@@ -1,0 +1,59 @@
+{
+  "status": "reached 1010:580B",
+  "steps": 4995,
+  "cpu": {
+    "ax": 0,
+    "bx": 17894,
+    "cx": 0,
+    "dx": 0,
+    "sp": 41588,
+    "bp": 65535,
+    "si": 32004,
+    "di": 16004,
+    "cs": 4112,
+    "ds": 9676,
+    "es": 30673,
+    "ss": 9676,
+    "ip": 22539,
+    "flags": 598
+  },
+  "cpu_snapshot": "AX=0000 BX=45E6 CX=0000 DX=0000 SI=7D04 DI=3E84 BP=FFFF SP=A274 CS:IP=1010:580B DS=25CC ES=77D1 SS=25CC FLAGS=0256",
+  "program": {
+    "path": "assets/OVERKILL.UNLZEXE.EXE",
+    "psp_segment": 4096,
+    "load_segment": 4112,
+    "entry_cs": 9078,
+    "entry_ip": 16,
+    "initial_ss": 13092,
+    "initial_sp": 128,
+    "load_module_size": 80040,
+    "overlay_size": 467649
+  },
+  "dos": {
+    "video_mode": 3,
+    "ticks": 0,
+    "vga_status_reads": 4,
+    "open_files": {},
+    "stdout_tail": "",
+    "port_log_tail": []
+  },
+  "hooks": {
+    "1010:0367": "overkill_linear_byte_rle_decoder_0367_fast",
+    "1010:03A8": "overkill_vertical_rle_decoder_03a8",
+    "1010:0615": "overkill_packed_read_word",
+    "1010:0624": "overkill_packed_read_byte",
+    "1010:41DA": "overkill_linear_rows_to_work_buffer_41da",
+    "1010:450C": "overkill_expand_4plane_list_450c",
+    "1010:4511": "overkill_expand_4plane_block_4511",
+    "1010:4537": "overkill_expand_4plane_row_4537_fast",
+    "1010:45CB": "overkill_expand_bits_45cb",
+    "1010:45F6": "overkill_pack_four_pixels_45f6",
+    "1010:497A": "overkill_blit_scaled_column_block_497a",
+    "1010:C916": "overkill_file_checksum_loop",
+    "1010:ECF2": "overkill_lz_decoder_ecf2",
+    "1010:ED7A": "overkill_lz_backref_copy_ed7a",
+    "1010:ED97": "overkill_lz_input_byte_ed97",
+    "1010:EDE9": "overkill_lz_output_byte_ede9",
+    "254A:05BF": "overkill_overlay_xor_decode_254a_05bf"
+  }
+}

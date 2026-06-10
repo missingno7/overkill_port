@@ -1,0 +1,182 @@
+{
+  "1010:017E": {
+    "name": "poll_control_keys_into_button_field",
+    "notes": "Reads 8 scancodes from the control-map table at DS:213E (or DS:2146 when DS:[0010]==2), indexes the INT 9 key-state table at DS:98C4, shifts each key's pressed bit, and rcl-packs them into the button bitfield at DS:98BE. Active map DS:213E = [00,00,Z(2C),Space(39),Q(10),A(1E),O(18),P(19)]: OVERKILL uses Q/A/O/P to move + Z/Space to fire, not the arrow keys.",
+    "status": "understood"
+  },
+  "1010:0324": "candidate_word_pair_rle_decoder",
+  "1010:0367": {
+    "name": "overkill_linear_byte_rle_decoder_0367_fast",
+    "notes": "Linear/horizontal byte RLE decoder. Verified against interpreted ASM on synthetic literal/repeat/80h terminator stream; optimized to collapse runs while preserving tested final state.",
+    "status": "replaced"
+  },
+  "1010:0386": "next observed startup RLE/asset decode hot path after full LZ hook",
+  "1010:0391": "next observed startup RLE/asset decode hot path after full LZ hook",
+  "1010:0396": "next observed startup RLE/asset decode hot path after full LZ hook",
+  "1010:039B": "next observed startup RLE/asset decode hot path after full LZ hook",
+  "1010:03A8": "vertical byte RLE decoder (verified hook)",
+  "1010:0615": "overkill_packed_read_word",
+  "1010:0624": "overkill_packed_read_byte",
+  "1010:066B": {
+    "name": "timer_tick_flag",
+    "notes": "Byte flag in the resident segment. Incremented by the game's reprogrammed IRQ0 ISR (via the 066C helper) and consumed only by the 0679 wait loop; cleared by 0672. Drives per-frame timing.",
+    "status": "data"
+  },
+  "1010:066C": {
+    "name": "timer_tick_inc",
+    "notes": "inc byte ptr cs:[066B]; ret. Called from the reprogrammed INT 08h ISR at 06E5 (site 0713) on alternating sub-ticks.",
+    "status": "understood"
+  },
+  "1010:0672": {
+    "name": "timer_tick_clear",
+    "notes": "mov byte ptr cs:[066B],0; ret. Clears the tick flag before a wait. Callers: 97B2, D007, D318, D406 (each paired with a 0679 wait).",
+    "status": "understood"
+  },
+  "1010:0679": {
+    "name": "overkill_wait_timer_tick_0679",
+    "notes": "Busy-wait: cmp byte cs:[066B],0; jz 0679; ret. Waits for the next reprogrammed-IRQ0 tick. Callers 981A/D025/D340/D41F. Replaced by a narrow hook modelling one elapsed tick (066B 0->1) since this interpreter delivers no async interrupts; verified against interpreted ASM.",
+    "status": "replaced"
+  },
+  "1010:0682": {
+    "name": "install_timer_if_needed",
+    "notes": "cmp word [0052],1; if not yet installed, fall through to 068A. [0052] is the timer-installed flag.",
+    "status": "understood"
+  },
+  "1010:068A": {
+    "name": "install_fast_timer_isr",
+    "notes": "Saves old INT 08h vector to CS:0738/073A, reprograms 8253 PIT (out 43h,36h; divisor 0x4000 ~= 72.8 Hz), sets INT 08h -> 1010:06E5 via AH=2508h, sets [0052]=1.",
+    "status": "understood"
+  },
+  "1010:06BC": {
+    "name": "uninstall_fast_timer_isr",
+    "notes": "cmp word [0052],0; if installed, restore old INT 08h vector from CS:0738, reprogram PIT back to 18.2 Hz, EOI, clear [0052].",
+    "status": "understood"
+  },
+  "1010:06E5": {
+    "name": "fast_timer_isr",
+    "notes": "Reprogrammed IRQ0 (INT 08h) handler. Loads DS from CS:9596, optionally far-calls sound at 2032:0000 when [0055]&1, calls 1010:D50E, bumps 066B via 066C on even sub-ticks, increments [0054] mod 4, sends EOI to port 20h, and chains the original BIOS INT 08h every 4th tick (jmp far cs:[0738]). Not emulated as an ISR; only the 0679 wait is modelled.",
+    "status": "understood"
+  },
+  "1010:0871": {
+    "name": "runtime_error_print_and_exit_delay",
+    "notes": "Generic error display path. Reached with DX=0FF6 and stdout \"Memory de-allocation error\" when PSP AH=4Ah resize failed before checkpoint 8.",
+    "status": "error path identified"
+  },
+  "1010:41DA": {
+    "name": "overkill_linear_rows_to_work_buffer_41da",
+    "notes": "Row-copy routine selected via 5A5A table. Verified hook matches interpreted ASM for captured zero-row/zero-width call. Diagnostic guard now stops on suspicious rows=65536,width=FECE case at DS:SI=7000:550C instead of burning enormous time; this is evidence of either a later data/control-flow issue or an unhandled convention, not treated as understood gameplay logic.",
+    "status": "partially replaced; guarded diagnostic"
+  },
+  "1010:447B": {
+    "name": "overkill_present_frame_blit_447b",
+    "notes": "Mode-0 frame-present blit, reached via the 5BDC video jump table (CS:[5BE8]). Copies C0h (192) rows of 1Ah (26) words from the work buffer CS:[9598]:[234C] to the display CS:[95A4] (=B800h) using the interlaced scanline step (+2000h/+C050h on the 4000h bank wrap), then restores DS from CS:[9596]. Hottest interpreted loop once the main loop runs; replaced by a verified hook.",
+    "status": "replaced"
+  },
+  "1010:5BDC": {
+    "name": "present_frame_dispatch",
+    "notes": "Per-frame presenter. Reads video mode CS:[95BC], shl 1, jmp cs:[bx+5BE8]. Mode 0 -> 447B. Called from the main loop at 1010:D010.",
+    "status": "understood"
+  },
+  "1010:450C": {
+    "name": "overkill_expand_4plane_list_450c",
+    "notes": "Outer list driver for the 4-plane startup renderer: reads block headers via 44D7 semantics and invokes the verified 4511 block renderer until the zero/FFFF exit path to 44AA.",
+    "status": "replaced"
+  },
+  "1010:4511": "4-plane block renderer nested loop (verified hook)",
+  "1010:4537": {
+    "name": "overkill_expand_4plane_row_4537_fast",
+    "notes": "4-plane row renderer helper; optimized but still verified against interpreted ASM. Mirrors current CPU8086 rotate flag semantics for oracle-relative tests.",
+    "status": "replaced"
+  },
+  "1010:38B7": {
+    "name": "overkill_masked_sprite_composite_38b7",
+    "notes": "Masked 2-column sprite-composite LOOP (38B7..38CF). Per row: two columns of [lodsw mask; and ax,es:[di]; or ax,ds:[si]; add si,2; stosw] then add di,0030h; loop CX rows. Effect: dest=(dest AND mask) OR data. Source row=[mask0,data0,mask1,data1] (SI+=8/row); dest stride 0034h. Hottest interpreted routine in the sprite-render phase after the 477E lift. Exit: CX=0, AX=last word, FLAGS from final add di,30h, falls through to 38D0. Replaced and verified bit-identical to the interpreted loop over 2000 randomized states.",
+    "status": "replaced"
+  },
+  "1010:45CB": "overkill_expand_bits_45cb",
+  "1010:45F6": "overkill_pack_four_pixels_45f6",
+  "1010:477E": {
+    "name": "overkill_sprite_blit_9x16_477e",
+    "notes": "Fully-unrolled fixed-geometry sprite blit (477E..480D), reached from the 5A36/4740 table dispatcher via the A849 sprite loop. ES=cs:[9596], source DS=cs:[9598]; copies a 9-byte-wide by 16-row sprite from DS:SI (source row stride 52) into packed ES:DI, then restores DS=cs:[9596]. Exit: SI+=0x340, DI+=0x90, 144 bytes written, FLAGS from the final add si,2Bh. Hottest interpreted routine during sprite-heavy loading. Replaced and verified against interpreted ASM (DF=0 and DF=1).",
+    "status": "replaced"
+  },
+  "1010:497A": {
+    "name": "overkill_blit_scaled_column_block_497a",
+    "notes": "Display blit/clear routine reached through CS:595A mode table. Verified against a captured pre-call snapshot and also through the 58DF loop snapshot.",
+    "status": "replaced"
+  },
+  "1010:50C9": {
+    "name": "overkill_wait_vga_retrace_50c9",
+    "notes": "C9EA wrapper that waits for VGA status bit 3 high/low through port 03DAh. Hook still calls the IO layer so vga_status_reads and AL/flags remain oracle-relative; preserves internal CALL stack scratch C9F0.",
+    "status": "replaced"
+  },
+  "1010:5827": {
+    "name": "overkill_ega_planar_to_linear_copy_5827",
+    "notes": "Narrow hook for 5827..58A4 EGA row-copy loop. Verified at mode 0 on captured snapshot; leaves later render driver code original.",
+    "status": "replaced for verified mode-0 path"
+  },
+  "1010:58DF": {
+    "name": "overkill_postcopy_blit_wait_loop_58df",
+    "notes": "Narrow mode-0 control-flow hook for 58DF..58F8. It repeatedly invokes verified 497A and 50C9 hooks and preserves push/call/pop stack scratches plus DEC CX + LOOP double-decrement.",
+    "status": "replaced for verified mode-0 path"
+  },
+  "1010:95C9": {
+    "name": "relocated_runtime_entry_after_inner_unpacker",
+    "notes": "First known transfer into useful game/runtime code after the inner bootstrap.",
+    "status": "confirmed checkpoint"
+  },
+  "1010:95F6": {
+    "name": "startup_resize_psp_block_int21_4a",
+    "notes": "OVERKILL shrinks the initial PSP-owned DOS memory block with ES=1000h, BX=22FFh before making AH=48h heap allocations. Requires DOSMachine.seed_initial_memory_block.",
+    "status": "confirmed startup DOS memory operation"
+  },
+  "1010:C713": {
+    "name": "asset_table_search_candidate",
+    "notes": "Scans words from DS:14D0 looking for DS:21AA or FFFF after asset decode. Observed around checkpoint 6; likely small next hook/caller-analysis target.",
+    "status": "candidate"
+  },
+  "1010:C916": {
+    "name": "overkill_file_checksum_loop",
+    "notes": "Small deterministic checksum loop over bytes read from OVERKILL data file. Python replacement is regression-tested.",
+    "status": "replaced"
+  },
+  "1010:CA18": {
+    "name": "wait_vga_retrace_status_read",
+    "notes": "Reads port 03DAh and waits for bit 3. DOSMachine.port_read now toggles that bit.",
+    "status": "hardware wait identified"
+  },
+  "1010:ECF2": {
+    "name": "overkill_lz_decoder_ecf2",
+    "notes": "Full OVERKILL-specific LZ asset decoder: initializes output pointer from CS:ECEE, clears ring buffer at CS:DCB8, decodes literals/backrefs, terminates on 00 00 00, restores ES and returns. Verified against interpreted ASM on synthetic literal and back-reference streams.",
+    "status": "replaced"
+  },
+  "1010:ED7A": "LZ sliding-window back-reference copy (verified hook)",
+  "1010:ED97": "LZ input byte reader / 1KiB refill buffer (verified hook)",
+  "1010:EDE9": "LZ output byte writer / ES:DI segment wrap (verified hook)",
+  "2376:0010": {
+    "name": "mz_entry_after_dos_load",
+    "notes": "MZ CS:IP 1366:0010 loaded at segment 1010h.",
+    "status": "confirmed"
+  },
+  "254A:04D7": {
+    "name": "overlay_container_open_entry_path",
+    "notes": "Far-call file/container helper. Opens OVERKILL, seeks entry offsets, checks small headers/signatures, and reaches XOR decode loop at 05BF. Current best next candidate for narrow verified loader-path hooks.",
+    "status": "active investigation target"
+  },
+  "254A:0582": {
+    "name": "overlay_signature_compare_loop",
+    "notes": "Compares six bytes from header at 074E against signature/table at 0756 before continuing to the overlay decode path. Observed repeatedly after PSP heap fix.",
+    "status": "candidate small hook"
+  },
+  "254A:05BF": "overlay/file-block XOR decode loop for default load layout (verified hook)",
+  "DOS:INT21:48": {
+    "name": "minimal_distinct_paragraph_allocator",
+    "notes": "Checkpoint 8 replaces the old constant 7000h placeholder with a monotonic paragraph allocator seeded by the PSP block resize. Prevents work/source/screen buffer aliasing.",
+    "status": "implemented"
+  },
+  "DOS:INT21:4A": {
+    "name": "resize_memory_block_support",
+    "notes": "Supports OVERKILL startup shrink of the PSP block and deterministic grow/shrink of tracked most-recent allocations.",
+    "status": "implemented"
+  }
+}

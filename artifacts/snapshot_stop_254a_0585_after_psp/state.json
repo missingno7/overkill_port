@@ -1,0 +1,128 @@
+{
+  "status": "reached 254A:0585",
+  "steps": 28654,
+  "cpu": {
+    "ax": 83,
+    "bx": 7,
+    "cx": 6,
+    "dx": 1866,
+    "sp": 41572,
+    "bp": 0,
+    "si": 1871,
+    "di": 1878,
+    "cs": 9546,
+    "ds": 9546,
+    "es": 13823,
+    "ss": 9676,
+    "ip": 1413,
+    "flags": 582
+  },
+  "cpu_snapshot": "AX=0053 BX=0007 CX=0006 DX=074A SI=074F DI=0756 BP=0000 SP=A264 CS:IP=254A:0585 DS=254A ES=35FF SS=25CC FLAGS=0246",
+  "program": {
+    "path": "assets/OVERKILL.UNLZEXE.EXE",
+    "psp_segment": 4096,
+    "load_segment": 4112,
+    "entry_cs": 9078,
+    "entry_ip": 16,
+    "initial_ss": 13092,
+    "initial_sp": 128,
+    "load_module_size": 80040,
+    "overlay_size": 467649
+  },
+  "dos": {
+    "video_mode": 3,
+    "ticks": 0,
+    "vga_status_reads": 4,
+    "next_alloc_segment": 27204,
+    "allocation_limit_segment": 40960,
+    "allocations": {
+      "1000": 8959,
+      "35FF": 4096,
+      "45FF": 235,
+      "46EA": 2041,
+      "4EE3": 1041,
+      "52F4": 417,
+      "5495": 897,
+      "5816": 221,
+      "58F3": 1630,
+      "5F51": 188,
+      "600D": 1413,
+      "6592": 1025,
+      "6993": 177
+    },
+    "open_files": {
+      "7": {
+        "path": "assets/OVERKILL",
+        "pos": 50567,
+        "size": 518204
+      }
+    },
+    "stdout_tail": "",
+    "port_log_tail": [
+      [
+        "out",
+        968,
+        0,
+        8
+      ],
+      [
+        "out",
+        969,
+        0,
+        8
+      ],
+      [
+        "out",
+        969,
+        0,
+        8
+      ],
+      [
+        "out",
+        969,
+        0,
+        8
+      ],
+      [
+        "out",
+        67,
+        54,
+        8
+      ],
+      [
+        "out",
+        64,
+        0,
+        8
+      ],
+      [
+        "out",
+        64,
+        64,
+        8
+      ]
+    ]
+  },
+  "hooks": {
+    "1010:0367": "overkill_linear_byte_rle_decoder_0367_fast",
+    "1010:03A8": "overkill_vertical_rle_decoder_03a8",
+    "1010:0615": "overkill_packed_read_word",
+    "1010:0624": "overkill_packed_read_byte",
+    "1010:41DA": "overkill_linear_rows_to_work_buffer_41da",
+    "1010:450C": "overkill_expand_4plane_list_450c",
+    "1010:4511": "overkill_expand_4plane_block_4511",
+    "1010:4537": "overkill_expand_4plane_row_4537_fast",
+    "1010:45CB": "overkill_expand_bits_45cb",
+    "1010:45F6": "overkill_pack_four_pixels_45f6",
+    "1010:497A": "overkill_blit_scaled_column_block_497a",
+    "1010:50C9": "overkill_wait_vga_retrace_50c9",
+    "1010:5827": "overkill_ega_planar_to_linear_copy_5827",
+    "1010:58DF": "overkill_postcopy_blit_wait_loop_58df",
+    "1010:C916": "overkill_file_checksum_loop",
+    "1010:ECF2": "overkill_lz_decoder_ecf2",
+    "1010:ED7A": "overkill_lz_backref_copy_ed7a",
+    "1010:ED97": "overkill_lz_input_byte_ed97",
+    "1010:EDE9": "overkill_lz_output_byte_ede9",
+    "254A:05BF": "overkill_overlay_xor_decode_254a_05bf"
+  }
+}

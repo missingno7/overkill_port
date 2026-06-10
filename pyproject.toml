@@ -1,0 +1,12 @@
+[project]
+name = "overkill-source-port"
+version = "0.1.0"
+description = "OVERKILL-specific DOS 8086 interpreter scaffold for gradual reverse-engineered source porting"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+overkill-port = "overkill_port.cli:main"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

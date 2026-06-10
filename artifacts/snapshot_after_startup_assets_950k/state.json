@@ -1,0 +1,96 @@
+{
+  "status": "stopped after max steps",
+  "steps": 950000,
+  "cpu": {
+    "ax": 65424,
+    "bx": 12,
+    "cx": 102,
+    "dx": 1040,
+    "sp": 41576,
+    "bp": 65535,
+    "si": 4784,
+    "di": 16794,
+    "cs": 4112,
+    "ds": 4112,
+    "es": 28672,
+    "ss": 9676,
+    "ip": 1020,
+    "flags": 518
+  },
+  "cpu_snapshot": "AX=FF90 BX=000C CX=0066 DX=0410 SI=12B0 DI=419A BP=FFFF SP=A268 CS:IP=1010:03FC DS=1010 ES=7000 SS=25CC FLAGS=0206",
+  "program": {
+    "path": "assets/OVERKILL.UNLZEXE.EXE",
+    "psp_segment": 4096,
+    "load_segment": 4112,
+    "entry_cs": 9078,
+    "entry_ip": 16,
+    "initial_ss": 13092,
+    "initial_sp": 128,
+    "load_module_size": 80040,
+    "overlay_size": 467649
+  },
+  "dos": {
+    "video_mode": 3,
+    "ticks": 0,
+    "vga_status_reads": 4,
+    "open_files": {
+      "12": {
+        "path": "assets/OVERKILL",
+        "pos": 83899,
+        "size": 518204
+      }
+    },
+    "stdout_tail": "",
+    "port_log_tail": [
+      [
+        "out",
+        968,
+        0,
+        8
+      ],
+      [
+        "out",
+        969,
+        0,
+        8
+      ],
+      [
+        "out",
+        969,
+        0,
+        8
+      ],
+      [
+        "out",
+        969,
+        0,
+        8
+      ],
+      [
+        "out",
+        67,
+        54,
+        8
+      ],
+      [
+        "out",
+        64,
+        0,
+        8
+      ],
+      [
+        "out",
+        64,
+        64,
+        8
+      ]
+    ]
+  },
+  "hooks": {
+    "1010:0615": "overkill_packed_read_word",
+    "1010:0624": "overkill_packed_read_byte",
+    "1010:45CB": "overkill_expand_bits_45cb",
+    "1010:45F6": "overkill_pack_four_pixels_45f6",
+    "1010:C916": "overkill_file_checksum_loop"
+  }
+}

@@ -1,0 +1,72 @@
+{
+  "status": "program halted",
+  "steps": 10744,
+  "cpu": {
+    "ax": 19456,
+    "bx": 0,
+    "cx": 0,
+    "dx": 5632,
+    "sp": 41592,
+    "bp": 0,
+    "si": 47400,
+    "di": 4000,
+    "cs": 4112,
+    "ds": 9676,
+    "es": 0,
+    "ss": 9676,
+    "ip": 23986,
+    "flags": 659
+  },
+  "cpu_snapshot": "AX=4C00 BX=0000 CX=0000 DX=1600 SI=B928 DI=0FA0 BP=0000 SP=A278 CS:IP=1010:5DB2 DS=25CC ES=0000 SS=25CC FLAGS=0293",
+  "program": {
+    "path": "assets/OVERKILL.UNLZEXE.EXE",
+    "psp_segment": 4096,
+    "load_segment": 4112,
+    "entry_cs": 9078,
+    "entry_ip": 16,
+    "initial_ss": 13092,
+    "initial_sp": 128,
+    "load_module_size": 80040,
+    "overlay_size": 467649
+  },
+  "dos": {
+    "video_mode": 3,
+    "ticks": 0,
+    "vga_status_reads": 400,
+    "next_alloc_segment": 28672,
+    "allocation_limit_segment": 40960,
+    "allocations": {},
+    "open_files": {},
+    "stdout_tail": "Memory de-allocation error",
+    "port_log_tail": [
+      [
+        "out",
+        97,
+        0,
+        8
+      ]
+    ]
+  },
+  "hooks": {
+    "1010:0367": "overkill_linear_byte_rle_decoder_0367_fast",
+    "1010:03A8": "overkill_vertical_rle_decoder_03a8",
+    "1010:0615": "overkill_packed_read_word",
+    "1010:0624": "overkill_packed_read_byte",
+    "1010:41DA": "overkill_linear_rows_to_work_buffer_41da",
+    "1010:450C": "overkill_expand_4plane_list_450c",
+    "1010:4511": "overkill_expand_4plane_block_4511",
+    "1010:4537": "overkill_expand_4plane_row_4537_fast",
+    "1010:45CB": "overkill_expand_bits_45cb",
+    "1010:45F6": "overkill_pack_four_pixels_45f6",
+    "1010:497A": "overkill_blit_scaled_column_block_497a",
+    "1010:50C9": "overkill_wait_vga_retrace_50c9",
+    "1010:5827": "overkill_ega_planar_to_linear_copy_5827",
+    "1010:58DF": "overkill_postcopy_blit_wait_loop_58df",
+    "1010:C916": "overkill_file_checksum_loop",
+    "1010:ECF2": "overkill_lz_decoder_ecf2",
+    "1010:ED7A": "overkill_lz_backref_copy_ed7a",
+    "1010:ED97": "overkill_lz_input_byte_ed97",
+    "1010:EDE9": "overkill_lz_output_byte_ede9",
+    "254A:05BF": "overkill_overlay_xor_decode_254a_05bf"
+  }
+}

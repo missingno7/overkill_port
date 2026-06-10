@@ -1,0 +1,111 @@
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+
+from .cpu import HaltExecution, UnsupportedInstruction
+from .runtime import create_runtime
+from .snapshot import parse_addr, run_until, write_snapshot, load_snapshot
+
+
+def cmd_info(args: argparse.Namespace) -> int:
+    from .mz import parse_mz
+    exe = parse_mz(args.exe)
+    h = exe.header
+    print(f"path: {exe.path}")
+    print(f"load module: {len(exe.load_module)} bytes")
+    print(f"overlay: {len(exe.overlay)} bytes")
+    print(f"entry CS:IP: {h.cs:04X}:{h.ip:04X}")
+    print(f"stack SS:SP: {h.ss:04X}:{h.sp:04X}")
+    print(f"relocations: {len(exe.relocations)}")
+    print(f"min/max extra paragraphs: {h.min_extra_paragraphs}/{h.max_extra_paragraphs}")
+    return 0
+
+
+def cmd_trace(args: argparse.Namespace) -> int:
+    rt = create_runtime(args.exe, game_root=args.game_root)
+    out = Path(args.out) if args.out else None
+    try:
+        rt.cpu.run(args.steps)
+        status = f"stopped after {args.steps} steps"
+    except HaltExecution:
+        status = "program halted"
+    except UnsupportedInstruction as e:
+        status = f"unsupported instruction: {e}"
+    except Exception as e:
+        status = f"exception: {type(e).__name__}: {e}"
+    lines = [status, rt.cpu.s.snapshot(), "", *rt.cpu.trace]
+    text = "\n".join(lines) + "\n"
+    if out:
+        out.write_text(text, encoding="utf-8")
+        print(f"wrote {out}")
+    else:
+        print(text)
+    if rt.dos.stdout:
+        print("--- DOS stdout ---")
+        print("".join(rt.dos.stdout))
+    return 0
+
+
+
+def cmd_snapshot(args: argparse.Namespace) -> int:
+    rt = create_runtime(args.exe, game_root=args.game_root)
+    stop_at = parse_addr(args.stop_at) if args.stop_at else None
+    status, steps, tail = run_until(rt, max_steps=args.steps, stop_at=stop_at, trace_tail=args.trace_tail)
+    write_snapshot(rt, args.out_dir, status=status, steps=steps, trace_tail=tail)
+    print(f"{status}; steps={steps}; wrote {args.out_dir}")
+    print(rt.cpu.s.snapshot())
+    return 0
+
+
+def cmd_continue_snapshot(args: argparse.Namespace) -> int:
+    rt = load_snapshot(args.exe, args.snapshot_dir, game_root=args.game_root)
+    stop_at = parse_addr(args.stop_at) if args.stop_at else None
+    status, steps, tail = run_until(rt, max_steps=args.steps, stop_at=stop_at, trace_tail=args.trace_tail)
+    write_snapshot(rt, args.out_dir, status=status, steps=steps, trace_tail=tail)
+    print(f"{status}; continued_steps={steps}; wrote {args.out_dir}")
+    print(rt.cpu.s.snapshot())
+    return 0
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(prog="overkill-port", description="OVERKILL-specific DOS interpreter/source-port scaffold")
+    sub = p.add_subparsers(required=True)
+    i = sub.add_parser("info", help="print MZ metadata")
+    i.add_argument("exe")
+    i.set_defaults(func=cmd_info)
+    t = sub.add_parser("trace", help="execute and trace original DOS code")
+    t.add_argument("exe")
+    t.add_argument("--game-root", default=None)
+    t.add_argument("--steps", type=int, default=1000)
+    t.add_argument("--out", default=None)
+    t.set_defaults(func=cmd_trace)
+
+    snap = sub.add_parser("snapshot", help="run and dump full 1MB memory image plus JSON state")
+    snap.add_argument("exe")
+    snap.add_argument("--game-root", default=None)
+    snap.add_argument("--steps", type=int, default=100000)
+    snap.add_argument("--stop-at", default=None, help="optional CS:IP hex stop address, e.g. 1010:45CB")
+    snap.add_argument("--trace-tail", type=int, default=0, help="keep only the last N trace lines")
+    snap.add_argument("--out-dir", default="artifacts/snapshot")
+    snap.set_defaults(func=cmd_snapshot)
+
+    cont = sub.add_parser("continue-snapshot", help="resume execution from a saved snapshot and write a new snapshot")
+    cont.add_argument("exe")
+    cont.add_argument("snapshot_dir")
+    cont.add_argument("--game-root", default=None)
+    cont.add_argument("--steps", type=int, default=100000)
+    cont.add_argument("--stop-at", default=None, help="optional CS:IP hex stop address, e.g. 1010:45CB")
+    cont.add_argument("--trace-tail", type=int, default=0)
+    cont.add_argument("--out-dir", default="artifacts/snapshot_continued")
+    cont.set_defaults(func=cmd_continue_snapshot)
+    return p
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
