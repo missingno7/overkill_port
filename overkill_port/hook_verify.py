@@ -48,13 +48,13 @@ class HookStop:
             return ((cs, 0x27EB if outer > 1 else 0x27D9),)
         if self.kind == "dispatch_5a00":
             mode = cpu.mem.rw(cs, 0x95BC)
-            if mode in (0, 2):  # CGA + Tandy coordinate targets are fully hooked.
+            if mode in (0, 1, 2):  # CGA + EGA + Tandy coordinate targets are fully hooked.
                 return ((cs, cpu.mem.rw(before.ss, before.sp)),)
             bx = ((mode & 0xFFFF) << 1) & 0xFFFF
             return ((cs, cpu.mem.rw(cs, (0x5A0C + bx) & 0xFFFF)),)
         if self.kind == "dispatch_5a24":
             mode = cpu.mem.rw(cs, 0x95BC)
-            if mode in (0, 2):  # CGA + Tandy coordinate targets are fully hooked.
+            if mode in (0, 1, 2):  # CGA + EGA + Tandy coordinate targets are fully hooked.
                 return ((cs, cpu.mem.rw(before.ss, before.sp)),)
             bx = ((mode & 0xFFFF) << 1) & 0xFFFF
             return ((cs, cpu.mem.rw(cs, (0x5A30 + bx) & 0xFFFF)),)
@@ -124,7 +124,14 @@ class HookStop:
             if cpu.mem.rw(ss, (bp + 0x24) & 0xFFFF) == 0:
                 table = 0x76E6
             target = cpu.mem.rw(cs, (table + ((dispatch << 1) & 0xFFFF)) & 0xFFFF)
-            if target in (0x2F81, 0x2F40, 0x2E6E):
+            if target in (
+                0x103C, 0x10B7, 0x1AEB, 0x1D1B,
+                0x2193, 0x21D6, 0x2223, 0x2285, 0x22FC,
+                0x238D, 0x2410, 0x247E,
+                0x3849, 0x387C, 0x38B7, 0x38D6, 0x38F9, 0x390E,
+                0x409D, 0x40D7, 0x412B,
+                0x2F81, 0x2F40, 0x2ECB, 0x2E6E, 0x2FB6,
+            ):
                 return ((cs, cpu.mem.rw(before.ss, before.sp)),)
             return ((cs, target),)
         if self.kind == "scan_layer1_a8c7":
@@ -183,6 +190,16 @@ class HookVerifierConfig:
 
 DEFAULT_STOPS: dict[Addr, HookStop] = {
     (0x1010, 0x017E): HookStop("fixed_ip", 0x018B),
+    (0x1010, 0x103C): HookStop("near_ret"),
+    (0x1010, 0x10B7): HookStop("near_ret"),
+    (0x1010, 0x2193): HookStop("near_ret"),
+    (0x1010, 0x21D6): HookStop("near_ret"),
+    (0x1010, 0x238D): HookStop("near_ret"),
+    (0x1010, 0x2410): HookStop("near_ret"),
+    (0x1010, 0x247E): HookStop("near_ret"),
+    (0x1010, 0x2223): HookStop("near_ret"),
+    (0x1010, 0x2285): HookStop("near_ret"),
+    (0x1010, 0x22FC): HookStop("near_ret"),
     (0x1010, 0x1AEB): HookStop("near_ret"),
     (0x1010, 0x75A6): HookStop("near_ret"),
     (0x1010, 0xB73E): HookStop("near_ret"),
@@ -208,6 +225,15 @@ DEFAULT_STOPS: dict[Addr, HookStop] = {
     (0x1010, 0x356C): HookStop("near_ret"),
     (0x1010, 0x35AA): HookStop("near_ret"),
     (0x1010, 0x35CC): HookStop("near_ret"),
+    (0x1010, 0x3849): HookStop("near_ret"),
+    (0x1010, 0x387C): HookStop("near_ret"),
+    (0x1010, 0x38D6): HookStop("near_ret"),
+    (0x1010, 0x390E): HookStop("near_ret"),
+    (0x1010, 0x38B7): HookStop("near_ret"),
+    (0x1010, 0x38F9): HookStop("near_ret"),
+    (0x1010, 0x409D): HookStop("near_ret"),
+    (0x1010, 0x40D7): HookStop("near_ret"),
+    (0x1010, 0x412B): HookStop("near_ret"),
     (0x1010, 0xCCAA): HookStop("fixed_ip", 0xCD08),
     (0x1010, 0xCCC4): HookStop("fixed_ip", 0xCD08),
     (0x1010, 0xCCF0): HookStop("fixed_ip", 0xCD08),

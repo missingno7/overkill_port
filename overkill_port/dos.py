@@ -197,6 +197,30 @@ class DOSMachine:
         if ah == 0x02:
             self.stdout.append(chr(cpu.s.dx & 0xFF))
             return
+        if ah in (0x01, 0x07, 0x08):
+            # Console character input.
+            #
+            # AH=01h: wait for character, echo, Ctrl-C checked by DOS.
+            # AH=07h: direct character input, no echo, no Ctrl-C check.
+            # AH=08h: character input, no echo, Ctrl-C checked by DOS.
+            #
+            # This emulator does not have a real DOS stdin stream.  Use the same
+            # deterministic keyboard queue as INT 16h when available, returning
+            # the ASCII byte in AL.  When no queued key exists, return Esc, matching
+            # the existing headless INT 16h fallback and preventing blocking DOS
+            # read paths from crashing automated play runs.
+            key = self.key_queue.pop(0) if self.key_queue else 0x011B
+            ch = key & 0xFF
+            if ch == 0 and (key >> 8):
+                # DOS extended keys are reported as 00h first; a second read
+                # would return the scan code on real DOS.  Keeping the leading
+                # zero is the safest narrow emulation for code that distinguishes
+                # extended keys.
+                ch = 0
+            cpu.s.ax = (cpu.s.ax & 0xFF00) | ch
+            if ah == 0x01:
+                self.stdout.append(chr(ch))
+            return
         if ah == 0x30:  # get DOS version
             cpu.s.ax = 0x0005
             cpu.s.bx = 0x0000

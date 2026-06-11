@@ -204,6 +204,30 @@ def test_int16_keyboard_queue_and_headless_fallback():
     assert cpu.get_flag(ZF)
 
 
+
+def test_int21_console_input_uses_keyboard_queue_and_fallback():
+    from pathlib import Path
+    from overkill_port.dos import DOSMachine
+
+    cpu = CPU8086(Memory(), CPUState(cs=0x1000, ds=0x1000, es=0x1000, ss=0x1000, sp=0xFFFE))
+    dos = DOSMachine(root=Path('.'))
+
+    dos.key_queue.append(0x1C0D)  # Enter: scan 1C, ASCII 0D
+    cpu.s.ax = 0x0700
+    dos.interrupt(cpu, 0x21)
+    assert cpu.s.ax == 0x070D
+    assert dos.key_queue == []
+
+    cpu.s.ax = 0x0800
+    dos.interrupt(cpu, 0x21)
+    assert cpu.s.ax == 0x081B
+
+    dos.key_queue.append(0x2041)
+    cpu.s.ax = 0x0100
+    dos.interrupt(cpu, 0x21)
+    assert cpu.s.ax == 0x0141
+    assert dos.stdout[-1] == 'A'
+
 def test_dos_seeded_psp_resize_and_distinct_allocations():
     from pathlib import Path
     from overkill_port.dos import DOSMachine

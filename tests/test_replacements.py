@@ -3842,6 +3842,155 @@ def test_b73e_b77b_view_contact_death_matches_interpreted_asm():
             assert a == b, f"memory differs at physical {i:05X}: asm={a:02X} hook={b:02X}"
 
 
+def test_b73e_b808_low_a47e_reset_target_matches_interpreted_asm():
+    from pathlib import Path
+    from overkill_port.replacements import _run_object_behavior_b73e
+
+    blob = Path("artifacts/snapshot_play_tandy_20260611_152751/memory_1mb.bin").read_bytes()
+
+    def make_cpu() -> CPU8086:
+        mem = Memory()
+        mem.data[:] = blob
+        ds = 0x25CC
+        ss = 0x25CC
+        bp = 0x2700
+        for off in range(0, 0x38, 2):
+            mem.ww(ss, bp + off, 0)
+        globals_ = {
+            0x2338: 0x0002,
+            0x2340: 0x0300,
+            0x2324: 0x0001,
+            0x232E: 0x002C,
+            0xA47C: 0x0001,
+            0xA47E: 0x0003,
+            0xA7A0: 0x0023,
+            0x2380: 0x0078,
+            0xA278: 0x0000,
+        }
+        for off, value in globals_.items():
+            mem.ww(ds, off, value)
+        values = {
+            0x00: 0x0001,
+            0x02: 0x0060,
+            0x04: 0x0080,
+            0x08: 0x0000,
+            0x0A: 0x0001,
+            0x0C: 0x4000,
+            0x0E: 0x5000,
+            0x14: 0x0001,
+            0x16: 0x0004,
+            0x18: 0x0020,
+            0x1C: 0xFFFF,
+            0x20: 0x0004,
+            0x28: 0xFFFF,
+            0x32: 0x0087,
+            0x34: 0x0060,
+        }
+        for off, value in values.items():
+            mem.ww(ss, bp + off, value)
+        state = CPUState(
+            ax=0, bx=0, cx=0x0012, dx=0,
+            si=0, di=0, bp=bp, sp=0xA272,
+            cs=0x1010, ds=ds, es=ds, ss=ss,
+            ip=0xB73E, flags=0x0202,
+        )
+        cpu = CPU8086(mem, state)
+        cpu.trace_enabled = False
+        cpu.push(0xBEEF)
+        return cpu
+
+    asm = make_cpu()
+    hook = make_cpu()
+    for _ in range(300):
+        if asm.addr() == (0x1010, 0xBEEF):
+            break
+        asm.step()
+
+    _run_object_behavior_b73e(hook, parent="test", chain="test", cx_value=0x0012)
+
+    assert asm.addr() == hook.addr() == (0x1010, 0xBEEF)
+    assert asm.s.snapshot() == hook.s.snapshot()
+    ss = asm.s.ss & 0xFFFF
+    stack_scratch = {((ss << 4) + off) & 0xFFFFF for off in range(0xA268, 0xA270)}
+    for i, (a, b) in enumerate(zip(asm.mem.data, hook.mem.data)):
+        if i not in stack_scratch:
+            assert a == b, f"memory differs at physical {i:05X}: asm={a:02X} hook={b:02X}"
+
+
+def test_b73e_b77b_out_of_bounds_bd17_deactivates_logic20_matches_interpreted_asm():
+    from pathlib import Path
+    from overkill_port.replacements import _run_object_behavior_b73e
+
+    blob = Path("artifacts/snapshot_play_tandy_20260611_152751/memory_1mb.bin").read_bytes()
+
+    def make_cpu() -> CPU8086:
+        mem = Memory()
+        mem.data[:] = blob
+        ds = 0x25CC
+        ss = 0x25CC
+        bp = 0x276C
+        for off in range(0, 0x38, 2):
+            mem.ww(ss, bp + off, 0)
+        globals_ = {
+            0x2338: 0x0002,
+            0x2340: 0x0300,
+            0x2324: 0x0000,
+            0x232E: 0x002C,
+            0xA47C: 0x0000,
+            0xA47E: 0x0005,
+            0xA7A0: 0x0023,
+            0x2380: 0x0078,
+            0xA278: 0x0000,
+        }
+        for off, value in globals_.items():
+            mem.ww(ds, off, value)
+        values = {
+            0x00: 0x0001,
+            0x02: 0x00EC,
+            0x04: 0x0090,
+            0x08: 0x007A,
+            0x0A: 0x0001,
+            0x0C: 0xFFFF,
+            0x0E: 0x6014,
+            0x14: 0x0001,
+            0x16: 0x0004,
+            0x18: 0x0020,
+            0x1C: 0x0002,
+            0x20: 0x0004,
+            0x28: 0xFFFF,
+            0x32: 0x0090,
+            0x34: 0x0020,
+        }
+        for off, value in values.items():
+            mem.ww(ss, bp + off, value)
+        state = CPUState(
+            ax=0, bx=0, cx=0x0012, dx=0,
+            si=0, di=0, bp=bp, sp=0xA272,
+            cs=0x1010, ds=ds, es=ds, ss=ss,
+            ip=0xB73E, flags=0x0202,
+        )
+        cpu = CPU8086(mem, state)
+        cpu.trace_enabled = False
+        cpu.push(0xBEEF)
+        return cpu
+
+    asm = make_cpu()
+    hook = make_cpu()
+    for _ in range(300):
+        if asm.addr() == (0x1010, 0xBEEF):
+            break
+        asm.step()
+
+    _run_object_behavior_b73e(hook, parent="test", chain="test", cx_value=0x0012)
+
+    assert asm.addr() == hook.addr() == (0x1010, 0xBEEF)
+    assert asm.s.snapshot() == hook.s.snapshot()
+    ss = asm.s.ss & 0xFFFF
+    stack_scratch = {((ss << 4) + off) & 0xFFFFF for off in range(0xA26A, 0xA270)}
+    for i, (a, b) in enumerate(zip(asm.mem.data, hook.mem.data)):
+        if i not in stack_scratch:
+            assert a == b, f"memory differs at physical {i:05X}: asm={a:02X} hook={b:02X}"
+
 
 def test_aa2b_and_efae_dispatch_hooks_match_interpreted_asm():
     from overkill_port.cpu import CPU8086, CPUState
@@ -4134,10 +4283,12 @@ def test_cga_xy_to_di_5a00_and_5a24_hooks_match_interpreted_asm():
 
     dispatch_5a00 = bytes.fromhex('2e 8b 1e bc 95 d1 e3 2e ff a7 0c 5a')
     dispatch_5a24 = bytes.fromhex('2e 8b 1e bc 95 d1 e3 2e ff a7 30 5a')
-    # Mode 0 (CGA) targets double X (one SHL AX,1); mode 2 (Tandy) targets at
-    # 3103/312D quadruple X (two SHL AX,1) using the same row tables.
+    # Mode 0 (CGA) targets double X (one SHL AX,1), mode 1 (EGA) leaves X
+    # unscaled, and mode 2 (Tandy) targets at 3103/312D quadruple X (two SHL AX,1).
     target_422b = bytes.fromhex('8a dc 32 ff d1 e3 8b 9f e8 9e 32 e4 d1 e0 03 c3 8b f8 c3')
     target_4251 = bytes.fromhex('8a dc 32 ff d1 e3 8b 9f 58 9d 32 e4 d1 e0 03 c3 8b f8 c3')
+    target_25b6 = bytes.fromhex('8a dc 32 ff d1 e3 8b 9f e8 9e 32 e4 03 c3 8b f8 c3')
+    target_25d8 = bytes.fromhex('8a dc 32 ff d1 e3 8b 9f 58 9d 32 e4 03 c3 8b f8 c3')
     target_3103 = bytes.fromhex('8a dc 32 ff d1 e3 8b 9f e8 9e 32 e4 d1 e0 d1 e0 03 c3 8b f8 c3')
     target_312d = bytes.fromhex('8a dc 32 ff d1 e3 8b 9f 58 9d 32 e4 d1 e0 d1 e0 03 c3 8b f8 c3')
 
@@ -4167,6 +4318,8 @@ def test_cga_xy_to_di_5a00_and_5a24_hooks_match_interpreted_asm():
     cases = [
         (0x5A00, overkill_cga_xy_to_di_5a00, dispatch_5a00, target_422b, 0x422B, 0x9EE8, 0),
         (0x5A24, overkill_cga_xy_to_di_5a24, dispatch_5a24, target_4251, 0x4251, 0x9D58, 0),
+        (0x5A00, overkill_cga_xy_to_di_5a00, dispatch_5a00, target_25b6, 0x25B6, 0x9EE8, 1),
+        (0x5A24, overkill_cga_xy_to_di_5a24, dispatch_5a24, target_25d8, 0x25D8, 0x9D58, 1),
         (0x5A00, overkill_cga_xy_to_di_5a00, dispatch_5a00, target_3103, 0x3103, 0x9EE8, 2),
         (0x5A24, overkill_cga_xy_to_di_5a24, dispatch_5a24, target_312d, 0x312D, 0x9D58, 2),
     ]
