@@ -272,3 +272,43 @@ def test_create_runtime_accepts_command_tail():
     psp = rt.program.psp_segment
     assert rt.program.memory.rb(psp, 0x80) == 3
     assert rt.program.memory.block(psp, 0x81, 4) == b" /E\r"
+
+
+def test_hook_registry_rejects_duplicate_registration():
+    # Two replacements at the same CS:IP must fail loudly.  The map is keyed by
+    # CS:IP, so a silent overwrite is exactly how superseded hook bodies used to
+    # accrete unnoticed; the guard keeps one address mapped to one replacement.
+    from overkill_port.hooks import HookRegistry
+
+    reg = HookRegistry()
+
+    @reg.replace(0x1010, 0x1234, "first")
+    def first(cpu):  # pragma: no cover - body never runs in this test
+        pass
+
+    raised = False
+    try:
+        @reg.replace(0x1010, 0x1234, "second")
+        def second(cpu):  # pragma: no cover - registration fails before use
+            pass
+    except ValueError as exc:
+        raised = True
+        assert "1010:1234" in str(exc)
+    assert raised, "duplicate CS:IP registration should raise ValueError"
+    # The first registration is intact and a different address still registers.
+    assert reg.replacements[(0x1010, 0x1234)].name == "first"
+
+    @reg.replace(0x1010, 0x5678, "other")
+    def other(cpu):  # pragma: no cover - body never runs in this test
+        pass
+
+    assert (0x1010, 0x5678) in reg.replacements
+
+
+def test_production_registry_has_no_duplicate_addresses():
+    # Importing the real hook table must not trip the duplicate guard, i.e. the
+    # shipped replacements.py keeps exactly one replacement per CS:IP.
+    import overkill_port.replacements  # noqa: F401  (registers hooks on import)
+    from overkill_port.hooks import registry
+
+    assert len(registry.replacements) > 0

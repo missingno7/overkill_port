@@ -665,12 +665,13 @@ def overkill_lz_backref_copy_ed7a(cpu):
 
 @registry.replace(0x1010, 0xECF2, "overkill_lz_decoder_ecf2")
 def overkill_lz_decoder_ecf2(cpu):
-    """Optimized full replacement for OVERKILL's 1010:ECF2 LZ asset decoder.
+    """Full verified replacement for OVERKILL's 1010:ECF2 LZ asset decoder.
 
-    This supersedes the first conservative version above.  It keeps the same
-    externally verified behavior, but inlines byte input, byte output, and
-    back-reference copying so a whole compressed asset can complete in one hook
-    invocation without spending minutes in nested Python call/flag overhead.
+    Byte input, byte output, and back-reference copying are inlined here (rather
+    than dispatched through the ED97/EDE9/ED7A helper hooks) so a whole
+    compressed asset completes in one hook invocation without spending minutes in
+    nested Python call/flag overhead.  The observable result is verified against
+    the interpreted ASM by the ECF2 oracle test.
     """
     cs = cpu.s.cs & 0xFFFF
     mem = cpu.mem
@@ -801,13 +802,12 @@ def overkill_lz_decoder_ecf2(cpu):
 
 @registry.replace(0x1010, 0x0367, "overkill_linear_byte_rle_decoder_0367_fast")
 def overkill_linear_byte_rle_decoder_0367(cpu):
-    """Optimized verified replacement for 1010:0367 linear byte-RLE decoder.
+    """Verified replacement for 1010:0367 linear byte-RLE decoder.
 
-    The earlier implementation was a direct translation that called the packed
-    byte-reader hook for every byte and updated flags for every output byte.
-    This version preserves the same externally observed state but collapses each
-    literal/repeat run into a small Python loop, which matters because the real
-    startup stream can contain very large images.
+    Each literal/repeat run is collapsed into a small Python loop instead of
+    invoking the packed byte-reader hook and recomputing flags per output byte,
+    which matters because the real startup stream can contain very large images.
+    The externally observed state matches the interpreted ASM (oracle test).
     """
     ds = cpu.s.ds & 0xFFFF
     mem = cpu.mem
@@ -1032,11 +1032,11 @@ def _row_4537_core(cpu):
 
 @registry.replace(0x1010, 0x4537, "overkill_expand_4plane_row_4537_fast")
 def overkill_expand_4plane_row_4537(cpu):
-    """Optimized verified replacement for 1010:4537 4-plane row expansion.
+    """Verified replacement for 1010:4537 4-plane row expansion.
 
-    Same observable semantics as the rotate-chain implementation above, now
-    computed with direct bit arithmetic in `_row_4537_core` (the previous
-    implementation performed ~500 per-bit rotate/flag helper calls per row).
+    The body lives in `_row_4537_core`, which computes the same observable
+    semantics as the original 45F6/45CB rotate chain using direct bit arithmetic
+    (the rotate chain would perform ~500 per-bit rotate/flag operations per row).
     Verified bit-identical against the interpreted original ASM by
     ``test_expand_4plane_row_4537_hook_matches_interpreted_asm`` and the
     randomized differential fuzz in ``test_expand_4plane_row_4537_fuzz``.

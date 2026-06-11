@@ -770,7 +770,7 @@ stored inside the CPU-visible `A000h` aperture.
 
 Findings and fixes, in the order they landed:
 
-1. Read-map tracking and planar-safe fast paths (was `EGA_GHOSTING_FIX.md`).
+1. Read-map tracking and planar-safe fast paths.
    `Memory` now tracks the graphics-controller read-map-select (port `03CEh/03CFh`
    index `04h`) in addition to the sequencer map mask (`03C4h` index `02h`), and
    routes `A000h` `rb/rw` through the selected shadow plane.  The optimized
@@ -778,7 +778,7 @@ Findings and fixes, in the order they landed:
    whenever a transfer touches the EGA aperture, so they can no longer update or
    read only one plane and leave coloured sprite ghosts.
 
-2. Out-of-aperture shadow storage (was `EGA_PLANE_STORAGE_FIX.md`).  On real EGA,
+2. Out-of-aperture shadow storage.  On real EGA,
    `A000:2000` is CPU offset/page `2000h` in the *selected* plane(s), not "plane 1
    at offset 0".  The transition/fullscreen code really does touch those high CPU
    offsets, so the old in-aperture layout let them clobber the visible plane
@@ -790,8 +790,7 @@ Findings and fixes, in the order they landed:
    `test_ega_read_map_can_read_high_cpu_offsets_without_shadow_aliasing`.
    Diagnostic: `scripts/probe_ega_page_offsets.py`.
 
-3. Presenter + remaining flat stores (was `EGA_PRESENT_STORAGE_FIX.md`,
-   `EGA_SCREEN_MIXING_INVESTIGATION.md`).  `overkill_present_ega_frame_2750` and
+3. Presenter + remaining flat stores.  `overkill_present_ega_frame_2750` and
    the `1010:291C` temp-row copy still wrote flat `A000:+plane*2000` / direct
    `mem.data` bytes; both now write through the shadow store / `Memory.wb()` when
    `ES=A000h` (keeping a flat fallback for non-`A000h` synthetic/oracle cases).
@@ -799,7 +798,7 @@ Findings and fixes, in the order they landed:
    re-enabled for interactive EGA/Tandy playback; `1010:58DF` stays disabled for
    non-CGA because it is mode-0-specific.
 
-4. Self-modifying-code guardrail (was `EGA_SELF_MOD_INVESTIGATION.md`).  The unpacked
+4. Self-modifying-code guardrail.  The unpacked
    EXE rewrites large parts of `CS=1010h` during bootstrap, so comparing against the
    load image is misleading; the useful baseline is the first post-bootstrap video
    boundary.  Over the tested intro/menu path the EGA render routines stay stable
