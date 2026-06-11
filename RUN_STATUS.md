@@ -1,3 +1,34 @@
+## 2026-06-11 Tandy B73E formation/contact continuation
+
+Closed the later formation-change divergence from
+`artifacts/snapshot_play_tandy_20260611_152751`.
+
+- The original frame-383 path for object `BP=2814` is
+  `B73E -> B77B -> BC4B -> BCCB -> AA46/8331 -> BFC7`, not a `62F6`
+  overlap collision.  `AA46` sets carry when the object is inside the
+  view/contact rectangle; the replacement previously checked only X and always
+  cleared carry, so the object stayed alive in logic `20h`.
+- `_run_view_window_check_aa46` now mirrors the full X/Y rectangle test and
+  preserves the carry-set contact result.
+- `_run_object_postmove_bc4b` now composes the carry-set `BCCB` path: optional
+  `BFC7` death/logic-transition tail, observed `9E69` bookkeeping, then the
+  normal `62F6` call.
+- `_run_object_overlap_scan_62f6` now preserves `BX` on the early
+  `logic_id == 0001` return, matching the original post-death scan.
+- Added an interpreted-ASM regression for the exact `B77B` contact-death tick.
+
+Verification:
+
+```text
+python scripts\run_tests.py
+# 113 passed, 0 failed
+
+python scripts\play.py --snapshot artifacts\snapshot_play_tandy_20260611_152751 --verify-frames --verify-frame-max 500
+# FRAME VERIFY OK frames=500
+```
+
+---
+
 ## 2026-06-11 B73E/BEC5 gameplay continuation
 
 Closed two user-reported Tandy gameplay stops from

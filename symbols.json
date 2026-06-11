@@ -67,6 +67,11 @@
     "notes": "Mode-2 eight-word masked sprite compositor. For each row it reads mask/data word pairs from DS:SI and writes dest=(dest & mask)|data to ES:DI, then advances DI by 0058h. Restores DS from CS:[9596] and RETs. Verified against interpreted ASM and live Tandy gameplay calls.",
     "status": "replaced"
   },
+  "1010:2ECB": {
+    "name": "overkill_tandy_or_inverted_mask_2ecb",
+    "notes": "Mode-2/Tandy eight-word inverted-mask OR compositor reached through the 75A6/768E layer sprite path during formation gameplay. Same shape as 2F40 but eight destination words per row and row advance 0058h.",
+    "status": "replaced"
+  },
   "1010:2F40": {
     "name": "overkill_tandy_or_inverted_mask_2f40",
     "notes": "Mode-2/Tandy four-word layer compositor reached through 768E. For each of 16 rows it reads four source mask words, NOTs each word, ORs it into ES:DI, skips the interleaved source word with SI += 4, advances DI by 2 per word and 0060h per row, restores DS from CS:[9596], and RETs. Added from crash snapshot snapshot_play_tandy_20260611_164810 where A8C7 -> 7596 -> 768E selected 2F40.",
@@ -193,6 +198,12 @@
     "name": "object_movement_direction_helper_5db2",
     "notes": "Next fail-fast target after lifting A9E0->AA2B->EFAE->B73E. It compares object Y/X against DS:2304/2306, writes direction bits in DS:A954 and DS:230A, selects animation via DS:A348 xlat, then dispatches through CS:5E0C based on DS:2308. Needs reversal/verification next."
   },
+  "1010:62F6": {
+    "kind": "helper",
+    "name": "object_overlap_scan_observed",
+    "notes": "Object overlap scan used from BC4B. The lifted helper covers observed no-collision and BEC5 variant-2 collision paths. Important post-death detail: when current object logic_id is 0001, the original returns immediately with incoming BX preserved rather than advancing to the empty-scan sentinel.",
+    "status": "partial helper"
+  },
   "1010:7596": {
     "name": "layer_draw_object_type_dispatch",
     "notes": "Small object-type dispatcher used by layer draw scans: loads SS:[BP+14], shifts to word index, and jumps through CS:[75A0+index]. Hot Tandy layer-1 object type 1 dispatches to 1010:768E.",
@@ -205,6 +216,12 @@
     "status": "replaced for verified Tandy compositor targets"
   },
   "1010:7746": "tandy_compact_layer_draw_dispatch",
+  "1010:8331": {
+    "kind": "helper",
+    "name": "view_contact_rect_test_8331",
+    "notes": "Shared rectangle-test tail used by AA46. Tests SS:BP object X/Y against DS:95F2/95F4 +/- 16. Clears carry on any out-of-window exit; sets carry at 8359 when inside the rectangle.",
+    "status": "understood"
+  },
   "1010:8D4F": "object_logic_waypoint_patrol_observed",
   "1010:95C9": {
     "name": "relocated_runtime_entry_after_inner_unpacker",
@@ -215,6 +232,12 @@
     "name": "startup_resize_psp_block_int21_4a",
     "notes": "OVERKILL shrinks the initial PSP-owned DOS memory block with ES=1000h, BX=22FFh before making AH=48h heap allocations. Requires DOSMachine.seed_initial_memory_block.",
     "status": "confirmed startup DOS memory operation"
+  },
+  "1010:9E69": {
+    "kind": "helper",
+    "name": "post_contact_bookkeeping_9e69_observed",
+    "notes": "Post-contact helper called after BFC7 from BC4B/BD09. Observed path checks A47C, 2384, 98C0 and BEDC, toggles byte A362, and returns when the toggle becomes 1. Other BEDC/toggle branches remain explicit fail-fast frontiers.",
+    "status": "partial helper"
   },
   "1010:A849": {
     "name": "overkill_scan_objects_call_5ac8_a849",
@@ -261,6 +284,12 @@
     "name": "overkill_scan_objects_call_aa2b_aa10",
     "notes": "Object-logic scan over DS:8D12. Skips inactive entries and stops at the real CALL AA2B for the first active object so AA2B owns its dispatch boundary."
   },
+  "1010:AA46": {
+    "kind": "helper",
+    "name": "view_contact_rect_setup_aa46",
+    "notes": "Builds DS:95F2/95F4 from the view table at DS:214E plus camera globals 237E/2380, then jumps to 8331 for the X/Y rectangle test. The carry flag is consumed by BC4B/BCCB; carry set enters the BFC7 contact/death path.",
+    "status": "understood"
+  },
   "1010:AA2B": {
     "kind": "hook",
     "name": "overkill_object_logic_dispatch_aa2b",
@@ -271,7 +300,13 @@
   "1010:B73E": {
     "kind": "hook",
     "name": "overkill_object_behavior_b73e",
-    "notes": "Partially lifted behavior for the observed logic_id 20h object. Covers the no-substate FFFFh movement path, B7F3/B7C9 target reset, substate-0 B754 movement, and the bounded B82D waypoint-table loop when selected waypoints already match current X/Y."
+    "notes": "Partially lifted behavior for the observed logic_id 20h object. Covers the no-substate FFFFh movement path, B7F3/B7C9 target reset, substates B754/B770/B77B, the bounded B82D waypoint-table loop, and the B77B -> BC4B -> AA46 carry-set contact death path verified at frame 383 from snapshot_play_tandy_20260611_152751."
+  },
+  "1010:BC4B": {
+    "kind": "helper",
+    "name": "object_postmove_bounds_contact_overlap_bc4b",
+    "notes": "Post-move helper: Y clamp, X bounds, BCCB view/contact check, optional BFC7 death tail, 9E69 bookkeeping, then 62F6 overlap scan. The lifted helper now composes the observed AA46 carry-set parent path instead of treating it as a leaf fail-fast.",
+    "status": "partial helper"
   },
   "1010:BD17": "object_deactivate_out_of_bounds_observed",
   "1010:BEC5": {

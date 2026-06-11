@@ -3762,6 +3762,86 @@ def test_b73e_b800_formation_gate_odd_helper_matches_interpreted_asm():
     assert asm.mem.data == hook.mem.data
 
 
+def test_b73e_b77b_view_contact_death_matches_interpreted_asm():
+    from pathlib import Path
+    from overkill_port.replacements import _run_object_behavior_b73e
+
+    blob = Path("artifacts/snapshot_play_tandy_20260611_152751/memory_1mb.bin").read_bytes()
+
+    def make_cpu() -> CPU8086:
+        mem = Memory()
+        mem.data[:] = blob
+        ds = 0x25CC
+        ss = 0x25CC
+        bp = 0x2814
+        globals_ = {
+            0x2314: 0x0000,
+            0x2340: 0x0280,
+            0x237E: 0x00C0,
+            0x2380: 0x0058,
+            0x2384: 0x0000,
+            0xA47C: 0x0000,
+            0xA47E: 0x0014,
+            0xA8C2: 0x0000,
+            0xA362: 0x0000,
+            0xBEDC: 0x0000,
+        }
+        for off, value in globals_.items():
+            mem.ww(ds, off, value)
+        mem.wb(ds, 0x98C0, 0x00)
+        mem.ww(ds, 0x214E, 0x0007)
+        mem.ww(ds, 0x2150, 0x0008)
+        for off in range(0, 0x38, 2):
+            mem.ww(ss, bp + off, 0)
+        values = {
+            0x00: 0x0001,
+            0x02: 0x00B4,
+            0x04: 0x0060,
+            0x06: 0x0004,
+            0x08: 0x0077,
+            0x0A: 0x0001,
+            0x0C: 0x4F68,
+            0x0E: 0x5894,
+            0x14: 0x0001,
+            0x16: 0x0004,
+            0x18: 0x0020,
+            0x1C: 0x0002,
+            0x20: 0x0004,
+            0x28: 0xFFFF,
+            0x32: 0x0060,
+            0x34: 0x0020,
+        }
+        for off, value in values.items():
+            mem.ww(ss, bp + off, value)
+        state = CPUState(
+            ax=0x00B4, bx=0x0040, cx=0x0015, dx=0x0090,
+            si=0x0004, di=0x0001, bp=bp, sp=0xA274,
+            cs=0x1010, ds=ds, es=ds, ss=ss,
+            ip=0xB73E, flags=0x0202,
+        )
+        cpu = CPU8086(mem, state)
+        cpu.trace_enabled = False
+        cpu.push(0xBEEF)
+        return cpu
+
+    asm = make_cpu()
+    hook = make_cpu()
+    for _ in range(1000):
+        if asm.addr() == (0x1010, 0xBEEF):
+            break
+        asm.step()
+
+    _run_object_behavior_b73e(hook, parent="test", chain="test", cx_value=0x0015)
+
+    assert asm.addr() == hook.addr() == (0x1010, 0xBEEF)
+    assert asm.s.snapshot() == hook.s.snapshot()
+    ss = asm.s.ss & 0xFFFF
+    stack_scratch = {((ss << 4) + off) & 0xFFFFF for off in range(0xA266, 0xA270)}
+    for i, (a, b) in enumerate(zip(asm.mem.data, hook.mem.data)):
+        if i not in stack_scratch:
+            assert a == b, f"memory differs at physical {i:05X}: asm={a:02X} hook={b:02X}"
+
+
 
 def test_aa2b_and_efae_dispatch_hooks_match_interpreted_asm():
     from overkill_port.cpu import CPU8086, CPUState

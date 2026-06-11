@@ -1,3 +1,33 @@
+## 2026-06-11 B73E formation contact: AA46 carry-set path
+
+The later Tandy formation-change divergence from
+`artifacts/snapshot_play_tandy_20260611_152751` was gameplay state, not
+rendering.  At frame 383 the reference killed object `BP=2814` and added score
+`0030`; the hook left the object alive as logic `20h`.
+
+The original path for that tick is:
+
+```text
+B73E -> B77B          ; substate 2, X += 4, sprite 0077 once X >= 00A0
+BC4B -> BCCB
+AA46 -> 8331         ; X/Y rectangle test
+BCFC/BCFF -> BFC7    ; carry set means contact/death path
+BD09 -> 9E69
+BCAD -> 62F6         ; now early-returns because logic_id is 0001
+```
+
+The important correction is `AA46/8331`: it tests both axes.  It clears carry on
+any out-of-window exit, but sets carry at `8359` when the object is inside the
+rectangle.  The previous helper modeled only the X half and always cleared carry
+after the second X comparison, which skipped `BFC7`.
+
+`BC4B` now composes this carry-set contact path at the parent level: it calls
+the already verified `BFC7` death/transition tail when `DS:A8C2 != 1`, runs the
+observed `9E69` bookkeeping path, then continues to `62F6`.  `62F6` also has a
+small but important early-return detail: after `BFC7` changes the object to
+`logic_id == 0001`, the original returns immediately with the incoming `BX`
+preserved; it does not advance to the empty-scan sentinel.
+
 ## 2026-06-11 B73E/BEC5 gameplay continuation
 
 Two more `1010:B73E` gameplay stops from

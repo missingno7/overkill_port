@@ -3940,12 +3940,20 @@ def _run_object_overlap_scan_62f6(cpu, *, parent: str, chain: str, cx_value: int
         finish_empty_scan()
         return
 
-    for off, bad in ((0x16, 0), (0x18, 0), (0x18, 1), (0x18, 0x26)):
+    for off, bad in ((0x16, 0), (0x18, 0)):
         _cmp_word(cpu, mem.rw(ss, (bp + off) & 0xFFFF), bad)
         if mem.rw(ss, (bp + off) & 0xFFFF) == bad:
             cpu.s.bx = 0x3294
             finish_empty_scan()
             return
+    _cmp_word(cpu, mem.rw(ss, (bp + 0x18) & 0xFFFF), 0x0001)
+    if mem.rw(ss, (bp + 0x18) & 0xFFFF) == 0x0001:
+        return
+    _cmp_word(cpu, mem.rw(ss, (bp + 0x18) & 0xFFFF), 0x0026)
+    if mem.rw(ss, (bp + 0x18) & 0xFFFF) == 0x0026:
+        cpu.s.bx = 0x3294
+        finish_empty_scan()
+        return
 
     cpu.s.si = mem.rw(ss, (bp + 0x16) & 0xFFFF)
     cpu.s.di = mem.rw(ss, (bp + 0x0A) & 0xFFFF)
