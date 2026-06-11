@@ -62,6 +62,27 @@
     "notes": "Generic error display path. Reached with DX=0FF6 and stdout \"Memory de-allocation error\" when PSP AH=4Ah resize failed before checkpoint 8.",
     "status": "error path identified"
   },
+  "1010:2E6E": {
+    "name": "overkill_tandy_masked_sprite_composite_2e6e",
+    "notes": "Mode-2 eight-word masked sprite compositor. For each row it reads mask/data word pairs from DS:SI and writes dest=(dest & mask)|data to ES:DI, then advances DI by 0058h. Restores DS from CS:[9596] and RETs. Verified against interpreted ASM and live Tandy gameplay calls.",
+    "status": "replaced"
+  },
+  "1010:2F40": {
+    "name": "overkill_tandy_or_inverted_mask_2f40",
+    "notes": "Mode-2/Tandy four-word layer compositor reached through 768E. For each of 16 rows it reads four source mask words, NOTs each word, ORs it into ES:DI, skips the interleaved source word with SI += 4, advances DI by 2 per word and 0060h per row, restores DS from CS:[9596], and RETs. Added from crash snapshot snapshot_play_tandy_20260611_164810 where A8C7 -> 7596 -> 768E selected 2F40.",
+    "status": "replaced"
+  },
+  "1010:2F81": {
+    "name": "overkill_tandy_masked_sprite_composite_2f81",
+    "notes": "Mode-2 four-word masked sprite compositor. Same shape as 2E6E with four destination words per row and row advance 0060h. Hottest Tandy first-level sprite composite target; verified against interpreted ASM and live hook verifier.",
+    "status": "replaced"
+  },
+  "1010:2FB6": "tandy_masked_compact_two_word_compositor",
+  "1010:30D2": {
+    "name": "tandy_object_row_addr_target_30d2",
+    "notes": "Mode-2 target reached through 1010:5A36. Maps SS:[BP+02]/SS:[BP+04] to a Tandy work-buffer row address via DS:99C8, stores zero to SS:[BP+12], uses X>>1, returns AX=FFFF for out-of-range/FFFF rows, and optionally decrements SS:[BP+24]. Folded into the verified 5A36 dispatch hook.",
+    "status": "replaced as part of 1010:5A36"
+  },
   "1010:33B2": {
     "name": "overkill_expand_tandy_block_33b2",
     "notes": "Tandy packed-pixel startup block/list continuation. Live-patched routine: if ZF is set it jumps to 44AA; otherwise renders CS:[5B9E] rows by CS:[5B9C] cells via 33DD, advances SI by three extra widths per row, and jumps back to 33AF. Verified hook preserves normal/terminator continuations and final stack scratch.",
@@ -77,20 +98,10 @@
     "notes": "Tandy packed-pixel helper used by 33DD. ROR/RCL interleaves AL/AH/DL/DH into CL and optionally computes CH mask bytes against CS:[0000] when CS:[0BD6] is nonzero. No EGA colour remap table.",
     "status": "understood as part of 33DD/33B2 hook"
   },
-  "1010:2E6E": {
-    "name": "overkill_tandy_masked_sprite_composite_2e6e",
-    "notes": "Mode-2 eight-word masked sprite compositor. For each row it reads mask/data word pairs from DS:SI and writes dest=(dest & mask)|data to ES:DI, then advances DI by 0058h. Restores DS from CS:[9596] and RETs. Verified against interpreted ASM and live Tandy gameplay calls.",
+  "1010:34AD": {
+    "name": "overkill_tandy_split_present_copy_34ad",
+    "notes": "Mode-2 split present-side copy reached from 5A92. If entry DI is valid it first calls the verified 34C5 eight-word/16-row copy for SS:[BP+0C]/SS:[BP+0E]. It then loads DI=SS:[BP+10], SI=SS:[BP+0E]+0140h and tail-falls into 34C5 when the second destination is valid. Added while lifting the fail-fast A90F/A927 present-scan path.",
     "status": "replaced"
-  },
-  "1010:2F81": {
-    "name": "overkill_tandy_masked_sprite_composite_2f81",
-    "notes": "Mode-2 four-word masked sprite compositor. Same shape as 2E6E with four destination words per row and row advance 0060h. Hottest Tandy first-level sprite composite target; verified against interpreted ASM and live hook verifier.",
-    "status": "replaced"
-  },
-  "1010:30D2": {
-    "name": "tandy_object_row_addr_target_30d2",
-    "notes": "Mode-2 target reached through 1010:5A36. Maps SS:[BP+02]/SS:[BP+04] to a Tandy work-buffer row address via DS:99C8, stores zero to SS:[BP+12], uses X>>1, returns AX=FFFF for out-of-range/FFFF rows, and optionally decrements SS:[BP+24]. Folded into the verified 5A36 dispatch hook.",
-    "status": "replaced as part of 1010:5A36"
   },
   "1010:34C5": {
     "name": "overkill_tandy_strided_copy_34c5",
@@ -102,6 +113,12 @@
     "notes": "Mode-2 present-side fixed block reached from 5A92. If DI=FFFF it returns after CMP; otherwise copies 16 rows of four words from DS:SI to ES:DI and advances DI by 0060h after every row. Live verifier caught the final ADD DI,BX flag/DI effect; hook and oracle now match.",
     "status": "replaced"
   },
+  "1010:3542": {
+    "name": "overkill_tandy_tiny_strided_copy_3542",
+    "notes": "Mode-2 tiny present-side copy reached from 5A92 for overlaid/8D12 objects. If DI=FFFF it returns; otherwise it copies 8 rows of two words from DS:SI to ES:DI, advancing DI by 0064h after each row. Added from the fail-fast A90F path where type 0 mode 2 dispatch selected 3542.",
+    "status": "replaced"
+  },
+  "1010:356C": "tandy_draw_split_object",
   "1010:35AA": {
     "name": "overkill_tandy_source_strided_copy_35aa",
     "notes": "Mode-2 source-strided object copy. Loads ES=CS:[9596], DS=CS:[9598], copies 16 rows of eight words, advances SI by 0058h after each row, restores DS from CS:[9596], and RETs. Verified against interpreted ASM and live gameplay calls.",
@@ -110,6 +127,12 @@
   "1010:35CC": {
     "name": "overkill_tandy_draw_object_block_35cc",
     "notes": "Mode-2 draw-side parent block reached from 5AC8. Calls the verified 5A36 row-address hook internally while preserving CALL stack scratch, stores SS:[BP+0C], adds DS:[234C], loads ES=CS:[9596]/DS=CS:[9598], then copies 16 rows of four words advancing SI by 0060h after each row. Verified as a composed parent hook against interpreted ASM and live gameplay calls.",
+    "status": "replaced"
+  },
+  "1010:3657": "tandy_draw_tiny_object",
+  "1010:38B7": {
+    "name": "overkill_masked_sprite_composite_38b7",
+    "notes": "Masked 2-column sprite-composite LOOP (38B7..38CF). Per row: two columns of [lodsw mask; and ax,es:[di]; or ax,ds:[si]; add si,2; stosw] then add di,0030h; loop CX rows. Effect: dest=(dest AND mask) OR data. Source row=[mask0,data0,mask1,data1] (SI+=8/row); dest stride 0034h. Hottest interpreted routine in the sprite-render phase after the 477E lift. Exit: CX=0, AX=last word, FLAGS from final add di,30h, falls through to 38D0. Replaced and verified bit-identical to the interpreted loop over 2000 randomized states.",
     "status": "replaced"
   },
   "1010:41DA": {
@@ -122,11 +145,6 @@
     "notes": "Mode-0 frame-present blit, reached via the 5BDC video jump table (CS:[5BE8]). Copies C0h (192) rows of 1Ah (26) words from the work buffer CS:[9598]:[234C] to the display CS:[95A4] (=B800h) using the interlaced scanline step (+2000h/+C050h on the 4000h bank wrap), then restores DS from CS:[9596]. Hottest interpreted loop once the main loop runs; replaced by a verified hook.",
     "status": "replaced"
   },
-  "1010:5BDC": {
-    "name": "present_frame_dispatch",
-    "notes": "Per-frame presenter. Reads video mode CS:[95BC], shl 1, jmp cs:[bx+5BE8]. Mode 0 -> 447B. Called from the main loop at 1010:D010.",
-    "status": "understood"
-  },
   "1010:450C": {
     "name": "overkill_expand_4plane_list_450c",
     "notes": "Outer list driver for the 4-plane startup renderer: reads block headers via 44D7 semantics and invokes the verified 4511 block renderer until the zero/FFFF exit path to 44AA.",
@@ -136,11 +154,6 @@
   "1010:4537": {
     "name": "overkill_expand_4plane_row_4537_fast",
     "notes": "4-plane row renderer helper; optimized but still verified against interpreted ASM. Mirrors current CPU8086 rotate flag semantics for oracle-relative tests.",
-    "status": "replaced"
-  },
-  "1010:38B7": {
-    "name": "overkill_masked_sprite_composite_38b7",
-    "notes": "Masked 2-column sprite-composite LOOP (38B7..38CF). Per row: two columns of [lodsw mask; and ax,es:[di]; or ax,ds:[si]; add si,2; stosw] then add di,0030h; loop CX rows. Effect: dest=(dest AND mask) OR data. Source row=[mask0,data0,mask1,data1] (SI+=8/row); dest stride 0034h. Hottest interpreted routine in the sprite-render phase after the 477E lift. Exit: CX=0, AX=last word, FLAGS from final add di,30h, falls through to 38D0. Replaced and verified bit-identical to the interpreted loop over 2000 randomized states.",
     "status": "replaced"
   },
   "1010:45CB": "overkill_expand_bits_45cb",
@@ -170,6 +183,29 @@
     "notes": "Narrow mode-0 control-flow hook for 58DF..58F8. It repeatedly invokes verified 497A and 50C9 hooks and preserves push/call/pop stack scratches plus DEC CX + LOOP double-decrement.",
     "status": "replaced for verified mode-0 path"
   },
+  "1010:5BDC": {
+    "name": "present_frame_dispatch",
+    "notes": "Per-frame presenter. Reads video mode CS:[95BC], shl 1, jmp cs:[bx+5BE8]. Mode 0 -> 447B. Called from the main loop at 1010:D010.",
+    "status": "understood"
+  },
+  "1010:5DB2": {
+    "kind": "target",
+    "name": "object_movement_direction_helper_5db2",
+    "notes": "Next fail-fast target after lifting A9E0->AA2B->EFAE->B73E. It compares object Y/X against DS:2304/2306, writes direction bits in DS:A954 and DS:230A, selects animation via DS:A348 xlat, then dispatches through CS:5E0C based on DS:2308. Needs reversal/verification next."
+  },
+  "1010:7596": {
+    "name": "layer_draw_object_type_dispatch",
+    "notes": "Small object-type dispatcher used by layer draw scans: loads SS:[BP+14], shifts to word index, and jumps through CS:[75A0+index]. Hot Tandy layer-1 object type 1 dispatches to 1010:768E.",
+    "status": "understood"
+  },
+  "1010:75A6": "next_frontier_split_layer_draw_helper",
+  "1010:768E": {
+    "name": "overkill_tandy_layer_sprite_draw_768e",
+    "notes": "Tandy layer sprite setup/tail-dispatch helper reached through 7596. Handles DI=FFFF early return, selects source segment/table via CS:[95AA]/[95AC] and CS:9192, combines video mode CS:[95BC] with sprite phase SS:[BP+12], and runs verified Tandy compositor targets 2F81/2F40/2E6E. Unknown compositor targets now fail fast with diagnostics instead of tail-dispatching into original ASM.",
+    "status": "replaced for verified Tandy compositor targets"
+  },
+  "1010:7746": "tandy_compact_layer_draw_dispatch",
+  "1010:8D4F": "object_logic_waypoint_patrol_observed",
   "1010:95C9": {
     "name": "relocated_runtime_entry_after_inner_unpacker",
     "notes": "First known transfer into useful game/runtime code after the inner bootstrap.",
@@ -179,6 +215,69 @@
     "name": "startup_resize_psp_block_int21_4a",
     "notes": "OVERKILL shrinks the initial PSP-owned DOS memory block with ES=1000h, BX=22FFh before making AH=48h heap allocations. Requires DOSMachine.seed_initial_memory_block.",
     "status": "confirmed startup DOS memory operation"
+  },
+  "1010:A849": {
+    "name": "overkill_scan_objects_call_5ac8_a849",
+    "notes": "Descending scan over DS:32CA object table for draw dispatch. Skips inactive entries and stops at the real CALL A858 for the first active object, preserving PUSH CX stack scratch, BP/BX selection, CX, and active-test flags. The separate 5AC8/draw target hooks own the call body.",
+    "status": "partial scan replacement"
+  },
+  "1010:A861": {
+    "kind": "hook",
+    "name": "overkill_scan_objects_call_5ac8_a861",
+    "notes": "Descending scan over DS:8D12 for draw dispatch. Skips inactive entries and stops at the real CALL A870 for the first active object."
+  },
+  "1010:A87C": {
+    "kind": "hook",
+    "name": "overkill_scan_objects_call_7746_a87c",
+    "notes": "Descending compact-layer scan over DS:8D12. Skips inactive entries and stops at the real CALL A88B for the first active object."
+  },
+  "1010:A894": {
+    "kind": "hook",
+    "name": "overkill_scan_layer0_draw_a894",
+    "notes": "Layer-0 draw scan over DS:32CA. Skips non-calling entries and stops at the real CALL A8BE for the first drawable object, preserving PUSH CX stack scratch, BP/BX selection, CX, and final predicate flags. The separate 7596/layer draw path owns the call body."
+  },
+  "1010:A8C7": {
+    "name": "overkill_scan_layer1_draw_a8c7",
+    "notes": "Layer-1 draw scan over DS:32CA object table. Preserves the original active/layer predicate using DS:BDAC, DS:2350, SS:[BP+16], and SS:[BP+0A], then stops at the real CALL A8F1 for the first drawable object. The separate 7596/layer draw hooks own the call body.",
+    "status": "partial scan replacement"
+  },
+  "1010:A90F": {
+    "name": "overkill_scan_objects_call_5a92_a90f",
+    "notes": "Descending present scan over the DS:8D12 object pointer table. Skips inactive entries and stops at the real CALL A91E for the first active object. The separate 5A92/present target hooks own the call body.",
+    "status": "partial scan replacement"
+  },
+  "1010:A927": {
+    "name": "overkill_scan_objects_call_5a92_a927",
+    "notes": "Descending scan over DS:32CA object table for present dispatch. Skips inactive entries and stops at the real CALL A936 for the first active object. The separate 5A92/present target hooks own the call body.",
+    "status": "partial scan replacement"
+  },
+  "1010:A9E0": {
+    "kind": "hook",
+    "name": "overkill_scan_objects_call_aa2b_a9e0",
+    "notes": "Object-logic scan over DS:32CA. Skips inactive entries, preserves DS:2340 counter side effects, and stops at the real CALL AA2B for the first active object so AA2B owns its dispatch boundary."
+  },
+  "1010:AA10": {
+    "kind": "hook",
+    "name": "overkill_scan_objects_call_aa2b_aa10",
+    "notes": "Object-logic scan over DS:8D12. Skips inactive entries and stops at the real CALL AA2B for the first active object so AA2B owns its dispatch boundary."
+  },
+  "1010:AA2B": {
+    "kind": "hook",
+    "name": "overkill_object_logic_dispatch_aa2b",
+    "notes": "First-level object logic dispatcher. Loads BX=SS:[BP+16]<<1 and jumps through CS:AA36. Kept dispatch-only after frame verification showed inline child gameplay execution caused frame-34 drift from snapshot_play_tandy_20260611_152751."
+  },
+  "1010:AB10": "object_logic_table_position_update",
+  "1010:AED8": "object_logic_movement_tile_probe_observed",
+  "1010:B73E": {
+    "kind": "hook",
+    "name": "overkill_object_behavior_b73e",
+    "notes": "Partially lifted behavior for the observed logic_id 20h object. Covers the no-substate FFFFh movement path, B7F3/B7C9 target reset, substate-0 B754 movement, and the bounded B82D waypoint-table loop when selected waypoints already match current X/Y."
+  },
+  "1010:BD17": "object_deactivate_out_of_bounds_observed",
+  "1010:BEC5": {
+    "kind": "helper",
+    "name": "collision_handler_observed_variant_2",
+    "notes": "Observed variant-2 collision path reached from B73E/BC4B/62F6. Handles BEDC=0000 staged counter path including the fourth-counter-zero BFC7 type-1 death/logic-transition tail, plus BEDC=0001 tail through BF4D. Other branches remain fail-fast."
   },
   "1010:C713": {
     "name": "asset_table_search_candidate",
@@ -203,6 +302,11 @@
   "1010:ED7A": "LZ sliding-window back-reference copy (verified hook)",
   "1010:ED97": "LZ input byte reader / 1KiB refill buffer (verified hook)",
   "1010:EDE9": "LZ output byte writer / ES:DI segment wrap (verified hook)",
+  "1010:EFAE": {
+    "kind": "hook",
+    "name": "overkill_object_family_dispatch_efae",
+    "notes": "Second-level object family dispatcher reached from AA2B. Publishes SS:[BP+04] to DS:D1FE and SS:[BP+02] to DS:D200, then dispatches through CS:EFC4 indexed by SS:[BP+18]. Kept dispatch-only after frame verification showed inline child gameplay execution caused frame-34 drift."
+  },
   "2376:0010": {
     "name": "mz_entry_after_dos_load",
     "notes": "MZ CS:IP 1366:0010 loaded at segment 1010h.",

@@ -175,6 +175,16 @@ def main(argv: list[str] | None = None) -> int:
                    help="print detailed hook divergence reports and continue")
     p.add_argument("--verify-full-memory", action="store_true",
                    help="compare the full memory image instead of default named ranges")
+    p.add_argument("--verify-require-metadata", action="store_true",
+                   help="fail instead of silently skipping a hook that has no verifier continuation metadata")
+    p.add_argument("--verify-frames", action="store_true",
+                   help="headless differential frame verifier: reference ASM runtime vs hooked runtime")
+    p.add_argument("--verify-frame-max", type=int, default=60,
+                   help="stop frame verifier after N frame/timer/retrace boundaries")
+    p.add_argument("--verify-frame-source", choices=("rgb", "vram", "both"), default="both",
+                   help="frame verifier comparison source")
+    p.add_argument("--verify-frame-dump-dir", default=str(ROOT / "artifacts" / "frame_verify"),
+                   help="directory for frame verifier divergence PNG/VRAM/report artifacts")
     p.add_argument("--ega-publish-timed-boundaries", action="store_true",
                    help="debug only: publish EGA snapshots at timer/retrace waits as well as the EGA presenter")
     p.add_argument("--ega-start-address-units", choices=("byte", "word", "ignore"), default="byte",
@@ -207,6 +217,26 @@ def main(argv: list[str] | None = None) -> int:
         # CGA mode 0.
         command_tail = b""
 
+    if args.verify_frames:
+        from overkill_port.frame_verify import FrameVerifyConfig, run_frame_verifier
+
+        return run_frame_verifier(
+            exe=exe,
+            assets=assets,
+            snapshot=args.snapshot,
+            command_tail=command_tail,
+            config=FrameVerifyConfig(
+                video=args.video,
+                palette=args.palette,
+                max_frames=args.verify_frame_max,
+                frame_budget=args.frame_budget,
+                source=args.verify_frame_source,
+                dump_dir=Path(args.verify_frame_dump_dir),
+                stop_on_diff=True,
+                ega_start_address_units=args.ega_start_address_units,
+            ),
+        )
+
     if args.snapshot:
         rt = load_snapshot(exe, args.snapshot, game_root=assets)
     else:
@@ -223,6 +253,7 @@ def main(argv: list[str] | None = None) -> int:
                 stop_on_diff=args.verify_stop_on_diff,
                 log_diffs=args.verify_log_diffs,
                 full_memory=args.verify_full_memory,
+                require_metadata=args.verify_require_metadata,
             ),
         )
 

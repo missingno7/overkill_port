@@ -1,3 +1,464 @@
+## 2026-06-11 B73E/BEC5 gameplay continuation
+
+Closed two user-reported Tandy gameplay stops from
+`artifacts/snapshot_play_tandy_20260611_152751`:
+
+- Shooting enemies reached `B73E -> B7BD -> BC4B -> 62F6 -> BEC5 fourth
+  counter zero`.  The observed `BFC7` death/transition tail now handles the
+  type-1, no-linked-slot path: score add via the `5F0D` BP/SS decimal helper,
+  Y clamp, logic transition `20h -> 1`, previous logic saved in `+1A`, `+22`
+  cleared, and the type-1 sprite-zero dispatch.
+- Passive play reached `B73E -> B7BD -> B7F3`, then the follow-up
+  `B73E -> B7BD -> B82D -> B7BD` waypoint-loop case.  The verified branches now
+  cover the `B7F3 -> B7C9` target-reset path, substate-0 `B754` movement path,
+  and the bounded `B82D` waypoint-table loop.
+
+Important correction while verifying: the `B7C9` target reset always produces
+the observed target Y from `DS:2380 + 8` before alignment; a branch-counting
+guess that preserved the old target caused frame-266 divergence.
+
+Verification:
+
+```text
+python scripts\run_tests.py
+# 111 passed, 0 failed
+
+python scripts\play.py --snapshot artifacts\snapshot_play_tandy_20260611_152751 --verify-frames --verify-frame-max 300
+# FRAME VERIFY OK frames=300
+```
+
+The key correction for the waypoint loop: `B82D` does not move immediately after
+selecting a different waypoint.  It updates `+34/+32` from the table and falls
+through to `BC4B`; movement happens on a later target-mismatch tick.
+
+---
+
+## 2026-06-11 Tandy layer-0 scan fix: A894 stops at CALL A8BE
+
+User-reported gameplay from `artifacts/snapshot_play_tandy_20260611_214016`
+hit the layer-0 draw scan with an active layer-0 object:
+
+```text
+1010:A894: partial scan reached unlifted CALL at A8BE
+BP=2884 active=0001 layer=0000 type=0001 draw_layer=0005
+```
+
+This was a boundary bug in the shared partial-scan helper.  The `1010:A894`
+hook is supposed to skip non-calling iterations and stop immediately before the
+real `CALL` for the first drawable object.  Instead, `_scan_loop_until_callable`
+still used the older fail-fast behavior.
+
+Fix:
+
+- `_scan_loop_until_callable` now preserves the loop `PUSH CX` scratch and leaves
+  `CS:IP` at the real call instruction (`1010:A8BE` for `A894`).
+- Added a synthetic interpreted-ASM oracle test for the active layer-0 path,
+  comparing the original bytes through `A8BE` against the hook state.
+
+Verification:
+
+```text
+python scripts\run_tests.py
+# 108 passed, 0 failed
+
+python scripts\play.py --snapshot artifacts\snapshot_play_tandy_20260611_214016 --verify-frames --verify-frame-max 60
+# FRAME VERIFY OK frames=60
+```
+
+---
+
+## 2026-06-11 Tandy gameplay crash fix: BEC5 BEDC=0001 collision tail
+
+User-reported manual gameplay from
+`artifacts/snapshot_play_tandy_20260611_192528` crashed while shooting spawned
+ships:
+
+```text
+B73E -> B73E -> B7BD -> BC4B -> 62F6 -> BEC5 BEDC=0001 -> BF5E
+```
+
+The branch was real gameplay execution, not a renderer path.  Re-reading the
+original bytes showed that `DS:BEDC == 0001` does not return immediately: it
+jumps into the tail at `1010:BF4D`, decrements `SS:[BP+20]` once more, writes
+`SS:[BP+24]=0005`, compares `DS:A8C2` with `0001`, and then returns at
+`1010:BF5E` when `A8C2 != 0001`.
+
+Fix:
+
+- `1010:BEC5` observed variant-2 collision helper now implements the verified
+  `BEDC=0001` tail instead of fail-fasting or returning early.
+- The remaining zero-counter and `A8C2=0001` branches stay fail-fast with
+  concrete target addresses.
+- Added a synthetic interpreted-ASM oracle test for the `BEDC=0001` tail.
+
+Verification:
+
+```text
+python scripts\run_tests.py
+# 107 passed, 0 failed
+
+python scripts\play.py --snapshot artifacts\snapshot_play_tandy_20260611_152751 --verify-frames --verify-frame-max 60
+# FRAME VERIFY OK frames=60
+
+python scripts\play.py --snapshot artifacts\snapshot_play_tandy_20260611_192528 --verify-frames --verify-frame-max 60
+# FRAME VERIFY OK frames=60
+```
+
+---
+
+## 2026-06-11 frame-verify regression fix: AA2B/EFAE back to dispatch-only
+
+User-reported frame verification diverged at frame 34 from
+`artifacts/snapshot_play_tandy_20260611_152751`:
+
+```text
+python scripts\play.py --snapshot artifacts\snapshot_play_tandy_20260611_152751 --verify-frames --verify-frame-max 60
+```
+
+Bisecting with `OVERKILL_DISABLE_HOOKS` showed:
+
+- Disabling all non-frame hooks passes 60 frames.
+- Disabling only the recent layer/draw hooks did not change the bad CRC.
+- Disabling `1010:AA2B,1010:EFAE` alone restores 60-frame verification.
+
+Root cause: `AA2B` and `EFAE` had crossed from dispatch-stub replacements into
+inline gameplay behavior execution. Synthetic/local verifier boundaries did not
+catch the later frame-level drift.
+
+Fix:
+
+- `1010:AA2B overkill_object_logic_dispatch_aa2b` is now dispatch-only: it
+  mirrors `mov bx,ss:[bp+16]; shl bx,1; jmp cs:[bx+AA36]`.
+- `1010:EFAE overkill_object_family_dispatch_efae` is now dispatch-only after
+  preserving the real prologue writes to `DS:D1FE` and `DS:D200`, then jumps
+  through `CS:EFC4`.
+- Hook verifier metadata now stops at the selected dispatch target for both
+  hooks, not at the caller return.
+- Added synthetic ASM oracle coverage for both dispatch boundaries.
+- `scripts/run_tests.py` now provides a tiny `pytest.raises` shim when pytest is
+  unavailable, keeping the local pytest-free runner usable.
+
+Verification:
+
+```text
+python scripts\play.py --snapshot artifacts\snapshot_play_tandy_20260611_152751 --verify-frames --verify-frame-max 60
+# FRAME VERIFY OK frames=60
+
+python scripts\run_tests.py
+# 106 passed, 0 failed
+```
+
+---
+
+## 2026-06-11 island-closure continuation: movement/collision/draw/layer frontier
+
+Continued the fail-fast “close the island before expanding” pass from the previous
+object-logic frontier.  The run no longer stops at `5DB2`; the currently opened
+Tandy/object island now includes movement, the observed collision branch, more
+first-level object logic, and several adjacent Tandy draw/layer targets.
+
+New structural lifts in this pass:
+
+- `1010:5DB2`: target-seeking movement/direction helper, including observed
+  `AF60` double 2-pixel step and `AEE4` 8-pixel step modes.
+- `1010:8D4F`: observed `logic_id=1Fh` waypoint/target-patrol branch through the
+  far-call waypoint reader and `5DB2`.
+- `1010:BEC5` observed branch: collision with a `+18h == 0002` object now
+  deactivates the collided slot and updates the moving object's `+20h/+24h` state
+  instead of stopping at the collision handler.
+- `1010:AB10`: first-level AA2B target that updates object sprite/position from
+  the `A40C/A414` tables.
+- `1010:AED8`: observed `logic_id=2` movement/tile-probe branch, including the
+  `AEE4 -> B250 -> AD5A -> 5073/505B` path and the observed out-of-bounds
+  deactivation through `BD17`.
+- `1010:356C`, `1010:3657`: additional Tandy draw targets reached by the composed
+  `A849/A861 -> 5AC8` draw scans.
+- `1010:A861`: overlaid `8D12` draw scan now composes verified `5AC8` Tandy draw
+  targets instead of stopping before the call.
+- `1010:7746` and `1010:2FB6`: compact layer draw setup and its two-word masked
+  Tandy compositor, reached by `A87C`.
+- `1010:A87C`: active-object scan over `8D12` now composes the verified `7746`
+  compact layer draw path.
+
+Current intentional frontier from `artifacts/snapshot_play_tandy_20260611_164810`:
+
+```text
+1010:A8C7 -> 7596 -> 75A6
+```
+
+This is useful new information: the already-opened layer pipeline now reaches the
+`75A6` split/two-destination layer draw helper.  It should be lifted next rather
+than adding a fallback.
+
+Verification:
+
+```text
+python -m pytest -q                         # 103 passed
+python -m compileall -q overkill_port scripts tests
+python - <<'PY'                              # symbols.json parses
+import json; json.load(open('symbols.json'))
+PY
+```
+
+---
+
+## 2026-06-11 fail-fast object logic frontier
+
+The fail-fast no-fallback pass continued past the previous stop at
+`1010:A9E0 -> AA01 -> AA2B`.
+
+New structural lifts:
+
+- `1010:A9E0`: object-logic scan over `DS:32CA`, including `DS:2340` counter side effect.
+- `1010:AA10`: object-logic scan over `DS:8D12`.
+- `1010:AA2B`: first-level object logic dispatch by `SS:[BP+16]` / `CS:AA36`.
+- `1010:EFAE`: second-level object family dispatch by `SS:[BP+18]` / `CS:EFC4`.
+- `1010:B73E`: observed `logic_id=20h` branch lifted to the next concrete helper.
+
+Current intentional frontier from `artifacts/snapshot_play_tandy_20260611_164810`:
+
+```text
+1010:A9E0 -> AA2B -> EFAE -> B73E -> B85C -> B729 -> 5DB2
+```
+
+Verification:
+
+```text
+python -m pytest -q                         # 102 passed
+python -m compileall -q overkill_port scripts tests
+python - <<'PY'                              # symbols.json parses
+import json; json.load(open('symbols.json'))
+PY
+```
+
+Next best RE target: `1010:5DB2`, the movement/direction helper that compares the
+object position against `DS:2304/2306`, writes `DS:A954` / `DS:230A`, XLATs through
+`DS:A348`, and then dispatches via `CS:5E0C` according to `DS:2308`.
+
+---
+# Checkpoint: A90F/5A92 present-scan lift (fail-fast follow-up)
+
+Continuing from the no-fallback run, the first exposed target was not worked around.
+`1010:A90F` has now been lifted as a real parent present scan over the `DS:8D12`
+object table. Active entries compose through `5A92` when their Tandy present target
+is verified.
+
+New verified present targets discovered from this path:
+
+- `1010:3542` — 8-row/two-word Tandy present copy with `DI += 0064h`.
+- `1010:34AD` — split present copy: optional first `34C5`, then
+  `SS:[BP+10]` / `SS:[BP+0E]+0140h` tail into `34C5`.
+
+`A927` now uses the same shared present-scan helper, so both `32CA` and `8D12`
+present scans compose known `5A92` targets and fail fast on truly unknown ones.
+
+Validation:
+
+- `python -m pytest -q` -> 102 passed.
+- `python -m compileall -q overkill_port scripts tests` -> passed.
+- `symbols.json` parses.
+- Replaying `artifacts/snapshot_play_tandy_20260611_164810` now gets past the
+  previous `A90F -> A91E -> 5A92` stop and past the newly discovered `3542`/`34AD`
+  present targets. The next intentional fail-fast target is now
+  `1010:A9E0 -> AA01 -> AA2B`, object `BP=2734`, `CX=0011`, `type=0001`,
+  `draw_layer=0004`, `sprite=007A`.
+
+Next RE target:
+
+- Reverse/lift the `1010:A9E0 -> AA01 -> AA2B` object/gameplay dispatch path.
+
+---
+
+# Checkpoint: fail-fast replacement policy (no ASM fallback masking)
+
+This pass removes the conservative unknown-target fallbacks from composed replacement hooks.
+The project goal is reverse engineering, not short-term playability, so unknown dispatch
+paths now raise a diagnostic `RuntimeError` instead of returning to the interpreted ASM
+pre-call boundary. Runtime-patched hook signatures also fail fast instead of silently
+unregistering the hook and continuing through the original bytes.
+
+Changed behavior:
+
+- `1010:A849` now raises on unverified `A849 -> 5AC8 -> target` paths instead of
+  stopping at `A858`.
+- `1010:A927` now raises on unverified `A927 -> 5A92 -> target` paths instead of
+  stopping at `A936`.
+- `1010:A8C7` now raises on unverified `A8C7 -> 7596` or nested
+  `A8C7 -> 7596 -> 768E -> target` paths instead of stopping at `A8F1`.
+- `1010:768E` now raises on unknown Tandy sprite compositor targets instead of
+  tail-dispatching to original code.
+- Partial scan hooks using `_scan_loop_until_callable` now raise when they reach an
+  active object requiring an unlifted call. They still complete skip-only scans.
+- `5A36` and shared `5A00/5A24` coordinate dispatch helpers now raise on unverified
+  video modes rather than jumping into original target code.
+
+Validation:
+
+- `python -m pytest -q` -> 99 passed.
+- `python -m compileall -q overkill_port scripts tests` -> passed.
+- `symbols.json` parses.
+- Continuing `artifacts/snapshot_play_tandy_20260611_164810` now intentionally stops
+  after 3 instructions at the next unknown RE target:
+  `1010:A90F` partial scan reached unlifted call `A91E` with object `BP=2CAC`,
+  `CX=0007`, `type=0000`, `sprite=0032`, `di=537A`, `present_si=9418`.
+
+Next RE target exposed by fail-fast policy:
+
+- Reverse/lift the `1010:A90F -> A91E -> 5A92` present/object scan path instead of
+  allowing the old skip hook to fall back into ASM.
+
+---
+
+# Run status — checkpoint 31
+
+Validated on `assets/OVERKILL.UNLZEXE.EXE`. Crash regression snapshot:
+`artifacts/snapshot_play_tandy_20260611_164810`.
+
+This pass fixes the gameplay crash at `1010:A8C7` without treating `2F40` as an
+unknown fallback case.  The deeper issue was that `1010:768E` is a
+setup/tail-dispatch helper, and the crash snapshot exercised a real Tandy
+compositor target that had not yet been lifted:
+
+- `1010:2F40 overkill_tandy_or_inverted_mask_2f40`
+
+## Tandy compositor target 2F40
+
+`2F40` is a four-word, 16-row Tandy layer compositor.  It is not the same masked
+copy shape as `2F81`: each row consumes four source cells as
+`MOV AX,[SI]; NOT AX; OR ES:[DI],AX; ADD SI,4; ADD DI,2`, then advances the
+destination by `0060h`.  In game terms this is an inverted-mask OR pass used by
+some layer sprites.
+
+The new hook preserves the original `BX=0060h`, `CX` loop, `SI`/`DI` advancement,
+final flags from the last row `ADD DI,BX`, `DS=CS:[9596]` restoration, and `RET`
+behavior.  `768E` and the composed `A8C7` scan now treat `2F40` as a verified
+child target alongside `2F81` and `2E6E`.
+
+`A8C7` still predicts the nested `768E` compositor before composing the scan, but
+that fallback is now only for genuinely unverified nested targets; the observed
+`2F40` path is executed and verified rather than skipped.
+
+## Verification
+
+- Crash snapshot replay from `snapshot_play_tandy_20260611_164810`: 50,000
+  instructions without the old `768E layer draw returned to unexpected IP 2F40`
+  crash.
+- Synthetic interpreted-ASM oracle now covers `768E -> 2F40`.
+- Synthetic `A8C7` parent-scan oracle now covers full composition through
+  `7596 -> 768E -> 2F40`.
+- Live verifier from the crash snapshot:
+  - `A8C7`: 20 real calls, no divergence.
+  - `768E`: 1 real nested `2F40` call in the replay window, no divergence.
+- Full test suite: `99 passed`.
+- `py_compile`: passed.
+
+---
+
+# Run status — checkpoint 30
+
+Validated on `assets/OVERKILL.UNLZEXE.EXE`. Current Tandy gameplay snapshot:
+`artifacts/snapshot_play_tandy_20260611_152751`.
+
+This pass moved one level higher in the Tandy layer-1 draw pipeline:
+
+- `1010:768E overkill_tandy_layer_sprite_draw_768e`
+- `1010:A8C7 overkill_scan_layer1_draw_a8c7`
+
+## Layer-1 draw composition
+
+`1010:7596` is a small object-type dispatcher.  Its hot Tandy layer-1 path
+dispatches object type 1 to `1010:768E`, which sets up the source segment/table,
+destination pointer, mode/phase compositor table, row count, and then tail-jumps
+to the verified Tandy sprite compositor (`1010:2F81` in the current snapshot).
+
+`768E` is now a verified setup/tail-dispatch helper.  It handles:
+
+- `DI=FFFF` early return.
+- Known compositor targets `2F81` and `2E6E` by running verified children.
+- Unknown compositor targets by tail-dispatching back to the original target.
+
+`A8C7` now composes the layer-1 scan when the active object's `7596` target is
+the verified `768E` path.  It preserves the original layer filter, `PUSH CX`,
+`CALL 7596`, `POP CX`, and `LOOP` behavior.  If an active object dispatches to an
+unverified `7596` target, the hook falls back before the original call at
+`1010:A8F1`.
+
+## Verification
+
+- Added interpreted-ASM oracle tests for `768E` complete, early-return, and
+  fallback paths.
+- Added interpreted-ASM oracle tests for `A8C7` complete and fallback paths.
+- Live hook verifier from `snapshot_play_tandy_20260611_152751` covered:
+  - `768E`: 800 real calls, no divergence.
+  - `A8C7`: 500 real layer-1 scan calls, no divergence.
+
+## Current profile shape
+
+The layer-1 pipeline no longer appears as repeated interpreted
+`A8C7 -> 7596 -> 768E -> 2F81` crossings in the common Tandy path.  The remaining
+hot interpreted work is now strongly concentrated in shared object/gameplay code:
+
+- `1010:A9E0 -> AA2B`
+- `1010:EFAE` object routine dispatch
+- `1010:BC4E` / nearby shared update/collision-style logic
+
+Those should be treated as gameplay/object reconstruction targets rather than
+rendering helpers.
+
+---
+
+# Run status — checkpoint 29
+
+Validated on `assets/OVERKILL.UNLZEXE.EXE`. Current Tandy gameplay snapshot:
+`artifacts/snapshot_play_tandy_20260611_152751`.
+
+This pass composed two verified small-hook clusters into full object scan passes
+for the common Tandy first-level object table.
+
+## Composed object scan hooks
+
+Updated:
+
+- `1010:A927 overkill_scan_objects_call_5a92_a927`
+- `1010:A849 overkill_scan_objects_call_5ac8_a849`
+
+Both routines still preserve the old conservative behavior when they encounter
+an unverified dispatch target: they stop at the original pre-call boundary
+(`A936` for `A927`, `A858` for `A849`).  When all active objects dispatch to the
+verified Tandy targets, they now run the whole scan loop and return at the loop
+exit (`A93C` / `A85E`).
+
+The composed paths reuse the already verified smaller operations:
+
+- `A927 -> 5A92 -> 34D8/34C5`
+- `A849 -> 5AC8 -> 35CC/35AA`
+
+They preserve the original `PUSH CX`, `CALL`, `POP CX`, `LOOP` stack scratch and
+flag behavior instead of inventing a higher-level object API.
+
+## Verification
+
+- Added interpreted-ASM oracle tests for complete and fallback paths of both
+  composed scan hooks.
+- Live hook verifier from `snapshot_play_tandy_20260611_152751` covered:
+  - `A927`: 750 real full-scan calls, no divergence.
+  - `A849`: 760 real full-scan calls, no divergence.
+
+## Current profile shape
+
+With both 32CA scan passes composed, a 3M-step Tandy first-level profile drops
+the repeated `A849/A927 -> 5AC8/5A92 -> 35CC/34D8` interpreter crossings.  The
+remaining hot interpreted areas are now mostly shared behavior:
+
+- `1010:AA2B` / `EFAE` object dispatch/update paths.
+- `1010:BC4E` and nearby shared gameplay code.
+- `1010:A8C7 -> 7596 -> 768E` layer-1 draw pipeline.
+
+These are the next good characterization targets, with preference for lifting a
+whole pipeline once the boundary is proven.
+
+---
+
 # Run status — checkpoint 28
 
 Validated on `assets/OVERKILL.UNLZEXE.EXE`. Current Tandy gameplay snapshot:

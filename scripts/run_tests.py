@@ -2,9 +2,31 @@
 
 Discovers test_* functions in tests/test_*.py and runs them sequentially.
 """
-import importlib, pathlib, sys, traceback
+import importlib, pathlib, re, sys, traceback, types
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+
+if "pytest" not in sys.modules:
+    class _Raises:
+        def __init__(self, exc_type, match=None):
+            self.exc_type = exc_type
+            self.match = match
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            if exc_type is None:
+                raise AssertionError(f"did not raise {self.exc_type.__name__}")
+            if not issubclass(exc_type, self.exc_type):
+                return False
+            if self.match is not None and re.search(self.match, str(exc)) is None:
+                raise AssertionError(f"exception message did not match {self.match!r}: {exc}")
+            return True
+
+    pytest_stub = types.ModuleType("pytest")
+    pytest_stub.raises = _Raises
+    sys.modules["pytest"] = pytest_stub
 
 failed = passed = 0
 for path in sorted(pathlib.Path(__file__).resolve().parents[1].glob("tests/test_*.py")):

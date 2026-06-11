@@ -16,6 +16,7 @@ def add_verify_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--verify-stop-on-diff", action="store_true", help="raise on the first hook divergence")
     p.add_argument("--verify-log-diffs", action="store_true", help="print detailed hook divergence reports and continue")
     p.add_argument("--verify-full-memory", action="store_true", help="compare the full memory image instead of default named ranges")
+    p.add_argument("--verify-require-metadata", action="store_true", help="fail instead of silently skipping a hook that has no verifier continuation metadata")
 
 
 def maybe_install_verifier(rt, args: argparse.Namespace) -> None:
@@ -29,6 +30,7 @@ def maybe_install_verifier(rt, args: argparse.Namespace) -> None:
         stop_on_diff=args.verify_stop_on_diff,
         log_diffs=args.verify_log_diffs,
         full_memory=args.verify_full_memory,
+        require_metadata=args.verify_require_metadata,
     )
     install_hook_verifier(rt, config)
 

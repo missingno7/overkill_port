@@ -1,0 +1,43 @@
+FRAME VERIFY DIVERGENCE
+frame: 34
+video: tandy
+source: both
+REF continuation:  1010:97C8 steps=11948
+HOOK continuation: 1010:97C8 steps=1089
+Raw video differences:
+  REF crc:  65459754
+  HOOK crc: 5A040ED3
+  first differing byte: 3362
+
+Rendered RGB differences:
+  REF crc:  F9F859A3
+  HOOK crc: 0DFBD1E9
+  first differing pixel: x=4 y=84 channel=0
+
+Recent candidate hooks before divergence:
+  000084607 1010:A849 overkill_scan_objects_call_5ac8_a849 enter=1010:A849
+  000084609 1010:5AC8 overkill_dispatch_draw_object_5ac8 enter=1010:5AC8
+  000084610 1010:35CC overkill_tandy_draw_object_block_35cc enter=1010:35CC
+  000084614 1010:A861 overkill_scan_objects_call_5ac8_a861 enter=1010:A861
+  000084622 1010:4D15 overkill_presence_stamp_list_4d15 enter=1010:4D15
+  000084626 1010:4D15 overkill_presence_stamp_list_4d15 enter=1010:4D15
+  000084629 1010:4D15 overkill_presence_stamp_list_4d15 enter=1010:4D15
+  000085261 1010:75A6 overkill_tandy_layer_sprite_draw_75a6 enter=1010:75A6
+  000085506 1010:768E overkill_tandy_layer_sprite_draw_768e enter=1010:768E
+  000085527 1010:768E overkill_tandy_layer_sprite_draw_768e enter=1010:768E
+  000085548 1010:768E overkill_tandy_layer_sprite_draw_768e enter=1010:768E
+  000085569 1010:768E overkill_tandy_layer_sprite_draw_768e enter=1010:768E
+  000085590 1010:768E overkill_tandy_layer_sprite_draw_768e enter=1010:768E
+  000085611 1010:768E overkill_tandy_layer_sprite_draw_768e enter=1010:768E
+  000085632 1010:768E overkill_tandy_layer_sprite_draw_768e enter=1010:768E
+  000085644 1010:3354 frame_verify_candidate_present enter=1010:3354
+
+Recent reference hooks before divergence:
+  000214700 1010:0679 frame_verify_reference_timer enter=1010:0679
+  000222391 1010:3354 frame_verify_reference_present enter=1010:3354
+  000230747 1010:0679 frame_verify_reference_timer enter=1010:0679
+  000238438 1010:3354 frame_verify_reference_present enter=1010:3354
+  000246605 1010:0679 frame_verify_reference_timer enter=1010:0679
+  000254296 1010:3354 frame_verify_reference_present enter=1010:3354
+  000262808 1010:0679 frame_verify_reference_timer enter=1010:0679
+  000273164 1010:3354 frame_verify_reference_present enter=1010:3354

@@ -48,13 +48,13 @@ class HookStop:
             return ((cs, 0x27EB if outer > 1 else 0x27D9),)
         if self.kind == "dispatch_5a00":
             mode = cpu.mem.rw(cs, 0x95BC)
-            if mode == 0:
+            if mode in (0, 2):  # CGA + Tandy coordinate targets are fully hooked.
                 return ((cs, cpu.mem.rw(before.ss, before.sp)),)
             bx = ((mode & 0xFFFF) << 1) & 0xFFFF
             return ((cs, cpu.mem.rw(cs, (0x5A0C + bx) & 0xFFFF)),)
         if self.kind == "dispatch_5a24":
             mode = cpu.mem.rw(cs, 0x95BC)
-            if mode == 0:
+            if mode in (0, 2):  # CGA + Tandy coordinate targets are fully hooked.
                 return ((cs, cpu.mem.rw(before.ss, before.sp)),)
             bx = ((mode & 0xFFFF) << 1) & 0xFFFF
             return ((cs, cpu.mem.rw(cs, (0x5A30 + bx) & 0xFFFF)),)
@@ -74,6 +74,91 @@ class HookStop:
             obj_type = cpu.mem.rw(before.ss, (before.bp + 0x14) & 0xFFFF)
             bx = ((obj_type + mode + mode + mode) << 1) & 0xFFFF
             return ((cs, cpu.mem.rw(cs, (0x5AB6 + bx) & 0xFFFF)),)
+        if self.kind in ("scan_present_a927", "scan_present_a90f"):
+            cx = before.cx & 0xFFFF
+            if cx == 0:
+                cx = 0x10000
+            ds = before.ds & 0xFFFF
+            ss = before.ss & 0xFFFF
+            table_base = 0x8D12 if self.kind == "scan_present_a90f" else 0x32CA
+            call_ip = 0xA91E if self.kind == "scan_present_a90f" else 0xA936
+            done_ip = 0xA924 if self.kind == "scan_present_a90f" else 0xA93C
+            while cx:
+                bx = ((cx & 0xFFFF) << 1) & 0xFFFF
+                bp = cpu.mem.rw(ds, (table_base + bx) & 0xFFFF)
+                if cpu.mem.rw(ss, bp & 0xFFFF) != 0:
+                    return ((cs, call_ip),)
+                cx = (cx - 1) & 0xFFFF
+                if cx == 0:
+                    break
+            return ((cs, done_ip),)
+        if self.kind == "scan_draw_a849":
+            cx = before.cx & 0xFFFF
+            if cx == 0:
+                cx = 0x10000
+            ds = before.ds & 0xFFFF
+            ss = before.ss & 0xFFFF
+            while cx:
+                bx = ((cx & 0xFFFF) << 1) & 0xFFFF
+                bp = cpu.mem.rw(ds, (0x32CA + bx) & 0xFFFF)
+                if cpu.mem.rw(ss, bp & 0xFFFF) != 0:
+                    return ((cs, 0xA858),)
+                cx = (cx - 1) & 0xFFFF
+                if cx == 0:
+                    break
+            return ((cs, 0xA85E),)
+        if self.kind == "tandy_layer_sprite_768e":
+            ss = before.ss & 0xFFFF
+            bp = before.bp & 0xFFFF
+            di = cpu.mem.rw(ss, (bp + 0x0C) & 0xFFFF)
+            if di == 0xFFFF:
+                return ((cs, cpu.mem.rw(before.ss, before.sp)),)
+            bx = cpu.mem.rw(ss, (bp + 0x08) & 0xFFFF)
+            if bx >= 0x00FA:
+                bx = (bx - 0x00FA) & 0xFFFF
+            bx = ((bx << 1) + 0x9192) & 0xFFFF
+            mode = cpu.mem.rw(cs, 0x95BC)
+            dispatch = (mode << 3) & 0xFFFF
+            dispatch = (dispatch + cpu.mem.rw(ss, (bp + 0x12) & 0xFFFF)) & 0xFFFF
+            table = 0x7716
+            if cpu.mem.rw(ss, (bp + 0x24) & 0xFFFF) == 0:
+                table = 0x76E6
+            target = cpu.mem.rw(cs, (table + ((dispatch << 1) & 0xFFFF)) & 0xFFFF)
+            if target in (0x2F81, 0x2F40, 0x2E6E):
+                return ((cs, cpu.mem.rw(before.ss, before.sp)),)
+            return ((cs, target),)
+        if self.kind == "scan_layer1_a8c7":
+            cx = before.cx & 0xFFFF
+            if cx == 0:
+                cx = 0x10000
+            ds = before.ds & 0xFFFF
+            ss = before.ss & 0xFFFF
+            while cx:
+                bx = ((cx & 0xFFFF) << 1) & 0xFFFF
+                bp = cpu.mem.rw(ds, (0x32CA + bx) & 0xFFFF)
+                if cpu.mem.rw(ss, bp & 0xFFFF) != 0:
+                    should_call = True
+                    mode = cpu.mem.rw(ds, 0xBDAC)
+                    if mode != 1:
+                        camera = cpu.mem.rw(ds, 0x2350)
+                        if camera <= 0x00B6:
+                            layer = cpu.mem.rw(ss, (bp + 0x16) & 0xFFFF)
+                            if layer == 1:
+                                should_call = False
+                    if should_call and cpu.mem.rw(ss, (bp + 0x0A) & 0xFFFF) == 1:
+                        return ((cs, 0xA8F1),)
+                cx = (cx - 1) & 0xFFFF
+                if cx == 0:
+                    break
+            return ((cs, 0xA8F7),)
+        if self.kind == "dispatch_aa2b":
+            obj_kind = cpu.mem.rw(before.ss, (before.bp + 0x16) & 0xFFFF)
+            bx = ((obj_kind & 0xFFFF) << 1) & 0xFFFF
+            return ((cs, cpu.mem.rw(cs, (0xAA36 + bx) & 0xFFFF)),)
+        if self.kind == "dispatch_efae":
+            logic_id = cpu.mem.rw(before.ss, (before.bp + 0x18) & 0xFFFF)
+            bx = ((logic_id & 0xFFFF) << 1) & 0xFFFF
+            return ((cs, cpu.mem.rw(cs, (0xEFC4 + bx) & 0xFFFF)),)
         raise ValueError(f"unknown hook stop kind {self.kind!r}")
 
 
@@ -93,11 +178,14 @@ class HookVerifierConfig:
     log_diffs: bool = False
     asm_max_steps: int = 500_000
     full_memory: bool = False
+    require_metadata: bool = False
 
 
 DEFAULT_STOPS: dict[Addr, HookStop] = {
     (0x1010, 0x017E): HookStop("fixed_ip", 0x018B),
     (0x1010, 0x1AEB): HookStop("near_ret"),
+    (0x1010, 0x75A6): HookStop("near_ret"),
+    (0x1010, 0xB73E): HookStop("near_ret"),
     (0x1010, 0x13E7): HookStop("near_ret"),
     (0x1010, 0x1D1B): HookStop("near_ret"),
     (0x1010, 0x2750): HookStop("near_ret"),
@@ -111,9 +199,13 @@ DEFAULT_STOPS: dict[Addr, HookStop] = {
     (0x1010, 0x2E6E): HookStop("near_ret"),
     (0x1010, 0x2F81): HookStop("near_ret"),
     (0x1010, 0x33B2): HookStop("fixed_ips", ips=(0x33AF, 0x44AA)),
+    (0x1010, 0x3354): HookStop("near_ret"),
     (0x1010, 0x33DD): HookStop("near_ret"),
+    (0x1010, 0x34AD): HookStop("near_ret"),
     (0x1010, 0x34C5): HookStop("near_ret"),
     (0x1010, 0x34D8): HookStop("near_ret"),
+    (0x1010, 0x3542): HookStop("near_ret"),
+    (0x1010, 0x356C): HookStop("near_ret"),
     (0x1010, 0x35AA): HookStop("near_ret"),
     (0x1010, 0x35CC): HookStop("near_ret"),
     (0x1010, 0xCCAA): HookStop("fixed_ip", 0xCD08),
@@ -127,15 +219,18 @@ DEFAULT_STOPS: dict[Addr, HookStop] = {
     (0x1010, 0x5A36): HookStop("dispatch_5a36"),
     (0x1010, 0x5AC8): HookStop("dispatch_5ac8"),
     (0x1010, 0x5A92): HookStop("dispatch_5a92"),
-    (0x1010, 0xA849): HookStop("fixed_ips", ips=(0xA858, 0xA85E)),
+    (0x1010, 0x768E): HookStop("tandy_layer_sprite_768e"),
+    (0x1010, 0xA849): HookStop("scan_draw_a849"),
     (0x1010, 0xA861): HookStop("fixed_ips", ips=(0xA870, 0xA876)),
     (0x1010, 0xA87C): HookStop("fixed_ips", ips=(0xA88B, 0xA891)),
     (0x1010, 0xA894): HookStop("fixed_ips", ips=(0xA8BE, 0xA8C4)),
-    (0x1010, 0xA8C7): HookStop("fixed_ips", ips=(0xA8F1, 0xA8F7)),
-    (0x1010, 0xA90F): HookStop("fixed_ips", ips=(0xA91E, 0xA924)),
-    (0x1010, 0xA927): HookStop("fixed_ips", ips=(0xA936, 0xA93C)),
+    (0x1010, 0xA8C7): HookStop("scan_layer1_a8c7"),
+    (0x1010, 0xA90F): HookStop("scan_present_a90f"),
+    (0x1010, 0xA927): HookStop("scan_present_a927"),
     (0x1010, 0xA9E0): HookStop("fixed_ips", ips=(0xAA01, 0xAA07)),
+    (0x1010, 0xAA2B): HookStop("dispatch_aa2b"),
     (0x1010, 0xAA10): HookStop("fixed_ips", ips=(0xAA1F, 0xAA25)),
+    (0x1010, 0xEFAE): HookStop("dispatch_efae"),
 }
 
 
@@ -165,8 +260,11 @@ class HookVerifier:
 
         stop = DEFAULT_STOPS.get(key)
         if stop is None:
+            msg = f"HOOK VERIFY MISSING METADATA {key[0]:04X}:{key[1]:04X} {name}: no continuation metadata"
+            if self.config.require_metadata:
+                raise HookVerifyDivergence(msg)
             if key not in self.skipped:
-                print(f"HOOK VERIFY SKIP {key[0]:04X}:{key[1]:04X} {name}: no continuation metadata")
+                print(msg.replace("MISSING METADATA", "SKIP"))
                 self.skipped.add(key)
             handler(cpu)
             return

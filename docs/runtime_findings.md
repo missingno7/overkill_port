@@ -1,4 +1,344 @@
+## 2026-06-11 B73E/BEC5 gameplay continuation
+
+Two more `1010:B73E` gameplay stops from
+`artifacts/snapshot_play_tandy_20260611_152751` were verified against interpreted
+ASM and lifted:
+
+- `BEC5` variant-2 collision, `BEDC=0000`, fourth counter decrement reaches
+  zero.  This enters the `BFC7` death/transition tail.  The observed type-1,
+  no-linked-slot path adds score through the `5F0D` packed decimal helper
+  (`SS:2314` BP-relative storage), runs the Y clamp, calls the observed `C055`
+  logic-20 side effect (`DS:A47E--`), then transitions object logic
+  `20h -> 1`, saves previous logic in `+1A`, clears `+22`, and dispatches
+  type 1 to sprite `0000`.
+- `B7F3` after an at-target `B7BD` state.  Verified branches now include the
+  `B7C9` target-reset path, substate-0 `B754` movement path, and the bounded
+  `B82D` waypoint-table loop when one or more selected waypoints already match
+  current X/Y.
+
+The `B7C9` branch is intentionally oracle-driven: raw branch counting suggested
+that `DS:2324 == 1` preserved the old target Y, but interpreted ASM showed the
+observed effect is still `target_y = (DS:2380 + 8) & FFF8h`.  Preserving the old
+target caused frame-266 drift.
+
+The `B82D` loop has one important behavior detail: selecting a different waypoint
+does not move immediately.  The routine updates `+34/+32` from `DS:A842`, falls
+through to the `BC4B` postmove path, and leaves movement for a later
+target-mismatch tick.
+
+## 2026-06-11 A894 layer-0 scan boundary
+
+Gameplay from `artifacts/snapshot_play_tandy_20260611_214016` reached an active
+layer-0 object in the `1010:A894` scan and failed at the intended call boundary:
+
+```text
+A894 ... layer-0 scan
+A8BE  call 7596
+A8C1  pop cx
+A8C2  loop A894
+A8C4  ...
+```
+
+The replacement was conceptually correct but the shared helper still had the old
+fail-fast behavior.  For active/matching objects it now mirrors the original
+pre-call state: `BP` and `BX` selected from `DS:32CA`, flags from the final layer
+comparison, `CX` unchanged, loop `PUSH CX` visible on the stack, and `IP=A8BE`.
+The real call then enters the separately verified `7596`/layer draw path.
+
+## 2026-06-11 BEC5 collision tail: BEDC=0001 path
+
+Manual Tandy gameplay from `artifacts/snapshot_play_tandy_20260611_192528`
+reached a fail-fast collision path while shooting spawned ships:
+
+```text
+B73E -> B73E -> B7BD -> BC4B -> 62F6 -> BEC5 BEDC=0001 -> BF5E
+```
+
+This is object/gameplay behavior.  The original `1010:BEC5` bytes for the
+observed variant-2 collision branch show that the `DS:BEDC == 0001` case jumps
+to `1010:BF4D`, not straight to the final `RET`.  The verified tail is:
+
+```text
+BF4D  dec word ptr ss:[bp+20h]
+BF50  jz  BFC7          ; still unverified
+BF52  mov word ptr ss:[bp+24h],0005h
+BF57  cmp word ptr ds:[A8C2h],0001h
+BF5C  jz  BF5F          ; still unverified
+BF5E  ret
+```
+
+The replacement now preserves that extra counter decrement, the `+24h` state
+write, the final comparison flags, and the normal near-return behavior.  A
+synthetic interpreted-ASM oracle test covers this complete `BEDC=0001`,
+`A8C2!=0001`, nonzero-counter path.
+
+## 2026-06-11 frame-verify regression: AA2B/EFAE dispatch boundaries
+
+Frame verification from `artifacts/snapshot_play_tandy_20260611_152751` exposed a
+behavior divergence at frame 34 even though local hook verifier runs had passed.
+The bad frame CRC was unchanged when disabling the recent Tandy layer/draw hooks,
+but disabling `1010:AA2B,1010:EFAE` restored 60-frame verification.
+
+The issue was boundary selection.  `AA2B` and `EFAE` are dispatch stubs, not
+stable behavior bodies:
+
+```text
+AA2B  mov bx,ss:[bp+16h]
+AA2E  shl bx,1
+AA30  jmp word ptr cs:[bx+AA36h]
+
+EFAE  mov ax,ss:[bp+04h] ; publish Y to DS:D1FE
+EFB1  mov ds:[D1FE],ax
+EFB4  mov ax,ss:[bp+02h] ; publish X to DS:D200
+EFB7  mov ds:[D200],ax
+EFBA  mov bx,ss:[bp+18h]
+EFBD  shl bx,1
+EFBF  jmp word ptr cs:[bx+EFC4h]
+```
+
+They have now been backed down to dispatch-only replacements: the hooks preserve
+the real register/flag/prologue side effects and leave `CS:IP` at the selected
+target.  They no longer execute child gameplay routines inline.  Hook-verifier
+metadata was changed accordingly (`dispatch_aa2b`, `dispatch_efae`), and synthetic
+oracle tests cover both dispatch boundaries.
+
+This is a useful rule for the next gameplay pass: parent scan wrappers can be
+composed when their child routine boundaries are already verified, but gameplay
+dispatch stubs should first be lifted only as dispatchers.  Concrete object
+behaviors such as `B73E`, `8D4F`, `AED8`, and movement/collision helpers need
+their own independent frame-level verification before being composed into a
+larger gameplay tick.
+
+## 2026-06-11 island-closure continuation: movement/collision/draw/layer frontier
+
+Continued the fail-fast “close the island before expanding” pass from the previous
+object-logic frontier.  The run no longer stops at `5DB2`; the currently opened
+Tandy/object island now includes movement, the observed collision branch, more
+first-level object logic, and several adjacent Tandy draw/layer targets.
+
+New structural lifts in this pass:
+
+- `1010:5DB2`: target-seeking movement/direction helper, including observed
+  `AF60` double 2-pixel step and `AEE4` 8-pixel step modes.
+- `1010:8D4F`: observed `logic_id=1Fh` waypoint/target-patrol branch through the
+  far-call waypoint reader and `5DB2`.
+- `1010:BEC5` observed branch: collision with a `+18h == 0002` object now
+  deactivates the collided slot and updates the moving object's `+20h/+24h` state
+  instead of stopping at the collision handler.
+- `1010:AB10`: first-level AA2B target that updates object sprite/position from
+  the `A40C/A414` tables.
+- `1010:AED8`: observed `logic_id=2` movement/tile-probe branch, including the
+  `AEE4 -> B250 -> AD5A -> 5073/505B` path and the observed out-of-bounds
+  deactivation through `BD17`.
+- `1010:356C`, `1010:3657`: additional Tandy draw targets reached by the composed
+  `A849/A861 -> 5AC8` draw scans.
+- `1010:A861`: overlaid `8D12` draw scan now composes verified `5AC8` Tandy draw
+  targets instead of stopping before the call.
+- `1010:7746` and `1010:2FB6`: compact layer draw setup and its two-word masked
+  Tandy compositor, reached by `A87C`.
+- `1010:A87C`: active-object scan over `8D12` now composes the verified `7746`
+  compact layer draw path.
+
+Current intentional frontier from `artifacts/snapshot_play_tandy_20260611_164810`:
+
+```text
+1010:A8C7 -> 7596 -> 75A6
+```
+
+This is useful new information: the already-opened layer pipeline now reaches the
+`75A6` split/two-destination layer draw helper.  It should be lifted next rather
+than adding a fallback.
+
+Verification:
+
+```text
+python -m pytest -q                         # 103 passed
+python -m compileall -q overkill_port scripts tests
+python - <<'PY'                              # symbols.json parses
+import json; json.load(open('symbols.json'))
+PY
+```
+
+---
+
+# A90F / 5A92 present-scan lift after no-fallback policy
+
+The no-fallback policy exposed `1010:A90F -> A91E -> 5A92` in the Tandy gameplay
+snapshot `snapshot_play_tandy_20260611_164810`. This was not a reason to restore
+a pre-call fallback; it identified another parent scan.
+
+`1010:A90F` has the same PUSH/MOV BX,CX/SHL/MOV BP/table/active-test/CALL/POP/LOOP
+shape as the already lifted `A927` scan, but it uses the overlaid object pointer
+table at `DS:8D12` and finishes at `A924`. It now composes active entries through
+`5A92` using a shared present-scan helper.
+
+That exposed two real Tandy present targets:
+
+- `1010:3542`: if `DI != FFFFh`, copies 8 rows of two words from `DS:SI` to
+  `ES:DI`, adding `0064h` to `DI` after each row.
+- `1010:34AD`: if entry `DI != FFFFh`, calls the verified `34C5` block copy; then
+  loads `DI=SS:[BP+10]`, `SI=SS:[BP+0E]+0140h`, and tail-falls into `34C5` when
+  the second destination is valid.
+
+Both targets have interpreted-ASM oracle coverage. `A90F` has a synthetic parent
+scan oracle covering `3542`, `34AD`, and early-return paths. The original crash
+snapshot now advances past `A90F`; the next fail-fast marker is the more
+gameplay-like `A9E0 -> AA2B` dispatch path.
+
+---
+
+# Fail-fast replacement policy for unknown paths
+
+The project now treats unknown replacement paths as reverse-engineering evidence, not
+as something to hide behind interpreted ASM. Conservative fallbacks in composed hooks
+were removed because short-term playability is less important than exposing the next
+unlifted routine. Unknown targets now raise a diagnostic `RuntimeError` with the
+parent hook, dispatch chain, target IP, scan `CX`, object `BP`, and relevant object
+fields.
+
+Important consequences:
+
+- Composed hooks must only execute verified child targets.
+- If a dispatch table points to an unverified target, the hook fails fast.
+- Partial scan hooks still skip inactive entries, but they no longer return to the
+  original pre-call boundary when an active object needs unlifted logic.
+- Runtime-patched signatures no longer silently disable hooks; they fail fast with
+  the live and expected bytes.
+
+The first newly exposed target after this policy change is `1010:A90F` reaching
+`1010:A91E` from the crash snapshot `snapshot_play_tandy_20260611_164810`. That is
+the intended next RE task, not a regression.
+
+---
+
 # Runtime findings after the second RE pass
+
+## Checkpoint 31 — real Tandy 2F40 layer compositor
+
+The crash snapshot `artifacts/snapshot_play_tandy_20260611_164810` showed that
+the layer-1 parent hook `1010:A8C7` was not merely missing a conservative fallback:
+it had exposed a real nested compositor target used by `1010:768E`, namely
+`1010:2F40`.
+
+`2F40` is a mode-2/Tandy four-word layer compositor with a different shape from
+the already verified masked-copy target `2F81`.  Per row it reloads `BX=0060h`
+and repeats four times:
+
+```text
+mov ax,[si]
+not ax
+or  es:[di],ax
+add si,4
+add di,2
+```
+
+Then it advances `DI` by `BX`, loops for `CX` rows, restores `DS` from
+`CS:[9596]`, and returns.  The new replacement
+`overkill_tandy_or_inverted_mask_2f40` preserves that exact routine boundary,
+including final flags from the last `ADD DI,BX`.
+
+`1010:768E` now treats `2F40` as a verified tail target alongside `2F81` and
+`2E6E`.  `1010:A8C7` still predicts the nested `768E` target before composing a
+whole scan, but the observed `2F40` case is now actually executed and oracle
+verified instead of being pushed back to interpreted ASM.  Unknown nested targets
+remain conservative fallback cases until they are characterized the same way.
+
+Verification added:
+
+- direct interpreted-ASM coverage through `768E -> 2F40`;
+- full composed parent coverage for `A8C7 -> 7596 -> 768E -> 2F40`;
+- replay of the crash snapshot for 50,000 instructions;
+- live hook verifier on the crash snapshot for `A8C7` and `768E`;
+- full suite `99 passed`.
+
+## Checkpoint 30 — Tandy layer-1 draw pipeline composition
+
+The `A8C7 -> 7596 -> 768E` hot path is now lifted as a verified layer-1 draw
+pipeline rather than a set of loose render leaves.
+
+`1010:7596` is only a small object-type dispatcher:
+
+```text
+7596  mov bx,ss:[bp+14h]
+7599  shl bx,1
+759B  jmp word ptr cs:[bx+75A0h]
+```
+
+For the hot Tandy first-level layer-1 objects, the dispatch target is
+`1010:768E`.  That target is now replaced by
+`overkill_tandy_layer_sprite_draw_768e`.  It reads `SS:[BP+0C]` as the
+destination and returns immediately if it is `FFFF`; otherwise it loads
+`ES=CS:[9598]`, chooses the source segment from `CS:[95AA]`/`CS:[95AC]` based on
+`SS:[BP+08]`, looks up the source pointer through the `CS:9192` table, folds the
+video mode and sprite phase `SS:[BP+12]` into the compositor table, and tail-runs
+the verified Tandy compositor (`2F81` in the common path, `2E6E` also allowed).
+Unknown compositor targets still tail-dispatch back to the original target.
+
+`1010:A8C7` is now a composed parent hook for the layer-1 scan.  It keeps the
+same active/layer predicate as the original code, including the `DS:BDAC`,
+`DS:2350`, `SS:[BP+16]`, and `SS:[BP+0A]` checks.  For active layer-1 objects
+whose `7596` target is the verified `768E` path, it preserves the original
+`PUSH CX`, `CALL 7596`, `POP CX`, and `LOOP` shape while running the known child
+hook directly.  If an active object points at any other `7596` target, it falls
+back at the original pre-call boundary `1010:A8F1`.
+
+Oracle tests cover `768E` complete, `DI=FFFF`, and unknown-target fallback paths,
+plus `A8C7` complete and unknown-target fallback paths.  Live verification from
+`artifacts/snapshot_play_tandy_20260611_152751` covered 800 real `768E` calls and
+500 real `A8C7` scans with no divergence.
+
+After this pass, the remaining Tandy first-level profile is dominated by shared
+object/gameplay behavior rather than Tandy render plumbing: the `A9E0 -> AA2B`
+timed object scan/update, `EFAE` object routine dispatch, and the `BC4E`/nearby
+update/collision-style path.
+
+## Checkpoint 29 — composed Tandy object scan passes
+
+The verified Tandy render/present leaves made it possible to lift two parent scan
+loops without guessing at object behavior:
+
+- `1010:A927 overkill_scan_objects_call_5a92_a927`
+- `1010:A849 overkill_scan_objects_call_5ac8_a849`
+
+Both are descending scans over the `DS:32CA` object table.  The original loop
+shape is:
+
+```text
+push cx
+mov  bx,cx
+shl  bx,1
+mov  bp,[bx+32CA]
+cmp  word ptr ss:[bp],0
+jz   skip_call
+call dispatcher
+pop  cx
+loop top
+```
+
+Previously these hooks only skipped inactive entries and stopped immediately
+before the real call for the first active object.  They now execute the full scan
+when the active object's dispatch target is in the verified Tandy set:
+
+- `A927 -> 5A92 -> 34D8/34C5` for object presentation.
+- `A849 -> 5AC8 -> 35CC/35AA` for object drawing.
+
+The implementation still preserves the original stack shape: each iteration
+leaves the balanced `PUSH CX` scratch below `SP`, active calls also leave the
+internal return-word scratch (`A939` or `A85B`), and `LOOP` does not alter flags.
+If a target outside the verified set is encountered, the hook falls back to the
+old pre-call boundary (`A936` or `A858`) so the original interpreted code can
+continue.
+
+Verification added synthetic interpreted-ASM oracle tests for the complete and
+fallback paths of both parent hooks.  Live verifier coverage from
+`artifacts/snapshot_play_tandy_20260611_152751` covered 750 real `A927` scans and
+760 real `A849` scans with no divergence.
+
+After this pass, the common first-level Tandy profile no longer spends
+interpreter time in the repeated `A849/A927 -> 5AC8/5A92 -> 35CC/34D8` crossing
+pattern.  Remaining heat is now concentrated in shared object/gameplay paths
+(`AA2B`, `EFAE`, `BC4E`/nearby) and the layer-1 draw pipeline
+(`A8C7 -> 7596 -> 768E`).
 
 ## Checkpoint 28 — Tandy first-level gameplay block hooks
 
@@ -1053,3 +1393,36 @@ emulator/hooks/`FrameSync`/keyboard/pacing/F12-snapshot session and then runs
 the displayed image is unchanged.  `pygame`/`numpy` are declared in
 `pyproject.toml` and imported only when the viewer launches, so the interpreter
 core, the PNG tool and the test suite still run without them.
+
+### 2026-06-11 fail-fast object-logic frontier: A9E0 -> AA2B -> EFAE -> B73E -> 5DB2
+
+After removing playable fallbacks, the next Tandy gameplay snapshot stopped at
+`1010:A9E0 -> AA01 -> AA2B`.  This was not a render fallback; it is the first
+real move into shared object/gameplay logic.
+
+New lifted pieces:
+
+- `1010:A9E0 overkill_scan_objects_call_aa2b_a9e0`: full fail-fast scan over the
+  `DS:32CA` object table.  It preserves the original per-iteration increment and
+  reset of `DS:2340`, checks `SS:[BP]` active state, and composes the AA2B object
+  dispatch instead of stopping at the CALL boundary.
+- `1010:AA10 overkill_scan_objects_call_aa2b_aa10`: same AA2B composition for the
+  `DS:8D12` object table.
+- `1010:AA2B overkill_object_logic_dispatch_aa2b`: first-level object logic
+  dispatcher using `SS:[BP+16]` and table `CS:AA36`.
+- `1010:EFAE overkill_object_family_dispatch_efae`: second-level object-family
+  dispatcher.  It writes object coordinates to `DS:D1FE/D200`, then dispatches
+  through `CS:EFC4` using `SS:[BP+18]`.
+- `1010:B73E overkill_object_behavior_b73e`: first branch layer of the observed
+  `logic_id=20h` behavior.  For the current object (`substate=FFFFh`) it selects
+  the frame, reaches the `B85C -> B729` path, prepares `DS:2304/2306`, and stops
+  at the concrete unlifted helper `1010:5DB2`.
+
+The frontier is now no longer the vague `AA2B` dispatcher.  It is a specific
+movement/direction helper:
+
+```text
+A9E0 -> AA2B -> EFAE -> B73E -> B85C -> B729 -> 5DB2
+```
+
+Snapshot replay now intentionally stops with full object context at `1010:5DB2`.
