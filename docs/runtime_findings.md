@@ -721,7 +721,9 @@ structure is:
 A flat `bytearray` cannot represent real EGA hardware bitplanes selected through
 the sequencer map-mask register.  The new verified-for-purpose replacement
 `1010:2750 overkill_present_ega_frame_2750` therefore stores the currently
-presented frame in an explicit shadow layout inside the `A000h` aperture:
+presented frame in an explicit shadow layout inside the `A000h` aperture
+(**superseded** — the planes were later moved out of the CPU aperture; see the
+"EGA planar correctness" entry below):
 
 ```text
 A000:0000..1F3F  plane 0
@@ -758,3 +760,56 @@ Added narrow, oracle-tested replacements:
 
 Each replacement has a synthetic interpreted-ASM oracle test comparing registers,
 flags, stack scratches, and full 1 MiB memory.  `pytest -q` is now `47 passed`.
+
+### 2026-06-10 EGA planar correctness: read-map tracking and out-of-aperture shadow storage
+
+This entry consolidates the EGA colour-ghosting / screen-mixing investigation that
+followed the first EGA presenter.  It **supersedes the in-aperture shadow layout**
+described in the "EGA play mode" entry above: emulated EGA planes are no longer
+stored inside the CPU-visible `A000h` aperture.
+
+Findings and fixes, in the order they landed:
+
+1. Read-map tracking and planar-safe fast paths (was `EGA_GHOSTING_FIX.md`).
+   `Memory` now tracks the graphics-controller read-map-select (port `03CEh/03CFh`
+   index `04h`) in addition to the sequencer map mask (`03C4h` index `02h`), and
+   routes `A000h` `rb/rw` through the selected shadow plane.  The optimized
+   `REP MOVSB/MOVSW/STOSB` slice paths fall back to the per-byte `Memory` path
+   whenever a transfer touches the EGA aperture, so they can no longer update or
+   read only one plane and leave coloured sprite ghosts.
+
+2. Out-of-aperture shadow storage (was `EGA_PLANE_STORAGE_FIX.md`).  On real EGA,
+   `A000:2000` is CPU offset/page `2000h` in the *selected* plane(s), not "plane 1
+   at offset 0".  The transition/fullscreen code really does touch those high CPU
+   offsets, so the old in-aperture layout let them clobber the visible plane
+   shadows (the "mixed screens" artifact).  Planes now live outside the 20-bit CPU
+   address space at `EGA_SHADOW_BASE (0x100000) + plane * 0x10000 + offset`; CPU
+   accesses to `A000:0000..FFFF` are routed through the read-map / map-mask state
+   into that store, and rendering + CRC sampling read the store, not the aperture.
+   Tests: `test_ega_cpu_page_offsets_do_not_alias_visible_shadow_planes`,
+   `test_ega_read_map_can_read_high_cpu_offsets_without_shadow_aliasing`.
+   Diagnostic: `scripts/probe_ega_page_offsets.py`.
+
+3. Presenter + remaining flat stores (was `EGA_PRESENT_STORAGE_FIX.md`,
+   `EGA_SCREEN_MIXING_INVESTIGATION.md`).  `overkill_present_ega_frame_2750` and
+   the `1010:291C` temp-row copy still wrote flat `A000:+plane*2000` / direct
+   `mem.data` bytes; both now write through the shadow store / `Memory.wb()` when
+   `ES=A000h` (keeping a flat fallback for non-`A000h` synthetic/oracle cases).
+   With the aliasing fixed, the `CCAA`/`CCC4`/`CCF0` dirty-copy hooks were
+   re-enabled for interactive EGA/Tandy playback; `1010:58DF` stays disabled for
+   non-CGA because it is mode-0-specific.
+
+4. Self-modifying-code guardrail (was `EGA_SELF_MOD_INVESTIGATION.md`).  The unpacked
+   EXE rewrites large parts of `CS=1010h` during bootstrap, so comparing against the
+   load image is misleading; the useful baseline is the first post-bootstrap video
+   boundary.  Over the tested intro/menu path the EGA render routines stay stable
+   after that baseline (only the inline variable at `1010:5901` changes).  As a
+   guardrail the EGA render/dirty hooks (`2750`, `27EB`, `280D`, `2824`, `291C`,
+   `2932`, `58DF`, `CCAA`, `CCC4`, `CCF0`) verify their entry bytes and self-disable
+   (leaving `CS:IP` for the interpreter) if the game ever patches them later.
+   `OVERKILL_TRACE_CODE_PATCHES=1` logs such self-disables.
+   Diagnostic: `scripts/probe_ega_self_mod.py`.
+
+`render_ega_ppm()` decodes the four shadow planes (`EGA_SHADOW_BASE` layout, with a
+legacy in-aperture fallback for old byte snapshots) as standard 320x200 16-colour
+RGBI output.

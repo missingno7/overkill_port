@@ -103,50 +103,6 @@ def overkill_file_checksum_loop(cpu):
     cpu.s.ip = 0xC91F
 
 
-@registry.replace(0x1010, 0x45CB, "overkill_expand_bits_45cb")
-def overkill_expand_bits_45cb(cpu):
-    """Replace the tiny self-call bit expansion helper at 1010:45CB.
-
-    The original routine is intentionally odd:
-
-        45CB  call 45CE     ; pushes 45CE, jumps to 45CE
-        45CE  rol al,1
-              rol al,1
-              rol al,1
-              rcl word ptr cs:[45E4],1
-              rol al,1
-              rcl word ptr cs:[45E4],1
-              ret           ; first ret goes back to 45CE
-                            ; second ret returns to the original caller
-
-    Therefore a single CALL 45CB executes the 45CE body twice.  The helper is
-    hot while the startup renderer expands bit/nibble graphics into video-ish
-    buffers, and replacing it removes thousands of interpreted instructions
-    without changing the architectural result.
-    """
-
-    def body_once() -> None:
-        al = cpu.get_reg8(0)
-        for _ in range(3):
-            al = cpu.shift(0, al, 1, 8)  # ROL AL,1
-        cpu.set_reg8(0, al)
-
-        word = cpu.mem.rw(cpu.s.cs, 0x45E4)
-        word = cpu.shift(2, word, 1, 16)  # RCL word ptr CS:[45E4],1
-        cpu.mem.ww(cpu.s.cs, 0x45E4, word)
-
-        al = cpu.get_reg8(0)
-        al = cpu.shift(0, al, 1, 8)  # ROL AL,1
-        cpu.set_reg8(0, al)
-
-        word = cpu.mem.rw(cpu.s.cs, 0x45E4)
-        word = cpu.shift(2, word, 1, 16)  # RCL word ptr CS:[45E4],1
-        cpu.mem.ww(cpu.s.cs, 0x45E4, word)
-
-    body_once()
-    body_once()
-    cpu.s.ip = cpu.pop()
-
 @registry.replace(0x1010, 0x45F6, "overkill_pack_four_pixels_45f6")
 def overkill_pack_four_pixels_45f6(cpu):
     """Replace the hot pixel/nibble packing helper at 1010:45F6.
@@ -497,75 +453,6 @@ def _stosw(cpu) -> None:
     cpu.s.di = (cpu.s.di + (-2 if cpu.get_flag(DF) else 2)) & 0xFFFF
 
 
-@registry.replace(0x1010, 0x4537, "overkill_expand_4plane_row_4537")
-def overkill_expand_4plane_row_4537(cpu):
-    """Replace the hot 4-plane-to-packed-pixels row helper at 1010:4537.
-
-    This is the leaf helper called thousands of times by the startup renderer
-    around 1010:4516.  It reads four source bitplanes separated by CS:5B9C,
-    runs the exact already-verified 45F6 packer four times, optionally builds a
-    transparency mask through the already-verified 45CB bit expander, then builds
-    the visible pixel word through the same 45CB expander.
-
-    The implementation deliberately invokes the smaller verified hooks with the
-    same near-call stack write/pop pattern, instead of reimplementing their
-    internals here.  That keeps this larger replacement easier to audit.
-    """
-    cs = cpu.s.cs & 0xFFFF
-    ds = cpu.s.ds & 0xFFFF
-    width = cpu.mem.rw(cs, 0x5B9C)
-
-    cpu.s.bx = width
-    cpu.set_reg8(0, cpu.mem.rb(ds, cpu.s.si))
-    cpu.set_reg8(4, cpu.mem.rb(ds, (cpu.s.si + cpu.s.bx) & 0xFFFF))
-    cpu.s.bx = (cpu.s.bx << 1) & 0xFFFF
-    cpu.set_reg8(2, cpu.mem.rb(ds, (cpu.s.si + cpu.s.bx) & 0xFFFF))
-    cpu.s.bx = (cpu.s.bx + width) & 0xFFFF
-    cpu.set_reg8(6, cpu.mem.rb(ds, (cpu.s.si + cpu.s.bx) & 0xFFFF))
-
-    _call_hook_like_near_call(cpu, overkill_pack_four_pixels_45f6, 0x454E)
-    cpu.mem.wb(cs, 0x5B95, cpu.get_reg8(1))
-    cpu.mem.wb(cs, 0x5B99, cpu.get_reg8(5))
-
-    _call_hook_like_near_call(cpu, overkill_pack_four_pixels_45f6, 0x455B)
-    cpu.mem.wb(cs, 0x5B94, cpu.get_reg8(1))
-    cpu.mem.wb(cs, 0x5B98, cpu.get_reg8(5))
-
-    _call_hook_like_near_call(cpu, overkill_pack_four_pixels_45f6, 0x4568)
-    cpu.mem.wb(cs, 0x5B97, cpu.get_reg8(1))
-    cpu.mem.wb(cs, 0x5B9B, cpu.get_reg8(5))
-
-    _call_hook_like_near_call(cpu, overkill_pack_four_pixels_45f6, 0x4575)
-    cpu.mem.wb(cs, 0x5B96, cpu.get_reg8(1))
-    cpu.mem.wb(cs, 0x5B9A, cpu.get_reg8(5))
-
-    # INC SI. Its flags are overwritten by the following CMP or by the 45CB calls.
-    old_si = cpu.s.si & 0xFFFF
-    old_cf = cpu.get_flag(CF)
-    cpu.s.si = (cpu.s.si + 1) & 0xFFFF
-    cpu.set_add_flags(old_si, 1, old_si + 1, 16)
-    cpu.set_flag(CF, old_cf)
-
-    # CMP word ptr CS:[0BD6],0; JE 45A9
-    transparent_enabled = cpu.mem.rw(cs, 0x0BD6) != 0
-    cpu.set_sub_flags(cpu.mem.rw(cs, 0x0BD6), 0, cpu.mem.rw(cs, 0x0BD6), 16)
-
-    if transparent_enabled:
-        for addr, ret in ((0x5B98, 0x458F), (0x5B99, 0x4596), (0x5B9A, 0x459D), (0x5B9B, 0x45A4)):
-            cpu.set_reg8(0, cpu.mem.rb(cs, addr))
-            _call_hook_like_near_call(cpu, overkill_expand_bits_45cb, ret)
-        cpu.s.ax = cpu.mem.rw(cs, 0x45E4)
-        _stosw(cpu)
-
-    for addr, ret in ((0x5B94, 0x45B0), (0x5B95, 0x45B7), (0x5B96, 0x45BE), (0x5B97, 0x45C5)):
-        cpu.set_reg8(0, cpu.mem.rb(cs, addr))
-        _call_hook_like_near_call(cpu, overkill_expand_bits_45cb, ret)
-    cpu.s.ax = cpu.mem.rw(cs, 0x45E4)
-    _stosw(cpu)
-
-    cpu.s.ip = cpu.pop()
-
-
 @registry.replace(0x1010, 0x4511, "overkill_expand_4plane_block_4511")
 def overkill_expand_4plane_block_4511(cpu):
     """Replace the hot nested block renderer at 1010:4511.
@@ -778,140 +665,6 @@ def overkill_lz_backref_copy_ed7a(cpu):
 
 @registry.replace(0x1010, 0xECF2, "overkill_lz_decoder_ecf2")
 def overkill_lz_decoder_ecf2(cpu):
-    """Replace the complete OVERKILL LZ-style asset decoder at 1010:ECF2.
-
-    This is deliberately a conservative replacement of exactly the observed
-    runtime routine, not a generic decompressor.  The code shape in the
-    self-modified runtime is:
-
-        ECF2  push es
-        ECF3  zero CS:EDE5/EDE7 output counters
-        ED01  les di, cs:[ECEE]
-        ED06  clear one-byte pushback slot
-        ED0C  si = 0; bp = 0
-        ED12  clear dictionary words at CS:DCB8
-        ED20  bp = 0FEE; dx = 0
-        ED26  bitstream loop, literals/backrefs until 00 00 00 terminator
-        ED95  pop es; ret
-
-    The hook calls the already-verified ED97 input and EDE9 output helpers with
-    synthetic near-call stack side effects.  It keeps the original ring buffer,
-    output counters, segment wrapping, one-byte pushback escape, and termination
-    flags.  It intentionally does not try to understand higher-level asset
-    semantics yet.
-    """
-    cs = cpu.s.cs & 0xFFFF
-
-    # ECF2: PUSH ES.  The original later restores ES at ED95 before RET.
-    cpu.push(cpu.s.es)
-
-    # ECF3..ED00: reset output byte counter dword.
-    cpu.mem.ww(cs, 0xEDE5, 0)
-    cpu.mem.ww(cs, 0xEDE7, 0)
-
-    # ED01: LES DI, CS:[ECEE]
-    cpu.s.di = cpu.mem.rw(cs, 0xECEE)
-    cpu.s.es = cpu.mem.rw(cs, 0xECF0)
-
-    # ED06..ED1E: reset pushback, input pointer, and most of the 4 KiB ring.
-    cpu.mem.wb(cs, 0xEE04, 0)
-    cpu.s.si = 0
-    cpu.s.bp = 0
-    cpu.s.cx = 0x07F7
-    while cpu.s.cx != 0:
-        cpu.mem.ww(cs, (0xDCB8 + cpu.s.bp) & 0xFFFF, 0)
-        old_cf = cpu.get_flag(CF)
-        old_bp = cpu.s.bp & 0xFFFF
-        cpu.s.bp = (cpu.s.bp + 1) & 0xFFFF
-        cpu.set_add_flags(old_bp, 1, old_bp + 1, 16)
-        cpu.set_flag(CF, old_cf)
-        old_cf = cpu.get_flag(CF)
-        old_bp = cpu.s.bp & 0xFFFF
-        cpu.s.bp = (cpu.s.bp + 1) & 0xFFFF
-        cpu.set_add_flags(old_bp, 1, old_bp + 1, 16)
-        cpu.set_flag(CF, old_cf)
-        cpu.s.cx = (cpu.s.cx - 1) & 0xFFFF  # LOOP, flags unchanged.
-
-    cpu.s.bp = 0x0FEE
-    cpu.s.dx = 0
-
-    # Hard safety guard: the original should terminate from the compressed
-    # stream.  Hitting this indicates either bad test data or a wrong hook.
-    guard = 0
-    while True:
-        guard += 1
-        if guard > 1_000_000:
-            raise RuntimeError("OVERKILL LZ decoder did not reach terminator")
-
-        # ED26: SHR DX,1
-        cpu.s.dx = cpu.shift(5, cpu.s.dx, 1, 16)
-
-        # ED28: TEST DX,0100h; if zero, fetch a fresh flag byte into DL and set DH=FF.
-        cpu.set_logic_flags(cpu.s.dx & 0x0100, 16)
-        if (cpu.s.dx & 0x0100) == 0:
-            _call_hook_like_near_call(cpu, overkill_lz_input_byte_ed97, 0xED31)
-            cpu.set_reg8(2, cpu.get_reg8(0))  # DL = AL
-            cpu.set_reg8(6, 0xFF)             # DH = FF
-
-        # ED35: TEST DX,0001h
-        cpu.set_logic_flags(cpu.s.dx & 0x0001, 16)
-        if (cpu.s.dx & 0x0001) != 0:
-            # Literal path ED3B..ED4B.
-            _call_hook_like_near_call(cpu, overkill_lz_input_byte_ed97, 0xED3E)
-            _call_hook_like_near_call(cpu, overkill_lz_output_byte_ede9, 0xED41)
-            cpu.mem.wb(cs, (0xDCB8 + cpu.s.bp) & 0xFFFF, cpu.get_reg8(0))
-
-            old_cf = cpu.get_flag(CF)
-            old_bp = cpu.s.bp & 0xFFFF
-            cpu.s.bp = (cpu.s.bp + 1) & 0xFFFF
-            cpu.set_add_flags(old_bp, 1, old_bp + 1, 16)  # INC BP
-            cpu.set_flag(CF, old_cf)
-            cpu.s.bp &= 0x0FFF
-            cpu.set_logic_flags(cpu.s.bp, 16)             # AND BP,0FFFh
-            continue
-
-        # Back-reference / terminator path ED4D..ED93.
-        _call_hook_like_near_call(cpu, overkill_lz_input_byte_ed97, 0xED50)
-        cpu.set_reg8(4, cpu.get_reg8(0))  # AH = AL
-        _call_hook_like_near_call(cpu, overkill_lz_input_byte_ed97, 0xED55)
-        al = cpu.get_reg8(0)
-        ah = cpu.get_reg8(4)
-        cpu.set_reg8(0, ah)               # XCHG AL,AH
-        cpu.set_reg8(4, al)
-
-        cpu.set_sub_flags(cpu.s.ax, 0, cpu.s.ax, 16)      # CMP AX,0
-        if cpu.s.ax == 0:
-            _call_hook_like_near_call(cpu, overkill_lz_input_byte_ed97, 0xED5F)
-            cpu.set_sub_flags(cpu.get_reg8(0), 0, cpu.get_reg8(0), 8)  # CMP AL,0
-            if cpu.get_reg8(0) == 0:
-                # ED95: POP ES; RET.  Flags intentionally remain from CMP AL,0.
-                cpu.s.es = cpu.pop()
-                cpu.s.ip = cpu.pop()
-                return
-            # ED63 CALL EDDA; ED66 MOV AL,0.  EDDA changes no flags.
-            cpu.mem.wb(cs, 0xEE04, 1)
-            cpu.mem.wb(cs, 0xEE05, cpu.get_reg8(0))
-            cpu.set_reg8(0, 0)
-
-        # ED68..ED77: derive length and dictionary offset from AX.
-        cpu.set_reg8(1, cpu.get_reg8(4))  # CL = AH
-        for _ in range(4):
-            cpu.set_reg8(4, cpu.shift(5, cpu.get_reg8(4), 1, 8))  # SHR AH,1
-        cl = cpu.get_reg8(1) & 0x0F
-        cpu.set_reg8(1, cl)
-        cpu.set_logic_flags(cl, 8)        # AND CL,0Fh
-        cpu.s.bx = cpu.s.ax & 0xFFFF
-        old_cl = cpu.get_reg8(1)
-        new_cl = old_cl + 3
-        cpu.set_reg8(1, new_cl)
-        cpu.set_add_flags(old_cl, 3, new_cl, 8)  # ADD CL,3
-
-        # ED7A is a loop body ending in JMP ED26, not a RETing helper.
-        # Call it directly so it does not leave a synthetic return word on the stack.
-        overkill_lz_backref_copy_ed7a(cpu)
-
-@registry.replace(0x1010, 0xECF2, "overkill_lz_decoder_ecf2")
-def overkill_lz_decoder_ecf2(cpu):
     """Optimized full replacement for OVERKILL's 1010:ECF2 LZ asset decoder.
 
     This supersedes the first conservative version above.  It keeps the same
@@ -1046,160 +799,6 @@ def overkill_lz_decoder_ecf2(cpu):
             cpu.s.bp = (cpu.s.bp + 1) & 0x0FFF
             cpu.s.cx = (cpu.s.cx - 1) & 0xFFFF
 
-@registry.replace(0x1010, 0x450C, "overkill_expand_4plane_list_450c")
-def overkill_expand_4plane_list_450c(cpu):
-    """Replace the list-driver loop around 1010:450C.
-
-    This is intentionally a narrow control-flow replacement, not a new renderer.
-    It only folds the hot outer loop:
-
-        450C call 44D7        ; read one block header / detect terminator
-        450F jz   44AA        ; exit list when 44D7 left ZF set
-        4511 ...              ; existing verified 4-plane block renderer
-        4535 jmp  450C
-
-    Each non-terminal block is still rendered by the already verified 4511 hook.
-    This keeps behavior tied to the interpreted routine while removing tens of
-    thousands of call/jmp/header instructions during startup asset expansion.
-    """
-    cs = cpu.s.cs & 0xFFFF
-    ds = cpu.s.ds & 0xFFFF
-
-    guard = 0
-    while True:
-        guard += 1
-        if guard > 100_000:
-            raise RuntimeError("OVERKILL 450C 4-plane list did not reach terminator")
-
-        # 44D7: MOV AX,[SI]; OR AX,[SI+2]; JNZ 44DF; RET
-        first = cpu.mem.rw(ds, cpu.s.si)
-        second = cpu.mem.rw(ds, (cpu.s.si + 2) & 0xFFFF)
-        combined = first | second
-        cpu.s.ax = combined & 0xFFFF
-        cpu.set_logic_flags(cpu.s.ax, 16)
-        if combined == 0:
-            # The original returns to 450F with ZF=1; JZ then jumps to 44AA.
-            cpu.s.ip = 0x44AA
-            return
-
-        # 44DF..450A: consume header words and publish dimensions.
-        cpu.s.bx = cpu.mem.rw(cs, 0x0BE0)
-        old_index = cpu.mem.rw(cs, 0x0BE0)
-        cpu.mem.ww(cs, 0x0BE0, (old_index + 2) & 0xFFFF)
-        cpu.set_add_flags(old_index, 2, old_index + 2, 16)
-
-        # LODSW -> first word.  Flags are overwritten below by CMP/INC.
-        cpu.s.ax = cpu.mem.rw(ds, cpu.s.si)
-        cpu.s.si = (cpu.s.si + (-2 if cpu.get_flag(DF) else 2)) & 0xFFFF
-
-        bd8 = cpu.mem.rw(cs, 0x0BD8)
-        cpu.set_sub_flags(bd8, 0, bd8, 16)
-        if bd8 != 0:
-            cpu.mem.ww(cs, cpu.s.bx, cpu.s.di)
-            _stosw(cpu)
-        cpu.mem.ww(cs, 0x5B9E, cpu.s.ax)
-
-        # LODSW -> second word.
-        cpu.s.ax = cpu.mem.rw(ds, cpu.s.si)
-        cpu.s.si = (cpu.s.si + (-2 if cpu.get_flag(DF) else 2)) & 0xFFFF
-
-        bd8 = cpu.mem.rw(cs, 0x0BD8)
-        cpu.set_sub_flags(bd8, 0, bd8, 16)
-        if bd8 != 0:
-            _stosw(cpu)
-        cpu.mem.ww(cs, 0x5B9C, cpu.s.ax)
-
-        old_ax = cpu.s.ax & 0xFFFF
-        old_cf = cpu.get_flag(CF)
-        cpu.s.ax = (old_ax + 1) & 0xFFFF
-        cpu.set_add_flags(old_ax, 1, old_ax + 1, 16)  # INC AX flag shape.
-        cpu.set_flag(CF, old_cf)                      # INC does not affect CF.
-
-        if cpu.get_flag(0x0040):  # ZF from INC AX; matches JZ 44AA at 450F.
-            cpu.s.ip = 0x44AA
-            return
-
-        # Fall-through to 4511.  It is a jump target, not a CALL, so invoke the
-        # verified 4511 replacement directly without a synthetic return word.
-        overkill_expand_4plane_block_4511(cpu)
-        if cpu.s.ip != 0x450C:
-            return
-
-@registry.replace(0x1010, 0x0367, "overkill_linear_byte_rle_decoder_0367")
-def overkill_linear_byte_rle_decoder_0367(cpu):
-    """Replace the linear byte-RLE startup decoder at 1010:0367.
-
-    This is the horizontal/linear sibling of the already-verified 03A8 vertical
-    decoder.  It writes bytes to ES:DI with normal STOSB advancement until a
-    control byte of 80h jumps to the shared continuation at 1010:02A8.
-    """
-    ds = cpu.s.ds & 0xFFFF
-    cpu.s.es = cpu.mem.rw(ds, 0x023A)
-    cpu.s.di = cpu.mem.rw(ds, 0x023C)
-
-    guard = 0
-    while True:
-        guard += 1
-        if guard > 1_000_000:
-            raise RuntimeError("OVERKILL 0367 byte RLE did not reach terminator")
-
-        _overkill_read_packed_byte(cpu)
-        if cpu.s.ip == 0x02B2:
-            return
-        control = cpu.get_reg8(0)
-        cpu.set_sub_flags(control, 0x80, control - 0x80, 8)  # CMP AL,80h
-
-        if control == 0x80:
-            cpu.s.ip = 0x02A8
-            return
-
-        if control > 0x80:
-            # NEG AL; XCHG AL,AH; XCHG AH,BL; CALL 0624; XCHG AH,BL
-            cpu.set_sub_flags(0, control, -control, 8)
-            cpu.set_reg8(0, (-control) & 0xFF)
-
-            al = cpu.get_reg8(0)
-            ah = cpu.get_reg8(4)
-            cpu.set_reg8(0, ah)
-            cpu.set_reg8(4, al)
-
-            ah = cpu.get_reg8(4)
-            bl = cpu.get_reg8(3)
-            cpu.set_reg8(4, bl)
-            cpu.set_reg8(3, ah)
-
-            _overkill_read_packed_byte(cpu)
-            if cpu.s.ip == 0x02B2:
-                return
-
-            ah = cpu.get_reg8(4)
-            bl = cpu.get_reg8(3)
-            cpu.set_reg8(4, bl)
-            cpu.set_reg8(3, ah)
-
-            while True:
-                cpu.mem.wb(cpu.s.es, cpu.s.di, cpu.get_reg8(0))
-                cpu.s.di = (cpu.s.di + (-1 if cpu.get_flag(DF) else 1)) & 0xFFFF
-                _inc_mem_word_preserve_cf(cpu, ds, 0x0244)
-                _dec_reg8_preserve_cf(cpu, 4)  # DEC AH
-                if cpu.get_flag(0x0080):       # JNS not taken when SF=1
-                    break
-            continue
-
-        # Literal run: PUSH AX; CALL 0624; STOSB; INC [0244]; POP AX; DEC AL; JNS
-        while True:
-            saved_ax = cpu.s.ax & 0xFFFF
-            _overkill_read_packed_byte(cpu)
-            if cpu.s.ip == 0x02B2:
-                return
-            cpu.mem.wb(cpu.s.es, cpu.s.di, cpu.get_reg8(0))
-            cpu.s.di = (cpu.s.di + (-1 if cpu.get_flag(DF) else 1)) & 0xFFFF
-            _inc_mem_word_preserve_cf(cpu, ds, 0x0244)
-            cpu.s.ax = saved_ax
-            _dec_reg8_preserve_cf(cpu, 0)  # DEC AL
-            if cpu.get_flag(0x0080):       # JNS not taken when SF=1
-                break
-
 @registry.replace(0x1010, 0x0367, "overkill_linear_byte_rle_decoder_0367_fast")
 def overkill_linear_byte_rle_decoder_0367(cpu):
     """Optimized verified replacement for 1010:0367 linear byte-RLE decoder.
@@ -1302,99 +901,9 @@ def overkill_linear_byte_rle_decoder_0367(cpu):
         cpu.set_reg8(0, 0)
         _dec_reg8_preserve_cf(cpu, 0)
 
-def _r_rol8(cpu, v: int) -> int:
-    old = v & 0xFF
-    res = ((old << 1) | (old >> 7)) & 0xFF
-    cpu.set_flag(CF, bool(old & 0x80))
-    cpu.set_flag(ZF, res == 0); cpu.set_flag(SF, bool(res & 0x80)); cpu.set_flag(PF, cpu.parity(res))
-    return res
 
-
-def _r_ror8(cpu, v: int) -> int:
-    old = v & 0xFF
-    res = ((old >> 1) | ((old & 1) << 7)) & 0xFF
-    cpu.set_flag(CF, bool(old & 1))
-    cpu.set_flag(ZF, res == 0); cpu.set_flag(SF, bool(res & 0x80)); cpu.set_flag(PF, cpu.parity(res))
-    return res
-
-
-def _r_rcl8(cpu, v: int) -> int:
-    old = v & 0xFF
-    old_cf = 1 if cpu.get_flag(CF) else 0
-    res = ((old << 1) | old_cf) & 0xFF
-    cpu.set_flag(CF, bool(old & 0x80))
-    cpu.set_flag(ZF, res == 0); cpu.set_flag(SF, bool(res & 0x80)); cpu.set_flag(PF, cpu.parity(res))
-    return res
-
-
-def _r_rcl16_mem(cpu, cs: int, off: int) -> None:
-    mem = cpu.mem
-    old = mem.rw(cs, off)
-    old_cf = 1 if cpu.get_flag(CF) else 0
-    res = ((old << 1) | old_cf) & 0xFFFF
-    mem.ww(cs, off, res)
-    cpu.set_flag(CF, bool(old & 0x8000))
-    cpu.set_flag(ZF, res == 0); cpu.set_flag(SF, bool(res & 0x8000)); cpu.set_flag(PF, cpu.parity(res))
-
-
-def _r_pack_four_pixels(cpu, cs: int) -> None:
-    """Module-level lift of 4537's per-row pack helper (45F6 family).
-
-    Gathers the low bits of the four plane bytes (DH,DL,AH,AL) into CL via the
-    ROR/RCL bit chain, applies the optional transparency test against CS:[0BD6]/
-    CS:[0000], then remaps the nibbles through the CS:45E6 colour table.  Lifted
-    out of the hook body so it is defined once instead of as a per-call closure.
-    """
-    mem = cpu.mem
-    for reg in (6, 2, 4, 0, 6, 2, 4, 0):
-        cpu.set_reg8(reg, _r_ror8(cpu, cpu.get_reg8(reg)))
-        cpu.set_reg8(1, _r_rcl8(cpu, cpu.get_reg8(1)))
-    for _ in range(4):
-        cpu.set_reg8(1, _r_ror8(cpu, cpu.get_reg8(1)))
-
-    original_ax = cpu.s.ax & 0xFFFF
-    cl = cpu.get_reg8(1)
-    ch = cpu.get_reg8(5)
-    if mem.rw(cs, 0x0BD6) != 0:
-        ch = 0
-        transparent_color = mem.rb(cs, 0x0000)
-        low = cl & 0x0F
-        if low == transparent_color:
-            ch |= 0x0F
-            cl &= 0xF0
-        high = (cl >> 4) & 0x0F
-        if high == transparent_color:
-            ch |= 0xF0
-            cl &= 0x0F
-
-    mem.ww(cs, 0x45E2, original_ax)
-    table = 0x45E6
-    low_mapped = mem.rb(cs, table + (cl & 0x0F))
-    high_mapped = mem.rb(cs, table + ((cl >> 4) & 0x0F))
-    mapped = ((high_mapped << 4) | low_mapped) & 0xFF
-    cpu.set_logic_flags(mapped, 8)
-    cpu.s.bx = table
-    cpu.set_reg8(1, mapped)
-    cpu.set_reg8(5, ch)
-    cpu.s.ax = original_ax
-
-
-def _r_expand_bits(cpu, cs: int, value: int) -> None:
-    """Module-level lift of 4537's per-byte bit-spread helper (45CB family)."""
-    al = value & 0xFF
-    for _ in range(2):
-        for _ in range(3):
-            al = _r_rol8(cpu, al)
-        cpu.set_reg8(0, al)
-        _r_rcl16_mem(cpu, cs, 0x45E4)
-        al = _r_rol8(cpu, al)
-        cpu.set_reg8(0, al)
-        _r_rcl16_mem(cpu, cs, 0x45E4)
-    cpu.set_reg8(0, al)
-
-
-# 45CB bit-spread group table.  One _r_expand_bits call inserts exactly four
-# bits of its input byte into CS:[45E4] via the ROL/RCL16 chain, in this order:
+# 45CB bit-spread group table.  One 45CB expansion inserts exactly four bits of
+# its input byte into CS:[45E4] via the ROL/RCL16 chain, in this order:
 # bit5, bit4, bit1, bit0 (ROL x3 carries out bit5, ROL carries bit4, then ROL x3
 # from the rotated position carries bit1, ROL carries bit0).  The table maps a
 # byte to that 4-bit group so a whole 45CB call becomes one lookup.
@@ -1407,9 +916,9 @@ _G45CB = tuple(
 def _row_4537_core(cpu):
     """Fast lifted body of the 1010:4537 row expander (no return-IP pop).
 
-    Computes the same final architectural state as the rotate-chain
-    implementation (`_r_pack_four_pixels` / `_r_expand_bits`) using direct bit
-    arithmetic and the `_G45CB` table:
+    Computes the same final architectural state as the original 45F6/45CB
+    rotate chain (the four 45F6 pack calls and the 45CB bit-spread calls) using
+    direct bit arithmetic and the `_G45CB` table:
 
     - pack call k (k=0..3) gathers bits 2k/2k+1 of the four plane bytes
       (DH,DL,AH,AL) into CL with the nibbles swapped, applies the optional
@@ -1599,20 +1108,10 @@ def overkill_expand_4plane_list_450c(cpu):
         cpu.mem.ww(cs, 0x5B9C, cpu.s.ax)
 
         old_ax = cpu.s.ax & 0xFFFF
+        old_cf = cpu.get_flag(CF)
         cpu.s.ax = (old_ax + 1) & 0xFFFF
-        cpu.set_add_flags(old_ax, 1, old_ax + 1, 16)  # INC AX; CF preserved by helper? set_add sets CF, so fix below.
-        # INC does not affect CF on 8086.  set_add_flags updated it, so restore the
-        # CF from the previous CMP path.  ZF/SF/PF/AF/OF are the live bits here.
-        # The old CF after CMP bd8,0 is false when bd8==0 and also false for bd8>0
-        # in normal startup, but preserve it explicitly for tests/future cases.
-        # Recompute INC flags with preserved CF by applying add flags then restoring.
-        # (See the helper below for a clearer version used in future hooks.)
-
-        # Correct CF preservation for INC AX.
-        prev_cf = bd8 < 0  # placeholder overwritten immediately below
-        # The CF before INC is the CF left by CMP CS:0BD8,0.
-        prev_cf = cpu.mem.rw(cs, 0x0BD8) < 0  # always false for unsigned word, kept explicit.
-        cpu.set_flag(CF, prev_cf)
+        cpu.set_add_flags(old_ax, 1, old_ax + 1, 16)  # INC AX flag shape.
+        cpu.set_flag(CF, old_cf)                      # INC does not affect CF.
 
         if cpu.get_flag(0x0040):  # ZF from INC AX; matches JZ 44AA at 450F.
             cpu.s.ip = 0x44AA
@@ -2224,8 +1723,8 @@ def overkill_ega_source_spaced_copy_2ab9(cpu):
     _call_hook_like_near_call(cpu, _object_row_addr_mode1_2580, 0x2ABC)
     if s.ip != 0x2ABC:
         return
-    # CALL/RET leaves the final pushed return word in the scratch slot below SP.
-    mem.ww(ss, (s.sp - 2) & 0xFFFF, 0x2ABC)
+    # The near-call push already left 0x2ABC in the scratch slot below SP, so the
+    # stack image matches a real CALL/RET without an extra fixup write here.
 
     mem.ww(ss, (bp + 0x0C) & 0xFFFF, s.ax)
     _cmp_word(cpu, s.ax, 0xFFFF)

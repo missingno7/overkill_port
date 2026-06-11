@@ -1,6 +1,12 @@
-# Current run status — checkpoint 26
+# Run status — checkpoint 26
 
-Validated on `assets/OVERKILL.UNLZEXE.EXE`.  `65 passed`.
+Validated on `assets/OVERKILL.UNLZEXE.EXE`.  `65 passed` *at this checkpoint*.
+
+> **Note:** this checkpoint is not the latest state.  Work after checkpoint 26
+> (EGA planar-correctness fixes, the masked-sprite/perf pass, and the
+> replacements.py hook de-duplication) is recorded in
+> [`docs/runtime_findings.md`](docs/runtime_findings.md); the full suite is now
+> `78 passed`.
 
 This pass continued profiling the slow planet/difficulty selection screen that is
 shown after pressing SPACE in the main menu.  The earlier menu hooks helped, but

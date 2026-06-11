@@ -135,10 +135,13 @@ def render_ega_ppm(mem: bytes, seg: int = 0xA000, scale: int = 2, start_offset: 
     the four planes in the usual EGA order.  ``start_offset`` is the CRTC display
     start address tracked from ports 03D4h/03D5h; old snapshots default to zero.
     """
-    # Newer runtime builds store EGA hardware planes outside the CPU-visible
-    # A000h aperture so real offsets/pages such as A000:2000 cannot corrupt the
-    # displayed plane shadows.  Fall back to the legacy in-aperture layout for
-    # older saved byte snapshots.
+    # Three accepted plane layouts, distinguished by buffer length:
+    #   * a tight view of exactly the four shadow planes (the live viewer slices
+    #     these out of runtime memory) -> planes start at offset 0;
+    #   * full runtime memory, where newer builds store the planes outside the
+    #     CPU-visible A000h aperture so real offsets/pages such as A000:2000
+    #     cannot corrupt the displayed shadows -> planes start at EGA_SHADOW_BASE;
+    #   * older saved byte snapshots using the legacy in-aperture layout.
     if len(mem) == EGA_PLANE_STRIDE * 4:
         base = 0
         plane_stride = EGA_PLANE_STRIDE

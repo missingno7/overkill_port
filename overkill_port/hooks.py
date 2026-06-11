@@ -31,8 +31,20 @@ class HookRegistry:
         self.replacements: dict[tuple[int, int], Replacement] = {}
 
     def replace(self, cs: int, ip: int, name: str):
+        key = (cs & 0xFFFF, ip & 0xFFFF)
+
         def deco(fn: Hook) -> Hook:
-            self.replacements[(cs & 0xFFFF, ip & 0xFFFF)] = Replacement(cs & 0xFFFF, ip & 0xFFFF, name, fn)
+            # Fail fast on duplicate registrations.  The map is keyed by CS:IP, so
+            # a second @replace at the same address would silently shadow the
+            # first; that is exactly how superseded hook implementations used to
+            # accrete unnoticed.  One address must have exactly one replacement.
+            existing = self.replacements.get(key)
+            if existing is not None:
+                raise ValueError(
+                    f"duplicate replacement at {key[0]:04X}:{key[1]:04X} "
+                    f"({existing.name!r} then {name!r})"
+                )
+            self.replacements[key] = Replacement(key[0], key[1], name, fn)
             return fn
         return deco
 
