@@ -60,7 +60,7 @@ class HookStop:
             return ((cs, cpu.mem.rw(cs, (0x5A30 + bx) & 0xFFFF)),)
         if self.kind == "dispatch_5a36":
             mode = cpu.mem.rw(cs, 0x95BC)
-            if mode == 0:
+            if mode in (0, 1, 2):
                 return ((cs, cpu.mem.rw(before.ss, before.sp)),)
             bx = ((mode & 0xFFFF) << 1) & 0xFFFF
             return ((cs, cpu.mem.rw(cs, (0x5A42 + bx) & 0xFFFF)),)
@@ -108,8 +108,14 @@ DEFAULT_STOPS: dict[Addr, HookStop] = {
     (0x1010, 0x2824): HookStop("ega_2824"),
     (0x1010, 0x291C): HookStop("near_ret"),
     (0x1010, 0x2932): HookStop("near_ret"),
+    (0x1010, 0x2E6E): HookStop("near_ret"),
+    (0x1010, 0x2F81): HookStop("near_ret"),
     (0x1010, 0x33B2): HookStop("fixed_ips", ips=(0x33AF, 0x44AA)),
     (0x1010, 0x33DD): HookStop("near_ret"),
+    (0x1010, 0x34C5): HookStop("near_ret"),
+    (0x1010, 0x34D8): HookStop("near_ret"),
+    (0x1010, 0x35AA): HookStop("near_ret"),
+    (0x1010, 0x35CC): HookStop("near_ret"),
     (0x1010, 0xCCAA): HookStop("fixed_ip", 0xCD08),
     (0x1010, 0xCCC4): HookStop("fixed_ip", 0xCD08),
     (0x1010, 0xCCF0): HookStop("fixed_ip", 0xCD08),

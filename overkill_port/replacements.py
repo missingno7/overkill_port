@@ -40,7 +40,13 @@ _SIG_280D = bytes.fromhex("2e 8b 0e 9c 5b ac 2e 88 05 47 e2 f9 2e 2b 3e 9c")
 _SIG_2824 = bytes.fromhex("bf f4 5a 2e 8b 0e 9c 5b 51 2e 8a 05 2e 8a 65 28")
 _SIG_291C = bytes.fromhex("51 2e 8a 05 47 57 2e 8b 3e a6 5b aa 2e 89 3e a6")
 _SIG_2932 = bytes.fromhex("2e c6 06 a0 5b 00 2e 8b 1e 9c 5b 8a 04 8a 20 d1")
+_SIG_2E6E = bytes.fromhex("bb 58 00 ad 26 23 05 0b 04 83 c6 02 ab ad 26 23")
+_SIG_2F81 = bytes.fromhex("bb 60 00 ad 26 23 05 0b 04 83 c6 02 ab ad 26 23")
 _SIG_33B2 = bytes.fromhex("75 03 e9 f3 10 2e 8b 0e 9e 5b 51 2e 8b 0e 9c")
+_SIG_34C5 = bytes.fromhex("bb 58 00 b9 10 00 a5 a5 a5 a5 a5 a5 a5 a5 03 fb")
+_SIG_34D8 = bytes.fromhex("83 ff ff 75 01 c3 bb 60 00 a5 a5 a5 a5 03 fb")
+_SIG_35CC = bytes.fromhex("e8 67 24 89 46 0c 3d ff ff 75 01 c3 03 06 4c 23")
+_SIG_35AA = bytes.fromhex("2e 8e 06 96 95 2e 8e 1e 98 95 bb 58 00 b9 10 00")
 _SIG_58DF = bytes.fromhex("51 2e 89 0e 01 59 2e 8b 1e bc 95 d1 e3 2e ff 97")
 _SIG_CCAA = bytes.fromhex("b9 08 00 26 8b 04 26 3b 05 74 05 b2 01 26 89 05")
 _SIG_CCC4 = bytes.fromhex("b9 08 00 26 8b 04 26 3b 05 74 05 b2 01 26 89 05")
@@ -638,6 +644,243 @@ def overkill_expand_tandy_block_33b2(cpu):
 
     s.cx = 0
     s.ip = 0x33AF
+
+
+def _masked_word_composite_rows(cpu, *, words_per_row: int, row_add: int) -> None:
+    s = cpu.s
+    mem = cpu.mem
+    ds = s.ds & 0xFFFF
+    es = s.es & 0xFFFF
+    rows = s.cx & 0xFFFF
+    if rows == 0:
+        rows = 0x10000
+
+    si = s.si & 0xFFFF
+    di = s.di & 0xFFFF
+    step = -2 if s.flags & DF else 2
+    bx = 0x0060
+    bx = row_add & 0xFFFF
+    ax = s.ax & 0xFFFF
+
+    for _ in range(rows):
+        for _col in range(words_per_row):
+            ax = mem.rw(ds, si)              # LODSW
+            si = (si + step) & 0xFFFF
+            ax = (ax & mem.rw(es, di)) & 0xFFFF
+            ax = (ax | mem.rw(ds, si)) & 0xFFFF
+            si_sum = si + 2                  # ADD SI,2
+            si = si_sum & 0xFFFF
+            mem.ww(es, di, ax)               # STOSW
+            di = (di + step) & 0xFFFF
+
+        di_sum = di + bx                     # ADD DI,BX; LOOP preserves flags.
+        cpu.set_add_flags(di, bx, di_sum, 16)
+        di = di_sum & 0xFFFF
+
+    s.ax = ax
+    s.bx = bx
+    s.cx = 0
+    s.si = si
+    s.di = di
+
+
+def _strided_movsw_rows(cpu, *, words_per_row: int, row_add: int) -> None:
+    s = cpu.s
+    mem = cpu.mem
+    ds = s.ds & 0xFFFF
+    es = s.es & 0xFFFF
+    rows = s.cx & 0xFFFF
+    if rows == 0:
+        rows = 0x10000
+
+    si = s.si & 0xFFFF
+    di = s.di & 0xFFFF
+    step = -2 if s.flags & DF else 2
+    bx = row_add & 0xFFFF
+    for _ in range(rows):
+        for _col in range(words_per_row):
+            mem.ww(es, di, mem.rw(ds, si))
+            si = (si + step) & 0xFFFF
+            di = (di + step) & 0xFFFF
+        di_sum = di + bx
+        cpu.set_add_flags(di, bx, di_sum, 16)
+        di = di_sum & 0xFFFF
+    s.bx = bx
+    s.cx = 0
+    s.si = si
+    s.di = di
+
+
+def _source_strided_movsw_rows(cpu, *, words_per_row: int, row_add: int) -> None:
+    s = cpu.s
+    mem = cpu.mem
+    ds = s.ds & 0xFFFF
+    es = s.es & 0xFFFF
+    rows = s.cx & 0xFFFF
+    if rows == 0:
+        rows = 0x10000
+
+    si = s.si & 0xFFFF
+    di = s.di & 0xFFFF
+    step = -2 if s.flags & DF else 2
+    bx = row_add & 0xFFFF
+    for _ in range(rows):
+        for _col in range(words_per_row):
+            mem.ww(es, di, mem.rw(ds, si))
+            si = (si + step) & 0xFFFF
+            di = (di + step) & 0xFFFF
+        si_sum = si + bx
+        cpu.set_add_flags(si, bx, si_sum, 16)
+        si = si_sum & 0xFFFF
+    s.bx = bx
+    s.cx = 0
+    s.si = si
+    s.di = di
+
+
+def _fixed_di_strided_movsw_rows(cpu, *, words_per_row: int, row_add: int, rows: int) -> None:
+    s = cpu.s
+    mem = cpu.mem
+    ds = s.ds & 0xFFFF
+    es = s.es & 0xFFFF
+    si = s.si & 0xFFFF
+    di = s.di & 0xFFFF
+    step = -2 if s.flags & DF else 2
+    bx = row_add & 0xFFFF
+
+    for row in range(rows):
+        for _col in range(words_per_row):
+            mem.ww(es, di, mem.rw(ds, si))
+            si = (si + step) & 0xFFFF
+            di = (di + step) & 0xFFFF
+        di_sum = di + bx
+        cpu.set_add_flags(di, bx, di_sum, 16)
+        di = di_sum & 0xFFFF
+
+    s.bx = bx
+    s.si = si
+    s.di = di
+
+
+def _fixed_si_strided_movsw_rows(cpu, *, words_per_row: int, row_add: int, rows: int) -> None:
+    s = cpu.s
+    mem = cpu.mem
+    ds = s.ds & 0xFFFF
+    es = s.es & 0xFFFF
+    si = s.si & 0xFFFF
+    di = s.di & 0xFFFF
+    step = -2 if s.flags & DF else 2
+    bx = row_add & 0xFFFF
+
+    for _row in range(rows):
+        for _col in range(words_per_row):
+            mem.ww(es, di, mem.rw(ds, si))
+            si = (si + step) & 0xFFFF
+            di = (di + step) & 0xFFFF
+        si_sum = si + bx
+        cpu.set_add_flags(si, bx, si_sum, 16)
+        si = si_sum & 0xFFFF
+
+    s.bx = bx
+    s.si = si
+    s.di = di
+
+
+@registry.replace(0x1010, 0x2E6E, "overkill_tandy_masked_sprite_composite_2e6e")
+def overkill_tandy_masked_sprite_composite_2e6e(cpu):
+    """Replace the mode-2 eight-word masked sprite compositor at 1010:2E6E."""
+    if _self_disable_if_patched(cpu, 0x2E6E, _SIG_2E6E, "overkill_tandy_masked_sprite_composite_2e6e"):
+        return
+    _masked_word_composite_rows(cpu, words_per_row=8, row_add=0x0058)
+    cpu.s.ds = cpu.mem.rw(cpu.s.cs & 0xFFFF, 0x9596)
+    cpu.s.ip = cpu.pop()
+
+
+@registry.replace(0x1010, 0x2F81, "overkill_tandy_masked_sprite_composite_2f81")
+def overkill_tandy_masked_sprite_composite_2f81(cpu):
+    """Replace the mode-2 four-word masked sprite compositor at 1010:2F81."""
+    if _self_disable_if_patched(cpu, 0x2F81, _SIG_2F81, "overkill_tandy_masked_sprite_composite_2f81"):
+        return
+    _masked_word_composite_rows(cpu, words_per_row=4, row_add=0x0060)
+    cpu.s.ds = cpu.mem.rw(cpu.s.cs & 0xFFFF, 0x9596)
+    cpu.s.ip = cpu.pop()
+
+
+@registry.replace(0x1010, 0x35AA, "overkill_tandy_source_strided_copy_35aa")
+def overkill_tandy_source_strided_copy_35aa(cpu):
+    """Replace the mode-2 source-strided object copy at 1010:35AA."""
+    if _self_disable_if_patched(cpu, 0x35AA, _SIG_35AA, "overkill_tandy_source_strided_copy_35aa"):
+        return
+    cs = cpu.s.cs & 0xFFFF
+    cpu.s.es = cpu.mem.rw(cs, 0x9596)
+    cpu.s.ds = cpu.mem.rw(cs, 0x9598)
+    cpu.s.bx = 0x0058
+    cpu.s.cx = 0x0010
+    _source_strided_movsw_rows(cpu, words_per_row=8, row_add=0x0058)
+    cpu.s.ds = cpu.mem.rw(cs, 0x9596)
+    cpu.s.ip = cpu.pop()
+
+
+@registry.replace(0x1010, 0x34C5, "overkill_tandy_strided_copy_34c5")
+def overkill_tandy_strided_copy_34c5(cpu):
+    """Replace the 16-row, eight-word strided copy helper at 1010:34C5."""
+    if _self_disable_if_patched(cpu, 0x34C5, _SIG_34C5, "overkill_tandy_strided_copy_34c5"):
+        return
+    cpu.s.bx = 0x0058
+    cpu.s.cx = 0x0010
+    _strided_movsw_rows(cpu, words_per_row=8, row_add=0x0058)
+    cpu.s.ds = cpu.mem.rw(cpu.s.cs & 0xFFFF, 0x9596)
+    cpu.s.ip = cpu.pop()
+
+
+@registry.replace(0x1010, 0x34D8, "overkill_tandy_small_strided_copy_34d8")
+def overkill_tandy_small_strided_copy_34d8(cpu):
+    """Replace the mode-2 16-row, four-word object-present copy at 1010:34D8."""
+    if _self_disable_if_patched(cpu, 0x34D8, _SIG_34D8, "overkill_tandy_small_strided_copy_34d8"):
+        return
+    _cmp_word(cpu, cpu.s.di & 0xFFFF, 0xFFFF)
+    if (cpu.s.di & 0xFFFF) == 0xFFFF:
+        cpu.s.ip = cpu.pop()
+        return
+    cpu.s.bx = 0x0060
+    _fixed_di_strided_movsw_rows(cpu, words_per_row=4, row_add=0x0060, rows=16)
+    cpu.s.ip = cpu.pop()
+
+
+@registry.replace(0x1010, 0x35CC, "overkill_tandy_draw_object_block_35cc")
+def overkill_tandy_draw_object_block_35cc(cpu):
+    """Replace the mode-2 draw-side row-address plus source-strided copy at 1010:35CC."""
+    if _self_disable_if_patched(cpu, 0x35CC, _SIG_35CC, "overkill_tandy_draw_object_block_35cc"):
+        return
+
+    _call_hook_like_near_call(cpu, overkill_cga_object_row_addr_5a36, 0x35CF)
+    if cpu.s.ip != 0x35CF:
+        raise RuntimeError(f"5A36 replacement returned to unexpected IP {cpu.s.ip:04X}")
+
+    ss = cpu.s.ss & 0xFFFF
+    ds = cpu.s.ds & 0xFFFF
+    cs = cpu.s.cs & 0xFFFF
+    bp = cpu.s.bp & 0xFFFF
+    ax = cpu.s.ax & 0xFFFF
+
+    cpu.mem.ww(ss, (bp + 0x0C) & 0xFFFF, ax)
+    _cmp_word(cpu, ax, 0xFFFF)
+    if ax == 0xFFFF:
+        cpu.s.ip = cpu.pop()
+        return
+
+    row_sum = ax + cpu.mem.rw(ds, 0x234C)
+    cpu.s.ax = row_sum & 0xFFFF
+    cpu.set_add_flags(ax, cpu.mem.rw(ds, 0x234C), row_sum, 16)
+    cpu.mem.ww(ss, (bp + 0x0C) & 0xFFFF, cpu.s.ax)
+    cpu.s.si = cpu.s.ax
+    cpu.s.di = cpu.mem.rw(ss, (bp + 0x0E) & 0xFFFF)
+    cpu.s.es = cpu.mem.rw(cs, 0x9596)
+    cpu.s.ds = cpu.mem.rw(cs, 0x9598)
+    cpu.s.bx = 0x0060
+    _fixed_si_strided_movsw_rows(cpu, words_per_row=4, row_add=0x0060, rows=16)
+    cpu.s.ds = cpu.mem.rw(cs, 0x9596)
+    cpu.s.ip = cpu.pop()
 
 
 @registry.replace(0x1010, 0xEDE9, "overkill_lz_output_byte_ede9")
@@ -3901,9 +4144,9 @@ def overkill_cga_object_row_addr_5a36(cpu):
     In mode 0 the dispatch target at 41F5 maps an object's Y coordinate
     (SS:BP+2) and X coordinate (SS:BP+4) to a work-buffer row address, stores the
     sub-byte X phase at SS:BP+12h, and optionally decrements SS:BP+24h.  This is
-    called many times while rendering the planet-selection menu cursor/sprites.
-    Non-CGA modes are dispatched back to the original target so EGA/Tandy remain
-    conservative.
+    called many times while rendering sprites and object rows.  Mode 1 and mode
+    2 share the same verified shape with different X packing, so they are folded
+    into this dispatch hook; unknown modes still dispatch to the original target.
     """
     s = cpu.s
     cs = s.cs & 0xFFFF
@@ -3912,6 +4155,9 @@ def overkill_cga_object_row_addr_5a36(cpu):
     s.bx = cpu.shift(4, s.bx, 1, 16)  # SHL BX,1 from the dispatch stub.
     if mode == 1:
         _object_row_addr_mode1_2580(cpu)
+        return
+    if mode == 2:
+        _object_row_addr_mode2_30d2(cpu)
         return
     if mode != 0:
         s.ip = cpu.mem.rw(cs, (0x5A42 + s.bx) & 0xFFFF)
@@ -4002,6 +4248,47 @@ def _object_row_addr_mode1_2580(cpu) -> None:
         cpu.mem.ww(ss, (bp + 0x24) & 0xFFFF, result)
         cpu.set_sub_flags(countdown, 1, countdown - 1, 16)
         cpu.set_flag(CF, old_cf)        # DEC preserves CF.
+    s.ip = cpu.pop()
+
+
+def _object_row_addr_mode2_30d2(cpu) -> None:
+    """Mode-2 Tandy row-address target reached through 1010:5A36 -> 1010:30D2."""
+    s = cpu.s
+    ss = s.ss & 0xFFFF
+    ds = s.ds & 0xFFFF
+    bp = s.bp & 0xFFFF
+
+    y = cpu.mem.rw(ss, (bp + 0x02) & 0xFFFF)
+    s.bx = y
+    _cmp_word(cpu, y, 0x00E0)
+    if y >= 0x00E0:
+        s.ax = 0xFFFF
+        s.ip = cpu.pop()
+        return
+
+    s.bx = cpu.shift(4, y, 1, 16)  # SHL BX,1
+    row_base = cpu.mem.rw(ds, (s.bx + 0x99C8) & 0xFFFF)
+    s.bx = row_base
+    _cmp_word(cpu, row_base, 0xFFFF)
+    if row_base == 0xFFFF:
+        s.ax = 0xFFFF
+        s.ip = cpu.pop()
+        return
+
+    x = cpu.mem.rw(ss, (bp + 0x04) & 0xFFFF)
+    s.ax = x
+    cpu.mem.ww(ss, (bp + 0x12) & 0xFFFF, 0)
+    s.ax = cpu.shift(5, s.ax, 1, 16)  # SHR AX,1
+    _add_reg16(cpu, 0, row_base)      # ADD AX,BX
+
+    countdown = cpu.mem.rw(ss, (bp + 0x24) & 0xFFFF)
+    _cmp_word(cpu, countdown, 0)
+    if countdown != 0:
+        old_cf = cpu.get_flag(CF)
+        result = (countdown - 1) & 0xFFFF
+        cpu.mem.ww(ss, (bp + 0x24) & 0xFFFF, result)
+        cpu.set_sub_flags(countdown, 1, countdown - 1, 16)
+        cpu.set_flag(CF, old_cf)      # DEC preserves CF.
     s.ip = cpu.pop()
 
 

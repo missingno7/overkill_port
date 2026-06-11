@@ -1,5 +1,48 @@
 # Runtime findings after the second RE pass
 
+## Checkpoint 28 — Tandy first-level gameplay block hooks
+
+Profiling from `artifacts/snapshot_play_tandy_20260611_152751` showed the next
+Tandy gameplay heat was no longer startup decode, but mode-2 object sprite/copy
+blocks plus object dispatch glue.  The clean Tandy-specific blocks are now
+hooked and verified:
+
+- `1010:2F81 overkill_tandy_masked_sprite_composite_2f81`
+- `1010:2E6E overkill_tandy_masked_sprite_composite_2e6e`
+- `1010:34C5 overkill_tandy_strided_copy_34c5`
+- `1010:35AA overkill_tandy_source_strided_copy_35aa`
+- `1010:34D8 overkill_tandy_small_strided_copy_34d8`
+- `1010:35CC overkill_tandy_draw_object_block_35cc`
+
+The existing `1010:5A36` row-address dispatch hook now also folds in mode 2
+(`1010:30D2`).  Mode 2 maps `SS:[BP+02]` Y through the row table at
+`DS:99C8`, rejects `Y >= 00E0h` and `FFFF` row entries by returning `AX=FFFF`,
+stores zero to `SS:[BP+12]`, adds `X >> 1`, and optionally decrements
+`SS:[BP+24]`.  The verifier metadata for `5A36` now treats modes 0/1/2 as
+caller-return hooks; unknown modes still dispatch to the original table target.
+
+`1010:35CC` is the first larger composed Tandy draw hook in this group.  It
+mirrors the original `CALL 5A36` stack scratch, uses the verified row-address
+hook internally, stores `SS:[BP+0C]`, applies the work-buffer base at `DS:234C`,
+loads `ES=CS:[9596]` and `DS=CS:[9598]`, then copies 16 rows of four words while
+advancing `SI` by `0060h` after each row.  Its companion `1010:34D8` handles the
+present-side fixed block: `DI=FFFF` returns immediately, otherwise it copies 16
+rows of four words and advances `DI` by `0060h` after each row.  A live verifier
+run caught and corrected an initial synthetic-test mistake around the final
+`ADD DI,BX` in `34D8`.
+
+Verification added interpreted-ASM oracle tests for all new Tandy gameplay hooks,
+including DF-sensitive fixed-copy cases and the composed `35CC -> 5A36 -> 30D2`
+path.  Live verification from the Tandy first-level snapshot covered 2,000 mixed
+calls across `2F81/2E6E/34C5/35AA/5A36`, 500 real `34D8` calls, and 1,500 mixed
+`35CC/34D8/5A36` calls with no divergence.
+
+After these hooks, the remaining real interpreted heat in a 3M-step Tandy
+first-level profile has shifted toward shared gameplay/object code:
+`1010:AA2B`, `1010:EFAE`, `1010:BC4E`/`BCxx`, and smaller draw target work around
+`1010:768E`.  Those should be characterized as call families before lifting; the
+Tandy-specific sprite-copy plumbing is no longer the main interpreted island.
+
 ## Checkpoint 27 — Tandy default and `1010:33B2` startup expander
 
 Tandy is now the default interactive/profile mode (`scripts/play.py` and

@@ -1,3 +1,56 @@
+# Run status — checkpoint 28
+
+Validated on `assets/OVERKILL.UNLZEXE.EXE`. Current Tandy gameplay snapshot:
+`artifacts/snapshot_play_tandy_20260611_152751`.
+
+This pass continued from the Tandy first-level snapshot and lifted the next
+highest-impact verified Tandy gameplay blocks, favoring parent/block-level hooks
+over tiny leaves.
+
+## Tandy gameplay hooks
+
+Added verified hooks:
+
+- `1010:2F81 overkill_tandy_masked_sprite_composite_2f81`
+- `1010:2E6E overkill_tandy_masked_sprite_composite_2e6e`
+- `1010:34C5 overkill_tandy_strided_copy_34c5`
+- `1010:35AA overkill_tandy_source_strided_copy_35aa`
+- `1010:34D8 overkill_tandy_small_strided_copy_34d8`
+- `1010:35CC overkill_tandy_draw_object_block_35cc`
+
+Also folded the Tandy mode-2 row-address target `1010:30D2` into the existing
+`1010:5A36` dispatch hook, so mode 0/1/2 now return at the caller boundary while
+unknown modes still dispatch to the original table target.
+
+`35CC` is deliberately a composed parent hook: it calls the verified `5A36`
+row-address replacement internally, mirrors the original `CALL 5A36` stack
+scratch, then performs the Tandy source-strided copy as one routine.
+
+## Verification
+
+- Added interpreted-ASM oracle tests for all new Tandy gameplay hooks, including
+  the composed `35CC -> 5A36 -> 30D2` path.
+- Live hook verifier from `snapshot_play_tandy_20260611_152751` covered:
+  - `2F81/2E6E/34C5/35AA/5A36`: 2,000 mixed real calls, no divergence.
+  - `34D8`: 500 real calls, no divergence.
+  - `35CC/34D8/5A36`: 1,500 mixed real calls, no divergence.
+
+## Current profile shape
+
+`python scripts/profile_hotspots.py 3000000 --video tandy --snapshot artifacts\snapshot_play_tandy_20260611_152751 --top 35`
+now shows the Tandy-specific sprite/copy work as hooks. The remaining real
+interpreted heat has shifted toward shared object/gameplay logic:
+
+- `1010:AA2B` dispatch/helper path
+- `1010:EFAE` object routine dispatcher
+- `1010:BC4E` / `BCxx` shared gameplay paths
+- smaller draw target work around `1010:768E`
+
+Those are the next best candidates, but they should be lifted only after their
+entry/exit contracts and call families are characterized.
+
+---
+
 # Run status — checkpoint 27
 
 Validated on `assets/OVERKILL.UNLZEXE.EXE`.  Local pytest-free runner:

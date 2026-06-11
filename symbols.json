@@ -77,6 +77,41 @@
     "notes": "Tandy packed-pixel helper used by 33DD. ROR/RCL interleaves AL/AH/DL/DH into CL and optionally computes CH mask bytes against CS:[0000] when CS:[0BD6] is nonzero. No EGA colour remap table.",
     "status": "understood as part of 33DD/33B2 hook"
   },
+  "1010:2E6E": {
+    "name": "overkill_tandy_masked_sprite_composite_2e6e",
+    "notes": "Mode-2 eight-word masked sprite compositor. For each row it reads mask/data word pairs from DS:SI and writes dest=(dest & mask)|data to ES:DI, then advances DI by 0058h. Restores DS from CS:[9596] and RETs. Verified against interpreted ASM and live Tandy gameplay calls.",
+    "status": "replaced"
+  },
+  "1010:2F81": {
+    "name": "overkill_tandy_masked_sprite_composite_2f81",
+    "notes": "Mode-2 four-word masked sprite compositor. Same shape as 2E6E with four destination words per row and row advance 0060h. Hottest Tandy first-level sprite composite target; verified against interpreted ASM and live hook verifier.",
+    "status": "replaced"
+  },
+  "1010:30D2": {
+    "name": "tandy_object_row_addr_target_30d2",
+    "notes": "Mode-2 target reached through 1010:5A36. Maps SS:[BP+02]/SS:[BP+04] to a Tandy work-buffer row address via DS:99C8, stores zero to SS:[BP+12], uses X>>1, returns AX=FFFF for out-of-range/FFFF rows, and optionally decrements SS:[BP+24]. Folded into the verified 5A36 dispatch hook.",
+    "status": "replaced as part of 1010:5A36"
+  },
+  "1010:34C5": {
+    "name": "overkill_tandy_strided_copy_34c5",
+    "notes": "Mode-2 16-row, eight-word DI-strided copy helper. Sets BX=0058/CX=0010, copies eight words per row from DS:SI to ES:DI, advances DI by 0058h after each row, restores DS from CS:[9596], and RETs. Verified against interpreted ASM and live gameplay calls.",
+    "status": "replaced"
+  },
+  "1010:34D8": {
+    "name": "overkill_tandy_small_strided_copy_34d8",
+    "notes": "Mode-2 present-side fixed block reached from 5A92. If DI=FFFF it returns after CMP; otherwise copies 16 rows of four words from DS:SI to ES:DI and advances DI by 0060h after every row. Live verifier caught the final ADD DI,BX flag/DI effect; hook and oracle now match.",
+    "status": "replaced"
+  },
+  "1010:35AA": {
+    "name": "overkill_tandy_source_strided_copy_35aa",
+    "notes": "Mode-2 source-strided object copy. Loads ES=CS:[9596], DS=CS:[9598], copies 16 rows of eight words, advances SI by 0058h after each row, restores DS from CS:[9596], and RETs. Verified against interpreted ASM and live gameplay calls.",
+    "status": "replaced"
+  },
+  "1010:35CC": {
+    "name": "overkill_tandy_draw_object_block_35cc",
+    "notes": "Mode-2 draw-side parent block reached from 5AC8. Calls the verified 5A36 row-address hook internally while preserving CALL stack scratch, stores SS:[BP+0C], adds DS:[234C], loads ES=CS:[9596]/DS=CS:[9598], then copies 16 rows of four words advancing SI by 0060h after each row. Verified as a composed parent hook against interpreted ASM and live gameplay calls.",
+    "status": "replaced"
+  },
   "1010:41DA": {
     "name": "overkill_linear_rows_to_work_buffer_41da",
     "notes": "Row-copy routine selected via 5A5A table. Verified hook matches interpreted ASM for captured zero-row/zero-width call. Diagnostic guard now stops on suspicious rows=65536,width=FECE case at DS:SI=7000:550C instead of burning enormous time; this is evidence of either a later data/control-flow issue or an unhandled convention, not treated as understood gameplay logic.",
