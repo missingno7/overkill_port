@@ -32,6 +32,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from overkill_port.runtime import create_runtime  # noqa: E402
+from overkill_port.snapshot import load_snapshot  # noqa: E402
 
 # Present/frame-boundary hooks: time spent here is "graphics/present", not the
 # interpreter or asset-decode work we are trying to speed up.
@@ -55,6 +56,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("steps", nargs="?", type=int, default=3_000_000,
                    help="max interpreted steps to profile (default 3,000,000)")
     p.add_argument("--video", choices=("cga", "ega", "tandy"), default="cga")
+    p.add_argument("--snapshot", default=None,
+                   help="resume profiling from a saved runtime snapshot directory")
     p.add_argument("--stop-at", default=None, help="stop early at CS:IP, e.g. 1010:475A")
     p.add_argument("--top", type=int, default=25, help="how many rows to print")
     args = p.parse_args(argv)
@@ -64,11 +67,16 @@ def main(argv: list[str] | None = None) -> int:
         cs, ip = args.stop_at.split(":")
         stop_at = (int(cs, 16) & 0xFFFF, int(ip, 16) & 0xFFFF)
 
-    rt = create_runtime(
-        ROOT / "assets" / "OVERKILL.UNLZEXE.EXE",
-        game_root=ROOT / "assets",
-        command_tail=VIDEO_TAIL[args.video],
-    )
+    exe = ROOT / "assets" / "OVERKILL.UNLZEXE.EXE"
+    assets = ROOT / "assets"
+    if args.snapshot:
+        rt = load_snapshot(exe, args.snapshot, game_root=assets)
+    else:
+        rt = create_runtime(
+            exe,
+            game_root=assets,
+            command_tail=VIDEO_TAIL[args.video],
+        )
     cpu = rt.cpu
     cpu.trace_enabled = False
 

@@ -2018,6 +2018,164 @@ def test_masked_sprite_composite_3849_hook_matches_interpreted_asm():
     assert asm.mem.data == hook.mem.data
 
 
+def test_ega_spaced_word_composite_1aeb_hook_matches_interpreted_asm():
+    import random
+    from overkill_port.replacements import overkill_ega_spaced_word_composite_1aeb
+
+    code = bytes.fromhex(
+        '26 8b 05 23 04 0b 44 02 26 89 05 83 c7 1a'
+        '26 8b 05 23 04 0b 44 04 26 89 05 83 c7 1a'
+        '26 8b 05 23 04 0b 44 06 26 89 05 83 c7 1a'
+        '26 8b 05 23 04 0b 44 08 26 89 05 83 c7 1a'
+        '83 c6 0a e2 c3 2e 8e 1e 96 95 c3'
+    )
+
+    def make_cpu(use_hook: bool, rows: int, seed: int):
+        rnd = random.Random(seed)
+        mem = Memory()
+        mem.load(0x1010, 0x1AEB, code)
+        mem.ww(0x1010, 0x9596, 0x2222)
+        ds, es = 0x3000, 0x4000
+        si, di = 0x0100, 0x0200
+        for i in range(rows * 0x0A + 0x20):
+            mem.wb(ds, (si + i) & 0xFFFF, rnd.randrange(256))
+        for i in range(rows * 0x68 + 0x40):
+            mem.wb(es, (di + i) & 0xFFFF, rnd.randrange(256))
+        state = CPUState(
+            ax=rnd.randrange(0x10000), bx=0x1111, cx=rows, dx=0x2222,
+            si=si, di=di, bp=0x3333, sp=0x9000, cs=0x1010, ds=ds, es=es,
+            ss=0x5000, ip=0x1AEB, flags=0x0287,
+        )
+        cpu = CPU8086(mem, state)
+        cpu.trace_enabled = False
+        cpu.push(0xBEEF)
+        if use_hook:
+            cpu.replacement_hooks[(0x1010, 0x1AEB)] = overkill_ega_spaced_word_composite_1aeb
+        return cpu
+
+    for rows in (1, 2, 8, 17):
+        asm = make_cpu(False, rows, rows)
+        hook = make_cpu(True, rows, rows)
+        for _ in range(5000):
+            if asm.addr() == (0x1010, 0xBEEF):
+                break
+            asm.step()
+        hook.step()
+        assert asm.addr() == hook.addr() == (0x1010, 0xBEEF)
+        assert asm.s.snapshot() == hook.s.snapshot()
+        assert asm.mem.data == hook.mem.data
+
+
+def test_ega_spaced_copy_29c6_hook_matches_interpreted_asm():
+    import random
+    from overkill_port.replacements import overkill_ega_spaced_copy_29c6
+
+    code = bytes.fromhex(
+        '83 ff ff 75 01 c3 bb 17 00 b9 10 00'
+        'a5 a4 03 fb a5 a4 03 fb a5 a4 03 fb a5 a4 03 fb e2 ee c3'
+    )
+
+    def make_cpu(use_hook: bool, *, di: int, seed: int):
+        rnd = random.Random(seed)
+        mem = Memory()
+        mem.load(0x1010, 0x29C6, code)
+        ds, es = 0x3000, 0x4000
+        si = 0x0100
+        for i in range(16 * 4 * 3 + 0x20):
+            mem.wb(ds, (si + i) & 0xFFFF, rnd.randrange(256))
+        for i in range(16 * 0x68 + 0x80):
+            mem.wb(es, (0x0200 + i) & 0xFFFF, rnd.randrange(256))
+        state = CPUState(
+            ax=rnd.randrange(0x10000), bx=0xAAAA, cx=0xBBBB, dx=0xCCCC,
+            si=si, di=di, bp=0xDDDD, sp=0x9000, cs=0x1010, ds=ds, es=es,
+            ss=0x5000, ip=0x29C6, flags=0x0287,
+        )
+        cpu = CPU8086(mem, state)
+        cpu.trace_enabled = False
+        cpu.push(0xBEEF)
+        if use_hook:
+            cpu.replacement_hooks[(0x1010, 0x29C6)] = overkill_ega_spaced_copy_29c6
+        return cpu
+
+    for di in (0x0200, 0x1234, 0xFFFF):
+        asm = make_cpu(False, di=di, seed=di)
+        hook = make_cpu(True, di=di, seed=di)
+        for _ in range(5000):
+            if asm.addr() == (0x1010, 0xBEEF):
+                break
+            asm.step()
+        hook.step()
+        assert asm.addr() == hook.addr() == (0x1010, 0xBEEF)
+        assert asm.s.snapshot() == hook.s.snapshot()
+        assert asm.mem.data == hook.mem.data
+
+
+def test_ega_source_spaced_copy_2ab9_hook_matches_interpreted_asm():
+    import random
+    from overkill_port.replacements import overkill_ega_source_spaced_copy_2ab9
+
+    code_2ab9 = bytes.fromhex(
+        'e8 7a 2f 89 46 0c 3d ff ff 75 01 c3 03 06 4c 23'
+        '89 46 0c 8b f0 8b 7e 0e 2e 8e 06 96 95 2e 8e 1e 98 95'
+        'bb 17 00 b9 10 00'
+        'a5 a4 03 f3 a5 a4 03 f3 a5 a4 03 f3 a5 a4 03 f3'
+        'e2 ee 2e 8e 1e 96 95 c3'
+    )
+    code_5a36 = bytes.fromhex('2e 8b 1e bc 95 d1 e3 2e ff a7 42 5a')
+    code_2580 = bytes.fromhex(
+        '8b 5e 02 81 fb e0 00 73 29 d1 e3 8b 9f c8 99 83 fb ff 74 1e'
+        '8b 46 04 8b c8 83 e1 07 89 4e 12 d1 e8 d1 e8 d1 e8 03 c3'
+        '83 7e 24 00 75 01 c3 ff 4e 24 c3 b8 ff ff c3'
+    )
+
+    def make_cpu(use_hook: bool, *, y: int, row_word: int, seed: int):
+        rnd = random.Random(seed)
+        mem = Memory()
+        mem.load(0x1010, 0x2AB9, code_2ab9)
+        mem.load(0x1010, 0x5A36, code_5a36)
+        mem.load(0x1010, 0x2580, code_2580)
+        mem.ww(0x1010, 0x95BC, 1)
+        mem.ww(0x1010, 0x5A44, 0x2580)
+        mem.ww(0x1010, 0x9596, 0x4000)
+        mem.ww(0x1010, 0x9598, 0x6000)
+        row_ds = 0x3000
+        ss = 0x5000
+        bp = 0x0800
+        mem.ww(row_ds, 0x234C, 0x0100)
+        mem.ww(row_ds, 0x99C8 + ((y << 1) & 0xFFFF), row_word)
+        mem.ww(ss, bp + 0x02, y)
+        mem.ww(ss, bp + 0x04, 0x0039)
+        mem.ww(ss, bp + 0x0E, 0x0200)
+        mem.ww(ss, bp + 0x24, 3)
+        source_start = (row_word + 0x0100 + (0x0039 >> 3)) & 0xFFFF
+        for i in range(16 * 0x68 + 0x80):
+            mem.wb(0x6000, (source_start + i) & 0xFFFF, rnd.randrange(256))
+            mem.wb(0x4000, (0x0200 + i) & 0xFFFF, rnd.randrange(256))
+        state = CPUState(
+            ax=rnd.randrange(0x10000), bx=0xAAAA, cx=0xBBBB, dx=0xCCCC,
+            si=0x1111, di=0x2222, bp=bp, sp=0x9000, cs=0x1010, ds=row_ds,
+            es=0x7777, ss=ss, ip=0x2AB9, flags=0x0287,
+        )
+        cpu = CPU8086(mem, state)
+        cpu.trace_enabled = False
+        cpu.push(0xBEEF)
+        if use_hook:
+            cpu.replacement_hooks[(0x1010, 0x2AB9)] = overkill_ega_source_spaced_copy_2ab9
+        return cpu
+
+    for y, row_word in ((0x20, 0x1800), (0xE0, 0x1800), (0x30, 0xFFFF)):
+        asm = make_cpu(False, y=y, row_word=row_word, seed=y ^ row_word)
+        hook = make_cpu(True, y=y, row_word=row_word, seed=y ^ row_word)
+        for _ in range(10000):
+            if asm.addr() == (0x1010, 0xBEEF):
+                break
+            asm.step()
+        hook.step()
+        assert asm.addr() == hook.addr() == (0x1010, 0xBEEF)
+        assert asm.s.snapshot() == hook.s.snapshot()
+        assert asm.mem.data == hook.mem.data
+
+
 def test_sprite_copy_469f_hook_matches_interpreted_asm():
     from overkill_port.replacements import overkill_sprite_copy_9x16_469f
 

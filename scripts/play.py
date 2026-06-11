@@ -20,8 +20,9 @@ Threading model (CPython GIL keeps this safe):
     wakes the emulator so the next frame can execute; key events go through a
     frame-accurate KeyDispatcher.
 
-Controls: Q/A/O/P move, Z or Space fire (the game's own scheme), Esc quits.  Any
-other key is forwarded too (full keyboard), in case a screen wants it.
+Controls: Q/A/O/P move, Z or Space fire (the game's own scheme), F12 saves a
+runtime snapshot, Esc quits.  Any other key is forwarded too (full keyboard), in
+case a screen wants it.
 
 Run:
     python scripts/play.py [--video cga|ega|tandy] [--game-hz 30] [--fps 30] [--palette 1h] [--scale 2]
@@ -29,6 +30,8 @@ Run:
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
+from queue import Empty, SimpleQueue
 import sys
 import tempfile
 import threading
@@ -44,7 +47,7 @@ from overkill_port.interrupts import deliver_scancode
 from overkill_port.keyboard import KeyDispatcher
 from overkill_port.hook_verify import HookVerifierConfig, install_hook_verifier, parse_addr as parse_verify_addr
 from overkill_port.runtime import create_runtime
-from overkill_port.snapshot import load_snapshot
+from overkill_port.snapshot import load_snapshot, write_snapshot
 from overkill_port.memory import EGA_APERTURE, EGA_SHADOW_SIZE
 from render_cga import CGA_PALETTES, render_ppm, render_ega_ppm, render_tandy_ppm
 
@@ -58,19 +61,11 @@ B800_SIZE = 0x4000
 A000_BASE = EGA_APERTURE
 TANDY_SIZE = 0x8000
 
-# These hooks were added during the last performance pass and are not yet safe
-# enough for the interactive player.  In particular, the starfield/menu dirty
-# update path can leave trails when one of these lifted routines is even slightly
-# off.  Keep them available for oracle tests and profiling, but default play.py
-# back to the interpreted ASM until the live regression is understood.
-UNSAFE_INTERACTIVE_HOOKS = set()
 # 58DF is verified for CGA and is important for collapsing post-copy/retrace
 # loading bursts on the planet/difficulty selection screen.  Keep it enabled for
-# default CGA play, but remove it below for EGA/Tandy unless --unsafe-render-hooks
-# is requested because that lifted loop is currently mode-0-only.  The CCAA/CCC4/
-# CCF0 dirty-copy helpers are now left enabled again: their earlier suspicion was
-# downstream of the old EGA shadow-plane aliasing, and disabling them made menu /
-# level-select transitions much slower.
+# default CGA play, but remove it below for EGA/Tandy because that lifted loop is
+# currently mode-0-only.  The CCAA/CCC4/CCF0 dirty-copy helpers are left enabled:
+# their earlier suspicion was downstream of the old EGA shadow-plane aliasing.
 NON_CGA_INTERACTIVE_DISABLE = {
     (0x1010, 0x58DF),
 }
@@ -199,8 +194,8 @@ def main(argv: list[str] | None = None) -> int:
                    help="max interpreted steps to wait for one frame before reporting a stall")
     p.add_argument("--snapshot", default=None,
                    help="load a saved snapshot dir to skip the ~11s asset-decode bootstrap")
-    p.add_argument("--unsafe-render-hooks", action="store_true",
-                   help="enable newest lifted render/dirty hooks; off by default because they currently ghost the starfield")
+    p.add_argument("--save-snapshot-root", default=str(ROOT / "artifacts"),
+                   help="root directory for F12 runtime snapshots")
     p.add_argument("--no-present-sync", action="store_true",
                    help="debug only: do not wait for Tk to consume each timer-frame snapshot")
     p.add_argument("--retrace-hz", type=float, default=None,
@@ -274,11 +269,8 @@ def main(argv: list[str] | None = None) -> int:
             ),
         )
 
-    if not args.unsafe_render_hooks:
-        disabled_hooks = set(UNSAFE_INTERACTIVE_HOOKS)
-        if args.video != "cga":
-            disabled_hooks.update(NON_CGA_INTERACTIVE_DISABLE)
-        for key in disabled_hooks:
+    if args.video != "cga":
+        for key in NON_CGA_INTERACTIVE_DISABLE:
             rt.cpu.replacement_hooks.pop(key, None)
             rt.cpu.hook_names.pop(key, None)
 
@@ -355,15 +347,21 @@ def main(argv: list[str] | None = None) -> int:
         return zlib.crc32(data[video_base:video_base + video_size]) & 0xFFFFFFFF
 
     def publish_video_if_changed(cpu, *, force: bool = False) -> bool:
-        crc = video_crc(cpu)
         raw_display_start = cpu.mem.ega_display_start if args.video == "ega" else 0
         display_start = ega_render_start(raw_display_start) if args.video == "ega" else 0
-        visible_key = (crc, display_start)
-        if not force and last_video_crc["value"] == visible_key:
-            return False
+        crc: int | None = None
+        if force and not (args.ega_log_starts and args.video == "ega"):
+            visible_key = (visible["n"] + 1, display_start)
+        else:
+            crc = video_crc(cpu)
+            visible_key = (crc, display_start)
+            if not force and last_video_crc["value"] == visible_key:
+                return False
         last_video_crc["value"] = visible_key
         visible["n"] += 1
         if args.ega_log_starts and args.video == "ega":
+            if crc is None:
+                crc = video_crc(cpu)
             print(
                 f"EGA publish visible={visible['n']} blits={blits['n']} "
                 f"raw_start={raw_display_start:04X} render_start={display_start:04X} "
@@ -371,7 +369,13 @@ def main(argv: list[str] | None = None) -> int:
                 flush=True,
             )
         if not args.no_present_sync:
-            frame_sync.publish_and_wait(cpu.mem.data, display_start=display_start)
+            if args.video == "ega":
+                frame_sync.publish_and_wait(
+                    memoryview(cpu.mem.data)[video_base:video_base + video_size],
+                    display_start=display_start,
+                )
+            else:
+                frame_sync.publish_and_wait(cpu.mem.data, display_start=display_start)
         return True
 
     def stop_cpu_burst() -> None:
@@ -435,10 +439,30 @@ def main(argv: list[str] | None = None) -> int:
     keyboard = KeyDispatcher(lambda sc: deliver_scancode(rt, sc))
     stop = threading.Event()
     status = {"text": ""}
+    snapshot_requests: SimpleQueue[Path] = SimpleQueue()
+
+    def queue_snapshot_save() -> None:
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        out = Path(args.save_snapshot_root) / f"snapshot_play_{args.video}_{stamp}"
+        snapshot_requests.put(out)
+        status["text"] = f"snapshot queued: {out}"
 
     def emulator_loop() -> None:
         while not stop.is_set():
             try:
+                try:
+                    out = snapshot_requests.get_nowait()
+                except Empty:
+                    out = None
+                if out is not None:
+                    write_snapshot(
+                        rt,
+                        out,
+                        status="interactive F12 snapshot",
+                        steps=rt.cpu.instruction_count,
+                        trace_tail=(),
+                    )
+                    status["text"] = f"snapshot saved: {out}"
                 keyboard.pump()  # frame-accurate key make/break delivery
                 target = boundary["n"] + 1
                 used = 0
@@ -474,6 +498,9 @@ def main(argv: list[str] | None = None) -> int:
         if event.keysym == "Escape":
             stop.set()
             root.destroy()
+            return
+        if event.keysym == "F12":
+            queue_snapshot_save()
             return
         sc = scancode_for(event)
         if sc is not None:

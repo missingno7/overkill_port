@@ -2129,6 +2129,143 @@ def overkill_masked_sprite_composite_3849(cpu):
     s.ip = cpu.pop()
 
 
+@registry.replace(0x1010, 0x1AEB, "overkill_ega_spaced_word_composite_1aeb")
+def overkill_ega_spaced_word_composite_1aeb(cpu):
+    """Replace the hot EGA spaced-word composite loop at 1010:1AEB.
+
+    Each row updates four words separated by 1Ah bytes in ES.  Source words are
+    laid out as one mask word followed by four data words.  The original
+    restores DS from CS:[9596] and returns near after the loop.
+    """
+    s = cpu.s
+    mem = cpu.mem
+    rows = s.cx & 0xFFFF
+    if rows == 0:
+        rows = 0x10000
+
+    ds = s.ds & 0xFFFF
+    es = s.es & 0xFFFF
+    si = s.si & 0xFFFF
+    di = s.di & 0xFFFF
+    ax = s.ax & 0xFFFF
+    old_si = si
+
+    for _ in range(rows):
+        row_si = si
+        mask = mem.rw(ds, row_si)
+        for data_off in (2, 4, 6, 8):
+            ax = (mem.rw(es, di) & mask) | mem.rw(ds, (row_si + data_off) & 0xFFFF)
+            mem.ww(es, di, ax)
+            di = (di + 0x1A) & 0xFFFF
+        old_si = si
+        si = (si + 0x0A) & 0xFFFF
+
+    cpu.set_add_flags(old_si, 0x0A, old_si + 0x0A, 16)
+    s.ax = ax & 0xFFFF
+    s.si = si
+    s.di = di
+    s.cx = 0
+    s.ds = mem.rw(s.cs & 0xFFFF, 0x9596)
+    s.ip = cpu.pop()
+
+
+@registry.replace(0x1010, 0x29C6, "overkill_ega_spaced_copy_29c6")
+def overkill_ega_spaced_copy_29c6(cpu):
+    """Replace the hot EGA 16-row spaced copy routine at 1010:29C6.
+
+    If DI is FFFFh the original returns immediately.  Otherwise it copies four
+    3-byte chunks per row for 16 rows, spacing destination chunks by 1Ah bytes.
+    """
+    s = cpu.s
+    mem = cpu.mem
+    _cmp_word(cpu, s.di & 0xFFFF, 0xFFFF)
+    if (s.di & 0xFFFF) == 0xFFFF:
+        s.ip = cpu.pop()
+        return
+
+    ds = s.ds & 0xFFFF
+    es = s.es & 0xFFFF
+    si = s.si & 0xFFFF
+    di = s.di & 0xFFFF
+    s.bx = 0x0017
+    old_di = di
+
+    for _row in range(16):
+        for _col in range(4):
+            mem.ww(es, di, mem.rw(ds, si))
+            si = (si + 2) & 0xFFFF
+            di = (di + 2) & 0xFFFF
+            mem.wb(es, di, mem.rb(ds, si))
+            si = (si + 1) & 0xFFFF
+            di = (di + 1) & 0xFFFF
+            old_di = di
+            di = (di + 0x0017) & 0xFFFF
+
+    cpu.set_add_flags(old_di, 0x0017, old_di + 0x0017, 16)
+    s.si = si
+    s.di = di
+    s.cx = 0
+    s.ip = cpu.pop()
+
+
+@registry.replace(0x1010, 0x2AB9, "overkill_ega_source_spaced_copy_2ab9")
+def overkill_ega_source_spaced_copy_2ab9(cpu):
+    """Replace EGA object draw copy routine at 1010:2AB9.
+
+    The original calls the mode-specific 5A36 row-address helper, then copies
+    four 3-byte chunks per row for 16 rows, spacing source chunks by 1Ah bytes.
+    """
+    s = cpu.s
+    mem = cpu.mem
+    ss = s.ss & 0xFFFF
+    bp = s.bp & 0xFFFF
+    cs = s.cs & 0xFFFF
+
+    _call_hook_like_near_call(cpu, _object_row_addr_mode1_2580, 0x2ABC)
+    if s.ip != 0x2ABC:
+        return
+    # CALL/RET leaves the final pushed return word in the scratch slot below SP.
+    mem.ww(ss, (s.sp - 2) & 0xFFFF, 0x2ABC)
+
+    mem.ww(ss, (bp + 0x0C) & 0xFFFF, s.ax)
+    _cmp_word(cpu, s.ax, 0xFFFF)
+    if (s.ax & 0xFFFF) == 0xFFFF:
+        s.ip = cpu.pop()
+        return
+
+    _add_reg16(cpu, 0, mem.rw(s.ds & 0xFFFF, 0x234C))
+    mem.ww(ss, (bp + 0x0C) & 0xFFFF, s.ax)
+    s.si = s.ax & 0xFFFF
+    s.di = mem.rw(ss, (bp + 0x0E) & 0xFFFF)
+    s.es = mem.rw(cs, 0x9596)
+    s.ds = mem.rw(cs, 0x9598)
+    s.bx = 0x0017
+
+    ds = s.ds & 0xFFFF
+    es = s.es & 0xFFFF
+    si = s.si & 0xFFFF
+    di = s.di & 0xFFFF
+    old_si = si
+
+    for _row in range(16):
+        for _col in range(4):
+            mem.ww(es, di, mem.rw(ds, si))
+            si = (si + 2) & 0xFFFF
+            di = (di + 2) & 0xFFFF
+            mem.wb(es, di, mem.rb(ds, si))
+            si = (si + 1) & 0xFFFF
+            di = (di + 1) & 0xFFFF
+            old_si = si
+            si = (si + 0x0017) & 0xFFFF
+
+    cpu.set_add_flags(old_si, 0x0017, old_si + 0x0017, 16)
+    s.si = si
+    s.di = di
+    s.cx = 0
+    s.ds = mem.rw(cs, 0x9596)
+    s.ip = cpu.pop()
+
+
 @registry.replace(0x1010, 0x469F, "overkill_sprite_copy_9x16_469f")
 def overkill_sprite_copy_9x16_469f(cpu):
     """Replace the hot 9-byte-wide by 16-row plain sprite copy at 1010:469F."""
@@ -3245,10 +3382,11 @@ def overkill_present_ega_frame_2750(cpu):
     The real routine writes the same A000h offsets four times while changing the
     EGA sequencer map-mask register (03C4h index 02h / 03C5h data 1,2,4,8).
     The memory model routes those CPU-visible A000h writes into the selected
-    shadow plane, so this hook must use ``Memory.ww`` rather than flat bytearray
-    slices.  The copied source bytes and register flow mirror the original
-    routine; this is deliberately only the final presenter, not a broad VGA/EGA
-    hardware emulator.
+    shadow plane.  The common A000 case copies directly into that selected
+    shadow plane; unusual geometry falls back through ``Memory.ww``.  The copied
+    source bytes and register flow mirror the original routine; this is
+    deliberately only the final presenter, not a broad VGA/EGA hardware
+    emulator.
     """
     cs = cpu.s.cs & 0xFFFF
     mem = cpu.mem
@@ -3268,6 +3406,7 @@ def overkill_present_ega_frame_2750(cpu):
     es_seg = cpu.s.es & 0xFFFF
     width = 0x001A
     words = width // 2
+    data = mem.data
 
     def set_present_map_mask() -> None:
         # Runtime executions update this via DOSMachine.port_write.  Synthetic
@@ -3275,6 +3414,21 @@ def overkill_present_ega_frame_2750(cpu):
         # known 03C5h map-mask writes locally too.
         mem.ega_planar = True
         mem.ega_map_mask = cpu.get_reg8(0) & 0x0F
+
+    def fast_copy_selected_plane(src: int, dst: int) -> bool:
+        mask = cpu.get_reg8(0) & 0x0F
+        if (not mem.ega_planar
+                or es_seg != 0xA000
+                or mask not in (0x01, 0x02, 0x04, 0x08)
+                or src + width > 0x10000
+                or dst + width > EGA_PLANE_WINDOW
+                or _ega_aperture_overlap(cpu.s.ds, src, width)):
+            return False
+        plane = (mask.bit_length() - 1) & 0x03
+        src_base = (((cpu.s.ds & 0xFFFF) << 4) + src) & 0xFFFFF
+        dst_base = EGA_APERTURE + plane * EGA_PLANE_STRIDE + dst
+        data[dst_base:dst_base + width] = data[src_base:src_base + width]
+        return True
 
     while True:
         cpu.set_reg8(0, 0x01)
@@ -3285,10 +3439,14 @@ def overkill_present_ega_frame_2750(cpu):
             # MOVS changes SI/DI/CX but not flags.
             src = cpu.s.si & 0xFFFF
             dst = cpu.s.di & 0xFFFF
-            for _ in range(words):
-                mem.ww(es_seg, dst, mem.rw(cpu.s.ds, src))
-                src = (src + 2) & 0xFFFF
-                dst = (dst + 2) & 0xFFFF
+            if fast_copy_selected_plane(src, dst):
+                src = (src + width) & 0xFFFF
+                dst = (dst + width) & 0xFFFF
+            else:
+                for _ in range(words):
+                    mem.ww(es_seg, dst, mem.rw(cpu.s.ds, src))
+                    src = (src + 2) & 0xFFFF
+                    dst = (dst + 2) & 0xFFFF
             cpu.s.si = src
             cpu.s.di = dst
             cpu.s.cx = 0
@@ -3922,6 +4080,9 @@ def overkill_cga_object_row_addr_5a36(cpu):
     mode = cpu.mem.rw(cs, 0x95BC)
     s.bx = mode & 0xFFFF
     s.bx = cpu.shift(4, s.bx, 1, 16)  # SHL BX,1 from the dispatch stub.
+    if mode == 1:
+        _object_row_addr_mode1_2580(cpu)
+        return
     if mode != 0:
         s.ip = cpu.mem.rw(cs, (0x5A42 + s.bx) & 0xFFFF)
         return
@@ -3953,6 +4114,52 @@ def overkill_cga_object_row_addr_5a36(cpu):
     s.cx &= 0x0003
     cpu.set_logic_flags(s.cx, 16)       # AND CX,0003h
     cpu.mem.ww(ss, (bp + 0x12) & 0xFFFF, s.cx)
+    s.ax = cpu.shift(5, s.ax, 1, 16)    # SHR AX,1
+    s.ax = cpu.shift(5, s.ax, 1, 16)    # SHR AX,1
+    _add_reg16(cpu, 0, row_base)        # ADD AX,BX
+
+    countdown = cpu.mem.rw(ss, (bp + 0x24) & 0xFFFF)
+    _cmp_word(cpu, countdown, 0)
+    if countdown != 0:
+        old_cf = cpu.get_flag(CF)
+        result = (countdown - 1) & 0xFFFF
+        cpu.mem.ww(ss, (bp + 0x24) & 0xFFFF, result)
+        cpu.set_sub_flags(countdown, 1, countdown - 1, 16)
+        cpu.set_flag(CF, old_cf)        # DEC preserves CF.
+    s.ip = cpu.pop()
+
+
+def _object_row_addr_mode1_2580(cpu) -> None:
+    """Mode-1 row-address target reached through 1010:5A36 -> 1010:2580."""
+    s = cpu.s
+    ss = s.ss & 0xFFFF
+    ds = s.ds & 0xFFFF
+    bp = s.bp & 0xFFFF
+
+    y = cpu.mem.rw(ss, (bp + 0x02) & 0xFFFF)
+    s.bx = y
+    _cmp_word(cpu, y, 0x00E0)
+    if y >= 0x00E0:
+        s.ax = 0xFFFF
+        s.ip = cpu.pop()
+        return
+
+    s.bx = cpu.shift(4, y, 1, 16)  # SHL BX,1
+    row_base = cpu.mem.rw(ds, (s.bx + 0x99C8) & 0xFFFF)
+    s.bx = row_base
+    _cmp_word(cpu, row_base, 0xFFFF)
+    if row_base == 0xFFFF:
+        s.ax = 0xFFFF
+        s.ip = cpu.pop()
+        return
+
+    x = cpu.mem.rw(ss, (bp + 0x04) & 0xFFFF)
+    s.ax = x
+    s.cx = x
+    s.cx &= 0x0007
+    cpu.set_logic_flags(s.cx, 16)       # AND CX,0007h
+    cpu.mem.ww(ss, (bp + 0x12) & 0xFFFF, s.cx)
+    s.ax = cpu.shift(5, s.ax, 1, 16)    # SHR AX,1
     s.ax = cpu.shift(5, s.ax, 1, 16)    # SHR AX,1
     s.ax = cpu.shift(5, s.ax, 1, 16)    # SHR AX,1
     _add_reg16(cpu, 0, row_base)        # ADD AX,BX

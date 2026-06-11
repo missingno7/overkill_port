@@ -22,6 +22,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+from functools import lru_cache
 import struct
 import sys
 import zlib
@@ -46,6 +47,16 @@ EGA_PALETTE = [
     (0x55, 0x55, 0x55), (0x55, 0x55, 0xFF), (0x55, 0xFF, 0x55), (0x55, 0xFF, 0xFF),
     (0xFF, 0x55, 0x55), (0xFF, 0x55, 0xFF), (0xFF, 0xFF, 0x55), (0xFF, 0xFF, 0xFF),
 ]
+
+
+@lru_cache(maxsize=65536)
+def _ega_quad_pixels(p0: int, p1: int, p2: int, p3: int, scale: int) -> bytes:
+    px = bytearray()
+    for bit in range(7, -1, -1):
+        colour = ((p0 >> bit) & 1) | (((p1 >> bit) & 1) << 1) | (((p2 >> bit) & 1) << 2) | (((p3 >> bit) & 1) << 3)
+        r, g, b = EGA_PALETTE[colour]
+        px += bytes((r, g, b)) * scale
+    return bytes(px)
 
 EGA_SHADOW_BASE = 0x100000
 EGA_PLANE_STRIDE = 0x10000
@@ -128,7 +139,10 @@ def render_ega_ppm(mem: bytes, seg: int = 0xA000, scale: int = 2, start_offset: 
     # A000h aperture so real offsets/pages such as A000:2000 cannot corrupt the
     # displayed plane shadows.  Fall back to the legacy in-aperture layout for
     # older saved byte snapshots.
-    if len(mem) >= EGA_SHADOW_BASE + EGA_PLANE_STRIDE * 4:
+    if len(mem) == EGA_PLANE_STRIDE * 4:
+        base = 0
+        plane_stride = EGA_PLANE_STRIDE
+    elif len(mem) >= EGA_SHADOW_BASE + EGA_PLANE_STRIDE * 4:
         base = EGA_SHADOW_BASE
         plane_stride = EGA_PLANE_STRIDE
     else:
@@ -143,14 +157,13 @@ def render_ega_ppm(mem: bytes, seg: int = 0xA000, scale: int = 2, start_offset: 
         line = bytearray()
         for xb in range(EGA_BYTES_PER_ROW):
             off = (row + xb) & 0xFFFF
-            p0 = data[base + off]
-            p1 = data[base + plane_stride + off]
-            p2 = data[base + plane_stride * 2 + off]
-            p3 = data[base + plane_stride * 3 + off]
-            for bit in range(7, -1, -1):
-                colour = ((p0 >> bit) & 1) | (((p1 >> bit) & 1) << 1) | (((p2 >> bit) & 1) << 2) | (((p3 >> bit) & 1) << 3)
-                r, g, b = EGA_PALETTE[colour]
-                line += bytes((r, g, b)) * scale
+            line += _ega_quad_pixels(
+                data[base + off],
+                data[base + plane_stride + off],
+                data[base + plane_stride * 2 + off],
+                data[base + plane_stride * 3 + off],
+                scale,
+            )
         out += line * scale
     return width * scale, height * scale, bytes(out)
 

@@ -594,11 +594,10 @@ unpaced turbo mode even with `--fps 30 --game-hz 30`.
 - real-time sleeping is done only at present time, not from the modeled
   `1010:0679` timer flag hook, avoiding ordering-dependent double/missed pacing.
 
-The newest interactive-risk render hooks (`1010:41A6`, `1010:4D15`,
-`1010:CCAA`, `1010:CCC4`, `1010:CCF0`) are disabled by default in `play.py`
-because the live starfield/menu path showed ghosting/trailing.  They remain in
-`replacements.py` for oracle tests/profiling and can be re-enabled with
-`--unsafe-render-hooks`.
+This note is historical: the later EGA shadow-plane and present/page-flip fixes
+explained the observed ghosting better than those hooks.  `play.py` no longer
+has an `--unsafe-render-hooks` mode.  The only interactive-mode hook suppression
+left is `1010:58DF` for non-CGA, because that lifted loop is mode-0-specific.
 
 ### 2026-06-10 interactive player regression fix 2: sync on the timer frame, not the blit
 
