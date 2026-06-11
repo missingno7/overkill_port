@@ -40,6 +40,7 @@ _SIG_280D = bytes.fromhex("2e 8b 0e 9c 5b ac 2e 88 05 47 e2 f9 2e 2b 3e 9c")
 _SIG_2824 = bytes.fromhex("bf f4 5a 2e 8b 0e 9c 5b 51 2e 8a 05 2e 8a 65 28")
 _SIG_291C = bytes.fromhex("51 2e 8a 05 47 57 2e 8b 3e a6 5b aa 2e 89 3e a6")
 _SIG_2932 = bytes.fromhex("2e c6 06 a0 5b 00 2e 8b 1e 9c 5b 8a 04 8a 20 d1")
+_SIG_33B2 = bytes.fromhex("75 03 e9 f3 10 2e 8b 0e 9e 5b 51 2e 8b 0e 9c")
 _SIG_58DF = bytes.fromhex("51 2e 89 0e 01 59 2e 8b 1e bc 95 d1 e3 2e ff 97")
 _SIG_CCAA = bytes.fromhex("b9 08 00 26 8b 04 26 3b 05 74 05 b2 01 26 89 05")
 _SIG_CCC4 = bytes.fromhex("b9 08 00 26 8b 04 26 3b 05 74 05 b2 01 26 89 05")
@@ -504,6 +505,139 @@ def overkill_expand_4plane_block_4511(cpu):
 
     s.cx = 0
     s.ip = 0x450C
+
+
+def _tandy_cell_33dd_core(cpu) -> None:
+    """Fast lifted body of one 1010:33DD Tandy source cell expansion.
+
+    The original calls 344B four times.  Each call rotates two bits from
+    DH/DL/AH/AL into CL, optionally masks transparent nibbles into CH, and then
+    33DD stores the four CL/CH pairs as two Tandy packed words.  At the 33DD
+    boundary all rotate/transparency-test flags have been overwritten by the
+    final ``CMP CS:[0BD6],0``, so this can use direct bit arithmetic while still
+    matching interpreted ASM at the hook continuation.
+    """
+    s = cpu.s
+    mem = cpu.mem
+    rb, rw, wb = mem.rb, mem.rw, mem.wb
+    cs = s.cs & 0xFFFF
+    ds = s.ds & 0xFFFF
+    width = rw(cs, 0x5B9C)
+    si = s.si & 0xFFFF
+
+    s.bx = width
+    al = rb(ds, si)
+    ah = rb(ds, (si + s.bx) & 0xFFFF)
+    s.bx = cpu.shift(4, s.bx, 1, 16)  # SHL BX,1
+    dl = rb(ds, (si + s.bx) & 0xFFFF)
+    old_bx = s.bx
+    s.bx = (s.bx + width) & 0xFFFF
+    cpu.set_add_flags(old_bx, width, old_bx + width, 16)
+    dh = rb(ds, (si + s.bx) & 0xFFFF)
+
+    bd6 = rw(cs, 0x0BD6)
+    transparent_color = rb(cs, 0x0000) if bd6 else 0
+    entry_ch = (s.cx >> 8) & 0xFF
+
+    cls = []
+    chs = []
+    for k in (0, 2, 4, 6):
+        b = k + 1
+        cl = ((((dh >> b) & 1) << 7) | (((dl >> b) & 1) << 6)
+              | (((ah >> b) & 1) << 5) | (((al >> b) & 1) << 4)
+              | (((dh >> k) & 1) << 3) | (((dl >> k) & 1) << 2)
+              | (((ah >> k) & 1) << 1) | ((al >> k) & 1))
+        if bd6:
+            ch = 0
+            if (cl & 0x0F) == transparent_color:
+                ch |= 0x0F
+                cl &= 0xF0
+            if ((cl >> 4) & 0x0F) == transparent_color:
+                ch |= 0xF0
+                cl &= 0x0F
+        else:
+            ch = entry_ch
+        cls.append(cl & 0xFF)
+        chs.append(ch & 0xFF)
+
+    c0, c1, c2, c3 = cls
+    m0, m1, m2, m3 = chs
+    wb(cs, 0x5B95, c0); wb(cs, 0x5B99, m0)
+    wb(cs, 0x5B94, c1); wb(cs, 0x5B98, m1)
+    wb(cs, 0x5B97, c2); wb(cs, 0x5B9B, m2)
+    wb(cs, 0x5B96, c3); wb(cs, 0x5B9A, m3)
+
+    old_si = s.si & 0xFFFF
+    s.si = (old_si + 1) & 0xFFFF
+    old_cf = cpu.get_flag(CF)
+    cpu.set_add_flags(old_si, 1, old_si + 1, 16)  # INC SI, preserving CF.
+    cpu.set_flag(CF, old_cf)
+
+    cpu.set_sub_flags(bd6, 0, bd6, 16)
+    if bd6 != 0:
+        s.ax = rw(cs, 0x5B9A)
+        _stosw(cpu)
+    s.ax = rw(cs, 0x5B96)
+    _stosw(cpu)
+
+    cpu.set_sub_flags(bd6, 0, bd6, 16)
+    if bd6 != 0:
+        s.ax = rw(cs, 0x5B98)
+        _stosw(cpu)
+    s.ax = rw(cs, 0x5B94)
+    _stosw(cpu)
+
+    s.bx = ((ah << 8) | al) if bd6 else (width * 3) & 0xFFFF
+    s.cx = (((m3 if bd6 else entry_ch) << 8) | c3) & 0xFFFF
+    s.dx = ((dh << 8) | dl) & 0xFFFF
+
+
+@registry.replace(0x1010, 0x33DD, "overkill_expand_tandy_cell_33dd")
+def overkill_expand_tandy_cell_33dd(cpu):
+    """Verified replacement for the Tandy packed-pixel cell expander at 1010:33DD."""
+    _tandy_cell_33dd_core(cpu)
+    cpu.s.ip = cpu.pop()
+
+
+@registry.replace(0x1010, 0x33B2, "overkill_expand_tandy_block_33b2")
+def overkill_expand_tandy_block_33b2(cpu):
+    """Replace the hot Tandy startup block renderer/list continuation at 1010:33B2."""
+    if _self_disable_if_patched(cpu, 0x33B2, _SIG_33B2, "overkill_expand_tandy_block_33b2"):
+        return
+
+    s = cpu.s
+    if s.flags & ZF:
+        s.ip = 0x44AA
+        return
+
+    cs = s.cs & 0xFFFF
+    height = cpu.mem.rw(cs, 0x5B9E)
+    width = cpu.mem.rw(cs, 0x5B9C)
+    entry_sp = s.sp & 0xFFFF
+    wrote_call_scratch = False
+
+    outer = height
+    while outer != 0:
+        col = width
+        while col != 0:
+            wrote_call_scratch = True
+            s.cx = col
+            _tandy_cell_33dd_core(cpu)
+            col = (col - 1) & 0xFFFF  # LOOP column, flags unaffected.
+
+        si = (s.si + width + width) & 0xFFFF
+        cpu.set_add_flags(si, width, si + width, 16)
+        s.si = (si + width) & 0xFFFF
+        outer = (outer - 1) & 0xFFFF  # LOOP row, flags unaffected.
+
+    if wrote_call_scratch:
+        ss = s.ss & 0xFFFF
+        cpu.mem.ww(ss, (entry_sp - 6) & 0xFFFF, 0x33C6)
+        cpu.mem.ww(ss, (entry_sp - 4) & 0xFFFF, 0x0001)
+        cpu.mem.ww(ss, (entry_sp - 2) & 0xFFFF, 0x0001)
+
+    s.cx = 0
+    s.ip = 0x33AF
 
 
 @registry.replace(0x1010, 0xEDE9, "overkill_lz_output_byte_ede9")

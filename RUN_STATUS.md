@@ -1,3 +1,60 @@
+# Run status — checkpoint 27
+
+Validated on `assets/OVERKILL.UNLZEXE.EXE`.  Local pytest-free runner:
+`86 passed, 0 failed`.
+
+This pass switches the interactive/profiling default video mode to Tandy and
+adds verified Tandy startup-expander hooks for the slow packed-pixel asset path.
+
+## Tandy default
+
+- `scripts/play.py` now defaults to `--video tandy`.
+- `scripts/profile_hotspots.py` now defaults to `--video tandy`.
+- `README.md` now documents Tandy as the default interactive path.
+
+## Tandy startup-expander hooks
+
+Profiling showed Tandy startup was spending most of its time in the live-patched
+`1010:33B2 -> 33DD -> 344B` packed-pixel block renderer.  This is the Tandy
+analog of the already-hooked EGA `4511/4537/45F6` startup expander.
+
+Added:
+
+- `1010:33DD overkill_expand_tandy_cell_33dd`
+- `1010:33B2 overkill_expand_tandy_block_33b2`
+
+The `33B2` hook is guarded by live-byte signature because this code region is
+runtime-patched.  It preserves the original normal continuation (`1010:33AF`),
+terminator branch (`1010:44AA`), `SI`/`DI`/`CX` loop effects, flags, output
+writes, and final stack scratch words from the original call frame.
+
+## Verification
+
+- Added interpreted-ASM oracle tests for `33DD`, `33B2`, and the `33B2` zero/
+  terminator branch.
+- Added hook-verifier continuation metadata for `1010:33B2` and `1010:33DD`.
+- Live differential verification covered all 686 real `1010:33B2` calls reached
+  in the current Tandy startup profile with no divergence.
+- Full local test runner: `86 passed, 0 failed`.
+
+## Profiling note
+
+`python scripts/profile_hotspots.py 6000000 --video tandy --top 10` now shows
+`1010:33B2` as 686 block-level hook calls instead of the previous interpreted
+`33B2/33DD/344B` loop tree.  After replacing the internal 344B rotate simulation
+with direct bit packing, `33B2` is about `0.57s` total / `0.83ms` per block in
+the same profile.  The run still stops later at the pre-existing
+`Unsupported opcode 98 at 1010:0008`; a control run with `1010:33B2` disabled
+hits the same stop, so it is not caused by the new hook.
+
+## Viewer polish
+
+The SDL viewer window is now resizable/maximizable.  Frames are centered at the
+largest integer scale that fits the current window, preserving the 320x200 aspect
+ratio with black bars as needed.
+
+---
+
 # Run status — checkpoint 26
 
 Validated on `assets/OVERKILL.UNLZEXE.EXE`.  `65 passed` *at this checkpoint*.

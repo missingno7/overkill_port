@@ -143,9 +143,9 @@ class FrameSync:
 
 
 def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(description="Interactive CGA/EGA viewer for the OVERKILL runtime")
-    p.add_argument("--video", choices=("cga", "ega", "tandy"), default="cga",
-                   help="launch/render the original game in CGA, EGA, or Tandy mode")
+    p = argparse.ArgumentParser(description="Interactive CGA/EGA/Tandy viewer for the OVERKILL runtime")
+    p.add_argument("--video", choices=("cga", "ega", "tandy"), default="tandy",
+                   help="launch/render the original game in CGA, EGA, or Tandy mode (default: tandy)")
     p.add_argument("--dos-args", default=None,
                    help="override the PSP command tail passed to the original EXE, e.g. ' /E'")
     p.add_argument("--game-hz", type=float, default=30.0,
@@ -203,8 +203,8 @@ def main(argv: list[str] | None = None) -> int:
         # executable would also fall back to EGA, so use the binary selector here.
         command_tail = bytes((0x0D, 0x02))
     else:
-        # Keep the long-tested default CGA path unchanged.  With an empty PSP tail
-        # the inner parser sees PSP:82 == 0 and selects mode 0.
+        # With an empty PSP tail the inner parser sees PSP:82 == 0 and selects
+        # CGA mode 0.
         command_tail = b""
 
     if args.snapshot:

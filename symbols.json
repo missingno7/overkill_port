@@ -62,6 +62,21 @@
     "notes": "Generic error display path. Reached with DX=0FF6 and stdout \"Memory de-allocation error\" when PSP AH=4Ah resize failed before checkpoint 8.",
     "status": "error path identified"
   },
+  "1010:33B2": {
+    "name": "overkill_expand_tandy_block_33b2",
+    "notes": "Tandy packed-pixel startup block/list continuation. Live-patched routine: if ZF is set it jumps to 44AA; otherwise renders CS:[5B9E] rows by CS:[5B9C] cells via 33DD, advances SI by three extra widths per row, and jumps back to 33AF. Verified hook preserves normal/terminator continuations and final stack scratch.",
+    "status": "replaced"
+  },
+  "1010:33DD": {
+    "name": "overkill_expand_tandy_cell_33dd",
+    "notes": "Tandy per-cell source expander. Reads four source bytes separated by CS:[5B9C], calls 344B four times, stores temporaries at CS:5B94..5B9B, increments SI, and writes visible/mask words to ES:DI with STOSW depending on CS:[0BD6].",
+    "status": "replaced"
+  },
+  "1010:344B": {
+    "name": "tandy_pack_pixels_344b",
+    "notes": "Tandy packed-pixel helper used by 33DD. ROR/RCL interleaves AL/AH/DL/DH into CL and optionally computes CH mask bytes against CS:[0000] when CS:[0BD6] is nonzero. No EGA colour remap table.",
+    "status": "understood as part of 33DD/33B2 hook"
+  },
   "1010:41DA": {
     "name": "overkill_linear_rows_to_work_buffer_41da",
     "notes": "Row-copy routine selected via 5A5A table. Verified hook matches interpreted ASM for captured zero-row/zero-width call. Diagnostic guard now stops on suspicious rows=65536,width=FECE case at DS:SI=7000:550C instead of burning enormous time; this is evidence of either a later data/control-flow issue or an unhandled convention, not treated as understood gameplay logic.",

@@ -181,15 +181,21 @@ def run_sdl_ui(
 
     pygame.init()
     pygame.display.set_caption(f"OVERKILL (emulated {video.upper()})  -  Q/A/O/P move, Z/Space fire")
-    screen = pygame.display.set_mode((WIDTH * scale, HEIGHT * scale))
+    screen = pygame.display.set_mode((WIDTH * scale, HEIGHT * scale), pygame.RESIZABLE)
     scan = _build_pygame_scan()
 
     def present(snapshot: bytes, display_start: int) -> None:
         rgb = decode(snapshot, display_start)                        # (200,320,3)
         surf = pygame.image.frombuffer(rgb.tobytes(), (WIDTH, HEIGHT), "RGB")
-        if scale != 1:
-            surf = pygame.transform.scale(surf, (WIDTH * scale, HEIGHT * scale))
-        screen.blit(surf, (0, 0))
+        win_w, win_h = screen.get_size()
+        fit = max(1, min(win_w // WIDTH, win_h // HEIGHT))
+        target = (WIDTH * fit, HEIGHT * fit)
+        if fit != 1:
+            surf = pygame.transform.scale(surf, target)
+        x = (win_w - target[0]) // 2
+        y = (win_h - target[1]) // 2
+        screen.fill((0, 0, 0))
+        screen.blit(surf, (x, y))
         pygame.display.flip()
 
     def caption() -> None:
@@ -211,6 +217,8 @@ def run_sdl_ui(
             for ev in pygame.event.get():
                 if ev.type == pygame.QUIT:
                     running = False
+                elif ev.type == pygame.VIDEORESIZE:
+                    screen = pygame.display.set_mode((max(WIDTH, ev.w), max(HEIGHT, ev.h)), pygame.RESIZABLE)
                 elif ev.type == pygame.KEYDOWN:
                     if ev.key == pygame.K_ESCAPE:
                         running = False

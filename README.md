@@ -24,10 +24,11 @@ Or use the convenience scripts:
 ```bash
 python scripts/trace_start.py
 python scripts/make_runtime_snapshot.py
-python scripts/profile_hotspots.py 2000000          # hottest interpreted addresses
+python scripts/profile_hotspots.py 2000000          # hottest interpreted addresses; defaults to Tandy
 python scripts/render_cga.py --steps 2000000 --out frame.png   # decode B800 -> PNG
-python scripts/play.py                              # interactive SDL viewer, default CGA
-python scripts/play.py --video ega                  # launch/render using the original /E EGA selector
+python scripts/play.py                              # interactive SDL viewer, default Tandy
+python scripts/play.py --video cga                  # launch/render using original mode-0 CGA
+python scripts/play.py --video ega                  # launch/render using the inner EGA binary selector
 ```
 
 ## What works now
@@ -49,17 +50,18 @@ python scripts/play.py --video ega                  # launch/render using the or
 
 The interpreter now boots OVERKILL all the way into its **main loop** and renders
 real frames.  Highlights of the path: post-inner-unpacker entry at `1010:95C9`,
-verified checksum/LZ/RLE/4-plane startup hooks, the DOS PSP heap fix, a verified
+verified checksum/LZ/RLE/startup-expander hooks, the DOS PSP heap fix, a verified
 reprogrammed-IRQ0 timer-tick model (`1010:0679`) that unblocks the per-frame
-timing wait, and the mode-0 frame-present blit (`1010:447B`) that copies the work
-buffer to `B800h` video memory.
+timing wait, and verified CGA/EGA/Tandy frame-present paths.
 
 Decoding `B800h` as CGA 320x200 4-colour shows the actual OVERKILL outfitting/shop
 screen (player ship, HUD, `WEAPON/MISSILES/DRONE/GADGETS/UPGRADES`).  See
 `scripts/render_cga.py` (frame -> PNG) and `scripts/play.py` (interactive SDL
-viewer with keyboard input; needs `pygame` + `numpy`).  CGA is the default stable
-path.  `scripts/play.py --video ega` now passes the documented `/E` PSP command
-tail and decodes the mode-1 `A000h` EGA shadow planes as 320x200 16-colour output.
+viewer with keyboard input; needs `pygame` + `numpy`).  Tandy is now the default
+interactive path because it is visually equivalent to EGA for this port and has
+the best current runtime behavior.  `scripts/play.py --video ega` and
+`--video tandy` pass the inner binary video selectors instead of ASCII switches,
+so mode selection is explicit for the unpacked executable.
 
 Next targets are the remaining hot per-frame render routines (`1010:CCAA`
 dirty-word copy, `1010:41A6` variable-width interlaced blit) and the first

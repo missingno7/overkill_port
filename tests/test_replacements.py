@@ -437,6 +437,152 @@ def test_expand_4plane_block_4511_hook_matches_interpreted_asm():
     assert asm.mem.rw(0x1010, 0x45E4) == hook.mem.rw(0x1010, 0x45E4)
 
 
+def _tandy_33dd_asm_bytes():
+    cell_33dd = bytes.fromhex(
+        "2e8b1e9c5b8a048a20d1e38a102e031e9c5b8a30e857002e880e955b2e882e995b"
+        "e84a002e880e945b2e882e985be83d002e880e975b2e882e9b5be830002e880e965b"
+        "2e882e9a5b462e833ed60b0074052ea19a5bab2ea1965bab2e833ed60b007405"
+        "2ea1985bab2ea1945babc3"
+    )
+    pack_344b = bytes.fromhex(
+        "d0ced0d1d0cad0d1d0ccd0d1d0c8d0d1d0ced0d1d0cad0d1d0ccd0d1d0c8d0d1"
+        "d0c9d0c9d0c9d0c92e833ed60b007501c38bd832ed8ac1240f2e3a0600007506"
+        "80cd0f80e1f08ac124f0d0e8d0e8d0e8d0e82e3a060000750680cdf080e10f"
+        "8bc3c3"
+    )
+    return cell_33dd, pack_344b
+
+
+def test_expand_tandy_cell_33dd_hook_matches_interpreted_asm():
+    from overkill_port.cpu import CPU8086, CPUState
+    from overkill_port.memory import Memory
+    from overkill_port.replacements import overkill_expand_tandy_cell_33dd
+
+    cell_33dd, pack_344b = _tandy_33dd_asm_bytes()
+
+    def make_cpu(use_hook: bool, *, bd6: int, flags: int) -> CPU8086:
+        mem = Memory()
+        mem.load(0x1010, 0x33DD, cell_33dd)
+        mem.load(0x1010, 0x344B, pack_344b)
+        mem.ww(0x1010, 0x5B9C, 3)
+        mem.ww(0x1010, 0x0BD6, bd6)
+        mem.wb(0x1010, 0x0000, 0x03)
+        for i, value in enumerate([0x96, 0x69, 0x39, 0x93, 0xC3, 0x3C, 0x5A, 0xA5, 0xF0, 0x0F]):
+            mem.wb(0x6000, 0x0100 + i, value)
+        state = CPUState(
+            ax=0xA65C, bx=0x1111, cx=0x7E23, dx=0xC398,
+            si=0x0100, di=0x0240, bp=0x5555, sp=0x9000,
+            cs=0x1010, ds=0x6000, es=0x7000, ss=0x4000,
+            ip=0x33DD, flags=flags,
+        )
+        cpu = CPU8086(mem, state)
+        cpu.trace_enabled = False
+        cpu.push(0xBEEF)
+        if use_hook:
+            cpu.replacement_hooks[(0x1010, 0x33DD)] = overkill_expand_tandy_cell_33dd
+        return cpu
+
+    for bd6 in (0, 1):
+        for flags in (0x0203, 0x0603):
+            asm = make_cpu(False, bd6=bd6, flags=flags)
+            hook = make_cpu(True, bd6=bd6, flags=flags)
+            for _ in range(800):
+                if asm.addr() == (0x1010, 0xBEEF):
+                    break
+                asm.step()
+            hook.step()
+            assert asm.addr() == (0x1010, 0xBEEF)
+            assert hook.addr() == (0x1010, 0xBEEF)
+            assert asm.s.snapshot() == hook.s.snapshot()
+            assert asm.mem.block(0x7000, 0x0200, 0x80) == hook.mem.block(0x7000, 0x0200, 0x80)
+            assert asm.mem.block(0x1010, 0x5B94, 8) == hook.mem.block(0x1010, 0x5B94, 8)
+
+
+def test_expand_tandy_block_33b2_hook_matches_interpreted_asm():
+    from overkill_port.cpu import CPU8086, CPUState
+    from overkill_port.memory import Memory
+    from overkill_port.replacements import overkill_expand_tandy_block_33b2
+
+    block_33b2 = bytes.fromhex(
+        "7503e9f3102e8b0e9e5b512e8b0e9c5b51e8170059e2f92e03369c5b"
+        "2e03369c5b2e03369c5b59e2e1ebd2"
+    )
+    cell_33dd, pack_344b = _tandy_33dd_asm_bytes()
+
+    def make_cpu(use_hook: bool, *, bd6: int, flags: int) -> CPU8086:
+        mem = Memory()
+        mem.load(0x1010, 0x33B2, block_33b2)
+        mem.load(0x1010, 0x33DD, cell_33dd)
+        mem.load(0x1010, 0x344B, pack_344b)
+        mem.ww(0x1010, 0x5B9C, 2)  # width
+        mem.ww(0x1010, 0x5B9E, 2)  # rows
+        mem.ww(0x1010, 0x0BD6, bd6)
+        mem.wb(0x1010, 0x0000, 0x03)
+        for i, value in enumerate([0x96, 0x69, 0x39, 0x93, 0xC3, 0x3C, 0x5A, 0xA5,
+                                   0x11, 0x22, 0x44, 0x88, 0xF0, 0x0F, 0xAA, 0x55]):
+            mem.wb(0x6000, 0x0100 + i, value)
+        state = CPUState(
+            ax=0xA65C, bx=0x1111, cx=0x7E23, dx=0xC398,
+            si=0x0100, di=0x0240, bp=0x5555, sp=0x9000,
+            cs=0x1010, ds=0x6000, es=0x7000, ss=0x4000,
+            ip=0x33B2, flags=flags,
+        )
+        cpu = CPU8086(mem, state)
+        cpu.trace_enabled = False
+        if use_hook:
+            cpu.replacement_hooks[(0x1010, 0x33B2)] = overkill_expand_tandy_block_33b2
+        return cpu
+
+    for bd6 in (0, 1):
+        for flags in (0x0202, 0x0602):
+            asm = make_cpu(False, bd6=bd6, flags=flags)
+            hook = make_cpu(True, bd6=bd6, flags=flags)
+            for _ in range(5000):
+                if asm.addr() == (0x1010, 0x33AF):
+                    break
+                asm.step()
+            hook.step()
+            assert asm.addr() == (0x1010, 0x33AF)
+            assert hook.addr() == (0x1010, 0x33AF)
+            assert asm.s.snapshot() == hook.s.snapshot()
+            assert asm.mem.block(0x7000, 0x0200, 0x100) == hook.mem.block(0x7000, 0x0200, 0x100)
+            assert asm.mem.block(0x1010, 0x5B94, 8) == hook.mem.block(0x1010, 0x5B94, 8)
+
+
+def test_expand_tandy_block_33b2_terminator_branch_matches_interpreted_asm():
+    from overkill_port.cpu import CPU8086, CPUState
+    from overkill_port.memory import Memory
+    from overkill_port.replacements import overkill_expand_tandy_block_33b2
+
+    block_33b2 = bytes.fromhex("7503e9f3102e8b0e9e5b512e8b0e9c5b")
+
+    def make_cpu(use_hook: bool) -> CPU8086:
+        mem = Memory()
+        mem.load(0x1010, 0x33B2, block_33b2)
+        state = CPUState(
+            ax=0xA65C, bx=0x1111, cx=0x7E23, dx=0xC398,
+            si=0x0100, di=0x0240, bp=0x5555, sp=0x9000,
+            cs=0x1010, ds=0x6000, es=0x7000, ss=0x4000,
+            ip=0x33B2, flags=0x0242,
+        )
+        cpu = CPU8086(mem, state)
+        cpu.trace_enabled = False
+        if use_hook:
+            cpu.replacement_hooks[(0x1010, 0x33B2)] = overkill_expand_tandy_block_33b2
+        return cpu
+
+    asm = make_cpu(False)
+    hook = make_cpu(True)
+    for _ in range(3):
+        if asm.addr() == (0x1010, 0x44AA):
+            break
+        asm.step()
+    hook.step()
+    assert asm.addr() == (0x1010, 0x44AA)
+    assert hook.addr() == (0x1010, 0x44AA)
+    assert asm.s.snapshot() == hook.s.snapshot()
+
+
 def test_lz_output_byte_ede9_hook_matches_interpreted_asm():
     from overkill_port.cpu import CPU8086, CPUState
     from overkill_port.memory import Memory

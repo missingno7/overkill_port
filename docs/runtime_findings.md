@@ -1,5 +1,50 @@
 # Runtime findings after the second RE pass
 
+## Checkpoint 27 — Tandy default and `1010:33B2` startup expander
+
+Tandy is now the default interactive/profile mode (`scripts/play.py` and
+`scripts/profile_hotspots.py`).  It is visually equivalent to the EGA path for
+the current port work and has the best observed interactive behavior.
+
+The slow Tandy cold-start asset path was the live-patched packed-pixel expander:
+
+```text
+1010:33B2  block/list continuation
+1010:33DD  per-cell source expander
+1010:344B  packed-pixel helper
+```
+
+This is the Tandy analog of the EGA `4511/4537/45F6` startup-expander family.
+`33DD` reads four source bytes separated by `CS:[5B9C]`, calls the `344B` packer
+four times, stores the resulting visible/mask bytes in `CS:5B94..5B9B`, then
+writes two visible words or four mask+visible words to `ES:DI` using `STOSW`.
+`344B` uses the same `ROR`/`RCL` bit chain shape as `45F6`, but it does not apply
+the EGA colour-remap table.
+
+Added verified hooks:
+
+- `1010:33DD overkill_expand_tandy_cell_33dd`
+- `1010:33B2 overkill_expand_tandy_block_33b2`
+
+The `33B2` hook includes a live-byte guard because this area is runtime-patched.
+It handles both continuations (`1010:33AF` normal loop, `1010:44AA` terminator)
+and preserves final stack scratch words from the original nested `PUSH/CALL/POP`
+shape.  Synthetic oracle tests cover `33DD`, `33B2`, and the terminator branch.
+The live hook verifier covered all 686 real `33B2` calls reached in the current
+Tandy startup profile with no divergence.
+
+Profiling after the hook shows `33B2` as 686 block-level calls instead of the
+previous interpreted `33B2/33DD/344B` loop tree.  A follow-up cleanup removed the
+internal 344B rotate-simulator path and computes the packed bytes directly;
+`33B2` dropped to about `0.57s` total / `0.83ms` per block in the 6M-step Tandy
+startup profile.  The same profile still later stops at the pre-existing
+`Unsupported opcode 98 at 1010:0008`; disabling `1010:33B2` hits the same stop,
+so that is not caused by this hook.
+
+The SDL viewer window is also resizable/maximizable now.  The native 320x200
+frame is centered at the largest integer scale that fits the current window, so
+maximized windows preserve aspect ratio with black bars as needed.
+
 ## Checkpoint 23 — 1010:38B7 masked sprite composite, 4537 helper lift
 
 ### `1010:38B7` — masked 2-column sprite composite (now hooked)

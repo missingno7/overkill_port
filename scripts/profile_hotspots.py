@@ -55,7 +55,7 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("steps", nargs="?", type=int, default=3_000_000,
                    help="max interpreted steps to profile (default 3,000,000)")
-    p.add_argument("--video", choices=("cga", "ega", "tandy"), default="cga")
+    p.add_argument("--video", choices=("cga", "ega", "tandy"), default="tandy")
     p.add_argument("--snapshot", default=None,
                    help="resume profiling from a saved runtime snapshot directory")
     p.add_argument("--stop-at", default=None, help="stop early at CS:IP, e.g. 1010:475A")
