@@ -47,7 +47,9 @@ EGA_PALETTE = [
     (0xFF, 0x55, 0x55), (0xFF, 0x55, 0xFF), (0xFF, 0xFF, 0x55), (0xFF, 0xFF, 0xFF),
 ]
 
-EGA_PLANE_STRIDE = 0x2000
+EGA_SHADOW_BASE = 0x100000
+EGA_PLANE_STRIDE = 0x10000
+EGA_LEGACY_PLANE_STRIDE = 0x2000
 EGA_BYTES_PER_ROW = 40
 TANDY_BANK_STRIDE = 0x2000
 TANDY_BYTES_PER_ROW = 160
@@ -106,7 +108,7 @@ def render_ppm(mem: bytes, seg: int, palette: str = "1h", scale: int = 2) -> tup
 
 
 
-def render_ega_ppm(mem: bytes, seg: int = 0xA000, scale: int = 2) -> tuple[int, int, bytes]:
+def render_ega_ppm(mem: bytes, seg: int = 0xA000, scale: int = 2, start_offset: int = 0) -> tuple[int, int, bytes]:
     """Decode the live EGA shadow planes to binary PPM (P6).
 
     The real EGA mode uses four hardware bitplanes selected through the
@@ -119,21 +121,32 @@ def render_ega_ppm(mem: bytes, seg: int = 0xA000, scale: int = 2) -> tuple[int, 
         plane 3: seg:6000..7F3F
 
     Each byte represents eight horizontal pixels; colour index bits come from
-    the four planes in the usual EGA order.
+    the four planes in the usual EGA order.  ``start_offset`` is the CRTC display
+    start address tracked from ports 03D4h/03D5h; old snapshots default to zero.
     """
-    base = (seg & 0xFFFF) * 16
+    # Newer runtime builds store EGA hardware planes outside the CPU-visible
+    # A000h aperture so real offsets/pages such as A000:2000 cannot corrupt the
+    # displayed plane shadows.  Fall back to the legacy in-aperture layout for
+    # older saved byte snapshots.
+    if len(mem) >= EGA_SHADOW_BASE + EGA_PLANE_STRIDE * 4:
+        base = EGA_SHADOW_BASE
+        plane_stride = EGA_PLANE_STRIDE
+    else:
+        base = (seg & 0xFFFF) * 16
+        plane_stride = EGA_LEGACY_PLANE_STRIDE
     width, height = 320, 200
     out = bytearray(f"P6\n{width * scale} {height * scale}\n255\n".encode("ascii"))
     data = mem
+    start_offset &= 0xFFFF
     for y in range(height):
-        row = y * EGA_BYTES_PER_ROW
+        row = (start_offset + y * EGA_BYTES_PER_ROW) & 0xFFFF
         line = bytearray()
         for xb in range(EGA_BYTES_PER_ROW):
-            off = row + xb
+            off = (row + xb) & 0xFFFF
             p0 = data[base + off]
-            p1 = data[base + EGA_PLANE_STRIDE + off]
-            p2 = data[base + EGA_PLANE_STRIDE * 2 + off]
-            p3 = data[base + EGA_PLANE_STRIDE * 3 + off]
+            p1 = data[base + plane_stride + off]
+            p2 = data[base + plane_stride * 2 + off]
+            p3 = data[base + plane_stride * 3 + off]
             for bit in range(7, -1, -1):
                 colour = ((p0 >> bit) & 1) | (((p1 >> bit) & 1) << 1) | (((p2 >> bit) & 1) << 2) | (((p3 >> bit) & 1) << 3)
                 r, g, b = EGA_PALETTE[colour]

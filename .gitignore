@@ -3,3 +3,26 @@ backup
 .pytest_cache
 __bigtest.txt
 assets
+
+# Local assistant/tool state
+.claude/
+
+# Scratch traces, dumps, and rendered probes
+trace_start.txt
+checkpoint_tail.txt
+seg1010_*.bin
+tmp_*.bin
+tmp_*.png
+ega_first_present.png
+ega_first_present.ppm
+
+# Interactive/viewer smoke-test logs
+artifacts/play_*_smoke_stdout.txt
+artifacts/play_*_smoke_stderr.txt
+
+# Generated visual/debug capture folders
+artifacts/drive_menu_frames/
+artifacts/drive_menu_frames2/
+artifacts/headless_ega_frames/
+artifacts/headless_ega_press/
+artifacts/verify_*/

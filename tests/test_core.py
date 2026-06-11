@@ -50,6 +50,22 @@ def test_dos_version_returns_al_major_ah_minor():
     assert not cpu.get_flag(CF)
 
 
+def test_ega_crtc_display_start_tracks_indexed_port_writes():
+    from overkill_port.dos import DOSMachine
+
+    mem = Memory()
+    cpu = CPU8086(mem, CPUState(cs=0x1000, ds=0x1000, es=0x1000, ss=0x1000, sp=0xFFFE))
+    dos = DOSMachine(root=__import__('pathlib').Path('.'))
+
+    dos.port_write(cpu, 0x03D4, 0x120C, 16)
+    dos.port_write(cpu, 0x03D4, 0x340D, 16)
+    assert mem.ega_display_start == 0x1234
+
+    dos.port_write(cpu, 0x03D4, 0x0C, 8)
+    dos.port_write(cpu, 0x03D5, 0x20, 8)
+    assert mem.ega_display_start == 0x2034
+
+
 def test_key_dispatcher_holds_tap_for_one_frame():
     from overkill_port.keyboard import KeyDispatcher
     log: list[int] = []
@@ -79,6 +95,20 @@ def test_key_dispatcher_hold_release_and_autorepeat():
     d.post_up(0x10)
     d.pump()
     assert log == [0x10, 0x90]           # break delivered on release
+
+
+def test_key_dispatcher_drains_release_during_long_no_frame_burst():
+    from overkill_port.keyboard import KeyDispatcher
+    log: list[int] = []
+    d = KeyDispatcher(log.append)
+
+    d.post_down(0x39)
+    d.pump()
+    assert log == [0x39]
+
+    d.post_up(0x39)
+    d.pump_events()
+    assert log == [0x39, 0x39 | 0x80]
 
 
 def test_iret_restores_cs_ip_and_flags():

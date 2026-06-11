@@ -42,8 +42,10 @@ sys.path.insert(0, str(ROOT))
 
 from overkill_port.interrupts import deliver_scancode
 from overkill_port.keyboard import KeyDispatcher
+from overkill_port.hook_verify import HookVerifierConfig, install_hook_verifier, parse_addr as parse_verify_addr
 from overkill_port.runtime import create_runtime
 from overkill_port.snapshot import load_snapshot
+from overkill_port.memory import EGA_APERTURE, EGA_SHADOW_SIZE
 from render_cga import CGA_PALETTES, render_ppm, render_ega_ppm, render_tandy_ppm
 
 CGA_PRESENT_HOOK = (0x1010, 0x447B)  # mode-0 CGA frame-present blit
@@ -53,8 +55,7 @@ TIMER_WAIT_HOOK = (0x1010, 0x0679)  # game frame/timer wait; one call == one log
 RETRACE_WAIT_HOOK = (0x1010, 0x50C9)  # VGA retrace wait used heavily by intro/menu/transitions
 B800_BASE = 0xB8000
 B800_SIZE = 0x4000
-A000_BASE = 0xA0000
-EGA_SHADOW_SIZE = 0x8000
+A000_BASE = EGA_APERTURE
 TANDY_SIZE = 0x8000
 
 # These hooks were added during the last performance pass and are not yet safe
@@ -62,16 +63,16 @@ TANDY_SIZE = 0x8000
 # update path can leave trails when one of these lifted routines is even slightly
 # off.  Keep them available for oracle tests and profiling, but default play.py
 # back to the interpreted ASM until the live regression is understood.
-UNSAFE_INTERACTIVE_HOOKS = {
-    (0x1010, 0x41A6),
-    (0x1010, 0x4D15),
-    # 58DF calls the 50C9 retrace-wait helper directly inside one Python hook.
-    # Disable it for interactive play so every retrace wait remains visible to
-    # play.py's pacing/sync wrapper instead of being fast-forwarded internally.
+UNSAFE_INTERACTIVE_HOOKS = set()
+# 58DF is verified for CGA and is important for collapsing post-copy/retrace
+# loading bursts on the planet/difficulty selection screen.  Keep it enabled for
+# default CGA play, but remove it below for EGA/Tandy unless --unsafe-render-hooks
+# is requested because that lifted loop is currently mode-0-only.  The CCAA/CCC4/
+# CCF0 dirty-copy helpers are now left enabled again: their earlier suspicion was
+# downstream of the old EGA shadow-plane aliasing, and disabling them made menu /
+# level-select transitions much slower.
+NON_CGA_INTERACTIVE_DISABLE = {
     (0x1010, 0x58DF),
-    (0x1010, 0xCCAA),
-    (0x1010, 0xCCC4),
-    (0x1010, 0xCCF0),
 }
 
 # Full Tk keysym -> XT make scan code map so any key can be forwarded.
@@ -150,22 +151,22 @@ class FrameSync:
         self._cond = threading.Condition()
         self._next_id = 0
         self._displayed_id = 0
-        self._pending: tuple[int, bytes] | None = None
+        self._pending: tuple[int, bytes, int] | None = None
         self._closed = False
 
-    def publish_and_wait(self, memory: bytearray) -> None:
+    def publish_and_wait(self, memory: bytearray, *, display_start: int = 0) -> None:
         snapshot = bytes(memory)
         with self._cond:
             if self._closed:
                 return
             self._next_id += 1
             frame_id = self._next_id
-            self._pending = (frame_id, snapshot)
+            self._pending = (frame_id, snapshot, display_start & 0xFFFF)
             self._cond.notify_all()
             while not self._closed and self._displayed_id < frame_id:
                 self._cond.wait(timeout=0.25)
 
-    def take_pending(self) -> tuple[int, bytes] | None:
+    def take_pending(self) -> tuple[int, bytes, int] | None:
         with self._cond:
             return self._pending
 
@@ -204,6 +205,26 @@ def main(argv: list[str] | None = None) -> int:
                    help="debug only: do not wait for Tk to consume each timer-frame snapshot")
     p.add_argument("--retrace-hz", type=float, default=None,
                    help="pace VGA retrace waits used by intro/menu; defaults to --game-hz")
+    p.add_argument("--verify-hooks", action="store_true",
+                   help="differentially verify all hooks at hook boundaries while playing")
+    p.add_argument("--verify-hook", action="append", default=[],
+                   help="differentially verify one hook address while playing; may be repeated")
+    p.add_argument("--verify-max", type=int, default=None,
+                   help="stop after N verified hook calls")
+    p.add_argument("--verify-stop-on-diff", action="store_true",
+                   help="stop the emulator thread on the first hook divergence")
+    p.add_argument("--verify-log-diffs", action="store_true",
+                   help="print detailed hook divergence reports and continue")
+    p.add_argument("--verify-full-memory", action="store_true",
+                   help="compare the full memory image instead of default named ranges")
+    p.add_argument("--ega-publish-timed-boundaries", action="store_true",
+                   help="debug only: publish EGA snapshots at timer/retrace waits as well as the EGA presenter")
+    p.add_argument("--ega-start-address-units", choices=("byte", "word", "ignore"), default="byte",
+                   help="debug EGA CRTC start interpretation: byte offset, word address*2, or always zero")
+    p.add_argument("--ega-log-starts", action="store_true",
+                   help="print EGA display-start value and interpreted render offset for each published frame")
+    p.add_argument("--ega-publish-all-presents", action="store_true",
+                   help="debug only: publish every EGA present, including alternating off-screen page presents")
     args = p.parse_args(argv)
 
     try:
@@ -239,9 +260,25 @@ def main(argv: list[str] | None = None) -> int:
     else:
         rt = create_runtime(exe, game_root=assets, command_tail=command_tail)
     rt.cpu.trace_enabled = False
+    hook_verifier = None
+    if args.verify_hooks or args.verify_hook:
+        hook_verifier = install_hook_verifier(
+            rt,
+            HookVerifierConfig(
+                verify_all=args.verify_hooks,
+                hooks={parse_verify_addr(text) for text in args.verify_hook},
+                max_verified=args.verify_max,
+                stop_on_diff=args.verify_stop_on_diff,
+                log_diffs=args.verify_log_diffs,
+                full_memory=args.verify_full_memory,
+            ),
+        )
 
     if not args.unsafe_render_hooks:
-        for key in UNSAFE_INTERACTIVE_HOOKS:
+        disabled_hooks = set(UNSAFE_INTERACTIVE_HOOKS)
+        if args.video != "cga":
+            disabled_hooks.update(NON_CGA_INTERACTIVE_DISABLE)
+        for key in disabled_hooks:
             rt.cpu.replacement_hooks.pop(key, None)
             rt.cpu.hook_names.pop(key, None)
 
@@ -263,42 +300,78 @@ def main(argv: list[str] | None = None) -> int:
     blits = {"n": 0}
     timers = {"n": 0}
     retraces = {"n": 0}
-    last_video_crc: dict[str, int | None] = {"value": None}
+    last_video_crc: dict[str, tuple[int, int] | None] = {"value": None}
     if args.video == "ega":
         present_hook_addr = EGA_PRESENT_HOOK
         video_base = A000_BASE
         video_size = EGA_SHADOW_SIZE
-        render_frame = lambda snapshot: render_ega_ppm(snapshot, 0xA000, args.scale)
+        render_frame = lambda snapshot, display_start: render_ega_ppm(snapshot, 0xA000, args.scale, display_start)
     elif args.video == "tandy":
         present_hook_addr = TANDY_PRESENT_HOOK
         video_base = B800_BASE
         video_size = TANDY_SIZE
-        render_frame = lambda snapshot: render_tandy_ppm(snapshot, 0xB800, args.scale)
+        render_frame = lambda snapshot, display_start: render_tandy_ppm(snapshot, 0xB800, args.scale)
     else:
         present_hook_addr = CGA_PRESENT_HOOK
         video_base = B800_BASE
         video_size = B800_SIZE
-        render_frame = lambda snapshot: render_ppm(snapshot, 0xB800, args.palette, args.scale)
+        render_frame = lambda snapshot, display_start: render_ppm(snapshot, 0xB800, args.palette, args.scale)
 
     base_present = rt.cpu.replacement_hooks.get(present_hook_addr)
+    base_present_name = rt.cpu.hook_names.get(present_hook_addr, "replacement")
     base_timer_wait = rt.cpu.replacement_hooks.get(TIMER_WAIT_HOOK)
     base_retrace_wait = rt.cpu.replacement_hooks.get(RETRACE_WAIT_HOOK)
     if base_timer_wait is None:
         print(f"missing required timer wait hook {TIMER_WAIT_HOOK[0]:04X}:{TIMER_WAIT_HOOK[1]:04X}")
         return 1
 
+    def ega_render_start(raw_start: int) -> int:
+        raw_start &= 0xFFFF
+        if args.ega_start_address_units == "ignore":
+            return 0
+        if args.ega_start_address_units == "word":
+            return (raw_start << 1) & 0xFFFF
+        return raw_start
+
     def video_crc(cpu) -> int:
         data = cpu.mem.data
+        if args.video == "ega":
+            # Only hash the hardware-visible 320x200 window from each plane.
+            # Hashing the full shadow store lets off-screen/work pages trigger a
+            # Tk publish even when the displayed CRTC page did not change.
+            start = ega_render_start(cpu.mem.ega_display_start)
+            crc = 0
+            for plane in range(4):
+                plane_base = video_base + plane * 0x10000
+                for y in range(200):
+                    row = (start + y * 40) & 0xFFFF
+                    if row <= 0x10000 - 40:
+                        crc = zlib.crc32(data[plane_base + row:plane_base + row + 40], crc)
+                    else:
+                        tail = 0x10000 - row
+                        crc = zlib.crc32(data[plane_base + row:plane_base + 0x10000], crc)
+                        crc = zlib.crc32(data[plane_base:plane_base + (40 - tail)], crc)
+            return crc & 0xFFFFFFFF
         return zlib.crc32(data[video_base:video_base + video_size]) & 0xFFFFFFFF
 
     def publish_video_if_changed(cpu, *, force: bool = False) -> bool:
         crc = video_crc(cpu)
-        if not force and last_video_crc["value"] == crc:
+        raw_display_start = cpu.mem.ega_display_start if args.video == "ega" else 0
+        display_start = ega_render_start(raw_display_start) if args.video == "ega" else 0
+        visible_key = (crc, display_start)
+        if not force and last_video_crc["value"] == visible_key:
             return False
-        last_video_crc["value"] = crc
+        last_video_crc["value"] = visible_key
         visible["n"] += 1
+        if args.ega_log_starts and args.video == "ega":
+            print(
+                f"EGA publish visible={visible['n']} blits={blits['n']} "
+                f"raw_start={raw_display_start:04X} render_start={display_start:04X} "
+                f"crc={crc:08X}",
+                flush=True,
+            )
         if not args.no_present_sync:
-            frame_sync.publish_and_wait(cpu.mem.data)
+            frame_sync.publish_and_wait(cpu.mem.data, display_start=display_start)
         return True
 
     def stop_cpu_burst() -> None:
@@ -307,9 +380,19 @@ def main(argv: list[str] | None = None) -> int:
 
     def present_hook(cpu) -> None:
         if base_present is not None:
-            base_present(cpu)
+            if hook_verifier is not None:
+                hook_verifier.verify(cpu, present_hook_addr, base_present, base_present_name)
+            else:
+                base_present(cpu)
         blits["n"] += 1
-        publish_video_if_changed(cpu, force=True)
+        # EGA gameplay alternates the CRTC start between 0000h and 2000h around
+        # paired present calls.  The two presents are part of one page-flip/update
+        # sequence; painting both through Tk exposes the intermediate work page
+        # as the visible "every other frame" blink.  Keep executing both in the
+        # VM, but only publish the stable page unless the debug flag asks to see
+        # every present boundary.
+        if args.video != "ega" or args.ega_publish_all_presents or (cpu.mem.ega_display_start & 0xFFFF) == 0:
+            publish_video_if_changed(cpu, force=True)
         # A visible blit is a safe place to hand control back to the UI.  The
         # following 0679 timer wait still performs the actual gameplay sleep, so
         # this does not invent an additional gameplay delay.
@@ -318,10 +401,13 @@ def main(argv: list[str] | None = None) -> int:
     def timer_frame_hook(cpu) -> None:
         base_timer_wait(cpu)
         timers["n"] += 1
-        # Some paths update B800h directly and only use the timer wait as their
-        # boundary.  Publish only when the visible memory differs from the last
-        # snapshot; gameplay's 447B blit will normally have published already.
-        publish_video_if_changed(cpu)
+        # Some paths update video memory directly and only use the timer wait as
+        # their boundary.  EGA startup/menu can do this before the first 2750
+        # present, but after EGA presenting starts, timed-boundary publishing can
+        # expose intermediate dirty-panel states that the presenter has not
+        # committed as a complete frame yet.
+        if args.video != "ega" or args.ega_publish_timed_boundaries or blits["n"] == 0:
+            publish_video_if_changed(cpu)
         timer_pacer()
         stop_cpu_burst()
 
@@ -329,11 +415,11 @@ def main(argv: list[str] | None = None) -> int:
         if base_retrace_wait is not None:
             base_retrace_wait(cpu)
         retraces["n"] += 1
-        # Intro/menu/fade code often draws first and then waits for retrace.  This
-        # is the missing timing source that made those screens disappear while the
-        # gameplay demo looked correct.  Pace every retrace wait, but publish only
-        # when B800h changed so static delay loops do not thrash Tk with duplicates.
-        publish_video_if_changed(cpu)
+        # Intro/menu/fade code often draws first and then waits for retrace.  For
+        # EGA, publish these timed snapshots only until the first explicit EGA
+        # presenter runs; after that, keep retrace as a pacing boundary only.
+        if args.video != "ega" or args.ega_publish_timed_boundaries or blits["n"] == 0:
+            publish_video_if_changed(cpu)
         retrace_pacer()
         stop_cpu_burst()
 
@@ -341,6 +427,10 @@ def main(argv: list[str] | None = None) -> int:
     rt.cpu.replacement_hooks[TIMER_WAIT_HOOK] = timer_frame_hook
     if base_retrace_wait is not None:
         rt.cpu.replacement_hooks[RETRACE_WAIT_HOOK] = retrace_frame_hook
+    # These three hooks are UI pacing wrappers in play.py.  Let them execute
+    # directly; present_hook manually verifies the underlying real presenter
+    # before publishing to Tk.
+    rt.cpu.hook_verifier_passthrough.update({present_hook_addr, TIMER_WAIT_HOOK, RETRACE_WAIT_HOOK})
 
     keyboard = KeyDispatcher(lambda sc: deliver_scancode(rt, sc))
     stop = threading.Event()
@@ -358,6 +448,11 @@ def main(argv: list[str] | None = None) -> int:
                     except FramePresented:
                         break
                     used += 8000
+                    # Long screen loads can run for many chunks without a
+                    # visible/timer boundary.  Drain key-up events during those
+                    # bursts so a short FIRE tap from the menu is not still held
+                    # when the newly loaded level-select screen first polls input.
+                    keyboard.pump_events()
                 if boundary["n"] < target and not stop.is_set():
                     cs, ip = rt.cpu.addr()
                     status["text"] = f"stall (no visual/timer boundary in {used} steps) @ {cs:04X}:{ip:04X}"
@@ -400,8 +495,8 @@ def main(argv: list[str] | None = None) -> int:
     def ui_tick() -> None:
         pending = frame_sync.take_pending()
         if pending is not None:
-            frame_id, snapshot = pending
-            width, height, ppm = render_frame(snapshot)
+            frame_id, snapshot, display_start = pending
+            width, height, ppm = render_frame(snapshot, display_start)
             frame_path.write_bytes(ppm)
             ui["img"] = tk.PhotoImage(file=str(frame_path))
             label.configure(image=ui["img"])
@@ -411,7 +506,8 @@ def main(argv: list[str] | None = None) -> int:
             # intentionally does *not* do this, because sampling live B800 while
             # the emulator is in the middle of drawing a frame causes exactly the
             # choppy/partial-frame look we are avoiding.
-            width, height, ppm = render_frame(bytes(rt.program.memory.data))
+            live_start = ega_render_start(rt.program.memory.ega_display_start) if args.video == "ega" else 0
+            width, height, ppm = render_frame(bytes(rt.program.memory.data), live_start)
             frame_path.write_bytes(ppm)
             ui["img"] = tk.PhotoImage(file=str(frame_path))
             label.configure(image=ui["img"])

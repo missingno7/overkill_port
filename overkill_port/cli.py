@@ -4,8 +4,33 @@ import argparse
 from pathlib import Path
 
 from .cpu import HaltExecution, UnsupportedInstruction
+from .hook_verify import HookVerifierConfig, install_hook_verifier, parse_addr as parse_verify_addr
 from .runtime import create_runtime
 from .snapshot import parse_addr, run_until, write_snapshot, load_snapshot
+
+
+def add_verify_args(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--verify-hooks", action="store_true", help="differentially verify all hooks at hook boundaries")
+    p.add_argument("--verify-hook", action="append", default=[], help="differentially verify one hook address; may be repeated")
+    p.add_argument("--verify-max", type=int, default=None, help="stop verifying after N hook calls")
+    p.add_argument("--verify-stop-on-diff", action="store_true", help="raise on the first hook divergence")
+    p.add_argument("--verify-log-diffs", action="store_true", help="print detailed hook divergence reports and continue")
+    p.add_argument("--verify-full-memory", action="store_true", help="compare the full memory image instead of default named ranges")
+
+
+def maybe_install_verifier(rt, args: argparse.Namespace) -> None:
+    if not getattr(args, "verify_hooks", False) and not getattr(args, "verify_hook", []):
+        return
+    hooks = {parse_verify_addr(text) for text in args.verify_hook}
+    config = HookVerifierConfig(
+        verify_all=args.verify_hooks,
+        hooks=hooks,
+        max_verified=args.verify_max,
+        stop_on_diff=args.verify_stop_on_diff,
+        log_diffs=args.verify_log_diffs,
+        full_memory=args.verify_full_memory,
+    )
+    install_hook_verifier(rt, config)
 
 
 def cmd_info(args: argparse.Namespace) -> int:
@@ -24,6 +49,7 @@ def cmd_info(args: argparse.Namespace) -> int:
 
 def cmd_trace(args: argparse.Namespace) -> int:
     rt = create_runtime(args.exe, game_root=args.game_root)
+    maybe_install_verifier(rt, args)
     out = Path(args.out) if args.out else None
     try:
         rt.cpu.run(args.steps)
@@ -50,6 +76,7 @@ def cmd_trace(args: argparse.Namespace) -> int:
 
 def cmd_snapshot(args: argparse.Namespace) -> int:
     rt = create_runtime(args.exe, game_root=args.game_root)
+    maybe_install_verifier(rt, args)
     stop_at = parse_addr(args.stop_at) if args.stop_at else None
     status, steps, tail = run_until(rt, max_steps=args.steps, stop_at=stop_at, trace_tail=args.trace_tail)
     write_snapshot(rt, args.out_dir, status=status, steps=steps, trace_tail=tail)
@@ -60,6 +87,7 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
 
 def cmd_continue_snapshot(args: argparse.Namespace) -> int:
     rt = load_snapshot(args.exe, args.snapshot_dir, game_root=args.game_root)
+    maybe_install_verifier(rt, args)
     stop_at = parse_addr(args.stop_at) if args.stop_at else None
     status, steps, tail = run_until(rt, max_steps=args.steps, stop_at=stop_at, trace_tail=args.trace_tail)
     write_snapshot(rt, args.out_dir, status=status, steps=steps, trace_tail=tail)
@@ -78,6 +106,7 @@ def build_parser() -> argparse.ArgumentParser:
     t.add_argument("--game-root", default=None)
     t.add_argument("--steps", type=int, default=1000)
     t.add_argument("--out", default=None)
+    add_verify_args(t)
     t.set_defaults(func=cmd_trace)
 
     snap = sub.add_parser("snapshot", help="run and dump full 1MB memory image plus JSON state")
@@ -87,6 +116,7 @@ def build_parser() -> argparse.ArgumentParser:
     snap.add_argument("--stop-at", default=None, help="optional CS:IP hex stop address, e.g. 1010:45CB")
     snap.add_argument("--trace-tail", type=int, default=0, help="keep only the last N trace lines")
     snap.add_argument("--out-dir", default="artifacts/snapshot")
+    add_verify_args(snap)
     snap.set_defaults(func=cmd_snapshot)
 
     cont = sub.add_parser("continue-snapshot", help="resume execution from a saved snapshot and write a new snapshot")
@@ -97,6 +127,7 @@ def build_parser() -> argparse.ArgumentParser:
     cont.add_argument("--stop-at", default=None, help="optional CS:IP hex stop address, e.g. 1010:45CB")
     cont.add_argument("--trace-tail", type=int, default=0)
     cont.add_argument("--out-dir", default="artifacts/snapshot_continued")
+    add_verify_args(cont)
     cont.set_defaults(func=cmd_continue_snapshot)
     return p
 

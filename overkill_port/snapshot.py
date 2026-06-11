@@ -68,6 +68,10 @@ def write_snapshot(rt: Runtime, out_dir: str | Path, *, status: str, steps: int,
             "video_mode": rt.dos.video_mode,
             "ticks": rt.dos.ticks,
             "vga_status_reads": rt.dos.vga_status_reads,
+            "ega_planar": rt.program.memory.ega_planar,
+            "ega_map_mask": rt.program.memory.ega_map_mask,
+            "ega_read_plane": rt.program.memory.ega_read_plane,
+            "ega_display_start": rt.program.memory.ega_display_start,
             "next_alloc_segment": rt.dos.next_alloc_segment,
             "allocation_limit_segment": rt.dos.allocation_limit_segment,
             "allocations": {f"{seg:04X}": size for seg, size in sorted(rt.dos.allocations.items())},
@@ -107,6 +111,10 @@ def load_snapshot(exe_path: str | Path, snapshot_dir: str | Path, *, game_root: 
     rt.dos.video_mode = dos_meta.get("video_mode", rt.dos.video_mode)
     rt.dos.ticks = dos_meta.get("ticks", rt.dos.ticks)
     rt.dos.vga_status_reads = dos_meta.get("vga_status_reads", rt.dos.vga_status_reads)
+    rt.program.memory.ega_planar = dos_meta.get("ega_planar", rt.program.memory.ega_planar)
+    rt.program.memory.ega_map_mask = dos_meta.get("ega_map_mask", rt.program.memory.ega_map_mask)
+    rt.program.memory.ega_read_plane = dos_meta.get("ega_read_plane", rt.program.memory.ega_read_plane)
+    rt.program.memory.ega_display_start = dos_meta.get("ega_display_start", rt.program.memory.ega_display_start)
     rt.dos.next_alloc_segment = dos_meta.get("next_alloc_segment", rt.dos.next_alloc_segment)
     rt.dos.allocation_limit_segment = dos_meta.get("allocation_limit_segment", rt.dos.allocation_limit_segment)
     rt.dos.allocations = {int(seg, 16): int(size) for seg, size in dos_meta.get("allocations", {}).items()}

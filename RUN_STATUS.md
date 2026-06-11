@@ -1,3 +1,164 @@
+# Current run status — checkpoint 26
+
+Validated on `assets/OVERKILL.UNLZEXE.EXE`.  `65 passed`.
+
+This pass continued profiling the slow planet/difficulty selection screen that is
+shown after pressing SPACE in the main menu.  The earlier menu hooks helped, but
+profiling showed that this screen was now dominated by overlaid masked-sprite
+compositors and object dispatch stubs rather than asset decompression.
+
+## Performance finding
+
+After re-enabling the dirty-copy hooks and adding the previous `4D15` fix, the
+next hot interpreted path was the overlaid masked sprite drawing code around
+`1010:3EFB`.  This routine is used heavily by the selection highlight/sprite
+redraw path and performs many `RCR`/`SHR` chains per row.
+
+The addresses around `3EE1`/`3EFC` are reused by overlays, so hooks in that area
+must verify the resident bytes before applying.  A non-guarded row-copy hook can
+accidentally intercept a different overlaid compositor body.
+
+## Fixes / hooks
+
+- Added `1010:3E12 overkill_masked_sprite_composite_3e12`, collapsing the hot
+  two-shift masked CGA sprite compositor used by the level-selection redraw.
+- Added guarded strided-row-copy hooks for `1010:3EE1` and `1010:3EFC`.  These
+  only run when the exact row-copy bytes are resident; otherwise they fall back
+  to the interpreter for the current overlaid instruction.
+- Added `1010:3EFB overkill_masked_sprite_composite_3efb`, collapsing the
+  overlaid six-shift masked sprite compositor that became the dominant interpreted
+  loop on the selection screen.
+- Added fast dispatch hooks for `1010:5AC8` and `1010:5A92`, removing repeated
+  interpreted mode/subtype dispatch overhead before the existing draw/present
+  hooks take over.
+- Added `1010:AA44 overkill_clc_ret_aa44` for the tiny hot success helper.
+- Kept the earlier live-player hook policy change: dirty-copy hooks are enabled
+  in interactive CGA, while the mode-0-only `58DF` hook remains disabled for
+  non-CGA modes.
+
+## Verification
+
+Added oracle tests comparing the new hooks against interpreted ASM snippets:
+
+- `test_masked_sprite_composite_3e12_hook_matches_interpreted_asm`
+- `test_strided_row_copy_3ee1_and_3efc_hooks_match_interpreted_asm`
+- `test_masked_sprite_composite_3efb_hook_matches_interpreted_asm`
+- `test_dispatch_5ac8_and_5a92_hooks_match_interpreted_asm`
+- `test_clc_ret_aa44_hook_matches_interpreted_asm`
+
+Full result:
+
+```text
+65 passed in 2.95s
+```
+
+A 1.5M-step CGA profile now reaches further into the menu/gameplay rendering
+path within the same step budget.  `1010:3EFB`, `1010:5AC8`, `1010:5A92`, and
+`1010:AA44` are now replacement hooks instead of interpreted hot loops.
+
+---
+
+# Current run status — checkpoint 25
+
+Validated on `assets/OVERKILL.UNLZEXE.EXE`.  `56 passed`.
+
+This pass targeted the very slow menu/planet-selection renderer path shown by
+profiling the live CGA menu loop after startup.
+
+## Performance finding
+
+With the interactive-safe hook set from checkpoint 24, the hottest interpreted
+routine on this screen was `1010:4D15`: the presence/stamp-list helper used by
+the menu/planet-selection object/cell bookkeeping.  A 5M-step profile from the
+menu loop showed `4D15..4D61` dominating the interpreted address list before the
+existing hook was allowed in the live player.
+
+After enabling the fixed hook, `4D15` disappears from the interpreted hotspot
+list.  The next interpreted hotspots are now `1010:017E` (keyboard poll bit
+loop), `1010:CCAD..CCC0` (dirty-copy mode-1 body when the still-disabled dirty
+hooks are off), and `1010:3E12..3E4E`.
+
+## Fixes / hooks
+
+- Reworked `1010:4D15 overkill_presence_stamp_list_4d15` into a faster local-loop
+  hook instead of using CPU helper calls for every small operation.
+- Fixed an uncovered mode-0 accuracy bug in the older `4D15` hook: the original
+  `JNE 4D59` path stamps only the base cell and appends it to `DS:DI`; the stacked
+  `+1A/+34/+4E` stores are mode-1 `JMP BP` paths only.
+- Removed `4D15` from the interactive disabled-hook set after adding regression
+  coverage for the mode-0 and final-skip paths.
+- Removed `41A6` from the interactive disabled-hook set as well; it is already
+  covered by an interpreted-ASM oracle test and is now the active fast path for
+  the variable-width interlaced menu/screen blit.
+
+## Verification
+
+Added `test_presence_stamp_list_4d15_final_skip_and_mode0_flags_match_asm` to
+cover the previously missing paths.  Full result:
+
+```text
+56 passed in 2.65s
+```
+
+---
+
+# Current run status — checkpoint 24
+
+Validated on `assets/OVERKILL.UNLZEXE.EXE`.  `55 passed`.
+
+This pass fixes the accuracy regression in the fast 4-plane row expander and
+continues the loading/sprite-phase lift where profiling showed the highest
+remaining interpreted-instruction density.
+
+## Accuracy fix
+
+- **Fixed `1010:4537` fast row expander final `DX`.**  The optimized
+  `_row_4537_core` incorrectly left `DX` as the entry value.  The original ASM
+  loads `DL`/`DH` from plane 2/3 and then calls `45F6` four times; each call
+  rotates the plane bytes by two bits, so after four calls the bytes return to
+  their loaded values.  The hook now exits with `DX = (loaded_DH << 8) | loaded_DL`.
+- Reconfirmed the 4537/4511 oracle tests and fuzz tests, then the full suite.
+
+## Loading / sprite-phase performance lifts
+
+- **New overlaid object-scan skip hooks** for the hot repeated loops around
+  `A849`, `A861`, `A87C`, `A894`, `A8C7`, `A90F`, `A927`, `A9E0`, and `AA10`.
+  These loops mostly scan inactive object slots during loading/render setup.
+  The hooks consume skip-only iterations in Python and stop immediately before
+  the original CALL when an active/matching object needs the existing ASM logic.
+  Stack scratch from the balanced `PUSH CX`/`POP CX` pair is preserved.
+- **New `1010:3849` hook** for the 4-column masked sprite composite loop, the
+  wider sibling of the existing `38B7` hook.  It composites four mask/data word
+  pairs per row and restores `DS` from `CS:[9596]` before returning.
+- **New `1010:469F` hook** for the plain 9-byte × 16-row sprite copy loop.
+- **New `1010:4D6F` hook** for the presence-list clear loop.
+
+## Verification
+
+Added self-contained oracle tests for the newly risky lifts:
+
+- `test_masked_sprite_composite_3849_hook_matches_interpreted_asm`
+- `test_sprite_copy_469f_hook_matches_interpreted_asm`
+- `test_overlay_scan_a849_skips_inactive_entries_like_asm`
+- `test_overlay_scan_a9e0_counter_and_skip_match_asm`
+
+Full result:
+
+```text
+55 passed in 2.50s
+```
+
+## Profiling note
+
+A 1.5M-step CGA profile after the new hooks reaches further into the sprite/game
+phase within the same interpreted-step budget, so wall-clock numbers are not a
+clean apples-to-apples boot benchmark.  The previous `A849`/`A8C7`/`A9E0` scan
+addresses disappear from the interpreted-instruction top list; the next visible
+hotspots are now the small bit loop at `017E`, the `CD8D` region, and far-call
+code at `1F8F:0960`.
+
+---
+
 # Current run status — checkpoint 23
 
 Validated on `assets/OVERKILL.UNLZEXE.EXE`.  `49 passed`.

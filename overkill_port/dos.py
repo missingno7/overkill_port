@@ -32,6 +32,7 @@ class DOSMachine:
     ticks: int = 0
     vga_status_reads: int = 0
     _seq_index: int = 0  # last EGA sequencer index latched via 03C4h
+    _crtc_index: int = 0  # last colour CRTC index latched via 03D4h/03B4h
     port_log: list[tuple[str, int, int, int]] = field(default_factory=list)
     # Pending BIOS keystrokes as 16-bit values (high byte = scan code, low byte =
     # ASCII).  An interactive front-end pushes keys here; when empty the runtime
@@ -126,6 +127,34 @@ class DOSMachine:
             mem.ega_planar = True
             if getattr(self, "_seq_index", None) == 0x02:
                 mem.ega_map_mask = value & 0x0F
+        elif port == 0x3CE:
+            mem.ega_planar = True
+            if bits == 16:
+                if (value & 0xFF) == 0x04:
+                    mem.ega_read_plane = (value >> 8) & 0x03
+            else:
+                self._gc_index = value & 0xFF
+        elif port == 0x3CF:
+            mem.ega_planar = True
+            if getattr(self, "_gc_index", None) == 0x04:
+                mem.ega_read_plane = value & 0x03
+        elif port in (0x3D4, 0x3B4):
+            if bits == 16:
+                index = value & 0xFF
+                data = (value >> 8) & 0xFF
+                self._write_crtc_register(mem, index, data)
+            else:
+                self._crtc_index = value & 0xFF
+        elif port in (0x3D5, 0x3B5):
+            self._write_crtc_register(mem, getattr(self, "_crtc_index", 0), value & 0xFF)
+
+    def _write_crtc_register(self, mem, index: int, value: int) -> None:
+        index &= 0xFF
+        value &= 0xFF
+        if index == 0x0C:
+            mem.ega_display_start = ((value << 8) | (mem.ega_display_start & 0x00FF)) & 0xFFFF
+        elif index == 0x0D:
+            mem.ega_display_start = ((mem.ega_display_start & 0xFF00) | value) & 0xFFFF
 
     def interrupt(self, cpu: CPU8086, num: int) -> None:
         if num == 0x20:

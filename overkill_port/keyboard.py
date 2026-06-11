@@ -33,8 +33,7 @@ class KeyDispatcher:
     def post_up(self, scancode: int) -> None:
         self._events.append(("up", scancode & 0xFF))
 
-    def pump(self) -> None:
-        """Apply queued events for one frame.  Call before running the frame."""
+    def _drain_events(self) -> None:
         while self._events:
             kind, sc = self._events.popleft()
             if kind == "down":
@@ -44,11 +43,30 @@ class KeyDispatcher:
                     self._down[sc] = 0
             else:
                 self._release.add(sc)
-        # Only release keys that have already been held for a full frame.
+
+    def _release_ready(self, *, hold_new_taps: bool) -> None:
         for sc in list(self._release):
-            if self._down.get(sc, -1) >= 1:
+            if self._down.get(sc, -1) >= 1 or not hold_new_taps:
                 self._deliver(sc | 0x80)       # break code
                 self._down.pop(sc, None)
                 self._release.discard(sc)
+
+    def pump_events(self) -> None:
+        """Apply queued physical events without advancing the game-frame age.
+
+        The interactive runner uses this during long no-frame loading bursts so
+        a key released by the user does not remain logically held until the next
+        visible frame.  New down+up taps drained here are released immediately;
+        frame-start ``pump()`` remains the path that guarantees a tap spans one
+        complete game poll.
+        """
+        self._drain_events()
+        self._release_ready(hold_new_taps=False)
+
+    def pump(self) -> None:
+        """Apply queued events for one frame.  Call before running the frame."""
+        self._drain_events()
+        # Only release keys that have already been held for a full frame.
+        self._release_ready(hold_new_taps=True)
         for sc in self._down:
             self._down[sc] += 1

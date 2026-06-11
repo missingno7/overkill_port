@@ -32,6 +32,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from overkill_port.runtime import create_runtime  # noqa: E402
+from overkill_port.memory import EGA_APERTURE, EGA_PLANE_STRIDE  # noqa: E402
 
 VIDEO_TAIL = {
     "cga": b"",
@@ -46,10 +47,8 @@ PRESENT_HOOK = {
 # Hooks play.py disables for the interactive non-CGA modes: they are only
 # verified for mode 0, so let interpreted ASM handle them in EGA/Tandy.
 NON_CGA_DISABLE = {
-    (0x1010, 0x41A6), (0x1010, 0x4D15), (0x1010, 0x58DF),
-    (0x1010, 0xCCAA), (0x1010, 0xCCC4), (0x1010, 0xCCF0),
+    (0x1010, 0x58DF),
 }
-EGA_PLANE_STRIDE = 0x2000
 EGA_BYTES_PER_ROW = 40
 TANDY_BANK_STRIDE = 0x2000
 TANDY_BYTES_PER_ROW = 160
@@ -109,7 +108,7 @@ def run_to_present(video: str, max_steps: int):
 
 
 def diag_ega(mem: bytes) -> None:
-    base = 0xA000 * 16
+    base = EGA_APERTURE
     print("EGA shadow-plane occupancy (A000 aperture):")
     plane_nonzero = []
     for p in range(4):
@@ -200,6 +199,7 @@ def main(argv: list[str] | None = None) -> int:
         print("below may be empty.  Increase --max-steps.")
     mem = bytes(rt.program.memory.data)
     if args.video == "ega":
+        print(f"EGA CRTC display start: {rt.program.memory.ega_display_start:04X}h")
         diag_ega(mem)
     elif args.video == "tandy":
         diag_tandy(mem)

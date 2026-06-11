@@ -130,6 +130,8 @@ class CPU8086:
     port_writer: Callable[["CPU8086", int, int, int], None] | None = None
     replacement_hooks: dict[tuple[int, int], Callable[["CPU8086"], None]] = field(default_factory=dict)
     hook_names: dict[tuple[int, int], str] = field(default_factory=dict)
+    hook_verifier: Callable[["CPU8086", tuple[int, int], Callable[["CPU8086"], None], str], None] | None = None
+    hook_verifier_passthrough: set[tuple[int, int]] = field(default_factory=set)
     # Optional real-time pacer invoked once per modelled timer tick (the 1010:0679
     # wait).  Left None for headless/deterministic runs; an interactive front-end
     # sets it to throttle the game to real time.
@@ -337,7 +339,11 @@ class CPU8086:
         if hook_key in self.replacement_hooks:
             before = self.s.snapshot() if self.trace_enabled else ""
             name = self.hook_names.get(hook_key, "replacement")
-            self.replacement_hooks[hook_key](self)
+            handler = self.replacement_hooks[hook_key]
+            if self.hook_verifier is not None and hook_key not in self.hook_verifier_passthrough:
+                self.hook_verifier(self, hook_key, handler, name)
+            else:
+                handler(self)
             self.instruction_count += 1
             if self.trace_enabled:
                 self.trace.append(f"{start_cs:04X}:{start_ip:04X}  HOOK {name:<23} {before} -> {self.s.snapshot()}")

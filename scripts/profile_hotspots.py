@@ -89,9 +89,13 @@ def main(argv: list[str] | None = None) -> int:
         cpu.replacement_hooks[addr] = wrap(addr, fn)
 
     addr_counts: Counter[tuple[int, int]] = Counter()
+    hook_predecessors: dict[tuple[int, int], Counter[tuple[int, int]]] = {}
+    hook_stack_words: dict[tuple[int, int], Counter[int]] = {}
+    backward_edges: Counter[tuple[tuple[int, int], tuple[int, int]]] = Counter()
     step = cpu.step
     cur = cpu.addr
     hook_set = set(cpu.replacement_hooks)
+    previous_addr: tuple[int, int] | None = None
 
     t_start = perf()
     executed = 0
@@ -99,9 +103,18 @@ def main(argv: list[str] | None = None) -> int:
         for _ in range(args.steps):
             a = cur()
             addr_counts[a] += 1
+            if a in hook_set:
+                if previous_addr is not None:
+                    hook_predecessors.setdefault(a, Counter())[previous_addr] += 1
+                if cpu.s.sp <= 0xFFFE:
+                    hook_stack_words.setdefault(a, Counter())[cpu.mem.rw(cpu.s.ss, cpu.s.sp)] += 1
             if stop_at is not None and a == stop_at:
                 break
             step()
+            b = cur()
+            if b[0] == a[0] and b[1] <= a[1]:
+                backward_edges[(a, b)] += 1
+            previous_addr = a
             executed += 1
     except Exception as exc:  # keep partial results useful during bring-up
         cs, ip = cpu.addr()
@@ -144,6 +157,31 @@ def main(argv: list[str] | None = None) -> int:
         per = (t / calls * 1e6) if calls else 0.0
         kind = "present" if addr in PRESENT_HOOKS else "decode "
         print(f"  {addr[0]:04X}:{addr[1]:04X} {kind} {t:7.3f}s  calls={calls:>8,}  {per:8.1f}us/call  {name}")
+    print("-" * 64)
+
+    print("Top interpreted backward edges / tight loops:")
+    for (src, dst), count in backward_edges.most_common(args.top):
+        print(f"  {src[0]:04X}:{src[1]:04X} -> {dst[0]:04X}:{dst[1]:04X}  {count:9,}")
+    print("-" * 64)
+
+    print("Top hook boundary crossings by predecessor address:")
+    crossing_rows = []
+    for hook_addr, preds in hook_predecessors.items():
+        for pred, count in preds.items():
+            crossing_rows.append((count, pred, hook_addr))
+    for count, pred, hook_addr in sorted(crossing_rows, reverse=True)[: args.top]:
+        name = cpu.hook_names.get(hook_addr, "")
+        print(f"  {pred[0]:04X}:{pred[1]:04X} -> {hook_addr[0]:04X}:{hook_addr[1]:04X}  {count:9,}  {name}")
+    print("-" * 64)
+
+    print("Top hook stack return words / likely call sites:")
+    hook_call_rows = []
+    for hook_addr, words in hook_stack_words.items():
+        for word, count in words.items():
+            hook_call_rows.append((count, hook_addr, word))
+    for count, hook_addr, word in sorted(hook_call_rows, reverse=True)[: args.top]:
+        name = cpu.hook_names.get(hook_addr, "")
+        print(f"  {hook_addr[0]:04X}:{hook_addr[1]:04X}  stack={word:04X}  {count:9,}  {name}")
     print("=" * 64)
     return 0
 

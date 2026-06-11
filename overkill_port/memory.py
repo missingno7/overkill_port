@@ -6,7 +6,7 @@ from pathlib import Path
 from .mz import MZExecutable, parse_mz
 
 
-MEM_SIZE = 1024 * 1024
+CPU_MEM_SIZE = 1024 * 1024
 PSP_SIZE = 256
 DEFAULT_LOAD_SEGMENT = 0x1000
 
@@ -15,27 +15,42 @@ def linear(seg: int, off: int) -> int:
     return (((seg & 0xFFFF) << 4) + (off & 0xFFFF)) & 0xFFFFF
 
 
-EGA_APERTURE = 0xA0000        # physical base of the EGA A000h aperture
-EGA_PLANE_STRIDE = 0x2000     # shadow-plane spacing; must match render_cga.py
-EGA_PLANE_WINDOW = 0x2000     # CPU offsets 0..1FFFh map into one plane
+EGA_CPU_APERTURE = 0xA0000    # CPU-visible base of the real EGA A000h aperture
+# Store emulated EGA bitplanes outside the 20-bit CPU address space.  Earlier
+# revisions stored plane 1/2/3 at A000:2000/4000/6000, but those are real CPU
+# offsets/pages, not hardware planes.  Full-screen transition code can legally
+# write there, which corrupted the displayed plane shadows and mixed screens.
+EGA_APERTURE = 0x100000       # compatibility name: shadow-plane storage base
+EGA_PLANE_STRIDE = 0x10000    # full 64 KiB per EGA plane
+EGA_PLANE_WINDOW = 0x10000    # CPU offsets 0000h..FFFFh map into each plane
+EGA_VISIBLE_PLANE_SIZE = 0x2000  # 320x200x4bpp visible bytes per plane
+EGA_SHADOW_SIZE = EGA_PLANE_STRIDE * 4
+MEM_SIZE = CPU_MEM_SIZE + EGA_SHADOW_SIZE
 
 
 class Memory:
     def __init__(self, size: int = MEM_SIZE):
         self.data = bytearray(size)
         self.size = size
-        # EGA planar emulation.  Real EGA exposes four hardware bitplanes that all
-        # share the same CPU offset inside A000h; the sequencer map-mask register
-        # (03C4h index 02h) selects which planes a write lands in.  Our memory is a
-        # flat bytearray, so without this a 16-colour image drawn plane-by-plane
-        # (map mask cycling 1,2,4,8) collapses into a single plane and renders
-        # monochrome.  We shadow each plane at A000h + plane*EGA_PLANE_STRIDE, the
-        # exact layout render_cga.py / the 2750 present blit already expect, and
-        # route A000h writes there per the current map mask.  Activated lazily the
-        # first time the game programs the EGA sequencer (CGA never touches 03C4h),
-        # so the long-tested CGA path keeps its plain flat-memory behaviour.
+        # EGA planar emulation.  Real EGA exposes four hardware bitplanes behind
+        # the same CPU offsets in A000h; the sequencer map-mask register
+        # (03C4h index 02h) selects which planes a write lands in.  Keep those
+        # emulated planes in non-CPU-visible storage at EGA_APERTURE so real CPU
+        # offsets like A000:2000 remain usable as offsets/pages instead of
+        # colliding with the display shadow for plane 1.
         self.ega_planar = False
         self.ega_map_mask = 0x0F
+        # EGA graphics-controller read map select (GC index 04h).  Real EGA
+        # reads one selected plane through the same A000h CPU offset.  Hooks and
+        # the interpreter both go through rb/rw for normal memory reads, so
+        # tracking this keeps plane-to-linear copies from accidentally reading
+        # plane 0 four times.
+        self.ega_read_plane = 0
+        # CRTC start address programmed through 03D4h/03D5h indexes 0Ch/0Dh.
+        # OVERKILL's EGA paths use off-screen A000 pages during transitions; the
+        # live renderer must display the hardware-selected start offset, not
+        # always shadow offset 0000h.
+        self.ega_display_start = 0
 
     def check(self, addr: int, n: int = 1) -> int:
         addr &= 0xFFFFF
@@ -63,11 +78,23 @@ class Memory:
     # byte access is always in range; word accesses wrap at the 1 MB boundary like
     # real-mode hardware instead of raising.
     def rb(self, seg: int, off: int) -> int:
-        return self.data[((((seg & 0xFFFF) << 4) + (off & 0xFFFF)) & 0xFFFFF)]
+        a = ((((seg & 0xFFFF) << 4) + (off & 0xFFFF)) & 0xFFFFF)
+        if self.ega_planar:
+            po = a - EGA_CPU_APERTURE
+            if 0 <= po < EGA_PLANE_WINDOW:
+                return self.data[EGA_APERTURE + (self.ega_read_plane & 0x03) * EGA_PLANE_STRIDE + po]
+        return self.data[a]
 
     def rw(self, seg: int, off: int) -> int:
         a = (((seg & 0xFFFF) << 4) + (off & 0xFFFF)) & 0xFFFFF
         d = self.data
+        if self.ega_planar:
+            po = a - EGA_CPU_APERTURE
+            if 0 <= po < EGA_PLANE_WINDOW:
+                base = EGA_APERTURE + (self.ega_read_plane & 0x03) * EGA_PLANE_STRIDE + po
+                if po + 1 < EGA_PLANE_WINDOW:
+                    return d[base] | (d[base + 1] << 8)
+                return d[base] | (d[(a + 1) & 0xFFFFF] << 8)
         if a == 0xFFFFF:
             return d[a] | (d[0] << 8)
         return d[a] | (d[a + 1] << 8)
@@ -75,7 +102,7 @@ class Memory:
     def wb(self, seg: int, off: int, value: int) -> None:
         a = ((((seg & 0xFFFF) << 4) + (off & 0xFFFF)) & 0xFFFFF)
         if self.ega_planar:
-            po = a - EGA_APERTURE
+            po = a - EGA_CPU_APERTURE
             if 0 <= po < EGA_PLANE_WINDOW:
                 self._ega_wb(po, value)
                 return
@@ -85,7 +112,7 @@ class Memory:
         a = (((seg & 0xFFFF) << 4) + (off & 0xFFFF)) & 0xFFFFF
         d = self.data
         if self.ega_planar:
-            po = a - EGA_APERTURE
+            po = a - EGA_CPU_APERTURE
             if 0 <= po < EGA_PLANE_WINDOW:
                 self._ega_wb(po, value & 0xFF)
                 if po + 1 < EGA_PLANE_WINDOW:
