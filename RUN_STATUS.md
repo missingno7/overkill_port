@@ -3,10 +3,12 @@
 Validated on `assets/OVERKILL.UNLZEXE.EXE`.  `65 passed` *at this checkpoint*.
 
 > **Note:** this checkpoint is not the latest state.  Work after checkpoint 26
-> (EGA planar-correctness fixes, the masked-sprite/perf pass, and the
-> replacements.py hook de-duplication) is recorded in
+> (EGA planar-correctness fixes, the masked-sprite/perf pass, the replacements.py
+> hook de-duplication, and the 2026-06-11 EGA gameplay-profiling passes that added
+> the verified `1D1B` and wide `13E7` bit-spread composite hooks — together ~17%
+> then a further ~33% faster in-level play) is recorded in
 > [`docs/runtime_findings.md`](docs/runtime_findings.md); the full suite is now
-> `80 passed`.
+> `82 passed`.
 
 This pass continued profiling the slow planet/difficulty selection screen that is
 shown after pressing SPACE in the main menu.  The earlier menu hooks helped, but

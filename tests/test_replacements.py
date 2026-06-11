@@ -2066,6 +2066,120 @@ def test_ega_spaced_word_composite_1aeb_hook_matches_interpreted_asm():
         assert asm.mem.data == hook.mem.data
 
 
+def test_ega_spread_masked_composite_1d1b_hook_matches_interpreted_asm():
+    import random
+    from overkill_port.replacements import overkill_ega_spread_masked_composite_1d1b
+
+    # Exact bytes of 1010:1D1B..1DF3 captured from the runtime (the EGA bit-spread
+    # masked sprite variant reached via the 76E2 jump table).
+    code = bytes.fromhex(
+        'ad b2 ff f9 d0 d8 d0 dc d0 da f9 d0 d8 d0 dc d0 da f9 d0 d8 d0 dc d0 da'
+        'f9 d0 d8 d0 dc d0 da 26 21 05 26 20 55 02 26 21 45 1a 26 20 55 1c'
+        '26 21 45 34 26 20 55 36 26 21 45 4e 26 20 55 50 ad 32 d2 d0 e8 d0 dc d0 da'
+        'd0 e8 d0 dc d0 da d0 e8 d0 dc d0 da d0 e8 d0 dc d0 da 26 09 05 26 08 55 02'
+        'ad 32 d2 d0 e8 d0 dc d0 da d0 e8 d0 dc d0 da d0 e8 d0 dc d0 da d0 e8 d0 dc d0 da'
+        '26 09 45 1a 26 08 55 1c'
+        'ad 32 d2 d0 e8 d0 dc d0 da d0 e8 d0 dc d0 da d0 e8 d0 dc d0 da d0 e8 d0 dc d0 da'
+        '26 09 45 34 26 08 55 36'
+        'ad 32 d2 d0 e8 d0 dc d0 da d0 e8 d0 dc d0 da d0 e8 d0 dc d0 da d0 e8 d0 dc d0 da'
+        '26 09 45 4e 26 08 55 50'
+        '83 c7 68 e2 02 eb 03 e9 2d ff 2e 8e 1e 96 95 c3'
+    )
+
+    def make_cpu(use_hook: bool, rows: int, seed: int):
+        rnd = random.Random(seed)
+        mem = Memory()
+        mem.load(0x1010, 0x1D1B, code)
+        mem.ww(0x1010, 0x9596, 0x2222)
+        ds, es = 0x3000, 0x4000
+        si, di = 0x0100, 0x0200
+        for i in range(rows * 0x0A + 0x20):
+            mem.wb(ds, (si + i) & 0xFFFF, rnd.randrange(256))
+        for i in range(rows * 0x68 + 0x60):
+            mem.wb(es, (di + i) & 0xFFFF, rnd.randrange(256))
+        state = CPUState(
+            ax=rnd.randrange(0x10000), bx=0x1111, cx=rows, dx=0x77AA,
+            si=si, di=di, bp=0x3333, sp=0x9000, cs=0x1010, ds=ds, es=es,
+            ss=0x5000, ip=0x1D1B, flags=0x0287,
+        )
+        cpu = CPU8086(mem, state)
+        cpu.trace_enabled = False
+        cpu.push(0xBEEF)
+        if use_hook:
+            cpu.replacement_hooks[(0x1010, 0x1D1B)] = overkill_ega_spread_masked_composite_1d1b
+        return cpu
+
+    for rows in (1, 2, 8, 16, 17):
+        asm = make_cpu(False, rows, rows)
+        hook = make_cpu(True, rows, rows)
+        for _ in range(20000):
+            if asm.addr() == (0x1010, 0xBEEF):
+                break
+            asm.step()
+        hook.step()
+        assert asm.addr() == hook.addr() == (0x1010, 0xBEEF)
+        assert asm.s.snapshot() == hook.s.snapshot()
+        assert asm.mem.data == hook.mem.data
+
+
+def test_ega_spread_masked_composite_wide_13e7_hook_matches_interpreted_asm():
+    import random
+    from overkill_port.replacements import overkill_ega_spread_masked_composite_wide_13e7
+
+    # Exact bytes of 1010:13E7..154A captured from the runtime (the wide,
+    # word+word+byte EGA bit-spread masked sprite variant reached via 7620).
+    code = bytes.fromhex(
+        '8b 04 8b 5c 02 b2 ff f9 d0 d8 d0 dc d0 db d0 df d0 da f9 d0 d8 d0 dc d0 db d0 df d0 da'
+        'f9 d0 d8 d0 dc d0 db d0 df d0 da f9 d0 d8 d0 dc d0 db d0 df d0 da'
+        '26 21 05 26 21 5d 02 26 20 55 04 26 21 45 1a 26 21 5d 1c 26 20 55 1e'
+        '26 21 45 34 26 21 5d 36 26 20 55 38 26 21 45 4e 26 21 5d 50 26 20 55 52'
+        '8b 44 04 8b 5c 06 32 d2 d0 e8 d0 dc d0 db d0 df d0 da d0 e8 d0 dc d0 db d0 df d0 da'
+        'd0 e8 d0 dc d0 db d0 df d0 da d0 e8 d0 dc d0 db d0 df d0 da 26 09 05 26 09 5d 02 26 08 55 04'
+        '8b 44 08 8b 5c 0a 32 d2 d0 e8 d0 dc d0 db d0 df d0 da d0 e8 d0 dc d0 db d0 df d0 da'
+        'd0 e8 d0 dc d0 db d0 df d0 da d0 e8 d0 dc d0 db d0 df d0 da 26 09 45 1a 26 09 5d 1c 26 08 55 1e'
+        '8b 44 0c 8b 5c 0e 32 d2 d0 e8 d0 dc d0 db d0 df d0 da d0 e8 d0 dc d0 db d0 df d0 da'
+        'd0 e8 d0 dc d0 db d0 df d0 da d0 e8 d0 dc d0 db d0 df d0 da 26 09 45 34 26 09 5d 36 26 08 55 38'
+        '8b 44 10 8b 5c 12 32 d2 d0 e8 d0 dc d0 db d0 df d0 da d0 e8 d0 dc d0 db d0 df d0 da'
+        'd0 e8 d0 dc d0 db d0 df d0 da d0 e8 d0 dc d0 db d0 df d0 da 26 09 45 4e 26 09 5d 50 26 08 55 52'
+        '83 c7 68 83 c6 14 e2 02 eb 03 e9 a2 fe 2e 8e 1e 96 95 c3'
+    )
+
+    def make_cpu(use_hook: bool, rows: int, seed: int):
+        rnd = random.Random(seed)
+        mem = Memory()
+        mem.load(0x1010, 0x13E7, code)
+        mem.ww(0x1010, 0x9596, 0x2222)
+        ds, es = 0x3000, 0x4000
+        si, di = 0x0100, 0x0200
+        for i in range(rows * 0x14 + 0x20):
+            mem.wb(ds, (si + i) & 0xFFFF, rnd.randrange(256))
+        for i in range(rows * 0x68 + 0x60):
+            mem.wb(es, (di + i) & 0xFFFF, rnd.randrange(256))
+        state = CPUState(
+            ax=rnd.randrange(0x10000), bx=rnd.randrange(0x10000), cx=rows, dx=0x77AA,
+            si=si, di=di, bp=0x3333, sp=0x9000, cs=0x1010, ds=ds, es=es,
+            ss=0x5000, ip=0x13E7, flags=0x0287,
+        )
+        cpu = CPU8086(mem, state)
+        cpu.trace_enabled = False
+        cpu.push(0xBEEF)
+        if use_hook:
+            cpu.replacement_hooks[(0x1010, 0x13E7)] = overkill_ega_spread_masked_composite_wide_13e7
+        return cpu
+
+    for rows in (1, 2, 8, 16, 17):
+        asm = make_cpu(False, rows, rows)
+        hook = make_cpu(True, rows, rows)
+        for _ in range(30000):
+            if asm.addr() == (0x1010, 0xBEEF):
+                break
+            asm.step()
+        hook.step()
+        assert asm.addr() == hook.addr() == (0x1010, 0xBEEF)
+        assert asm.s.snapshot() == hook.s.snapshot()
+        assert asm.mem.data == hook.mem.data
+
+
 def test_ega_spaced_copy_29c6_hook_matches_interpreted_asm():
     import random
     from overkill_port.replacements import overkill_ega_spaced_copy_29c6

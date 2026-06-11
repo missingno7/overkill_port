@@ -4,8 +4,9 @@ The interpreter runs on a background thread so the UI remains responsive during
 long bursts spent decoding the next screen.  Gameplay is paced from the game's
 modelled timer wait (``1010:0679``), while intro/menu/transition screens also
 pace from the VGA retrace wait (``1010:50C9``).  Visible video-memory snapshots
-(CGA ``B800h`` or EGA ``A000h`` shadow planes) are published to the Tk thread whenever a timed boundary changed the screen, and the
-emulator waits until that exact snapshot is consumed before continuing.  That
+(CGA ``B800h`` or EGA ``A000h`` shadow planes) are published to the SDL viewer
+thread whenever a timed boundary changed the screen, and the emulator waits until
+that exact snapshot is consumed before continuing.  That
 producer/consumer handoff prevents the emulator from executing several visible
 states before the UI/input side gets a chance to react.
 
@@ -33,7 +34,6 @@ import argparse
 from datetime import datetime
 from queue import Empty, SimpleQueue
 import sys
-import tempfile
 import threading
 import time
 import traceback
@@ -49,7 +49,7 @@ from overkill_port.hook_verify import HookVerifierConfig, install_hook_verifier,
 from overkill_port.runtime import create_runtime
 from overkill_port.snapshot import load_snapshot, write_snapshot
 from overkill_port.memory import EGA_APERTURE, EGA_SHADOW_SIZE
-from render_cga import CGA_PALETTES, render_ppm, render_ega_ppm, render_tandy_ppm
+from render_cga import CGA_PALETTES
 
 CGA_PRESENT_HOOK = (0x1010, 0x447B)  # mode-0 CGA frame-present blit
 EGA_PRESENT_HOOK = (0x1010, 0x2750)  # mode-1 EGA frame-present blit
@@ -69,43 +69,6 @@ TANDY_SIZE = 0x8000
 NON_CGA_INTERACTIVE_DISABLE = {
     (0x1010, 0x58DF),
 }
-
-# Full Tk keysym -> XT make scan code map so any key can be forwarded.
-KEYSYM_SCAN: dict[str, int] = {
-    "Escape": 0x01, "minus": 0x0C, "equal": 0x0D, "BackSpace": 0x0E, "Tab": 0x0F,
-    "bracketleft": 0x1A, "bracketright": 0x1B, "Return": 0x1C, "KP_Enter": 0x1C,
-    "Control_L": 0x1D, "Control_R": 0x1D, "semicolon": 0x27, "apostrophe": 0x28,
-    "grave": 0x29, "Shift_L": 0x2A, "backslash": 0x2B, "comma": 0x33, "period": 0x34,
-    "slash": 0x35, "Shift_R": 0x36, "Alt_L": 0x38, "Alt_R": 0x38, "space": 0x39,
-    "Caps_Lock": 0x3A,
-    "F1": 0x3B, "F2": 0x3C, "F3": 0x3D, "F4": 0x3E, "F5": 0x3F, "F6": 0x40,
-    "F7": 0x41, "F8": 0x42, "F9": 0x43, "F10": 0x44, "F11": 0x57, "F12": 0x58,
-    # Arrows use the keypad scan codes most DOS games expect.
-    "Up": 0x48, "Down": 0x50, "Left": 0x4B, "Right": 0x4D,
-    "KP_7": 0x47, "KP_8": 0x48, "KP_9": 0x49, "KP_Subtract": 0x4A,
-    "KP_4": 0x4B, "KP_5": 0x4C, "KP_6": 0x4D, "KP_Add": 0x4E,
-    "KP_1": 0x4F, "KP_2": 0x50, "KP_3": 0x51, "KP_0": 0x52, "KP_Decimal": 0x53,
-}
-for _i, _ch in enumerate("1234567890"):
-    KEYSYM_SCAN[_ch] = 0x02 + _i
-for _i, _ch in enumerate("qwertyuiop"):
-    KEYSYM_SCAN[_ch] = 0x10 + _i
-for _i, _ch in enumerate("asdfghjkl"):
-    KEYSYM_SCAN[_ch] = 0x1E + _i
-for _i, _ch in enumerate("zxcvbnm"):
-    KEYSYM_SCAN[_ch] = 0x2C + _i
-
-
-def scancode_for(event) -> int | None:
-    if event.keysym in KEYSYM_SCAN:
-        return KEYSYM_SCAN[event.keysym]
-    key = (event.keysym or "").lower()
-    if key in KEYSYM_SCAN:
-        return KEYSYM_SCAN[key]
-    if event.char and event.char.lower() in KEYSYM_SCAN:
-        return KEYSYM_SCAN[event.char.lower()]
-    return None
-
 
 class TimerPacer:
     """Throttle the game to ``hz`` frames/second."""
@@ -134,10 +97,10 @@ class FramePresented(Exception):
 
 
 class FrameSync:
-    """One-frame-at-a-time handoff from emulator thread to Tk thread.
+    """One-frame-at-a-time handoff from emulator thread to the viewer thread.
 
-    The previous player let the emulator keep executing while Tk sampled video
-    memory on its own timer.  If Tk was late, several emulated presents could be
+    The previous player let the emulator keep executing while the UI sampled video
+    memory on its own timer.  If the UI was late, several emulated presents could be
     overwritten before one was shown, producing the exact symptom reported by the
     user: intro/menu animations looked unpaced and key presses were hard to land.
     """
@@ -197,7 +160,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--save-snapshot-root", default=str(ROOT / "artifacts"),
                    help="root directory for F12 runtime snapshots")
     p.add_argument("--no-present-sync", action="store_true",
-                   help="debug only: do not wait for Tk to consume each timer-frame snapshot")
+                   help="debug only: do not wait for the viewer to consume each timer-frame snapshot")
     p.add_argument("--retrace-hz", type=float, default=None,
                    help="pace VGA retrace waits used by intro/menu; defaults to --game-hz")
     p.add_argument("--verify-hooks", action="store_true",
@@ -221,12 +184,6 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--ega-publish-all-presents", action="store_true",
                    help="debug only: publish every EGA present, including alternating off-screen page presents")
     args = p.parse_args(argv)
-
-    try:
-        import tkinter as tk
-    except Exception as exc:  # pragma: no cover - environment dependent
-        print(f"tkinter is required for the interactive viewer: {exc}")
-        return 1
 
     exe = ROOT / "assets" / "OVERKILL.UNLZEXE.EXE"
     assets = ROOT / "assets"
@@ -297,17 +254,14 @@ def main(argv: list[str] | None = None) -> int:
         present_hook_addr = EGA_PRESENT_HOOK
         video_base = A000_BASE
         video_size = EGA_SHADOW_SIZE
-        render_frame = lambda snapshot, display_start: render_ega_ppm(snapshot, 0xA000, args.scale, display_start)
     elif args.video == "tandy":
         present_hook_addr = TANDY_PRESENT_HOOK
         video_base = B800_BASE
         video_size = TANDY_SIZE
-        render_frame = lambda snapshot, display_start: render_tandy_ppm(snapshot, 0xB800, args.scale)
     else:
         present_hook_addr = CGA_PRESENT_HOOK
         video_base = B800_BASE
         video_size = B800_SIZE
-        render_frame = lambda snapshot, display_start: render_ppm(snapshot, 0xB800, args.palette, args.scale)
 
     base_present = rt.cpu.replacement_hooks.get(present_hook_addr)
     base_present_name = rt.cpu.hook_names.get(present_hook_addr, "replacement")
@@ -330,7 +284,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.video == "ega":
             # Only hash the hardware-visible 320x200 window from each plane.
             # Hashing the full shadow store lets off-screen/work pages trigger a
-            # Tk publish even when the displayed CRTC page did not change.
+            # viewer publish even when the displayed CRTC page did not change.
             start = ega_render_start(cpu.mem.ega_display_start)
             crc = 0
             for plane in range(4):
@@ -391,7 +345,7 @@ def main(argv: list[str] | None = None) -> int:
         blits["n"] += 1
         # EGA gameplay alternates the CRTC start between 0000h and 2000h around
         # paired present calls.  The two presents are part of one page-flip/update
-        # sequence; painting both through Tk exposes the intermediate work page
+        # sequence; painting both through the viewer exposes the intermediate work page
         # as the visible "every other frame" blink.  Keep executing both in the
         # VM, but only publish the stable page unless the debug flag asks to see
         # every present boundary.
@@ -486,81 +440,28 @@ def main(argv: list[str] | None = None) -> int:
                 traceback.print_exc()
                 return
 
-    root = tk.Tk()
-    root.title(f"OVERKILL (emulated {args.video.upper()})")
-    label = tk.Label(root)
-    label.pack()
-    label.focus_set()
-    ui = {"img": None}
-    frame_path = Path(tempfile.gettempdir()) / "overkill_frame.ppm"
+    try:
+        from sdl_view import run_sdl_ui
+    except Exception as exc:
+        print(f"the interactive viewer requires pygame and numpy: {exc}")
+        return 1
 
-    def on_press(event) -> None:
-        if event.keysym == "Escape":
-            stop.set()
-            root.destroy()
-            return
-        if event.keysym == "F12":
-            queue_snapshot_save()
-            return
-        sc = scancode_for(event)
-        if sc is not None:
-            keyboard.post_down(sc)
-
-    def on_release(event) -> None:
-        sc = scancode_for(event)
-        if sc is not None:
-            keyboard.post_up(sc)
-
-    # bind_all is more reliable than binding only the root/label: depending on
-    # platform/window-manager focus, Tk can otherwise show frames but never route
-    # menu key presses to our handlers.
-    root.bind_all("<KeyPress>", on_press)
-    root.bind_all("<KeyRelease>", on_release)
-    root.focus_force()
-    root.protocol("WM_DELETE_WINDOW", lambda: (stop.set(), root.destroy()))
-
-    def ui_tick() -> None:
-        pending = frame_sync.take_pending()
-        if pending is not None:
-            frame_id, snapshot, display_start = pending
-            width, height, ppm = render_frame(snapshot, display_start)
-            frame_path.write_bytes(ppm)
-            ui["img"] = tk.PhotoImage(file=str(frame_path))
-            label.configure(image=ui["img"])
-            frame_sync.mark_displayed(frame_id)
-        elif args.no_present_sync:
-            # Debug escape hatch: old unsynchronised sampling mode.  Normal play
-            # intentionally does *not* do this, because sampling live B800 while
-            # the emulator is in the middle of drawing a frame causes exactly the
-            # choppy/partial-frame look we are avoiding.
-            live_start = ega_render_start(rt.program.memory.ega_display_start) if args.video == "ega" else 0
-            width, height, ppm = render_frame(bytes(rt.program.memory.data), live_start)
-            frame_path.write_bytes(ppm)
-            ui["img"] = tk.PhotoImage(file=str(frame_path))
-            label.configure(image=ui["img"])
-
-        base = f"OVERKILL (emulated {args.video.upper()})  -  Q/A/O/P move, Z/Space fire"
-        if boundary["n"] == 0 and not status["text"]:
-            root.title("OVERKILL - decoding startup assets, please wait (~10-15s)...")
-        elif status["text"]:
-            root.title(f"{base}  |  {status['text']}  |  visible={visible['n']} boundaries={boundary['n']} blits={blits['n']} timers={timers['n']} retraces={retraces['n']}")
-        else:
-            root.title(f"{base}  |  visible={visible['n']} boundaries={boundary['n']} blits={blits['n']} timers={timers['n']} retraces={retraces['n']}")
-        if not stop.is_set():
-            # Do not use --fps as an additional frame pacer.  The emulator thread
-            # is already paced by --game-hz at the DOS timer wait.  Tk should
-            # consume pending snapshots quickly; otherwise --fps 30 plus
-            # --game-hz 30 accidentally becomes a double throttle.
-            root.after(1, ui_tick)
-
+    # Start the emulator thread, then run the pygame/SDL viewer on the main thread.
     emu = threading.Thread(target=emulator_loop, name="overkill-emu", daemon=True)
     emu.start()
-    root.after(30, ui_tick)
-    try:
-        root.mainloop()
-    finally:
-        stop.set()
-        frame_sync.close()
+    run_sdl_ui(
+        args=args,
+        frame_sync=frame_sync,
+        keyboard=keyboard,
+        stop=stop,
+        status=status,
+        counters={"visible": visible, "boundary": boundary, "blits": blits,
+                  "timers": timers, "retraces": retraces},
+        queue_snapshot_save=queue_snapshot_save,
+        ega_render_start=ega_render_start,
+        live_memory=lambda: bytes(rt.program.memory.data),
+        live_display_start=lambda: rt.program.memory.ega_display_start,
+    )
     return 0
 
 

@@ -26,7 +26,7 @@ python scripts/trace_start.py
 python scripts/make_runtime_snapshot.py
 python scripts/profile_hotspots.py 2000000          # hottest interpreted addresses
 python scripts/render_cga.py --steps 2000000 --out frame.png   # decode B800 -> PNG
-python scripts/play.py                              # interactive Tk viewer, default CGA
+python scripts/play.py                              # interactive SDL viewer, default CGA
 python scripts/play.py --video ega                  # launch/render using the original /E EGA selector
 ```
 
@@ -56,8 +56,10 @@ buffer to `B800h` video memory.
 
 Decoding `B800h` as CGA 320x200 4-colour shows the actual OVERKILL outfitting/shop
 screen (player ship, HUD, `WEAPON/MISSILES/DRONE/GADGETS/UPGRADES`).  See
-`scripts/render_cga.py` (frame -> PNG) and `scripts/play.py` (interactive Tk
-viewer with keyboard input).  CGA is the default stable path.  `scripts/play.py --video ega` now passes the documented `/E` PSP command tail and decodes the mode-1 `A000h` EGA shadow planes as 320x200 16-colour output.
+`scripts/render_cga.py` (frame -> PNG) and `scripts/play.py` (interactive SDL
+viewer with keyboard input; needs `pygame` + `numpy`).  CGA is the default stable
+path.  `scripts/play.py --video ega` now passes the documented `/E` PSP command
+tail and decodes the mode-1 `A000h` EGA shadow planes as 320x200 16-colour output.
 
 Next targets are the remaining hot per-frame render routines (`1010:CCAA`
 dirty-word copy, `1010:41A6` variable-width interlaced blit) and the first

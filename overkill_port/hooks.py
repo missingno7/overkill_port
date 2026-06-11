@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Callable
 
@@ -49,9 +50,27 @@ class HookRegistry:
         return deco
 
     def install(self, cpu: CPU8086) -> None:
+        # Allow individual hooks to be disabled without code changes, e.g.
+        # OVERKILL_DISABLE_HOOKS=1010:1D1B,1010:1AEB.  Disabled addresses fall
+        # back to the interpreted original ASM, which is useful for A/B
+        # performance checks and for bisecting a suspected-incorrect hook.
+        disabled = _parse_disabled(os.environ.get("OVERKILL_DISABLE_HOOKS", ""))
         for key, repl in self.replacements.items():
+            if key in disabled:
+                continue
             cpu.replacement_hooks[key] = repl.handler
             cpu.hook_names[key] = repl.name
+
+
+def _parse_disabled(text: str) -> set[tuple[int, int]]:
+    out: set[tuple[int, int]] = set()
+    for token in text.replace(";", ",").split(","):
+        token = token.strip()
+        if not token:
+            continue
+        cs, _, ip = token.partition(":")
+        out.add((int(cs, 16) & 0xFFFF, int(ip, 16) & 0xFFFF))
+    return out
 
 
 registry = HookRegistry()

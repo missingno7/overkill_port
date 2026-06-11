@@ -1668,6 +1668,203 @@ def overkill_ega_spaced_word_composite_1aeb(cpu):
     s.ip = cpu.pop()
 
 
+@registry.replace(0x1010, 0x1D1B, "overkill_ega_spread_masked_composite_1d1b")
+def overkill_ega_spread_masked_composite_1d1b(cpu):
+    """Replace the hot EGA bit-spread masked composite loop at 1010:1D1B.
+
+    This is the sibling of the 1AEB jump-table sprite variant (both are reached
+    through the ``jmp cs:[bx]`` dispatcher at 1010:76E2 and return near to the
+    object-scan caller after restoring DS from CS:[9596]).  Per row it writes
+    four 3-byte chunks (a word at DI plus a byte at DI+2) spaced 1Ah bytes apart,
+    advancing DI by 68h between rows.
+
+    The source layout is one mask word followed by four data words (SI += 0Ah per
+    row).  Unlike 1AEB, each word is first spread through the original RCR/SHR bit
+    chains before it is combined with the destination:
+
+      * mask word: ``DL=FF`` then 4x {STC; RCR AL; RCR AH; RCR DL}; the resulting
+        AX (word) and DL (byte) are AND-ed into all four chunks of the row,
+        clearing the pixels the sprite will overwrite;
+      * each of the four data words: ``DL=0`` then 4x {SHR AL; RCR AH; RCR DL};
+        the resulting AX/DL are OR-ed into that chunk, painting the pixels.
+
+    The chains are replicated exactly (same primitives, same order) so registers,
+    flags and written memory match the interpreted ASM; only the per-instruction
+    fetch/decode/dispatch overhead is removed.  Verified bit-identical at runtime
+    by the differential hook verifier (see ``DEFAULT_STOPS`` 1D1B near_ret) and by
+    ``test_ega_spread_masked_composite_1d1b_hook_matches_interpreted_asm``.
+    """
+    s = cpu.s
+    mem = cpu.mem
+    rows = s.cx & 0xFFFF
+    if rows == 0:
+        rows = 0x10000
+
+    ds = s.ds & 0xFFFF
+    es = s.es & 0xFFFF
+    si = s.si & 0xFFFF
+    di = s.di & 0xFFFF
+    dh = (s.dx >> 8) & 0xFF
+
+    rw, ww, rb, wb = mem.rw, mem.ww, mem.rb, mem.wb
+
+    ax = s.ax & 0xFFFF
+    dl = 0
+    old_di = di
+    # Destination chunk offsets within a row: word at +k, byte at +k+2.
+    chunk = (0x00, 0x1A, 0x34, 0x4E)
+
+    for _ in range(rows):
+        # Mask word: STC-seeded RCR chain, then AND into all four chunks.
+        al = rw(ds, si) & 0xFF
+        ah = (rw(ds, si) >> 8) & 0xFF
+        si = (si + 2) & 0xFFFF
+        dl = 0xFF
+        for _ in range(4):
+            cf = 1
+            nal = ((cf << 7) | (al >> 1)) & 0xFF; cf = al & 1; al = nal
+            nah = ((cf << 7) | (ah >> 1)) & 0xFF; cf = ah & 1; ah = nah
+            ndl = ((cf << 7) | (dl >> 1)) & 0xFF; cf = dl & 1; dl = ndl
+        mask_ax = ((ah << 8) | al) & 0xFFFF
+        mask_dl = dl
+        for k in chunk:
+            ww(es, (di + k) & 0xFFFF, rw(es, (di + k) & 0xFFFF) & mask_ax)
+            wb(es, (di + k + 2) & 0xFFFF, rb(es, (di + k + 2) & 0xFFFF) & mask_dl)
+
+        # Four data words: SHR-seeded RCR chain, then OR into the matching chunk.
+        for k in chunk:
+            al = rw(ds, si) & 0xFF
+            ah = (rw(ds, si) >> 8) & 0xFF
+            si = (si + 2) & 0xFFFF
+            dl = 0
+            for _ in range(4):
+                cf = al & 1; al = (al >> 1) & 0xFF
+                nah = ((cf << 7) | (ah >> 1)) & 0xFF; cf = ah & 1; ah = nah
+                ndl = ((cf << 7) | (dl >> 1)) & 0xFF; cf = dl & 1; dl = ndl
+            ax = ((ah << 8) | al) & 0xFFFF
+            ww(es, (di + k) & 0xFFFF, rw(es, (di + k) & 0xFFFF) | ax)
+            wb(es, (di + k + 2) & 0xFFFF, rb(es, (di + k + 2) & 0xFFFF) | dl)
+
+        old_di = di
+        di = (di + 0x68) & 0xFFFF
+
+    # Live flags at the near return come from the final ADD DI,68h.
+    cpu.set_add_flags(old_di, 0x68, old_di + 0x68, 16)
+    s.ax = ax & 0xFFFF
+    s.dx = ((dh << 8) | (dl & 0xFF)) & 0xFFFF
+    s.si = si
+    s.di = di
+    s.cx = 0
+    s.ds = mem.rw(s.cs & 0xFFFF, 0x9596)
+    s.ip = cpu.pop()
+
+
+@registry.replace(0x1010, 0x13E7, "overkill_ega_spread_masked_composite_wide_13e7")
+def overkill_ega_spread_masked_composite_wide_13e7(cpu):
+    """Replace the hot wide EGA bit-spread masked composite loop at 1010:13E7.
+
+    This is the five-byte-wide sibling of the 1D1B variant: another target of the
+    ``jmp cs:[bx]`` sprite dispatcher (here at 1010:7620) that returns near to the
+    object-scan caller after restoring DS from CS:[9596].  Where 1D1B writes a
+    word+byte (3-byte) chunk, 1D1B's wide sibling writes a word+word+byte (5-byte)
+    chunk: a word at DI, a word at DI+2, and a byte at DI+4.  Four chunks per row
+    are spaced 1Ah bytes apart (DI += 68h between rows).
+
+    Per row the source is read with explicit ``MOV r,DS:[SI+disp]`` (not LODSW), as
+    one mask pair followed by four data pairs, so SI advances by 14h per row:
+
+      * mask: AX=[SI], BX=[SI+2], ``DL=FF`` then 4x {STC; RCR AL; RCR AH; RCR BL;
+        RCR BH; RCR DL}; AX/BX/DL are AND-ed into all four chunks of the row;
+      * data k (k=0..3): AX=[SI+4+4k], BX=[SI+6+4k], ``DL=0`` then 4x {SHR AL;
+        RCR AH; RCR BL; RCR BH; RCR DL}; AX/BX/DL are OR-ed into chunk k.
+
+    The RCR/SHR chains are replicated exactly (same primitives/order over the
+    AL/AH/BL/BH/DL register chain) so registers, flags and written memory match the
+    interpreted ASM; only the per-instruction fetch/decode/dispatch overhead is
+    removed.  The live flags at the near return come from the final ``ADD SI,14h``
+    (textually the last arithmetic before LOOP).  Verified bit-identical by the
+    differential hook verifier (``DEFAULT_STOPS`` 13E7 near_ret) and by
+    ``test_ega_spread_masked_composite_wide_13e7_hook_matches_interpreted_asm``.
+    """
+    s = cpu.s
+    mem = cpu.mem
+    rows = s.cx & 0xFFFF
+    if rows == 0:
+        rows = 0x10000
+
+    ds = s.ds & 0xFFFF
+    es = s.es & 0xFFFF
+    si = s.si & 0xFFFF
+    di = s.di & 0xFFFF
+    dh = (s.dx >> 8) & 0xFF
+
+    rw, ww, rb, wb = mem.rw, mem.ww, mem.rb, mem.wb
+
+    ax = s.ax & 0xFFFF
+    bx = s.bx & 0xFFFF
+    dl = 0
+    old_si = si
+    # Destination chunk offsets within a row: word at +k, word at +k+2, byte +k+4.
+    chunk = (0x00, 0x1A, 0x34, 0x4E)
+
+    for _ in range(rows):
+        # Mask pair: STC-seeded RCR chain over AL/AH/BL/BH/DL, AND into all chunks.
+        word = rw(ds, si)
+        al = word & 0xFF; ah = (word >> 8) & 0xFF
+        word = rw(ds, (si + 2) & 0xFFFF)
+        bl = word & 0xFF; bh = (word >> 8) & 0xFF
+        dl = 0xFF
+        for _ in range(4):
+            cf = 1
+            n = ((cf << 7) | (al >> 1)) & 0xFF; cf = al & 1; al = n
+            n = ((cf << 7) | (ah >> 1)) & 0xFF; cf = ah & 1; ah = n
+            n = ((cf << 7) | (bl >> 1)) & 0xFF; cf = bl & 1; bl = n
+            n = ((cf << 7) | (bh >> 1)) & 0xFF; cf = bh & 1; bh = n
+            n = ((cf << 7) | (dl >> 1)) & 0xFF; cf = dl & 1; dl = n
+        mask_ax = ((ah << 8) | al) & 0xFFFF
+        mask_bx = ((bh << 8) | bl) & 0xFFFF
+        mask_dl = dl
+        for k in chunk:
+            ww(es, (di + k) & 0xFFFF, rw(es, (di + k) & 0xFFFF) & mask_ax)
+            ww(es, (di + k + 2) & 0xFFFF, rw(es, (di + k + 2) & 0xFFFF) & mask_bx)
+            wb(es, (di + k + 4) & 0xFFFF, rb(es, (di + k + 4) & 0xFFFF) & mask_dl)
+
+        # Four data pairs: SHR-seeded RCR chain, then OR into the matching chunk.
+        for j, k in enumerate(chunk):
+            so = 4 + j * 4
+            word = rw(ds, (si + so) & 0xFFFF)
+            al = word & 0xFF; ah = (word >> 8) & 0xFF
+            word = rw(ds, (si + so + 2) & 0xFFFF)
+            bl = word & 0xFF; bh = (word >> 8) & 0xFF
+            dl = 0
+            for _ in range(4):
+                cf = al & 1; al = (al >> 1) & 0xFF
+                n = ((cf << 7) | (ah >> 1)) & 0xFF; cf = ah & 1; ah = n
+                n = ((cf << 7) | (bl >> 1)) & 0xFF; cf = bl & 1; bl = n
+                n = ((cf << 7) | (bh >> 1)) & 0xFF; cf = bh & 1; bh = n
+                n = ((cf << 7) | (dl >> 1)) & 0xFF; cf = dl & 1; dl = n
+            ax = ((ah << 8) | al) & 0xFFFF
+            bx = ((bh << 8) | bl) & 0xFFFF
+            ww(es, (di + k) & 0xFFFF, rw(es, (di + k) & 0xFFFF) | ax)
+            ww(es, (di + k + 2) & 0xFFFF, rw(es, (di + k + 2) & 0xFFFF) | bx)
+            wb(es, (di + k + 4) & 0xFFFF, rb(es, (di + k + 4) & 0xFFFF) | dl)
+
+        di = (di + 0x68) & 0xFFFF
+        old_si = si
+        si = (si + 0x14) & 0xFFFF
+
+    # Live flags at the near return come from the final ADD SI,14h.
+    cpu.set_add_flags(old_si, 0x14, old_si + 0x14, 16)
+    s.ax = ax & 0xFFFF
+    s.bx = bx & 0xFFFF
+    s.dx = ((dh << 8) | (dl & 0xFF)) & 0xFFFF
+    s.si = si
+    s.di = di
+    s.cx = 0
+    s.ds = mem.rw(s.cs & 0xFFFF, 0x9596)
+    s.ip = cpu.pop()
+
+
 @registry.replace(0x1010, 0x29C6, "overkill_ega_spaced_copy_29c6")
 def overkill_ega_spaced_copy_29c6(cpu):
     """Replace the hot EGA 16-row spaced copy routine at 1010:29C6.

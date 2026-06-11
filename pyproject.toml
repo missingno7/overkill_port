@@ -3,7 +3,13 @@ name = "overkill-source-port"
 version = "0.1.0"
 description = "OVERKILL-specific DOS 8086 interpreter scaffold for gradual reverse-engineered source porting"
 requires-python = ">=3.11"
-dependencies = []
+# The 8086 interpreter core has no third-party dependencies.  The interactive
+# viewer (scripts/play.py) needs pygame (SDL) for display/input and numpy for the
+# vectorised frame decode; both are imported only when the viewer launches.
+dependencies = [
+    "numpy>=1.23",
+    "pygame>=2.5",
+]
 
 [project.scripts]
 overkill-port = "overkill_port.cli:main"

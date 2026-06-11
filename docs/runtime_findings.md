@@ -812,3 +812,156 @@ Findings and fixes, in the order they landed:
 `render_ega_ppm()` decodes the four shadow planes (`EGA_SHADOW_BASE` layout, with a
 legacy in-aperture fallback for old byte snapshots) as standard 320x200 16-colour
 RGBI output.
+
+### 2026-06-11 EGA gameplay profiling and the 1D1B bit-spread composite hook
+
+First profiling pass driven from a real in-level EGA snapshot
+(`artifacts/snapshot_play_ega_20260611_123041`, ~3.9M steps in) rather than the
+startup/loading path.  Tooling: `scripts/profile_hotspots.py <steps> --snapshot
+<dir>` (wraps every hook with a timing shim and reports interpreted CS:IP
+frequency, backward-edge loops, and hook boundary crossings).
+
+Headline: during gameplay the **interpreter is ~86% of wall time**; replacement
+hooks are ~5.7% (decode/IO) and present/frame hooks ~8.2%.  So the wins are in
+fusing the remaining hot *interpreted* loops, not in adding more leaf hooks.
+
+Top interpreted gameplay loops (2M-step sample, by backward-edge count):
+
+| loop | iters | what it is |
+|------|-------|------------|
+| `1D1B→1DEB` | 4,080 | EGA bit-spread masked sprite/tile composite (hottest, ~18% of interpreted steps) |
+| `29AF→29C3`, `2A9D→2AB1` | ~3,700 | interpreted tails around the already-hooked 29C6/2AB9 EGA copies |
+| `13E7→1542` | 3,660 | not yet analysed |
+| `2672→26FA` | 2,928 | not yet analysed |
+
+The object-scan dispatch (`A8xx`/`5A92`/`5AC8`/`A9E0`) is already hooked and cheap
+per call; it drives the EGA copy/composite variants, which is where the time goes.
+
+`1010:1D1B` is one target of the `jmp cs:[bx]` sprite dispatcher at `1010:76E2`
+(sibling of the already-hooked `1010:1AEB`).  It returns near to the object-scan
+caller after restoring DS from `CS:[9596]`.  Per row it reads one mask word plus
+four data words (`SI += 0Ah`), spreads each word through the original RCR/SHR bit
+chains, AND-s the mask into four 3-byte chunks (word at DI, byte at DI+2; chunks
+spaced 1Ah; `DI += 68h` per row), then OR-s the four data words in.
+
+New verified hook `overkill_ega_spread_masked_composite_1d1b` replicates those
+chains exactly (same primitives/order, so registers, flags and memory match) and
+removes the per-instruction fetch/decode/dispatch overhead.  Correctness:
+
+- synthetic oracle `test_ega_spread_masked_composite_1d1b_hook_matches_interpreted_asm`
+  (rows 1/2/8/16/17, full register+flag+memory equality vs interpreted ASM);
+- runtime differential verifier (`hook_verify.py`, `1D1B` → `near_ret`): 300
+  consecutive in-game calls compared full-memory against the interpreted routine
+  with zero divergence.
+
+Performance (150 in-level frames from the snapshot, same game progress):
+
+| config | wall | fps | interpreted steps |
+|--------|------|-----|-------------------|
+| 1D1B interpreted | 12.42s | 12.1 | 2,474,881 |
+| 1D1B hooked | 10.27s | 14.6 | 2,029,670 |
+
+≈ **17% faster wall / +20% fps** from this one hook; interpreter steps/sec is
+unchanged, confirming the gain is from executing ~445k fewer interpreted
+instructions per 150 frames.  The hook only fires in EGA (CGA/Tandy select other
+jump-table targets and never reach `1D1B`), so those modes are unaffected.
+
+Tooling note: hooks can now be disabled individually for A/B checks and bisection
+via `OVERKILL_DISABLE_HOOKS=1010:1D1B[,1010:....]` (honoured by
+`HookRegistry.install`).
+
+### 2026-06-11 EGA gameplay perf #2: the wide 13E7 bit-spread composite hook
+
+Re-profiling the same in-level EGA snapshot after the `1D1B` hook, the interpreter
+is still ~83% of wall time.  Top interpreted gameplay loops by backward-edge count
+(2M-step sample):
+
+| loop | iters | what it is |
+|------|-------|------------|
+| `29C3→29AF` | 4,440 | un-hooked block-copy routine at `29A9` (5-byte columns, sibling of the hooked `29C6`) |
+| `2AB1→2A9D` | 4,440 | sibling copy near the hooked `2AB9` |
+| `1542→13E7` | 4,417 | **wide bit-spread masked composite (chosen)** |
+| `26FA→2672` | 3,552 | EGA planar tile draw with per-plane `OUT 03C4h/03CEh` port writes |
+
+Chosen: `1010:13E7`, the five-byte-wide sibling of `1D1B`.  Like `1D1B` it is a
+target of the `jmp cs:[bx]` sprite dispatcher (here at `1010:7620`) and returns
+near to the object-scan caller after `MOV DS,CS:[9596]`.  Differences from `1D1B`:
+each chunk is word+word+byte (AX at DI, BX at DI+2, DL at DI+4) instead of
+word+byte; the RCR/SHR spread chains run over the AL/AH/BL/BH/DL register chain;
+the source is read with explicit `MOV r,DS:[SI+disp]` (not `LODSW`) as one mask
+pair plus four data pairs, so `SI += 14h` per row; the row end is
+`ADD DI,68h; ADD SI,14h` and the live flags at the near return come from that final
+`ADD SI,14h`.  Four chunks per row spaced `1Ah`, 16 rows, `DI += 68h` per row.
+
+New verified hook `overkill_ega_spread_masked_composite_wide_13e7` replicates the
+chains exactly (same primitives/order) so registers/flags/memory match; only the
+per-instruction dispatch overhead is removed.  Correctness:
+
+- synthetic oracle `test_ega_spread_masked_composite_wide_13e7_hook_matches_interpreted_asm`
+  (rows 1/2/8/16/17, full register+flag+memory equality vs interpreted ASM);
+- runtime differential verifier (`hook_verify.py`, `13E7` → `near_ret`): 300
+  consecutive in-game calls compared full-memory against the interpreted routine
+  with zero divergence.
+
+Performance (150 in-level frames from the snapshot, identical game progress;
+deterministic step counts, two back-to-back runs each):
+
+| config | wall | fps | interpreted steps |
+|--------|------|-----|-------------------|
+| 13E7 interpreted | ~14.2s | ~10.6 | 2,029,670 |
+| 13E7 hooked | ~9.5s | ~15.7 | 1,328,476 |
+
+≈ **33% faster wall / +48% fps** from this one hook; 701k fewer interpreted steps
+(-34.5%) for the same 150 frames, steps/sec unchanged.  EGA-only (CGA/Tandy select
+other jump-table targets and never reach `13E7`).
+
+Remaining top gameplay candidates for a future single-hook pass: the un-hooked
+`29A9` 5-byte block copy (`29C3→29AF`, simplest, exact sibling of `29C6`), its
+`2A9D` neighbour, and the port-driven planar tile loop at `2672` (riskier because
+each iteration issues `OUT 03C4h/03CEh` sequencer/GC writes that change planar
+routing state).
+
+### 2026-06-11 Viewer backend investigation: is Tk the bottleneck? (added SDL backend)
+
+Question raised from interactive EGA play feeling like ~5 fps: is the Tk renderer
+the bottleneck, and would SDL help?  Measured on the in-level EGA snapshot.
+
+Per-frame display path (scale 2): `render_ega_ppm` builds a *scaled* RGB PPM in a
+pure-Python pixel loop, it is written to a temp `.ppm` file, and a fresh
+`tk.PhotoImage(file=...)` is parsed back from disk every frame.  Component costs:
+render 3.1 ms, disk write 0.5 ms, PhotoImage 1.6 ms.  A NumPy decode at *native*
+320x200 is 0.76 ms and is pixel-identical to `render_ega_ppm`.
+
+Head-to-head, real `FrameSync` + emulator thread, displayed frames over 6 s:
+
+| pipeline | fps |
+|----------|-----|
+| emulator only (no UI), counting visible `2750` presents | ~14 |
+| async Tk (`root.after(1)` + PPM + disk + PhotoImage) | ~11 |
+| async pygame (poll + NumPy + SDL surface/scale/flip) | ~12 |
+
+**Conclusion: Tk is _not_ the primary bottleneck — the interpreter is** (~14
+visible-fps ceiling on this snapshot; lower with more on-screen objects).  Both UI
+pipelines sit near that ceiling, so swapping Tk→SDL is only ~10% at scale 2.  The
+real lever for higher fps remains emulator hook fusion (see the 1D1B/13E7 passes).
+
+SDL is still clearly the better viewer and is now the **only** live backend (Tk
+was removed): keeping two UIs was pure accretion once `pygame`/`numpy` are accepted
+runtime deps for the playable game.
+
+- the display path is **8-9x cheaper** (scale 2: ~1.4 ms vs ~12 ms) and, unlike
+  the old Tk path whose pure-Python scaled-PPM cost is O(scale²) (12 / 15 / 21 ms
+  at scale 2 / 3 / 4), the SDL path renders native and GPU-scales (~1.4 / 1.8 /
+  2.4 ms), so its advantage grows with window size and as the emulator gets faster;
+- it removes the per-frame temp-file round-trip and `PhotoImage` allocation.
+
+Implementation: `scripts/sdl_view.py` (`pygame` + `numpy`) holds the vectorised
+`render_{ega,cga,tandy}_rgb` decoders and `run_sdl_ui`; `play.py` builds the
+emulator/hooks/`FrameSync`/keyboard/pacing/F12-snapshot session and then runs
+`run_sdl_ui` on the main thread.  The reference `render_*_ppm` functions in
+`render_cga.py` are kept as the headless PNG-dump tool and as the decode oracle;
+`tests/test_render_rgb.py` asserts the NumPy decoders are pixel-identical to them
+(full-memory *and* the tight shadow-plane slice the viewer actually publishes), so
+the displayed image is unchanged.  `pygame`/`numpy` are declared in
+`pyproject.toml` and imported only when the viewer launches, so the interpreter
+core, the PNG tool and the test suite still run without them.
