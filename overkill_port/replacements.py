@@ -61,6 +61,8 @@ from .games.overkill.rendering.tandy import (
     masked_sprite_composite_2f81 as run_tandy_masked_sprite_composite_2f81,
     or_inverted_mask_2ecb as run_tandy_or_inverted_mask_2ecb,
     or_inverted_mask_2f40 as run_tandy_or_inverted_mask_2f40,
+    loading_scroll_sequence_60c5 as run_tandy_loading_scroll_sequence_60c5,
+    loading_tile_column_copy_36a2 as run_tandy_loading_tile_column_copy_36a2,
     postcopy_scaled_blit_375b as run_tandy_postcopy_scaled_blit_375b,
     present_tandy_frame_3354 as run_present_tandy_frame_3354,
     changed_dword_present_8rows_cdaa as run_tandy_changed_dword_present_cdaa,
@@ -116,6 +118,8 @@ _SIG_356C = bytes.fromhex("e8 c7 24 89 46 0c 3d ff ff 74 0f 03 06 4c 23")
 _SIG_3657 = bytes.fromhex("e8 dc 23 89 46 0c 3d ff ff 75 01 c3 03 06 4c 23")
 _SIG_375B = bytes.fromhex("2e c7 06 03 59 00 00 2e 8b 3e f9 58 2e 8b 36 fb 58 2e 8b 0e fd 58 2e 8b 2e ff 58 d1 e5")
 _SIG_35AA = bytes.fromhex("2e 8e 06 96 95 2e 8e 1e 98 95 bb 58 00 b9 10 00")
+_SIG_36A2 = bytes.fromhex("8b da b9 0d 00 2e a1 9a 95 81 3e 50 23 5f 0e 72")
+_SIG_60C5 = bytes.fromhex("c7 06 50 23 a0 0e b9 10 00 51 e8 af 46 59 e2 f9")
 _SIG_58DF = bytes.fromhex("51 2e 89 0e 01 59 2e 8b 1e bc 95 d1 e3 2e ff 97")
 _SIG_5DB2 = bytes.fromhex("c7 06 54 a9 00 00 c7 06 0a 23 00 00 8b 46 04 3b")
 _SIG_768E = bytes.fromhex("8b 7e 0c 83 ff ff 75 01 c3 2e 8e 06 98 95 8b 5e")
@@ -360,6 +364,20 @@ def overkill_tandy_rect_copy_306f(cpu):
     """Hook wrapper for OVERKILL 1010:306F Tandy raw rectangular copy."""
     run_tandy_rect_copy_306f(cpu, _tandy_render_runtime())
 
+
+
+
+
+
+@registry.replace(0x1010, 0x60C5, "overkill_tandy_loading_scroll_sequence_60c5")
+def overkill_tandy_loading_scroll_sequence_60c5(cpu):
+    """Hook wrapper for OVERKILL 1010:60C5 Tandy loading scroll sequence."""
+    run_tandy_loading_scroll_sequence_60c5(cpu, _tandy_render_runtime())
+
+@registry.replace(0x1010, 0x36A2, "overkill_tandy_loading_tile_column_copy_36a2")
+def overkill_tandy_loading_tile_column_copy_36a2(cpu):
+    """Hook wrapper for OVERKILL 1010:36A2 Tandy loading tile-column copy."""
+    run_tandy_loading_tile_column_copy_36a2(cpu, _tandy_render_runtime())
 
 @registry.replace(0x1010, 0x7746, "overkill_tandy_compact_layer_draw_7746")
 def overkill_tandy_compact_layer_draw_7746(cpu):
@@ -2285,6 +2303,8 @@ def _tandy_render_runtime() -> TandyRenderRuntime:
         signature_34d8=_SIG_34D8,
         signature_3542=_SIG_3542,
         signature_35aa=_SIG_35AA,
+        signature_36a2=_SIG_36A2,
+        signature_60c5=_SIG_60C5,
         signature_35cc=_SIG_35CC,
         signature_356c=_SIG_356C,
         signature_3657=_SIG_3657,

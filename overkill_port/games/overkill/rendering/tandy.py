@@ -59,6 +59,8 @@ class TandyRenderRuntime:
     signature_34d8: bytes
     signature_3542: bytes
     signature_35aa: bytes
+    signature_36a2: bytes
+    signature_60c5: bytes
     signature_35cc: bytes
     signature_356c: bytes
     signature_3657: bytes
@@ -114,6 +116,21 @@ def _sub_mem_word(cpu, seg: int, off: int, value: int) -> None:
     result = old - subtrahend
     cpu.mem.ww(seg, off, result)
     cpu.set_sub_flags(old, subtrahend, result, 16)
+
+
+def _inc_mem_word_preserve_cf(cpu, seg: int, off: int) -> None:
+    old = cpu.mem.rw(seg, off)
+    old_cf = cpu.get_flag(CF)
+    result = old + 1
+    cpu.mem.ww(seg, off, result)
+    cpu.set_add_flags(old, 1, result, 16)
+    cpu.set_flag(CF, old_cf)
+
+
+def _and_mem_word(cpu, seg: int, off: int, value: int) -> None:
+    result = cpu.mem.rw(seg, off) & (value & 0xFFFF)
+    cpu.mem.ww(seg, off, result)
+    cpu.set_logic_flags(result, 16)
 
 
 def _dec_reg16_preserve_cf(cpu, reg_idx: int) -> None:
@@ -784,6 +801,241 @@ def draw_object_block_35cc(cpu, runtime: TandyRenderRuntime) -> None:
     _restore_tandy_display_ds(cpu)
     cpu.s.ip = cpu.pop()
 
+
+
+def _loading_scroll_a7e3_reset_cursor(cpu) -> None:
+    """Lift 1010:A7E3, reset the loading work-buffer cursor."""
+    ds = cpu.s.ds & 0xFFFF
+    cs = cpu.s.cs & 0xFFFF
+    cpu.s.ax = cpu.mem.rw(cs, 0x95BE)
+    cpu.mem.ww(ds, 0x234C, cpu.s.ax)
+    cpu.s.ip = cpu.pop()
+
+
+def _loading_scroll_a81b_dispatch(cpu, runtime: TandyRenderRuntime) -> None:
+    """Lift the A81B path reached from A781 with DS:[2352] == 1."""
+    ds = cpu.s.ds & 0xFFFF
+    cs = cpu.s.cs & 0xFFFF
+    cpu.s.bx = cpu.mem.rw(ds, 0x2350)
+    _cmp_word(cpu, cpu.mem.rw(ds, 0x2352), 1)
+    if cpu.mem.rw(ds, 0x2352) != 1:
+        raise RuntimeError("1010:A81B loading-scroll hook reached unverified DS:[2352] != 1 path")
+    _sub_reg16(cpu, 3, 0x00A9)  # BX -= 00A9h
+
+    # 5A7E dispatch prologue: MOV DX,BX; MOV BX,CS:[95BC]; SHL BX,1;
+    # JMP CS:[5A8C+BX].  36A2 then immediately reloads BX from DX, but DX
+    # and the pushed BX scratch are visible at the wider 60C5 boundary.
+    cpu.s.dx = cpu.s.bx & 0xFFFF
+    mode = cpu.mem.rw(cs, 0x95BC)
+    cpu.s.bx = mode & 0xFFFF
+    cpu.s.bx = cpu.shift(4, cpu.s.bx, 1, 16)
+    if mode != 2:
+        raise RuntimeError(f"1010:A81B loading-scroll hook only covers Tandy mode, got mode {mode}")
+    loading_tile_column_copy_36a2(cpu, runtime)
+
+
+def _loading_scroll_a7eb_build_and_shift(cpu, runtime: TandyRenderRuntime) -> None:
+    """Lift 1010:A7EB, build one Tandy strip then shift the work buffer."""
+    ds = cpu.s.ds & 0xFFFF
+    cs = cpu.s.cs & 0xFFFF
+
+    cpu.s.di = cpu.mem.rw(ds, 0x234C)
+    _sub_reg16(cpu, 7, cpu.mem.rw(cs, 0x95BE))
+
+    cpu.push(0xA7F7)
+    _loading_scroll_a81b_dispatch(cpu, runtime)
+    if cpu.s.ip != 0xA7F7:
+        raise RuntimeError(f"1010:A81B returned to unexpected IP {cpu.s.ip:04X}")
+
+    ds = cpu.s.ds & 0xFFFF
+    cpu.s.si = cpu.mem.rw(ds, 0x234C)
+    _sub_reg16(cpu, 6, cpu.mem.rw(cs, 0x95BE))
+    cpu.s.ds = cpu.mem.rw(cs, 0x9598)
+    cpu.s.di = cpu.s.si & 0xFFFF
+    _add_reg16(cpu, 7, cpu.mem.rw(cs, 0x95C2))
+    cpu.s.cx = cpu.mem.rw(cs, 0x95BE)
+    cpu.s.cx = cpu.shift(5, cpu.s.cx, 1, 16)  # SHR CX,1
+    _rep_movsw(cpu, cpu.s.cx)
+    cpu.s.ds = cpu.mem.rw(cs, TANDY_DISPLAY_SEGMENT_OFF)
+    cpu.s.ip = cpu.pop()
+
+
+def _loading_scroll_a7d0_advance_source(cpu, runtime: TandyRenderRuntime) -> None:
+    """Lift 1010:A7D0, the source-strip advance helper called by A781."""
+    cpu.push(0xA7D3)
+    _loading_scroll_a7eb_build_and_shift(cpu, runtime)
+    if cpu.s.ip != 0xA7D3:
+        raise RuntimeError(f"1010:A7EB returned to unexpected IP {cpu.s.ip:04X}")
+
+    ds = cpu.s.ds & 0xFFFF
+    _sub_mem_word(cpu, ds, 0x2350, 0x000D)
+    _inc_mem_word_preserve_cf(cpu, ds, 0xA978)
+    cpu.mem.ww(ds, 0x2354, 1)
+    cpu.s.ip = cpu.pop()
+
+
+def _loading_scroll_step_a781(cpu, runtime: TandyRenderRuntime) -> None:
+    """Lift observed 1010:A781 loading-scroll step used by the 60C5 loop."""
+    ds = cpu.s.ds & 0xFFFF
+    cs = cpu.s.cs & 0xFFFF
+
+    cpu.push(cpu.s.bp)
+    cpu.mem.ww(ds, 0x2352, 1)
+    _cmp_word(cpu, cpu.mem.rw(ds, 0x2350), 0)
+    if cpu.mem.rw(ds, 0x2350) == 0:
+        raise RuntimeError("1010:A781 loading-scroll hook reached unverified zero-cursor path")
+
+    _add_mem_word(cpu, ds, 0xA278, 0xFFFF)
+    _cmp_word(cpu, cpu.mem.rw(ds, 0x234E), 0)
+    if cpu.mem.rw(ds, 0x234E) == 0:
+        cpu.push(0xA79E)
+        _loading_scroll_a7d0_advance_source(cpu, runtime)
+        if cpu.s.ip != 0xA79E:
+            raise RuntimeError(f"1010:A7D0 returned to unexpected IP {cpu.s.ip:04X}")
+
+    _inc_mem_word_preserve_cf(cpu, ds, 0x234E)
+    _and_mem_word(cpu, ds, 0x234E, 0x000F)
+    if cpu.mem.rw(ds, 0x234E) == 0:
+        _cmp_word(cpu, cpu.mem.rw(ds, 0x2354), 1)
+        if cpu.mem.rw(ds, 0x2354) != 1:
+            _sub_mem_word(cpu, ds, 0x2350, 0x000D)
+            _inc_mem_word_preserve_cf(cpu, ds, 0xA978)
+
+    cpu.s.ax = cpu.mem.rw(cs, 0x95C0)
+    _cmp_word(cpu, cpu.mem.rw(ds, 0x234C), cpu.s.ax)
+    if cpu.mem.rw(ds, 0x234C) == cpu.s.ax:
+        cpu.push(0xA7C6)
+        _loading_scroll_a7e3_reset_cursor(cpu)
+        if cpu.s.ip != 0xA7C6:
+            raise RuntimeError(f"1010:A7E3 returned to unexpected IP {cpu.s.ip:04X}")
+
+    cpu.s.ax = cpu.mem.rw(cs, 0x959E)
+    _add_mem_word(cpu, ds, 0x234C, cpu.s.ax)
+    cpu.s.bp = cpu.pop()
+    cpu.s.ip = cpu.pop()
+
+
+def loading_scroll_sequence_60c5(cpu, runtime: TandyRenderRuntime) -> None:
+    """OVERKILL 1010:60C5 Tandy loading scroll/materialization loop.
+
+    The snapshot spends thousands of interpreted instructions in the nested
+    ``60C5 -> A781 -> A7EB -> A81B -> 36A2`` loading path.  ``36A2`` owns the
+    Tandy tile materialization, while this wrapper preserves the original outer
+    loop/call structure and cursor bookkeeping.
+    """
+    if runtime.self_disable_if_patched(cpu, 0x60C5, runtime.signature_60c5, "overkill_tandy_loading_scroll_sequence_60c5"):
+        return
+    if cpu.mem.rw(cpu.s.cs & 0xFFFF, 0x95BC) != 2:
+        raise RuntimeError("1010:60C5 loading-scroll hook only covers verified Tandy mode")
+
+    ds = cpu.s.ds & 0xFFFF
+    cpu.mem.ww(ds, 0x2350, 0x0EA0)
+    while True:
+        cpu.s.cx = 0x0010
+        while True:
+            cpu.push(cpu.s.cx)
+            cpu.push(0x60D2)
+            _loading_scroll_step_a781(cpu, runtime)
+            if cpu.s.ip != 0x60D2:
+                raise RuntimeError(f"1010:A781 returned to unexpected IP {cpu.s.ip:04X}")
+            cpu.s.cx = cpu.pop()
+            cpu.s.cx = (cpu.s.cx - 1) & 0xFFFF  # LOOP, flags unaffected.
+            if cpu.s.cx != 0:
+                continue
+            break
+
+        _cmp_word(cpu, cpu.mem.rw(ds, 0x2350), 0x009C)
+        if cpu.mem.rw(ds, 0x2350) != 0x009C:
+            continue
+        break
+
+    _sub_mem_word(cpu, ds, 0xA978, 0x0003)
+    cpu.s.ip = cpu.pop()
+
+
+def loading_tile_column_copy_36a2(cpu, runtime: TandyRenderRuntime) -> None:
+    """OVERKILL 1010:36A2 Tandy loading/menu tile-column materializer.
+
+    This is reached from the shared ``5A7E`` video-mode dispatch while the game
+    loads transition/menu graphics.  It expands a 13-column strip of 16x8-byte
+    Tandy tile cells from the selected source segment into the decoded work
+    buffer at ``CS:[9598]``.  The body is mostly a long unrolled MOVSW sequence;
+    keeping it as one hook avoids thousands of interpreter steps during loading
+    without changing the surrounding loading state machine.
+    """
+    if runtime.self_disable_if_patched(cpu, 0x36A2, runtime.signature_36a2, "overkill_tandy_loading_tile_column_copy_36a2"):
+        return
+
+    s = cpu.s
+    mem = cpu.mem
+    cs = s.cs & 0xFFFF
+    ss = s.ss & 0xFFFF
+    display_ds = s.ds & 0xFFFF
+
+    # 36A2..36B7: select the source segment based on the current loading cursor.
+    s.bx = s.dx & 0xFFFF
+    s.cx = 0x000D
+    s.ax = mem.rw(cs, 0x959A)
+    cursor = mem.rw(display_ds, 0x2350)
+    cpu.set_sub_flags(cursor, 0x0E5F, cursor - 0x0E5F, 16)
+    if cursor >= 0x0E5F:
+        s.ax = mem.rw(cs, 0x959C)
+    s.ds = s.ax & 0xFFFF
+
+    while True:
+        # The original loop pushes CX then BX every column and pops them back
+        # after the copy.  Use real push/pop so freed stack scratch remains
+        # byte-identical for hook verification.
+        cpu.push(s.cx)
+        cpu.push(s.bx)
+
+        s.es = mem.rw(cs, 0x9592)
+        tile_index = mem.rb(s.es, s.bx)
+
+        # DEC BL preserves CF; XOR BH,BH then clears CF/OF and sets ZF/PF.
+        old_bl = tile_index & 0xFF
+        old_cf = cpu.get_flag(CF)
+        new_bl = (old_bl - 1) & 0xFF
+        cpu.set_sub_flags(old_bl, 1, old_bl - 1, 8)
+        cpu.set_flag(CF, old_cf)
+        s.bx = (s.bx & 0xFF00) | new_bl
+        s.bx &= 0x00FF
+        cpu.set_logic_flags(0, 8)
+
+        s.bx = cpu.shift(4, s.bx, 1, 16)  # SHL BX,1
+        old_bx = s.bx & 0xFFFF
+        s.bx = (old_bx + 0x8D92) & 0xFFFF
+        cpu.set_add_flags(old_bx, 0x8D92, old_bx + 0x8D92, 16)
+        s.si = mem.rw(cs, s.bx)
+        s.es = mem.rw(cs, 0x9598)
+
+        # Sixteen rows, four MOVSW per row, then ADD DI,60h.  MOVSW does not
+        # affect flags; the row add does.  The original code is fully unrolled.
+        for _row in range(16):
+            for _ in range(4):
+                mem.ww(s.es, s.di, mem.rw(s.ds, s.si))
+                delta = -2 if s.flags & DF else 2
+                s.si = (s.si + delta) & 0xFFFF
+                s.di = (s.di + delta) & 0xFFFF
+            old_di = s.di & 0xFFFF
+            s.di = (old_di + 0x0060) & 0xFFFF
+            cpu.set_add_flags(old_di, 0x0060, old_di + 0x0060, 16)
+
+        old_di = s.di & 0xFFFF
+        s.di = (old_di - 0x0678) & 0xFFFF
+        cpu.set_sub_flags(old_di, 0x0678, old_di - 0x0678, 16)
+
+        s.bx = cpu.pop()
+        old_bx = s.bx & 0xFFFF
+        s.bx = (old_bx + 1) & 0xFFFF
+        cpu.set_add_flags(old_bx, 1, old_bx + 1, 16)
+        s.cx = cpu.pop()
+        s.cx = (s.cx - 1) & 0xFFFF  # LOOP does not modify FLAGS.
+        if s.cx == 0:
+            break
+
+    s.ds = mem.rw(cs, TANDY_DISPLAY_SEGMENT_OFF)
+    s.ip = cpu.pop()
 
 
 def postcopy_scaled_blit_375b(cpu) -> None:

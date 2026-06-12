@@ -97,7 +97,7 @@ class AsyncTimerIrqDriver:
         now = time.perf_counter()
         self._next = now + self.period * max(1, int(ticks))
 
-    def poll(self, cpu, *, max_catchup: int = 4) -> int:
+    def poll(self, cpu, *, max_catchup: int = 1) -> int:
         if self.period <= 0 or not cpu.get_flag(IF):
             return 0
         now = time.perf_counter()
@@ -106,6 +106,17 @@ class AsyncTimerIrqDriver:
             return 0
         if now < self._next:
             return 0
+
+        # This driver is only meant to keep the original IRQ0 sound ISR alive
+        # while the foreground code is in menu/retrace/input waits that do not
+        # reach the normal 1010:0679 timer wait.  Do not preserve a large wall-
+        # clock backlog here.  Replaying missed PIT ticks later mutates the same
+        # CS:066B frame-wait flag that drives gameplay, so after one slow Python
+        # burst the game can briefly run too fast while the delayed IRQs are
+        # drained.  Hardware IRQs are asynchronous, but our foreground execution
+        # is not interruptible in the middle of a long Python hook; the stable
+        # interactive compromise is to deliver a small bounded number of real ISR
+        # ticks and then re-anchor to wall clock.
         due = int((now - self._next) // self.period) + 1
         due = max(1, min(max_catchup, due))
         delivered = 0
@@ -114,9 +125,7 @@ class AsyncTimerIrqDriver:
                 break
             delivered += 1
         if delivered:
-            # Schedule from wall clock, not from loop iteration count, so a tight
-            # keyboard busy-wait cannot make sound run faster than the PIT.
-            self._next = now + self.period
+            self._next = time.perf_counter() + self.period
         return delivered
 
 class TimerPacer:
@@ -126,7 +135,7 @@ class TimerPacer:
         self.period = 1.0 / hz if hz > 0 else 0.0
         self._next: float | None = None
 
-    def __call__(self, units: int = 1) -> None:
+    def __call__(self, units: int = 1, *, poll=None, poll_interval: float | None = None) -> None:
         if self.period <= 0:
             return
         units = max(1, int(units))
@@ -137,7 +146,18 @@ class TimerPacer:
             return
         delay = self._next - now
         if delay > 0:
-            time.sleep(delay)
+            if poll is None:
+                time.sleep(delay)
+            else:
+                deadline = now + delay
+                interval = poll_interval if poll_interval is not None else min(delay, 0.005)
+                interval = max(0.001, float(interval))
+                while True:
+                    remaining = deadline - time.perf_counter()
+                    if remaining <= 0:
+                        break
+                    time.sleep(min(remaining, interval))
+                    poll()
             self._next += period
         else:
             self._next = now + period  # fell behind (e.g. after a load): resync
@@ -206,6 +226,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--scale", type=int, default=2)
     p.add_argument("--frame-budget", type=int, default=6_000_000,
                    help="max interpreted steps to wait for one frame before reporting a stall")
+    p.add_argument("--cpu-chunk-steps", type=int, default=1000,
+                   help="interpreted steps per cooperative UI/sound poll while waiting for a boundary")
     p.add_argument("--snapshot", default=None,
                    help="load a saved snapshot dir to skip the ~11s asset-decode bootstrap")
     p.add_argument("--save-snapshot-root", default=str(ROOT / "artifacts"),
@@ -530,7 +552,17 @@ def main(argv: list[str] | None = None) -> int:
         # committed as a complete frame yet.
         if args.video != "ega" or args.ega_publish_timed_boundaries or blits["n"] == 0:
             publish_video_if_changed(cpu)
-        timer_pacer(getattr(cpu, "timer_ticks_elapsed", 0) or 2)
+        # Pace one logical OVERKILL frame, not the number of IRQ0 ticks that
+        # happened to be delivered inside this particular 0679 hook call.
+        #
+        # The timer ISR increments CS:066B on every other PIT tick.  If the
+        # async IRQ driver already delivered the first half-tick during the
+        # foreground work, 0679 only needs one more ISR to unblock.  Pacing by
+        # that raw value makes the next frame sleep for 1/72.8s instead of the
+        # intended 2/72.8s, so gameplay alternates between normal and too-fast
+        # depending on CPU load.  Each 0679 return still represents one game
+        # tick, i.e. two PIT tick units.
+        timer_pacer(2)
         last_boundary["kind"] = "timer"
         stop_cpu_burst()
 
@@ -546,7 +578,10 @@ def main(argv: list[str] | None = None) -> int:
         # presenter runs; after that, keep retrace as a pacing boundary only.
         if args.video != "ega" or args.ega_publish_timed_boundaries or blits["n"] == 0:
             publish_video_if_changed(cpu)
-        retrace_pacer()
+        retrace_pacer(
+            poll=lambda: async_timer_irq.poll(cpu, max_catchup=1),
+            poll_interval=async_timer_irq.period * 0.5 if async_timer_irq.period > 0 else None,
+        )
         last_boundary["kind"] = "retrace"
         stop_cpu_burst()
 
@@ -601,7 +636,7 @@ def main(argv: list[str] | None = None) -> int:
                 used = 0
                 while boundary["n"] < target and used < args.frame_budget and not stop.is_set():
                     try:
-                        rt.cpu.run(8000)
+                        rt.cpu.run(max(1, int(args.cpu_chunk_steps)))
                     except FramePresented:
                         break
                     except ConsoleInputWouldBlock:
@@ -640,7 +675,7 @@ def main(argv: list[str] | None = None) -> int:
                         status["text"] = f"waiting for exit confirmation @ {cs:04X}:{ip:04X}"
                         time.sleep(0.01)
                         break
-                    used += 8000
+                    used += max(1, int(args.cpu_chunk_steps))
                     async_timer_irq.poll(rt.cpu)
                     # Long screen loads can run for many chunks without a
                     # visible/timer boundary.  Drain key-up events during those
