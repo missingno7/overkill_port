@@ -5,7 +5,69 @@ import os
 from .cpu import CF, DF, ZF, SF, PF, _PARITY
 from .hooks import registry
 from .memory import EGA_CPU_APERTURE, EGA_APERTURE, EGA_PLANE_STRIDE, EGA_PLANE_WINDOW
+from .games.overkill.asset_codecs import (
+    compare_overlay_entry_name_05d9,
+    compare_overlay_signature_0582,
+    compute_overkill_file_checksum,
+    copy_lz_back_reference,
+    decode_linear_byte_rle,
+    decode_lz_asset,
+    decode_overlay_xor,
+    decode_vertical_rle_columns,
+    decode_word_pair_rle,
+    find_overlay_directory_entry_05a1,
+    input_lz_byte,
+    strip_overlay_path_components_0701,
+    output_lz_byte,
+    read_packed_byte,
+    read_packed_byte_hook,
+    read_packed_word_le_hook,
+)
+from .games.overkill.asset_codecs.startup_graphics import (
+    expand_4plane_block_4511,
+    expand_4plane_list_450c,
+    expand_4plane_row_4537,
+    expand_bits_45cb,
+    pack_four_pixels_45f6,
+)
 
+from .games.overkill.rendering.coordinates import (
+    coordinate_ax_to_di_5a00,
+    coordinate_ax_to_di_5a24,
+    object_row_address_from_mode_dispatch_5a36,
+    object_row_address_mode1_2580,
+)
+from .games.overkill.rendering.layer_sprites import (
+    LayerSpriteRuntime,
+    dispatch_layer_sprite_tail_75f5,
+    draw_compact_layer_sprite_7746,
+    draw_layer_sprite_75a6,
+    draw_layer_sprite_768e,
+    is_known_layer_sprite_composite_target,
+    predict_layer_sprite_composite_target_768e,
+    run_layer_sprite_compositor_target,
+)
+
+from .games.overkill.rendering.tandy import (
+    expand_tandy_cell_33dd as run_expand_tandy_cell_33dd,
+    expand_tandy_block_33b2 as run_expand_tandy_block_33b2,
+    TandyRenderRuntime,
+    draw_object_block_35cc as run_tandy_draw_object_block_35cc,
+    draw_split_object_356c as run_tandy_draw_split_object_356c,
+    draw_tiny_object_3657 as run_tandy_draw_tiny_object_3657,
+    masked_compact_2fb6 as run_tandy_masked_compact_2fb6,
+    masked_sprite_composite_2e6e as run_tandy_masked_sprite_composite_2e6e,
+    masked_sprite_composite_2f81 as run_tandy_masked_sprite_composite_2f81,
+    or_inverted_mask_2ecb as run_tandy_or_inverted_mask_2ecb,
+    or_inverted_mask_2f40 as run_tandy_or_inverted_mask_2f40,
+    postcopy_scaled_blit_375b as run_tandy_postcopy_scaled_blit_375b,
+    present_tandy_frame_3354 as run_present_tandy_frame_3354,
+    small_strided_copy_34d8 as run_tandy_small_strided_copy_34d8,
+    source_strided_copy_35aa as run_tandy_source_strided_copy_35aa,
+    split_present_copy_34ad as run_tandy_split_present_copy_34ad,
+    strided_copy_34c5 as run_tandy_strided_copy_34c5,
+    tiny_strided_copy_3542 as run_tandy_tiny_strided_copy_3542,
+)
 
 # Runtime-patched code guard -------------------------------------------------
 #
@@ -47,6 +109,7 @@ _SIG_3542 = bytes.fromhex("83 ff ff 75 01 c3 bb 64 00 a5 a5 03 fb a5 a5 03")
 _SIG_35CC = bytes.fromhex("e8 67 24 89 46 0c 3d ff ff 75 01 c3 03 06 4c 23")
 _SIG_356C = bytes.fromhex("e8 c7 24 89 46 0c 3d ff ff 74 0f 03 06 4c 23")
 _SIG_3657 = bytes.fromhex("e8 dc 23 89 46 0c 3d ff ff 75 01 c3 03 06 4c 23")
+_SIG_375B = bytes.fromhex("2e c7 06 03 59 00 00 2e 8b 3e f9 58 2e 8b 36 fb 58 2e 8b 0e fd 58 2e 8b 2e ff 58 d1 e5")
 _SIG_35AA = bytes.fromhex("2e 8e 06 96 95 2e 8e 1e 98 95 bb 58 00 b9 10 00")
 _SIG_58DF = bytes.fromhex("51 2e 89 0e 01 59 2e 8b 1e bc 95 d1 e3 2e ff 97")
 _SIG_5DB2 = bytes.fromhex("c7 06 54 a9 00 00 c7 06 0a 23 00 00 8b 46 04 3b")
@@ -71,397 +134,46 @@ _SIG_CCF0 = bytes.fromhex("b9 20 00 26 8a 04 26 3a 05 74 05 b2 01 26 88 05")
 
 @registry.replace(0x1010, 0xC916, "overkill_file_checksum_loop")
 def overkill_file_checksum_loop(cpu):
-    """Replace the tight OVERKILL data-file checksum loop.
-
-    Original code at 1010:C916:
-
-        mov dl, [si]
-        add ax, dx
-        add ah, al
-        inc si
-        loop C916
-
-    This optimized version keeps all per-byte state in Python locals.  The
-    first checkpoint implementation used CPU helper calls inside the loop,
-    which was correct but still very slow when startup invokes this with
-    CX=0000 (8086 LOOP count = 65536) many times while validating OVERKILL.
-    """
-    count = cpu.s.cx & 0xFFFF
-    if count == 0:
-        count = 0x10000
-
-    ax = cpu.s.ax & 0xFFFF
-    dh_part = cpu.s.dx & 0xFF00
-    ds_base = (cpu.s.ds & 0xFFFF) << 4
-    off = cpu.s.si & 0xFFFF
-    remaining = count
-    data = cpu.mem.data
-    last_b = cpu.s.dx & 0xFF
-    carry_after_ah_add = cpu.get_flag(CF)
-
-    while remaining:
-        chunk = min(remaining, 0x10000 - off)
-        start = (ds_base + off) & 0xFFFFF
-        for b in data[start:start + chunk]:
-            last_b = b
-            ax = (ax + (dh_part | b)) & 0xFFFF
-            al = ax & 0xFF
-            ah = (ax >> 8) & 0xFF
-            sum8 = ah + al
-            carry_after_ah_add = sum8 > 0xFF
-            ax = ((sum8 & 0xFF) << 8) | al
-        off = (off + chunk) & 0xFFFF
-        remaining -= chunk
-
-    old_si = (cpu.s.si + count - 1) & 0xFFFF
-    final_si = (cpu.s.si + count) & 0xFFFF
-    cpu.s.ax = ax & 0xFFFF
-    cpu.s.dx = dh_part | last_b
-    cpu.s.si = final_si
-    cpu.s.cx = 0
-
-    cpu.set_add_flags(old_si, 1, old_si + 1, 16)
-    cpu.set_flag(CF, carry_after_ah_add)
-    cpu.s.ip = 0xC91F
+    """Hook wrapper for OVERKILL 1010:C916 file checksum loop."""
+    compute_overkill_file_checksum(cpu)
 
 
 @registry.replace(0x1010, 0x45F6, "overkill_pack_four_pixels_45f6")
 def overkill_pack_four_pixels_45f6(cpu):
-    """Replace the hot pixel/nibble packing helper at 1010:45F6.
-
-    This routine takes bitplanes in AL/AH/DL/DH, rotates bits through CF into
-    CL, optionally applies a transparent-nibble mask in CH, then remaps both
-    nibbles through the CS:45E6 lookup table.  The caller stores CL/CH into
-    temporary CS variables used by the renderer around 4537..45CA.
-    """
-    # Interleave 8 bits from DH,DL,AH,AL into CL using the same current CPU
-    # rotate helper as interpreted D0 /1 and D0 /2 instructions.
-    sequence = ["dh", "dl", "ah", "al", "dh", "dl", "ah", "al"]
-    for reg in sequence:
-        if reg == "dh":
-            value = cpu.get_reg8(6)
-            cpu.set_reg8(6, cpu.shift(1, value, 1, 8))  # ROR DH,1
-        elif reg == "dl":
-            value = cpu.get_reg8(2)
-            cpu.set_reg8(2, cpu.shift(1, value, 1, 8))  # ROR DL,1
-        elif reg == "ah":
-            value = cpu.get_reg8(4)
-            cpu.set_reg8(4, cpu.shift(1, value, 1, 8))  # ROR AH,1
-        else:
-            value = cpu.get_reg8(0)
-            cpu.set_reg8(0, cpu.shift(1, value, 1, 8))  # ROR AL,1
-        cl = cpu.get_reg8(1)
-        cpu.set_reg8(1, cpu.shift(2, cl, 1, 8))        # RCL CL,1
-
-    for _ in range(4):
-        cl = cpu.get_reg8(1)
-        cpu.set_reg8(1, cpu.shift(1, cl, 1, 8))        # ROR CL,1
-
-    original_ax = cpu.s.ax & 0xFFFF
-    cl = cpu.get_reg8(1)
-    ch = cpu.get_reg8(5)
-
-    transparent_enabled = cpu.mem.rw(cpu.s.cs, 0x0BD6) != 0
-    transparent_color = cpu.mem.rb(cpu.s.cs, 0x0000)
-    if transparent_enabled:
-        ch = 0
-        low = cl & 0x0F
-        if low == transparent_color:
-            ch |= 0x0F
-            cl &= 0xF0
-        high = (cl >> 4) & 0x0F
-        if high == transparent_color:
-            ch |= 0xF0
-            cl &= 0x0F
-
-    cpu.mem.ww(cpu.s.cs, 0x45E2, original_ax)
-
-    table_base = 0x45E6
-    low_mapped = cpu.mem.rb(cpu.s.cs, table_base + (cl & 0x0F))
-    high_mapped = cpu.mem.rb(cpu.s.cs, table_base + ((cl >> 4) & 0x0F))
-    mapped = ((high_mapped << 4) | low_mapped) & 0xFF
-    cpu.set_logic_flags(mapped, 8)  # final OR AL,AH flags
-
-    cpu.s.bx = table_base
-    cpu.set_reg8(1, mapped)  # CL
-    cpu.set_reg8(5, ch)      # CH
-    cpu.s.ax = original_ax
-    cpu.s.ip = cpu.pop()
+    """Hook wrapper for OVERKILL 1010:45F6 startup graphics pixel packer."""
+    pack_four_pixels_45f6(cpu)
 
 
 def _overkill_read_packed_byte(cpu) -> None:
-    """Shared implementation for OVERKILL's 512-byte packed-data reader.
-
-    Mirrors 1010:0624. Result byte is returned in AL.  On refill the original
-    routine calls DOS AH=3Fh and leaves AH as the high byte of the byte-count
-    returned by DOS; this matters, so the hook calls the configured interrupt
-    handler rather than reading Python files directly.
-    """
-    ds = cpu.s.ds & 0xFFFF
-    saved_bx = cpu.s.bx & 0xFFFF
-    cpu.mem.ww(ds, 0x0612, saved_bx)
-    ptr = cpu.mem.rw(ds, 0x0610)
-
-    if ptr >= 0x0610:
-        cpu.mem.ww(ds, 0x0610, 0x0410)
-        saved_cx = cpu.s.cx & 0xFFFF
-        cpu.set_reg8(4, 0x3F)  # AH=3Fh read file/device
-        cpu.s.bx = cpu.mem.rw(ds, 0x0240)
-        cpu.s.cx = 0x0200
-        cpu.s.dx = 0x0410
-        if cpu.interrupt_handler is None:
-            raise RuntimeError("OVERKILL packed reader needs DOS INT 21h handler")
-        cpu.interrupt_handler(cpu, 0x21)
-        cpu.s.cx = saved_cx
-        if cpu.get_flag(CF):
-            cpu.s.ip = 0x02B2
-            return
-        ptr = cpu.mem.rw(ds, 0x0610)
-
-    byte = cpu.mem.rb(ds, ptr)
-    cpu.set_reg8(0, byte)
-
-    old_ptr = cpu.mem.rw(ds, 0x0610)
-    new_ptr = (old_ptr + 1) & 0xFFFF
-    old_cf = cpu.get_flag(CF)
-    cpu.set_add_flags(old_ptr, 1, old_ptr + 1, 16)
-    cpu.set_flag(CF, old_cf)
-    cpu.mem.ww(ds, 0x0610, new_ptr)
-
-    cpu.s.bx = cpu.mem.rw(ds, 0x0612)
+    """Compatibility alias for the OVERKILL 1010:0624 packed byte reader."""
+    read_packed_byte(cpu)
 
 
 @registry.replace(0x1010, 0x0624, "overkill_packed_read_byte")
 def overkill_packed_read_byte(cpu):
-    """Replace hot byte reader at 1010:0624 used by startup RLE/asset decoders."""
-    _overkill_read_packed_byte(cpu)
-    if cpu.s.ip != 0x02B2:
-        cpu.s.ip = cpu.pop()
+    """Hook wrapper for OVERKILL 1010:0624 packed byte reader."""
+    read_packed_byte_hook(cpu)
 
 
 @registry.replace(0x1010, 0x0615, "overkill_packed_read_word")
 def overkill_packed_read_word(cpu):
-    """Replace 1010:0615 little-endian word reader built from two byte reads."""
-    _overkill_read_packed_byte(cpu)
-    if cpu.s.ip == 0x02B2:
-        return
-    low = cpu.get_reg8(0)
-    cpu.mem.wb(cpu.s.ds, 0x0614, low)
-    _overkill_read_packed_byte(cpu)
-    if cpu.s.ip == 0x02B2:
-        return
-    high = cpu.get_reg8(0)
-    cpu.set_reg8(4, high)  # AH
-    cpu.set_reg8(0, cpu.mem.rb(cpu.s.ds, 0x0614))
-    cpu.s.ip = cpu.pop()
+    """Hook wrapper for OVERKILL 1010:0615 little-endian packed word reader."""
+    read_packed_word_le_hook(cpu)
 
 @registry.replace(0x1010, 0x45CB, "overkill_expand_bits_45cb")
 def overkill_expand_bits_45cb(cpu):
-    """Replace the tiny self-call bit expansion helper at 1010:45CB.
-
-    The original routine is intentionally odd:
-
-        45CB  call 45CE     ; pushes 45CE, jumps to 45CE
-        45CE  rol al,1
-              rol al,1
-              rol al,1
-              rcl word ptr cs:[45E4],1
-              rol al,1
-              rcl word ptr cs:[45E4],1
-              ret           ; first ret goes back to 45CE
-                            ; second ret returns to the original caller
-
-    Therefore a single CALL 45CB executes the 45CE body twice.  The helper is
-    hot while the startup renderer expands bit/nibble graphics into video-ish
-    buffers, and replacing it removes thousands of interpreted instructions
-    without changing the architectural result.
-    """
-
-    def body_once() -> None:
-        al = cpu.get_reg8(0)
-        for _ in range(3):
-            al = cpu.shift(0, al, 1, 8)  # ROL AL,1
-        cpu.set_reg8(0, al)
-
-        word = cpu.mem.rw(cpu.s.cs, 0x45E4)
-        word = cpu.shift(2, word, 1, 16)  # RCL word ptr CS:[45E4],1
-        cpu.mem.ww(cpu.s.cs, 0x45E4, word)
-
-        al = cpu.get_reg8(0)
-        al = cpu.shift(0, al, 1, 8)  # ROL AL,1
-        cpu.set_reg8(0, al)
-
-        word = cpu.mem.rw(cpu.s.cs, 0x45E4)
-        word = cpu.shift(2, word, 1, 16)  # RCL word ptr CS:[45E4],1
-        cpu.mem.ww(cpu.s.cs, 0x45E4, word)
-
-    body_once()
-    body_once()
-    cpu.s.ip = cpu.pop()
+    """Hook wrapper for OVERKILL 1010:45CB startup graphics bit expander."""
+    expand_bits_45cb(cpu)
 
 
-def _inc_mem_word_preserve_cf(cpu, seg: int, off: int) -> None:
-    old = cpu.mem.rw(seg, off)
-    old_cf = cpu.get_flag(CF)
-    cpu.mem.ww(seg, off, (old + 1) & 0xFFFF)
-    cpu.set_add_flags(old, 1, old + 1, 16)
-    cpu.set_flag(CF, old_cf)
 
 
-def _dec_reg8_preserve_cf(cpu, reg_idx: int) -> None:
-    old = cpu.get_reg8(reg_idx)
-    old_cf = cpu.get_flag(CF)
-    cpu.set_reg8(reg_idx, (old - 1) & 0xFF)
-    cpu.set_sub_flags(old, 1, old - 1, 8)
-    cpu.set_flag(CF, old_cf)
 
 
 @registry.replace(0x1010, 0x03A8, "overkill_vertical_rle_decoder_03a8")
 def overkill_vertical_rle_decoder_03a8(cpu):
-    """Replace the vertical byte RLE startup decoder at 1010:03A8.
-
-    The original routine is not a normal near function: when the image is
-    complete it jumps to the common dispatcher continuation at 1010:02A8.
-
-    Header words are read through the original packed stream reader:
-
-        word0 -> CS:03A2
-        word1 -> DS:03A4   ; also read back through CS:03A4 as column count/stride
-        word2 -> DS:03A6
-
-    Then it decodes one vertical RLE stream per column.  Byte 0x80 ends the
-    current column.  Bytes 00..7F copy N+1 following literal bytes downward by
-    the stride.  Bytes 81..FF repeat the following byte (-N)+1 times downward.
-
-    This hook intentionally preserves the odd AX/AH/BL side effects of the ASM
-    around the packed byte reader, because those registers carry across RLE
-    commands and can differ when a DOS refill changes AH to the high byte of the
-    byte count returned by INT 21h AH=3Fh.
-    """
-    ds = cpu.s.ds & 0xFFFF
-    cs = cpu.s.cs & 0xFFFF
-
-    cpu.s.es = cpu.mem.rw(ds, 0x023A)
-    start_di = cpu.mem.rw(ds, 0x023C)
-    cpu.s.di = start_di
-
-    _overkill_read_packed_byte(cpu)
-    if cpu.s.ip == 0x02B2:
-        return
-    lo = cpu.get_reg8(0)
-    _overkill_read_packed_byte(cpu)
-    if cpu.s.ip == 0x02B2:
-        return
-    word0 = lo | (cpu.get_reg8(0) << 8)
-    cpu.s.ax = word0
-    cpu.mem.ww(cs, 0x03A2, word0)
-
-    _overkill_read_packed_byte(cpu)
-    if cpu.s.ip == 0x02B2:
-        return
-    lo = cpu.get_reg8(0)
-    _overkill_read_packed_byte(cpu)
-    if cpu.s.ip == 0x02B2:
-        return
-    word1 = lo | (cpu.get_reg8(0) << 8)
-    cpu.s.ax = word1
-    cpu.mem.ww(ds, 0x03A4, word1)
-
-    _overkill_read_packed_byte(cpu)
-    if cpu.s.ip == 0x02B2:
-        return
-    lo = cpu.get_reg8(0)
-    _overkill_read_packed_byte(cpu)
-    if cpu.s.ip == 0x02B2:
-        return
-    word2 = lo | (cpu.get_reg8(0) << 8)
-    cpu.s.ax = word2
-    cpu.mem.ww(ds, 0x03A6, word2)
-
-    # Original uses CS:03A4 for both outer LOOP count and vertical stride.
-    # In the real runtime DS==CS here, but using CS keeps the hook bit-faithful.
-    stride = cpu.mem.rw(cs, 0x03A4)
-    columns = stride
-    cpu.s.cx = columns
-    outer_di = cpu.s.di & 0xFFFF
-
-    while cpu.s.cx != 0:
-        saved_outer_cx = cpu.s.cx & 0xFFFF
-        saved_outer_di = outer_di & 0xFFFF
-        cpu.s.di = saved_outer_di
-
-        while True:
-            _overkill_read_packed_byte(cpu)
-            if cpu.s.ip == 0x02B2:
-                return
-            control = cpu.get_reg8(0)
-            cpu.set_sub_flags(control, 0x80, control - 0x80, 8)  # CMP AL,80h
-
-            if control == 0x80:
-                break
-
-            if control > 0x80:
-                # NEG AL; XCHG AL,AH; XCHG AH,BL; CALL 0624; XCHG AH,BL
-                cpu.set_sub_flags(0, control, -control, 8)
-                cpu.set_reg8(0, (-control) & 0xFF)
-
-                al = cpu.get_reg8(0)
-                ah = cpu.get_reg8(4)
-                cpu.set_reg8(0, ah)
-                cpu.set_reg8(4, al)
-
-                ah = cpu.get_reg8(4)
-                bl = cpu.get_reg8(3)
-                cpu.set_reg8(4, bl)
-                cpu.set_reg8(3, ah)
-
-                _overkill_read_packed_byte(cpu)
-                if cpu.s.ip == 0x02B2:
-                    return
-
-                ah = cpu.get_reg8(4)
-                bl = cpu.get_reg8(3)
-                cpu.set_reg8(4, bl)
-                cpu.set_reg8(3, ah)
-
-                while True:
-                    cpu.mem.wb(cpu.s.es, cpu.s.di, cpu.get_reg8(0))
-                    cpu.s.di = (cpu.s.di + stride) & 0xFFFF
-                    # ADD DI,stride flags are overwritten by the following INC/DEC in this loop.
-                    _inc_mem_word_preserve_cf(cpu, ds, 0x0244)
-                    _dec_reg8_preserve_cf(cpu, 4)  # DEC AH
-                    if cpu.get_flag(0x0080):      # JNS not taken when SF=1
-                        break
-                continue
-
-            # Literal run: PUSH AX; CALL 0624; STOSB; INC [0244]; POP AX; DEC AL; JNS
-            while True:
-                saved_ax = cpu.s.ax & 0xFFFF
-                _overkill_read_packed_byte(cpu)
-                if cpu.s.ip == 0x02B2:
-                    return
-                cpu.mem.wb(cpu.s.es, cpu.s.di, cpu.get_reg8(0))
-                cpu.s.di = (cpu.s.di + stride) & 0xFFFF
-                _inc_mem_word_preserve_cf(cpu, ds, 0x0244)
-                cpu.s.ax = saved_ax
-                _dec_reg8_preserve_cf(cpu, 0)  # DEC AL
-                if cpu.get_flag(0x0080):       # JNS not taken when SF=1
-                    break
-
-        # POP DI; INC DI; POP CX; LOOP outer
-        cpu.s.di = saved_outer_di
-        old_di = cpu.s.di & 0xFFFF
-        old_cf = cpu.get_flag(CF)
-        cpu.s.di = (cpu.s.di + 1) & 0xFFFF
-        cpu.set_add_flags(old_di, 1, old_di + 1, 16)  # INC DI
-        cpu.set_flag(CF, old_cf)
-        outer_di = cpu.s.di
-
-        cpu.s.cx = saved_outer_cx
-        cpu.s.cx = (cpu.s.cx - 1) & 0xFFFF
-        # LOOP does not affect flags.
-
-    cpu.s.ip = 0x02A8
+    """Hook wrapper for OVERKILL 1010:03A8 vertical startup RLE decoder."""
+    decode_vertical_rle_columns(cpu)
 
 
 def _call_hook_like_near_call(cpu, handler, return_ip: int) -> None:
@@ -499,1460 +211,220 @@ def _run_interpreted_near_call_observed(cpu, target_ip: int, return_ip: int, *, 
     )
 
 
-def _stosw(cpu) -> None:
-    cpu.mem.ww(cpu.s.es, cpu.s.di, cpu.s.ax)
-    cpu.s.di = (cpu.s.di + (-2 if cpu.get_flag(DF) else 2)) & 0xFFFF
-
 
 @registry.replace(0x1010, 0x4511, "overkill_expand_4plane_block_4511")
 def overkill_expand_4plane_block_4511(cpu):
-    """Replace the hot nested block renderer at 1010:4511.
+    """Hook wrapper for OVERKILL 1010:4511 4-plane startup block expander."""
+    expand_4plane_block_4511(cpu)
 
-    Original shape:
-
-        CX = CS:5B9E
-      row:
-        push CX
-        CX = CS:5B9C
-      col:
-        push CX
-        call 4537
-        pop CX
-        loop col
-        add SI,width three times
-        pop CX
-        loop row
-        jmp 450C
-
-    The inner 4537 leaf is already tested independently, so this hook mostly
-    preserves the LOOP stack/register side effects while collapsing the Python
-    interpreter overhead of the nested control-flow instructions.
-    """
-    s = cpu.s
-    cs = s.cs & 0xFFFF
-    height = cpu.mem.rw(cs, 0x5B9E)
-    width = cpu.mem.rw(cs, 0x5B9C)
-
-    outer = height
-    while outer != 0:
-        # Original: PUSH CX / MOV CX,width / per-column PUSH CX; CALL 4537;
-        # POP CX; LOOP.  The loop counters are carried in Python locals and
-        # CX is staged before each row call because the row body reads CH for
-        # the non-transparent mask bytes.  Only sub-SP stack scratch is
-        # dropped, as the verified 4537 fast hook already does.
-        col = width
-        while col != 0:
-            s.cx = col
-            _row_4537_core(cpu)
-            col -= 1  # LOOP col, flags unaffected.
-
-        # ADD SI,width three times; the third ADD's flags are the live ones.
-        si = (s.si + width + width) & 0xFFFF
-        cpu.set_add_flags(si, width, si + width, 16)
-        s.si = (si + width) & 0xFFFF
-
-        outer = (outer - 1) & 0xFFFF  # LOOP row, flags unaffected.
-
-    s.cx = 0
-    s.ip = 0x450C
-
-
-def _tandy_cell_33dd_core(cpu) -> None:
-    """Fast lifted body of one 1010:33DD Tandy source cell expansion.
-
-    The original calls 344B four times.  Each call rotates two bits from
-    DH/DL/AH/AL into CL, optionally masks transparent nibbles into CH, and then
-    33DD stores the four CL/CH pairs as two Tandy packed words.  At the 33DD
-    boundary all rotate/transparency-test flags have been overwritten by the
-    final ``CMP CS:[0BD6],0``, so this can use direct bit arithmetic while still
-    matching interpreted ASM at the hook continuation.
-    """
-    s = cpu.s
-    mem = cpu.mem
-    rb, rw, wb = mem.rb, mem.rw, mem.wb
-    cs = s.cs & 0xFFFF
-    ds = s.ds & 0xFFFF
-    width = rw(cs, 0x5B9C)
-    si = s.si & 0xFFFF
-
-    s.bx = width
-    al = rb(ds, si)
-    ah = rb(ds, (si + s.bx) & 0xFFFF)
-    s.bx = cpu.shift(4, s.bx, 1, 16)  # SHL BX,1
-    dl = rb(ds, (si + s.bx) & 0xFFFF)
-    old_bx = s.bx
-    s.bx = (s.bx + width) & 0xFFFF
-    cpu.set_add_flags(old_bx, width, old_bx + width, 16)
-    dh = rb(ds, (si + s.bx) & 0xFFFF)
-
-    bd6 = rw(cs, 0x0BD6)
-    transparent_color = rb(cs, 0x0000) if bd6 else 0
-    entry_ch = (s.cx >> 8) & 0xFF
-
-    cls = []
-    chs = []
-    for k in (0, 2, 4, 6):
-        b = k + 1
-        cl = ((((dh >> b) & 1) << 7) | (((dl >> b) & 1) << 6)
-              | (((ah >> b) & 1) << 5) | (((al >> b) & 1) << 4)
-              | (((dh >> k) & 1) << 3) | (((dl >> k) & 1) << 2)
-              | (((ah >> k) & 1) << 1) | ((al >> k) & 1))
-        if bd6:
-            ch = 0
-            if (cl & 0x0F) == transparent_color:
-                ch |= 0x0F
-                cl &= 0xF0
-            if ((cl >> 4) & 0x0F) == transparent_color:
-                ch |= 0xF0
-                cl &= 0x0F
-        else:
-            ch = entry_ch
-        cls.append(cl & 0xFF)
-        chs.append(ch & 0xFF)
-
-    c0, c1, c2, c3 = cls
-    m0, m1, m2, m3 = chs
-    wb(cs, 0x5B95, c0); wb(cs, 0x5B99, m0)
-    wb(cs, 0x5B94, c1); wb(cs, 0x5B98, m1)
-    wb(cs, 0x5B97, c2); wb(cs, 0x5B9B, m2)
-    wb(cs, 0x5B96, c3); wb(cs, 0x5B9A, m3)
-
-    old_si = s.si & 0xFFFF
-    s.si = (old_si + 1) & 0xFFFF
-    old_cf = cpu.get_flag(CF)
-    cpu.set_add_flags(old_si, 1, old_si + 1, 16)  # INC SI, preserving CF.
-    cpu.set_flag(CF, old_cf)
-
-    cpu.set_sub_flags(bd6, 0, bd6, 16)
-    if bd6 != 0:
-        s.ax = rw(cs, 0x5B9A)
-        _stosw(cpu)
-    s.ax = rw(cs, 0x5B96)
-    _stosw(cpu)
-
-    cpu.set_sub_flags(bd6, 0, bd6, 16)
-    if bd6 != 0:
-        s.ax = rw(cs, 0x5B98)
-        _stosw(cpu)
-    s.ax = rw(cs, 0x5B94)
-    _stosw(cpu)
-
-    s.bx = ((ah << 8) | al) if bd6 else (width * 3) & 0xFFFF
-    s.cx = (((m3 if bd6 else entry_ch) << 8) | c3) & 0xFFFF
-    s.dx = ((dh << 8) | dl) & 0xFFFF
 
 
 @registry.replace(0x1010, 0x33DD, "overkill_expand_tandy_cell_33dd")
 def overkill_expand_tandy_cell_33dd(cpu):
-    """Verified replacement for the Tandy packed-pixel cell expander at 1010:33DD."""
-    _tandy_cell_33dd_core(cpu)
-    cpu.s.ip = cpu.pop()
+    """Hook wrapper for OVERKILL 1010:33DD Tandy startup cell expander."""
+    run_expand_tandy_cell_33dd(cpu)
 
 
 @registry.replace(0x1010, 0x33B2, "overkill_expand_tandy_block_33b2")
 def overkill_expand_tandy_block_33b2(cpu):
-    """Replace the hot Tandy startup block renderer/list continuation at 1010:33B2."""
-    if _self_disable_if_patched(cpu, 0x33B2, _SIG_33B2, "overkill_expand_tandy_block_33b2"):
-        return
-
-    s = cpu.s
-    if s.flags & ZF:
-        s.ip = 0x44AA
-        return
-
-    cs = s.cs & 0xFFFF
-    height = cpu.mem.rw(cs, 0x5B9E)
-    width = cpu.mem.rw(cs, 0x5B9C)
-    entry_sp = s.sp & 0xFFFF
-    wrote_call_scratch = False
-
-    outer = height
-    while outer != 0:
-        col = width
-        while col != 0:
-            wrote_call_scratch = True
-            s.cx = col
-            _tandy_cell_33dd_core(cpu)
-            col = (col - 1) & 0xFFFF  # LOOP column, flags unaffected.
-
-        si = (s.si + width + width) & 0xFFFF
-        cpu.set_add_flags(si, width, si + width, 16)
-        s.si = (si + width) & 0xFFFF
-        outer = (outer - 1) & 0xFFFF  # LOOP row, flags unaffected.
-
-    if wrote_call_scratch:
-        ss = s.ss & 0xFFFF
-        cpu.mem.ww(ss, (entry_sp - 6) & 0xFFFF, 0x33C6)
-        cpu.mem.ww(ss, (entry_sp - 4) & 0xFFFF, 0x0001)
-        cpu.mem.ww(ss, (entry_sp - 2) & 0xFFFF, 0x0001)
-
-    s.cx = 0
-    s.ip = 0x33AF
+    """Hook wrapper for OVERKILL 1010:33B2 Tandy startup block expander."""
+    run_expand_tandy_block_33b2(cpu, _tandy_render_runtime())
 
 
-def _masked_word_composite_rows(cpu, *, words_per_row: int, row_add: int) -> None:
-    s = cpu.s
-    mem = cpu.mem
-    ds = s.ds & 0xFFFF
-    es = s.es & 0xFFFF
-    rows = s.cx & 0xFFFF
-    if rows == 0:
-        rows = 0x10000
-
-    si = s.si & 0xFFFF
-    di = s.di & 0xFFFF
-    step = -2 if s.flags & DF else 2
-    bx = 0x0060
-    bx = row_add & 0xFFFF
-    ax = s.ax & 0xFFFF
-
-    for _ in range(rows):
-        for _col in range(words_per_row):
-            ax = mem.rw(ds, si)              # LODSW
-            si = (si + step) & 0xFFFF
-            ax = (ax & mem.rw(es, di)) & 0xFFFF
-            ax = (ax | mem.rw(ds, si)) & 0xFFFF
-            si_sum = si + 2                  # ADD SI,2
-            si = si_sum & 0xFFFF
-            mem.ww(es, di, ax)               # STOSW
-            di = (di + step) & 0xFFFF
-
-        di_sum = di + bx                     # ADD DI,BX; LOOP preserves flags.
-        cpu.set_add_flags(di, bx, di_sum, 16)
-        di = di_sum & 0xFFFF
-
-    s.ax = ax
-    s.bx = bx
-    s.cx = 0
-    s.si = si
-    s.di = di
-
-def _or_inverted_source_words_rows(cpu, *, words_per_row: int, row_add: int) -> None:
-    """Mirror Tandy compositor rows that OR inverted source-mask words into ES:DI.
-
-    The 1010:2F40 target is not a normal masked blit.  It uses the same 16-row
-    sprite-dispatch contract as 2F81, but each row consumes four source cells as
-    ``MOV AX,[SI]; NOT AX; OR ES:[DI],AX; ADD SI,4; ADD DI,2``.  In other words
-    the source words are a mask-only stream interleaved with skipped words; the
-    destination is widened by setting all bits *outside* that mask.
-    """
-    s = cpu.s
-    mem = cpu.mem
-    ds = s.ds & 0xFFFF
-    es = s.es & 0xFFFF
-    rows = s.cx & 0xFFFF
-    if rows == 0:
-        rows = 0x10000
-
-    si = s.si & 0xFFFF
-    di = s.di & 0xFFFF
-    bx = row_add & 0xFFFF
-    ax = s.ax & 0xFFFF
-
-    # The original loop jumps back to the MOV BX,row_add at the top, so BX is
-    # reloaded each row.  Since row_add is constant this is equivalent at the
-    # routine boundary, while keeping the final BX value exact.
-    for _ in range(rows):
-        bx = row_add & 0xFFFF
-        for _col in range(words_per_row):
-            ax = mem.rw(ds, si)
-            ax = (~ax) & 0xFFFF              # NOT AX, flags unaffected.
-            value = (mem.rw(es, di) | ax) & 0xFFFF
-            mem.ww(es, di, value)            # OR ES:[DI],AX
-            cpu.set_logic_flags(value, 16)
-
-            si_sum = si + 4
-            si = si_sum & 0xFFFF
-            cpu.set_add_flags((si - 4) & 0xFFFF, 4, si_sum, 16)
-
-            di_sum = di + 2
-            di = di_sum & 0xFFFF
-            cpu.set_add_flags((di - 2) & 0xFFFF, 2, di_sum, 16)
-
-        di_sum = di + bx
-        cpu.set_add_flags(di, bx, di_sum, 16)
-        di = di_sum & 0xFFFF
-
-    s.ax = ax
-    s.bx = bx
-    s.cx = 0
-    s.si = si
-    s.di = di
 
 
-def _strided_movsw_rows(cpu, *, words_per_row: int, row_add: int) -> None:
-    s = cpu.s
-    mem = cpu.mem
-    ds = s.ds & 0xFFFF
-    es = s.es & 0xFFFF
-    rows = s.cx & 0xFFFF
-    if rows == 0:
-        rows = 0x10000
-
-    si = s.si & 0xFFFF
-    di = s.di & 0xFFFF
-    step = -2 if s.flags & DF else 2
-    bx = row_add & 0xFFFF
-    for _ in range(rows):
-        for _col in range(words_per_row):
-            mem.ww(es, di, mem.rw(ds, si))
-            si = (si + step) & 0xFFFF
-            di = (di + step) & 0xFFFF
-        di_sum = di + bx
-        cpu.set_add_flags(di, bx, di_sum, 16)
-        di = di_sum & 0xFFFF
-    s.bx = bx
-    s.cx = 0
-    s.si = si
-    s.di = di
 
 
-def _source_strided_movsw_rows(cpu, *, words_per_row: int, row_add: int) -> None:
-    s = cpu.s
-    mem = cpu.mem
-    ds = s.ds & 0xFFFF
-    es = s.es & 0xFFFF
-    rows = s.cx & 0xFFFF
-    if rows == 0:
-        rows = 0x10000
-
-    si = s.si & 0xFFFF
-    di = s.di & 0xFFFF
-    step = -2 if s.flags & DF else 2
-    bx = row_add & 0xFFFF
-    for _ in range(rows):
-        for _col in range(words_per_row):
-            mem.ww(es, di, mem.rw(ds, si))
-            si = (si + step) & 0xFFFF
-            di = (di + step) & 0xFFFF
-        si_sum = si + bx
-        cpu.set_add_flags(si, bx, si_sum, 16)
-        si = si_sum & 0xFFFF
-    s.bx = bx
-    s.cx = 0
-    s.si = si
-    s.di = di
 
 
-def _fixed_di_strided_movsw_rows(cpu, *, words_per_row: int, row_add: int, rows: int) -> None:
-    s = cpu.s
-    mem = cpu.mem
-    ds = s.ds & 0xFFFF
-    es = s.es & 0xFFFF
-    si = s.si & 0xFFFF
-    di = s.di & 0xFFFF
-    step = -2 if s.flags & DF else 2
-    bx = row_add & 0xFFFF
-
-    for row in range(rows):
-        for _col in range(words_per_row):
-            mem.ww(es, di, mem.rw(ds, si))
-            si = (si + step) & 0xFFFF
-            di = (di + step) & 0xFFFF
-        di_sum = di + bx
-        cpu.set_add_flags(di, bx, di_sum, 16)
-        di = di_sum & 0xFFFF
-
-    s.bx = bx
-    s.si = si
-    s.di = di
 
 
-def _fixed_si_strided_movsw_rows(cpu, *, words_per_row: int, row_add: int, rows: int) -> None:
-    s = cpu.s
-    mem = cpu.mem
-    ds = s.ds & 0xFFFF
-    es = s.es & 0xFFFF
-    si = s.si & 0xFFFF
-    di = s.di & 0xFFFF
-    step = -2 if s.flags & DF else 2
-    bx = row_add & 0xFFFF
 
-    for _row in range(rows):
-        for _col in range(words_per_row):
-            mem.ww(es, di, mem.rw(ds, si))
-            si = (si + step) & 0xFFFF
-            di = (di + step) & 0xFFFF
-        si_sum = si + bx
-        cpu.set_add_flags(si, bx, si_sum, 16)
-        si = si_sum & 0xFFFF
-
-    s.bx = bx
-    s.si = si
-    s.di = di
 
 
 @registry.replace(0x1010, 0x2E6E, "overkill_tandy_masked_sprite_composite_2e6e")
 def overkill_tandy_masked_sprite_composite_2e6e(cpu):
-    """Replace the mode-2 eight-word masked sprite compositor at 1010:2E6E."""
-    if _self_disable_if_patched(cpu, 0x2E6E, _SIG_2E6E, "overkill_tandy_masked_sprite_composite_2e6e"):
-        return
-    _masked_word_composite_rows(cpu, words_per_row=8, row_add=0x0058)
-    cpu.s.ds = cpu.mem.rw(cpu.s.cs & 0xFFFF, 0x9596)
-    cpu.s.ip = cpu.pop()
+    """Hook wrapper for OVERKILL 1010:2E6E Tandy masked compositor."""
+    run_tandy_masked_sprite_composite_2e6e(cpu, _tandy_render_runtime())
 
 
 @registry.replace(0x1010, 0x2F40, "overkill_tandy_or_inverted_mask_2f40")
 def overkill_tandy_or_inverted_mask_2f40(cpu):
-    """Replace the mode-2 four-word inverted-mask OR compositor at 1010:2F40."""
-    if _self_disable_if_patched(cpu, 0x2F40, _SIG_2F40, "overkill_tandy_or_inverted_mask_2f40"):
-        return
-    _or_inverted_source_words_rows(cpu, words_per_row=4, row_add=0x0060)
-    cpu.s.ds = cpu.mem.rw(cpu.s.cs & 0xFFFF, 0x9596)
-    cpu.s.ip = cpu.pop()
+    """Hook wrapper for OVERKILL 1010:2F40 Tandy inverted-mask OR compositor."""
+    run_tandy_or_inverted_mask_2f40(cpu, _tandy_render_runtime())
 
 @registry.replace(0x1010, 0x2ECB, "overkill_tandy_or_inverted_mask_2ecb")
 def overkill_tandy_or_inverted_mask_2ecb(cpu):
-    """Replace the mode-2 eight-word inverted-mask OR compositor at 1010:2ECB."""
-    if _self_disable_if_patched(cpu, 0x2ECB, _SIG_2ECB, "overkill_tandy_or_inverted_mask_2ecb"):
-        return
-    _or_inverted_source_words_rows(cpu, words_per_row=8, row_add=0x0058)
-    cpu.s.ds = cpu.mem.rw(cpu.s.cs & 0xFFFF, 0x9596)
-    cpu.s.ip = cpu.pop()
+    """Hook wrapper for OVERKILL 1010:2ECB Tandy inverted-mask OR compositor."""
+    run_tandy_or_inverted_mask_2ecb(cpu, _tandy_render_runtime())
 
 @registry.replace(0x1010, 0x2F81, "overkill_tandy_masked_sprite_composite_2f81")
 def overkill_tandy_masked_sprite_composite_2f81(cpu):
-    """Replace the mode-2 four-word masked sprite compositor at 1010:2F81."""
-    if _self_disable_if_patched(cpu, 0x2F81, _SIG_2F81, "overkill_tandy_masked_sprite_composite_2f81"):
-        return
-    _masked_word_composite_rows(cpu, words_per_row=4, row_add=0x0060)
-    cpu.s.ds = cpu.mem.rw(cpu.s.cs & 0xFFFF, 0x9596)
-    cpu.s.ip = cpu.pop()
+    """Hook wrapper for OVERKILL 1010:2F81 Tandy masked compositor."""
+    run_tandy_masked_sprite_composite_2f81(cpu, _tandy_render_runtime())
 
 
 @registry.replace(0x1010, 0x35AA, "overkill_tandy_source_strided_copy_35aa")
 def overkill_tandy_source_strided_copy_35aa(cpu):
-    """Replace the mode-2 source-strided object copy at 1010:35AA."""
-    if _self_disable_if_patched(cpu, 0x35AA, _SIG_35AA, "overkill_tandy_source_strided_copy_35aa"):
-        return
-    cs = cpu.s.cs & 0xFFFF
-    cpu.s.es = cpu.mem.rw(cs, 0x9596)
-    cpu.s.ds = cpu.mem.rw(cs, 0x9598)
-    cpu.s.bx = 0x0058
-    cpu.s.cx = 0x0010
-    _source_strided_movsw_rows(cpu, words_per_row=8, row_add=0x0058)
-    cpu.s.ds = cpu.mem.rw(cs, 0x9596)
-    cpu.s.ip = cpu.pop()
+    """Hook wrapper for OVERKILL 1010:35AA Tandy source-strided copy."""
+    run_tandy_source_strided_copy_35aa(cpu, _tandy_render_runtime())
 
 
 
 
 @registry.replace(0x1010, 0x34AD, "overkill_tandy_split_present_copy_34ad")
 def overkill_tandy_split_present_copy_34ad(cpu):
-    """Replace the mode-2 split object-present copy at 1010:34AD.
-
-    The original optionally calls 34C5 for SS:[BP+0C]/SS:[BP+0E], then reloads
-    DI from SS:[BP+10] and SI from SS:[BP+0E]+0140h and tail-falls into 34C5
-    when the second destination is valid.
-    """
-    if _self_disable_if_patched(cpu, 0x34AD, _SIG_34AD, "overkill_tandy_split_present_copy_34ad"):
-        return
-
-    _cmp_word(cpu, cpu.s.di & 0xFFFF, 0xFFFF)
-    if (cpu.s.di & 0xFFFF) != 0xFFFF:
-        _call_hook_like_near_call(cpu, overkill_tandy_strided_copy_34c5, 0x34B5)
-        if cpu.s.ip != 0x34B5:
-            raise RuntimeError(f"34C5 first half returned to unexpected IP {cpu.s.ip:04X}")
-
-    ss = cpu.s.ss & 0xFFFF
-    bp = cpu.s.bp & 0xFFFF
-    cpu.s.di = cpu.mem.rw(ss, (bp + 0x10) & 0xFFFF)
-    cpu.s.si = cpu.mem.rw(ss, (bp + 0x0E) & 0xFFFF)
-    _add_reg16(cpu, 6, 0x0140)
-    _cmp_word(cpu, cpu.s.di & 0xFFFF, 0xFFFF)
-    if (cpu.s.di & 0xFFFF) == 0xFFFF:
-        cpu.s.ip = cpu.pop()
-        return
-    overkill_tandy_strided_copy_34c5(cpu)
+    """Hook wrapper for OVERKILL 1010:34AD Tandy split present copy."""
+    run_tandy_split_present_copy_34ad(cpu, _tandy_render_runtime())
 
 @registry.replace(0x1010, 0x34C5, "overkill_tandy_strided_copy_34c5")
 def overkill_tandy_strided_copy_34c5(cpu):
-    """Replace the 16-row, eight-word strided copy helper at 1010:34C5."""
-    if _self_disable_if_patched(cpu, 0x34C5, _SIG_34C5, "overkill_tandy_strided_copy_34c5"):
-        return
-    cpu.s.bx = 0x0058
-    cpu.s.cx = 0x0010
-    _strided_movsw_rows(cpu, words_per_row=8, row_add=0x0058)
-    cpu.s.ds = cpu.mem.rw(cpu.s.cs & 0xFFFF, 0x9596)
-    cpu.s.ip = cpu.pop()
+    """Hook wrapper for OVERKILL 1010:34C5 Tandy strided copy helper."""
+    run_tandy_strided_copy_34c5(cpu, _tandy_render_runtime())
 
 
 @registry.replace(0x1010, 0x34D8, "overkill_tandy_small_strided_copy_34d8")
 def overkill_tandy_small_strided_copy_34d8(cpu):
-    """Replace the mode-2 16-row, four-word object-present copy at 1010:34D8."""
-    if _self_disable_if_patched(cpu, 0x34D8, _SIG_34D8, "overkill_tandy_small_strided_copy_34d8"):
-        return
-    _cmp_word(cpu, cpu.s.di & 0xFFFF, 0xFFFF)
-    if (cpu.s.di & 0xFFFF) == 0xFFFF:
-        cpu.s.ip = cpu.pop()
-        return
-    cpu.s.bx = 0x0060
-    _fixed_di_strided_movsw_rows(cpu, words_per_row=4, row_add=0x0060, rows=16)
-    cpu.s.ip = cpu.pop()
+    """Hook wrapper for OVERKILL 1010:34D8 Tandy small strided copy."""
+    run_tandy_small_strided_copy_34d8(cpu, _tandy_render_runtime())
 
 
 
 
 @registry.replace(0x1010, 0x3542, "overkill_tandy_tiny_strided_copy_3542")
 def overkill_tandy_tiny_strided_copy_3542(cpu):
-    """Replace the mode-2 8-row, two-word object-present copy at 1010:3542."""
-    if _self_disable_if_patched(cpu, 0x3542, _SIG_3542, "overkill_tandy_tiny_strided_copy_3542"):
-        return
-    _cmp_word(cpu, cpu.s.di & 0xFFFF, 0xFFFF)
-    if (cpu.s.di & 0xFFFF) == 0xFFFF:
-        cpu.s.ip = cpu.pop()
-        return
-    cpu.s.bx = 0x0064
-    _fixed_di_strided_movsw_rows(cpu, words_per_row=2, row_add=0x0064, rows=8)
-    cpu.s.ip = cpu.pop()
+    """Hook wrapper for OVERKILL 1010:3542 Tandy tiny strided copy."""
+    run_tandy_tiny_strided_copy_3542(cpu, _tandy_render_runtime())
 
 
-def _tandy_draw_source_copy_body(cpu, *, si: int, di: int) -> None:
-    cs = cpu.s.cs & 0xFFFF
-    cpu.s.es = cpu.mem.rw(cs, 0x9596)
-    cpu.s.ds = cpu.mem.rw(cs, 0x9598)
-    cpu.s.si = si & 0xFFFF
-    cpu.s.di = di & 0xFFFF
-    cpu.s.bx = 0x0058
-    cpu.s.cx = 0x0010
-    _source_strided_movsw_rows(cpu, words_per_row=8, row_add=0x0058)
-    cpu.s.ds = cpu.mem.rw(cs, 0x9596)
 
 
 
 @registry.replace(0x1010, 0x3657, "overkill_tandy_draw_tiny_object_3657")
 def overkill_tandy_draw_tiny_object_3657(cpu):
-    """Replace the mode-2 small draw target at 1010:3657."""
-    if _self_disable_if_patched(cpu, 0x3657, _SIG_3657, "overkill_tandy_draw_tiny_object_3657"):
-        return
-    ss = cpu.s.ss & 0xFFFF
-    ds = cpu.s.ds & 0xFFFF
-    bp = cpu.s.bp & 0xFFFF
-    mem = cpu.mem
-
-    _call_hook_like_near_call(cpu, overkill_cga_object_row_addr_5a36, 0x365A)
-    if cpu.s.ip != 0x365A:
-        raise RuntimeError(f"5A36 replacement returned to unexpected IP {cpu.s.ip:04X}")
-    ax = cpu.s.ax & 0xFFFF
-    mem.ww(ss, (bp + 0x0C) & 0xFFFF, ax)
-    _cmp_word(cpu, ax, 0xFFFF)
-    if ax == 0xFFFF:
-        cpu.s.ip = cpu.pop()
-        return
-    row_sum = ax + mem.rw(ds, 0x234C)
-    cpu.s.ax = row_sum & 0xFFFF
-    cpu.set_add_flags(ax, mem.rw(ds, 0x234C), row_sum, 16)
-    mem.ww(ss, (bp + 0x0C) & 0xFFFF, cpu.s.ax)
-    cs = cpu.s.cs & 0xFFFF
-    cpu.s.es = mem.rw(cs, 0x9596)
-    cpu.s.ds = mem.rw(cs, 0x9598)
-    cpu.s.si = cpu.s.ax
-    cpu.s.di = mem.rw(ss, (bp + 0x0E) & 0xFFFF)
-    cpu.s.bx = 0x0064
-    _fixed_si_strided_movsw_rows(cpu, words_per_row=2, row_add=0x0064, rows=8)
-    cpu.s.ds = mem.rw(cs, 0x9596)
-    cpu.s.ip = cpu.pop()
+    """Hook wrapper for OVERKILL 1010:3657 Tandy tiny-object draw."""
+    run_tandy_draw_tiny_object_3657(cpu, _tandy_render_runtime())
 
 @registry.replace(0x1010, 0x356C, "overkill_tandy_draw_split_object_356c")
 def overkill_tandy_draw_split_object_356c(cpu):
-    """Replace the mode-2 split draw target at 1010:356C.
-
-    This is the draw-side sibling of the already-lifted split present copy: it
-    row-addresses the object, draws the first 16-row half when visible, nudges X
-    by 10h, row-addresses again, then draws the second half at +0140h.
-    """
-    if _self_disable_if_patched(cpu, 0x356C, _SIG_356C, "overkill_tandy_draw_split_object_356c"):
-        return
-
-    ss = cpu.s.ss & 0xFFFF
-    ds = cpu.s.ds & 0xFFFF
-    bp = cpu.s.bp & 0xFFFF
-    mem = cpu.mem
-
-    _call_hook_like_near_call(cpu, overkill_cga_object_row_addr_5a36, 0x356F)
-    if cpu.s.ip != 0x356F:
-        raise RuntimeError(f"5A36 replacement returned to unexpected IP {cpu.s.ip:04X}")
-    ax = cpu.s.ax & 0xFFFF
-    mem.ww(ss, (bp + 0x0C) & 0xFFFF, ax)
-    _cmp_word(cpu, ax, 0xFFFF)
-    if ax != 0xFFFF:
-        row_sum = ax + mem.rw(ds, 0x234C)
-        cpu.s.ax = row_sum & 0xFFFF
-        cpu.set_add_flags(ax, mem.rw(ds, 0x234C), row_sum, 16)
-        mem.ww(ss, (bp + 0x0C) & 0xFFFF, cpu.s.ax)
-        _tandy_draw_source_copy_body(cpu, si=cpu.s.ax, di=mem.rw(ss, (bp + 0x0E) & 0xFFFF))
-        ds = cpu.s.ds & 0xFFFF
-
-    _add_mem_word(cpu, ss, (bp + 0x02) & 0xFFFF, 0x0010)
-    # The second row-address CALL returns to 358D; the following instructions then
-    # store [BP+10], restore X, compare AX with FFFF and only then branch to 359A.
-    # Keeping the return word exact matters because OVERKILL leaves balanced CALL
-    # scratch just below SP, and hook verification compares that stack area.
-    _call_hook_like_near_call(cpu, overkill_cga_object_row_addr_5a36, 0x358D)
-    if cpu.s.ip != 0x358D:
-        raise RuntimeError(f"5A36 replacement returned to unexpected IP {cpu.s.ip:04X}")
-    ax = cpu.s.ax & 0xFFFF
-    mem.ww(ss, (bp + 0x10) & 0xFFFF, ax)
-    _sub_mem_word(cpu, ss, (bp + 0x02) & 0xFFFF, 0x0010)
-    _cmp_word(cpu, ax, 0xFFFF)
-    if ax != 0xFFFF:
-        ds = cpu.s.ds & 0xFFFF
-        row_sum = ax + mem.rw(ds, 0x234C)
-        cpu.s.ax = row_sum & 0xFFFF
-        cpu.set_add_flags(ax, mem.rw(ds, 0x234C), row_sum, 16)
-        mem.ww(ss, (bp + 0x10) & 0xFFFF, cpu.s.ax)
-        di = (mem.rw(ss, (bp + 0x0E) & 0xFFFF) + 0x0140) & 0xFFFF
-        _tandy_draw_source_copy_body(cpu, si=cpu.s.ax, di=di)
-    cpu.s.ip = cpu.pop()
+    """Hook wrapper for OVERKILL 1010:356C Tandy split-object draw."""
+    run_tandy_draw_split_object_356c(cpu, _tandy_render_runtime())
 
 @registry.replace(0x1010, 0x35CC, "overkill_tandy_draw_object_block_35cc")
 def overkill_tandy_draw_object_block_35cc(cpu):
-    """Replace the mode-2 draw-side row-address plus source-strided copy at 1010:35CC."""
-    if _self_disable_if_patched(cpu, 0x35CC, _SIG_35CC, "overkill_tandy_draw_object_block_35cc"):
-        return
-
-    _call_hook_like_near_call(cpu, overkill_cga_object_row_addr_5a36, 0x35CF)
-    if cpu.s.ip != 0x35CF:
-        raise RuntimeError(f"5A36 replacement returned to unexpected IP {cpu.s.ip:04X}")
-
-    ss = cpu.s.ss & 0xFFFF
-    ds = cpu.s.ds & 0xFFFF
-    cs = cpu.s.cs & 0xFFFF
-    bp = cpu.s.bp & 0xFFFF
-    ax = cpu.s.ax & 0xFFFF
-
-    cpu.mem.ww(ss, (bp + 0x0C) & 0xFFFF, ax)
-    _cmp_word(cpu, ax, 0xFFFF)
-    if ax == 0xFFFF:
-        cpu.s.ip = cpu.pop()
-        return
-
-    row_sum = ax + cpu.mem.rw(ds, 0x234C)
-    cpu.s.ax = row_sum & 0xFFFF
-    cpu.set_add_flags(ax, cpu.mem.rw(ds, 0x234C), row_sum, 16)
-    cpu.mem.ww(ss, (bp + 0x0C) & 0xFFFF, cpu.s.ax)
-    cpu.s.si = cpu.s.ax
-    cpu.s.di = cpu.mem.rw(ss, (bp + 0x0E) & 0xFFFF)
-    cpu.s.es = cpu.mem.rw(cs, 0x9596)
-    cpu.s.ds = cpu.mem.rw(cs, 0x9598)
-    cpu.s.bx = 0x0060
-    _fixed_si_strided_movsw_rows(cpu, words_per_row=4, row_add=0x0060, rows=16)
-    cpu.s.ds = cpu.mem.rw(cs, 0x9596)
-    cpu.s.ip = cpu.pop()
+    """Hook wrapper for OVERKILL 1010:35CC Tandy object-block draw."""
+    run_tandy_draw_object_block_35cc(cpu, _tandy_render_runtime())
 
 
 @registry.replace(0x1010, 0x768E, "overkill_tandy_layer_sprite_draw_768e")
 def overkill_tandy_layer_sprite_draw_768e(cpu):
-    """Replace the mode-2 layer sprite setup/tail-dispatch helper at 1010:768E."""
-    if _self_disable_if_patched(cpu, 0x768E, _SIG_768E, "overkill_tandy_layer_sprite_draw_768e"):
-        return
+    """Hook wrapper for OVERKILL 1010:768E shared layer-sprite draw helper.
 
-    s = cpu.s
-    cs = s.cs & 0xFFFF
-    ss = s.ss & 0xFFFF
-    obj_bp = s.bp & 0xFFFF
-    mem = cpu.mem
-
-    s.di = mem.rw(ss, (obj_bp + 0x0C) & 0xFFFF)
-    _cmp_word(cpu, s.di, 0xFFFF)
-    if s.di == 0xFFFF:
-        s.ip = cpu.pop()
-        return
-
-    s.es = mem.rw(cs, 0x9598)
-    s.bx = mem.rw(ss, (obj_bp + 0x08) & 0xFFFF)
-    s.cx = mem.rw(cs, 0x95AA)
-    _cmp_word(cpu, s.bx, 0x00FA)
-    if s.bx >= 0x00FA:
-        _sub_reg16(cpu, 3, 0x00FA)
-        s.cx = mem.rw(cs, 0x95AC)
-
-    s.bx = cpu.shift(4, s.bx, 1, 16)          # SHL BX,1
-    _add_reg16(cpu, 3, 0x9192)                # ADD BX,9192h
-    s.si = mem.rw(cs, s.bx)
-    s.bx = mem.rw(cs, 0x95BC)
-    s.bx = cpu.shift(4, s.bx, 1, 16)
-    s.bx = cpu.shift(4, s.bx, 1, 16)
-    s.bx = cpu.shift(4, s.bx, 1, 16)
-    _add_reg16(cpu, 3, mem.rw(ss, (obj_bp + 0x12) & 0xFFFF))
-    s.dx = 0x7716
-    _test_word(cpu, mem.rw(ss, (obj_bp + 0x24) & 0xFFFF), 0xFFFF)
-    if cpu.get_flag(ZF):
-        s.dx = 0x76E6
-    s.bx = cpu.shift(4, s.bx, 1, 16)
-    _add_reg16(cpu, 3, s.dx)
-    target_ip = mem.rw(cs, s.bx)
-    s.ds = s.cx & 0xFFFF
-    s.bp = 0x0010
-    s.cx = s.bp
-
-    if not _run_known_tandy_sprite_composite_target(cpu, target_ip):
-        _raise_unverified_path(
-            cpu,
-            parent="1010:768E",
-            chain="768E Tandy sprite compositor dispatch",
-            target_ip=target_ip,
-            bp=obj_bp,
-        )
+    The legacy registry name says Tandy, but this original routine is reached in
+    CGA, EGA, and Tandy.  The readable game-specific implementation lives in
+    ``games.overkill.rendering.layer_sprites``.
+    """
+    draw_layer_sprite_768e(cpu, _layer_sprite_runtime())
 
 
 def _tandy_layer_dispatch_75f5(cpu, obj_bp: int, chain: str) -> None:
-    """Run the shared 1010:75F5 sprite-composite tail dispatch (the 7620 JMP table).
-
-    Mirrors 75F5: ``ES=CS:[9598]``; ``BX = (CS:[95BC] << 3) + SS:[BP+12h]``; the
-    dispatch table base is ``7628h`` when ``SS:[BP+24h]==0`` else ``7658h``;
-    ``BX = (BX << 1) + base``; ``DS=CX`` (the sprite segment); ``BP=10h``;
-    ``CX=10h``; then ``JMP CS:[BX]`` to the composite.  The composite hook performs
-    the draw and ends with ``s.ip = pop()``, so on return CS:IP is the caller's
-    continuation.  SI/DI (source frame / destination) are set up by the caller.
-    """
-    s = cpu.s
-    cs = s.cs & 0xFFFF
-    ss = s.ss & 0xFFFF
-    mem = cpu.mem
-    s.es = mem.rw(cs, 0x9598)
-    bx = (mem.rw(cs, 0x95BC) << 3) & 0xFFFF
-    bx = (bx + mem.rw(ss, (obj_bp + 0x12) & 0xFFFF)) & 0xFFFF
-    base = 0x7628 if mem.rw(ss, (obj_bp + 0x24) & 0xFFFF) == 0 else 0x7658
-    s.dx = base              # MOV DX,7658h / MOV DX,7628h (the composite preserves DX).
-    bx = ((bx << 1) & 0xFFFF)
-    bx = (bx + base) & 0xFFFF
-    s.bx = bx
-    target = mem.rw(cs, bx)
-    s.ds = s.cx & 0xFFFF      # MOV DS,CX (sprite segment) before BP/CX are reused.
-    s.bp = 0x0010
-    s.cx = 0x0010
-    if not _run_known_tandy_sprite_composite_target(cpu, target):
-        _raise_unverified_path(cpu, parent="1010:75F5", chain=chain, target_ip=target, bp=obj_bp)
+    """Compatibility wrapper for the shared OVERKILL 1010:75F5 layer tail."""
+    dispatch_layer_sprite_tail_75f5(cpu, obj_bp, chain, _layer_sprite_runtime())
 
 
 @registry.replace(0x1010, 0x75A6, "overkill_tandy_layer_sprite_draw_75a6")
 def overkill_tandy_layer_sprite_draw_75a6(cpu):
-    """Replace the mode-2 layer sprite setup/double-draw helper at 1010:75A6.
-
-    Reached from the 7596 layer-draw jump table (``CS:[75A0 + type*2]``) for one
-    object type, the sibling of 768E.  It looks up the sprite frame pointer in the
-    CS:9392 table (sprite index ``SS:[BP+8]``, clamped at 1Ch with an alternate
-    CS:95A6/95AE source segment), saves it to CS:[7624]/CS:[7626], then draws the
-    sprite into up to two destination slots -- ``SS:[BP+0Ch]`` then ``SS:[BP+10h]``
-    -- through the shared 75F5 -> 7620 composite tail.  The first slot is a real
-    ``CALL 75F5`` (the composite returns into the 75DA tail); the second slot falls
-    through into 75F5 so the composite pops the scan's return address directly.  The
-    second frame advances SI by ``DS:[1028] >> 1``.  Returns near to the scan.
-    """
-    if _self_disable_if_patched(cpu, 0x75A6, _SIG_75A6, "overkill_tandy_layer_sprite_draw_75a6"):
-        return
-    s = cpu.s
-    cs = s.cs & 0xFFFF
-    ss = s.ss & 0xFFFF
-    mem = cpu.mem
-    obj_bp = s.bp & 0xFFFF
-
-    # 75A6..75CD: clamp the sprite index and fetch the frame pointer + segment.
-    s.bx = mem.rw(ss, (obj_bp + 0x08) & 0xFFFF)
-    s.cx = mem.rw(cs, 0x95A6)
-    _cmp_word(cpu, s.bx, 0x1C)
-    if (s.bx & 0xFFFF) >= 0x1C:
-        _sub_reg16(cpu, 3, 0x1C)                  # SUB BX,1Ch
-        s.cx = mem.rw(cs, 0x95AE)
-    s.bx = cpu.shift(4, s.bx, 1, 16)              # SHL BX,1
-    _add_reg16(cpu, 3, 0x9392)                    # ADD BX,9392h
-    s.si = mem.rw(cs, s.bx & 0xFFFF)
-    mem.ww(cs, 0x7624, s.si & 0xFFFF)
-    mem.ww(cs, 0x7626, s.cx & 0xFFFF)
-
-    # Draw 1: destination SS:[BP+0Ch] (CALL 75F5 -> composite -> returns to 75DA).
-    s.di = mem.rw(ss, (obj_bp + 0x0C) & 0xFFFF)
-    _cmp_word(cpu, s.di, 0xFFFF)
-    if (s.di & 0xFFFF) != 0xFFFF:
-        cpu.push(obj_bp)                          # PUSH BP
-        cpu.push(0x75DA)                          # CALL 75F5 return address
-        _tandy_layer_dispatch_75f5(cpu, obj_bp, "A8C7 -> 7596 -> 75A6 -> 75F5 (slot 0Ch)")
-        if (s.ip & 0xFFFF) != 0x75DA:
-            raise RuntimeError(f"75A6 slot-0Ch composite returned to {s.ip:04X}, expected 75DA")
-        s.bp = cpu.pop()                          # POP BP
-        obj_bp = s.bp & 0xFFFF
-
-    # 75DB: destination SS:[BP+10h]; FFFFh ends the routine.
-    s.di = mem.rw(ss, (obj_bp + 0x10) & 0xFFFF)
-    _cmp_word(cpu, s.di, 0xFFFF)
-    if (s.di & 0xFFFF) == 0xFFFF:
-        s.ip = cpu.pop()                          # RET (75E3)
-        return
-
-    # Draw 2: reload the saved frame pointer/segment and advance to the next frame,
-    # then fall through into 75F5 so the composite returns to the scan caller.
-    s.si = mem.rw(cs, 0x7624)
-    s.cx = mem.rw(cs, 0x7626)
-    s.ax = mem.rw(s.ds & 0xFFFF, 0x1028)
-    s.ax = cpu.shift(5, s.ax, 1, 16)              # SHR AX,1
-    old_si = s.si & 0xFFFF
-    s.si = (old_si + (s.ax & 0xFFFF)) & 0xFFFF     # ADD SI,AX
-    cpu.set_add_flags(old_si, s.ax & 0xFFFF, old_si + (s.ax & 0xFFFF), 16)
-    _tandy_layer_dispatch_75f5(cpu, obj_bp, "A8C7 -> 7596 -> 75A6 -> 75F5 (slot 10h)")
+    """Hook wrapper for OVERKILL 1010:75A6 shared double-slot layer draw."""
+    draw_layer_sprite_75a6(cpu, _layer_sprite_runtime())
 
 
 @registry.replace(0x1010, 0x2FB6, "overkill_tandy_masked_compact_2fb6")
 def overkill_tandy_masked_compact_2fb6(cpu):
-    """Replace the mode-2 compact two-word masked compositor at 1010:2FB6."""
-    if _self_disable_if_patched(cpu, 0x2FB6, _SIG_2FB6, "overkill_tandy_masked_compact_2fb6"):
-        return
-    _masked_word_composite_rows(cpu, words_per_row=2, row_add=0x0064)
-    cpu.s.ds = cpu.mem.rw(cpu.s.cs & 0xFFFF, 0x9596)
-    cpu.s.ip = cpu.pop()
+    """Hook wrapper for OVERKILL 1010:2FB6 Tandy compact masked compositor."""
+    run_tandy_masked_compact_2fb6(cpu, _tandy_render_runtime())
 
 
 @registry.replace(0x1010, 0x7746, "overkill_tandy_compact_layer_draw_7746")
 def overkill_tandy_compact_layer_draw_7746(cpu):
-    """Replace the compact layer sprite setup/tail-dispatch helper at 1010:7746."""
-    if _self_disable_if_patched(cpu, 0x7746, _SIG_7746, "overkill_tandy_compact_layer_draw_7746"):
-        return
-    s = cpu.s
-    cs = s.cs & 0xFFFF
-    ss = s.ss & 0xFFFF
-    obj_bp = s.bp & 0xFFFF
-    mem = cpu.mem
+    """Hook wrapper for OVERKILL 1010:7746 shared compact layer draw."""
+    draw_compact_layer_sprite_7746(cpu, _layer_sprite_runtime())
 
-    s.di = mem.rw(ss, (obj_bp + 0x0C) & 0xFFFF)
-    _cmp_word(cpu, s.di, 0xFFFF)
-    if s.di == 0xFFFF:
-        s.ip = cpu.pop()
-        return
-    s.es = mem.rw(cs, 0x9598)
-    s.bx = mem.rw(ss, (obj_bp + 0x08) & 0xFFFF)
-    s.cx = mem.rw(cs, 0x95A8)
-    s.bx = cpu.shift(4, s.bx, 1, 16)
-    _add_reg16(cpu, 3, 0x8F92)
-    s.si = mem.rw(cs, s.bx)
-    s.bx = mem.rw(cs, 0x95BC)
-    s.bx = cpu.shift(4, s.bx, 1, 16)
-    s.bx = cpu.shift(4, s.bx, 1, 16)
-    s.bx = cpu.shift(4, s.bx, 1, 16)
-    _add_reg16(cpu, 3, mem.rw(ss, (obj_bp + 0x12) & 0xFFFF))
-    s.ds = s.cx & 0xFFFF
-    s.bp = 0x0008
-    s.cx = s.bp
-    s.bx = cpu.shift(4, s.bx, 1, 16)
-    target_ip = mem.rw(cs, (0x7782 + s.bx) & 0xFFFF)
-    if not _run_known_tandy_sprite_composite_target(cpu, target_ip):
-        _raise_unverified_path(cpu, parent="1010:7746", chain="7746 compact layer compositor dispatch", target_ip=target_ip, bp=obj_bp)
 
 @registry.replace(0x1010, 0xEDE9, "overkill_lz_output_byte_ede9")
 def overkill_lz_output_byte_ede9(cpu):
-    """Replace byte-output helper at 1010:EDE9 used by the LZ-style decoder."""
-    # STOSB
-    cpu.mem.wb(cpu.s.es, cpu.s.di, cpu.get_reg8(0))
-    cpu.s.di = (cpu.s.di + (-1 if cpu.get_flag(DF) else 1)) & 0xFFFF
-
-    # OR DI,DI
-    cpu.set_logic_flags(cpu.s.di, 16)
-    if cpu.s.di == 0:
-        # PUSH AX; MOV AX,ES; ADD AX,1000h; MOV ES,AX; POP AX
-        saved_ax = cpu.s.ax & 0xFFFF
-        ax = cpu.s.es & 0xFFFF
-        result = ax + 0x1000
-        cpu.set_add_flags(ax, 0x1000, result, 16)
-        cpu.s.es = result & 0xFFFF
-        cpu.s.ax = saved_ax
-
-    # INC word ptr CS:EDE5; if it wrapped, INC word ptr CS:EDE7.
-    old = cpu.mem.rw(cpu.s.cs, 0xEDE5)
-    old_cf = cpu.get_flag(CF)
-    new = (old + 1) & 0xFFFF
-    cpu.mem.ww(cpu.s.cs, 0xEDE5, new)
-    cpu.set_add_flags(old, 1, old + 1, 16)
-    cpu.set_flag(CF, old_cf)
-    if new == 0:
-        old2 = cpu.mem.rw(cpu.s.cs, 0xEDE7)
-        old_cf = cpu.get_flag(CF)
-        cpu.mem.ww(cpu.s.cs, 0xEDE7, (old2 + 1) & 0xFFFF)
-        cpu.set_add_flags(old2, 1, old2 + 1, 16)
-        cpu.set_flag(CF, old_cf)
-
-    cpu.s.ip = cpu.pop()
+    """Hook wrapper for OVERKILL 1010:EDE9 LZ byte-output helper."""
+    output_lz_byte(cpu)
 
 
 @registry.replace(0x1010, 0xED97, "overkill_lz_input_byte_ed97")
 def overkill_lz_input_byte_ed97(cpu):
-    """Replace byte-input helper at 1010:ED97 used by the LZ-style decoder.
+    """Hook wrapper for OVERKILL 1010:ED97 LZ byte-input helper."""
+    input_lz_byte(cpu)
 
-    The routine reads from a 1 KiB buffer at DS:D8B8+SI.  When SI wraps to zero
-    it refills that buffer from DOS handle CS:D666.  It also has a one-byte
-    pushback slot at CS:EE04/EE05 used by the decoder around ED5C..EDDA.
-    """
-    cs = cpu.s.cs & 0xFFFF
-    # TEST byte ptr CS:EE04,0FFh
-    pushback_flag = cpu.mem.rb(cs, 0xEE04)
-    cpu.set_logic_flags(pushback_flag & 0xFF, 8)
-    if pushback_flag != 0:
-        cpu.set_reg8(0, cpu.mem.rb(cs, 0xEE05))
-        cpu.mem.wb(cs, 0xEE04, 0)
-        cpu.s.ip = cpu.pop()
-        return
 
-    # ADD SI,D8B8h; LODSB; SUB SI,D8B8h; AND SI,03FFh
-    old_si = cpu.s.si & 0xFFFF
-    added = old_si + 0xD8B8
-    cpu.s.si = added & 0xFFFF
-    cpu.set_add_flags(old_si, 0xD8B8, added, 16)
-
-    cpu.set_reg8(0, cpu.mem.rb(cpu.s.ds, cpu.s.si))
-    cpu.s.si = (cpu.s.si + (-1 if cpu.get_flag(DF) else 1)) & 0xFFFF
-
-    before_sub = cpu.s.si & 0xFFFF
-    sub_result = before_sub - 0xD8B8
-    cpu.s.si = sub_result & 0xFFFF
-    cpu.set_sub_flags(before_sub, 0xD8B8, sub_result, 16)
-
-    and_result = cpu.s.si & 0x03FF
-    cpu.s.si = and_result
-    cpu.set_logic_flags(and_result, 16)
-    saved_flags_after_and = cpu.s.flags & 0xFFFF
-
-    if cpu.s.si == 0:
-        saved = (cpu.s.ax, cpu.s.bx, cpu.s.cx, cpu.s.dx, cpu.s.si, cpu.s.di, cpu.s.bp, cpu.s.flags)
-        cpu.s.dx = 0xD8B8
-        cpu.s.ax = 0x3F00
-        cpu.s.bx = cpu.mem.rw(cs, 0xD666)
-        cpu.s.cx = 0x0400
-        if cpu.interrupt_handler is None:
-            raise RuntimeError("OVERKILL LZ reader needs DOS INT 21h handler")
-        cpu.interrupt_handler(cpu, 0x21)
-        cpu.s.ax, cpu.s.bx, cpu.s.cx, cpu.s.dx, cpu.s.si, cpu.s.di, cpu.s.bp, _ = saved
-        cpu.s.flags = saved_flags_after_and | 0x0002
-
-    cpu.s.ip = cpu.pop()
+@registry.replace(0x254A, 0x05A1, "overkill_overlay_directory_entry_scan_254a_05a1")
+def overkill_overlay_directory_entry_scan_254a_05a1(cpu):
+    """Hook wrapper for OVERKILL 254A:05A1 overlay directory-entry scan loop."""
+    find_overlay_directory_entry_05a1(cpu)
 
 
 @registry.replace(0x254A, 0x05BF, "overkill_overlay_xor_decode_254a_05bf")
 def overkill_overlay_xor_decode_254a_05bf(cpu):
-    """Replace the small overlay/file-block XOR decode loop at 254A:05BF.
+    """Hook wrapper for OVERKILL 254A:05BF overlay XOR decoder."""
+    decode_overlay_xor(cpu)
 
-    Original loop:
 
-        xor [di],al
-        inc di
-        add al,ah
-        loop 05BF
+@registry.replace(0x254A, 0x0582, "overkill_overlay_signature_compare_254a_0582")
+def overkill_overlay_signature_compare_254a_0582(cpu):
+    """Hook wrapper for OVERKILL 254A:0582 overlay signature compare loop."""
+    compare_overlay_signature_0582(cpu)
 
-    It is reached after an INT 21h read into DS:075C and is stable for the
-    default PSP/load layout used by this project.
-    """
-    count = cpu.s.cx & 0xFFFF
-    if count == 0:
-        count = 0x10000
-    al = cpu.get_reg8(0)
-    ah = cpu.get_reg8(4)
-    di = cpu.s.di & 0xFFFF
-    ds = cpu.s.ds & 0xFFFF
-    data = cpu.mem.data
-    base = (ds << 4) & 0xFFFFF
-    last_add_a = al
-    last_add_result = al
-    for _ in range(count):
-        addr = (base + di) & 0xFFFFF
-        data[addr] ^= al
-        di = (di + 1) & 0xFFFF
-        last_add_a = al
-        last_add_result = al + ah
-        al = last_add_result & 0xFF
-    cpu.set_reg8(0, al)
-    cpu.s.di = di
-    cpu.s.cx = 0
-    cpu.set_add_flags(last_add_a, ah, last_add_result, 8)
-    cpu.s.ip = 0x05C6
+
+@registry.replace(0x254A, 0x05D9, "overkill_overlay_entry_name_compare_254a_05d9")
+def overkill_overlay_entry_name_compare_254a_05d9(cpu):
+    """Hook wrapper for OVERKILL 254A:05D9 overlay directory-name compare loop."""
+    compare_overlay_entry_name_05d9(cpu)
+
+
+@registry.replace(0x254A, 0x0701, "overkill_overlay_path_normalizer_254a_0701")
+def overkill_overlay_path_normalizer_254a_0701(cpu):
+    """Hook wrapper for OVERKILL 254A:0701 overlay path-component normalizer."""
+    strip_overlay_path_components_0701(cpu)
 
 
 @registry.replace(0x1010, 0xED7A, "overkill_lz_backref_copy_ed7a")
 def overkill_lz_backref_copy_ed7a(cpu):
-    """Replace the LZ back-reference copy loop at 1010:ED7A."""
-    count = cpu.s.cx & 0xFFFF
-    if count == 0:
-        count = 0x10000
-    cs = cpu.s.cs & 0xFFFF
-    for _ in range(count):
-        cpu.set_reg8(0, cpu.mem.rb(cs, (cpu.s.bx + 0xDCB8) & 0xFFFF))
-        _call_hook_like_near_call(cpu, overkill_lz_output_byte_ede9, 0xED82)
-        cpu.mem.wb(cs, (cpu.s.bp + 0xDCB8) & 0xFFFF, cpu.get_reg8(0))
-
-        old_bx = cpu.s.bx & 0xFFFF
-        old_cf = cpu.get_flag(CF)
-        cpu.s.bx = (cpu.s.bx + 1) & 0xFFFF
-        cpu.set_add_flags(old_bx, 1, old_bx + 1, 16)
-        cpu.set_flag(CF, old_cf)
-        cpu.s.bx &= 0x0FFF
-        cpu.set_logic_flags(cpu.s.bx, 16)
-
-        old_bp = cpu.s.bp & 0xFFFF
-        old_cf = cpu.get_flag(CF)
-        cpu.s.bp = (cpu.s.bp + 1) & 0xFFFF
-        cpu.set_add_flags(old_bp, 1, old_bp + 1, 16)
-        cpu.set_flag(CF, old_cf)
-        cpu.s.bp &= 0x0FFF
-        cpu.set_logic_flags(cpu.s.bp, 16)
-
-        cpu.s.cx = (cpu.s.cx - 1) & 0xFFFF  # LOOP, flags unaffected.
-    cpu.s.ip = 0xED26
+    """Hook wrapper for OVERKILL 1010:ED7A LZ back-reference copy loop."""
+    copy_lz_back_reference(cpu)
 
 @registry.replace(0x1010, 0xECF2, "overkill_lz_decoder_ecf2")
 def overkill_lz_decoder_ecf2(cpu):
-    """Full verified replacement for OVERKILL's 1010:ECF2 LZ asset decoder.
-
-    Byte input, byte output, and back-reference copying are inlined here (rather
-    than dispatched through the ED97/EDE9/ED7A helper hooks) so a whole
-    compressed asset completes in one hook invocation without spending minutes in
-    nested Python call/flag overhead.  The observable result is verified against
-    the interpreted ASM by the ECF2 oracle test.
-    """
-    cs = cpu.s.cs & 0xFFFF
-    mem = cpu.mem
-    data = mem.data
-
-    def rb(seg: int, off: int) -> int:
-        return data[(((seg & 0xFFFF) << 4) + (off & 0xFFFF)) & 0xFFFFF]
-
-    def wb(seg: int, off: int, value: int) -> None:
-        data[(((seg & 0xFFFF) << 4) + (off & 0xFFFF)) & 0xFFFFF] = value & 0xFF
-
-    def ww(seg: int, off: int, value: int) -> None:
-        wb(seg, off, value)
-        wb(seg, (off + 1) & 0xFFFF, value >> 8)
-
-    def read_input_byte() -> int:
-        # Mirrors ED97.  Most flags are not live across the full decoder except
-        # for the explicit TEST/CMP branches reproduced in the outer logic.
-        if rb(cs, 0xEE04) != 0:
-            value = rb(cs, 0xEE05)
-            wb(cs, 0xEE04, 0)
-            cpu.set_reg8(0, value)
-            return value
-
-        ds = cpu.s.ds & 0xFFFF
-        temp_si = (cpu.s.si + 0xD8B8) & 0xFFFF
-        value = rb(ds, temp_si)
-        temp_si = (temp_si + (-1 if cpu.get_flag(DF) else 1)) & 0xFFFF
-        cpu.s.si = (temp_si - 0xD8B8) & 0xFFFF
-        cpu.s.si &= 0x03FF
-
-        if cpu.s.si == 0:
-            saved = (cpu.s.ax, cpu.s.bx, cpu.s.cx, cpu.s.dx, cpu.s.si, cpu.s.di, cpu.s.bp, cpu.s.flags)
-            cpu.s.dx = 0xD8B8
-            cpu.s.ax = 0x3F00
-            cpu.s.bx = mem.rw(cs, 0xD666)
-            cpu.s.cx = 0x0400
-            if cpu.interrupt_handler is None:
-                raise RuntimeError("OVERKILL LZ decoder needs DOS INT 21h handler")
-            cpu.interrupt_handler(cpu, 0x21)
-            cpu.s.ax, cpu.s.bx, cpu.s.cx, cpu.s.dx, cpu.s.si, cpu.s.di, cpu.s.bp, cpu.s.flags = saved
-
-        cpu.set_reg8(0, value)
-        return value
-
-    def output_byte(value: int) -> None:
-        wb(cpu.s.es, cpu.s.di, value)
-        cpu.s.di = (cpu.s.di + (-1 if cpu.get_flag(DF) else 1)) & 0xFFFF
-        if cpu.s.di == 0:
-            cpu.s.es = (cpu.s.es + 0x1000) & 0xFFFF
-        counter = (mem.rw(cs, 0xEDE5) + 1) & 0xFFFF
-        mem.ww(cs, 0xEDE5, counter)
-        if counter == 0:
-            mem.ww(cs, 0xEDE7, (mem.rw(cs, 0xEDE7) + 1) & 0xFFFF)
-
-    # ECF2 PUSH ES / ED95 POP ES; RET.
-    cpu.push(cpu.s.es)
-
-    mem.ww(cs, 0xEDE5, 0)
-    mem.ww(cs, 0xEDE7, 0)
-    cpu.s.di = mem.rw(cs, 0xECEE)
-    cpu.s.es = mem.rw(cs, 0xECF0)
-    wb(cs, 0xEE04, 0)
-    cpu.s.si = 0
-    cpu.s.bp = 0
-    cpu.s.cx = 0x07F7
-
-    while cpu.s.cx != 0:
-        ww(cs, (0xDCB8 + cpu.s.bp) & 0xFFFF, 0)
-        cpu.s.bp = (cpu.s.bp + 2) & 0xFFFF
-        cpu.s.cx = (cpu.s.cx - 1) & 0xFFFF
-
-    cpu.s.bp = 0x0FEE
-    cpu.s.dx = 0
-    cpu.s.cx = 0
-
-    guard = 0
-    while True:
-        guard += 1
-        if guard > 200_000:
-            raise RuntimeError("OVERKILL LZ decoder did not reach terminator")
-
-        cpu.s.dx = (cpu.s.dx >> 1) & 0xFFFF
-        if (cpu.s.dx & 0x0100) == 0:
-            flag_byte = read_input_byte()
-            cpu.s.dx = 0xFF00 | flag_byte
-
-        if cpu.s.dx & 1:
-            value = read_input_byte()
-            output_byte(value)
-            wb(cs, (0xDCB8 + cpu.s.bp) & 0xFFFF, value)
-            cpu.s.bp = (cpu.s.bp + 1) & 0x0FFF
-            cpu.s.cx = 0
-            continue
-
-        first = read_input_byte()
-        second = read_input_byte()
-        cpu.s.ax = ((second & 0xFF) << 8) | first
-        cpu.set_sub_flags(cpu.s.ax, 0, cpu.s.ax, 16)
-        if cpu.s.ax == 0:
-            extra = read_input_byte()
-            cpu.set_reg8(0, extra)
-            cpu.set_sub_flags(extra, 0, extra, 8)
-            if extra == 0:
-                cpu.s.es = cpu.pop()
-                cpu.s.ip = cpu.pop()
-                return
-            wb(cs, 0xEE04, 1)
-            wb(cs, 0xEE05, extra)
-            cpu.set_reg8(0, 0)
-            # AX is now exactly zero, matching MOV AL,0 with AH already zero.
-            cpu.s.ax &= 0xFF00
-
-        ah = (cpu.s.ax >> 8) & 0xFF
-        length = (ah & 0x0F) + 3
-        offset = (((ah >> 4) << 8) | (cpu.s.ax & 0xFF)) & 0x0FFF
-        cpu.s.bx = offset
-        cpu.s.cx = length
-
-        while cpu.s.cx != 0:
-            value = rb(cs, (0xDCB8 + cpu.s.bx) & 0xFFFF)
-            cpu.set_reg8(0, value)
-            output_byte(value)
-            wb(cs, (0xDCB8 + cpu.s.bp) & 0xFFFF, value)
-            cpu.s.bx = (cpu.s.bx + 1) & 0x0FFF
-            cpu.s.bp = (cpu.s.bp + 1) & 0x0FFF
-            cpu.s.cx = (cpu.s.cx - 1) & 0xFFFF
+    """Hook wrapper for OVERKILL 1010:ECF2 full LZ asset decoder."""
+    decode_lz_asset(cpu)
 
 @registry.replace(0x1010, 0x0367, "overkill_linear_byte_rle_decoder_0367_fast")
 def overkill_linear_byte_rle_decoder_0367(cpu):
-    """Verified replacement for 1010:0367 linear byte-RLE decoder.
-
-    Each literal/repeat run is collapsed into a small Python loop instead of
-    invoking the packed byte-reader hook and recomputing flags per output byte,
-    which matters because the real startup stream can contain very large images.
-    The externally observed state matches the interpreted ASM (oracle test).
-    """
-    ds = cpu.s.ds & 0xFFFF
-    mem = cpu.mem
-    data = mem.data
-
-    def rb(seg: int, off: int) -> int:
-        return data[(((seg & 0xFFFF) << 4) + (off & 0xFFFF)) & 0xFFFFF]
-
-    def wb(seg: int, off: int, value: int) -> None:
-        data[(((seg & 0xFFFF) << 4) + (off & 0xFFFF)) & 0xFFFFF] = value & 0xFF
-
-    def read_packed_byte() -> int | None:
-        saved_bx = cpu.s.bx & 0xFFFF
-        mem.ww(ds, 0x0612, saved_bx)
-        ptr = mem.rw(ds, 0x0610)
-        if ptr >= 0x0610:
-            mem.ww(ds, 0x0610, 0x0410)
-            saved_cx = cpu.s.cx & 0xFFFF
-            cpu.set_reg8(4, 0x3F)
-            cpu.s.bx = mem.rw(ds, 0x0240)
-            cpu.s.cx = 0x0200
-            cpu.s.dx = 0x0410
-            if cpu.interrupt_handler is None:
-                raise RuntimeError("OVERKILL 0367 RLE needs DOS INT 21h handler")
-            cpu.interrupt_handler(cpu, 0x21)
-            cpu.s.cx = saved_cx
-            if cpu.get_flag(CF):
-                cpu.s.ip = 0x02B2
-                return None
-            ptr = mem.rw(ds, 0x0610)
-        value = rb(ds, ptr)
-        cpu.set_reg8(0, value)
-        mem.ww(ds, 0x0610, (ptr + 1) & 0xFFFF)
-        cpu.s.bx = mem.rw(ds, 0x0612)
-        return value
-
-    def write_byte(value: int) -> None:
-        wb(cpu.s.es, cpu.s.di, value)
-        cpu.s.di = (cpu.s.di + (-1 if cpu.get_flag(DF) else 1)) & 0xFFFF
-
-    cpu.s.es = mem.rw(ds, 0x023A)
-    cpu.s.di = mem.rw(ds, 0x023C)
-
-    guard = 0
-    while True:
-        guard += 1
-        if guard > 1_000_000:
-            raise RuntimeError("OVERKILL 0367 byte RLE did not reach terminator")
-
-        control = read_packed_byte()
-        if control is None:
-            return
-        cpu.set_sub_flags(control, 0x80, control - 0x80, 8)
-        if control == 0x80:
-            cpu.s.ip = 0x02A8
-            return
-
-        if control > 0x80:
-            # Keep the visible register shuffling from NEG/XCHG/CALL/XCHG.
-            cpu.set_sub_flags(0, control, -control, 8)
-            cpu.set_reg8(0, (-control) & 0xFF)
-            al = cpu.get_reg8(0); ah = cpu.get_reg8(4)
-            cpu.set_reg8(0, ah); cpu.set_reg8(4, al)
-            ah = cpu.get_reg8(4); bl = cpu.get_reg8(3)
-            cpu.set_reg8(4, bl); cpu.set_reg8(3, ah)
-            value = read_packed_byte()
-            if value is None:
-                return
-            ah = cpu.get_reg8(4); bl = cpu.get_reg8(3)
-            cpu.set_reg8(4, bl); cpu.set_reg8(3, ah)
-            count = (cpu.get_reg8(4) + 1) & 0x1FF
-            for _ in range(count):
-                write_byte(value)
-            mem.ww(ds, 0x0244, (mem.rw(ds, 0x0244) + count) & 0xFFFF)
-            # Final DEC AH when AH was 00h exits the JNS loop.
-            cpu.set_reg8(4, 0)
-            _dec_reg8_preserve_cf(cpu, 4)
-            continue
-
-        # Literal run, count = AL + 1.  Data reads do not affect the branch
-        # structure; the final DEC AL decides loop exit and defines flags.
-        saved_ah = cpu.get_reg8(4)
-        count = control + 1
-        for _ in range(count):
-            value = read_packed_byte()
-            if value is None:
-                return
-            write_byte(value)
-        mem.ww(ds, 0x0244, (mem.rw(ds, 0x0244) + count) & 0xFFFF)
-        cpu.set_reg8(4, saved_ah)
-        cpu.set_reg8(0, 0)
-        _dec_reg8_preserve_cf(cpu, 0)
+    """Hook wrapper for OVERKILL 1010:0367 linear byte-RLE decoder."""
+    decode_linear_byte_rle(cpu)
 
 
-# 45CB bit-spread group table.  One 45CB expansion inserts exactly four bits of
-# its input byte into CS:[45E4] via the ROL/RCL16 chain, in this order:
-# bit5, bit4, bit1, bit0 (ROL x3 carries out bit5, ROL carries bit4, then ROL x3
-# from the rotated position carries bit1, ROL carries bit0).  The table maps a
-# byte to that 4-bit group so a whole 45CB call becomes one lookup.
-_G45CB = tuple(
-    ((((b >> 5) & 1) << 3) | (((b >> 4) & 1) << 2) | (((b >> 1) & 1) << 1) | (b & 1))
-    for b in range(256)
-)
+@registry.replace(0x1010, 0x0324, "overkill_word_pair_rle_decoder_0324")
+def overkill_word_pair_rle_decoder_0324(cpu):
+    """Hook wrapper for OVERKILL 1010:0324 word-pair RLE decoder."""
+    decode_word_pair_rle(cpu)
 
 
-def _row_4537_core(cpu):
-    """Fast lifted body of the 1010:4537 row expander (no return-IP pop).
-
-    Computes the same final architectural state as the original 45F6/45CB
-    rotate chain (the four 45F6 pack calls and the 45CB bit-spread calls) using
-    direct bit arithmetic and the `_G45CB` table:
-
-    - pack call k (k=0..3) gathers bits 2k/2k+1 of the four plane bytes
-      (DH,DL,AH,AL) into CL with the nibbles swapped, applies the optional
-      transparency test against CS:[0BD6]/CS:[0000], and remaps both nibbles
-      through the CS:45E6 colour table;
-    - each 45CB expansion contributes `_G45CB[byte]` as the next nibble of the
-      output word, first byte highest (mask word from 5B98..5B9B when
-      CS:[0BD6] != 0, then the visible word from 5B94..5B97);
-    - final flags: AF/OF (and base word) from `CMP CS:[0BD6],0`, then CF from
-      bit15 of CS:[45E4] before the last RCL16 (= bit0 of the word's previous
-      content) and ZF/SF/PF from the final word, exactly as the RCL16 chain
-      leaves them.
-
-    Verified bit-identical to the interpreted original ASM by the oracle test
-    plus a randomized differential fuzz (registers, flags incl. DF, and all
-    written memory).
-    """
-    s = cpu.s
-    mem = cpu.mem
-    rb, rw, wb, ww = mem.rb, mem.rw, mem.wb, mem.ww
-    cs = s.cs & 0xFFFF
-    ds = s.ds & 0xFFFF
-
-    width = rw(cs, 0x5B9C)
-    si = s.si & 0xFFFF
-    al = rb(ds, si)
-    ah = rb(ds, (si + width) & 0xFFFF)
-    bx = (width << 1) & 0xFFFF
-    dl = rb(ds, (si + bx) & 0xFFFF)
-    bx = (bx + width) & 0xFFFF
-    dh = rb(ds, (si + bx) & 0xFFFF)
-
-    bd6 = rw(cs, 0x0BD6)
-    tcol = rb(cs, 0x0000) if bd6 else 0
-    entry_ch = (s.cx >> 8) & 0xFF
-
-    cls = []
-    chs = []
-    for k in (0, 2, 4, 6):
-        b = k + 1
-        cl = ((((dh >> b) & 1) << 7) | (((dl >> b) & 1) << 6)
-              | (((ah >> b) & 1) << 5) | (((al >> b) & 1) << 4)
-              | (((dh >> k) & 1) << 3) | (((dl >> k) & 1) << 2)
-              | (((ah >> k) & 1) << 1) | ((al >> k) & 1))
-        if bd6:
-            ch = 0
-            if (cl & 0x0F) == tcol:
-                ch = 0x0F
-                cl &= 0xF0
-            if ((cl >> 4) & 0x0F) == tcol:
-                ch |= 0xF0
-                cl &= 0x0F
-        else:
-            ch = entry_ch
-        cls.append(((rb(cs, 0x45E6 + ((cl >> 4) & 0x0F)) << 4)
-                    | rb(cs, 0x45E6 + (cl & 0x0F))) & 0xFF)
-        chs.append(ch)
-
-    c0, c1, c2, c3 = cls
-    m0, m1, m2, m3 = chs
-    wb(cs, 0x5B95, c0); wb(cs, 0x5B99, m0)
-    wb(cs, 0x5B94, c1); wb(cs, 0x5B98, m1)
-    wb(cs, 0x5B97, c2); wb(cs, 0x5B9B, m2)
-    wb(cs, 0x5B96, c3); wb(cs, 0x5B9A, m3)
-    # CS:[45E2] is written once per pack call; the surviving value is the one
-    # from the fourth call, where AH:AL have been rotated by a full 8 bits and
-    # therefore equal the loaded plane bytes again.
-    ww(cs, 0x45E2, ((ah << 8) | al) & 0xFFFF)
-
-    s.si = (si + 1) & 0xFFFF
-
-    g = _G45CB
-    step = -2 if s.flags & DF else 2
-    di = s.di & 0xFFFF
-    es = s.es & 0xFFFF
-
-    if bd6:
-        # Mask word from 5B98,5B99,5B9A,5B9B == m1,m0,m3,m2 (insertion order).
-        w1 = (g[m1] << 12) | (g[m0] << 8) | (g[m3] << 4) | g[m2]
-        ww(es, di, w1)
-        di = (di + step) & 0xFFFF
-        prev45e4_bit0 = w1 & 1
-    else:
-        prev45e4_bit0 = rw(cs, 0x45E4) & 1
-
-    # Visible word from 5B94,5B95,5B96,5B97 == c1,c0,c3,c2.
-    w2 = (g[c1] << 12) | (g[c0] << 8) | (g[c3] << 4) | g[c2]
-    ww(cs, 0x45E4, w2)
-    ww(es, di, w2)
-    s.di = (di + step) & 0xFFFF
-
-    s.ax = w2
-    s.bx = 0x45E6
-    s.cx = ((m3 << 8) | c3) & 0xFFFF
-    # 45F6 rotates each plane byte by two bits per call. 4537 calls it four
-    # times, so the bytes return to their loaded values, not the entry DX.
-    s.dx = ((dh << 8) | dl) & 0xFFFF
-
-    cpu.set_sub_flags(bd6, 0, bd6, 16)          # CMP CS:[0BD6],0 -> AF/OF base
-    f = s.flags & ~0x00C5                        # clear CF, PF, ZF, SF
-    if prev45e4_bit0:
-        f |= CF
-    if w2 == 0:
-        f |= ZF
-    if w2 & 0x8000:
-        f |= SF
-    if _PARITY[w2 & 0xFF]:
-        f |= PF
-    s.flags = (f | 0x0002) & 0x0FFF
 
 
 @registry.replace(0x1010, 0x4537, "overkill_expand_4plane_row_4537_fast")
 def overkill_expand_4plane_row_4537(cpu):
-    """Verified replacement for 1010:4537 4-plane row expansion.
-
-    The body lives in `_row_4537_core`, which computes the same observable
-    semantics as the original 45F6/45CB rotate chain using direct bit arithmetic
-    (the rotate chain would perform ~500 per-bit rotate/flag operations per row).
-    Verified bit-identical against the interpreted original ASM by
-    ``test_expand_4plane_row_4537_hook_matches_interpreted_asm`` and the
-    randomized differential fuzz in ``test_expand_4plane_row_4537_fuzz``.
-    """
-    _row_4537_core(cpu)
-    cpu.s.ip = cpu.pop()
+    """Hook wrapper for OVERKILL 1010:4537 4-plane startup row expander."""
+    expand_4plane_row_4537(cpu)
 
 @registry.replace(0x1010, 0x450C, "overkill_expand_4plane_list_450c")
 def overkill_expand_4plane_list_450c(cpu):
-    """Replace the list-driver loop around 1010:450C.
-
-    This is intentionally a narrow control-flow replacement, not a new renderer.
-    It only folds the hot outer loop:
-
-        450C call 44D7        ; read one block header / detect terminator
-        450F jz   44AA        ; exit list when 44D7 left ZF set
-        4511 ...              ; existing verified 4-plane block renderer
-        4535 jmp  450C
-
-    Each non-terminal block is still rendered by the already verified 4511 hook.
-    This keeps behavior tied to the interpreted routine while removing tens of
-    thousands of call/jmp/header instructions during startup asset expansion.
-    """
-    cs = cpu.s.cs & 0xFFFF
-    ds = cpu.s.ds & 0xFFFF
-
-    guard = 0
-    while True:
-        guard += 1
-        if guard > 100_000:
-            raise RuntimeError("OVERKILL 450C 4-plane list did not reach terminator")
-
-        # 44D7: MOV AX,[SI]; OR AX,[SI+2]; JNZ 44DF; RET
-        first = cpu.mem.rw(ds, cpu.s.si)
-        second = cpu.mem.rw(ds, (cpu.s.si + 2) & 0xFFFF)
-        combined = first | second
-        cpu.s.ax = combined & 0xFFFF
-        cpu.set_logic_flags(cpu.s.ax, 16)
-        if combined == 0:
-            # The original returns to 450F with ZF=1; JZ then jumps to 44AA.
-            cpu.s.ip = 0x44AA
-            return
-
-        # 44DF..450A: consume header words and publish dimensions.
-        cpu.s.bx = cpu.mem.rw(cs, 0x0BE0)
-        old_index = cpu.mem.rw(cs, 0x0BE0)
-        cpu.mem.ww(cs, 0x0BE0, (old_index + 2) & 0xFFFF)
-        cpu.set_add_flags(old_index, 2, old_index + 2, 16)
-
-        # LODSW -> first word.  Flags are overwritten below by CMP/INC.
-        cpu.s.ax = cpu.mem.rw(ds, cpu.s.si)
-        cpu.s.si = (cpu.s.si + (-2 if cpu.get_flag(DF) else 2)) & 0xFFFF
-
-        bd8 = cpu.mem.rw(cs, 0x0BD8)
-        cpu.set_sub_flags(bd8, 0, bd8, 16)
-        if bd8 != 0:
-            cpu.mem.ww(cs, cpu.s.bx, cpu.s.di)
-            _stosw(cpu)
-        cpu.mem.ww(cs, 0x5B9E, cpu.s.ax)
-
-        # LODSW -> second word.
-        cpu.s.ax = cpu.mem.rw(ds, cpu.s.si)
-        cpu.s.si = (cpu.s.si + (-2 if cpu.get_flag(DF) else 2)) & 0xFFFF
-
-        bd8 = cpu.mem.rw(cs, 0x0BD8)
-        cpu.set_sub_flags(bd8, 0, bd8, 16)
-        if bd8 != 0:
-            _stosw(cpu)
-        cpu.mem.ww(cs, 0x5B9C, cpu.s.ax)
-
-        old_ax = cpu.s.ax & 0xFFFF
-        old_cf = cpu.get_flag(CF)
-        cpu.s.ax = (old_ax + 1) & 0xFFFF
-        cpu.set_add_flags(old_ax, 1, old_ax + 1, 16)  # INC AX flag shape.
-        cpu.set_flag(CF, old_cf)                      # INC does not affect CF.
-
-        if cpu.get_flag(0x0040):  # ZF from INC AX; matches JZ 44AA at 450F.
-            cpu.s.ip = 0x44AA
-            return
-
-        # Fall-through to 4511.  It is a jump target, not a CALL, so invoke the
-        # verified 4511 replacement directly without a synthetic return word.
-        overkill_expand_4plane_block_4511(cpu)
-        if cpu.s.ip != 0x450C:
-            return
+    """Hook wrapper for OVERKILL 1010:450C 4-plane startup list expander."""
+    expand_4plane_list_450c(cpu)
 
 
 def _inc_reg16_preserve_cf(cpu, reg_idx: int) -> None:
@@ -2102,6 +574,14 @@ def _ega_next_scanline_di(cpu) -> None:
     _test_word(cpu, cpu.s.di, 0x4000)
     if not cpu.get_flag(ZF):
         _add_reg16(cpu, 7, 0xC050)
+
+
+@registry.replace(0x1010, 0x375B, "overkill_tandy_postcopy_scaled_blit_375b")
+def overkill_tandy_postcopy_scaled_blit_375b(cpu):
+    """Hook wrapper for OVERKILL 1010:375B Tandy post-copy scaled blitter."""
+    if _self_disable_if_patched(cpu, 0x375B, _SIG_375B, "overkill_tandy_postcopy_scaled_blit_375b"):
+        return
+    run_tandy_postcopy_scaled_blit_375b(cpu)
 
 
 @registry.replace(0x1010, 0x497A, "overkill_blit_scaled_column_block_497a")
@@ -2293,7 +773,7 @@ def overkill_sprite_blit_9x16_477e(cpu):
         480D  ret near
 
     Side effects preserved exactly (verified against interpreted ASM on
-    artifacts/snapshot_stop_477e_probe, exit state SI+=0x340, DI+=0x90,
+    artifacts/evidence/snapshot_stop_477e_probe, exit state SI+=0x340, DI+=0x90,
     DS=ES=cs:[9596], FLAGS=0212):
       * ES = cs:[9596], DS = cs:[9596] on exit
       * SI += 16*0x34 = 0x340, DI += 16*0x09 = 0x90
@@ -3350,7 +1830,7 @@ def overkill_ega_source_spaced_copy_2ab9(cpu):
     bp = s.bp & 0xFFFF
     cs = s.cs & 0xFFFF
 
-    _call_hook_like_near_call(cpu, _object_row_addr_mode1_2580, 0x2ABC)
+    _call_hook_like_near_call(cpu, object_row_address_mode1_2580, 0x2ABC)
     if s.ip != 0x2ABC:
         return
     # The near-call push already left 0x2ABC in the scratch slot below SP, so the
@@ -3768,194 +2248,92 @@ def _layer_draw_dispatch_target_7596(cpu, bp: int) -> int:
     return cpu.mem.rw(cs, (0x75A0 + index) & 0xFFFF)
 
 
-def _layer_sprite_composite_target_768e(cpu, bp: int) -> int | None:
-    """Predict the 1010:768E tail compositor target without mutating CPU state.
-
-    Returns None for the documented immediate-return path where SS:[BP+0C] is
-    FFFFh.  Parent scan hooks use this to compose only dispatch chains whose
-    nested compositor is already verified.
-    """
-    cs = cpu.s.cs & 0xFFFF
-    ss = cpu.s.ss & 0xFFFF
-    if cpu.mem.rw(ss, (bp + 0x0C) & 0xFFFF) == 0xFFFF:
-        return None
-    dispatch = (cpu.mem.rw(cs, 0x95BC) << 3) & 0xFFFF
-    dispatch = (dispatch + cpu.mem.rw(ss, (bp + 0x12) & 0xFFFF)) & 0xFFFF
-    table = 0x7716
-    if cpu.mem.rw(ss, (bp + 0x24) & 0xFFFF) == 0:
-        table = 0x76E6
-    return cpu.mem.rw(cs, (table + ((dispatch << 1) & 0xFFFF)) & 0xFFFF)
 
 
-def _is_verified_tandy_sprite_composite_target(target_ip: int | None) -> bool:
-    return target_ip is None or target_ip in (0x2F81, 0x2F40, 0x2ECB, 0x2E6E)
-
-
-def _run_known_tandy_present_target(cpu, target_ip: int) -> bool:
-    if target_ip == 0x34D8:
-        overkill_tandy_small_strided_copy_34d8(cpu)
-        return True
-    if target_ip == 0x34C5:
-        overkill_tandy_strided_copy_34c5(cpu)
-        return True
-    if target_ip == 0x3542:
-        overkill_tandy_tiny_strided_copy_3542(cpu)
-        return True
-    if target_ip == 0x34AD:
-        overkill_tandy_split_present_copy_34ad(cpu)
-        return True
-    return False
-
-
-def _run_known_tandy_draw_target(cpu, target_ip: int) -> bool:
-    if target_ip == 0x35CC:
-        overkill_tandy_draw_object_block_35cc(cpu)
-        return True
-    if target_ip == 0x35AA:
-        overkill_tandy_source_strided_copy_35aa(cpu)
-        return True
-    if target_ip == 0x356C:
-        overkill_tandy_draw_split_object_356c(cpu)
-        return True
-    if target_ip == 0x3657:
-        overkill_tandy_draw_tiny_object_3657(cpu)
-        return True
-    return False
-
-
-def _run_original_layer_composite_near_target(cpu, target_ip: int, *, max_steps: int = 20000) -> None:
-    """Execute a still-unlifted layer compositor target through the ASM interpreter.
-
-    The shared 75F5/76E2 layer-sprite dispatch tables contain many small
-    video-mode-specific compositor variants.  Most hot targets are lifted above,
-    but a few rare animation phases can still legitimately dispatch to original
-    targets that are not worth broadening the caller hook around.  For those
-    exact targets, keep the 75F5 wrapper intact and run the original near-return
-    compositor to its RET, bounded so bad control flow still fails loudly.
-    """
-    s = cpu.s
-    entry_cs = s.cs & 0xFFFF
-    entry_sp = s.sp & 0xFFFF
-    return_ip = cpu.mem.rw(s.ss & 0xFFFF, entry_sp)
-    s.ip = target_ip & 0xFFFF
-    for _ in range(max_steps):
-        cpu.step()
-        if (s.cs & 0xFFFF) == entry_cs and (s.ip & 0xFFFF) == return_ip and (s.sp & 0xFFFF) == ((entry_sp + 2) & 0xFFFF):
-            return
-    _raise_unverified_path(
-        cpu,
-        parent="1010:75F5",
-        chain="bounded original layer compositor did not return",
-        target_ip=target_ip,
+def _tandy_render_runtime() -> TandyRenderRuntime:
+    """Build VM callbacks/signatures for Tandy-specific rendering primitives."""
+    return TandyRenderRuntime(
+        self_disable_if_patched=_self_disable_if_patched,
+        object_row_address_from_mode_dispatch_5a36=overkill_cga_object_row_addr_5a36,
+        signature_2e6e=_SIG_2E6E,
+        signature_2ecb=_SIG_2ECB,
+        signature_2f40=_SIG_2F40,
+        signature_2f81=_SIG_2F81,
+        signature_2fb6=_SIG_2FB6,
+        signature_33b2=_SIG_33B2,
+        signature_34ad=_SIG_34AD,
+        signature_34c5=_SIG_34C5,
+        signature_34d8=_SIG_34D8,
+        signature_3542=_SIG_3542,
+        signature_35aa=_SIG_35AA,
+        signature_35cc=_SIG_35CC,
+        signature_356c=_SIG_356C,
+        signature_3657=_SIG_3657,
     )
 
 
-_KNOWN_ORIGINAL_LAYER_COMPOSITE_TARGETS = {
-    # CGA layer-sprite compositor table entries not lifted yet.
-    0x3926, 0x39DF, 0x3AEE, 0x3C53, 0x3CBC, 0x3D52,
-    0x3E12, 0x3E70, 0x3EFB, 0x3FB0, 0x3FEB, 0x403A,
-    # EGA layer-sprite compositor table entries not lifted yet.  These are
-    # sibling animation-phase targets of the already lifted 103C/10B7/1AEB/1D1B
-    # paths and are reached by left/right movement frames.
-    0x10ED, 0x11B8, 0x12B6, 0x13E7, 0x154B, 0x167C, 0x177A,
-    0x1845, 0x1899, 0x18F7, 0x195F, 0x19D1, 0x1A39, 0x1A97,
-    0x1B2E, 0x1B4F, 0x1BC6, 0x1C61, 0x1DF4, 0x1EAE, 0x1F49,
-    0x1FC0, 0x1FFB, 0x203C, 0x2083, 0x20D0, 0x2117, 0x2158,
-}
+def _layer_sprite_runtime() -> LayerSpriteRuntime:
+    """Build the callback table used by the shared layer-sprite module.
+
+    The renderer setup logic now lives outside this large hook-registration file,
+    but the concrete compositor hook functions remain here for now.  Creating the
+    table lazily keeps import order simple while avoiding a circular import from
+    ``games.overkill.rendering.layer_sprites`` back into this module.
+    """
+    return LayerSpriteRuntime(
+        self_disable_if_patched=_self_disable_if_patched,
+        fail_unverified=_raise_unverified_path,
+        signature_75a6=_SIG_75A6,
+        signature_768e=_SIG_768E,
+        signature_7746=_SIG_7746,
+        compositor_handlers={
+            # EGA compact/spread compositor leaves.
+            0x2193: overkill_ega_compact_byte_masked_composite_2193,
+            0x238D: overkill_ega_compact_byte_spread_left_composite_238d,
+            0x2410: overkill_ega_compact_byte_spread_left_composite_2410,
+            0x247E: overkill_ega_compact_byte_spread_left_composite_247e,
+            0x21D6: overkill_ega_compact_byte_spread_composite_21d6,
+            0x2223: overkill_ega_compact_byte_spread_composite_2223,
+            0x2285: overkill_ega_compact_byte_spread_composite_2285,
+            0x22FC: overkill_ega_compact_byte_spread_composite_22fc,
+            0x409D: overkill_ega_compact_spread_composite_409d,
+            0x40D7: overkill_ega_compact_spread_composite_40d7,
+            0x412B: overkill_ega_compact_spread_composite_412b,
+            # CGA compositor leaves.
+            0x387C: overkill_or_inverted_sprite_composite_387c,
+            0x38D6: overkill_or_inverted_sprite_composite_38d6,
+            0x390E: overkill_or_inverted_sprite_composite_390e,
+            0x3849: overkill_masked_sprite_composite_3849,
+            0x38B7: _run_cga_masked_sprite_composite_38b7_as_near,
+            0x38F9: overkill_masked_sprite_composite_38f9,
+            # EGA full-width layer compositor leaves.
+            0x10B7: overkill_ega_layer_or_inverted_composite_10b7,
+            0x103C: overkill_ega_layer_masked_composite_103c,
+            0x1AEB: overkill_ega_spaced_word_composite_1aeb,
+            0x1D1B: overkill_ega_spread_masked_composite_1d1b,
+            # Tandy compositor leaves.
+            0x2F81: overkill_tandy_masked_sprite_composite_2f81,
+            0x2F40: overkill_tandy_or_inverted_mask_2f40,
+            0x2ECB: overkill_tandy_or_inverted_mask_2ecb,
+            0x2E6E: overkill_tandy_masked_sprite_composite_2e6e,
+            0x2FB6: overkill_tandy_masked_compact_2fb6,
+        },
+    )
+
+
+def _layer_sprite_composite_target_768e(cpu, bp: int) -> int | None:
+    """Compatibility shim for scan/prediction code; see rendering.layer_sprites."""
+    return predict_layer_sprite_composite_target_768e(cpu, bp)
+
+
+def _is_verified_tandy_sprite_composite_target(target_ip: int | None) -> bool:
+    """Compatibility shim; this is now a shared CGA/EGA/Tandy target check."""
+    return is_known_layer_sprite_composite_target(target_ip)
 
 
 def _run_known_tandy_sprite_composite_target(cpu, target_ip: int) -> bool:
-    # Shared layer-sprite dispatchers (75F5/7620 and 768E/76E2) are used by
-    # all three OVERKILL video modes.  The old helper name is kept to minimize
-    # churn, but the accepted targets are mode-aware: CGA entries live in the
-    # 38xx compositor table, EGA entries in the 10xx/1xxx table, and Tandy
-    # entries in the 2Exx/2Fxx table.
-    if target_ip in _KNOWN_ORIGINAL_LAYER_COMPOSITE_TARGETS:
-        # Exact CGA/EGA animation-phase compositor targets observed in the
-        # original jump tables.  Keep them bounded-original until they become hot
-        # enough to justify lifting one by one.  This is intentionally not a
-        # broad fallback: unknown table entries still fail fast.
-        _run_original_layer_composite_near_target(cpu, target_ip)
-        return True
-    if target_ip == 0x2193:
-        overkill_ega_compact_byte_masked_composite_2193(cpu)
-        return True
-    if target_ip == 0x238D:
-        overkill_ega_compact_byte_spread_left_composite_238d(cpu)
-        return True
-    if target_ip == 0x2410:
-        overkill_ega_compact_byte_spread_left_composite_2410(cpu)
-        return True
-    if target_ip == 0x247E:
-        overkill_ega_compact_byte_spread_left_composite_247e(cpu)
-        return True
-    if target_ip == 0x21D6:
-        overkill_ega_compact_byte_spread_composite_21d6(cpu)
-        return True
-    if target_ip == 0x2223:
-        overkill_ega_compact_byte_spread_composite_2223(cpu)
-        return True
-    if target_ip == 0x2285:
-        overkill_ega_compact_byte_spread_composite_2285(cpu)
-        return True
-    if target_ip == 0x22FC:
-        overkill_ega_compact_byte_spread_composite_22fc(cpu)
-        return True
-    if target_ip == 0x409D:
-        overkill_ega_compact_spread_composite_409d(cpu)
-        return True
-    if target_ip == 0x40D7:
-        overkill_ega_compact_spread_composite_40d7(cpu)
-        return True
-    if target_ip == 0x412B:
-        overkill_ega_compact_spread_composite_412b(cpu)
-        return True
-    if target_ip == 0x387C:
-        overkill_or_inverted_sprite_composite_387c(cpu)
-        return True
-    if target_ip == 0x38D6:
-        overkill_or_inverted_sprite_composite_38d6(cpu)
-        return True
-    if target_ip == 0x390E:
-        overkill_or_inverted_sprite_composite_390e(cpu)
-        return True
-    if target_ip == 0x3849:
-        overkill_masked_sprite_composite_3849(cpu)
-        return True
-    if target_ip == 0x38B7:
-        _run_cga_masked_sprite_composite_38b7_as_near(cpu)
-        return True
-    if target_ip == 0x38F9:
-        overkill_masked_sprite_composite_38f9(cpu)
-        return True
-    if target_ip == 0x10B7:
-        overkill_ega_layer_or_inverted_composite_10b7(cpu)
-        return True
-    if target_ip == 0x103C:
-        overkill_ega_layer_masked_composite_103c(cpu)
-        return True
-    if target_ip == 0x1AEB:
-        overkill_ega_spaced_word_composite_1aeb(cpu)
-        return True
-    if target_ip == 0x1D1B:
-        overkill_ega_spread_masked_composite_1d1b(cpu)
-        return True
-    if target_ip == 0x2F81:
-        overkill_tandy_masked_sprite_composite_2f81(cpu)
-        return True
-    if target_ip == 0x2F40:
-        overkill_tandy_or_inverted_mask_2f40(cpu)
-        return True
-    if target_ip == 0x2ECB:
-        overkill_tandy_or_inverted_mask_2ecb(cpu)
-        return True
-    if target_ip == 0x2E6E:
-        overkill_tandy_masked_sprite_composite_2e6e(cpu)
-        return True
-    if target_ip == 0x2FB6:
-        overkill_tandy_masked_compact_2fb6(cpu)
-        return True
-    return False
+    """Compatibility shim for the old Tandy-only helper name."""
+    return run_layer_sprite_compositor_target(cpu, target_ip, _layer_sprite_runtime())
 
 
 def _object_logic_target_aa2b(cpu, bp: int) -> int:
@@ -6727,42 +5105,8 @@ def overkill_wait_timer_tick_0679(cpu):
 
 @registry.replace(0x1010, 0x3354, "overkill_present_tandy_frame_3354")
 def overkill_present_tandy_frame_3354(cpu):
-    """Replace the mode-2 Tandy frame-present blit at 1010:3354.
-
-    The Tandy/PCjr presenter is selected by the same 5BDC video-mode jump table
-    as the CGA and EGA presenters, but it copies to a 320x200x16 packed Tandy
-    aperture instead of CGA 2bpp or EGA hardware planes.  Its address progression
-    is the classic four-bank Tandy layout:
-
-        screen offset = (y & 3) * 2000h + (y >> 2) * 00A0h + x_byte
-
-    One byte contains two 4-bit pixels.  The source work buffer is still only the
-    game's active 208-pixel-wide rectangle, so the presenter copies 52 words
-    (104 bytes) for each of 192 rows, starting at screen offset 00A0h.
-    """
-    cs = cpu.s.cs & 0xFFFF
-    # 3354 MOV SI,DS:[234C] (uses entry DS before DS is reloaded below).
-    cpu.s.si = cpu.mem.rw(cpu.s.ds, 0x234C)
-    # 3358/335D load destination/source selectors from the resident video state.
-    cpu.s.es = cpu.mem.rw(cs, 0x95A4)
-    cpu.s.ds = cpu.mem.rw(cs, 0x9598)
-    # 3362..3368 constants: 52 words = 104 bytes per row, row 4 start, 192 rows.
-    cpu.s.bx = 0x0034
-    cpu.s.di = 0x00A0
-    cpu.s.bp = 0x00C0
-    while True:
-        cpu.s.cx = cpu.s.bx & 0xFFFF       # 336B MOV CX,BX
-        _rep_movsw(cpu, cpu.s.cx)          # 336D REP MOVSW
-        _sub_reg16(cpu, 7, 0x0068)         # 336F SUB DI,68h
-        _add_reg16(cpu, 7, 0x2000)         # 3372 ADD DI,2000h
-        _test_word(cpu, cpu.s.di, 0x8000)  # 3376 TEST DI,8000h
-        if not cpu.get_flag(ZF):           # 337A JZ 3380
-            _add_reg16(cpu, 7, 0x80A0)     # 337C ADD DI,80A0h
-        _dec_reg16_preserve_cf(cpu, 5)     # 3380 DEC BP
-        if cpu.get_flag(ZF):               # 3381 JNZ 336B
-            break
-    cpu.s.ds = cpu.mem.rw(cs, 0x9596)      # 3383 MOV DS,CS:[9596]
-    cpu.s.ip = cpu.pop()                   # 3388 RET
+    """Hook wrapper for OVERKILL 1010:3354 Tandy frame-present blit."""
+    run_present_tandy_frame_3354(cpu)
 
 
 @registry.replace(0x1010, 0x447B, "overkill_present_frame_blit_447b")
@@ -7200,211 +5544,26 @@ def overkill_masked_sprite_composite_3e12(cpu):
 
 @registry.replace(0x1010, 0x5A36, "overkill_cga_object_row_addr_5a36")
 def overkill_cga_object_row_addr_5a36(cpu):
-    """Replace the hot CGA object/sprite row-address helper at 1010:5A36.
+    """Hook wrapper for OVERKILL 1010:5A36 object-row address dispatch.
 
-    In mode 0 the dispatch target at 41F5 maps an object's Y coordinate
-    (SS:BP+2) and X coordinate (SS:BP+4) to a work-buffer row address, stores the
-    sub-byte X phase at SS:BP+12h, and optionally decrements SS:BP+24h.  This is
-    called many times while rendering sprites and object rows.  Mode 1 and mode
-    2 share the same verified shape with different X packing, so they are folded
-    into this dispatch hook. Unknown modes are treated as fail-fast RE targets.
+    Implementation lives in ``games.overkill.rendering.coordinates`` because the
+    routine is shared by CGA, EGA, and Tandy rendering paths.  The wrapper keeps
+    the original ASM address visible at the hook boundary.
     """
-    s = cpu.s
-    cs = s.cs & 0xFFFF
-    mode = cpu.mem.rw(cs, 0x95BC)
-    s.bx = mode & 0xFFFF
-    s.bx = cpu.shift(4, s.bx, 1, 16)  # SHL BX,1 from the dispatch stub.
-    if mode == 1:
-        _object_row_addr_mode1_2580(cpu)
-        return
-    if mode == 2:
-        _object_row_addr_mode2_30d2(cpu)
-        return
-    if mode != 0:
-        _raise_unverified_path(
-            cpu,
-            parent="1010:5A36",
-            chain=f"5A36 object row address mode dispatch mode={mode & 0xFFFF:04X}",
-            target_ip=cpu.mem.rw(cs, (0x5A42 + s.bx) & 0xFFFF),
-            bp=s.bp & 0xFFFF,
-        )
-
-    ss = s.ss & 0xFFFF
-    ds = s.ds & 0xFFFF
-    bp = s.bp & 0xFFFF
-
-    y = cpu.mem.rw(ss, (bp + 0x02) & 0xFFFF)
-    s.bx = y
-    _cmp_word(cpu, y, 0x00E0)
-    if y >= 0x00E0:
-        s.ax = 0xFFFF
-        s.ip = cpu.pop()
-        return
-
-    s.bx = cpu.shift(4, y, 1, 16)  # SHL BX,1
-    row_base = cpu.mem.rw(ds, (s.bx + 0x99C8) & 0xFFFF)
-    s.bx = row_base
-    _cmp_word(cpu, row_base, 0xFFFF)
-    if row_base == 0xFFFF:
-        s.ax = 0xFFFF
-        s.ip = cpu.pop()
-        return
-
-    x = cpu.mem.rw(ss, (bp + 0x04) & 0xFFFF)
-    s.ax = x
-    s.cx = x
-    s.cx &= 0x0003
-    cpu.set_logic_flags(s.cx, 16)       # AND CX,0003h
-    cpu.mem.ww(ss, (bp + 0x12) & 0xFFFF, s.cx)
-    s.ax = cpu.shift(5, s.ax, 1, 16)    # SHR AX,1
-    s.ax = cpu.shift(5, s.ax, 1, 16)    # SHR AX,1
-    _add_reg16(cpu, 0, row_base)        # ADD AX,BX
-
-    countdown = cpu.mem.rw(ss, (bp + 0x24) & 0xFFFF)
-    _cmp_word(cpu, countdown, 0)
-    if countdown != 0:
-        old_cf = cpu.get_flag(CF)
-        result = (countdown - 1) & 0xFFFF
-        cpu.mem.ww(ss, (bp + 0x24) & 0xFFFF, result)
-        cpu.set_sub_flags(countdown, 1, countdown - 1, 16)
-        cpu.set_flag(CF, old_cf)        # DEC preserves CF.
-    s.ip = cpu.pop()
-
-
-def _object_row_addr_mode1_2580(cpu) -> None:
-    """Mode-1 row-address target reached through 1010:5A36 -> 1010:2580."""
-    s = cpu.s
-    ss = s.ss & 0xFFFF
-    ds = s.ds & 0xFFFF
-    bp = s.bp & 0xFFFF
-
-    y = cpu.mem.rw(ss, (bp + 0x02) & 0xFFFF)
-    s.bx = y
-    _cmp_word(cpu, y, 0x00E0)
-    if y >= 0x00E0:
-        s.ax = 0xFFFF
-        s.ip = cpu.pop()
-        return
-
-    s.bx = cpu.shift(4, y, 1, 16)  # SHL BX,1
-    row_base = cpu.mem.rw(ds, (s.bx + 0x99C8) & 0xFFFF)
-    s.bx = row_base
-    _cmp_word(cpu, row_base, 0xFFFF)
-    if row_base == 0xFFFF:
-        s.ax = 0xFFFF
-        s.ip = cpu.pop()
-        return
-
-    x = cpu.mem.rw(ss, (bp + 0x04) & 0xFFFF)
-    s.ax = x
-    s.cx = x
-    s.cx &= 0x0007
-    cpu.set_logic_flags(s.cx, 16)       # AND CX,0007h
-    cpu.mem.ww(ss, (bp + 0x12) & 0xFFFF, s.cx)
-    s.ax = cpu.shift(5, s.ax, 1, 16)    # SHR AX,1
-    s.ax = cpu.shift(5, s.ax, 1, 16)    # SHR AX,1
-    s.ax = cpu.shift(5, s.ax, 1, 16)    # SHR AX,1
-    _add_reg16(cpu, 0, row_base)        # ADD AX,BX
-
-    countdown = cpu.mem.rw(ss, (bp + 0x24) & 0xFFFF)
-    _cmp_word(cpu, countdown, 0)
-    if countdown != 0:
-        old_cf = cpu.get_flag(CF)
-        result = (countdown - 1) & 0xFFFF
-        cpu.mem.ww(ss, (bp + 0x24) & 0xFFFF, result)
-        cpu.set_sub_flags(countdown, 1, countdown - 1, 16)
-        cpu.set_flag(CF, old_cf)        # DEC preserves CF.
-    s.ip = cpu.pop()
-
-
-def _object_row_addr_mode2_30d2(cpu) -> None:
-    """Mode-2 Tandy row-address target reached through 1010:5A36 -> 1010:30D2."""
-    s = cpu.s
-    ss = s.ss & 0xFFFF
-    ds = s.ds & 0xFFFF
-    bp = s.bp & 0xFFFF
-
-    y = cpu.mem.rw(ss, (bp + 0x02) & 0xFFFF)
-    s.bx = y
-    _cmp_word(cpu, y, 0x00E0)
-    if y >= 0x00E0:
-        s.ax = 0xFFFF
-        s.ip = cpu.pop()
-        return
-
-    s.bx = cpu.shift(4, y, 1, 16)  # SHL BX,1
-    row_base = cpu.mem.rw(ds, (s.bx + 0x99C8) & 0xFFFF)
-    s.bx = row_base
-    _cmp_word(cpu, row_base, 0xFFFF)
-    if row_base == 0xFFFF:
-        s.ax = 0xFFFF
-        s.ip = cpu.pop()
-        return
-
-    x = cpu.mem.rw(ss, (bp + 0x04) & 0xFFFF)
-    s.ax = x
-    cpu.mem.ww(ss, (bp + 0x12) & 0xFFFF, 0)
-    s.ax = cpu.shift(5, s.ax, 1, 16)  # SHR AX,1
-    _add_reg16(cpu, 0, row_base)      # ADD AX,BX
-
-    countdown = cpu.mem.rw(ss, (bp + 0x24) & 0xFFFF)
-    _cmp_word(cpu, countdown, 0)
-    if countdown != 0:
-        old_cf = cpu.get_flag(CF)
-        result = (countdown - 1) & 0xFFFF
-        cpu.mem.ww(ss, (bp + 0x24) & 0xFFFF, result)
-        cpu.set_sub_flags(countdown, 1, countdown - 1, 16)
-        cpu.set_flag(CF, old_cf)      # DEC preserves CF.
-    s.ip = cpu.pop()
-
-
-def _cga_xy_to_di_common(cpu, *, dispatch_table: int, row_table: int) -> None:
-    s = cpu.s
-    cs = s.cs & 0xFFFF
-    mode = cpu.mem.rw(cs, 0x95BC)
-    s.bx = mode & 0xFFFF
-    s.bx = cpu.shift(4, s.bx, 1, 16)  # SHL BX,1 from the dispatch stub.
-    # Modes 0/1/2 all use the same tiny coordinate target shape: BL takes the
-    # Y byte (AH), BX indexes a DS row-base table, AH is zeroed so AX contains
-    # only X, then the target scales X according to the video memory layout and
-    # adds the row base into AX/DI.  The only difference is horizontal scale:
-    #   mode 0 CGA    target 422B/4251: X * 2
-    #   mode 1 EGA    target 25B6/25D8: X * 1
-    #   mode 2 Tandy  target 3103/312D: X * 4
-    if mode not in (0, 1, 2):
-        _raise_unverified_path(
-            cpu,
-            parent="1010:5A00/5A24",
-            chain=f"coordinate helper mode dispatch mode={mode & 0xFFFF:04X}",
-            target_ip=cpu.mem.rw(cs, (dispatch_table + s.bx) & 0xFFFF),
-            bp=s.bp & 0xFFFF,
-        )
-
-    ds = s.ds & 0xFFFF
-    y = (s.ax >> 8) & 0xFF
-    x = s.ax & 0xFF
-    # The target zeroes BH, shifts the y index to word addressing, loads the row
-    # base, zeroes AH, scales X in AX, then adds the row base.
-    s.bx = (y << 1) & 0xFFFF
-    row_base = cpu.mem.rw(ds, (row_table + s.bx) & 0xFFFF)
-    s.bx = row_base
-    x_shift = {0: 1, 1: 0, 2: 2}[mode & 0xFFFF]
-    s.ax = (x << x_shift) & 0xFFFF
-    _add_reg16(cpu, 0, row_base)
-    s.di = s.ax & 0xFFFF
-    s.ip = cpu.pop()
+    object_row_address_from_mode_dispatch_5a36(cpu)
 
 
 @registry.replace(0x1010, 0x5A00, "overkill_cga_xy_to_di_5a00")
 def overkill_cga_xy_to_di_5a00(cpu):
-    """Replace CGA coordinate-to-DI helper 1010:5A00 / target 422B."""
-    _cga_xy_to_di_common(cpu, dispatch_table=0x5A0C, row_table=0x9EE8)
+    """Hook wrapper for OVERKILL 1010:5A00 coordinate-to-DI helper."""
+    coordinate_ax_to_di_5a00(cpu)
 
 
 @registry.replace(0x1010, 0x5A24, "overkill_cga_xy_to_di_5a24")
 def overkill_cga_xy_to_di_5a24(cpu):
-    """Replace CGA coordinate-to-DI helper 1010:5A24 / target 4251."""
-    _cga_xy_to_di_common(cpu, dispatch_table=0x5A30, row_table=0x9D58)
+    """Hook wrapper for OVERKILL 1010:5A24 coordinate-to-DI helper."""
+    coordinate_ax_to_di_5a24(cpu)
+
 
 @registry.replace(0x1010, 0x5AC8, "overkill_dispatch_draw_object_5ac8")
 def overkill_dispatch_draw_object_5ac8(cpu):

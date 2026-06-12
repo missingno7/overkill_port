@@ -4,7 +4,11 @@
     "notes": "Reads 8 scancodes from the control-map table at DS:213E (or DS:2146 when DS:[0010]==2), indexes the INT 9 key-state table at DS:98C4, shifts each key's pressed bit, and rcl-packs them into the button bitfield at DS:98BE. Active map DS:213E = [00,00,Z(2C),Space(39),Q(10),A(1E),O(18),P(19)]: OVERKILL uses Q/A/O/P to move + Z/Space to fire, not the arrow keys.",
     "status": "understood"
   },
-  "1010:0324": "candidate_word_pair_rle_decoder",
+  "1010:0324": {
+    "name": "overkill_word_pair_rle_decoder_0324",
+    "notes": "Word-pair RLE decoder. Reads a sentinel word through the packed 0615 stream reader, writes literal word pairs when the next word differs from the sentinel, and handles sentinel/count/pair repeated runs. Sentinel plus count zero exits to the shared loader dispatcher at 02A8. Verified against interpreted ASM with literal, repeat, terminator, flags, packed-stream scratch, and stack scratch coverage.",
+    "status": "replaced"
+  },
   "1010:0367": {
     "name": "overkill_linear_byte_rle_decoder_0367_fast",
     "notes": "Linear/horizontal byte RLE decoder. Verified against interpreted ASM on synthetic literal/repeat/80h terminator stream; optimized to collapse runs while preserving tested final state.",
@@ -74,7 +78,7 @@
   },
   "1010:2F40": {
     "name": "overkill_tandy_or_inverted_mask_2f40",
-    "notes": "Mode-2/Tandy four-word layer compositor reached through 768E. For each of 16 rows it reads four source mask words, NOTs each word, ORs it into ES:DI, skips the interleaved source word with SI += 4, advances DI by 2 per word and 0060h per row, restores DS from CS:[9596], and RETs. Added from crash snapshot snapshot_play_tandy_20260611_164810 where A8C7 -> 7596 -> 768E selected 2F40.",
+    "notes": "Mode-2/Tandy four-word layer compositor reached through 768E. For each of 16 rows it reads four source mask words, NOTs each word, ORs it into ES:DI, skips the interleaved source word with SI += 4, advances DI by 2 per word and 0060h per row, restores DS from CS:[9596], and RETs. Added from crash snapshot play_tandy_edrax_orbit_combat_20260611_164810 where A8C7 -> 7596 -> 768E selected 2F40.",
     "status": "replaced"
   },
   "1010:2F81": {
@@ -354,8 +358,8 @@
   },
   "254A:0582": {
     "name": "overlay_signature_compare_loop",
-    "notes": "Compares six bytes from header at 074E against signature/table at 0756 before continuing to the overlay decode path. Observed repeatedly after PSP heap fix.",
-    "status": "candidate small hook"
+    "notes": "Compares bytes from header at 074E against signature/table at 0756 before continuing to the overlay decode path. Hooked as part of the existing overlay asset-codec island; exits at 058D on full match and 0640 on first mismatch.",
+    "status": "replaced"
   },
   "254A:05BF": "overlay/file-block XOR decode loop for default load layout (verified hook)",
   "DOS:INT21:48": {

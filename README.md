@@ -1,104 +1,237 @@
-# OVERKILL source-port scaffold
+# OVERKILL Runtime And Source-Port Scaffold
 
-This project is a working scaffold for a game-specific DOS 8086 interpreter that can execute original OVERKILL code and gradually replace known ASM routines with readable Python handlers.
+This repository is an evidence-driven runtime/source-port project for
+**OVERKILL: The Six-Planet Mega Blast**, a 16-bit DOS game.
 
-It is deliberately narrow: the goal is **not** to emulate all of DOS, but to build the smallest reliable runtime that can run this one game's original binary and make reverse engineering productive.
+The project runs the original executable in a custom 8086 runtime, observes real
+state transitions, and gradually replaces understood original routines with
+verified Python implementations. The original binary remains the behavioral
+oracle throughout the migration.
 
-## Included assets
+This is intentionally **not** a general DOS emulator. The runtime implements the
+DOS, BIOS, CPU, video, file, timer, and input behavior needed by OVERKILL, and no
+more unless the game proves it is required.
 
-- `assets/OVERKILL.UNLZEXE.EXE` — the final LZEXE-unpacked bound executable from the RE pack.
-- `assets/OVERKILL.OVERLAY.BIN` — preserved large overlay/trailing data from the original no-extension `OVERKILL` file.
-- `assets/OVERKILL`, `assets/OVERKILL.EXE`, `assets/OVERKILL.DOC` — original files copied in so DOS file-open calls can resolve game data.
+## Goals
 
-## Quick start
+- Execute the original game deterministically enough to trace and verify it.
+- Preserve the original executable as an oracle for every lifted routine.
+- Replace small, understood routines with Python hooks.
+- Compose proven hooks into larger source-port-like modules over time.
+- Keep reverse-engineering findings documented by address and evidence.
+- Build toward a readable, testable source-level version of the game.
 
-```bash
-python -m overkill_port.cli info assets/OVERKILL.UNLZEXE.EXE
-python -m overkill_port.cli trace assets/OVERKILL.UNLZEXE.EXE --steps 5000 --out trace_start.txt
-python -m overkill_port.cli snapshot assets/OVERKILL.UNLZEXE.EXE --game-root assets --steps 100000 --trace-tail 128 --out-dir artifacts/snapshot_after_bootstrap_100k
-python -m pytest tests -q
+## Non-Goals
+
+- This is not DOSBox.
+- This is not a general x86 emulator.
+- This is not a clean-room rewrite from memory or intuition.
+- This is not a place for speculative high-level gameplay rewrites.
+- Performance improvements are not accepted as proof of correctness.
+
+## Game Files
+
+The repository does **not** ship the original game data.
+
+`assets/` is intended for your local copy of the original files and is ignored by
+git. To run the runtime locally, place the expected OVERKILL files there,
+including:
+
+```text
+assets/OVERKILL.UNLZEXE.EXE
 ```
 
-Or use the convenience scripts:
+and the companion game data files opened by the original loader.
 
-```bash
-python scripts/trace_start.py
-python scripts/make_runtime_snapshot.py
-python scripts/profile_hotspots.py 2000000          # hottest interpreted addresses; defaults to Tandy
-python scripts/render_cga.py --steps 2000000 --out frame.png   # decode B800 -> PNG
-python scripts/play.py                              # interactive SDL viewer, default Tandy
-python scripts/play.py --video cga                  # launch/render using original mode-0 CGA
-python scripts/play.py --video ega                  # launch/render using the inner EGA binary selector
-```
+## Project Shape
 
-## What works now
+The runtime is a hybrid:
 
-- DOS MZ parser and loader.
-- 20-bit real-mode memory model.
-- Minimal PSP creation.
-- Runtime segment setup matching a DOS EXE launch.
-- Relocation support, even though this unpacked target currently has zero relocation entries.
-- Initial 8086 interpreter core with the instructions needed by the first bootstrap and loader path.
-- DOS/BIOS hook layer for early file/video/timer/keyboard/memory calls.
-- Port IO layer with a minimal VGA `0x3DA` retrace model.
-- Replacement hook registry for gradual source-porting.
-- First verified replacement: `1010:C916 overkill_file_checksum_loop`.
-- Trace output with call depth and clearer CALL/RET/JMP/INT annotations.
-- Full memory snapshot writer: `memory_1mb.bin` + `state.json` + trace tail.
+- unknown original code still executes through the 8086 interpreter,
+- known routines are replaced by exact `CS:IP` hooks,
+- stable hooks move into game-specific Python modules,
+- tests and snapshots keep the original ASM as the oracle.
 
-## Current RE status
+The important boundary is not "Python versus ASM"; it is "verified versus not
+verified".
 
-The interpreter now boots OVERKILL all the way into its **main loop** and renders
-real frames.  Highlights of the path: post-inner-unpacker entry at `1010:95C9`,
-verified checksum/LZ/RLE/startup-expander hooks, the DOS PSP heap fix, a verified
-reprogrammed-IRQ0 timer-tick model (`1010:0679`) that unblocks the per-frame
-timing wait, and verified CGA/EGA/Tandy frame-present paths.
-
-Decoding `B800h` as CGA 320x200 4-colour shows the actual OVERKILL outfitting/shop
-screen (player ship, HUD, `WEAPON/MISSILES/DRONE/GADGETS/UPGRADES`).  See
-`scripts/render_cga.py` (frame -> PNG) and `scripts/play.py` (interactive SDL
-viewer with keyboard input; needs `pygame` + `numpy`).  Tandy is now the default
-interactive path because it is visually equivalent to EGA for this port and has
-the best current runtime behavior.  `scripts/play.py --video ega` and
-`--video tandy` pass the inner binary video selectors instead of ASCII switches,
-so mode selection is explicit for the unpacked executable.
-
-Next targets are the remaining hot per-frame render routines (`1010:CCAA`
-dirty-word copy, `1010:41A6` variable-width interlaced blit) and the first
-input-dependent paths exercised by interactive play.
-
-See:
-
-- `RUN_STATUS.md`
-- `docs/runtime_findings.md`
-- `symbols.json`
-- `artifacts/snapshot_after_bootstrap_100k/state.json`
-
-## Project layout
+## Repository Layout
 
 ```text
 overkill_port/
-  mz.py          MZ parsing
-  memory.py      real-mode memory + loader
-  cpu.py         dependency-free 8086 interpreter core
-  dos.py         narrow DOS/BIOS/port services
-  hooks.py       source-port replacement hooks
-  replacements.py built-in verified OVERKILL replacements
-  runtime.py     OVERKILL runtime wiring
-  snapshot.py    memory/state snapshot helpers
-  cli.py         info/trace/snapshot commands
-assets/          unpacked target binary, original files and overlay
-artifacts/       generated runtime snapshots
-docs/            design notes and findings
-scripts/         convenience runners
-tests/           CPU and replacement regression tests
+  mz.py                 MZ parsing and loading
+  memory.py             20-bit real-mode memory model
+  cpu.py                dependency-free 8086 interpreter core
+  dos.py                narrow DOS/BIOS/port services
+  hooks.py              replacement hook registry
+  replacements.py       exact CS:IP hook wrappers and staging area
+  runtime.py            OVERKILL runtime wiring
+  snapshot.py           memory/state snapshot helpers
+  hook_verify.py        live differential hook verifier
+  frame_verify.py       frame-level oracle comparison helpers
+  games/overkill/       lifted game-specific source-port logic
+assets/                 local user-supplied original game files
+artifacts/              root kept for live `play_*` captures
+  evidence/             non-play evidence snapshots, traces, and probes
+  test_oracles/         snapshots used directly by regression tests
+docs/                   design notes and reverse-engineering findings
+scripts/                convenience runners and RE helpers
+tests/                  CPU and replacement regression tests
+symbols.json            known addresses, names, hypotheses, and status
+RUN_STATUS.md           current checkpoint and recent work
+AGENTS.md               durable workflow and agent instructions
 ```
 
-## Intended workflow
+## Quick Start
 
-1. Generate an execution trace from the original code.
-2. Match trace addresses against static disassembly and the runtime memory snapshot.
-3. Name routines and data tables in `symbols.json`.
-4. Add replacement hooks for decoded routines.
-5. Verify each replacement with before/after CPU/memory snapshots or regression tests.
-6. Keep running the rest of the original binary until enough of the game has been lifted into source code.
+Inspect the executable:
+
+```bash
+python -m overkill_port.cli info assets/OVERKILL.UNLZEXE.EXE
+```
+
+Run a short trace:
+
+```bash
+python -m overkill_port.cli trace assets/OVERKILL.UNLZEXE.EXE \
+  --game-root assets \
+  --steps 5000 \
+  --out trace_start.txt
+```
+
+Create a snapshot:
+
+```bash
+python -m overkill_port.cli snapshot assets/OVERKILL.UNLZEXE.EXE \
+  --game-root assets \
+  --steps 100000 \
+  --trace-tail 128 \
+  --out-dir artifacts/evidence/snapshot_after_bootstrap_100k
+```
+
+Run tests:
+
+```bash
+python scripts/run_tests.py
+```
+
+Launch interactive play/viewer:
+
+```bash
+python scripts/play.py
+python scripts/play.py --video tandy
+python scripts/play.py --video ega
+python scripts/play.py --video cga
+```
+
+Profile interpreted hotspots:
+
+```bash
+python scripts/profile_hotspots.py 2000000
+```
+
+Audit source-port island closure signals:
+
+```bash
+python scripts/audit_islands.py --all-hooks
+```
+
+## Verification Workflow
+
+Every replacement is treated as a proof obligation.
+
+1. Identify the exact original address, such as `1010:ECF2`.
+2. Understand the original boundary: entry state, exit IP, stack behavior,
+   flags, registers, segment state, memory writes, file offsets, and port
+   effects.
+3. Run the interpreted original ASM to produce an oracle.
+4. Implement a Python replacement hook.
+5. Compare hook output against the oracle in tests or live hook verification.
+6. Document the finding in `docs/runtime_findings.md` and `symbols.json`.
+
+For focused hook tests, compare registers, flags, segment registers, stack
+scratch, touched memory, DOS state, and relevant video/file/port state.
+
+For real runtime paths, use the live verifier:
+
+```bash
+python scripts/play.py --verify-hook 1010:ECF2 --verify-stop-on-diff
+python scripts/play.py --verify-hooks --verify-require-metadata
+```
+
+For rendered behavior, use frame verification where appropriate:
+
+```bash
+python scripts/play.py --snapshot artifacts/evidence/snapshot_name --verify-frames
+```
+
+## Source-Port Islands
+
+Stable game-specific code belongs under `overkill_port/games/overkill/`.
+`replacements.py` should remain the thin address-facing hook layer.
+
+Examples of source-port islands include:
+
+- asset codecs and startup materialization,
+- overlay loading and directory scan helpers,
+- startup graphics expansion,
+- coordinate/address helpers,
+- Tandy rendering primitives,
+- shared layer sprite dispatch,
+- gameplay/object/collision logic once proven.
+
+Use the audit script to see whether an island still has obvious open seams:
+
+```bash
+python scripts/audit_islands.py
+```
+
+`closed-candidate` means "no known script-detected blockers"; it is a useful
+closure signal, not a substitute for oracle evidence.
+
+## Artifacts
+
+`artifacts/` keeps the root focused on live gameplay captures.
+
+Keep the live `play_*` captures in the root of `artifacts/`.
+Keep regression-test snapshots in `artifacts/test_oracles/`.
+Keep other evidence, scratch traces, and one-off probes in `artifacts/evidence/`
+so they stay separate from gameplay snapshots.
+
+Generated scratch traces and one-off probes can be pruned once they stop
+carrying evidence value.
+
+Snapshot directories usually contain:
+
+```text
+memory_1mb.bin
+state.json
+trace_tail.txt
+```
+
+Do not delete evidence snapshots that justify hooks or findings unless cleanup is
+explicitly requested.
+
+## Documentation Map
+
+- `README.md`: stable project overview.
+- `AGENTS.md`: durable workflow, guardrails, and agent rules.
+- `RUN_STATUS.md`: current checkpoint and recent commands.
+- `docs/runtime_findings.md`: accumulated reverse-engineering findings.
+- `docs/design.md`: runtime architecture notes.
+- `docs/next_steps.md`: tactical investigation notes when useful.
+- `symbols.json`: address labels, hypotheses, and replacement status.
+
+Prefer explicit segment:offset notation (`1010:95C9`) when documenting original
+code.
+
+## Development Notes
+
+- Keep the CPU and DOS layers narrow and game-driven.
+- Add interpreter instructions only when OVERKILL reaches them.
+- Keep hooks readable before making them fast.
+- Move verified logic into `overkill_port/games/overkill/` when it becomes a
+  coherent game-specific module.
+- Avoid broad refactors unless tests and oracle comparisons prove behavior did
+  not change.
+- The current state of the project lives in `RUN_STATUS.md`, not in this README.

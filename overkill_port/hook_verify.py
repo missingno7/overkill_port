@@ -37,6 +37,8 @@ class HookStop:
         cs = before.cs & 0xFFFF
         if self.kind == "near_ret":
             return ((cs, cpu.mem.rw(before.ss, before.sp)),)
+        if self.kind == "far_ret":
+            return ((cpu.mem.rw(before.ss, (before.sp + 2) & 0xFFFF), cpu.mem.rw(before.ss, before.sp)),)
         if self.kind == "fixed_ip":
             if self.ip is None:
                 raise ValueError("fixed_ip hook metadata needs ip")
@@ -190,6 +192,16 @@ class HookVerifierConfig:
 
 DEFAULT_STOPS: dict[Addr, HookStop] = {
     (0x1010, 0x017E): HookStop("fixed_ip", 0x018B),
+    (0x254A, 0x05A1): HookStop("fixed_ips", ips=(0x0607, 0x0640)),
+    (0x254A, 0x05D9): HookStop("fixed_ips", ips=(0x0607, 0x0637)),
+    (0x254A, 0x05BF): HookStop("fixed_ip", 0x05C6),
+    (0x254A, 0x0582): HookStop("fixed_ips", ips=(0x058D, 0x0640)),
+    (0x254A, 0x0701): HookStop("far_ret"),
+    (0x1010, 0x0324): HookStop("fixed_ips", ips=(0x02A8, 0x02B2)),
+    (0x1010, 0x0367): HookStop("fixed_ips", ips=(0x02A8, 0x02B2)),
+    (0x1010, 0x03A8): HookStop("fixed_ips", ips=(0x02A8, 0x02B2)),
+    (0x1010, 0x0615): HookStop("near_ret"),
+    (0x1010, 0x0624): HookStop("near_ret"),
     (0x1010, 0x103C): HookStop("near_ret"),
     (0x1010, 0x10B7): HookStop("near_ret"),
     (0x1010, 0x2193): HookStop("near_ret"),
@@ -214,7 +226,10 @@ DEFAULT_STOPS: dict[Addr, HookStop] = {
     (0x1010, 0x291C): HookStop("near_ret"),
     (0x1010, 0x2932): HookStop("near_ret"),
     (0x1010, 0x2E6E): HookStop("near_ret"),
+    (0x1010, 0x2ECB): HookStop("near_ret"),
+    (0x1010, 0x2F40): HookStop("near_ret"),
     (0x1010, 0x2F81): HookStop("near_ret"),
+    (0x1010, 0x2FB6): HookStop("near_ret"),
     (0x1010, 0x33B2): HookStop("fixed_ips", ips=(0x33AF, 0x44AA)),
     (0x1010, 0x3354): HookStop("near_ret"),
     (0x1010, 0x33DD): HookStop("near_ret"),
@@ -223,8 +238,10 @@ DEFAULT_STOPS: dict[Addr, HookStop] = {
     (0x1010, 0x34D8): HookStop("near_ret"),
     (0x1010, 0x3542): HookStop("near_ret"),
     (0x1010, 0x356C): HookStop("near_ret"),
+    (0x1010, 0x375B): HookStop("near_ret"),
     (0x1010, 0x35AA): HookStop("near_ret"),
     (0x1010, 0x35CC): HookStop("near_ret"),
+    (0x1010, 0x3657): HookStop("near_ret"),
     (0x1010, 0x3849): HookStop("near_ret"),
     (0x1010, 0x387C): HookStop("near_ret"),
     (0x1010, 0x38D6): HookStop("near_ret"),
@@ -234,6 +251,16 @@ DEFAULT_STOPS: dict[Addr, HookStop] = {
     (0x1010, 0x409D): HookStop("near_ret"),
     (0x1010, 0x40D7): HookStop("near_ret"),
     (0x1010, 0x412B): HookStop("near_ret"),
+    (0x1010, 0x450C): HookStop("fixed_ips", ips=(0x450C, 0x44AA)),
+    (0x1010, 0x4511): HookStop("fixed_ip", 0x450C),
+    (0x1010, 0x4537): HookStop("near_ret"),
+    (0x1010, 0x45CB): HookStop("near_ret"),
+    (0x1010, 0x45F6): HookStop("near_ret"),
+    (0x1010, 0xC916): HookStop("fixed_ip", 0xC91F),
+    (0x1010, 0xECF2): HookStop("near_ret"),
+    (0x1010, 0xED7A): HookStop("fixed_ip", 0xED26),
+    (0x1010, 0xED97): HookStop("near_ret"),
+    (0x1010, 0xEDE9): HookStop("near_ret"),
     (0x1010, 0xCCAA): HookStop("fixed_ip", 0xCD08),
     (0x1010, 0xCCC4): HookStop("fixed_ip", 0xCD08),
     (0x1010, 0xCCF0): HookStop("fixed_ip", 0xCD08),
@@ -246,6 +273,7 @@ DEFAULT_STOPS: dict[Addr, HookStop] = {
     (0x1010, 0x5AC8): HookStop("dispatch_5ac8"),
     (0x1010, 0x5A92): HookStop("dispatch_5a92"),
     (0x1010, 0x768E): HookStop("tandy_layer_sprite_768e"),
+    (0x1010, 0x7746): HookStop("near_ret"),
     (0x1010, 0xA849): HookStop("scan_draw_a849"),
     (0x1010, 0xA861): HookStop("fixed_ips", ips=(0xA870, 0xA876)),
     (0x1010, 0xA87C): HookStop("fixed_ips", ips=(0xA88B, 0xA891)),

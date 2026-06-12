@@ -1,7 +1,168 @@
+## 2026-06-12 Timeless top-level documentation pass
+
+Refactored project-facing docs so durable guidance is separated from living
+status:
+
+- `AGENTS.md` now contains stable agent/human workflow rules: project purpose,
+  proof obligations, hook mechanics, verification expectations, source-port
+  islands, artifact policy, and things not to do.
+- `README.md` now reads as stable onboarding: goals, non-goals, local game-file
+  expectations, project layout, quick-start commands, verification workflow,
+  source-port island model, and documentation map.
+- `docs/design.md` now describes runtime architecture and design pressure
+  without embedding old checkpoint progress or tactical next targets.
+
+Current facts, recent commands, and next tactical targets should remain in
+`RUN_STATUS.md`; durable address-level findings remain in
+`docs/runtime_findings.md`.
+
+---
+
+## 2026-06-12 Existing-island exhaustion audit tooling
+
+Added `scripts/audit_islands.py` to make island closure visible instead of
+purely conversational.  The script groups currently registered hooks into the
+already-created OverKill islands:
+
+- asset codecs / startup materialization
+- overlay loading / overlay decode / overlay directory scan
+- startup graphics expansion
+- coordinate/address helpers
+- shared layer sprite dispatch
+- Tandy-specific rendering primitives
+
+For each island it reports hook-verifier metadata coverage, obvious
+oracle/regression test mentions, `symbols.json` entries that still advertise a
+candidate/frontier/unverified/fallback state, explicit module seam markers such
+as bounded original fallbacks, and optional trace hits.
+
+Useful commands:
+
+```text
+python scripts\audit_islands.py
+python scripts\audit_islands.py --all-hooks
+python scripts\audit_islands.py --json
+python scripts\audit_islands.py --trace artifacts\some_trace.txt
+```
+
+Current audit result:
+
+- `startup_graphics` reports `closed-candidate`: all known hooks in that island
+  have verifier metadata and test mentions, and the script found no explicit
+  seam markers or open symbols.
+- `asset_codecs` now reports `closed-candidate`: the remaining
+  `1010:0324` word-pair RLE candidate has been lifted, verified, and marked
+  replaced.
+- `overlay` remains open because `254A:05A1` and `254A:05D9` need direct test
+  mentions and `254A:04D7` is still marked as an active parent-loader
+  investigation target.
+- `coordinates` remains open because the coordinate module still contains an
+  explicit unverified-path seam.
+- `layer_sprites` remains open because it still has bounded-original/fail-fast
+  seams and an open `1010:75A6` frontier symbol.
+- `tandy_rendering` remains open because several hooks lack obvious direct test
+  mentions.
+
+Important limitation: `closed-candidate` is a closure signal, not proof that no
+unknown behavior exists.  It means the known source-port island has no
+script-detected blockers left and should then be checked with live hook
+verification and representative Tandy traces.
+
+Hook-verifier metadata was also filled in for the existing-island hooks that now
+have clear boundaries, including overlay far-return handling for `254A:0701`.
+A small regression pins the far-return stop metadata behavior.
+
+Verification:
+
+```text
+python -m py_compile scripts\audit_islands.py overkill_port\hook_verify.py
+python scripts\run_tests.py
+# 119 passed, 0 failed
+```
+
+---
+
+## 2026-06-12 Asset-codec closure: 1010:0324 word-pair RLE
+
+Closed the last audit blocker in the non-overlay `asset_codecs` island:
+
+- `1010:0324` is a word-pair RLE decoder, sibling to the already lifted
+  `1010:0367` byte-linear and `1010:03A8` vertical RLE decoders.
+- The stream starts with a sentinel word read through the packed `0615` reader.
+  Non-sentinel words are literal two-word pairs.  Sentinel words introduce a
+  repeat count; count zero exits to the shared loader continuation at
+  `1010:02A8`, and nonzero counts repeat the following two-word pair.
+- The implementation lives in
+  `overkill_port/games/overkill/asset_codecs/rle.py` as
+  `decode_word_pair_rle`, with a thin `replacements.py` hook wrapper.
+- The shared packed byte reader now preserves the original fast-path carry:
+  `0624` does `CMP BX,0610h`, takes the below-buffer branch with `CF=1`, and
+  the later `INC word ptr [0610]` preserves that carry.
+- The oracle test covers literal, repeat, and terminator paths, including final
+  registers, flags, output words, packed-stream scratch, byte count, and stack
+  scratch around `SS:SP`.
+
+Audit result after this pass:
+
+```text
+asset_codecs      closed-candidate  hooks=10
+startup_graphics  closed-candidate  hooks=7
+```
+
+Verification:
+
+```text
+python scripts\run_tests.py
+# 119 passed, 0 failed
+
+python scripts\audit_islands.py --all-hooks
+# asset_codecs and startup_graphics report closed-candidate
+```
+
+---
+
+## 2026-06-12 Existing-island audit: overlay signature loop
+
+Audited remaining candidates against the already-created OverKill islands
+(`asset_codecs` and `rendering`) and intentionally avoided opening new gameplay
+areas.
+
+Lifted one clear overlay-loader subloop:
+
+- `254A:0582` belongs to the existing `asset_codecs.overlay` island.  It is the
+  bounded header/signature compare loop after the parent loader reads the
+  twelve-byte overlay/container header.  The Python implementation now lives in
+  `overkill_port/games/overkill/asset_codecs/overlay.py` as
+  `compare_overlay_signature_0582`, with a thin hook wrapper in
+  `replacements.py`.
+- Continuations are preserved exactly: full match goes to `254A:058D`; first
+  mismatch goes to `254A:0640`.
+- Added an interpreted-ASM oracle regression covering both exits.
+
+Audit decisions:
+
+- `254A:04D7` is clearly overlay loading, but it is a larger file-open/read/seek
+  parent.  It should not be lifted wholesale until more of its small deterministic
+  loops are closed.
+- `1010:B73E/BC4B/62F6/BEC5` are gameplay/contact helpers, not part of the six
+  requested islands, so they were left alone.
+- The remaining CGA/EGA bounded layer compositor allow-list belongs to the shared
+  layer-sprite rendering island, but it is not Tandy-specific and would be a
+  broad rendering sweep; left untouched in this focused pass.
+
+Verification:
+
+```text
+python scripts\run_tests.py
+# 117 passed, 0 failed
+```
+
+---
+
 ## 2026-06-11 Tandy B73E formation/contact continuation
 
 Closed the later formation-change divergence from
-`artifacts/snapshot_play_tandy_20260611_152751`.
+`artifacts/test_oracles/snapshot_play_tandy_20260611_152751`.
 
 - The original frame-383 path for object `BP=2814` is
   `B73E -> B77B -> BC4B -> BCCB -> AA46/8331 -> BFC7`, not a `62F6`
@@ -23,7 +184,7 @@ Verification:
 python scripts\run_tests.py
 # 113 passed, 0 failed
 
-python scripts\play.py --snapshot artifacts\snapshot_play_tandy_20260611_152751 --verify-frames --verify-frame-max 500
+python scripts\play.py --snapshot artifacts\test_oracles\snapshot_play_tandy_20260611_152751 --verify-frames --verify-frame-max 500
 # FRAME VERIFY OK frames=500
 ```
 
@@ -32,7 +193,7 @@ python scripts\play.py --snapshot artifacts\snapshot_play_tandy_20260611_152751 
 ## 2026-06-11 B73E/BEC5 gameplay continuation
 
 Closed two user-reported Tandy gameplay stops from
-`artifacts/snapshot_play_tandy_20260611_152751`:
+`artifacts/test_oracles/snapshot_play_tandy_20260611_152751`:
 
 - Shooting enemies reached `B73E -> B7BD -> BC4B -> 62F6 -> BEC5 fourth
   counter zero`.  The observed `BFC7` death/transition tail now handles the
@@ -54,7 +215,7 @@ Verification:
 python scripts\run_tests.py
 # 111 passed, 0 failed
 
-python scripts\play.py --snapshot artifacts\snapshot_play_tandy_20260611_152751 --verify-frames --verify-frame-max 300
+python scripts\play.py --snapshot artifacts\test_oracles\snapshot_play_tandy_20260611_152751 --verify-frames --verify-frame-max 300
 # FRAME VERIFY OK frames=300
 ```
 
@@ -66,7 +227,7 @@ through to `BC4B`; movement happens on a later target-mismatch tick.
 
 ## 2026-06-11 Tandy layer-0 scan fix: A894 stops at CALL A8BE
 
-User-reported gameplay from `artifacts/snapshot_play_tandy_20260611_214016`
+User-reported gameplay from `artifacts/play_tandy_edrax_orbit_combat_20260611_214016`
 hit the layer-0 draw scan with an active layer-0 object:
 
 ```text
@@ -92,7 +253,7 @@ Verification:
 python scripts\run_tests.py
 # 108 passed, 0 failed
 
-python scripts\play.py --snapshot artifacts\snapshot_play_tandy_20260611_214016 --verify-frames --verify-frame-max 60
+python scripts\play.py --snapshot artifacts\play_tandy_edrax_orbit_combat_20260611_214016 --verify-frames --verify-frame-max 60
 # FRAME VERIFY OK frames=60
 ```
 
@@ -101,7 +262,7 @@ python scripts\play.py --snapshot artifacts\snapshot_play_tandy_20260611_214016 
 ## 2026-06-11 Tandy gameplay crash fix: BEC5 BEDC=0001 collision tail
 
 User-reported manual gameplay from
-`artifacts/snapshot_play_tandy_20260611_192528` crashed while shooting spawned
+`artifacts/play_tandy_black_panel_20260611_192528` crashed while shooting spawned
 ships:
 
 ```text
@@ -128,10 +289,10 @@ Verification:
 python scripts\run_tests.py
 # 107 passed, 0 failed
 
-python scripts\play.py --snapshot artifacts\snapshot_play_tandy_20260611_152751 --verify-frames --verify-frame-max 60
+python scripts\play.py --snapshot artifacts\test_oracles\snapshot_play_tandy_20260611_152751 --verify-frames --verify-frame-max 60
 # FRAME VERIFY OK frames=60
 
-python scripts\play.py --snapshot artifacts\snapshot_play_tandy_20260611_192528 --verify-frames --verify-frame-max 60
+python scripts\play.py --snapshot artifacts\play_tandy_black_panel_20260611_192528 --verify-frames --verify-frame-max 60
 # FRAME VERIFY OK frames=60
 ```
 
@@ -140,10 +301,10 @@ python scripts\play.py --snapshot artifacts\snapshot_play_tandy_20260611_192528 
 ## 2026-06-11 frame-verify regression fix: AA2B/EFAE back to dispatch-only
 
 User-reported frame verification diverged at frame 34 from
-`artifacts/snapshot_play_tandy_20260611_152751`:
+`artifacts/test_oracles/snapshot_play_tandy_20260611_152751`:
 
 ```text
-python scripts\play.py --snapshot artifacts\snapshot_play_tandy_20260611_152751 --verify-frames --verify-frame-max 60
+python scripts\play.py --snapshot artifacts\test_oracles\snapshot_play_tandy_20260611_152751 --verify-frames --verify-frame-max 60
 ```
 
 Bisecting with `OVERKILL_DISABLE_HOOKS` showed:
@@ -172,7 +333,7 @@ Fix:
 Verification:
 
 ```text
-python scripts\play.py --snapshot artifacts\snapshot_play_tandy_20260611_152751 --verify-frames --verify-frame-max 60
+python scripts\play.py --snapshot artifacts\test_oracles\snapshot_play_tandy_20260611_152751 --verify-frames --verify-frame-max 60
 # FRAME VERIFY OK frames=60
 
 python scripts\run_tests.py
@@ -211,7 +372,7 @@ New structural lifts in this pass:
 - `1010:A87C`: active-object scan over `8D12` now composes the verified `7746`
   compact layer draw path.
 
-Current intentional frontier from `artifacts/snapshot_play_tandy_20260611_164810`:
+Current intentional frontier from `artifacts/play_tandy_edrax_orbit_combat_20260611_164810`:
 
 ```text
 1010:A8C7 -> 7596 -> 75A6
@@ -246,7 +407,7 @@ New structural lifts:
 - `1010:EFAE`: second-level object family dispatch by `SS:[BP+18]` / `CS:EFC4`.
 - `1010:B73E`: observed `logic_id=20h` branch lifted to the next concrete helper.
 
-Current intentional frontier from `artifacts/snapshot_play_tandy_20260611_164810`:
+Current intentional frontier from `artifacts/play_tandy_edrax_orbit_combat_20260611_164810`:
 
 ```text
 1010:A9E0 -> AA2B -> EFAE -> B73E -> B85C -> B729 -> 5DB2
@@ -288,7 +449,7 @@ Validation:
 - `python -m pytest -q` -> 102 passed.
 - `python -m compileall -q overkill_port scripts tests` -> passed.
 - `symbols.json` parses.
-- Replaying `artifacts/snapshot_play_tandy_20260611_164810` now gets past the
+- Replaying `artifacts/play_tandy_edrax_orbit_combat_20260611_164810` now gets past the
   previous `A90F -> A91E -> 5A92` stop and past the newly discovered `3542`/`34AD`
   present targets. The next intentional fail-fast target is now
   `1010:A9E0 -> AA01 -> AA2B`, object `BP=2734`, `CX=0011`, `type=0001`,
@@ -328,7 +489,7 @@ Validation:
 - `python -m pytest -q` -> 99 passed.
 - `python -m compileall -q overkill_port scripts tests` -> passed.
 - `symbols.json` parses.
-- Continuing `artifacts/snapshot_play_tandy_20260611_164810` now intentionally stops
+- Continuing `artifacts/play_tandy_edrax_orbit_combat_20260611_164810` now intentionally stops
   after 3 instructions at the next unknown RE target:
   `1010:A90F` partial scan reached unlifted call `A91E` with object `BP=2CAC`,
   `CX=0007`, `type=0000`, `sprite=0032`, `di=537A`, `present_si=9418`.
@@ -343,7 +504,7 @@ Next RE target exposed by fail-fast policy:
 # Run status — checkpoint 31
 
 Validated on `assets/OVERKILL.UNLZEXE.EXE`. Crash regression snapshot:
-`artifacts/snapshot_play_tandy_20260611_164810`.
+`artifacts/play_tandy_edrax_orbit_combat_20260611_164810`.
 
 This pass fixes the gameplay crash at `1010:A8C7` without treating `2F40` as an
 unknown fallback case.  The deeper issue was that `1010:768E` is a
@@ -371,7 +532,7 @@ that fallback is now only for genuinely unverified nested targets; the observed
 
 ## Verification
 
-- Crash snapshot replay from `snapshot_play_tandy_20260611_164810`: 50,000
+- Crash snapshot replay from `play_tandy_edrax_orbit_combat_20260611_164810`: 50,000
   instructions without the old `768E layer draw returned to unexpected IP 2F40`
   crash.
 - Synthetic interpreted-ASM oracle now covers `768E -> 2F40`.
@@ -388,7 +549,7 @@ that fallback is now only for genuinely unverified nested targets; the observed
 # Run status — checkpoint 30
 
 Validated on `assets/OVERKILL.UNLZEXE.EXE`. Current Tandy gameplay snapshot:
-`artifacts/snapshot_play_tandy_20260611_152751`.
+`artifacts/test_oracles/snapshot_play_tandy_20260611_152751`.
 
 This pass moved one level higher in the Tandy layer-1 draw pipeline:
 
@@ -441,7 +602,7 @@ rendering helpers.
 # Run status — checkpoint 29
 
 Validated on `assets/OVERKILL.UNLZEXE.EXE`. Current Tandy gameplay snapshot:
-`artifacts/snapshot_play_tandy_20260611_152751`.
+`artifacts/test_oracles/snapshot_play_tandy_20260611_152751`.
 
 This pass composed two verified small-hook clusters into full object scan passes
 for the common Tandy first-level object table.
@@ -493,7 +654,7 @@ whole pipeline once the boundary is proven.
 # Run status — checkpoint 28
 
 Validated on `assets/OVERKILL.UNLZEXE.EXE`. Current Tandy gameplay snapshot:
-`artifacts/snapshot_play_tandy_20260611_152751`.
+`artifacts/test_oracles/snapshot_play_tandy_20260611_152751`.
 
 This pass continued from the Tandy first-level snapshot and lifted the next
 highest-impact verified Tandy gameplay blocks, favoring parent/block-level hooks
@@ -529,7 +690,7 @@ scratch, then performs the Tandy source-strided copy as one routine.
 
 ## Current profile shape
 
-`python scripts/profile_hotspots.py 3000000 --video tandy --snapshot artifacts\snapshot_play_tandy_20260611_152751 --top 35`
+`python scripts/profile_hotspots.py 3000000 --video tandy --snapshot artifacts\test_oracles\snapshot_play_tandy_20260611_152751 --top 35`
 now shows the Tandy-specific sprite/copy work as hooks. The remaining real
 interpreted heat has shifted toward shared object/gameplay logic:
 
@@ -999,8 +1160,8 @@ Commands used in this pass:
 ```bash
 python -m py_compile scripts/play.py scripts/render_cga.py overkill_port/runtime.py overkill_port/replacements.py
 python -m pytest -q
-python scripts/render_cga.py artifacts/snapshot_play_start --video cga --out artifacts/test_cga.png
-python scripts/render_cga.py artifacts/snapshot_play_start --video ega --out artifacts/test_ega.png
+python scripts/render_cga.py artifacts/play_tandy_edrax_orbit_combat_20260611_214016 --video cga --out artifacts/evidence/test_cga.png
+python scripts/render_cga.py artifacts/play_tandy_edrax_orbit_combat_20260611_214016 --video ega --out artifacts/evidence/test_ega.png
 ```
 
 Result:

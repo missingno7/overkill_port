@@ -1,7 +1,152 @@
+## Artifact hygiene note
+
+Older one-off closure, verify, and probe outputs that were not referenced by
+tests or `play_*` captures have been pruned from `artifacts/` during
+cleanup. The remaining artifact directories are the ones still used as evidence
+oracles in tests and living docs.
+
+## 2026-06-12 island exhaustion signals
+
+`scripts/audit_islands.py` now gives a repeatable closure check for the existing
+OverKill-specific source-port islands.  The goal is not to prove semantic
+completeness automatically; the original executable remains the oracle.  The
+script instead reports whether a known island still has visible frontier signs.
+
+An island can be treated as an exhaustion candidate only when all of these are
+true for the known routines in that island:
+
+- Registered hooks have explicit hook-verifier continuation metadata.
+- Hooks have obvious oracle/regression test mentions.
+- `symbols.json` no longer marks island addresses as candidate/frontier,
+  unverified, fallback, next-target, or active-investigation items.
+- The island module does not contain explicit seams such as
+  `KNOWN_ORIGINAL`, `fail_unverified`, bounded original fallbacks, or
+  unverified-path branches.
+- Representative traces or frame verification do not hit unknown original-code
+  paths in that island.
+
+The current audit classifies `startup_graphics` and non-overlay `asset_codecs`
+as `closed-candidate`.  Startup graphics covers the known startup
+materializers:
+
+```text
+1010:33B2  Tandy block expander
+1010:33DD  Tandy cell expander
+1010:450C  4-plane list driver
+1010:4511  4-plane block renderer
+1010:4537  4-plane row helper
+1010:45CB  bit expander
+1010:45F6  four-pixel packer
+```
+
+The non-overlay asset-codec closure now covers:
+
+```text
+1010:0324  word-pair RLE decoder
+1010:0367  linear byte RLE decoder
+1010:03A8  vertical byte RLE decoder
+1010:0615  packed little-endian word reader
+1010:0624  packed byte reader
+1010:C916  file checksum loop
+1010:ECF2  LZ asset decoder
+1010:ED7A  LZ back-reference copy
+1010:ED97  LZ input byte helper
+1010:EDE9  LZ output byte helper
+```
+
+The other existing islands still have concrete blockers rather than vague
+unknowns:
+
+- `overlay`: `254A:04D7` is still the parent loader investigation target, and
+  `254A:05A1` / `254A:05D9` need direct test mentions.
+- `coordinates`: the module still has an explicit unverified-path seam.
+- `layer_sprites`: the module still has bounded-original/fail-fast compositor
+  seams and the `1010:75A6` frontier symbol.
+- `tandy_rendering`: several rendering hooks need direct test mentions even
+  though many are covered indirectly by higher-level behavior tests.
+
+Use the audit as a triage lens before lifting more code: if a candidate belongs
+to one of these islands and appears in the blocker list, close that local seam;
+if it does not clearly belong to an existing island, leave it alone for now.
+
+## 2026-06-12 asset-codec closure: `1010:0324` word-pair RLE
+
+The last non-overlay `asset_codecs` audit blocker was the old
+`candidate_word_pair_rle_decoder` symbol at `1010:0324`.  The decoded original
+routine is:
+
+```text
+0324  mov es,[023A]
+0328  mov di,[023C]
+032C  call 0615       ; sentinel word -> BX
+0331  call 0615       ; next word
+0334  cmp ax,bx
+0336  jz  0344
+0338  stosw           ; literal first word
+0339  call 0615
+033C  stosw           ; literal second word
+033D  add [0244],4
+0342  jmp 0331
+0344  call 0615       ; repeat count
+0349  jcxz 034D
+034D  jmp 02A8        ; count zero terminates
+0350  call 0615       ; repeated pair word 0
+0353  push ax
+0354  call 0615       ; repeated pair word 1
+0357  mov dx,ax
+0359  pop ax
+035A  stosw
+035B  xchg ax,dx
+035C  stosw
+035D  add [0244],4
+0362  xchg ax,dx
+0363  loop 035A
+0365  jmp 0331
+```
+
+`decode_word_pair_rle` now lives in
+`overkill_port/games/overkill/asset_codecs/rle.py`, with the hook wrapper
+`overkill_word_pair_rle_decoder_0324`.  The synthetic oracle test covers
+literal pairs, repeated pairs, and the sentinel/count-zero exit, and compares
+registers, flags, output memory, `DS:0244`, `DS:0610`, `DS:0614`, and the stack
+scratch range around `SS:SP`.
+
+While verifying this, the shared `0624` packed byte reader gained an important
+flag correction: on the no-refill path the original `CMP BX,0610h` leaves
+`CF=1`, and `INC word ptr [0610]` preserves that carry.  The Python helper now
+models that before deciding whether to refill the 512-byte packed stream buffer.
+
+## 2026-06-12 overlay island closure: signature compare loop
+
+The existing-island audit found one small deterministic overlay-loader loop that
+clearly belongs in `overkill_port/games/overkill/asset_codecs/overlay.py`:
+
+```text
+254A:0582  lodsb
+254A:0583  cmp al,[di]
+254A:0585  jz  058A
+254A:0587  jmp 0640
+254A:058A  inc di
+254A:058B  loop 0582
+254A:058D  ...
+```
+
+This is the six-byte signature check after the parent overlay/container loader
+reads the header at `254A:074A`.  The lifted helper
+`compare_overlay_signature_0582` preserves the two continuations:
+
+- `254A:058D` when all bytes match.
+- `254A:0640` on the first mismatch.
+
+The larger `254A:04D7` file-open/read/seek parent is still explicitly not lifted
+as a whole.  It belongs to the overlay island, but includes DOS handle state,
+header math, directory scanning, and final far-return setup; closing more small
+loops first is the safer path.
+
 ## 2026-06-11 B73E formation contact: AA46 carry-set path
 
 The later Tandy formation-change divergence from
-`artifacts/snapshot_play_tandy_20260611_152751` was gameplay state, not
+`artifacts/test_oracles/snapshot_play_tandy_20260611_152751` was gameplay state, not
 rendering.  At frame 383 the reference killed object `BP=2814` and added score
 `0030`; the hook left the object alive as logic `20h`.
 
@@ -31,7 +176,7 @@ preserved; it does not advance to the empty-scan sentinel.
 ## 2026-06-11 B73E/BEC5 gameplay continuation
 
 Two more `1010:B73E` gameplay stops from
-`artifacts/snapshot_play_tandy_20260611_152751` were verified against interpreted
+`artifacts/test_oracles/snapshot_play_tandy_20260611_152751` were verified against interpreted
 ASM and lifted:
 
 - `BEC5` variant-2 collision, `BEDC=0000`, fourth counter decrement reaches
@@ -58,7 +203,7 @@ target-mismatch tick.
 
 ## 2026-06-11 A894 layer-0 scan boundary
 
-Gameplay from `artifacts/snapshot_play_tandy_20260611_214016` reached an active
+Gameplay from `artifacts/play_tandy_edrax_orbit_combat_20260611_214016` reached an active
 layer-0 object in the `1010:A894` scan and failed at the intended call boundary:
 
 ```text
@@ -77,7 +222,7 @@ The real call then enters the separately verified `7596`/layer draw path.
 
 ## 2026-06-11 BEC5 collision tail: BEDC=0001 path
 
-Manual Tandy gameplay from `artifacts/snapshot_play_tandy_20260611_192528`
+Manual Tandy gameplay from `artifacts/play_tandy_black_panel_20260611_192528`
 reached a fail-fast collision path while shooting spawned ships:
 
 ```text
@@ -104,7 +249,7 @@ synthetic interpreted-ASM oracle test covers this complete `BEDC=0001`,
 
 ## 2026-06-11 frame-verify regression: AA2B/EFAE dispatch boundaries
 
-Frame verification from `artifacts/snapshot_play_tandy_20260611_152751` exposed a
+Frame verification from `artifacts/test_oracles/snapshot_play_tandy_20260611_152751` exposed a
 behavior divergence at frame 34 even though local hook verifier runs had passed.
 The bad frame CRC was unchanged when disabling the recent Tandy layer/draw hooks,
 but disabling `1010:AA2B,1010:EFAE` restored 60-frame verification.
@@ -169,7 +314,7 @@ New structural lifts in this pass:
 - `1010:A87C`: active-object scan over `8D12` now composes the verified `7746`
   compact layer draw path.
 
-Current intentional frontier from `artifacts/snapshot_play_tandy_20260611_164810`:
+Current intentional frontier from `artifacts/play_tandy_edrax_orbit_combat_20260611_164810`:
 
 ```text
 1010:A8C7 -> 7596 -> 75A6
@@ -194,7 +339,7 @@ PY
 # A90F / 5A92 present-scan lift after no-fallback policy
 
 The no-fallback policy exposed `1010:A90F -> A91E -> 5A92` in the Tandy gameplay
-snapshot `snapshot_play_tandy_20260611_164810`. This was not a reason to restore
+snapshot `play_tandy_edrax_orbit_combat_20260611_164810`. This was not a reason to restore
 a pre-call fallback; it identified another parent scan.
 
 `1010:A90F` has the same PUSH/MOV BX,CX/SHL/MOV BP/table/active-test/CALL/POP/LOOP
@@ -236,7 +381,7 @@ Important consequences:
   the live and expected bytes.
 
 The first newly exposed target after this policy change is `1010:A90F` reaching
-`1010:A91E` from the crash snapshot `snapshot_play_tandy_20260611_164810`. That is
+`1010:A91E` from the crash snapshot `play_tandy_edrax_orbit_combat_20260611_164810`. That is
 the intended next RE task, not a regression.
 
 ---
@@ -245,7 +390,7 @@ the intended next RE task, not a regression.
 
 ## Checkpoint 31 — real Tandy 2F40 layer compositor
 
-The crash snapshot `artifacts/snapshot_play_tandy_20260611_164810` showed that
+The crash snapshot `artifacts/play_tandy_edrax_orbit_combat_20260611_164810` showed that
 the layer-1 parent hook `1010:A8C7` was not merely missing a conservative fallback:
 it had exposed a real nested compositor target used by `1010:768E`, namely
 `1010:2F40`.
@@ -314,7 +459,7 @@ back at the original pre-call boundary `1010:A8F1`.
 
 Oracle tests cover `768E` complete, `DI=FFFF`, and unknown-target fallback paths,
 plus `A8C7` complete and unknown-target fallback paths.  Live verification from
-`artifacts/snapshot_play_tandy_20260611_152751` covered 800 real `768E` calls and
+`artifacts/test_oracles/snapshot_play_tandy_20260611_152751` covered 800 real `768E` calls and
 500 real `A8C7` scans with no divergence.
 
 After this pass, the remaining Tandy first-level profile is dominated by shared
@@ -361,7 +506,7 @@ continue.
 
 Verification added synthetic interpreted-ASM oracle tests for the complete and
 fallback paths of both parent hooks.  Live verifier coverage from
-`artifacts/snapshot_play_tandy_20260611_152751` covered 750 real `A927` scans and
+`artifacts/test_oracles/snapshot_play_tandy_20260611_152751` covered 750 real `A927` scans and
 760 real `A849` scans with no divergence.
 
 After this pass, the common first-level Tandy profile no longer spends
@@ -372,7 +517,7 @@ pattern.  Remaining heat is now concentrated in shared object/gameplay paths
 
 ## Checkpoint 28 — Tandy first-level gameplay block hooks
 
-Profiling from `artifacts/snapshot_play_tandy_20260611_152751` showed the next
+Profiling from `artifacts/test_oracles/snapshot_play_tandy_20260611_152751` showed the next
 Tandy gameplay heat was no longer startup decode, but mode-2 object sprite/copy
 blocks plus object dispatch glue.  The clean Tandy-specific blocks are now
 hooked and verified:
@@ -568,7 +713,7 @@ For now the best practical label is:
 `scripts/make_runtime_snapshot.py` writes:
 
 ```text
-artifacts/snapshot_after_bootstrap_100k/
+artifacts/evidence/snapshot_after_bootstrap_100k/
   memory_1mb.bin
   state.json
   trace_tail.txt
@@ -631,8 +776,8 @@ Important stack detail: `1010:ED7A` looks tempting to call as a helper, but it i
 Verified snapshot pair:
 
 ```text
-before: artifacts/snapshot_before_lz_full_hook_ecf2
-after:  artifacts/snapshot_after_lz_full_hook_ecf2
+before: artifacts/evidence/snapshot_before_lz_full_hook_ecf2
+after:  artifacts/evidence/snapshot_after_lz_full_hook_ecf2
 ```
 
 The hook decodes 51,636 bytes to `ES:DI` output space for the captured asset and advances the `OVERKILL` data-file handle from offset 463,837 to 476,125.
@@ -653,7 +798,7 @@ New tooling:
 - `overkill-port continue-snapshot ...` can resume execution from a saved snapshot directory. This avoids replaying the whole bootstrap when investigating the next hot area.
 - `snapshot.load_snapshot(...)` restores CPU state, memory and simple DOS open-file bookkeeping for RE scripts.
 
-Observed runtime state at `artifacts/snapshot_after_verified_render_rle_hooks_38600`:
+Observed runtime state at `artifacts/evidence/snapshot_after_verified_render_rle_hooks_38600`:
 
 ```text
 AX=12E8 BX=0013 CX=6357 DX=0410 SI=14DE DI=B03C BP=FFFF SP=A26E
@@ -684,17 +829,17 @@ pytest -q
 New captured oracle snapshots:
 
 ```text
-artifacts/snapshot_stop_497a_probe
-artifacts/snapshot_stop_41da_probe
-artifacts/snapshot_stop_5827_probe
-artifacts/snapshot_stop_50c9_probe
-artifacts/snapshot_stop_58df_probe
+artifacts/evidence/snapshot_stop_497a_probe
+artifacts/evidence/snapshot_stop_41da_probe
+artifacts/evidence/snapshot_stop_5827_probe
+artifacts/evidence/snapshot_stop_50c9_probe
+artifacts/evidence/snapshot_stop_58df_probe
 ```
 
 After these hooks, execution from checkpoint 6 reaches a new guarded diagnostic snapshot:
 
 ```text
-artifacts/snapshot_suspicious_41da_header_after_video_hooks
+artifacts/evidence/snapshot_suspicious_41da_header_after_video_hooks
 AX=FECE BX=0000 CX=0000 DX=03D9 SI=5510 DI=3B60 BP=FECE SP=A270
 CS:IP=1010:41DA DS=7000 ES=7000 SS=25CC FLAGS=0283
 ```
@@ -733,11 +878,11 @@ Added tests cover:
 New evidence snapshots:
 
 ```text
-artifacts/snapshot_stop_0871_distinct_heap
-artifacts/snapshot_stop_5d20_distinct_heap
-artifacts/snapshot_after_psp_heap_fix_20k
-artifacts/snapshot_stop_254a_0585_after_psp
-artifacts/snapshot_after_psp_heap_fix_30k
+artifacts/evidence/snapshot_stop_0871_distinct_heap
+artifacts/evidence/snapshot_stop_5d20_distinct_heap
+artifacts/evidence/snapshot_after_psp_heap_fix_20k
+artifacts/evidence/snapshot_stop_254a_0585_after_psp
+artifacts/evidence/snapshot_after_psp_heap_fix_30k
 ```
 
 Current best next target is the overlay/container loader path around `254A:04D7..05FB`.  It is now hit repeatedly with distinct heap segments and real file offsets.  The next safe replacement should be a narrow verified helper for a small, deterministic sub-loop in that path, not a broad asset-loader rewrite.  The true menu/game main loop is still **not confirmed**.
@@ -777,8 +922,8 @@ The hook is verified against interpreted ASM (`test_wait_timer_tick_0679_hook_ma
 With the hook active, the runtime advances out of the spin and into real per-frame output for the first time:
 
 ```text
-artifacts/snapshot_probe_frontier_2m       (before: stuck spinning at 1010:0679)
-artifacts/snapshot_after_timer_hook_2m     (after:  CS:IP=1010:4496, ES=B800)
+artifacts/evidence/snapshot_probe_frontier_2m       (before: stuck spinning at 1010:0679)
+artifacts/evidence/snapshot_after_timer_hook_2m     (after:  CS:IP=1010:4496, ES=B800)
 ```
 
 It now executes masked sprite compositing (`lodsw; and ax,es:[di]; or ax,ds:[si]; stosw; add di,30h`) with `ES=B800` (video memory) and dispatches through the render chain `1010:A8F4 -> D010 -> 5BDC` reading the `CS:95BC` video-mode selector.  The new frontier is this `1010:D0xx` render/logic dispatch region.  The true menu/game main loop is now **very likely reached** (per-frame timing + video writes), but the next evidence-driven step is to profile this new region and lift one hot routine there, not to assume it.
@@ -805,8 +950,8 @@ This is the actual present to `B800h` video memory, confirming the game is rende
 Captured oracle/evidence snapshots:
 
 ```text
-artifacts/snapshot_stop_447f_probe          (entry-path trace into the blit)
-artifacts/snapshot_probe_frontier2_8m       (8M-step frontier: still advancing, CS:IP=1010:A930)
+artifacts/evidence/snapshot_stop_447f_probe          (entry-path trace into the blit)
+artifacts/evidence/snapshot_probe_frontier2_8m       (8M-step frontier: still advancing, CS:IP=1010:A930)
 ```
 
 With the blit collapsed, the `4492` loop disappears from the profile and the runtime reaches further per fixed step budget (2M steps now end at `1010:A84A`).  The next hot interpreted loops, and the recommended next lift targets, are:
@@ -832,8 +977,8 @@ the outfitting/shop screen — player ship in a starfield with the
 name.  Evidence:
 
 ```text
-artifacts/frame_2m_pal1h.png   (item "Fire Nose")
-artifacts/frame_8m_pal1h.png   (item "Drone >2<")
+artifacts/evidence/frame_2m_pal1h.png   (item "Fire Nose")
+artifacts/evidence/frame_8m_pal1h.png   (item "Drone >2<")
 ```
 
 That two snapshots show different item names confirms the runtime is animating
@@ -1008,7 +1153,7 @@ bootstrap decodes all startup assets through the verified LZ/RLE/4-plane hooks -
 each hook decodes a whole asset in a single interpreted "step", so it is heavy in
 wall-clock time though few in step count.  To make iteration fast, `scripts/play.py`
 gained `--snapshot DIR` (via `snapshot.load_snapshot`) to start from a saved
-post-bootstrap state instantly; `artifacts/snapshot_play_start` is a fresh capture
+post-bootstrap state instantly; the current live play snapshots are fresh captures
 (with the IVT populated, so keyboard input works on load).  The default path still
 runs the real bootstrap and shows a "decoding startup assets" status until the
 first frame.
@@ -1274,7 +1419,7 @@ RGBI output.
 ### 2026-06-11 EGA gameplay profiling and the 1D1B bit-spread composite hook
 
 First profiling pass driven from a real in-level EGA snapshot
-(`artifacts/snapshot_play_ega_20260611_123041`, ~3.9M steps in) rather than the
+(`artifacts/play_ega_edrax_orbit_combat_20260611_123041`, ~3.9M steps in) rather than the
 startup/loading path.  Tooling: `scripts/profile_hotspots.py <steps> --snapshot
 <dir>` (wraps every hook with a timing shim and reports interpreted CS:IP
 frequency, backward-edge loops, and hook boundary crossings).

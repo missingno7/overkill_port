@@ -1,110 +1,154 @@
-# OVERKILL interpreter/source-port design
+# OVERKILL Runtime Architecture
 
-This is intentionally not a general DOSBox replacement. It is a migration scaffold for one game:
+This document describes the durable architecture of the OVERKILL runtime and
+source-port scaffold. Current progress belongs in `RUN_STATUS.md`; accumulated
+address-level findings belong in `docs/runtime_findings.md`.
 
-1. load the original DOS MZ executable exactly enough to reach real game code,
-2. execute original 8086 instructions and produce deterministic traces,
-3. identify routines by `CS:IP`,
-4. replace those routines one by one with Python code,
-5. later move stable Python replacements into a cleaner engine/source port.
+## Architectural Goal
 
-## Runtime pieces
+The runtime exists to migrate one original DOS game into verified source-level
+Python one boundary at a time.
 
-- `mz.py` parses DOS MZ headers, load modules, relocation tables and overlay/trailing data.
-- `memory.py` provides a 20-bit real-mode memory model and a minimal PSP.
-- `cpu.py` contains a dependency-free 8086 interpreter core with a practical subset of instructions already used by OVERKILL startup.
-- `dos.py` provides narrow DOS/BIOS/port hooks: text output, file open/read/seek/close, memory APIs, video mode calls, timer, keyboard placeholders and VGA status-port behavior.
-- `hooks.py` contains the replacement mechanism used for gradual source-porting.
-- `replacements.py` contains verified built-in game-specific replacements.
-- `snapshot.py` writes full memory/state snapshots for reverse-engineering checkpoints.
-- `runtime.py` wires all components together for the unpacked OVERKILL binary.
+The original executable is always the oracle. The runtime should be capable of:
 
-## Address model
+1. loading the original program,
+2. executing unknown 8086 code directly,
+3. tracing and snapshotting observable state,
+4. replacing proven routines with hooks,
+5. verifying hooks against interpreted ASM,
+6. moving stable behavior into game-specific source-port modules.
 
-The DOS loader puts the PSP at `1000h` and the EXE load module at `1010h` by default. Therefore MZ `CS:IP 1366:0010` starts executing at real-mode address:
+The design should remain narrow. Generic emulator completeness is not a goal.
+
+## Runtime Components
+
+- `mz.py`: DOS MZ parsing, relocation handling, and load-module extraction.
+- `memory.py`: 20-bit real-mode memory model, PSP setup, and video-memory
+  backing stores.
+- `cpu.py`: dependency-free 8086 interpreter for instructions OVERKILL reaches.
+- `dos.py`: deterministic DOS, BIOS, file, port, timer, and input services used
+  by OVERKILL.
+- `hooks.py`: replacement-hook registry keyed by exact runtime `CS:IP`.
+- `replacements.py`: thin hook wrappers and staging area for newly lifted code.
+- `runtime.py`: wiring for CPU, memory, DOS services, and hook installation.
+- `snapshot.py`: full memory/state snapshot save and load helpers.
+- `hook_verify.py`: live differential verifier that runs original ASM and hook
+  side by side at a replacement boundary.
+- `frame_verify.py`: frame-level comparison helpers for video-output behavior.
+- `overkill_port/games/overkill/`: game-specific source-port modules for stable
+  lifted behavior.
+
+## Address Model
+
+Runtime addresses are written as `CS:IP`.
+
+The DOS loader creates a PSP segment and loads the MZ image after it. Static MZ
+`CS:IP` values are relative to the load segment; runtime tracing observes the
+relocated real-mode segment.
+
+The general relationship is:
 
 ```text
-load segment = 1010h
-runtime CS   = 1010h + 1366h = 2376h
-runtime IP   = 0010h
-physical     = 2376h * 16 + 0010h = 23770h
+runtime_segment = load_segment + mz_relative_segment
+physical        = runtime_segment * 16 + offset
 ```
 
-The original static disassembly in the RE pack uses load-module offsets. The helper rule is:
+Many routines are unpacked, relocated, or patched after load. For executed code,
+the runtime memory snapshot is more authoritative than the original file bytes.
 
-```text
-runtime segment = load_segment + mz_relative_segment
-load_module_offset = mz_relative_segment * 16 + offset
-```
+## Hook Boundary Model
 
-Be careful: OVERKILL modifies/unpacks code into memory. For many addresses after `1010:95C9`, the runtime memory snapshot is more authoritative than the original file load module.
-
-## Replacement hooks
-
-A replacement is registered against the runtime `CS:IP` where the original routine starts:
+A replacement hook is registered at the exact runtime address where original
+execution would enter the replaced boundary:
 
 ```python
-from overkill_port.hooks import registry, return_near
-
-@registry.replace(0x1234, 0x5678, "decoded_original_routine")
-def decoded_original_routine(cpu):
-    # emulate routine side effects here
-    cpu.s.ax = 0
-    return_near(cpu)
+@registry.replace(0x1010, 0xECF2, "overkill_lz_decoder_ecf2")
+def overkill_lz_decoder_ecf2(cpu):
+    ...
 ```
 
-This lets the rest of the binary continue running normally while one known routine is implemented as readable source.
+The hook must leave the same observable state as interpreted ASM at the chosen
+continuation:
 
-The first real replacement is `overkill_file_checksum_loop` at `1010:C916`. It replaces:
+- registers and segment registers,
+- flags,
+- `CS:IP`,
+- stack pointer and stack scratch,
+- touched memory,
+- DOS/file/port/video side effects.
 
-```asm
-mov dl, [si]
-add ax, dx
-add ah, al
-inc si
-loop C916
-```
+Boundaries may be normal routines, far routines, dispatch stubs, loop bodies,
+tail jumps, or self-call tricks. The boundary type must be understood before a
+hook is added.
 
-The replacement is covered by a regression test that compares AX/DX/CX/SI/FLAGS against the original instruction sequence.
+## Source-Port Module Model
 
-## Snapshot workflow
+`replacements.py` is the address-facing layer. It should contain the exact
+`@registry.replace(...)` wrappers and any short staging code that still needs
+close oracle comparison.
 
-Generate a post-bootstrap snapshot with:
-
-```bash
-python scripts/make_runtime_snapshot.py
-```
-
-or directly:
-
-```bash
-python -m overkill_port.cli snapshot assets/OVERKILL.UNLZEXE.EXE \
-  --game-root assets \
-  --steps 100000 \
-  --trace-tail 128 \
-  --out-dir artifacts/snapshot_after_bootstrap_100k
-```
-
-This writes:
+Stable game-specific behavior should move into modules under:
 
 ```text
-memory_1mb.bin   complete real-mode memory image
-state.json       CPU, loader, DOS, hook and port metadata
-trace_tail.txt   capped execution trace tail
+overkill_port/games/overkill/
 ```
 
-## Current bootstrap progress
+This split keeps two ideas separate:
 
-The initial LZEXE layers are already unpacked in `assets/OVERKILL.UNLZEXE.EXE`, but the binary still contains an internal bootstrap/self-relocation stage. The interpreter now gets through that stage far enough to reach relocated game code at `1010:95C9`, set interrupt vectors, resize the DOS memory block, open/read/seek/close the original `OVERKILL` data file, and run beyond the original checksum loop and VGA retrace wait.
+- the original binary boundary (`1010:ECF2`),
+- the reconstructed game behavior (`decode_lz_asset`, rendering helpers, object
+  logic, etc.).
 
-The current 100k-step snapshot stops in a hot path around `1010:45CB`. This appears to be self-modified graphics/bit expansion code. The true menu/game main loop is still unknown.
+## Verification Layers
 
-## Fidelity notes
+The project uses several verification layers:
 
-The interpreter is currently permissive for hardware ports and some DOS memory APIs. It returns simple placeholder values rather than trying to fully emulate DOS/VGA/OPL yet. That is intentional for bootstrap progress, but once the game loop is reached these areas should become explicit subsystems:
+- synthetic interpreted-ASM tests for small routines,
+- captured snapshot tests for larger or stateful paths,
+- live hook verification during startup or gameplay,
+- frame verification for rendered output,
+- island audits for closure signals across related modules.
 
-- VGA memory and port model,
-- keyboard/input queue,
-- timer tick source,
-- PC speaker / OPL hooks,
-- file/resource loader with named source-level wrappers.
+The strongest proof is still oracle equivalence against the original executable.
+Audit scripts and coverage reports are triage tools, not proof by themselves.
+
+## DOS And Hardware Model
+
+The DOS/BIOS/port layer should model only behavior OVERKILL observes.
+
+Additions should be driven by an observed call site or port access. Each new
+service should document:
+
+- where the original game calls it,
+- input registers or port values,
+- output registers, flags, memory, or device state,
+- any deterministic simplification used by the runtime.
+
+Avoid building a general OS or hardware emulator unless the game requires that
+specific behavior.
+
+## Snapshots
+
+Snapshots capture the full machine state needed to resume or compare execution:
+
+```text
+memory_1mb.bin
+state.json
+trace_tail.txt
+```
+
+Snapshots are evidence. Keep the ones referenced by tests, findings, or active
+investigations. Ad hoc generated traces and probes can be pruned after they stop
+serving as evidence.
+
+## Design Pressure
+
+The runtime should gradually move upward:
+
+1. interpreter support for instructions the game reaches,
+2. small verified hooks,
+3. larger coherent parent-level replacements,
+4. source-port islands with closed boundaries,
+5. readable game systems that no longer look like isolated hook bodies.
+
+At every stage, preserve the ability to compare back to the original executable.

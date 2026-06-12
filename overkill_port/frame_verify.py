@@ -53,7 +53,7 @@ class FrameVerifyConfig:
     max_frames: int = 60
     frame_budget: int = 6_000_000
     source: Literal["rgb", "vram", "both"] = "both"
-    dump_dir: Path = Path("artifacts/frame_verify")
+    dump_dir: Path = Path("artifacts/evidence/frame_verify")
     stop_on_diff: bool = True
     ega_start_address_units: Literal["byte", "word", "ignore"] = "byte"
     log_every: int = 10

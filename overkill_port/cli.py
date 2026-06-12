@@ -128,7 +128,7 @@ def build_parser() -> argparse.ArgumentParser:
     cont.add_argument("--steps", type=int, default=100000)
     cont.add_argument("--stop-at", default=None, help="optional CS:IP hex stop address, e.g. 1010:45CB")
     cont.add_argument("--trace-tail", type=int, default=0)
-    cont.add_argument("--out-dir", default="artifacts/snapshot_continued")
+    cont.add_argument("--out-dir", default="artifacts/evidence/snapshot_continued")
     add_verify_args(cont)
     cont.set_defaults(func=cmd_continue_snapshot)
     return p
