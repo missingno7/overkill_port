@@ -4,7 +4,7 @@ import copy
 from dataclasses import dataclass, field
 from typing import Callable
 
-from .cpu import CPU8086, CPUState
+from .cpu import CPU8086, CPUState, IF
 from .dos import DOSMachine, FileHandle
 from .memory import (
     EGA_APERTURE,
@@ -37,7 +37,13 @@ class HookStop:
         cs = before.cs & 0xFFFF
         if self.kind == "near_ret":
             return ((cs, cpu.mem.rw(before.ss, before.sp)),)
+        if self.kind == "near_ret_or_fixed_ip":
+            if self.ip is None:
+                raise ValueError("near_ret_or_fixed_ip hook metadata needs ip")
+            return ((cs, cpu.mem.rw(before.ss, before.sp)), (cs, self.ip & 0xFFFF))
         if self.kind == "far_ret":
+            return ((cpu.mem.rw(before.ss, (before.sp + 2) & 0xFFFF), cpu.mem.rw(before.ss, before.sp)),)
+        if self.kind == "iret":
             return ((cpu.mem.rw(before.ss, (before.sp + 2) & 0xFFFF), cpu.mem.rw(before.ss, before.sp)),)
         if self.kind == "fixed_ip":
             if self.ip is None:
@@ -76,6 +82,10 @@ class HookStop:
             obj_type = cpu.mem.rw(before.ss, (before.bp + 0x14) & 0xFFFF)
             bx = ((obj_type + mode + mode + mode) << 1) & 0xFFFF
             return ((cs, cpu.mem.rw(cs, (0x5AB6 + bx) & 0xFFFF)),)
+        if self.kind == "dispatch_7596":
+            obj_type = cpu.mem.rw(before.ss, (before.bp + 0x14) & 0xFFFF)
+            bx = ((obj_type & 0xFFFF) << 1) & 0xFFFF
+            return ((cs, cpu.mem.rw(cs, (0x75A0 + bx) & 0xFFFF)),)
         if self.kind in ("scan_present_a927", "scan_present_a90f"):
             cx = before.cx & 0xFFFF
             if cx == 0:
@@ -191,7 +201,11 @@ class HookVerifierConfig:
 
 
 DEFAULT_STOPS: dict[Addr, HookStop] = {
+    (0x1010, 0x06E5): HookStop("iret"),
     (0x1010, 0x3153): HookStop("near_ret"),
+    (0x1010, 0x519A): HookStop("near_ret"),
+    (0x1010, 0x5F06): HookStop("near_ret"),
+    (0x1010, 0xBDE3): HookStop("near_ret_or_fixed_ip", 0x5059),
     (0x1F8F, 0x0960): HookStop("near_ret"),
     (0x1010, 0x017E): HookStop("fixed_ip", 0x018B),
     (0x254A, 0x05A1): HookStop("fixed_ips", ips=(0x0607, 0x0640)),
@@ -263,6 +277,7 @@ DEFAULT_STOPS: dict[Addr, HookStop] = {
     (0x1010, 0x45CB): HookStop("near_ret"),
     (0x1010, 0x45F6): HookStop("near_ret"),
     (0x1010, 0xC916): HookStop("fixed_ip", 0xC91F),
+    (0x1010, 0xD50E): HookStop("near_ret"),
     (0x1010, 0xECF2): HookStop("near_ret"),
     (0x1010, 0xED7A): HookStop("fixed_ip", 0xED26),
     (0x1010, 0xED97): HookStop("near_ret"),
@@ -272,22 +287,39 @@ DEFAULT_STOPS: dict[Addr, HookStop] = {
     (0x1010, 0xCCF0): HookStop("fixed_ip", 0xCD08),
     (0x1010, 0x4D15): HookStop("near_ret"),
     (0x1010, 0x4D6F): HookStop("near_ret"),
+    (0x1010, 0x5059): HookStop("near_ret"),
+    (0x1010, 0x505B): HookStop("near_ret"),
+    (0x1010, 0x5073): HookStop("near_ret"),
     (0x1010, 0x5827): HookStop("fixed_ip", 0x58A4),
     (0x1010, 0x5A00): HookStop("dispatch_5a00"),
     (0x1010, 0x5A24): HookStop("dispatch_5a24"),
     (0x1010, 0x5A36): HookStop("dispatch_5a36"),
     (0x1010, 0x5AC8): HookStop("dispatch_5ac8"),
     (0x1010, 0x5A92): HookStop("dispatch_5a92"),
+    (0x1010, 0x7596): HookStop("dispatch_7596"),
     (0x1010, 0x768E): HookStop("tandy_layer_sprite_768e"),
     (0x1010, 0x7746): HookStop("near_ret"),
     (0x1010, 0xA849): HookStop("scan_draw_a849"),
+    (0x1010, 0xA858): HookStop("dispatch_5ac8"),
+    (0x1010, 0xA85B): HookStop("fixed_ips", ips=(0xA849, 0xA85E)),
     (0x1010, 0xA861): HookStop("fixed_ips", ips=(0xA870, 0xA876)),
     (0x1010, 0xA87C): HookStop("fixed_ips", ips=(0xA88B, 0xA891)),
     (0x1010, 0xA894): HookStop("fixed_ips", ips=(0xA8BE, 0xA8C4)),
+    (0x1010, 0xA8BE): HookStop("dispatch_7596"),
+    (0x1010, 0xA8C1): HookStop("fixed_ips", ips=(0xA894, 0xA8C4)),
     (0x1010, 0xA8C7): HookStop("scan_layer1_a8c7"),
+    (0x1010, 0xA8F1): HookStop("dispatch_7596"),
+    (0x1010, 0xA8F4): HookStop("fixed_ips", ips=(0xA8C7, 0xA8F7)),
     (0x1010, 0xA90F): HookStop("scan_present_a90f"),
     (0x1010, 0xA927): HookStop("scan_present_a927"),
+    (0x1010, 0xA936): HookStop("dispatch_5a92"),
+    (0x1010, 0xA939): HookStop("fixed_ips", ips=(0xA927, 0xA93C)),
     (0x1010, 0xA9E0): HookStop("fixed_ips", ips=(0xAA01, 0xAA07)),
+    (0x1010, 0xAA01): HookStop("dispatch_aa2b"),
+    (0x1010, 0xAA04): HookStop("fixed_ips", ips=(0xA9E0, 0xAA07)),
+    (0x1010, 0xAC97): HookStop("near_ret_or_fixed_ip", 0xACD9),
+    (0x1010, 0xBCB1): HookStop("near_ret"),
+    (0x1010, 0xBC4B): HookStop("near_ret"),
     (0x1010, 0xAA2B): HookStop("dispatch_aa2b"),
     (0x1010, 0xAA10): HookStop("fixed_ips", ips=(0xAA1F, 0xAA25)),
     (0x1010, 0xEFAE): HookStop("dispatch_efae"),
@@ -315,7 +347,11 @@ class HookVerifier:
 
     def verify(self, cpu: CPU8086, key: Addr, handler: Callable[[CPU8086], None], name: str) -> None:
         if not self._should_verify(key):
-            handler(cpu)
+            try:
+                handler(cpu)
+            finally:
+                if cpu.coverage_telemetry is not None:
+                    cpu.coverage_telemetry.record_hook_unverified(key, name)
             return
 
         stop = DEFAULT_STOPS.get(key)
@@ -326,7 +362,11 @@ class HookVerifier:
             if key not in self.skipped:
                 print(msg.replace("MISSING METADATA", "SKIP"))
                 self.skipped.add(key)
-            handler(cpu)
+            try:
+                handler(cpu)
+            finally:
+                if cpu.coverage_telemetry is not None:
+                    cpu.coverage_telemetry.record_hook_skipped(key, name)
             return
 
         call_no = self.counts.get(key, 0) + 1
@@ -342,6 +382,8 @@ class HookVerifier:
         asm_steps = self._run_asm_to_target(asm_cpu, targets)
         handler(cpu)
         self.total_verified += 1
+        if cpu.coverage_telemetry is not None:
+            cpu.coverage_telemetry.record_hook_verified(key, name, asm_steps)
 
         report = self._diff_report(
             key=key,
@@ -370,6 +412,23 @@ class HookVerifier:
         for steps in range(self.config.asm_max_steps + 1):
             if cpu.addr() in target_set:
                 return steps
+            if cpu.addr() == (0x1010, 0x072F):
+                # OVERKILL's timer ISR chains the original BIOS INT 08h every
+                # fourth tick via JMP FAR CS:[0738]. The runtime's IRQ deliverer
+                # bounds that external BIOS path and returns to the interrupted
+                # frame after the game-side work; mirror that here so 06E5 can be
+                # differentially verified.
+                cpu.s.ds = cpu.pop()
+                cpu.s.ax = cpu.pop()
+                cpu.set_flag(IF, True)
+                if cpu.port_writer:
+                    cpu.port_writer(cpu, 0x20, 0x20, 8)
+                cpu.s.ip = cpu.pop()
+                cpu.s.cs = cpu.pop()
+                cpu.s.flags = cpu.pop() | 0x0002
+                if cpu.addr() in target_set:
+                    return steps
+                continue
             cpu.step()
         labels = ", ".join(f"{cs:04X}:{ip:04X}" for cs, ip in targets)
         raise HookVerifyDivergence(

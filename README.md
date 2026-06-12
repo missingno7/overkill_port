@@ -189,6 +189,11 @@ python scripts/audit_islands.py
 `closed-candidate` means "no known script-detected blockers"; it is a useful
 closure signal, not a substitute for oracle evidence.
 
+The asset-codec work now lives under `overkill_port/games/overkill/asset_codecs/`
+and includes the lifted overlay read/decode/normalize/compare helpers. Keep new
+replacement logic there once it is verified well enough to move out of
+`replacements.py`.
+
 ## Artifacts
 
 `artifacts/` keeps the root focused on live gameplay captures.

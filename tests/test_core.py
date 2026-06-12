@@ -428,3 +428,46 @@ def test_production_registry_has_no_duplicate_addresses():
     from overkill_port.hooks import registry
 
     assert len(registry.replacements) > 0
+
+
+def test_coverage_telemetry_counts_interpreted_and_verified_hooks():
+    from overkill_port.coverage import CoverageTelemetry, OverkillCoverageClassifier
+
+    cov = CoverageTelemetry(classifier=OverkillCoverageClassifier(), cache_path=None)
+    cov.record_interpreted_instruction((0x1010, 0x03A8))
+    cov.record_hook_verified((0x1010, 0x03A8), "overkill_vertical_rle_decoder_03a8", 123)
+    cov.record_hook_skipped((0x1010, 0xDEAD), "unknown_hook")
+
+    snap = cov.snapshot()
+    assert snap["total_interpreted_instructions"] == 1
+    assert snap["hook_verified_equiv_instructions"] == 123
+    assert snap["total_hook_calls"] == 2
+    assert snap["verified_hook_calls"] == 1
+    assert snap["skipped_hooks"] == 1
+    assert snap["unknown_unmeasured_hook_calls"] == 1
+    assert snap["islands"]["asset_codecs"].interpreted_asm == 1
+    assert snap["islands"]["asset_codecs"].hooked_verified_equiv == 123
+
+
+def test_cpu_emits_coverage_for_generic_asm_and_hook():
+    from overkill_port.coverage import CoverageTelemetry, OverkillCoverageClassifier
+
+    mem = Memory()
+    # 0000: mov ax,1234 ; hlt.  0010: hook target.
+    mem.load(0x1000, 0, bytes.fromhex("b8 34 12 f4"))
+    cpu = CPU8086(mem, CPUState(cs=0x1000, ds=0x1000, es=0x1000, ss=0x1000, sp=0xFFFE))
+    cov = CoverageTelemetry(classifier=OverkillCoverageClassifier(), cache_path=None)
+    cpu.coverage_telemetry = cov
+    cpu.step()
+    assert cov.snapshot()["total_interpreted_instructions"] == 1
+
+    def fake_hook(cpu):
+        cpu.s.ip = 0x0004
+
+    cpu.s.ip = 0x0010
+    cpu.replacement_hooks[(0x1000, 0x0010)] = fake_hook
+    cpu.hook_names[(0x1000, 0x0010)] = "fake_hook"
+    cpu.step()
+    snap = cov.snapshot()
+    assert snap["total_hook_calls"] == 1
+    assert snap["unverified_hook_calls"] == 1

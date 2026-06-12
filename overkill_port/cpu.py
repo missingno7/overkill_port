@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Callable
+from typing import Any, Callable
 
 from .memory import Memory, linear
 
@@ -138,6 +138,9 @@ class CPU8086:
     timer_pacer: Callable[[], None] | None = None
     timer_ticks_elapsed: int = 0
     max_rep_count: int = 1_000_000
+    # Optional generic execution telemetry sink. The CPU emits only raw events;
+    # game-specific island classification lives outside the interpreter.
+    coverage_telemetry: Any | None = None
 
     def addr(self) -> tuple[int, int]:
         return self.s.cs & 0xFFFF, self.s.ip & 0xFFFF
@@ -344,7 +347,11 @@ class CPU8086:
             if self.hook_verifier is not None and hook_key not in self.hook_verifier_passthrough:
                 self.hook_verifier(self, hook_key, handler, name)
             else:
-                handler(self)
+                try:
+                    handler(self)
+                finally:
+                    if self.coverage_telemetry is not None:
+                        self.coverage_telemetry.record_hook_unverified(hook_key, name)
             self.instruction_count += 1
             if self.trace_enabled:
                 self.trace.append(f"{start_cs:04X}:{start_ip:04X}  HOOK {name:<23} {before} -> {self.s.snapshot()}")
@@ -362,6 +369,8 @@ class CPU8086:
                 continue
             break
         asm = self.execute_opcode(op, seg_override, rep)
+        if self.coverage_telemetry is not None:
+            self.coverage_telemetry.record_interpreted_instruction((start_cs, start_ip))
         self.instruction_count += 1
         if self.trace_enabled:
             self.trace.append(f"{start_cs:04X}:{start_ip:04X}  d{self.call_depth:02d} {asm:<34} {self.s.snapshot()}")

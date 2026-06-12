@@ -58,6 +58,18 @@ LAYER_TAIL_VARIANT_TABLE = 0x7658
 LAYER_768E_NORMAL_TABLE = 0x76E6
 LAYER_768E_VARIANT_TABLE = 0x7716
 COMPACT_LAYER_TABLE = 0x7782
+LAYER_DRAW_TYPE_TABLE = 0x75A0
+
+SIG_LAYER_DRAW_TYPE_DISPATCH_7596 = bytes.fromhex("8b 5e 14 d1 e3 2e ff a7 a0 75")
+SIG_LAYER0_CALL_7596_A8BE = bytes.fromhex("e8 d5 cc 59 e2 d0")
+SIG_LAYER0_TAIL_A8C1 = bytes.fromhex("59 e2 d0")
+SIG_LAYER1_CALL_7596_A8F1 = bytes.fromhex("e8 a2 cc 59 e2 d0")
+SIG_LAYER1_TAIL_A8F4 = bytes.fromhex("59 e2 d0")
+SIG_SCAN_DRAW_CALL_5AC8_A858 = bytes.fromhex("e8 6d b2 59 e2 eb")
+SIG_SCAN_DRAW_TAIL_A85B = bytes.fromhex("59 e2 eb")
+SIG_SCAN_PRESENT_CALL_5A92_A936 = bytes.fromhex("e8 59 b1 59 e2 eb")
+SIG_SCAN_PRESENT_TAIL_A939 = bytes.fromhex("59 e2 eb")
+
 
 # These exact CGA/EGA animation-phase targets are still executed by the original
 # interpreter as bounded near-return compositor leaves.  This remains a narrow
@@ -142,6 +154,141 @@ def _sub_reg16(cpu, reg_idx: int, value: int) -> None:
 def _variant_layer_table(normal_base: int, variant_base: int, variant_flags: int) -> int:
     """Select the same table as ``TEST SS:[BP+24h],FFFFh`` / conditional MOV."""
     return normal_base if (variant_flags & 0xFFFF) == 0 else variant_base
+
+
+
+def dispatch_draw_object_5ac8(cpu) -> None:
+    """Lift OVERKILL 1010:5AC8 draw-object jump-table dispatcher."""
+    s = cpu.s
+    cs = s.cs & 0xFFFF
+    ss = s.ss & 0xFFFF
+    bp = s.bp & 0xFFFF
+    mode = cpu.mem.rw(cs, VIDEO_MODE_SELECTOR_OFF)
+    bx = cpu.mem.rw(ss, (bp + 0x14) & 0xFFFF)
+    bx = (bx + mode + mode + mode) & 0xFFFF
+    s.bx = bx
+    s.bx = cpu.shift(4, s.bx, 1, 16)
+    s.ip = cpu.mem.rw(cs, (0x5AE2 + s.bx) & 0xFFFF)
+
+
+def dispatch_present_object_5a92(cpu) -> None:
+    """Lift OVERKILL 1010:5A92 present-object jump-table dispatcher."""
+    s = cpu.s
+    cs = s.cs & 0xFFFF
+    ss = s.ss & 0xFFFF
+    bp = s.bp & 0xFFFF
+    s.es = cpu.mem.rw(cs, 0x9598)
+    s.di = cpu.mem.rw(ss, (bp + 0x0C) & 0xFFFF)
+    s.si = cpu.mem.rw(ss, (bp + 0x0E) & 0xFFFF)
+    mode = cpu.mem.rw(cs, VIDEO_MODE_SELECTOR_OFF)
+    bx = cpu.mem.rw(ss, (bp + 0x14) & 0xFFFF)
+    bx = (bx + mode + mode + mode) & 0xFFFF
+    s.bx = bx
+    s.bx = cpu.shift(4, s.bx, 1, 16)
+    s.ip = cpu.mem.rw(cs, (0x5AB6 + s.bx) & 0xFFFF)
+
+
+def call_draw_dispatch_from_scan_a858(cpu, runtime: LayerSpriteRuntime) -> None:
+    """Model ``A858: CALL 5AC8`` while preserving the real return frame."""
+    if runtime.self_disable_if_patched(cpu, 0xA858, SIG_SCAN_DRAW_CALL_5AC8_A858, "overkill_scan_draw_call_5ac8_a858"):
+        return
+    cpu.push(0xA85B)
+    dispatch_draw_object_5ac8(cpu)
+
+
+def finish_draw_scan_tail_a85b(cpu, runtime: LayerSpriteRuntime) -> None:
+    """Model ``A85B: POP CX ; LOOP A849``."""
+    if runtime.self_disable_if_patched(cpu, 0xA85B, SIG_SCAN_DRAW_TAIL_A85B, "overkill_scan_draw_tail_a85b"):
+        return
+    s = cpu.s
+    s.cx = cpu.pop()
+    s.cx = (s.cx - 1) & 0xFFFF
+    s.ip = 0xA849 if s.cx != 0 else 0xA85E
+
+
+def call_present_dispatch_from_scan_a936(cpu, runtime: LayerSpriteRuntime) -> None:
+    """Model ``A936: CALL 5A92`` while preserving the real return frame."""
+    if runtime.self_disable_if_patched(cpu, 0xA936, SIG_SCAN_PRESENT_CALL_5A92_A936, "overkill_scan_present_call_5a92_a936"):
+        return
+    cpu.push(0xA939)
+    dispatch_present_object_5a92(cpu)
+
+
+def finish_present_scan_tail_a939(cpu, runtime: LayerSpriteRuntime) -> None:
+    """Model ``A939: POP CX ; LOOP A927``."""
+    if runtime.self_disable_if_patched(cpu, 0xA939, SIG_SCAN_PRESENT_TAIL_A939, "overkill_scan_present_tail_a939"):
+        return
+    s = cpu.s
+    s.cx = cpu.pop()
+    s.cx = (s.cx - 1) & 0xFFFF
+    s.ip = 0xA927 if s.cx != 0 else 0xA93C
+
+
+def dispatch_layer_draw_type_table_7596(cpu) -> None:
+    """Run the tiny SS:[BP+14h] -> CS:75A0 draw-type table dispatch."""
+    s = cpu.s
+    cs = s.cs & 0xFFFF
+    ss = s.ss & 0xFFFF
+    bp = s.bp & 0xFFFF
+    s.bx = cpu.mem.rw(ss, (bp + 0x14) & 0xFFFF)
+    s.bx = cpu.shift(4, s.bx, 1, 16)
+    s.ip = cpu.mem.rw(cs, (LAYER_DRAW_TYPE_TABLE + s.bx) & 0xFFFF)
+
+
+def call_layer0_draw_type_from_scan_a8be(cpu, runtime: LayerSpriteRuntime) -> None:
+    """Model ``A8BE: CALL 7596`` in the layer-0 scan."""
+    if runtime.self_disable_if_patched(cpu, 0xA8BE, SIG_LAYER0_CALL_7596_A8BE, "overkill_layer0_call_7596_a8be"):
+        return
+    cpu.push(0xA8C1)
+    dispatch_layer_draw_type_table_7596(cpu)
+
+
+def finish_layer0_scan_tail_a8c1(cpu, runtime: LayerSpriteRuntime) -> None:
+    """Model ``A8C1: POP CX ; LOOP A894``."""
+    if runtime.self_disable_if_patched(cpu, 0xA8C1, SIG_LAYER0_TAIL_A8C1, "overkill_layer0_scan_tail_a8c1"):
+        return
+    s = cpu.s
+    s.cx = cpu.pop()
+    s.cx = (s.cx - 1) & 0xFFFF
+    s.ip = 0xA894 if s.cx != 0 else 0xA8C4
+
+
+def call_layer1_draw_type_from_scan_a8f1(cpu, runtime: LayerSpriteRuntime) -> None:
+    """Model ``A8F1: CALL 7596`` in the layer-1 scan."""
+    if runtime.self_disable_if_patched(cpu, 0xA8F1, SIG_LAYER1_CALL_7596_A8F1, "overkill_layer1_call_7596_a8f1"):
+        return
+    cpu.push(0xA8F4)
+    dispatch_layer_draw_type_table_7596(cpu)
+
+
+def finish_layer1_scan_tail_a8f4(cpu, runtime: LayerSpriteRuntime) -> None:
+    """Model ``A8F4: POP CX ; LOOP A8C7``."""
+    if runtime.self_disable_if_patched(cpu, 0xA8F4, SIG_LAYER1_TAIL_A8F4, "overkill_layer1_scan_tail_a8f4"):
+        return
+    s = cpu.s
+    s.cx = cpu.pop()
+    s.cx = (s.cx - 1) & 0xFFFF
+    s.ip = 0xA8C7 if s.cx != 0 else 0xA8F7
+
+
+def dispatch_layer_draw_type_7596(cpu, runtime: LayerSpriteRuntime) -> None:
+    """Lift OVERKILL 1010:7596 object-type layer draw dispatcher.
+
+    The original body is a tiny jump-table stub reached from the layer-0/layer-1
+    scan loops after they have selected the current object in ``BP``::
+
+        mov bx, ss:[bp+14h]
+        shl bx, 1
+        jmp word ptr cs:[bx+75A0h]
+
+    Keeping this as a real hook removes a very hot interpreted glue cluster while
+    still preserving the original boundary: the selected draw helper runs as its
+    own hook/interpreted routine exactly as the jump table chose it.
+    """
+    if runtime.self_disable_if_patched(cpu, 0x7596, SIG_LAYER_DRAW_TYPE_DISPATCH_7596, "overkill_layer_draw_type_dispatch_7596"):
+        return
+
+    dispatch_layer_draw_type_table_7596(cpu)
 
 
 def predict_layer_sprite_composite_target_768e(cpu, bp: int) -> int | None:

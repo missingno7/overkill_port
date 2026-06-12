@@ -6,6 +6,7 @@ from .overlay import (
     compare_overlay_signature_0582,
     decode_overlay_xor,
     find_overlay_directory_entry_05a1,
+    run_overlay_counter_stride_loop_1f8f_0960,
     strip_overlay_path_components_0701,
 )
 from .packed_stream import read_packed_byte, read_packed_byte_hook, read_packed_word_le, read_packed_word_le_hook
@@ -28,6 +29,7 @@ __all__ = [
     "compare_overlay_signature_0582",
     "decode_overlay_xor",
     "find_overlay_directory_entry_05a1",
+    "run_overlay_counter_stride_loop_1f8f_0960",
     "decode_vertical_rle_columns",
     "expand_4plane_block_4511",
     "expand_4plane_list_450c",

@@ -37,13 +37,184 @@ Verification:
 
 ```text
 python scripts\run_tests.py
-# 128 passed, 0 failed
+# 141 passed, 0 failed
 python scripts\play.py --snapshot artifacts\snapshot_play_tandy_20260612_151523 --verify-frames --verify-frame-max 60
 # FRAME VERIFY OK frames=60
 ```
 
 Note: `snapshot_play_tandy_20260612_151420` times out in the reference frame
 verifier after frame 1 because it is in an input/menu wait path at `1010:D439`.
+
+## 2026-06-12 AC97 object-slot scan lift
+
+Absorbed the hot `1010:AC97` scan from
+`artifacts/snapshot_play_tandy_20260612_192438` into
+`overkill_object_slot_scan_ac97`.
+
+Findings:
+
+- The slowdown is a read-only gameplay object-slot loop body, not asset-codec
+  work.
+- It walks 35 records at `DS:23B4` with a `0038h` stride, one slot per hook
+  call.
+- It skips empty records and records with `+24h == 1` or `+20h == 1`.
+- It performs the observed signed Y/X window checks and the `SS:[BP+14]`
+  compare before advancing `BX/CX` and re-entering `AC97`.
+
+Status:
+
+- Hook lifted.
+- Regression test added against `artifacts/evidence/ac97_stop`.
+
+## 2026-06-12 BCB1 clamp leaf lift
+
+Lifted the hot `1010:BCB1` clamp leaf from the BC4B post-move path.
+
+Findings:
+
+- The routine only clamps `SS:[BP+4]` into `0..00C0h`.
+- It is a repeated leaf reached from the `BC4B` post-move path.
+- The replacement returns to the `BC4E` continuation just like the original.
+
+Status:
+
+- Hook lifted.
+- Regression test added against `artifacts/evidence/bc4b_stop`.
+
+## 2026-06-12 BC4B post-move call-site lift
+
+Absorbed the full hot `1010:BC4B` post-move call-site from the same gameplay
+snapshot.
+
+Findings:
+
+- The block clamps Y, applies the X bounds, performs the BCCB contact check,
+  folds the observed AA71 contact-window helper including the AAAB -> AA44
+  upper tail, runs the optional BFC7 death tail, does the 9E69 bookkeeping,
+  and finishes with the 62F6 overlap scan.
+- The remaining 62F6 early exit for signed `SS:[BP+2] < 0x20` preserves the
+  compare flags and incoming `BX`; it does not fall through to the empty-scan
+  sentinel.
+- The call-site was the last large interpreted block in that path.
+- The hook now returns to the outer caller after completing the whole helper.
+
+Status:
+
+- Hook lifted.
+- Regression test added against `artifacts/evidence/bc4b_stop`.
+
+## 2026-06-12 AA71 upper contact tail lift
+
+The same BC4B snapshot also hit the higher `1010:AA71` branch that survives
+the signed X guard and then takes the `AAAB -> AA44` success tail.
+
+Findings:
+
+- The helper reuses the `SS:[BP+2] + 18h` compare against `DS:237E`.
+- The path clears carry and returns without mutating object state.
+- The remaining unobserved AA71 branches stay fail-fast.
+
+Status:
+
+- Lifted into the shared contact-window helper.
+- Regression test added against `artifacts/evidence/next_frontier_probe_4`.
+
+## 2026-06-12 BFC7 shared C054 call for logic 003B
+
+`snapshot_play_tandy_20260612_223501` reached `BC4B -> 62F6 -> BEC5 third counter zero -> BFC7` with `logic_id=003Bh`.  The original trace shows this is not a new bespoke branch: `BFC7` calls the shared `C054` selector before the state transition, and `003Bh` simply falls through to the default `AX=A4E4h` selector.  `C01B` then overwrites the flags with the `DS:98C0` compare and `C027` overwrites `AX` with the original logic id.
+
+Status:
+
+- `BFC7` now calls the shared lifted `C054` selector instead of whitelisting only `0012h/002Bh/0031h`.
+- `003Bh` completes the same death/transition tail without decrementing `DS:A47E`.
+- Regression test added for the `003Bh` path with `DS:98C0 != 0`.
+
+## 2026-06-12 BFC7 no-counter branch lift
+
+The `BFC7` death/transition tail now covers the current observed `0012h`,
+`002Bh`, and `0031h` branches from the same BC4B snapshot.
+
+Findings:
+
+- Those branches take the same state transition as the verified death tail.
+- None of them decrement `DS:A47E`.
+- The replacement now keeps that family in the observed no-counter path instead
+  of failing fast.
+
+Status:
+
+- Lifted into the shared collision tail.
+- Regression tests cover the three observed logic ids.
+
+## 2026-06-12 BD17/C054 dispatcher lift
+
+The same BC4B tail also reaches `1010:BD17`, whose `C054` dispatcher now
+selects the observed `0000h/0013h -> A4E4h` branch and preserves the `BD5F`
+stack scratch below the final return word. The newer `draw_layer=5,
+logic_id=0000h` path also returns cleanly after clearing the active flag, so it
+is no longer a frontier either.
+
+## 2026-06-12 BEC5 variant 000C tail lift
+
+The same shooting path also reached `1010:BEC5` with `variant=000Ch`.
+
+Findings:
+
+- The BEC5 variant table routes `0007h`, `0008h`, `000Ch`, and `0009h` to the
+  shared `BFB9` tail.
+- Returning to the original interpreter at `BFB9` is enough to preserve the
+  live state for that branch.
+- The helper now preserves that branch instead of failing fast.
+
+Status:
+
+- Lifted as a shared-tail dispatch.
+- Regression test added for the `000Ch` variant.
+
+## 2026-06-12 BEC5 sprite 0033 BF21 continuation
+
+The latest snapshot also hit the `sprite=0033h` branch inside `1010:BEC5`.
+That branch falls through into the shared `BF25` counter logic in the original
+code instead of failing fast, and the `third counter zero` tail then continues
+through the shared `BF4B -> BFC7` score/death path.
+
+Status:
+
+- Hook updated.
+- Regression tests added for the observed sprite fallthrough and `BF4B` tail.
+
+Findings:
+
+- The draw-layer-4 / `logic_id=002Bh` path clears the active flag, enters the
+  C054 dispatcher, and the observed `0000h`/`0013h` selector branches return
+  `A4E4h` without touching `DS:A47E`.
+- The stricter fail-fast only belonged to the smaller counter-decrement family,
+  not to the current gameplay snapshot.
+- This removes the last crash in the current BC4B/BD17 tail without widening
+  the hook to a guessed general rewrite.
+
+Status:
+
+- Hook updated.
+- Regression test added for the observed `002Ah` fallthrough.
+
+## 2026-06-12 BFC7 002B branch lift
+
+The same BFC7 tail now also handles the observed `logic_id=002Bh` branch
+without dropping `DS:A47E`.
+
+Findings:
+
+- The `0020h` branch remains the one that decrements the live counter.
+- The current `002Bh` branch follows the same death/transition state update,
+  but skips the counter drop.
+- This removes the next crash from the current snapshot without guessing at a
+  broad rewrite of the whole dispatcher.
+
+Status:
+
+- Hook updated.
+- Regression test added for the observed `002Bh` no-counter path.
 
 ---
 

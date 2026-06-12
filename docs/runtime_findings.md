@@ -280,8 +280,9 @@ The non-overlay asset-codec closure now covers:
 The other existing islands still have concrete blockers rather than vague
 unknowns:
 
-- `overlay`: `254A:04D7` is still the parent loader investigation target, and
-  `254A:05A1` / `254A:05D9` need direct test mentions.
+- `overlay`: `254A:04D7` is still the parent loader investigation target; the
+  `254A:05A1`, `254A:05D9`, and `254A:0701` overlay subloops have direct tests
+  and replacements.
 - `coordinates`: the module still has an explicit unverified-path seam.
 - `layer_sprites`: the module still has bounded-original/fail-fast compositor
   seams and the `1010:75A6` frontier symbol.
@@ -363,8 +364,8 @@ reads the header at `254A:074A`.  The lifted helper
 
 The larger `254A:04D7` file-open/read/seek parent is still explicitly not lifted
 as a whole.  It belongs to the overlay island, but includes DOS handle state,
-header math, directory scanning, and final far-return setup; closing more small
-loops first is the safer path.
+header math, and the surrounding far-return setup; closing more small loops
+first is the safer path.
 
 ## 2026-06-11 B73E formation contact: AA46 carry-set path
 
@@ -372,6 +373,11 @@ The later Tandy formation-change divergence from
 `artifacts/test_oracles/snapshot_play_tandy_20260611_152751` was gameplay state, not
 rendering.  At frame 383 the reference killed object `BP=2814` and added score
 `0030`; the hook left the object alive as logic `20h`.
+
+The overlay path normalizer at `254A:0701` preserves the live `BP` scratch
+pointer as well as `SI`/`DI`.  That matters because the surrounding loader uses
+the helper's far-return path and later reads the pointer back out through the
+caller frame.
 
 The original path for that tick is:
 
@@ -406,9 +412,11 @@ ASM and lifted:
   zero.  This enters the `BFC7` death/transition tail.  The observed type-1,
   no-linked-slot path adds score through the `5F0D` packed decimal helper
   (`SS:2314` BP-relative storage), runs the Y clamp, calls the observed `C055`
-  logic-20 side effect (`DS:A47E--`), then transitions object logic
-  `20h -> 1`, saves previous logic in `+1A`, clears `+22`, and dispatches
-  type 1 to sprite `0000`.
+  logic-20 side effect (`DS:A47E--`) on the current `0020h` branch, while the
+  observed `002Bh` branch follows the same transition without decrementing the
+  live counter.  In both cases it transitions object logic `20h -> 1`, saves
+  previous logic in `+1A`, clears `+22`, and dispatches type 1 to sprite
+  `0000`.
 - `B7F3` after an at-target `B7BD` state.  Verified branches now include the
   `B7C9` target-reset path, substate-0 `B754` movement path, and the bounded
   `B82D` waypoint-table loop when one or more selected waypoints already match
@@ -1824,3 +1832,89 @@ A9E0 -> AA2B -> EFAE -> B73E -> B85C -> B729 -> 5DB2
 ```
 
 Snapshot replay now intentionally stops with full object context at `1010:5DB2`.
+
+### 2026-06-12 AC97 object-slot scan lift
+
+Using `artifacts/evidence/ac97_stop` from
+`artifacts/snapshot_play_tandy_20260612_192438`, I traced the hot
+`1010:AC97` path and confirmed it is a read-only scan over 35 object records.
+The body walks `DS:23B4` in `0038h` strides, skips empty and state-gated
+entries, applies the signed Y/X window checks plus the `SS:[BP+14]`
+comparison, and then advances `BX/CX` before re-entering `AC97` for the next
+slot.
+
+That scan now lives in `overkill_object_slot_scan_ac97`, so the slowdown no
+longer needs to run through the interpreted original loop.
+
+### 2026-06-12 BCB1 post-move clamp lift
+
+The same gameplay snapshot also showed `1010:BCB1` as a tiny but hot repeated
+leaf inside the BC4B post-move path.  It only clamps `SS:[BP+4]` into the
+inclusive `0..00C0h` range before returning to the `BC4E` continuation, so it
+is now lifted into `overkill_postmove_y_clamp_bcb1`.
+
+### 2026-06-12 BC4B post-move call-site lift
+
+The remaining collision hotspot from the same snapshot was the `1010:BC4B`
+post-move call-site itself.  The hook now absorbs the full Y clamp, X bounds,
+BCCB view/contact check, the observed `AA71` contact-window helper including
+the `AAAB -> AA44` upper tail, optional BFC7 death tail, `9E69` bookkeeping,
+and the `62F6` overlap scan before returning to the outer caller, which removes
+the last large interpreted block in that path.
+
+One more small `62F6` detail mattered for verifier parity: the signed
+`SS:[BP+2] < 0x20` early exit keeps the compare flags live and returns with the
+incoming `BX` unchanged instead of advancing to the empty-scan sentinel.
+
+### 2026-06-12 AA71 upper contact tail lift
+
+The same BC4B snapshot also exercised the higher `AA71` branch that survives
+the signed X guard and then runs the `AAAB -> AA44` success tail.  That path
+reuses the `SS:[BP+2] + 18h` compare against `DS:237E`, clears carry, and
+returns without mutating any object state, so it is now folded into the
+contact-window helper instead of failing fast.
+
+### 2026-06-12 BD17/C054 dispatcher lift
+
+The same out-of-bounds tail also reaches the `1010:BD17` deactivation helper.
+The current `C054` compare chain now returns `A4E4h` for the observed
+`0000h`/`0013h` selectors and leaves the `BD5F` call scratch below the final
+return word.  Only the smaller side-effect family still touches the live-object
+counter.  The newer `draw_layer=5, logic_id=0000h` branch also clears the
+active flag and returns without touching `DS:A47E`, so the replacement now
+tracks both observed paths instead of failing fast.
+
+### 2026-06-12 BFC7 shared C054 call for logic 003Bh
+
+A later Tandy snapshot (`snapshot_play_tandy_20260612_223501`) reached the
+`BC4B -> 62F6 -> BEC5 third counter zero -> BFC7` tail with
+`logic_id=003Bh`.  Running the same entry through interpreted ASM showed that
+`BFC7` does not special-case this id.  It still calls the shared `C054`
+selector at `C018`; `003Bh` falls through the compare chain to the default
+`AX=A4E4h`, then `C01B` overwrites flags with the `DS:98C0` compare and `C027`
+loads `AX=003Bh` for the final state transition.  Therefore the replacement now
+models the real shared `C054` call instead of maintaining a short allow-list of
+no-counter logic ids.
+
+### 2026-06-12 BFC7 no-counter branch lift
+
+The `BFC7` death/transition tail also has current observed `logic_id=0012h`,
+`002Bh`, and `0031h` branches in the same snapshot.  They take the same state
+transition as the verified death tail but skip the `DS:A47E--` live-counter
+decrement.  The replacement now keeps that family in the observed no-counter
+path instead of failing fast.
+
+### 2026-06-12 BEC5 variant 000Ch BFB9 tail lift
+
+The same BEC5 collision helper has a variant table entry for `000Ch` that
+shares the `BFB9` tail with the `0007h`, `0008h`, and `0009h` branches.  That
+branch now returns control to the original interpreter at `BFB9` instead of
+throwing, so the shared tail can continue to run with the live game state.
+
+### 2026-06-12 BEC5 sprite 0033 BF21 continuation
+
+The same `1010:BEC5` helper also has a `sprite=0033h` branch that just falls
+through into the shared `BF25` counter logic instead of failing fast.  The
+`third counter zero` path then joins the shared `BF4B -> BFC7` death/score
+tail, so the replacement now lets the original tail run instead of aborting at
+the sprite compare.

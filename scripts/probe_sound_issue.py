@@ -4,7 +4,7 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
 from overkill_port.snapshot import load_snapshot
 from overkill_port.interrupts import deliver_scancode
-from overkill_port.replacements import _deliver_overkill_timer_irq0
+from overkill_port.games.overkill.sounds import deliver_overkill_timer_irq0
 
 snap=Path('/mnt/data/work_overkill/snapshot/snapshot_play_tandy_20260612_155451')
 rt=load_snapshot(ROOT/'assets'/'OVERKILL.UNLZEXE.EXE', snap, game_root=ROOT/'assets')

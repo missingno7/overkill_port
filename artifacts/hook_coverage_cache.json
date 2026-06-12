@@ -1,0 +1,440 @@
+{
+  "hooks": {
+    "1010:017E": {
+      "avg_asm_equiv": 48.0,
+      "island": "gameplay_objects",
+      "last_asm_equiv": 48.0,
+      "name": "overkill_keyboard_poll_bits_017e",
+      "samples": 40.0
+    },
+    "1010:0367": {
+      "avg_asm_equiv": 245922.0,
+      "island": "asset_codecs",
+      "last_asm_equiv": 201175.0,
+      "name": "overkill_linear_byte_rle_decoder_0367_fast",
+      "samples": 2.0
+    },
+    "1010:03A8": {
+      "avg_asm_equiv": 114632.66666666667,
+      "island": "asset_codecs",
+      "last_asm_equiv": 48813.0,
+      "name": "overkill_vertical_rle_decoder_03a8",
+      "samples": 6.0
+    },
+    "1010:0624": {
+      "avg_asm_equiv": 18.0,
+      "island": "asset_codecs",
+      "last_asm_equiv": 18.0,
+      "name": "overkill_packed_read_byte",
+      "samples": 8.0
+    },
+    "1010:06E5": {
+      "avg_asm_equiv": 32.24691358024691,
+      "island": "sound",
+      "last_asm_equiv": 32.0,
+      "name": "overkill_fast_timer_isr_06e5",
+      "samples": 81.0
+    },
+    "1010:306F": {
+      "avg_asm_equiv": 82.0,
+      "island": "tandy_renderer",
+      "last_asm_equiv": 82.0,
+      "name": "overkill_tandy_rect_copy_306f",
+      "samples": 211.0
+    },
+    "1010:3354": {
+      "avg_asm_equiv": 1592.0,
+      "island": "tandy_renderer",
+      "last_asm_equiv": 1592.0,
+      "name": "overkill_present_tandy_frame_3354",
+      "samples": 40.0
+    },
+    "1010:33AF": {
+      "avg_asm_equiv": 1320.7777777777778,
+      "island": "tandy_renderer",
+      "last_asm_equiv": 26.0,
+      "name": "overkill_expand_tandy_list_33af",
+      "samples": 9.0
+    },
+    "1010:34AD": {
+      "avg_asm_equiv": 9.529411764705882,
+      "island": "tandy_renderer",
+      "last_asm_equiv": 10.0,
+      "name": "overkill_tandy_split_present_copy_34ad",
+      "samples": 68.0
+    },
+    "1010:34D8": {
+      "avg_asm_equiv": 74.67625899280576,
+      "island": "tandy_renderer",
+      "last_asm_equiv": 84.0,
+      "name": "overkill_tandy_small_strided_copy_34d8",
+      "samples": 695.0
+    },
+    "1010:3542": {
+      "avg_asm_equiv": 26.451327433628318,
+      "island": "tandy_renderer",
+      "last_asm_equiv": 28.0,
+      "name": "overkill_tandy_tiny_strided_copy_3542",
+      "samples": 113.0
+    },
+    "1010:356C": {
+      "avg_asm_equiv": 20.579710144927535,
+      "island": "tandy_renderer",
+      "last_asm_equiv": 24.0,
+      "name": "overkill_tandy_draw_split_object_356c",
+      "samples": 69.0
+    },
+    "1010:35CC": {
+      "avg_asm_equiv": 83.78796561604585,
+      "island": "tandy_renderer",
+      "last_asm_equiv": 6.0,
+      "name": "overkill_tandy_draw_object_block_35cc",
+      "samples": 698.0
+    },
+    "1010:3657": {
+      "avg_asm_equiv": 36.017699115044245,
+      "island": "tandy_renderer",
+      "last_asm_equiv": 38.0,
+      "name": "overkill_tandy_draw_tiny_object_3657",
+      "samples": 113.0
+    },
+    "1010:36A2": {
+      "avg_asm_equiv": 1256.0,
+      "island": "tandy_renderer",
+      "last_asm_equiv": 1256.0,
+      "name": "overkill_tandy_loading_tile_column_copy_36a2",
+      "samples": 2.0
+    },
+    "1010:375B": {
+      "avg_asm_equiv": 3277.438775510204,
+      "island": "tandy_renderer",
+      "last_asm_equiv": 3872.0,
+      "name": "overkill_tandy_postcopy_scaled_blit_375b",
+      "samples": 196.0
+    },
+    "1010:4D15": {
+      "avg_asm_equiv": 216.08333333333334,
+      "island": "cga_renderer",
+      "last_asm_equiv": 161.0,
+      "name": "overkill_presence_stamp_list_4d15",
+      "samples": 120.0
+    },
+    "1010:4D6F": {
+      "avg_asm_equiv": 268.4,
+      "island": "cga_renderer",
+      "last_asm_equiv": 292.0,
+      "name": "overkill_clear_presence_list_4d6f",
+      "samples": 40.0
+    },
+    "1010:5059": {
+      "avg_asm_equiv": 2.0,
+      "island": "collision",
+      "last_asm_equiv": 2.0,
+      "name": "overkill_collision_stc_ret_5059",
+      "samples": 40.0
+    },
+    "1010:505B": {
+      "avg_asm_equiv": 8.0,
+      "island": "collision",
+      "last_asm_equiv": 8.0,
+      "name": "overkill_tile_lookup_505b",
+      "samples": 638.0
+    },
+    "1010:5073": {
+      "avg_asm_equiv": 24.04602510460251,
+      "island": "collision",
+      "last_asm_equiv": 25.0,
+      "name": "overkill_tile_probe_5073",
+      "samples": 478.0
+    },
+    "1010:519A": {
+      "avg_asm_equiv": 7.0,
+      "island": "tandy_renderer",
+      "last_asm_equiv": 7.0,
+      "name": "overkill_text_dispatch_519a",
+      "samples": 80.0
+    },
+    "1010:5827": {
+      "avg_asm_equiv": 2452.0,
+      "island": "movement",
+      "last_asm_equiv": 2452.0,
+      "name": "overkill_ega_planar_to_linear_copy_5827",
+      "samples": 1.0
+    },
+    "1010:5A00": {
+      "avg_asm_equiv": 13.0,
+      "island": "coordinates",
+      "last_asm_equiv": 13.0,
+      "name": "overkill_cga_xy_to_di_5a00",
+      "samples": 211.0
+    },
+    "1010:5A24": {
+      "avg_asm_equiv": 13.0,
+      "island": "coordinates",
+      "last_asm_equiv": 13.0,
+      "name": "overkill_cga_xy_to_di_5a24",
+      "samples": 436.0
+    },
+    "1010:5A92": {
+      "avg_asm_equiv": 9.0,
+      "island": "gameplay_objects",
+      "last_asm_equiv": 9.0,
+      "name": "overkill_dispatch_present_object_5a92",
+      "samples": 113.0
+    },
+    "1010:5AC8": {
+      "avg_asm_equiv": 6.0,
+      "island": "gameplay_objects",
+      "last_asm_equiv": 6.0,
+      "name": "overkill_dispatch_draw_object_5ac8",
+      "samples": 113.0
+    },
+    "1010:5F06": {
+      "avg_asm_equiv": 4.0,
+      "island": "tandy_renderer",
+      "last_asm_equiv": 4.0,
+      "name": "overkill_score_nibble_text_5f06",
+      "samples": 320.0
+    },
+    "1010:75A6": {
+      "avg_asm_equiv": 44.470588235294116,
+      "island": "layer_sprites",
+      "last_asm_equiv": 57.0,
+      "name": "overkill_tandy_layer_sprite_draw_75a6",
+      "samples": 68.0
+    },
+    "1010:768E": {
+      "avg_asm_equiv": 24.33093525179856,
+      "island": "layer_sprites",
+      "last_asm_equiv": 27.0,
+      "name": "overkill_tandy_layer_sprite_draw_768e",
+      "samples": 695.0
+    },
+    "1010:7746": {
+      "avg_asm_equiv": 19.008849557522122,
+      "island": "layer_sprites",
+      "last_asm_equiv": 20.0,
+      "name": "overkill_tandy_compact_layer_draw_7746",
+      "samples": 113.0
+    },
+    "1010:A849": {
+      "avg_asm_equiv": 12.20599739243807,
+      "island": "layer_sprites",
+      "last_asm_equiv": 6.0,
+      "name": "overkill_scan_objects_call_5ac8_a849",
+      "samples": 767.0
+    },
+    "1010:A858": {
+      "avg_asm_equiv": 2.0,
+      "island": "layer_sprites",
+      "last_asm_equiv": 2.0,
+      "name": "overkill_scan_draw_call_5ac8_a858",
+      "samples": 767.0
+    },
+    "1010:A85B": {
+      "avg_asm_equiv": 2.0,
+      "island": "layer_sprites",
+      "last_asm_equiv": 2.0,
+      "name": "overkill_scan_draw_tail_a85b",
+      "samples": 766.0
+    },
+    "1010:A861": {
+      "avg_asm_equiv": 74.5034965034965,
+      "island": "layer_sprites",
+      "last_asm_equiv": 6.0,
+      "name": "overkill_scan_objects_call_5ac8_a861",
+      "samples": 143.0
+    },
+    "1010:A87C": {
+      "avg_asm_equiv": 74.5034965034965,
+      "island": "layer_sprites",
+      "last_asm_equiv": 6.0,
+      "name": "overkill_scan_objects_call_7746_a87c",
+      "samples": 143.0
+    },
+    "1010:A894": {
+      "avg_asm_equiv": 58.32217573221757,
+      "island": "layer_sprites",
+      "last_asm_equiv": 85.0,
+      "name": "overkill_scan_layer0_draw_a894",
+      "samples": 239.0
+    },
+    "1010:A8BE": {
+      "avg_asm_equiv": 2.0,
+      "island": "layer_sprites",
+      "last_asm_equiv": 2.0,
+      "name": "overkill_layer0_call_7596_a8be",
+      "samples": 199.0
+    },
+    "1010:A8C1": {
+      "avg_asm_equiv": 2.0,
+      "island": "layer_sprites",
+      "last_asm_equiv": 2.0,
+      "name": "overkill_layer0_scan_tail_a8c1",
+      "samples": 199.0
+    },
+    "1010:A8C7": {
+      "avg_asm_equiv": 24.98936170212766,
+      "island": "layer_sprites",
+      "last_asm_equiv": 12.0,
+      "name": "overkill_scan_layer1_draw_a8c7",
+      "samples": 564.0
+    },
+    "1010:A8F1": {
+      "avg_asm_equiv": 2.0,
+      "island": "layer_sprites",
+      "last_asm_equiv": 2.0,
+      "name": "overkill_layer1_call_7596_a8f1",
+      "samples": 564.0
+    },
+    "1010:A8F4": {
+      "avg_asm_equiv": 2.0,
+      "island": "layer_sprites",
+      "last_asm_equiv": 2.0,
+      "name": "overkill_layer1_scan_tail_a8f4",
+      "samples": 564.0
+    },
+    "1010:A90F": {
+      "avg_asm_equiv": 74.5034965034965,
+      "island": "layer_sprites",
+      "last_asm_equiv": 6.0,
+      "name": "overkill_scan_objects_call_5a92_a90f",
+      "samples": 143.0
+    },
+    "1010:A927": {
+      "avg_asm_equiv": 12.211009174311927,
+      "island": "layer_sprites",
+      "last_asm_equiv": 6.0,
+      "name": "overkill_scan_objects_call_5a92_a927",
+      "samples": 763.0
+    },
+    "1010:A936": {
+      "avg_asm_equiv": 2.0,
+      "island": "layer_sprites",
+      "last_asm_equiv": 2.0,
+      "name": "overkill_scan_present_call_5a92_a936",
+      "samples": 763.0
+    },
+    "1010:A939": {
+      "avg_asm_equiv": 2.0,
+      "island": "layer_sprites",
+      "last_asm_equiv": 2.0,
+      "name": "overkill_scan_present_tail_a939",
+      "samples": 763.0
+    },
+    "1010:A9E0": {
+      "avg_asm_equiv": 18.23076923076923,
+      "island": "gameplay_objects",
+      "last_asm_equiv": 9.0,
+      "name": "overkill_scan_objects_call_aa2b_a9e0",
+      "samples": 728.0
+    },
+    "1010:AA01": {
+      "avg_asm_equiv": 2.0,
+      "island": "gameplay_objects",
+      "last_asm_equiv": 2.0,
+      "name": "overkill_object_logic_call_aa2b_aa01",
+      "samples": 728.0
+    },
+    "1010:AA04": {
+      "avg_asm_equiv": 2.0,
+      "island": "gameplay_objects",
+      "last_asm_equiv": 2.0,
+      "name": "overkill_object_logic_scan_tail_aa04",
+      "samples": 728.0
+    },
+    "1010:AA10": {
+      "avg_asm_equiv": 72.40816326530613,
+      "island": "gameplay_objects",
+      "last_asm_equiv": 6.0,
+      "name": "overkill_scan_objects_call_aa2b_aa10",
+      "samples": 147.0
+    },
+    "1010:AA2B": {
+      "avg_asm_equiv": 3.0,
+      "island": "gameplay_objects",
+      "last_asm_equiv": 3.0,
+      "name": "overkill_object_logic_dispatch_aa2b",
+      "samples": 118.0
+    },
+    "1010:AC97": {
+      "avg_asm_equiv": 297.85833333333335,
+      "island": "gameplay_objects",
+      "last_asm_equiv": 324.0,
+      "name": "overkill_object_slot_scan_ac97",
+      "samples": 120.0
+    },
+    "1010:BC4B": {
+      "avg_asm_equiv": 169.75795053003534,
+      "island": "collision",
+      "last_asm_equiv": 206.0,
+      "name": "overkill_object_postmove_bc4b",
+      "samples": 566.0
+    },
+    "1010:BCB1": {
+      "avg_asm_equiv": 5.0,
+      "island": "movement",
+      "last_asm_equiv": 5.0,
+      "name": "overkill_postmove_y_clamp_bcb1",
+      "samples": 1.0
+    },
+    "1010:BDE3": {
+      "avg_asm_equiv": 213.94117647058823,
+      "island": "collision",
+      "last_asm_equiv": 231.0,
+      "name": "overkill_player_hazard_object_scan_bde3",
+      "samples": 68.0
+    },
+    "1010:C916": {
+      "avg_asm_equiv": 25271.756756756757,
+      "island": "asset_codecs",
+      "last_asm_equiv": 5420.0,
+      "name": "overkill_file_checksum_loop",
+      "samples": 111.0
+    },
+    "1010:CCC4": {
+      "avg_asm_equiv": 80.86829268292684,
+      "island": "tandy_renderer",
+      "last_asm_equiv": 74.0,
+      "name": "overkill_dirty_copy_mode3_ccc4",
+      "samples": 410.0
+    },
+    "1010:ECF2": {
+      "avg_asm_equiv": 154481.0,
+      "island": "asset_codecs",
+      "last_asm_equiv": 154481.0,
+      "name": "overkill_lz_decoder_ecf2",
+      "samples": 1.0
+    },
+    "1010:EFAE": {
+      "avg_asm_equiv": 7.0,
+      "island": "gameplay_objects",
+      "last_asm_equiv": 7.0,
+      "name": "overkill_object_family_dispatch_efae",
+      "samples": 686.0
+    },
+    "1F8F:0960": {
+      "avg_asm_equiv": 79.65714285714286,
+      "island": "asset_codecs",
+      "last_asm_equiv": 51.0,
+      "name": "overkill_overlay_counter_stride_loop_1f8f_0960",
+      "samples": 35.0
+    },
+    "254A:0582": {
+      "avg_asm_equiv": 30.0,
+      "island": "asset_codecs",
+      "last_asm_equiv": 30.0,
+      "name": "overkill_overlay_signature_compare_254a_0582",
+      "samples": 17.0
+    },
+    "254A:05A1": {
+      "avg_asm_equiv": 346.4117647058824,
+      "island": "asset_codecs",
+      "last_asm_equiv": 591.0,
+      "name": "overkill_overlay_directory_entry_scan_254a_05a1",
+      "samples": 17.0
+    }
+  },
+  "updated": 1781297893.2614949,
+  "version": 1
+}

@@ -47,11 +47,16 @@ from overkill_port.interrupts import deliver_scancode
 from overkill_port.keyboard import KeyDispatcher
 from overkill_port.hook_verify import HookVerifierConfig, install_hook_verifier, parse_addr as parse_verify_addr
 from overkill_port.dos import ConsoleInputWouldBlock
+from overkill_port.cpu import HaltExecution
 from overkill_port.runtime import create_runtime
-from overkill_port.cpu import IF
-from overkill_port.replacements import _deliver_overkill_timer_irq0
 from overkill_port.snapshot import load_snapshot, write_snapshot
 from overkill_port.memory import EGA_APERTURE, EGA_SHADOW_SIZE
+from overkill_port.coverage import (
+    CoverageDashboardTk,
+    CoverageTelemetry,
+    OverkillCoverageClassifier,
+)
+from overkill_port.games.overkill.sounds import AsyncTimerIrqDriver, OVERKILL_PIT_HZ
 from render_cga import CGA_PALETTES
 
 CGA_PRESENT_HOOK = (0x1010, 0x447B)  # mode-0 CGA frame-present blit
@@ -73,60 +78,6 @@ NON_CGA_INTERACTIVE_DISABLE = {
     (0x1010, 0x58DF),
 }
 
-
-OVERKILL_PIT_HZ = 1193182.0 / 0x4000  # original IRQ0 cadence programmed by 1010:068A
-
-
-class AsyncTimerIrqDriver:
-    """Deliver real OVERKILL INT 08h IRQs during non-frame busy waits.
-
-    The game normally waits at 1010:0679, where the timer hook runs the real
-    1010:06E5 ISR.  Some menu/input-release loops spin without touching 0679; on
-    the original PC the PIT IRQ continues asynchronously and advances sound there
-    too.  This driver is intentionally only a scheduler: each tick still executes
-    the actual installed ISR, not a synthetic sound fallback.
-    """
-
-    def __init__(self, hz: float = OVERKILL_PIT_HZ) -> None:
-        self.period = 1.0 / hz if hz > 0 else 0.0
-        self._next: float | None = None
-
-    def reset_after_synchronous_ticks(self, ticks: int = 1) -> None:
-        if self.period <= 0:
-            return
-        now = time.perf_counter()
-        self._next = now + self.period * max(1, int(ticks))
-
-    def poll(self, cpu, *, max_catchup: int = 1) -> int:
-        if self.period <= 0 or not cpu.get_flag(IF):
-            return 0
-        now = time.perf_counter()
-        if self._next is None:
-            self._next = now + self.period
-            return 0
-        if now < self._next:
-            return 0
-
-        # This driver is only meant to keep the original IRQ0 sound ISR alive
-        # while the foreground code is in menu/retrace/input waits that do not
-        # reach the normal 1010:0679 timer wait.  Do not preserve a large wall-
-        # clock backlog here.  Replaying missed PIT ticks later mutates the same
-        # CS:066B frame-wait flag that drives gameplay, so after one slow Python
-        # burst the game can briefly run too fast while the delayed IRQs are
-        # drained.  Hardware IRQs are asynchronous, but our foreground execution
-        # is not interruptible in the middle of a long Python hook; the stable
-        # interactive compromise is to deliver a small bounded number of real ISR
-        # ticks and then re-anchor to wall clock.
-        due = int((now - self._next) // self.period) + 1
-        due = max(1, min(max_catchup, due))
-        delivered = 0
-        for _ in range(due):
-            if not _deliver_overkill_timer_irq0(cpu):
-                break
-            delivered += 1
-        if delivered:
-            self._next = time.perf_counter() + self.period
-        return delivered
 
 class TimerPacer:
     """Throttle the game to ``hz`` frames/second."""
@@ -266,6 +217,14 @@ def main(argv: list[str] | None = None) -> int:
                    help="print EGA display-start value and interpreted render offset for each published frame")
     p.add_argument("--ega-publish-all-presents", action="store_true",
                    help="debug only: publish every EGA present, including alternating off-screen page presents")
+    p.add_argument("--coverage-dashboard", action="store_true",
+                   help="open a live Tk ASM / Hook Coverage dashboard next to the gameplay window")
+    p.add_argument("--coverage-refresh-hz", type=float, default=4.0,
+                   help="Tk coverage dashboard refresh rate (default: 4 Hz)")
+    p.add_argument("--coverage-cache", default=str(ROOT / "artifacts" / "hook_coverage_cache.json"),
+                   help="JSON cache used to estimate hook ASM-equivalent cost outside --verify-hooks")
+    p.add_argument("--no-coverage-summary", action="store_true",
+                   help="do not print the final ASM / Hook Coverage summary on exit")
     args = p.parse_args(argv)
 
     exe = ROOT / "assets" / "OVERKILL.UNLZEXE.EXE"
@@ -316,6 +275,12 @@ def main(argv: list[str] | None = None) -> int:
         rt = create_runtime(exe, game_root=assets, command_tail=command_tail)
     rt.dos.console_input_fallback = None
     rt.cpu.trace_enabled = False
+    coverage = CoverageTelemetry(
+        classifier=OverkillCoverageClassifier(ROOT / "symbols.json"),
+        cache_path=Path(args.coverage_cache) if args.coverage_cache else None,
+        enabled=True,
+    )
+    rt.cpu.coverage_telemetry = coverage
     hook_verifier = None
     if args.verify_hooks or args.verify_hook:
         hook_verifier = install_hook_verifier(
@@ -639,6 +604,10 @@ def main(argv: list[str] | None = None) -> int:
                         rt.cpu.run(max(1, int(args.cpu_chunk_steps)))
                     except FramePresented:
                         break
+                    except HaltExecution:
+                        stop.set()
+                        status["text"] = "program exited normally"
+                        break
                     except ConsoleInputWouldBlock:
                         async_timer_irq.poll(rt.cpu)
                         publish_video_if_changed(rt.cpu)
@@ -703,24 +672,37 @@ def main(argv: list[str] | None = None) -> int:
         print(f"the interactive viewer requires pygame and numpy: {exc}")
         return 1
 
+    dashboard = CoverageDashboardTk(coverage, refresh_hz=args.coverage_refresh_hz) if args.coverage_dashboard else None
+    if dashboard is not None:
+        dashboard.start()
+
     # Start the emulator thread, then run the pygame/SDL viewer on the main thread.
     emu = threading.Thread(target=emulator_loop, name="overkill-emu", daemon=True)
     emu.start()
-    run_sdl_ui(
-        args=args,
-        frame_sync=frame_sync,
-        keyboard=keyboard,
-        stop=stop,
-        status=status,
-        counters={"visible": visible, "boundary": boundary, "blits": blits,
-                  "timers": timers, "retraces": retraces, "direct_video": direct_video},
-        queue_snapshot_save=queue_snapshot_save,
-        queue_dos_key=queue_dos_key,
-        ega_render_start=ega_render_start,
-        live_memory=lambda: bytes(rt.program.memory.data),
-        live_display_start=lambda: rt.program.memory.ega_display_start,
-        speaker_events=speaker_events,
-    )
+    try:
+        run_sdl_ui(
+            args=args,
+            frame_sync=frame_sync,
+            keyboard=keyboard,
+            stop=stop,
+            status=status,
+            counters={"visible": visible, "boundary": boundary, "blits": blits,
+                      "timers": timers, "retraces": retraces, "direct_video": direct_video},
+            queue_snapshot_save=queue_snapshot_save,
+            queue_dos_key=queue_dos_key,
+            ega_render_start=ega_render_start,
+            live_memory=lambda: bytes(rt.program.memory.data),
+            live_display_start=lambda: rt.program.memory.ega_display_start,
+            speaker_events=speaker_events,
+        )
+    finally:
+        stop.set()
+        frame_sync.close()
+        if dashboard is not None:
+            dashboard.close()
+        coverage.save_cache()
+        if not args.no_coverage_summary:
+            print(coverage.format_summary(), flush=True)
     return 0
 
 

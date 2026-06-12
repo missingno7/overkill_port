@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 
-from .cpu import CF, DF, IF, PF, SF, TF, ZF, _PARITY
+from .cpu import CF, DF, PF, SF, ZF, _PARITY
 from .hooks import registry
 from .memory import EGA_CPU_APERTURE, EGA_APERTURE, EGA_PLANE_STRIDE, EGA_PLANE_WINDOW
 from .games.overkill.asset_codecs import (
@@ -16,6 +16,7 @@ from .games.overkill.asset_codecs import (
     decode_vertical_rle_columns,
     decode_word_pair_rle,
     find_overlay_directory_entry_05a1,
+    run_overlay_counter_stride_loop_1f8f_0960,
     input_lz_byte,
     strip_overlay_path_components_0701,
     output_lz_byte,
@@ -39,8 +40,19 @@ from .games.overkill.rendering.coordinates import (
 )
 from .games.overkill.rendering.layer_sprites import (
     LayerSpriteRuntime,
+    call_draw_dispatch_from_scan_a858,
+    call_layer0_draw_type_from_scan_a8be,
+    call_layer1_draw_type_from_scan_a8f1,
+    call_present_dispatch_from_scan_a936,
+    dispatch_draw_object_5ac8,
+    dispatch_layer_draw_type_7596,
     dispatch_layer_sprite_tail_75f5,
+    dispatch_present_object_5a92,
     draw_compact_layer_sprite_7746,
+    finish_draw_scan_tail_a85b,
+    finish_layer0_scan_tail_a8c1,
+    finish_layer1_scan_tail_a8f4,
+    finish_present_scan_tail_a939,
     draw_layer_sprite_75a6,
     draw_layer_sprite_768e,
     is_known_layer_sprite_composite_target,
@@ -72,6 +84,35 @@ from .games.overkill.rendering.tandy import (
     split_present_copy_34ad as run_tandy_split_present_copy_34ad,
     strided_copy_34c5 as run_tandy_strided_copy_34c5,
     tiny_strided_copy_3542 as run_tandy_tiny_strided_copy_3542,
+)
+
+from .games.overkill.rendering.text import (
+    TextRenderRuntime,
+    run_score_nibble_text_5f06,
+    run_tandy_text_glyph_3153,
+    run_text_dispatch_519a,
+)
+from .games.overkill.gameplay.collision import (
+    run_collision_stc_ret_5059,
+    run_object_deactivate_logic_dispatch_c054,
+    run_object_slot_scan_ac97,
+    run_postmove_y_clamp_bcb1,
+    run_postmove_contact_window_aa71,
+    run_player_hazard_object_scan_bde3,
+    run_tile_lookup_505b,
+    run_tile_probe_5073,
+)
+from .games.overkill.gameplay.objects import (
+    call_object_logic_from_scan_aa01,
+    finish_object_logic_scan_tail_aa04,
+)
+
+from .games.overkill.sounds import (
+    SIG_FAST_TIMER_ISR_06E5,
+    SIG_PC_SPEAKER_TICK_D50E,
+    deliver_overkill_timer_irq0,
+    run_fast_timer_isr_06e5,
+    run_pc_speaker_tick_d50e,
 )
 
 # Runtime-patched code guard -------------------------------------------------
@@ -138,155 +179,61 @@ _SIG_EFAE = bytes.fromhex("8b 46 04 a3 fe d1 8b 46 02 a3 00 d2 8b 5e 18")
 _SIG_CCAA = bytes.fromhex("b9 08 00 26 8b 04 26 3b 05 74 05 b2 01 26 89 05")
 _SIG_CCC4 = bytes.fromhex("b9 08 00 26 8b 04 26 3b 05 74 05 b2 01 26 89 05")
 _SIG_CCF0 = bytes.fromhex("b9 20 00 26 8a 04 26 3a 05 74 05 b2 01 26 88 05")
-_SIG_1F8F_0960 = bytes.fromhex("ff 04 81 3c c0 00 75 04 c7 04 00 00 83 c6 06 e2 ef c3")
-_SIG_3153 = bytes.fromhex("3c 10 75 03 e9 e3 01 3c 11 75 03 e9 c1 01 32 e4")
 
+
+
+
+
+def _text_render_runtime() -> TextRenderRuntime:
+    return TextRenderRuntime(self_disable_if_patched=_self_disable_if_patched)
+
+
+@registry.replace(0x1010, 0x519A, "overkill_text_dispatch_519a")
+def overkill_text_dispatch_519a(cpu):
+    """Hook wrapper for OVERKILL 1010:519A text-character dispatcher."""
+    run_text_dispatch_519a(cpu, _text_render_runtime())
+
+
+@registry.replace(0x1010, 0x5F06, "overkill_score_nibble_text_5f06")
+def overkill_score_nibble_text_5f06(cpu):
+    """Hook wrapper for OVERKILL 1010:5F06 score nibble text helper."""
+    run_score_nibble_text_5f06(cpu, _text_render_runtime())
+
+
+@registry.replace(0x1010, 0xBDE3, "overkill_player_hazard_object_scan_bde3")
+def overkill_player_hazard_object_scan_bde3(cpu):
+    """Hook wrapper for OVERKILL 1010:BDE3 player/hazard scan."""
+    run_player_hazard_object_scan_bde3(cpu, _self_disable_if_patched)
+
+
+@registry.replace(0x1010, 0x5059, "overkill_collision_stc_ret_5059")
+def overkill_collision_stc_ret_5059(cpu):
+    """Hook wrapper for OVERKILL 1010:5059 STC/RET collision-hit helper."""
+    run_collision_stc_ret_5059(cpu, _self_disable_if_patched)
+
+
+@registry.replace(0x1010, 0x505B, "overkill_tile_lookup_505b")
+def overkill_tile_lookup_505b(cpu):
+    """Hook wrapper for OVERKILL 1010:505B tile lookup helper."""
+    run_tile_lookup_505b(cpu, _self_disable_if_patched)
+
+
+@registry.replace(0x1010, 0x5073, "overkill_tile_probe_5073")
+def overkill_tile_probe_5073(cpu):
+    """Hook wrapper for OVERKILL 1010:5073 coordinate-to-tile probe helper."""
+    run_tile_probe_5073(cpu, _self_disable_if_patched)
 
 
 @registry.replace(0x1010, 0x3153, "overkill_tandy_text_glyph_3153")
 def overkill_tandy_text_glyph_3153(cpu):
-    """Lift OVERKILL Tandy text/glyph routine 1010:3153.
-
-    The routine is reached through the generic text dispatcher at 1010:519A
-    when the active video text backend is Tandy.  It handles two inline control
-    bytes (10h = set colour, 11h = set cursor) and otherwise draws one 8-row
-    glyph into the Tandy work/video buffer using the original font and nibble
-    mask tables.
-    """
-    if _self_disable_if_patched(cpu, 0x3153, _SIG_3153, "overkill_tandy_text_glyph_3153"):
-        return
-
-    s = cpu.s
-    mem = cpu.mem
-    ds = s.ds & 0xFFFF
-    ss = s.ss & 0xFFFF
-    cs = s.cs & 0xFFFF
-    bp = s.bp & 0xFFFF
-    al = s.ax & 0x00FF
-
-    if al == 0x10:
-        old_bp = bp
-        bp = (bp + 1) & 0xFFFF
-        s.bp = bp
-        # INC preserves CF; the following MOVs do not change FLAGS.
-        old_cf = cpu.get_flag(CF)
-        cpu.set_add_flags(old_bp, 1, old_bp + 1, 16)
-        cpu.set_flag(CF, old_cf)
-        value = mem.rb(ss, bp)
-        s.ax = (s.ax & 0xFF00) | value
-        mem.wb(ds, 0x215C, value)
-        s.ip = cpu.pop()
-        return
-
-    if al == 0x11:
-        row = mem.rb(ss, (bp + 1) & 0xFFFF)
-        product = row * 0x0140
-        s.dx = (product >> 16) & 0xFFFF
-        ax = product & 0xFFFF
-        mem.ww(ds, 0x2160, ax)
-        col = mem.rb(ss, (bp + 2) & 0xFFFF)
-        # The Tandy control path shifts AL only, preserving AH from the row*0140
-        # product in AX.
-        ax = (ax & 0xFF00) | col
-        ax = (ax & 0xFF00) | ((ax << 1) & 0x00FF)
-        ax = (ax & 0xFF00) | ((ax << 1) & 0x00FF)
-        mem.wb(ds, 0x215E, ax & 0x00FF)
-        old_bp = bp
-        bp = (bp + 2) & 0xFFFF
-        s.ax = ax & 0xFFFF
-        s.cx = 0x0140
-        s.bp = bp
-        cpu.set_add_flags(old_bp, 2, old_bp + 2, 16)
-        s.ip = cpu.pop()
-        return
-
-    # Normal glyph path.  The original zeroes AH, multiplies the character by
-    # eight via three SHL AX, and reads eight source bytes from DS:1816+char*8.
-    ax = (al << 3) & 0xFFFF
-    si = (ax + 0x1816) & 0xFFFF
-    es = mem.rw(cs, 0x95A4)
-    dx = mem.rb(ds, 0x215E)
-    dx = (dx + mem.rw(ds, 0x2160)) & 0xFFFF
-    di = dx
-    colour = mem.rb(ds, 0x215C)
-    dl = (((colour << 4) & 0xFF) | colour) & 0xFF
-    dx = (dl << 8) | dl
-
-    bx = s.bx & 0xFFFF
-    cx = s.cx & 0xFFFF
-    last_ax = ax
-    for _ in range(8):
-        glyph_byte = mem.rb(ds, si)
-        si = (si + 1) & 0xFFFF
-        ax = glyph_byte
-        bx = ((ax << 2) + 0x1514) & 0xFFFF
-        last_ax = mem.rw(ds, bx)
-        cx = last_ax & dx
-        mem.ww(es, di, cx)
-        last_ax = mem.rw(ds, (bx + 2) & 0xFFFF)
-        cx = last_ax & dx
-        mem.ww(es, (di + 2) & 0xFFFF, cx)
-        before_di = di
-        di = (di + 0x2000) & 0xFFFF
-        cpu.set_add_flags(before_di, 0x2000, before_di + 0x2000, 16)
-        cpu.set_logic_flags(di & 0x8000, 16)
-        if di & 0x8000:
-            before_di = di
-            di = (di + 0x80A0) & 0xFFFF
-            cpu.set_add_flags(before_di, 0x80A0, before_di + 0x80A0, 16)
-
-    old_cursor_x = mem.rb(ds, 0x215E)
-    new_cursor_x = (old_cursor_x + 4) & 0xFF
-    mem.wb(ds, 0x215E, new_cursor_x)
-    cpu.set_add_flags(old_cursor_x, 4, old_cursor_x + 4, 8)
-    cpu.set_sub_flags(new_cursor_x, 0xA0, new_cursor_x - 0xA0, 8)
-    if new_cursor_x >= 0xA0:
-        mem.wb(ds, 0x215E, 0)
-        old_y = mem.rw(ds, 0x2160)
-        mem.ww(ds, 0x2160, (old_y + 0x0140) & 0xFFFF)
-        cpu.set_add_flags(old_y, 0x0140, old_y + 0x0140, 16)
-
-    s.ax = last_ax & 0xFFFF
-    s.bx = bx & 0xFFFF
-    s.cx = cx & 0xFFFF
-    s.dx = dx & 0xFFFF
-    s.si = si & 0xFFFF
-    s.di = di & 0xFFFF
-    s.es = es & 0xFFFF
-    s.ip = cpu.pop()
+    """Hook wrapper for OVERKILL 1010:3153 Tandy text/glyph renderer."""
+    run_tandy_text_glyph_3153(cpu, _text_render_runtime())
 
 
 @registry.replace(0x1F8F, 0x0960, "overkill_overlay_counter_stride_loop_1f8f_0960")
 def overkill_overlay_counter_stride_loop_1f8f_0960(cpu):
-    """Lift OVERKILL overlay routine 1F8F:0960.
-
-    This tiny near helper is hot during Tandy gameplay.  It walks ``CX`` words
-    spaced six bytes apart, increments each counter, wraps counters that reach
-    ``00C0h`` back to zero, then returns.  The final FLAGS are those of the
-    last ``ADD SI,0006h``; the following ``LOOP``/``RET`` do not affect them.
-    """
-    if _self_disable_if_patched(cpu, 0x0960, _SIG_1F8F_0960, "overkill_overlay_counter_stride_loop_1f8f_0960"):
-        return
-
-    s = cpu.s
-    mem = cpu.mem
-    ds = s.ds & 0xFFFF
-    count = s.cx & 0xFFFF
-    if count == 0:
-        count = 0x10000
-    si = s.si & 0xFFFF
-
-    last_si = si
-    for _ in range(count):
-        value = (mem.rw(ds, si) + 1) & 0xFFFF
-        mem.ww(ds, si, 0 if value == 0x00C0 else value)
-        last_si = si
-        si = (si + 0x0006) & 0xFFFF
-
-    s.si = si
-    s.cx = 0
-    cpu.set_add_flags(last_si, 0x0006, last_si + 0x0006, 16)
-    s.ip = cpu.pop()
+    """Hook wrapper for OVERKILL 1F8F:0960 overlay counter stride loop."""
+    run_overlay_counter_stride_loop_1f8f_0960(cpu, _self_disable_if_patched)
 
 
 @registry.replace(0x1010, 0xC916, "overkill_file_checksum_loop")
@@ -356,10 +303,21 @@ def _run_interpreted_near_call_observed(cpu, target_ip: int, return_ip: int, *, 
     cpu.push(return_ip & 0xFFFF)
     cpu.s.ip = target_ip & 0xFFFF
     try:
-        for _ in range(max_steps):
-            if cpu.addr() == target:
-                return
-            cpu.step()
+        ctx = (
+            cpu.coverage_telemetry.bounded_original((cs, target_ip & 0xFFFF), "bounded original near call")
+            if cpu.coverage_telemetry is not None
+            else None
+        )
+        if ctx is not None:
+            ctx.__enter__()
+        try:
+            for _ in range(max_steps):
+                if cpu.addr() == target:
+                    return
+                cpu.step()
+        finally:
+            if ctx is not None:
+                ctx.__exit__(None, None, None)
     finally:
         cpu.hook_verifier = saved_verifier
     raise RuntimeError(
@@ -477,6 +435,60 @@ def overkill_tandy_draw_split_object_356c(cpu):
 def overkill_tandy_draw_object_block_35cc(cpu):
     """Hook wrapper for OVERKILL 1010:35CC Tandy object-block draw."""
     run_tandy_draw_object_block_35cc(cpu, _tandy_render_runtime())
+
+
+@registry.replace(0x1010, 0x7596, "overkill_layer_draw_type_dispatch_7596")
+def overkill_layer_draw_type_dispatch_7596(cpu):
+    """Hook wrapper for OVERKILL 1010:7596 layer draw type jump-table dispatch."""
+    dispatch_layer_draw_type_7596(cpu, _layer_sprite_runtime())
+
+
+@registry.replace(0x1010, 0xA8BE, "overkill_layer0_call_7596_a8be")
+def overkill_layer0_call_7596_a8be(cpu):
+    """Hook wrapper for A894 active-entry CALL 7596 glue."""
+    call_layer0_draw_type_from_scan_a8be(cpu, _layer_sprite_runtime())
+
+
+@registry.replace(0x1010, 0xA8C1, "overkill_layer0_scan_tail_a8c1")
+def overkill_layer0_scan_tail_a8c1(cpu):
+    """Hook wrapper for A894 post-draw POP/LOOP glue."""
+    finish_layer0_scan_tail_a8c1(cpu, _layer_sprite_runtime())
+
+
+@registry.replace(0x1010, 0xA8F1, "overkill_layer1_call_7596_a8f1")
+def overkill_layer1_call_7596_a8f1(cpu):
+    """Hook wrapper for A8C7 active-entry CALL 7596 glue."""
+    call_layer1_draw_type_from_scan_a8f1(cpu, _layer_sprite_runtime())
+
+
+@registry.replace(0x1010, 0xA8F4, "overkill_layer1_scan_tail_a8f4")
+def overkill_layer1_scan_tail_a8f4(cpu):
+    """Hook wrapper for A8C7 post-draw POP/LOOP glue."""
+    finish_layer1_scan_tail_a8f4(cpu, _layer_sprite_runtime())
+
+
+@registry.replace(0x1010, 0xA858, "overkill_scan_draw_call_5ac8_a858")
+def overkill_scan_draw_call_5ac8_a858(cpu):
+    """Hook wrapper for A849 active-entry CALL 5AC8 glue."""
+    call_draw_dispatch_from_scan_a858(cpu, _layer_sprite_runtime())
+
+
+@registry.replace(0x1010, 0xA85B, "overkill_scan_draw_tail_a85b")
+def overkill_scan_draw_tail_a85b(cpu):
+    """Hook wrapper for A849 post-draw POP/LOOP glue."""
+    finish_draw_scan_tail_a85b(cpu, _layer_sprite_runtime())
+
+
+@registry.replace(0x1010, 0xA936, "overkill_scan_present_call_5a92_a936")
+def overkill_scan_present_call_5a92_a936(cpu):
+    """Hook wrapper for A927 active-entry CALL 5A92 glue."""
+    call_present_dispatch_from_scan_a936(cpu, _layer_sprite_runtime())
+
+
+@registry.replace(0x1010, 0xA939, "overkill_scan_present_tail_a939")
+def overkill_scan_present_tail_a939(cpu):
+    """Hook wrapper for A927 post-present POP/LOOP glue."""
+    finish_present_scan_tail_a939(cpu, _layer_sprite_runtime())
 
 
 @registry.replace(0x1010, 0x768E, "overkill_tandy_layer_sprite_draw_768e")
@@ -661,6 +673,43 @@ def _and_mem_word(cpu, seg: int, off: int, value: int) -> None:
 
 
 
+
+
+def _inc_mem_byte_preserve_cf(cpu, seg: int, off: int) -> int:
+    old = cpu.mem.rb(seg, off)
+    old_cf = cpu.get_flag(CF)
+    result = (old + 1) & 0xFF
+    cpu.mem.wb(seg, off, result)
+    cpu.set_add_flags(old, 1, old + 1, 8)
+    cpu.set_flag(CF, old_cf)
+    return result
+
+
+def _dec_mem_byte_preserve_cf(cpu, seg: int, off: int) -> int:
+    old = cpu.mem.rb(seg, off)
+    old_cf = cpu.get_flag(CF)
+    result_full = old - 1
+    result = result_full & 0xFF
+    cpu.mem.wb(seg, off, result)
+    cpu.set_sub_flags(old, 1, result_full, 8)
+    cpu.set_flag(CF, old_cf)
+    return result
+
+
+def _and_mem_byte(cpu, seg: int, off: int, value: int) -> int:
+    result = cpu.mem.rb(seg, off) & (value & 0xFF)
+    cpu.mem.wb(seg, off, result)
+    cpu.set_logic_flags(result, 8)
+    return result
+
+
+def _add_mem_byte(cpu, seg: int, off: int, value: int) -> int:
+    old = cpu.mem.rb(seg, off)
+    result_full = old + (value & 0xFF)
+    result = result_full & 0xFF
+    cpu.mem.wb(seg, off, result)
+    cpu.set_add_flags(old, value & 0xFF, result_full, 8)
+    return result
 
 def _ega_aperture_overlap(seg: int, off: int, count: int) -> bool:
     """Return True when a flat byte transfer touches the emulated EGA aperture.
@@ -2898,14 +2947,19 @@ def _run_collision_handler_bec5_observed(cpu, *, collided_bx: int, parent: str, 
     for target in (0x0007, 0x0008, 0x000C, 0x0009):
         _cmp_word(cpu, variant, target)
         if variant == target:
-            _raise_unverified_path(
+            # BEC5's 7/8/0C/9 variants jump to the shared BFB9 tail.  That
+            # tail optionally clears the moving object's target-Y and then
+            # falls directly into BFC7; it does not return to the 62F6 scanner.
+            _cmp_word(cpu, mem.rw(ds, 0xA8C2), 0x0001)
+            if mem.rw(ds, 0xA8C2) != 0x0001:
+                mem.ww(ss, (bp + 0x32) & 0xFFFF, 0x0000)
+            _run_collision_death_tail_bfc7(
                 cpu,
                 parent=parent,
                 chain=f"{chain} -> BEC5 variant {variant:04X}",
-                target_ip=0xBEC5,
-                bp=bp,
                 cx_value=cx_value,
             )
+            return
     _cmp_word(cpu, variant, 0x0002)
     if variant != 0x0002:
         _raise_unverified_path(
@@ -2922,14 +2976,9 @@ def _run_collision_handler_bec5_observed(cpu, *, collided_bx: int, parent: str, 
     sprite = mem.rw(ds, (bx + 0x08) & 0xFFFF)
     _cmp_word(cpu, sprite, 0x0033)
     if sprite == 0x0033:
-        _raise_unverified_path(
-            cpu,
-            parent=parent,
-            chain=f"{chain} -> BEC5 sprite 0033",
-            target_ip=0xBF21,
-            bp=bp,
-            cx_value=cx_value,
-        )
+        # The original path just falls through into the shared BF25 counter
+        # logic after this compare.  The compare itself is the observable part.
+        pass
 
     _sub_mem_word(cpu, ss, (bp + 0x20) & 0xFFFF, 1)
     if mem.rw(ss, (bp + 0x20) & 0xFFFF) == 0:
@@ -2984,6 +3033,17 @@ def _run_collision_handler_bec5_observed(cpu, *, collided_bx: int, parent: str, 
         if mem.rw(ss, (bp + 0x20) & 0xFFFF) == 0:
             if label == "fourth":
                 _run_collision_death_tail_bfc7(cpu, parent=parent, chain=f"{chain} -> BEC5", cx_value=cx_value)
+                return
+            if label == "second":
+                cpu.s.ip = target
+                return
+            if label == "third":
+                _run_collision_death_tail_bfc7(
+                    cpu,
+                    parent=parent,
+                    chain=f"{chain} -> BEC5 third counter zero",
+                    cx_value=cx_value,
+                )
                 return
             _raise_unverified_path(
                 cpu,
@@ -3048,6 +3108,76 @@ def _run_y_clamp_bcb1(cpu) -> None:
         cpu.mem.ww(ss, (bp + 0x04) & 0xFFFF, 0)
 
 
+def _find_free_effect_slot_7524(cpu) -> int:
+    """Mirror the small 1010:7524 allocator used by the BFC7 linked effect.
+
+    It scans from DS:[95D8] through the compact 38h-byte object records before
+    the main 2B5C object pool, stores the found slot back to DS:[95D8], and
+    leaves BX/CX/flags as the original allocator.
+    """
+    ds = cpu.s.ds & 0xFFFF
+    mem = cpu.mem
+    cpu.s.cx = 0x0023
+    cpu.s.bx = mem.rw(ds, 0x95D8)
+    while True:
+        bx = cpu.s.bx & 0xFFFF
+        _cmp_word(cpu, mem.rw(ds, bx), 0x0000)
+        if mem.rw(ds, bx) == 0:
+            mem.ww(ds, 0x95D8, bx)
+            return bx
+        _add_reg16(cpu, 3, 0x0038)
+        _cmp_word(cpu, cpu.s.bx, 0x2B5C)
+        if cpu.s.bx == 0x2B5C:
+            cpu.s.bx = 0x23B4
+        old_cx = cpu.s.cx
+        cpu.s.cx = (cpu.s.cx - 1) & 0xFFFF
+        if cpu.s.cx == 0:
+            cpu.s.bx = 0xFFFF
+            return 0xFFFF
+
+
+def _run_linked_effect_spawn_7420_observed(cpu) -> None:
+    """Run the observed 1010:7420 spawn helper used by BFC7/BFEE.
+
+    The helper publishes source Y/X/type in DS:2376/2378/237A, allocates a
+    compact effect slot via 7524, and seeds a short-lived visual object.
+    """
+    ds = cpu.s.ds & 0xFFFF
+    mem = cpu.mem
+
+    bx = _find_free_effect_slot_7524(cpu)
+    _cmp_word(cpu, cpu.s.bx, 0xFFFF)
+    if bx == 0xFFFF:
+        return
+
+    mem.ww(ds, bx, 0x0001)
+    cpu.s.ax = mem.rw(ds, 0x2378)
+    old_ax = cpu.s.ax
+    addend = mem.rw(ds, 0xA278)
+    cpu.s.ax = (cpu.s.ax + addend) & 0xFFFF
+    cpu.set_add_flags(old_ax, addend, old_ax + addend, 16)
+    mem.ww(ds, (bx + 0x02) & 0xFFFF, cpu.s.ax)
+
+    cpu.s.ax = mem.rw(ds, 0x2376)
+    _cmp_word(cpu, cpu.s.ax, 0x00C0)
+    if cpu.s.ax > 0x00C0:
+        cpu.s.ax = 0x00C0
+    mem.ww(ds, (bx + 0x04) & 0xFFFF, cpu.s.ax)
+
+    mem.ww(ds, (bx + 0x22) & 0xFFFF, 0x0000)
+    mem.ww(ds, (bx + 0x14) & 0xFFFF, 0x0001)
+    mem.ww(ds, (bx + 0x16) & 0xFFFF, 0x0005)
+    mem.ww(ds, (bx + 0x18) & 0xFFFF, 0x0000)
+    mem.ww(ds, (bx + 0x28) & 0xFFFF, 0xFFFF)
+    mem.ww(ds, (bx + 0x24) & 0xFFFF, 0x0000)
+
+    cpu.s.si = mem.rw(ds, 0x237A)
+    mem.ww(ds, (bx + 0x26) & 0xFFFF, cpu.s.si)
+    _add_reg16(cpu, 6, 0x0046)
+    mem.ww(ds, (bx + 0x08) & 0xFFFF, cpu.s.si)
+    mem.ww(ds, (bx + 0x0A) & 0xFFFF, 0x0000)
+
+
 def _run_collision_death_tail_bfc7(cpu, *, parent: str, chain: str, cx_value: int) -> None:
     """Run the observed BFC7 object death/transition tail for type-1 objects."""
     ds = cpu.s.ds & 0xFFFF
@@ -3093,24 +3223,36 @@ def _run_collision_death_tail_bfc7(cpu, *, parent: str, chain: str, cx_value: in
     linked_slot = mem.rw(ss, (bp + 0x28) & 0xFFFF)
     _cmp_word(cpu, linked_slot, 0xFFFF)
     if linked_slot != 0xFFFF:
-        _raise_unverified_path(
-            cpu, parent=parent, chain=f"{chain} -> BFC7 linked slot",
-            target_ip=0xBFEE, bp=bp, cx_value=cx_value,
-        )
+        cpu.s.si = linked_slot
+        cpu.s.si = cpu.shift(4, cpu.s.si, 1, 16)
+        _add_reg16(cpu, 6, 0x2078)
+        linked_counter = mem.rb(ds, cpu.s.si & 0xFFFF)
+        _cmp_byte(cpu, linked_counter, 0)
+        if linked_counter != 0:
+            old_counter = linked_counter
+            new_counter = (old_counter - 1) & 0xFF
+            mem.wb(ds, cpu.s.si & 0xFFFF, new_counter)
+            cpu.set_sub_flags(old_counter, 1, old_counter - 1, 8)
+            if new_counter == 0:
+                mem.ww(ds, 0x2376, mem.rw(ss, (bp + 0x04) & 0xFFFF))
+                mem.ww(ds, 0x2378, mem.rw(ss, (bp + 0x02) & 0xFFFF))
+                cpu.s.ax = mem.rb(ds, (cpu.s.si + 1) & 0xFFFF)
+                cpu.set_logic_flags(cpu.s.ax, 16)
+                mem.ww(ds, 0x237A, cpu.s.ax)
+                # C014 CALL 7420 leaves C017 below the live saved-BP word.
+                mem.ww(ss, (cpu.s.sp - 2) & 0xFFFF, 0xC017)
+                _run_linked_effect_spawn_7420_observed(cpu)
     cpu.s.bp = cpu.pop()
 
-    # Observed call C055 returns before the state transition.  Keep the CALL
-    # scratch visible below SP for full-memory comparisons.
+    # BFC7 always CALLs the shared C054 selector before the state transition.
+    # Earlier revisions whitelisted only a few observed logic ids here, but the
+    # real helper is just the same compare chain used by BD17: some ids decrement
+    # DS:A47E, while all other ids fall through to the default AX selector.
+    # The following C01B compare overwrites C054's flags and C027 overwrites AX
+    # with the original logic id, so the important observable effects are the
+    # optional counter drop and call-frame scratch.
     _remember_balanced_push_scratch(cpu, 0xC01B)
-    if logic_id == 0x0020:
-        old_counter = mem.rw(ds, 0xA47E)
-        mem.ww(ds, 0xA47E, (old_counter - 1) & 0xFFFF)
-        cpu.set_sub_flags(old_counter, 1, old_counter - 1, 16)
-    else:
-        _raise_unverified_path(
-            cpu, parent=parent, chain=f"{chain} -> BFC7 C055 logic {logic_id:04X}",
-            target_ip=0xC055, bp=bp, cx_value=cx_value,
-        )
+    run_object_deactivate_logic_dispatch_c054(cpu)
     _cmp_word(cpu, mem.rb(ds, 0x98C0), 0)
     if mem.rb(ds, 0x98C0) != 0:
         mem.wb(ds, 0xBEFF, 0x19)
@@ -3317,15 +3459,17 @@ def _run_object_overlap_scan_62f6(cpu, *, parent: str, chain: str, cx_value: int
 
     _cmp_word(cpu, mem.rw(ss, (bp + 0x02) & 0xFFFF), 0x0020)
     if (mem.rw(ss, (bp + 0x02) & 0xFFFF) if mem.rw(ss, (bp + 0x02) & 0xFFFF) < 0x8000 else mem.rw(ss, (bp + 0x02) & 0xFFFF) - 0x10000) < 0x20:
-        cpu.s.bx = 0x3294
-        finish_empty_scan()
+        # The original bails out before the slot scan here, so keep BX and the
+        # compare flags from 62FE intact instead of forcing the empty-scan tail.
         return
 
     for off, bad in ((0x16, 0), (0x18, 0)):
         _cmp_word(cpu, mem.rw(ss, (bp + off) & 0xFFFF), bad)
         if mem.rw(ss, (bp + off) & 0xFFFF) == bad:
-            cpu.s.bx = 0x3294
-            finish_empty_scan()
+            # 6308/6311: zero draw-layer/logic-id does not enter the slot scan.
+            # The original falls through/jumps directly to the shared RET at
+            # 741F, preserving the incoming BX and the zero-compare flags.  Do
+            # not force the empty-scan sentinel tail here.
             return
     _cmp_word(cpu, mem.rw(ss, (bp + 0x18) & 0xFFFF), 0x0001)
     if mem.rw(ss, (bp + 0x18) & 0xFFFF) == 0x0001:
@@ -3366,11 +3510,13 @@ def _run_object_overlap_scan_62f6(cpu, *, parent: str, chain: str, cx_value: int
                     y_candidates.append((y_candidates[-1] - 8) & 0xFFFF)
                     y_candidates.append((y_candidates[-1] - 8) & 0xFFFF)
                 if cpu.s.dx in y_candidates:
+                    used_x_branch = False
                     ax = mem.rw(ds, (bx + 0x02) & 0xFFFF) & 0xFFF8
                     x_candidates = [ax, (ax - 8) & 0xFFFF]
                     if obj_type == 2 and logic_id not in (0x78, 0x79):
                         x_candidates.append((x_candidates[-1] - 8) & 0xFFFF)
                         x_candidates.append((x_candidates[-1] - 8) & 0xFFFF)
+                    used_x_branch = True
                     if cpu.s.cx in x_candidates:
                         # The original arrives at BEC5 with AX holding the
                         # matched tile X and BX pointing at the collided slot.
@@ -3383,9 +3529,13 @@ def _run_object_overlap_scan_62f6(cpu, *, parent: str, chain: str, cx_value: int
                             cx_value=cx_value,
                         )
                         return
-                # Leave AX approximately as the last tested Y coordinate, as the
-                # original unrolled code does on the no-collision path.
-                cpu.s.ax = y_candidates[-1]
+                    # The original leaves AX at the last X candidate once the
+                    # X branch has been entered, even on a miss.
+                    cpu.s.ax = x_candidates[-1]
+                else:
+                    # Leave AX at the last tested Y coordinate when the Y
+                    # branch misses entirely.
+                    cpu.s.ax = y_candidates[-1]
         if bx == 0x3294:
             cpu.s.bx = bx
             finish_empty_scan()
@@ -3424,20 +3574,20 @@ def _run_object_postmove_bc4b(cpu, *, parent: str, chain: str, cx_value: int, cl
     if not skip_precise_x:
         _cmp_word(cpu, x, 0xFF40)
         if sx < -0x00C0:
-            _run_deactivate_bd17_observed(cpu, parent=parent, chain=f"{chain} -> BC4B", cx_value=cx_value)
+            _run_deactivate_bd17_observed(cpu, parent=parent, chain=f"{chain} -> BC4B", cx_value=cx_value, pop_return=False)
             return
         _cmp_word(cpu, x, 0x00F0)
         if sx >= 0x00F0:
-            _run_deactivate_bd17_observed(cpu, parent=parent, chain=f"{chain} -> BC4B", cx_value=cx_value)
+            _run_deactivate_bd17_observed(cpu, parent=parent, chain=f"{chain} -> BC4B", cx_value=cx_value, pop_return=False)
             return
     else:
         _cmp_word(cpu, x, 0xFFEC)
         if sx < -0x0014:
-            _run_deactivate_bd17_observed(cpu, parent=parent, chain=f"{chain} -> BC4B", cx_value=cx_value)
+            _run_deactivate_bd17_observed(cpu, parent=parent, chain=f"{chain} -> BC4B", cx_value=cx_value, pop_return=False)
             return
         _cmp_word(cpu, x, 0x00F0)
         if sx >= 0x00F0:
-            _run_deactivate_bd17_observed(cpu, parent=parent, chain=f"{chain} -> BC4B", cx_value=cx_value)
+            _run_deactivate_bd17_observed(cpu, parent=parent, chain=f"{chain} -> BC4B", cx_value=cx_value, pop_return=False)
             return
 
     _cmp_word(cpu, global_disable, 0)
@@ -3467,7 +3617,11 @@ def _run_object_postmove_bc4b(cpu, *, parent: str, chain: str, cx_value: int, cl
                         _run_view_window_check_aa46(cpu)
                         cpu.s.sp = saved_sp
                     elif obj_type == 2:
-                        _raise_unverified_path(cpu, parent=parent, chain=f"{chain} -> BCCB", target_ip=0xAA71, bp=bp, cx_value=cx_value)
+                        # BCF9 CALL AA71 leaves BCFC below BCCB's live frame.
+                        saved_sp = cpu.s.sp & 0xFFFF
+                        cpu.push(0xBCFC)
+                        run_postmove_contact_window_aa71(cpu)
+                        cpu.s.sp = saved_sp
                     else:
                         return
                     if cpu.get_flag(CF):
@@ -3623,7 +3777,7 @@ def _run_tile_lookup_505b(cpu) -> None:
 
 
 
-def _run_deactivate_bd17_observed(cpu, *, parent: str, chain: str, cx_value: int) -> None:
+def _run_deactivate_bd17_observed(cpu, *, parent: str, chain: str, cx_value: int, pop_return: bool = True) -> None:
     """Run observed 1010:BD17 object deactivation tail.
 
     BD17 is reached from BC4B when an object leaves the allowed X bounds.  The
@@ -3643,25 +3797,12 @@ def _run_deactivate_bd17_observed(cpu, *, parent: str, chain: str, cx_value: int
     _cmp_word(cpu, draw_layer, 0x0004)
     if draw_layer == 0x0004:
         logic_id = mem.rw(ss, (bp + 0x18) & 0xFFFF)
-
-        # C054 observed C14F family: these logic ids decrement the global live
-        # counter A47E.  The new crash hits logic_id 20h here.
-        c14f_ids = {
-            0x0014, 0x0016, 0x0017, 0x0018,
-            0x001D, 0x001E, 0x0020, 0x0021, 0x0022,
-            0x0061, 0x0062, 0x0065,
-            0x007F, 0x0080, 0x0081,
-        }
-        if logic_id in c14f_ids:
-            _sub_mem_word(cpu, ds, 0xA47E, 0x0001)  # DEC word ptr DS:A47E
-        elif logic_id == 0x0093:
-            mem.wb(ds, 0x98A8, 0x01)
-            _sub_mem_word(cpu, ds, 0xA47E, 0x0001)
-        else:
-            _raise_unverified_path(
-                cpu, parent=parent, chain=f"{chain} -> BD17 -> C054",
-                target_ip=0xC054, bp=bp, cx_value=cx_value,
-            )
+        # Draw-layer 4 always CALLs C054.  The nested near-call leaves BD5F
+        # below SP as stack scratch, which the verifier can see after the outer
+        # BC4B return.  C054 owns the live-counter decrement family; BD17 then
+        # continues with its small draw-layer-4 cleanup tail.
+        run_object_deactivate_logic_dispatch_c054(cpu)
+        mem.ww(ss, (cpu.s.sp - 2) & 0xFFFF, 0xBD5F)
 
         _cmp_word(cpu, logic_id, 0x0001)
         if logic_id == 0x0001:
@@ -3682,17 +3823,27 @@ def _run_deactivate_bd17_observed(cpu, *, parent: str, chain: str, cx_value: int
         return
 
     logic_id = mem.rw(ss, (bp + 0x18) & 0xFFFF)
-    for target, counter in ((0x0007, 0xA970), (0x0008, 0xA970), (0x0005, 0xA976), (0x0006, 0xA976), (0x000C, 0xA974)):
+    for target, counter in (
+        (0x0007, 0xA970),
+        (0x0008, 0xA970),
+        (0x0009, 0xA972),
+        (0x0006, 0xA976),
+        (0x0005, 0xA976),
+        (0x000C, 0xA974),
+        (0x000A, 0xA972),
+    ):
         _cmp_word(cpu, logic_id, target)
         if logic_id == target:
             if mem.rw(ds, counter) != 0:
                 _sub_mem_word(cpu, ds, counter, 0x0001)
             return
 
-    _raise_unverified_path(
-        cpu, parent=parent, chain=f"{chain} -> BD17",
-        target_ip=0xBD17, bp=bp, cx_value=cx_value,
-    )
+    # BD17 is usually called as a standalone helper in tests/older lifted paths,
+    # but BC4B reaches it by a direct branch and its wrapper owns the final RET
+    # pop.  Preserve both boundary shapes explicitly.
+    if pop_return:
+        cpu.s.ip = cpu.pop()
+    return
 
 
 def _run_object_behavior_aed8(cpu, *, parent: str, chain: str, cx_value: int) -> None:
@@ -3723,18 +3874,18 @@ def _run_object_behavior_aed8(cpu, *, parent: str, chain: str, cx_value: int) ->
     x = mem.rw(ss, (bp + 0x02) & 0xFFFF)
     _cmp_word(cpu, x, 0x0008)
     if x < 0x0008:
-        _run_deactivate_bd17_observed(cpu, parent=parent, chain=f"{chain} -> AED8 -> AD5A", cx_value=cx_value)
+        _run_deactivate_bd17_observed(cpu, parent=parent, chain=f"{chain} -> AED8 -> AD5A", cx_value=cx_value, pop_return=False)
         cpu.s.ip = cpu.pop()
         return
     _cmp_word(cpu, x, 0x00E0)
     if x > 0x00E0:
-        _run_deactivate_bd17_observed(cpu, parent=parent, chain=f"{chain} -> AED8 -> AD5A", cx_value=cx_value)
+        _run_deactivate_bd17_observed(cpu, parent=parent, chain=f"{chain} -> AED8 -> AD5A", cx_value=cx_value, pop_return=False)
         cpu.s.ip = cpu.pop()
         return
     y = mem.rw(ss, (bp + 0x04) & 0xFFFF)
     _cmp_word(cpu, y, 0x00C8)
     if y > 0x00C8:
-        _run_deactivate_bd17_observed(cpu, parent=parent, chain=f"{chain} -> AED8 -> AD5A", cx_value=cx_value)
+        _run_deactivate_bd17_observed(cpu, parent=parent, chain=f"{chain} -> AED8 -> AD5A", cx_value=cx_value, pop_return=False)
         cpu.s.ip = cpu.pop()
         return
     draw_layer = mem.rw(ss, (bp + 0x16) & 0xFFFF)
@@ -4307,6 +4458,37 @@ def overkill_movement_direction_helper_5db2(cpu):
     if _self_disable_if_patched(cpu, 0x5DB2, _SIG_5DB2, "overkill_movement_direction_helper_5db2"):
         return
     _run_movement_direction_5db2(cpu)
+    cpu.s.ip = cpu.pop()
+
+
+@registry.replace(0x1010, 0xAA01, "overkill_object_logic_call_aa2b_aa01")
+def overkill_object_logic_call_aa2b_aa01(cpu):
+    """Hook wrapper for A9E0 active-entry CALL AA2B glue."""
+    call_object_logic_from_scan_aa01(cpu, _self_disable_if_patched)
+
+
+@registry.replace(0x1010, 0xAA04, "overkill_object_logic_scan_tail_aa04")
+def overkill_object_logic_scan_tail_aa04(cpu):
+    """Hook wrapper for A9E0 post-logic POP/LOOP glue."""
+    finish_object_logic_scan_tail_aa04(cpu, _self_disable_if_patched)
+
+
+@registry.replace(0x1010, 0xAC97, "overkill_object_slot_scan_ac97")
+def overkill_object_slot_scan_ac97(cpu):
+    """Lift the hot 35-slot object-record scan at 1010:AC97."""
+    run_object_slot_scan_ac97(cpu)
+
+
+@registry.replace(0x1010, 0xBCB1, "overkill_postmove_y_clamp_bcb1")
+def overkill_postmove_y_clamp_bcb1(cpu):
+    """Lift the hot BC4B Y-clamp leaf at 1010:BCB1."""
+    run_postmove_y_clamp_bcb1(cpu)
+
+
+@registry.replace(0x1010, 0xBC4B, "overkill_object_postmove_bc4b")
+def overkill_object_postmove_bc4b(cpu):
+    """Lift the hot BC4B post-move helper call-site at 1010:BC4B."""
+    _run_object_postmove_bc4b(cpu, parent="1010:BC4B", chain="BC4B", cx_value=cpu.s.cx & 0xFFFF)
     cpu.s.ip = cpu.pop()
 
 
@@ -5275,6 +5457,27 @@ def overkill_postcopy_blit_wait_loop_58df(cpu):
             return
 
 
+
+
+@registry.replace(0x1010, 0x06E5, "overkill_fast_timer_isr_06e5")
+def overkill_fast_timer_isr_06e5(cpu):
+    if _self_disable_if_patched(cpu, 0x06E5, SIG_FAST_TIMER_ISR_06E5, "overkill_fast_timer_isr_06e5"):
+        return
+    run_fast_timer_isr_06e5(cpu)
+
+
+@registry.replace(0x1010, 0xD50E, "overkill_pc_speaker_tick_d50e")
+def overkill_pc_speaker_tick_d50e(cpu):
+    if _self_disable_if_patched(cpu, 0xD50E, SIG_PC_SPEAKER_TICK_D50E, "overkill_pc_speaker_tick_d50e"):
+        return
+    run_pc_speaker_tick_d50e(cpu)
+
+
+# Backward-compatible import point for older diagnostics/scripts.  New code should
+# import from overkill_port.games.overkill.sounds directly.
+_deliver_overkill_timer_irq0 = deliver_overkill_timer_irq0
+
+
 @registry.replace(0x1010, 0x0679, "overkill_wait_timer_tick_0679")
 def overkill_wait_timer_tick_0679(cpu):
     """Replace the timer-tick busy-wait at 1010:0679.
@@ -5317,7 +5520,7 @@ def overkill_wait_timer_tick_0679(cpu):
     if flag == 0:
         delivered = 0
         while flag == 0 and delivered < 8:
-            if not _deliver_overkill_timer_irq0(cpu):
+            if not deliver_overkill_timer_irq0(cpu):
                 raise RuntimeError(
                     "1010:0679 timer wait needs OVERKILL INT 08h at 1010:06E5; "
                     "no synthetic timer fallback is allowed"
@@ -5335,52 +5538,6 @@ def overkill_wait_timer_tick_0679(cpu):
     if cpu.timer_pacer is not None:
         cpu.timer_pacer()
 
-
-def _deliver_overkill_timer_irq0(cpu, *, max_steps: int = 200_000) -> bool:
-    """Synchronously run OVERKILL's installed INT 08h timer ISR if present.
-
-    The game sound code lives in the real ISR at ``1010:06E5``.  The original
-    handler chains the old BIOS timer every fourth tick via ``JMP FAR
-    CS:[0738]``; in this VM that saved BIOS vector is often 0000:0000, so stop
-    at the known chain point after the game-side work and restore the interrupt
-    frame locally.
-    """
-    mem = cpu.mem
-    off = mem.rw(0, 0x20)
-    seg = mem.rw(0, 0x22)
-    if (seg & 0xFFFF, off & 0xFFFF) != (0x1010, 0x06E5):
-        return False
-
-    ret_cs, ret_ip = cpu.s.cs & 0xFFFF, cpu.s.ip & 0xFFFF
-    sp0 = cpu.s.sp & 0xFFFF
-    cpu.push(cpu.s.flags)
-    cpu.push(ret_cs)
-    cpu.push(ret_ip)
-    cpu.set_flag(IF, False)
-    cpu.set_flag(TF, False)
-    cpu.s.cs = seg & 0xFFFF
-    cpu.s.ip = off & 0xFFFF
-
-    for _ in range(max_steps):
-        if cpu.s.sp == sp0 and cpu.addr() == (ret_cs, ret_ip):
-            return True
-        if cpu.addr() == (0x1010, 0x072F):
-            # Chain path after the game work:
-            #   POP DS; POP AX; STI; JMP FAR CS:[0738]
-            cpu.s.ds = cpu.pop()
-            cpu.s.ax = cpu.pop()
-            cpu.set_flag(IF, True)
-            if cpu.port_writer:
-                cpu.port_writer(cpu, 0x20, 0x20, 8)
-            cpu.s.ip = cpu.pop()
-            cpu.s.cs = cpu.pop()
-            cpu.s.flags = cpu.pop()
-            return cpu.s.sp == sp0 and cpu.addr() == (ret_cs, ret_ip)
-        cpu.step()
-    raise RuntimeError(
-        f"OVERKILL INT 08h timer ISR did not return "
-        f"(cs:ip={cpu.s.cs:04X}:{cpu.s.ip:04X})"
-    )
 
 
 
@@ -5550,9 +5707,18 @@ def _interpret_current_instruction_without_hook(cpu) -> None:
     """Interpret the current instruction when an overlaid address no longer matches a hook signature."""
     key = cpu.addr()
     fn = cpu.replacement_hooks.pop(key, None)
+    ctx = (
+        cpu.coverage_telemetry.bounded_original(key, "overlaid hook signature mismatch")
+        if cpu.coverage_telemetry is not None
+        else None
+    )
     try:
+        if ctx is not None:
+            ctx.__enter__()
         cpu.step()
     finally:
+        if ctx is not None:
+            ctx.__exit__(None, None, None)
         if fn is not None:
             cpu.replacement_hooks[key] = fn
 
@@ -5854,35 +6020,14 @@ def overkill_cga_xy_to_di_5a24(cpu):
 
 @registry.replace(0x1010, 0x5AC8, "overkill_dispatch_draw_object_5ac8")
 def overkill_dispatch_draw_object_5ac8(cpu):
-    """Collapse the hot CGA object draw dispatcher at 1010:5AC8."""
-    s = cpu.s
-    cs = s.cs & 0xFFFF
-    ss = s.ss & 0xFFFF
-    bp = s.bp & 0xFFFF
-    mode = cpu.mem.rw(cs, 0x95BC)
-    bx = cpu.mem.rw(ss, (bp + 0x14) & 0xFFFF)
-    bx = (bx + mode + mode + mode) & 0xFFFF
-    s.bx = bx
-    s.bx = cpu.shift(4, s.bx, 1, 16)  # SHL BX,1; final flags before JMP.
-    s.ip = cpu.mem.rw(cs, (0x5AE2 + s.bx) & 0xFFFF)
+    """Hook wrapper for OVERKILL 1010:5AC8 draw-object dispatcher."""
+    dispatch_draw_object_5ac8(cpu)
 
 
 @registry.replace(0x1010, 0x5A92, "overkill_dispatch_present_object_5a92")
 def overkill_dispatch_present_object_5a92(cpu):
-    """Collapse the hot object-present dispatcher at 1010:5A92."""
-    s = cpu.s
-    cs = s.cs & 0xFFFF
-    ss = s.ss & 0xFFFF
-    bp = s.bp & 0xFFFF
-    s.es = cpu.mem.rw(cs, 0x9598)
-    s.di = cpu.mem.rw(ss, (bp + 0x0C) & 0xFFFF)
-    s.si = cpu.mem.rw(ss, (bp + 0x0E) & 0xFFFF)
-    mode = cpu.mem.rw(cs, 0x95BC)
-    bx = cpu.mem.rw(ss, (bp + 0x14) & 0xFFFF)
-    bx = (bx + mode + mode + mode) & 0xFFFF
-    s.bx = bx
-    s.bx = cpu.shift(4, s.bx, 1, 16)  # SHL BX,1; final flags before JMP.
-    s.ip = cpu.mem.rw(cs, (0x5AB6 + s.bx) & 0xFFFF)
+    """Hook wrapper for OVERKILL 1010:5A92 present-object dispatcher."""
+    dispatch_present_object_5a92(cpu)
 
 
 @registry.replace(0x1010, 0xAA44, "overkill_clc_ret_aa44")

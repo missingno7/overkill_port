@@ -181,6 +181,7 @@ def strip_overlay_path_components_0701(cpu) -> None:
             if al == 0x5C:  # '\\' path separator; BP points after it because LODSB incremented SI.
                 bp = si
         s.si = bp & 0xFFFF
+        s.bp = bp & 0xFFFF
 
     # TEST AH,2 is the live flag producer when the DI branch is skipped.
     ah = cpu.get_reg8(4)
@@ -204,6 +205,7 @@ def strip_overlay_path_components_0701(cpu) -> None:
         if al == 0x5C:
             bp = di
     s.di = bp & 0xFFFF
+    s.bp = bp & 0xFFFF
     s.ip = cpu.pop()
     s.cs = cpu.pop()
 
@@ -272,3 +274,42 @@ def find_overlay_directory_entry_05a1(cpu) -> None:
             s.ip = 0x0640
             return
         # JMP 05A1; continue the Python loop.
+
+SIG_OVERLAY_COUNTER_STRIDE_LOOP_1F8F_0960 = bytes.fromhex(
+    "ff 04 81 3c c0 00 75 04 c7 04 00 00 83 c6 06 e2 ef c3"
+)
+
+
+def run_overlay_counter_stride_loop_1f8f_0960(cpu, self_disable_if_patched) -> None:
+    """Lift OVERKILL overlay routine 1F8F:0960.
+
+    This tiny near helper is hot during Tandy gameplay.  It walks ``CX`` words
+    spaced six bytes apart, increments each counter, wraps counters that reach
+    ``00C0h`` back to zero, then returns.  The final FLAGS are those of the
+    last ``ADD SI,0006h``; the following ``LOOP``/``RET`` do not affect them.
+    """
+    if self_disable_if_patched(
+        cpu,
+        0x0960,
+        SIG_OVERLAY_COUNTER_STRIDE_LOOP_1F8F_0960,
+        "overkill_overlay_counter_stride_loop_1f8f_0960",
+    ):
+        return
+
+    s = cpu.s
+    mem = cpu.mem
+    ds = s.ds & 0xFFFF
+    count = loop_count(s.cx)
+    si = s.si & 0xFFFF
+
+    last_si = si
+    for _ in range(count):
+        value = (mem.rw(ds, si) + 1) & 0xFFFF
+        mem.ww(ds, si, 0 if value == 0x00C0 else value)
+        last_si = si
+        si = (si + 0x0006) & 0xFFFF
+
+    s.si = si
+    s.cx = 0
+    cpu.set_add_flags(last_si, 0x0006, last_si + 0x0006, 16)
+    s.ip = cpu.pop()
