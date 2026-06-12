@@ -138,7 +138,155 @@ _SIG_EFAE = bytes.fromhex("8b 46 04 a3 fe d1 8b 46 02 a3 00 d2 8b 5e 18")
 _SIG_CCAA = bytes.fromhex("b9 08 00 26 8b 04 26 3b 05 74 05 b2 01 26 89 05")
 _SIG_CCC4 = bytes.fromhex("b9 08 00 26 8b 04 26 3b 05 74 05 b2 01 26 89 05")
 _SIG_CCF0 = bytes.fromhex("b9 20 00 26 8a 04 26 3a 05 74 05 b2 01 26 88 05")
+_SIG_1F8F_0960 = bytes.fromhex("ff 04 81 3c c0 00 75 04 c7 04 00 00 83 c6 06 e2 ef c3")
+_SIG_3153 = bytes.fromhex("3c 10 75 03 e9 e3 01 3c 11 75 03 e9 c1 01 32 e4")
 
+
+
+@registry.replace(0x1010, 0x3153, "overkill_tandy_text_glyph_3153")
+def overkill_tandy_text_glyph_3153(cpu):
+    """Lift OVERKILL Tandy text/glyph routine 1010:3153.
+
+    The routine is reached through the generic text dispatcher at 1010:519A
+    when the active video text backend is Tandy.  It handles two inline control
+    bytes (10h = set colour, 11h = set cursor) and otherwise draws one 8-row
+    glyph into the Tandy work/video buffer using the original font and nibble
+    mask tables.
+    """
+    if _self_disable_if_patched(cpu, 0x3153, _SIG_3153, "overkill_tandy_text_glyph_3153"):
+        return
+
+    s = cpu.s
+    mem = cpu.mem
+    ds = s.ds & 0xFFFF
+    ss = s.ss & 0xFFFF
+    cs = s.cs & 0xFFFF
+    bp = s.bp & 0xFFFF
+    al = s.ax & 0x00FF
+
+    if al == 0x10:
+        old_bp = bp
+        bp = (bp + 1) & 0xFFFF
+        s.bp = bp
+        # INC preserves CF; the following MOVs do not change FLAGS.
+        old_cf = cpu.get_flag(CF)
+        cpu.set_add_flags(old_bp, 1, old_bp + 1, 16)
+        cpu.set_flag(CF, old_cf)
+        value = mem.rb(ss, bp)
+        s.ax = (s.ax & 0xFF00) | value
+        mem.wb(ds, 0x215C, value)
+        s.ip = cpu.pop()
+        return
+
+    if al == 0x11:
+        row = mem.rb(ss, (bp + 1) & 0xFFFF)
+        product = row * 0x0140
+        s.dx = (product >> 16) & 0xFFFF
+        ax = product & 0xFFFF
+        mem.ww(ds, 0x2160, ax)
+        col = mem.rb(ss, (bp + 2) & 0xFFFF)
+        # The Tandy control path shifts AL only, preserving AH from the row*0140
+        # product in AX.
+        ax = (ax & 0xFF00) | col
+        ax = (ax & 0xFF00) | ((ax << 1) & 0x00FF)
+        ax = (ax & 0xFF00) | ((ax << 1) & 0x00FF)
+        mem.wb(ds, 0x215E, ax & 0x00FF)
+        old_bp = bp
+        bp = (bp + 2) & 0xFFFF
+        s.ax = ax & 0xFFFF
+        s.cx = 0x0140
+        s.bp = bp
+        cpu.set_add_flags(old_bp, 2, old_bp + 2, 16)
+        s.ip = cpu.pop()
+        return
+
+    # Normal glyph path.  The original zeroes AH, multiplies the character by
+    # eight via three SHL AX, and reads eight source bytes from DS:1816+char*8.
+    ax = (al << 3) & 0xFFFF
+    si = (ax + 0x1816) & 0xFFFF
+    es = mem.rw(cs, 0x95A4)
+    dx = mem.rb(ds, 0x215E)
+    dx = (dx + mem.rw(ds, 0x2160)) & 0xFFFF
+    di = dx
+    colour = mem.rb(ds, 0x215C)
+    dl = (((colour << 4) & 0xFF) | colour) & 0xFF
+    dx = (dl << 8) | dl
+
+    bx = s.bx & 0xFFFF
+    cx = s.cx & 0xFFFF
+    last_ax = ax
+    for _ in range(8):
+        glyph_byte = mem.rb(ds, si)
+        si = (si + 1) & 0xFFFF
+        ax = glyph_byte
+        bx = ((ax << 2) + 0x1514) & 0xFFFF
+        last_ax = mem.rw(ds, bx)
+        cx = last_ax & dx
+        mem.ww(es, di, cx)
+        last_ax = mem.rw(ds, (bx + 2) & 0xFFFF)
+        cx = last_ax & dx
+        mem.ww(es, (di + 2) & 0xFFFF, cx)
+        before_di = di
+        di = (di + 0x2000) & 0xFFFF
+        cpu.set_add_flags(before_di, 0x2000, before_di + 0x2000, 16)
+        cpu.set_logic_flags(di & 0x8000, 16)
+        if di & 0x8000:
+            before_di = di
+            di = (di + 0x80A0) & 0xFFFF
+            cpu.set_add_flags(before_di, 0x80A0, before_di + 0x80A0, 16)
+
+    old_cursor_x = mem.rb(ds, 0x215E)
+    new_cursor_x = (old_cursor_x + 4) & 0xFF
+    mem.wb(ds, 0x215E, new_cursor_x)
+    cpu.set_add_flags(old_cursor_x, 4, old_cursor_x + 4, 8)
+    cpu.set_sub_flags(new_cursor_x, 0xA0, new_cursor_x - 0xA0, 8)
+    if new_cursor_x >= 0xA0:
+        mem.wb(ds, 0x215E, 0)
+        old_y = mem.rw(ds, 0x2160)
+        mem.ww(ds, 0x2160, (old_y + 0x0140) & 0xFFFF)
+        cpu.set_add_flags(old_y, 0x0140, old_y + 0x0140, 16)
+
+    s.ax = last_ax & 0xFFFF
+    s.bx = bx & 0xFFFF
+    s.cx = cx & 0xFFFF
+    s.dx = dx & 0xFFFF
+    s.si = si & 0xFFFF
+    s.di = di & 0xFFFF
+    s.es = es & 0xFFFF
+    s.ip = cpu.pop()
+
+
+@registry.replace(0x1F8F, 0x0960, "overkill_overlay_counter_stride_loop_1f8f_0960")
+def overkill_overlay_counter_stride_loop_1f8f_0960(cpu):
+    """Lift OVERKILL overlay routine 1F8F:0960.
+
+    This tiny near helper is hot during Tandy gameplay.  It walks ``CX`` words
+    spaced six bytes apart, increments each counter, wraps counters that reach
+    ``00C0h`` back to zero, then returns.  The final FLAGS are those of the
+    last ``ADD SI,0006h``; the following ``LOOP``/``RET`` do not affect them.
+    """
+    if _self_disable_if_patched(cpu, 0x0960, _SIG_1F8F_0960, "overkill_overlay_counter_stride_loop_1f8f_0960"):
+        return
+
+    s = cpu.s
+    mem = cpu.mem
+    ds = s.ds & 0xFFFF
+    count = s.cx & 0xFFFF
+    if count == 0:
+        count = 0x10000
+    si = s.si & 0xFFFF
+
+    last_si = si
+    for _ in range(count):
+        value = (mem.rw(ds, si) + 1) & 0xFFFF
+        mem.ww(ds, si, 0 if value == 0x00C0 else value)
+        last_si = si
+        si = (si + 0x0006) & 0xFFFF
+
+    s.si = si
+    s.cx = 0
+    cpu.set_add_flags(last_si, 0x0006, last_si + 0x0006, 16)
+    s.ip = cpu.pop()
 
 
 @registry.replace(0x1010, 0xC916, "overkill_file_checksum_loop")

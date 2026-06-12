@@ -191,6 +191,8 @@ class HookVerifierConfig:
 
 
 DEFAULT_STOPS: dict[Addr, HookStop] = {
+    (0x1010, 0x3153): HookStop("near_ret"),
+    (0x1F8F, 0x0960): HookStop("near_ret"),
     (0x1010, 0x017E): HookStop("fixed_ip", 0x018B),
     (0x254A, 0x05A1): HookStop("fixed_ips", ips=(0x0607, 0x0640)),
     (0x254A, 0x05D9): HookStop("fixed_ips", ips=(0x0607, 0x0637)),

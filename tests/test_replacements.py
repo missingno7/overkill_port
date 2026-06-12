@@ -5282,3 +5282,68 @@ def test_object_allocator_7573_full_pool_matches_original_exhaustion():
     assert asm.s.cx == hook.s.cx == 0
     assert asm.s.flags == hook.s.flags
     assert asm.mem.rw(0x2000, 0x95DA) == hook.mem.rw(0x2000, 0x95DA) == 0x3294
+
+
+def test_overlay_counter_stride_loop_1f8f_0960_matches_interpreted_asm():
+    from overkill_port.cpu import CPU8086, CPUState
+    from overkill_port.memory import Memory
+    from overkill_port.replacements import overkill_overlay_counter_stride_loop_1f8f_0960
+
+    code = bytes.fromhex("ff 04 81 3c c0 00 75 04 c7 04 00 00 83 c6 06 e2 ef c3")
+
+    def make_cpu(use_hook: bool) -> CPU8086:
+        mem = Memory()
+        mem.load(0x1F8F, 0x0960, code)
+        for i, value in enumerate((0x00BE, 0x00BF, 0xFFFF, 0x0001, 0x00C0)):
+            mem.ww(0x2000, (0x0100 + i * 6) & 0xFFFF, value)
+        mem.ww(0x3000, 0x8FFE, 0xBEEF)
+        state = CPUState(
+            ax=0x1111, bx=0x2222, cx=5, dx=0x3333, si=0x0100, di=0x4444,
+            bp=0x5555, sp=0x8FFE, cs=0x1F8F, ds=0x2000, es=0x6666,
+            ss=0x3000, ip=0x0960, flags=0x0286,
+        )
+        cpu = CPU8086(mem, state)
+        cpu.trace_enabled = False
+        if use_hook:
+            cpu.replacement_hooks[(0x1F8F, 0x0960)] = overkill_overlay_counter_stride_loop_1f8f_0960
+        return cpu
+
+    asm = make_cpu(False)
+    hook = make_cpu(True)
+    for _ in range(200):
+        if asm.addr() == (0x1F8F, 0xBEEF):
+            break
+        asm.step()
+    hook.step()
+
+    assert asm.addr() == hook.addr() == (0x1F8F, 0xBEEF)
+    assert asm.s.snapshot() == hook.s.snapshot()
+    assert asm.mem.data == hook.mem.data
+
+
+def test_tandy_text_glyph_3153_hook_verifies_on_gameplay_snapshot():
+    from pathlib import Path
+    from overkill_port.hook_verify import HookVerifierConfig, HookVerifyLimitReached, install_hook_verifier
+    from overkill_port.snapshot import load_snapshot
+
+    root = Path(__file__).resolve().parents[1]
+    snap = root / "artifacts" / "snapshot_play_tandy_20260612_163127"
+    assert snap.exists(), "gameplay snapshot for 1010:3153 text glyph verification is missing"
+
+    rt = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
+    verifier = install_hook_verifier(
+        rt,
+        HookVerifierConfig(
+            hooks={(0x1010, 0x3153)},
+            stop_on_diff=True,
+            max_verified=50,
+            asm_max_steps=3000,
+        ),
+    )
+
+    try:
+        rt.cpu.run(500000)
+    except HookVerifyLimitReached:
+        pass
+
+    assert verifier.counts[(0x1010, 0x3153)] == 50
