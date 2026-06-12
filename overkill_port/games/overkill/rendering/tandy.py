@@ -1040,16 +1040,18 @@ def _tandy_block_header_44d7(cpu) -> bool:
     _add_mem_word(cpu, cs, 0x0BE0, 2)
 
     lodsw_delta = -2 if cpu.get_flag(DF) else 2
+    mirror_headers = mem.rw(cs, 0x0BD8) != 0
+
     s.ax = mem.rw(ds, s.si)
     s.si = (s.si + lodsw_delta) & 0xFFFF
-    if mem.rw(cs, 0x0BD8) != 0:
+    if mirror_headers:
         mem.ww(cs, s.bx, s.di)
-    _stosw(cpu)
+        _stosw(cpu)
     mem.ww(cs, 0x5B9E, s.ax)
 
     s.ax = mem.rw(ds, s.si)
     s.si = (s.si + lodsw_delta) & 0xFFFF
-    if mem.rw(cs, 0x0BD8) != 0:
+    if mirror_headers:
         _stosw(cpu)
     mem.ww(cs, 0x5B9C, s.ax)
     _inc_ax_preserve_cf(cpu)
@@ -1067,12 +1069,6 @@ def expand_tandy_list_33af(cpu, runtime: TandyRenderRuntime) -> None:
         return
 
     s = cpu.s
-    if cpu.mem.rw(s.cs, 0x0BD8) == 0:
-        cpu.replacement_hooks.pop((s.cs & 0xFFFF, 0x33AF), None)
-        cpu.hook_names.pop((s.cs & 0xFFFF, 0x33AF), None)
-        s.ip = 0x33AF
-        return
-
     ss = s.ss & 0xFFFF
     while True:
         # CALL 44D7 writes return IP 33B2 below SP, then RET restores SP.  Keep

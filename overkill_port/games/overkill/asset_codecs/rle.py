@@ -135,27 +135,37 @@ def decode_vertical_rle_columns(cpu) -> None:
     start_di = cpu.mem.rw(ds, 0x023C)
     cpu.s.di = start_di
 
-    cpu.push(0x03B3)
-    read_packed_word_le(cpu)
-    if cpu.s.ip == OVERKILL_LOAD_ERROR_IP:
+    def read_word_from_call(return_ip: int) -> bool:
+        # 03A8 is a jump-style loader routine, but its helper reads are normal
+        # near CALLs.  Keep those return frames live while running the lifted
+        # 0615 body so verifier-visible freed stack scratch matches ASM.
+        cpu.push(return_ip & 0xFFFF)
+        read_packed_word_le(cpu)
+        if cpu.s.ip == OVERKILL_LOAD_ERROR_IP:
+            return False
+        cpu.s.ip = cpu.pop()
+        return True
+
+    def read_byte_from_call(return_ip: int) -> bool:
+        cpu.push(return_ip & 0xFFFF)
+        read_packed_byte(cpu)
+        if cpu.s.ip == OVERKILL_LOAD_ERROR_IP:
+            return False
+        cpu.s.ip = cpu.pop()
+        return True
+
+    if not read_word_from_call(0x03B3):
         return
-    cpu.s.ip = cpu.pop()
     word0 = cpu.s.ax & 0xFFFF
     cpu.mem.ww(cs, 0x03A2, word0)
 
-    cpu.push(0x03BB)
-    read_packed_word_le(cpu)
-    if cpu.s.ip == OVERKILL_LOAD_ERROR_IP:
+    if not read_word_from_call(0x03BA):
         return
-    cpu.s.ip = cpu.pop()
     word1 = cpu.s.ax & 0xFFFF
     cpu.mem.ww(ds, 0x03A4, word1)
 
-    cpu.push(0x03C3)
-    read_packed_word_le(cpu)
-    if cpu.s.ip == OVERKILL_LOAD_ERROR_IP:
+    if not read_word_from_call(0x03C0):
         return
-    cpu.s.ip = cpu.pop()
     word2 = cpu.s.ax & 0xFFFF
     cpu.mem.ww(ds, 0x03A6, word2)
 
@@ -168,13 +178,15 @@ def decode_vertical_rle_columns(cpu) -> None:
     outer_di = cpu.s.di & 0xFFFF
 
     while cpu.s.cx != 0:
-        saved_outer_cx = cpu.s.cx & 0xFFFF
-        saved_outer_di = outer_di & 0xFFFF
-        cpu.s.di = saved_outer_di
+        cpu.s.di = outer_di & 0xFFFF
+        # Original saves the outer LOOP counter and column DI on the real stack:
+        #   PUSH CX; PUSH DI; ... ; POP DI; INC DI; POP CX; LOOP ...
+        # The words remain below SP after return and are compared by hook_verify.
+        cpu.push(cpu.s.cx & 0xFFFF)
+        cpu.push(cpu.s.di & 0xFFFF)
 
         while True:
-            read_packed_byte(cpu)
-            if cpu.s.ip == OVERKILL_LOAD_ERROR_IP:
+            if not read_byte_from_call(0x03CD):
                 return
             control = cpu.get_reg8(0)
             cpu.set_sub_flags(control, 0x80, control - 0x80, 8)  # CMP AL,80h
@@ -199,8 +211,7 @@ def decode_vertical_rle_columns(cpu) -> None:
                 cpu.set_reg8(4, bl)
                 cpu.set_reg8(3, ah)
 
-                read_packed_byte(cpu)
-                if cpu.s.ip == OVERKILL_LOAD_ERROR_IP:
+                if not read_byte_from_call(0x03DC):
                     return
 
                 ah = cpu.get_reg8(4)
@@ -221,20 +232,20 @@ def decode_vertical_rle_columns(cpu) -> None:
             # Literal run: PUSH AX; CALL 0624; STOSB; INC [0244]; POP AX;
             # DEC AL; JNS.
             while True:
-                saved_ax = cpu.s.ax & 0xFFFF
-                read_packed_byte(cpu)
-                if cpu.s.ip == OVERKILL_LOAD_ERROR_IP:
+                # PUSH AX; CALL 0624; ... ; POP AX; DEC AL; JNS ...
+                cpu.push(cpu.s.ax & 0xFFFF)
+                if not read_byte_from_call(0x03F4):
                     return
                 cpu.mem.wb(cpu.s.es, cpu.s.di, cpu.get_reg8(0))
                 cpu.s.di = (cpu.s.di + stride) & 0xFFFF
                 inc_mem_word_preserve_cf(cpu, ds, 0x0244)
-                cpu.s.ax = saved_ax
+                cpu.s.ax = cpu.pop()
                 dec_reg8_preserve_cf(cpu, 0)  # DEC AL
                 if cpu.get_flag(0x0080):       # JNS not taken when SF=1
                     break
 
         # POP DI; INC DI; POP CX; LOOP outer.
-        cpu.s.di = saved_outer_di
+        cpu.s.di = cpu.pop()
         old_di = cpu.s.di & 0xFFFF
         old_cf = cpu.get_flag(CF)
         cpu.s.di = (old_di + 1) & 0xFFFF
@@ -242,7 +253,7 @@ def decode_vertical_rle_columns(cpu) -> None:
         cpu.set_flag(CF, old_cf)
         outer_di = cpu.s.di
 
-        cpu.s.cx = saved_outer_cx
+        cpu.s.cx = cpu.pop()
         cpu.s.cx = (cpu.s.cx - 1) & 0xFFFF
         # LOOP does not affect flags.
 
@@ -271,9 +282,13 @@ def decode_linear_byte_rle(cpu) -> None:
         saved_bx = cpu.s.bx & 0xFFFF
         mem.ww(ds, 0x0612, saved_bx)
         ptr = mem.rw(ds, 0x0610)
+        cpu.set_sub_flags(ptr, 0x0610, ptr - 0x0610, 16)
         if ptr >= 0x0610:
             mem.ww(ds, 0x0610, 0x0410)
             saved_cx = cpu.s.cx & 0xFFFF
+            # 0624 does PUSH CX around DOS AH=3Fh.  SP is balanced, but the
+            # saved word remains visible below the caller's return frame.
+            mem.ww(cpu.s.ss, (cpu.s.sp - 2) & 0xFFFF, saved_cx)
             cpu.set_reg8(4, 0x3F)
             cpu.s.bx = mem.rw(ds, 0x0240)
             cpu.s.cx = 0x0200
@@ -288,8 +303,20 @@ def decode_linear_byte_rle(cpu) -> None:
             ptr = mem.rw(ds, 0x0610)
         value = rb(ds, ptr)
         cpu.set_reg8(0, value)
-        mem.ww(ds, 0x0610, (ptr + 1) & 0xFFFF)
+        old_ptr = mem.rw(ds, 0x0610)
+        old_cf = cpu.get_flag(CF)
+        mem.ww(ds, 0x0610, (old_ptr + 1) & 0xFFFF)
+        cpu.set_add_flags(old_ptr, 1, old_ptr + 1, 16)
+        cpu.set_flag(CF, old_cf)
         cpu.s.bx = mem.rw(ds, 0x0612)
+        return value
+
+    def read_byte_from_call(return_ip: int) -> int | None:
+        cpu.push(return_ip & 0xFFFF)
+        value = read_byte_from_0367_stream()
+        if value is None:
+            return None
+        cpu.s.ip = cpu.pop()
         return value
 
     def write_byte(value: int) -> None:
@@ -305,7 +332,7 @@ def decode_linear_byte_rle(cpu) -> None:
         if guard > 1_000_000:
             raise RuntimeError("OVERKILL 0367 byte RLE did not reach terminator")
 
-        control = read_byte_from_0367_stream()
+        control = read_byte_from_call(0x0372)
         if control is None:
             return
         cpu.set_sub_flags(control, 0x80, control - 0x80, 8)
@@ -321,7 +348,7 @@ def decode_linear_byte_rle(cpu) -> None:
             cpu.set_reg8(0, ah); cpu.set_reg8(4, al)
             ah = cpu.get_reg8(4); bl = cpu.get_reg8(3)
             cpu.set_reg8(4, bl); cpu.set_reg8(3, ah)
-            value = read_byte_from_0367_stream()
+            value = read_byte_from_call(0x0384)
             if value is None:
                 return
             ah = cpu.get_reg8(4); bl = cpu.get_reg8(3)
@@ -340,11 +367,12 @@ def decode_linear_byte_rle(cpu) -> None:
         saved_ah = cpu.get_reg8(4)
         count = control + 1
         for _ in range(count):
-            value = read_byte_from_0367_stream()
+            cpu.push(cpu.s.ax & 0xFFFF)
+            value = read_byte_from_call(0x0395)
             if value is None:
                 return
             write_byte(value)
+            cpu.s.ax = cpu.pop()
+            dec_reg8_preserve_cf(cpu, 0)
         mem.ww(ds, 0x0244, (mem.rw(ds, 0x0244) + count) & 0xFFFF)
         cpu.set_reg8(4, saved_ah)
-        cpu.set_reg8(0, 0)
-        dec_reg8_preserve_cf(cpu, 0)

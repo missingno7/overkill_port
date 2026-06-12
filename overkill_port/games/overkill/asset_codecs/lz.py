@@ -201,6 +201,20 @@ def decode_lz_asset(cpu) -> None:
         if counter == 0:
             mem.ww(cs, OUTPUT_COUNT_HIGH_OFF, (mem.rw(cs, OUTPUT_COUNT_HIGH_OFF) + 1) & 0xFFFF)
 
+    def input_from_call(return_ip: int) -> int:
+        # The full decoder inlines ED97 for speed, but the original ECF2 code
+        # reaches it through near CALLs.  Keep those call frames live so freed
+        # stack scratch, including the final ED5F terminator read, matches ASM.
+        cpu.push(return_ip & 0xFFFF)
+        value = read_input_byte()
+        cpu.s.ip = cpu.pop()
+        return value
+
+    def output_from_call(return_ip: int, value: int) -> None:
+        cpu.push(return_ip & 0xFFFF)
+        output_byte(value)
+        cpu.s.ip = cpu.pop()
+
     # ECF2 PUSH ES / ED95 POP ES; RET.
     cpu.push(cpu.s.es)
 
@@ -230,23 +244,23 @@ def decode_lz_asset(cpu) -> None:
 
         cpu.s.dx = (cpu.s.dx >> 1) & 0xFFFF
         if (cpu.s.dx & 0x0100) == 0:
-            flag_byte = read_input_byte()
+            flag_byte = input_from_call(0xED31)
             cpu.s.dx = 0xFF00 | flag_byte
 
         if cpu.s.dx & 1:
-            value = read_input_byte()
-            output_byte(value)
+            value = input_from_call(0xED3E)
+            output_from_call(0xED41, value)
             wb(cs, (OUTPUT_DICT_BASE + cpu.s.bp) & 0xFFFF, value)
             cpu.s.bp = (cpu.s.bp + 1) & 0x0FFF
             cpu.s.cx = 0
             continue
 
-        first = read_input_byte()
-        second = read_input_byte()
+        first = input_from_call(0xED50)
+        second = input_from_call(0xED55)
         cpu.s.ax = ((second & 0xFF) << 8) | first
         cpu.set_sub_flags(cpu.s.ax, 0, cpu.s.ax, 16)
         if cpu.s.ax == 0:
-            extra = read_input_byte()
+            extra = input_from_call(0xED5F)
             cpu.set_reg8(0, extra)
             cpu.set_sub_flags(extra, 0, extra, 8)
             if extra == 0:
@@ -268,7 +282,7 @@ def decode_lz_asset(cpu) -> None:
         while cpu.s.cx != 0:
             value = rb(cs, (OUTPUT_DICT_BASE + cpu.s.bx) & 0xFFFF)
             cpu.set_reg8(0, value)
-            output_byte(value)
+            output_from_call(0xED82, value)
             wb(cs, (OUTPUT_DICT_BASE + cpu.s.bp) & 0xFFFF, value)
             cpu.s.bx = (cpu.s.bx + 1) & 0x0FFF
             cpu.s.bp = (cpu.s.bp + 1) & 0x0FFF

@@ -704,7 +704,7 @@ def test_expand_tandy_list_33af_composes_headers_and_blocks_like_asm():
     assert asm.mem.data == hook.mem.data
 
 
-def test_expand_tandy_list_33af_falls_back_when_header_table_disabled():
+def test_expand_tandy_list_33af_handles_disabled_header_table_like_asm():
     from overkill_port.cpu import CPU8086, CPUState
     from overkill_port.memory import Memory
     from overkill_port.replacements import overkill_expand_tandy_list_33af
@@ -718,6 +718,9 @@ def test_expand_tandy_list_33af_falls_back_when_header_table_disabled():
             "2e03369c5b2e03369c5b2e03369c5b59e2e1ebd2"
         ),
     )
+    # CS:0BD8 only controls whether 44D7 mirrors header words into the side
+    # table; it does not disable the 33AF list itself.  A zero source header
+    # still returns through the normal 44AA terminator path.
     mem.ww(0x1010, 0x0BD8, 0)
     state = CPUState(
         ax=0x1111, bx=0x2222, cx=0x3333, dx=0x4444,
@@ -730,8 +733,8 @@ def test_expand_tandy_list_33af_falls_back_when_header_table_disabled():
 
     cpu.step()
 
-    assert cpu.addr() == (0x1010, 0x33AF)
-    assert (0x1010, 0x33AF) not in cpu.replacement_hooks
+    assert cpu.addr() == (0x1010, 0x44AA)
+    assert (0x1010, 0x33AF) in cpu.replacement_hooks
 
 
 def test_tandy_masked_sprite_composite_2f81_hook_matches_interpreted_asm():
