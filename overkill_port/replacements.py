@@ -61,6 +61,8 @@ from .games.overkill.rendering.layer_sprites import (
 )
 
 from .games.overkill.rendering.tandy import (
+    build_video_offset_tables_0fa3 as run_tandy_video_offset_tables_0fa3,
+    build_pixel_pair_lookup_table_0fe4 as run_tandy_pixel_pair_table_0fe4,
     expand_tandy_cell_33dd as run_expand_tandy_cell_33dd,
     expand_tandy_block_33b2 as run_expand_tandy_block_33b2,
     expand_tandy_list_33af as run_expand_tandy_list_33af,
@@ -144,6 +146,8 @@ _SIG_2824 = bytes.fromhex("bf f4 5a 2e 8b 0e 9c 5b 51 2e 8a 05 2e 8a 65 28")
 _SIG_291C = bytes.fromhex("51 2e 8a 05 47 57 2e 8b 3e a6 5b aa 2e 89 3e a6")
 _SIG_2932 = bytes.fromhex("2e c6 06 a0 5b 00 2e 8b 1e 9c 5b 8a 04 8a 20 d1")
 _SIG_2E6E = bytes.fromhex("bb 58 00 ad 26 23 05 0b 04 83 c6 02 ab ad 26 23")
+_SIG_0FA3 = bytes.fromhex("0e 07 bf 92 8d b9 00 01 33 c0 ab 03 06 70 10 e2 f9 bf 92 8f b9 00 01 33 c0 ab 03 06 24 10 e2 f9 bf 92 91 b9 00 01 33 c0 ab 03 06 26 10 e2 f9 bf 92 93 b9 00 01 33 c0 ab 03 06 28 10 e2 f9 e9 86 42")
+_SIG_0FE4 = bytes.fromhex("2e 8e 06 96 95 bf 17 15 32 f6 8a d6 32 c0 d0 da 73 02 b0 0f d0 da 73 02 04 f0 88 05 4f 32 c0 d0 da 73 02 b0 0f d0 da 73 02 04 f0 88 05 4f 32 c0 d0 da 73 02 b0 0f d0 da 73 02 04 f0 88 05 4f 32 c0 d0 da 73 02 b0 0f d0 da 73 02 04 f0 88 05 4f 83 c7 08 fe c6 75 b3 c3")
 _SIG_2ECB = bytes.fromhex("bb 58 00 8b 04 f7 d0 26 09 05 83 c6 04 83 c7 02")
 _SIG_2F40 = bytes.fromhex("bb 60 00 8b 04 f7 d0 26 09 05 83 c6 04 83 c7 02")
 _SIG_2F81 = bytes.fromhex("bb 60 00 ad 26 23 05 0b 04 83 c6 02 ab ad 26 23")
@@ -179,6 +183,7 @@ _SIG_EFAE = bytes.fromhex("8b 46 04 a3 fe d1 8b 46 02 a3 00 d2 8b 5e 18")
 _SIG_CCAA = bytes.fromhex("b9 08 00 26 8b 04 26 3b 05 74 05 b2 01 26 89 05")
 _SIG_CCC4 = bytes.fromhex("b9 08 00 26 8b 04 26 3b 05 74 05 b2 01 26 89 05")
 _SIG_CCF0 = bytes.fromhex("b9 20 00 26 8a 04 26 3a 05 74 05 b2 01 26 88 05")
+_SIG_CC7F = bytes.fromhex("51 a1 95 bd e8 9e 8d 89 3e 9e bd 8b f7 81 c6 00 7d 32 d2 2e 8e 06 98 95")
 
 
 
@@ -286,6 +291,26 @@ def _call_hook_like_near_call(cpu, handler, return_ip: int) -> None:
     handler(cpu)
 
 
+def _call_installed_hook_like_near_call(cpu, key: tuple[int, int], default_handler, return_ip: int) -> None:
+    """Run the currently installed hook with CALL/RET stack semantics.
+
+    Most fused replacements call leaf helpers directly so differential tests stay
+    simple and do not accidentally recurse into the verifier.  Visual timing
+    boundaries are different: ``scripts/play.py`` wraps the retrace/present
+    hooks to publish video and raise ``FramePresented``.  Calling the base helper
+    directly from a larger fused hook bypasses that UI boundary, making intro
+    dirty-cell transitions appear frozen or skipped even though memory matches at
+    the larger verifier boundary.
+
+    Use this helper only for those timing-sensitive nested CALLs.  If the play
+    wrapper raises after returning to ``return_ip``, the exception intentionally
+    escapes; execution can then resume in the original code at that continuation.
+    """
+    handler = cpu.replacement_hooks.get(key, default_handler)
+    cpu.push(return_ip & 0xFFFF)
+    handler(cpu)
+
+
 def _run_interpreted_near_call_observed(cpu, target_ip: int, return_ip: int, *, max_steps: int = 20000) -> None:
     """Run a rare original near helper from inside a larger lifted path.
 
@@ -350,6 +375,18 @@ def overkill_expand_tandy_block_33b2(cpu):
 def overkill_expand_tandy_list_33af(cpu):
     """Hook wrapper for OVERKILL 1010:33AF Tandy startup list expander."""
     run_expand_tandy_list_33af(cpu, _tandy_render_runtime())
+
+
+@registry.replace(0x1010, 0x0FE4, "overkill_tandy_pixel_pair_table_0fe4")
+def overkill_tandy_pixel_pair_table_0fe4(cpu):
+    """Hook wrapper for OVERKILL 1010:0FE4 Tandy pixel-pair lookup table init."""
+    run_tandy_pixel_pair_table_0fe4(cpu, _tandy_render_runtime())
+
+
+@registry.replace(0x1010, 0x0FA3, "overkill_tandy_video_offset_tables_0fa3")
+def overkill_tandy_video_offset_tables_0fa3(cpu):
+    """Hook wrapper for OVERKILL 1010:0FA3 Tandy/CGA video offset table init."""
+    run_tandy_video_offset_tables_0fa3(cpu, _tandy_render_runtime())
 
 
 
@@ -2505,6 +2542,8 @@ def _tandy_render_runtime() -> TandyRenderRuntime:
         signature_35cc=_SIG_35CC,
         signature_356c=_SIG_356C,
         signature_3657=_SIG_3657,
+        signature_0fa3=_SIG_0FA3,
+        signature_0fe4=_SIG_0FE4,
     )
 
 
@@ -5208,6 +5247,234 @@ def _out_dx_al(cpu) -> None:
 def _cmp_byte(cpu, a: int, b: int) -> None:
     cpu.set_sub_flags(a & 0xFF, b & 0xFF, (a & 0xFF) - (b & 0xFF), 8)
 
+
+
+
+def _inc_mem_byte_preserve_cf(cpu, seg: int, off: int) -> None:
+    old = cpu.mem.rb(seg, off)
+    old_cf = cpu.get_flag(CF)
+    result = old + 1
+    cpu.mem.wb(seg, off, result)
+    cpu.set_add_flags(old, 1, result, 8)
+    cpu.set_flag(CF, old_cf)
+
+
+def _run_menu_cell_source_blit_5a6c_from_cd4f(cpu) -> bool:
+    """Run the 1010:CD4F -> 5A6C source blit part of the dirty-cell presenter.
+
+    Returns True when the blit was fully lifted and execution reached CD52.
+    Returns False after preparing a faithful partial continuation for an
+    unlifted video-mode target (currently EGA 24D7).
+    """
+    cs = cpu.s.cs & 0xFFFF
+    mode = cpu.mem.rw(cs, 0x95BC)
+    cpu.s.bx = mode & 0xFFFF
+    cpu.s.bx = cpu.shift(4, cpu.s.bx, 1, 16)
+
+    if mode == 0:
+        # 5A6C dispatches mode 0 to 4199.  4199 reads height/width, selects the
+        # visible video segment, doubles the byte width into BP, then falls into
+        # the already lifted 41A6 variable-width interlaced blit and RETs to CD52.
+        cpu.push(0xCD52)
+        delta = -2 if cpu.get_flag(DF) else 2
+        cpu.s.ax = cpu.mem.rw(cpu.s.ds, cpu.s.si)
+        cpu.s.si = (cpu.s.si + delta) & 0xFFFF
+        cpu.s.cx = cpu.s.ax & 0xFFFF
+        cpu.s.ax = cpu.mem.rw(cpu.s.ds, cpu.s.si)
+        cpu.s.si = (cpu.s.si + delta) & 0xFFFF
+        cpu.s.es = cpu.mem.rw(cs, 0x95A4)
+        cpu.s.ax = cpu.shift(4, cpu.s.ax, 1, 16)
+        cpu.s.bp = cpu.s.ax & 0xFFFF
+        overkill_variable_width_interlaced_blit_41a6(cpu)
+        if cpu.s.ip != 0xCD52:
+            raise RuntimeError(f"41A6 returned to unexpected IP {cpu.s.ip:04X} inside CC7F presenter")
+        return True
+
+    if mode == 2:
+        # 5A6C dispatches mode 2 to 306F, the lifted Tandy raw-rectangle copy.
+        _call_hook_like_near_call(cpu, overkill_tandy_rect_copy_306f, 0xCD52)
+        if cpu.s.ip != 0xCD52:
+            raise RuntimeError(f"306F returned to unexpected IP {cpu.s.ip:04X} inside CC7F presenter")
+        return True
+
+    if mode == 1:
+        # EGA target 24D7 is not part of this narrow pass.  Preserve CALL 5A6C
+        # semantics exactly so the original target can continue from there.
+        cpu.push(0xCD52)
+        cpu.s.ip = 0x24D7
+        return False
+
+    raise RuntimeError(f"unverified original-code path reached in 1010:CC7F: unknown video mode {mode:04X}")
+
+
+def _run_changed_cell_present_dispatch_cd7e(cpu) -> bool:
+    """Run the 1010:CD77/7E changed-cell present dispatch when lifted.
+
+    Returns False after preparing a faithful continuation for an unlifted EGA
+    presenter target.
+    """
+    cs = cpu.s.cs & 0xFFFF
+    mode = cpu.mem.rw(cs, 0x95BC)
+    cpu.s.bx = mode & 0xFFFF
+    cpu.s.bx = cpu.shift(4, cpu.s.bx, 1, 16)
+
+    if mode == 0:
+        cpu.s.cx = 0x0008
+        overkill_changed_word_present_8rows_cd8d(cpu)
+        if cpu.s.ip != 0xCE02:
+            raise RuntimeError(f"CD8D returned to unexpected IP {cpu.s.ip:04X} inside CC7F presenter")
+        return True
+
+    if mode == 2:
+        cpu.s.cx = 0x0008
+        overkill_tandy_changed_dword_present_8rows_cdaa(cpu)
+        if cpu.s.ip != 0xCE02:
+            raise RuntimeError(f"CDAA returned to unexpected IP {cpu.s.ip:04X} inside CC7F presenter")
+        return True
+
+    if mode == 1:
+        cpu.s.ip = 0xCDCC
+        return False
+
+    raise RuntimeError(f"unverified original-code path reached in 1010:CC7F: unknown changed-present mode {mode:04X}")
+
+
+def _finish_dirty_cell_presenter_row_loop_ce07(cpu) -> None:
+    ds = cpu.s.ds & 0xFFFF
+    _inc_mem_byte_preserve_cf(cpu, ds, 0xBD95)
+    cpu.s.cx = cpu.pop()
+    cpu.s.cx = (cpu.s.cx - 1) & 0xFFFF  # LOOP does not alter flags.
+    cpu.s.ip = 0xCC7F if cpu.s.cx != 0 else 0xCE13
+
+
+def _run_dirty_cell_presenter_row_cc7f_once(cpu) -> None:
+    if _self_disable_if_patched(cpu, 0xCC7F, _SIG_CC7F, "overkill_dirty_cell_presenter_row_cc7f"):
+        return
+    """Fuse one row iteration of the CC4F/CC58 dirty-cell presenter.
+
+    The surrounding routine pushes an outer rectangle count and jumps back to
+    CC7F once per dirty-cell row.  This hook owns the hot row body:
+
+      CC7F..CC9E  compute work-buffer source/destination and dispatch dirty copy
+      CCAA/CCF0/CCC4 compare/copy back-buffer cells, setting DL when changed
+      CD08..CD7E  if changed, draw the source cell and present it to video
+      CE02..CE10  restore DS, increment row coordinate, LOOP to CC7F or CE13
+
+    EGA's source/presenter leaves are still not part of this pass; when mode 1
+    reaches an unlifted target the hook leaves a faithful partial continuation
+    at the original target with the expected return word on the stack.
+    """
+    cs = cpu.s.cs & 0xFFFF
+    ds = cpu.s.ds & 0xFFFF
+    mem = cpu.mem
+
+    # CC7F push cx; mov ax,[BD95]; call 5A24
+    cpu.push(cpu.s.cx)
+    cpu.s.ax = mem.rw(ds, 0xBD95)
+    _call_hook_like_near_call(cpu, overkill_cga_xy_to_di_5a24, 0xCC86)
+    if cpu.s.ip != 0xCC86:
+        raise RuntimeError(f"5A24 returned to unexpected IP {cpu.s.ip:04X} inside CC7F presenter")
+
+    # CC86..CC9E prepare dirty-copy dispatch.
+    ds = cpu.s.ds & 0xFFFF
+    mem.ww(ds, 0xBD9E, cpu.s.di)
+    cpu.s.si = cpu.s.di & 0xFFFF
+    _add_reg16(cpu, 6, 0x7D00)
+    cpu.set_reg8(2, 0)            # XOR DL,DL
+    cpu.set_logic_flags(0, 8)
+    cpu.s.es = mem.rw(cs, 0x9598)
+    mode = mem.rw(cs, 0x95BC)
+    cpu.s.bx = mode & 0xFFFF
+    cpu.s.bx = cpu.shift(4, cpu.s.bx, 1, 16)
+
+    if mode == 0:
+        overkill_dirty_copy_mode1_ccaa(cpu)
+    elif mode == 1:
+        overkill_dirty_copy_mode2_ccf0(cpu)
+    elif mode == 2:
+        overkill_dirty_copy_mode3_ccc4(cpu)
+    else:
+        raise RuntimeError(f"unverified original-code path reached in 1010:CC7F: unknown dirty-copy mode {mode:04X}")
+    if cpu.s.ip != 0xCD08:
+        raise RuntimeError(f"dirty-copy target returned to unexpected IP {cpu.s.ip:04X} inside CC7F presenter")
+
+    # CD08 OR DL,DL; unchanged cells skip the expensive source draw/present.
+    dl = cpu.s.dx & 0x00FF
+    cpu.set_logic_flags(dl, 8)
+    if dl != 0:
+        # CD0F..CD37 optional cursor/status byte selected by row group and flag.
+        ds = cpu.s.ds & 0xFFFF
+        bda0 = mem.rw(ds, 0xBDA0)
+        _cmp_word(cpu, bda0, 0x0004)
+        status_enabled = mem.rb(ds, 0x98C0)
+        if bda0 == 0x0004:
+            _cmp_byte(cpu, status_enabled, 0)
+            if status_enabled != 0:
+                mem.wb(ds, 0xBEFF, 0x0A)
+        else:
+            _cmp_byte(cpu, status_enabled, 0)
+            if status_enabled != 0:
+                _cmp_byte(cpu, status_enabled, 0)  # The original repeats this CMP before the MOV.
+                mem.wb(ds, 0xBEFF, 0x0E)
+
+        # CD37..CD52 draw the changed source cell to the visible video segment.
+        cpu.s.ax = mem.rw(ds, 0xBD95)
+        _call_hook_like_near_call(cpu, overkill_cga_xy_to_di_5a00, 0xCD3D)
+        if cpu.s.ip != 0xCD3D:
+            raise RuntimeError(f"5A00 returned to unexpected IP {cpu.s.ip:04X} inside CC7F presenter")
+        cpu.push(cpu.s.di)
+        cpu.s.si = 0x0012
+        cpu.s.si = cpu.shift(4, cpu.s.si, 1, 16)
+        _add_reg16(cpu, 6, 0x0C92)
+        cpu.s.si = mem.rw(cs, cpu.s.si)
+        cpu.s.ds = mem.rw(cs, 0x95B8)
+        if not _run_menu_cell_source_blit_5a6c_from_cd4f(cpu):
+            return
+
+        # CD52..CD68 optional retrace wait before presenting the changed cell.
+        cpu.s.ds = mem.rw(cs, 0x9596)
+        ds = cpu.s.ds & 0xFFFF
+        bda0 = mem.rw(ds, 0xBDA0)
+        _cmp_word(cpu, bda0, 0x0005)
+        if bda0 != 0x0005:
+            flag = mem.rb(ds, 0x98C3)
+            _cmp_byte(cpu, flag, 0)
+            if flag == 0:
+                _call_installed_hook_like_near_call(
+                    cpu,
+                    (0x1010, 0x50C9),
+                    overkill_wait_vga_retrace_50c9,
+                    0xCD68,
+                )
+                if cpu.s.ip != 0xCD68:
+                    raise RuntimeError(f"50C9 returned to unexpected IP {cpu.s.ip:04X} inside CC7F presenter")
+
+        # CD68..CE02 present the dirty cell from the work/front buffer.
+        cpu.s.di = cpu.pop()
+        cpu.s.si = mem.rw(ds, 0xBD9E)
+        cpu.s.es = mem.rw(cs, 0x95A4)
+        cpu.s.ds = mem.rw(cs, 0x9598)
+        if not _run_changed_cell_present_dispatch_cd7e(cpu):
+            return
+        cpu.s.ds = mem.rw(cs, 0x9596)
+
+    _finish_dirty_cell_presenter_row_loop_ce07(cpu)
+
+
+
+@registry.replace(0x1010, 0xCC7F, "overkill_dirty_cell_presenter_row_cc7f")
+def overkill_dirty_cell_presenter_row_cc7f(cpu):
+    """Run CC7F row iterations until the original inner LOOP exits.
+
+    A verifier target cannot be the hook entry itself, so this wrapper consumes
+    the CC7F -> ... -> CE10 -> CC7F loop internally and stops only when the
+    original reaches CE13, or at an explicitly preserved unlifted EGA target.
+    """
+    while True:
+        _run_dirty_cell_presenter_row_cc7f_once(cpu)
+        if cpu.s.ip == 0xCC7F:
+            continue
+        return
 
 @registry.replace(0x1010, 0xCCAA, "overkill_dirty_copy_mode1_ccaa")
 def overkill_dirty_copy_mode1_ccaa(cpu):

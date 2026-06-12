@@ -1918,3 +1918,40 @@ through into the shared `BF25` counter logic instead of failing fast.  The
 `third counter zero` path then joins the shared `BF4B -> BFC7` death/score
 tail, so the replacement now lets the original tail run instead of aborting at
 the sprite compare.
+
+
+### 2026-06-12 — CC7F dirty-cell presenter row driver
+
+- `1010:CC7F overkill_dirty_cell_presenter_row_cc7f` is the hot row driver
+  around the already-lifted dirty-copy leaves `CCAA`/`CCF0`/`CCC4`.  It is not
+  asset-codec work; it belongs to the renderer/menu dirty-cell presenter.
+- The routine starts with a remaining-row count in `CX`, pushes it, converts the
+  current row coordinate `DS:BD95` through `5A24`, stores the work-buffer DI in
+  `DS:BD9E`, points `SI` at the shadow/front-buffer cell, clears `DL`, and
+  dispatches the video-mode dirty-copy detector through the table at `CS:CCA4`.
+- If `DL` remains zero, the original jumps from `CD08` to `CE07` and only
+  increments `DS:BD95` before the inner `LOOP`.  If `DL` is non-zero, the
+  original draws the source cell through the `5A6C` mode table, optionally waits
+  for retrace, then dispatches the changed-cell present loop through `CS:CD84`.
+- The hook consumes the inner `CC7F -> ... -> CE10 -> CC7F` loop internally and
+  stops at `CE13`, so live verification can use a stable continuation that is
+  not the hook entry itself.  CGA mode uses the existing `41A6` and `CD8D`
+  hooks; Tandy mode uses the existing `306F` and `CDAA` hooks.
+
+### 2026-06-12 — CC7F intro pacing wrapper regression
+
+- The first `1010:CC7F` lift was register/memory-correct at the `CE13` row
+  boundary, including when compared against pure interpreted ASM from the
+  `snapshot_play_tandy_20260612_235139` intro dirty-cell state.
+- The interactive intro still regressed visually because the fused CC7F path
+  called the base `1010:50C9` retrace wait helper directly from the nested
+  `CD52 -> 50C9 -> CD68` path.  In `scripts/play.py`, `50C9` is wrapped as a
+  visual pacing boundary that publishes the dirty-cell transition and yields to
+  the UI.  Bypassing that installed wrapper lets a large number of changed cells
+  complete inside one CPU burst, so the intro looks frozen/skipped even though
+  memory matches at the later verifier boundary.
+- The fix is deliberately narrow: fused hooks still call most leaf replacements
+  directly, but timing-sensitive nested retrace waits use the currently
+  installed hook with normal near-CALL stack semantics.  If the interactive
+  wrapper raises after returning to `CD68`, execution resumes in the original
+  interpreted tail at `CD68`, preserving both UI pacing and correctness.

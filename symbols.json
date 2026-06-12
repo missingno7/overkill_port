@@ -66,6 +66,16 @@
     "notes": "Generic error display path. Reached with DX=0FF6 and stdout \"Memory de-allocation error\" when PSP AH=4Ah resize failed before checkpoint 8.",
     "status": "error path identified"
   },
+  "1010:0FA3": {
+    "name": "overkill_tandy_video_offset_tables_0fa3",
+    "notes": "Startup table builder for Tandy/CGA-style video offsets. It sets ES=CS and fills four 256-word tables at CS:8D92, 8F92, 9192 and 9392 using cumulative strides from DS:1070, DS:1024, DS:1026 and DS:1028. The original ends with a near JMP to 1010:526A, not RET. Rendering startup data, not asset/overlay decoding.",
+    "status": "replaced"
+  },
+  "1010:0FE4": {
+    "name": "overkill_tandy_pixel_pair_table_0fe4",
+    "notes": "Tandy/PCjr startup lookup-table builder. After the unpacked program resizes its DOS memory block, this routine sets ES=CS:[9596], DI=1517h, DH=0, then iterates DH through 00h..FFh. Each source byte is expanded into four bytes at DS:1514..1913; every 2-bit pair becomes 00h/0Fh/F0h/FFh using RCR DL,1 so final DL/FLAGS are observable. This is rendering startup table generation, not asset/overlay decoding.",
+    "status": "replaced"
+  },
   "1010:2E6E": {
     "name": "overkill_tandy_masked_sprite_composite_2e6e",
     "notes": "Mode-2 eight-word masked sprite compositor. For each row it reads mask/data word pairs from DS:SI and writes dest=(dest & mask)|data to ES:DI, then advances DI by 0058h. Restores DS from CS:[9596] and RETs. Verified against interpreted ASM and live Tandy gameplay calls.",
@@ -97,14 +107,14 @@
     "notes": "Mode-2 target reached through 1010:5A36. Maps SS:[BP+02]/SS:[BP+04] to a Tandy work-buffer row address via DS:99C8, stores zero to SS:[BP+12], uses X>>1, returns AX=FFFF for out-of-range/FFFF rows, and optionally decrements SS:[BP+24]. Folded into the verified 5A36 dispatch hook.",
     "status": "replaced as part of 1010:5A36"
   },
-  "1010:33B2": {
-    "name": "overkill_expand_tandy_block_33b2",
-    "notes": "Tandy packed-pixel startup block/list continuation. Live-patched routine: if ZF is set it jumps to 44AA; otherwise renders CS:[5B9E] rows by CS:[5B9C] cells via 33DD, advances SI by three extra widths per row, and jumps back to 33AF. Verified hook preserves normal/terminator continuations and final stack scratch.",
-    "status": "replaced"
-  },
   "1010:33AF": {
     "name": "overkill_expand_tandy_list_33af",
     "notes": "Mode-2/Tandy startup list driver. Composes the 44D7 block-header reader with the verified 33B2 block expander until the zero header terminates at 44AA. Preserves CALL/RET stack scratch from 44D7 and nested 33DD/344B calls.",
+    "status": "replaced"
+  },
+  "1010:33B2": {
+    "name": "overkill_expand_tandy_block_33b2",
+    "notes": "Tandy packed-pixel startup block/list continuation. Live-patched routine: if ZF is set it jumps to 44AA; otherwise renders CS:[5B9E] rows by CS:[5B9C] cells via 33DD, advances SI by three extra widths per row, and jumps back to 33AF. Verified hook preserves normal/terminator continuations and final stack scratch.",
     "status": "replaced"
   },
   "1010:33DD": {
@@ -253,12 +263,6 @@
     "notes": "Post-contact helper called after BFC7 from BC4B/BD09. Observed path checks A47C, 2384, 98C0 and BEDC, toggles byte A362, and returns when the toggle becomes 1. Other BEDC/toggle branches remain explicit fail-fast frontiers.",
     "status": "partial helper"
   },
-  "1010:BFC7": {
-    "kind": "helper",
-    "name": "collision_death_tail_bfc7_observed",
-    "notes": "Observed death/transition tail reached from BC4B/BCCB and BEC5. It calls the shared C054 selector before the state transition; selector ids such as 0020h decrement DS:A47E through C054, while observed ids 0012h, 002Bh, 0031h, and 003Bh take the same transition without the live-counter drop. Logic 003Bh falls through C054 to default AX=A4E4h before AX is overwritten with the original logic id.",
-    "status": "partial helper"
-  },
   "1010:A849": {
     "name": "overkill_scan_objects_call_5ac8_a849",
     "notes": "Descending scan over DS:32CA object table for draw dispatch. Skips inactive entries and stops at the real CALL A858 for the first active object, preserving PUSH CX stack scratch, BP/BX selection, CX, and active-test flags. The separate 5AC8/draw target hooks own the call body.",
@@ -304,6 +308,11 @@
     "name": "overkill_scan_objects_call_aa2b_aa10",
     "notes": "Object-logic scan over DS:8D12. Skips inactive entries and stops at the real CALL AA2B for the first active object so AA2B owns its dispatch boundary."
   },
+  "1010:AA2B": {
+    "kind": "hook",
+    "name": "overkill_object_logic_dispatch_aa2b",
+    "notes": "First-level object logic dispatcher. Loads BX=SS:[BP+16]<<1 and jumps through CS:AA36. Kept dispatch-only after frame verification showed inline child gameplay execution caused frame-34 drift from snapshot_play_tandy_20260611_152751."
+  },
   "1010:AA46": {
     "kind": "helper",
     "name": "view_contact_rect_setup_aa46",
@@ -316,22 +325,12 @@
     "notes": "Observed BC4B contact-window helper. Handles the signed X guard, the AAAB->AA44 upper tail for the current snapshot, and the remaining AA44 success return. Negative-X and the other unobserved AA71 branches stay fail-fast.",
     "status": "understood"
   },
-  "1010:AA2B": {
-    "kind": "hook",
-    "name": "overkill_object_logic_dispatch_aa2b",
-    "notes": "First-level object logic dispatcher. Loads BX=SS:[BP+16]<<1 and jumps through CS:AA36. Kept dispatch-only after frame verification showed inline child gameplay execution caused frame-34 drift from snapshot_play_tandy_20260611_152751."
-  },
+  "1010:AB10": "object_logic_table_position_update",
   "1010:AC97": {
     "kind": "hook",
     "name": "overkill_object_slot_scan_ac97",
     "notes": "Hot object-slot scan over DS:23B4 with a 0038h stride. One hook call now consumes the verifier boundary for the whole scan, either returning through the original near return when the loop exhausts or stopping at ACD9 when a candidate must continue into the interpreted tail; it preserves the signed Y/X window checks and the SS:[BP+0Eh] identity comparison."
   },
-  "1010:BCB1": {
-    "kind": "hook",
-    "name": "overkill_postmove_y_clamp_bcb1",
-    "notes": "Tiny BC4B leaf that clamps SS:[BP+4] into the inclusive 0..00C0h range before returning to BC4E. It is repeatedly hit from the object post-move path and was still showing up as a hot interpreted loop in gameplay traces."
-  },
-  "1010:AB10": "object_logic_table_position_update",
   "1010:AED8": "object_logic_movement_tile_probe_observed",
   "1010:B73E": {
     "kind": "hook",
@@ -343,21 +342,32 @@
     "name": "overkill_object_postmove_bc4b",
     "notes": "Hot BC4B post-move call-site. It clamps Y, applies the X bounds, runs the BCCB view/contact check, folds the observed AA71 contact-window helper including the AAAB->AA44 upper tail, runs the optional BFC7 death tail and 9E69 bookkeeping, then performs the 62F6 overlap scan before returning to the outer caller. Lifted from snapshot_play_tandy_20260612_192438 because it was still the dominant interpreted hotspot after the smaller BCB1 clamp leaf was absorbed."
   },
+  "1010:BCB1": {
+    "kind": "hook",
+    "name": "overkill_postmove_y_clamp_bcb1",
+    "notes": "Tiny BC4B leaf that clamps SS:[BP+4] into the inclusive 0..00C0h range before returning to BC4E. It is repeatedly hit from the object post-move path and was still showing up as a hot interpreted loop in gameplay traces."
+  },
   "1010:BD17": {
     "kind": "helper",
     "name": "object_deactivate_out_of_bounds_observed",
     "notes": "Observed out-of-bounds deactivation tail from BC4B. The current draw_layer=5, logic_id=0000h branch simply clears the active flag and returns to the caller without touching A47E; the draw_layer-4 branch now also carries the nested C054 dispatcher that leaves AX=A4E4 on the current 0000h/0013h paths and preserves the BD5F stack scratch.",
     "status": "partial helper"
   },
-  "1010:C054": {
-    "kind": "helper",
-    "name": "object_deactivate_logic_dispatch_c054",
-    "notes": "Shared object-logic selector used by BD17 and BFC7. The compare chain selects A79Ch, A6F0h, A83Eh, A82Ah, A5C0h, or A4E4h for known selector values, decrements DS:A47E for the smaller counter family, and otherwise falls through to default AX=A4E4h; observed 0000h, 0013h, and 003Bh all use that default/no-counter behavior."
-  },
   "1010:BEC5": {
     "kind": "helper",
     "name": "collision_handler_observed_variant_2",
     "notes": "Observed variant-2 collision path reached from B73E/BC4B/62F6. Handles BEDC=0000 staged counter path including the third-counter-zero BF4B/BFC7 tail and the fourth-counter-zero BFC7 type-1 death/logic-transition tail, plus BEDC=0001 tail through BF4D. The sprite=0033 branch falls through into the shared BF25 logic instead of failing fast. The variant table also routes 0007h/0008h/000Ch/0009h to the shared BFB9 tail, which is now preserved instead of failing fast. Other branches remain fail-fast."
+  },
+  "1010:BFC7": {
+    "kind": "helper",
+    "name": "collision_death_tail_bfc7_observed",
+    "notes": "Observed death/transition tail reached from BC4B/BCCB and BEC5. It calls the shared C054 selector before the state transition; selector ids such as 0020h decrement DS:A47E through C054, while observed ids 0012h, 002Bh, 0031h, and 003Bh take the same transition without the live-counter drop. Logic 003Bh falls through C054 to default AX=A4E4h before AX is overwritten with the original logic id.",
+    "status": "partial helper"
+  },
+  "1010:C054": {
+    "kind": "helper",
+    "name": "object_deactivate_logic_dispatch_c054",
+    "notes": "Shared object-logic selector used by BD17 and BFC7. The compare chain selects A79Ch, A6F0h, A83Eh, A82Ah, A5C0h, or A4E4h for known selector values, decrements DS:A47E for the smaller counter family, and otherwise falls through to default AX=A4E4h; observed 0000h, 0013h, and 003Bh all use that default/no-counter behavior."
   },
   "1010:C713": {
     "name": "asset_table_search_candidate",
@@ -402,22 +412,22 @@
     "notes": "Far-call file/container helper. Opens OVERKILL, seeks entry offsets, checks small headers/signatures, and reaches the overlay directory scan at 05A1. The 05A1/05D9/0701 subloops are individually verified and replaced. The parent 04D7 file-open/read/seek path is still the open investigation target.",
     "status": "active investigation target"
   },
-  "254A:05A1": {
-    "name": "overkill_overlay_directory_entry_scan_05a1",
-    "notes": "Overlay directory-entry scan loop. Reads each directory record through DOS AH=3Fh, XOR-decodes the block in place via 05BF, normalizes the requested path through 0701, compares the entry name through 05D9, and loops until a match or exhaustion. Verified against interpreted ASM with direct regression coverage.",
-    "status": "replaced"
-  },
   "254A:0582": {
     "name": "overlay_signature_compare_loop",
     "notes": "Compares bytes from header at 074E against signature/table at 0756 before continuing to the overlay decode path. Hooked as part of the existing overlay asset-codec island; exits at 058D on full match and 0640 on first mismatch.",
     "status": "replaced"
   },
+  "254A:05A1": {
+    "name": "overkill_overlay_directory_entry_scan_05a1",
+    "notes": "Overlay directory-entry scan loop. Reads each directory record through DOS AH=3Fh, XOR-decodes the block in place via 05BF, normalizes the requested path through 0701, compares the entry name through 05D9, and loops until a match or exhaustion. Verified against interpreted ASM with direct regression coverage.",
+    "status": "replaced"
+  },
+  "254A:05BF": "overlay/file-block XOR decode loop for default load layout (verified hook)",
   "254A:05D9": {
     "name": "overkill_overlay_entry_name_compare_05d9",
     "notes": "Overlay entry-name compare helper. Skips spaces on both sides, uppercases lowercase letters from the requested name, and returns to 0607 on a match or 0637 on the first mismatch. Verified against interpreted ASM on match and mismatch paths.",
     "status": "replaced"
   },
-  "254A:05BF": "overlay/file-block XOR decode loop for default load layout (verified hook)",
   "254A:0701": {
     "name": "overkill_overlay_path_normalizer_0701",
     "notes": "Overlay path-component normalizer. Conditionally trims DS:SI and ES:DI to the component after the final backslash, preserves the live BP scratch pointer, then returns with RETF to the caller frame pushed by 05A1. Verified against interpreted ASM for gate-on and gate-off paths.",
@@ -432,5 +442,10 @@
     "name": "resize_memory_block_support",
     "notes": "Supports OVERKILL startup shrink of the PSP block and deterministic grow/shrink of tracked most-recent allocations.",
     "status": "implemented"
+  },
+  "1010:CC7F": {
+    "name": "overkill_dirty_cell_presenter_row_cc7f",
+    "notes": "Row driver inside the CC4F/CC58 dirty-cell menu/status presenter. It computes the row DI through 5A24, dispatches one of the dirty-copy leaves CCAA/CCF0/CCC4, and when DL marks a changed cell it draws the source cell and presents it through the CD7E changed-cell presenter. The hook consumes the inner CC7F..CE10 row loop until CE13; EGA mode can still continue at original 24D7/CDCC targets.",
+    "status": "replaced"
   }
 }

@@ -6218,3 +6218,166 @@ def test_bfc7_linked_slot_zero_counter_spawns_effect():
     assert mem.rw(ds, (slot + 0x08) & 0xFFFF) == 0x0047
     assert cpu.s.cx == 0x0022
     assert cpu.s.si == 0x0047
+
+def test_tandy_pixel_pair_table_0fe4_matches_interpreted_asm():
+    from overkill_port.cpu import CPU8086, CPUState
+    from overkill_port.memory import Memory
+    from overkill_port.replacements import overkill_tandy_pixel_pair_table_0fe4
+
+    code = bytes.fromhex(
+        "2e 8e 06 96 95 bf 17 15 32 f6 8a d6 32 c0 d0 da 73 02 b0 0f "
+        "d0 da 73 02 04 f0 88 05 4f 32 c0 d0 da 73 02 b0 0f d0 da 73 "
+        "02 04 f0 88 05 4f 32 c0 d0 da 73 02 b0 0f d0 da 73 02 04 f0 "
+        "88 05 4f 32 c0 d0 da 73 02 b0 0f d0 da 73 02 04 f0 88 05 4f "
+        "83 c7 08 fe c6 75 b3 c3"
+    )
+
+    def make_cpu(use_hook: bool) -> CPU8086:
+        mem = Memory()
+        mem.load(0x1010, 0x0FE4, code)
+        mem.ww(0x1010, 0x9596, 0x25CC)
+        for off in range(0x1514, 0x1914):
+            mem.wb(0x25CC, off, 0xA5)
+        state = CPUState(
+            ax=0x4A00, bx=0x22FF, cx=0x7777, dx=0x0FF6,
+            si=0x32FF, di=0x0000, bp=0xBEEF,
+            cs=0x1010, ds=0x25CC, es=0x1000, ss=0x25CC,
+            sp=0xA276, ip=0x0FE4, flags=0x0206,
+        )
+        cpu = CPU8086(mem, state)
+        cpu.trace_enabled = False
+        cpu.push(0x9603)
+        if use_hook:
+            cpu.replacement_hooks[(0x1010, 0x0FE4)] = overkill_tandy_pixel_pair_table_0fe4
+        return cpu
+
+    asm = make_cpu(False)
+    hook = make_cpu(True)
+    for _ in range(10000):
+        if asm.addr() == (0x1010, 0x9603):
+            break
+        asm.step()
+    hook.step()
+
+    assert asm.addr() == (0x1010, 0x9603)
+    assert asm.s.snapshot() == hook.s.snapshot()
+    assert asm.mem.block(0x25CC, 0x1514, 0x400) == hook.mem.block(0x25CC, 0x1514, 0x400)
+    assert asm.mem.block(0x25CC, 0x1514, 8).hex() == "000000000000000f"
+    assert asm.mem.block(0x25CC, 0x1910, 4).hex() == "ffffffff"
+
+
+def test_tandy_video_offset_tables_0fa3_matches_interpreted_asm():
+    from overkill_port.cpu import CPU8086, CPUState
+    from overkill_port.memory import Memory
+    from overkill_port.replacements import overkill_tandy_video_offset_tables_0fa3
+
+    code = bytes.fromhex(
+        "0e 07 bf 92 8d b9 00 01 33 c0 ab 03 06 70 10 e2 f9 "
+        "bf 92 8f b9 00 01 33 c0 ab 03 06 24 10 e2 f9 "
+        "bf 92 91 b9 00 01 33 c0 ab 03 06 26 10 e2 f9 "
+        "bf 92 93 b9 00 01 33 c0 ab 03 06 28 10 e2 f9 e9 86 42"
+    )
+
+    def make_cpu(use_hook: bool) -> CPU8086:
+        mem = Memory()
+        mem.load(0x1010, 0x0FA3, code)
+        mem.ww(0x25CC, 0x1070, 0x0080)
+        mem.ww(0x25CC, 0x1024, 0x0040)
+        mem.ww(0x25CC, 0x1026, 0x0100)
+        mem.ww(0x25CC, 0x1028, 0x0400)
+        for base in (0x8D92, 0x8F92, 0x9192, 0x9392):
+            for off in range(base, base + 0x200):
+                mem.wb(0x1010, off, 0xA5)
+        state = CPUState(
+            ax=0x1F40, bx=0x0004, cx=0, dx=0,
+            si=0x116E, di=0xA078, bp=0,
+            cs=0x1010, ds=0x25CC, es=0x25CC, ss=0x25CC,
+            sp=0xA276, ip=0x0FA3, flags=0x0A03,
+        )
+        cpu = CPU8086(mem, state)
+        cpu.trace_enabled = False
+        if use_hook:
+            cpu.replacement_hooks[(0x1010, 0x0FA3)] = overkill_tandy_video_offset_tables_0fa3
+        return cpu
+
+    asm = make_cpu(False)
+    hook = make_cpu(True)
+    for _ in range(4000):
+        if asm.addr() == (0x1010, 0x526A):
+            break
+        asm.step()
+    hook.step()
+
+    assert asm.addr() == (0x1010, 0x526A)
+    assert asm.s.snapshot() == hook.s.snapshot()
+    for base in (0x8D92, 0x8F92, 0x9192, 0x9392):
+        assert asm.mem.block(0x1010, base, 0x200) == hook.mem.block(0x1010, base, 0x200)
+    assert hook.mem.block(0x1010, 0x8D92, 8).hex() == "0000800000018001"
+    assert hook.mem.block(0x1010, 0x9392, 8).hex() == "000000040008000c"
+
+
+def test_dirty_cell_presenter_cc7f_hook_verifies_on_tandy_startup_snapshot():
+    from pathlib import Path
+    from overkill_port.hook_verify import HookVerifierConfig, HookVerifyLimitReached, install_hook_verifier
+    from overkill_port.snapshot import load_snapshot
+
+    root = Path(__file__).resolve().parents[1]
+    snap = root / "artifacts" / "evidence" / "snapshot_stop_tandy_cc7f"
+    assert snap.exists(), "startup snapshot for 1010:CC7F dirty-cell presenter verification is missing"
+
+    rt = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
+    verifier = install_hook_verifier(
+        rt,
+        HookVerifierConfig(
+            hooks={(0x1010, 0xCC7F)},
+            stop_on_diff=True,
+            max_verified=25,
+            asm_max_steps=5000,
+        ),
+    )
+
+    try:
+        rt.cpu.run(20000)
+    except HookVerifyLimitReached:
+        pass
+
+    assert verifier.counts[(0x1010, 0xCC7F)] == 25
+
+
+def test_dirty_cell_presenter_uses_installed_retrace_hook_for_intro_pacing_snapshot():
+    """CC7F must not bypass play.py's 50C9 pacing wrapper when fused.
+
+    The dirty-cell intro presenter calls the retrace wait from inside the lifted
+    CC7F path.  Calling the base 50C9 helper directly is register/memory-correct
+    at CE13, but interactive play relies on the installed 50C9 wrapper to publish
+    intermediate video and yield to the UI.  This regression fixture installs a
+    wrapper that raises only for the nested CD52 -> 50C9 call; the CPU must be left
+    at the original CD68 continuation so execution can resume in interpreted ASM.
+    """
+    from pathlib import Path
+    from overkill_port.snapshot import load_snapshot
+
+    class FrameBoundary(Exception):
+        pass
+
+    root = Path(__file__).resolve().parents[1]
+    snap = root / "artifacts" / "snapshot_play_tandy_20260612_235139"
+    assert snap.exists(), "intro dirty-cell snapshot is missing"
+
+    rt = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
+    base_retrace = rt.cpu.replacement_hooks[(0x1010, 0x50C9)]
+
+    def pacing_wrapper(cpu):
+        nested_dirty_presenter_call = (cpu.s.cs & 0xFFFF, cpu.s.ip & 0xFFFF) == (0x1010, 0xCD52)
+        base_retrace(cpu)
+        if nested_dirty_presenter_call:
+            raise FrameBoundary()
+
+    rt.cpu.replacement_hooks[(0x1010, 0x50C9)] = pacing_wrapper
+
+    with pytest.raises(FrameBoundary):
+        for _ in range(5000):
+            rt.cpu.step()
+
+    assert rt.cpu.addr() == (0x1010, 0xCD68)
+    assert rt.cpu.s.sp == 0xA268

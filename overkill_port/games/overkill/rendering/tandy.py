@@ -64,6 +64,8 @@ class TandyRenderRuntime:
     signature_35cc: bytes
     signature_356c: bytes
     signature_3657: bytes
+    signature_0fa3: bytes
+    signature_0fe4: bytes
 
 
 def _call_hook_like_near_call(cpu, handler: HookHandler, return_ip: int) -> None:
@@ -221,6 +223,128 @@ def _rep_movsb(cpu, count: int) -> None:
         cpu.s.si = (cpu.s.si + delta) & 0xFFFF
         cpu.s.di = (cpu.s.di + delta) & 0xFFFF
     cpu.s.cx = 0
+
+
+def build_pixel_pair_lookup_table_0fe4(cpu, runtime: TandyRenderRuntime) -> None:
+    """OVERKILL 1010:0FE4 Tandy startup pixel-pair table builder.
+
+    The original routine is a one-shot startup helper called immediately after
+    the unpacked program resizes its DOS memory block.  It expands every byte
+    value 00h..FFh into four bytes at ``DS:1514..1913``.  Each source bit-pair
+    becomes one mask-ish byte: low bit -> ``0Fh`` and high bit -> ``F0h``.  The
+    code uses ``RCR DL,1`` rather than ``SHR`` so the exact final ``DL`` and
+    flags are part of the verified boundary state.
+
+    This is rendering startup data, not file/overlay asset decoding: it is the
+    small table later used by Tandy/PCjr pixel expansion paths.
+    """
+    if runtime.self_disable_if_patched(cpu, 0x0FE4, runtime.signature_0fe4, "overkill_tandy_pixel_pair_table_0fe4"):
+        return
+
+    s = cpu.s
+    mem = cpu.mem
+    cs = s.cs & 0xFFFF
+    # MOV ES,CS:[9596]; MOV DI,1517h; XOR DH,DH.
+    s.es = mem.rw(cs, TANDY_DISPLAY_SEGMENT_OFF)
+    s.di = 0x1517
+    s.dx &= 0x00FF
+    cpu.set_logic_flags(0, 8)
+
+    while True:
+        dh = (s.dx >> 8) & 0xFF
+        dl = dh
+        s.dx = (s.dx & 0xFF00) | dl
+
+        for _ in range(4):
+            # XOR AL,AL.
+            s.ax &= 0xFF00
+            cpu.set_logic_flags(0, 8)
+
+            # RCR DL,1; JNB skip; MOV AL,0Fh.
+            dl = cpu.shift(3, dl, 1, 8)
+            if cpu.get_flag(CF):
+                s.ax = (s.ax & 0xFF00) | 0x0F
+
+            # RCR DL,1; JNB skip; ADD AL,F0h.
+            dl = cpu.shift(3, dl, 1, 8)
+            if cpu.get_flag(CF):
+                al = s.ax & 0xFF
+                result = al + 0xF0
+                s.ax = (s.ax & 0xFF00) | (result & 0xFF)
+                cpu.set_add_flags(al, 0xF0, result, 8)
+
+            # MOV [DI],AL; DEC DI.
+            mem.wb(s.ds, s.di, s.ax & 0xFF)
+            old_cf = cpu.get_flag(CF)
+            old_di = s.di & 0xFFFF
+            s.di = (old_di - 1) & 0xFFFF
+            cpu.set_sub_flags(old_di, 1, old_di - 1, 16)
+            cpu.set_flag(CF, old_cf)
+            s.dx = (s.dx & 0xFF00) | dl
+
+        # ADD DI,8; INC DH; JNZ 0FEE.
+        old_di = s.di & 0xFFFF
+        result_di = old_di + 8
+        s.di = result_di & 0xFFFF
+        cpu.set_add_flags(old_di, 8, result_di, 16)
+
+        old_cf = cpu.get_flag(CF)
+        old_dh = (s.dx >> 8) & 0xFF
+        new_dh = (old_dh + 1) & 0xFF
+        s.dx = (new_dh << 8) | (s.dx & 0x00FF)
+        cpu.set_add_flags(old_dh, 1, old_dh + 1, 8)
+        cpu.set_flag(CF, old_cf)  # INC preserves carry.
+        if new_dh == 0:
+            break
+
+    s.ip = cpu.pop()
+
+
+def build_video_offset_tables_0fa3(cpu, runtime: TandyRenderRuntime) -> None:
+    """OVERKILL 1010:0FA3 Tandy/CGA video-offset lookup table builder.
+
+    The startup code materializes four 256-word tables in the code segment at
+    8D92h, 8F92h, 9192h, and 9392h.  Each table is a simple cumulative sequence
+    using mode-dependent strides stored in the data segment.  The original ends
+    with ``JMP 526A`` rather than returning, so the lifted hook has a fixed-IP
+    continuation.
+    """
+    if runtime.self_disable_if_patched(cpu, 0x0FA3, runtime.signature_0fa3, "overkill_tandy_video_offset_tables_0fa3"):
+        return
+
+    s = cpu.s
+    mem = cpu.mem
+    cs = s.cs & 0xFFFF
+    ds = s.ds & 0xFFFF
+
+    # PUSH CS; POP ES.  The net SP is unchanged, but the transient push leaves
+    # a scratch word below SP that full-memory verifier snapshots can observe.
+    mem.ww(s.ss, (s.sp - 2) & 0xFFFF, cs)
+    s.es = cs
+
+    for base, stride_off in (
+        (0x8D92, 0x1070),
+        (0x8F92, 0x1024),
+        (0x9192, 0x1026),
+        (0x9392, 0x1028),
+    ):
+        s.di = base
+        s.cx = 0x0100
+        s.ax = 0
+        cpu.set_logic_flags(0, 16)  # XOR AX,AX.
+        stride = mem.rw(ds, stride_off)
+        while True:
+            # STOSW; ADD AX,DS:[stride_off]; LOOP.
+            _stosw(cpu)
+            old_ax = s.ax & 0xFFFF
+            result = old_ax + stride
+            s.ax = result & 0xFFFF
+            cpu.set_add_flags(old_ax, stride, result, 16)
+            s.cx = (s.cx - 1) & 0xFFFF
+            if s.cx == 0:
+                break
+
+    s.ip = 0x526A
 
 
 def _rep_stosb(cpu, count: int) -> None:
