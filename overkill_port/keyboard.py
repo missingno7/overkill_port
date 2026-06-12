@@ -63,10 +63,22 @@ class KeyDispatcher:
         self._drain_events()
         self._release_ready(hold_new_taps=False)
 
-    def pump(self) -> None:
-        """Apply queued events for one frame.  Call before running the frame."""
+    def pump(self, *, allow_release: bool = True) -> None:
+        """Apply queued events for one emulated boundary.
+
+        ``allow_release=False`` is used by the interactive player immediately
+        after a visual presenter boundary.  OVERKILL's gameplay loop presents
+        the frame before it checks some one-shot keys such as Esc, so releasing
+        a quick tap at that boundary would clear the game's key table before
+        the original post-present input code can observe it.  We still drain
+        new key-down events and age held keys; the matching break is simply kept
+        pending until a later timer/no-frame boundary.
+        """
         self._drain_events()
-        # Only release keys that have already been held for a full frame.
-        self._release_ready(hold_new_taps=True)
+        # Only release keys that have already been held for a full frame, and
+        # only at boundaries where the caller knows post-present input polling is
+        # not still ahead of the VM.
+        if allow_release:
+            self._release_ready(hold_new_taps=True)
         for sc in self._down:
             self._down[sc] += 1

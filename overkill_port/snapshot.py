@@ -68,6 +68,11 @@ def write_snapshot(rt: Runtime, out_dir: str | Path, *, status: str, steps: int,
             "video_mode": rt.dos.video_mode,
             "ticks": rt.dos.ticks,
             "vga_status_reads": rt.dos.vga_status_reads,
+            "pit_channel2_access": rt.dos._pit_channel2_access,
+            "pit_channel2_latch": rt.dos._pit_channel2_latch,
+            "pit_channel2_write_low": rt.dos._pit_channel2_write_low,
+            "pit_channel2_reload": rt.dos.pit_channel2_reload,
+            "speaker_control": rt.dos.speaker_control,
             "ega_planar": rt.program.memory.ega_planar,
             "ega_map_mask": rt.program.memory.ega_map_mask,
             "ega_read_plane": rt.program.memory.ega_read_plane,
@@ -111,6 +116,13 @@ def load_snapshot(exe_path: str | Path, snapshot_dir: str | Path, *, game_root: 
     rt.dos.video_mode = dos_meta.get("video_mode", rt.dos.video_mode)
     rt.dos.ticks = dos_meta.get("ticks", rt.dos.ticks)
     rt.dos.vga_status_reads = dos_meta.get("vga_status_reads", rt.dos.vga_status_reads)
+    rt.dos._pit_channel2_access = dos_meta.get("pit_channel2_access", rt.dos._pit_channel2_access)
+    rt.dos._pit_channel2_latch = dos_meta.get("pit_channel2_latch", rt.dos._pit_channel2_latch)
+    rt.dos._pit_channel2_write_low = dos_meta.get("pit_channel2_write_low", rt.dos._pit_channel2_write_low)
+    rt.dos.pit_channel2_reload = dos_meta.get("pit_channel2_reload", rt.dos.pit_channel2_reload)
+    rt.dos.speaker_control = dos_meta.get("speaker_control", rt.dos.speaker_control)
+    if "pit_channel2_reload" not in dos_meta and "port_log_tail" in dos_meta:
+        _restore_speaker_from_port_log_tail(rt, dos_meta.get("port_log_tail", ()))
     rt.program.memory.ega_planar = dos_meta.get("ega_planar", rt.program.memory.ega_planar)
     rt.program.memory.ega_map_mask = dos_meta.get("ega_map_mask", rt.program.memory.ega_map_mask)
     rt.program.memory.ega_read_plane = dos_meta.get("ega_read_plane", rt.program.memory.ega_read_plane)
@@ -129,4 +141,77 @@ def load_snapshot(exe_path: str | Path, snapshot_dir: str | Path, *, game_root: 
         rt.dos.files[int(handle_text)] = fh
     if rt.dos.files:
         rt.dos.next_handle = max(rt.dos.files) + 1
+    _repair_overkill_object_allocator_cursor(rt)
     return rt
+
+
+def _repair_overkill_object_allocator_cursor(rt: Runtime) -> None:
+    """Repair snapshots saved after the old 7573 lift corrupted DS:[95DA].
+
+    DS:[95DA] is the game's free-object scan cursor.  Valid values are the 34
+    object slots 2B5C..3294 or the 32CC sentinel that the original 7573 allocator
+    wraps back to 2B5C.  Older snapshots can contain values beyond the sentinel
+    (for example 3374), which overlaps the Tandy draw buffer and makes newly
+    allocated projectiles disappear on the next sprite draw.
+    """
+    cpu = rt.cpu
+    mem = cpu.mem
+    ds = cpu.s.ds & 0xFFFF
+    if not _looks_like_overkill_runtime_snapshot(rt):
+        return
+    cursor = mem.rw(ds, 0x95DA)
+    if _is_valid_overkill_object_cursor(cursor):
+        return
+    mem.ww(ds, 0x95DA, 0x32CC)
+
+
+def _looks_like_overkill_runtime_snapshot(rt: Runtime) -> bool:
+    cpu = rt.cpu
+    mem = cpu.mem
+    ds = cpu.s.ds & 0xFFFF
+    cs = cpu.s.cs & 0xFFFF
+    # OVERKILL keeps its keyboard scancode table at DS:213E in captured runtime
+    # snapshots.  This guard keeps the invariant repair away from unrelated or
+    # very early bootstrap snapshots where DS:[95DA] may be arbitrary data.
+    return (
+        mem.rb(ds, 0x2140) == 0x2C
+        and mem.rb(ds, 0x2141) == 0x39
+        and mem.rb(ds, 0x2142) == 0x10
+        and mem.rw(cs, 0x95BC) in (0, 1, 2)
+    )
+
+
+def _is_valid_overkill_object_cursor(cursor: int) -> bool:
+    cursor &= 0xFFFF
+    if cursor == 0x32CC:
+        return True
+    if cursor < 0x2B5C or cursor > 0x3294:
+        return False
+    return ((cursor - 0x2B5C) % 0x38) == 0
+
+
+def _restore_speaker_from_port_log_tail(rt: Runtime, port_log_tail) -> None:
+    """Best-effort PC-speaker state recovery for older snapshots.
+
+    Pre-sound-state snapshots only stored the last few OUT instructions.  Replaying
+    the speaker-related writes reconstructs the PIT channel-2 reload and port 61h
+    gate when the tail contains the most recent tone setup, which is exactly the
+    common F12-in-the-menu case.  The replay updates DOS hardware state only; it
+    deliberately does not call a frontend speaker callback or append duplicate log
+    entries.
+    """
+    saved_callback = rt.dos.speaker_callback
+    rt.dos.speaker_callback = None
+    try:
+        for entry in port_log_tail or ():
+            if not isinstance(entry, (list, tuple)) or len(entry) != 4:
+                continue
+            direction, port, value, bits = entry
+            if direction != "out":
+                continue
+            port = int(port) & 0xFFFF
+            if port not in (0x42, 0x43, 0x61):
+                continue
+            rt.dos._track_pc_speaker(port, int(value), int(bits))
+    finally:
+        rt.dos.speaker_callback = saved_callback

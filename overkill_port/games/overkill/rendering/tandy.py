@@ -52,6 +52,7 @@ class TandyRenderRuntime:
     signature_2f81: bytes
     signature_2fb6: bytes
     signature_306f: bytes
+    signature_33af: bytes
     signature_33b2: bytes
     signature_34ad: bytes
     signature_34c5: bytes
@@ -1013,6 +1014,78 @@ def expand_tandy_cell_33dd(cpu):
     _tandy_cell_33dd_core(cpu)
     cpu.s.ip = cpu.pop()
 
+
+def _inc_ax_preserve_cf(cpu) -> None:
+    old = cpu.s.ax & 0xFFFF
+    old_cf = cpu.get_flag(CF)
+    cpu.s.ax = (old + 1) & 0xFFFF
+    cpu.set_add_flags(old, 1, old + 1, 16)
+    cpu.set_flag(CF, old_cf)
+
+
+def _tandy_block_header_44d7(cpu) -> bool:
+    """Lift the 1010:44D7 header reader used by the Tandy list driver."""
+    s = cpu.s
+    mem = cpu.mem
+    cs = s.cs & 0xFFFF
+    ds = s.ds & 0xFFFF
+
+    s.ax = mem.rw(ds, s.si)
+    value = s.ax | mem.rw(ds, (s.si + 2) & 0xFFFF)
+    cpu.set_logic_flags(value, 16)
+    if value == 0:
+        return False
+
+    s.bx = mem.rw(cs, 0x0BE0)
+    _add_mem_word(cpu, cs, 0x0BE0, 2)
+
+    lodsw_delta = -2 if cpu.get_flag(DF) else 2
+    s.ax = mem.rw(ds, s.si)
+    s.si = (s.si + lodsw_delta) & 0xFFFF
+    if mem.rw(cs, 0x0BD8) != 0:
+        mem.ww(cs, s.bx, s.di)
+    _stosw(cpu)
+    mem.ww(cs, 0x5B9E, s.ax)
+
+    s.ax = mem.rw(ds, s.si)
+    s.si = (s.si + lodsw_delta) & 0xFFFF
+    if mem.rw(cs, 0x0BD8) != 0:
+        _stosw(cpu)
+    mem.ww(cs, 0x5B9C, s.ax)
+    _inc_ax_preserve_cf(cpu)
+    return True
+
+
+def expand_tandy_list_33af(cpu, runtime: TandyRenderRuntime) -> None:
+    """OVERKILL 1010:33AF Tandy startup list driver.
+
+    This composes the small original header reader at ``44D7`` with the already
+    verified ``33B2`` block expander, removing hundreds of interpreted
+    call/return/header iterations during Tandy startup materialization.
+    """
+    if runtime.self_disable_if_patched(cpu, 0x33AF, runtime.signature_33af, "overkill_expand_tandy_list_33af"):
+        return
+
+    s = cpu.s
+    if cpu.mem.rw(s.cs, 0x0BD8) == 0:
+        cpu.replacement_hooks.pop((s.cs & 0xFFFF, 0x33AF), None)
+        cpu.hook_names.pop((s.cs & 0xFFFF, 0x33AF), None)
+        s.ip = 0x33AF
+        return
+
+    ss = s.ss & 0xFFFF
+    while True:
+        # CALL 44D7 writes return IP 33B2 below SP, then RET restores SP.  Keep
+        # the scratch word because full-memory oracles can observe it.
+        cpu.mem.ww(ss, (s.sp - 2) & 0xFFFF, 0x33B2)
+        if not _tandy_block_header_44d7(cpu):
+            s.ip = 0x44AA
+            return
+        expand_tandy_block_33b2(cpu, runtime)
+        if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (s.cs & 0xFFFF, 0x33AF):
+            return
+
+
 def expand_tandy_block_33b2(cpu, runtime: TandyRenderRuntime) -> None:
     """OVERKILL 1010:33B2 hot Tandy startup block/list expansion."""
     if runtime.self_disable_if_patched(cpu, 0x33B2, runtime.signature_33b2, "overkill_expand_tandy_block_33b2"):
@@ -1045,6 +1118,7 @@ def expand_tandy_block_33b2(cpu, runtime: TandyRenderRuntime) -> None:
 
     if wrote_call_scratch:
         ss = s.ss & 0xFFFF
+        cpu.mem.ww(ss, (entry_sp - 8) & 0xFFFF, 0x341B)
         cpu.mem.ww(ss, (entry_sp - 6) & 0xFFFF, 0x33C6)
         cpu.mem.ww(ss, (entry_sp - 4) & 0xFFFF, 0x0001)
         cpu.mem.ww(ss, (entry_sp - 2) & 0xFFFF, 0x0001)

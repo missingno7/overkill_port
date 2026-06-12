@@ -230,6 +230,8 @@ DEFAULT_STOPS: dict[Addr, HookStop] = {
     (0x1010, 0x2F40): HookStop("near_ret"),
     (0x1010, 0x2F81): HookStop("near_ret"),
     (0x1010, 0x2FB6): HookStop("near_ret"),
+    (0x1010, 0x306F): HookStop("near_ret"),
+    (0x1010, 0x33AF): HookStop("fixed_ip", 0x44AA),
     (0x1010, 0x33B2): HookStop("fixed_ips", ips=(0x33AF, 0x44AA)),
     (0x1010, 0x3354): HookStop("near_ret"),
     (0x1010, 0x33DD): HookStop("near_ret"),
@@ -393,6 +395,11 @@ class HookVerifier:
         dos.video_mode = src.dos.video_mode
         dos.ticks = src.dos.ticks
         dos.vga_status_reads = src.dos.vga_status_reads
+        dos._pit_channel2_access = getattr(src.dos, "_pit_channel2_access", 3)
+        dos._pit_channel2_latch = getattr(src.dos, "_pit_channel2_latch", 0)
+        dos._pit_channel2_write_low = getattr(src.dos, "_pit_channel2_write_low", True)
+        dos.pit_channel2_reload = src.dos.pit_channel2_reload
+        dos.speaker_control = src.dos.speaker_control
         dos._seq_index = getattr(src.dos, "_seq_index", 0)
         dos._crtc_index = getattr(src.dos, "_crtc_index", 0)
         dos.current_scancode = src.dos.current_scancode
@@ -519,6 +526,23 @@ class HookVerifier:
             lines.append(
                 f"  ega_display_start: asm={asm_rt.program.memory.ega_display_start:04X} "
                 f"hook={hook_rt.program.memory.ega_display_start:04X}"
+            )
+        for field in (
+            "_pit_channel2_access",
+            "_pit_channel2_latch",
+            "_pit_channel2_write_low",
+            "pit_channel2_reload",
+            "speaker_control",
+        ):
+            av = getattr(asm_rt.dos, field)
+            hv = getattr(hook_rt.dos, field)
+            if av != hv:
+                lines.append(f"  {field}: asm={av!r} hook={hv!r}")
+        if asm_rt.dos.port_log != hook_rt.dos.port_log:
+            lines.append(
+                "  port_log_tail:\n"
+                f"    asm={asm_rt.dos.port_log[-8:]}\n"
+                f"    hook={hook_rt.dos.port_log[-8:]}"
             )
         asm_files = {h: f.pos for h, f in asm_rt.dos.files.items()}
         hook_files = {h: f.pos for h, f in hook_rt.dos.files.items()}

@@ -39,6 +39,16 @@ def test_pop_rm16_memory_opcode_8f():
     assert cpu.s.sp == 0xFFFE
 
 
+def test_cbw_sign_extends_al_without_changing_flags():
+    cpu = run_bytes(bytes.fromhex("b0 80 98 f4"), 3)
+    assert cpu.s.ax == 0xFF80
+    assert cpu.s.flags == 0x0202
+
+    cpu = run_bytes(bytes.fromhex("b0 7f 98 f4"), 3)
+    assert cpu.s.ax == 0x007F
+    assert cpu.s.flags == 0x0202
+
+
 def test_dos_version_returns_al_major_ah_minor():
     from overkill_port.dos import DOSMachine
     from overkill_port.cpu import CF
@@ -64,6 +74,32 @@ def test_ega_crtc_display_start_tracks_indexed_port_writes():
     dos.port_write(cpu, 0x03D4, 0x0C, 8)
     dos.port_write(cpu, 0x03D5, 0x20, 8)
     assert mem.ega_display_start == 0x2034
+
+
+def test_pc_speaker_tracks_pit_channel2_and_gate():
+    from pathlib import Path
+    from overkill_port.dos import DOSMachine
+
+    mem = Memory()
+    cpu = CPU8086(mem, CPUState(cs=0x1000, ds=0x1000, es=0x1000, ss=0x1000, sp=0xFFFE))
+    dos = DOSMachine(root=Path('.'))
+    events: list[tuple[bool, float]] = []
+    dos.speaker_callback = lambda enabled, freq: events.append((enabled, freq))
+
+    dos.port_write(cpu, 0x43, 0xB6, 8)  # channel 2, lobyte/hibyte, square wave
+    dos.port_write(cpu, 0x42, 0x34, 8)
+    assert events == []
+    dos.port_write(cpu, 0x42, 0x12, 8)
+    assert dos.pit_channel2_reload == 0x1234
+    assert events[-1][0] is False
+
+    dos.port_write(cpu, 0x61, 0x03, 8)
+    assert events[-1][0] is True
+    assert abs(events[-1][1] - (1193182.0 / 0x1234)) < 0.001
+    assert dos.port_read(cpu, 0x61, 8) == 0x03
+
+    dos.port_write(cpu, 0x61, 0x00, 8)
+    assert events[-1] == (False, 0.0)
 
 
 def test_key_dispatcher_holds_tap_for_one_frame():
@@ -110,6 +146,26 @@ def test_key_dispatcher_drains_release_during_long_no_frame_burst():
     d.pump_events()
     assert log == [0x39, 0x39 | 0x80]
 
+
+
+def test_key_dispatcher_can_defer_release_after_present_boundary():
+    from overkill_port.keyboard import KeyDispatcher
+    log: list[int] = []
+    d = KeyDispatcher(log.append)
+
+    d.post_down(0x01)
+    d.pump()
+    assert log == [0x01]
+
+    # The interactive player uses this immediately after a visual present.
+    # The physical key-up is recorded, but the game's key table remains pressed
+    # until the VM has passed post-present input polling.
+    d.post_up(0x01)
+    d.pump(allow_release=False)
+    assert log == [0x01]
+
+    d.pump_events()
+    assert log == [0x01, 0x01 | 0x80]
 
 def test_iret_restores_cs_ip_and_flags():
     mem = Memory()

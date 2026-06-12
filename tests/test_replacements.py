@@ -192,6 +192,7 @@ def test_packed_read_byte_0624_hook_matches_interpreted_asm_with_refill():
     assert asm.s.snapshot() == hook.s.snapshot()
     assert asm.mem.block(0x1010, 0x0410, 16) == hook.mem.block(0x1010, 0x0410, 16)
     assert asm.mem.rw(0x1010, 0x0610) == hook.mem.rw(0x1010, 0x0610)
+    assert asm.mem.rw(asm.s.ss, (asm.s.sp - 2) & 0xFFFF) == hook.mem.rw(hook.s.ss, (hook.s.sp - 2) & 0xFFFF)
 
 
 def test_packed_read_word_0615_hook_matches_interpreted_asm():
@@ -648,6 +649,89 @@ def test_expand_tandy_block_33b2_terminator_branch_matches_interpreted_asm():
     assert asm.addr() == (0x1010, 0x44AA)
     assert hook.addr() == (0x1010, 0x44AA)
     assert asm.s.snapshot() == hook.s.snapshot()
+
+
+def test_expand_tandy_list_33af_composes_headers_and_blocks_like_asm():
+    from overkill_port.cpu import CPU8086, CPUState
+    from overkill_port.memory import Memory
+    from overkill_port.replacements import overkill_expand_tandy_list_33af
+
+    code_33af = bytes.fromhex(
+        "e825117503e9f3102e8b0e9e5b512e8b0e9c5b51e8170059e2f9"
+        "2e03369c5b2e03369c5b2e03369c5b59e2e1ebd2"
+    )
+    code_44d7 = bytes.fromhex(
+        "8b040b44027501c32e8b1ee00b2e8306e00b02ad2e833ed80b007404"
+        "2e893fab2ea39e5bad2e833ed80b007401ab2ea39c5b40c3"
+    )
+    cell_33dd, pack_344b = _tandy_33dd_asm_bytes()
+
+    def make_cpu(use_hook: bool) -> CPU8086:
+        mem = Memory()
+        mem.load(0x1010, 0x33AF, code_33af)
+        mem.load(0x1010, 0x33DD, cell_33dd)
+        mem.load(0x1010, 0x344B, pack_344b)
+        mem.load(0x1010, 0x44D7, code_44d7)
+        mem.ww(0x1010, 0x0BD6, 0)
+        mem.ww(0x1010, 0x0BD8, 1)
+        mem.ww(0x1010, 0x0BE0, 0x5C00)
+        stream = bytearray()
+        stream += bytes([1, 0, 1, 0, 0x96, 0x69, 0x39, 0x93])
+        stream += bytes([2, 0, 1, 0, 0xC3, 0x3C, 0x5A, 0xA5, 0x11, 0x22, 0x44, 0x88])
+        stream += bytes([0, 0, 0, 0])
+        mem.load(0x6000, 0x0100, stream)
+        state = CPUState(
+            ax=0xA65C, bx=0x1111, cx=0x7E23, dx=0xC398,
+            si=0x0100, di=0x0240, bp=0x5555, sp=0x9000,
+            cs=0x1010, ds=0x6000, es=0x7000, ss=0x4000,
+            ip=0x33AF, flags=0x0202,
+        )
+        cpu = CPU8086(mem, state)
+        cpu.trace_enabled = False
+        if use_hook:
+            cpu.replacement_hooks[(0x1010, 0x33AF)] = overkill_expand_tandy_list_33af
+        return cpu
+
+    asm = make_cpu(False)
+    hook = make_cpu(True)
+    for _ in range(20000):
+        if asm.addr() == (0x1010, 0x44AA):
+            break
+        asm.step()
+    hook.step()
+    assert asm.addr() == hook.addr() == (0x1010, 0x44AA)
+    assert asm.s.snapshot() == hook.s.snapshot()
+    assert asm.mem.data == hook.mem.data
+
+
+def test_expand_tandy_list_33af_falls_back_when_header_table_disabled():
+    from overkill_port.cpu import CPU8086, CPUState
+    from overkill_port.memory import Memory
+    from overkill_port.replacements import overkill_expand_tandy_list_33af
+
+    mem = Memory()
+    mem.load(
+        0x1010,
+        0x33AF,
+        bytes.fromhex(
+            "e825117503e9f3102e8b0e9e5b512e8b0e9c5b51e8170059e2f9"
+            "2e03369c5b2e03369c5b2e03369c5b59e2e1ebd2"
+        ),
+    )
+    mem.ww(0x1010, 0x0BD8, 0)
+    state = CPUState(
+        ax=0x1111, bx=0x2222, cx=0x3333, dx=0x4444,
+        si=0x0100, di=0x0200, bp=0x5555, sp=0x9000,
+        cs=0x1010, ds=0x6000, es=0x7000, ss=0x4000,
+        ip=0x33AF, flags=0x0202,
+    )
+    cpu = CPU8086(mem, state)
+    cpu.replacement_hooks[(0x1010, 0x33AF)] = overkill_expand_tandy_list_33af
+
+    cpu.step()
+
+    assert cpu.addr() == (0x1010, 0x33AF)
+    assert (0x1010, 0x33AF) not in cpu.replacement_hooks
 
 
 def test_tandy_masked_sprite_composite_2f81_hook_matches_interpreted_asm():
@@ -1958,6 +2042,7 @@ def test_postcopy_loop_58df_hook_matches_interpreted_asm_on_captured_snapshot():
 
 
 def test_wait_timer_tick_0679_hook_matches_interpreted_asm():
+    import pytest
     from overkill_port.cpu import CPU8086, CPUState
     from overkill_port.memory import Memory
     from overkill_port.replacements import overkill_wait_timer_tick_0679
@@ -1982,21 +2067,14 @@ def test_wait_timer_tick_0679_hook_matches_interpreted_asm():
             cpu.replacement_hooks[(0x1010, 0x0679)] = overkill_wait_timer_tick_0679
         return cpu
 
-    # Case A: flag starts at 0.  The hook models one elapsed ISR tick (066B->1);
-    # the oracle is the same loop with the tick already delivered (066B preset
-    # to 1) so the interpreted ASM actually terminates.  Both must agree.
+    # Case A: flag starts at 0 but no known INT 08h ISR is installed.  Do not
+    # invent a synthetic tick; fail loudly so the missing timer path is fixed.
     hook = make_cpu(True, 0)
-    oracle = make_cpu(False, 1)
-    hook.step()
-    for _ in range(10):
-        if oracle.addr() == (0x1010, 0xBEEF):
-            break
-        oracle.step()
-    assert hook.addr() == oracle.addr() == (0x1010, 0xBEEF)
-    assert hook.s.snapshot() == oracle.s.snapshot()
-    assert hook.mem.rb(0x1010, 0x066B) == oracle.mem.rb(0x1010, 0x066B) == 1
+    with pytest.raises(RuntimeError, match="no synthetic timer fallback"):
+        hook.step()
 
-    # Case B: flag already non-zero.  The loop exits immediately without changing
+    # Case B: flag already non-zero.  The loop exits immediately without needing
+    # external timer progress, so it still matches the original wait loop.
     # it; the hook must leave it untouched and produce the same state.
     hook = make_cpu(True, 7)
     oracle = make_cpu(False, 7)
@@ -2008,6 +2086,46 @@ def test_wait_timer_tick_0679_hook_matches_interpreted_asm():
     assert hook.addr() == oracle.addr() == (0x1010, 0xBEEF)
     assert hook.s.snapshot() == oracle.s.snapshot()
     assert hook.mem.rb(0x1010, 0x066B) == oracle.mem.rb(0x1010, 0x066B) == 7
+
+
+def test_wait_timer_tick_0679_runs_overkill_sound_isr_when_installed():
+    from pathlib import Path
+    from overkill_port.replacements import overkill_wait_timer_tick_0679
+    from overkill_port.snapshot import load_snapshot
+
+    root = Path(__file__).resolve().parents[1]
+    snap = root / "artifacts" / "play_tandy_main_menu_20260612_132548"
+    assert snap.exists(), "Tandy menu snapshot with installed INT 08h is missing"
+
+    rt = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
+    cpu = rt.cpu
+    cpu.trace_enabled = False
+    cpu.s.cs = 0x1010
+    cpu.s.ip = 0x0679
+    cpu.push(0xBEEF)
+    cpu.mem.wb(0x1010, 0x066B, 0)
+    cpu.mem.wb(cpu.mem.rw(0x1010, 0x9596), 0x0054, 3)  # exercise the BIOS-chain tick path
+
+    ports: list[tuple[int, int, int]] = []
+    orig_writer = rt.dos.port_write
+
+    def port_writer(cpu, port: int, value: int, bits: int) -> None:
+        orig_writer(cpu, port, value, bits)
+        if port in (0x42, 0x43, 0x61):
+            ports.append((port, value & ((1 << bits) - 1), bits))
+
+    cpu.port_writer = port_writer
+    cpu.replacement_hooks[(0x1010, 0x0679)] = overkill_wait_timer_tick_0679
+
+    cpu.step()
+
+    assert cpu.addr() == (0x1010, 0xBEEF)
+    assert cpu.s.sp == 0xA276
+    assert cpu.mem.rb(0x1010, 0x066B) != 0
+    assert cpu.timer_ticks_elapsed == 2
+    assert any(port == 0x42 for port, _, _ in ports)
+    assert any(port == 0x43 for port, _, _ in ports)
+    assert any(port == 0x61 for port, _, _ in ports)
 
 
 def test_present_frame_blit_447b_hook_matches_interpreted_asm():
@@ -5085,3 +5203,79 @@ def test_movement_direction_5db2_hook_matches_interpreted_asm_on_captured_snapsh
     assert asm.cpu.addr() == hook.cpu.addr() == (0x1010, 0xB738)
     assert asm.cpu.s.snapshot() == hook.cpu.s.snapshot()
     assert asm.program.memory.data == hook.program.memory.data
+
+
+def test_object_allocator_7573_wraps_at_sentinel_each_iteration():
+    from overkill_port.cpu import CPU8086, CPUState
+    from overkill_port.memory import Memory
+    from overkill_port.replacements import _find_free_object_slot_7573
+
+    code = bytes.fromhex(
+        "b9 22 00 8b 1e da 95 81 fb cc 32 75 03 bb 5c 2b "
+        "83 3f 00 74 09 83 c3 38 e2 ed bb ff ff c3 89 1e da 95 c3"
+    )
+
+    def make_cpu() -> CPU8086:
+        mem = Memory()
+        mem.load(0x1010, 0x7573, code)
+        state = CPUState(cs=0x1010, ds=0x2000, ss=0x3000, sp=0x9000, ip=0x7573, flags=0x0202)
+        cpu = CPU8086(mem, state)
+        cpu.trace_enabled = False
+        cpu.mem.ww(0x2000, 0x95DA, 0x3294)
+        cpu.mem.ww(0x2000, 0x3294, 1)
+        cpu.mem.ww(0x2000, 0x2B5C, 0)
+        return cpu
+
+    asm = make_cpu()
+    asm.push(0xBEEF)
+    for _ in range(80):
+        if asm.addr() == (0x1010, 0xBEEF):
+            break
+        asm.step()
+
+    hook = make_cpu()
+    _find_free_object_slot_7573(hook)
+
+    assert asm.addr() == (0x1010, 0xBEEF)
+    assert asm.s.bx == hook.s.bx == 0x2B5C
+    assert asm.s.cx == hook.s.cx == 0x0021
+    assert asm.s.flags == hook.s.flags
+    assert asm.mem.rw(0x2000, 0x95DA) == hook.mem.rw(0x2000, 0x95DA) == 0x2B5C
+
+
+def test_object_allocator_7573_full_pool_matches_original_exhaustion():
+    from overkill_port.cpu import CPU8086, CPUState
+    from overkill_port.memory import Memory
+    from overkill_port.replacements import _find_free_object_slot_7573
+
+    code = bytes.fromhex(
+        "b9 22 00 8b 1e da 95 81 fb cc 32 75 03 bb 5c 2b "
+        "83 3f 00 74 09 83 c3 38 e2 ed bb ff ff c3 89 1e da 95 c3"
+    )
+
+    def make_cpu() -> CPU8086:
+        mem = Memory()
+        mem.load(0x1010, 0x7573, code)
+        state = CPUState(cs=0x1010, ds=0x2000, ss=0x3000, sp=0x9000, ip=0x7573, flags=0x0202)
+        cpu = CPU8086(mem, state)
+        cpu.trace_enabled = False
+        cpu.mem.ww(0x2000, 0x95DA, 0x3294)
+        for i in range(0x22):
+            cpu.mem.ww(0x2000, 0x2B5C + i * 0x38, 1)
+        return cpu
+
+    asm = make_cpu()
+    asm.push(0xBEEF)
+    for _ in range(300):
+        if asm.addr() == (0x1010, 0xBEEF):
+            break
+        asm.step()
+
+    hook = make_cpu()
+    _find_free_object_slot_7573(hook)
+
+    assert asm.addr() == (0x1010, 0xBEEF)
+    assert asm.s.bx == hook.s.bx == 0xFFFF
+    assert asm.s.cx == hook.s.cx == 0
+    assert asm.s.flags == hook.s.flags
+    assert asm.mem.rw(0x2000, 0x95DA) == hook.mem.rw(0x2000, 0x95DA) == 0x3294

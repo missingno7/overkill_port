@@ -135,37 +135,28 @@ def decode_vertical_rle_columns(cpu) -> None:
     start_di = cpu.mem.rw(ds, 0x023C)
     cpu.s.di = start_di
 
-    read_packed_byte(cpu)
+    cpu.push(0x03B3)
+    read_packed_word_le(cpu)
     if cpu.s.ip == OVERKILL_LOAD_ERROR_IP:
         return
-    lo = cpu.get_reg8(0)
-    read_packed_byte(cpu)
-    if cpu.s.ip == OVERKILL_LOAD_ERROR_IP:
-        return
-    word0 = lo | (cpu.get_reg8(0) << 8)
-    cpu.s.ax = word0
+    cpu.s.ip = cpu.pop()
+    word0 = cpu.s.ax & 0xFFFF
     cpu.mem.ww(cs, 0x03A2, word0)
 
-    read_packed_byte(cpu)
+    cpu.push(0x03BB)
+    read_packed_word_le(cpu)
     if cpu.s.ip == OVERKILL_LOAD_ERROR_IP:
         return
-    lo = cpu.get_reg8(0)
-    read_packed_byte(cpu)
-    if cpu.s.ip == OVERKILL_LOAD_ERROR_IP:
-        return
-    word1 = lo | (cpu.get_reg8(0) << 8)
-    cpu.s.ax = word1
+    cpu.s.ip = cpu.pop()
+    word1 = cpu.s.ax & 0xFFFF
     cpu.mem.ww(ds, 0x03A4, word1)
 
-    read_packed_byte(cpu)
+    cpu.push(0x03C3)
+    read_packed_word_le(cpu)
     if cpu.s.ip == OVERKILL_LOAD_ERROR_IP:
         return
-    lo = cpu.get_reg8(0)
-    read_packed_byte(cpu)
-    if cpu.s.ip == OVERKILL_LOAD_ERROR_IP:
-        return
-    word2 = lo | (cpu.get_reg8(0) << 8)
-    cpu.s.ax = word2
+    cpu.s.ip = cpu.pop()
+    word2 = cpu.s.ax & 0xFFFF
     cpu.mem.ww(ds, 0x03A6, word2)
 
     # Original uses CS:03A4 for both outer LOOP count and vertical stride.  In

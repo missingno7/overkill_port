@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 
-from .cpu import CF, DF, ZF, SF, PF, _PARITY
+from .cpu import CF, DF, IF, PF, SF, TF, ZF, _PARITY
 from .hooks import registry
 from .memory import EGA_CPU_APERTURE, EGA_APERTURE, EGA_PLANE_STRIDE, EGA_PLANE_WINDOW
 from .games.overkill.asset_codecs import (
@@ -51,6 +51,7 @@ from .games.overkill.rendering.layer_sprites import (
 from .games.overkill.rendering.tandy import (
     expand_tandy_cell_33dd as run_expand_tandy_cell_33dd,
     expand_tandy_block_33b2 as run_expand_tandy_block_33b2,
+    expand_tandy_list_33af as run_expand_tandy_list_33af,
     TandyRenderRuntime,
     draw_object_block_35cc as run_tandy_draw_object_block_35cc,
     draw_split_object_356c as run_tandy_draw_split_object_356c,
@@ -104,6 +105,7 @@ _SIG_2ECB = bytes.fromhex("bb 58 00 8b 04 f7 d0 26 09 05 83 c6 04 83 c7 02")
 _SIG_2F40 = bytes.fromhex("bb 60 00 8b 04 f7 d0 26 09 05 83 c6 04 83 c7 02")
 _SIG_2F81 = bytes.fromhex("bb 60 00 ad 26 23 05 0b 04 83 c6 02 ab ad 26 23")
 _SIG_306F = bytes.fromhex("ad 8b c8 ad 2e 8e 06 a4 95 d1 e0 d1 e0 8b e8 51")
+_SIG_33AF = bytes.fromhex("e8 25 11 75 03 e9 f3 10 2e 8b 0e 9e 5b 51 2e 8b")
 _SIG_33B2 = bytes.fromhex("75 03 e9 f3 10 2e 8b 0e 9e 5b 51 2e 8b 0e 9c")
 _SIG_34AD = bytes.fromhex("83 ff ff 74 03 e8 10 00 8b 7e 10 8b 76 0e 81 c6")
 _SIG_34C5 = bytes.fromhex("bb 58 00 b9 10 00 a5 a5 a5 a5 a5 a5 a5 a5 03 fb")
@@ -232,6 +234,12 @@ def overkill_expand_tandy_cell_33dd(cpu):
 def overkill_expand_tandy_block_33b2(cpu):
     """Hook wrapper for OVERKILL 1010:33B2 Tandy startup block expander."""
     run_expand_tandy_block_33b2(cpu, _tandy_render_runtime())
+
+
+@registry.replace(0x1010, 0x33AF, "overkill_expand_tandy_list_33af")
+def overkill_expand_tandy_list_33af(cpu):
+    """Hook wrapper for OVERKILL 1010:33AF Tandy startup list expander."""
+    run_expand_tandy_list_33af(cpu, _tandy_render_runtime())
 
 
 
@@ -2270,6 +2278,7 @@ def _tandy_render_runtime() -> TandyRenderRuntime:
         signature_2f81=_SIG_2F81,
         signature_2fb6=_SIG_2FB6,
         signature_306f=_SIG_306F,
+        signature_33af=_SIG_33AF,
         signature_33b2=_SIG_33B2,
         signature_34ad=_SIG_34AD,
         signature_34c5=_SIG_34C5,
@@ -2383,7 +2392,16 @@ def _run_object_behavior_b73e(cpu, *, parent: str, chain: str, cx_value: int) ->
         cpu.mem.ww(ds, 0x2304, target_y_local)
         cpu.s.ax = target_x_local
         cpu.mem.ww(ds, 0x2306, target_x_local)
+        # B85C reaches the movement helper through B862 CALL B729, then
+        # B735 CALL 5DB2.  The lifted helper models AF60's self-call scratch
+        # relative to the current SP, so keep both real return frames live while
+        # running it; otherwise AF63 is written one frame too shallow and hook
+        # verification later sees stale stack garbage around SS:SP.
+        saved_sp = cpu.s.sp & 0xFFFF
+        cpu.push(0xB865)
+        cpu.push(0xB738)
         _run_movement_direction_5db2(cpu)
+        cpu.s.sp = saved_sp
         _cmp_word(cpu, cpu.mem.rw(ds, 0x230A), 0)
         cpu.mem.ww(ss, (bp + 0x06) & 0xFFFF, 0x0004)
         _run_object_postmove_bc4b(cpu, parent=parent, chain=f"{chain} -> B73E -> B85C -> B729 -> 5DB2", cx_value=cx_value)
@@ -3020,20 +3038,34 @@ def _run_post_contact_9e98_tail_observed(cpu) -> None:
 
 
 def _find_free_object_slot_7573(cpu) -> int:
+    """Mirror the original 1010:7573 object-slot allocator.
+
+    The loop target in the ASM is 757A, not 7583, so the sentinel/wrap check is
+    repeated on every scan iteration.  A lifted version that only wrapped once
+    before the loop could let DS:[95DA] advance past 32CC into Tandy draw
+    scratch space; the next projectile allocation would then overlap the sprite
+    buffer and vanish on the following draw pass.
+    """
     ds = cpu.s.ds & 0xFFFF
     bx = cpu.mem.rw(ds, 0x95DA)
-    if bx == 0x32CC:
-        bx = 0x2B5C
     cx = 0x0022
     while cx:
-        _cmp_word(cpu, cpu.mem.rw(ds, bx), 0)
-        if cpu.mem.rw(ds, bx) == 0:
+        _cmp_word(cpu, bx, 0x32CC)
+        if bx == 0x32CC:
+            bx = 0x2B5C
+        value = cpu.mem.rw(ds, bx)
+        _cmp_word(cpu, value, 0)
+        if value == 0:
             cpu.mem.ww(ds, 0x95DA, bx)
             cpu.s.bx = bx
+            cpu.s.cx = cx
             return bx
+        old_bx = bx
         bx = (bx + 0x0038) & 0xFFFF
+        cpu.set_add_flags(old_bx, 0x0038, old_bx + 0x0038, 16)
         cx = (cx - 1) & 0xFFFF
     cpu.s.bx = 0xFFFF
+    cpu.s.cx = 0
     return 0xFFFF
 
 
@@ -3242,46 +3274,59 @@ def _run_object_postmove_bc4b(cpu, *, parent: str, chain: str, cx_value: int, cl
 
     _cmp_word(cpu, global_disable, 0)
     if global_disable == 0:
-        # BCCB early exits for inactive/exempt objects; otherwise it may call
-        # the view-window helper and only continues into hit logic if CF is set.
-        _cmp_word(cpu, mem.rw(ss, bp), 0)
-        if mem.rw(ss, bp) != 0:
-            for off, bad in ((0x16, 5), (0x18, 0), (0x18, 1)):
-                _cmp_word(cpu, mem.rw(ss, (bp + off) & 0xFFFF), bad)
-                if mem.rw(ss, (bp + off) & 0xFFFF) == bad:
-                    break
-            else:
-                obj_type = mem.rw(ss, (bp + 0x14) & 0xFFFF)
-                _cmp_word(cpu, obj_type, 1)
-                if obj_type == 1:
-                    # BCF4 CALL AA46 leaves the BCF7 return word as stack scratch
-                    # below SP; OVERKILL reads that scratch later, so reproduce it.
-                    saved_sp = cpu.s.sp & 0xFFFF
-                    cpu.push(0xBCF7)
-                    _run_view_window_check_aa46(cpu)
-                    cpu.mem.ww(cpu.s.ss & 0xFFFF, (saved_sp - 4) & 0xFFFF, 0xBCF7)
-                    cpu.s.sp = saved_sp
-                elif obj_type == 2:
-                    _raise_unverified_path(cpu, parent=parent, chain=f"{chain} -> BCCB", target_ip=0xAA71, bp=bp, cx_value=cx_value)
+        # BC4B reaches the contact checks through CALL BCCB.  Even though BCCB
+        # balances SP before returning, its nested CALLs leave return-address
+        # scratch below SP; keep the real BCAD call frame live while modelling
+        # BCCB so later nested calls land at the same stack offsets.
+        bccb_sp = cpu.s.sp & 0xFFFF
+        cpu.push(0xBCAD)
+        try:
+            # BCCB early exits for inactive/exempt objects; otherwise it may call
+            # the view-window helper and only continues into hit logic if CF is set.
+            _cmp_word(cpu, mem.rw(ss, bp), 0)
+            if mem.rw(ss, bp) != 0:
+                for off, bad in ((0x16, 5), (0x18, 0), (0x18, 1)):
+                    _cmp_word(cpu, mem.rw(ss, (bp + off) & 0xFFFF), bad)
+                    if mem.rw(ss, (bp + off) & 0xFFFF) == bad:
+                        break
                 else:
-                    return
-                if cpu.get_flag(CF):
-                    _cmp_word(cpu, mem.rw(ds, 0xA8C2), 0x0001)
-                    if mem.rw(ds, 0xA8C2) != 0x0001:
-                        cpu.push(0xBD09)
-                        _run_collision_death_tail_bfc7(
+                    obj_type = mem.rw(ss, (bp + 0x14) & 0xFFFF)
+                    _cmp_word(cpu, obj_type, 1)
+                    if obj_type == 1:
+                        # BCF4 CALL AA46 leaves BCF7 below BCCB's live frame.
+                        saved_sp = cpu.s.sp & 0xFFFF
+                        cpu.push(0xBCF7)
+                        _run_view_window_check_aa46(cpu)
+                        cpu.s.sp = saved_sp
+                    elif obj_type == 2:
+                        _raise_unverified_path(cpu, parent=parent, chain=f"{chain} -> BCCB", target_ip=0xAA71, bp=bp, cx_value=cx_value)
+                    else:
+                        return
+                    if cpu.get_flag(CF):
+                        _cmp_word(cpu, mem.rw(ds, 0xA8C2), 0x0001)
+                        if mem.rw(ds, 0xA8C2) != 0x0001:
+                            cpu.push(0xBD09)
+                            _run_collision_death_tail_bfc7(
+                                cpu,
+                                parent=parent,
+                                chain=f"{chain} -> BCCB",
+                                cx_value=cx_value,
+                            )
+                        # BD09 CALL 9E69 must run with BD0C on the stack, not
+                        # merely written below the current SP.  The 9E69 -> 9E98
+                        # display tail calls 61DC, whose nested scratch is part
+                        # of the verifier-visible freed stack bytes.
+                        saved_sp = cpu.s.sp & 0xFFFF
+                        cpu.push(0xBD0C)
+                        _run_post_contact_9e69_observed(
                             cpu,
                             parent=parent,
-                            chain=f"{chain} -> BCCB",
+                            chain=f"{chain} -> BCCB -> BD09",
                             cx_value=cx_value,
                         )
-                    _remember_balanced_push_scratch(cpu, 0xBD0C)
-                    _run_post_contact_9e69_observed(
-                        cpu,
-                        parent=parent,
-                        chain=f"{chain} -> BCCB -> BD09",
-                        cx_value=cx_value,
-                    )
+                        cpu.s.sp = saved_sp
+        finally:
+            cpu.s.sp = bccb_sp
         # BCAD CALL 62F6 leaves the BCB0 return word as stack scratch below SP.
         saved_sp = cpu.s.sp & 0xFFFF
         cpu.push(0xBCB0)
@@ -5100,9 +5145,20 @@ def overkill_wait_timer_tick_0679(cpu):
     """
     cs = cpu.s.cs & 0xFFFF
     flag = cpu.mem.rb(cs, 0x066B)
+    cpu.timer_ticks_elapsed = 0
     if flag == 0:
-        flag = 1  # model a single elapsed reprogrammed-IRQ0 tick
-        cpu.mem.wb(cs, 0x066B, flag)
+        delivered = 0
+        while flag == 0 and delivered < 8:
+            if not _deliver_overkill_timer_irq0(cpu):
+                raise RuntimeError(
+                    "1010:0679 timer wait needs OVERKILL INT 08h at 1010:06E5; "
+                    "no synthetic timer fallback is allowed"
+                )
+            delivered += 1
+            flag = cpu.mem.rb(cs, 0x066B)
+        if flag == 0:
+            raise RuntimeError("1010:06E5 timer ISR did not advance CS:066B within 8 ticks")
+        cpu.timer_ticks_elapsed = delivered
     # Final loop iteration: CMP byte ptr CS:[066B],0 (now non-zero); JZ not taken; RET.
     cpu.set_sub_flags(flag, 0, flag, 8)
     cpu.s.ip = cpu.pop()
@@ -5110,6 +5166,53 @@ def overkill_wait_timer_tick_0679(cpu):
     # place to throttle the game to real time when an interactive front-end asks.
     if cpu.timer_pacer is not None:
         cpu.timer_pacer()
+
+
+def _deliver_overkill_timer_irq0(cpu, *, max_steps: int = 200_000) -> bool:
+    """Synchronously run OVERKILL's installed INT 08h timer ISR if present.
+
+    The game sound code lives in the real ISR at ``1010:06E5``.  The original
+    handler chains the old BIOS timer every fourth tick via ``JMP FAR
+    CS:[0738]``; in this VM that saved BIOS vector is often 0000:0000, so stop
+    at the known chain point after the game-side work and restore the interrupt
+    frame locally.
+    """
+    mem = cpu.mem
+    off = mem.rw(0, 0x20)
+    seg = mem.rw(0, 0x22)
+    if (seg & 0xFFFF, off & 0xFFFF) != (0x1010, 0x06E5):
+        return False
+
+    ret_cs, ret_ip = cpu.s.cs & 0xFFFF, cpu.s.ip & 0xFFFF
+    sp0 = cpu.s.sp & 0xFFFF
+    cpu.push(cpu.s.flags)
+    cpu.push(ret_cs)
+    cpu.push(ret_ip)
+    cpu.set_flag(IF, False)
+    cpu.set_flag(TF, False)
+    cpu.s.cs = seg & 0xFFFF
+    cpu.s.ip = off & 0xFFFF
+
+    for _ in range(max_steps):
+        if cpu.s.sp == sp0 and cpu.addr() == (ret_cs, ret_ip):
+            return True
+        if cpu.addr() == (0x1010, 0x072F):
+            # Chain path after the game work:
+            #   POP DS; POP AX; STI; JMP FAR CS:[0738]
+            cpu.s.ds = cpu.pop()
+            cpu.s.ax = cpu.pop()
+            cpu.set_flag(IF, True)
+            if cpu.port_writer:
+                cpu.port_writer(cpu, 0x20, 0x20, 8)
+            cpu.s.ip = cpu.pop()
+            cpu.s.cs = cpu.pop()
+            cpu.s.flags = cpu.pop()
+            return cpu.s.sp == sp0 and cpu.addr() == (ret_cs, ret_ip)
+        cpu.step()
+    raise RuntimeError(
+        f"OVERKILL INT 08h timer ISR did not return "
+        f"(cs:ip={cpu.s.cs:04X}:{cpu.s.ip:04X})"
+    )
 
 
 

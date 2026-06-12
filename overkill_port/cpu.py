@@ -136,6 +136,7 @@ class CPU8086:
     # wait).  Left None for headless/deterministic runs; an interactive front-end
     # sets it to throttle the game to real time.
     timer_pacer: Callable[[], None] | None = None
+    timer_ticks_elapsed: int = 0
     max_rep_count: int = 1_000_000
 
     def addr(self) -> tuple[int, int]:
@@ -393,6 +394,10 @@ class CPU8086:
             self.push(s.flags); return "pushf"
         if op == 0x9D:
             s.flags = self.pop() | 0x0002; return "popf"
+        if op == 0x98:
+            al = s.ax & 0x00FF
+            s.ax = al | (0xFF00 if al & 0x80 else 0x0000)
+            return "cbw"
 
         # MOV between r/m and reg / segment
         if op in (0x88, 0x89, 0x8A, 0x8B):

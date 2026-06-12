@@ -48,6 +48,8 @@ from overkill_port.keyboard import KeyDispatcher
 from overkill_port.hook_verify import HookVerifierConfig, install_hook_verifier, parse_addr as parse_verify_addr
 from overkill_port.dos import ConsoleInputWouldBlock
 from overkill_port.runtime import create_runtime
+from overkill_port.cpu import IF
+from overkill_port.replacements import _deliver_overkill_timer_irq0
 from overkill_port.snapshot import load_snapshot, write_snapshot
 from overkill_port.memory import EGA_APERTURE, EGA_SHADOW_SIZE
 from render_cga import CGA_PALETTES
@@ -71,6 +73,52 @@ NON_CGA_INTERACTIVE_DISABLE = {
     (0x1010, 0x58DF),
 }
 
+
+OVERKILL_PIT_HZ = 1193182.0 / 0x4000  # original IRQ0 cadence programmed by 1010:068A
+
+
+class AsyncTimerIrqDriver:
+    """Deliver real OVERKILL INT 08h IRQs during non-frame busy waits.
+
+    The game normally waits at 1010:0679, where the timer hook runs the real
+    1010:06E5 ISR.  Some menu/input-release loops spin without touching 0679; on
+    the original PC the PIT IRQ continues asynchronously and advances sound there
+    too.  This driver is intentionally only a scheduler: each tick still executes
+    the actual installed ISR, not a synthetic sound fallback.
+    """
+
+    def __init__(self, hz: float = OVERKILL_PIT_HZ) -> None:
+        self.period = 1.0 / hz if hz > 0 else 0.0
+        self._next: float | None = None
+
+    def reset_after_synchronous_ticks(self, ticks: int = 1) -> None:
+        if self.period <= 0:
+            return
+        now = time.perf_counter()
+        self._next = now + self.period * max(1, int(ticks))
+
+    def poll(self, cpu, *, max_catchup: int = 4) -> int:
+        if self.period <= 0 or not cpu.get_flag(IF):
+            return 0
+        now = time.perf_counter()
+        if self._next is None:
+            self._next = now + self.period
+            return 0
+        if now < self._next:
+            return 0
+        due = int((now - self._next) // self.period) + 1
+        due = max(1, min(max_catchup, due))
+        delivered = 0
+        for _ in range(due):
+            if not _deliver_overkill_timer_irq0(cpu):
+                break
+            delivered += 1
+        if delivered:
+            # Schedule from wall clock, not from loop iteration count, so a tight
+            # keyboard busy-wait cannot make sound run faster than the PIT.
+            self._next = now + self.period
+        return delivered
+
 class TimerPacer:
     """Throttle the game to ``hz`` frames/second."""
 
@@ -78,19 +126,21 @@ class TimerPacer:
         self.period = 1.0 / hz if hz > 0 else 0.0
         self._next: float | None = None
 
-    def __call__(self) -> None:
+    def __call__(self, units: int = 1) -> None:
         if self.period <= 0:
             return
+        units = max(1, int(units))
+        period = self.period * units
         now = time.perf_counter()
         if self._next is None:
-            self._next = now + self.period
+            self._next = now + period
             return
         delay = self._next - now
         if delay > 0:
             time.sleep(delay)
-            self._next += self.period
+            self._next += period
         else:
-            self._next = now + self.period  # fell behind (e.g. after a load): resync
+            self._next = now + period  # fell behind (e.g. after a load): resync
 
 
 class FramePresented(Exception):
@@ -149,8 +199,8 @@ def main(argv: list[str] | None = None) -> int:
                    help="launch/render the original game in CGA, EGA, or Tandy mode (default: tandy)")
     p.add_argument("--dos-args", default=None,
                    help="override the PSP command tail passed to the original EXE, e.g. ' /E'")
-    p.add_argument("--game-hz", type=float, default=30.0,
-                   help="real-time game speed (frames/sec); original is ~36. Lower if choppy.")
+    p.add_argument("--game-hz", type=float, default=36.4,
+                   help="real-time game speed (frames/sec); original timer cadence is ~36.4. Lower if choppy.")
     p.add_argument("--fps", type=int, default=30, help="legacy option; timing is controlled by --game-hz")
     p.add_argument("--palette", default="1h", choices=sorted(CGA_PALETTES))
     p.add_argument("--scale", type=int, default=2)
@@ -273,8 +323,9 @@ def main(argv: list[str] | None = None) -> int:
     # both 0679 and 50C9 as timed boundaries, and publishes a new snapshot whenever
     # B800h actually changed.
     rt.cpu.timer_pacer = None
-    timer_pacer = TimerPacer(args.game_hz)
+    timer_pacer = TimerPacer(args.game_hz * 2.0)
     retrace_pacer = TimerPacer(args.retrace_hz if args.retrace_hz is not None else args.game_hz)
+    async_timer_irq = AsyncTimerIrqDriver()
     frame_sync = FrameSync()
 
     boundary = {"n": 0}
@@ -283,6 +334,7 @@ def main(argv: list[str] | None = None) -> int:
     timers = {"n": 0}
     retraces = {"n": 0}
     direct_video = {"n": 0}
+    last_boundary: dict[str, str | None] = {"kind": None}
     last_video_crc: dict[str, tuple[int, int] | None] = {"value": None}
     if args.video == "ega":
         present_hook_addr = EGA_PRESENT_HOOK
@@ -408,7 +460,45 @@ def main(argv: list[str] | None = None) -> int:
             return key != 0 and rt.cpu.mem.rb(rt.cpu.s.ds, (0x98C4 + key) & 0xFFFF) != 0
         return False
 
+    def is_overlay_menu_key_wait() -> bool:
+        cs, ip = rt.cpu.addr()
+        if not (0x099B <= ip <= 0x09DF):
+            return False
+        mem = rt.cpu.mem
+        if mem.block(cs, 0x099B, 7) != bytes.fromhex("80 3e 0f 99 01 74 47"):
+            return False
+        ds = rt.cpu.s.ds & 0xFFFF
+        watched = (0x990F, 0x990C, 0x990D, 0x98D2, 0x9911,
+                   0x9914, 0x9915, 0x98FD, 0x98E0, 0x98C5)
+        return all(mem.rb(ds, off) != 1 for off in watched)
+
+    def is_gameplay_exit_confirm_wait() -> bool:
+        """Detect the in-game Esc "SURE ?" confirmation key loop.
+
+        The original code draws the prompt between 1010:9875 and 1010:989B, then
+        spins at 1010:989E..98B4 polling Y/N key-state bytes.  There is no Tandy
+        presenter or timer wait inside that loop, so the interactive viewer must
+        publish the direct VRAM update and yield for Y/N input.
+        """
+        cs, ip = rt.cpu.addr()
+        if cs != 0x1010 or not (0x989E <= ip <= 0x98B6):
+            return False
+        mem = rt.cpu.mem
+        if mem.block(cs, 0x989E, 24) != bytes.fromhex(
+            "c6 06 b4 22 4e 80 3e f5 98 01 74 0c "
+            "c6 06 b4 22 59 80 3e d9 98 01 75 e8"
+        ):
+            return False
+        ds = rt.cpu.s.ds & 0xFFFF
+        return mem.rb(ds, 0x98F5) != 1 and mem.rb(ds, 0x98D9) != 1
+
     def present_hook(cpu) -> None:
+        # Hardware IRQ0 is independent of the video presenter.  Intro and menu
+        # paths can hit many present boundaries without ever reaching the
+        # gameplay 0679 timer wait; polling here lets the real 1010:06E5 sound
+        # ISR consume pending BEFF sound requests while the intro is still on
+        # screen instead of deferring them until the next menu/input wait.
+        async_timer_irq.poll(cpu)
         if base_present is not None:
             if hook_verifier is not None:
                 hook_verifier.verify(cpu, present_hook_addr, base_present, base_present_name)
@@ -426,10 +516,12 @@ def main(argv: list[str] | None = None) -> int:
         # A visible blit is a safe place to hand control back to the UI.  The
         # following 0679 timer wait still performs the actual gameplay sleep, so
         # this does not invent an additional gameplay delay.
+        last_boundary["kind"] = "present"
         stop_cpu_burst()
 
     def timer_frame_hook(cpu) -> None:
         base_timer_wait(cpu)
+        async_timer_irq.reset_after_synchronous_ticks(getattr(cpu, "timer_ticks_elapsed", 0) or 1)
         timers["n"] += 1
         # Some paths update video memory directly and only use the timer wait as
         # their boundary.  EGA startup/menu can do this before the first 2750
@@ -438,10 +530,14 @@ def main(argv: list[str] | None = None) -> int:
         # committed as a complete frame yet.
         if args.video != "ega" or args.ega_publish_timed_boundaries or blits["n"] == 0:
             publish_video_if_changed(cpu)
-        timer_pacer()
+        timer_pacer(getattr(cpu, "timer_ticks_elapsed", 0) or 2)
+        last_boundary["kind"] = "timer"
         stop_cpu_burst()
 
     def retrace_frame_hook(cpu) -> None:
+        # Same rationale as present_hook: retrace waits are visual timing
+        # boundaries, not PIT waits.  The original IRQ0 still fires during them.
+        async_timer_irq.poll(cpu)
         if base_retrace_wait is not None:
             base_retrace_wait(cpu)
         retraces["n"] += 1
@@ -451,6 +547,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.video != "ega" or args.ega_publish_timed_boundaries or blits["n"] == 0:
             publish_video_if_changed(cpu)
         retrace_pacer()
+        last_boundary["kind"] = "retrace"
         stop_cpu_burst()
 
     rt.cpu.replacement_hooks[present_hook_addr] = present_hook
@@ -466,6 +563,8 @@ def main(argv: list[str] | None = None) -> int:
     stop = threading.Event()
     status = {"text": ""}
     snapshot_requests: SimpleQueue[Path] = SimpleQueue()
+    speaker_events: SimpleQueue[tuple[bool, float]] = SimpleQueue()
+    rt.dos.set_speaker_callback(lambda enabled, freq: speaker_events.put((enabled, freq)), emit_current=True)
 
     def queue_snapshot_save() -> None:
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -489,7 +588,15 @@ def main(argv: list[str] | None = None) -> int:
                         trace_tail=(),
                     )
                     status["text"] = f"snapshot saved: {out}"
-                keyboard.pump()  # frame-accurate key make/break delivery
+                # Tandy/CGA gameplay presents the frame before checking some
+                # post-present one-shot keys such as Esc.  If a quick physical
+                # tap is pressed before that presenter and released right after
+                # it, releasing it at the next outer-loop pump would make the
+                # original code miss the key entirely.  Keep breaks pending for
+                # one more VM slice after present boundaries; no-frame busy-wait
+                # pumping below can still release keys once the game reaches its
+                # explicit key-release loop.
+                keyboard.pump(allow_release=last_boundary["kind"] != "present")
                 target = boundary["n"] + 1
                 used = 0
                 while boundary["n"] < target and used < args.frame_budget and not stop.is_set():
@@ -498,20 +605,43 @@ def main(argv: list[str] | None = None) -> int:
                     except FramePresented:
                         break
                     except ConsoleInputWouldBlock:
+                        async_timer_irq.poll(rt.cpu)
                         publish_video_if_changed(rt.cpu)
                         boundary["n"] += 1
+                        last_boundary["kind"] = "wait"
                         cs, ip = rt.cpu.addr()
                         status["text"] = f"waiting for DOS console input @ {cs:04X}:{ip:04X}"
                         time.sleep(0.01)
                         break
                     if is_redefine_key_wait():
+                        async_timer_irq.poll(rt.cpu)
                         publish_video_if_changed(rt.cpu)
                         boundary["n"] += 1
+                        last_boundary["kind"] = "wait"
                         cs, ip = rt.cpu.addr()
                         status["text"] = f"waiting for redefine-key input @ {cs:04X}:{ip:04X}"
                         time.sleep(0.01)
                         break
+                    if is_overlay_menu_key_wait():
+                        async_timer_irq.poll(rt.cpu)
+                        publish_video_if_changed(rt.cpu)
+                        boundary["n"] += 1
+                        last_boundary["kind"] = "wait"
+                        cs, ip = rt.cpu.addr()
+                        status["text"] = f"waiting for menu screen input @ {cs:04X}:{ip:04X}"
+                        time.sleep(0.01)
+                        break
+                    if is_gameplay_exit_confirm_wait():
+                        async_timer_irq.poll(rt.cpu)
+                        publish_video_if_changed(rt.cpu, force=True)
+                        boundary["n"] += 1
+                        last_boundary["kind"] = "wait"
+                        cs, ip = rt.cpu.addr()
+                        status["text"] = f"waiting for exit confirmation @ {cs:04X}:{ip:04X}"
+                        time.sleep(0.01)
+                        break
                     used += 8000
+                    async_timer_irq.poll(rt.cpu)
                     # Long screen loads can run for many chunks without a
                     # visible/timer boundary.  Drain key-up events during those
                     # bursts so a short FIRE tap from the menu is not still held
@@ -522,6 +652,7 @@ def main(argv: list[str] | None = None) -> int:
                     if publish_video_if_changed(rt.cpu):
                         direct_video["n"] += 1
                         boundary["n"] += 1
+                        last_boundary["kind"] = "direct"
                         status["text"] = f"direct video publish @ {cs:04X}:{ip:04X}"
                     else:
                         status["text"] = f"stall (no visual/timer boundary in {used} steps) @ {cs:04X}:{ip:04X}"
@@ -553,6 +684,7 @@ def main(argv: list[str] | None = None) -> int:
         ega_render_start=ega_render_start,
         live_memory=lambda: bytes(rt.program.memory.data),
         live_display_start=lambda: rt.program.memory.ega_display_start,
+        speaker_events=speaker_events,
     )
     return 0
 

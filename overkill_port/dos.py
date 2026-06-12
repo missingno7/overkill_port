@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Callable
 
 from .cpu import CPU8086, HaltExecution, UnsupportedInstruction, CF, ZF
 
@@ -37,6 +38,12 @@ class DOSMachine:
     vga_status_reads: int = 0
     _seq_index: int = 0  # last EGA sequencer index latched via 03C4h
     _crtc_index: int = 0  # last colour CRTC index latched via 03D4h/03B4h
+    _pit_channel2_access: int = 3
+    _pit_channel2_latch: int = 0
+    _pit_channel2_write_low: bool = True
+    pit_channel2_reload: int = 0
+    speaker_control: int = 0
+    speaker_callback: Callable[[bool, float], None] | None = None
     port_log: list[tuple[str, int, int, int]] = field(default_factory=list)
     # Pending BIOS keystrokes as 16-bit values (high byte = scan code, low byte =
     # ASCII).  An interactive front-end pushes keys here; when empty the runtime
@@ -49,6 +56,19 @@ class DOSMachine:
     # Latest raw keyboard scan code presented on port 60h.  A front-end sets this
     # and then invokes the installed INT 9 handler (see overkill_port.interrupts).
     current_scancode: int = 0
+
+    def set_speaker_callback(self, callback: Callable[[bool, float], None] | None, *, emit_current: bool = False) -> None:
+        """Install a PC-speaker observer, optionally emitting the current state.
+
+        Runtime snapshots can be taken while a tone is already active.  The live
+        SDL frontend attaches its callback after ``load_snapshot`` restores DOS
+        state, so it needs one immediate notification; otherwise the next port
+        write is the first audible event and an already-playing tone is lost.
+        """
+        self.speaker_callback = callback
+        if emit_current and callback is not None:
+            self._notify_speaker()
+
 
 
     def seed_initial_memory_block(self, psp_segment: int, top_segment: int = 0xA000) -> None:
@@ -110,12 +130,60 @@ class DOSMachine:
         if port == 0x60 and bits == 8:
             # 8042 keyboard data port: the game's INT 9 handler reads the scan code here.
             return self.current_scancode & 0xFF
+        if port == 0x61 and bits == 8:
+            return self.speaker_control & 0xFF
         return 0
 
     def port_write(self, cpu: CPU8086, port: int, value: int, bits: int) -> None:
         if len(self.port_log) < 4096:
             self.port_log.append(("out", port & 0xFFFF, value & ((1 << bits) - 1), bits))
+        self._track_pc_speaker(port & 0xFFFF, value, bits)
         self._track_ega_ports(cpu, port & 0xFFFF, value, bits)
+
+    def _track_pc_speaker(self, port: int, value: int, bits: int) -> None:
+        if bits == 16:
+            self._track_pc_speaker(port, value & 0xFF, 8)
+            self._track_pc_speaker((port + 1) & 0xFFFF, (value >> 8) & 0xFF, 8)
+            return
+
+        value &= 0xFF
+        if port == 0x43:
+            channel = (value >> 6) & 0x03
+            if channel == 2:
+                access = (value >> 4) & 0x03
+                self._pit_channel2_access = access
+                self._pit_channel2_write_low = True
+                if access in (1, 2):
+                    self._pit_channel2_latch = 0
+            return
+        if port == 0x42:
+            access = self._pit_channel2_access
+            if access == 1:
+                self.pit_channel2_reload = (self.pit_channel2_reload & 0xFF00) | value
+                self._notify_speaker()
+            elif access == 2:
+                self.pit_channel2_reload = (self.pit_channel2_reload & 0x00FF) | (value << 8)
+                self._notify_speaker()
+            else:
+                if self._pit_channel2_write_low:
+                    self._pit_channel2_latch = value
+                    self._pit_channel2_write_low = False
+                else:
+                    self.pit_channel2_reload = ((value << 8) | self._pit_channel2_latch) & 0xFFFF
+                    self._pit_channel2_write_low = True
+                    self._notify_speaker()
+            return
+        if port == 0x61:
+            self.speaker_control = value
+            self._notify_speaker()
+
+    def _notify_speaker(self) -> None:
+        if self.speaker_callback is None:
+            return
+        reload = self.pit_channel2_reload or 0x10000
+        enabled = (self.speaker_control & 0x03) == 0x03 and reload != 0
+        freq = 1193182.0 / reload if enabled else 0.0
+        self.speaker_callback(enabled, freq)
 
     def _track_ega_ports(self, cpu: CPU8086, port: int, value: int, bits: int) -> None:
         # Track just enough EGA sequencer state to drive planar A000h writes (see

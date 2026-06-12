@@ -1,3 +1,146 @@
+## 2026-06-12 PC speaker timing cadence
+
+Two later Tandy snapshots clarified the sound timing behavior:
+
+- `artifacts/snapshot_play_tandy_20260612_151420` is a level-select/menu state
+  after `D`.
+- `artifacts/snapshot_play_tandy_20260612_151523` is gameplay after Space/fire
+  where sound was heard but no projectile appeared.
+
+Both snapshots have `DS:0055 == 0`, so they are not using the optional far sound
+driver at `2032:0000`.  Speaker activity comes from the always-run timer helper
+path inside `1010:06E5 -> D50E`.
+
+The Space/fire snapshot was compared with the old synthetic `0679` timer model
+and the new real-ISR model under the same Space input.  The sampled B800 CRC and
+object-table state matched.  That means the "fire sound but no projectile"
+state is not caused by enabling the timer ISR speaker path; it remains a
+gameplay/input-state issue to audit separately.
+
+The sound-length complaint did reveal a pacing mismatch.  OVERKILL programs PIT
+divisor `0x4000`, so the timer ISR runs at about `72.8 Hz`.  The `0679` wait
+usually consumes two ISR ticks before `CS:066B` advances, yielding an effective
+game cadence of about `36.4 Hz`.  The interactive player default was still
+`30 Hz`, so timer-driven sounds were stretched by roughly 20%.
+
+`CPU8086.timer_ticks_elapsed` now records the number of real ISR ticks delivered
+by the `0679` hook.  `scripts/play.py` paces gameplay by those PIT-tick units,
+with default `--game-hz 36.4` and an internal pacer frequency of
+`--game-hz * 2`.
+
+## 2026-06-12 PC speaker via the original timer ISR
+
+The PC speaker backend became audible once the timer wait hook stopped skipping
+the game-side ISR work.
+
+`1010:0679 overkill_wait_timer_tick_0679` originally modeled only the flag that
+unblocks the wait loop (`CS:066B`).  That was enough for video/gameplay timing,
+but it bypassed the installed INT 08h handler at `1010:06E5`, where OVERKILL
+updates sound.  A live delivery test from
+`artifacts/play_tandy_main_menu_20260612_132548` showed the ISR producing real
+speaker hardware writes:
+
+```text
+out 43h,B6h
+out 42h,<low divisor>
+out 42h,<high divisor>
+out 61h,03h
+```
+
+The timer hook now runs the original ISR synchronously when INT 08h points at
+`1010:06E5`, delivering bounded real ISR ticks until the original `CS:066B`
+wait flag advances.  If that vector is absent or different, the hook fails
+fast; it no longer invents a synthetic timer tick.
+
+One guard is needed: the original ISR chains the saved BIOS timer every fourth
+tick through `JMP FAR CS:[0738]`.  The VM often has that saved vector as
+`0000:0000`, so the hook stops at the known chain point after the game-side
+work, restores the interrupt return frame, sends the EOI, and returns to the
+wait loop.  This keeps the original sound/timer behavior without executing an
+unmodeled BIOS timer body.
+
+Validation:
+
+```text
+scripts/run_tests.py
+128 passed, 0 failed
+scripts/play.py --snapshot artifacts/play_tandy_main_menu_20260612_132548 --verify-frames --verify-frame-max 40
+FRAME VERIFY OK frames=40
+scripts/play.py --snapshot artifacts/play_tandy_edrax_orbit_combat_20260611_232258 --verify-frames --verify-frame-max 40
+FRAME VERIFY OK frames=40
+```
+
+## 2026-06-12 Tandy `33AF` composition guard
+
+`artifacts/snapshot_play_tandy_20260612_141644` exposed a gameplay rendering
+regression that initially looked correlated with the PC speaker pass.  It was
+not: the failing path performed no `42h/43h/61h` speaker IO before divergence.
+
+Frame verification diverged at frame 48.  Hook bisection showed that disabling
+`1010:33AF overkill_expand_tandy_list_33af` alone restored frame agreement.
+Live verification then showed the composed parent hook was wrong for the
+snapshot's state:
+
+```text
+entry 1010:33AF
+DS=35FF ES=8502 SI=0000 DI=0000
+CS:[0BD8]=0000
+```
+
+The `33AF` parent composition had been verified for the startup/header-table
+case where `CS:[0BD8] != 0`.  The gameplay materialization case with
+`CS:[0BD8] == 0` has different visible parent-level behavior.  Rather than
+guess that second mode, the hook now self-disables and falls back to original
+ASM when `0BD8 == 0`; the child `1010:33B2` block expander remains hooked, so
+the original parent can still benefit from the verified block-level lift.
+
+The investigation also tightened two asset-codec side effects:
+
+- `1010:0615` now models its two nested `CALL 0624` operations so stack scratch
+  from call/return and refill paths matches the original more closely.
+- `1010:03A8` now reads its three header words through the shared `0615` helper,
+  preserving the original `CS:0614` temp-byte side effect.
+
+Validation:
+
+```text
+scripts/play.py --snapshot artifacts/snapshot_play_tandy_20260612_141644 --verify-frames --verify-frame-max 60
+FRAME VERIFY OK frames=60
+scripts/run_tests.py
+127 passed, 0 failed
+```
+
+## 2026-06-12 PC speaker hardware path
+
+The runtime now models the PC speaker hardware state narrowly enough for
+OVERKILL:
+
+- port `43h` tracks PIT channel 2 access mode;
+- port `42h` latches channel 2 reload values, including the normal low/high
+  byte programming sequence;
+- port `61h` stores and reads back the speaker gate/data control bits;
+- a callback publishes `(enabled, frequency)` whenever a complete divisor or
+  gate change can affect the audible state.
+
+The interactive SDL viewer consumes those callbacks through a queue and plays a
+cached mono square wave at `1193182 / reload` Hz while both low speaker bits are
+set.  This is intentionally a hardware/backend pass, not a guessed sound-driver
+rewrite.
+
+Evidence gap: a short run from `artifacts/play_tandy_main_menu_20260612_132548`
+produces no speaker-port writes, and the loaded far driver slot at `2032:0000`
+is still only:
+
+```text
+2032:0000  e8 0f 00 cb  e8 0b 00 cb  02 00 00 00  00 00 88 03
+```
+
+That matches the earlier timer finding: `1010:0679` currently models the timer
+flag without running the full `1010:06E5` ISR, and the observed sound target is
+not yet a real PC-speaker routine.  The next sound-specific RE step is therefore
+to find the command-tail/loader path that selects a non-stub driver, then decide
+whether `1010:06E5` can safely compose the verified sound tick.
+
 ## Artifact hygiene note
 
 Older one-off closure, verify, and probe outputs that were not referenced by
@@ -46,6 +189,44 @@ that key is released.  `scripts/play.py` treats both loops as interactive yield
 points so the SDL thread can pump key events immediately instead of waiting for
 the full `--frame-budget`.  No global hook was added because headless/oracle
 runs should still see the original keyboard wait semantics.
+
+The instructions/order-info overlay has a similar but separate key wait.  From
+`artifacts/snapshot_play_tandy_20260612_140352`, execution is already in overlay
+segment `1F8F`, not loading assets.  The hot loop is:
+
+```text
+1F8F:099B..09DF  repeated cmp byte ptr DS:[key_state],01h / branch
+```
+
+It checks the game key-state bytes at `DS:990F`, `990C`, `990D`, `98D2`,
+`9911`, `9914`, `9915`, `98FD`, `98E0`, and `98C5`.  `scripts/play.py` now
+recognizes this overlay wait by the `1F8F:099B` code signature and yields the UI
+while all watched keys are idle.  This remains an interactive scheduling fix,
+not a replacement hook: profiling/oracle runs still execute the original loop.
+
+## 2026-06-12 Tandy startup list-driver composition
+
+Cold-start Tandy profiling showed that the startup graphics materialization path
+still paid interpreter overhead around the already-hooked Tandy block expander:
+
+```text
+1010:33AF  call 44D7          ; read one block header
+1010:33B2  ...                ; Tandy block expander, already hooked
+1010:450A  ret / loop to 33AF
+```
+
+`1010:44D7` reads a block header from `DS:SI`, detects the zero terminator,
+updates `CS:[5B9E]` height and `CS:[5B9C]` width, emits the original header words
+to `ES:DI`, and leaves flags for `33B2`'s terminator branch.  New hook
+`1010:33AF overkill_expand_tandy_list_33af` composes that header reader with the
+existing `33B2` implementation until the zero header reaches `1010:44AA`.
+
+This keeps the implementation inside the existing Tandy rendering/startup
+materialization island and avoids duplicating the pixel expansion logic.  The
+oracle test uses a two-block list plus terminator and compares full memory.  It
+also exposed one missing balanced-call scratch in `33B2`: the final nested
+`344B` call leaves return word `341B` at `SP-8`, now preserved by the lower-level
+helper too.
 
 ## 2026-06-12 island exhaustion signals
 

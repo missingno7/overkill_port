@@ -36,6 +36,9 @@ def read_packed_byte(cpu) -> None:
     if ptr >= BUFFER_END:
         cpu.mem.ww(ds, STREAM_PTR_OFF, BUFFER_START)
         saved_cx = cpu.s.cx & 0xFFFF
+        # Original 0624 does PUSH CX / ... / POP CX around INT 21h.  SP is
+        # balanced, but the saved word remains visible as stack scratch.
+        cpu.mem.ww(cpu.s.ss, (cpu.s.sp - 2) & 0xFFFF, saved_cx)
         cpu.set_reg8(4, 0x3F)  # AH=3Fh read file/device
         cpu.s.bx = cpu.mem.rw(ds, DOS_FILE_HANDLE_OFF)
         cpu.s.cx = 0x0200
@@ -76,14 +79,18 @@ def read_packed_word_le(cpu) -> None:
     It preserves the visible DS:0614 scratch byte and all flags left by the
     second 0624 byte read.
     """
+    cpu.push(0x0618)
     read_packed_byte(cpu)
     if cpu.s.ip == OVERKILL_LOAD_ERROR_IP:
         return
+    cpu.s.ip = cpu.pop()
     low = cpu.get_reg8(0)
     cpu.mem.wb(cpu.s.ds, TEMP_LOW_BYTE_OFF, low)
+    cpu.push(0x061E)
     read_packed_byte(cpu)
     if cpu.s.ip == OVERKILL_LOAD_ERROR_IP:
         return
+    cpu.s.ip = cpu.pop()
     high = cpu.get_reg8(0)
     cpu.set_reg8(4, high)  # AH
     cpu.set_reg8(0, cpu.mem.rb(cpu.s.ds, TEMP_LOW_BYTE_OFF))

@@ -29,6 +29,7 @@ core runtime, the PNG tool and the tests do not require ``pygame``.
 """
 from __future__ import annotations
 
+from queue import Empty
 from typing import Callable
 
 import numpy as np
@@ -47,6 +48,55 @@ from render_cga import (
 WIDTH, HEIGHT = 320, 200
 
 _EGA_PAL = np.array(EGA_PALETTE, dtype=np.uint8)  # (16, 3)
+
+
+class PcSpeakerAudio:
+    """Tiny SDL square-wave renderer for PIT channel 2 / port 61h events."""
+
+    def __init__(self, pygame) -> None:
+        self._pygame = pygame
+        self._channel = None
+        self._freq_key = 0
+        self._cache = {}
+        if not pygame.mixer.get_init():
+            pygame.mixer.init(frequency=44100, size=-16, channels=1, buffer=512)
+        init = pygame.mixer.get_init()
+        if init is None:
+            raise RuntimeError("pygame mixer did not initialize")
+        self._rate = int(init[0])
+        self._channels = int(init[2])
+
+    def set(self, enabled: bool, freq: float) -> None:
+        if not enabled or freq < 20.0:
+            self.close()
+            return
+        key = max(20, min(20000, int(round(freq))))
+        if key == self._freq_key and self._channel is not None:
+            return
+        self.close()
+        self._channel = self._sound_for(key).play(loops=-1)
+        self._freq_key = key
+
+    def close(self) -> None:
+        if self._channel is not None:
+            self._channel.stop()
+        self._channel = None
+        self._freq_key = 0
+
+    def _sound_for(self, freq: int):
+        sound = self._cache.get(freq)
+        if sound is not None:
+            return sound
+        rate = self._rate
+        samples = max(rate // 50, int(rate / max(freq, 1)) * 2)
+        t = np.arange(samples, dtype=np.float64)
+        phase = (t * float(freq) / rate) % 1.0
+        wave = np.where(phase < 0.5, 3500, -3500).astype(np.int16)
+        if self._channels > 1:
+            wave = np.repeat(wave[:, None], self._channels, axis=1)
+        sound = self._pygame.sndarray.make_sound(wave)
+        self._cache[freq] = sound
+        return sound
 
 
 def render_ega_rgb(mem: bytes, start_offset: int = 0, seg: int = 0xA000) -> np.ndarray:
@@ -160,6 +210,7 @@ def run_sdl_ui(
     ega_render_start: Callable[[int], int],
     live_memory: Callable[[], bytes],
     live_display_start: Callable[[], int],
+    speaker_events=None,
 ) -> None:
     """Run the pygame display loop until the window closes or ``stop`` is set.
 
@@ -180,10 +231,22 @@ def run_sdl_ui(
     else:
         decode = lambda snap, ds: render_cga_rgb(snap, palette)
 
+    pygame.mixer.pre_init(frequency=44100, size=-16, channels=1, buffer=512)
     pygame.init()
+    speaker = PcSpeakerAudio(pygame)
     pygame.display.set_caption(f"OVERKILL (emulated {video.upper()})  -  Q/A/O/P move, Z/Space fire")
     screen = pygame.display.set_mode((WIDTH * scale, HEIGHT * scale), pygame.RESIZABLE)
     scan = _build_pygame_scan()
+
+    def drain_speaker_events() -> None:
+        if speaker_events is None:
+            return
+        while True:
+            try:
+                enabled, freq = speaker_events.get_nowait()
+            except Empty:
+                break
+            speaker.set(enabled, freq)
 
     def present(snapshot: bytes, display_start: int) -> None:
         rgb = decode(snapshot, display_start)                        # (200,320,3)
@@ -217,6 +280,7 @@ def run_sdl_ui(
     try:
         running = True
         while running and not stop.is_set():
+            drain_speaker_events()
             for ev in pygame.event.get():
                 if ev.type == pygame.QUIT:
                     running = False
@@ -253,6 +317,7 @@ def run_sdl_ui(
                 caption()
                 last_caption = now
     finally:
+        speaker.close()
         stop.set()
         frame_sync.close()
         pygame.quit()
