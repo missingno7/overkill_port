@@ -87,6 +87,11 @@
     "status": "replaced"
   },
   "1010:2FB6": "tandy_masked_compact_two_word_compositor",
+  "1010:306F": {
+    "name": "overkill_tandy_rect_copy_306f",
+    "notes": "Mode-2 raw rectangle copy used by menu/high-score text screens. Reads height/width from DS:SI, copies width*4 bytes per row to CS:[95A4] video memory, advances rows through Tandy +2000h interlace with +80A0h wrap correction, and preserves the balanced PUSH/POP stack scratch.",
+    "status": "replaced"
+  },
   "1010:30D2": {
     "name": "tandy_object_row_addr_target_30d2",
     "notes": "Mode-2 target reached through 1010:5A36. Maps SS:[BP+02]/SS:[BP+04] to a Tandy work-buffer row address via DS:99C8, stores zero to SS:[BP+12], uses X>>1, returns AX=FFFF for out-of-range/FFFF rows, and optionally decrements SS:[BP+24]. Folded into the verified 5A36 dispatch hook.",
@@ -332,6 +337,11 @@
     "name": "wait_vga_retrace_status_read",
     "notes": "Reads port 03DAh and waits for bit 3. DOSMachine.port_read now toggles that bit.",
     "status": "hardware wait identified"
+  },
+  "1010:CDAA": {
+    "name": "overkill_tandy_changed_dword_present_8rows_cdaa",
+    "notes": "Mode-2 dirty-present loop. Copies two words from DS:SI to ES:DI for each of eight rows, advances SI by 00A0h, advances DI through Tandy +2000h interlace with +80A0h wrap correction, and continues at CE02.",
+    "status": "replaced"
   },
   "1010:ECF2": {
     "name": "overkill_lz_decoder_ecf2",

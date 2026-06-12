@@ -156,6 +156,7 @@ def run_sdl_ui(
     status: dict,
     counters: dict,
     queue_snapshot_save: Callable[[], None],
+    queue_dos_key: Callable[[int, str], None],
     ega_render_start: Callable[[int], int],
     live_memory: Callable[[], bytes],
     live_display_start: Callable[[], int],
@@ -203,6 +204,8 @@ def run_sdl_ui(
         c = counters
         tail = (f"visible={c['visible']['n']} boundaries={c['boundary']['n']} "
                 f"blits={c['blits']['n']} timers={c['timers']['n']} retraces={c['retraces']['n']}")
+        if "direct_video" in c:
+            tail += f" direct={c['direct_video']['n']}"
         if c["boundary"]["n"] == 0 and not status["text"]:
             pygame.display.set_caption("OVERKILL - decoding startup assets, please wait (~10-15s)...")
         elif status["text"]:
@@ -220,14 +223,14 @@ def run_sdl_ui(
                 elif ev.type == pygame.VIDEORESIZE:
                     screen = pygame.display.set_mode((max(WIDTH, ev.w), max(HEIGHT, ev.h)), pygame.RESIZABLE)
                 elif ev.type == pygame.KEYDOWN:
-                    if ev.key == pygame.K_ESCAPE:
-                        running = False
-                    elif ev.key == pygame.K_F12:
+                    if ev.key == pygame.K_F12:
                         queue_snapshot_save()
                     else:
                         sc = scan.get(ev.key)
                         if sc is not None:
                             keyboard.post_down(sc)
+                            if queue_dos_key is not None:
+                                queue_dos_key(sc, getattr(ev, "unicode", ""))
                 elif ev.type == pygame.KEYUP:
                     sc = scan.get(ev.key)
                     if sc is not None:

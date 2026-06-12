@@ -22,8 +22,8 @@ Threading model (CPython GIL keeps this safe):
     frame-accurate KeyDispatcher.
 
 Controls: Q/A/O/P move, Z or Space fire (the game's own scheme), F12 saves a
-runtime snapshot, Esc quits.  Any other key is forwarded too (full keyboard), in
-case a screen wants it.
+runtime snapshot.  Esc and any other key are forwarded too (full keyboard), in
+case a screen wants them.
 
 Run:
     python scripts/play.py [--video cga|ega|tandy] [--game-hz 30] [--fps 30] [--palette 1h] [--scale 2]
@@ -46,6 +46,7 @@ sys.path.insert(0, str(ROOT))
 from overkill_port.interrupts import deliver_scancode
 from overkill_port.keyboard import KeyDispatcher
 from overkill_port.hook_verify import HookVerifierConfig, install_hook_verifier, parse_addr as parse_verify_addr
+from overkill_port.dos import ConsoleInputWouldBlock
 from overkill_port.runtime import create_runtime
 from overkill_port.snapshot import load_snapshot, write_snapshot
 from overkill_port.memory import EGA_APERTURE, EGA_SHADOW_SIZE
@@ -241,6 +242,7 @@ def main(argv: list[str] | None = None) -> int:
         rt = load_snapshot(exe, args.snapshot, game_root=assets)
     else:
         rt = create_runtime(exe, game_root=assets, command_tail=command_tail)
+    rt.dos.console_input_fallback = None
     rt.cpu.trace_enabled = False
     hook_verifier = None
     if args.verify_hooks or args.verify_hook:
@@ -280,6 +282,7 @@ def main(argv: list[str] | None = None) -> int:
     blits = {"n": 0}
     timers = {"n": 0}
     retraces = {"n": 0}
+    direct_video = {"n": 0}
     last_video_crc: dict[str, tuple[int, int] | None] = {"value": None}
     if args.video == "ega":
         present_hook_addr = EGA_PRESENT_HOOK
@@ -366,6 +369,44 @@ def main(argv: list[str] | None = None) -> int:
     def stop_cpu_burst() -> None:
         boundary["n"] += 1
         raise FramePresented()
+
+    def queue_dos_key(scancode: int, text: str) -> None:
+        cs, ip = rt.cpu.addr()
+        in_high_score_editor = cs == 0x1010 and 0x5300 <= ip <= 0x5650
+        if direct_video["n"] == 0 and not in_high_score_editor:
+            return
+        if not text:
+            text = {
+                0x02: "1", 0x03: "2", 0x04: "3", 0x05: "4", 0x06: "5",
+                0x07: "6", 0x08: "7", 0x09: "8", 0x0A: "9", 0x0B: "0",
+                0x0C: "-", 0x0D: "=", 0x0E: "\b", 0x0F: "\t",
+                0x10: "q", 0x11: "w", 0x12: "e", 0x13: "r", 0x14: "t",
+                0x15: "y", 0x16: "u", 0x17: "i", 0x18: "o", 0x19: "p",
+                0x1A: "[", 0x1B: "]", 0x1C: "\r",
+                0x1E: "a", 0x1F: "s", 0x20: "d", 0x21: "f", 0x22: "g",
+                0x23: "h", 0x24: "j", 0x25: "k", 0x26: "l", 0x27: ";",
+                0x28: "'", 0x29: "`", 0x2B: "\\",
+                0x2C: "z", 0x2D: "x", 0x2E: "c", 0x2F: "v", 0x30: "b",
+                0x31: "n", 0x32: "m", 0x33: ",", 0x34: ".", 0x35: "/",
+                0x39: " ", 0x01: "\x1b",
+            }.get(scancode, "")
+        if not text:
+            return
+        ch = ord(text[0])
+        if ch < 0x20 and ch not in (0x08, 0x09, 0x0D, 0x1B):
+            return
+        rt.dos.key_queue.append((((scancode & 0xFF) << 8) | (ch & 0xFF)) & 0xFFFF)
+
+    def is_redefine_key_wait() -> bool:
+        cs, ip = rt.cpu.addr()
+        if cs != 0x1010:
+            return False
+        if ip in (0x57AB, 0x57B0):
+            return rt.cpu.mem.rb(rt.cpu.s.ds, 0x98C3) == 0
+        if ip in (0x57DD, 0x57E0):
+            key = rt.cpu.mem.rb(rt.cpu.s.ds, 0x98C3)
+            return key != 0 and rt.cpu.mem.rb(rt.cpu.s.ds, (0x98C4 + key) & 0xFFFF) != 0
+        return False
 
     def present_hook(cpu) -> None:
         if base_present is not None:
@@ -456,6 +497,20 @@ def main(argv: list[str] | None = None) -> int:
                         rt.cpu.run(8000)
                     except FramePresented:
                         break
+                    except ConsoleInputWouldBlock:
+                        publish_video_if_changed(rt.cpu)
+                        boundary["n"] += 1
+                        cs, ip = rt.cpu.addr()
+                        status["text"] = f"waiting for DOS console input @ {cs:04X}:{ip:04X}"
+                        time.sleep(0.01)
+                        break
+                    if is_redefine_key_wait():
+                        publish_video_if_changed(rt.cpu)
+                        boundary["n"] += 1
+                        cs, ip = rt.cpu.addr()
+                        status["text"] = f"waiting for redefine-key input @ {cs:04X}:{ip:04X}"
+                        time.sleep(0.01)
+                        break
                     used += 8000
                     # Long screen loads can run for many chunks without a
                     # visible/timer boundary.  Drain key-up events during those
@@ -464,7 +519,12 @@ def main(argv: list[str] | None = None) -> int:
                     keyboard.pump_events()
                 if boundary["n"] < target and not stop.is_set():
                     cs, ip = rt.cpu.addr()
-                    status["text"] = f"stall (no visual/timer boundary in {used} steps) @ {cs:04X}:{ip:04X}"
+                    if publish_video_if_changed(rt.cpu):
+                        direct_video["n"] += 1
+                        boundary["n"] += 1
+                        status["text"] = f"direct video publish @ {cs:04X}:{ip:04X}"
+                    else:
+                        status["text"] = f"stall (no visual/timer boundary in {used} steps) @ {cs:04X}:{ip:04X}"
             except Exception as exc:
                 cs, ip = rt.cpu.addr()
                 status["text"] = f"CRASH @ {cs:04X}:{ip:04X} - {type(exc).__name__}: {exc}"
@@ -487,8 +547,9 @@ def main(argv: list[str] | None = None) -> int:
         stop=stop,
         status=status,
         counters={"visible": visible, "boundary": boundary, "blits": blits,
-                  "timers": timers, "retraces": retraces},
+                  "timers": timers, "retraces": retraces, "direct_video": direct_video},
         queue_snapshot_save=queue_snapshot_save,
+        queue_dos_key=queue_dos_key,
         ega_render_start=ega_render_start,
         live_memory=lambda: bytes(rt.program.memory.data),
         live_display_start=lambda: rt.program.memory.ega_display_start,

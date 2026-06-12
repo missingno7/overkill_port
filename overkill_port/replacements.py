@@ -62,6 +62,8 @@ from .games.overkill.rendering.tandy import (
     or_inverted_mask_2f40 as run_tandy_or_inverted_mask_2f40,
     postcopy_scaled_blit_375b as run_tandy_postcopy_scaled_blit_375b,
     present_tandy_frame_3354 as run_present_tandy_frame_3354,
+    changed_dword_present_8rows_cdaa as run_tandy_changed_dword_present_cdaa,
+    copy_rect_to_tandy_video_306f as run_tandy_rect_copy_306f,
     small_strided_copy_34d8 as run_tandy_small_strided_copy_34d8,
     source_strided_copy_35aa as run_tandy_source_strided_copy_35aa,
     split_present_copy_34ad as run_tandy_split_present_copy_34ad,
@@ -101,6 +103,7 @@ _SIG_2E6E = bytes.fromhex("bb 58 00 ad 26 23 05 0b 04 83 c6 02 ab ad 26 23")
 _SIG_2ECB = bytes.fromhex("bb 58 00 8b 04 f7 d0 26 09 05 83 c6 04 83 c7 02")
 _SIG_2F40 = bytes.fromhex("bb 60 00 8b 04 f7 d0 26 09 05 83 c6 04 83 c7 02")
 _SIG_2F81 = bytes.fromhex("bb 60 00 ad 26 23 05 0b 04 83 c6 02 ab ad 26 23")
+_SIG_306F = bytes.fromhex("ad 8b c8 ad 2e 8e 06 a4 95 d1 e0 d1 e0 8b e8 51")
 _SIG_33B2 = bytes.fromhex("75 03 e9 f3 10 2e 8b 0e 9e 5b 51 2e 8b 0e 9c")
 _SIG_34AD = bytes.fromhex("83 ff ff 74 03 e8 10 00 8b 7e 10 8b 76 0e 81 c6")
 _SIG_34C5 = bytes.fromhex("bb 58 00 b9 10 00 a5 a5 a5 a5 a5 a5 a5 a5 03 fb")
@@ -342,6 +345,12 @@ def overkill_tandy_layer_sprite_draw_75a6(cpu):
 def overkill_tandy_masked_compact_2fb6(cpu):
     """Hook wrapper for OVERKILL 1010:2FB6 Tandy compact masked compositor."""
     run_tandy_masked_compact_2fb6(cpu, _tandy_render_runtime())
+
+
+@registry.replace(0x1010, 0x306F, "overkill_tandy_rect_copy_306f")
+def overkill_tandy_rect_copy_306f(cpu):
+    """Hook wrapper for OVERKILL 1010:306F Tandy raw rectangular copy."""
+    run_tandy_rect_copy_306f(cpu, _tandy_render_runtime())
 
 
 @registry.replace(0x1010, 0x7746, "overkill_tandy_compact_layer_draw_7746")
@@ -2260,6 +2269,7 @@ def _tandy_render_runtime() -> TandyRenderRuntime:
         signature_2f40=_SIG_2F40,
         signature_2f81=_SIG_2F81,
         signature_2fb6=_SIG_2FB6,
+        signature_306f=_SIG_306F,
         signature_33b2=_SIG_33B2,
         signature_34ad=_SIG_34AD,
         signature_34c5=_SIG_34C5,
@@ -5257,6 +5267,12 @@ def overkill_changed_word_present_8rows_cd8d(cpu):
     s.di = di
     s.cx = 0
     s.ip = 0xCE02
+
+
+@registry.replace(0x1010, 0xCDAA, "overkill_tandy_changed_dword_present_8rows_cdaa")
+def overkill_tandy_changed_dword_present_8rows_cdaa(cpu):
+    """Replace the Tandy changed-cell presenter loop at 1010:CDAA."""
+    run_tandy_changed_dword_present_cdaa(cpu)
 
 
 def _interpret_current_instruction_without_hook(cpu) -> None:

@@ -6,6 +6,10 @@ from pathlib import Path
 from .cpu import CPU8086, HaltExecution, UnsupportedInstruction, CF, ZF
 
 
+class ConsoleInputWouldBlock(Exception):
+    """Raised when an interactive front-end wants DOS console input to wait."""
+
+
 @dataclass
 class FileHandle:
     path: Path
@@ -38,6 +42,10 @@ class DOSMachine:
     # ASCII).  An interactive front-end pushes keys here; when empty the runtime
     # keeps its previous deterministic headless behaviour.
     key_queue: list[int] = field(default_factory=list)
+    # Deterministic headless fallback for blocking console reads.  Interactive
+    # front-ends can set this to None so AH=01h/07h/08h waits for a real key
+    # instead of synthesizing Esc.
+    console_input_fallback: int | None = 0x011B
     # Latest raw keyboard scan code presented on port 60h.  A front-end sets this
     # and then invokes the installed INT 9 handler (see overkill_port.interrupts).
     current_scancode: int = 0
@@ -209,7 +217,13 @@ class DOSMachine:
             # the ASCII byte in AL.  When no queued key exists, return Esc, matching
             # the existing headless INT 16h fallback and preventing blocking DOS
             # read paths from crashing automated play runs.
-            key = self.key_queue.pop(0) if self.key_queue else 0x011B
+            if self.key_queue:
+                key = self.key_queue.pop(0)
+            elif self.console_input_fallback is not None:
+                key = self.console_input_fallback & 0xFFFF
+            else:
+                cpu.s.ip = (cpu.s.ip - 2) & 0xFFFF
+                raise ConsoleInputWouldBlock()
             ch = key & 0xFF
             if ch == 0 and (key >> 8):
                 # DOS extended keys are reported as 00h first; a second read
@@ -398,6 +412,13 @@ class DOSMachine:
         if ah == 0x0F:
             cpu.s.ax = (80 << 8) | self.video_mode
             cpu.s.bx = 0
+            return
+        if ah == 0x0E:
+            # BIOS teletype output.  OVERKILL reaches this from the high-score
+            # name editor as a bell (AL=07h) on rejected input; keep it as a
+            # narrow console side effect instead of trying to render BIOS text
+            # over the game's graphics screen.
+            self.stdout.append(chr(al))
             return
         if ah in (0x01, 0x02, 0x06, 0x07, 0x0B, 0x10, 0x12):
             return

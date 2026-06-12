@@ -1,3 +1,122 @@
+## 2026-06-12 Tandy end-screen direct-video publish
+
+Investigated `artifacts/play_tandy_the_end_20260612_001833`, where the
+interactive viewer appeared frozen after the ending instead of showing the
+high-score/name-entry flow.
+
+Findings:
+
+- Continuing the snapshot headlessly does not crash or remain at the snapshot
+  entry.  The game advances from `1010:98FA` through the retrace-delay loop.
+- In the following path, video memory changes directly: a 1M-step probe changed
+  10,257 bytes in `B800h`.
+- The hot path is interpreted text/glyph drawing around `1010:518C -> 3153`,
+  which writes to `ES=B800` without hitting the usual Tandy present, timer, or
+  retrace hooks after the initial delay.
+- Because `scripts/play.py` previously published frames only at known
+  present/timer/retrace boundaries, this looked frozen in the viewer even though
+  the VM was drawing.
+
+Fix:
+
+- `scripts/play.py` now checks for changed visible video memory when a long run
+  reaches the no-boundary frame budget.  If video changed, it publishes a
+  "direct video" frame and treats that as a UI boundary.
+- `scripts/sdl_view.py` reports the direct-video count in the window caption.
+- Printable SDL keydowns are also bridged into the DOS key queue after the first
+  direct-video publish, so late DOS character input such as `INT 21h AH=07h`
+  name entry can receive typed characters without polluting the queue during
+  normal gameplay controls.
+- Follow-up from `artifacts/snapshot_play_tandy_20260612_131223`: a snapshot can
+  start already inside the high-score/name-entry screen before this viewer
+  session has counted any direct-video publish.  The DOS-key bridge is therefore
+  also enabled while the CPU is in the observed high-score editor region
+  `1010:5300..5650`, with a scancode-to-ASCII fallback for common printable
+  keys and control keys when SDL provides no printable `unicode`.
+- Follow-up from `artifacts/snapshot_play_tandy_20260612_131602`: the saved
+  state is already late in the editor/submission path (`1010:55F1`) with the
+  name buffer filled (`gttrfdffgg`), the name pointer at the 10-character limit,
+  and the last editor character recorded as Enter (`DS:22B4=000D`).  Continuing
+  that snapshot can therefore return to the menu because the name has already
+  effectively been submitted, not because the VM has a stuck Enter key.
+- Follow-up from `artifacts/snapshot_play_tandy_20260612_131812`: this snapshot
+  starts before the high-score screen is fully drawn (`1010:32C5`).  Profiling
+  1.5M steps shows the delay is pure interpreted text/direct-video drawing:
+  `1010:518C`, `1010:3153`, and callers around `1010:32C5`; no replacement
+  hooks fire.  This explains the slow appearance and marks the path as a future
+  direct-video/text drawing lift candidate.
+- The remaining "cannot type name" issue was caused by the deterministic
+  headless DOS console fallback: `INT 21h AH=07h` returned Esc when no queued
+  key was available.  In interactive `scripts/play.py`, DOS console input now
+  blocks instead: the handler rewinds `IP` to the `INT 21h`, raises a narrow
+  `ConsoleInputWouldBlock`, and the viewer yields a UI boundary until a real key
+  is queued.
+- Name-entry input then exposed the real missing VM service:
+  `INT 10h AH=0Eh` BIOS teletype output.  The high-score editor reaches this as
+  a bell (`AL=07h`) for rejected input.  `dos.py` now accepts this narrowly by
+  recording the character in the stdout log rather than trying to render BIOS
+  text over the graphics screen.
+
+Verification:
+
+```text
+python -m py_compile overkill_port\dos.py scripts\play.py scripts\sdl_view.py
+python scripts\run_tests.py
+# 121 passed, 0 failed
+```
+
+---
+
+## 2026-06-12 Tandy menu/redefine screen rendering pass
+
+Investigated `artifacts/play_tandy_main_menu_20260612_132548`, where menu
+subscreens such as ordering info, instructions, and redefine-keys felt slow.
+
+Changes:
+
+- `scripts/sdl_view.py` no longer treats Esc as a viewer quit key.  Esc is now
+  forwarded to OVERKILL like the rest of the keyboard; close the SDL window to
+  exit the viewer.
+- Added `1010:306F overkill_tandy_rect_copy_306f`, the raw Tandy rectangle copy
+  used by menu/high-score text screens.  This is a parent-level replacement for
+  the formerly hot `307E` row loop.
+- Added `1010:CDAA overkill_tandy_changed_dword_present_8rows_cdaa`, the Tandy
+  dirty-present sibling of the existing `CD8D` CGA/EGA-ish changed-word
+  presenter.
+
+Verification:
+
+```text
+python scripts\run_tests.py
+# 123 passed, 0 failed
+```
+
+Profiling notes:
+
+- Before `306F`, `1010:307E..3094` dominated the interpreted menu/text copy
+  path.  After the hook it disappears from the interpreted hot list.
+- Before `CDAA`, `1010:CDAA..CDC8` was the next Tandy dirty-present loop.  After
+  the hook it also disappears from the interpreted hot list.
+- The remaining top interpreted loop from this snapshot is `1F8F:0960`, a compact
+  far-overlay/menu counter loop.  It is not clearly part of the Tandy rendering
+  island, so it was left untouched in this pass.
+
+Follow-up from `artifacts/snapshot_play_tandy_20260612_134028`:
+
+- The redefine-keys page itself was not slow because of rendering.  It was
+  spinning in a pure keyboard wait:
+  `1010:57AB cmp byte ptr DS:[98C3],00h` / `1010:57B0 jz 57AB`.
+- `scripts/play.py` now treats this redefine-key wait as an interactive yield
+  boundary when `DS:[98C3]` is still zero.  The runner publishes any changed
+  video, pumps the UI, and retries after a real key event.
+- The same handling covers the immediately following key-release wait at
+  `1010:57DD/57E0`, where the game waits for `DS:[98C4 + DS:[98C3]]` to clear.
+- This is deliberately not a global replacement hook: headless profiling and
+  oracle runs still see the original wait loop.  The fix only prevents the live
+  viewer from burning the full `--frame-budget` between redefine-key prompts.
+
+---
+
 ## 2026-06-12 Timeless top-level documentation pass
 
 Refactored project-facing docs so durable guidance is separated from living

@@ -5,6 +5,48 @@ tests or `play_*` captures have been pruned from `artifacts/` during
 cleanup. The remaining artifact directories are the ones still used as evidence
 oracles in tests and living docs.
 
+## 2026-06-12 Tandy menu text/direct-present closures
+
+Profiling `artifacts/play_tandy_main_menu_20260612_132548` showed that slow menu
+subscreens and redefine-key screens still spent substantial time in interpreted
+Tandy rendering loops after the startup/gameplay hooks were already active.
+
+Two routines clearly belonged to the existing `tandy_rendering` island:
+
+- `1010:306F overkill_tandy_rect_copy_306f`: raw rectangle copy for menu and
+  high-score text screens.  It reads height/width from `DS:SI`, copies
+  `width*4` bytes per row to `CS:[95A4]` video memory, advances rows through the
+  Tandy `+2000h` interlace layout, applies the original `+80A0h` wrap, and
+  preserves the balanced `PUSH CX` / `POP CX` stack scratch.  This lifts the hot
+  `1010:307E..3094` row loop as one coherent parent routine.
+- `1010:CDAA overkill_tandy_changed_dword_present_8rows_cdaa`: Tandy
+  dirty-present cell loop.  It copies two words per row from `DS:SI` to `ES:DI`
+  for eight rows, advances `SI` by `00A0h`, advances `DI` through the Tandy
+  interlace layout, and continues at `1010:CE02`.
+
+Both replacements have synthetic interpreted-ASM oracle coverage in
+`tests/test_replacements.py`.  After these hooks, `1010:307E` and
+`1010:CDAA` disappear from the interpreted hot list.  The remaining top loop in
+that snapshot is `1F8F:0960`, which appears to be a compact overlay/menu counter
+update loop rather than Tandy rendering, so it was intentionally not lifted in
+this pass.
+
+Follow-up profiling of `artifacts/snapshot_play_tandy_20260612_134028` from the
+redefine-keys page showed a different kind of hot loop:
+
+```text
+1010:57AB  cmp byte ptr DS:[98C3],00h
+1010:57B0  jz 57AB
+```
+
+This is the redefine-key screen waiting for the game's keyboard ISR/state table
+to report a key, not a rendering primitive.  After accepting a key, the screen
+also waits at `1010:57DD/57E0` until `DS:[98C4 + DS:[98C3]]` clears, i.e. until
+that key is released.  `scripts/play.py` treats both loops as interactive yield
+points so the SDL thread can pump key events immediately instead of waiting for
+the full `--frame-budget`.  No global hook was added because headless/oracle
+runs should still see the original keyboard wait semantics.
+
 ## 2026-06-12 island exhaustion signals
 
 `scripts/audit_islands.py` now gives a repeatable closure check for the existing

@@ -228,6 +228,42 @@ def test_int21_console_input_uses_keyboard_queue_and_fallback():
     assert cpu.s.ax == 0x0141
     assert dos.stdout[-1] == 'A'
 
+
+def test_int21_console_input_can_block_without_consuming_instruction():
+    from pathlib import Path
+    from overkill_port.dos import ConsoleInputWouldBlock, DOSMachine
+
+    cpu = CPU8086(Memory(), CPUState(cs=0x1000, ds=0x1000, es=0x1000, ss=0x1000, sp=0xFFFE))
+    dos = DOSMachine(root=Path('.'))
+    dos.console_input_fallback = None
+
+    cpu.s.ax = 0x0700
+    cpu.s.ip = 0x1236
+    try:
+        dos.interrupt(cpu, 0x21)
+    except ConsoleInputWouldBlock:
+        pass
+    else:
+        raise AssertionError("empty interactive console input should block")
+
+    assert cpu.s.ip == 0x1234
+    assert cpu.s.ax == 0x0700
+
+
+def test_int10_teletype_accepts_high_score_editor_bell():
+    from pathlib import Path
+    from overkill_port.dos import DOSMachine
+
+    cpu = CPU8086(Memory(), CPUState(cs=0x1000, ds=0x1000, es=0x1000, ss=0x1000, sp=0xFFFE))
+    dos = DOSMachine(root=Path('.'))
+
+    cpu.s.ax = 0x0E07
+    dos.interrupt(cpu, 0x10)
+
+    assert dos.stdout[-1] == '\x07'
+    assert cpu.s.ax == 0x0E07
+
+
 def test_dos_seeded_psp_resize_and_distinct_allocations():
     from pathlib import Path
     from overkill_port.dos import DOSMachine

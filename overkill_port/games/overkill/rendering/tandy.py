@@ -51,6 +51,7 @@ class TandyRenderRuntime:
     signature_2f40: bytes
     signature_2f81: bytes
     signature_2fb6: bytes
+    signature_306f: bytes
     signature_33b2: bytes
     signature_34ad: bytes
     signature_34c5: bytes
@@ -229,6 +230,105 @@ def _rep_stosb(cpu, count: int) -> None:
         cpu.mem.wb(cpu.s.es, cpu.s.di, value)
         cpu.s.di = (cpu.s.di + delta) & 0xFFFF
     cpu.s.cx = 0
+
+
+def copy_rect_to_tandy_video_306f(cpu, runtime: TandyRenderRuntime) -> None:
+    """Copy a raw rectangle to Tandy B800h interlaced video memory.
+
+    Original routine ``1010:306F`` reads ``height`` and ``width`` words from
+    ``DS:SI``.  Each row copies ``width * 4`` bytes, then rewinds to the row
+    start and advances through Tandy's ``+2000h`` interlace layout with the
+    original ``+80A0h`` wrap correction.
+    """
+    if runtime.self_disable_if_patched(cpu, 0x306F, runtime.signature_306f, "overkill_tandy_rect_copy_306f"):
+        return
+
+    mem = cpu.mem
+    s = cpu.s
+
+    lodsw_delta = -2 if cpu.get_flag(DF) else 2
+
+    s.ax = mem.rw(s.ds, s.si)
+    s.si = (s.si + lodsw_delta) & 0xFFFF
+    height = s.ax & 0xFFFF
+    s.cx = height
+
+    s.ax = mem.rw(s.ds, s.si)
+    s.si = (s.si + lodsw_delta) & 0xFFFF
+    s.es = mem.rw(s.cs, TANDY_VIDEO_SEGMENT_OFF)
+    s.ax = (s.ax << 1) & 0xFFFF
+    s.ax = (s.ax << 1) & 0xFFFF
+    s.bp = s.ax
+
+    rows_left = height
+    while rows_left:
+        mem.ww(s.ss, (s.sp - 2) & 0xFFFF, rows_left)
+        s.cx = s.bp
+        _rep_movsb(cpu, s.cx)
+
+        old_di = s.di & 0xFFFF
+        result = old_di - (s.bp & 0xFFFF)
+        s.di = result & 0xFFFF
+        cpu.set_sub_flags(old_di, s.bp & 0xFFFF, result, 16)
+
+        old_di = s.di & 0xFFFF
+        result = old_di + 0x2000
+        s.di = result & 0xFFFF
+        cpu.set_add_flags(old_di, 0x2000, result, 16)
+
+        cpu.set_logic_flags(s.di & 0x8000, 16)
+        if s.di & 0x8000:
+            old_di = s.di & 0xFFFF
+            result = old_di + 0x80A0
+            s.di = result & 0xFFFF
+            cpu.set_add_flags(old_di, 0x80A0, result, 16)
+
+        rows_left = (rows_left - 1) & 0xFFFF
+
+    s.cx = 0
+    s.ip = cpu.pop()
+
+
+def changed_dword_present_8rows_cdaa(cpu) -> None:
+    """Copy one changed 4-byte Tandy cell to visible B800h for eight rows."""
+    s = cpu.s
+    mem = cpu.mem
+    ds = s.ds & 0xFFFF
+    es = s.es & 0xFFFF
+    si = s.si & 0xFFFF
+    di = s.di & 0xFFFF
+    cx = s.cx & 0xFFFF
+    if cx == 0:
+        cx = 0x10000
+
+    ax = s.ax & 0xFFFF
+    while cx:
+        ax = mem.rw(ds, si)
+        mem.ww(es, di, ax)
+        ax = mem.rw(ds, (si + 2) & 0xFFFF)
+        mem.ww(es, (di + 2) & 0xFFFF, ax)
+
+        si = (si + 0x00A0) & 0xFFFF
+
+        old_di = di
+        result = old_di + 0x2000
+        di = result & 0xFFFF
+        cpu.set_add_flags(old_di, 0x2000, result, 16)
+
+        cpu.set_logic_flags(di & 0x8000, 16)
+        if di & 0x8000:
+            old_di = di
+            result = old_di + 0x80A0
+            di = result & 0xFFFF
+            cpu.set_add_flags(old_di, 0x80A0, result, 16)
+
+        cx -= 1
+
+    s.ax = ax
+    s.si = si
+    s.di = di
+    s.cx = 0
+    s.ip = 0xCE02
 
 
 def _xor_al_al(cpu) -> None:
