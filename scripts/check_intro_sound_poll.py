@@ -8,7 +8,7 @@ from scripts.play import AsyncTimerIrqDriver, TANDY_PRESENT_HOOK, RETRACE_WAIT_H
 snap=Path('/mnt/data/work_overkill/snapshot/snapshot_play_tandy_20260612_155451')
 
 def run(with_poll: bool):
-    rt=load_snapshot(ROOT/'assets'/'OVERKILL.UNLZEXE.EXE', snap, game_root=ROOT/'assets')
+    rt=load_snapshot(ROOT/'assets'/'OVERKILL', snap, game_root=ROOT/'assets')
     base_present=rt.cpu.replacement_hooks[TANDY_PRESENT_HOOK]
     base_retrace=rt.cpu.replacement_hooks.get(RETRACE_WAIT_HOOK)
     irq=AsyncTimerIrqDriver()

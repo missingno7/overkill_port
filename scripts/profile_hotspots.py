@@ -67,7 +67,7 @@ def main(argv: list[str] | None = None) -> int:
         cs, ip = args.stop_at.split(":")
         stop_at = (int(cs, 16) & 0xFFFF, int(ip, 16) & 0xFFFF)
 
-    exe = ROOT / "assets" / "OVERKILL.UNLZEXE.EXE"
+    exe = ROOT / "assets" / "OVERKILL"
     assets = ROOT / "assets"
     if args.snapshot:
         rt = load_snapshot(exe, args.snapshot, game_root=assets)

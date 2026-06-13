@@ -935,8 +935,8 @@ or under-filled upstream is the open EGA question.
 
 ## Confirmed execution landmarks
 
-- `2376:0010` — DOS-loaded MZ entrypoint for `assets/OVERKILL.UNLZEXE.EXE` with the default PSP/load layout used by this scaffold.
-- `32FF:0052` range — internal unpack/self-relocation stage still present inside the already-unLZEXE'd executable.
+- `2376:0010` - historical DOS-loaded MZ entrypoint for the generated unpacked convenience executable. Current runs use the original `assets/OVERKILL` MZ/container and let its unpack/bootstrap code produce the in-memory game image.
+- `32FF:0052` range - internal unpack/self-relocation stage reached after the original container has expanded the inner module.
 - `1010:95C9` — first confirmed transfer into the relocated game/runtime code after the inner bootstrap has produced the useful in-memory image.
 - `1010:C916` — tight checksum loop over data read from the original `OVERKILL` file. This is now the first verified source-level replacement hook.
 - `1010:CA18` / `1010:CA19` / `1010:CA1B` — VGA vertical-retrace busy wait: `in al,03DAh`, `test al,08h`, `jz`. The port layer now toggles bit 3 of `0x3DA` so this no longer deadlocks.
@@ -1209,7 +1209,7 @@ The true menu/game main loop is now considered **reached** (per-frame IRQ0 timin
 ## Checkpoint 11 — visible CGA output and an interactive front-end
 
 The unpacked executable runs in CGA mode (`CS:[95BC]=0`), matching the real
-`OVERKILL.UNLZEXE.EXE` in DOSBox, which goes straight to CGA (the CGA/EGA/Tandy
+the inner OVERKILL module in DOSBox, which goes straight to CGA (the CGA/EGA/Tandy
 mode menu belongs to the outer launcher, not this inner module).  A raw screen
 grab of `B800h` shown as text mode is meaningless CP437 glyphs; decoded as the
 standard CGA 320x200 4-colour interlaced layout it is a real frame.

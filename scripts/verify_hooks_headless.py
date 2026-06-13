@@ -55,8 +55,8 @@ def main() -> int:
     parser.add_argument(
         "--exe",
         type=Path,
-        default=ROOT / "assets" / "OVERKILL.UNLZEXE.EXE",
-        help="unlzexe OVERKILL executable path",
+        default=ROOT / "assets" / "OVERKILL",
+        help="original OVERKILL executable/container path",
     )
     parser.add_argument(
         "--game-root",

@@ -233,22 +233,18 @@ def main(argv: list[str] | None = None) -> int:
                    help="do not print the final ASM / Hook Coverage summary on exit")
     args = p.parse_args(argv)
 
-    exe = ROOT / "assets" / "OVERKILL.UNLZEXE.EXE"
+    exe = ROOT / "assets" / "OVERKILL"
     assets = ROOT / "assets"
     if args.dos_args is not None:
         command_tail: bytes | str = args.dos_args
     elif args.video == "ega":
-        # The public packed EXE accepts the documented ASCII switch /E, but this
-        # project runs the already-unpacked inner executable.  That inner module
-        # is launched by the original stub with a compact binary PSP tail:
+        # The original OVERKILL container unpacks into the inner game module.
+        # That inner module is selected with a compact binary PSP tail:
         #   PSP:81 = sound/music option byte, PSP:82 = video mode (0/1/2).
-        # ASCII switches such as " /E" only work for EGA by accident because
-        # '/' is outside 0..2 and the inner parser falls back to mode 1.  Use the
-        # direct selector so non-default modes are unambiguous.
+        # Use the direct selector so non-default modes are unambiguous.
         command_tail = bytes((0x0D, 0x01))
     elif args.video == "tandy":
-        # Mode 2 is Tandy/PCjr.  Passing the documented ASCII " /T" to the inner
-        # executable would also fall back to EGA, so use the binary selector here.
+        # Mode 2 is Tandy/PCjr.
         command_tail = bytes((0x0D, 0x02))
     else:
         # With an empty PSP tail the inner parser sees PSP:82 == 0 and selects

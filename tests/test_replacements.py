@@ -2123,7 +2123,7 @@ def test_blit_497a_hook_matches_interpreted_asm_on_captured_snapshot():
     snap = root / "artifacts" / "evidence" / "snapshot_stop_497a_probe"
     assert snap.exists(), "captured oracle snapshot for 1010:497A is missing"
 
-    asm = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
+    asm = load_snapshot(root / "assets" / "OVERKILL", snap, game_root=root / "assets")
     asm.cpu.replacement_hooks.pop((0x1010, 0x497A), None)
     asm.cpu.hook_names.pop((0x1010, 0x497A), None)
     asm.cpu.trace_enabled = False
@@ -2133,7 +2133,7 @@ def test_blit_497a_hook_matches_interpreted_asm_on_captured_snapshot():
             break
         asm.cpu.step()
 
-    hook = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
+    hook = load_snapshot(root / "assets" / "OVERKILL", snap, game_root=root / "assets")
     hook.cpu.trace_enabled = False
     hook.cpu.step()
 
@@ -2150,7 +2150,7 @@ def test_row_copy_41da_hook_matches_interpreted_asm_on_zero_count_snapshot():
     snap = root / "artifacts" / "evidence" / "snapshot_stop_41da_probe"
     assert snap.exists(), "captured oracle snapshot for 1010:41DA is missing"
 
-    asm = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
+    asm = load_snapshot(root / "assets" / "OVERKILL", snap, game_root=root / "assets")
     asm.cpu.replacement_hooks.pop((0x1010, 0x41DA), None)
     asm.cpu.hook_names.pop((0x1010, 0x41DA), None)
     asm.cpu.trace_enabled = False
@@ -2160,7 +2160,7 @@ def test_row_copy_41da_hook_matches_interpreted_asm_on_zero_count_snapshot():
             break
         asm.cpu.step()
 
-    hook = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
+    hook = load_snapshot(root / "assets" / "OVERKILL", snap, game_root=root / "assets")
     hook.cpu.trace_enabled = False
     hook.cpu.step()
 
@@ -2177,7 +2177,7 @@ def test_ega_copy_5827_hook_matches_interpreted_asm_on_captured_snapshot():
     snap = root / "artifacts" / "evidence" / "snapshot_stop_5827_probe"
     assert snap.exists(), "captured oracle snapshot for 1010:5827 is missing"
 
-    asm = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
+    asm = load_snapshot(root / "assets" / "OVERKILL", snap, game_root=root / "assets")
     asm.cpu.replacement_hooks.pop((0x1010, 0x5827), None)
     asm.cpu.hook_names.pop((0x1010, 0x5827), None)
     asm.cpu.trace_enabled = False
@@ -2187,7 +2187,7 @@ def test_ega_copy_5827_hook_matches_interpreted_asm_on_captured_snapshot():
             break
         asm.cpu.step()
 
-    hook = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
+    hook = load_snapshot(root / "assets" / "OVERKILL", snap, game_root=root / "assets")
     hook.cpu.trace_enabled = False
     hook.cpu.step()
 
@@ -2204,7 +2204,7 @@ def test_vga_wait_50c9_hook_matches_interpreted_asm_on_captured_snapshot():
     snap = root / "artifacts" / "evidence" / "snapshot_stop_50c9_probe"
     assert snap.exists(), "captured oracle snapshot for 1010:50C9 is missing"
 
-    asm = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
+    asm = load_snapshot(root / "assets" / "OVERKILL", snap, game_root=root / "assets")
     asm.cpu.replacement_hooks.pop((0x1010, 0x50C9), None)
     asm.cpu.hook_names.pop((0x1010, 0x50C9), None)
     asm.cpu.trace_enabled = False
@@ -2215,7 +2215,7 @@ def test_vga_wait_50c9_hook_matches_interpreted_asm_on_captured_snapshot():
             break
         asm.cpu.step()
 
-    hook = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
+    hook = load_snapshot(root / "assets" / "OVERKILL", snap, game_root=root / "assets")
     hook.cpu.trace_enabled = False
     hook.cpu.step()
 
@@ -2233,7 +2233,7 @@ def test_postcopy_loop_58df_hook_matches_interpreted_asm_on_captured_snapshot():
     snap = root / "artifacts" / "evidence" / "snapshot_stop_58df_probe"
     assert snap.exists(), "captured oracle snapshot for 1010:58DF is missing"
 
-    asm = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
+    asm = load_snapshot(root / "assets" / "OVERKILL", snap, game_root=root / "assets")
     for addr in [(0x1010, 0x58DF)]:
         asm.cpu.replacement_hooks.pop(addr, None)
         asm.cpu.hook_names.pop(addr, None)
@@ -2244,7 +2244,7 @@ def test_postcopy_loop_58df_hook_matches_interpreted_asm_on_captured_snapshot():
             break
         asm.cpu.step()
 
-    hook = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
+    hook = load_snapshot(root / "assets" / "OVERKILL", snap, game_root=root / "assets")
     hook.cpu.trace_enabled = False
     hook.cpu.step()
 
@@ -2368,7 +2368,7 @@ def test_wait_timer_tick_0679_runs_overkill_sound_isr_when_installed():
     snap = root / "artifacts" / "test_oracles" / "timer_wait_tandy_main_menu_20260612_132548"
     assert snap.exists(), "Tandy menu snapshot with installed INT 08h is missing"
 
-    rt = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
+    rt = load_snapshot(root / "assets" / "OVERKILL", snap, game_root=root / "assets")
     cpu = rt.cpu
     cpu.trace_enabled = False
     cpu.s.cs = 0x1010
@@ -2408,7 +2408,7 @@ def test_hook_verifier_timer_wait_0679_delivers_real_isr_oracle():
     snap = root / "artifacts" / "test_oracles" / "timer_wait_tandy_main_menu_20260612_132548"
     assert snap.exists(), "Tandy menu snapshot with installed INT 08h is missing"
 
-    rt = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
+    rt = load_snapshot(root / "assets" / "OVERKILL", snap, game_root=root / "assets")
     cpu = rt.cpu
     cpu.trace_enabled = False
     cpu.s.cs = 0x1010
@@ -2996,7 +2996,7 @@ def test_hook_verifier_accepts_ega_transparency_mask_2932_boundary():
     from overkill_port.runtime import create_runtime
 
     root = Path(__file__).resolve().parents[1]
-    rt = create_runtime(root / "assets" / "OVERKILL.UNLZEXE.EXE", game_root=root / "assets")
+    rt = create_runtime(root / "assets" / "OVERKILL", game_root=root / "assets")
     mem = rt.program.memory
     code = bytes.fromhex(
         '2e c6 06 a0 5b 00 2e 8b 1e 9c 5b 8a 04 8a 20 d1 e3 8a 10'
@@ -5862,7 +5862,7 @@ def test_runtime_patched_object_steer_5e42_hook_matches_interpreted_snapshot():
     assert snap.exists(), "captured gameplay snapshot for runtime-patched 1010:5E42 is missing"
 
     def make_runtime(use_hook: bool):
-        rt = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
+        rt = load_snapshot(root / "assets" / "OVERKILL", snap, game_root=root / "assets")
         rt.cpu.trace_enabled = False
         if not use_hook:
             rt.cpu.replacement_hooks.pop((0x1010, 0x5E42), None)
@@ -5904,7 +5904,7 @@ def test_hook_verifier_verifies_runtime_patched_object_steer_5e42():
     snap = root / "artifacts" / "snapshot_play_tandy_20260613_220042"
     assert snap.exists(), "captured gameplay snapshot for runtime-patched 1010:5E42 is missing"
 
-    rt = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
+    rt = load_snapshot(root / "assets" / "OVERKILL", snap, game_root=root / "assets")
     rt.cpu.trace_enabled = False
     verifier = install_hook_verifier(
         rt,
@@ -5928,7 +5928,7 @@ def test_movement_direction_5db2_hook_matches_interpreted_asm_on_captured_snapsh
     snap = root / "artifacts" / "test_oracles" / "closure_run_5db2_160415"
     assert snap.exists(), "captured oracle snapshot for 1010:5DB2 is missing"
 
-    asm = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
+    asm = load_snapshot(root / "assets" / "OVERKILL", snap, game_root=root / "assets")
     asm.cpu.replacement_hooks.pop((0x1010, 0x5DB2), None)
     asm.cpu.hook_names.pop((0x1010, 0x5DB2), None)
     asm.cpu.trace_enabled = False
@@ -5937,7 +5937,7 @@ def test_movement_direction_5db2_hook_matches_interpreted_asm_on_captured_snapsh
             break
         asm.cpu.step()
 
-    hook = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
+    hook = load_snapshot(root / "assets" / "OVERKILL", snap, game_root=root / "assets")
     hook.cpu.trace_enabled = False
     hook.cpu.step()
 
@@ -5955,7 +5955,7 @@ def test_hook_verifier_verifies_movement_direction_5db2_without_skipping():
     snap = root / "artifacts" / "test_oracles" / "closure_run_5db2_160415"
     assert snap.exists(), "captured oracle snapshot for 1010:5DB2 is missing"
 
-    rt = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
+    rt = load_snapshot(root / "assets" / "OVERKILL", snap, game_root=root / "assets")
     rt.cpu.trace_enabled = False
     verifier = install_hook_verifier(
         rt,
@@ -6091,7 +6091,7 @@ def test_object_slot_scan_ac97_hook_matches_interpreted_asm_on_captured_snapshot
     assert snap.exists(), "captured oracle snapshot for 1010:AC97 is missing"
 
     def make_runtime(use_hook: bool):
-        rt = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
+        rt = load_snapshot(root / "assets" / "OVERKILL", snap, game_root=root / "assets")
         if not use_hook:
             rt.cpu.replacement_hooks.pop((0x1010, 0xAC97), None)
             rt.cpu.hook_names.pop((0x1010, 0xAC97), None)
@@ -6195,7 +6195,7 @@ def test_postmove_y_clamp_bcb1_hook_matches_interpreted_asm_on_captured_snapshot
     assert snap.exists(), "captured oracle snapshot for 1010:BCB1 is missing"
 
     def make_runtime(use_hook: bool):
-        rt = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
+        rt = load_snapshot(root / "assets" / "OVERKILL", snap, game_root=root / "assets")
         rt.cpu.replacement_hooks.pop((0x1010, 0xBC4B), None)
         rt.cpu.hook_names.pop((0x1010, 0xBC4B), None)
         if not use_hook:
@@ -6287,7 +6287,7 @@ def test_bd17_deactivate_selector_a83e_tail_matches_interpreted_asm_on_captured_
     assert snap.exists(), "captured oracle snapshot for 1010:BD17 selector A83E tail is missing"
 
     def make_runtime(use_hook: bool):
-        rt = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
+        rt = load_snapshot(root / "assets" / "OVERKILL", snap, game_root=root / "assets")
         if not use_hook:
             rt.cpu.replacement_hooks.pop((0x1010, 0xBC4B), None)
             rt.cpu.hook_names.pop((0x1010, 0xBC4B), None)
@@ -6522,7 +6522,7 @@ def test_aa71_upper_contact_tail_matches_interpreted_asm_on_captured_snapshot():
     assert snap.exists(), "captured oracle snapshot for 1010:AA71 is missing"
 
     def make_runtime():
-        rt = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
+        rt = load_snapshot(root / "assets" / "OVERKILL", snap, game_root=root / "assets")
         rt.cpu.replacement_hooks.clear()
         rt.cpu.hook_names.clear()
         rt.cpu.trace_enabled = False
@@ -6560,7 +6560,7 @@ def test_aa71_upper_contact_tail_forced_upper_branch_matches_interpreted_asm():
     assert snap.exists(), "captured oracle snapshot for 1010:AA71 is missing"
 
     def make_runtime():
-        rt = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
+        rt = load_snapshot(root / "assets" / "OVERKILL", snap, game_root=root / "assets")
         rt.cpu.replacement_hooks.clear()
         rt.cpu.hook_names.clear()
         rt.cpu.trace_enabled = False
@@ -6600,7 +6600,7 @@ def test_object_postmove_bc4b_hook_matches_interpreted_asm_on_captured_snapshot(
     assert snap.exists(), "captured oracle snapshot for 1010:BC4B is missing"
 
     def make_runtime(use_hook: bool):
-        rt = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
+        rt = load_snapshot(root / "assets" / "OVERKILL", snap, game_root=root / "assets")
         if not use_hook:
             rt.cpu.replacement_hooks.pop((0x1010, 0xBC4B), None)
             rt.cpu.hook_names.pop((0x1010, 0xBC4B), None)
@@ -6630,7 +6630,7 @@ def test_object_postmove_bc4b_variant_000a_owner_linked_tail_matches_interpreted
     assert snap.exists(), "captured oracle snapshot for BEC5 variant 000A owner-linked tail is missing"
 
     def make_runtime(use_hook: bool):
-        rt = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
+        rt = load_snapshot(root / "assets" / "OVERKILL", snap, game_root=root / "assets")
         # This oracle targets the 53rd *externally visible* BC4B boundary from
         # the captured snapshot.  Once the D007 frame orchestrator is lifted,
         # BC4B can be reached inside a single composed D007 step, so keep the
@@ -6700,7 +6700,7 @@ def test_tandy_text_glyph_3153_hook_verifies_on_gameplay_snapshot():
     snap = root / "artifacts" / "test_oracles" / "tandy_text_score_gameplay_20260612_163127"
     assert snap.exists(), "gameplay snapshot for 1010:3153 text glyph verification is missing"
 
-    rt = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
+    rt = load_snapshot(root / "assets" / "OVERKILL", snap, game_root=root / "assets")
     # Wider text hooks absorb calls before they reach the narrow 3153 glyph
     # hook.  Disable them here so this regression continues to verify the
     # original 3153 boundary directly.
@@ -6734,7 +6734,7 @@ def test_score_byte_text_5ef9_hook_verifies_on_gameplay_snapshot():
     snap = root / "artifacts" / "test_oracles" / "tandy_text_score_gameplay_20260612_163127"
     assert snap.exists(), "gameplay snapshot for 1010:5EF9 score-byte text verification is missing"
 
-    rt = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
+    rt = load_snapshot(root / "assets" / "OVERKILL", snap, game_root=root / "assets")
     # The wider 5EDB HUD block composes 5EF9 internally, so disable it when this
     # test wants to verify the original 5EF9 boundary directly.
     rt.cpu.replacement_hooks.pop((0x1010, 0x5EDB), None)
@@ -6965,7 +6965,7 @@ def test_dirty_cell_presenter_cc7f_hook_verifies_on_tandy_startup_snapshot():
     snap = root / "artifacts" / "evidence" / "snapshot_stop_tandy_cc7f"
     assert snap.exists(), "startup snapshot for 1010:CC7F dirty-cell presenter verification is missing"
 
-    rt = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
+    rt = load_snapshot(root / "assets" / "OVERKILL", snap, game_root=root / "assets")
     verifier = install_hook_verifier(
         rt,
         HookVerifierConfig(
@@ -7004,7 +7004,7 @@ def test_dirty_cell_presenter_uses_installed_retrace_hook_for_intro_pacing_snaps
     snap = root / "artifacts" / "test_oracles" / "dirty_cell_presenter_pacing_20260612_235139"
     assert snap.exists(), "intro dirty-cell snapshot is missing"
 
-    rt = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
+    rt = load_snapshot(root / "assets" / "OVERKILL", snap, game_root=root / "assets")
     base_retrace = rt.cpu.replacement_hooks[(0x1010, 0x50C9)]
 
     def pacing_wrapper(cpu):
@@ -7076,8 +7076,8 @@ def test_overlay_container_open_entry_254a_04d7_hook_matches_interpreted_asm_sna
     snap = root / "artifacts" / "test_oracles" / "snapshot_stop_254a_04d7_overlay_parent"
     assert snap.exists(), "captured oracle snapshot for 254A:04D7 is missing"
 
-    asm = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
-    hook = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
+    asm = load_snapshot(root / "assets" / "OVERKILL", snap, game_root=root / "assets")
+    hook = load_snapshot(root / "assets" / "OVERKILL", snap, game_root=root / "assets")
 
     # Run the parent helper as original ASM, including its inner loops.
     for addr in (
@@ -7115,8 +7115,8 @@ def test_startup_coordinate_tables_0f0b_hook_matches_interpreted_asm_snapshot():
     snap = root / "artifacts" / "test_oracles" / "snapshot_stop_1010_0f0b_startup_tables"
     assert snap.exists(), "captured oracle snapshot for 1010:0F0B is missing"
 
-    asm = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
-    hook = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
+    asm = load_snapshot(root / "assets" / "OVERKILL", snap, game_root=root / "assets")
+    hook = load_snapshot(root / "assets" / "OVERKILL", snap, game_root=root / "assets")
 
     # Run the whole original startup table builder, including its 0FA3 fallthrough,
     # as interpreted ASM so the oracle includes all registers and memory effects.
@@ -7200,7 +7200,7 @@ def test_input_selector_loop_d445_matches_interpreted_asm():
     from overkill_port.snapshot import load_snapshot
 
     root = Path(__file__).resolve().parents[1]
-    exe = root / "assets" / "OVERKILL.UNLZEXE.EXE"
+    exe = root / "assets" / "OVERKILL"
     snapshot = root / "artifacts" / "evidence" / "bc4b_stop"
 
     cases = [
@@ -7478,7 +7478,7 @@ def test_main_frame_loop_d007_hook_matches_one_interpreted_frame_iteration():
 
     root = Path.cwd()
     snap = root / "artifacts" / "test_oracles" / "main_frame_loop_d007"
-    rt = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
+    rt = load_snapshot(root / "assets" / "OVERKILL", snap, game_root=root / "assets")
     registry.install(rt.cpu)
     verifier = HookVerifier(
         rt,
@@ -7502,7 +7502,7 @@ def test_decrement_counter_61c7_hook_matches_interpreted_snapshot():
     assert snap.exists(), "captured gameplay snapshot for 1010:61C7 is missing"
 
     def make_runtime():
-        rt = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
+        rt = load_snapshot(root / "assets" / "OVERKILL", snap, game_root=root / "assets")
         rt.cpu.trace_enabled = False
         for addr in ((0x1010, 0x61F7), (0x1010, 0x61C7), (0x1010, 0x61CA)):
             rt.cpu.replacement_hooks.pop(addr, None)
@@ -7543,7 +7543,7 @@ def test_decrement_counter_loop_61f7_hook_matches_interpreted_snapshot():
     assert snap.exists(), "captured gameplay snapshot for 1010:61F7 is missing"
 
     def make_runtime():
-        rt = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
+        rt = load_snapshot(root / "assets" / "OVERKILL", snap, game_root=root / "assets")
         rt.cpu.trace_enabled = False
         rt.cpu.replacement_hooks.pop((0x1010, 0x61F7), None)
         rt.cpu.hook_names.pop((0x1010, 0x61F7), None)
@@ -7590,7 +7590,7 @@ def test_score_status_text_block_5edb_hook_matches_interpreted_snapshot():
     )
 
     def make_runtime():
-        rt = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
+        rt = load_snapshot(root / "assets" / "OVERKILL", snap, game_root=root / "assets")
         rt.cpu.trace_enabled = False
         for addr in composed:
             rt.cpu.replacement_hooks.pop(addr, None)
@@ -7765,7 +7765,7 @@ def test_status_counter_cell_blit_6296_hook_matches_composed_interpreted_snapsho
     assert snap.exists(), "captured gameplay snapshot for 1010:6296 is missing"
 
     def make_runtime():
-        rt = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
+        rt = load_snapshot(root / "assets" / "OVERKILL", snap, game_root=root / "assets")
         rt.cpu.trace_enabled = False
         rt.cpu.replacement_hooks.pop((0x1010, 0x6296), None)
         rt.cpu.hook_names.pop((0x1010, 0x6296), None)

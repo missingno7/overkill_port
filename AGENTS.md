@@ -216,13 +216,13 @@ python scripts/run_tests.py
 Print executable metadata:
 
 ```bash
-python -m overkill_port.cli info assets/OVERKILL.UNLZEXE.EXE
+python -m overkill_port.cli info assets/OVERKILL
 ```
 
 Generate a trace from cold start:
 
 ```bash
-python -m overkill_port.cli trace assets/OVERKILL.UNLZEXE.EXE \
+python -m overkill_port.cli trace assets/OVERKILL \
   --game-root assets \
   --steps 5000 \
   --out trace_start.txt
@@ -231,7 +231,7 @@ python -m overkill_port.cli trace assets/OVERKILL.UNLZEXE.EXE \
 Create a full snapshot from cold start:
 
 ```bash
-python -m overkill_port.cli snapshot assets/OVERKILL.UNLZEXE.EXE \
+python -m overkill_port.cli snapshot assets/OVERKILL \
   --game-root assets \
   --steps 100000 \
   --trace-tail 200 \
@@ -241,7 +241,7 @@ python -m overkill_port.cli snapshot assets/OVERKILL.UNLZEXE.EXE \
 Stop at a specific address:
 
 ```bash
-python -m overkill_port.cli snapshot assets/OVERKILL.UNLZEXE.EXE \
+python -m overkill_port.cli snapshot assets/OVERKILL \
   --game-root assets \
   --stop-at 1010:ECF2 \
   --steps 40000 \
@@ -252,7 +252,7 @@ python -m overkill_port.cli snapshot assets/OVERKILL.UNLZEXE.EXE \
 Continue from an existing snapshot:
 
 ```bash
-python -m overkill_port.cli continue-snapshot assets/OVERKILL.UNLZEXE.EXE \
+python -m overkill_port.cli continue-snapshot assets/OVERKILL \
   artifacts/evidence/snapshot_name \
   --game-root assets \
   --steps 50000 \

@@ -694,6 +694,7 @@ class HookVerifier:
         dos.allocation_limit_segment = src.dos.allocation_limit_segment
         dos.allocations = dict(src.dos.allocations)
         dos.video_mode = src.dos.video_mode
+        dos.video_page = src.dos.video_page
         dos.ticks = src.dos.ticks
         dos.vga_status_reads = src.dos.vga_status_reads
         dos._pit_channel2_access = getattr(src.dos, "_pit_channel2_access", 3)
@@ -834,6 +835,7 @@ class HookVerifier:
             "next_alloc_segment",
             "allocation_limit_segment",
             "video_mode",
+            "video_page",
             "ticks",
             "vga_status_reads",
             "_seq_index",

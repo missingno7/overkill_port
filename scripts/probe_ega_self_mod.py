@@ -56,7 +56,7 @@ def main(argv: list[str] | None = None) -> int:
                    help="do not disable 58DF/CCAA/CCC4/CCF0 like play.py does for EGA")
     args = p.parse_args(argv)
 
-    rt = create_runtime(ROOT / "assets" / "OVERKILL.UNLZEXE.EXE",
+    rt = create_runtime(ROOT / "assets" / "OVERKILL",
                         game_root=ROOT / "assets", command_tail=VIDEO_TAIL_EGA)
     cpu = rt.cpu
     cpu.trace_enabled = False

@@ -70,6 +70,40 @@ python scripts/verify_hooks_headless.py --snapshot artifacts/snapshot_play_tandy
 Note: a full-memory 10k run was attempted too, but it did not finish within the
 available sandbox timeout after passing the 9k checkpoint without divergence.
 
+## 2026-06-14 original asset source switch
+
+Switched active runtime/test/script defaults from generated convenience files to
+the original OVERKILL assets:
+
+- executable/container: `assets\OVERKILL`
+- companion splash/loader data: `assets\OVERKILL.EXE`
+
+Removed generated assets:
+
+- `assets\OVERKILL.UNLZEXE.EXE`
+- `assets\OVERKILL.OVERLAY.BIN`
+
+Notes:
+
+- `assets\OVERKILL` is itself an MZ executable with the 467,649-byte overlay
+  appended, so the runtime now lets the original unpack/bootstrap path produce
+  the in-memory game image.
+- `create_runtime()` keeps `OVERKILL.UNLZEXE.EXE` as a legacy alias only when
+  that generated file is absent, mapping it to sibling `OVERKILL` so old
+  snapshots/commands can still be loaded.
+- The original startup path exposed two narrow BIOS/port details that the
+  generated file hid: INT 10h/AH=05h active display page selection, and
+  monochrome status port `03BAh` polling with bit `80h`.
+
+Verification:
+
+```text
+C:\Users\Jiri\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe scripts\run_tests.py
+# 207 passed, 0 failed
+headless Tandy original-container smoke with --verify-hooks --verify-require-metadata --verify-max 50
+# HOOK VERIFY LIMIT REACHED verified=50, no divergence
+```
+
 ## 2026-06-13 strict hook verifier cold-start cleanup
 
 Followed up on `scripts\play.py --verify-hooks --verify-stop-on-diff` after

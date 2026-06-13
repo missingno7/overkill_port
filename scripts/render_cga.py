@@ -222,7 +222,7 @@ def load_memory(args: argparse.Namespace) -> bytes:
     if args.steps is not None:
         from overkill_port.runtime import create_runtime
 
-        rt = create_runtime(ROOT / "assets" / "OVERKILL.UNLZEXE.EXE", game_root=ROOT / "assets")
+        rt = create_runtime(ROOT / "assets" / "OVERKILL", game_root=ROOT / "assets")
         rt.cpu.trace_enabled = False
         rt.cpu.run(args.steps)
         return bytes(rt.program.memory.data)

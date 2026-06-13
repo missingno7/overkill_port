@@ -34,6 +34,7 @@ class DOSMachine:
     allocation_limit_segment: int = 0xA000
     allocations: dict[int, int] = field(default_factory=dict)
     video_mode: int = 3
+    video_page: int = 0
     ticks: int = 0
     vga_status_reads: int = 0
     _seq_index: int = 0  # last EGA sequencer index latched via 03C4h
@@ -124,6 +125,9 @@ class DOSMachine:
     def port_read(self, cpu: CPU8086, port: int, bits: int) -> int:
         # VGA input status register 1. Bit 3 is vertical retrace. Toggle it so
         # busy-wait loops that wait for retrace high/low both make progress.
+        if port == 0x03BA and bits == 8:
+            self.vga_status_reads += 1
+            return 0x80 if (self.vga_status_reads & 1) else 0x00
         if port == 0x03DA and bits == 8:
             self.vga_status_reads += 1
             return 0x08 if (self.vga_status_reads & 1) else 0x00
@@ -477,9 +481,14 @@ class DOSMachine:
         if ah == 0x00:
             self.video_mode = al
             return
+        if ah == 0x05:
+            # Select active display page.  OVERKILL's original packed launcher
+            # uses this during video setup before the inner game code starts.
+            self.video_page = al
+            return
         if ah == 0x0F:
             cpu.s.ax = (80 << 8) | self.video_mode
-            cpu.s.bx = 0
+            cpu.s.bx = (cpu.s.bx & 0xFF00) | (self.video_page & 0xFF)
             return
         if ah == 0x0E:
             # BIOS teletype output.  OVERKILL reaches this from the high-score

@@ -10,11 +10,32 @@ from .hooks import registry
 from . import replacements  # noqa: F401 - registers built-in OVERKILL hooks
 
 
+LEGACY_UNPACKED_EXE = "OVERKILL.UNLZEXE.EXE"
+ORIGINAL_CONTAINER_EXE = "OVERKILL"
+
+
 @dataclass
 class Runtime:
     program: LoadedProgram
     cpu: CPU8086
     dos: DOSMachine
+
+
+def resolve_exe_path(exe_path: str | Path) -> Path:
+    """Resolve OVERKILL's canonical original executable/container.
+
+    Older project commands and snapshots refer to the generated
+    ``OVERKILL.UNLZEXE.EXE`` convenience file.  The source of truth is now the
+    original extensionless ``OVERKILL`` MZ/container.  Keep the legacy spelling
+    as an alias when the generated file is absent so old evidence can still be
+    loaded without reintroducing that generated asset.
+    """
+    path = Path(exe_path)
+    if path.name.upper() == LEGACY_UNPACKED_EXE and not path.exists():
+        candidate = path.with_name(ORIGINAL_CONTAINER_EXE)
+        if candidate.exists():
+            return candidate
+    return path
 
 
 def create_runtime(
@@ -23,6 +44,7 @@ def create_runtime(
     game_root: str | Path | None = None,
     command_tail: bytes | str = b"",
 ) -> Runtime:
+    exe_path = resolve_exe_path(exe_path)
     if isinstance(command_tail, str):
         command_tail = command_tail.encode("ascii")
     program = load_mz_program(exe_path, command_tail=command_tail)

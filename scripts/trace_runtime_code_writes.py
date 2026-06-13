@@ -27,7 +27,7 @@ from overkill_port.snapshot import load_snapshot
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--exe", default="assets/OVERKILL.UNLZEXE.EXE")
+    p.add_argument("--exe", default="assets/OVERKILL")
     p.add_argument("--game-root", default="assets")
     p.add_argument("--snapshot", help="Optional snapshot directory to start from")
     p.add_argument("--steps", type=int, default=250_000)

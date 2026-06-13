@@ -5,7 +5,7 @@ from pathlib import Path
 
 from .cpu import HaltExecution, UnsupportedInstruction
 from .hook_verify import HookVerifierConfig, install_hook_verifier, parse_addr as parse_verify_addr
-from .runtime import create_runtime
+from .runtime import create_runtime, resolve_exe_path
 from .snapshot import parse_addr, run_until, write_snapshot, load_snapshot
 
 
@@ -38,7 +38,7 @@ def maybe_install_verifier(rt, args: argparse.Namespace) -> None:
 
 def cmd_info(args: argparse.Namespace) -> int:
     from .mz import parse_mz
-    exe = parse_mz(args.exe)
+    exe = parse_mz(resolve_exe_path(args.exe))
     h = exe.header
     print(f"path: {exe.path}")
     print(f"load module: {len(exe.load_module)} bytes")

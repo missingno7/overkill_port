@@ -66,6 +66,7 @@ def write_snapshot(rt: Runtime, out_dir: str | Path, *, status: str, steps: int,
         },
         "dos": {
             "video_mode": rt.dos.video_mode,
+            "video_page": rt.dos.video_page,
             "ticks": rt.dos.ticks,
             "vga_status_reads": rt.dos.vga_status_reads,
             "pit_channel2_access": rt.dos._pit_channel2_access,
@@ -114,6 +115,7 @@ def load_snapshot(exe_path: str | Path, snapshot_dir: str | Path, *, game_root: 
 
     dos_meta = meta.get("dos", {})
     rt.dos.video_mode = dos_meta.get("video_mode", rt.dos.video_mode)
+    rt.dos.video_page = dos_meta.get("video_page", rt.dos.video_page)
     rt.dos.ticks = dos_meta.get("ticks", rt.dos.ticks)
     rt.dos.vga_status_reads = dos_meta.get("vga_status_reads", rt.dos.vga_status_reads)
     rt.dos._pit_channel2_access = dos_meta.get("pit_channel2_access", rt.dos._pit_channel2_access)

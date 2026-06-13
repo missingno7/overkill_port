@@ -421,7 +421,7 @@ def test_create_runtime_accepts_command_tail():
     from overkill_port.runtime import create_runtime
 
     root = Path(__file__).resolve().parents[1]
-    rt = create_runtime(root / "assets" / "OVERKILL.UNLZEXE.EXE", game_root=root / "assets", command_tail=" /E")
+    rt = create_runtime(root / "assets" / "OVERKILL", game_root=root / "assets", command_tail=" /E")
     psp = rt.program.psp_segment
     assert rt.program.memory.rb(psp, 0x80) == 3
     assert rt.program.memory.block(psp, 0x81, 4) == b" /E\r"

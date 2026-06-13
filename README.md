@@ -38,7 +38,7 @@ git. To run the runtime locally, place the expected OVERKILL files there,
 including:
 
 ```text
-assets/OVERKILL.UNLZEXE.EXE
+assets/OVERKILL
 ```
 
 and the companion game data files opened by the original loader.
@@ -154,13 +154,13 @@ AGENTS.md               durable workflow and agent instructions
 Inspect the executable:
 
 ```bash
-python -m overkill_port.cli info assets/OVERKILL.UNLZEXE.EXE
+python -m overkill_port.cli info assets/OVERKILL
 ```
 
 Run a short trace:
 
 ```bash
-python -m overkill_port.cli trace assets/OVERKILL.UNLZEXE.EXE \
+python -m overkill_port.cli trace assets/OVERKILL \
   --game-root assets \
   --steps 5000 \
   --out trace_start.txt
@@ -169,7 +169,7 @@ python -m overkill_port.cli trace assets/OVERKILL.UNLZEXE.EXE \
 Create a snapshot:
 
 ```bash
-python -m overkill_port.cli snapshot assets/OVERKILL.UNLZEXE.EXE \
+python -m overkill_port.cli snapshot assets/OVERKILL \
   --game-root assets \
   --steps 100000 \
   --trace-tail 128 \

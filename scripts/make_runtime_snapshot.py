@@ -8,7 +8,7 @@ from overkill_port.cli import main
 
 raise SystemExit(main([
     "snapshot",
-    str(ROOT / "assets" / "OVERKILL.UNLZEXE.EXE"),
+    str(ROOT / "assets" / "OVERKILL"),
     "--game-root", str(ROOT / "assets"),
     "--steps", "100000",
     "--trace-tail", "128",

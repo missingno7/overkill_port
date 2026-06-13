@@ -6,7 +6,7 @@ from overkill_port.runtime import create_runtime
 NON_CGA_DISABLE={(0x1010,0x58DF)}
 BOUND={(0x1010,0x2750):'present',(0x1010,0x50C9):'retrace',(0x1010,0x0679):'timer'}
 class B(Exception): pass
-rt=create_runtime(ROOT/'assets/OVERKILL.UNLZEXE.EXE', game_root=ROOT/'assets', command_tail=bytes((0x0D,0x01)))
+rt=create_runtime(ROOT/'assets/OVERKILL', game_root=ROOT/'assets', command_tail=bytes((0x0D,0x01)))
 cpu=rt.cpu; cpu.trace_enabled=False
 for k in NON_CGA_DISABLE: cpu.replacement_hooks.pop(k,None); cpu.hook_names.pop(k,None)
 mem=cpu.mem

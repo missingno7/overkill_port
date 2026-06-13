@@ -18,23 +18,36 @@ from overkill_port.snapshot import load_snapshot
 
 ROOT = Path(__file__).resolve().parents[1]
 ASSETS = ROOT / "assets"
-EXE = ASSETS / "OVERKILL.UNLZEXE.EXE"
+EXE = ASSETS / "OVERKILL"
 SNAP_5E42 = ROOT / "artifacts" / "snapshot_play_tandy_20260613_220042"
 
 
-def test_runtime_code_manifest_distinguishes_cold_and_gameplay_5e42():
+def _run_until_5e42_gameplay_variant(rt, *, max_steps: int = 1_300_000) -> None:
+    for _ in range(max_steps):
+        try:
+            variant = identify_runtime_code_variant(rt.cpu, (0x1010, 0x5E42))
+        except UnknownRuntimeCodeVariant:
+            pass
+        else:
+            if variant.name == "gameplay_object_steer_5e42":
+                return
+        rt.cpu.step()
+    raise AssertionError("original OVERKILL bootstrap did not install gameplay 5E42 body")
+
+
+def test_runtime_code_manifest_distinguishes_packed_start_and_gameplay_5e42():
     cold = create_runtime(EXE, game_root=ASSETS)
-    cold_variant = identify_runtime_code_variant(cold.cpu, (0x1010, 0x5E42))
-    assert cold_variant.name == "cold_display_helper_5e42_prefix"
+    with pytest.raises(UnknownRuntimeCodeVariant, match="unknown runtime-code variant at 1010:5E42"):
+        identify_runtime_code_variant(cold.cpu, (0x1010, 0x5E42))
 
     gameplay = load_snapshot(EXE, SNAP_5E42, game_root=ASSETS)
     gameplay_variant = identify_runtime_code_variant(gameplay.cpu, (0x1010, 0x5E42))
     assert gameplay_variant.name == "gameplay_object_steer_5e42"
 
 
-def test_runtime_patched_5e42_hook_rejects_known_cold_variant_without_fallback():
+def test_runtime_patched_5e42_hook_rejects_packed_start_without_fallback():
     rt = create_runtime(EXE, game_root=ASSETS)
-    with pytest.raises(UnknownRuntimeCodeVariant, match="known but not valid.*gameplay_object_steer_5e42"):
+    with pytest.raises(UnknownRuntimeCodeVariant, match="unknown runtime-code variant at 1010:5E42"):
         require_runtime_code_variant(rt.cpu, (0x1010, 0x5E42), "gameplay_object_steer_5e42")
 
 
@@ -81,8 +94,9 @@ def test_runtime_code_staticization_manifest_has_static_source_owner_for_accepte
 
 
 def test_runtime_code_staticization_strict_installer_gate_accepts_bootstrap_provenance():
-    # The accepted body is staticized, and the writer has now been classified as
-    # the transient 32FF:* inner unpack/self-relocation bootstrap.
+    # The accepted body is staticized, and the final writer is still classified
+    # as the transient 32FF:* inner unpack/self-relocation bootstrap.  Original
+    # packed startup has earlier decompressor writes before that final install.
     assert_runtime_code_staticization_ready(strict_installers=True)
     report = runtime_code_staticization_report(strict_installers=True)
     row = next(item for item in report if item["addr"] == "1010:5E42")
@@ -106,12 +120,11 @@ def test_runtime_patched_5e42_bootstrap_installs_same_body_for_video_modes():
         rt.cpu.hook_names.clear()
         tracer = RuntimeCodeWriteTracer(rt.cpu).install()
         try:
-            for _ in range(250_000):
-                rt.cpu.step()
+            _run_until_5e42_gameplay_variant(rt)
         finally:
             tracer.uninstall()
         assert tracer.events
-        assert {event.writer for event in tracer.events} == {(0x32FF, 0x009B)}
+        assert (0x32FF, 0x009B) in {event.writer for event in tracer.events}
         assert min(event.target_phys for event in tracer.events) == 0x1010 * 16 + 0x5E42
         assert max(event.target_phys for event in tracer.events) == 0x1010 * 16 + 0x5F1A
         variant = identify_runtime_code_variant(rt.cpu, (0x1010, 0x5E42))

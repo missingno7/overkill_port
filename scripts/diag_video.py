@@ -56,7 +56,7 @@ TANDY_BYTES_PER_ROW = 160
 
 def run_to_present(video: str, max_steps: int):
     rt = create_runtime(
-        ROOT / "assets" / "OVERKILL.UNLZEXE.EXE",
+        ROOT / "assets" / "OVERKILL",
         game_root=ROOT / "assets",
         command_tail=VIDEO_TAIL[video],
     )

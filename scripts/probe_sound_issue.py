@@ -7,7 +7,7 @@ from overkill_port.interrupts import deliver_scancode
 from overkill_port.games.overkill.sounds import deliver_overkill_timer_irq0
 
 snap=Path('/mnt/data/work_overkill/snapshot/snapshot_play_tandy_20260612_155451')
-rt=load_snapshot(ROOT/'assets'/'OVERKILL.UNLZEXE.EXE', snap, game_root=ROOT/'assets')
+rt=load_snapshot(ROOT/'assets'/'OVERKILL', snap, game_root=ROOT/'assets')
 print('addr', rt.cpu.s.snapshot())
 print('int8', hex(rt.cpu.mem.rw(0,0x20)), hex(rt.cpu.mem.rw(0,0x22)))
 print('int9', hex(rt.cpu.mem.rw(0,0x24)), hex(rt.cpu.mem.rw(0,0x26)))
