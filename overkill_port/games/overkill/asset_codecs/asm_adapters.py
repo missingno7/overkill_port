@@ -9,15 +9,10 @@ specific to OVERKILL's loader code.
 from __future__ import annotations
 
 from overkill_port.cpu import CF, DF
+from overkill_port.games.overkill.asm import loop_count
 
 OVERKILL_LOAD_ERROR_IP = 0x02B2
 OVERKILL_LOAD_DISPATCH_CONTINUATION_IP = 0x02A8
-
-
-def loop_count(cx: int) -> int:
-    """Return 8086 LOOP iteration count; CX=0 means 65536 iterations."""
-    count = cx & 0xFFFF
-    return 0x10000 if count == 0 else count
 
 
 def inc_mem_word_preserve_cf(cpu, seg: int, off: int) -> None:

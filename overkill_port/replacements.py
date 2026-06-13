@@ -16,15 +16,24 @@ from .games.overkill.asset_codecs import (
     decode_vertical_rle_columns,
     decode_word_pair_rle,
     find_overlay_directory_entry_05a1,
-    run_overlay_counter_stride_loop_1f8f_0960,
     input_lz_byte,
     strip_overlay_path_components_0701,
     output_lz_byte,
     read_packed_byte,
     read_packed_byte_hook,
     read_packed_word_le_hook,
+    search_decoded_asset_table_c713,
 )
-from .games.overkill.asset_codecs.startup_graphics import (
+from .games.overkill.file_io import open_overlay_container_entry_254a_04d7
+
+from .games.overkill.input_menu import (
+    pack_keyboard_poll_bits_017e,
+    run_input_poll_0162,
+    run_intro_retrace_delay_loop_96c5,
+    run_intro_retrace_delay_loop_tail_96c8,
+)
+
+from .games.overkill.rendering.startup_graphics import (
     expand_4plane_block_4511,
     expand_4plane_list_450c,
     expand_4plane_row_4537,
@@ -44,10 +53,15 @@ from .games.overkill.rendering.layer_sprites import (
     call_layer0_draw_type_from_scan_a8be,
     call_layer1_draw_type_from_scan_a8f1,
     call_present_dispatch_from_scan_a936,
+    call_clear_presence_list_parent_a93c,
     dispatch_draw_object_5ac8,
     dispatch_layer_draw_type_7596,
     dispatch_layer_sprite_tail_75f5,
+    dispatch_menu_cell_source_blit_5a6c,
     dispatch_present_object_5a92,
+    run_clear_presence_list_parent_4d64,
+    run_present_object_scan_pair_a90c,
+    run_video_page_toggle_511f,
     draw_compact_layer_sprite_7746,
     finish_draw_scan_tail_a85b,
     finish_layer0_scan_tail_a8c1,
@@ -61,7 +75,10 @@ from .games.overkill.rendering.layer_sprites import (
 )
 
 from .games.overkill.rendering.tandy import (
+    build_startup_coordinate_tables_0f0b as run_tandy_startup_coordinate_tables_0f0b,
     build_video_offset_tables_0fa3 as run_tandy_video_offset_tables_0fa3,
+    clear_tandy_interlaced_buffer_30b0 as run_tandy_interlaced_clear_30b0,
+    patched_strided_row_copy_30ba as run_tandy_patched_strided_row_copy_30ba,
     build_pixel_pair_lookup_table_0fe4 as run_tandy_pixel_pair_table_0fe4,
     expand_tandy_cell_33dd as run_expand_tandy_cell_33dd,
     expand_tandy_block_33b2 as run_expand_tandy_block_33b2,
@@ -76,6 +93,7 @@ from .games.overkill.rendering.tandy import (
     or_inverted_mask_2ecb as run_tandy_or_inverted_mask_2ecb,
     or_inverted_mask_2f40 as run_tandy_or_inverted_mask_2f40,
     loading_scroll_sequence_60c5 as run_tandy_loading_scroll_sequence_60c5,
+    loading_scroll_until_4e0d as run_tandy_loading_scroll_until_4e0d,
     loading_tile_column_copy_36a2 as run_tandy_loading_tile_column_copy_36a2,
     postcopy_scaled_blit_375b as run_tandy_postcopy_scaled_blit_375b,
     present_tandy_frame_3354 as run_present_tandy_frame_3354,
@@ -98,23 +116,106 @@ from .games.overkill.gameplay.collision import (
     run_collision_stc_ret_5059,
     run_object_deactivate_logic_dispatch_c054,
     run_object_slot_scan_ac97,
+    run_object_slot_scan_guard_ac81,
     run_postmove_y_clamp_bcb1,
     run_postmove_contact_window_aa71,
     run_player_hazard_object_scan_bde3,
     run_tile_lookup_505b,
     run_tile_probe_5073,
+    run_tile_collision_probe_ac28,
+)
+from .games.overkill.gameplay.game_state import (
+    run_gameplay_counter_tick_1f8f_0922,
+    run_gameplay_counter_stride_loop_1f8f_0960,
+    run_decrement_first_active_counter_61c5,
+    run_decrement_first_active_counter_scan_61ca,
 )
 from .games.overkill.gameplay.objects import (
     call_object_logic_from_scan_aa01,
     finish_object_logic_scan_tail_aa04,
+    run_object_motion_table_ab34,
+    run_object_scroll_sprite_ab4f,
 )
 
 from .games.overkill.sounds import (
     SIG_FAST_TIMER_ISR_06E5,
     SIG_PC_SPEAKER_TICK_D50E,
+    SIG_TIMER_CLEAR_0672,
+    SIG_TIMER_WAIT_0679,
     deliver_overkill_timer_irq0,
+    run_clear_timer_tick_flag_0672,
     run_fast_timer_isr_06e5,
     run_pc_speaker_tick_d50e,
+    run_wait_timer_tick_0679,
+)
+
+from .games.overkill.asm import (
+    _add_mem_byte,
+    _add_mem_word,
+    _add_reg16,
+    _and_mem_byte,
+    _and_mem_word,
+    _cmp_byte,
+    _cmp_word,
+    _dec_mem_byte_preserve_cf,
+    _dec_reg16_preserve_cf,
+    _ega_aperture_overlap,
+    _ega_next_scanline_di,
+    _inc_mem_byte_preserve_cf,
+    _inc_reg16_preserve_cf,
+    _rep_movsb,
+    _rep_stosb,
+    _sub_mem_word,
+    _sub_reg16,
+    _test_word,
+    _xor_al_al,
+)
+from .games.overkill.gameplay.object_runtime import (
+    _draw_dispatch_target_5ac8,
+    _find_free_effect_slot_7524,
+    _find_free_object_slot_7573,
+    _format_object_context,
+    _layer_draw_dispatch_target_7596,
+    _object_family_target_efae,
+    _object_logic_target_aa2b,
+    _object_ptr_from_scan_index,
+    _present_dispatch_target_5a92,
+    _push_loop_count_for_interpreted_tail,
+    _raise_unverified_path,
+    _remember_balanced_push_scratch,
+    _run_object_behavior_aba3,
+    _run_aee4_step_for_direction,
+    _run_af60_double_step_for_direction,
+    _run_af63_step_for_direction,
+    _run_collision_death_tail_bfc7,
+    _run_collision_handler_bec5_observed,
+    _run_deactivate_bd17_observed,
+    _run_formation_spawn_7476_observed,
+    _run_interpreted_near_call_observed,
+    _run_linked_effect_spawn_7420_observed,
+    _run_movement_direction_5db2,
+    _run_object_behavior_8d4f,
+    _run_object_behavior_ab77,
+    _run_object_behavior_ae09,
+    _run_object_behavior_aed8,
+    _run_object_behavior_b73e,
+    _run_object_family_dispatch_efae,
+    _run_object_logic_ab10,
+    _run_object_logic_branch_ad04,
+    _run_object_logic_dispatch_aa2b,
+    _run_object_overlap_scan_62f6,
+    _run_object_postmove_bc4b,
+    run_object_postmove_prelude_bc45,
+    _run_post_contact_9e69_observed,
+    _run_post_contact_9e98_tail_observed,
+    _run_tile_lookup_505b,
+    _run_tile_probe_5073,
+    _run_view_window_check_aa46,
+    _run_y_clamp_bcb1,
+    _scan_active_object_call,
+    _scan_layered_object_call,
+    _scan_loop_until_callable,
+    _scan_object_logic_via_aa2b,
 )
 
 # Runtime-patched code guard -------------------------------------------------
@@ -145,13 +246,19 @@ _SIG_280D = bytes.fromhex("2e 8b 0e 9c 5b ac 2e 88 05 47 e2 f9 2e 2b 3e 9c")
 _SIG_2824 = bytes.fromhex("bf f4 5a 2e 8b 0e 9c 5b 51 2e 8a 05 2e 8a 65 28")
 _SIG_291C = bytes.fromhex("51 2e 8a 05 47 57 2e 8b 3e a6 5b aa 2e 89 3e a6")
 _SIG_2932 = bytes.fromhex("2e c6 06 a0 5b 00 2e 8b 1e 9c 5b 8a 04 8a 20 d1")
+_SIG_5A6C = bytes.fromhex("2e 8b 1e bc 95 d1 e3 2e ff a7 78 5a")
 _SIG_2E6E = bytes.fromhex("bb 58 00 ad 26 23 05 0b 04 83 c6 02 ab ad 26 23")
+_SIG_96C5 = bytes.fromhex("e8 01 ba e2 fb")
+_SIG_96C8 = bytes.fromhex("e2 fb")
+_SIG_0F0B = bytes.fromhex("2e 8e 1e 96 95 2e 8e 06 96 95 bf c8 99 b9 10 00 b8 ff ff f3 ab 2e a1 9e 95 d1 e0 d1 e0 d1 e0 d1 e0 f7 d8 b9 d0 00 ab 2e 03 06 9e 95 e2 f8 b8 ff ff b9 20 00 f3 ab bf c8 9b 33 c0 b9 c8 00 ab 2e 03 06 9e 95 e2 f8 bf 58 9d 33 c0 b9 c8 00 ab 2e 03 06 a0 95 e2 f8 bf e8 9e b9 c8 00 33 c0 ab 97 2e 8b 1e bc 95 d1 e3 2e ff a7 77 0f 7d 0f 8d 0f 92 0f 81 c7 00 20 f7 c7 00 40 74 04 81 c7 50 c0 eb 13 83 c7 28 eb 0e 81 c7 00 20 f7 c7 00 80 74 04 81 c7 a0 80 97 e2 c6")
 _SIG_0FA3 = bytes.fromhex("0e 07 bf 92 8d b9 00 01 33 c0 ab 03 06 70 10 e2 f9 bf 92 8f b9 00 01 33 c0 ab 03 06 24 10 e2 f9 bf 92 91 b9 00 01 33 c0 ab 03 06 26 10 e2 f9 bf 92 93 b9 00 01 33 c0 ab 03 06 28 10 e2 f9 e9 86 42")
 _SIG_0FE4 = bytes.fromhex("2e 8e 06 96 95 bf 17 15 32 f6 8a d6 32 c0 d0 da 73 02 b0 0f d0 da 73 02 04 f0 88 05 4f 32 c0 d0 da 73 02 b0 0f d0 da 73 02 04 f0 88 05 4f 32 c0 d0 da 73 02 b0 0f d0 da 73 02 04 f0 88 05 4f 32 c0 d0 da 73 02 b0 0f d0 da 73 02 04 f0 88 05 4f 83 c7 08 fe c6 75 b3 c3")
 _SIG_2ECB = bytes.fromhex("bb 58 00 8b 04 f7 d0 26 09 05 83 c6 04 83 c7 02")
 _SIG_2F40 = bytes.fromhex("bb 60 00 8b 04 f7 d0 26 09 05 83 c6 04 83 c7 02")
 _SIG_2F81 = bytes.fromhex("bb 60 00 ad 26 23 05 0b 04 83 c6 02 ab ad 26 23")
 _SIG_306F = bytes.fromhex("ad 8b c8 ad 2e 8e 06 a4 95 d1 e0 d1 e0 8b e8 51")
+_SIG_30B0 = bytes.fromhex("2e 8e 06 a4 95 33 ff bd c8 00 b9 34 00 33 c0 f3 ab 83 ef 68 81 c7 00 20 f7 c7 00 80 74 04 81 c7 a0 80 4d 75 e5 c3")
+_SIG_30BA_PATCHED_ROW_COPY = bytes.fromhex("8b c8 ad d1 e0 d1 e0 8b e8 51 8b cd f3 a4 2b fd 81 c7 a0 00 59 e2 f2 c3")
 _SIG_33AF = bytes.fromhex("e8 25 11 75 03 e9 f3 10 2e 8b 0e 9e 5b 51 2e 8b")
 _SIG_33B2 = bytes.fromhex("75 03 e9 f3 10 2e 8b 0e 9e 5b 51 2e 8b 0e 9c")
 _SIG_34AD = bytes.fromhex("83 ff ff 74 03 e8 10 00 8b 7e 10 8b 76 0e 81 c6")
@@ -161,6 +268,7 @@ _SIG_3542 = bytes.fromhex("83 ff ff 75 01 c3 bb 64 00 a5 a5 03 fb a5 a5 03")
 _SIG_35CC = bytes.fromhex("e8 67 24 89 46 0c 3d ff ff 75 01 c3 03 06 4c 23")
 _SIG_356C = bytes.fromhex("e8 c7 24 89 46 0c 3d ff ff 74 0f 03 06 4c 23")
 _SIG_3657 = bytes.fromhex("e8 dc 23 89 46 0c 3d ff ff 75 01 c3 03 06 4c 23")
+_SIG_4E0D = bytes.fromhex("57 56 e8 6f 59 5e 5f 39 3e 50 23 77 f3 83 3e 4e 23 00 75 ec 89 36 78 a9 c3")
 _SIG_375B = bytes.fromhex("2e c7 06 03 59 00 00 2e 8b 3e f9 58 2e 8b 36 fb 58 2e 8b 0e fd 58 2e 8b 2e ff 58 d1 e5")
 _SIG_35AA = bytes.fromhex("2e 8e 06 96 95 2e 8e 1e 98 95 bb 58 00 b9 10 00")
 _SIG_36A2 = bytes.fromhex("8b da b9 0d 00 2e a1 9a 95 81 3e 50 23 5f 0e 72")
@@ -175,15 +283,29 @@ _SIG_A8C7 = bytes.fromhex("51 8b d9 d1 e3 8b af ca 32 83 7e 00 00 74 1e 83 3e ac
 _SIG_A849 = bytes.fromhex("51 8b d9 d1 e3 8b af ca 32 83 7e 00 00 74 03 e8 6d b2")
 _SIG_A90F = bytes.fromhex("51 8b d9 d1 e3 8b af 12 8d 83 7e 00 00 74 03 e8")
 _SIG_A927 = bytes.fromhex("51 8b d9 d1 e3 8b af ca 32 83 7e 00 00 74 03 e8 59 b1")
+_SIG_A90C = bytes.fromhex("b9 22 00 51 8b d9 d1 e3 8b af 12 8d")
+_SIG_A93C = bytes.fromhex("e8 25 a4 c3")
+_SIG_4D64 = bytes.fromhex("2e 8e 06 98 95 be b1 c7 b9 28 00")
 _SIG_A9E0 = bytes.fromhex("51 8b d9 d1 e3 8b af ca 32 ff 06 40 23 81 3e 40 23 dc 05")
 _SIG_AA10 = bytes.fromhex("51 8b d9 d1 e3 8b af 12 8d 83 7e 00 00 74 03 e8 09 00")
+_SIG_ABA3 = bytes.fromhex("89 1e 2e a4 83 3e 84 23 03 73 12 a1 3c 23 05 14 00")
+_SIG_AB77 = bytes.fromhex("83 3e 84 23 03 73 11 e8 ce ff e8 a4 00 72 09 e8 f8 00")
+_SIG_BC45 = bytes.fromhex("a1 78 a2 01 46 02")
 _SIG_B73E = bytes.fromhex("83 7e 1c ff 74 4d 8b 5e 1c d1 e3 2e ff a7 4e b7")
 _SIG_AA2B = bytes.fromhex("8b 5e 16 d1 e3 2e ff a7 36 aa")
 _SIG_EFAE = bytes.fromhex("8b 46 04 a3 fe d1 8b 46 02 a3 00 d2 8b 5e 18")
+_SIG_AED8 = bytes.fromhex("ff 4e 1c 75 03 e9 e9 fe b8 50 b2 50 8b 5e 06 d1 e3")
+_SIG_AE09 = bytes.fromhex("83 7e 1c 00 74 0a ff 4e 1c 75 09 c7 46 06 00 00 83 6e 02 02")
+_SIG_AB10 = bytes.fromhex("83 3e 84 23 03 72 03 e9 08 01 83 3e 7c a4 03 72 03 e9 fe 00")
+_SIG_AD04 = bytes.fromhex("83 3e ac bd 01 74 09 81 3e 50 23 b6 00 77 01 c3")
+_SIG_AC81 = bytes.fromhex("83 3e ac bd 01 75 03 e9 b9 fd b9 23 00 bb b4 23 8b 46 04 8b 7e 02")
 _SIG_CCAA = bytes.fromhex("b9 08 00 26 8b 04 26 3b 05 74 05 b2 01 26 89 05")
 _SIG_CCC4 = bytes.fromhex("b9 08 00 26 8b 04 26 3b 05 74 05 b2 01 26 89 05")
 _SIG_CCF0 = bytes.fromhex("b9 20 00 26 8a 04 26 3a 05 74 05 b2 01 26 88 05")
 _SIG_CC7F = bytes.fromhex("51 a1 95 bd e8 9e 8d 89 3e 9e bd 8b f7 81 c6 00 7d 32 d2 2e 8e 06 98 95")
+_SIG_CD68 = bytes.fromhex("5f 8b 36 9e bd 2e 8e 06 a4 95 2e 8e 1e 98 95 2e 8b 1e bc 95")
+_SIG_CE40 = bytes.fromhex("80 3e c3 98 00 74 01 c3 51 e8 16 33 59 f6 06 be 98 10")
+_SIG_CE5C = bytes.fromhex("e2 e2 c3")
 
 
 
@@ -235,10 +357,21 @@ def overkill_tandy_text_glyph_3153(cpu):
     run_tandy_text_glyph_3153(cpu, _text_render_runtime())
 
 
-@registry.replace(0x1F8F, 0x0960, "overkill_overlay_counter_stride_loop_1f8f_0960")
-def overkill_overlay_counter_stride_loop_1f8f_0960(cpu):
-    """Hook wrapper for OVERKILL 1F8F:0960 overlay counter stride loop."""
-    run_overlay_counter_stride_loop_1f8f_0960(cpu, _self_disable_if_patched)
+
+@registry.replace(0x1F8F, 0x0922, "overkill_gameplay_counter_tick_1f8f_0922")
+def overkill_gameplay_counter_tick_1f8f_0922(cpu):
+    """Hook wrapper for the per-frame far counter tick at 1F8F:0922."""
+    run_gameplay_counter_tick_1f8f_0922(cpu, _self_disable_if_patched)
+
+@registry.replace(0x1F8F, 0x0960, "overkill_gameplay_counter_stride_loop_1f8f_0960")
+def overkill_gameplay_counter_stride_loop_1f8f_0960(cpu):
+    """Hook wrapper for OVERKILL 1F8F:0960 gameplay counter stride loop."""
+    run_gameplay_counter_stride_loop_1f8f_0960(cpu, _self_disable_if_patched)
+
+
+# Backward-compatible test/import alias.  The routine lives in the game_state
+# island; the old overlay name is not used for registration or coverage labels.
+overkill_overlay_counter_stride_loop_1f8f_0960 = overkill_gameplay_counter_stride_loop_1f8f_0960
 
 
 @registry.replace(0x1010, 0xC916, "overkill_file_checksum_loop")
@@ -279,6 +412,14 @@ def overkill_expand_bits_45cb(cpu):
 
 
 
+
+
+@registry.replace(0x1010, 0xC713, "overkill_decoded_asset_table_search_c713")
+def overkill_decoded_asset_table_search_c713(cpu):
+    """Hook wrapper for OVERKILL 1010:C713 decoded-asset table search loop."""
+    search_decoded_asset_table_c713(cpu)
+
+
 @registry.replace(0x1010, 0x03A8, "overkill_vertical_rle_decoder_03a8")
 def overkill_vertical_rle_decoder_03a8(cpu):
     """Hook wrapper for OVERKILL 1010:03A8 vertical startup RLE decoder."""
@@ -311,44 +452,6 @@ def _call_installed_hook_like_near_call(cpu, key: tuple[int, int], default_handl
     handler(cpu)
 
 
-def _run_interpreted_near_call_observed(cpu, target_ip: int, return_ip: int, *, max_steps: int = 20000) -> None:
-    """Run a rare original near helper from inside a larger lifted path.
-
-    This is used for non-hot, display/bookkeeping helper tails that have not yet
-    been lifted but are needed to keep gameplay moving through an observed path.
-    The helper is still bounded and deterministic: it installs the same near-CALL
-    return word the ASM would have pushed, steps until that continuation is
-    reached, and restores verifier state afterwards so nested fast hooks do not
-    recursively start their own differential verification.
-    """
-    cs = cpu.s.cs & 0xFFFF
-    target = (cs, return_ip & 0xFFFF)
-    saved_verifier = cpu.hook_verifier
-    cpu.hook_verifier = None
-    cpu.push(return_ip & 0xFFFF)
-    cpu.s.ip = target_ip & 0xFFFF
-    try:
-        ctx = (
-            cpu.coverage_telemetry.bounded_original((cs, target_ip & 0xFFFF), "bounded original near call")
-            if cpu.coverage_telemetry is not None
-            else None
-        )
-        if ctx is not None:
-            ctx.__enter__()
-        try:
-            for _ in range(max_steps):
-                if cpu.addr() == target:
-                    return
-                cpu.step()
-        finally:
-            if ctx is not None:
-                ctx.__exit__(None, None, None)
-    finally:
-        cpu.hook_verifier = saved_verifier
-    raise RuntimeError(
-        f"interpreted helper 1010:{target_ip & 0xFFFF:04X} did not return to "
-        f"1010:{return_ip & 0xFFFF:04X}; now at {cpu.s.cs & 0xFFFF:04X}:{cpu.s.ip & 0xFFFF:04X}"
-    )
 
 
 
@@ -383,10 +486,31 @@ def overkill_tandy_pixel_pair_table_0fe4(cpu):
     run_tandy_pixel_pair_table_0fe4(cpu, _tandy_render_runtime())
 
 
+@registry.replace(0x1010, 0x0F0B, "overkill_startup_coordinate_tables_0f0b")
+def overkill_startup_coordinate_tables_0f0b(cpu):
+    """Hook wrapper for OVERKILL 1010:0F0B startup coordinate/video tables."""
+    run_tandy_startup_coordinate_tables_0f0b(cpu, _tandy_render_runtime())
+
+
 @registry.replace(0x1010, 0x0FA3, "overkill_tandy_video_offset_tables_0fa3")
 def overkill_tandy_video_offset_tables_0fa3(cpu):
     """Hook wrapper for OVERKILL 1010:0FA3 Tandy/CGA video offset table init."""
     run_tandy_video_offset_tables_0fa3(cpu, _tandy_render_runtime())
+
+
+@registry.replace(0x1010, 0x30B0, "overkill_tandy_interlaced_clear_30b0")
+def overkill_tandy_interlaced_clear_30b0(cpu):
+    """Hook wrapper for OVERKILL 1010:30B0 Tandy interlaced buffer clear."""
+    run_tandy_interlaced_clear_30b0(cpu, _tandy_render_runtime())
+
+
+@registry.replace(0x1010, 0x30BA, "overkill_tandy_patched_row_copy_30ba")
+def overkill_tandy_patched_row_copy_30ba(cpu):
+    """Hook wrapper for runtime-patched OVERKILL 1010:30BA Tandy row copier."""
+    if not _code_matches(cpu, 0x30BA, _SIG_30BA_PATCHED_ROW_COPY):
+        _interpret_current_instruction_without_hook(cpu)
+        return
+    run_tandy_patched_strided_row_copy_30ba(cpu)
 
 
 
@@ -566,6 +690,15 @@ def overkill_tandy_rect_copy_306f(cpu):
 
 
 
+
+
+@registry.replace(0x1010, 0x4E0D, "overkill_tandy_loading_scroll_until_4e0d")
+def overkill_tandy_loading_scroll_until_4e0d(cpu):
+    """Replace 4E0D parent loop around the A781 loading-scroll step."""
+    if _self_disable_if_patched(cpu, 0x4E0D, _SIG_4E0D, "overkill_tandy_loading_scroll_until_4e0d"):
+        return
+    run_tandy_loading_scroll_until_4e0d(cpu, _tandy_render_runtime())
+
 @registry.replace(0x1010, 0x60C5, "overkill_tandy_loading_scroll_sequence_60c5")
 def overkill_tandy_loading_scroll_sequence_60c5(cpu):
     """Hook wrapper for OVERKILL 1010:60C5 Tandy loading scroll sequence."""
@@ -592,6 +725,12 @@ def overkill_lz_output_byte_ede9(cpu):
 def overkill_lz_input_byte_ed97(cpu):
     """Hook wrapper for OVERKILL 1010:ED97 LZ byte-input helper."""
     input_lz_byte(cpu)
+
+
+@registry.replace(0x254A, 0x04D7, "overkill_overlay_container_open_entry_254a_04d7")
+def overkill_overlay_container_open_entry_254a_04d7(cpu):
+    """Hook wrapper for OVERKILL 254A:04D7 overlay/container file-open parent."""
+    open_overlay_container_entry_254a_04d7(cpu)
 
 
 @registry.replace(0x254A, 0x05A1, "overkill_overlay_directory_entry_scan_254a_05a1")
@@ -659,190 +798,41 @@ def overkill_expand_4plane_list_450c(cpu):
     expand_4plane_list_450c(cpu)
 
 
-def _inc_reg16_preserve_cf(cpu, reg_idx: int) -> None:
-    old = cpu.get_reg16(reg_idx)
-    old_cf = cpu.get_flag(CF)
-    cpu.set_reg16(reg_idx, (old + 1) & 0xFFFF)
-    cpu.set_add_flags(old, 1, old + 1, 16)
-    cpu.set_flag(CF, old_cf)
-
-
-def _dec_reg16_preserve_cf(cpu, reg_idx: int) -> None:
-    old = cpu.get_reg16(reg_idx)
-    old_cf = cpu.get_flag(CF)
-    cpu.set_reg16(reg_idx, (old - 1) & 0xFFFF)
-    cpu.set_sub_flags(old, 1, old - 1, 16)
-    cpu.set_flag(CF, old_cf)
-
-
-def _add_reg16(cpu, reg_idx: int, value: int) -> None:
-    old = cpu.get_reg16(reg_idx)
-    result = old + (value & 0xFFFF)
-    cpu.set_reg16(reg_idx, result)
-    cpu.set_add_flags(old, value & 0xFFFF, result, 16)
-
-
-def _sub_reg16(cpu, reg_idx: int, value: int) -> None:
-    old = cpu.get_reg16(reg_idx)
-    result = old - (value & 0xFFFF)
-    cpu.set_reg16(reg_idx, result)
-    cpu.set_sub_flags(old, value & 0xFFFF, result, 16)
-
-
-def _add_mem_word(cpu, seg: int, off: int, value: int) -> None:
-    old = cpu.mem.rw(seg, off)
-    result = old + (value & 0xFFFF)
-    cpu.mem.ww(seg, off, result)
-    cpu.set_add_flags(old, value & 0xFFFF, result, 16)
-
-
-def _sub_mem_word(cpu, seg: int, off: int, value: int) -> None:
-    old = cpu.mem.rw(seg, off)
-    result = old - (value & 0xFFFF)
-    cpu.mem.ww(seg, off, result)
-    cpu.set_sub_flags(old, value & 0xFFFF, result, 16)
-
-
-def _and_mem_word(cpu, seg: int, off: int, value: int) -> None:
-    result = cpu.mem.rw(seg, off) & (value & 0xFFFF)
-    cpu.mem.ww(seg, off, result)
-    cpu.set_logic_flags(result, 16)
 
 
 
 
 
-def _inc_mem_byte_preserve_cf(cpu, seg: int, off: int) -> int:
-    old = cpu.mem.rb(seg, off)
-    old_cf = cpu.get_flag(CF)
-    result = (old + 1) & 0xFF
-    cpu.mem.wb(seg, off, result)
-    cpu.set_add_flags(old, 1, old + 1, 8)
-    cpu.set_flag(CF, old_cf)
-    return result
 
 
-def _dec_mem_byte_preserve_cf(cpu, seg: int, off: int) -> int:
-    old = cpu.mem.rb(seg, off)
-    old_cf = cpu.get_flag(CF)
-    result_full = old - 1
-    result = result_full & 0xFF
-    cpu.mem.wb(seg, off, result)
-    cpu.set_sub_flags(old, 1, result_full, 8)
-    cpu.set_flag(CF, old_cf)
-    return result
 
 
-def _and_mem_byte(cpu, seg: int, off: int, value: int) -> int:
-    result = cpu.mem.rb(seg, off) & (value & 0xFF)
-    cpu.mem.wb(seg, off, result)
-    cpu.set_logic_flags(result, 8)
-    return result
 
 
-def _add_mem_byte(cpu, seg: int, off: int, value: int) -> int:
-    old = cpu.mem.rb(seg, off)
-    result_full = old + (value & 0xFF)
-    result = result_full & 0xFF
-    cpu.mem.wb(seg, off, result)
-    cpu.set_add_flags(old, value & 0xFF, result_full, 8)
-    return result
-
-def _ega_aperture_overlap(seg: int, off: int, count: int) -> bool:
-    """Return True when a flat byte transfer touches the emulated EGA aperture.
-
-    Real EGA memory is not a linear bytearray: reads come from the selected read
-    plane and writes land in the planes selected by the sequencer map mask.
-    Slice-copy fast paths must therefore avoid this range, otherwise only one
-    shadow plane is updated/read and moving EGA sprites leave coloured ghosts.
-    The fast callers already restrict transfers to non-wrapping 16-bit offsets,
-    so a simple physical interval check is enough here.
-    """
-    if count <= 0:
-        return False
-    start = (((seg & 0xFFFF) << 4) + (off & 0xFFFF)) & 0xFFFFF
-    end = start + count
-    ega_start = EGA_CPU_APERTURE
-    ega_end = EGA_CPU_APERTURE + EGA_PLANE_WINDOW
-    return start < ega_end and end > ega_start
-
-def _cmp_word(cpu, a: int, b: int) -> None:
-    cpu.set_sub_flags(a & 0xFFFF, b & 0xFFFF, (a & 0xFFFF) - (b & 0xFFFF), 16)
 
 
-def _test_word(cpu, a: int, b: int) -> None:
-    cpu.set_logic_flags((a & 0xFFFF) & (b & 0xFFFF), 16)
 
 
-def _xor_al_al(cpu) -> None:
-    cpu.set_reg8(0, 0)
-    cpu.set_logic_flags(0, 8)
 
 
-def _rep_movsb(cpu, count: int) -> None:
-    count &= 0xFFFF
-    if count == 0:
-        cpu.s.cx = 0
-        return
-
-    # Fast path for the normal forward, non-wrapping case used by the render
-    # blitters.  REP MOVSB does not alter FLAGS, so a bytearray slice copy is
-    # behavior-equivalent as long as the 16-bit source/destination offsets and
-    # 20-bit physical addresses do not wrap inside the transfer.
-    if not cpu.get_flag(DF):
-        si = cpu.s.si & 0xFFFF
-        di = cpu.s.di & 0xFFFF
-        if si + count <= 0x10000 and di + count <= 0x10000 \
-                and not (cpu.mem.ega_planar and (
-                    _ega_aperture_overlap(cpu.s.ds, si, count)
-                    or _ega_aperture_overlap(cpu.s.es, di, count)
-                )):
-            src = (((cpu.s.ds & 0xFFFF) << 4) + si) & 0xFFFFF
-            dst = (((cpu.s.es & 0xFFFF) << 4) + di) & 0xFFFFF
-            if src + count <= len(cpu.mem.data) and dst + count <= len(cpu.mem.data):
-                cpu.mem.data[dst:dst + count] = cpu.mem.data[src:src + count]
-                cpu.s.si = (si + count) & 0xFFFF
-                cpu.s.di = (di + count) & 0xFFFF
-                cpu.s.cx = 0
-                return
-
-    delta = -1 if cpu.get_flag(DF) else 1
-    for _ in range(count):
-        cpu.mem.wb(cpu.s.es, cpu.s.di, cpu.mem.rb(cpu.s.ds, cpu.s.si))
-        cpu.s.si = (cpu.s.si + delta) & 0xFFFF
-        cpu.s.di = (cpu.s.di + delta) & 0xFFFF
-    cpu.s.cx = 0
 
 
-def _rep_stosb(cpu, count: int) -> None:
-    count &= 0xFFFF
-    if count == 0:
-        cpu.s.cx = 0
-        return
-    value = cpu.get_reg8(0)
-    if not cpu.get_flag(DF):
-        di = cpu.s.di & 0xFFFF
-        if di + count <= 0x10000 \
-                and not (cpu.mem.ega_planar and _ega_aperture_overlap(cpu.s.es, di, count)):
-            dst = (((cpu.s.es & 0xFFFF) << 4) + di) & 0xFFFFF
-            if dst + count <= len(cpu.mem.data):
-                cpu.mem.data[dst:dst + count] = bytes([value]) * count
-                cpu.s.di = (di + count) & 0xFFFF
-                cpu.s.cx = 0
-                return
-    delta = -1 if cpu.get_flag(DF) else 1
-    for _ in range(count):
-        cpu.mem.wb(cpu.s.es, cpu.s.di, value)
-        cpu.s.di = (cpu.s.di + delta) & 0xFFFF
-    cpu.s.cx = 0
 
 
-def _ega_next_scanline_di(cpu) -> None:
-    """Mirror OVERKILL's planar 80-byte EGA/VGA row address advance."""
-    _add_reg16(cpu, 7, 0x2000)  # ADD DI,2000h
-    _test_word(cpu, cpu.s.di, 0x4000)
-    if not cpu.get_flag(ZF):
-        _add_reg16(cpu, 7, 0xC050)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 @registry.replace(0x1010, 0x375B, "overkill_tandy_postcopy_scaled_blit_375b")
@@ -2340,181 +2330,26 @@ def overkill_presence_stamp_list_4d15(cpu):
     s.ip = cpu.pop()
 
 
-def _object_ptr_from_scan_index(cpu, table_base: int, cx_value: int) -> tuple[int, int]:
-    """Return (BX, BP) for OVERKILL's descending object-list scan loops."""
-    bx = ((cx_value & 0xFFFF) << 1) & 0xFFFF
-    bp = cpu.mem.rw(cpu.s.ds & 0xFFFF, (table_base + bx) & 0xFFFF)
-    cpu.s.bx = bx
-    cpu.s.bp = bp
-    return bx, bp
 
 
-def _push_loop_count_for_interpreted_tail(cpu, cx_value: int) -> None:
-    cpu.s.sp = (cpu.s.sp - 2) & 0xFFFF
-    cpu.mem.ww(cpu.s.ss & 0xFFFF, cpu.s.sp, cx_value & 0xFFFF)
 
 
-def _remember_balanced_push_scratch(cpu, cx_value: int) -> None:
-    # PUSH/POP pairs leave the last pushed word below SP. Full-memory oracle
-    # comparisons can see it even though SP is balanced afterwards.
-    cpu.mem.ww(cpu.s.ss & 0xFFFF, (cpu.s.sp - 2) & 0xFFFF, cx_value & 0xFFFF)
 
 
-def _scan_loop_until_callable(cpu, table_base: int, callable_ip: int, done_ip: int, should_call) -> None:
-    """Collapse an object-list loop until the next entry that really calls out.
-
-    The overlaid loading/rendering code has several loops of the form::
-
-        push cx
-        mov  bx,cx
-        shl  bx,1
-        mov  bp,[table+bx]
-        ... tests against SS:[BP+...] ...
-        call helper      ; only for active/matching objects
-        pop  cx
-        loop top
-
-    Most startup iterations only skip inactive objects.  This helper consumes
-    those skip-only iterations in Python and stops immediately before the real
-    CALL for the first object that needs original helper logic.
-    """
-    iterations = cpu.s.cx & 0xFFFF
-    if iterations == 0:
-        iterations = 0x10000
-
-    while iterations:
-        cx_value = cpu.s.cx & 0xFFFF
-        _object_ptr_from_scan_index(cpu, table_base, cx_value)
-        if should_call():
-            _push_loop_count_for_interpreted_tail(cpu, cx_value)
-            cpu.s.ip = callable_ip & 0xFFFF
-            return
-
-        _remember_balanced_push_scratch(cpu, cx_value)
-        cpu.s.cx = (cx_value - 1) & 0xFFFF
-        iterations -= 1
-        if cpu.s.cx == 0:
-            cpu.s.ip = done_ip & 0xFFFF
-            return
-
-    cpu.s.ip = done_ip & 0xFFFF
 
 
-def _scan_active_object_call(cpu, table_base: int, callable_ip: int, done_ip: int) -> None:
-    ss = cpu.s.ss & 0xFFFF
-
-    def should_call() -> bool:
-        active = cpu.mem.rw(ss, cpu.s.bp & 0xFFFF)
-        _cmp_word(cpu, active, 0)
-        return active != 0
-
-    _scan_loop_until_callable(cpu, table_base, callable_ip, done_ip, should_call)
 
 
-def _scan_layered_object_call(cpu, wanted_layer: int, callable_ip: int, done_ip: int) -> None:
-    ds = cpu.s.ds & 0xFFFF
-    ss = cpu.s.ss & 0xFFFF
-
-    def should_call() -> bool:
-        active = cpu.mem.rw(ss, cpu.s.bp & 0xFFFF)
-        _cmp_word(cpu, active, 0)
-        if active == 0:
-            return False
-
-        mode = cpu.mem.rw(ds, 0xBDAC)
-        _cmp_word(cpu, mode, 1)
-        use_layer_test = False
-        if mode != 1:
-            camera = cpu.mem.rw(ds, 0x2350)
-            _cmp_word(cpu, camera, 0x00B6)
-            if camera <= 0x00B6:  # original JA falls through to layer test only when false
-                layer = cpu.mem.rw(ss, (cpu.s.bp + 0x16) & 0xFFFF)
-                _cmp_word(cpu, layer, 1)
-                if layer == 1:
-                    return False
-                use_layer_test = True
-
-        obj_layer = cpu.mem.rw(ss, (cpu.s.bp + 0x0A) & 0xFFFF)
-        _cmp_word(cpu, obj_layer, wanted_layer)
-        return obj_layer == wanted_layer
-
-    _scan_loop_until_callable(cpu, 0x32CA, callable_ip, done_ip, should_call)
 
 
-def _format_object_context(cpu, bp: int | None = None, cx_value: int | None = None) -> str:
-    parts = [
-        f"CS:IP={cpu.s.cs & 0xFFFF:04X}:{cpu.s.ip & 0xFFFF:04X}",
-        f"DS={cpu.s.ds & 0xFFFF:04X}",
-        f"SS={cpu.s.ss & 0xFFFF:04X}",
-        f"SP={cpu.s.sp & 0xFFFF:04X}",
-        f"CX={cpu.s.cx & 0xFFFF:04X}",
-    ]
-    if cx_value is not None:
-        parts.append(f"scan_cx={cx_value & 0xFFFF:04X}")
-    if bp is not None:
-        ss = cpu.s.ss & 0xFFFF
-        bp &= 0xFFFF
-        parts.append(f"BP={bp:04X}")
-        for off, name in (
-            (0x00, "active"),
-            (0x08, "sprite"),
-            (0x0A, "layer"),
-            (0x0C, "di"),
-            (0x0E, "present_si"),
-            (0x12, "phase"),
-            (0x14, "type"),
-            (0x16, "draw_layer"),
-            (0x18, "logic_id"),
-            (0x1C, "substate"),
-            (0x24, "variant"),
-            (0x32, "target_y"),
-            (0x34, "target_x"),
-        ):
-            parts.append(f"{name}@+{off:02X}={cpu.mem.rw(ss, (bp + off) & 0xFFFF):04X}")
-    return "; ".join(parts)
 
 
-def _raise_unverified_path(
-    cpu,
-    *,
-    parent: str,
-    chain: str,
-    target_ip: int | None = None,
-    bp: int | None = None,
-    cx_value: int | None = None,
-) -> None:
-    target = "immediate-ret" if target_ip is None else f"{target_ip:04X}"
-    raise RuntimeError(
-        f"unverified original-code path reached in {parent}: {chain} -> {target}. "
-        f"Fail-fast is intentional; reverse and hook this target instead of "
-        f"falling back to interpreted ASM. {_format_object_context(cpu, bp, cx_value)}"
-    )
 
 
-def _present_dispatch_target_5a92(cpu, bp: int) -> int:
-    cs = cpu.s.cs & 0xFFFF
-    ss = cpu.s.ss & 0xFFFF
-    mode = cpu.mem.rw(cs, 0x95BC)
-    obj_type = cpu.mem.rw(ss, (bp + 0x14) & 0xFFFF)
-    index = ((obj_type + mode + mode + mode) << 1) & 0xFFFF
-    return cpu.mem.rw(cs, (0x5AB6 + index) & 0xFFFF)
 
 
-def _draw_dispatch_target_5ac8(cpu, bp: int) -> int:
-    cs = cpu.s.cs & 0xFFFF
-    ss = cpu.s.ss & 0xFFFF
-    mode = cpu.mem.rw(cs, 0x95BC)
-    obj_type = cpu.mem.rw(ss, (bp + 0x14) & 0xFFFF)
-    index = ((obj_type + mode + mode + mode) << 1) & 0xFFFF
-    return cpu.mem.rw(cs, (0x5AE2 + index) & 0xFFFF)
 
 
-def _layer_draw_dispatch_target_7596(cpu, bp: int) -> int:
-    cs = cpu.s.cs & 0xFFFF
-    ss = cpu.s.ss & 0xFFFF
-    obj_type = cpu.mem.rw(ss, (bp + 0x14) & 0xFFFF)
-    index = (obj_type << 1) & 0xFFFF
-    return cpu.mem.rw(cs, (0x75A0 + index) & 0xFFFF)
 
 
 
@@ -2523,7 +2358,7 @@ def _tandy_render_runtime() -> TandyRenderRuntime:
     """Build VM callbacks/signatures for Tandy-specific rendering primitives."""
     return TandyRenderRuntime(
         self_disable_if_patched=_self_disable_if_patched,
-        object_row_address_from_mode_dispatch_5a36=overkill_cga_object_row_addr_5a36,
+        object_row_address_from_mode_dispatch_5a36=overkill_object_row_addr_5a36,
         signature_2e6e=_SIG_2E6E,
         signature_2ecb=_SIG_2ECB,
         signature_2f40=_SIG_2F40,
@@ -2542,8 +2377,10 @@ def _tandy_render_runtime() -> TandyRenderRuntime:
         signature_35cc=_SIG_35CC,
         signature_356c=_SIG_356C,
         signature_3657=_SIG_3657,
+        signature_0f0b=_SIG_0F0B,
         signature_0fa3=_SIG_0FA3,
         signature_0fe4=_SIG_0FE4,
+        signature_30b0=_SIG_30B0,
     )
 
 
@@ -2611,1480 +2448,54 @@ def _run_known_tandy_sprite_composite_target(cpu, target_ip: int) -> bool:
     return run_layer_sprite_compositor_target(cpu, target_ip, _layer_sprite_runtime())
 
 
-def _object_logic_target_aa2b(cpu, bp: int) -> int:
-    """Predict AA2B's object-logic dispatch target from SS:[BP+16]."""
-    cs = cpu.s.cs & 0xFFFF
-    ss = cpu.s.ss & 0xFFFF
-    draw_layer = cpu.mem.rw(ss, (bp + 0x16) & 0xFFFF)
-    index = (draw_layer << 1) & 0xFFFF
-    return cpu.mem.rw(cs, (0xAA36 + index) & 0xFFFF)
-
-
-def _object_family_target_efae(cpu, bp: int) -> int:
-    """Predict EFAE's second-level behavior dispatch target from SS:[BP+18]."""
-    cs = cpu.s.cs & 0xFFFF
-    ss = cpu.s.ss & 0xFFFF
-    logic_id = cpu.mem.rw(ss, (bp + 0x18) & 0xFFFF)
-    index = (logic_id << 1) & 0xFFFF
-    return cpu.mem.rw(cs, (0xEFC4 + index) & 0xFFFF)
-
-
-def _run_object_behavior_b73e(cpu, *, parent: str, chain: str, cx_value: int) -> None:
-    """Lift the first branch layer of behavior B73E until its next helper call.
-
-    The observed gameplay object (`logic_id=20h`, `substate=FFFFh`) enters the
-    no-substate path, selects an animation frame, and when it has not reached
-    its target Y/X yet it prepares DS:2304/2306 and calls B729 -> 5DB2.  We stop
-    at that concrete helper instead of pretending the whole behavior is known.
-    """
-    ds = cpu.s.ds & 0xFFFF
-    ss = cpu.s.ss & 0xFFFF
-    bp = cpu.s.bp & 0xFFFF
-
-    def run_b85c_move_to_target() -> None:
-        target_y_local = cpu.mem.rw(ss, (bp + 0x32) & 0xFFFF)
-        target_x_local = cpu.mem.rw(ss, (bp + 0x34) & 0xFFFF)
-        cpu.mem.ww(ds, 0x2308, 0x0002)
-        cpu.mem.ww(ds, 0x2304, target_y_local)
-        cpu.s.ax = target_x_local
-        cpu.mem.ww(ds, 0x2306, target_x_local)
-        # B85C reaches the movement helper through B862 CALL B729, then
-        # B735 CALL 5DB2.  The lifted helper models AF60's self-call scratch
-        # relative to the current SP, so keep both real return frames live while
-        # running it; otherwise AF63 is written one frame too shallow and hook
-        # verification later sees stale stack garbage around SS:SP.
-        saved_sp = cpu.s.sp & 0xFFFF
-        cpu.push(0xB865)
-        cpu.push(0xB738)
-        _run_movement_direction_5db2(cpu)
-        cpu.s.sp = saved_sp
-        _cmp_word(cpu, cpu.mem.rw(ds, 0x230A), 0)
-        cpu.mem.ww(ss, (bp + 0x06) & 0xFFFF, 0x0004)
-        _run_object_postmove_bc4b(cpu, parent=parent, chain=f"{chain} -> B73E -> B85C -> B729 -> 5DB2", cx_value=cx_value)
-        cpu.s.ip = cpu.pop()
-
-    def run_b7c7_reset_target(*, check_2324: bool, branch: str) -> None:
-        # B7C7/B7CE: choose a new target row, align it to 8 pixels, reset the
-        # behavior substate, and tail-jump into the common BC4B post-move path.
-        # B7C7 performs the DS:2324 guard first; B7CE is the direct path that
-        # always reloads target_y from DS:2380+8.
-        if check_2324:
-            value_2324 = cpu.mem.rw(ds, 0x2324)
-            _cmp_word(cpu, value_2324, 0x0001)
-            should_reload_y = value_2324 != 0x0001
-        else:
-            should_reload_y = True
-        if should_reload_y:
-            cpu.s.ax = cpu.mem.rw(ds, 0x2380)
-            old_ax = cpu.s.ax
-            cpu.s.ax = (cpu.s.ax + 0x0008) & 0xFFFF
-            cpu.set_add_flags(old_ax, 0x0008, old_ax + 0x0008, 16)
-            cpu.mem.ww(ss, (bp + 0x32) & 0xFFFF, cpu.s.ax)
-        _and_mem_word(cpu, ss, (bp + 0x32) & 0xFFFF, 0xFFF8)
-        cpu.mem.ww(ds, 0x2340, 0x0028)
-        cpu.mem.ww(ss, (bp + 0x1C) & 0xFFFF, 0x0000)
-        cpu.mem.ww(ss, (bp + 0x08) & 0xFFFF, 0x0078)
-        cpu.mem.ww(ss, (bp + 0x34) & 0xFFFF, 0x0020)
-        _run_object_postmove_bc4b(
-            cpu,
-            parent=parent,
-            chain=f"{chain} -> B73E -> B7BD -> {branch}",
-            cx_value=cx_value,
-        )
-        cpu.s.ip = cpu.pop()
-
-    substate = cpu.mem.rw(ss, (bp + 0x1C) & 0xFFFF)
-    _cmp_word(cpu, substate, 0xFFFF)
-    if substate != 0xFFFF:
-        cpu.s.bx = substate
-        cpu.s.bx = cpu.shift(4, cpu.s.bx, 1, 16)
-        target_ip = cpu.mem.rw(cpu.s.cs & 0xFFFF, (0xB74E + cpu.s.bx) & 0xFFFF)
-        if target_ip == 0xB754:
-            y = cpu.mem.rw(ss, (bp + 0x04) & 0xFFFF)
-            target_y = cpu.mem.rw(ss, (bp + 0x32) & 0xFFFF)
-            cpu.s.ax = y
-            _cmp_word(cpu, y, target_y)
-            if y != target_y:
-                run_b85c_move_to_target()
-                return
-            x = cpu.mem.rw(ss, (bp + 0x02) & 0xFFFF)
-            target_x = cpu.mem.rw(ss, (bp + 0x34) & 0xFFFF)
-            cpu.s.ax = x
-            _cmp_word(cpu, x, target_x)
-            if x != target_x:
-                run_b85c_move_to_target()
-                return
-            _add_mem_word(cpu, ss, (bp + 0x1C) & 0xFFFF, 1)
-            _run_object_postmove_bc4b(cpu, parent=parent, chain=f"{chain} -> B73E -> B754", cx_value=cx_value)
-            cpu.s.ip = cpu.pop()
-            return
-        if target_ip == 0xB770:
-            cpu.mem.ww(ss, (bp + 0x08) & 0xFFFF, 0x0079)
-            _add_mem_word(cpu, ss, (bp + 0x1C) & 0xFFFF, 1)
-            _run_object_postmove_bc4b(cpu, parent=parent, chain=f"{chain} -> B73E -> B770", cx_value=cx_value)
-            cpu.s.ip = cpu.pop()
-            return
-        if target_ip == 0xB77B:
-            _add_mem_word(cpu, ss, (bp + 0x02) & 0xFFFF, 0x0004)
-            _cmp_word(cpu, cpu.mem.rw(ss, (bp + 0x02) & 0xFFFF), 0x00A0)
-            if cpu.mem.rw(ss, (bp + 0x02) & 0xFFFF) >= 0x00A0:
-                cpu.mem.ww(ss, (bp + 0x08) & 0xFFFF, 0x0077)
-            _run_object_postmove_bc4b(cpu, parent=parent, chain=f"{chain} -> B73E -> B77B", cx_value=cx_value)
-            cpu.s.ip = cpu.pop()
-            return
-        _raise_unverified_path(
-            cpu, parent=parent, chain=f"{chain} -> B73E[substate]",
-            target_ip=target_ip, bp=bp, cx_value=cx_value,
-        )
-
-    timer = cpu.mem.rw(ds, 0x2338)
-    y = cpu.mem.rw(ss, (bp + 0x04) & 0xFFFF)
-    _cmp_word(cpu, y, 0x0060)
-    if y < 0x0060:
-        # NEG AX; ADD AX,007Fh, with AX initially DS:[2338].
-        cpu.set_sub_flags(0, timer, -timer, 16)
-        cpu.s.ax = (-timer) & 0xFFFF
-        old_ax = cpu.s.ax
-        cpu.s.ax = (cpu.s.ax + 0x007F) & 0xFFFF
-        cpu.set_add_flags(old_ax, 0x007F, old_ax + 0x007F, 16)
-    else:
-        old_ax = timer
-        cpu.s.ax = (timer + 0x007A) & 0xFFFF
-        cpu.set_add_flags(old_ax, 0x007A, old_ax + 0x007A, 16)
-    cpu.mem.ww(ss, (bp + 0x08) & 0xFFFF, cpu.s.ax)
-
-    target_y = cpu.mem.rw(ss, (bp + 0x32) & 0xFFFF)
-    cpu.s.ax = y
-    _cmp_word(cpu, y, target_y)
-    if y != target_y:
-        # B85C: move toward the target; shared by Y-mismatch and X-mismatch.
-        run_b85c_move_to_target()
-        return
-
-    x = cpu.mem.rw(ss, (bp + 0x02) & 0xFFFF)
-    target_x = cpu.mem.rw(ss, (bp + 0x34) & 0xFFFF)
-    cpu.s.ax = x
-    _cmp_word(cpu, x, target_x)
-    if x != target_x:
-        run_b85c_move_to_target()
-        return
-
-    # B7BD reached when this object is already at its current target.  In the
-    # observed gameplay state DS:A7A0 is below 23h, so the original immediately
-    # falls through to the same BC4B post-move helper.  Keep that helper as the
-    # next honest frontier rather than pretending the whole behavior is closed.
-    _cmp_word(cpu, cpu.mem.rw(ds, 0xA7A0), 0x0023)
-    if cpu.mem.rw(ds, 0xA7A0) < 0x0023:
-        _run_object_postmove_bc4b(cpu, parent=parent, chain=f"{chain} -> B73E -> B7BD", cx_value=cx_value)
-        cpu.s.ip = cpu.pop()
-        return
-
-    game_counter = cpu.mem.rw(ds, 0x2340)
-    _cmp_word(cpu, game_counter, 0x02BC)
-    if game_counter < 0x02BC:
-        reaches_b808 = True
-    else:
-        _cmp_word(cpu, game_counter, 0x02D0)
-        reaches_b808 = game_counter > 0x02D0
-    if not reaches_b808:
-        old_ptr = cpu.mem.rw(ds, 0x20A6)
-        new_ptr = (old_ptr + 0x0002) & 0xFFFF
-        cpu.mem.ww(ds, 0x20A6, new_ptr)
-        _cmp_word(cpu, new_ptr, 0x20C7)
-        if new_ptr >= 0x20C7:
-            cpu.mem.ww(ds, 0x20A6, 0x20A8)
-            new_ptr = 0x20A8
-        cpu.s.bx = cpu.mem.rw(ds, new_ptr)
-        cpu.s.bx &= 0x0001
-        cpu.set_logic_flags(cpu.s.bx, 16)
-        if cpu.s.bx == 0:
-            _run_formation_spawn_7476_observed(
-                cpu,
-                parent=parent,
-                chain=f"{chain} -> B73E -> B7BD -> B800",
-                cx_value=cx_value,
-            )
-
-    _cmp_word(cpu, cpu.mem.rw(ds, 0xA47E), 0x0003)
-    if cpu.mem.rw(ds, 0xA47E) <= 0x0003:
-        run_b7c7_reset_target(check_2324=True, branch="B808 -> B7C7 -> BC4B")
-        return
-    _cmp_word(cpu, game_counter, 0x0005)
-    if game_counter < 0x0005:
-        run_b7c7_reset_target(check_2324=False, branch="B815 -> B7CE -> BC4B")
-        return
-    _cmp_word(cpu, cpu.mem.rw(ds, 0x232E), 0x003F)
-    if cpu.mem.rw(ds, 0x232E) != 0x003F:
-        _run_object_postmove_bc4b(
-            cpu,
-            parent=parent,
-            chain=f"{chain} -> B73E -> B7BD -> B7F3 -> BC4B",
-            cx_value=cx_value,
-        )
-        cpu.s.ip = cpu.pop()
-        return
-
-    for _ in range(0x20):
-        cpu.s.si = cpu.mem.rw(ds, 0xA842)
-        _cmp_word(cpu, cpu.s.si, 0xA894)
-        if cpu.s.si >= 0xA894:
-            cpu.mem.ww(ds, 0xA842, 0xA844)
-            cpu.s.si = 0xA844
-        else:
-            cpu.s.si = cpu.mem.rw(ds, 0xA842)
-        cpu.s.ax = cpu.mem.rw(ds, cpu.s.si)
-        cpu.s.si = (cpu.s.si + 2) & 0xFFFF
-        old_ax = cpu.s.ax
-        cpu.s.ax = (cpu.s.ax + 0x0020) & 0xFFFF
-        cpu.set_add_flags(old_ax, 0x0020, old_ax + 0x0020, 16)
-        cpu.mem.ww(ss, (bp + 0x34) & 0xFFFF, cpu.s.ax)
-        cpu.s.ax = cpu.mem.rw(ds, cpu.s.si)
-        cpu.s.si = (cpu.s.si + 2) & 0xFFFF
-        cpu.mem.ww(ss, (bp + 0x32) & 0xFFFF, cpu.s.ax)
-        cpu.mem.ww(ds, 0xA842, cpu.s.si)
-
-        x = cpu.mem.rw(ss, (bp + 0x02) & 0xFFFF)
-        cpu.s.ax = x
-        _cmp_word(cpu, x, cpu.mem.rw(ss, (bp + 0x34) & 0xFFFF))
-        if x != cpu.mem.rw(ss, (bp + 0x34) & 0xFFFF):
-            _run_object_postmove_bc4b(cpu, parent=parent, chain=f"{chain} -> B73E -> B7BD -> B82D -> BC4B", cx_value=cx_value)
-            cpu.s.ip = cpu.pop()
-            return
-        y = cpu.mem.rw(ss, (bp + 0x04) & 0xFFFF)
-        cpu.s.ax = y
-        _cmp_word(cpu, y, cpu.mem.rw(ss, (bp + 0x32) & 0xFFFF))
-        if y != cpu.mem.rw(ss, (bp + 0x32) & 0xFFFF):
-            _run_object_postmove_bc4b(cpu, parent=parent, chain=f"{chain} -> B73E -> B7BD -> B82D -> BC4B", cx_value=cx_value)
-            cpu.s.ip = cpu.pop()
-            return
-
-        _cmp_word(cpu, cpu.mem.rw(ds, 0xA7A0), 0x0023)
-        if cpu.mem.rw(ds, 0xA7A0) < 0x0023:
-            _run_object_postmove_bc4b(cpu, parent=parent, chain=f"{chain} -> B73E -> B7BD -> B82D -> B7BD", cx_value=cx_value)
-            cpu.s.ip = cpu.pop()
-            return
-        game_counter = cpu.mem.rw(ds, 0x2340)
-        _cmp_word(cpu, game_counter, 0x02BC)
-        if game_counter < 0x02BC:
-            continue
-        _cmp_word(cpu, game_counter, 0x02D0)
-        if game_counter > 0x02D0:
-            continue
-        _raise_unverified_path(
-            cpu, parent=parent, chain=f"{chain} -> B73E -> B7BD -> B82D loop",
-            target_ip=0xB800, bp=bp, cx_value=cx_value,
-        )
-    _raise_unverified_path(
-        cpu, parent=parent, chain=f"{chain} -> B73E -> B7BD -> B82D loop",
-        target_ip=0xB7BD, bp=bp, cx_value=cx_value,
-    )
-
-
-def _run_view_window_check_aa46(cpu) -> None:
-    """Run the observed AA46 -> 8331 view-window check path.
-
-    This helper is used from BCCB inside the BC4B post-move pass.  It preserves
-    the memory writes to DS:95F2/95F4 and the live carry flag used by BCCB.  The
-    current Tandy gameplay path exits with CF clear; if a later state reaches a
-    not-yet-modeled branch, the surrounding caller will fail fast instead of
-    hiding it.
-    """
-    ds = cpu.s.ds & 0xFFFF
-    ss = cpu.s.ss & 0xFFFF
-    bp = cpu.s.bp & 0xFFFF
-    mem = cpu.mem
-
-    cpu.s.ax = mem.rw(ss, (bp + 0x02) & 0xFFFF)
-    cpu.set_logic_flags(cpu.s.ax, 16)  # OR AX,AX
-    if cpu.s.ax & 0x8000:
-        cpu.set_flag(CF, False)  # 835B CLC on this observed out-of-window exit.
-        return
-
-    cpu.s.si = mem.rw(ds, 0x2384)
-    _cmp_word(cpu, cpu.s.si, 0x0003)
-    # The observed path uses SI < 3.  For SI >= 3 the original still reaches the
-    # same 8331-style bounds check through a nearby branch; keep the arithmetic
-    # table-driven because it is harmless for the captured state and explicit.
-    old_si = cpu.s.si
-    cpu.s.si = (cpu.s.si << 1) & 0xFFFF
-    cpu.set_add_flags(old_si, old_si, old_si + old_si, 16)  # SHL-by-1 flag shape approximation.
-    old_si = cpu.s.si
-    cpu.s.si = (cpu.s.si << 1) & 0xFFFF
-    cpu.set_add_flags(old_si, old_si, old_si + old_si, 16)
-    old_si = cpu.s.si
-    cpu.s.si = (cpu.s.si + 0x214E) & 0xFFFF
-    cpu.set_add_flags(old_si, 0x214E, old_si + 0x214E, 16)
-
-    cpu.s.ax = mem.rw(ds, cpu.s.si)
-    cpu.s.si = (cpu.s.si + 2) & 0xFFFF
-    old_ax = cpu.s.ax
-    cpu.s.ax = (cpu.s.ax + mem.rw(ds, 0x237E)) & 0xFFFF
-    cpu.set_add_flags(old_ax, mem.rw(ds, 0x237E), old_ax + mem.rw(ds, 0x237E), 16)
-    mem.ww(ds, 0x95F2, cpu.s.ax)
-    cpu.s.ax = mem.rw(ds, cpu.s.si)
-    cpu.s.si = (cpu.s.si + 2) & 0xFFFF
-    old_ax = cpu.s.ax
-    cpu.s.ax = (cpu.s.ax + mem.rw(ds, 0x2380)) & 0xFFFF
-    cpu.set_add_flags(old_ax, mem.rw(ds, 0x2380), old_ax + mem.rw(ds, 0x2380), 16)
-    mem.ww(ds, 0x95F4, cpu.s.ax)
-
-    cpu.s.si = (mem.rw(ds, 0x95F2) + 0x0010) & 0xFFFF
-    cpu.set_add_flags(mem.rw(ds, 0x95F2), 0x0010, mem.rw(ds, 0x95F2) + 0x0010, 16)
-    x = mem.rw(ss, (bp + 0x02) & 0xFFFF)
-    _cmp_word(cpu, x, cpu.s.si)
-    sx = x if x < 0x8000 else x - 0x10000
-    ssi = cpu.s.si if cpu.s.si < 0x8000 else cpu.s.si - 0x10000
-    if sx > ssi:
-        cpu.set_flag(CF, False)
-        return
-    old_si = cpu.s.si
-    cpu.s.si = (cpu.s.si - 0x0020) & 0xFFFF
-    cpu.set_sub_flags(old_si, 0x0020, old_si - 0x0020, 16)
-    _cmp_word(cpu, x, cpu.s.si)
-    ssi = cpu.s.si if cpu.s.si < 0x8000 else cpu.s.si - 0x10000
-    if sx < ssi:
-        cpu.set_flag(CF, False)
-        return
-
-    cpu.s.si = (mem.rw(ds, 0x95F4) + 0x0010) & 0xFFFF
-    cpu.set_add_flags(mem.rw(ds, 0x95F4), 0x0010, mem.rw(ds, 0x95F4) + 0x0010, 16)
-    y = mem.rw(ss, (bp + 0x04) & 0xFFFF)
-    _cmp_word(cpu, y, cpu.s.si)
-    sy = y if y < 0x8000 else y - 0x10000
-    ssi = cpu.s.si if cpu.s.si < 0x8000 else cpu.s.si - 0x10000
-    if sy > ssi:
-        cpu.set_flag(CF, False)
-        return
-    old_si = cpu.s.si
-    cpu.s.si = (cpu.s.si - 0x0020) & 0xFFFF
-    cpu.set_sub_flags(old_si, 0x0020, old_si - 0x0020, 16)
-    _cmp_word(cpu, y, cpu.s.si)
-    ssi = cpu.s.si if cpu.s.si < 0x8000 else cpu.s.si - 0x10000
-    if sy < ssi:
-        cpu.set_flag(CF, False)
-        return
-    cpu.set_flag(CF, True)
-
-
-
-def _run_collision_handler_bec5_observed(cpu, *, collided_bx: int, parent: str, chain: str, cx_value: int) -> None:
-    """Run the currently verified BEC5 collision branch for hazard/item type 2.
-
-    This is the first non-render collision path reached from the closed object
-    island.  The observed branch handles a collided object whose +24h field is
-    0002h: deactivate that object, decrement the moving object's +32h counter
-    through the same staged tests as the original, and mark +36h with 0005h.
-    Other BEC5 sub-branches remain fail-fast so they become explicit RE work.
-    """
-    ds = cpu.s.ds & 0xFFFF
-    ss = cpu.s.ss & 0xFFFF
-    bp = cpu.s.bp & 0xFFFF
-    bx = collided_bx & 0xFFFF
-    mem = cpu.mem
-
-    variant = mem.rw(ds, (bx + 0x18) & 0xFFFF)
-    for target in (0x0007, 0x0008, 0x000C, 0x0009):
-        _cmp_word(cpu, variant, target)
-        if variant == target:
-            # BEC5's 7/8/0C/9 variants jump to the shared BFB9 tail.  That
-            # tail optionally clears the moving object's target-Y and then
-            # falls directly into BFC7; it does not return to the 62F6 scanner.
-            _cmp_word(cpu, mem.rw(ds, 0xA8C2), 0x0001)
-            if mem.rw(ds, 0xA8C2) != 0x0001:
-                mem.ww(ss, (bp + 0x32) & 0xFFFF, 0x0000)
-            _run_collision_death_tail_bfc7(
-                cpu,
-                parent=parent,
-                chain=f"{chain} -> BEC5 variant {variant:04X}",
-                cx_value=cx_value,
-            )
-            return
-    _cmp_word(cpu, variant, 0x0002)
-    if variant != 0x0002:
-        _raise_unverified_path(
-            cpu,
-            parent=parent,
-            chain=f"{chain} -> BEC5 variant {variant:04X}",
-            target_ip=0xBEC5,
-            bp=bp,
-            cx_value=cx_value,
-        )
-
-    cpu.s.bx = bx
-    mem.ww(ds, bx, 0)
-    sprite = mem.rw(ds, (bx + 0x08) & 0xFFFF)
-    _cmp_word(cpu, sprite, 0x0033)
-    if sprite == 0x0033:
-        # The original path just falls through into the shared BF25 counter
-        # logic after this compare.  The compare itself is the observable part.
-        pass
-
-    _sub_mem_word(cpu, ss, (bp + 0x20) & 0xFFFF, 1)
-    if mem.rw(ss, (bp + 0x20) & 0xFFFF) == 0:
-        _raise_unverified_path(
-            cpu,
-            parent=parent,
-            chain=f"{chain} -> BEC5 first counter zero",
-            target_ip=0xBF32,
-            bp=bp,
-            cx_value=cx_value,
-        )
-
-    bedc = mem.rw(ds, 0xBEDC)
-    _cmp_word(cpu, bedc, 0x0001)
-    if bedc == 0x0001:
-        _sub_mem_word(cpu, ss, (bp + 0x20) & 0xFFFF, 1)
-        if mem.rw(ss, (bp + 0x20) & 0xFFFF) == 0:
-            _run_collision_death_tail_bfc7(
-                cpu,
-                parent=parent,
-                chain=f"{chain} -> BEC5 BEDC=0001 counter zero",
-                cx_value=cx_value,
-            )
-            return
-        mem.ww(ss, (bp + 0x24) & 0xFFFF, 0x0005)
-        a8c2 = mem.rw(ds, 0xA8C2)
-        _cmp_word(cpu, a8c2, 0x0001)
-        if a8c2 == 0x0001:
-            _raise_unverified_path(
-                cpu,
-                parent=parent,
-                chain=f"{chain} -> BEC5 BEDC=0001 A8C2=0001",
-                target_ip=0xBF5F,
-                bp=bp,
-                cx_value=cx_value,
-            )
-        cpu.s.ip = cpu.pop()
-        return
-    _cmp_word(cpu, bedc, 0x0000)
-    if bedc != 0:
-        _raise_unverified_path(
-            cpu,
-            parent=parent,
-            chain=f"{chain} -> BEC5 BEDC={bedc:04X}",
-            target_ip=0xBF52,
-            bp=bp,
-            cx_value=cx_value,
-        )
-
-    for label, target in (("second", 0xBF46), ("third", 0xBF4B), ("fourth", 0xBF50)):
-        _sub_mem_word(cpu, ss, (bp + 0x20) & 0xFFFF, 1)
-        if mem.rw(ss, (bp + 0x20) & 0xFFFF) == 0:
-            if label == "fourth":
-                _run_collision_death_tail_bfc7(cpu, parent=parent, chain=f"{chain} -> BEC5", cx_value=cx_value)
-                return
-            if label == "second":
-                cpu.s.ip = target
-                return
-            if label == "third":
-                _run_collision_death_tail_bfc7(
-                    cpu,
-                    parent=parent,
-                    chain=f"{chain} -> BEC5 third counter zero",
-                    cx_value=cx_value,
-                )
-                return
-            _raise_unverified_path(
-                cpu,
-                parent=parent,
-                chain=f"{chain} -> BEC5 {label} counter zero",
-                target_ip=target,
-                bp=bp,
-                cx_value=cx_value,
-            )
-
-    mem.ww(ss, (bp + 0x24) & 0xFFFF, 0x0005)
-    a8c2 = mem.rw(ds, 0xA8C2)
-    _cmp_word(cpu, a8c2, 0x0001)
-    if a8c2 == 0x0001:
-        _raise_unverified_path(
-            cpu,
-            parent=parent,
-            chain=f"{chain} -> BEC5 A8C2=0001",
-            target_ip=0xBF60,
-            bp=bp,
-            cx_value=cx_value,
-        )
-
-def _run_score_add_5f0d_observed(cpu, amount: int) -> None:
-    """Observed score add helper reached from BFC7.
-
-    The original is a packed decimal add starting at 1010:5F0D.  The death-tail
-    paths seen so far add 0030h or 0060h into DS:2314..2318 and preserve AX, DX,
-    and BP.  Later code in the tail overwrites flags, so this helper only needs
-    the memory effect for the verified branch.
-    """
-    ss = cpu.s.ss & 0xFFFF
-    carry = amount & 0xFFFF
-    off = 0x2314
-    for _ in range(5):
-        value = cpu.mem.rb(ss, off)
-        addend = carry & 0xFF
-        total = (value & 0x0F) + (addend & 0x0F)
-        high = (value >> 4) + (addend >> 4)
-        if total > 9:
-            total -= 10
-            high += 1
-        carry = 0
-        if high > 9:
-            high -= 10
-            carry = 1
-        cpu.mem.wb(ss, off, ((high << 4) | total) & 0xFF)
-        off = (off + 1) & 0xFFFF
-
-
-def _run_y_clamp_bcb1(cpu) -> None:
-    ss = cpu.s.ss & 0xFFFF
-    bp = cpu.s.bp & 0xFFFF
-    y = cpu.mem.rw(ss, (bp + 0x04) & 0xFFFF)
-    _cmp_word(cpu, y, 0x00C0)
-    sy = y if y < 0x8000 else y - 0x10000
-    if sy > 0x00C0:
-        cpu.mem.ww(ss, (bp + 0x04) & 0xFFFF, 0x00C0)
-        return
-    _cmp_word(cpu, y, 0)
-    if sy < 0:
-        cpu.mem.ww(ss, (bp + 0x04) & 0xFFFF, 0)
-
-
-def _find_free_effect_slot_7524(cpu) -> int:
-    """Mirror the small 1010:7524 allocator used by the BFC7 linked effect.
-
-    It scans from DS:[95D8] through the compact 38h-byte object records before
-    the main 2B5C object pool, stores the found slot back to DS:[95D8], and
-    leaves BX/CX/flags as the original allocator.
-    """
-    ds = cpu.s.ds & 0xFFFF
-    mem = cpu.mem
-    cpu.s.cx = 0x0023
-    cpu.s.bx = mem.rw(ds, 0x95D8)
-    while True:
-        bx = cpu.s.bx & 0xFFFF
-        _cmp_word(cpu, mem.rw(ds, bx), 0x0000)
-        if mem.rw(ds, bx) == 0:
-            mem.ww(ds, 0x95D8, bx)
-            return bx
-        _add_reg16(cpu, 3, 0x0038)
-        _cmp_word(cpu, cpu.s.bx, 0x2B5C)
-        if cpu.s.bx == 0x2B5C:
-            cpu.s.bx = 0x23B4
-        old_cx = cpu.s.cx
-        cpu.s.cx = (cpu.s.cx - 1) & 0xFFFF
-        if cpu.s.cx == 0:
-            cpu.s.bx = 0xFFFF
-            return 0xFFFF
-
-
-def _run_linked_effect_spawn_7420_observed(cpu) -> None:
-    """Run the observed 1010:7420 spawn helper used by BFC7/BFEE.
-
-    The helper publishes source Y/X/type in DS:2376/2378/237A, allocates a
-    compact effect slot via 7524, and seeds a short-lived visual object.
-    """
-    ds = cpu.s.ds & 0xFFFF
-    mem = cpu.mem
-
-    bx = _find_free_effect_slot_7524(cpu)
-    _cmp_word(cpu, cpu.s.bx, 0xFFFF)
-    if bx == 0xFFFF:
-        return
-
-    mem.ww(ds, bx, 0x0001)
-    cpu.s.ax = mem.rw(ds, 0x2378)
-    old_ax = cpu.s.ax
-    addend = mem.rw(ds, 0xA278)
-    cpu.s.ax = (cpu.s.ax + addend) & 0xFFFF
-    cpu.set_add_flags(old_ax, addend, old_ax + addend, 16)
-    mem.ww(ds, (bx + 0x02) & 0xFFFF, cpu.s.ax)
-
-    cpu.s.ax = mem.rw(ds, 0x2376)
-    _cmp_word(cpu, cpu.s.ax, 0x00C0)
-    if cpu.s.ax > 0x00C0:
-        cpu.s.ax = 0x00C0
-    mem.ww(ds, (bx + 0x04) & 0xFFFF, cpu.s.ax)
-
-    mem.ww(ds, (bx + 0x22) & 0xFFFF, 0x0000)
-    mem.ww(ds, (bx + 0x14) & 0xFFFF, 0x0001)
-    mem.ww(ds, (bx + 0x16) & 0xFFFF, 0x0005)
-    mem.ww(ds, (bx + 0x18) & 0xFFFF, 0x0000)
-    mem.ww(ds, (bx + 0x28) & 0xFFFF, 0xFFFF)
-    mem.ww(ds, (bx + 0x24) & 0xFFFF, 0x0000)
-
-    cpu.s.si = mem.rw(ds, 0x237A)
-    mem.ww(ds, (bx + 0x26) & 0xFFFF, cpu.s.si)
-    _add_reg16(cpu, 6, 0x0046)
-    mem.ww(ds, (bx + 0x08) & 0xFFFF, cpu.s.si)
-    mem.ww(ds, (bx + 0x0A) & 0xFFFF, 0x0000)
-
-
-def _run_collision_death_tail_bfc7(cpu, *, parent: str, chain: str, cx_value: int) -> None:
-    """Run the observed BFC7 object death/transition tail for type-1 objects."""
-    ds = cpu.s.ds & 0xFFFF
-    ss = cpu.s.ss & 0xFFFF
-    bp = cpu.s.bp & 0xFFFF
-    mem = cpu.mem
-
-    logic_id = mem.rw(ss, (bp + 0x18) & 0xFFFF)
-    _cmp_word(cpu, logic_id, 0x0021)
-    if logic_id == 0x0021:
-        _cmp_word(cpu, mem.rw(ds, 0x2356), 0x0004)
-        if mem.rw(ds, 0x2356) != 0x0004:
-            cpu.s.ip = cpu.pop()
-            return
-        _raise_unverified_path(
-            cpu, parent=parent, chain=f"{chain} -> BFC7 logic 0021",
-            target_ip=0xBFD2, bp=bp, cx_value=cx_value,
-        )
-
-    obj_type = mem.rw(ss, (bp + 0x14) & 0xFFFF)
-    _cmp_word(cpu, obj_type, 0x0001)
-    cpu.s.bx = 0x0030
-    if obj_type != 0x0001:
-        cpu.s.bx = 0x0060
-    if obj_type not in (0x0001, 0x0002):
-        _raise_unverified_path(
-            cpu, parent=parent, chain=f"{chain} -> BFC7 type {obj_type:04X}",
-            target_ip=0xBFE1, bp=bp, cx_value=cx_value,
-        )
-
-    score_ax = cpu.s.ax
-    score_dx = cpu.s.dx
-    score_bp = cpu.s.bp
-    _run_score_add_5f0d_observed(cpu, cpu.s.bx)
-    stack_base = cpu.s.sp & 0xFFFF
-    mem.ww(ss, (stack_base - 8) & 0xFFFF, score_dx)
-    mem.ww(ss, (stack_base - 6) & 0xFFFF, score_ax)
-    mem.ww(ss, (stack_base - 4) & 0xFFFF, score_bp)
-    _run_y_clamp_bcb1(cpu)
-
-    saved_bp = bp
-    cpu.push(saved_bp)
-    linked_slot = mem.rw(ss, (bp + 0x28) & 0xFFFF)
-    _cmp_word(cpu, linked_slot, 0xFFFF)
-    if linked_slot != 0xFFFF:
-        cpu.s.si = linked_slot
-        cpu.s.si = cpu.shift(4, cpu.s.si, 1, 16)
-        _add_reg16(cpu, 6, 0x2078)
-        linked_counter = mem.rb(ds, cpu.s.si & 0xFFFF)
-        _cmp_byte(cpu, linked_counter, 0)
-        if linked_counter != 0:
-            old_counter = linked_counter
-            new_counter = (old_counter - 1) & 0xFF
-            mem.wb(ds, cpu.s.si & 0xFFFF, new_counter)
-            cpu.set_sub_flags(old_counter, 1, old_counter - 1, 8)
-            if new_counter == 0:
-                mem.ww(ds, 0x2376, mem.rw(ss, (bp + 0x04) & 0xFFFF))
-                mem.ww(ds, 0x2378, mem.rw(ss, (bp + 0x02) & 0xFFFF))
-                cpu.s.ax = mem.rb(ds, (cpu.s.si + 1) & 0xFFFF)
-                cpu.set_logic_flags(cpu.s.ax, 16)
-                mem.ww(ds, 0x237A, cpu.s.ax)
-                # C014 CALL 7420 leaves C017 below the live saved-BP word.
-                mem.ww(ss, (cpu.s.sp - 2) & 0xFFFF, 0xC017)
-                _run_linked_effect_spawn_7420_observed(cpu)
-    cpu.s.bp = cpu.pop()
-
-    # BFC7 always CALLs the shared C054 selector before the state transition.
-    # Earlier revisions whitelisted only a few observed logic ids here, but the
-    # real helper is just the same compare chain used by BD17: some ids decrement
-    # DS:A47E, while all other ids fall through to the default AX selector.
-    # The following C01B compare overwrites C054's flags and C027 overwrites AX
-    # with the original logic id, so the important observable effects are the
-    # optional counter drop and call-frame scratch.
-    _remember_balanced_push_scratch(cpu, 0xC01B)
-    run_object_deactivate_logic_dispatch_c054(cpu)
-    _cmp_word(cpu, mem.rb(ds, 0x98C0), 0)
-    if mem.rb(ds, 0x98C0) != 0:
-        mem.wb(ds, 0xBEFF, 0x19)
-
-    cpu.s.ax = logic_id
-    mem.ww(ss, (bp + 0x1A) & 0xFFFF, cpu.s.ax)
-    mem.ww(ss, (bp + 0x18) & 0xFFFF, 0x0001)
-    mem.ww(ss, (bp + 0x22) & 0xFFFF, 0x0000)
-    cpu.s.bx = obj_type
-    cpu.s.bx = cpu.shift(4, cpu.s.bx, 1, 16)
-    if obj_type == 0x0000:
-        mem.ww(ss, (bp + 0x08) & 0xFFFF, 0x0000)
-    elif obj_type == 0x0001:
-        mem.ww(ss, (bp + 0x08) & 0xFFFF, 0x0000)
-    else:
-        _raise_unverified_path(
-            cpu, parent=parent, chain=f"{chain} -> BFC7 type dispatch",
-            target_ip=0xC04E, bp=bp, cx_value=cx_value,
-        )
-    cpu.s.ip = cpu.pop()
-
-
-def _run_post_contact_9e69_observed(cpu, *, parent: str, chain: str, cx_value: int) -> None:
-    """Run the observed 1010:9E69 post-contact bookkeeping path."""
-    ds = cpu.s.ds & 0xFFFF
-    mem = cpu.mem
-
-    _cmp_word(cpu, mem.rw(ds, 0xA47C), 0x0001)
-    if mem.rw(ds, 0xA47C) == 0x0001:
-        return
-    _cmp_word(cpu, mem.rw(ds, 0x2384), 0x0003)
-    if mem.rw(ds, 0x2384) >= 0x0003:
-        return
-    _cmp_byte(cpu, mem.rb(ds, 0x98C0), 0x00)
-    if mem.rb(ds, 0x98C0) != 0:
-        mem.wb(ds, 0xBEFF, 0x03)
-    _cmp_word(cpu, mem.rw(ds, 0xBEDC), 0x0000)
-    if mem.rw(ds, 0xBEDC) != 0:
-        # JNE 9E98: skip the A362 every-other-call toggle and run the same tail
-        # immediately while BEDC is active.
-        _run_post_contact_9e98_tail_observed(cpu)
-        return
-    old = mem.rb(ds, 0xA362)
-    new = (old + 1) & 0xFF
-    mem.wb(ds, 0xA362, new)
-    cpu.set_add_flags(old, 1, old + 1, 8)
-    new &= 0x01
-    mem.wb(ds, 0xA362, new)
-    cpu.set_logic_flags(new, 8)
-    if new == 0:
-        _run_post_contact_9e98_tail_observed(cpu)
-
-
-def _run_post_contact_9e98_tail_observed(cpu) -> None:
-    """Run the observed 1010:9E98 tail of post-contact bookkeeping.
-
-    9E69 toggles DS:A362 and returns immediately on odd toggles.  On even
-    toggles it falls into 9E98, which advances global counters and redraws the
-    associated status/formation strip through 61DC.  The gameplay-relevant
-    branches are lifted here; the rare display helper 61DC is still executed by
-    bounded original interpretation so the visible frame and scratch registers
-    stay faithful until that helper is lifted separately.
-    """
-    ds = cpu.s.ds & 0xFFFF
-    cs = cpu.s.cs & 0xFFFF
-    resume_ip = cpu.s.ip & 0xFFFF
-    mem = cpu.mem
-
-    old_counter = mem.rw(ds, 0xA95A)
-    new_counter = (old_counter - 1) & 0xFFFF
-    mem.ww(ds, 0xA95A, new_counter)
-    cpu.set_sub_flags(old_counter, 1, old_counter - 1, 16)
-    _cmp_word(cpu, new_counter, 0xFFFF)
-    if new_counter == 0xFFFF:
-        mem.ww(ds, 0xA95C, 0x0000)
-        _cmp_byte(cpu, mem.rb(ds, 0x9791), 0x01)
-        if mem.rb(ds, 0x9791) == 0x01:
-            mem.ww(ds, 0xA95A, 0x0003)
-            mem.ww(ds, 0xA95C, 0x0018)
-            return
-        mem.ww(ds, 0x2384, 0x0003)
-        _cmp_byte(cpu, mem.rb(ds, 0x98C0), 0x00)
-        if mem.rb(ds, 0x98C0) != 0:
-            mem.wb(ds, 0xBEFF, 0x19)
-
-    _run_interpreted_near_call_observed(cpu, 0x61DC, 0x9EC5)
-    _cmp_word(cpu, mem.rw(cs, 0x95BC), 0x0001)
-    if mem.rw(cs, 0x95BC) == 0x0001:
-        _run_interpreted_near_call_observed(cpu, 0x511F, 0x9ED0)
-        _run_interpreted_near_call_observed(cpu, 0x61DC, 0x9ED3)
-        _run_interpreted_near_call_observed(cpu, 0x511F, 0x9ED6)
-    cpu.s.ip = resume_ip
-
-
-def _find_free_object_slot_7573(cpu) -> int:
-    """Mirror the original 1010:7573 object-slot allocator.
-
-    The loop target in the ASM is 757A, not 7583, so the sentinel/wrap check is
-    repeated on every scan iteration.  A lifted version that only wrapped once
-    before the loop could let DS:[95DA] advance past 32CC into Tandy draw
-    scratch space; the next projectile allocation would then overlap the sprite
-    buffer and vanish on the following draw pass.
-    """
-    ds = cpu.s.ds & 0xFFFF
-    bx = cpu.mem.rw(ds, 0x95DA)
-    cx = 0x0022
-    while cx:
-        _cmp_word(cpu, bx, 0x32CC)
-        if bx == 0x32CC:
-            bx = 0x2B5C
-        value = cpu.mem.rw(ds, bx)
-        _cmp_word(cpu, value, 0)
-        if value == 0:
-            cpu.mem.ww(ds, 0x95DA, bx)
-            cpu.s.bx = bx
-            cpu.s.cx = cx
-            return bx
-        old_bx = bx
-        bx = (bx + 0x0038) & 0xFFFF
-        cpu.set_add_flags(old_bx, 0x0038, old_bx + 0x0038, 16)
-        cx = (cx - 1) & 0xFFFF
-    cpu.s.bx = 0xFFFF
-    cpu.s.cx = 0
-    return 0xFFFF
-
-
-def _run_formation_spawn_7476_observed(cpu, *, parent: str, chain: str, cx_value: int) -> None:
-    """Run observed B800 -> 7476 helper that spawns a formation child object."""
-    ds = cpu.s.ds & 0xFFFF
-    ss = cpu.s.ss & 0xFFFF
-    bp = cpu.s.bp & 0xFFFF
-    mem = cpu.mem
-
-    bx = _find_free_object_slot_7573(cpu)
-    _cmp_word(cpu, cpu.s.bx, 0xFFFF)
-    if bx == 0xFFFF:
-        return
-    if mem.rb(ds, 0x98C0) != 0:
-        mem.wb(ds, 0xBEFF, 0x1A)
-
-    cpu.s.cx = 0x000C
-    cpu.s.dx = 0x000C
-    _cmp_word(cpu, mem.rw(ds, 0xA8C2), 0x0001)
-    if mem.rw(ds, 0xA8C2) == 0x0001:
-        cpu.s.cx = 0x001C
-        cpu.s.dx = 0x0008
-
-    cpu.s.ax = mem.rw(ss, (bp + 0x04) & 0xFFFF)
-    old_ax = cpu.s.ax
-    cpu.s.ax = (cpu.s.ax + cpu.s.cx) & 0xFFFF
-    cpu.set_add_flags(old_ax, cpu.s.cx, old_ax + cpu.s.cx, 16)
-    mem.ww(ds, (bx + 0x04) & 0xFFFF, cpu.s.ax)
-    cpu.s.ax = mem.rw(ss, (bp + 0x02) & 0xFFFF)
-    old_ax = cpu.s.ax
-    cpu.s.ax = (cpu.s.ax + cpu.s.dx) & 0xFFFF
-    cpu.set_add_flags(old_ax, cpu.s.dx, old_ax + cpu.s.dx, 16)
-    mem.ww(ds, (bx + 0x02) & 0xFFFF, cpu.s.ax)
-
-    mem.ww(ds, bx, 0x0001)
-    mem.ww(ds, (bx + 0x1E) & 0xFFFF, 0x0000)
-    mem.ww(ds, (bx + 0x06) & 0xFFFF, 0x0000)
-    mem.ww(ds, (bx + 0x08) & 0xFFFF, 0x0031)
-    mem.ww(ds, (bx + 0x0A) & 0xFFFF, 0x0001)
-    mem.ww(ds, (bx + 0x14) & 0xFFFF, 0x0000)
-    mem.ww(ds, (bx + 0x16) & 0xFFFF, 0x0002)
-    mem.ww(ds, (bx + 0x18) & 0xFFFF, 0x000B)
-    mem.ww(ds, (bx + 0x1C) & 0xFFFF, 0xFFFF)
-
-    cpu.s.ax = mem.rw(ds, (bx + 0x04) & 0xFFFF)
-    cpu.s.cx = (mem.rw(ds, 0x2380) + 0x0009) & 0xFFFF
-    cpu.set_add_flags(mem.rw(ds, 0x2380), 0x0009, mem.rw(ds, 0x2380) + 0x0009, 16)
-    old_ax = cpu.s.ax
-    cpu.s.ax = (cpu.s.ax - cpu.s.cx) & 0xFFFF
-    cpu.set_sub_flags(old_ax, cpu.s.cx, old_ax - cpu.s.cx, 16)
-    mem.ww(ds, (bx + 0x2C) & 0xFFFF, cpu.s.ax)
-    cpu.s.ax = mem.rw(ds, (bx + 0x02) & 0xFFFF)
-    cpu.s.cx = mem.rw(ds, 0x237E)
-    old_ax = cpu.s.ax
-    cpu.s.ax = (cpu.s.ax - cpu.s.cx) & 0xFFFF
-    cpu.set_sub_flags(old_ax, cpu.s.cx, old_ax - cpu.s.cx, 16)
-    mem.ww(ds, (bx + 0x2A) & 0xFFFF, cpu.s.ax)
-
-def _run_object_overlap_scan_62f6(cpu, *, parent: str, chain: str, cx_value: int) -> None:
-    """Run the no-collision path of the 1010:62F6 object-overlap scan.
-
-    The original is a large unrolled scan over 32CA-era object slots.  This
-    compact loop preserves the observed no-collision semantics and fail-fasts if
-    a candidate would jump to the unlifted collision handler at BEC5.
-    """
-    ss = cpu.s.ss & 0xFFFF
-    ds = cpu.s.ds & 0xFFFF
-    bp = cpu.s.bp & 0xFFFF
-    mem = cpu.mem
-
-    def finish_empty_scan() -> None:
-        # 741C: ADD BX,0038 ; 741F: RET in the unrolled original.
-        _add_reg16(cpu, 3, 0x0038)  # BX
-
-    _cmp_word(cpu, mem.rw(ss, bp), 0)
-    if mem.rw(ss, bp) == 0:
-        cpu.s.bx = 0x3294
-        finish_empty_scan()
-        return
-
-    _cmp_word(cpu, mem.rw(ss, (bp + 0x02) & 0xFFFF), 0x0020)
-    if (mem.rw(ss, (bp + 0x02) & 0xFFFF) if mem.rw(ss, (bp + 0x02) & 0xFFFF) < 0x8000 else mem.rw(ss, (bp + 0x02) & 0xFFFF) - 0x10000) < 0x20:
-        # The original bails out before the slot scan here, so keep BX and the
-        # compare flags from 62FE intact instead of forcing the empty-scan tail.
-        return
-
-    for off, bad in ((0x16, 0), (0x18, 0)):
-        _cmp_word(cpu, mem.rw(ss, (bp + off) & 0xFFFF), bad)
-        if mem.rw(ss, (bp + off) & 0xFFFF) == bad:
-            # 6308/6311: zero draw-layer/logic-id does not enter the slot scan.
-            # The original falls through/jumps directly to the shared RET at
-            # 741F, preserving the incoming BX and the zero-compare flags.  Do
-            # not force the empty-scan sentinel tail here.
-            return
-    _cmp_word(cpu, mem.rw(ss, (bp + 0x18) & 0xFFFF), 0x0001)
-    if mem.rw(ss, (bp + 0x18) & 0xFFFF) == 0x0001:
-        return
-    _cmp_word(cpu, mem.rw(ss, (bp + 0x18) & 0xFFFF), 0x0026)
-    if mem.rw(ss, (bp + 0x18) & 0xFFFF) == 0x0026:
-        cpu.s.bx = 0x3294
-        finish_empty_scan()
-        return
-
-    cpu.s.si = mem.rw(ss, (bp + 0x16) & 0xFFFF)
-    cpu.s.di = mem.rw(ss, (bp + 0x0A) & 0xFFFF)
-    cpu.s.dx = mem.rw(ss, (bp + 0x04) & 0xFFFF) & 0xFFF8
-    cpu.set_logic_flags(cpu.s.dx, 16)
-    cpu.s.cx = mem.rw(ss, (bp + 0x02) & 0xFFFF) & 0xFFF8
-    cpu.set_logic_flags(cpu.s.cx, 16)
-
-    obj_type = mem.rw(ss, (bp + 0x14) & 0xFFFF)
-    logic_id = mem.rw(ss, (bp + 0x18) & 0xFFFF)
-    bx = 0x2B5C
-    while True:
-        cpu.s.bx = bx
-        _cmp_word(cpu, mem.rw(ds, bx), 0)
-        if mem.rw(ds, bx) != 0:
-            _cmp_word(cpu, mem.rw(ds, (bx + 0x1E) & 0xFFFF), 0)
-            if mem.rw(ds, (bx + 0x1E) & 0xFFFF) != 0:
-                ax = mem.rw(ds, (bx + 0x04) & 0xFFFF)
-                _test_word(cpu, ax, 0x0007)
-                y_candidates = []
-                if ax & 0x0007:
-                    aligned = (ax & 0xFFF8)
-                    y_candidates.append((aligned + 8) & 0xFFFF)
-                    y_candidates.append(aligned)
-                else:
-                    y_candidates.append(ax)
-                y_candidates.append((y_candidates[-1] - 8) & 0xFFFF)
-                if obj_type == 2:
-                    y_candidates.append((y_candidates[-1] - 8) & 0xFFFF)
-                    y_candidates.append((y_candidates[-1] - 8) & 0xFFFF)
-                if cpu.s.dx in y_candidates:
-                    used_x_branch = False
-                    ax = mem.rw(ds, (bx + 0x02) & 0xFFFF) & 0xFFF8
-                    x_candidates = [ax, (ax - 8) & 0xFFFF]
-                    if obj_type == 2 and logic_id not in (0x78, 0x79):
-                        x_candidates.append((x_candidates[-1] - 8) & 0xFFFF)
-                        x_candidates.append((x_candidates[-1] - 8) & 0xFFFF)
-                    used_x_branch = True
-                    if cpu.s.cx in x_candidates:
-                        # The original arrives at BEC5 with AX holding the
-                        # matched tile X and BX pointing at the collided slot.
-                        cpu.s.ax = cpu.s.cx & 0xFFFF
-                        _run_collision_handler_bec5_observed(
-                            cpu,
-                            collided_bx=bx,
-                            parent=parent,
-                            chain=f"{chain} -> 62F6",
-                            cx_value=cx_value,
-                        )
-                        return
-                    # The original leaves AX at the last X candidate once the
-                    # X branch has been entered, even on a miss.
-                    cpu.s.ax = x_candidates[-1]
-                else:
-                    # Leave AX at the last tested Y coordinate when the Y
-                    # branch misses entirely.
-                    cpu.s.ax = y_candidates[-1]
-        if bx == 0x3294:
-            cpu.s.bx = bx
-            finish_empty_scan()
-            return
-        old_bx = bx
-        bx = (bx + 0x0038) & 0xFFFF
-        cpu.set_add_flags(old_bx, 0x0038, old_bx + 0x0038, 16)
-
-
-def _run_object_postmove_bc4b(cpu, *, parent: str, chain: str, cx_value: int, clamp_y: bool = True) -> None:
-    """Run the observed BC4B post-move/bounds/collision helper path."""
-    ds = cpu.s.ds & 0xFFFF
-    ss = cpu.s.ss & 0xFFFF
-    bp = cpu.s.bp & 0xFFFF
-    mem = cpu.mem
-
-    if clamp_y:
-        # BCB1: clamp Y into the 0..C0h range.  Some callers jump directly to
-        # BC4F, after this call; those use clamp_y=False.
-        y = mem.rw(ss, (bp + 0x04) & 0xFFFF)
-        _cmp_word(cpu, y, 0x00C0)
-        sy = y if y < 0x8000 else y - 0x10000
-        if sy > 0x00C0:
-            mem.ww(ss, (bp + 0x04) & 0xFFFF, 0x00C0)
-        else:
-            _cmp_word(cpu, y, 0)
-            if sy < 0:
-                mem.ww(ss, (bp + 0x04) & 0xFFFF, 0)
-        _remember_balanced_push_scratch(cpu, 0xBC4E)
-
-    global_disable = mem.rw(ds, 0xA47C)
-    _cmp_word(cpu, global_disable, 0)
-    skip_precise_x = global_disable != 0 or mem.rw(ss, (bp + 0x18) & 0xFFFF) in (0, 0x48, 0x26, 0x86, 0x28, 0x29, 0x34)
-    x = mem.rw(ss, (bp + 0x02) & 0xFFFF)
-    sx = x if x < 0x8000 else x - 0x10000
-    if not skip_precise_x:
-        _cmp_word(cpu, x, 0xFF40)
-        if sx < -0x00C0:
-            _run_deactivate_bd17_observed(cpu, parent=parent, chain=f"{chain} -> BC4B", cx_value=cx_value, pop_return=False)
-            return
-        _cmp_word(cpu, x, 0x00F0)
-        if sx >= 0x00F0:
-            _run_deactivate_bd17_observed(cpu, parent=parent, chain=f"{chain} -> BC4B", cx_value=cx_value, pop_return=False)
-            return
-    else:
-        _cmp_word(cpu, x, 0xFFEC)
-        if sx < -0x0014:
-            _run_deactivate_bd17_observed(cpu, parent=parent, chain=f"{chain} -> BC4B", cx_value=cx_value, pop_return=False)
-            return
-        _cmp_word(cpu, x, 0x00F0)
-        if sx >= 0x00F0:
-            _run_deactivate_bd17_observed(cpu, parent=parent, chain=f"{chain} -> BC4B", cx_value=cx_value, pop_return=False)
-            return
-
-    _cmp_word(cpu, global_disable, 0)
-    if global_disable == 0:
-        # BC4B reaches the contact checks through CALL BCCB.  Even though BCCB
-        # balances SP before returning, its nested CALLs leave return-address
-        # scratch below SP; keep the real BCAD call frame live while modelling
-        # BCCB so later nested calls land at the same stack offsets.
-        bccb_sp = cpu.s.sp & 0xFFFF
-        cpu.push(0xBCAD)
-        try:
-            # BCCB early exits for inactive/exempt objects; otherwise it may call
-            # the view-window helper and only continues into hit logic if CF is set.
-            _cmp_word(cpu, mem.rw(ss, bp), 0)
-            if mem.rw(ss, bp) != 0:
-                for off, bad in ((0x16, 5), (0x18, 0), (0x18, 1)):
-                    _cmp_word(cpu, mem.rw(ss, (bp + off) & 0xFFFF), bad)
-                    if mem.rw(ss, (bp + off) & 0xFFFF) == bad:
-                        break
-                else:
-                    obj_type = mem.rw(ss, (bp + 0x14) & 0xFFFF)
-                    _cmp_word(cpu, obj_type, 1)
-                    if obj_type == 1:
-                        # BCF4 CALL AA46 leaves BCF7 below BCCB's live frame.
-                        saved_sp = cpu.s.sp & 0xFFFF
-                        cpu.push(0xBCF7)
-                        _run_view_window_check_aa46(cpu)
-                        cpu.s.sp = saved_sp
-                    elif obj_type == 2:
-                        # BCF9 CALL AA71 leaves BCFC below BCCB's live frame.
-                        saved_sp = cpu.s.sp & 0xFFFF
-                        cpu.push(0xBCFC)
-                        run_postmove_contact_window_aa71(cpu)
-                        cpu.s.sp = saved_sp
-                    else:
-                        return
-                    if cpu.get_flag(CF):
-                        _cmp_word(cpu, mem.rw(ds, 0xA8C2), 0x0001)
-                        if mem.rw(ds, 0xA8C2) != 0x0001:
-                            cpu.push(0xBD09)
-                            _run_collision_death_tail_bfc7(
-                                cpu,
-                                parent=parent,
-                                chain=f"{chain} -> BCCB",
-                                cx_value=cx_value,
-                            )
-                        # BD09 CALL 9E69 must run with BD0C on the stack, not
-                        # merely written below the current SP.  The 9E69 -> 9E98
-                        # display tail calls 61DC, whose nested scratch is part
-                        # of the verifier-visible freed stack bytes.
-                        saved_sp = cpu.s.sp & 0xFFFF
-                        cpu.push(0xBD0C)
-                        _run_post_contact_9e69_observed(
-                            cpu,
-                            parent=parent,
-                            chain=f"{chain} -> BCCB -> BD09",
-                            cx_value=cx_value,
-                        )
-                        cpu.s.sp = saved_sp
-        finally:
-            cpu.s.sp = bccb_sp
-        # BCAD CALL 62F6 leaves the BCB0 return word as stack scratch below SP.
-        saved_sp = cpu.s.sp & 0xFFFF
-        cpu.push(0xBCB0)
-        _run_object_overlap_scan_62f6(cpu, parent=parent, chain=f"{chain} -> BC4B", cx_value=cx_value)
-        cpu.s.sp = saved_sp
-
-
-def _run_object_family_dispatch_efae(cpu, *, parent: str, chain: str, cx_value: int) -> None:
-    """Run EFAE's prologue and leave IP at the concrete second-level target.
-
-    EFAE is a dispatcher, not a behavior body.  It publishes the object's current
-    Y/X into DS:D1FE/D200 and then jumps through a second table indexed by
-    SS:[BP+18].  Keep this boundary conservative: do not run the selected
-    gameplay routine inline here.
-    """
-    ss = cpu.s.ss & 0xFFFF
-    ds = cpu.s.ds & 0xFFFF
-    bp = cpu.s.bp & 0xFFFF
-
-    cpu.s.ax = cpu.mem.rw(ss, (bp + 0x04) & 0xFFFF)
-    cpu.mem.ww(ds, 0xD1FE, cpu.s.ax)
-    cpu.s.ax = cpu.mem.rw(ss, (bp + 0x02) & 0xFFFF)
-    cpu.mem.ww(ds, 0xD200, cpu.s.ax)
-
-    cpu.s.bx = cpu.mem.rw(ss, (bp + 0x18) & 0xFFFF)
-    cpu.s.bx = cpu.shift(4, cpu.s.bx, 1, 16)  # SHL BX,1
-    target_ip = cpu.mem.rw(cpu.s.cs & 0xFFFF, (0xEFC4 + cpu.s.bx) & 0xFFFF)
-    cpu.s.ip = target_ip
-
-
-def _run_object_behavior_8d4f(cpu, *, parent: str, chain: str, cx_value: int) -> None:
-    """Lift the observed logic_id=1Fh target-patrol behavior at 1010:8D4F.
-
-    The body is mostly an overlay far-call (`1F8F:027A`) that reads the next
-    waypoint pair from DS:A482, publishes target X/Y to DS:2306/2304, sets
-    movement mode 3, calls the generic 5DB2 direction helper through the far
-    trampoline at 1010:8D8B, then returns to 8D54 and joins BC4B.
-    """
-    ds = cpu.s.ds & 0xFFFF
-    ss = cpu.s.ss & 0xFFFF
-    bp = cpu.s.bp & 0xFFFF
-    mem = cpu.mem
-
-    cpu.s.si = mem.rw(ds, 0xA482)
-    cpu.s.ax = mem.rw(ds, cpu.s.si)
-    cpu.s.si = (cpu.s.si + 2) & 0xFFFF
-    old_ax = cpu.s.ax
-    cpu.s.ax = (cpu.s.ax + 0x0020) & 0xFFFF
-    cpu.set_add_flags(old_ax, 0x0020, old_ax + 0x0020, 16)
-    mem.ww(ds, 0x2306, cpu.s.ax)
-    cpu.s.ax = mem.rw(ds, cpu.s.si)
-    cpu.s.si = (cpu.s.si + 2) & 0xFFFF
-    mem.ww(ds, 0x2304, cpu.s.ax)
-    mem.ww(ds, 0x2308, 0x0003)
-    cpu.s.ax = 0x5DB2
-    # Faithfully reproduce the call frame the original leaves below SP -- OVERKILL
-    # reads this scratch through its self-call tricks, so an approximation diverges:
-    #   8D4F      CALL FAR 1F8F:027A   pushes CS=1010, IP=8D54
-    #   1F8F:0292 CALL FAR 1010:8D8B   pushes CS=1F8F, IP=0297
-    #   1010:8D8B CALL AX (=5DB2)      pushes IP=8D8D
-    # 5DB2 then runs and three RET/RETF pops unwind the frame back to 8D54.
-    cpu.push(0x1010)
-    cpu.push(0x8D54)
-    cpu.push(0x1F8F)
-    cpu.push(0x0297)
-    cpu.push(0x8D8D)
-    _run_movement_direction_5db2(cpu)
-    cpu.s.sp = (cpu.s.sp + 0x000A) & 0xFFFF  # RET 5DB2 + RETF 8D8D + RETF 1F8F:0451
-    _run_object_postmove_bc4b(cpu, parent=parent, chain=f"{chain} -> 8D4F -> 1F8F:027A -> 5DB2", cx_value=cx_value)
-    cpu.s.ip = cpu.pop()
-
-
-
-
-def _run_tile_probe_5073(cpu) -> None:
-    """Mirror the coordinate-to-tile-index helper at 1010:5073."""
-    ds = cpu.s.ds & 0xFFFF
-    ss = cpu.s.ss & 0xFFFF
-    bp = cpu.s.bp & 0xFFFF
-    mem = cpu.mem
-
-    cpu.s.ax = mem.rw(ds, 0x234E)
-    old_ax = cpu.s.ax
-    addend = mem.rw(ss, (bp + 0x02) & 0xFFFF)
-    cpu.s.ax = (old_ax + addend) & 0xFFFF
-    cpu.set_add_flags(old_ax, addend, old_ax + addend, 16)
-    mem.ww(ds, 0x215A, cpu.s.ax)
-    if cpu.s.ax & 0x8000:
-        return
-    for _ in range(4):
-        cpu.s.ax = cpu.shift(5, cpu.s.ax, 1, 16)  # SHR AX,1
-    cpu.s.dx = cpu.s.ax
-    cpu.s.ax = cpu.shift(4, cpu.s.ax, 1, 16)
-    cpu.s.ax = cpu.shift(4, cpu.s.ax, 1, 16)
-    cpu.s.cx = cpu.s.ax
-    cpu.s.ax = cpu.shift(4, cpu.s.ax, 1, 16)
-    old_ax = cpu.s.ax
-    cpu.s.ax = (old_ax + cpu.s.cx) & 0xFFFF
-    cpu.set_add_flags(old_ax, cpu.s.cx, old_ax + cpu.s.cx, 16)
-    old_ax = cpu.s.ax
-    cpu.s.ax = (old_ax + cpu.s.dx) & 0xFFFF
-    cpu.set_add_flags(old_ax, cpu.s.dx, old_ax + cpu.s.dx, 16)
-    cpu.s.bx = mem.rw(ds, 0x2350)
-    _sub_reg16(cpu, 3, cpu.s.ax)
-    cpu.s.ax = mem.rw(ss, (bp + 0x04) & 0xFFFF) & 0xFFF0
-    cpu.set_logic_flags(cpu.s.ax, 16)
-    for _ in range(4):
-        cpu.s.ax = cpu.shift(5, cpu.s.ax, 1, 16)
-    _add_reg16(cpu, 3, cpu.s.ax)
-
-
-def _run_tile_lookup_505b(cpu) -> None:
-    """Mirror the observed tile lookup helper at 1010:505B."""
-    cs = cpu.s.cs & 0xFFFF
-    es = cpu.mem.rw(cs, 0x9592)
-    cpu.s.es = es
-    cpu.s.si = 0xC3AA
-    value = cpu.mem.rb(es, cpu.s.bx & 0xFFFF)
-    cpu.set_reg8(0, value)
-    cpu.set_reg8(4, 0)  # XOR AH,AH
-    old_si = cpu.s.si
-    cpu.s.si = (cpu.s.si + cpu.s.ax) & 0xFFFF
-    cpu.set_add_flags(old_si, cpu.s.ax, old_si + cpu.s.ax, 16)
-    cpu.set_reg8(0, cpu.mem.rb(cpu.s.ds & 0xFFFF, cpu.s.si))
-    cpu.set_logic_flags(cpu.get_reg8(0), 8)
-
-
-
-def _run_deactivate_bd17_observed(cpu, *, parent: str, chain: str, cx_value: int, pop_return: bool = True) -> None:
-    """Run observed 1010:BD17 object deactivation tail.
-
-    BD17 is reached from BC4B when an object leaves the allowed X bounds.  The
-    currently observed gameplay case is the B73E formation/attack object with
-    draw layer 4 and logic id 20h: BD17 clears the active flag, calls C054, C054
-    decrements DS:A47E for this logic family, then BD17 optionally clears the
-    per-slot byte indexed by SS:[BP+28h].
-    """
-    ds = cpu.s.ds & 0xFFFF
-    ss = cpu.s.ss & 0xFFFF
-    bp = cpu.s.bp & 0xFFFF
-    mem = cpu.mem
-
-    mem.ww(ss, (bp + 0x00) & 0xFFFF, 0x0000)
-
-    draw_layer = mem.rw(ss, (bp + 0x16) & 0xFFFF)
-    _cmp_word(cpu, draw_layer, 0x0004)
-    if draw_layer == 0x0004:
-        logic_id = mem.rw(ss, (bp + 0x18) & 0xFFFF)
-        # Draw-layer 4 always CALLs C054.  The nested near-call leaves BD5F
-        # below SP as stack scratch, which the verifier can see after the outer
-        # BC4B return.  C054 owns the live-counter decrement family; BD17 then
-        # continues with its small draw-layer-4 cleanup tail.
-        run_object_deactivate_logic_dispatch_c054(cpu)
-        mem.ww(ss, (cpu.s.sp - 2) & 0xFFFF, 0xBD5F)
-
-        _cmp_word(cpu, logic_id, 0x0001)
-        if logic_id == 0x0001:
-            return
-        slot = mem.rw(ss, (bp + 0x28) & 0xFFFF)
-        _cmp_word(cpu, slot, 0xFFFF)
-        if slot == 0xFFFF:
-            return
-        cpu.s.si = slot
-        cpu.s.si = cpu.shift(4, cpu.s.si, 1, 16)  # SHL SI,1
-        _add_reg16(cpu, 6, 0x2078)                # ADD SI,2078h
-        mem.wb(ds, cpu.s.si & 0xFFFF, 0x00)
-        return
-
-    _cmp_word(cpu, draw_layer, 0x0001)
-    if draw_layer == 0x0001:
-        mem.ww(ss, (bp + 0x16) & 0xFFFF, 0x0002)
-        return
-
-    logic_id = mem.rw(ss, (bp + 0x18) & 0xFFFF)
-    for target, counter in (
-        (0x0007, 0xA970),
-        (0x0008, 0xA970),
-        (0x0009, 0xA972),
-        (0x0006, 0xA976),
-        (0x0005, 0xA976),
-        (0x000C, 0xA974),
-        (0x000A, 0xA972),
-    ):
-        _cmp_word(cpu, logic_id, target)
-        if logic_id == target:
-            if mem.rw(ds, counter) != 0:
-                _sub_mem_word(cpu, ds, counter, 0x0001)
-            return
-
-    # BD17 is usually called as a standalone helper in tests/older lifted paths,
-    # but BC4B reaches it by a direct branch and its wrapper owns the final RET
-    # pop.  Preserve both boundary shapes explicitly.
-    if pop_return:
-        cpu.s.ip = cpu.pop()
-    return
-
-
-def _run_object_behavior_aed8(cpu, *, parent: str, chain: str, cx_value: int) -> None:
-    """Lift the observed EFAE logic_id=2 movement/tile-probe branch at AED8."""
-    ds = cpu.s.ds & 0xFFFF
-    ss = cpu.s.ss & 0xFFFF
-    bp = cpu.s.bp & 0xFFFF
-    mem = cpu.mem
-
-    _sub_mem_word(cpu, ss, (bp + 0x1C) & 0xFFFF, 1)
-    if mem.rw(ss, (bp + 0x1C) & 0xFFFF) == 0:
-        _raise_unverified_path(cpu, parent=parent, chain=f"{chain} -> AED8 timer expired", target_ip=0xADC9, bp=bp, cx_value=cx_value)
-
-    cpu.s.ax = 0xB250
-    # AED8 pushes B250 and falls into AEE4.  The return word is later replaced
-    # by the nested ADBF call scratch; keep SP unchanged in the lifted form.
-    mem.ww(ss, (cpu.s.sp - 2) & 0xFFFF, 0xB250)
-    _run_aee4_step_for_direction(cpu)
-
-    # Observed B250 branch: object +1Eh == 1 jumps to B2A3 -> AD5A.
-    marker = mem.rw(ss, (bp + 0x1E) & 0xFFFF)
-    _cmp_word(cpu, marker, 0x0001)
-    if marker != 0x0001:
-        _raise_unverified_path(cpu, parent=parent, chain=f"{chain} -> AED8 -> B250", target_ip=0xB254, bp=bp, cx_value=cx_value)
-
-    cpu.s.ax = mem.rw(ds, 0xA278)
-    _add_mem_word(cpu, ss, (bp + 0x02) & 0xFFFF, cpu.s.ax)
-    x = mem.rw(ss, (bp + 0x02) & 0xFFFF)
-    _cmp_word(cpu, x, 0x0008)
-    if x < 0x0008:
-        _run_deactivate_bd17_observed(cpu, parent=parent, chain=f"{chain} -> AED8 -> AD5A", cx_value=cx_value, pop_return=False)
-        cpu.s.ip = cpu.pop()
-        return
-    _cmp_word(cpu, x, 0x00E0)
-    if x > 0x00E0:
-        _run_deactivate_bd17_observed(cpu, parent=parent, chain=f"{chain} -> AED8 -> AD5A", cx_value=cx_value, pop_return=False)
-        cpu.s.ip = cpu.pop()
-        return
-    y = mem.rw(ss, (bp + 0x04) & 0xFFFF)
-    _cmp_word(cpu, y, 0x00C8)
-    if y > 0x00C8:
-        _run_deactivate_bd17_observed(cpu, parent=parent, chain=f"{chain} -> AED8 -> AD5A", cx_value=cx_value, pop_return=False)
-        cpu.s.ip = cpu.pop()
-        return
-    draw_layer = mem.rw(ss, (bp + 0x16) & 0xFFFF)
-    _cmp_word(cpu, draw_layer, 0x0002)
-    if draw_layer != 0x0002:
-        _raise_unverified_path(cpu, parent=parent, chain=f"{chain} -> AED8 -> AD5A", target_ip=0xADF4, bp=bp, cx_value=cx_value)
-    logic_id = mem.rw(ss, (bp + 0x18) & 0xFFFF)
-    for good in (0x0002, 0x0004, 0x000C, 0x0005, 0x0006, 0x0009, 0x0008):
-        _cmp_word(cpu, logic_id, good)
-        if logic_id == good:
-            break
-    else:
-        _raise_unverified_path(cpu, parent=parent, chain=f"{chain} -> AED8 -> AD5A", target_ip=0xADAA, bp=bp, cx_value=cx_value)
-
-    bdac = mem.rw(ds, 0xBDAC)
-    _cmp_word(cpu, bdac, 0x0001)
-    if bdac == 0x0001:
-        _raise_unverified_path(cpu, parent=parent, chain=f"{chain} -> AED8 -> ADAF", target_ip=0xADC3, bp=bp, cx_value=cx_value)
-    _run_tile_probe_5073(cpu)
-    _add_reg16(cpu, 3, 0x000D)  # ADD BX,000Dh before 505B.
-    # CALL 505B leaves ADBF as stack scratch below SP.
-    mem.ww(ss, (cpu.s.sp - 2) & 0xFFFF, 0xADBF)
-    _run_tile_lookup_505b(cpu)
-    if not cpu.get_flag(ZF):
-        _raise_unverified_path(cpu, parent=parent, chain=f"{chain} -> AED8 -> ADBF nonzero tile", target_ip=0xADC1, bp=bp, cx_value=cx_value)
-    cpu.s.ip = cpu.pop()
-
-def _run_object_logic_ab10(cpu, *, parent: str, chain: str, cx_value: int) -> None:
-    """Lift the observed AA2B target AB10 position/sprite update helper.
-
-    AB10 is a first-level object logic target for SS:[BP+16] == 6 in the
-    current island.  The observed branch samples a small animation table at
-    DS:A40C/DS:A414 using DS:2336 and DS:237C, then writes the object's sprite
-    and position before returning to the AA2B caller.
-    """
-    ds = cpu.s.ds & 0xFFFF
-    ss = cpu.s.ss & 0xFFFF
-    bp = cpu.s.bp & 0xFFFF
-    mem = cpu.mem
-
-    v2384 = mem.rw(ds, 0x2384)
-    _cmp_word(cpu, v2384, 0x0003)
-    if v2384 >= 0x0003:
-        _raise_unverified_path(cpu, parent=parent, chain=f"{chain} -> AB10", target_ip=0xAC21, bp=bp, cx_value=cx_value)
-
-    global_disable = mem.rw(ds, 0xA47C)
-    _cmp_word(cpu, global_disable, 0x0003)
-    if global_disable >= 0x0003:
-        _raise_unverified_path(cpu, parent=parent, chain=f"{chain} -> AB10", target_ip=0xAC21, bp=bp, cx_value=cx_value)
-
-    cpu.s.ax = mem.rw(ds, 0x2336)
-    cpu.s.bx = 0xA40C
-    # XLAT: AL = DS:[BX+AL], AH unchanged.
-    cpu.set_reg8(0, mem.rb(ds, (cpu.s.bx + (cpu.s.ax & 0x00FF)) & 0xFFFF))
-    old_ax = cpu.s.ax & 0xFFFF
-    cpu.s.ax = (old_ax + 0x0009) & 0xFFFF
-    cpu.set_add_flags(old_ax, 0x0009, old_ax + 0x0009, 16)
-    mem.ww(ss, (bp + 0x08) & 0xFFFF, cpu.s.ax)
-
-    cpu.s.dx = 0xA414
-    cpu.s.bx = 0x237C
-    cpu.s.si = mem.rw(ds, (cpu.s.bx + 0x08) & 0xFFFF)
-    cpu.s.si = cpu.shift(4, cpu.s.si, 1, 16)
-    cpu.s.si = cpu.shift(4, cpu.s.si, 1, 16)
-    old_si = cpu.s.si
-    cpu.s.si = (cpu.s.si + cpu.s.dx) & 0xFFFF
-    cpu.set_add_flags(old_si, cpu.s.dx, old_si + cpu.s.dx, 16)
-
-    cpu.s.ax = mem.rw(ds, cpu.s.si)
-    cpu.s.si = (cpu.s.si + (-2 if cpu.get_flag(DF) else 2)) & 0xFFFF
-    old_ax = cpu.s.ax & 0xFFFF
-    addend = mem.rw(ds, (cpu.s.bx + 0x02) & 0xFFFF)
-    cpu.s.ax = (old_ax + addend) & 0xFFFF
-    cpu.set_add_flags(old_ax, addend, old_ax + addend, 16)
-    mem.ww(ss, (bp + 0x02) & 0xFFFF, cpu.s.ax)
-
-    cpu.s.ax = mem.rw(ds, cpu.s.si)
-    cpu.s.si = (cpu.s.si + (-2 if cpu.get_flag(DF) else 2)) & 0xFFFF
-    old_ax = cpu.s.ax & 0xFFFF
-    addend = mem.rw(ds, (cpu.s.bx + 0x04) & 0xFFFF)
-    cpu.s.ax = (old_ax + addend) & 0xFFFF
-    cpu.set_add_flags(old_ax, addend, old_ax + addend, 16)
-    mem.ww(ss, (bp + 0x04) & 0xFFFF, cpu.s.ax)
-    cpu.s.ip = cpu.pop()
-
-def _run_object_logic_dispatch_aa2b(cpu, *, parent: str, chain: str, cx_value: int) -> None:
-    """Run AA2B's first-level dispatch and leave IP at the selected target.
-
-    AA2B dispatches through CS:AA36 using SS:[BP+16].  It is a jump-table stub,
-    not a stable gameplay body, so keep the hook at this exact boundary instead
-    of executing the selected behavior inline.
-    """
-    ss = cpu.s.ss & 0xFFFF
-    bp = cpu.s.bp & 0xFFFF
-    cpu.s.bx = cpu.mem.rw(ss, (bp + 0x16) & 0xFFFF)
-    cpu.s.bx = cpu.shift(4, cpu.s.bx, 1, 16)  # SHL BX,1
-    target_ip = cpu.mem.rw(cpu.s.cs & 0xFFFF, (0xAA36 + cpu.s.bx) & 0xFFFF)
-    cpu.s.ip = target_ip
-
-
-def _scan_object_logic_via_aa2b(
-    cpu,
-    *,
-    table_base: int,
-    done_ip: int,
-    call_ip: int,
-    advance_global_counter: bool,
-) -> None:
-    """Collapse the AA2B object scan only up to the next real CALL.
-
-    The loop bodies at A9E0/AA10 are scan wrappers, not the object logic itself.
-    They PUSH CX, select BP from an object table, and only then call AA2B for
-    active objects.  A previous replacement crossed that CALL boundary and ran
-    the whole AA2B dispatch inline.  That is too large a hook boundary: the
-    verifier quite reasonably stops the original ASM at AA01/AA1F before the
-    CALL, while the hook had already consumed the call and sometimes the whole
-    remaining scan.
-
-    Keep this hook as a narrow scan accelerator: consume inactive entries, but
-    when the first active object is found, leave CPU state exactly as the ASM has
-    it immediately before CALL AA2B.  The interpreter then executes the CALL,
-    and the separate AA2B hook owns the object-logic dispatch boundary.
-    """
-    iterations = cpu.s.cx & 0xFFFF
-    if iterations == 0:
-        iterations = 0x10000
-
-    while iterations:
-        cx_value = cpu.s.cx & 0xFFFF
-
-        # PUSH CX / MOV BX,CX / SHL BX,1 / MOV BP,[table+BX]
-        _object_ptr_from_scan_index(cpu, table_base, cx_value)
-
-        if advance_global_counter:
-            ds = cpu.s.ds & 0xFFFF
-            old_counter = cpu.mem.rw(ds, 0x2340)
-            counter = (old_counter + 1) & 0xFFFF
-            cpu.mem.ww(ds, 0x2340, counter)
-            _cmp_word(cpu, counter, 0x05DC)
-            if counter >= 0x05DC:
-                cpu.mem.ww(ds, 0x2340, 0)
-
-        active = cpu.mem.rw(cpu.s.ss & 0xFFFF, cpu.s.bp & 0xFFFF)
-        _cmp_word(cpu, active, 0)
-        if active != 0:
-            _push_loop_count_for_interpreted_tail(cpu, cx_value)
-            cpu.s.ip = call_ip & 0xFFFF
-            return
-
-        # The original PUSH/POP pair is balanced for inactive objects, but the
-        # transient PUSH still leaves bytes just below SP.  Keep that stack
-        # scratch visible for full-memory oracle comparisons.
-        _remember_balanced_push_scratch(cpu, cx_value)
-        cpu.s.cx = (cx_value - 1) & 0xFFFF
-        iterations -= 1
-        if cpu.s.cx == 0:
-            cpu.s.ip = done_ip & 0xFFFF
-            return
-
-    cpu.s.ip = done_ip & 0xFFFF
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 @registry.replace(0x1010, 0xA849, "overkill_scan_objects_call_5ac8_a849")
@@ -4276,6 +2687,37 @@ def _scan_present_objects_via_5a92(
     cpu.s.ip = done_ip & 0xFFFF
 
 
+
+
+@registry.replace(0x1010, 0x4D64, "overkill_clear_presence_list_parent_4d64")
+def overkill_clear_presence_list_parent_4d64(cpu):
+    """Set up and tail into the shared 4D6F presence-list clear hook."""
+    if _self_disable_if_patched(cpu, 0x4D64, _SIG_4D64, "overkill_clear_presence_list_parent_4d64"):
+        return
+    run_clear_presence_list_parent_4d64(cpu, overkill_clear_presence_list_4d6f)
+
+
+@registry.replace(0x1010, 0xA93C, "overkill_present_scan_clear_presence_a93c")
+def overkill_present_scan_clear_presence_a93c(cpu):
+    """Model A93C: CALL 4D64 ; RET using the shared 4D64/4D6F hooks."""
+    if _self_disable_if_patched(cpu, 0xA93C, _SIG_A93C, "overkill_present_scan_clear_presence_a93c"):
+        return
+    call_clear_presence_list_parent_a93c(cpu, overkill_clear_presence_list_parent_4d64)
+
+
+@registry.replace(0x1010, 0xA90C, "overkill_present_object_scan_pair_a90c")
+def overkill_present_object_scan_pair_a90c(cpu):
+    """Compose the two present scans and presence-list clear without duplicating leaves."""
+    if _self_disable_if_patched(cpu, 0xA90C, _SIG_A90C, "overkill_present_object_scan_pair_a90c"):
+        return
+    run_present_object_scan_pair_a90c(
+        cpu,
+        overkill_scan_objects_call_5a92_a90f,
+        overkill_scan_objects_call_5a92_a927,
+        overkill_clear_presence_list_parent_4d64,
+    )
+
+
 @registry.replace(0x1010, 0xA90F, "overkill_scan_objects_call_5a92_a90f")
 def overkill_scan_objects_call_5a92_a90f(cpu):
     """Present active 8D12 objects when their Tandy targets are verified."""
@@ -4319,176 +2761,12 @@ def overkill_object_behavior_b73e(cpu):
     )
 
 
-def _run_af63_step_for_direction(cpu, *, parent: str = "1010:AF63") -> None:
-    """Mirror one 1010:AF63 2-pixel direction step.
-
-    AF63 dispatches through the CS:AF6E table using SS:[BP+06].  AF60 is built
-    from this same body with a self-call trick, so keeping the one-step body
-    separate lets 5DB2 mode 1 (direct AF63) and mode 2 (AF60 double step) share
-    exactly the same movement mapping.
-    """
-    ss = cpu.s.ss & 0xFFFF
-    bp = cpu.s.bp & 0xFFFF
-
-    direction = cpu.mem.rw(ss, (bp + 0x06) & 0xFFFF) & 0xFFFF
-    cpu.s.bx = direction
-    cpu.s.bx = cpu.shift(4, cpu.s.bx, 1, 16)  # SHL BX,1 before table JMP.
-
-    if direction == 0:
-        _sub_mem_word(cpu, ss, (bp + 0x02) & 0xFFFF, 2)
-    elif direction == 1:
-        _sub_mem_word(cpu, ss, (bp + 0x02) & 0xFFFF, 2)
-        _add_mem_word(cpu, ss, (bp + 0x04) & 0xFFFF, 2)
-    elif direction == 2:
-        _add_mem_word(cpu, ss, (bp + 0x04) & 0xFFFF, 2)
-    elif direction == 3:
-        _add_mem_word(cpu, ss, (bp + 0x04) & 0xFFFF, 2)
-        _add_mem_word(cpu, ss, (bp + 0x02) & 0xFFFF, 2)
-    elif direction == 4:
-        _add_mem_word(cpu, ss, (bp + 0x02) & 0xFFFF, 2)
-    elif direction == 5:
-        _add_mem_word(cpu, ss, (bp + 0x02) & 0xFFFF, 2)
-        _sub_mem_word(cpu, ss, (bp + 0x04) & 0xFFFF, 2)
-    elif direction == 6:
-        _sub_mem_word(cpu, ss, (bp + 0x04) & 0xFFFF, 2)
-    elif direction == 7:
-        _sub_mem_word(cpu, ss, (bp + 0x04) & 0xFFFF, 2)
-        _sub_mem_word(cpu, ss, (bp + 0x02) & 0xFFFF, 2)
-    else:
-        _raise_unverified_path(
-            cpu,
-            parent=parent,
-            chain="AF63 direction table",
-            target_ip=cpu.mem.rw(cpu.s.cs & 0xFFFF, (0xAF6E + ((direction << 1) & 0xFFFF)) & 0xFFFF),
-            bp=bp,
-            cx_value=cpu.s.cx & 0xFFFF,
-        )
 
 
-def _run_af60_double_step_for_direction(cpu) -> None:
-    """Mirror 1010:AF60 for the movement helper's speed-2 mode.
-
-    AF60 is another OVERKILL self-call trick: ``CALL AF63`` pushes AF63, so
-    the direction movement body runs once, RET returns to AF63, and the same
-    body runs a second time before returning to the original caller.
-    """
-    ss = cpu.s.ss & 0xFFFF
-    # AF60 begins with CALL AF63.  After the self-call trick completes, SP is
-    # back where it started but the pushed return word remains as stack scratch.
-    cpu.mem.ww(ss, (cpu.s.sp - 2) & 0xFFFF, 0xAF63)
-    _run_af63_step_for_direction(cpu, parent="1010:AF60")
-    _run_af63_step_for_direction(cpu, parent="1010:AF60")
 
 
-def _run_aee4_step_for_direction(cpu) -> None:
-    """Mirror 1010:AEE4: one 8-pixel direction step via the AEEE table."""
-    ss = cpu.s.ss & 0xFFFF
-    bp = cpu.s.bp & 0xFFFF
-    direction = cpu.mem.rw(ss, (bp + 0x06) & 0xFFFF) & 0xFFFF
-    cpu.s.bx = direction
-    cpu.s.bx = cpu.shift(4, cpu.s.bx, 1, 16)
-
-    if direction == 0:
-        _sub_mem_word(cpu, ss, (bp + 0x02) & 0xFFFF, 8)
-    elif direction == 1:
-        _sub_mem_word(cpu, ss, (bp + 0x02) & 0xFFFF, 8)
-        _add_mem_word(cpu, ss, (bp + 0x04) & 0xFFFF, 8)
-    elif direction == 2:
-        _add_mem_word(cpu, ss, (bp + 0x04) & 0xFFFF, 8)
-    elif direction == 3:
-        _add_mem_word(cpu, ss, (bp + 0x04) & 0xFFFF, 8)
-        _add_mem_word(cpu, ss, (bp + 0x02) & 0xFFFF, 8)
-    elif direction == 4:
-        _add_mem_word(cpu, ss, (bp + 0x02) & 0xFFFF, 8)
-    elif direction == 5:
-        _add_mem_word(cpu, ss, (bp + 0x02) & 0xFFFF, 8)
-        _sub_mem_word(cpu, ss, (bp + 0x04) & 0xFFFF, 8)
-    elif direction == 6:
-        _sub_mem_word(cpu, ss, (bp + 0x04) & 0xFFFF, 8)
-    elif direction == 7:
-        _sub_mem_word(cpu, ss, (bp + 0x04) & 0xFFFF, 8)
-        _sub_mem_word(cpu, ss, (bp + 0x02) & 0xFFFF, 8)
-    else:
-        _raise_unverified_path(
-            cpu,
-            parent="1010:AEE4",
-            chain="AEE4 direction table",
-            target_ip=cpu.mem.rw(cpu.s.cs & 0xFFFF, (0xAEEE + ((direction << 1) & 0xFFFF)) & 0xFFFF),
-            bp=bp,
-            cx_value=cpu.s.cx & 0xFFFF,
-        )
 
 
-def _run_movement_direction_5db2(cpu) -> None:
-    """Run the 1010:5DB2 target-seeking movement/direction helper.
-
-    The helper compares object Y/X against DS:2304/2306, encodes the desired
-    direction into DS:A954, maps that nibble through DS:A348 into the object's
-    animation/direction word at SS:[BP+06], then dispatches through CS:5E0C by
-    DS:2308.  For the currently opened object-logic island, the verified mode is
-    DS:2308 == 2, which is the AF60 double 2-pixel step.
-    """
-    ds = cpu.s.ds & 0xFFFF
-    ss = cpu.s.ss & 0xFFFF
-    bp = cpu.s.bp & 0xFFFF
-
-    cpu.mem.ww(ds, 0xA954, 0)
-    cpu.mem.ww(ds, 0x230A, 0)
-
-    y = cpu.mem.rw(ss, (bp + 0x04) & 0xFFFF)
-    target_y = cpu.mem.rw(ds, 0x2304)
-    _cmp_word(cpu, y, target_y)
-    if y < target_y:
-        cpu.mem.ww(ds, 0xA954, 1)
-    elif y > target_y:
-        cpu.mem.ww(ds, 0xA954, 2)
-
-    x = cpu.mem.rw(ss, (bp + 0x02) & 0xFFFF)
-    target_x = cpu.mem.rw(ds, 0x2306)
-    _cmp_word(cpu, x, target_x)
-    # Original uses signed JL/JG for X after CMP AX,DS:[2306].
-    sx = x if x < 0x8000 else x - 0x10000
-    starget_x = target_x if target_x < 0x8000 else target_x - 0x10000
-    direction_bits = cpu.mem.rw(ds, 0xA954)
-    if sx < starget_x:
-        direction_bits |= 0x0004
-        cpu.mem.ww(ds, 0xA954, direction_bits)
-    elif sx > starget_x:
-        direction_bits |= 0x0008
-        cpu.mem.ww(ds, 0xA954, direction_bits)
-
-    cpu.s.bx = 0xA348
-    cpu.s.ax = cpu.mem.rw(ds, 0xA954)
-    mapped = cpu.mem.rb(ds, (cpu.s.bx + (cpu.s.ax & 0xFF)) & 0xFFFF)
-    cpu.set_reg8(0, mapped)  # XLAT updates AL only.
-    cpu.set_sub_flags(mapped, 0xFF, mapped - 0xFF, 8)  # CMP AL,FFh.
-    if mapped == 0xFF:
-        cpu.mem.ww(ds, 0x230A, 1)
-        # MOV word and RET do not affect flags; leave CMP AL,FFh flags live.
-        return
-
-    cpu.mem.ww(ss, (bp + 0x06) & 0xFFFF, cpu.s.ax)
-    cpu.s.bx = cpu.mem.rw(ds, 0x2308)
-    cpu.s.bx = cpu.shift(4, cpu.s.bx, 1, 16)  # SHL BX,1 before 5E0C table JMP.
-    mode = cpu.mem.rw(ds, 0x2308)
-    target_ip = cpu.mem.rw(cpu.s.cs & 0xFFFF, (0x5E0C + ((mode << 1) & 0xFFFF)) & 0xFFFF)
-    if target_ip == 0xAF63:
-        _run_af63_step_for_direction(cpu, parent="1010:5DB2")
-        return
-    if target_ip == 0xAF60:
-        _run_af60_double_step_for_direction(cpu)
-        return
-    if target_ip == 0xAEE4:
-        _run_aee4_step_for_direction(cpu)
-        return
-    _raise_unverified_path(
-        cpu,
-        parent="1010:5DB2",
-        chain="5DB2 -> 5E0C movement-mode dispatch",
-        target_ip=target_ip,
-        bp=bp,
-        cx_value=cpu.s.cx & 0xFFFF,
-    )
 
 
 @registry.replace(0x1010, 0x5DB2, "overkill_movement_direction_helper_5db2")
@@ -4524,6 +2802,29 @@ def overkill_postmove_y_clamp_bcb1(cpu):
     run_postmove_y_clamp_bcb1(cpu)
 
 
+
+
+
+
+@registry.replace(0x1010, 0x61C5, "overkill_decrement_first_active_counter_61c5")
+def overkill_decrement_first_active_counter_61c5(cpu):
+    """Replace the small DS:2368..2372 countdown scan at 1010:61C5."""
+    run_decrement_first_active_counter_61c5(cpu, _self_disable_if_patched)
+
+
+
+@registry.replace(0x1010, 0x61CA, "overkill_decrement_first_active_counter_scan_61ca")
+def overkill_decrement_first_active_counter_scan_61ca(cpu):
+    """Replace the inner countdown scan body at 1010:61CA."""
+    run_decrement_first_active_counter_scan_61ca(cpu, _self_disable_if_patched)
+
+@registry.replace(0x1010, 0xBC45, "overkill_object_postmove_prelude_bc45")
+def overkill_object_postmove_prelude_bc45(cpu):
+    """Replace BC45 prelude and reuse the shared BC4B postmove implementation."""
+    if _self_disable_if_patched(cpu, 0xBC45, _SIG_BC45, "overkill_object_postmove_prelude_bc45"):
+        return
+    run_object_postmove_prelude_bc45(cpu, cx_value=cpu.s.cx & 0xFFFF)
+
 @registry.replace(0x1010, 0xBC4B, "overkill_object_postmove_bc4b")
 def overkill_object_postmove_bc4b(cpu):
     """Lift the hot BC4B post-move helper call-site at 1010:BC4B."""
@@ -4555,6 +2856,108 @@ def overkill_object_family_dispatch_efae(cpu):
         chain="EFAE",
         cx_value=cpu.s.cx & 0xFFFF,
     )
+
+
+@registry.replace(0x1010, 0xAE09, "overkill_object_behavior_ae09")
+def overkill_object_behavior_ae09(cpu):
+    """Observed logic-id 0Ch timer/3-pixel-step behavior."""
+    if _self_disable_if_patched(cpu, 0xAE09, _SIG_AE09, "overkill_object_behavior_ae09"):
+        return
+    _run_object_behavior_ae09(
+        cpu,
+        parent="1010:AE09",
+        chain="AE09",
+        cx_value=cpu.s.cx & 0xFFFF,
+    )
+
+
+@registry.replace(0x1010, 0xAED8, "overkill_object_behavior_aed8")
+def overkill_object_behavior_aed8(cpu):
+    """Observed logic-id 2/3 object behavior: countdown, movement, and postmove tail."""
+    if _self_disable_if_patched(cpu, 0xAED8, _SIG_AED8, "overkill_object_behavior_aed8"):
+        return
+    _run_object_behavior_aed8(
+        cpu,
+        parent="1010:AED8",
+        chain="AED8",
+        cx_value=cpu.s.cx & 0xFFFF,
+    )
+
+
+
+@registry.replace(0x1010, 0xAB10, "overkill_object_logic_ab10")
+def overkill_object_logic_ab10(cpu):
+    """Observed AA2B target AB10 position/sprite update helper."""
+    if _self_disable_if_patched(cpu, 0xAB10, _SIG_AB10, "overkill_object_logic_ab10"):
+        return
+    _run_object_logic_ab10(
+        cpu,
+        parent="1010:AB10",
+        chain="AB10",
+        cx_value=cpu.s.cx & 0xFFFF,
+    )
+
+@registry.replace(0x1010, 0xAD04, "overkill_object_logic_branch_ad04")
+def overkill_object_logic_branch_ad04(cpu):
+    """Small object-logic selector that jumps to ABxx tails or returns."""
+    if _self_disable_if_patched(cpu, 0xAD04, _SIG_AD04, "overkill_object_logic_branch_ad04"):
+        return
+    _run_object_logic_branch_ad04(
+        cpu,
+        parent="1010:AD04",
+        chain="AD04",
+        cx_value=cpu.s.cx & 0xFFFF,
+    )
+
+
+
+@registry.replace(0x1010, 0xABA3, "overkill_object_behavior_aba3")
+def overkill_object_behavior_aba3(cpu):
+    """Observed ABA3 tracked-object follower/probe behaviour."""
+    if _self_disable_if_patched(cpu, 0xABA3, _SIG_ABA3, "overkill_object_behavior_aba3"):
+        return
+    _run_object_behavior_aba3(
+        cpu,
+        parent="1010:ABA3",
+        chain="ABA3",
+        cx_value=cpu.s.cx & 0xFFFF,
+    )
+
+
+@registry.replace(0x1010, 0xAB77, "overkill_object_behavior_ab77")
+def overkill_object_behavior_ab77(cpu):
+    """Observed AB77 tracked-object behaviour driver."""
+    if _self_disable_if_patched(cpu, 0xAB77, _SIG_AB77, "overkill_object_behavior_ab77"):
+        return
+    _run_object_behavior_ab77(
+        cpu,
+        parent="1010:AB77",
+        chain="AB77",
+        cx_value=cpu.s.cx & 0xFFFF,
+    )
+
+@registry.replace(0x1010, 0xAB34, "overkill_object_motion_table_ab34")
+def overkill_object_motion_table_ab34(cpu):
+    """Runtime-patched object motion table helper."""
+    run_object_motion_table_ab34(cpu, _self_disable_if_patched)
+
+
+@registry.replace(0x1010, 0xAB4F, "overkill_object_scroll_sprite_ab4f")
+def overkill_object_scroll_sprite_ab4f(cpu):
+    """Runtime-patched object scroll/sprite helper."""
+    run_object_scroll_sprite_ab4f(cpu, _self_disable_if_patched)
+
+
+@registry.replace(0x1010, 0xAC28, "overkill_tile_collision_probe_ac28")
+def overkill_tile_collision_probe_ac28(cpu):
+    """Runtime-patched tile-collision probe used by ABxx object behaviours."""
+    run_tile_collision_probe_ac28(cpu, _self_disable_if_patched)
+
+
+@registry.replace(0x1010, 0xAC81, "overkill_object_slot_scan_guard_ac81")
+def overkill_object_slot_scan_guard_ac81(cpu):
+    """Guard/setup wrapper around the shared AC97 object-slot overlap scan."""
+    run_object_slot_scan_guard_ac81(cpu, _self_disable_if_patched)
 
 
 @registry.replace(0x1010, 0xA9E0, "overkill_scan_objects_call_aa2b_a9e0")
@@ -5244,8 +3647,6 @@ def _out_dx_al(cpu) -> None:
         cpu.port_writer(cpu, cpu.s.dx & 0xFFFF, cpu.get_reg8(0), 8)
 
 
-def _cmp_byte(cpu, a: int, b: int) -> None:
-    cpu.set_sub_flags(a & 0xFF, b & 0xFF, (a & 0xFF) - (b & 0xFF), 8)
 
 
 
@@ -5371,7 +3772,7 @@ def _run_dirty_cell_presenter_row_cc7f_once(cpu) -> None:
     # CC7F push cx; mov ax,[BD95]; call 5A24
     cpu.push(cpu.s.cx)
     cpu.s.ax = mem.rw(ds, 0xBD95)
-    _call_hook_like_near_call(cpu, overkill_cga_xy_to_di_5a24, 0xCC86)
+    _call_hook_like_near_call(cpu, overkill_xy_to_di_5a24, 0xCC86)
     if cpu.s.ip != 0xCC86:
         raise RuntimeError(f"5A24 returned to unexpected IP {cpu.s.ip:04X} inside CC7F presenter")
 
@@ -5419,7 +3820,7 @@ def _run_dirty_cell_presenter_row_cc7f_once(cpu) -> None:
 
         # CD37..CD52 draw the changed source cell to the visible video segment.
         cpu.s.ax = mem.rw(ds, 0xBD95)
-        _call_hook_like_near_call(cpu, overkill_cga_xy_to_di_5a00, 0xCD3D)
+        _call_hook_like_near_call(cpu, overkill_xy_to_di_5a00, 0xCD3D)
         if cpu.s.ip != 0xCD3D:
             raise RuntimeError(f"5A00 returned to unexpected IP {cpu.s.ip:04X} inside CC7F presenter")
         cpu.push(cpu.s.di)
@@ -5459,6 +3860,112 @@ def _run_dirty_cell_presenter_row_cc7f_once(cpu) -> None:
         cpu.s.ds = mem.rw(cs, 0x9596)
 
     _finish_dirty_cell_presenter_row_loop_ce07(cpu)
+
+
+def _run_dirty_cell_presenter_resume_cd68(cpu) -> None:
+    """Resume the CC7F dirty-cell presenter after the pacing wait at CD68.
+
+    The full CC7F hook intentionally calls the installed 50C9 wait hook on the
+    nested ``CD52 -> 50C9 -> CD68`` path.  In interactive play that wrapper may
+    publish/yield the frame and leave IP at CD68.  This helper owns the remaining
+    original tail so the UI pacing boundary stays visible while the hot
+    ``CD68..CE10`` presenter code is still lifted and classified.
+    """
+    if _self_disable_if_patched(cpu, 0xCD68, _SIG_CD68, "overkill_dirty_cell_presenter_resume_cd68"):
+        return
+    cs = cpu.s.cs & 0xFFFF
+    mem = cpu.mem
+    ds = cpu.s.ds & 0xFFFF
+
+    # CD68..CD7E: restore the changed cell destination and dispatch the
+    # mode-specific presenter.  This is the same tail used by the fused CC7F
+    # path after the optional retrace wait returns normally.
+    cpu.s.di = cpu.pop()
+    cpu.s.si = mem.rw(ds, 0xBD9E)
+    cpu.s.es = mem.rw(cs, 0x95A4)
+    cpu.s.ds = mem.rw(cs, 0x9598)
+    if not _run_changed_cell_present_dispatch_cd7e(cpu):
+        return
+
+    # CE02..CE10: restore display DS, increment the row cursor, pop the saved
+    # row counter and loop back to CC7F or exit at CE13.  LOOP does not alter
+    # flags; the byte INC preserves CF.
+    cpu.s.ds = mem.rw(cs, 0x9596)
+    _finish_dirty_cell_presenter_row_loop_ce07(cpu)
+
+
+@registry.replace(0x1010, 0xCD68, "overkill_dirty_cell_presenter_resume_cd68")
+def overkill_dirty_cell_presenter_resume_cd68(cpu):
+    """Replace the post-retrace dirty-cell presenter tail at 1010:CD68."""
+    _run_dirty_cell_presenter_resume_cd68(cpu)
+
+
+def _run_menu_transition_input_wait_ce40(cpu) -> None:
+    """Run the CE40 menu/transition input-poll + retrace wait subroutine.
+
+    This routine is reached after a dirty-cell panel has finished presenting.
+    It polls the input bitfield through the already lifted 0162 input poller,
+    optionally latches the Space/fire scancode into DS:98C3, and waits on the
+    installed 50C9 retrace boundary up to CX times.  The installed 50C9 hook is
+    used intentionally so interactive play can still publish/yield at each
+    original wait; if that happens, execution resumes at the CE5C LOOP tail.
+    """
+    if _self_disable_if_patched(cpu, 0xCE40, _SIG_CE40, "overkill_menu_transition_input_wait_ce40"):
+        return
+    ds = cpu.s.ds & 0xFFFF
+    mem = cpu.mem
+    while True:
+        key = mem.rb(ds, 0x98C3)
+        _cmp_byte(cpu, key, 0)
+        if key != 0:
+            cpu.s.ip = cpu.pop()
+            return
+
+        cpu.push(cpu.s.cx)
+        _call_hook_like_near_call(cpu, overkill_input_poll_0162, 0xCE4C)
+        if cpu.s.ip != 0xCE4C:
+            raise RuntimeError(f"0162 returned to unexpected IP {cpu.s.ip:04X} inside CE40 input wait")
+        cpu.s.cx = cpu.pop()
+
+        buttons = mem.rb(ds, 0x98BE)
+        cpu.set_logic_flags(buttons & 0x10, 8)  # TEST byte [98BE],10h
+        if buttons & 0x10:
+            mem.wb(ds, 0x98C3, 0x39)
+
+        _call_installed_hook_like_near_call(
+            cpu,
+            (0x1010, 0x50C9),
+            overkill_wait_vga_retrace_50c9,
+            0xCE5C,
+        )
+        if cpu.s.ip != 0xCE5C:
+            raise RuntimeError(f"50C9 returned to unexpected IP {cpu.s.ip:04X} inside CE40 input wait")
+
+        cpu.s.cx = (cpu.s.cx - 1) & 0xFFFF  # LOOP preserves flags.
+        if cpu.s.cx != 0:
+            continue
+        cpu.s.ip = cpu.pop()
+        return
+
+
+def _run_menu_transition_input_wait_loop_ce5c(cpu) -> None:
+    """Resume CE40 after an interactive 50C9 pacing boundary returned at CE5C."""
+    if _self_disable_if_patched(cpu, 0xCE5C, _SIG_CE5C, "overkill_menu_transition_input_wait_loop_ce5c"):
+        return
+    cpu.s.cx = (cpu.s.cx - 1) & 0xFFFF  # LOOP does not alter flags.
+    cpu.s.ip = 0xCE40 if cpu.s.cx != 0 else cpu.pop()
+
+
+@registry.replace(0x1010, 0xCE40, "overkill_menu_transition_input_wait_ce40")
+def overkill_menu_transition_input_wait_ce40(cpu):
+    """Replace the CE40 input-poll/retrace wait subroutine."""
+    _run_menu_transition_input_wait_ce40(cpu)
+
+
+@registry.replace(0x1010, 0xCE5C, "overkill_menu_transition_input_wait_loop_ce5c")
+def overkill_menu_transition_input_wait_loop_ce5c(cpu):
+    """Replace the CE5C LOOP/RET tail used when 50C9 pacing yields."""
+    _run_menu_transition_input_wait_loop_ce5c(cpu)
 
 
 
@@ -5726,6 +4233,11 @@ def overkill_postcopy_blit_wait_loop_58df(cpu):
 
 
 
+@registry.replace(0x1010, 0x511F, "overkill_video_page_toggle_511f")
+def overkill_video_page_toggle_511f(cpu):
+    run_video_page_toggle_511f(cpu, _self_disable_if_patched)
+
+
 @registry.replace(0x1010, 0x06E5, "overkill_fast_timer_isr_06e5")
 def overkill_fast_timer_isr_06e5(cpu):
     if _self_disable_if_patched(cpu, 0x06E5, SIG_FAST_TIMER_ISR_06E5, "overkill_fast_timer_isr_06e5"):
@@ -5745,65 +4257,16 @@ def overkill_pc_speaker_tick_d50e(cpu):
 _deliver_overkill_timer_irq0 = deliver_overkill_timer_irq0
 
 
+@registry.replace(0x1010, 0x0672, "overkill_clear_timer_tick_flag_0672")
+def overkill_clear_timer_tick_flag_0672(cpu):
+    run_clear_timer_tick_flag_0672(cpu, _self_disable_if_patched)
+
+
 @registry.replace(0x1010, 0x0679, "overkill_wait_timer_tick_0679")
 def overkill_wait_timer_tick_0679(cpu):
-    """Replace the timer-tick busy-wait at 1010:0679.
-
-    Original routine:
-
-        0679  cmp byte ptr cs:[066B],0
-        067F  jz   0679
-        0681  ret
-
-    It spins until the byte flag at ``CS:066B`` becomes non-zero.  That flag is
-    only ever touched by three tiny resident routines:
-
-        1010:066C  inc byte ptr cs:[066B] ; ret   (tick increment helper)
-        1010:0672  mov byte ptr cs:[066B],0 ; ret (clear before waiting)
-        1010:0679  this wait loop
-
-    ``066C`` is reached from the game's own reprogrammed IRQ0 handler installed
-    at ``1010:068A``: that installer saves the old INT 08h vector to ``CS:0738``,
-    reprograms the 8253 PIT (``out 43h,36h`` then divisor ``0x4000`` ≈ 72.8 Hz),
-    and points INT 08h at the ISR ``1010:06E5``.  The ISR drives sound/per-tick
-    logic, calls ``066C`` to bump ``066B`` on alternating sub-ticks, and chains
-    the original BIOS handler every fourth tick.
-
-    This interpreter delivers no asynchronous hardware interrupts, so that ISR
-    never runs and ``066B`` stays 0 forever — the runtime spins here indefinitely
-    once it reaches the main per-frame timing loop (callers at 981A/D025/D340/
-    D41F, each paired with a ``066C`` clear at 97B2/D007/D318/D406).
-
-    Mirroring the existing narrow VGA-retrace model (``50C9`` / port ``03DAh``),
-    this hook models exactly one elapsed timer tick: if the flag is still 0 it
-    bumps it to 1 (one ISR ``inc``), then reproduces the final, exiting loop
-    iteration (``cmp`` against 0, ``jz`` not taken, ``ret``).  ``066B`` has no
-    other consumer, so this is sufficient to satisfy the wait faithfully without
-    speculatively emulating the whole IRQ0/sound ISR chain.
-    """
-    cs = cpu.s.cs & 0xFFFF
-    flag = cpu.mem.rb(cs, 0x066B)
-    cpu.timer_ticks_elapsed = 0
-    if flag == 0:
-        delivered = 0
-        while flag == 0 and delivered < 8:
-            if not deliver_overkill_timer_irq0(cpu):
-                raise RuntimeError(
-                    "1010:0679 timer wait needs OVERKILL INT 08h at 1010:06E5; "
-                    "no synthetic timer fallback is allowed"
-                )
-            delivered += 1
-            flag = cpu.mem.rb(cs, 0x066B)
-        if flag == 0:
-            raise RuntimeError("1010:06E5 timer ISR did not advance CS:066B within 8 ticks")
-        cpu.timer_ticks_elapsed = delivered
-    # Final loop iteration: CMP byte ptr CS:[066B],0 (now non-zero); JZ not taken; RET.
-    cpu.set_sub_flags(flag, 0, flag, 8)
-    cpu.s.ip = cpu.pop()
-    # There is exactly one of these waits per rendered frame, so it is the natural
-    # place to throttle the game to real time when an interactive front-end asks.
-    if cpu.timer_pacer is not None:
-        cpu.timer_pacer()
+    if _self_disable_if_patched(cpu, 0x0679, SIG_TIMER_WAIT_0679, "overkill_wait_timer_tick_0679"):
+        return
+    run_wait_timer_tick_0679(cpu)
 
 
 
@@ -5871,50 +4334,42 @@ def overkill_present_frame_blit_447b(cpu):
     cpu.s.ds = cpu.mem.rw(cs, 0x9596)      # 44AA MOV DS,CS:[9596]
     cpu.s.ip = cpu.pop()                   # 44AF RET
 
+
+
+@registry.replace(0x1010, 0x96C5, "overkill_intro_retrace_delay_loop_96c5")
+def overkill_intro_retrace_delay_loop_96c5(cpu):
+    """Replace the intro/menu CALL 50C9 + LOOP delay body at 1010:96C5."""
+    if _self_disable_if_patched(cpu, 0x96C5, _SIG_96C5, "overkill_intro_retrace_delay_loop_96c5"):
+        return
+
+    def call_retrace_wait(return_ip: int) -> None:
+        _call_installed_hook_like_near_call(
+            cpu,
+            (0x1010, 0x50C9),
+            overkill_wait_vga_retrace_50c9,
+            return_ip,
+        )
+
+    run_intro_retrace_delay_loop_96c5(cpu, call_retrace_wait)
+
+
+@registry.replace(0x1010, 0x96C8, "overkill_intro_retrace_delay_loop_tail_96c8")
+def overkill_intro_retrace_delay_loop_tail_96c8(cpu):
+    """Replace the 1010:96C8 LOOP tail used after an interactive 50C9 yield."""
+    if _self_disable_if_patched(cpu, 0x96C8, _SIG_96C8, "overkill_intro_retrace_delay_loop_tail_96c8"):
+        return
+    run_intro_retrace_delay_loop_tail_96c8(cpu)
+
+@registry.replace(0x1010, 0x0162, "overkill_input_poll_0162")
+def overkill_input_poll_0162(cpu):
+    """Replace the full keyboard/joystick input poller at 1010:0162."""
+    run_input_poll_0162(cpu)
+
+
 @registry.replace(0x1010, 0x017E, "overkill_keyboard_poll_bits_017e")
 def overkill_keyboard_poll_bits_017e(cpu):
-    """Replace the hot eight-key poll bit-packer at 1010:017E.
-
-    The menu/gameplay input path repeatedly scans a small table of XT scan codes
-    at DS:SI, reads the corresponding key-state byte from DS:DI+scan, shifts its
-    low bit into DS:98BE, and advances SI.  It is small but very hot on static
-    menu screens because the game polls it every frame.
-    """
-    s = cpu.s
-    ds = s.ds & 0xFFFF
-    data = cpu.mem.data
-    base = ds << 4
-    si = s.si & 0xFFFF
-    di = s.di & 0xFFFF
-    cx = s.cx & 0xFFFF
-    if cx == 0:
-        cx = 0x10000
-
-    bh = s.bx & 0xFF00
-    al = s.ax & 0xFF
-    bl = s.bx & 0xFF
-    scratch_off = 0x98BE
-
-    while cx:
-        bl = data[(base + si) & 0xFFFFF]
-        bx = bh | bl
-        al = data[(base + ((bx + di) & 0xFFFF)) & 0xFFFFF]
-        al = cpu.shift(5, al, 1, 8)  # SHR AL,1; CF becomes the key-state bit.
-        scratch_addr = (base + scratch_off) & 0xFFFFF
-        data[scratch_addr] = cpu.shift(2, data[scratch_addr], 1, 8)  # RCL byte [98BE],1.
-
-        old_cf = cpu.get_flag(CF)
-        old_si = si
-        si = (si + 1) & 0xFFFF
-        cpu.set_add_flags(old_si, 1, old_si + 1, 16)  # INC SI flags...
-        cpu.set_flag(CF, old_cf)                      # ...but INC preserves CF.
-        cx -= 1
-
-    s.ax = (s.ax & 0xFF00) | (al & 0xFF)
-    s.bx = bh | bl
-    s.si = si
-    s.cx = 0
-    s.ip = 0x018B
+    """Replace the hot eight-key poll bit-packer at 1010:017E."""
+    pack_keyboard_poll_bits_017e(cpu)
 
 
 @registry.replace(0x1010, 0xCD8D, "overkill_changed_word_present_8rows_cd8d")
@@ -6262,28 +4717,45 @@ def overkill_masked_sprite_composite_3e12(cpu):
 
 
 
-@registry.replace(0x1010, 0x5A36, "overkill_cga_object_row_addr_5a36")
-def overkill_cga_object_row_addr_5a36(cpu):
+@registry.replace(0x1010, 0x5A36, "overkill_object_row_addr_5a36")
+def overkill_object_row_addr_5a36(cpu):
     """Hook wrapper for OVERKILL 1010:5A36 object-row address dispatch.
 
-    Implementation lives in ``games.overkill.rendering.coordinates`` because the
-    routine is shared by CGA, EGA, and Tandy rendering paths.  The wrapper keeps
-    the original ASM address visible at the hook boundary.
+    The original address is a video-mode dispatch helper, not a CGA-only
+    routine.  It reaches CGA, EGA, or Tandy row-address targets through
+    CS:[95BC], so the neutral name avoids making Tandy coverage look like it is
+    accidentally using the CGA renderer.
     """
     object_row_address_from_mode_dispatch_5a36(cpu)
 
 
-@registry.replace(0x1010, 0x5A00, "overkill_cga_xy_to_di_5a00")
-def overkill_cga_xy_to_di_5a00(cpu):
-    """Hook wrapper for OVERKILL 1010:5A00 coordinate-to-DI helper."""
+@registry.replace(0x1010, 0x5A00, "overkill_xy_to_di_5a00")
+def overkill_xy_to_di_5a00(cpu):
+    """Hook wrapper for OVERKILL 1010:5A00 shared coordinate-to-DI helper."""
     coordinate_ax_to_di_5a00(cpu)
 
 
-@registry.replace(0x1010, 0x5A24, "overkill_cga_xy_to_di_5a24")
-def overkill_cga_xy_to_di_5a24(cpu):
-    """Hook wrapper for OVERKILL 1010:5A24 coordinate-to-DI helper."""
+@registry.replace(0x1010, 0x5A24, "overkill_xy_to_di_5a24")
+def overkill_xy_to_di_5a24(cpu):
+    """Hook wrapper for OVERKILL 1010:5A24 shared coordinate-to-DI helper."""
     coordinate_ax_to_di_5a24(cpu)
 
+
+# Backward-compatible aliases for older tests/tools.  The registered hook names
+# are intentionally neutral; these aliases are not used for coverage labelling.
+overkill_cga_object_row_addr_5a36 = overkill_object_row_addr_5a36
+overkill_cga_xy_to_di_5a00 = overkill_xy_to_di_5a00
+overkill_cga_xy_to_di_5a24 = overkill_xy_to_di_5a24
+
+
+
+@registry.replace(0x1010, 0x5A6C, "overkill_menu_cell_source_blit_dispatch_5a6c")
+def overkill_menu_cell_source_blit_dispatch_5a6c(cpu):
+    """Hook wrapper for OVERKILL 1010:5A6C source-cell mode dispatch."""
+    if not _code_matches(cpu, 0x5A6C, _SIG_5A6C):
+        _interpret_current_instruction_without_hook(cpu)
+        return
+    dispatch_menu_cell_source_blit_5a6c(cpu)
 
 @registry.replace(0x1010, 0x5AC8, "overkill_dispatch_draw_object_5ac8")
 def overkill_dispatch_draw_object_5ac8(cpu):

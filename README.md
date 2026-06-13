@@ -55,6 +55,67 @@ The runtime is a hybrid:
 The important boundary is not "Python versus ASM"; it is "verified versus not
 verified".
 
+## Methodology In One Loop
+
+The reusable workflow for this project is:
+
+```text
+observe -> classify -> choose boundary -> build ASM oracle -> implement hook -> verify -> document -> move to island
+```
+
+New work usually starts as an exact `CS:IP` hook in `replacements.py`.  Once the
+behavior is understood, the implementation moves into a coherent game module
+under `overkill_port/games/overkill/`, while `replacements.py` keeps only the
+address-facing wrapper.  This keeps reverse-engineering flexible without letting
+the staging file become the permanent source port.
+
+The full playbook is in `docs/source_port_methodology.md`. The compact project mantra is: do not write a source port first and hope it matches; exhaust truth from the original first, then let the source port crystallize from that evidence.
+
+
+## Long-Term Shape
+
+The source port is expected to crystallize upward through layers rather than be
+rewritten top-down.  Today many gameplay paths are still verified object-slot
+logic: fields, sprites, movement, collision, postmove tails, and renderer
+presenters.  Over time these should form clearer systems, then archetypes, then
+a semantic game model.
+
+```text
+8. Modern game / enhanced port layer
+7. Semantic game model layer
+6. Gameplay archetype layer
+5. Game systems layer
+4. Runtime object/data model layer
+3. Verified lifted routine layer
+2. ASM-compatible hook/runtime layer
+1. Original binary oracle layer
+```
+
+The rule is: let high-level meaning emerge from verified lower-level evidence.
+Do not guess a semantic model just because a sprite or behavior looks familiar.
+
+
+## Crystallization Rules
+
+The project uses a strict evidence ladder. A higher layer may only be created
+from proof in the layer below it. It is fine to investigate rendering, asset
+loading, collision, input, and sound in parallel, but their outputs must remain
+separate until the evidence converges.
+
+Practical consequences:
+
+- `ObjectSlot` comes before `Enemy`.
+- `ObjectKindCandidate` comes before a definitive archetype name.
+- Refactors must not change behavior.
+- Fixes must not introduce semantic models.
+- Lower layers must not import higher layers.
+- Every semantic name must be traceable back to original slots, behavior IDs,
+  verified routines, and snapshots/traces.
+
+`docs/island_truth_tables.md` tracks per-island confidence: what is known, what
+is verified, what is guessed, what remains unknown, and which tests/snapshots
+cover it.
+
 ## Repository Layout
 
 ```text
@@ -70,6 +131,12 @@ overkill_port/
   hook_verify.py        live differential hook verifier
   frame_verify.py       frame-level oracle comparison helpers
   games/overkill/       lifted game-specific source-port logic
+    asm.py              shared 8086-style helper functions
+    asset_codecs/       asset streams, checksum, RLE/LZ, decoded asset table
+    file_io/            overlay/container file orchestration
+    gameplay/           objects, movement, collision, game-state counters
+    rendering/          startup graphics, coordinates, video primitives, layer sprites
+    sounds/             timer and PC speaker behavior
 assets/                 local user-supplied original game files
 artifacts/              root kept for live `play_*` captures
   evidence/             non-play evidence snapshots, traces, and probes
@@ -172,13 +239,14 @@ Stable game-specific code belongs under `overkill_port/games/overkill/`.
 
 Examples of source-port islands include:
 
-- asset codecs and startup materialization,
-- overlay loading and directory scan helpers,
-- startup graphics expansion,
-- coordinate/address helpers,
-- Tandy rendering primitives,
-- shared layer sprite dispatch,
-- gameplay/object/collision logic once proven.
+- `asset_codecs`: packed streams, checksum, RLE/LZ, decoded asset tables,
+- `overlay`: overlay signature/directory/name/path/XOR helpers,
+- `file_io`: overlay/container open/read/seek orchestration,
+- `startup_graphics`: startup renderer table and graphics materialization helpers,
+- `rendering`: coordinate/address helpers, Tandy/CGA/EGA primitives, layer sprites,
+- `gameplay`: object scan, movement, object behavior, postmove, collision tails,
+- `sounds`: timer ISR and PC speaker behavior,
+- `input_menu`: keyboard polling and interactive wait/yield points.
 
 Use the audit script to see whether an island still has obvious open seams:
 
@@ -190,9 +258,9 @@ python scripts/audit_islands.py
 closure signal, not a substitute for oracle evidence.
 
 The asset-codec work now lives under `overkill_port/games/overkill/asset_codecs/`
-and includes the lifted overlay read/decode/normalize/compare helpers. Keep new
-replacement logic there once it is verified well enough to move out of
-`replacements.py`.
+and is limited to bytes becoming decoded asset data. Overlay helpers, file I/O,
+renderer startup materialization, and gameplay counters are separate islands even
+when their original addresses are physically near loader or overlay code.
 
 ## Artifacts
 
@@ -224,6 +292,7 @@ explicitly requested.
 - `RUN_STATUS.md`: current checkpoint and recent commands.
 - `docs/runtime_findings.md`: accumulated reverse-engineering findings.
 - `docs/design.md`: runtime architecture notes.
+- `docs/source_port_methodology.md`: reusable evidence-driven porting workflow.
 - `docs/next_steps.md`: tactical investigation notes when useful.
 - `symbols.json`: address labels, hypotheses, and replacement status.
 

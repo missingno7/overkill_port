@@ -8,17 +8,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from overkill_port.coverage import ISLANDS as COVERAGE_ISLANDS, OverkillCoverageClassifier  # noqa: E402
 from overkill_port.hook_verify import DEFAULT_STOPS  # noqa: E402
 from overkill_port.hooks import registry  # noqa: E402
 import overkill_port.replacements  # noqa: F401,E402  # registers hooks
 
-
 Addr = tuple[int, int]
-
 
 @dataclass(frozen=True)
 class Island:
@@ -26,127 +24,77 @@ class Island:
     title: str
     module_paths: tuple[Path, ...]
 
-
 ISLANDS: tuple[Island, ...] = (
-    Island(
-        "asset_codecs",
-        "asset loading / asset codecs / startup materialization",
-        (
-            ROOT / "overkill_port/games/overkill/asset_codecs/checksum.py",
-            ROOT / "overkill_port/games/overkill/asset_codecs/lz.py",
-            ROOT / "overkill_port/games/overkill/asset_codecs/packed_stream.py",
-            ROOT / "overkill_port/games/overkill/asset_codecs/rle.py",
-        ),
-    ),
-    Island(
-        "overlay",
-        "overlay loading / overlay decode / overlay directory scan",
-        (ROOT / "overkill_port/games/overkill/asset_codecs/overlay.py",),
-    ),
-    Island(
-        "startup_graphics",
-        "startup graphics expansion",
-        (
-            ROOT / "overkill_port/games/overkill/asset_codecs/startup_graphics.py",
-            ROOT / "overkill_port/games/overkill/rendering/tandy.py",
-        ),
-    ),
-    Island(
-        "coordinates",
-        "coordinate/address helpers",
-        (ROOT / "overkill_port/games/overkill/rendering/coordinates.py",),
-    ),
-    Island(
-        "layer_sprites",
-        "shared layer sprite dispatch",
-        (ROOT / "overkill_port/games/overkill/rendering/layer_sprites.py",),
-    ),
-    Island(
-        "tandy_rendering",
-        "Tandy-specific rendering primitives",
-        (ROOT / "overkill_port/games/overkill/rendering/tandy.py",),
-    ),
+    Island("asset_codecs", "asset loading / non-overlay codecs", (
+        ROOT / "overkill_port/games/overkill/asset_codecs/asset_table.py",
+        ROOT / "overkill_port/games/overkill/asset_codecs/checksum.py",
+        ROOT / "overkill_port/games/overkill/asset_codecs/lz.py",
+        ROOT / "overkill_port/games/overkill/asset_codecs/packed_stream.py",
+        ROOT / "overkill_port/games/overkill/asset_codecs/rle.py",
+    )),
+    Island("overlay", "overlay directory / overlay decode helpers", (
+        ROOT / "overkill_port/games/overkill/asset_codecs/overlay.py",
+    )),
+    Island("file_io", "file I/O and overlay/container parent loaders", (
+        ROOT / "overkill_port/games/overkill/file_io/overlay_loader.py",
+    )),
+    Island("bootstrap", "transient unpack/self-relocation bootstrap", ()),
+    Island("startup_graphics", "startup graphics / renderer table materialization", (
+        ROOT / "overkill_port/games/overkill/rendering/startup_graphics.py",
+        ROOT / "overkill_port/games/overkill/rendering/tandy.py",
+    )),
+    Island("coordinates", "coordinate/address helpers", (
+        ROOT / "overkill_port/games/overkill/rendering/coordinates.py",
+    )),
+    Island("layer_sprites", "shared layer sprite dispatch / presence lists", (
+        ROOT / "overkill_port/games/overkill/rendering/layer_sprites.py",
+    )),
+    Island("tandy_renderer", "Tandy-specific rendering primitives", (
+        ROOT / "overkill_port/games/overkill/rendering/tandy.py",
+    )),
+    Island("cga_renderer", "CGA / packed-row rendering primitives", (
+        ROOT / "overkill_port/replacements.py",
+    )),
+    Island("ega_renderer", "EGA planar rendering primitives", (
+        ROOT / "overkill_port/replacements.py",
+    )),
+    Island("game_state", "per-frame game-state counters and orchestration", (
+        ROOT / "overkill_port/games/overkill/gameplay/game_state.py",
+    )),
+    Island("gameplay_objects", "runtime object slot behavior and dispatch", (
+        ROOT / "overkill_port/games/overkill/gameplay/object_runtime.py",
+        ROOT / "overkill_port/games/overkill/gameplay/objects.py",
+    )),
+    Island("movement", "movement helpers", (
+        ROOT / "overkill_port/replacements.py",
+    )),
+    Island("collision", "tile/object collision and contact helpers", (
+        ROOT / "overkill_port/games/overkill/gameplay/collision.py",
+    )),
+    Island("input_menu", "input/menu/prompt/pacing helpers", (
+        ROOT / "overkill_port/games/overkill/input_menu.py",
+    )),
+    Island("sound", "timer IRQ / PC speaker sound", (
+        ROOT / "overkill_port/games/overkill/sounds/pc_speaker.py",
+    )),
+    Island("unknown", "unclassified", ()),
 )
 
+ISLAND_MAP = {island.key: island for island in ISLANDS}
 
-STARTUP_GRAPHICS_ADDRS: set[Addr] = {
-    (0x1010, 0x33B2),
-    (0x1010, 0x33DD),
-    (0x1010, 0x450C),
-    (0x1010, 0x4511),
-    (0x1010, 0x4537),
-    (0x1010, 0x45CB),
-    (0x1010, 0x45F6),
-}
-
-COORDINATE_ADDRS: set[Addr] = {
-    (0x1010, 0x5A00),
-    (0x1010, 0x5A24),
-    (0x1010, 0x5A36),
-}
-
-LAYER_SPRITE_ADDRS: set[Addr] = {
-    (0x1010, 0x75A6),
-    (0x1010, 0x768E),
-    (0x1010, 0x7746),
-    (0x1010, 0xA87C),
-    (0x1010, 0xA894),
-    (0x1010, 0xA8C7),
-}
-
-TANDY_RENDER_ADDRS: set[Addr] = {
-    (0x1010, 0x2E6E),
-    (0x1010, 0x2ECB),
-    (0x1010, 0x2F40),
-    (0x1010, 0x2F81),
-    (0x1010, 0x2FB6),
-    (0x1010, 0x3354),
-    (0x1010, 0x34AD),
-    (0x1010, 0x34C5),
-    (0x1010, 0x34D8),
-    (0x1010, 0x3542),
-    (0x1010, 0x356C),
-    (0x1010, 0x3657),
-    (0x1010, 0x35AA),
-    (0x1010, 0x35CC),
-    (0x1010, 0x375B),
-}
-
-ASSET_CODEC_NAME_RE = re.compile(
-    r"(checksum|packed|lz_|lz_decoder|rle|vertical_rle|linear_byte_rle|output_byte|input_byte|backref)",
-    re.IGNORECASE,
-)
+# Keep the tool honest if coverage.py gains/removes a dashboard island.
+missing_in_audit = set(COVERAGE_ISLANDS) - set(ISLAND_MAP)
+if missing_in_audit:
+    raise RuntimeError(f"audit_islands.py missing coverage islands: {sorted(missing_in_audit)}")
 
 
 def fmt_addr(addr: Addr) -> str:
     return f"{addr[0]:04X}:{addr[1]:04X}"
 
 
-def classify_hook(addr: Addr, name: str) -> str | None:
-    lname = name.lower()
-    if addr[0] == 0x254A or "overlay" in lname:
-        return "overlay"
-    if addr in STARTUP_GRAPHICS_ADDRS:
-        return "startup_graphics"
-    if addr in COORDINATE_ADDRS:
-        return "coordinates"
-    if addr in LAYER_SPRITE_ADDRS:
-        return "layer_sprites"
-    if addr in TANDY_RENDER_ADDRS:
-        return "tandy_rendering"
-    if ASSET_CODEC_NAME_RE.search(name):
-        return "asset_codecs"
-    return None
-
-
-def classify_symbol(addr_text: str, value: Any) -> str | None:
-    try:
-        cs_s, ip_s = addr_text.split(":")
-        addr = (int(cs_s, 16), int(ip_s, 16))
-    except ValueError:
-        return None
-    text = json.dumps(value, sort_keys=True) if not isinstance(value, str) else value
-    return classify_hook(addr, text)
+def parse_addr(text: str) -> Addr:
+    cs, ip = text.split(":")
+    return int(cs, 16), int(ip, 16)
 
 
 def load_text(paths: list[Path]) -> str:
@@ -160,8 +108,7 @@ def load_text(paths: list[Path]) -> str:
 def test_mentions_for(addr: Addr, names: tuple[str, ...], tests_text: str) -> list[str]:
     needles = {fmt_addr(addr), f"0x{addr[1]:04X}", f"0x{addr[1]:04x}", f"{addr[0]:04X}, 0x{addr[1]:04X}"}
     needles.update(n for n in names if n)
-    found = sorted(n for n in needles if n and n in tests_text)
-    return found
+    return sorted(n for n in needles if n and n in tests_text)
 
 
 def parse_trace(path: Path | None) -> set[Addr]:
@@ -186,7 +133,7 @@ def module_seams(island: Island) -> list[str]:
     )
     seams: list[str] = []
     for path in island.module_paths:
-        if not path.exists():
+        if not path.exists() or path.name == "replacements.py":
             continue
         rel = path.relative_to(ROOT)
         for lineno, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
@@ -196,9 +143,46 @@ def module_seams(island: Island) -> list[str]:
     return seams
 
 
+def import_seams() -> list[str]:
+    """Report obvious lower->higher island imports inside game modules."""
+    order = {
+        "asm": 0,
+        "asset_codecs": 1,
+        "overlay": 1,
+        "file_io": 2,
+        "startup_graphics": 2,
+        "coordinates": 2,
+        "layer_sprites": 3,
+        "tandy_renderer": 3,
+        "cga_renderer": 3,
+        "ega_renderer": 3,
+        "game_state": 4,
+        "movement": 4,
+        "collision": 4,
+        "gameplay_objects": 4,
+        "input_menu": 4,
+        "sound": 4,
+    }
+    # Currently this is intentionally conservative; it flags only game modules
+    # that import from an obviously higher conceptual directory.
+    seams: list[str] = []
+    for path in (ROOT / "overkill_port/games/overkill").rglob("*.py"):
+        rel = path.relative_to(ROOT)
+        text = path.read_text(encoding="utf-8", errors="replace")
+        if "games.overkill.gameplay" in text and "asset_codecs" in str(rel):
+            seams.append(f"{rel}: asset codec imports gameplay layer")
+        if "games.overkill.rendering" in text and "asset_codecs" in str(rel):
+            seams.append(f"{rel}: asset codec imports rendering layer")
+        if "games.overkill.gameplay" in text and "rendering" in str(rel):
+            seams.append(f"{rel}: rendering imports gameplay layer")
+    return seams
+
+
 def build_report(trace_path: Path | None = None) -> dict[str, Any]:
     tests_text = load_text(list((ROOT / "tests").glob("test_*.py")))
-    symbols = json.loads((ROOT / "symbols.json").read_text(encoding="utf-8"))
+    symbols_path = ROOT / "symbols.json"
+    symbols = json.loads(symbols_path.read_text(encoding="utf-8")) if symbols_path.exists() else {}
+    classifier = OverkillCoverageClassifier(symbols_path)
     trace_seen = parse_trace(trace_path)
 
     by_island: dict[str, dict[str, Any]] = {
@@ -215,34 +199,30 @@ def build_report(trace_path: Path | None = None) -> dict[str, Any]:
     }
 
     for addr, repl in sorted(registry.replacements.items()):
-        island_key = classify_hook(addr, repl.name)
-        if island_key is None:
-            continue
-        handler_name = getattr(repl.handler, "__name__", "")
-        mentions = test_mentions_for(addr, (repl.name, handler_name), tests_text)
-        item = {
-            "addr": fmt_addr(addr),
-            "name": repl.name,
-            "handler": handler_name,
-            "has_verifier_metadata": addr in DEFAULT_STOPS,
-            "test_mentions": mentions,
-            "trace_hit": addr in trace_seen if trace_path else None,
-        }
-        by_island[island_key]["hooks"].append(item)
-        if addr not in DEFAULT_STOPS:
-            by_island[island_key]["missing_verifier_metadata"].append(item["addr"])
-        if not mentions:
-            by_island[island_key]["missing_test_mentions"].append(item["addr"])
-        if trace_path and addr in trace_seen:
-            by_island[island_key]["trace_hits"].append(item["addr"])
+        island_key = classifier.classify(addr, repl.name)
+        info = by_island[island_key]
+        item = {"addr": fmt_addr(addr), "name": repl.name}
+        item["has_verifier_metadata"] = addr in DEFAULT_STOPS
+        item["test_mentions"] = test_mentions_for(addr, (repl.name, repl.handler.__name__), tests_text)
+        item["seen_in_trace"] = addr in trace_seen
+        info["hooks"].append(item)
+        if not item["has_verifier_metadata"]:
+            info["missing_verifier_metadata"].append(item["addr"])
+        if not item["test_mentions"]:
+            info["missing_test_mentions"].append(item["addr"])
+        if item["seen_in_trace"]:
+            info["trace_hits"].append(item["addr"])
 
-    review_words = ("candidate", "frontier", "unverified", "fallback", "next target", "active investigation")
     for addr_text, value in symbols.items():
-        island_key = classify_symbol(addr_text, value)
-        if island_key is None:
+        try:
+            addr = parse_addr(addr_text)
+        except Exception:
             continue
-        text = json.dumps(value, sort_keys=True).lower() if not isinstance(value, str) else value.lower()
-        if any(word in text for word in review_words):
+        island_key = classifier.classify(addr)
+        if island_key == "unknown":
+            continue
+        text = json.dumps(value, sort_keys=True) if not isinstance(value, str) else value
+        if any(word in text.lower() for word in ("candidate", "frontier", "unverified", "fallback")):
             by_island[island_key]["symbols_to_review"].append({addr_text: value})
 
     for island_key, info in by_island.items():
@@ -255,16 +235,23 @@ def build_report(trace_path: Path | None = None) -> dict[str, Any]:
             blockers.append("symbols still marked candidate/frontier/unverified/fallback")
         if info["module_seams"]:
             blockers.append("module contains explicit seam markers")
-        info["hook_count"] = len(info["hooks"])
-        info["exhaustion_status"] = "closed-candidate" if not blockers else "open"
         info["blockers"] = blockers
+        info["status"] = "closed-candidate" if info["hooks"] and not blockers else ("classified" if island_key == "bootstrap" else "open")
+    by_island["_import_seams"] = {"items": import_seams()}
     return by_island
 
 
-def print_report(report: dict[str, Any], *, show_all_hooks: bool) -> None:
-    for island_key, info in report.items():
-        print(f"\n== {info['title']} ({island_key}) ==")
-        print(f"status: {info['exhaustion_status']}  hooks: {info['hook_count']}")
+def print_report(report: dict[str, Any], *, all_hooks: bool = False) -> None:
+    import_seams = report.pop("_import_seams", {"items": []})["items"]
+    if import_seams:
+        print("\n== import seams ==")
+        for item in import_seams:
+            print(f"  - {item}")
+
+    for island in ISLANDS:
+        info = report[island.key]
+        print(f"\n== {info['title']} ({island.key}) ==")
+        print(f"status: {info['status']}  hooks: {len(info['hooks'])}")
         if info["blockers"]:
             print("blockers:")
             for blocker in info["blockers"]:
@@ -272,47 +259,39 @@ def print_report(report: dict[str, Any], *, show_all_hooks: bool) -> None:
         if info["missing_verifier_metadata"]:
             print("missing verifier metadata:", ", ".join(info["missing_verifier_metadata"]))
         if info["missing_test_mentions"]:
-            print("missing test mentions:", ", ".join(info["missing_test_mentions"]))
+            print("missing test mentions:", ", ".join(info["missing_test_mentions"][:20]))
+            if len(info["missing_test_mentions"]) > 20:
+                print(f"  ... +{len(info['missing_test_mentions']) - 20} more")
         if info["symbols_to_review"]:
             print("symbols to review:")
-            for item in info["symbols_to_review"]:
-                addr, value = next(iter(item.items()))
-                if isinstance(value, dict):
-                    label = value.get("name") or value.get("status") or ""
-                    status = value.get("status", "")
-                    print(f"  - {addr} {label} {status}".rstrip())
-                else:
-                    print(f"  - {addr} {value}")
+            for item in info["symbols_to_review"][:10]:
+                print(f"  - {next(iter(item))} {next(iter(item.values()))}")
+            if len(info["symbols_to_review"]) > 10:
+                print(f"  ... +{len(info['symbols_to_review']) - 10} more")
         if info["module_seams"]:
             print("module seams:")
-            for seam in info["module_seams"][:12]:
+            for seam in info["module_seams"][:20]:
                 print(f"  - {seam}")
-            if len(info["module_seams"]) > 12:
-                print(f"  - ... {len(info['module_seams']) - 12} more")
+            if len(info["module_seams"]) > 20:
+                print(f"  ... +{len(info['module_seams']) - 20} more")
         if info["trace_hits"]:
             print("trace hits:", ", ".join(info["trace_hits"]))
-        if show_all_hooks:
+        if all_hooks:
             print("hooks:")
             for hook in info["hooks"]:
-                meta = "meta" if hook["has_verifier_metadata"] else "no-meta"
-                tests = "tests" if hook["test_mentions"] else "no-tests"
-                print(f"  - {hook['addr']} {hook['name']} [{meta}, {tests}]")
+                flags = []
+                flags.append("meta" if hook["has_verifier_metadata"] else "no-meta")
+                flags.append("tests" if hook["test_mentions"] else "no-tests")
+                print(f"  - {hook['addr']} {hook['name']} [{', '.join(flags)}]")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Report closure signals for existing OVERKILL source-port islands.")
+    parser = argparse.ArgumentParser(description="Report closure signals for OVERKILL source-port islands.")
     parser.add_argument("--trace", type=Path, default=None, help="optional trace file to mark island hook addresses seen in execution")
-    parser.add_argument("--json", action="store_true", help="emit machine-readable JSON")
     parser.add_argument("--all-hooks", action="store_true", help="show every hook assigned to each island")
     args = parser.parse_args()
-
-    report = build_report(args.trace)
-    if args.json:
-        print(json.dumps(report, indent=2))
-    else:
-        print_report(report, show_all_hooks=args.all_hooks)
+    print_report(build_report(args.trace), all_hooks=args.all_hooks)
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

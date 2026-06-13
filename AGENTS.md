@@ -44,11 +44,136 @@ Use these files for different kinds of truth:
   near-term work.
 - `docs/runtime_findings.md`: accumulated reverse-engineering findings,
   address meanings, pitfalls, and hook explanations.
+- `docs/island_truth_tables.md`: per-island confidence, known facts, guesses,
+  frontiers, staged hooks, and test/snapshot coverage.
 - `symbols.json`: known addresses, names, hypotheses, and replacement status.
 - `tests/`: executable proof for CPU behavior and replacement equivalence.
 - `artifacts/`: evidence snapshots and traces used by tests or findings.
 
 Keep durable policy here. Keep time-sensitive status in `RUN_STATUS.md`.
+
+## Canonical Workflow
+
+Use the same loop for OVERKILL and for any future game handled by this
+runtime-first source-port method:
+
+```text
+observe -> classify -> choose boundary -> build ASM oracle -> implement hook -> verify -> document -> move to island
+```
+
+The full reusable process is documented in
+`docs/source_port_methodology.md`.  Treat that file as the project playbook and
+this `AGENTS.md` as the local guardrail sheet.
+
+Important staging rule:
+
+- new, uncertain, or address-shape-sensitive replacements may start in
+  `replacements.py`;
+- once the subsystem is understood, move the behavior into
+  `overkill_port/games/overkill/<island>/`;
+- leave only the exact `CS:IP` registration wrapper in `replacements.py`;
+- before adding a helper, search for an existing tail/helper with the same
+  original address or continuation so the code does not grow duplicate
+  implementations.
+
+
+
+## Logic Crystallization Rule
+
+The project grows upward through layers.  Do not force a high-level game model
+before the lower layers prove it.  The useful end-state pyramid is:
+
+```text
+8. Modern game / enhanced port layer
+7. Semantic game model layer
+6. Gameplay archetype layer
+5. Game systems layer
+4. Runtime object/data model layer
+3. Verified lifted routine layer
+2. ASM-compatible hook/runtime layer
+1. Original binary oracle layer
+```
+
+When working on objects, it is acceptable and often correct to describe them as
+slots with sprite/layer/logic-id/movement/collision fields.  Promote them to
+player/enemy/projectile/pickup/boss archetypes only when multiple verified
+routines make that identity stable.
+
+A semantic name must be reversible back to evidence:
+
+```text
+semantic name -> runtime slot/fields -> verified lifted routine -> original ASM trace/snapshot
+```
+
+If that chain does not exist, use a candidate name with evidence and confidence
+instead of a definitive gameplay entity.
+
+### Layer Boundaries For Tasks
+
+Every non-trivial task should state which layer it is working in. Examples:
+
+```text
+Work only in the verified lifted routine layer.
+Do not introduce high-level gameplay abstractions.
+Preserve CPU-visible side effects exactly.
+Move implementation out of replacements.py into rendering/ega.py.
+```
+
+```text
+Work in the runtime object model layer.
+Do not classify enemies yet.
+Extract object slot accessors and debug dumps showing active slots,
+coordinates, sprite refs, behavior ids, and state changes.
+```
+
+```text
+Work in the semantic classification layer.
+Use existing traces only.
+Do not change runtime behavior.
+Produce candidate classifications with evidence, not hardcoded gameplay logic.
+```
+
+Hard separation:
+
+```text
+refactor task != fix task
+fix task != semantic modeling task
+semantic task != renderer cleanup task
+```
+
+### Dependency Direction
+
+Lower layers must not import higher layers:
+
+```text
+asset_codecs        must not know Enemy
+rendering           must not know Boss
+collision           must not know level story
+object_runtime      must not know modern UI
+semantic model      may read lower-layer evidence
+modern renderer     may read semantic model
+```
+
+Dependencies point upward only:
+
+```text
+original oracle -> ASM runtime -> lifted routines -> runtime model -> systems -> semantic entities -> modern port
+```
+
+
+
+## Hard Anti-Chaos Rules
+
+1. Fidelity first, readability second, meaning third.
+2. Do not add high-level gameplay names without evidence.
+3. Refactors must not change behavior.
+4. Fixes must not introduce semantic models.
+5. `replacements.py` should become registry glue only.
+6. `ObjectSlot` before `Enemy`; candidate before definitive name.
+7. Every semantic name needs an evidence trace.
+8. Lower layers must not import higher layers.
+9. Parallel island investigation is allowed; premature final abstraction is not.
+10. Every island should maintain a truth table in `docs/island_truth_tables.md`.
 
 ## Repository Layout
 
@@ -65,6 +190,12 @@ overkill_port/
   hook_verify.py        live differential hook verifier
   frame_verify.py       frame-level oracle comparison helpers
   games/overkill/       lifted game-specific source-port logic
+    asm.py              shared 8086-style helpers for lifted code
+    asset_codecs/       decoded asset streams, RLE/LZ, overlay decode helpers
+    file_io/            overlay/container file orchestration
+    gameplay/           object, movement, collision, and postmove logic
+    rendering/          video-mode helpers, Tandy primitives, layer sprites
+    sounds/             timer/speaker lifted behavior
 assets/                 user-supplied original game files
 artifacts/              generated oracle snapshots, traces, and evidence
 docs/                   design notes and runtime findings
@@ -310,6 +441,7 @@ Update documentation with the same discipline as code:
 - `docs/runtime_findings.md` for durable reverse-engineering facts.
 - `RUN_STATUS.md` for current progress and recently run commands.
 - `README.md` for project overview and contributor onboarding.
+- `docs/source_port_methodology.md` for the reusable porting workflow.
 - `AGENTS.md` for durable agent workflow and guardrails.
 
 ## Style Rules

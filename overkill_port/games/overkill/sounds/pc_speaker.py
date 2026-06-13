@@ -24,6 +24,61 @@ from overkill_port.cpu import CF, IF, TF
 SIG_FAST_TIMER_ISR_06E5 = bytes.fromhex("50 1e 53 51 52 57 56 55 06 2e 8e 1e 96 95 80 3e")
 SIG_PC_SPEAKER_TICK_D50E = bytes.fromhex("fe 06 00 bf 80 26 00 bf 03 a0 ff be 0a c0 74 03")
 
+
+SIG_TIMER_CLEAR_0672 = bytes.fromhex("2e c6 06 6b 06 00 c3")
+SIG_TIMER_WAIT_0679 = bytes.fromhex("2e 80 3e 6b 06 00 74 f8 c3")
+
+
+def run_clear_timer_tick_flag_0672(cpu, self_disable_if_patched) -> None:
+    """Lift OVERKILL 1010:0672: clear the frame timer flag and RET.
+
+    This is the small companion to the already lifted 1010:0679 wait loop.
+    Main/gameplay loops call 0672 before doing a frame worth of work, then call
+    0679 to wait until the installed IRQ0 handler advances CS:066B.
+    """
+    if self_disable_if_patched(cpu, 0x0672, SIG_TIMER_CLEAR_0672, "overkill_clear_timer_tick_flag_0672"):
+        return
+    cs = cpu.s.cs & 0xFFFF
+    cpu.mem.wb(cs, 0x066B, 0)
+    cpu.s.ip = cpu.pop()
+
+
+def run_wait_timer_tick_0679(cpu) -> None:
+    """Lift OVERKILL 1010:0679 timer-tick busy wait.
+
+    Original routine::
+
+        0679  cmp byte ptr cs:[066B],0
+        067F  jz   0679
+        0681  ret
+
+    The flag at CS:066B is normally incremented by the installed IRQ0 handler
+    (1010:06E5).  Since the Python VM does not receive asynchronous hardware
+    IRQs, this hook explicitly delivers the game's timer ISR until the flag is
+    advanced, then models the final exiting CMP/JZ/RET iteration.
+    """
+    cs = cpu.s.cs & 0xFFFF
+    flag = cpu.mem.rb(cs, 0x066B)
+    cpu.timer_ticks_elapsed = 0
+    if flag == 0:
+        delivered = 0
+        while flag == 0 and delivered < 8:
+            if not deliver_overkill_timer_irq0(cpu):
+                raise RuntimeError(
+                    "1010:0679 timer wait needs OVERKILL INT 08h at 1010:06E5; "
+                    "no synthetic timer fallback is allowed"
+                )
+            delivered += 1
+            flag = cpu.mem.rb(cs, 0x066B)
+        if flag == 0:
+            raise RuntimeError("1010:06E5 timer ISR did not advance CS:066B within 8 ticks")
+        cpu.timer_ticks_elapsed = delivered
+
+    _cmp_byte(cpu, flag, 0)
+    cpu.s.ip = cpu.pop()
+    if cpu.timer_pacer is not None:
+        cpu.timer_pacer()
+
 # PIT divisor programmed by OVERKILL's 1010:068A installer.
 OVERKILL_PIT_HZ = 1193182.0 / 0x4000
 

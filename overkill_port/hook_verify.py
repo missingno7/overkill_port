@@ -41,6 +41,8 @@ class HookStop:
             if self.ip is None:
                 raise ValueError("near_ret_or_fixed_ip hook metadata needs ip")
             return ((cs, cpu.mem.rw(before.ss, before.sp)), (cs, self.ip & 0xFFFF))
+        if self.kind == "near_ret_or_fixed_ips":
+            return ((cs, cpu.mem.rw(before.ss, before.sp)),) + tuple((cs, ip & 0xFFFF) for ip in self.ips)
         if self.kind == "far_ret":
             return ((cpu.mem.rw(before.ss, (before.sp + 2) & 0xFFFF), cpu.mem.rw(before.ss, before.sp)),)
         if self.kind == "iret":
@@ -77,6 +79,10 @@ class HookStop:
             obj_type = cpu.mem.rw(before.ss, (before.bp + 0x14) & 0xFFFF)
             bx = ((obj_type + mode + mode + mode) << 1) & 0xFFFF
             return ((cs, cpu.mem.rw(cs, (0x5AE2 + bx) & 0xFFFF)),)
+        if self.kind == "dispatch_5a6c":
+            mode = cpu.mem.rw(cs, 0x95BC)
+            bx = ((mode & 0xFFFF) << 1) & 0xFFFF
+            return ((cs, cpu.mem.rw(cs, (0x5A78 + bx) & 0xFFFF)),)
         if self.kind == "dispatch_5a92":
             mode = cpu.mem.rw(cs, 0x95BC)
             obj_type = cpu.mem.rw(before.ss, (before.bp + 0x14) & 0xFFFF)
@@ -104,6 +110,30 @@ class HookStop:
                 if cx == 0:
                     break
             return ((cs, done_ip),)
+        if self.kind == "scan_present_pair_a90c":
+            def scan(table_base: int, count: int, call_ip: int, done_ip: int) -> tuple[Addr, bool]:
+                cx = count & 0xFFFF
+                if cx == 0:
+                    cx = 0x10000
+                ds = before.ds & 0xFFFF
+                ss = before.ss & 0xFFFF
+                while cx:
+                    bx = ((cx & 0xFFFF) << 1) & 0xFFFF
+                    bp = cpu.mem.rw(ds, (table_base + bx) & 0xFFFF)
+                    if cpu.mem.rw(ss, bp & 0xFFFF) != 0:
+                        return (cs, call_ip), False
+                    cx = (cx - 1) & 0xFFFF
+                    if cx == 0:
+                        break
+                return (cs, done_ip), True
+
+            target, done = scan(0x8D12, 0x0022, 0xA91E, 0xA924)
+            if not done:
+                return (target,)
+            target, done = scan(0x32CA, 0x0024, 0xA936, 0xA93C)
+            if not done:
+                return (target,)
+            return ((cs, cpu.mem.rw(before.ss, before.sp)),)
         if self.kind == "scan_draw_a849":
             cx = before.cx & 0xFFFF
             if cx == 0:
@@ -198,16 +228,22 @@ class HookVerifierConfig:
     asm_max_steps: int = 500_000
     full_memory: bool = False
     require_metadata: bool = False
+    progress_callback: Callable[[str], None] | None = None
 
 
 DEFAULT_STOPS: dict[Addr, HookStop] = {
     (0x1010, 0x06E5): HookStop("iret"),
+    (0x1010, 0x0679): HookStop("near_ret"),
+    (0x1010, 0x0672): HookStop("near_ret"),
     (0x1010, 0x3153): HookStop("near_ret"),
     (0x1010, 0x519A): HookStop("near_ret"),
     (0x1010, 0x5F06): HookStop("near_ret"),
     (0x1010, 0xBDE3): HookStop("near_ret_or_fixed_ip", 0x5059),
+    (0x1F8F, 0x0922): HookStop("far_ret"),
     (0x1F8F, 0x0960): HookStop("near_ret"),
+    (0x1010, 0x0162): HookStop("near_ret"),
     (0x1010, 0x017E): HookStop("fixed_ip", 0x018B),
+    (0x254A, 0x04D7): HookStop("far_ret"),
     (0x254A, 0x05A1): HookStop("fixed_ips", ips=(0x0607, 0x0640)),
     (0x254A, 0x05D9): HookStop("fixed_ips", ips=(0x0607, 0x0637)),
     (0x254A, 0x05BF): HookStop("fixed_ip", 0x05C6),
@@ -218,8 +254,11 @@ DEFAULT_STOPS: dict[Addr, HookStop] = {
     (0x1010, 0x03A8): HookStop("fixed_ips", ips=(0x02A8, 0x02B2)),
     (0x1010, 0x0615): HookStop("near_ret"),
     (0x1010, 0x0624): HookStop("near_ret"),
+    (0x1010, 0x0F0B): HookStop("fixed_ip", 0x526A),
     (0x1010, 0x0FA3): HookStop("fixed_ip", 0x526A),
     (0x1010, 0x0FE4): HookStop("near_ret"),
+    (0x1010, 0x96C5): HookStop("fixed_ip", 0x96CA),
+    (0x1010, 0x96C8): HookStop("fixed_ips", ips=(0x96C5, 0x96CA)),
     (0x1010, 0x103C): HookStop("near_ret"),
     (0x1010, 0x10B7): HookStop("near_ret"),
     (0x1010, 0x2193): HookStop("near_ret"),
@@ -249,6 +288,8 @@ DEFAULT_STOPS: dict[Addr, HookStop] = {
     (0x1010, 0x2F81): HookStop("near_ret"),
     (0x1010, 0x2FB6): HookStop("near_ret"),
     (0x1010, 0x306F): HookStop("near_ret"),
+    (0x1010, 0x30B0): HookStop("near_ret"),
+    (0x1010, 0x30BA): HookStop("near_ret"),
     (0x1010, 0x33AF): HookStop("fixed_ip", 0x44AA),
     (0x1010, 0x33B2): HookStop("fixed_ips", ips=(0x33AF, 0x44AA)),
     (0x1010, 0x3354): HookStop("near_ret"),
@@ -261,6 +302,7 @@ DEFAULT_STOPS: dict[Addr, HookStop] = {
     (0x1010, 0x36A2): HookStop("near_ret"),
     (0x1010, 0x60C5): HookStop("near_ret"),
     (0x1010, 0x375B): HookStop("near_ret"),
+    (0x1010, 0x4E0D): HookStop("near_ret"),
     (0x1010, 0x35AA): HookStop("near_ret"),
     (0x1010, 0x35CC): HookStop("near_ret"),
     (0x1010, 0x3657): HookStop("near_ret"),
@@ -278,6 +320,7 @@ DEFAULT_STOPS: dict[Addr, HookStop] = {
     (0x1010, 0x4537): HookStop("near_ret"),
     (0x1010, 0x45CB): HookStop("near_ret"),
     (0x1010, 0x45F6): HookStop("near_ret"),
+    (0x1010, 0xC713): HookStop("near_ret_or_fixed_ip", 0xC720),
     (0x1010, 0xC916): HookStop("fixed_ip", 0xC91F),
     (0x1010, 0xD50E): HookStop("near_ret"),
     (0x1010, 0xECF2): HookStop("near_ret"),
@@ -285,18 +328,27 @@ DEFAULT_STOPS: dict[Addr, HookStop] = {
     (0x1010, 0xED97): HookStop("near_ret"),
     (0x1010, 0xEDE9): HookStop("near_ret"),
     (0x1010, 0xCC7F): HookStop("fixed_ips", ips=(0xCE13, 0x24D7, 0xCDCC)),
+    (0x1010, 0xCD68): HookStop("fixed_ips", ips=(0xCE13, 0xCC7F, 0xCDCC)),
+    (0x1010, 0xCE40): HookStop("near_ret"),
+    (0x1010, 0xCE5C): HookStop("near_ret_or_fixed_ip", 0xCE40),
     (0x1010, 0xCCAA): HookStop("fixed_ip", 0xCD08),
     (0x1010, 0xCCC4): HookStop("fixed_ip", 0xCD08),
     (0x1010, 0xCCF0): HookStop("fixed_ip", 0xCD08),
     (0x1010, 0x4D15): HookStop("near_ret"),
+    (0x1010, 0x4D64): HookStop("near_ret"),
     (0x1010, 0x4D6F): HookStop("near_ret"),
+    (0x1010, 0x511F): HookStop("near_ret"),
+    (0x1010, 0x61C5): HookStop("near_ret"),
+    (0x1010, 0x61CA): HookStop("near_ret"),
     (0x1010, 0x5059): HookStop("near_ret"),
     (0x1010, 0x505B): HookStop("near_ret"),
     (0x1010, 0x5073): HookStop("near_ret"),
+    (0x1010, 0x5DB2): HookStop("near_ret"),
     (0x1010, 0x5827): HookStop("fixed_ip", 0x58A4),
     (0x1010, 0x5A00): HookStop("dispatch_5a00"),
     (0x1010, 0x5A24): HookStop("dispatch_5a24"),
     (0x1010, 0x5A36): HookStop("dispatch_5a36"),
+    (0x1010, 0x5A6C): HookStop("dispatch_5a6c"),
     (0x1010, 0x5AC8): HookStop("dispatch_5ac8"),
     (0x1010, 0x5A92): HookStop("dispatch_5a92"),
     (0x1010, 0x7596): HookStop("dispatch_7596"),
@@ -313,19 +365,32 @@ DEFAULT_STOPS: dict[Addr, HookStop] = {
     (0x1010, 0xA8C7): HookStop("scan_layer1_a8c7"),
     (0x1010, 0xA8F1): HookStop("dispatch_7596"),
     (0x1010, 0xA8F4): HookStop("fixed_ips", ips=(0xA8C7, 0xA8F7)),
+    (0x1010, 0xA90C): HookStop("scan_present_pair_a90c"),
     (0x1010, 0xA90F): HookStop("scan_present_a90f"),
     (0x1010, 0xA927): HookStop("scan_present_a927"),
+    (0x1010, 0xA93C): HookStop("near_ret"),
     (0x1010, 0xA936): HookStop("dispatch_5a92"),
     (0x1010, 0xA939): HookStop("fixed_ips", ips=(0xA927, 0xA93C)),
     (0x1010, 0xA9E0): HookStop("fixed_ips", ips=(0xAA01, 0xAA07)),
     (0x1010, 0xAA01): HookStop("dispatch_aa2b"),
     (0x1010, 0xAA04): HookStop("fixed_ips", ips=(0xA9E0, 0xAA07)),
+    (0x1010, 0xAB34): HookStop("near_ret"),
+    (0x1010, 0xAB4F): HookStop("near_ret"),
+    (0x1010, 0xAC28): HookStop("near_ret_or_fixed_ip", 0xAA44),
+    (0x1010, 0xAC81): HookStop("near_ret_or_fixed_ip", 0xACD9),
     (0x1010, 0xAC97): HookStop("near_ret_or_fixed_ip", 0xACD9),
     (0x1010, 0xBCB1): HookStop("near_ret"),
+    (0x1010, 0xBC45): HookStop("near_ret"),
     (0x1010, 0xBC4B): HookStop("near_ret"),
     (0x1010, 0xAA2B): HookStop("dispatch_aa2b"),
     (0x1010, 0xAA10): HookStop("fixed_ips", ips=(0xAA1F, 0xAA25)),
+    (0x1010, 0xAB10): HookStop("near_ret"),
+    (0x1010, 0xABA3): HookStop("near_ret_or_fixed_ips", ips=(0xABC0, 0xABBD, 0xACD9)),
+    (0x1010, 0xAB77): HookStop("near_ret_or_fixed_ips", ips=(0xAB8F, 0xAB8C, 0xACD9)),
     (0x1010, 0xEFAE): HookStop("dispatch_efae"),
+    (0x1010, 0xAE09): HookStop("near_ret"),
+    (0x1010, 0xAED8): HookStop("near_ret"),
+    (0x1010, 0xAD04): HookStop("near_ret_or_fixed_ips", ips=(0xABCA, 0xAB71, 0xAB69, 0xAB61, 0xAB59, 0xABA3)),
 }
 
 
@@ -344,6 +409,17 @@ class HookVerifier:
     def __init__(self, rt: Runtime, config: HookVerifierConfig) -> None:
         self.rt = rt
         self.config = config
+        # Keep the hook table as it looked when verification was installed.
+        # scripts/play.py installs UI pacing wrappers for a few hardware/boundary
+        # hooks (50C9 retrace wait, 0679 timer wait, present blits) after creating
+        # the verifier.  Those wrappers sleep, publish frames and raise control-flow
+        # exceptions, which is correct for interactive execution but wrong inside a
+        # differential hook transaction.  During verification, any hook listed in
+        # cpu.hook_verifier_passthrough is restored from this table on both the
+        # ASM oracle clone and the live hook side, so nested CALLs see the pure
+        # environment hook instead of the UI wrapper.
+        self._install_time_hooks = dict(rt.cpu.replacement_hooks)
+        self._install_time_names = dict(rt.cpu.hook_names)
         self.counts: dict[Addr, int] = {}
         self.total_verified = 0
         self.skipped: set[Addr] = set()
@@ -375,6 +451,8 @@ class HookVerifier:
         call_no = self.counts.get(key, 0) + 1
         self.counts[key] = call_no
         before = CPUState(**cpu.s.__dict__)
+        if self.config.progress_callback is not None:
+            self.config.progress_callback(f"verifying {key[0]:04X}:{key[1]:04X} {name} call {call_no}")
         asm_rt = self._clone_runtime()
         asm_cpu = asm_rt.cpu
         asm_cpu.hook_verifier = None
@@ -382,8 +460,10 @@ class HookVerifier:
         asm_cpu.hook_names.pop(key, None)
         targets = stop.targets(asm_cpu, before)
 
+        self._restore_passthrough_hooks(asm_cpu)
         asm_steps = self._run_asm_to_target(asm_cpu, targets)
-        handler(cpu)
+        with self._live_passthrough_hooks(cpu):
+            handler(cpu)
         self.total_verified += 1
         if cpu.coverage_telemetry is not None:
             cpu.coverage_telemetry.record_hook_verified(key, name, asm_steps)
@@ -410,11 +490,71 @@ class HookVerifier:
             return False
         return self.config.verify_all or key in self.config.hooks
 
+    def _restore_passthrough_hooks(self, cpu: CPU8086) -> None:
+        """Replace interactive passthrough wrappers with install-time base hooks.
+
+        The pass-through set is owned by the live CPU and may be populated after
+        this verifier is constructed.  That is intentional: play.py knows which
+        hooks are UI pacing boundaries only after it has chosen the active video
+        backend.
+        """
+        for key in getattr(cpu, "hook_verifier_passthrough", set()):
+            if key in self._install_time_hooks:
+                cpu.replacement_hooks[key] = self._install_time_hooks[key]
+                if key in self._install_time_names:
+                    cpu.hook_names[key] = self._install_time_names[key]
+            else:
+                cpu.replacement_hooks.pop(key, None)
+                cpu.hook_names.pop(key, None)
+
+    class _LivePassthroughHooks:
+        def __init__(self, verifier: "HookVerifier", cpu: CPU8086) -> None:
+            self.verifier = verifier
+            self.cpu = cpu
+            self.saved_hooks: dict[Addr, Callable[[CPU8086], None] | None] = {}
+            self.saved_names: dict[Addr, str | None] = {}
+
+        def __enter__(self) -> None:
+            for key in getattr(self.cpu, "hook_verifier_passthrough", set()):
+                self.saved_hooks[key] = self.cpu.replacement_hooks.get(key)
+                self.saved_names[key] = self.cpu.hook_names.get(key)
+                if key in self.verifier._install_time_hooks:
+                    self.cpu.replacement_hooks[key] = self.verifier._install_time_hooks[key]
+                    if key in self.verifier._install_time_names:
+                        self.cpu.hook_names[key] = self.verifier._install_time_names[key]
+                else:
+                    self.cpu.replacement_hooks.pop(key, None)
+                    self.cpu.hook_names.pop(key, None)
+
+        def __exit__(self, exc_type, exc, tb) -> bool:
+            for key, hook in self.saved_hooks.items():
+                if hook is None:
+                    self.cpu.replacement_hooks.pop(key, None)
+                else:
+                    self.cpu.replacement_hooks[key] = hook
+            for key, name in self.saved_names.items():
+                if name is None:
+                    self.cpu.hook_names.pop(key, None)
+                else:
+                    self.cpu.hook_names[key] = name
+            return False
+
+    def _live_passthrough_hooks(self, cpu: CPU8086) -> "HookVerifier._LivePassthroughHooks":
+        return HookVerifier._LivePassthroughHooks(self, cpu)
+
     def _run_asm_to_target(self, cpu: CPU8086, targets: tuple[Addr, ...]) -> int:
         target_set = set(targets)
         for steps in range(self.config.asm_max_steps + 1):
             if cpu.addr() in target_set:
                 return steps
+            if cpu.addr() in ((0x1010, 0x0679), (0x1010, 0x067F)) and cpu.mem.rb(0x1010, 0x066B) == 0:
+                from .games.overkill.sounds.pc_speaker import deliver_overkill_timer_irq0
+
+                if not deliver_overkill_timer_irq0(cpu):
+                    raise HookVerifyDivergence(
+                        "HOOK VERIFY ASM TIMER WAIT has no installed OVERKILL INT 08h "
+                        f"at={cpu.s.cs:04X}:{cpu.s.ip:04X}"
+                    )
             if cpu.addr() == (0x1010, 0x072F):
                 # OVERKILL's timer ISR chains the original BIOS INT 08h every
                 # fourth tick via JMP FAR CS:[0738]. The runtime's IRQ deliverer
@@ -441,8 +581,9 @@ class HookVerifier:
 
     def _clone_runtime(self) -> Runtime:
         src = self.rt
-        mem = Memory()
-        mem.data[:] = src.program.memory.data
+        mem = Memory(0)
+        mem.data = src.program.memory.data.copy()
+        mem.size = src.program.memory.size
         mem.ega_planar = src.program.memory.ega_planar
         mem.ega_map_mask = src.program.memory.ega_map_mask
         mem.ega_read_plane = src.program.memory.ega_read_plane
@@ -480,6 +621,8 @@ class HookVerifier:
         cpu.max_rep_count = src.cpu.max_rep_count
         cpu.replacement_hooks = dict(src.cpu.replacement_hooks)
         cpu.hook_names = dict(src.cpu.hook_names)
+        cpu.hook_verifier_passthrough = set(src.cpu.hook_verifier_passthrough)
+        self._restore_passthrough_hooks(cpu)
         cpu.interrupt_handler = dos.interrupt
         cpu.port_reader = dos.port_read
         cpu.port_writer = dos.port_write
@@ -616,16 +759,21 @@ class HookVerifier:
             lines.append(f"  file offsets: asm={asm_files} hook={hook_files}")
         return lines
 
-    def _range_diff(self, asm: bytearray, hook: bytearray, rng: MemoryRange) -> str | None:
+    @staticmethod
+    def _range_diff(asm: bytearray, hook: bytearray, rng: MemoryRange) -> str | None:
         start = max(0, rng.start)
         end = min(len(asm), len(hook), start + rng.size)
+        asm_view = memoryview(asm)[start:end]
+        hook_view = memoryview(hook)[start:end]
+        if asm_view == hook_view:
+            return None
         first = None
         count = 0
-        for addr in range(start, end):
-            if asm[addr] != hook[addr]:
+        for rel, (asm_byte, hook_byte) in enumerate(zip(asm_view, hook_view)):
+            if asm_byte != hook_byte:
                 count += 1
                 if first is None:
-                    first = addr
+                    first = start + rel
         if first is None:
             return None
         dump_start = max(start, first - 8)

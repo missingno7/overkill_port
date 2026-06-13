@@ -170,9 +170,9 @@ Two routines clearly belonged to the existing `tandy_rendering` island:
 Both replacements have synthetic interpreted-ASM oracle coverage in
 `tests/test_replacements.py`.  After these hooks, `1010:307E` and
 `1010:CDAA` disappear from the interpreted hot list.  The remaining top loop in
-that snapshot is `1F8F:0960`, which appears to be a compact overlay/menu counter
-update loop rather than Tandy rendering, so it was intentionally not lifted in
-this pass.
+that snapshot is `1F8F:0960`, now classified as a compact gameplay counter
+stride helper. It lives in an overlay segment, but its behavior is per-frame
+game-state update, not overlay loading or asset decoding.
 
 Follow-up profiling of `artifacts/snapshot_play_tandy_20260612_134028` from the
 redefine-keys page showed a different kind of hot loop:
@@ -1884,6 +1884,27 @@ counter.  The newer `draw_layer=5, logic_id=0000h` branch also clears the
 active flag and returns without touching `DS:A47E`, so the replacement now
 tracks both observed paths instead of failing fast.
 
+### 2026-06-13 BD17 A83E/A82A linked-effect tail
+
+A later Tandy capture (`snapshot_play_tandy_20260613_125913`) hit the
+`BC4B -> BD17` out-of-bounds branch with `draw_layer=4` and `logic_id=001Fh`.
+That path does not stop after `C054`: when the selector resolves to `A83Eh`
+(and the sibling `A82Ah` selector on the same tail family), the original code
+stores the selector result in `DS:A482`, marks `DS:A842=A844h`, pushes the live
+`BX/BP` frame, publishes source Y/X/type to `DS:2376/2378/237A`, seeds the
+`C017` scratch word, and calls the shared `7420` linked-effect spawn helper.
+After `7420` returns, `BD17` pops `BP` and `BX`, decrements `DS:A47E`, and
+returns through `BD5F`.
+
+The replayed oracle state at the shared continuation is:
+
+```text
+AX=0000 BX=0008 CX=0022 SI=0048
+```
+
+That matches the `1010:BD17` helper now and closes the missing post-`C054`
+tail that had been returning too early.
+
 ### 2026-06-12 BFC7 shared C054 call for logic 003Bh
 
 A later Tandy snapshot (`snapshot_play_tandy_20260612_223501`) reached the
@@ -1955,3 +1976,226 @@ the sprite compare.
   installed hook with normal near-CALL stack semantics.  If the interactive
   wrapper raises after returning to `CD68`, execution resumes in the original
   interpreted tail at `CD68`, preserving both UI pacing and correctness.
+
+### 2026-06-13 — replacements.py staging refactor and 30BA patched row copier
+
+`replacements.py` has been reduced back toward an address-facing hook wrapper
+layer.  Shared 8086-style helper operations now live in
+`overkill_port/games/overkill/asm.py`, while the large gameplay object,
+post-move, collision, and object-logic branch family now lives in
+`overkill_port/games/overkill/gameplay/object_runtime.py`.  The wrappers still
+register exact `CS:IP` hooks in `replacements.py`; tests that import legacy
+private helpers continue to work through imports from the new modules.
+
+The cold-start coverage dashboard also exposed the `1010:30C3/30C4/...` unknown
+cluster.  Inspecting live bytes showed that `1010:30BA` is runtime-patched: the
+static startup clear-loop body is later replaced by a compact Tandy row copier
+(`mov cx,ax; lodsw; shl ax,1; shl ax,1; mov bp,ax; ... rep movsb ... add
+di,00A0h; loop`).  The new `1010:30BA overkill_tandy_patched_row_copy_30ba`
+hook is therefore signature-guarded and falls back to interpreting the current
+instruction if those patched bytes are not resident.  Live hook verification
+from startup verified 25 calls before timeout with no divergence.
+
+## 2026-06-13 file-I/O island closure: `254A:04D7` overlay/container parent
+
+The overlay/container parent at `254A:04D7` has now been lifted as a small
+`file_io` island rather than as another asset decoder.  It opens either the
+container-list path or a direct file path depending on `CS:[073A]` bit 0, reads
+12-byte container headers, computes MZ overlay-directory offsets from
+`CS:[074C]/[074E]`, delegates the existing verified signature/directory/name/path
+subloops, seeks to the selected payload, and returns the open DOS handle plus the
+selected payload length.
+
+The implementation lives in
+`overkill_port/games/overkill/file_io/overlay_loader.py` with the hook wrapper
+`overkill_overlay_container_open_entry_254a_04d7`.  Its stop metadata is a
+far-return boundary, matching the original caller shape.
+
+Verification notes:
+
+```text
+snapshot_stop_254a_04d7_overlay_parent: interpreted ASM == lifted hook
+full CPU state match
+full memory match
+DOS file positions/open handles match
+live verifier: 17 cold-start calls with no divergence before the smoke timeout
+```
+
+This supersedes the older note that `254A:04D7` was intentionally not lifted.
+The codec work remains separate: `asset_codecs` covers deterministic decode and
+search loops, while `file_io` now owns the parent file-open/read/seek
+orchestration.
+
+
+## 2026-06-13 - Unknown gameplay/collision hook absorption
+
+Absorbed several hot unknown/gameplay instructions without duplicating existing logic:
+
+- `1010:AED8 overkill_object_behavior_aed8` now hooks the observed logic-id 2/3 countdown/movement behavior and reuses a shared `AD60` bounds/tile tail.
+- `1010:AD04 overkill_object_logic_branch_ad04` is only a branch selector: it returns or jumps to existing `ABxx` behavior tails, rather than reimplementing those tails.
+- `1010:AC81 overkill_object_slot_scan_guard_ac81` is only the guard/setup for the already-lifted `AC97` object-slot scan and directly reuses `run_object_slot_scan_ac97`.
+- `1010:AE09 overkill_object_behavior_ae09` handles the observed logic-id `0Ch` timer/3-pixel movement behavior, then reuses the same shared `AD60` tail as `AED8`.
+
+The previous inline `AD60` implementation inside `AED8` was refactored into `_run_object_bounds_tile_tail_ad60` so new behaviors do not clone the same bounds/tile/deactivation logic.
+
+Validation: `python scripts/run_tests.py` => `162 passed, 0 failed`; `python -m compileall -q overkill_port tests scripts`; live hook verifier samples were recorded for `AC81`, `AD04`, `AE09`, and `AED8` and added to `artifacts/hook_coverage_cache.json`.
+
+## 2026-06-13 - Startup renderer table builder `1010:0F0B`
+
+The `1010:0F31/0F32/0F37` cold-start unknown hotspot cluster is not asset or
+file-I/O logic.  It is the inner loop of the startup renderer coordinate/video
+lookup-table builder at `1010:0F0B`.
+
+The lifted hook `overkill_startup_coordinate_tables_0f0b` now lives in the
+renderer module with the adjacent startup table helpers.  It fills the active
+renderer data-segment table family at `DS:99C8..A077`, preserves the final
+mode-dispatch register side effect (`BX = CS:[95BC] << 1`), and falls through to
+the existing lifted `1010:0FA3` video-offset table builder rather than cloning
+that logic.
+
+Verification notes:
+
+```text
+snapshot_stop_1010_0f0b_startup_tables: interpreted ASM == lifted hook
+continuation: 1010:526A
+full CPU state match
+full memory match
+```
+
+This closes those startup unknowns as renderer setup, not as another codec or
+file loader.
+
+## 2026-06-13 methodology codified
+
+The repeated hook/debug/refactor pattern has now been codified in
+`docs/source_port_methodology.md`.
+
+The durable workflow is:
+
+```text
+observe -> classify -> choose boundary -> build ASM oracle -> implement hook -> verify -> document -> move to island
+```
+
+This reflects the current successful pattern used for asset codecs, file I/O,
+Tandy rendering/setup tables, gameplay object behavior, and collision tails:
+start with exact-address hooks in `replacements.py`, prove them against the
+original ASM, then move stable behavior into a clear module under
+`overkill_port/games/overkill/` while keeping only the address wrapper in
+`replacements.py`.
+
+This documentation pass also makes duplicate-code prevention explicit: before
+lifting a new hook, search for existing helpers with the same original tail,
+continuation IP, field offsets, or table addresses, and factor shared behavior
+instead of cloning it.
+
+### 2026-06-13 input/menu poller and ABxx collision helpers
+
+- `1010:0162` is the full OVERKILL input poller. It checks `DS:[0010]`:
+  - `1` selects the joystick branch and switches to resident segment `15BC`.
+  - `2` selects the alternate keyboard control-map table at `DS:2146`.
+  - all other values use the default keyboard table at `DS:213E`.
+  The hot inner bit packer remains `1010:017E`, now shared through `pack_keyboard_poll_bits_017e`.
+
+- `1010:AC28` is a runtime-patched tile-collision probe used by ABxx object behaviours. It is not a standalone tile decoder; it composes already-lifted helpers:
+  - `1010:5073` coordinate-to-tile index
+  - `1010:505B` tile id lookup
+  It returns clear for no collision, can jump to `AA44` when global gates disable processing, and sets object countdown/variant fields on collision.
+
+- `1010:AB34` is a runtime-patched motion-table coordinate helper. It uses base object `DS:237C`, caller table base `DX`, and the base object's sprite/index at `+08` to write object coordinates to `SS:[BP+2]` and `SS:[BP+4]`.
+
+- `1010:AB4F` is a small runtime-patched scroll/sprite helper that writes `DS:[233C]+18h` to `SS:[BP+8]`.
+
+## 2026-06-13 source-port layer pyramid and bootstrap classification
+
+The project now documents the higher-level migration model as a logic
+crystallization pyramid: original binary oracle -> ASM-compatible runtime ->
+verified lifted routines -> runtime object/data model -> game systems -> gameplay
+archetypes -> semantic game model -> modern/enhanced port layer.
+
+This matches the current object work: many objects are still best described as
+slot records with sprite/layer/logic-id/movement/collision fields.  Names such as
+player, projectile, pickup, boss, or specific enemy archetype should be promoted
+only when multiple verified lower-level routines make the identity stable.
+
+The cold-start `32FF:*` interpreted hotspot is now classified as `bootstrap` in
+coverage.  It is the transient inner unpack/self-relocation stage already noted
+at `32FF:0052`; it is intentionally not treated as a source-port game island and
+should not be hooked merely to make the unknown count look smaller.
+
+## 2026-06-13 unknown cleanup: game-state, timer, and shared video stubs
+
+Newly clarified routines:
+
+- `1010:5A6C` is a shared source-cell video-mode dispatch stub.  It does not
+  belong to CGA/Tandy-specific renderers; it simply reads `CS:[95BC]`, indexes
+  the source-cell dispatch table, and jumps to the mode-specific copy routine.
+- `1010:AB10` is an object logic helper using a runtime-patched live byte shape.
+  It updates object-slot sprite/table fields from `DS:[2336]`/`A40C` and can
+  deactivate the slot through the `AC22` tail when global counters reach 3.
+- `1010:AB77` is an observed object-behavior driver.  Its implementation is
+  intentionally compositional: it calls the existing lifted `AB4F`, `AC28`, and
+  `AC81/AC97` helpers rather than cloning their internals.
+- `1F8F:0922` is a gameplay/frame counter tick, not asset decode. It reuses the
+  existing `1F8F:0960` gameplay counter stride loop. Both belong to the
+  `game_state` island despite `0960` living in an overlay segment.
+- `1010:0672` and `1010:0679` form the timer flag clear/wait pair around
+  `CS:[066B]`.  Both now live in the sound/timer island next to the IRQ0 model.
+- `1010:511F` is called by all modes but only mutates page state when
+  `CS:[95BC] == 1`.  Tandy execution reaching this hook is expected and not an
+  EGA/CGA leakage bug.
+
+Classified but not yet hooked:
+
+- `1010:D007..D04C` is the main gameplay frame-loop dispatcher.  It composes
+  timer clear/wait, video page stubs, object/layer scans, rendering, input poll,
+  and game-state updates.  Do not hook it until more child calls are exhausted.
+- `1010:A846/A85E/A876` are parent/setup glue around existing layer-sprite scan
+  hooks.  Future hook work should compose the existing scan helpers.
+- `1010:4CED..4D14` is a presence-list parent around three `4D15` calls.  Future
+  hook work should call/reuse `4D15`, not duplicate its presence stamping loop.
+
+## 2026-06-13 layer-sprite present parent cleanup
+
+- `1010:A90C` is a layer-sprite present parent, not semantic object logic.  It
+  composes the existing `A90F` and `A927` scans and then clears the presence list.
+  The hook deliberately preserves partial continuations at the real `5A92` call
+  sites instead of absorbing the present-object dispatch body.
+- `1010:A93C` is only `CALL 4D64 ; RET`.
+- `1010:4D64` is only setup for `4D6F`: load the visible/work segment into `ES`,
+  set `SI=C7B1h`, set `CX=28h`, then tail into the shared clear loop.
+- `1010:D04D..D072` is a per-frame game-state/UI frontier reached after the
+  `D007` main-frame dispatcher.  It should stay classified until its child calls
+  are understood; do not fold it into object semantics prematurely.
+
+## 2026-06-13 next unknown cleanup: intro pacing, postmove prelude, loading scroll, counters
+
+- `1010:96C5` is an intro/menu delay loop: `CALL 50C9 ; LOOP 96C5`.  It is not
+  gameplay logic.  The lifted hook must call the installed `50C9` hook, not only
+  the base retrace helper, because `play.py` wraps `50C9` as an interactive
+  frame publish/yield boundary.
+- `1010:96C8` is the `LOOP` tail used when execution resumes after that pacing
+  boundary.  It decrements `CX` and jumps back to `96C5` or continues to `96CA`;
+  it does not alter flags itself.
+- `1010:BC45` is a tiny prelude before the shared `BC4B` postmove/collision
+  chain.  It adds `DS:[A278]` into `SS:[BP+02]`, then falls through into `BC4B`.
+  It should remain a composition wrapper, not a second copy of the BC4B chain.
+- `1010:4E0D` is a Tandy loading-scroll parent around the existing `A781` step.
+  The original pushes `DI`/`SI`, calls `A781`, restores them, then loops on
+  `DS:[2350]` and `DS:[234E]`.  The call return scratch is `4E12`; using a
+  later synthetic return address causes full-memory verifier mismatches.
+- `1010:61CA` is the hot inner scan over word counters at `DS:2368..2372`.
+  It decrements the first non-zero counter and returns.  `1010:61C5` is only the
+  setup parent that initializes `DI=2368`; many observed gameplay callers enter
+  the scan directly at `61CA`.
+
+Classified but still frontier:
+
+- `1010:9FEA` updates object/table coordinate state and flag bytes around
+  `A39E/A39F`; it needs a direct oracle before being assigned to movement versus
+  object-runtime.
+- `1010:5EF9` appears text/nibble rendering related.
+- `1010:4D95` should be treated as a presence-list parent candidate and should
+  reuse `4D15` if lifted.
+- `1010:780E` is a Tandy/layer draw sub-loop candidate.
+- `1010:8A7E` is object-behavior frontier and should not receive semantic enemy
+  names yet.

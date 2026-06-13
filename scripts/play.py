@@ -209,6 +209,10 @@ def main(argv: list[str] | None = None) -> int:
                    help="frame verifier comparison source")
     p.add_argument("--verify-frame-dump-dir", default=str(ROOT / "artifacts" / "frame_verify"),
                    help="directory for frame verifier divergence PNG/VRAM/report artifacts")
+    p.add_argument("--verify-frame-preview", action="store_true",
+                   help="show a live SDL preview of the candidate runtime while frame verification runs")
+    p.add_argument("--verify-frame-preview-on-diff", action="store_true",
+                   help="open the frame compare image when frame verification finds a diff")
     p.add_argument("--ega-publish-timed-boundaries", action="store_true",
                    help="debug only: publish EGA snapshots at timer/retrace waits as well as the EGA presenter")
     p.add_argument("--ega-start-address-units", choices=("byte", "word", "ignore"), default="byte",
@@ -249,6 +253,147 @@ def main(argv: list[str] | None = None) -> int:
         # CGA mode 0.
         command_tail = b""
 
+    if args.verify_frames and args.verify_frame_preview:
+        from overkill_port.frame_verify import FrameSample, FrameVerifyConfig, run_frame_verifier
+
+        frame_sync = FrameSync()
+        stop = threading.Event()
+        status = {"text": ""}
+        visible = {"n": 0}
+        boundary = {"n": 0}
+        blits = {"n": 0}
+        timers = {"n": 0}
+        retraces = {"n": 0}
+        direct_video = {"n": 0}
+        scancode_events: SimpleQueue[int] = SimpleQueue()
+        dos_key_events: SimpleQueue[tuple[int, str]] = SimpleQueue()
+
+        def ega_render_start(raw: int) -> int:
+            if args.ega_start_address_units == "ignore":
+                return 0
+            if args.ega_start_address_units == "word":
+                return (raw << 1) & 0xFFFF
+            return raw & 0xFFFF
+
+        def publish_candidate(rt, sample: FrameSample) -> None:
+            visible["n"] += 1
+            boundary["n"] += 1
+            if sample.kind == "present":
+                blits["n"] += 1
+            elif sample.kind == "timer":
+                timers["n"] += 1
+            elif sample.kind == "retrace":
+                retraces["n"] += 1
+            frame_sync.publish_and_wait(rt.program.memory.data, display_start=sample.display_start)
+
+        def pump_inputs(ref_rt, cand_rt) -> None:
+            keyboard.pump()
+            while True:
+                try:
+                    sc = scancode_events.get_nowait()
+                except Empty:
+                    break
+                deliver_scancode(ref_rt, sc)
+                deliver_scancode(cand_rt, sc)
+            while True:
+                try:
+                    scancode, text = dos_key_events.get_nowait()
+                except Empty:
+                    break
+                if not text:
+                    text = {
+                        0x02: "1", 0x03: "2", 0x04: "3", 0x05: "4", 0x06: "5",
+                        0x07: "6", 0x08: "7", 0x09: "8", 0x0A: "9", 0x0B: "0",
+                        0x0C: "-", 0x0D: "=", 0x0E: "\b", 0x0F: "\t",
+                        0x10: "q", 0x11: "w", 0x12: "e", 0x13: "r", 0x14: "t",
+                        0x15: "y", 0x16: "u", 0x17: "i", 0x18: "o", 0x19: "p",
+                        0x1A: "[", 0x1B: "]", 0x1C: "\r",
+                        0x1E: "a", 0x1F: "s", 0x20: "d", 0x21: "f", 0x22: "g",
+                        0x23: "h", 0x24: "j", 0x25: "k", 0x26: "l", 0x27: ";",
+                        0x28: "'", 0x29: "`", 0x2B: "\\",
+                        0x2C: "z", 0x2D: "x", 0x2E: "c", 0x2F: "v", 0x30: "b",
+                        0x31: "n", 0x32: "m", 0x33: ",", 0x34: ".", 0x35: "/",
+                        0x39: " ", 0x01: "\x1b",
+                    }.get(scancode, "")
+                if not text:
+                    continue
+                ch = ord(text[0])
+                if ch < 0x20 and ch not in (0x08, 0x09, 0x0D, 0x1B):
+                    continue
+                key = (((scancode & 0xFF) << 8) | (ch & 0xFF)) & 0xFFFF
+                ref_rt.dos.key_queue.append(key)
+                cand_rt.dos.key_queue.append(key)
+
+        keyboard = KeyDispatcher(lambda sc: scancode_events.put(sc))
+
+        def queue_dos_key(scancode: int, text: str) -> None:
+            dos_key_events.put((scancode, text))
+
+        def queue_snapshot_save() -> None:
+            status["text"] = "F12 snapshots are disabled during live frame verification"
+
+        def verifier_loop() -> None:
+            try:
+                max_frames = 0 if args.verify_frame_max == 60 else args.verify_frame_max
+                result = run_frame_verifier(
+                    exe=exe,
+                    assets=assets,
+                    snapshot=args.snapshot,
+                    command_tail=command_tail,
+                    config=FrameVerifyConfig(
+                        video=args.video,
+                        palette=args.palette,
+                        max_frames=max_frames,
+                        frame_budget=args.frame_budget,
+                        source=args.verify_frame_source,
+                        dump_dir=Path(args.verify_frame_dump_dir),
+                        stop_on_diff=True,
+                        preview_on_diff=args.verify_frame_preview_on_diff,
+                        ega_start_address_units=args.ega_start_address_units,
+                    ),
+                    publish_candidate=publish_candidate,
+                    pump_inputs=pump_inputs,
+                    stop_requested=stop.is_set,
+                    status_callback=lambda text: status.__setitem__("text", text),
+                )
+                if result == 0:
+                    status["text"] = "FRAME VERIFY stopped"
+            except Exception as exc:
+                status["text"] = f"FRAME VERIFY crash: {type(exc).__name__}: {exc}"
+                traceback.print_exc()
+            finally:
+                stop.set()
+                frame_sync.close()
+
+        try:
+            from sdl_view import run_sdl_ui
+        except Exception as exc:
+            print(f"the interactive viewer requires pygame and numpy: {exc}")
+            return 1
+
+        emu = threading.Thread(target=verifier_loop, name="overkill-frame-verify", daemon=True)
+        emu.start()
+        try:
+            run_sdl_ui(
+                args=args,
+                frame_sync=frame_sync,
+                keyboard=keyboard,
+                stop=stop,
+                status=status,
+                counters={"visible": visible, "boundary": boundary, "blits": blits,
+                          "timers": timers, "retraces": retraces, "direct_video": direct_video},
+                queue_snapshot_save=queue_snapshot_save,
+                queue_dos_key=queue_dos_key,
+                ega_render_start=ega_render_start,
+                live_memory=lambda: b"",
+                live_display_start=lambda: 0,
+                speaker_events=None,
+            )
+        finally:
+            stop.set()
+            frame_sync.close()
+        return 0
+
     if args.verify_frames:
         from overkill_port.frame_verify import FrameVerifyConfig, run_frame_verifier
 
@@ -265,6 +410,7 @@ def main(argv: list[str] | None = None) -> int:
                 source=args.verify_frame_source,
                 dump_dir=Path(args.verify_frame_dump_dir),
                 stop_on_diff=True,
+                preview_on_diff=args.verify_frame_preview_on_diff,
                 ega_start_address_units=args.ega_start_address_units,
             ),
         )
@@ -281,6 +427,7 @@ def main(argv: list[str] | None = None) -> int:
         enabled=True,
     )
     rt.cpu.coverage_telemetry = coverage
+    status = {"text": ""}
     hook_verifier = None
     if args.verify_hooks or args.verify_hook:
         hook_verifier = install_hook_verifier(
@@ -293,6 +440,7 @@ def main(argv: list[str] | None = None) -> int:
                 log_diffs=args.verify_log_diffs,
                 full_memory=args.verify_full_memory,
                 require_metadata=args.verify_require_metadata,
+                progress_callback=lambda text: status.__setitem__("text", text),
             ),
         )
 
@@ -480,12 +628,6 @@ def main(argv: list[str] | None = None) -> int:
         return mem.rb(ds, 0x98F5) != 1 and mem.rb(ds, 0x98D9) != 1
 
     def present_hook(cpu) -> None:
-        # Hardware IRQ0 is independent of the video presenter.  Intro and menu
-        # paths can hit many present boundaries without ever reaching the
-        # gameplay 0679 timer wait; polling here lets the real 1010:06E5 sound
-        # ISR consume pending BEFF sound requests while the intro is still on
-        # screen instead of deferring them until the next menu/input wait.
-        async_timer_irq.poll(cpu)
         if base_present is not None:
             if hook_verifier is not None:
                 hook_verifier.verify(cpu, present_hook_addr, base_present, base_present_name)
@@ -508,7 +650,7 @@ def main(argv: list[str] | None = None) -> int:
 
     def timer_frame_hook(cpu) -> None:
         base_timer_wait(cpu)
-        async_timer_irq.reset_after_synchronous_ticks(getattr(cpu, "timer_ticks_elapsed", 0) or 1)
+        async_timer_irq.reset_after_synchronous_ticks(2)
         timers["n"] += 1
         # Some paths update video memory directly and only use the timer wait as
         # their boundary.  EGA startup/menu can do this before the first 2750
@@ -561,7 +703,6 @@ def main(argv: list[str] | None = None) -> int:
 
     keyboard = KeyDispatcher(lambda sc: deliver_scancode(rt, sc))
     stop = threading.Event()
-    status = {"text": ""}
     snapshot_requests: SimpleQueue[Path] = SimpleQueue()
     speaker_events: SimpleQueue[tuple[bool, float]] = SimpleQueue()
     rt.dos.set_speaker_callback(lambda enabled, freq: speaker_events.put((enabled, freq)), emit_current=True)

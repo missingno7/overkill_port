@@ -22,6 +22,23 @@ def test_memory_operand_decoded_once():
     assert cpu.s.ip == 0x000D
 
 
+def test_hook_verify_range_diff_keeps_exact_mismatch_report():
+    from overkill_port.hook_verify import HookVerifier, MemoryRange
+
+    asm = bytearray(b"\x00" * 64)
+    hook = bytearray(asm)
+    rng = MemoryRange("probe", 8, 32)
+
+    assert HookVerifier._range_diff(asm, hook, rng) is None
+
+    hook[12] = 0x34
+    hook[30] = 0x56
+    report = HookVerifier._range_diff(asm, hook, rng)
+    assert report is not None
+    assert "differing bytes: 2" in report
+    assert "first diff: 0000C asm=00 hook=34" in report
+
+
 def test_rep_movsb_backward():
     mem = Memory()
     mem.load(0x1000, 0, bytes([1, 2, 3, 4]))
@@ -471,3 +488,57 @@ def test_cpu_emits_coverage_for_generic_asm_and_hook():
     snap = cov.snapshot()
     assert snap["total_hook_calls"] == 1
     assert snap["unverified_hook_calls"] == 1
+
+def test_coverage_classifier_marks_transient_bootstrap_segment():
+    from overkill_port.coverage import OverkillCoverageClassifier
+
+    classifier = OverkillCoverageClassifier()
+    assert classifier.classify((0x32FF, 0x0052)) == "bootstrap"
+    assert classifier.classify((0x32FF, 0x00C0)) == "bootstrap"
+
+
+
+def test_overkill_coverage_exact_address_sets_do_not_overlap():
+    import ast
+    from pathlib import Path
+
+    source = Path("overkill_port/coverage.py").read_text(encoding="utf-8")
+    module = ast.parse(source)
+    classifier = next(
+        node for node in module.body
+        if isinstance(node, ast.ClassDef) and node.name == "OverkillCoverageClassifier"
+    )
+    exact_sets = {}
+    for node in classifier.body:
+        if (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and (node.target.id.endswith("_ADDRS") or node.target.id == "OVERLAY_ADDRS")
+        ):
+            exact_sets[node.target.id] = set(ast.literal_eval(node.value))
+
+    owners = {}
+    overlaps = []
+    for set_name, addrs in exact_sets.items():
+        for addr in addrs:
+            previous = owners.setdefault(addr, set_name)
+            if previous != set_name:
+                overlaps.append((addr, previous, set_name))
+
+    assert overlaps == []
+
+
+def test_all_registered_overkill_hooks_have_non_unknown_island_classification():
+    from pathlib import Path
+
+    from overkill_port.coverage import OverkillCoverageClassifier
+    from overkill_port.hooks import registry
+    import overkill_port.replacements  # noqa: F401  # registers hooks
+
+    classifier = OverkillCoverageClassifier(Path("symbols.json"))
+    unknown = [
+        (addr, repl.name)
+        for addr, repl in sorted(registry.replacements.items())
+        if classifier.classify(addr, repl.name) == "unknown"
+    ]
+    assert unknown == []

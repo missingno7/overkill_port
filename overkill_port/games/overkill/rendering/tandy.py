@@ -64,8 +64,10 @@ class TandyRenderRuntime:
     signature_35cc: bytes
     signature_356c: bytes
     signature_3657: bytes
+    signature_0f0b: bytes
     signature_0fa3: bytes
     signature_0fe4: bytes
+    signature_30b0: bytes
 
 
 def _call_hook_like_near_call(cpu, handler: HookHandler, return_ip: int) -> None:
@@ -300,6 +302,84 @@ def build_pixel_pair_lookup_table_0fe4(cpu, runtime: TandyRenderRuntime) -> None
     s.ip = cpu.pop()
 
 
+
+
+def patched_strided_row_copy_30ba(cpu) -> None:
+    """OVERKILL runtime-patched 1010:30BA strided row copier.
+
+    Live startup/menu code patches 30BA from the earlier clear-loop body into a
+    compact row copier:
+
+        mov cx,ax; lodsw; shl ax,1; shl ax,1; mov bp,ax
+        push cx; mov cx,bp; rep movsb; sub di,bp; add di,00A0h; pop cx; loop
+
+    This is mode-2/Tandy rendering glue, not asset decoding.
+    """
+    s = cpu.s
+    mem = cpu.mem
+    s.cx = s.ax & 0xFFFF
+    delta = -2 if cpu.get_flag(DF) else 2
+    s.ax = mem.rw(s.ds & 0xFFFF, s.si & 0xFFFF)
+    s.si = (s.si + delta) & 0xFFFF
+    s.ax = cpu.shift(4, s.ax, 1, 16)
+    s.ax = cpu.shift(4, s.ax, 1, 16)
+    s.bp = s.ax & 0xFFFF
+
+    outer = s.cx if s.cx != 0 else 0x10000
+    width = s.bp & 0xFFFF
+    for _ in range(outer):
+        saved_cx = s.cx & 0xFFFF
+        cpu.push(saved_cx)
+        s.cx = width
+        _rep_movsb(cpu, width)
+        _sub_reg16(cpu, 7, width)
+        _add_reg16(cpu, 7, 0x00A0)
+        s.cx = cpu.pop()
+        s.cx = (s.cx - 1) & 0xFFFF
+
+    s.ip = cpu.pop()
+
+def _clear_tandy_interlaced_rows_from_current_state(cpu) -> None:
+    s = cpu.s
+    while True:
+        s.cx = 0x0034
+        s.ax = 0
+        cpu.set_logic_flags(0, 16)
+        for _ in range(0x34):
+            _stosw(cpu)
+        _sub_reg16(cpu, 7, 0x0068)
+        _add_reg16(cpu, 7, 0x2000)
+        _test_word(cpu, s.di, 0x8000)
+        if not cpu.get_flag(ZF):
+            _add_reg16(cpu, 7, 0x80A0)
+        _dec_reg16_preserve_cf(cpu, 5)
+        if s.bp == 0:
+            break
+    s.ip = cpu.pop()
+
+
+def clear_tandy_interlaced_buffer_30b0(cpu, runtime: TandyRenderRuntime) -> None:
+    """OVERKILL 1010:30B0 Tandy interlaced-buffer clear loop.
+
+    The original clears 200 interlaced rows in the Tandy video/work segment
+    selected by ``CS:[95A4]``.  Each row stores 0x34 words, rewinds DI by the
+    row width, advances through the 2000h/80A0h interlaced address pattern, and
+    loops on BP.  The final live FLAGS are from the last ``DEC BP`` with CF
+    preserved from the preceding TEST/ADD path.
+    """
+    if runtime.self_disable_if_patched(cpu, 0x30B0, runtime.signature_30b0, "overkill_tandy_interlaced_clear_30b0"):
+        return
+
+    s = cpu.s
+    mem = cpu.mem
+    cs = s.cs & 0xFFFF
+    s.es = mem.rw(cs, TANDY_VIDEO_SEGMENT_OFF)
+    s.di = 0
+    s.bp = 0x00C8
+
+    _clear_tandy_interlaced_rows_from_current_state(cpu)
+
+
 def build_video_offset_tables_0fa3(cpu, runtime: TandyRenderRuntime) -> None:
     """OVERKILL 1010:0FA3 Tandy/CGA video-offset lookup table builder.
 
@@ -345,6 +425,130 @@ def build_video_offset_tables_0fa3(cpu, runtime: TandyRenderRuntime) -> None:
                 break
 
     s.ip = 0x526A
+
+
+def build_startup_coordinate_tables_0f0b(cpu, runtime: TandyRenderRuntime) -> None:
+    """OVERKILL 1010:0F0B startup coordinate/video lookup table builder.
+
+    This parent setup block materializes the coordinate helper tables in the
+    active renderer data segment, then falls through into the already-lifted
+    ``0FA3`` code-segment video-offset table builder.  It is renderer setup
+    glue, not asset decoding: the generated tables are consumed later by the
+    coordinate and dirty-cell presenter paths.
+
+    Original shape:
+
+    * clear ``DS:99C8..99E7`` to ``FFFF``;
+    * build a signed X/window table at ``99E8`` using stride ``CS:[959E]``;
+    * add a second ``FFFF`` guard band;
+    * build two linear tables at ``9BC8`` and ``9D58`` using ``CS:[959E]`` and
+      ``CS:[95A0]``;
+    * build a mode-dispatched physical row-address table at ``9EE8``;
+    * fall through to ``0FA3``.
+
+    The mode-dispatch logic is shared by CGA/EGA/Tandy startup.  The observed
+    Tandy cold-start path currently uses mode index 0, but the helper implements
+    all three dispatch-table entries from the original bytes so synthetic and
+    alternate-video verification do not need a second copy of the routine.
+    """
+    if runtime.self_disable_if_patched(cpu, 0x0F0B, runtime.signature_0f0b, "overkill_startup_coordinate_tables_0f0b"):
+        return
+
+    s = cpu.s
+    mem = cpu.mem
+    cs = s.cs & 0xFFFF
+
+    # MOV DS,CS:[9596]; MOV ES,CS:[9596].
+    table_seg = mem.rw(cs, TANDY_DISPLAY_SEGMENT_OFF)
+    s.ds = table_seg
+    s.es = table_seg
+
+    # DI=99C8; CX=10; AX=FFFF; REP STOSW.
+    s.di = 0x99C8
+    s.cx = 0x0010
+    s.ax = 0xFFFF
+    for _ in range(0x0010):
+        _stosw(cpu)
+    s.cx = 0
+
+    # AX = -(CS:[959E] << 4); CX=D0; table += CS:[959E].
+    s.ax = mem.rw(cs, 0x959E)
+    for _ in range(4):
+        s.ax = cpu.shift(4, s.ax, 1, 16)  # SHL AX,1
+    old_ax = s.ax & 0xFFFF
+    s.ax = (-old_ax) & 0xFFFF
+    cpu.set_sub_flags(0, old_ax, -old_ax, 16)  # NEG AX.
+    s.cx = 0x00D0
+    stride = mem.rw(cs, 0x959E)
+    for _ in range(0x00D0):
+        _stosw(cpu)
+        old_ax = s.ax & 0xFFFF
+        result = old_ax + stride
+        s.ax = result & 0xFFFF
+        cpu.set_add_flags(old_ax, stride, result, 16)
+        s.cx = (s.cx - 1) & 0xFFFF
+
+    # Guard band: AX=FFFF; CX=20; REP STOSW.
+    s.ax = 0xFFFF
+    s.cx = 0x0020
+    for _ in range(0x0020):
+        _stosw(cpu)
+    s.cx = 0
+
+    def build_linear_table(base: int, stride_off: int) -> None:
+        s.di = base & 0xFFFF
+        s.ax = 0
+        cpu.set_logic_flags(0, 16)  # XOR AX,AX.
+        s.cx = 0x00C8
+        stride_value = mem.rw(cs, stride_off)
+        for _ in range(0x00C8):
+            _stosw(cpu)
+            old = s.ax & 0xFFFF
+            result = old + stride_value
+            s.ax = result & 0xFFFF
+            cpu.set_add_flags(old, stride_value, result, 16)
+            s.cx = (s.cx - 1) & 0xFFFF
+
+    build_linear_table(0x9BC8, 0x959E)
+    build_linear_table(0x9D58, 0x95A0)
+
+    # DI=9EE8; CX=C8; AX=0; row-address table with mode-dispatched advance.
+    s.di = 0x9EE8
+    s.cx = 0x00C8
+    s.ax = 0
+    cpu.set_logic_flags(0, 16)
+    mode = mem.rw(cs, 0x95BC) & 0xFFFF
+    while s.cx != 0:
+        _stosw(cpu)
+        # XCHG AX,DI; the original then dispatches on CS:[95BC].
+        s.ax, s.di = s.di & 0xFFFF, s.ax & 0xFFFF
+        if mode == 0:
+            _add_reg16(cpu, 7, 0x2000)
+            _test_word(cpu, s.di, 0x4000)
+            if not cpu.get_flag(ZF):
+                _add_reg16(cpu, 7, 0xC050)
+        elif mode == 1:
+            _add_reg16(cpu, 7, 0x0028)
+        elif mode == 2:
+            _add_reg16(cpu, 7, 0x2000)
+            _test_word(cpu, s.di, 0x8000)
+            if not cpu.get_flag(ZF):
+                _add_reg16(cpu, 7, 0x80A0)
+        else:
+            raise RuntimeError(f"1010:0F0B startup coordinate hook reached unknown video mode index {mode:04X}")
+        # XCHG AX,DI; LOOP.
+        s.ax, s.di = s.di & 0xFFFF, s.ax & 0xFFFF
+        s.cx = (s.cx - 1) & 0xFFFF
+
+    # The original dispatch sequence leaves BX holding CS:[95BC] << 1 from
+    # the final iteration before falling through into 0FA3.  Preserve that
+    # register side effect even though the Python dispatch above keeps mode as
+    # a local for clarity.
+    s.bx = ((mode & 0xFFFF) << 1) & 0xFFFF
+
+    # The original falls through into 0FA3 (not CALL).  Reuse the existing
+    # lifted helper so we do not keep a second implementation of those tables.
+    build_video_offset_tables_0fa3(cpu, runtime)
 
 
 def _rep_stosb(cpu, count: int) -> None:
@@ -1038,6 +1242,41 @@ def _loading_scroll_step_a781(cpu, runtime: TandyRenderRuntime) -> None:
     cpu.s.bp = cpu.pop()
     cpu.s.ip = cpu.pop()
 
+
+
+
+def loading_scroll_until_4e0d(cpu, runtime: TandyRenderRuntime) -> None:
+    """Lift 1010:4E0D, a parent loop around the A781 loading-scroll step.
+
+    The routine preserves ``DI``/``SI`` around each A781 call, then keeps
+    stepping until the work-buffer cursor ``DS:[2350]`` is no longer above the
+    caller's ``DI`` and the phase counter ``DS:[234E]`` has wrapped to zero.
+    It finally stores the caller's ``SI`` into ``DS:A978`` and returns.
+    """
+    ds = cpu.s.ds & 0xFFFF
+    while True:
+        cpu.push(cpu.s.di)
+        cpu.push(cpu.s.si)
+        cpu.push(0x4E12)
+        _loading_scroll_step_a781(cpu, runtime)
+        if cpu.s.ip != 0x4E12:
+            raise RuntimeError(f"1010:A781 returned to unexpected IP {cpu.s.ip:04X} inside 4E0D")
+        cpu.s.si = cpu.pop()
+        cpu.s.di = cpu.pop()
+
+        cursor = cpu.mem.rw(ds, 0x2350)
+        _cmp_word(cpu, cursor, cpu.s.di & 0xFFFF)
+        if (not cpu.get_flag(CF)) and (not cpu.get_flag(ZF)):
+            continue
+
+        phase = cpu.mem.rw(ds, 0x234E)
+        _cmp_word(cpu, phase, 0)
+        if phase != 0:
+            continue
+
+        cpu.mem.ww(ds, 0xA978, cpu.s.si & 0xFFFF)
+        cpu.s.ip = cpu.pop()
+        return
 
 def loading_scroll_sequence_60c5(cpu, runtime: TandyRenderRuntime) -> None:
     """OVERKILL 1010:60C5 Tandy loading scroll/materialization loop.

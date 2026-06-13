@@ -1,8 +1,13 @@
 {
+  "1010:0162": {
+    "name": "overkill_input_poll_0162",
+    "notes": "Full keyboard/joystick input poller. Selects default keyboard table DS:213E, alternate table DS:2146 for DS:[0010]==2, or joystick path for DS:[0010]==1; packs buttons into DS:98BE. Uses the shared 017E bit-packer helper.",
+    "status": "replaced"
+  },
   "1010:017E": {
-    "name": "poll_control_keys_into_button_field",
-    "notes": "Reads 8 scancodes from the control-map table at DS:213E (or DS:2146 when DS:[0010]==2), indexes the INT 9 key-state table at DS:98C4, shifts each key's pressed bit, and rcl-packs them into the button bitfield at DS:98BE. Active map DS:213E = [00,00,Z(2C),Space(39),Q(10),A(1E),O(18),P(19)]: OVERKILL uses Q/A/O/P to move + Z/Space to fire, not the arrow keys.",
-    "status": "understood"
+    "name": "overkill_keyboard_poll_bits_017e",
+    "notes": "Reads 8 scancodes from the control-map table at DS:213E (or DS:2146 when DS:[0010]==2), indexes the INT 9 key-state table at DS:98C4, shifts each key's pressed bit, and rcl-packs them into the button bitfield at DS:98BE. Active map DS:213E = [00,00,Z(2C),Space(39),Q(10),A(1E),O(18),P(19)]: OVERKILL uses Q/A/O/P to move + Z/Space to fire, not the arrow keys. Now owned by input_menu and shared with the full 0162 poller.",
+    "status": "replaced"
   },
   "1010:0324": {
     "name": "overkill_word_pair_rle_decoder_0324",
@@ -32,13 +37,15 @@
     "status": "understood"
   },
   "1010:0672": {
-    "name": "timer_tick_clear",
-    "notes": "mov byte ptr cs:[066B],0; ret. Clears the tick flag before a wait. Callers: 97B2, D007, D318, D406 (each paired with a 0679 wait).",
-    "status": "understood"
+    "island": "sound",
+    "name": "overkill_clear_timer_tick_flag_0672",
+    "notes": "Tiny timer companion: mov byte ptr CS:[066B],0; ret. Moved into sound/timer island with the 0679 wait loop and IRQ0 model.",
+    "status": "replaced"
   },
   "1010:0679": {
+    "island": "sound",
     "name": "overkill_wait_timer_tick_0679",
-    "notes": "Busy-wait: cmp byte cs:[066B],0; jz 0679; ret. Waits for the next reprogrammed-IRQ0 tick. Callers 981A/D025/D340/D41F. Replaced by a narrow hook modelling one elapsed tick (066B 0->1) since this interpreter delivers no async interrupts; verified against interpreted ASM.",
+    "notes": "Timer-tick busy wait. Now delegated from replacements.py into the sound/timer island; delivers the original IRQ0 handler until CS:[066B] advances, then models the final CMP/JZ/RET iteration and optional frontend pacer.",
     "status": "replaced"
   },
   "1010:0682": {
@@ -66,12 +73,20 @@
     "notes": "Generic error display path. Reached with DX=0FF6 and stdout \"Memory de-allocation error\" when PSP AH=4Ah resize failed before checkpoint 8.",
     "status": "error path identified"
   },
+  "1010:0F0B": {
+    "island": "startup_graphics",
+    "name": "overkill_startup_coordinate_tables_0f0b",
+    "notes": "Startup coordinate/video lookup table builder. Fills the renderer data-segment table family at DS:99C8..A077, preserves the mode-dispatch register side effects, then falls through to 1010:0FA3. Renderer setup, not asset/file decoding.",
+    "status": "replaced"
+  },
   "1010:0FA3": {
+    "island": "startup_graphics",
     "name": "overkill_tandy_video_offset_tables_0fa3",
     "notes": "Startup table builder for Tandy/CGA-style video offsets. It sets ES=CS and fills four 256-word tables at CS:8D92, 8F92, 9192 and 9392 using cumulative strides from DS:1070, DS:1024, DS:1026 and DS:1028. The original ends with a near JMP to 1010:526A, not RET. Rendering startup data, not asset/overlay decoding.",
     "status": "replaced"
   },
   "1010:0FE4": {
+    "island": "startup_graphics",
     "name": "overkill_tandy_pixel_pair_table_0fe4",
     "notes": "Tandy/PCjr startup lookup-table builder. After the unpacked program resizes its DOS memory block, this routine sets ES=CS:[9596], DI=1517h, DH=0, then iterates DH through 00h..FFh. Each source byte is expanded into four bytes at DS:1514..1913; every 2-bit pair becomes 00h/0Fh/F0h/FFh using RCR DL,1 so final DL/FLAGS are observable. This is rendering startup table generation, not asset/overlay decoding.",
     "status": "replaced"
@@ -100,6 +115,18 @@
   "1010:306F": {
     "name": "overkill_tandy_rect_copy_306f",
     "notes": "Mode-2 raw rectangle copy used by menu/high-score text screens. Reads height/width from DS:SI, copies width*4 bytes per row to CS:[95A4] video memory, advances rows through Tandy +2000h interlace with +80A0h wrap correction, and preserves the balanced PUSH/POP stack scratch.",
+    "status": "replaced"
+  },
+  "1010:30B0": {
+    "island": "tandy_renderer",
+    "name": "overkill_tandy_interlaced_clear_30b0",
+    "notes": "Startup Tandy interlaced buffer clear. Static bytes set ES from CS:[95A4], clear 200 rows of 0x34 words, and return near.",
+    "status": "replaced"
+  },
+  "1010:30BA": {
+    "island": "tandy_renderer",
+    "name": "overkill_tandy_patched_row_copy_30ba",
+    "notes": "Runtime-patched Tandy strided row copier at the former clear-loop body. Signature-guarded; falls back to interpreting the current instruction if the overlay bytes do not match. Verified live from cold startup.",
     "status": "replaced"
   },
   "1010:30D2": {
@@ -197,9 +224,43 @@
     "notes": "Display blit/clear routine reached through CS:595A mode table. Verified against a captured pre-call snapshot and also through the 58DF loop snapshot.",
     "status": "replaced"
   },
+  "1010:4CED": {
+    "island": "layer_sprites",
+    "name": "overkill_presence_stamp_triplet_4ced",
+    "notes": "Small parent around three 4D15 presence-list stamping calls. Classified as layer_sprites; safe future hook candidate that should call/reuse 4D15 rather than reimplementing it.",
+    "status": "classified-frontier"
+  },
+  "1010:4D15": {
+    "name": "overkill_presence_stamp_list_4d15",
+    "notes": "Shared layer/object presence-list stamper. Used by Tandy gameplay as well as other modes; mode 1 has extra stacked-cell checks, non-mode-1 covers CGA and Tandy.",
+    "status": "replaced"
+  },
+  "1010:4D64": {
+    "island": "layer_sprites",
+    "name": "overkill_clear_presence_list_parent_4d64",
+    "notes": "Tiny parent before the shared 4D6F presence-list clear loop. Sets ES=CS:[9598], SI=C7B1h, CX=28h and tail-falls into the existing 4D6F hook; added to avoid duplicating clear logic.",
+    "status": "replaced"
+  },
+  "1010:4D6F": {
+    "name": "overkill_clear_presence_list_4d6f",
+    "notes": "Shared layer/object presence-list clear routine. Used across video modes; mode 1 clears stacked EGA cells, non-mode-1 clears base cells.",
+    "status": "replaced"
+  },
+  "1010:4E0D": {
+    "island": "tandy_renderer",
+    "name": "overkill_tandy_loading_scroll_until_4e0d",
+    "notes": "Parent loop around A781 loading-scroll step; preserves SI/DI, steps until DS:2350 <= DI and DS:234E == 0, then stores SI into DS:A978.",
+    "status": "replaced"
+  },
   "1010:50C9": {
     "name": "overkill_wait_vga_retrace_50c9",
     "notes": "C9EA wrapper that waits for VGA status bit 3 high/low through port 03DAh. Hook still calls the IO layer so vga_status_reads and AL/flags remain oracle-relative; preserves internal CALL stack scratch C9F0.",
+    "status": "replaced"
+  },
+  "1010:511F": {
+    "island": "layer_sprites",
+    "name": "overkill_video_page_toggle_511f",
+    "notes": "Shared per-frame video-page toggle stub. All modes call it; only mode 1 flips CS:[95A4] between A000/A200. Tandy/CGA path is CMP/JNE/RET.",
     "status": "replaced"
   },
   "1010:5827": {
@@ -212,6 +273,27 @@
     "notes": "Narrow mode-0 control-flow hook for 58DF..58F8. It repeatedly invokes verified 497A and 50C9 hooks and preserves push/call/pop stack scratches plus DEC CX + LOOP double-decrement.",
     "status": "replaced for verified mode-0 path"
   },
+  "1010:5A00": {
+    "name": "overkill_xy_to_di_5a00",
+    "notes": "Shared AX=(Y:X) to DI coordinate helper. Scales X according to CS:[95BC] for CGA/EGA/Tandy.",
+    "status": "replaced"
+  },
+  "1010:5A24": {
+    "name": "overkill_xy_to_di_5a24",
+    "notes": "Shared AX=(Y:X) to DI coordinate helper using alternate row table. Scales X according to CS:[95BC] for CGA/EGA/Tandy.",
+    "status": "replaced"
+  },
+  "1010:5A36": {
+    "name": "overkill_object_row_addr_5a36",
+    "notes": "Shared video-mode object row-address dispatch. Selects CGA/EGA/Tandy target through CS:[95BC]; not CGA-only despite older helper names.",
+    "status": "replaced"
+  },
+  "1010:5A6C": {
+    "island": "layer_sprites",
+    "name": "overkill_menu_cell_source_blit_dispatch_5a6c",
+    "notes": "Shared source-cell video-mode dispatch stub. Reads CS:[95BC], shifts by two, and jumps through CS:5A78. Called from dirty-cell presenter; mode-specific work remains in existing renderer hooks.",
+    "status": "replaced"
+  },
   "1010:5BDC": {
     "name": "present_frame_dispatch",
     "notes": "Per-frame presenter. Reads video mode CS:[95BC], shl 1, jmp cs:[bx+5BE8]. Mode 0 -> 447B. Called from the main loop at 1010:D010.",
@@ -221,6 +303,18 @@
     "kind": "target",
     "name": "object_movement_direction_helper_5db2",
     "notes": "Next fail-fast target after lifting A9E0->AA2B->EFAE->B73E. It compares object Y/X against DS:2304/2306, writes direction bits in DS:A954 and DS:230A, selects animation via DS:A348 xlat, then dispatches through CS:5E0C based on DS:2308. Needs reversal/verification next."
+  },
+  "1010:61C5": {
+    "island": "game_state",
+    "name": "overkill_decrement_first_active_counter_61c5",
+    "notes": "Scans DS:2368..2372 word counters, decrements the first non-zero counter, returns if all are zero.",
+    "status": "replaced"
+  },
+  "1010:61CA": {
+    "island": "game_state",
+    "name": "overkill_decrement_first_active_counter_scan_61ca",
+    "notes": "Hot inner countdown scan body. Starting from caller-provided DI, scans DS:2368..2372 word counters, decrements the first non-zero counter, and returns when all are zero.",
+    "status": "replaced"
   },
   "1010:62F6": {
     "kind": "helper",
@@ -257,11 +351,35 @@
     "notes": "OVERKILL shrinks the initial PSP-owned DOS memory block with ES=1000h, BX=22FFh before making AH=48h heap allocations. Requires DOSMachine.seed_initial_memory_block.",
     "status": "confirmed startup DOS memory operation"
   },
+  "1010:96C5": {
+    "island": "input_menu",
+    "name": "overkill_intro_retrace_delay_loop_96c5",
+    "notes": "Intro/menu fixed-count retrace delay loop. Calls installed 50C9 hook to preserve interactive pacing; continues at 96CA when CX reaches zero.",
+    "status": "replaced"
+  },
+  "1010:96C8": {
+    "island": "input_menu",
+    "name": "overkill_intro_retrace_delay_loop_tail_96c8",
+    "notes": "LOOP tail for 96C5 delay used when an interactive 50C9 pacing boundary yields at the original return IP.",
+    "status": "replaced"
+  },
   "1010:9E69": {
     "kind": "helper",
     "name": "post_contact_bookkeeping_9e69_observed",
     "notes": "Post-contact helper called after BFC7 from BC4B/BD09. Observed path checks A47C, 2384, 98C0 and BEDC, toggles byte A362, and returns when the toggle becomes 1. Other BEDC/toggle branches remain explicit fail-fast frontiers.",
     "status": "partial helper"
+  },
+  "1010:A781": {
+    "island": "tandy_renderer",
+    "name": "loading_scroll_step_a781",
+    "notes": "Single loading-scroll step reused by 60C5 and 4E0D parent hooks.",
+    "status": "lifted-via-parents"
+  },
+  "1010:A846": {
+    "island": "layer_sprites",
+    "name": "overkill_layer_sprite_scan_frontier_a846",
+    "notes": "Parent/setup for existing A849/A861 layer sprite scan hooks. Currently classified only; hook later by composing existing scan helpers to avoid duplicating presenter logic.",
+    "status": "classified-frontier"
   },
   "1010:A849": {
     "name": "overkill_scan_objects_call_5ac8_a849",
@@ -288,6 +406,12 @@
     "notes": "Layer-1 draw scan over DS:32CA object table. Preserves the original active/layer predicate using DS:BDAC, DS:2350, SS:[BP+16], and SS:[BP+0A], then stops at the real CALL A8F1 for the first drawable object. The separate 7596/layer draw hooks own the call body.",
     "status": "partial scan replacement"
   },
+  "1010:A90C": {
+    "island": "layer_sprites",
+    "name": "overkill_present_object_scan_pair_a90c",
+    "notes": "Layer-sprite present parent. Sets CX=22h and reuses the A90F DS:8D12 scan, then CX=24h and reuses the A927 DS:32CA scan, then clears the presence list through A93C/4D64/4D6F. Preserves partial continuations at the real 5A92 call sites.",
+    "status": "replaced"
+  },
   "1010:A90F": {
     "name": "overkill_scan_objects_call_5a92_a90f",
     "notes": "Descending present scan over the DS:8D12 object pointer table. Skips inactive entries and stops at the real CALL A91E for the first active object. The separate 5A92/present target hooks own the call body.",
@@ -297,6 +421,18 @@
     "name": "overkill_scan_objects_call_5a92_a927",
     "notes": "Descending scan over DS:32CA object table for present dispatch. Skips inactive entries and stops at the real CALL A936 for the first active object. The separate 5A92/present target hooks own the call body.",
     "status": "partial scan replacement"
+  },
+  "1010:A93C": {
+    "island": "layer_sprites",
+    "name": "overkill_present_scan_clear_presence_a93c",
+    "notes": "Tiny A93C CALL 4D64 ; RET parent. Reuses the 4D64 parent and 4D6F clear hook instead of reimplementing presence-list cleanup.",
+    "status": "replaced"
+  },
+  "1010:A940": {
+    "island": "game_state",
+    "name": "overkill_frame_game_state_update_a940",
+    "notes": "Per-frame state/update cluster: object scans, level globals, calls 1F8F:081D and 1F8F:0922. Classified as game_state; not yet hooked as a parent because it composes many existing object/render/game-state calls.",
+    "status": "classified-frontier"
   },
   "1010:A9E0": {
     "kind": "hook",
@@ -325,17 +461,80 @@
     "notes": "Observed BC4B contact-window helper. Handles the signed X guard, the AAAB->AA44 upper tail for the current snapshot, and the remaining AA44 success return. Negative-X and the other unobserved AA71 branches stay fail-fast.",
     "status": "understood"
   },
-  "1010:AB10": "object_logic_table_position_update",
+  "1010:AB10": {
+    "island": "gameplay_objects",
+    "name": "overkill_object_logic_ab10",
+    "notes": "Runtime-patched object logic helper. Updates sprite/table fields from DS:[2336]/A40C and object slot BP fields; observed deactivation branch jumps through AC22 when DS:[2384] or DS:[A47C] reaches 3.",
+    "status": "replaced"
+  },
+  "1010:AB34": {
+    "name": "overkill_object_motion_table_ab34",
+    "notes": "Runtime-patched helper. Uses base object DS:237C sprite index and caller DX table base to compute SS:[BP+2]/[BP+4] object coordinates from two signed/relative table words.",
+    "status": "replaced"
+  },
+  "1010:AB4F": {
+    "name": "overkill_object_scroll_sprite_ab4f",
+    "notes": "Runtime-patched helper. Stores DS:[233C]+18h into SS:[BP+8] for AB77 object behaviour sprite/graphic selection.",
+    "status": "replaced"
+  },
+  "1010:AB77": {
+    "island": "gameplay_objects",
+    "name": "overkill_object_behavior_ab77",
+    "notes": "Observed object-behaviour driver that reuses AB4F sprite scroll, AC28 tile probe, AC81/AC97 object-slot scan guard, and preserves original continuations AB8F/AB8C/ACD9 for still-unlifted tails.",
+    "status": "replaced"
+  },
+  "1010:ABA3": {
+    "island": "gameplay_objects",
+    "name": "overkill_object_behavior_aba3",
+    "notes": "Tracked-object follower/probe path reached from AD04 for globals A962/A964. Stores selected tracker pointer in DS:A42E, sets sprite index from DS:233C+14h, and reuses AC81/AC97 slot scan. CF-set collision continuations remain explicit original IPs ABC0/ABBD/ACD9.",
+    "status": "replaced"
+  },
+  "1010:AC28": {
+    "name": "overkill_tile_collision_probe_ac28",
+    "notes": "Runtime-patched ABxx object tile collision probe. Reuses 5073 coordinate-to-tile and 505B tile lookup helpers; returns clear on no collision, sets object variant/countdown fields on contact, and jumps AA44 when global gates disable object processing.",
+    "status": "replaced"
+  },
+  "1010:AC81": {
+    "kind": "hook",
+    "name": "overkill_object_slot_scan_guard_ac81",
+    "notes": "Small guard/setup wrapper around the existing AC97 object-slot overlap scan. Reuses run_object_slot_scan_ac97 instead of duplicating the scan body; BDAC==1 jumps to AA44/CLC RET."
+  },
   "1010:AC97": {
     "kind": "hook",
     "name": "overkill_object_slot_scan_ac97",
     "notes": "Hot object-slot scan over DS:23B4 with a 0038h stride. One hook call now consumes the verifier boundary for the whole scan, either returning through the original near return when the loop exhausts or stopping at ACD9 when a candidate must continue into the interpreted tail; it preserves the signed Y/X window checks and the SS:[BP+0Eh] identity comparison."
   },
-  "1010:AED8": "object_logic_movement_tile_probe_observed",
+  "1010:AD04": {
+    "kind": "hook",
+    "name": "overkill_object_logic_branch_ad04",
+    "notes": "Hot first-level object-logic branch selector. Returns immediately or dispatches to ABCA/AB71/AB69/AB61/AB59/ABA3 according to BDAC/2350, sprite id, and tracked object pointer globals; does not duplicate those ABxx behavior tails."
+  },
+  "1010:AE09": {
+    "kind": "hook",
+    "name": "overkill_object_behavior_ae09",
+    "notes": "Observed EFAE logic-id 0Ch behavior. Handles substate countdown, optional direction reset, 3-pixel AF22 movement step, then reuses the shared AD60 bounds/tile tail."
+  },
+  "1010:AED8": {
+    "kind": "hook",
+    "name": "overkill_object_behavior_aed8",
+    "notes": "Observed logic-id 2/3 countdown/movement object behavior. Runs AED8 through its B250/AD5A postmove branch and returns to the object scan caller; fail-fast leaves unobserved branches explicit."
+  },
   "1010:B73E": {
     "kind": "hook",
     "name": "overkill_object_behavior_b73e",
     "notes": "Partially lifted behavior for the observed logic_id 20h object. Covers the no-substate FFFFh movement path, B7F3/B7C9 target reset, substates B754/B770/B77B, the bounded B82D waypoint-table loop, and the B77B -> BC4B -> AA46 carry-set contact death path verified at frame 383 from snapshot_play_tandy_20260611_152751."
+  },
+  "1010:BC45": {
+    "island": "collision",
+    "name": "overkill_object_postmove_prelude_bc45",
+    "notes": "Tiny BC45 prelude that adds DS:A278 into SS:[BP+02] before falling through to the shared BC4B object postmove/collision chain.",
+    "status": "replaced"
+  },
+  "1010:BC48": {
+    "island": "collision",
+    "name": "object_postmove_prelude_add_delta",
+    "notes": "Second instruction of BC45 prelude; covered by 1010:BC45 hook.",
+    "status": "classified"
   },
   "1010:BC4B": {
     "kind": "hook",
@@ -350,13 +549,13 @@
   "1010:BD17": {
     "kind": "helper",
     "name": "object_deactivate_out_of_bounds_observed",
-    "notes": "Observed out-of-bounds deactivation tail from BC4B. The current draw_layer=5, logic_id=0000h branch simply clears the active flag and returns to the caller without touching A47E; the draw_layer-4 branch now also carries the nested C054 dispatcher that leaves AX=A4E4 on the current 0000h/0013h paths and preserves the BD5F stack scratch.",
+    "notes": "Observed out-of-bounds deactivation tail from BC4B. The current draw_layer=5, logic_id=0000h branch simply clears the active flag and returns to the caller without touching A47E; the draw_layer-4 branch now also carries the nested C054 dispatcher and the A83Eh/A82Ah selector tail that writes A482/A842, seeds the 7420 linked-effect spawn helper, and decrements DS:A47E before unwinding through BD5F.",
     "status": "partial helper"
   },
   "1010:BEC5": {
     "kind": "helper",
     "name": "collision_handler_observed_variant_2",
-    "notes": "Observed variant-2 collision path reached from B73E/BC4B/62F6. Handles BEDC=0000 staged counter path including the third-counter-zero BF4B/BFC7 tail and the fourth-counter-zero BFC7 type-1 death/logic-transition tail, plus BEDC=0001 tail through BF4D. The sprite=0033 branch falls through into the shared BF25 logic instead of failing fast. The variant table also routes 0007h/0008h/000Ch/0009h to the shared BFB9 tail, which is now preserved instead of failing fast. Other branches remain fail-fast."
+    "notes": "Observed variant-2 collision path reached from B73E/BC4B/62F6. Handles BEDC=0000 staged counter path including the third-counter-zero BF4B/BFC7 tail and the fourth-counter-zero BFC7 type-1 death/logic-transition tail, plus BEDC=0001 tail through BF4D. The sprite=0033 branch falls through into the shared BF25 logic instead of failing fast. The variant table also routes 0007h/0008h/000Ch/0009h to the shared BFB9 tail, which is now preserved instead of failing fast. Other branches remain fail-fast. The owner-linked fallback after the 2/6/5 checks is also covered for observed variant 000Ah: when DS:[BX+30h] equals BP it clears DS:[BX+1Ch], optionally clears SS:[BP+20h], then joins BFC7."
   },
   "1010:BFC7": {
     "kind": "helper",
@@ -370,9 +569,9 @@
     "notes": "Shared object-logic selector used by BD17 and BFC7. The compare chain selects A79Ch, A6F0h, A83Eh, A82Ah, A5C0h, or A4E4h for known selector values, decrements DS:A47E for the smaller counter family, and otherwise falls through to default AX=A4E4h; observed 0000h, 0013h, and 003Bh all use that default/no-counter behavior."
   },
   "1010:C713": {
-    "name": "asset_table_search_candidate",
-    "notes": "Scans words from DS:14D0 looking for DS:21AA or FFFF after asset decode. Observed around checkpoint 6; likely small next hook/caller-analysis target.",
-    "status": "candidate"
+    "name": "overkill_decoded_asset_table_search_c713",
+    "notes": "Decoded-asset resident table search after asset materialization. Scans DS:14D0-style word list from live SI for DS:[21AA], returns immediately on match, or continues at C720 when the FFFF terminator is reached. Verified against interpreted ASM for match and terminator exits.",
+    "status": "replaced"
   },
   "1010:C916": {
     "name": "overkill_file_checksum_loop",
@@ -384,10 +583,45 @@
     "notes": "Reads port 03DAh and waits for bit 3. DOSMachine.port_read now toggles that bit.",
     "status": "hardware wait identified"
   },
+  "1010:CC7F": {
+    "name": "overkill_dirty_cell_presenter_row_cc7f",
+    "notes": "Row driver inside the CC4F/CC58 dirty-cell menu/status presenter. It computes the row DI through 5A24, dispatches one of the dirty-copy leaves CCAA/CCF0/CCC4, and when DL marks a changed cell it draws the source cell and presents it through the CD7E changed-cell presenter. The hook consumes the inner CC7F..CE10 row loop until CE13; EGA mode can still continue at original 24D7/CDCC targets.",
+    "status": "replaced"
+  },
+  "1010:CD68": {
+    "island": "tandy_renderer",
+    "name": "overkill_dirty_cell_presenter_resume_cd68",
+    "notes": "Resume tail for the CC7F dirty-cell presenter after the nested 50C9 pacing/wait boundary. Pops the saved DI, presents the changed cell through CD7E/CDAA or CD8D, restores DS, increments the row cursor, pops the saved row counter and loops to CC7F or exits at CE13.",
+    "status": "replaced"
+  },
   "1010:CDAA": {
     "name": "overkill_tandy_changed_dword_present_8rows_cdaa",
     "notes": "Mode-2 dirty-present loop. Copies two words from DS:SI to ES:DI for each of eight rows, advances SI by 00A0h, advances DI through Tandy +2000h interlace with +80A0h wrap correction, and continues at CE02.",
     "status": "replaced"
+  },
+  "1010:CE40": {
+    "island": "input_menu",
+    "name": "overkill_menu_transition_input_wait_ce40",
+    "notes": "Menu/transition input wait subroutine after dirty-cell presenter rows. Polls input through 0162, tests DS:98BE bit 10h, can latch DS:98C3=39h, then waits through the installed 50C9 retrace hook up to CX times. Uses installed 50C9 intentionally to preserve play.py pacing boundaries.",
+    "status": "replaced"
+  },
+  "1010:CE5C": {
+    "island": "input_menu",
+    "name": "overkill_menu_transition_input_wait_loop_ce5c",
+    "notes": "LOOP/RET tail for CE40 used when an interactive 50C9 pacing wrapper yields at the original return IP. Decrements CX without altering flags and either jumps to CE40 or returns.",
+    "status": "replaced"
+  },
+  "1010:D007": {
+    "island": "game_state",
+    "name": "overkill_main_frame_loop_d007",
+    "notes": "Main gameplay frame-loop dispatcher: clear timer flag, page/video stubs, layer/object/render/update calls, input poll, wait timer. Classified so it no longer looks like unknown code; do not hook until child calls are exhausted.",
+    "status": "classified-frontier"
+  },
+  "1010:D04D": {
+    "island": "game_state",
+    "name": "overkill_frame_ui_or_state_update_d04d",
+    "notes": "Classified per-frame game-state/UI frontier reached from the main D007 frame dispatcher. It starts by clearing DS:A278 and then enters a larger state/update sequence; not yet a safe small hook.",
+    "status": "classified-frontier"
   },
   "1010:ECF2": {
     "name": "overkill_lz_decoder_ecf2",
@@ -402,15 +636,28 @@
     "name": "overkill_object_family_dispatch_efae",
     "notes": "Second-level object family dispatcher reached from AA2B. Publishes SS:[BP+04] to DS:D1FE and SS:[BP+02] to DS:D200, then dispatches through CS:EFC4 indexed by SS:[BP+18]. Kept dispatch-only after frame verification showed inline child gameplay execution caused frame-34 drift."
   },
+  "1F8F:0922": {
+    "island": "game_state",
+    "name": "overkill_gameplay_counter_tick_1f8f_0922",
+    "notes": "Far-call per-frame counter tick reached from A940. Advances/toggles C812/C814/C816 and reuses the existing 1F8F:0960 gameplay counter stride loop. Not asset decode despite overlay segment residence.",
+    "status": "replaced"
+  },
+  "1F8F:0960": {
+    "island": "game_state",
+    "name": "overkill_gameplay_counter_stride_loop_1f8f_0960",
+    "notes": "Near helper in overlay segment, but semantically per-frame gameplay counter state. Walks CX words spaced six bytes apart, increments each, wraps counters at 00C0h, and returns. Moved out of overlay/asset_codecs to avoid classifying by segment residence.",
+    "status": "replaced"
+  },
   "2376:0010": {
     "name": "mz_entry_after_dos_load",
     "notes": "MZ CS:IP 1366:0010 loaded at segment 1010h.",
     "status": "confirmed"
   },
   "254A:04D7": {
-    "name": "overlay_container_open_entry_path",
-    "notes": "Far-call file/container helper. Opens OVERKILL, seeks entry offsets, checks small headers/signatures, and reaches the overlay directory scan at 05A1. The 05A1/05D9/0701 subloops are individually verified and replaced. The parent 04D7 file-open/read/seek path is still the open investigation target.",
-    "status": "active investigation target"
+    "island": "file_io",
+    "name": "overkill_overlay_container_open_entry_254a_04d7",
+    "notes": "Far-call overlay/container file-I/O parent. Opens either the OVERKILL container-list entry path or a direct file depending on CS:[073A] bit 0; reads 12-byte headers, computes MZ overlay directory offsets, delegates verified signature/directory/name/path subloops, seeks to the selected payload, and returns AX=BX handle plus CX:DX length. Verified from cold-start live calls and snapshot oracle.",
+    "status": "replaced"
   },
   "254A:0582": {
     "name": "overlay_signature_compare_loop",
@@ -433,6 +680,13 @@
     "notes": "Overlay path-component normalizer. Conditionally trims DS:SI and ES:DI to the component after the final backslash, preserves the live BP scratch pointer, then returns with RETF to the caller frame pushed by 05A1. Verified against interpreted ASM for gate-on and gate-off paths.",
     "status": "replaced"
   },
+  "32FF:0052": {
+    "island": "bootstrap",
+    "kind": "bootstrap",
+    "name": "inner_unpack_relocation_bootstrap_32ff_0052",
+    "notes": "Runtime-allocated transient unpack/self-relocation bootstrap segment seen during cold start. Classified away from unknown for coverage triage, but not a stable game-module island; leave interpreted unless boot performance becomes a blocker.",
+    "status": "classified-do-not-hook"
+  },
   "DOS:INT21:48": {
     "name": "minimal_distinct_paragraph_allocator",
     "notes": "Checkpoint 8 replaces the old constant 7000h placeholder with a monotonic paragraph allocator seeded by the PSP block resize. Prevents work/source/screen buffer aliasing.",
@@ -442,10 +696,5 @@
     "name": "resize_memory_block_support",
     "notes": "Supports OVERKILL startup shrink of the PSP block and deterministic grow/shrink of tracked most-recent allocations.",
     "status": "implemented"
-  },
-  "1010:CC7F": {
-    "name": "overkill_dirty_cell_presenter_row_cc7f",
-    "notes": "Row driver inside the CC4F/CC58 dirty-cell menu/status presenter. It computes the row DI through 5A24, dispatches one of the dirty-copy leaves CCAA/CCF0/CCC4, and when DL marks a changed cell it draws the source cell and presents it through the CD7E changed-cell presenter. The hook consumes the inner CC7F..CE10 row loop until CE13; EGA mode can still continue at original 24D7/CDCC targets.",
-    "status": "replaced"
   }
 }

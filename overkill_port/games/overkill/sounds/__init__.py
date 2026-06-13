@@ -4,9 +4,13 @@ from .pc_speaker import (
     OVERKILL_PIT_HZ,
     SIG_FAST_TIMER_ISR_06E5,
     SIG_PC_SPEAKER_TICK_D50E,
+    SIG_TIMER_CLEAR_0672,
+    SIG_TIMER_WAIT_0679,
     deliver_overkill_timer_irq0,
+    run_clear_timer_tick_flag_0672,
     run_fast_timer_isr_06e5,
     run_pc_speaker_tick_d50e,
+    run_wait_timer_tick_0679,
 )
 
 __all__ = [
@@ -14,7 +18,11 @@ __all__ = [
     "OVERKILL_PIT_HZ",
     "SIG_FAST_TIMER_ISR_06E5",
     "SIG_PC_SPEAKER_TICK_D50E",
+    "SIG_TIMER_CLEAR_0672",
+    "SIG_TIMER_WAIT_0679",
     "deliver_overkill_timer_irq0",
+    "run_clear_timer_tick_flag_0672",
     "run_fast_timer_isr_06e5",
     "run_pc_speaker_tick_d50e",
+    "run_wait_timer_tick_0679",
 ]

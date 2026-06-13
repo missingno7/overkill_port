@@ -23,6 +23,16 @@ SIG_TILE_PROBE_5073 = bytes.fromhex(
     "a1 4e 23 03 46 02 a3 5a 21 78 f1 d1 e8 d1 e8 d1 e8 d1 e8"
 )
 
+SIG_OBJECT_SLOT_SCAN_GUARD_AC81 = bytes.fromhex("83 3e ac bd 01 75 03 e9 b9 fd b9 23 00 bb b4 23 8b 46 04 8b 7e 02")
+
+SIG_TILE_COLLISION_PROBE_AC28 = bytes.fromhex(
+    "83 3e 7c a4 00 74 03 e9 12 fe 83 3e ac bd 01 75 03 e9 08 fe "
+    "e8 34 a4 83 c3 0d e8 16 a4 75 0f f7 46 04 0f 00 74 06 43 "
+    "e8 09 a4 75 02 f8 c3 80 3e c0 98 00 74 05 c6 06 ff be 0e "
+    "c7 46 24 05 00 83 3e dc be 00 75 07 83 3e 24 23 01 75 df "
+    "ff 4e 20 75 da c7 46 24 00 00 f9 c3"
+)
+
 
 def _signed16(value: int) -> int:
     value &= 0xFFFF
@@ -172,6 +182,34 @@ def run_object_deactivate_logic_dispatch_c054(cpu) -> None:
         s.ax = ax
         if selector == value:
             return
+
+
+
+def run_object_slot_scan_guard_ac81(cpu, self_disable_if_patched) -> None:
+    """Guard/setup wrapper around the shared AC97 object-slot overlap scan.
+
+    AC81 is not a separate collision algorithm; it gates the scan on DS:BDAC,
+    initializes the AC97 loop registers from the current object slot, then lets
+    ``run_object_slot_scan_ac97`` own the real overlap walk.
+    """
+    if self_disable_if_patched(cpu, 0xAC81, SIG_OBJECT_SLOT_SCAN_GUARD_AC81, "overkill_object_slot_scan_guard_ac81"):
+        return
+    s = cpu.s
+    mem = cpu.mem
+    ds = s.ds & 0xFFFF
+    ss = s.ss & 0xFFFF
+    bp = s.bp & 0xFFFF
+    bdac = mem.rw(ds, 0xBDAC)
+    _cmp_word(cpu, bdac, 0x0001)
+    if bdac == 0x0001:
+        cpu.set_flag(CF, False)
+        s.ip = cpu.pop()
+        return
+    s.cx = 0x0023
+    s.bx = 0x23B4
+    s.ax = mem.rw(ss, (bp + 0x04) & 0xFFFF)
+    s.di = mem.rw(ss, (bp + 0x02) & 0xFFFF)
+    run_object_slot_scan_ac97(cpu)
 
 
 def run_object_slot_scan_ac97(cpu) -> None:
@@ -360,6 +398,94 @@ def run_player_hazard_object_scan_bde3(cpu, self_disable_if_patched) -> None:
     s.ax = ax
     s.di = di
     cpu.set_flag(CF, False)
+    s.ip = cpu.pop()
+
+
+def run_tile_collision_probe_ac28(cpu, self_disable_if_patched) -> None:
+    """Lift the runtime-patched AC28 tile collision probe.
+
+    The ABxx object behaviours call this helper after preparing an object probe
+    point.  It checks the tile under/near the object through the existing 5073
+    coordinate-to-tile and 505B tile-id lookup helpers.  On clear space it
+    returns with CF clear; on an actionable collision it decrements the object
+    countdown at BP+20h and returns with CF set only when that counter reaches
+    zero.  Global gates A47C or BDAC jump to AA44 exactly like the patched ASM.
+    """
+    if self_disable_if_patched(cpu, 0xAC28, SIG_TILE_COLLISION_PROBE_AC28, "overkill_tile_collision_probe_ac28"):
+        return
+
+    def no_patch_guard(*_args) -> bool:
+        return False
+
+    s = cpu.s
+    mem = cpu.mem
+    ds = s.ds & 0xFFFF
+    ss = s.ss & 0xFFFF
+    bp = s.bp & 0xFFFF
+
+    _cmp_word(cpu, mem.rw(ds, 0xA47C), 0)
+    if not cpu.get_flag(0x0040):  # JZ not taken -> JMP AA44.
+        s.ip = 0xAA44
+        return
+    _cmp_word(cpu, mem.rw(ds, 0xBDAC), 1)
+    if cpu.get_flag(0x0040):  # JNE not taken -> JMP AA44.
+        s.ip = 0xAA44
+        return
+
+    cpu.push(0xAC3F)
+    run_tile_probe_5073(cpu, no_patch_guard)
+    # 5073 returns to AC3F.
+    old_bx = s.bx & 0xFFFF
+    s.bx = (old_bx + 0x000D) & 0xFFFF
+    cpu.set_add_flags(old_bx, 0x000D, old_bx + 0x000D, 16)
+    cpu.push(0xAC45)
+    run_tile_lookup_505b(cpu, no_patch_guard)
+    if not cpu.get_flag(0x0040):  # JNE AC56
+        collided = True
+    else:
+        cpu.set_logic_flags(mem.rw(ss, (bp + 0x04) & 0xFFFF) & 0x000F, 16)  # TEST [BP+4],000Fh
+        if cpu.get_flag(0x0040):
+            collided = False
+        else:
+            old_bx = s.bx & 0xFFFF
+            old_cf = cpu.get_flag(CF)
+            s.bx = (old_bx + 1) & 0xFFFF
+            cpu.set_add_flags(old_bx, 1, old_bx + 1, 16)
+            cpu.set_flag(CF, old_cf)  # INC preserves CF.
+            cpu.push(0xAC52)
+            run_tile_lookup_505b(cpu, no_patch_guard)
+            collided = not cpu.get_flag(0x0040)
+
+    if not collided:
+        cpu.set_flag(CF, False)
+        s.ip = cpu.pop()
+        return
+
+    _cmp_word(cpu, mem.rb(ds, 0x98C0), 0)
+    if not cpu.get_flag(0x0040):
+        mem.wb(ds, 0xBEFF, 0x0E)
+    mem.ww(ss, (bp + 0x24) & 0xFFFF, 0x0005)
+    _cmp_word(cpu, mem.rw(ds, 0xBEDC), 0)
+    if cpu.get_flag(0x0040):
+        _cmp_word(cpu, mem.rw(ds, 0x2324), 1)
+        if not cpu.get_flag(0x0040):
+            cpu.set_flag(CF, False)
+            s.ip = cpu.pop()
+            return
+
+    old = mem.rw(ss, (bp + 0x20) & 0xFFFF)
+    old_cf = cpu.get_flag(CF)
+    result_full = old - 1
+    mem.ww(ss, (bp + 0x20) & 0xFFFF, result_full & 0xFFFF)
+    cpu.set_sub_flags(old, 1, result_full, 16)
+    cpu.set_flag(CF, old_cf)  # DEC preserves CF.
+    if not cpu.get_flag(0x0040):
+        cpu.set_flag(CF, False)
+        s.ip = cpu.pop()
+        return
+
+    mem.ww(ss, (bp + 0x24) & 0xFFFF, 0x0000)
+    cpu.set_flag(CF, True)
     s.ip = cpu.pop()
 
 

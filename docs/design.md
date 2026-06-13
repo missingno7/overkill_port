@@ -20,6 +20,62 @@ The original executable is always the oracle. The runtime should be capable of:
 
 The design should remain narrow. Generic emulator completeness is not a goal.
 
+For the complete reusable workflow, see
+`docs/source_port_methodology.md`.  This design document explains the local
+architecture that supports that workflow.
+
+
+## Crystallization Layers
+
+The current runtime intentionally starts below a conventional game engine.  Most
+object logic is still represented as verified slot/table behavior: sprites move,
+probe tiles, collide, update fields, and call postmove tails.  We do not need to
+name every slot as player/enemy/projectile yet.
+
+The intended end state is a layered migration:
+
+```text
+8. Modern game / enhanced port layer
+7. Semantic game model layer
+6. Gameplay archetype layer
+5. Game systems layer
+4. Runtime object/data model layer
+3. Verified lifted routine layer
+2. ASM-compatible hook/runtime layer
+1. Original binary oracle layer
+```
+
+The architecture should let these layers emerge in order.  Do not skip directly
+from an address-level hook to a semantic enemy name unless the lower layers have
+made that name obvious.  `replacements.py` and hook wrappers live around layers
+2-3; `games/overkill/<island>/` modules are mostly layers 3-5; future clean
+gameplay models will be layers 6-8.
+
+See `docs/source_port_methodology.md` for the full reusable version of this
+pyramid.
+
+
+## Architectural Layer Rules
+
+A higher layer may only depend on evidence from lower layers. Lower layers must
+not import higher layers or interpret their concepts.
+
+```text
+asset_codecs        -> bytes and decoded records, never Enemy/Boss
+file_io             -> handles, offsets, flags, container records, never gameplay
+rendering           -> pixels, planes, cells, sprites, presence lists, never story
+collision/runtime   -> slots, fields, probes, overlaps, side effects, never final archetypes
+semantic model      -> may read evidence from lower layers
+modern layer        -> may use semantic model for enhancements
+```
+
+This keeps the source port reversible. A future `EnemyDefinition` must still be
+able to point back to the original slot fields, behavior id, verified routine,
+and ASM trace that justify it.
+
+Every island should have a compact confidence summary in
+`docs/island_truth_tables.md`.
+
 ## Runtime Components
 
 - `mz.py`: DOS MZ parsing, relocation handling, and load-module extraction.
@@ -91,6 +147,12 @@ Stable game-specific behavior should move into modules under:
 
 ```text
 overkill_port/games/overkill/
+  asm.py                 shared 8086-style helper functions
+  asset_codecs/          deterministic asset streams and decoders
+  file_io/               overlay/container file orchestration
+  gameplay/              objects, movement, collision, postmove behavior
+  rendering/             coordinates, Tandy/video primitives, layer sprites
+  sounds/                timer and PC speaker behavior
 ```
 
 This split keeps two ideas separate:
@@ -98,6 +160,20 @@ This split keeps two ideas separate:
 - the original binary boundary (`1010:ECF2`),
 - the reconstructed game behavior (`decode_lz_asset`, rendering helpers, object
   logic, etc.).
+
+The intended migration path is:
+
+```text
+unknown original ASM
+  -> staged hook in replacements.py
+  -> verified helper in games/overkill/<island>/
+  -> thin wrapper remains in replacements.py
+```
+
+A module should not grow a parallel copy of behavior that already exists in
+another module.  Shared original tails should be factored into helpers named
+after their original address, for example `_run_object_bounds_tile_tail_ad60` or
+`build_video_offset_tables_0fa3`.
 
 ## Verification Layers
 

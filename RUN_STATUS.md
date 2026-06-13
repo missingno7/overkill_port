@@ -1,3 +1,107 @@
+## 2026-06-13 interactive Tandy timer ordering guard
+
+Investigated a hidden level-start issue where the initial enemy sequence played
+but the next level phase did not appear to continue in interactive Tandy play.
+
+Findings:
+
+- Long Tandy frame verification from
+  `artifacts\test_oracles\snapshot_play_tandy_20260611_152751` stayed clean
+  through 500 frames, so the deterministic hooked runtime still matches the ASM
+  frame oracle at that level-start snapshot.
+- The interactive SDL path had one extra source of timer mutation that the frame
+  verifier does not exercise: `present_hook` could call
+  `AsyncTimerIrqDriver.poll()` before the normal `1010:0679` frame wait.  If that
+  IRQ advanced `CS:[066B]`, the later `0679` hook could return immediately
+  instead of delivering the expected frame ISR work at the timer boundary.
+
+Fix:
+
+- Removed async IRQ polling from the presenter boundary.  Async IRQs still run
+  in explicit retrace/menu/input wait loops where there is no normal `0679`
+  frame wait to service sound.
+- After every `0679` timer boundary, re-anchor the async IRQ scheduler by one
+  full OVERKILL frame (`2` PIT ticks) instead of using the raw number of ISR
+  ticks that happened to run inside that hook.
+
+Verification:
+
+```text
+C:\Users\Jiri\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe scripts\run_tests.py
+# 171 passed, 0 failed
+C:\Users\Jiri\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe scripts\play.py --snapshot artifacts\test_oracles\snapshot_play_tandy_20260611_152751 --verify-frames --verify-frame-max 300 --verify-frame-source both
+# FRAME VERIFY OK frames=300
+```
+
+## 2026-06-13 live frame verifier preview
+
+Added an interactive preview mode for frame verification.
+
+Behavior:
+
+- `python scripts\play.py --verify-frames --verify-frame-preview` now launches
+  the normal SDL viewer and publishes the candidate runtime while each frame is
+  compared against the reference ASM runtime.
+- Keyboard input is delivered to both runtimes before frame boundaries, so the
+  verifier can be played like `--verify-hooks`.
+- With live preview and the default `--verify-frame-max 60`, the verifier treats
+  the run as unbounded so the window does not close almost immediately.  Pass an
+  explicit `--verify-frame-max N` for a bounded live run.
+- The old "open compare image on divergence" behavior is now
+  `--verify-frame-preview-on-diff`.
+
+Verification:
+
+```text
+C:\Users\Jiri\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe scripts\run_tests.py
+# 173 passed, 0 failed
+C:\Users\Jiri\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe scripts\play.py --snapshot artifacts\test_oracles\snapshot_play_tandy_20260611_152751 --verify-frames --verify-frame-max 5 --verify-frame-source both
+# FRAME VERIFY OK frames=5
+```
+
+## 2026-06-13 hook verifier throughput pass
+
+Improved `--verify-hooks` throughput without changing verifier coverage.
+
+Follow-up after an interactive `play.py --verify-hooks --verify-stop-on-diff`
+stall report:
+
+- Headless cold-start verification reproduced a real verifier oracle problem:
+  raw interpreted ASM for `1010:0679` can spin forever at the timer wait because
+  the original busy-loop depends on IRQ0 advancing `CS:[066B]`.
+- `HookVerifier._run_asm_to_target` now recognizes the original `0679/067F`
+  timer wait and delivers the real installed OVERKILL INT 08h handler
+  (`1010:06E5`) when `CS:[066B] == 0`.  This is not a synthetic fallback; it is
+  the same game ISR the original wait loop is expecting.
+- `scripts/play.py` now passes a verifier progress callback so the SDL status
+  line shows the current hook being verified during long oracle runs.
+
+Changes:
+
+- `HookVerifier._clone_runtime` now copies the current memory image directly
+  instead of allocating and zeroing a fresh full memory buffer before copying.
+- `HookVerifier._range_diff` now uses a C-level `memoryview` equality check for
+  identical ranges, and only walks bytes when a range actually diverges.
+- Added a regression test proving the optimized range diff still reports a
+  clean match, exact differing-byte count, and first differing address/value.
+
+Verification:
+
+```text
+C:\Users\Jiri\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe scripts\run_tests.py
+# 171 passed, 0 failed
+C:\Users\Jiri\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -m overkill_port.cli snapshot assets\OVERKILL.UNLZEXE.EXE --game-root assets --steps 2000000 --verify-hooks --verify-max 1000 --out-dir artifacts\tmp_verify_hooks_cold_final
+# HOOK VERIFY LIMIT REACHED verified=1000
+```
+
+Benchmark from `artifacts\snapshot_play_tandy_20260612_151523` with
+`--verify-hooks --verify-max 200`:
+
+```text
+before: ~4583 ms
+after:  ~574 ms
+```
+
 ## 2026-06-12 PC speaker timing cadence fix
 
 Investigated two sound-related Tandy snapshots:
@@ -1838,3 +1942,311 @@ instead:
 - Tandy: `bytes((0x0D, 0x02))`
 
 The `--dos-args` escape hatch remains for raw ASCII PSP-tail experiments.
+
+## 2026-06-13 BEC5 variant 000A owner-linked collision tail
+
+`snapshot_play_tandy_20260613_000648` reached `BC4B -> 62F6 -> BEC5` with a
+collided slot whose logic/variant field was `000Ah`.  The original does not
+have a dedicated 000A handler; after the 7/8/0C/9 table and the 2/6/5 checks it
+compares the current object BP with `DS:[BX+30h]`.  A match marks the collided
+slot as linked to the current object, clears `DS:[BX+1Ch]`, clears
+`SS:[BP+20h]` when `A8C2 != 1`, and jumps into the shared `BFC7` transition
+path.
+
+- `_run_collision_handler_bec5_observed` now models that owner-linked fallback.
+- Added a regression that advances the captured snapshot to the 53rd `BC4B`
+  call and compares the lifted hook against interpreted original ASM with full
+  memory equality.
+
+## 2026-06-13 refactor pass: replacements staging split
+
+- Moved shared OVERKILL 8086-style arithmetic/string helpers out of
+  `replacements.py` into `overkill_port/games/overkill/asm.py`.
+- Moved the large gameplay object/postmove/collision behavior island out of
+  `replacements.py` into `overkill_port/games/overkill/gameplay/object_runtime.py`.
+  The address-facing hook wrappers remain in `replacements.py` and import the
+  lifted game logic back, preserving the hook-registration boundary.
+- Added `1010:30BA overkill_tandy_patched_row_copy_30ba`, a signature-guarded
+  hook for the runtime-patched Tandy row copier that was showing up as the
+  `30C3/30C4/...` unknown hotspot cluster.  The old static bytes at `30BA` are
+  not stable; if the patched row-copy signature is not resident, the hook
+  interprets the current original instruction instead of guessing.
+- Added `1010:30B0 overkill_tandy_interlaced_clear_30b0` for the static startup
+  Tandy interlaced clear routine.
+- Validation: `python scripts/run_tests.py` => `161 passed, 0 failed`.
+- Live verification: `scripts/play.py --verify-hook 1010:30BA --verify-stop-on-diff`
+  verified 25 calls before the smoke run timeout, with `1010:30BA` averaging
+  about 112.68 ASM-equivalent instructions/call.
+
+## 2026-06-13 video-mode label audit
+
+- Audited CGA-labelled hooks seen during Tandy gameplay.
+- Confirmed `1010:5A00`, `1010:5A24`, and `1010:5A36` are shared video-mode dispatch helpers. They select CGA/EGA/Tandy behavior through `CS:[95BC]`, so their registered hook names were changed from `overkill_cga_*` to neutral coordinate names while keeping old aliases for tests/tools.
+- Reclassified `1010:4D15` and `1010:4D6F` from `cga_renderer` to `layer_sprites`: these are shared presence/occupancy-list stamp/clear helpers used by Tandy gameplay too. Mode 1 has EGA-style stacked-cell handling; CGA/Tandy share the non-mode-1 base-cell path.
+- Short Tandy snapshot coverage smoke now reports zero `cga_renderer` calls for the intro/dirty-cell presenter path; shared hooks show under `coordinates`, `layer_sprites`, or `tandy_renderer` as appropriate.
+
+
+## 2026-06-13 - Unknown gameplay/collision hook absorption
+
+Absorbed several hot unknown/gameplay instructions without duplicating existing logic:
+
+- `1010:AED8 overkill_object_behavior_aed8` now hooks the observed logic-id 2/3 countdown/movement behavior and reuses a shared `AD60` bounds/tile tail.
+- `1010:AD04 overkill_object_logic_branch_ad04` is only a branch selector: it returns or jumps to existing `ABxx` behavior tails, rather than reimplementing those tails.
+- `1010:AC81 overkill_object_slot_scan_guard_ac81` is only the guard/setup for the already-lifted `AC97` object-slot scan and directly reuses `run_object_slot_scan_ac97`.
+- `1010:AE09 overkill_object_behavior_ae09` handles the observed logic-id `0Ch` timer/3-pixel movement behavior, then reuses the same shared `AD60` tail as `AED8`.
+
+The previous inline `AD60` implementation inside `AED8` was refactored into `_run_object_bounds_tile_tail_ad60` so new behaviors do not clone the same bounds/tile/deactivation logic.
+
+Validation: `python scripts/run_tests.py` => `162 passed, 0 failed`; `python -m compileall -q overkill_port tests scripts`; live hook verifier samples were recorded for `AC81`, `AD04`, `AE09`, and `AED8` and added to `artifacts/hook_coverage_cache.json`.
+
+## 2026-06-13 startup renderer table unknown absorption
+
+- Identified the `1010:0F31/0F32/0F37` unknown startup cluster as the inner loop
+  of `1010:0F0B`, a renderer coordinate/video lookup-table builder.
+- Added `1010:0F0B overkill_startup_coordinate_tables_0f0b` in the renderer
+  module.  The hook generates the `DS:99C8..A077` table family and reuses the
+  existing `1010:0FA3` lifted helper for the fallthrough table builder, avoiding
+  a second implementation of the same `0FA3` logic.
+- Regression oracle `snapshot_stop_1010_0f0b_startup_tables` compares the lifted
+  hook against fully interpreted ASM through continuation `1010:526A` with full
+  CPU and memory equality.
+- Validation: `python scripts/run_tests.py` => `163 passed, 0 failed`.
+- Live verification: `scripts/play.py --video tandy --verify-hook 1010:0F0B
+  --verify-stop-on-diff` verified the cold-start call with no divergence before
+  the smoke timeout.
+- Remaining cold-start unknowns around `32FF:0052` belong to the transient
+  unpack/relocation bootstrap segment, not to a stable game island.  I did not
+  hook them because the segment is dynamically loaded and not useful as a game
+  module boundary.
+
+## 2026-06-13 documentation/methodology refresh
+
+Updated the project documentation to describe the now-established source-port
+method as a reusable system rather than a pile of one-off OVERKILL fixes.
+
+Main documentation changes:
+
+- Added `docs/source_port_methodology.md`, the canonical playbook for the
+  evidence-driven workflow:
+  `observe -> classify -> choose boundary -> build ASM oracle -> implement hook -> verify -> document -> move to island`.
+- Updated `AGENTS.md` with the canonical workflow, the current island-module
+  layout, the staging rule for `replacements.py`, and the requirement to search
+  for existing tails/helpers before implementing a new hook.
+- Removed a duplicated `CPU Interpreter Rules` section from `AGENTS.md`.
+- Updated `README.md` with the methodology loop, current island examples, and a
+  pointer to the new methodology document.
+- Updated `docs/design.md` with the current `games/overkill/` module map and the
+  migration path from original ASM to staged hook to island module.
+- Replaced the stale `docs/next_steps.md` bootstrap-era TODO list with current
+  priorities: meaningful unknown absorption, keeping `replacements.py` as
+  staging, duplicate-code prevention, intentional verification modes, and island
+  documentation hygiene.
+
+No runtime code changed in this pass.
+
+## 2026-06-13 logic-pyramid documentation and bootstrap classification
+
+- Added the end-goal source-port pyramid to `docs/source_port_methodology.md`,
+  `docs/design.md`, `README.md`, `AGENTS.md`, and `docs/next_steps.md`:
+  original binary oracle -> ASM-compatible hook/runtime -> verified lifted
+  routine -> runtime object/data model -> game systems -> gameplay archetypes ->
+  semantic game model -> modern/enhanced port layer.
+- Clarified that current object work is mostly still layer 4: slots with
+  sprite/layer/logic-id/movement/collision fields.  Player/projectile/enemy/boss
+  names should emerge only after multiple verified routines support them.
+- Added a `bootstrap` coverage island for the transient `32FF:*` cold-start
+  unpack/self-relocation segment.  This makes the dashboard more honest: these
+  instructions are no longer `unknown`, but they are also not a game-module island
+  to hook prematurely.
+- Added `32FF:0052 inner_unpack_relocation_bootstrap_32ff_0052` to
+  `symbols.json` as `classified-do-not-hook`.
+- Validation: `python scripts/run_tests.py`; `python -m compileall -q overkill_port tests scripts`.
+
+## 2026-06-13 crystallization methodology integration
+
+Integrated the user-supplied methodology dump into durable project docs.
+
+Updated:
+
+- `docs/source_port_methodology.md` with the full evidence ladder: original
+  oracle, layer ownership, dependency direction, promotion rules, vertical
+  slices, definitions of done, AI task framing, and hard anti-chaos rules.
+- `docs/island_truth_tables.md` as the new per-island confidence/evidence index.
+- `AGENTS.md` with hard layer boundaries, task framing examples, dependency
+  direction, and the requirement that every semantic name remains reversible to
+  original ASM evidence.
+- `README.md`, `docs/design.md`, and `docs/next_steps.md` to point future work at
+  the crystallization model and island truth tables.
+
+No runtime behavior changed. Validation: `python -m compileall -q overkill_port tests scripts`; `python scripts/run_tests.py`.
+
+## 2026-06-13 unknown/island cleanup continuation
+
+Continued the evidence-driven cleanup after the crystallization-methodology pass.
+
+Runtime changes:
+
+- Added `1010:5A6C overkill_menu_cell_source_blit_dispatch_5a6c`, a shared
+  source-cell video-mode dispatch stub used by the dirty-cell presenter.  It is
+  classified under `layer_sprites`, not CGA/Tandy-specific rendering, because it
+  only reads `CS:[95BC]` and jumps through the mode table.
+- Registered/lifted `1010:AB10 overkill_object_logic_ab10` using the live
+  runtime-patched byte shape.  The deactivation path through `AC22` is now
+  modelled instead of fail-fast.
+- Added `1010:AB77 overkill_object_behavior_ab77` as an observed object-behavior
+  driver.  It deliberately reuses existing `AB4F`, `AC28`, and `AC81/AC97`
+  helpers and preserves original continuations for still-unlifted tails.
+- Added `1F8F:0922 overkill_gameplay_counter_tick_1f8f_0922` and the new
+  `game_state` coverage island.  This routine lives in an overlay segment but is
+  per-frame/game-state counter logic, not asset decoding.
+- Moved the `1010:0679` timer wait implementation out of `replacements.py` into
+  the sound/timer island and added the companion `1010:0672` clear-timer-flag
+  hook there.
+- Added `1010:511F overkill_video_page_toggle_511f`, a shared per-frame video
+  page stub.  It is a no-op return in Tandy/CGA but toggles the mode-1 visible
+  page state.
+
+Classification changes:
+
+- `1010:D007..D04C` is now classified as the main gameplay frame-loop dispatcher
+  under `game_state`, not raw unknown code.
+- `1010:A846/A85E/A876` and `1010:4CED..4D14` are classified as layer-sprite /
+  presence-list parent frontiers.  They are not hooked yet because they should be
+  composed from existing `A849/A861/A87C/4D15` helpers rather than duplicated.
+
+Validation:
+
+- `python -m compileall -q overkill_port tests scripts`
+- `python scripts/run_tests.py` => `165 passed, 0 failed`
+- `scripts/play.py --snapshot artifacts/snapshot_play_tandy_20260613_000648
+  --verify-hook 1010:0672 --verify-hook 1010:0679 --verify-hook 1010:511F
+  --verify-hook 1F8F:0922 --verify-hook 1010:AB77 --verify-hook 1010:AB10
+  --verify-hook 1010:5A6C --verify-stop-on-diff --verify-max 250` reached the
+  verifier limit with no divergence.
+
+## 2026-06-13 layer-sprite present parent cleanup
+
+Continued the unknown/island cleanup by absorbing the A90C/A93C/4D64 present-scan
+frontier without duplicating the underlying renderer/presence loops.
+
+Runtime changes:
+
+- Added `1010:A90C overkill_present_object_scan_pair_a90c`, the two-table
+  present parent.  It sets `CX=22h` and reuses the existing `A90F` scan over
+  `DS:8D12`, then sets `CX=24h` and reuses the existing `A927` scan over
+  `DS:32CA`.  If either child scan finds an active entry, the hook preserves the
+  original partial continuation at the real `CALL 5A92` site.
+- Added `1010:A93C overkill_present_scan_clear_presence_a93c`, modelling the
+  tiny `CALL 4D64 ; RET` parent.
+- Added `1010:4D64 overkill_clear_presence_list_parent_4d64`, the setup parent
+  for the already-lifted `4D6F` presence-list clear loop.  It sets
+  `ES=CS:[9598]`, `SI=C7B1h`, and `CX=28h`, then tail-runs the existing `4D6F`
+  hook.
+- Classified the next `D04D..D072` per-frame state/UI cluster under
+  `game_state` rather than leaving it as raw unknown.  It is still a larger
+  frontier, not a safe small hook.
+
+Validation:
+
+- `python -m compileall -q overkill_port tests scripts`
+- `python scripts/run_tests.py` => `165 passed, 0 failed`
+- `1010:A90C` verified for 50 calls from `artifacts/evidence/snapshot_stop_1010_a90c`.
+- `1010:A93C` verified for 10 calls from `artifacts/evidence/snapshot_stop_1010_a93c`.
+- `1010:4D64` verified on its direct stop snapshot.
+
+## 2026-06-13 next unknown cleanup: pacing loops, postmove prelude, loading scroll, counters
+
+Continued the evidence-driven unknown cleanup after the A90C/A93C/4D64 layer-sprite pass.
+The focus was small, composable hooks that remove meaningful unknown coverage without
+collapsing larger orchestration boundaries or duplicating existing lifted logic.
+
+Runtime changes:
+
+- Added `1010:96C5 overkill_intro_retrace_delay_loop_96c5` and companion
+  `1010:96C8 overkill_intro_retrace_delay_loop_tail_96c8`.  This is the
+  intro/menu fixed-count `CALL 50C9 ; LOOP` delay.  The hook calls the installed
+  `50C9` hook instead of the base implementation so interactive `play.py` keeps
+  its visual pacing/publish boundary.
+- Added `1010:BC45 overkill_object_postmove_prelude_bc45`.  This tiny collision
+  prelude adds `DS:[A278]` into `SS:[BP+02]`, then reuses the shared `BC4B`
+  postmove/collision chain.  The hook performs the final near return exactly like
+  the interpreted fallthrough path.
+- Added `1010:4E0D overkill_tandy_loading_scroll_until_4e0d`, the loading-scroll
+  parent around the existing lifted `A781` step.  It preserves `SI/DI`, loops
+  until `DS:[2350] <= DI` and `DS:[234E] == 0`, then stores `SI` into `DS:[A978]`.
+  The nested return IP is intentionally `4E12`, matching the original stack scratch.
+- Added `1010:61CA overkill_decrement_first_active_counter_scan_61ca`, the hot
+  inner scan over `DS:2368..2372` word counters.  It decrements the first non-zero
+  counter and returns when all are zero.  The `1010:61C5` parent remains available
+  for callers that enter before loading `DI=2368`, but real hot gameplay calls
+  commonly enter directly at `61CA`.
+
+Anti-duplication notes:
+
+- `96C5` does not inline the retrace/publish wait; it composes the installed
+  `50C9` hook.
+- `BC45` does not copy the postmove/collision chain; it delegates to the existing
+  `BC4B` implementation.
+- `4E0D` does not clone the loading-scroll step; it calls the existing lifted
+  `_loading_scroll_step_a781`.
+- `61CA` is the shared scan core used by the `61C5` parent and direct hot callers.
+
+Validation:
+
+- `python -m compileall -q overkill_port tests scripts`
+- `python scripts/run_tests.py` => `167 passed, 0 failed`
+- Live hook verifier coverage was checked for `1010:96C5`, `1010:BC45`,
+  `1010:4E0D`, and `1010:61CA` with no divergence in the exercised snapshots.
+
+Remaining useful frontiers:
+
+- `1010:9FEA` appears to be an object/table coordinate update helper.  Build a
+  direct oracle before naming it as movement or object-runtime logic.
+- `1010:5EF9` looks like a small text/nibble rendering helper around `5F06`.
+- `1010:4D95` is likely another presence-list parent and should compose `4D15`.
+- `1010:780E` is a Tandy/layer draw sub-loop candidate.
+- `1010:8A7E` is object-behavior frontier; do not promote to enemy/projectile
+  semantics until child helpers and evidence traces converge.
+
+## 2026-06-13 island classification sanity pass
+
+Goal: keep the current work in the strict first/lifted-routine layer and make
+island ownership match observed behavior rather than historical address names or
+segment residence.
+
+Corrections made:
+
+- `startup_graphics.py` moved from `asset_codecs/` to `rendering/startup_graphics.py`.
+  The routines there materialize renderer/startup tables and graphics buffers;
+  they are not asset codecs just because they run during loading.
+- `1F8F:0960` moved from overlay/asset ownership to `gameplay/game_state.py` and
+  registered as `overkill_gameplay_counter_stride_loop_1f8f_0960`.  It lives in
+  an overlay segment, but it updates gameplay counters, so segment residence is
+  not the island classifier.
+- Coverage now has separate `overlay` and `startup_graphics` dashboard islands.
+- Coverage exact-address sets are tested to be non-overlapping, and every
+  registered hook is tested to classify to a non-`unknown` island.
+- `scripts/audit_islands.py` now uses the same `OverkillCoverageClassifier` as
+  the live dashboard, so audit output and runtime coverage cannot silently drift
+  apart.
+
+Current first-layer rule reinforced:
+
+- Keep hook names technical and evidence-based.
+- Do not introduce semantic names such as concrete enemies/projectiles while we
+  are still only proving runtime object-slot behavior.
+- Move stable lifted behavior out of `replacements.py` into the correct island,
+  but keep `replacements.py` as address-facing hook glue and compatibility
+  aliases only.
+
+Validation:
+
+```text
+python -m compileall -q overkill_port tests scripts
+python scripts/run_tests.py
+169 passed, 0 failed
+```
+
+Smoke coverage with dummy SDL now reports cold-start startup materialization as
+`startup_graphics` instead of `asset_codecs`/`tandy_renderer`, and `overlay` is
+reserved for the real `254A:*` overlay helpers.

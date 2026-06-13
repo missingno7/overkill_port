@@ -20,6 +20,9 @@ visible and pass the concrete compositor handlers into this module.
 
 from __future__ import annotations
 
+from overkill_port.cpu import CF
+from overkill_port.games.overkill.asm import _cmp_word
+
 from dataclasses import dataclass
 from typing import Callable, Mapping
 
@@ -157,6 +160,23 @@ def _variant_layer_table(normal_base: int, variant_base: int, variant_flags: int
 
 
 
+def dispatch_menu_cell_source_blit_5a6c(cpu) -> None:
+    """Lift OVERKILL 1010:5A6C source-cell video-mode dispatch stub.
+
+    5A6C is not a renderer body.  It loads the active video mode from
+    ``CS:[95BC]``, performs the real ``SHL BX,1`` side effect, and jumps through
+    the small mode table at ``CS:5A78``.  The selected target owns the actual
+    CGA/EGA/Tandy source-cell blit.  Keeping this as a dispatch-only hook avoids
+    duplicating those renderer leaves while removing the hot three-instruction
+    unknown cluster (5A6C/5A71/5A73).
+    """
+    s = cpu.s
+    cs = s.cs & 0xFFFF
+    s.bx = cpu.mem.rw(cs, VIDEO_MODE_SELECTOR_OFF)
+    s.bx = cpu.shift(4, s.bx, 1, 16)
+    s.ip = cpu.mem.rw(cs, (0x5A78 + s.bx) & 0xFFFF)
+
+
 def dispatch_draw_object_5ac8(cpu) -> None:
     """Lift OVERKILL 1010:5AC8 draw-object jump-table dispatcher."""
     s = cpu.s
@@ -222,6 +242,69 @@ def finish_present_scan_tail_a939(cpu, runtime: LayerSpriteRuntime) -> None:
     s.cx = cpu.pop()
     s.cx = (s.cx - 1) & 0xFFFF
     s.ip = 0xA927 if s.cx != 0 else 0xA93C
+
+
+
+
+def run_clear_presence_list_parent_4d64(cpu, clear_presence_list_handler: CompositorHandler) -> None:
+    """Model the tiny 1010:4D64 parent before the shared 4D6F clear loop.
+
+    The original sequence is just::
+
+        mov es, cs:[9598h]
+        mov si, C7B1h
+        mov cx, 0028h
+        fall through to 4D6F
+
+    ``4D6F`` owns the actual presence-list clear body and returns to the word
+    already on the caller's stack.  This parent deliberately does not push a
+    synthetic return word; using the existing 4D6F hook keeps the clear logic in
+    one place.
+    """
+    s = cpu.s
+    cs = s.cs & 0xFFFF
+    s.es = cpu.mem.rw(cs, 0x9598)
+    s.si = 0xC7B1
+    s.cx = 0x0028
+    clear_presence_list_handler(cpu)
+
+
+def call_clear_presence_list_parent_a93c(cpu, clear_presence_parent_handler: CompositorHandler) -> None:
+    """Model ``A93C: CALL 4D64 ; RET`` without duplicating 4D6F."""
+    cpu.push(0xA93F)
+    clear_presence_parent_handler(cpu)
+    if (cpu.s.ip & 0xFFFF) != 0xA93F:
+        raise RuntimeError(f"4D64 returned to unexpected IP {cpu.s.ip:04X} inside A93C present-scan parent")
+    cpu.s.ip = cpu.pop()
+
+
+def run_present_object_scan_pair_a90c(
+    cpu,
+    scan_8d12_handler: CompositorHandler,
+    scan_32ca_handler: CompositorHandler,
+    clear_presence_parent_handler: CompositorHandler,
+) -> None:
+    """Model the A90C two-table present scan parent.
+
+    A90C is a narrow layer-sprite orchestration parent, not a renderer leaf:
+    it scans the DS:8D12 present list with the existing A90F hook, scans the
+    DS:32CA list with the existing A927 hook, then clears the presence list via
+    A93C/4D64/4D6F.  If either child scan finds an active entry, it preserves the
+    original partial continuation at the real CALL site so the existing dispatch
+    hooks own the object present body.
+    """
+    s = cpu.s
+    s.cx = 0x0022
+    scan_8d12_handler(cpu)
+    if (s.ip & 0xFFFF) != 0xA924:
+        return
+
+    s.cx = 0x0024
+    scan_32ca_handler(cpu)
+    if (s.ip & 0xFFFF) != 0xA93C:
+        return
+
+    call_clear_presence_list_parent_a93c(cpu, clear_presence_parent_handler)
 
 
 def dispatch_layer_draw_type_table_7596(cpu) -> None:
@@ -563,3 +646,46 @@ def draw_compact_layer_sprite_7746(cpu, runtime: LayerSpriteRuntime) -> None:
             target_ip=target_ip,
             bp=obj_bp,
         )
+
+
+SIG_VIDEO_PAGE_TOGGLE_511F = bytes.fromhex(
+    "2e 83 3e bc 95 01 74 01 c3 2e ff 06 5e 51 2e 83 26 5e 51 01 "
+    "2e c7 06 a4 95 00 a0 75 01 c3 2e c7 06 a4 95 00 a2 c3"
+)
+
+
+def _inc_cs_word_preserve_cf(cpu, off: int) -> int:
+    old = cpu.mem.rw(cpu.s.cs & 0xFFFF, off & 0xFFFF)
+    old_cf = cpu.get_flag(CF)
+    result = (old + 1) & 0xFFFF
+    cpu.mem.ww(cpu.s.cs & 0xFFFF, off & 0xFFFF, result)
+    cpu.set_add_flags(old, 1, old + 1, 16)
+    cpu.set_flag(CF, old_cf)
+    return result
+
+
+def run_video_page_toggle_511f(cpu, self_disable_if_patched) -> None:
+    """Lift shared 1010:511F video-page toggle stub.
+
+    All video modes call this from the main frame loop, but only mode 1 uses the
+    page flip: non-mode-1 paths are just CMP/JNE/RET and preserve that compare's
+    flags.  Keeping it neutral avoids mislabelling Tandy execution as CGA/EGA
+    rendering while still removing the tiny interpreted per-frame stub.
+    """
+    if self_disable_if_patched(cpu, 0x511F, SIG_VIDEO_PAGE_TOGGLE_511F, "overkill_video_page_toggle_511f"):
+        return
+    cs = cpu.s.cs & 0xFFFF
+    mode = cpu.mem.rw(cs, 0x95BC)
+    _cmp_word(cpu, mode, 1)
+    if mode != 1:
+        cpu.s.ip = cpu.pop()
+        return
+
+    _inc_cs_word_preserve_cf(cpu, 0x515E)
+    value = cpu.mem.rw(cs, 0x515E) & 0x0001
+    cpu.mem.ww(cs, 0x515E, value)
+    cpu.set_logic_flags(value, 16)
+    cpu.mem.ww(cs, 0x95A4, 0xA000)
+    if value != 0:
+        cpu.mem.ww(cs, 0x95A4, 0xA200)
+    cpu.s.ip = cpu.pop()

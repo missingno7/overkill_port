@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import json
 import sys
 import zlib
@@ -7,6 +8,7 @@ from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Literal
+import webbrowser
 
 from .cpu import CPU8086, HaltExecution, UnsupportedInstruction
 from .memory import EGA_APERTURE, EGA_PLANE_STRIDE
@@ -55,6 +57,7 @@ class FrameVerifyConfig:
     source: Literal["rgb", "vram", "both"] = "both"
     dump_dir: Path = Path("artifacts/evidence/frame_verify")
     stop_on_diff: bool = True
+    preview_on_diff: bool = False
     ega_start_address_units: Literal["byte", "word", "ignore"] = "byte"
     log_every: int = 10
 
@@ -84,6 +87,10 @@ def run_frame_verifier(
     snapshot: str | None,
     command_tail: bytes | str,
     config: FrameVerifyConfig,
+    publish_candidate: Callable[[Runtime, FrameSample], None] | None = None,
+    pump_inputs: Callable[[Runtime, Runtime], None] | None = None,
+    stop_requested: Callable[[], bool] | None = None,
+    status_callback: Callable[[str], None] | None = None,
 ) -> int:
     """Run a headless frame-boundary verifier.
 
@@ -113,27 +120,43 @@ def run_frame_verifier(
         flush=True,
     )
 
-    for frame_no in range(1, config.max_frames + 1):
+    frame_no = 1
+    while config.max_frames <= 0 or frame_no <= config.max_frames:
+        if stop_requested is not None and stop_requested():
+            return 0
+        if pump_inputs is not None:
+            pump_inputs(ref, cand)
         try:
             ref_sample = ref_runner.run_to_boundary(frame_no)
+            if pump_inputs is not None:
+                pump_inputs(ref, cand)
             cand_sample = cand_runner.run_to_boundary(frame_no)
         except (HaltExecution, UnsupportedInstruction) as exc:
             raise FrameVerifyDivergence(f"FRAME VERIFY STOPPED before frame {frame_no}: {type(exc).__name__}: {exc}") from exc
 
         report = _compare_samples(ref_sample, cand_sample, config)
+        if publish_candidate is not None:
+            publish_candidate(cand, cand_sample)
         if report is not None:
             _dump_divergence(ref_sample, cand_sample, report, config)
             print(report, flush=True)
+            if status_callback is not None:
+                status_callback(f"FRAME VERIFY divergence at frame {frame_no}")
             return 1 if config.stop_on_diff else 0
 
         if config.log_every and (frame_no == 1 or frame_no % config.log_every == 0):
-            print(
+            msg = (
                 f"FRAME VERIFY ok frame={frame_no} boundary={ref_sample.kind} "
-                f"raw={ref_sample.raw_crc:08X} rgb={ref_sample.rgb_crc:08X}",
-                flush=True,
+                f"raw={ref_sample.raw_crc:08X} rgb={ref_sample.rgb_crc:08X}"
             )
+            print(msg, flush=True)
+            if status_callback is not None:
+                status_callback(msg)
+        frame_no += 1
 
     print(f"FRAME VERIFY OK frames={config.max_frames}", flush=True)
+    if status_callback is not None:
+        status_callback(f"FRAME VERIFY OK frames={config.max_frames}")
     return 0
 
 
@@ -411,8 +434,15 @@ def _dump_divergence(ref: FrameSample, cand: FrameSample, report: str, config: F
     (out / f"{stem}_hook_vram.bin").write_bytes(cand.raw)
     _write_rgb_png(out / f"{stem}_ref.png", ref.rgb)
     _write_rgb_png(out / f"{stem}_hook.png", cand.rgb)
-    _write_rgb_png(out / f"{stem}_diff.png", _diff_rgb(ref.rgb, cand.rgb))
+    diff_rgb = _diff_rgb(ref.rgb, cand.rgb)
+    _write_rgb_png(out / f"{stem}_diff.png", diff_rgb)
+    compare_rgb = _compose_compare_rgb(ref.rgb, cand.rgb, diff_rgb)
+    _write_rgb_png(out / f"{stem}_compare.png", compare_rgb, width=WIDTH * 3 + 8)
+    compare_path = out / f"{stem}_compare.png"
     print(f"FRAME VERIFY artifacts written to {out / stem}_*", flush=True)
+    print(f"FRAME VERIFY compare image: {compare_path}", flush=True)
+    if config.preview_on_diff:
+        _open_image(compare_path)
 
 
 def _sample_meta(sample: FrameSample) -> dict[str, object]:
@@ -447,14 +477,51 @@ def _diff_rgb(a: bytes, b: bytes) -> bytes:
     return bytes(out)
 
 
-def _write_rgb_png(path: Path, rgb: bytes) -> None:
+def _compose_compare_rgb(ref_rgb: bytes, cand_rgb: bytes, diff_rgb: bytes) -> bytes:
+    """Pack reference, candidate, and diff frames into one side-by-side image."""
+    if not (len(ref_rgb) == len(cand_rgb) == len(diff_rgb)):
+        raise ValueError("compare RGB buffers must be the same length")
+    row_bytes = WIDTH * 3
+    if len(ref_rgb) != row_bytes * HEIGHT:
+        raise ValueError(f"expected {row_bytes * HEIGHT} RGB bytes per frame, got {len(ref_rgb)}")
+
+    separator = b"\x20\x20\x20" * 4
+    rows: list[bytearray] = []
+    for y in range(HEIGHT):
+        off = y * row_bytes
+        row = bytearray()
+        row.extend(ref_rgb[off:off + row_bytes])
+        row.extend(separator)
+        row.extend(cand_rgb[off:off + row_bytes])
+        row.extend(separator)
+        row.extend(diff_rgb[off:off + row_bytes])
+        rows.append(row)
+    out = bytearray()
+    for row in rows:
+        out.extend(row)
+    return bytes(out)
+
+
+def _open_image(path: Path) -> None:
+    """Best-effort open of a rendered comparison artifact."""
+    try:
+        if hasattr(os, "startfile"):
+            os.startfile(str(path))  # type: ignore[attr-defined]
+            return
+        webbrowser.open(path.as_uri())
+    except Exception as exc:  # pragma: no cover - best-effort convenience only
+        print(f"FRAME VERIFY preview failed for {path}: {type(exc).__name__}: {exc}", flush=True)
+
+
+def _write_rgb_png(path: Path, rgb: bytes, *, width: int = WIDTH) -> None:
     scripts = Path(__file__).resolve().parents[1] / "scripts"
     if str(scripts) not in sys.path:
         sys.path.insert(0, str(scripts))
     from render_cga import write_png
 
-    expected = WIDTH * HEIGHT * 3
+    expected = width * HEIGHT * 3
     if len(rgb) != expected:
         raise ValueError(f"expected {expected} RGB bytes, got {len(rgb)}")
-    rows = [bytearray(rgb[y * WIDTH * 3:(y + 1) * WIDTH * 3]) for y in range(HEIGHT)]
-    write_png(path, WIDTH, HEIGHT, rows)
+    row_bytes = width * 3
+    rows = [bytearray(rgb[y * row_bytes:(y + 1) * row_bytes]) for y in range(HEIGHT)]
+    write_png(path, width, HEIGHT, rows)
