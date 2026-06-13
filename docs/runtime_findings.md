@@ -2246,3 +2246,63 @@ Remaining meaningful leftovers after this pass:
 - The very hot `1010:9921/9926` loop is a wait/spin on byte globals, not an
   obvious source-port island hook.  Treat it as pacing/state investigation
   before replacing it.
+
+---
+
+# Runtime-code variants / self-modified-code exhaustion policy
+
+The hot gameplay helper at `1010:5E42` proved that a `CS:IP` address is not
+always a single cold-executable routine.  The cold MZ body at that address is a
+different display/helper routine, while the gameplay snapshot
+`artifacts/snapshot_play_tandy_20260613_220042` contains a materialized object
+steering helper at the same address.
+
+Policy from this checkpoint onward:
+
+- Runtime-patched addresses are **polyvariant code slots**.
+- A replacement hook at a polyvariant slot must identify the live byte variant
+  before executing lifted logic.
+- Known valid variant -> run the verified lifted hook.
+- Known cold/other variant -> fail fast as the wrong variant for that hook.
+- Unknown bytes -> fail fast with live bytes and registered variant signatures.
+- No generic "bytes differ, run interpreted original" fallback is allowed for
+  runtime-patched slots.
+
+Implementation:
+
+- `games/overkill/runtime_code.py` stores `RuntimeCodeVariant` records and exact
+  signatures.
+- `1010:5E42` now registers both the hooked gameplay object-steering variant and
+  the known cold display-helper prefix.
+- `run_runtime_patched_object_steer_5e42` requires the
+  `gameplay_object_steer_5e42` variant before running the lifted implementation.
+- `RuntimeCodeWriteTracer` can be installed to watch writes to registered
+  runtime-code regions, or to the whole code segment via
+  `scripts/trace_runtime_code_writes.py --all-code`.
+
+The gameplay signature deliberately covers the internal `5EB5`/`5EC8` leaves as
+well as the entry block.  This prevents a partially changed materialized body
+from being accepted simply because the first few setup instructions match.
+
+### 2026-06-13: input/menu wait gates and 61DC status-cell helper
+
+The hot `1010:9862-98FF` region is not a self-modifying-code iceberg; it is an
+interactive menu/input transition flow.  The hottest interpreted instructions
+were small busy-wait gates, so they were lifted as one-iteration state-machine
+hooks rather than as blocking Python loops:
+
+- `1010:986E` waits for `DS:98C5` to stop being `01h`.
+- `1010:989E` waits for the Y/N flags `DS:98D9`/`DS:98F5` while updating the
+  prompt byte at `DS:22B4`.
+- `1010:98D8` waits while `DS:BEFE` is non-zero.
+
+This preserves the original opportunity for the frontend/input layer to update
+memory between CPU chunks while removing the misleading interpreted hot-loop
+noise.
+
+The `1010:6296` helper inside the `61DC` status display parent was also lifted
+for the Tandy-first path.  It selects a status/counter cell source from the
+`CS:0BE4` table, composes the verified Tandy `306F` source-cell blit, and then
+applies the `613E` video-mode cursor-advance tail.  This reduces the remaining
+`61DC-62A7` unknown region without pretending the whole `61DC` display parent is
+fully semantic yet.

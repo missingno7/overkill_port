@@ -710,6 +710,23 @@ Defer or avoid hooks when:
 - the hook would duplicate a tail already implemented elsewhere,
 - the original code is self-modified and no resident signature guard exists.
 
+## Runtime-Code Staticization
+
+Some original routines are not stable cold executable bodies.  The game may
+materialize or patch executable bytes at runtime as a dispatch/specialization
+mechanism.  The source port must not preserve that as self-modifying Python.
+
+Treat such addresses as polyvariant code slots:
+
+```text
+runtime patch -> named byte variant -> guarded static Python function
+```
+
+A hook at a polyvariant slot must require a named live-byte variant before it
+runs.  Known-wrong and unknown variants fail fast.  No hook may silently fall
+back to interpreted ASM because live bytes differ.  The detailed project policy
+and audit commands live in `docs/runtime_code_staticization.md`.
+
 ## Fail-Fast Policy
 
 Fail-fast paths are useful. They turn unknown behavior into a precise snapshot

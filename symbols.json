@@ -123,12 +123,6 @@
     "notes": "Startup Tandy interlaced buffer clear. Static bytes set ES from CS:[95A4], clear 200 rows of 0x34 words, and return near.",
     "status": "replaced"
   },
-  "1010:3389": {
-    "island": "tandy_renderer",
-    "name": "overkill_tandy_interlaced_clear_3389",
-    "notes": "Tandy interlaced clear loop. Sets ES from CS:[95A4], zeroes DI, clears 200 rows of 0x34 words with the 2000h/80A0h interlace pattern, and returns near. It shares the same core loop shape as 30B0.",
-    "status": "replaced"
-  },
   "1010:30BA": {
     "island": "tandy_renderer",
     "name": "overkill_tandy_patched_row_copy_30ba",
@@ -139,6 +133,12 @@
     "name": "tandy_object_row_addr_target_30d2",
     "notes": "Mode-2 target reached through 1010:5A36. Maps SS:[BP+02]/SS:[BP+04] to a Tandy work-buffer row address via DS:99C8, stores zero to SS:[BP+12], uses X>>1, returns AX=FFFF for out-of-range/FFFF rows, and optionally decrements SS:[BP+24]. Folded into the verified 5A36 dispatch hook.",
     "status": "replaced as part of 1010:5A36"
+  },
+  "1010:3389": {
+    "island": "tandy_renderer",
+    "name": "overkill_tandy_interlaced_clear_3389",
+    "notes": "Tandy interlaced clear loop. Sets ES from CS:[95A4], zeroes DI, clears 200 rows of 0x34 words with the 2000h/80A0h interlace pattern, and returns near. It shares the same core loop shape as 30B0.",
+    "status": "replaced"
   },
   "1010:33AF": {
     "name": "overkill_expand_tandy_list_33af",
@@ -321,23 +321,46 @@
     "name": "object_movement_direction_helper_5db2",
     "notes": "Next fail-fast target after lifting A9E0->AA2B->EFAE->B73E. It compares object Y/X against DS:2304/2306, writes direction bits in DS:A954 and DS:230A, selects animation via DS:A348 xlat, then dispatches through CS:5E0C based on DS:2308. Needs reversal/verification next."
   },
+  "1010:5E42": {
+    "kind": "runtime-patched hook",
+    "name": "runtime_patched_object_steer_5e42",
+    "notes": "Gameplay-patched object steering helper. Converts signed deltas at SS:[BP+2C]/[BP+2A] through DS:A348 into direction SS:[BP+06], then tail-runs AF22 3px movement when DS:2312==3 or AF63 2px movement otherwise. Cold executable bytes at this address are a different display helper, so the hook is guarded by the live gameplay signature."
+  },
+  "1010:5EDB": {
+    "island": "tandy_renderer",
+    "name": "overkill_score_status_text_block_5edb",
+    "status": "replaced",
+    "notes": "HUD/status text glue: prints SS:2318 string through 518C, then four SS:2314..2317 bytes via the 5EF9 two-nibble helper, preserving CALL scratch for intermediate bytes."
+  },
   "1010:5EF9": {
     "island": "tandy_renderer",
     "name": "overkill_score_byte_text_5ef9",
     "notes": "Small HUD/text helper that prints one byte as two score nibbles by composing the existing 5F06 nibble-to-text helper for the high and low nibbles.",
     "status": "replaced"
   },
-  "1010:61C5": {
+  "1010:61C7": {
     "island": "game_state",
-    "name": "overkill_decrement_first_active_counter_61c5",
-    "notes": "Scans DS:2368..2372 word counters, decrements the first non-zero counter, returns if all are zero.",
-    "status": "replaced"
+    "name": "overkill_decrement_first_active_counter_61c7",
+    "status": "replaced",
+    "notes": "Real instruction-boundary entry for the DS:2368..2372 countdown scan. Older metadata accidentally used 61C5, which is inside the preceding CALL immediate in the materialized runtime body."
   },
   "1010:61CA": {
     "island": "game_state",
     "name": "overkill_decrement_first_active_counter_scan_61ca",
     "notes": "Hot inner countdown scan body. Starting from caller-provided DI, scans DS:2368..2372 word counters, decrements the first non-zero counter, and returns when all are zero.",
     "status": "replaced"
+  },
+  "1010:61F7": {
+    "island": "game_state",
+    "name": "overkill_decrement_first_active_counter_loop_61f7",
+    "status": "replaced",
+    "notes": "Hot CALL 61C7 / LOOP 61F7 glue inside the status/game-state update path; preserves nested CALL stack scratch and leaves flags from the final scan."
+  },
+  "1010:6296": {
+    "name": "overkill_status_counter_cell_blit_6296",
+    "island": "game_state",
+    "status": "hooked-verified-tandy",
+    "notes": "Status/counter cell blit helper called by 61DC. Selects CS:0BE4 cell source, composes verified Tandy 306F source-cell blit, then applies 613E video-mode cursor advance. Proven for Tandy-first path."
   },
   "1010:62F6": {
     "kind": "helper",
@@ -385,6 +408,24 @@
     "name": "overkill_intro_retrace_delay_loop_tail_96c8",
     "notes": "LOOP tail for 96C5 delay used when an interactive 50C9 pacing boundary yields at the original return IP.",
     "status": "replaced"
+  },
+  "1010:986E": {
+    "name": "overkill_input_release_wait_gate_986e",
+    "island": "input_menu",
+    "status": "hooked-verified",
+    "notes": "One-iteration state-machine hook for CMP DS:98C5,01 / JE 986E. Keeps interactive key-release wait yieldable instead of spinning inside Python."
+  },
+  "1010:989E": {
+    "name": "overkill_yes_no_choice_wait_gate_989e",
+    "island": "input_menu",
+    "status": "hooked-verified",
+    "notes": "One-iteration Y/N wait gate. Writes DS:22B4 to N/Y and waits on DS:98F5 or DS:98D9 without swallowing frontend input/yield windows."
+  },
+  "1010:98D8": {
+    "name": "overkill_sound_effect_completion_wait_gate_98d8",
+    "island": "input_menu",
+    "status": "hooked-verified",
+    "notes": "One-iteration wait while DS:BEFE is non-zero, used by 9862 transition flow after accepting Y."
   },
   "1010:9921": {
     "kind": "code",
@@ -660,17 +701,17 @@
     "notes": "Exit tail after D007 breaks out of the gameplay/attract frame loop. It clears DS:BDAC then calls 5AEE and 526A before returning. Left as a separate hook candidate instead of folding into D007.",
     "status": "classified-frontier"
   },
-  "1010:D445": {
-    "island": "input_menu",
-    "name": "overkill_input_selector_loop_d445",
-    "notes": "Observed input-driven selector loop. When DS:[98E4]==1 it increments DS:[BEDC] and wraps that counter back to zero after the third tick; otherwise it polls 0162 and updates DS:[BEDA] with direction bits 1/2/4/8 as a 2x3 selector grid. Bit 10h exits only when BEDA is nonzero.",
-    "status": "replaced"
-  },
   "1010:D04D": {
     "island": "game_state",
     "kind": "hook",
     "name": "overkill_frame_ui_state_update_d04d",
     "notes": "Finite per-frame UI/demo-state update block called from D007. It draws the script-selected cell, runs A212 maintenance, advances BE08/BE0A timers and either returns to D019 or hands off to original script continuation targets.",
+    "status": "replaced"
+  },
+  "1010:D445": {
+    "island": "input_menu",
+    "name": "overkill_input_selector_loop_d445",
+    "notes": "Observed input-driven selector loop. When DS:[98E4]==1 it increments DS:[BEDC] and wraps that counter back to zero after the third tick; otherwise it polls 0162 and updates DS:[BEDA] with direction bits 1/2/4/8 as a 2x3 selector grid. Bit 10h exits only when BEDA is nonzero.",
     "status": "replaced"
   },
   "1010:ECF2": {

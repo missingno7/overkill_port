@@ -86,7 +86,7 @@ FRONTIER_MANIFEST: tuple[FrontierEntry, ...] = (
     FrontierEntry((0x1010, 0x859E), "script_state_transition_helper_859e", "game_state", FrontierCategory.BOUNDED_ORIGINAL_RARE_BRANCH, "bounded-original", owner=(0x1010, 0xD04D)),
     FrontierEntry((0x1010, 0x7476), "formation_spawn_helper_7476", "gameplay_objects", FrontierCategory.BOUNDED_ORIGINAL_RARE_BRANCH, "bounded-original", owner=(0x1010, 0xB9F0)),
     FrontierEntry((0x1010, 0x5E1B), "score_or_effect_text_helper_5e1b", "gameplay_objects", FrontierCategory.BOUNDED_ORIGINAL_RARE_BRANCH, "bounded-original", owner=(0x1010, 0xB9F0)),
-    FrontierEntry((0x1010, 0x5E42), "score_or_effect_text_helper_5e42", "gameplay_objects", FrontierCategory.BOUNDED_ORIGINAL_RARE_BRANCH, "bounded-original", owner=(0x1010, 0xB9F0)),
+    FrontierEntry((0x1010, 0x5E42), "runtime_patched_object_steer_5e42", "gameplay_objects", FrontierCategory.BOUNDED_ORIGINAL_RARE_BRANCH, "hooked-runtime-patched-gameplay-variant", owner=(0x1010, 0xB9F0), notes="Cold executable bytes at 5E42 are a different display helper; the hot gameplay-patched object-steering variant is now hooked and verified."),
     FrontierEntry((0x1010, 0x61DC), "rare_status_display_helper_61dc", "gameplay_objects", FrontierCategory.BOUNDED_ORIGINAL_RARE_BRANCH, "bounded-original", owner=(0x1010, 0x9E69)),
     FrontierEntry((0x1010, 0xD2A4), "rare_target_chase_tail_d2a4", "gameplay_objects", FrontierCategory.BOUNDED_ORIGINAL_RARE_BRANCH, "bounded-original", owner=(0x1010, 0xD281)),
     FrontierEntry((0x1010, 0xAB99), "object_scroll_collision_tail_ab99", "gameplay_objects", FrontierCategory.BOUNDED_ORIGINAL_RARE_BRANCH, "bounded-original", owner=(0x1010, 0xAB77)),

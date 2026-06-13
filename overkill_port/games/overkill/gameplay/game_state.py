@@ -6,7 +6,7 @@ they must not classify concrete enemies/projectiles yet.
 """
 from __future__ import annotations
 
-from overkill_port.games.overkill.asm import _add_reg16, _and_mem_word, _cmp_byte, _cmp_word, _dec_mem_byte_preserve_cf, _dec_mem_word_preserve_cf, _inc_mem_byte_preserve_cf, _inc_mem_word_preserve_cf, loop_count
+from overkill_port.games.overkill.asm import _add_reg16, _and_mem_word, _cmp_byte, _cmp_word, _dec_mem_byte_preserve_cf, _dec_mem_word_preserve_cf, _inc_mem_byte_preserve_cf, _inc_mem_word_preserve_cf, _inc_reg16_preserve_cf, loop_count
 
 
 SIG_GAMEPLAY_COUNTER_STRIDE_LOOP_1F8F_0960 = bytes.fromhex(
@@ -219,32 +219,48 @@ SIG_GAMEPLAY_COUNTER_TICK_1F8F_0922 = bytes.fromhex(
 
 
 
-SIG_DECREMENT_ACTIVE_COUNTER_61C5 = bytes.fromhex(
+SIG_DECREMENT_ACTIVE_COUNTER_61C7 = bytes.fromhex(
     "bf 68 23 83 3d 00 74 03 ff 0d c3 83 c7 02 81 ff 74 23 75 ef c3"
 )
 SIG_DECREMENT_ACTIVE_COUNTER_SCAN_61CA = bytes.fromhex(
     "83 3d 00 74 03 ff 0d c3 83 c7 02 81 ff 74 23 75 ef c3"
 )
+SIG_DECREMENT_ACTIVE_COUNTER_LOOP_61F7 = bytes.fromhex(
+    "e8 cd ff e2 fb"
+)
 
 
-def run_decrement_first_active_counter_61c5(cpu, self_disable_if_patched) -> None:
-    """Lift 1010:61C5, a tiny per-frame countdown helper.
+def run_decrement_first_active_counter_61c7(cpu, self_disable_if_patched) -> None:
+    """Lift 1010:61C7, a tiny per-frame countdown helper.
 
     The routine scans the six word counters at ``DS:2368..2372``.  It decrements
     the first non-zero counter and returns immediately; if all counters are zero
     it returns after the final ``CMP DI,2374h``.  This is game-state/timing glue,
     not object semantics.
+
+    Historical note: an older hook was registered at ``61C5``, but that address
+    is the middle of the preceding CALL immediate in the materialized runtime
+    body.  ``61C7`` is the real instruction boundary (``MOV DI,2368h``).
     """
     if self_disable_if_patched(
         cpu,
-        0x61C5,
-        SIG_DECREMENT_ACTIVE_COUNTER_61C5,
-        "overkill_decrement_first_active_counter_61c5",
+        0x61C7,
+        SIG_DECREMENT_ACTIVE_COUNTER_61C7,
+        "overkill_decrement_first_active_counter_61c7",
     ):
         return
 
     cpu.s.di = 0x2368
     _run_decrement_first_active_counter_scan(cpu)
+
+
+def run_decrement_first_active_counter_61c5(cpu, self_disable_if_patched) -> None:
+    """Compatibility alias for the old off-by-two helper name.
+
+    This is intentionally not registered at 61C5 anymore; callers/tests that
+    imported the Python helper can still exercise the real 61C7 body.
+    """
+    return run_decrement_first_active_counter_61c7(cpu, self_disable_if_patched)
 
 
 def run_decrement_first_active_counter_scan_61ca(cpu, self_disable_if_patched) -> None:
@@ -257,6 +273,46 @@ def run_decrement_first_active_counter_scan_61ca(cpu, self_disable_if_patched) -
     ):
         return
     _run_decrement_first_active_counter_scan(cpu)
+
+
+
+def run_decrement_first_active_counter_loop_61f7(cpu, self_disable_if_patched) -> None:
+    """Lift the hot ``CALL 61C7; LOOP 61F7`` status-counter loop.
+
+    The parent display/status routine at 61DC executes a small loop whose whole
+    body is a CALL to the 61C7 countdown scan.  Hooking this glue removes a large
+    misleading unknown region while preserving the original CALL stack scratch:
+    each virtual CALL writes return IP 61FA below SP before the scan RET pops it.
+    LOOP does not modify FLAGS, so the final flags are those left by the last
+    61C7 scan, just like the original ASM.
+    """
+    if self_disable_if_patched(
+        cpu,
+        0x61F7,
+        SIG_DECREMENT_ACTIVE_COUNTER_LOOP_61F7,
+        "overkill_decrement_first_active_counter_loop_61f7",
+    ):
+        return
+
+    count = loop_count(cpu.s.cx)
+    for index in range(count):
+        cpu.push(0x61FA)
+        cpu.s.di = 0x2368
+        _run_decrement_first_active_counter_scan(cpu)
+        if (cpu.s.ip & 0xFFFF) != 0x61FA:
+            raise RuntimeError(
+                f"61F7 nested 61C7 scan returned to unexpected IP {cpu.s.ip & 0xFFFF:04X}"
+            )
+        cpu.s.cx = ((cpu.s.cx & 0xFFFF) - 1) & 0xFFFF
+        if cpu.s.cx == 0:
+            break
+        if index == 0xFFFF:
+            # loop_count() caps the CX=0 case at the exact 8086 65536
+            # iterations, so this should be unreachable unless CX is mutated by
+            # a future change inside the nested helper.
+            raise RuntimeError("61F7 LOOP failed to terminate after 65536 iterations")
+
+    cpu.s.ip = 0x61FC
 
 
 def _run_decrement_first_active_counter_scan(cpu) -> None:
@@ -275,6 +331,68 @@ def _run_decrement_first_active_counter_scan(cpu) -> None:
         cpu.s.ip = cpu.pop()
         return
 
+
+
+SIG_STATUS_COUNTER_CELL_BLIT_6296 = bytes.fromhex(
+    "83 c6 19 d1 e6 81 c6 e4 0b 2e 8b 34 57 e8 c6 f7 5f e9 94 fe"
+)
+
+
+def run_status_counter_cell_blit_6296(cpu, self_disable_if_patched, call_menu_cell_source_blit) -> None:
+    """Lift the 1010:6296 status-counter cell blit helper.
+
+    61DC calls this helper six times to draw the small status/counter cells.
+    The routine selects a cell sprite from the CS:0BE4 table, calls the already
+    verified 5A6C menu-cell blitter, restores DI, then tail-jumps to the tiny
+    613E video-mode cursor advance dispatch.
+
+    Keeping this as a composed helper removes the remaining hot interpreted
+    6296/613E glue without lifting the whole 61DC display parent yet.
+    """
+    if self_disable_if_patched(
+        cpu,
+        0x6296,
+        SIG_STATUS_COUNTER_CELL_BLIT_6296,
+        "overkill_status_counter_cell_blit_6296",
+    ):
+        return
+
+    s = cpu.s
+    mem = cpu.mem
+    cs = s.cs & 0xFFFF
+
+    _add_reg16(cpu, 6, 0x0019)
+    s.si = cpu.shift(4, s.si & 0xFFFF, 1, 16)
+    _add_reg16(cpu, 6, 0x0BE4)
+    s.si = mem.rw(cs, s.si & 0xFFFF)
+
+    cpu.push(s.di & 0xFFFF)
+    call_menu_cell_source_blit(0x62A6)
+    if (s.ip & 0xFFFF) != 0x62A6:
+        raise RuntimeError(f"5A6C returned to unexpected IP {s.ip:04X} inside 6296 status cell blit")
+    s.di = cpu.pop()
+
+    _run_status_cursor_advance_613e(cpu)
+
+
+def _run_status_cursor_advance_613e(cpu) -> None:
+    """Mirror the 613E video-mode text/status cursor advance tail."""
+    s = cpu.s
+    mem = cpu.mem
+    cs = s.cs & 0xFFFF
+
+    s.bx = mem.rw(cs, 0x95BC)
+    s.bx = cpu.shift(4, s.bx & 0xFFFF, 1, 16)
+    target = mem.rw(cs, (0x614A + s.bx) & 0xFFFF)
+    if target == 0x6150:
+        _add_reg16(cpu, 7, 0x0002)
+    elif target == 0x6154:
+        _inc_reg16_preserve_cf(cpu, 7)
+    elif target == 0x6156:
+        _add_reg16(cpu, 7, 0x0004)
+    else:
+        raise RuntimeError(f"unverified 613E status cursor advance target {target:04X}")
+    s.ip = cpu.pop()
 
 
 def _call_counter_stride_0960(cpu, self_disable_if_patched, return_ip: int) -> None:

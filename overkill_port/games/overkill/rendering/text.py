@@ -31,6 +31,10 @@ SIG_TEXT_DISPATCH_519A = bytes.fromhex(
 SIG_TEXT_STRING_LOOP_518C = bytes.fromhex("8a 46 00 0a c0 75 01 c3 e8 03 00 45 eb f2")
 SIG_SCORE_NIBBLE_TEXT_5F06 = bytes.fromhex("24 0f 04 30 e9 8d f2")
 SIG_SCORE_BYTE_TEXT_5EF9 = bytes.fromhex("50 d0 e8 d0 e8 d0 e8 d0 e8 e8 01 00 58")
+SIG_SCORE_STATUS_TEXT_BLOCK_5EDB = bytes.fromhex(
+    "bd 18 23 e8 ab f2 bd 14 23 8a 46 03 e8 0f 00 8a "
+    "46 02 e8 09 00 8a 46 01 e8 03 00 8a 46 00"
+)
 
 
 @dataclass(frozen=True)
@@ -196,6 +200,42 @@ def run_text_dispatch_519a(cpu, runtime: TextRenderRuntime) -> None:
     mem.ww(s.es, s.di, s.ax)
     _add_mem_word(cpu, ds, 0x2160, 2)
     s.ip = cpu.pop()
+
+
+
+def run_score_status_text_block_5edb(cpu, runtime: TextRenderRuntime) -> None:
+    """Lift the HUD/status text glue at 1010:5EDB.
+
+    The original body prints a string at ``SS:2318`` through ``518C``, then prints
+    four bytes from ``SS:2314..2317`` through the already verified ``5EF9``
+    byte-as-two-nibbles helper.  The final byte falls through into 5EF9, so the
+    caller's original return address remains on the stack for that last helper.
+    Intermediate CALL scratch return words are preserved for full-memory oracle
+    comparisons.
+    """
+    if runtime.self_disable_if_patched(cpu, 0x5EDB, SIG_SCORE_STATUS_TEXT_BLOCK_5EDB, "overkill_score_status_text_block_5edb"):
+        return
+
+    ss = cpu.s.ss & 0xFFFF
+
+    cpu.s.bp = 0x2318
+    cpu.push(0x5EE1)
+    run_text_string_loop_518c(cpu, runtime)
+    if (cpu.s.ip & 0xFFFF) != 0x5EE1:
+        raise RuntimeError(f"518C returned to unexpected IP {cpu.s.ip:04X} inside 5EDB status text block")
+
+    cpu.s.bp = 0x2314
+    for index, return_ip in ((3, 0x5EEA), (2, 0x5EF0), (1, 0x5EF6)):
+        cpu.set_reg8(0, cpu.mem.rb(ss, (cpu.s.bp + index) & 0xFFFF))
+        cpu.push(return_ip)
+        run_score_byte_text_5ef9(cpu, runtime)
+        if (cpu.s.ip & 0xFFFF) != return_ip:
+            raise RuntimeError(
+                f"5EF9 returned to unexpected IP {cpu.s.ip:04X} inside 5EDB status text block"
+            )
+
+    cpu.set_reg8(0, cpu.mem.rb(ss, cpu.s.bp & 0xFFFF))
+    run_score_byte_text_5ef9(cpu, runtime)
 
 
 def run_score_nibble_text_5f06(cpu, runtime: TextRenderRuntime) -> None:

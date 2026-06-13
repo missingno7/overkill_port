@@ -5852,6 +5852,74 @@ def test_tandy_present_scan_a90f_composes_known_targets_like_asm():
     assert asm.mem.data == hook.mem.data
 
 
+
+def test_runtime_patched_object_steer_5e42_hook_matches_interpreted_snapshot():
+    from pathlib import Path
+    from overkill_port.snapshot import load_snapshot
+
+    root = Path(__file__).resolve().parents[1]
+    snap = root / "artifacts" / "snapshot_play_tandy_20260613_220042"
+    assert snap.exists(), "captured gameplay snapshot for runtime-patched 1010:5E42 is missing"
+
+    def make_runtime(use_hook: bool):
+        rt = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
+        rt.cpu.trace_enabled = False
+        if not use_hook:
+            rt.cpu.replacement_hooks.pop((0x1010, 0x5E42), None)
+            rt.cpu.hook_names.pop((0x1010, 0x5E42), None)
+        return rt
+
+    asm = make_runtime(False)
+    hook = make_runtime(True)
+
+    for _ in range(20_000):
+        if asm.cpu.addr() == (0x1010, 0x5E42):
+            break
+        asm.cpu.step()
+    for _ in range(20_000):
+        if hook.cpu.addr() == (0x1010, 0x5E42):
+            break
+        hook.cpu.step()
+
+    assert asm.cpu.addr() == hook.cpu.addr() == (0x1010, 0x5E42)
+    return_ip = asm.cpu.mem.rw(asm.cpu.s.ss, asm.cpu.s.sp)
+
+    for _ in range(500):
+        if asm.cpu.addr() == (0x1010, return_ip):
+            break
+        asm.cpu.step()
+    hook.cpu.step()
+
+    assert asm.cpu.addr() == hook.cpu.addr() == (0x1010, return_ip)
+    assert asm.cpu.s.snapshot() == hook.cpu.s.snapshot()
+    assert asm.program.memory.data == hook.program.memory.data
+
+
+def test_hook_verifier_verifies_runtime_patched_object_steer_5e42():
+    from pathlib import Path
+    from overkill_port.hook_verify import HookVerifierConfig, install_hook_verifier
+    from overkill_port.snapshot import load_snapshot
+
+    root = Path(__file__).resolve().parents[1]
+    snap = root / "artifacts" / "snapshot_play_tandy_20260613_220042"
+    assert snap.exists(), "captured gameplay snapshot for runtime-patched 1010:5E42 is missing"
+
+    rt = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
+    rt.cpu.trace_enabled = False
+    verifier = install_hook_verifier(
+        rt,
+        HookVerifierConfig(hooks={(0x1010, 0x5E42)}, stop_on_diff=True),
+    )
+
+    for _ in range(20_000):
+        rt.cpu.step()
+        if verifier.total_verified:
+            break
+
+    assert verifier.total_verified == 1
+    assert (0x1010, 0x5E42) not in verifier.skipped
+
+
 def test_movement_direction_5db2_hook_matches_interpreted_asm_on_captured_snapshot():
     from pathlib import Path
     from overkill_port.snapshot import load_snapshot
@@ -6636,7 +6704,7 @@ def test_tandy_text_glyph_3153_hook_verifies_on_gameplay_snapshot():
     # Wider text hooks absorb calls before they reach the narrow 3153 glyph
     # hook.  Disable them here so this regression continues to verify the
     # original 3153 boundary directly.
-    for key in ((0x1010, 0x518C), (0x1010, 0x519A)):
+    for key in ((0x1010, 0x5EDB), (0x1010, 0x5EF9), (0x1010, 0x5F06), (0x1010, 0x518C), (0x1010, 0x519A)):
         rt.cpu.replacement_hooks.pop(key, None)
         rt.cpu.hook_names.pop(key, None)
     verifier = install_hook_verifier(
@@ -6667,6 +6735,10 @@ def test_score_byte_text_5ef9_hook_verifies_on_gameplay_snapshot():
     assert snap.exists(), "gameplay snapshot for 1010:5EF9 score-byte text verification is missing"
 
     rt = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
+    # The wider 5EDB HUD block composes 5EF9 internally, so disable it when this
+    # test wants to verify the original 5EF9 boundary directly.
+    rt.cpu.replacement_hooks.pop((0x1010, 0x5EDB), None)
+    rt.cpu.hook_names.pop((0x1010, 0x5EDB), None)
     verifier = install_hook_verifier(
         rt,
         HookVerifierConfig(
@@ -7418,3 +7490,306 @@ def test_main_frame_loop_d007_hook_matches_one_interpreted_frame_iteration():
 
     assert verifier.total_verified == 1
     assert rt.cpu.addr() in {(0x1010, 0xD007), (0x1010, 0xD040)}
+
+
+def test_decrement_counter_61c7_hook_matches_interpreted_snapshot():
+    from pathlib import Path
+    from overkill_port.replacements import overkill_decrement_first_active_counter_61c7
+    from overkill_port.snapshot import load_snapshot
+
+    root = Path(__file__).resolve().parents[1]
+    snap = root / "artifacts" / "snapshot_play_tandy_20260613_220042"
+    assert snap.exists(), "captured gameplay snapshot for 1010:61C7 is missing"
+
+    def make_runtime():
+        rt = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
+        rt.cpu.trace_enabled = False
+        for addr in ((0x1010, 0x61F7), (0x1010, 0x61C7), (0x1010, 0x61CA)):
+            rt.cpu.replacement_hooks.pop(addr, None)
+            rt.cpu.hook_names.pop(addr, None)
+        return rt
+
+    asm = make_runtime()
+    hook = make_runtime()
+
+    for _ in range(100_000):
+        if asm.cpu.addr() == (0x1010, 0x61C7):
+            break
+        asm.cpu.step()
+        hook.cpu.step()
+
+    assert asm.cpu.addr() == hook.cpu.addr() == (0x1010, 0x61C7)
+    return_ip = asm.cpu.mem.rw(asm.cpu.s.ss, asm.cpu.s.sp)
+    hook.cpu.replacement_hooks[(0x1010, 0x61C7)] = overkill_decrement_first_active_counter_61c7
+
+    for _ in range(1_000):
+        if asm.cpu.addr() == (0x1010, return_ip):
+            break
+        asm.cpu.step()
+    hook.cpu.step()
+
+    assert asm.cpu.addr() == hook.cpu.addr() == (0x1010, return_ip)
+    assert asm.cpu.s.snapshot() == hook.cpu.s.snapshot()
+    assert asm.program.memory.data == hook.program.memory.data
+
+
+def test_decrement_counter_loop_61f7_hook_matches_interpreted_snapshot():
+    from pathlib import Path
+    from overkill_port.replacements import overkill_decrement_first_active_counter_loop_61f7
+    from overkill_port.snapshot import load_snapshot
+
+    root = Path(__file__).resolve().parents[1]
+    snap = root / "artifacts" / "snapshot_play_tandy_20260613_220042"
+    assert snap.exists(), "captured gameplay snapshot for 1010:61F7 is missing"
+
+    def make_runtime():
+        rt = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
+        rt.cpu.trace_enabled = False
+        rt.cpu.replacement_hooks.pop((0x1010, 0x61F7), None)
+        rt.cpu.hook_names.pop((0x1010, 0x61F7), None)
+        return rt
+
+    asm = make_runtime()
+    hook = make_runtime()
+
+    for _ in range(100_000):
+        if asm.cpu.addr() == (0x1010, 0x61F7):
+            break
+        asm.cpu.step()
+        hook.cpu.step()
+
+    assert asm.cpu.addr() == hook.cpu.addr() == (0x1010, 0x61F7)
+    hook.cpu.replacement_hooks[(0x1010, 0x61F7)] = overkill_decrement_first_active_counter_loop_61f7
+
+    for _ in range(1_000):
+        if asm.cpu.addr() == (0x1010, 0x61FC):
+            break
+        asm.cpu.step()
+    hook.cpu.step()
+
+    assert asm.cpu.addr() == hook.cpu.addr() == (0x1010, 0x61FC)
+    assert asm.cpu.s.snapshot() == hook.cpu.s.snapshot()
+    assert asm.program.memory.data == hook.program.memory.data
+
+
+def test_score_status_text_block_5edb_hook_matches_interpreted_snapshot():
+    from pathlib import Path
+    from overkill_port.games.overkill.hook_wrappers.text import overkill_score_status_text_block_5edb
+    from overkill_port.snapshot import load_snapshot
+
+    root = Path(__file__).resolve().parents[1]
+    snap = root / "artifacts" / "snapshot_play_tandy_20260613_220042"
+    assert snap.exists(), "captured gameplay snapshot for 1010:5EDB is missing"
+
+    composed = (
+        (0x1010, 0x5EDB),
+        (0x1010, 0x5EF9),
+        (0x1010, 0x5F06),
+        (0x1010, 0x518C),
+        (0x1010, 0x519A),
+    )
+
+    def make_runtime():
+        rt = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
+        rt.cpu.trace_enabled = False
+        for addr in composed:
+            rt.cpu.replacement_hooks.pop(addr, None)
+            rt.cpu.hook_names.pop(addr, None)
+        return rt
+
+    asm = make_runtime()
+    hook = make_runtime()
+
+    for _ in range(200_000):
+        if asm.cpu.addr() == (0x1010, 0x5EDB):
+            break
+        asm.cpu.step()
+        hook.cpu.step()
+
+    assert asm.cpu.addr() == hook.cpu.addr() == (0x1010, 0x5EDB)
+    return_ip = asm.cpu.mem.rw(asm.cpu.s.ss, asm.cpu.s.sp)
+    hook.cpu.replacement_hooks[(0x1010, 0x5EDB)] = overkill_score_status_text_block_5edb
+
+    for _ in range(5_000):
+        if asm.cpu.addr() == (0x1010, return_ip):
+            break
+        asm.cpu.step()
+    hook.cpu.step()
+
+    assert asm.cpu.addr() == hook.cpu.addr() == (0x1010, return_ip)
+    assert asm.cpu.s.snapshot() == hook.cpu.s.snapshot()
+    assert asm.program.memory.data == hook.program.memory.data
+
+
+def test_input_release_wait_gate_986e_matches_interpreted_state_machine():
+    from overkill_port.cpu import CPU8086, CPUState
+    from overkill_port.memory import Memory
+    from overkill_port.replacements import overkill_input_release_wait_gate_986e
+
+    code = bytes.fromhex("80 3e c5 98 01 74 f9")
+
+    def make_cpu(use_hook: bool, key_flag: int) -> CPU8086:
+        mem = Memory()
+        mem.load(0x1010, 0x986E, code)
+        mem.wb(0x2000, 0x98C5, key_flag)
+        state = CPUState(
+            ax=0x1111, bx=0x2222, cx=0x3333, dx=0x4444,
+            si=0x5555, di=0x6666, bp=0x7777,
+            sp=0x8000, cs=0x1010, ds=0x2000, es=0x3000, ss=0x4000,
+            ip=0x986E, flags=0x0203,
+        )
+        cpu = CPU8086(mem, state)
+        cpu.trace_enabled = False
+        if use_hook:
+            cpu.replacement_hooks[(0x1010, 0x986E)] = overkill_input_release_wait_gate_986e
+        return cpu
+
+    for key_flag, expected_ip in ((0x01, 0x986E), (0x00, 0x9875), (0x02, 0x9875)):
+        asm = make_cpu(False, key_flag)
+        hook = make_cpu(True, key_flag)
+        for _ in range(4):
+            asm.step()
+            if asm.addr() == (0x1010, expected_ip):
+                break
+        hook.step()
+        assert asm.addr() == hook.addr() == (0x1010, expected_ip)
+        assert asm.s.snapshot() == hook.s.snapshot()
+        assert asm.mem.data == hook.mem.data
+
+
+def test_yes_no_choice_wait_gate_989e_matches_interpreted_state_machine():
+    from overkill_port.cpu import CPU8086, CPUState
+    from overkill_port.memory import Memory
+    from overkill_port.replacements import overkill_yes_no_choice_wait_gate_989e
+
+    code = bytes.fromhex(
+        "c6 06 b4 22 4e 80 3e f5 98 01 74 0c "
+        "c6 06 b4 22 59 80 3e d9 98 01 75 e8"
+    )
+
+    def make_cpu(use_hook: bool, *, n_flag: int, y_flag: int) -> CPU8086:
+        mem = Memory()
+        mem.load(0x1010, 0x989E, code)
+        mem.wb(0x2000, 0x98F5, n_flag)
+        mem.wb(0x2000, 0x98D9, y_flag)
+        mem.wb(0x2000, 0x22B4, 0x00)
+        state = CPUState(
+            ax=0xAAAA, bx=0xBBBB, cx=0xCCCC, dx=0xDDDD,
+            si=0x1111, di=0x2222, bp=0x3333,
+            sp=0x8000, cs=0x1010, ds=0x2000, es=0x3000, ss=0x4000,
+            ip=0x989E, flags=0x0207,
+        )
+        cpu = CPU8086(mem, state)
+        cpu.trace_enabled = False
+        if use_hook:
+            cpu.replacement_hooks[(0x1010, 0x989E)] = overkill_yes_no_choice_wait_gate_989e
+        return cpu
+
+    cases = [
+        (0x01, 0x00, 0x98B6, 0x4E),
+        (0x00, 0x01, 0x98B6, 0x59),
+        (0x00, 0x00, 0x989E, 0x59),
+    ]
+    for n_flag, y_flag, expected_ip, expected_choice in cases:
+        asm = make_cpu(False, n_flag=n_flag, y_flag=y_flag)
+        hook = make_cpu(True, n_flag=n_flag, y_flag=y_flag)
+        for _ in range(8):
+            asm.step()
+            if asm.addr() == (0x1010, expected_ip):
+                break
+        hook.step()
+        assert asm.addr() == hook.addr() == (0x1010, expected_ip)
+        assert asm.mem.rb(asm.s.ds & 0xFFFF, 0x22B4) == expected_choice
+        assert asm.s.snapshot() == hook.s.snapshot()
+        assert asm.mem.data == hook.mem.data
+
+
+def test_sound_effect_completion_wait_gate_98d8_matches_interpreted_state_machine():
+    from overkill_port.cpu import CPU8086, CPUState
+    from overkill_port.memory import Memory
+    from overkill_port.replacements import overkill_sound_effect_completion_wait_gate_98d8
+
+    code = bytes.fromhex("80 3e fe be 00 75 f9")
+
+    def make_cpu(use_hook: bool, completion_flag: int) -> CPU8086:
+        mem = Memory()
+        mem.load(0x1010, 0x98D8, code)
+        mem.wb(0x2000, 0xBEFE, completion_flag)
+        state = CPUState(
+            ax=0x1357, bx=0x2468, cx=0xAAAA, dx=0xBBBB,
+            si=0xCCCC, di=0xDDDD, bp=0xEEEE,
+            sp=0x8000, cs=0x1010, ds=0x2000, es=0x3000, ss=0x4000,
+            ip=0x98D8, flags=0x0202,
+        )
+        cpu = CPU8086(mem, state)
+        cpu.trace_enabled = False
+        if use_hook:
+            cpu.replacement_hooks[(0x1010, 0x98D8)] = overkill_sound_effect_completion_wait_gate_98d8
+        return cpu
+
+    for completion_flag, expected_ip in ((0x00, 0x98DF), (0x01, 0x98D8), (0x80, 0x98D8)):
+        asm = make_cpu(False, completion_flag)
+        hook = make_cpu(True, completion_flag)
+        for _ in range(4):
+            asm.step()
+            if asm.addr() == (0x1010, expected_ip):
+                break
+        hook.step()
+        assert asm.addr() == hook.addr() == (0x1010, expected_ip)
+        assert asm.s.snapshot() == hook.s.snapshot()
+        assert asm.mem.data == hook.mem.data
+
+
+def test_input_wait_gate_hook_metadata_uses_after_step_for_same_ip_targets():
+    from overkill_port.hook_verify import DEFAULT_STOPS
+
+    for addr, self_ip, exit_ip in (
+        ((0x1010, 0x986E), 0x986E, 0x9875),
+        ((0x1010, 0x989E), 0x989E, 0x98B6),
+        ((0x1010, 0x98D8), 0x98D8, 0x98DF),
+    ):
+        stop = DEFAULT_STOPS[addr]
+        assert stop.kind == "fixed_ips"
+        assert stop.min_steps == 1
+        assert self_ip in stop.ips
+        assert exit_ip in stop.ips
+
+
+def test_status_counter_cell_blit_6296_hook_matches_composed_interpreted_snapshot():
+    from pathlib import Path
+    from overkill_port.replacements import overkill_status_counter_cell_blit_6296
+    from overkill_port.snapshot import load_snapshot
+
+    root = Path(__file__).resolve().parents[1]
+    snap = root / "artifacts" / "snapshot_play_tandy_20260613_220042"
+    assert snap.exists(), "captured gameplay snapshot for 1010:6296 is missing"
+
+    def make_runtime():
+        rt = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
+        rt.cpu.trace_enabled = False
+        rt.cpu.replacement_hooks.pop((0x1010, 0x6296), None)
+        rt.cpu.hook_names.pop((0x1010, 0x6296), None)
+        return rt
+
+    asm = make_runtime()
+    hook = make_runtime()
+
+    for _ in range(200_000):
+        if asm.cpu.addr() == (0x1010, 0x6296):
+            break
+        asm.cpu.step()
+        hook.cpu.step()
+
+    assert asm.cpu.addr() == hook.cpu.addr() == (0x1010, 0x6296)
+    return_ip = asm.cpu.mem.rw(asm.cpu.s.ss, asm.cpu.s.sp)
+    hook.cpu.replacement_hooks[(0x1010, 0x6296)] = overkill_status_counter_cell_blit_6296
+
+    for _ in range(5_000):
+        if asm.cpu.addr() == (0x1010, return_ip):
+            break
+        asm.cpu.step()
+    hook.cpu.step()
+
+    assert asm.cpu.addr() == hook.cpu.addr() == (0x1010, return_ip)
+    assert asm.cpu.s.snapshot() == hook.cpu.s.snapshot()
+    assert asm.program.memory.data == hook.program.memory.data

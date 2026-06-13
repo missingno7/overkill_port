@@ -294,6 +294,62 @@ def run_input_selector_loop_d445(cpu) -> None:
             return
 
 
+def run_input_release_wait_gate_986e(cpu) -> None:
+    """Lift the tiny 1010:986E key-release wait gate.
+
+    The original block is an interactive busy wait:
+
+    ``CMP byte [98C5],01h; JE 986E``
+
+    Keep it as a one-iteration state-machine hook instead of spinning in Python
+    so the outer runtime can still yield between CPU chunks while a key remains
+    held.  The hook preserves the original CMP flags and lands either back on
+    the same gate or at the finite continuation 9875h.
+    """
+    ds = cpu.s.ds & 0xFFFF
+    value = cpu.mem.rb(ds, 0x98C5)
+    _cmp_byte(cpu, value, 0x01)
+    cpu.s.ip = 0x986E if value == 0x01 else 0x9875
+
+
+def run_yes_no_choice_wait_gate_989e(cpu) -> None:
+    """Lift one poll of the 1010:989E yes/no choice wait gate.
+
+    The original code continuously rewrites ``DS:22B4`` to ``'N'`` or ``'Y'``
+    while waiting for either the N-key flag ``DS:98F5`` or Y-key flag
+    ``DS:98D9``.  This function intentionally executes only one poll iteration:
+    if no accepted key is down it returns to 989Eh, preserving the original
+    opportunity for the frontend/input layer to update memory between chunks.
+    """
+    ds = cpu.s.ds & 0xFFFF
+    mem = cpu.mem
+
+    mem.wb(ds, 0x22B4, 0x4E)  # 'N'
+    n_flag = mem.rb(ds, 0x98F5)
+    _cmp_byte(cpu, n_flag, 0x01)
+    if n_flag == 0x01:
+        cpu.s.ip = 0x98B6
+        return
+
+    mem.wb(ds, 0x22B4, 0x59)  # 'Y'
+    y_flag = mem.rb(ds, 0x98D9)
+    _cmp_byte(cpu, y_flag, 0x01)
+    cpu.s.ip = 0x98B6 if y_flag == 0x01 else 0x989E
+
+
+def run_sound_effect_completion_wait_gate_98d8(cpu) -> None:
+    """Lift one poll of the 1010:98D8 sound/effect completion wait gate.
+
+    The original branch waits while ``DS:BEFE`` is non-zero.  Keep it as a
+    one-iteration same-IP gate so it removes interpreted hot-loop noise without
+    swallowing runtime yields.
+    """
+    ds = cpu.s.ds & 0xFFFF
+    value = cpu.mem.rb(ds, 0xBEFE)
+    _cmp_byte(cpu, value, 0x00)
+    cpu.s.ip = 0x98D8 if value != 0x00 else 0x98DF
+
+
 def run_intro_retrace_delay_loop_96c5(cpu, call_retrace_wait) -> None:
     """Run the 1010:96C5 intro/menu retrace-delay loop to 1010:96CA.
 

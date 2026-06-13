@@ -32,6 +32,7 @@ from overkill_port.games.overkill.gameplay.objects import (
     run_object_motion_table_ab34,
     run_object_scroll_sprite_ab4f,
 )
+from overkill_port.games.overkill.runtime_code import require_runtime_code_variant
 
 def _run_interpreted_near_call_observed(cpu, target_ip: int, return_ip: int, *, max_steps: int = 20000) -> None:
     """Run a rare original near helper from inside a larger lifted path.
@@ -89,6 +90,127 @@ SIG_OBJECT_DRIFT_DOWNRIGHT_AE2C = bytes.fromhex(
 SIG_OBJECT_DRIFT_UPRIGHT_AE7D = bytes.fromhex(
     "83 7e 04 00 75 03 e9 43 ff 83 6e 02 04 f7 46 04 0f 00"
 )
+
+
+def _or_mem_word(cpu, seg: int, off: int, value: int) -> int:
+    result = cpu.mem.rw(seg, off) | (value & 0xFFFF)
+    cpu.mem.ww(seg, off, result)
+    cpu.set_logic_flags(result, 16)
+    return result
+
+
+def _neg_reg16(cpu, reg_idx: int) -> None:
+    value = cpu.get_reg16(reg_idx)
+    result = (-value) & 0xFFFF
+    cpu.set_sub_flags(0, value, -value, 16)
+    cpu.set_reg16(reg_idx, result)
+
+
+def _run_runtime_patched_object_steer_5e42(cpu) -> None:
+    """Mirror the hot gameplay-patched 1010:5E42 steering helper.
+
+    The original executable overlays this address with a small helper during
+    gameplay.  It converts signed Y/X deltas at ``SS:[BP+2C]/[BP+2A]`` into a
+    direction through the ``DS:A348`` table, then tail-jumps to AF22 for a
+    3-pixel move when ``DS:2312 == 3`` or AF63 for a 2-pixel move otherwise.
+    """
+    ds = cpu.s.ds & 0xFFFF
+    ss = cpu.s.ss & 0xFFFF
+    bp = cpu.s.bp & 0xFFFF
+    entry_sp = cpu.s.sp & 0xFFFF
+    mem = cpu.mem
+
+    def remember_internal_call(ret_ip: int) -> None:
+        # 5E42 uses real CALLs to the 5EB5/5EC8 flag-bit leaves before the final
+        # JMP AF22/AF63.  Those CALLs are balanced, but the last return word
+        # remains below the caller's live return word after AF22/AF63 RETs.
+        mem.ww(ss, (entry_sp - 2) & 0xFFFF, ret_ip & 0xFFFF)
+
+    def call_5eb5(ret_ip: int) -> None:
+        remember_internal_call(ret_ip)
+        _cmp_word(cpu, mem.rw(ds, 0x230C), 0x0001)
+        if mem.rw(ds, 0x230C) == 0x0001:
+            _or_mem_word(cpu, ds, 0x2310, 0x0001)
+        else:
+            _or_mem_word(cpu, ds, 0x2310, 0x0002)
+
+    def call_5ec8(ret_ip: int) -> None:
+        remember_internal_call(ret_ip)
+        _cmp_word(cpu, mem.rw(ds, 0x230E), 0x0001)
+        if mem.rw(ds, 0x230E) == 0x0001:
+            _or_mem_word(cpu, ds, 0x2310, 0x0004)
+        else:
+            _or_mem_word(cpu, ds, 0x2310, 0x0008)
+
+    mem.ww(ds, 0x230C, 0x0000)
+    mem.ww(ds, 0x230E, 0x0000)
+    mem.ww(ds, 0x2310, 0x0000)
+
+    cpu.s.ax = mem.rw(ss, (bp + 0x2C) & 0xFFFF)
+    cpu.set_logic_flags(cpu.s.ax, 16)
+    if (cpu.s.ax & 0x8000) != 0:
+        _neg_reg16(cpu, 0)
+        _inc_mem_word_preserve_cf(cpu, ds, 0x230C)
+
+    cpu.s.bx = mem.rw(ss, (bp + 0x2A) & 0xFFFF)
+    cpu.set_logic_flags(cpu.s.bx, 16)
+    if (cpu.s.bx & 0x8000) != 0:
+        _neg_reg16(cpu, 3)
+        _inc_mem_word_preserve_cf(cpu, ds, 0x230E)
+
+    ax = cpu.s.ax & 0xFFFF
+    bx = cpu.s.bx & 0xFFFF
+    _cmp_word(cpu, ax, bx)
+    if ax == bx:
+        call_5eb5(0x5E96)
+        call_5ec8(0x5E99)
+    elif ax > bx:
+        _add_mem_word(cpu, ss, (bp + 0x2E) & 0xFFFF, bx)
+        frac = mem.rw(ss, (bp + 0x2E) & 0xFFFF)
+        _cmp_word(cpu, frac, ax)
+        if frac <= ax:
+            call_5eb5(0x5E91)
+        else:
+            _sub_mem_word(cpu, ss, (bp + 0x2E) & 0xFFFF, ax)
+            call_5eb5(0x5E96)
+            call_5ec8(0x5E99)
+    else:
+        _add_mem_word(cpu, ss, (bp + 0x2E) & 0xFFFF, ax)
+        frac = mem.rw(ss, (bp + 0x2E) & 0xFFFF)
+        _cmp_word(cpu, frac, bx)
+        if frac <= bx:
+            call_5ec8(0x5E99)
+        else:
+            _sub_mem_word(cpu, ss, (bp + 0x2E) & 0xFFFF, bx)
+            call_5eb5(0x5E96)
+            call_5ec8(0x5E99)
+
+    cpu.s.bx = 0xA348
+    cpu.s.ax = mem.rw(ds, 0x2310)
+    cpu.set_reg8(0, mem.rb(ds, (cpu.s.bx + (cpu.s.ax & 0x00FF)) & 0xFFFF))
+    _cmp_byte(cpu, cpu.s.ax & 0x00FF, 0xFF)
+    if (cpu.s.ax & 0x00FF) == 0xFF:
+        cpu.s.ip = cpu.pop()
+        return
+
+    mem.ww(ss, (bp + 0x06) & 0xFFFF, cpu.s.ax)
+    _cmp_word(cpu, mem.rw(ds, 0x2312), 0x0003)
+    if mem.rw(ds, 0x2312) == 0x0003:
+        _run_af22_three_pixel_step_for_direction(cpu, parent="1010:5E42 -> AF22")
+    else:
+        _run_af63_step_for_direction(cpu, parent="1010:5E42 -> AF63")
+    cpu.s.ip = cpu.pop()
+
+
+def run_runtime_patched_object_steer_5e42(cpu) -> None:
+    """Hook wrapper body for the gameplay-patched 1010:5E42 variant.
+
+    This address is polyvariant.  The hook is valid only for the known gameplay
+    materialized body; known-cold or unknown live bytes fail fast so runtime code
+    exhaustion cannot hide behind interpreted fallback.
+    """
+    require_runtime_code_variant(cpu, (cpu.s.cs & 0xFFFF, 0x5E42), "gameplay_object_steer_5e42")
+    _run_runtime_patched_object_steer_5e42(cpu)
 
 
 def run_object_child_coord_update_9fea(cpu, self_disable_if_patched) -> None:

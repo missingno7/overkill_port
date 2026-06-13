@@ -51,6 +51,10 @@ class Memory:
         # live renderer must display the hardware-selected start offset, not
         # always shadow offset 0000h.
         self.ega_display_start = 0
+        # Optional write-watch callbacks used by runtime-code patch tracing.
+        # The hot path only pays for one empty-list check per write.  Callbacks
+        # receive (physical_20bit_addr, old_bytes, new_bytes).
+        self.write_watchers = []
 
     def check(self, addr: int, n: int = 1) -> int:
         addr &= 0xFFFFF
@@ -65,13 +69,32 @@ class Memory:
         addr = self.check(addr, 2)
         return self.data[addr] | (self.data[addr + 1] << 8)
 
+    def _notify_write(self, addr: int, old: bytes, new: bytes) -> None:
+        if self.write_watchers:
+            for watcher in tuple(self.write_watchers):
+                watcher(addr & 0xFFFFF, old, new)
+
     def wb_phys(self, addr: int, value: int) -> None:
-        self.data[self.check(addr)] = value & 0xFF
+        addr = self.check(addr)
+        new = bytes([value & 0xFF])
+        if self.write_watchers:
+            old = bytes([self.data[addr]])
+            self.data[addr] = new[0]
+            self._notify_write(addr, old, new)
+        else:
+            self.data[addr] = new[0]
 
     def ww_phys(self, addr: int, value: int) -> None:
         addr = self.check(addr, 2)
-        self.data[addr] = value & 0xFF
-        self.data[addr + 1] = (value >> 8) & 0xFF
+        new = bytes([value & 0xFF, (value >> 8) & 0xFF])
+        if self.write_watchers:
+            old = bytes(self.data[addr:addr + 2])
+            self.data[addr] = new[0]
+            self.data[addr + 1] = new[1]
+            self._notify_write(addr, old, new)
+        else:
+            self.data[addr] = new[0]
+            self.data[addr + 1] = new[1]
 
     # Hot path: inline the 20-bit address calculation and skip the linear()/
     # check()/*_phys() call chain.  ``addr`` is always masked to 0..0xFFFFF, so a
@@ -106,7 +129,13 @@ class Memory:
             if 0 <= po < EGA_PLANE_WINDOW:
                 self._ega_wb(po, value)
                 return
-        self.data[a] = value & 0xFF
+        v = value & 0xFF
+        if self.write_watchers:
+            old = bytes([self.data[a]])
+            self.data[a] = v
+            self._notify_write(a, old, bytes([v]))
+        else:
+            self.data[a] = v
 
     def ww(self, seg: int, off: int, value: int) -> None:
         a = (((seg & 0xFFFF) << 4) + (off & 0xFFFF)) & 0xFFFFF
@@ -120,11 +149,27 @@ class Memory:
                 else:
                     d[a + 1] = (value >> 8) & 0xFF
                 return
-        d[a] = value & 0xFF
-        if a == 0xFFFFF:
-            d[0] = (value >> 8) & 0xFF
+        lo = value & 0xFF
+        hi = (value >> 8) & 0xFF
+        if self.write_watchers:
+            if a == 0xFFFFF:
+                old0 = bytes([d[a]])
+                old1 = bytes([d[0]])
+                d[a] = lo
+                d[0] = hi
+                self._notify_write(a, old0, bytes([lo]))
+                self._notify_write(0, old1, bytes([hi]))
+            else:
+                old = bytes(d[a:a + 2])
+                d[a] = lo
+                d[a + 1] = hi
+                self._notify_write(a, old, bytes([lo, hi]))
         else:
-            d[a + 1] = (value >> 8) & 0xFF
+            d[a] = lo
+            if a == 0xFFFFF:
+                d[0] = hi
+            else:
+                d[a + 1] = hi
 
     def _ega_wb(self, plane_off: int, value: int) -> None:
         """Route one A000h byte into the shadow planes the map mask selects."""
@@ -143,7 +188,13 @@ class Memory:
 
     def load(self, seg: int, off: int, payload: bytes) -> None:
         addr = self.check(linear(seg, off), len(payload))
-        self.data[addr:addr + len(payload)] = payload
+        if self.write_watchers:
+            old = bytes(self.data[addr:addr + len(payload)])
+            new = bytes(payload)
+            self.data[addr:addr + len(payload)] = new
+            self._notify_write(addr, old, new)
+        else:
+            self.data[addr:addr + len(payload)] = payload
 
     def block(self, seg: int, off: int, n: int) -> bytes:
         addr = self.check(linear(seg, off), n)

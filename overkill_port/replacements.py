@@ -67,6 +67,9 @@ from .games.overkill.input_menu import (
     pack_keyboard_poll_bits_017e,
     run_input_selector_loop_d445,
     run_input_poll_0162,
+    run_input_release_wait_gate_986e,
+    run_yes_no_choice_wait_gate_989e,
+    run_sound_effect_completion_wait_gate_98d8,
     run_intro_retrace_delay_loop_96c5,
     run_intro_retrace_delay_loop_tail_96c8,
 )
@@ -160,8 +163,10 @@ from .games.overkill.gameplay.game_state import (
     run_demo_counter_tick_1f8f_081d,
     run_gameplay_counter_tick_1f8f_0922,
     run_gameplay_counter_stride_loop_1f8f_0960,
-    run_decrement_first_active_counter_61c5,
+    run_decrement_first_active_counter_61c7,
     run_decrement_first_active_counter_scan_61ca,
+    run_decrement_first_active_counter_loop_61f7,
+    run_status_counter_cell_blit_6296,
     run_frame_game_state_update_a940,
 )
 from .games.overkill.gameplay.frame_orchestration import (
@@ -244,6 +249,7 @@ from .games.overkill.gameplay.object_runtime import (
     _run_object_overlap_scan_62f6,
     _run_object_postmove_bc4b,
     run_object_child_coord_update_9fea,
+    run_runtime_patched_object_steer_5e42,
     run_object_postmove_prelude_bc45,
     _run_post_contact_9e69_observed,
     _run_post_contact_9e98_tail_observed,
@@ -265,6 +271,9 @@ _SIG_291C = bytes.fromhex("51 2e 8a 05 47 57 2e 8b 3e a6 5b aa 2e 89 3e a6")
 _SIG_2932 = bytes.fromhex("2e c6 06 a0 5b 00 2e 8b 1e 9c 5b 8a 04 8a 20 d1")
 _SIG_5A6C = bytes.fromhex("2e 8b 1e bc 95 d1 e3 2e ff a7 78 5a")
 _SIG_2E6E = bytes.fromhex("bb 58 00 ad 26 23 05 0b 04 83 c6 02 ab ad 26 23")
+_SIG_986E = bytes.fromhex("80 3e c5 98 01 74 f9")
+_SIG_989E = bytes.fromhex("c6 06 b4 22 4e 80 3e f5 98 01 74 0c c6 06 b4 22 59 80 3e d9 98 01 75 e8")
+_SIG_98D8 = bytes.fromhex("80 3e fe be 00 75 f9")
 _SIG_96C5 = bytes.fromhex("e8 01 ba e2 fb")
 _SIG_96C8 = bytes.fromhex("e2 fb")
 _SIG_0F0B = bytes.fromhex("2e 8e 1e 96 95 2e 8e 06 96 95 bf c8 99 b9 10 00 b8 ff ff f3 ab 2e a1 9e 95 d1 e0 d1 e0 d1 e0 d1 e0 f7 d8 b9 d0 00 ab 2e 03 06 9e 95 e2 f8 b8 ff ff b9 20 00 f3 ab bf c8 9b 33 c0 b9 c8 00 ab 2e 03 06 9e 95 e2 f8 bf 58 9d 33 c0 b9 c8 00 ab 2e 03 06 a0 95 e2 f8 bf e8 9e b9 c8 00 33 c0 ab 97 2e 8b 1e bc 95 d1 e3 2e ff a7 77 0f 7d 0f 8d 0f 92 0f 81 c7 00 20 f7 c7 00 40 74 04 81 c7 50 c0 eb 13 83 c7 28 eb 0e 81 c7 00 20 f7 c7 00 80 74 04 81 c7 a0 80 97 e2 c6")
@@ -2821,6 +2830,13 @@ def overkill_object_behavior_b73e(cpu):
 
 
 
+@registry.replace(0x1010, 0x5E42, "overkill_runtime_patched_object_steer_5e42")
+def overkill_runtime_patched_object_steer_5e42(cpu):
+    """Lift the gameplay-patched object steering helper at 1010:5E42."""
+    run_runtime_patched_object_steer_5e42(cpu)
+
+
+
 @registry.replace(0x1010, 0x5DB2, "overkill_movement_direction_helper_5db2")
 def overkill_movement_direction_helper_5db2(cpu):
     """Verified target-seeking movement helper at 1010:5DB2."""
@@ -2858,17 +2874,23 @@ def overkill_postmove_y_clamp_bcb1(cpu):
 
 
 
-@registry.replace(0x1010, 0x61C5, "overkill_decrement_first_active_counter_61c5")
-def overkill_decrement_first_active_counter_61c5(cpu):
-    """Replace the small DS:2368..2372 countdown scan at 1010:61C5."""
-    run_decrement_first_active_counter_61c5(cpu, _self_disable_if_patched)
+@registry.replace(0x1010, 0x61C7, "overkill_decrement_first_active_counter_61c7")
+def overkill_decrement_first_active_counter_61c7(cpu):
+    """Replace the small DS:2368..2372 countdown scan at real entry 1010:61C7."""
+    run_decrement_first_active_counter_61c7(cpu, _self_disable_if_patched)
 
+
+@registry.replace(0x1010, 0x61F7, "overkill_decrement_first_active_counter_loop_61f7")
+def overkill_decrement_first_active_counter_loop_61f7(cpu):
+    """Replace the hot CALL-61C7/LOOP glue at 1010:61F7."""
+    run_decrement_first_active_counter_loop_61f7(cpu, _self_disable_if_patched)
 
 
 @registry.replace(0x1010, 0x61CA, "overkill_decrement_first_active_counter_scan_61ca")
 def overkill_decrement_first_active_counter_scan_61ca(cpu):
     """Replace the inner countdown scan body at 1010:61CA."""
     run_decrement_first_active_counter_scan_61ca(cpu, _self_disable_if_patched)
+
 
 @registry.replace(0x1010, 0xBC45, "overkill_object_postmove_prelude_bc45")
 def overkill_object_postmove_prelude_bc45(cpu):
@@ -3099,6 +3121,25 @@ def overkill_object_slot_scan_guard_ac81(cpu):
 
 
 
+
+
+@registry.replace(0x1010, 0x6296, "overkill_status_counter_cell_blit_6296")
+def overkill_status_counter_cell_blit_6296(cpu):
+    """Composed status/counter cell blit helper used by the 61DC display parent."""
+    def call_menu_cell_source_blit(return_ip: int) -> None:
+        cs = cpu.s.cs & 0xFFFF
+        mode = cpu.mem.rw(cs, 0x95BC)
+        cpu.s.bx = mode & 0xFFFF
+        cpu.s.bx = cpu.shift(4, cpu.s.bx, 1, 16)
+        if mode == 2:
+            _call_hook_like_near_call(cpu, overkill_tandy_rect_copy_306f, return_ip)
+            return
+        # 6296 has only been proven on the Tandy-first source-port path.  Other
+        # video modes should be lifted explicitly rather than silently routed
+        # through original-mode dispatch.
+        raise RuntimeError(f"unverified 6296 source-cell blit video mode {mode:04X}")
+
+    run_status_counter_cell_blit_6296(cpu, _self_disable_if_patched, call_menu_cell_source_blit)
 
 
 @registry.replace(0x1010, 0xD007, "overkill_main_frame_loop_d007")
@@ -4690,6 +4731,30 @@ def overkill_present_frame_blit_447b(cpu):
     cpu.s.ds = cpu.mem.rw(cs, 0x9596)      # 44AA MOV DS,CS:[9596]
     cpu.s.ip = cpu.pop()                   # 44AF RET
 
+
+
+@registry.replace(0x1010, 0x986E, "overkill_input_release_wait_gate_986e")
+def overkill_input_release_wait_gate_986e(cpu):
+    """One-iteration state-machine hook for the 986E input-release wait."""
+    if _self_disable_if_patched(cpu, 0x986E, _SIG_986E, "overkill_input_release_wait_gate_986e"):
+        return
+    run_input_release_wait_gate_986e(cpu)
+
+
+@registry.replace(0x1010, 0x989E, "overkill_yes_no_choice_wait_gate_989e")
+def overkill_yes_no_choice_wait_gate_989e(cpu):
+    """One-iteration state-machine hook for the 989E Y/N choice wait."""
+    if _self_disable_if_patched(cpu, 0x989E, _SIG_989E, "overkill_yes_no_choice_wait_gate_989e"):
+        return
+    run_yes_no_choice_wait_gate_989e(cpu)
+
+
+@registry.replace(0x1010, 0x98D8, "overkill_sound_effect_completion_wait_gate_98d8")
+def overkill_sound_effect_completion_wait_gate_98d8(cpu):
+    """One-iteration state-machine hook for the 98D8 completion wait."""
+    if _self_disable_if_patched(cpu, 0x98D8, _SIG_98D8, "overkill_sound_effect_completion_wait_gate_98d8"):
+        return
+    run_sound_effect_completion_wait_gate_98d8(cpu)
 
 
 @registry.replace(0x1010, 0x96C5, "overkill_intro_retrace_delay_loop_96c5")

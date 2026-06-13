@@ -2464,3 +2464,129 @@ proves the object role.
 - Static hook audit now reports 222 hooks and no function/registry-label
   mismatch.
 
+
+## 2026-06-13 — runtime-code variant exhaustion policy
+
+- Promoted runtime-patched code from an ad-hoc hook guard into an explicit
+  `games/overkill/runtime_code.py` manifest.
+- `1010:5E42` now has named live-byte variants:
+  - `gameplay_object_steer_5e42` — hooked/verified movement helper observed in
+    `snapshot_play_tandy_20260613_220042`.
+  - `cold_display_helper_5e42_prefix` — known cold executable body at the same
+    address, intentionally not valid for the movement hook.
+- Removed the previous behavior where the 5E42 hook could silently run the live
+  original body when bytes did not match.  Known-wrong or unknown bytes now raise
+  `UnknownRuntimeCodeVariant`.
+- Added optional `Memory.write_watchers` and `RuntimeCodeWriteTracer` for tracing
+  who writes into runtime-code regions without enabling it in normal gameplay.
+- Added `scripts/trace_runtime_code_writes.py` with `--no-hooks` and `--all-code`
+  for cold-start code-materialization audits.
+- Added runtime-code tests proving cold/gameplay variant distinction, unknown
+  byte fail-fast behavior, and write-tracer event capture.
+
+Validation:
+
+```text
+pytest -q
+196 passed
+python scripts/verify_hooks_headless.py --snapshot artifacts/snapshot_play_tandy_20260613_220042 --verify-max 300 --fast-ranges --coverage
+OK HOOK VERIFY LIMIT REACHED verified=300
+```
+
+## 2026-06-13 — runtime-code staticization scaffold
+
+- Promoted runtime-code handling from variant fail-fast only to an explicit
+  staticization manifest.
+- `games/overkill/runtime_code.py` now models `RuntimeCodeSlot`, accepted/rejected
+  `RuntimeCodeVariant` records, and `RuntimeCodeStaticization` targets.
+- `1010:5E42` is now recorded as a polyvariant code slot whose accepted gameplay
+  body is staticized into
+  `gameplay.object_runtime.run_runtime_patched_object_steer_5e42`.
+- Added `scripts/audit_runtime_code_staticization.py`:
+  - `--check` verifies that accepted runtime-code variants have static Python
+    owners.
+  - `--strict-installers` additionally requires writer/installer provenance and
+    is intended as the final 100% exhaustion gate.
+- `trace_runtime_code_writes.py --dump-final-variants` now reports the final live
+  digest/variant for registered runtime-code slots after stepping.
+- Added `docs/runtime_code_staticization.md` as the policy/playbook for turning
+  runtime self-modifying code into named, flat source-port logic.
+
+Important status:
+
+- Source-port staticization gate passes for the current known slot.
+- Strict installer gate intentionally still fails for `1010:5E42` until the
+  cold-start writer that materializes the gameplay body is traced and named.
+
+## 2026-06-13 — hot unknown cleanup after runtime-code staticization
+
+- Absorbed two misleading hot/problematic interpreted regions that were not new
+  runtime-patched bodies:
+  - `1010:61F7` now hooks the hot `CALL 61C7; LOOP 61F7` status-counter glue.
+  - `1010:5EDB` now hooks the HUD/status text block that composes `518C`, `5EF9`,
+    and `5F06`.
+- Corrected the old `1010:61C5` countdown hook metadata: `61C5` is inside the
+  preceding CALL immediate in the materialized runtime body.  The real routine
+  entry is `1010:61C7` (`MOV DI,2368h`).
+- The new `61F7` hook preserves nested CALL stack scratch and leaves FLAGS from
+  the final scan, matching interpreted ASM memory/state oracle checks.
+- The new `5EDB` hook preserves intermediate CALL return scratch and tail-runs
+  the final `5EF9` helper so the caller's original return address is consumed by
+  the same boundary as the original code.
+- No additional runtime-code slot was identified in this pass; these removals are
+  static hot-region absorption, not self-modifying Python behavior.
+
+Validation:
+
+```text
+python scripts/audit_runtime_code_staticization.py --check
+ok; 1010:5E42 remains the only registered runtime-code slot, staticized with
+installer provenance still pending
+
+python -m pytest -q
+201 passed
+
+python scripts/verify_hooks_headless.py --snapshot artifacts/snapshot_play_tandy_20260613_220042 --verify-max 800 --fast-ranges --coverage
+OK HOOK VERIFY LIMIT REACHED verified=800
+```
+
+## 2026-06-13 runtime-code census: 5E42 is bootstrap materialization, not video selection
+
+Investigated whether the currently known runtime-patched code is actually a
+video/sound/input selector that can be retired by committing to Tandy-first.
+
+Result:
+
+- `1010:5E42` is installed by the transient `32FF:*` inner unpack/self-relocation
+  bootstrap, specifically `writer=32FF:009B`.
+- The installer writes 211 bytes into `1010:5E42-5F1A`.
+- CGA, EGA, and Tandy command tails all receive the same final variant:
+  `gameplay_object_steer_5e42`.
+- Therefore `5E42` is not a video-card, sound-card, keyboard, joystick, or
+  Amstrad-joystick selector.  It is a bootstrapped gameplay/object steering body
+  that is already staticized as flat Python.
+- The actual video-mode choice observed in the same census is a data/config word
+  in the code segment: `CS:95BC = 0000/0001/0002` for CGA/EGA/Tandy.  That can
+  be lifted later into high-level Tandy configuration; it is not executable SMC.
+
+Added `scripts/audit_runtime_code_census.py` to make this repeatable:
+
+```bash
+python scripts/audit_runtime_code_census.py --video all --steps 250000 --show-bootstrap
+```
+
+Updated the runtime-code manifest so strict installer audit now passes:
+
+```bash
+python scripts/audit_runtime_code_staticization.py --check --strict-installers
+```
+
+Validation:
+
+```bash
+python -m pytest -q
+# 202 passed
+
+python scripts/verify_hooks_headless.py --snapshot artifacts/snapshot_play_tandy_20260613_220042 --verify-max 800 --fast-ranges --coverage
+# OK HOOK VERIFY LIMIT REACHED verified=800
+```

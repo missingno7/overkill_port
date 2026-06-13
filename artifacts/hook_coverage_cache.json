@@ -308,6 +308,13 @@
       "name": "overkill_movement_direction_helper_5db2",
       "samples": 387.0
     },
+    "1010:5E42": {
+      "avg_asm_equiv": 37.34,
+      "island": "movement",
+      "last_asm_equiv": 36.0,
+      "name": "overkill_runtime_patched_object_steer_5e42",
+      "samples": 50.0
+    },
     "1010:5EF9": {
       "avg_asm_equiv": 9.0,
       "island": "tandy_renderer",
@@ -883,6 +890,6 @@
       "samples": 17.0
     }
   },
-  "updated": 1781383735.427637,
+  "updated": 1781384217.398088,
   "version": 1
 }
