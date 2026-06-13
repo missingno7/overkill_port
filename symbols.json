@@ -15,7 +15,7 @@
     "status": "replaced"
   },
   "1010:0367": {
-    "name": "overkill_linear_byte_rle_decoder_0367_fast",
+    "name": "overkill_linear_byte_rle_decoder_0367",
     "notes": "Linear/horizontal byte RLE decoder. Verified against interpreted ASM on synthetic literal/repeat/80h terminator stream; optimized to collapse runs while preserving tested final state.",
     "status": "replaced"
   },
@@ -123,6 +123,12 @@
     "notes": "Startup Tandy interlaced buffer clear. Static bytes set ES from CS:[95A4], clear 200 rows of 0x34 words, and return near.",
     "status": "replaced"
   },
+  "1010:3389": {
+    "island": "tandy_renderer",
+    "name": "overkill_tandy_interlaced_clear_3389",
+    "notes": "Tandy interlaced clear loop. Sets ES from CS:[95A4], zeroes DI, clears 200 rows of 0x34 words with the 2000h/80A0h interlace pattern, and returns near. It shares the same core loop shape as 30B0.",
+    "status": "replaced"
+  },
   "1010:30BA": {
     "island": "tandy_renderer",
     "name": "overkill_tandy_patched_row_copy_30ba",
@@ -208,7 +214,7 @@
   },
   "1010:4511": "4-plane block renderer nested loop (verified hook)",
   "1010:4537": {
-    "name": "overkill_expand_4plane_row_4537_fast",
+    "name": "overkill_expand_4plane_row_4537",
     "notes": "4-plane row renderer helper; optimized but still verified against interpreted ASM. Mirrors current CPU8086 rotate flag semantics for oracle-relative tests.",
     "status": "replaced"
   },
@@ -227,8 +233,8 @@
   "1010:4CED": {
     "island": "layer_sprites",
     "name": "overkill_presence_stamp_triplet_4ced",
-    "notes": "Small parent around three 4D15 presence-list stamping calls. Classified as layer_sprites; safe future hook candidate that should call/reuse 4D15 rather than reimplementing it.",
-    "status": "classified-frontier"
+    "notes": "Small parent around three verified 4D15 presence-list stamping calls. Replaced by composing 4D15 three times with real call-site return scratch and then writing the FFFF sentinel at DS:DI.",
+    "status": "replaced"
   },
   "1010:4D15": {
     "name": "overkill_presence_stamp_list_4d15",
@@ -262,6 +268,11 @@
     "name": "overkill_video_page_toggle_511f",
     "notes": "Shared per-frame video-page toggle stub. All modes call it; only mode 1 flips CS:[95A4] between A000/A200. Tandy/CGA path is CMP/JNE/RET.",
     "status": "replaced"
+  },
+  "1010:518C": {
+    "kind": "helper",
+    "name": "overkill_text_string_loop_518c",
+    "notes": "NUL-terminated inline text loop: reads SS:BP, exits on zero, otherwise calls 519A and advances BP. Lifted to compose the verified text dispatcher while preserving control-byte BP adjustments and call scratch."
   },
   "1010:5827": {
     "name": "overkill_ega_planar_to_linear_copy_5827",
@@ -299,10 +310,22 @@
     "notes": "Per-frame presenter. Reads video mode CS:[95BC], shl 1, jmp cs:[bx+5BE8]. Mode 0 -> 447B. Called from the main loop at 1010:D010.",
     "status": "understood"
   },
+  "1010:5C74": {
+    "island": "tandy_renderer",
+    "name": "overkill_tandy_postcopy_mode_sweep_5c74",
+    "notes": "Tandy postcopy dispatch/wait sweep. Reads the video-mode table at CS:595A, dispatches through the installed 497A or 375B leaf, waits via the installed 50C9 hook, bumps CS:5901 by 2, and loops until it reaches CS:58FD before restoring DS and returning near.",
+    "status": "replaced"
+  },
   "1010:5DB2": {
     "kind": "target",
     "name": "object_movement_direction_helper_5db2",
     "notes": "Next fail-fast target after lifting A9E0->AA2B->EFAE->B73E. It compares object Y/X against DS:2304/2306, writes direction bits in DS:A954 and DS:230A, selects animation via DS:A348 xlat, then dispatches through CS:5E0C based on DS:2308. Needs reversal/verification next."
+  },
+  "1010:5EF9": {
+    "island": "tandy_renderer",
+    "name": "overkill_score_byte_text_5ef9",
+    "notes": "Small HUD/text helper that prints one byte as two score nibbles by composing the existing 5F06 nibble-to-text helper for the high and low nibbles.",
+    "status": "replaced"
   },
   "1010:61C5": {
     "island": "game_state",
@@ -362,6 +385,11 @@
     "name": "overkill_intro_retrace_delay_loop_tail_96c8",
     "notes": "LOOP tail for 96C5 delay used when an interactive 50C9 pacing boundary yields at the original return IP.",
     "status": "replaced"
+  },
+  "1010:9921": {
+    "kind": "code",
+    "name": "overkill_sound_active_wait_9921",
+    "notes": "Inline foreground busy wait: cmp byte ptr DS:[BEFE],0; jnz 9921. DS:BEFE is the global PC-speaker sound-active byte cleared by the real 1010:06E5 timer IRQ/sound driver. The hook delivers the real installed IRQ0 ISR until the byte clears, then exits at 9928 with final CMP flags."
   },
   "1010:9E69": {
     "kind": "helper",
@@ -458,7 +486,7 @@
   "1010:AA71": {
     "kind": "helper",
     "name": "postmove_contact_window_aa71",
-    "notes": "Observed BC4B contact-window helper. Handles the signed X guard, the AAAB->AA44 upper tail for the current snapshot, and the remaining AA44 success return. Negative-X and the other unobserved AA71 branches stay fail-fast.",
+    "notes": "Observed BC4B contact-window helper. Handles the signed X guard, the AAAB->AA44 upper tail, and the remaining AA44 success return. Negative-X and the A8C2=0001 branch stay fail-fast until proven by a snapshot.",
     "status": "understood"
   },
   "1010:AB10": {
@@ -560,7 +588,7 @@
   "1010:BFC7": {
     "kind": "helper",
     "name": "collision_death_tail_bfc7_observed",
-    "notes": "Observed death/transition tail reached from BC4B/BCCB and BEC5. It calls the shared C054 selector before the state transition; selector ids such as 0020h decrement DS:A47E through C054, while observed ids 0012h, 002Bh, 0031h, and 003Bh take the same transition without the live-counter drop. Logic 003Bh falls through C054 to default AX=A4E4h before AX is overwritten with the original logic id.",
+    "notes": "Observed death/transition tail reached from BC4B/BCCB and BEC5. It calls the shared C054 selector before the state transition; selector ids such as 0020h decrement DS:A47E through C054, while observed ids 0012h, 002Bh, 0031h, and 003Bh take the same transition without the live-counter drop. The later C037/C048 tail exits with BX=0002 and FLAGS=0202h on the B73E/BEC5 oracles. Logic 003Bh falls through C054 to default AX=A4E4h before AX is overwritten with the original logic id.",
     "status": "partial helper"
   },
   "1010:C054": {
@@ -574,7 +602,7 @@
     "status": "replaced"
   },
   "1010:C916": {
-    "name": "overkill_file_checksum_loop",
+    "name": "overkill_file_checksum_loop_c916",
     "notes": "Small deterministic checksum loop over bytes read from OVERKILL data file. Python replacement is regression-tested.",
     "status": "replaced"
   },
@@ -613,15 +641,37 @@
   },
   "1010:D007": {
     "island": "game_state",
+    "kind": "hook",
     "name": "overkill_main_frame_loop_d007",
-    "notes": "Main gameplay frame-loop dispatcher: clear timer flag, page/video stubs, layer/object/render/update calls, input poll, wait timer. Classified so it no longer looks like unknown code; do not hook until child calls are exhausted.",
+    "notes": "Main gameplay/attract frame-loop dispatcher lifted as one verified frame iteration. Composes child proof boundaries in original CALL order and returns to D007 on same-IP loop or D040 on exit. Hook verifier uses same-IP-after-step metadata so the oracle cannot stop at the entry without executing a frame.",
+    "status": "replaced"
+  },
+  "1010:D03E": {
+    "island": "game_state",
+    "kind": "loop_gate",
+    "name": "main_frame_same_ip_loop_gate_d03e",
+    "notes": "Final CMP/JZ gate inside D007; loops back to D007 when DS:98C3 is zero. Tracked in frontier manifest because same-IP targets need min-step verifier metadata.",
+    "status": "owned-by-D007"
+  },
+  "1010:D040": {
+    "island": "game_state",
+    "kind": "exit_tail",
+    "name": "main_frame_exit_tail_d040",
+    "notes": "Exit tail after D007 breaks out of the gameplay/attract frame loop. It clears DS:BDAC then calls 5AEE and 526A before returning. Left as a separate hook candidate instead of folding into D007.",
     "status": "classified-frontier"
+  },
+  "1010:D445": {
+    "island": "input_menu",
+    "name": "overkill_input_selector_loop_d445",
+    "notes": "Observed input-driven selector loop. When DS:[98E4]==1 it increments DS:[BEDC] and wraps that counter back to zero after the third tick; otherwise it polls 0162 and updates DS:[BEDA] with direction bits 1/2/4/8 as a 2x3 selector grid. Bit 10h exits only when BEDA is nonzero.",
+    "status": "replaced"
   },
   "1010:D04D": {
     "island": "game_state",
-    "name": "overkill_frame_ui_or_state_update_d04d",
-    "notes": "Classified per-frame game-state/UI frontier reached from the main D007 frame dispatcher. It starts by clearing DS:A278 and then enters a larger state/update sequence; not yet a safe small hook.",
-    "status": "classified-frontier"
+    "kind": "hook",
+    "name": "overkill_frame_ui_state_update_d04d",
+    "notes": "Finite per-frame UI/demo-state update block called from D007. It draws the script-selected cell, runs A212 maintenance, advances BE08/BE0A timers and either returns to D019 or hands off to original script continuation targets.",
+    "status": "replaced"
   },
   "1010:ECF2": {
     "name": "overkill_lz_decoder_ecf2",

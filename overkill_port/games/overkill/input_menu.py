@@ -8,7 +8,12 @@ logic so the outer poller and the inner bit-packer do not duplicate code.
 from __future__ import annotations
 
 from overkill_port.cpu import CF, IF, ZF
-from overkill_port.games.overkill.asm import _cmp_byte, _cmp_word
+from overkill_port.games.overkill.asm import (
+    _cmp_byte,
+    _cmp_word,
+    _dec_mem_byte_preserve_cf,
+    _inc_mem_byte_preserve_cf,
+)
 
 
 def _or_mem_byte(cpu, seg: int, off: int, value: int) -> int:
@@ -188,6 +193,107 @@ def run_input_poll_0162(cpu) -> None:
             _or_mem_byte(cpu, ds, 0x98BE, mask)
     s.ip = cpu.pop()
 
+
+def run_input_selector_loop_d445(cpu) -> None:
+    """Run the observed 1010:D445 input/selector loop to its return.
+
+    The loop has two distinct observed modes:
+
+    * when ``DS:[98E4] == 1``, it increments ``DS:[BEDC]`` and wraps that
+      counter back to zero after the third tick; and
+    * otherwise it polls input through ``1010:0162`` and adjusts ``DS:[BEDA]``
+      as a small 2x3 selector grid driven by the direction bits in
+      ``DS:[98BE]``.
+
+    The fire bit ``10h`` exits only when ``DS:[BEDA]`` is nonzero; a zero
+    selection keeps the loop waiting.
+    """
+
+    def _write_beda_add(delta: int) -> int:
+        old = cpu.s.ax & 0xFF
+        result_full = old + (delta & 0xFF)
+        result = result_full & 0xFF
+        cpu.mem.wb(ds, 0xBEDA, result)
+        cpu.set_reg8(0, result)
+        cpu.set_add_flags(old, delta & 0xFF, result_full, 8)
+        return result
+
+    def _write_beda_sub(delta: int) -> int:
+        old = cpu.s.ax & 0xFF
+        result_full = old - (delta & 0xFF)
+        result = result_full & 0xFF
+        cpu.mem.wb(ds, 0xBEDA, result)
+        cpu.set_reg8(0, result)
+        cpu.set_sub_flags(old, delta & 0xFF, result_full, 8)
+        return result
+
+    s = cpu.s
+    ds = s.ds & 0xFFFF
+    mem = cpu.mem
+
+    while True:
+        _cmp_byte(cpu, mem.rb(ds, 0x98E4), 0x01)
+        if cpu.get_flag(ZF):
+            _inc_mem_byte_preserve_cf(cpu, ds, 0xBEDC)
+            bedc = mem.rb(ds, 0xBEDC)
+            _cmp_byte(cpu, bedc, 0x03)
+            if bedc >= 0x03:
+                mem.wb(ds, 0xBEDC, 0x00)
+            s.ip = cpu.pop()
+            return
+
+        cpu.push(0xD44F)
+        poll_input = cpu.replacement_hooks.get((0x1010, 0x0162), run_input_poll_0162)
+        poll_input(cpu)
+        if s.ip != 0xD44F:
+            raise RuntimeError(f"0162 returned to unexpected IP {s.ip:04X} inside D445 selector loop")
+
+        beda = mem.rb(ds, 0xBEDA)
+        cpu.set_reg8(0, beda)
+        buttons = mem.rb(ds, 0x98BE)
+
+        if buttons & 0x01:
+            _cmp_byte(cpu, beda, 0x03)
+            if beda < 0x03:
+                _write_beda_add(0x03)
+            s.ip = cpu.pop()
+            return
+
+        if buttons & 0x02:
+            _cmp_byte(cpu, beda, 0x02)
+            if beda > 0x02:
+                _write_beda_sub(0x03)
+            s.ip = cpu.pop()
+            return
+
+        if buttons & 0x08:
+            cpu.set_logic_flags(beda, 8)
+            if beda == 0:
+                continue
+            old_cf = cpu.get_flag(CF)
+            result = _dec_mem_byte_preserve_cf(cpu, ds, 0xBEDA)
+            cpu.set_reg8(0, result)
+            cpu.set_flag(CF, old_cf)
+            s.ip = cpu.pop()
+            return
+
+        if buttons & 0x04:
+            _cmp_byte(cpu, beda, 0x05)
+            if beda != 0x05:
+                old_cf = cpu.get_flag(CF)
+                _write_beda_add(0x01)
+                cpu.set_flag(CF, old_cf)
+            s.ip = cpu.pop()
+            return
+
+        if buttons & 0x10:
+            cpu.set_logic_flags(beda, 8)
+            if beda == 0:
+                continue
+            s.ip = cpu.pop()
+            return
+
+
 def run_intro_retrace_delay_loop_96c5(cpu, call_retrace_wait) -> None:
     """Run the 1010:96C5 intro/menu retrace-delay loop to 1010:96CA.
 
@@ -220,4 +326,3 @@ def run_intro_retrace_delay_loop_tail_96c8(cpu) -> None:
     cx = ((cpu.s.cx & 0xFFFF) - 1) & 0xFFFF
     cpu.s.cx = cx
     cpu.s.ip = 0x96C5 if cx != 0 else 0x96CA
-

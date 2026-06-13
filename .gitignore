@@ -27,3 +27,13 @@ artifacts/headless_ega_frames/
 artifacts/headless_ega_press/
 artifacts/snapshot_play_*/
 artifacts/verify_*/
+# Generated artifact families; promote only selected evidence/test oracles.
+artifacts/tmp_*/
+artifacts/play_*/
+artifacts/frame_verify/
+artifacts/evidence/snapshot_play_previews/
+# Python/tool caches
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/

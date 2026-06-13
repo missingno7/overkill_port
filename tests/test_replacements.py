@@ -737,6 +737,44 @@ def test_expand_tandy_list_33af_handles_disabled_header_table_like_asm():
     assert (0x1010, 0x33AF) in cpu.replacement_hooks
 
 
+def test_tandy_interlaced_clear_3389_hook_matches_interpreted_asm():
+    from overkill_port.cpu import CPU8086, CPUState
+    from overkill_port.memory import Memory
+    from overkill_port.replacements import overkill_tandy_interlaced_clear_3389
+
+    code_3389 = bytes.fromhex(
+        "2e8e06a49533ffbdc800b9340033c0f3ab83ef6881c70020f7c70080740481c7a0804d75e5c3"
+    )
+
+    def make_cpu(use_hook: bool) -> CPU8086:
+        mem = Memory()
+        mem.load(0x1010, 0x3389, code_3389)
+        mem.ww(0x1010, 0x95A4, 0xB800)
+        state = CPUState(
+            ax=0x1234, bx=0x5678, cx=0x9ABC, dx=0xDEF0,
+            si=0x1111, di=0x1400, bp=0x2222, sp=0x9000,
+            cs=0x1010, ds=0x6000, es=0x7777, ss=0x4000,
+            ip=0x3389, flags=0x0203,
+        )
+        cpu = CPU8086(mem, state)
+        cpu.trace_enabled = False
+        cpu.push(0xBEEF)
+        if use_hook:
+            cpu.replacement_hooks[(0x1010, 0x3389)] = overkill_tandy_interlaced_clear_3389
+        return cpu
+
+    asm = make_cpu(False)
+    hook = make_cpu(True)
+    for _ in range(20000):
+        if asm.addr() == (0x1010, 0xBEEF):
+            break
+        asm.step()
+    hook.step()
+    assert asm.addr() == hook.addr() == (0x1010, 0xBEEF)
+    assert asm.s.snapshot() == hook.s.snapshot()
+    assert asm.mem.data == hook.mem.data
+
+
 def test_tandy_masked_sprite_composite_2f81_hook_matches_interpreted_asm():
     import random
     from overkill_port.cpu import CPU8086, CPUState
@@ -2216,6 +2254,64 @@ def test_postcopy_loop_58df_hook_matches_interpreted_asm_on_captured_snapshot():
     assert asm.dos.vga_status_reads == hook.dos.vga_status_reads
 
 
+def test_tandy_postcopy_mode_sweep_5c74_hook_matches_interpreted_asm():
+    from overkill_port.cpu import CPU8086, CPUState
+    from overkill_port.memory import Memory
+    from overkill_port.replacements import overkill_tandy_postcopy_mode_sweep_5c74
+
+    code_5c74 = bytes.fromhex(
+        "2e8b1ebc95d1e32eff975a59e846f42e83060159022ea101592e3b06fd5875e02e8e1e9695c3"
+    )
+    code_375b = bytes.fromhex("83c720c3")
+    code_50c9 = bytes.fromhex("b80800c3")
+
+    def dummy_375b(cpu: CPU8086) -> None:
+        cpu.s.di = (cpu.s.di + 0x0020) & 0xFFFF
+        cpu.s.ip = cpu.pop()
+
+    def dummy_50c9(cpu: CPU8086) -> None:
+        cpu.s.ax = 0x0008
+        cpu.s.ip = cpu.pop()
+
+    def make_cpu(use_hook: bool) -> CPU8086:
+        mem = Memory()
+        mem.load(0x1010, 0x5C74, code_5c74)
+        mem.load(0x1010, 0x375B, code_375b)
+        mem.load(0x1010, 0x50C9, code_50c9)
+        mem.ww(0x1010, 0x95BC, 2)
+        mem.ww(0x1010, 0x595A, 0x497A)
+        mem.ww(0x1010, 0x595C, 0x2D2D)
+        mem.ww(0x1010, 0x595E, 0x375B)
+        mem.ww(0x1010, 0x5901, 0x00C4)
+        mem.ww(0x1010, 0x58FD, 0x00C8)
+        mem.ww(0x1010, 0x9596, 0x6BE1)
+        state = CPUState(
+            ax=0x0008, bx=0x0004, cx=0x0000, dx=0x03DA,
+            si=0x48F8, di=0x1400, bp=0x0034, sp=0xA274,
+            cs=0x1010, ds=0x6BE1, es=0xB800, ss=0x25CC,
+            ip=0x5C74, flags=0x0202,
+        )
+        cpu = CPU8086(mem, state)
+        cpu.trace_enabled = False
+        cpu.push(0xBEEF)
+        if use_hook:
+            cpu.replacement_hooks[(0x1010, 0x5C74)] = overkill_tandy_postcopy_mode_sweep_5c74
+            cpu.replacement_hooks[(0x1010, 0x375B)] = dummy_375b
+            cpu.replacement_hooks[(0x1010, 0x50C9)] = dummy_50c9
+        return cpu
+
+    asm = make_cpu(False)
+    hook = make_cpu(True)
+    for _ in range(2000):
+        if asm.addr() == (0x1010, 0xBEEF):
+            break
+        asm.step()
+    hook.step()
+    assert asm.addr() == hook.addr() == (0x1010, 0xBEEF)
+    assert asm.s.snapshot() == hook.s.snapshot()
+    assert asm.mem.data == hook.mem.data
+
+
 def test_wait_timer_tick_0679_hook_matches_interpreted_asm():
     import pytest
     from overkill_port.cpu import CPU8086, CPUState
@@ -2269,7 +2365,7 @@ def test_wait_timer_tick_0679_runs_overkill_sound_isr_when_installed():
     from overkill_port.snapshot import load_snapshot
 
     root = Path(__file__).resolve().parents[1]
-    snap = root / "artifacts" / "play_tandy_main_menu_20260612_132548"
+    snap = root / "artifacts" / "test_oracles" / "timer_wait_tandy_main_menu_20260612_132548"
     assert snap.exists(), "Tandy menu snapshot with installed INT 08h is missing"
 
     rt = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
@@ -2309,7 +2405,7 @@ def test_hook_verifier_timer_wait_0679_delivers_real_isr_oracle():
     from overkill_port.snapshot import load_snapshot
 
     root = Path(__file__).resolve().parents[1]
-    snap = root / "artifacts" / "play_tandy_main_menu_20260612_132548"
+    snap = root / "artifacts" / "test_oracles" / "timer_wait_tandy_main_menu_20260612_132548"
     assert snap.exists(), "Tandy menu snapshot with installed INT 08h is missing"
 
     rt = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
@@ -2562,6 +2658,70 @@ def test_presence_stamp_list_4d15_final_skip_and_mode0_flags_match_asm():
         asm = make_cpu(False, mode=mode, final_skip=final_skip)
         hook = make_cpu(True, mode=mode, final_skip=final_skip)
         for _ in range(300):
+            if asm.addr() == (0x1010, 0xBEEF):
+                break
+            asm.step()
+        hook.step()
+        assert asm.addr() == hook.addr() == (0x1010, 0xBEEF)
+        assert asm.s.snapshot() == hook.s.snapshot()
+        assert asm.mem.data == hook.mem.data
+
+
+def test_presence_stamp_triplet_4ced_composes_three_4d15_calls():
+    from overkill_port.cpu import CPU8086, CPUState
+    from overkill_port.memory import Memory
+    from overkill_port.replacements import overkill_presence_stamp_list_4d15, overkill_presence_stamp_triplet_4ced
+
+    code = bytes.fromhex(
+        "2e8e069895bec1c6bfb1c7bd4d4db91400e81400bd514db90a00"
+        "e80b00b90a00e80500c705ffffc3ad8bd8d1e381c3089a8b1f"
+        "031e4c23ad03d8ad26803f0075332e833ebc9501752326807f"
+        "1a00752426807f3400751d26807f4e007516ffe52688474e2688"
+        "47342688471a268807891d83c702e2b2c3"
+    )
+
+    def make_cpu(use_hook: bool, *, mode: int) -> CPU8086:
+        mem = Memory()
+        mem.load(0x1010, 0x4CED, code)
+        mem.ww(0x1010, 0x9598, 0x3000)
+        mem.ww(0x1010, 0x95BC, mode)
+        mem.ww(0x2000, 0x234C, 0x0100)
+        for i in range(16):
+            mem.ww(0x2000, 0x9A08 + i * 2, 0x0200 + i * 0x30)
+
+        triples = []
+        for i in range(40):
+            triples.extend((i % 16, (i * 4) & 0x01FF, 0x1100 + i))
+        src = 0xC6C1
+        for i, word in enumerate(triples):
+            mem.ww(0x2000, src + i * 2, word)
+
+        for i in (3, 17, 29):
+            base = 0x0100 + (0x0200 + (i % 16) * 0x30) + ((i * 4) & 0x01FF)
+            mem.wb(0x3000, base & 0xFFFF, 0x77)
+        if mode == 1:
+            for i, off in ((8, 0x1A), (21, 0x34), (35, 0x4E)):
+                base = 0x0100 + (0x0200 + (i % 16) * 0x30) + ((i * 4) & 0x01FF)
+                mem.wb(0x3000, (base + off) & 0xFFFF, 0x55)
+
+        state = CPUState(
+            ax=0x2222, bx=0x3333, cx=0x4444, dx=0x5555,
+            si=0x6666, di=0x7777, bp=0x8888,
+            sp=0x9000, cs=0x1010, ds=0x2000, es=0x9999, ss=0x4000,
+            ip=0x4CED, flags=0x0297,
+        )
+        cpu = CPU8086(mem, state)
+        cpu.trace_enabled = False
+        cpu.push(0xBEEF)
+        if use_hook:
+            cpu.replacement_hooks[(0x1010, 0x4CED)] = overkill_presence_stamp_triplet_4ced
+            cpu.replacement_hooks[(0x1010, 0x4D15)] = overkill_presence_stamp_list_4d15
+        return cpu
+
+    for mode in (0, 1):
+        asm = make_cpu(False, mode=mode)
+        hook = make_cpu(True, mode=mode)
+        for _ in range(5000):
             if asm.addr() == (0x1010, 0xBEEF):
                 break
             asm.step()
@@ -3988,6 +4148,143 @@ def test_bec5_bedc_one_collision_tail_matches_interpreted_asm():
     assert asm.addr() == hook.addr() == (0x1010, 0xBEEF)
     assert asm.s.snapshot() == hook.s.snapshot()
     assert asm.mem.data == hook.mem.data
+
+
+
+def test_bec5_variant_0005_a8c2_one_matches_interpreted_asm():
+    from overkill_port.replacements import _run_collision_handler_bec5_observed
+    from overkill_port.cpu import CPU8086, CPUState
+    from overkill_port.memory import Memory
+
+    code_bec5 = bytes.fromhex(
+        "837f18077503e9eb00837f18087503e9e200837f180c7503e9d900"
+        "837f18097503e9bf00837f1802742c837f18067503e99f00837f"
+        "18057503e996003b6f307401c3c7471c0000833ec2a8017412"
+        "c746200000e9ac00c7070000837f08337508ff4e207503e99a00"
+        "ff4e207503e99200833edcbe017411833edcbe00750fff4e20"
+        "747fff4e20747aff4e207475c746240500833ec2a8017401c3"
+        "558b2ebaa8c7462405008b2ebca8c7462405008b2ebea8c746"
+        "2405008b2ec0a8c746240500803ec098007405c606ffbe0e5dc3"
+        "e878fdeb8ee873fd833ec2a8017484c746200000eb1f833ec2a8"
+        "017503e973ffc746200000eb0e833ec2a80174d2c746200000eb00"
+    )
+    code_bd0d = bytes.fromhex(
+        "558bebe804008bdd5dc3c746000000837e1604743a837e1601742e"
+        "837e1807747e837e18087478837e18097440837e18067503e98100"
+        "837e1805747b837e180c7469837e180a7449c3c746160200c3"
+        "e8f502837e18017501c3837e28ff7501c38b7628d1e681c67820"
+        "c60400c3833e72a9007501c3b91a00beb4a3ad3dffff7501c3"
+        "8944fe8bd8c7070000ff0e72a9ebea833e7ea9007404ff0e7ea9"
+        "e96dee833e70a9007404ff0e70a9c3833e74a9007404ff0e74a9"
+        "c3833e76a9007404ff0e76a9c3"
+    )
+
+    def make_cpu(use_hook: bool) -> CPU8086:
+        mem = Memory()
+        mem.load(0x1010, 0xBEC5, code_bec5)
+        mem.load(0x1010, 0xBD0D, code_bd0d)
+        ds = ss = 0x3000
+        collided_bx = 0x1200
+        bp = 0x2504
+        mem.ww(ds, collided_bx + 0x00, 0x0001)
+        mem.ww(ds, collided_bx + 0x16, 0x0005)
+        mem.ww(ds, collided_bx + 0x18, 0x0005)
+        mem.ww(ds, 0xA8C2, 0x0001)
+        mem.ww(ds, 0xA976, 0x0004)
+        mem.ww(ds, 0xBEDC, 0x0000)
+        mem.wb(ds, 0x98C0, 0x01)
+        mem.wb(ds, 0xBEFF, 0x00)
+        for i, ptr in enumerate((0x2600, 0x2638, 0x2670, 0x26A8)):
+            mem.ww(ds, 0xA8BA + i * 2, ptr)
+            mem.ww(ss, ptr + 0x24, 0x1111 + i)
+        mem.ww(ss, bp + 0x00, 0x0001)
+        mem.ww(ss, bp + 0x14, 0x0001)
+        mem.ww(ss, bp + 0x18, 0x0058)
+        mem.ww(ss, bp + 0x20, 0x0007)
+        mem.ww(ss, bp + 0x24, 0x0000)
+        state = CPUState(
+            ax=0x00A8, bx=collided_bx, cx=0x0048, dx=0x0058,
+            si=0x1111, di=0x2222, bp=bp, sp=0x9000,
+            cs=0x1010, ds=ds, es=ds, ss=ss,
+            ip=0xBEC5, flags=0x0202,
+        )
+        cpu = CPU8086(mem, state)
+        cpu.trace_enabled = False
+        cpu.push(0xCAFE)
+        if use_hook:
+            _run_collision_handler_bec5_observed(
+                cpu,
+                collided_bx=collided_bx,
+                parent="test",
+                chain="test",
+                cx_value=0x0048,
+            )
+        return cpu
+
+    asm = make_cpu(False)
+    hook = make_cpu(True)
+    for _ in range(300):
+        if asm.addr() == (0x1010, 0xCAFE):
+            break
+        asm.step()
+
+    assert asm.addr() == hook.addr() == (0x1010, 0xCAFE)
+    assert asm.s.snapshot() == hook.s.snapshot()
+    assert asm.mem.data == hook.mem.data
+
+def test_bec5_bedc_zero_second_counter_zero_runs_bfc7_tail():
+    from overkill_port.replacements import _run_collision_handler_bec5_observed
+    from overkill_port.cpu import CPU8086, CPUState
+    from overkill_port.memory import Memory
+
+    mem = Memory()
+    ds = 0x2000
+    ss = 0x3000
+    collided_bx = 0x1200
+    bp = 0x23B4
+    mem.ww(ds, collided_bx + 0x00, 0x0001)
+    mem.ww(ds, collided_bx + 0x08, 0x007F)
+    mem.ww(ds, collided_bx + 0x18, 0x0002)
+    mem.ww(ds, 0xA8C2, 0x0000)
+    mem.ww(ds, 0xBEDC, 0x0000)
+    mem.wb(ds, 0x2078, 0x03)
+    mem.wb(ds, 0x2079, 0x01)
+    mem.wb(ds, 0x98C0, 0x00)
+    mem.ww(ss, bp + 0x00, 0x0001)
+    mem.ww(ss, bp + 0x02, 0x006C)
+    mem.ww(ss, bp + 0x04, 0x0045)
+    mem.ww(ss, bp + 0x08, 0x007F)
+    mem.ww(ss, bp + 0x14, 0x0001)
+    mem.ww(ss, bp + 0x16, 0x0004)
+    mem.ww(ss, bp + 0x18, 0x0019)
+    mem.ww(ss, bp + 0x20, 0x0002)
+    mem.ww(ss, bp + 0x22, 0xAAAA)
+    mem.ww(ss, bp + 0x24, 0x0000)
+    mem.ww(ss, bp + 0x28, 0x0000)
+    cpu = CPU8086(
+        mem,
+        CPUState(
+            ax=0x006C, bx=collided_bx, cx=0x0017, dx=0xAAAA,
+            si=0x1111, di=0x2222, bp=bp, sp=0x9000,
+            cs=0x1010, ds=ds, es=ds, ss=ss,
+            ip=0xBEC5, flags=0x0202,
+        ),
+    )
+    cpu.trace_enabled = False
+    cpu.push(0xBEEF)
+
+    _run_collision_handler_bec5_observed(
+        cpu,
+        collided_bx=collided_bx,
+        parent="test",
+        chain="test",
+        cx_value=0x0017,
+    )
+
+    assert cpu.addr() == (0x1010, 0xBEEF)
+    assert mem.rw(ds, collided_bx) == 0
+    assert mem.rw(ss, bp + 0x20) == 0
+    assert mem.rb(ds, 0x2078) == 0x02
 
 
 def test_bec5_variant_000c_consumes_bfb9_tail_like_bc4b_path():
@@ -5748,6 +6045,79 @@ def test_object_slot_scan_ac97_hook_matches_interpreted_asm_on_captured_snapshot
     assert asm.program.memory.data == hook.program.memory.data
 
 
+def test_object_slot_scan_ac97_absorbs_non_actionable_acd9_continue_tail():
+    from overkill_port.cpu import CPU8086, CPUState
+    from overkill_port.memory import Memory
+    from overkill_port.replacements import overkill_object_slot_scan_ac97
+
+    code = bytes.fromhex(
+        "83 3f 00 74 36 83 7f 18 01 74 30 83 7f 14 01 75 2a "
+        "8b 77 02 83 c6 10 3b fe 7f 20 83 ee 20 3b fe 7c 19 "
+        "8b 77 04 83 c6 10 3b c6 7f 0f 83 ee 20 3b c6 7c 08 "
+        "8b 76 0e 3b 77 0e 75 07 83 c3 38 e2 c0 f8 c3 83 7f "
+        "16 05 74 1a 83 7f 14 01 74 03 e9 71 a3 83 7f 16 04 "
+        "75 e4 e8 a8 fe e8 62 ff 72 01 c3 f9 c3 55 8b eb e8 "
+        "d4 fd 8b dd 5d f8 c3"
+    )
+
+    def make_cpu(use_hook: bool) -> CPU8086:
+        mem = Memory()
+        mem.load(0x1010, 0xAC97, code)
+        ds = ss = 0x25CC
+        bp = 0x3000
+        sp = 0x8000
+        bx = 0x23B4
+        # First slot overlaps and has a different owner, but kind 3 is neither
+        # ACD9's actionable kind 4 nor kind 5.  Original ASM therefore jumps
+        # ACD9 -> ACD2 and continues scanning instead of returning through the
+        # interpreted tail.
+        mem.ww(ds, bx + 0x00, 1)
+        mem.ww(ds, bx + 0x02, 0x0040)
+        mem.ww(ds, bx + 0x04, 0x0040)
+        mem.ww(ds, bx + 0x0E, 0x2222)
+        mem.ww(ds, bx + 0x14, 1)
+        mem.ww(ds, bx + 0x16, 3)
+        mem.ww(ds, bx + 0x18, 0)
+        # Second slot is inactive, so the two-slot scan exhausts and returns CLC.
+        mem.ww(ds, bx + 0x38, 0)
+        mem.ww(ss, bp + 0x0E, 0x1111)
+        mem.ww(ss, sp, 0xBEEF)
+        cpu = CPU8086(
+            mem,
+            CPUState(
+                ax=0x0040,
+                bx=bx,
+                cx=2,
+                di=0x0040,
+                bp=bp,
+                sp=sp,
+                cs=0x1010,
+                ds=ds,
+                es=ds,
+                ss=ss,
+                ip=0xAC97,
+                flags=0x0202,
+            ),
+        )
+        cpu.trace_enabled = False
+        if use_hook:
+            cpu.replacement_hooks[(0x1010, 0xAC97)] = overkill_object_slot_scan_ac97
+            cpu.hook_names[(0x1010, 0xAC97)] = "overkill_object_slot_scan_ac97"
+        return cpu
+
+    asm = make_cpu(False)
+    hook = make_cpu(True)
+    for _ in range(120):
+        if asm.addr() == (0x1010, 0xBEEF):
+            break
+        asm.step()
+    hook.step()
+
+    assert asm.addr() == hook.addr() == (0x1010, 0xBEEF)
+    assert asm.s.snapshot() == hook.s.snapshot()
+    assert asm.mem.data == hook.mem.data
+
+
 def test_postmove_y_clamp_bcb1_hook_matches_interpreted_asm_on_captured_snapshot():
     from pathlib import Path
     from overkill_port.snapshot import load_snapshot
@@ -5845,7 +6215,7 @@ def test_bd17_deactivate_selector_a83e_tail_matches_interpreted_asm_on_captured_
     from overkill_port.snapshot import load_snapshot
 
     root = Path(__file__).resolve().parents[1]
-    snap = root / "artifacts" / "snapshot_play_tandy_20260613_125913"
+    snap = root / "artifacts" / "test_oracles" / "bd17_selector_a83e_tail_20260613_125913"
     assert snap.exists(), "captured oracle snapshot for 1010:BD17 selector A83E tail is missing"
 
     def make_runtime(use_hook: bool):
@@ -6112,6 +6482,47 @@ def test_aa71_upper_contact_tail_matches_interpreted_asm_on_captured_snapshot():
     assert asm.program.memory.data == hook.program.memory.data
 
 
+def test_aa71_upper_contact_tail_forced_upper_branch_matches_interpreted_asm():
+    from pathlib import Path
+    from overkill_port.games.overkill.gameplay.collision import run_postmove_contact_window_aa71
+    from overkill_port.snapshot import load_snapshot
+
+    root = Path(__file__).resolve().parents[1]
+    snap = root / "artifacts" / "evidence" / "next_frontier_probe_4"
+    assert snap.exists(), "captured oracle snapshot for 1010:AA71 is missing"
+
+    def make_runtime():
+        rt = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
+        rt.cpu.replacement_hooks.clear()
+        rt.cpu.hook_names.clear()
+        rt.cpu.trace_enabled = False
+        return rt
+
+    asm = make_runtime()
+    hook = make_runtime()
+    for _ in range(2000):
+        if asm.cpu.addr() == (0x1010, 0xAA71) and hook.cpu.addr() == (0x1010, 0xAA71):
+            break
+        asm.cpu.step()
+        hook.cpu.step()
+
+    assert asm.cpu.addr() == hook.cpu.addr() == (0x1010, 0xAA71)
+
+    for cpu in (asm.cpu, hook.cpu):
+        cpu.mem.ww(cpu.s.ss, (cpu.s.bp + 0x04) & 0xFFFF, 0x0041)
+
+    run_postmove_contact_window_aa71(hook.cpu)
+
+    for _ in range(32):
+        if asm.cpu.addr() == (0x1010, 0xBCFC):
+            break
+        asm.cpu.step()
+
+    assert asm.cpu.addr() == hook.cpu.addr() == (0x1010, 0xBCFC)
+    assert asm.cpu.s.snapshot() == hook.cpu.s.snapshot()
+    assert asm.program.memory.data == hook.program.memory.data
+
+
 def test_object_postmove_bc4b_hook_matches_interpreted_asm_on_captured_snapshot():
     from pathlib import Path
     from overkill_port.snapshot import load_snapshot
@@ -6147,11 +6558,17 @@ def test_object_postmove_bc4b_variant_000a_owner_linked_tail_matches_interpreted
     from overkill_port.snapshot import load_snapshot
 
     root = Path(__file__).resolve().parents[1]
-    snap = root / "artifacts" / "snapshot_play_tandy_20260613_000648"
+    snap = root / "artifacts" / "test_oracles" / "bc4b_variant_000a_owner_linked_20260613_000648"
     assert snap.exists(), "captured oracle snapshot for BEC5 variant 000A owner-linked tail is missing"
 
     def make_runtime(use_hook: bool):
         rt = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
+        # This oracle targets the 53rd *externally visible* BC4B boundary from
+        # the captured snapshot.  Once the D007 frame orchestrator is lifted,
+        # BC4B can be reached inside a single composed D007 step, so keep the
+        # parent frame hook disabled while seeking this BC4B-specific fixture.
+        rt.cpu.replacement_hooks.pop((0x1010, 0xD007), None)
+        rt.cpu.hook_names.pop((0x1010, 0xD007), None)
         count = 0
         for _ in range(100000):
             if rt.cpu.addr() == (0x1010, 0xBC4B):
@@ -6212,15 +6629,16 @@ def test_tandy_text_glyph_3153_hook_verifies_on_gameplay_snapshot():
     from overkill_port.snapshot import load_snapshot
 
     root = Path(__file__).resolve().parents[1]
-    snap = root / "artifacts" / "snapshot_play_tandy_20260612_163127"
+    snap = root / "artifacts" / "test_oracles" / "tandy_text_score_gameplay_20260612_163127"
     assert snap.exists(), "gameplay snapshot for 1010:3153 text glyph verification is missing"
 
     rt = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
-    # The wider 519A text-dispatch hook absorbs calls before they reach the
-    # narrow 3153 glyph hook.  Disable it here so this regression continues to
-    # verify the original 3153 boundary directly.
-    rt.cpu.replacement_hooks.pop((0x1010, 0x519A), None)
-    rt.cpu.hook_names.pop((0x1010, 0x519A), None)
+    # Wider text hooks absorb calls before they reach the narrow 3153 glyph
+    # hook.  Disable them here so this regression continues to verify the
+    # original 3153 boundary directly.
+    for key in ((0x1010, 0x518C), (0x1010, 0x519A)):
+        rt.cpu.replacement_hooks.pop(key, None)
+        rt.cpu.hook_names.pop(key, None)
     verifier = install_hook_verifier(
         rt,
         HookVerifierConfig(
@@ -6237,6 +6655,34 @@ def test_tandy_text_glyph_3153_hook_verifies_on_gameplay_snapshot():
         pass
 
     assert verifier.counts[(0x1010, 0x3153)] == 50
+
+
+def test_score_byte_text_5ef9_hook_verifies_on_gameplay_snapshot():
+    from pathlib import Path
+    from overkill_port.hook_verify import HookVerifierConfig, HookVerifyLimitReached, install_hook_verifier
+    from overkill_port.snapshot import load_snapshot
+
+    root = Path(__file__).resolve().parents[1]
+    snap = root / "artifacts" / "test_oracles" / "tandy_text_score_gameplay_20260612_163127"
+    assert snap.exists(), "gameplay snapshot for 1010:5EF9 score-byte text verification is missing"
+
+    rt = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
+    verifier = install_hook_verifier(
+        rt,
+        HookVerifierConfig(
+            hooks={(0x1010, 0x5EF9)},
+            stop_on_diff=True,
+            max_verified=20,
+            asm_max_steps=5000,
+        ),
+    )
+
+    try:
+        rt.cpu.run(500000)
+    except HookVerifyLimitReached:
+        pass
+
+    assert verifier.counts[(0x1010, 0x5EF9)] == 20
 
 
 def test_bfc7_linked_slot_decrements_counter_and_completes_transition():
@@ -6483,7 +6929,7 @@ def test_dirty_cell_presenter_uses_installed_retrace_hook_for_intro_pacing_snaps
         pass
 
     root = Path(__file__).resolve().parents[1]
-    snap = root / "artifacts" / "snapshot_play_tandy_20260612_235139"
+    snap = root / "artifacts" / "test_oracles" / "dirty_cell_presenter_pacing_20260612_235139"
     assert snap.exists(), "intro dirty-cell snapshot is missing"
 
     rt = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
@@ -6670,9 +7116,119 @@ def test_input_poll_0162_keyboard_path_matches_interpreted_asm():
                 break
             asm.step()
         hook.step()
-        assert asm.addr() == hook.addr() == (0x1010, 0x7777)
+    assert asm.addr() == hook.addr() == (0x1010, 0x7777)
+    assert asm.s.snapshot() == hook.s.snapshot()
+    assert asm.mem.data == hook.mem.data
+
+
+def test_input_selector_loop_d445_matches_interpreted_asm():
+    from pathlib import Path
+
+    from overkill_port.replacements import overkill_input_selector_loop_d445
+    from overkill_port.snapshot import load_snapshot
+
+    root = Path(__file__).resolve().parents[1]
+    exe = root / "assets" / "OVERKILL.UNLZEXE.EXE"
+    snapshot = root / "artifacts" / "evidence" / "bc4b_stop"
+
+    cases = [
+        (0x01, 0x00, 0x00, 0x00, 0x03),
+        (0x02, 0x04, 0x00, 0x00, 0x01),
+        (0x04, 0x04, 0x00, 0x00, 0x05),
+        (0x08, 0x04, 0x00, 0x00, 0x03),
+        (0x10, 0x04, 0x00, 0x00, 0x04),
+        (0x00, 0x04, 0x01, 0x00, 0x04),
+        (0x00, 0x04, 0x01, 0x02, 0x04),
+    ]
+
+    def make_cpu(
+        use_hook: bool,
+        *,
+        button_mask: int,
+        beda_seed: int,
+        bedc_seed: int,
+        state98e4: int,
+        button_masks: list[int] | None = None,
+    ) -> CPU8086:
+        rt = load_snapshot(exe, snapshot, game_root=root / "assets")
+        ds = rt.cpu.s.ds & 0xFFFF
+        rt.cpu.mem.wb(ds, 0x98E4, state98e4)
+        rt.cpu.mem.wb(ds, 0xBEDA, beda_seed)
+        rt.cpu.mem.wb(ds, 0xBEDC, bedc_seed)
+
+        masks = list(button_masks) if button_masks is not None else [button_mask]
+
+        def fake_0162(cpu, masks=masks):
+            ds2 = cpu.s.ds & 0xFFFF
+            cpu.mem.wb(ds2, 0x98BE, masks.pop(0) if masks else 0)
+            cpu.s.ip = cpu.pop()
+
+        rt.cpu.replacement_hooks[(0x1010, 0x0162)] = fake_0162
+        if use_hook:
+            rt.cpu.replacement_hooks[(0x1010, 0xD445)] = overkill_input_selector_loop_d445
+        else:
+            rt.cpu.replacement_hooks.pop((0x1010, 0xD445), None)
+
+        rt.cpu.s.cs = 0x1010
+        rt.cpu.s.ip = 0xD445
+        rt.cpu.trace_enabled = False
+        return rt.cpu
+
+    for button_mask, beda_seed, state98e4, bedc_seed, expected_beda in cases:
+        asm = make_cpu(
+            False,
+            button_mask=button_mask,
+            beda_seed=beda_seed,
+            bedc_seed=bedc_seed,
+            state98e4=state98e4,
+        )
+        hook = make_cpu(
+            True,
+            button_mask=button_mask,
+            beda_seed=beda_seed,
+            bedc_seed=bedc_seed,
+            state98e4=state98e4,
+        )
+
+        for _ in range(80):
+            if asm.addr() == (0x1010, 0xAA04):
+                break
+            asm.step()
+        hook.step()
+
+        assert asm.addr() == hook.addr() == (0x1010, 0xAA04)
+        assert asm.mem.rb(asm.s.ds & 0xFFFF, 0xBEDA) == expected_beda
         assert asm.s.snapshot() == hook.s.snapshot()
         assert asm.mem.data == hook.mem.data
+
+    # Exercise the "wait once, then continue" branch without hanging forever.
+    asm = make_cpu(
+        False,
+        button_mask=0x00,
+        button_masks=[0x00, 0x04],
+        beda_seed=0x04,
+        bedc_seed=0x00,
+        state98e4=0x00,
+    )
+    hook = make_cpu(
+        True,
+        button_mask=0x00,
+        button_masks=[0x00, 0x04],
+        beda_seed=0x04,
+        bedc_seed=0x00,
+        state98e4=0x00,
+    )
+
+    for _ in range(120):
+        if asm.addr() == (0x1010, 0xAA04):
+            break
+        asm.step()
+    hook.step()
+
+    assert asm.addr() == hook.addr() == (0x1010, 0xAA04)
+    assert asm.mem.rb(asm.s.ds & 0xFFFF, 0xBEDA) == 0x05
+    assert asm.s.snapshot() == hook.s.snapshot()
+    assert asm.mem.data == hook.mem.data
 
 
 def test_intro_retrace_delay_loop_96c5_matches_interpreted_asm_with_stubbed_50c9():
@@ -6829,3 +7385,36 @@ def test_intro_retrace_delay_loop_96c5_uses_installed_retrace_hook_for_pacing():
     assert cpu.addr() == (0x1010, 0x96C5)
     assert cpu.s.cx == 0x0001
     assert cpu.s.flags == old_flags
+
+
+def test_hook_stop_after_step_metadata_for_same_ip_frame_loop():
+    from overkill_port.hook_verify import DEFAULT_STOPS
+
+    stop = DEFAULT_STOPS[(0x1010, 0xD007)]
+    assert stop.kind == "fixed_ips"
+    assert stop.min_steps == 1
+    assert 0xD007 in stop.ips
+    assert 0xD040 in stop.ips
+
+
+def test_main_frame_loop_d007_hook_matches_one_interpreted_frame_iteration():
+    from pathlib import Path
+
+    from overkill_port.hook_verify import HookVerifier, HookVerifierConfig
+    from overkill_port.replacements import registry
+    from overkill_port.snapshot import load_snapshot
+
+    root = Path.cwd()
+    snap = root / "artifacts" / "test_oracles" / "main_frame_loop_d007"
+    rt = load_snapshot(root / "assets" / "OVERKILL.UNLZEXE.EXE", snap, game_root=root / "assets")
+    registry.install(rt.cpu)
+    verifier = HookVerifier(
+        rt,
+        HookVerifierConfig(hooks={(0x1010, 0xD007)}, stop_on_diff=True, log_diffs=True, asm_max_steps=1_000_000),
+    )
+    rt.cpu.hook_verifier = verifier.verify
+
+    rt.cpu.step()
+
+    assert verifier.total_verified == 1
+    assert rt.cpu.addr() in {(0x1010, 0xD007), (0x1010, 0xD040)}

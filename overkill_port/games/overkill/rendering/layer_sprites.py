@@ -278,6 +278,49 @@ def call_clear_presence_list_parent_a93c(cpu, clear_presence_parent_handler: Com
     cpu.s.ip = cpu.pop()
 
 
+def run_presence_stamp_triplet_4ced(cpu, presence_stamp_handler: CompositorHandler) -> None:
+    """Model the small ``1010:4CED`` parent around three ``4D15`` calls.
+
+    The original routine is only orchestration glue for the already-lifted
+    presence-list stamper::
+
+        mov es, cs:[9598h]
+        mov si, C6C1h
+        mov di, C7B1h
+        mov bp, 4D4Dh
+        mov cx, 0014h
+        call 4D15
+        mov bp, 4D51h
+        mov cx, 000Ah
+        call 4D15
+        mov cx, 000Ah
+        call 4D15
+        mov word ptr [di], FFFFh
+        ret
+
+    Compose the proven ``4D15`` hook instead of duplicating the stamping loop.
+    Synthetic return words are the real call-site continuations, so full-memory
+    verifier snapshots still see the same balanced call scratch under ``SP``.
+    """
+    s = cpu.s
+    cs = s.cs & 0xFFFF
+    ds = s.ds & 0xFFFF
+    s.es = cpu.mem.rw(cs, 0x9598)
+    s.si = 0xC6C1
+    s.di = 0xC7B1
+
+    for bp, cx, return_ip in ((0x4D4D, 0x0014, 0x4D01), (0x4D51, 0x000A, 0x4D0A), (0x4D51, 0x000A, 0x4D10)):
+        s.bp = bp
+        s.cx = cx
+        cpu.push(return_ip)
+        presence_stamp_handler(cpu)
+        if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (cs, return_ip):
+            raise RuntimeError(f"4D15 returned to unexpected IP {s.cs:04X}:{s.ip:04X} inside 4CED parent")
+
+    cpu.mem.ww(ds, s.di & 0xFFFF, 0xFFFF)
+    s.ip = cpu.pop()
+
+
 def run_present_object_scan_pair_a90c(
     cpu,
     scan_8d12_handler: CompositorHandler,

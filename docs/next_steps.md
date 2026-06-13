@@ -187,14 +187,12 @@ is not a semantic model task; a semantic task is not renderer cleanup.
 
 ## Current next candidates after A90C/A93C/4D64 cleanup
 
-1. `1010:4CED` remains the cleanest small layer-sprite parent candidate: compose
-   the existing `4D15` presence stamper three times, with no copied stamping loop.
-2. `1010:A846/A85E/A876` can be approached as scan-parent composition only after
+1. `1010:A846/A85E/A876` can be approached as scan-parent composition only after
    verifying they reuse existing scan helpers cleanly.
-3. `1010:D04D..D072` is now classified as `game_state` frontier.  Treat it like
+2. `1010:D04D..D072` is now classified as `game_state` frontier.  Treat it like
    the `D007` parent: document and split child calls first; do not hook it as one
    monolith unless the children are exhausted.
-4. Keep object semantic work candidate-based.  The A90C pass is renderer/list
+3. Keep object semantic work candidate-based.  The A90C pass is renderer/list
    orchestration, not evidence for a concrete enemy/projectile class.
 
 ## Current next candidates after 96C5/BC45/4E0D/61CA cleanup
@@ -202,12 +200,10 @@ is not a semantic model task; a semantic task is not renderer cleanup.
 1. `1010:9FEA` is the most interesting gameplay-runtime candidate.  It appears
    to update object/table coordinates and flag bytes, but it needs a direct ASM
    oracle before being assigned to `movement` or `gameplay_objects`.
-2. `1010:5EF9` looks like a small text/nibble rendering helper around `5F06`.
-   Treat it as renderer/text utility until proven otherwise.
-3. `1010:4D95` is likely a presence-list parent.  If lifted, it should compose
+2. `1010:4D95` is likely a presence-list parent.  If lifted, it should compose
    the existing `4D15` presence stamper and avoid copying its loop.
-4. `1010:780E` is a Tandy/layer draw sub-loop candidate; use frame/pixel evidence
+3. `1010:780E` is a Tandy/layer draw sub-loop candidate; use frame/pixel evidence
    before broadening its boundary.
-5. `1010:8A7E` is object-behavior frontier.  Keep technical naming and avoid
+4. `1010:8A7E` is object-behavior frontier.  Keep technical naming and avoid
    `Enemy`/`Projectile` semantics until spawn/collision/death/asset evidence
    converges.

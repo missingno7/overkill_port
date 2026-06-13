@@ -1,3 +1,15 @@
+## 2026-06-13 Tandy loop sweep lifts
+
+Two additional Tandy hotspots were lifted out of the interpreter:
+
+- `1010:3389` is the interlaced clear loop that zeroes `DI`, sets `ES` from
+  `CS:[95A4]`, and clears 200 rows of 0x34 words through the `2000h/80A0h`
+  interlace pattern. It is the same core loop shape as `1010:30B0`.
+- `1010:5C74` is the postcopy mode sweep that dispatches through the mode table
+  at `CS:595A`, calls the installed `497A` or `375B` leaf, waits through the
+  installed `50C9` retrace hook, bumps `CS:5901`, and loops until it reaches
+  `CS:58FD` before restoring `DS` and returning.
+
 ## 2026-06-12 PC speaker timing cadence
 
 Two later Tandy snapshots clarified the sound timing behavior:
@@ -416,7 +428,8 @@ ASM and lifted:
   observed `002Bh` branch follows the same transition without decrementing the
   live counter.  In both cases it transitions object logic `20h -> 1`, saves
   previous logic in `+1A`, clears `+22`, and dispatches type 1 to sprite
-  `0000`.
+  `0000`.  The later `C037 -> C048` tail exits with `BX=0002` and `FLAGS=0202h`
+  before the caller resumes.
 - `B7F3` after an at-target `B7BD` state.  Verified branches now include the
   `B7C9` target-reset path, substate-0 `B754` movement path, and the bounded
   `B82D` waypoint-table loop when one or more selected waypoints already match
@@ -1021,8 +1034,8 @@ This checkpoint keeps the original executable as the behavioral oracle and adds 
 New verified hooks:
 
 - `1010:450C overkill_expand_4plane_list_450c` — folds the hot outer 4-plane block-list driver (`450C -> 44D7 -> 4511 -> 450C`) while still using the already verified block renderer. It handles both normal block headers and the zero/FFFF exit cases without inventing higher-level sprite semantics.
-- `1010:0367 overkill_linear_byte_rle_decoder_0367_fast` — horizontal/linear byte-RLE decoder sibling of the existing vertical decoder. It is tested against interpreted ASM for literal runs, repeat runs, and the `80h` terminator.
-- `1010:4537 overkill_expand_4plane_row_4537_fast` — optimized row renderer. It is still tested against interpreted ASM, but removes synthetic nested calls to `45F6` and `45CB` inside the hot path. Note: this mirrors the current interpreter's rotate flag behavior, including the simplified ZF/SF/PF updates implemented by `CPU8086.shift`, so tests remain oracle-relative.
+- `1010:0367 overkill_linear_byte_rle_decoder_0367` — horizontal/linear byte-RLE decoder sibling of the existing vertical decoder. It is tested against interpreted ASM for literal runs, repeat runs, and the `80h` terminator.
+- `1010:4537 overkill_expand_4plane_row_4537` — optimized row renderer. It is still tested against interpreted ASM, but removes synthetic nested calls to `45F6` and `45CB` inside the hot path. Note: this mirrors the current interpreter's rotate flag behavior, including the simplified ZF/SF/PF updates implemented by `CPU8086.shift`, so tests remain oracle-relative.
 
 New tooling:
 
@@ -1872,7 +1885,9 @@ The same BC4B snapshot also exercised the higher `AA71` branch that survives
 the signed X guard and then runs the `AAAB -> AA44` success tail.  That path
 reuses the `SS:[BP+2] + 18h` compare against `DS:237E`, clears carry, and
 returns without mutating any object state, so it is now folded into the
-contact-window helper instead of failing fast.
+contact-window helper instead of failing fast.  The remaining `A8C2==0001`
+branch still stays as an explicit frontier because we have not yet captured it
+in a trace.
 
 ### 2026-06-12 BD17/C054 dispatcher lift
 
@@ -2096,6 +2111,14 @@ instead of cloning it.
   - all other values use the default keyboard table at `DS:213E`.
   The hot inner bit packer remains `1010:017E`, now shared through `pack_keyboard_poll_bits_017e`.
 
+- `1010:D445` is a small input-driven selector/counter loop, not a renderer or
+  collision leaf. It has two observed modes:
+  - when `DS:[98E4] == 1`, it increments `DS:[BEDC]` and wraps that counter
+    back to zero after the third tick;
+  - otherwise it polls `0162` and updates `DS:[BEDA]` as a 2x3 selector grid
+    using bits `1`, `2`, `4`, and `8` from `DS:[98BE]`.
+  The fire bit `10h` exits only when `DS:[BEDA]` is nonzero.
+
 - `1010:AC28` is a runtime-patched tile-collision probe used by ABxx object behaviours. It is not a standalone tile decoder; it composes already-lifted helpers:
   - `1010:5073` coordinate-to-tile index
   - `1010:505B` tile id lookup
@@ -2199,3 +2222,27 @@ Classified but still frontier:
 - `1010:780E` is a Tandy/layer draw sub-loop candidate.
 - `1010:8A7E` is object-behavior frontier and should not receive semantic enemy
   names yet.
+
+## 2026-06-13 leftover hook cleanup: 4CED and 5EF9
+
+- `1010:4CED` is now lifted as a small layer-sprite/presence-list parent.  It
+  composes the verified `4D15` stamper three times with the original call-site
+  return scratch words (`4D01`, `4D0A`, `4D10`), then writes the final `FFFFh`
+  sentinel at `DS:DI` and returns.  The hook deliberately does not duplicate the
+  `4D15` stamping loop.
+- `1010:5EF9` is now lifted as the two-nibble HUD/text helper.  It preserves the
+  original `PUSH AX` / `CALL 5F06` scratch shape, calls the existing `5F06`
+  nibble-to-text helper for the high nibble, restores `AX`, and then tail-calls
+  `5F06` for the low nibble.
+
+Remaining meaningful leftovers after this pass:
+
+- `1010:A846` is still the larger layer-sprite scan parent around the existing
+  `A849`, `A861`, `4CED`, `A87C`, `A894`, and `A8C7` pieces.  It is now more
+  attractive, but should be lifted only as a composition parent that preserves
+  partial child continuations.
+- The hot `1010:B9F0..BAxx` object-family path remains interpreted; it should be
+  investigated as object-runtime behavior, not renderer cleanup.
+- The very hot `1010:9921/9926` loop is a wait/spin on byte globals, not an
+  obvious source-port island hook.  Treat it as pacing/state investigation
+  before replacing it.

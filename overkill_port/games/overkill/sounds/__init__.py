@@ -6,11 +6,13 @@ from .pc_speaker import (
     SIG_PC_SPEAKER_TICK_D50E,
     SIG_TIMER_CLEAR_0672,
     SIG_TIMER_WAIT_0679,
+    SIG_SOUND_ACTIVE_WAIT_9921,
     deliver_overkill_timer_irq0,
     run_clear_timer_tick_flag_0672,
     run_fast_timer_isr_06e5,
     run_pc_speaker_tick_d50e,
     run_wait_timer_tick_0679,
+    run_sound_active_wait_9921,
 )
 
 __all__ = [
@@ -20,9 +22,11 @@ __all__ = [
     "SIG_PC_SPEAKER_TICK_D50E",
     "SIG_TIMER_CLEAR_0672",
     "SIG_TIMER_WAIT_0679",
+    "SIG_SOUND_ACTIVE_WAIT_9921",
     "deliver_overkill_timer_irq0",
     "run_clear_timer_tick_flag_0672",
     "run_fast_timer_isr_06e5",
     "run_pc_speaker_tick_d50e",
     "run_wait_timer_tick_0679",
+    "run_sound_active_wait_9921",
 ]

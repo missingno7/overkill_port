@@ -15,7 +15,8 @@ def add_verify_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--verify-max", type=int, default=None, help="stop verifying after N hook calls")
     p.add_argument("--verify-stop-on-diff", action="store_true", help="raise on the first hook divergence")
     p.add_argument("--verify-log-diffs", action="store_true", help="print detailed hook divergence reports and continue")
-    p.add_argument("--verify-full-memory", action="store_true", help="compare the full memory image instead of default named ranges")
+    p.add_argument("--verify-full-memory", action="store_true", help="deprecated compatibility flag; full memory is now the default")
+    p.add_argument("--verify-fast-ranges", action="store_true", help="debug/perf only: compare named memory ranges instead of the full memory image")
     p.add_argument("--verify-require-metadata", action="store_true", help="fail instead of silently skipping a hook that has no verifier continuation metadata")
 
 
@@ -29,7 +30,7 @@ def maybe_install_verifier(rt, args: argparse.Namespace) -> None:
         max_verified=args.verify_max,
         stop_on_diff=args.verify_stop_on_diff,
         log_diffs=args.verify_log_diffs,
-        full_memory=args.verify_full_memory,
+        full_memory=args.verify_full_memory or not args.verify_fast_ranges,
         require_metadata=args.verify_require_metadata,
     )
     install_hook_verifier(rt, config)

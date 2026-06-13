@@ -6,7 +6,7 @@ they must not classify concrete enemies/projectiles yet.
 """
 from __future__ import annotations
 
-from overkill_port.games.overkill.asm import _add_reg16, _and_mem_word, _cmp_word, _dec_mem_word_preserve_cf, _inc_mem_word_preserve_cf, loop_count
+from overkill_port.games.overkill.asm import _add_reg16, _and_mem_word, _cmp_byte, _cmp_word, _dec_mem_byte_preserve_cf, _dec_mem_word_preserve_cf, _inc_mem_byte_preserve_cf, _inc_mem_word_preserve_cf, loop_count
 
 
 SIG_GAMEPLAY_COUNTER_STRIDE_LOOP_1F8F_0960 = bytes.fromhex(
@@ -48,6 +48,167 @@ def run_gameplay_counter_stride_loop_1f8f_0960(cpu, self_disable_if_patched) -> 
     s.cx = 0
     cpu.set_add_flags(last_si, 0x0006, last_si + 0x0006, 16)
     s.ip = cpu.pop()
+
+
+SIG_FRAME_GAME_STATE_UPDATE_A940 = bytes.fromhex(
+    "83 3e ce a8 ff 74 04 ff 06 ce a8 a1 c8 a8 a3 c6 "
+    "a8 a1 cc a8 a3 ca a8 c7 06 cc a8 00 00 83 3e 56"
+)
+
+
+def run_frame_game_state_update_a940(cpu, self_disable_if_patched) -> None:
+    """Lift the finite A940 per-frame game-state prelude up to the A9E0 scan.
+
+    This hook owns only the deterministic counter/global updates before object
+    scanning.  It deliberately stops at A9E0 so the existing object-scan and
+    object-behavior hooks remain the proof boundary.  The rare F797 path is left
+    as original code by returning at A9DA before the call.
+    """
+    if self_disable_if_patched(
+        cpu,
+        0xA940,
+        SIG_FRAME_GAME_STATE_UPDATE_A940,
+        "overkill_frame_game_state_update_a940",
+    ):
+        return
+
+    s = cpu.s
+    mem = cpu.mem
+    ds = s.ds & 0xFFFF
+
+    value = mem.rw(ds, 0xA8CE)
+    _cmp_word(cpu, value, 0xFFFF)
+    if value != 0xFFFF:
+        _inc_mem_word_preserve_cf(cpu, ds, 0xA8CE)
+
+    s.ax = mem.rw(ds, 0xA8C8)
+    mem.ww(ds, 0xA8C6, s.ax)
+    s.ax = mem.rw(ds, 0xA8CC)
+    mem.ww(ds, 0xA8CA, s.ax)
+    mem.ww(ds, 0xA8CC, 0)
+
+    state = mem.rw(ds, 0x2356)
+    _cmp_word(cpu, state, 5)
+    if state == 5:
+        flag98a2 = mem.rb(ds, 0x98A2)
+        _cmp_byte(cpu, flag98a2, 0)
+        if flag98a2 != 0:
+            old = mem.rw(ds, 0x98AA)
+            mem.ww(ds, 0x98AA, (-old) & 0xFFFF)
+            cpu.set_sub_flags(0, old, -old, 16)
+            mem.wb(ds, 0x98A2, 0)
+            mem.wb(ds, 0x98A4, 1)
+        else:
+            mem.wb(ds, 0x98A4, 0)
+
+        cpu.set_reg8(1, 0)  # XOR CL,CL
+        cpu.set_logic_flags(0, 8)
+
+        flag98a5 = mem.rb(ds, 0x98A5)
+        _cmp_byte(cpu, flag98a5, 0)
+        if flag98a5 != 0:
+            dec_value = _dec_mem_byte_preserve_cf(cpu, ds, 0x98A5)
+            if dec_value == 0:
+                s.ax = mem.rw(ds, 0xA47E)
+                cpu.set_reg8(1, 0x0A)
+                _cmp_word(cpu, s.ax, 0x0010)
+                if s.ax <= 0x0010:
+                    cpu.set_reg8(1, 0x06)
+                    _cmp_word(cpu, s.ax, 0x0008)
+                    if s.ax <= 0x0008:
+                        cpu.set_reg8(1, 0x04)
+                        _cmp_word(cpu, s.ax, 0x0004)
+                        if s.ax <= 0x0004:
+                            cpu.set_reg8(1, 0x01)
+
+            mem.wb(ds, 0x98A5, s.cx & 0x00FF)
+            _inc_mem_byte_preserve_cf(cpu, ds, 0x98A3)
+        else:
+            mem.wb(ds, 0x98A5, s.cx & 0x00FF)
+            _inc_mem_byte_preserve_cf(cpu, ds, 0x98A3)
+
+        # A9B8 far-call 1F8F:081D, then continuation at A9BD.
+        caller_cs = s.cs & 0xFFFF
+        cpu.push(caller_cs)
+        cpu.push(0xA9BD)
+        s.cs = 0x1F8F
+        s.ip = 0x081D
+        run_demo_counter_tick_1f8f_081d(cpu, self_disable_if_patched)
+        if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (caller_cs, 0xA9BD):
+            raise RuntimeError(
+                f"1F8F:081D returned to unexpected IP {s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X} inside A940"
+            )
+
+    mem.wb(ds, 0x98A9, 0)
+    flag98a8 = mem.rb(ds, 0x98A8)
+    _cmp_byte(cpu, flag98a8, 0)
+    if flag98a8 != 0:
+        mem.wb(ds, 0x98A8, 0)
+        mem.wb(ds, 0x98A9, 1)
+
+    pending = mem.rw(ds, 0xA8C2)
+    _cmp_word(cpu, pending, 1)
+    if pending == 1:
+        s.ip = 0xA9DA
+        return
+
+    s.cx = 0x0023
+    s.ip = 0xA9E0
+
+
+SIG_DEMO_COUNTER_TICK_1F8F_081D = bytes.fromhex(
+    "fe 0e a7 98 75 2b a1 7e a4 b1 78 83 f8 10 77 17 "
+    "b1 64 83 f8 08 77 0f b1 50 83 f8 04 77 07 b1 3c "
+    "83 f8 02 77 02 b1 28"
+)
+
+
+def run_demo_counter_tick_1f8f_081d(cpu, self_disable_if_patched) -> None:
+    """Lift the small far-call demo/attract counter tick at 1F8F:081D.
+
+    A940 calls this once per frame only while DS:2356 == 5.  It decrements
+    DS:98A7; when the byte reaches zero it reloads it from the current speed
+    bucket DS:A47E and increments DS:98A6.  Otherwise it clears DS:98A6.
+    The routine returns with RETF.
+    """
+    if self_disable_if_patched(
+        cpu,
+        0x081D,
+        SIG_DEMO_COUNTER_TICK_1F8F_081D,
+        "overkill_demo_counter_tick_1f8f_081d",
+    ):
+        return
+
+    s = cpu.s
+    ds = s.ds & 0xFFFF
+    mem = cpu.mem
+
+    result = _dec_mem_byte_preserve_cf(cpu, ds, 0x98A7)
+    if result != 0:
+        mem.wb(ds, 0x98A6, 0)
+        s.ip = cpu.pop()
+        s.cs = cpu.pop()
+        return
+
+    s.ax = mem.rw(ds, 0xA47E)
+    s.cx = (s.cx & 0xFF00) | 0x78
+    _cmp_word(cpu, s.ax, 0x0010)
+    if s.ax <= 0x0010:
+        s.cx = (s.cx & 0xFF00) | 0x64
+        _cmp_word(cpu, s.ax, 0x0008)
+        if s.ax <= 0x0008:
+            s.cx = (s.cx & 0xFF00) | 0x50
+            _cmp_word(cpu, s.ax, 0x0004)
+            if s.ax <= 0x0004:
+                s.cx = (s.cx & 0xFF00) | 0x3C
+                _cmp_word(cpu, s.ax, 0x0002)
+                if s.ax <= 0x0002:
+                    s.cx = (s.cx & 0xFF00) | 0x28
+
+    mem.wb(ds, 0x98A7, s.cx & 0xFF)
+    _inc_mem_byte_preserve_cf(cpu, ds, 0x98A6)
+    s.ip = cpu.pop()
+    s.cs = cpu.pop()
 
 
 SIG_GAMEPLAY_COUNTER_TICK_1F8F_0922 = bytes.fromhex(

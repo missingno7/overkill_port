@@ -347,6 +347,7 @@ def _clear_tandy_interlaced_rows_from_current_state(cpu) -> None:
         cpu.set_logic_flags(0, 16)
         for _ in range(0x34):
             _stosw(cpu)
+        s.cx = 0
         _sub_reg16(cpu, 7, 0x0068)
         _add_reg16(cpu, 7, 0x2000)
         _test_word(cpu, s.di, 0x8000)
@@ -356,6 +357,17 @@ def _clear_tandy_interlaced_rows_from_current_state(cpu) -> None:
         if s.bp == 0:
             break
     s.ip = cpu.pop()
+
+
+def clear_tandy_interlaced_buffer_3389(cpu) -> None:
+    """Lift the 1010:3389 Tandy interlaced clear loop."""
+    s = cpu.s
+    mem = cpu.mem
+    cs = s.cs & 0xFFFF
+    s.es = mem.rw(cs, TANDY_VIDEO_SEGMENT_OFF)
+    s.di = 0
+    s.bp = 0x00C8
+    _clear_tandy_interlaced_rows_from_current_state(cpu)
 
 
 def clear_tandy_interlaced_buffer_30b0(cpu, runtime: TandyRenderRuntime) -> None:
@@ -1277,6 +1289,89 @@ def loading_scroll_until_4e0d(cpu, runtime: TandyRenderRuntime) -> None:
         cpu.mem.ww(ds, 0xA978, cpu.s.si & 0xFFFF)
         cpu.s.ip = cpu.pop()
         return
+
+
+def loading_tile_remap_scan_4e26(cpu) -> None:
+    """OVERKILL 1010:4E26 loading/menu tile-id remap scan.
+
+    The original preserves all general registers plus DS/ES, scans 0x9C bytes
+    backwards from ``DS:[2350]`` in the loading work buffer, and remaps selected
+    tile ids through the table selected by ``DS:[2356]``.  Real push/pop is
+    used so the verifier sees the same freed stack scratch as the original.
+    """
+    s = cpu.s
+    mem = cpu.mem
+    cs = s.cs & 0xFFFF
+    ds = s.ds & 0xFFFF
+
+    # 4E26..4E2E: PUSH AX,BX,CX,DX,DI,SI,BP,ES,DS.
+    cpu.push(s.ax)
+    cpu.push(s.bx)
+    cpu.push(s.cx)
+    cpu.push(s.dx)
+    cpu.push(s.di)
+    cpu.push(s.si)
+    cpu.push(s.bp)
+    cpu.push(s.es)
+    cpu.push(s.ds)
+
+    # 4E2F..4E38: select work-buffer segment and scan count.
+    s.es = mem.rw(cs, 0x9592)
+    s.si = mem.rw(ds, 0x2350)
+    s.cx = 0x009C
+
+    while True:
+        # 4E3B: DEC SI; DEC preserves CF.
+        _dec_reg16_preserve_cf(cpu, 6)  # SI
+
+        # 4E3C..4E42: BX = DS:[20D6 + 2 * DS:[2356]].
+        s.bx = mem.rw(ds, 0x2356)
+        s.bx = cpu.shift(4, s.bx, 1, 16)  # SHL BX,1
+        s.bx = mem.rw(ds, (s.bx + 0x20D6) & 0xFFFF)
+
+        while True:
+            # 4E46..4E4A: FFFF sentinel means leave this tile unchanged.
+            entry_value = mem.rw(cs, s.bx)
+            _cmp_word(cpu, entry_value, 0xFFFF)
+            if entry_value == 0xFFFF:
+                break
+
+            # 4E4C..4E51: compare byte tile id as AX against table word.
+            s.ax = mem.rb(s.es, s.si)
+            cpu.set_logic_flags(0, 8)  # XOR AH,AH; later CMP normally wins.
+            _cmp_word(cpu, s.ax, entry_value)
+            if s.ax == entry_value:
+                target = mem.rw(cs, (s.bx + 2) & 0xFFFF)
+                if target == 0x4E5F:
+                    mem.wb(s.es, s.si, 0x28)
+                elif target == 0x4E65:
+                    mem.wb(s.es, s.si, 0x01)
+                else:
+                    raise RuntimeError(f"1010:4E26 remap table jumped to unexpected target {target:04X}")
+                break
+
+            # 4E5A..4E5D: next mapping entry.
+            old_bx = s.bx
+            s.bx = (s.bx + 4) & 0xFFFF
+            cpu.set_add_flags(old_bx, 4, old_bx + 4, 16)
+
+        # 4E69: LOOP 4E3B; LOOP does not change FLAGS.
+        s.cx = (s.cx - 1) & 0xFFFF
+        if s.cx != 0:
+            continue
+        break
+
+    # 4E6B..4E74: POP DS,ES,BP,SI,DI,DX,CX,BX,AX / RET.
+    s.ds = cpu.pop()
+    s.es = cpu.pop()
+    s.bp = cpu.pop()
+    s.si = cpu.pop()
+    s.di = cpu.pop()
+    s.dx = cpu.pop()
+    s.cx = cpu.pop()
+    s.bx = cpu.pop()
+    s.ax = cpu.pop()
+    s.ip = cpu.pop()
 
 def loading_scroll_sequence_60c5(cpu, runtime: TandyRenderRuntime) -> None:
     """OVERKILL 1010:60C5 Tandy loading scroll/materialization loop.

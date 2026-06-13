@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import time
 
-from overkill_port.cpu import CF, IF, TF
+from overkill_port.cpu import CF, IF, TF, ZF
 
 # Live-byte signatures used by the hook wrappers in replacements.py.
 SIG_FAST_TIMER_ISR_06E5 = bytes.fromhex("50 1e 53 51 52 57 56 55 06 2e 8e 1e 96 95 80 3e")
@@ -27,6 +27,7 @@ SIG_PC_SPEAKER_TICK_D50E = bytes.fromhex("fe 06 00 bf 80 26 00 bf 03 a0 ff be 0a
 
 SIG_TIMER_CLEAR_0672 = bytes.fromhex("2e c6 06 6b 06 00 c3")
 SIG_TIMER_WAIT_0679 = bytes.fromhex("2e 80 3e 6b 06 00 74 f8 c3")
+SIG_SOUND_ACTIVE_WAIT_9921 = bytes.fromhex("80 3e fe be 00 75 f9")
 
 
 def run_clear_timer_tick_flag_0672(cpu, self_disable_if_patched) -> None:
@@ -54,15 +55,21 @@ def run_wait_timer_tick_0679(cpu) -> None:
 
     The flag at CS:066B is normally incremented by the installed IRQ0 handler
     (1010:06E5).  Since the Python VM does not receive asynchronous hardware
-    IRQs, this hook explicitly delivers the game's timer ISR until the flag is
-    advanced, then models the final exiting CMP/JZ/RET iteration.
+    IRQs, this hook explicitly delivers the game's timer ISR at the same
+    instruction boundaries used by the verifier's ASM oracle, then models the
+    tiny CMP/JZ/RET loop.  Preserving the delivery point matters: if the first
+    ISR tick does not advance CS:066B, the real foreground code reaches 067F
+    with the CMP flags set, and the next interrupt frame leaves 067F/FLAGS
+    scratch under SP.
     """
     cs = cpu.s.cs & 0xFFFF
-    flag = cpu.mem.rb(cs, 0x066B)
+    delivered = 0
     cpu.timer_ticks_elapsed = 0
-    if flag == 0:
-        delivered = 0
-        while flag == 0 and delivered < 8:
+    cpu.s.ip = 0x0679
+
+    for _ in range(32):
+        flag = cpu.mem.rb(cs, 0x066B)
+        if cpu.s.ip in (0x0679, 0x067F) and flag == 0:
             if not deliver_overkill_timer_irq0(cpu):
                 raise RuntimeError(
                     "1010:0679 timer wait needs OVERKILL INT 08h at 1010:06E5; "
@@ -70,14 +77,60 @@ def run_wait_timer_tick_0679(cpu) -> None:
                 )
             delivered += 1
             flag = cpu.mem.rb(cs, 0x066B)
-        if flag == 0:
-            raise RuntimeError("1010:06E5 timer ISR did not advance CS:066B within 8 ticks")
-        cpu.timer_ticks_elapsed = delivered
 
-    _cmp_byte(cpu, flag, 0)
-    cpu.s.ip = cpu.pop()
-    if cpu.timer_pacer is not None:
-        cpu.timer_pacer()
+        if cpu.s.ip == 0x0679:
+            _cmp_byte(cpu, flag, 0)
+            cpu.s.ip = 0x067F
+            continue
+
+        if cpu.s.ip == 0x067F:
+            cpu.s.ip = 0x0679 if cpu.get_flag(ZF) else 0x0681
+            continue
+
+        if cpu.s.ip == 0x0681:
+            cpu.timer_ticks_elapsed = delivered
+            cpu.s.ip = cpu.pop()
+            if cpu.timer_pacer is not None:
+                cpu.timer_pacer()
+            return
+
+        raise RuntimeError(f"1010:0679 timer wait reached unexpected IP {cpu.s.ip:04X}")
+
+    raise RuntimeError("1010:06E5 timer ISR did not advance CS:066B within 32 wait-loop iterations")
+
+
+def run_sound_active_wait_9921(cpu) -> None:
+    """Lift OVERKILL 1010:9921 sound-active busy wait.
+
+    Original inline loop::
+
+        9921  cmp byte ptr ds:[BEFE],0
+        9926  jnz 9921
+
+    This loop appears in foreground/menu code after sound requests.  On real
+    hardware the reprogrammed PIT/IRQ0 keeps executing 1010:06E5 asynchronously
+    while the foreground code spins.  The Python VM is not asynchronously
+    interruptible, so the hook delivers the real installed OVERKILL IRQ0 ISR
+    until the global sound-active byte clears, then models the final exiting
+    CMP/JNZ iteration and continues at 9928.
+    """
+    ds = cpu.s.ds & 0xFFFF
+    active = cpu.mem.rb(ds, 0xBEFE)
+    delivered = 0
+    while active != 0 and delivered < 8192:
+        if not deliver_overkill_timer_irq0(cpu):
+            raise RuntimeError(
+                "1010:9921 sound-active wait needs OVERKILL INT 08h at 1010:06E5; "
+                "no synthetic sound fallback is allowed"
+            )
+        delivered += 1
+        active = cpu.mem.rb(ds, 0xBEFE)
+    if active != 0:
+        raise RuntimeError("1010:06E5 timer ISR did not clear DS:BEFE within 8192 ticks")
+
+    _cmp_byte(cpu, active, 0)
+    cpu.s.ip = 0x9928
+
 
 # PIT divisor programmed by OVERKILL's 1010:068A installer.
 OVERKILL_PIT_HZ = 1193182.0 / 0x4000

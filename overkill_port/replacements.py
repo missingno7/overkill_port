@@ -1,44 +1,74 @@
+"""Backward-compatible aggregate import for OVERKILL replacements.
+
+Importing this module registers every known hook.  New address-bound wrapper
+modules should live under ``games.overkill.hook_wrappers`` and be re-exported
+here only when tests or older scripts still import their function names from
+``overkill_port.replacements``.  Keep actual game logic in the domain modules
+(``asset_codecs``, ``rendering``, ``gameplay``, ``sounds``).
+"""
+
 from __future__ import annotations
 
 import os
 
 from .cpu import CF, DF, PF, SF, ZF, _PARITY
 from .hooks import registry
-from .memory import EGA_CPU_APERTURE, EGA_APERTURE, EGA_PLANE_STRIDE, EGA_PLANE_WINDOW
-from .games.overkill.asset_codecs import (
-    compare_overlay_entry_name_05d9,
-    compare_overlay_signature_0582,
-    compute_overkill_file_checksum,
-    copy_lz_back_reference,
-    decode_linear_byte_rle,
-    decode_lz_asset,
-    decode_overlay_xor,
-    decode_vertical_rle_columns,
-    decode_word_pair_rle,
-    find_overlay_directory_entry_05a1,
-    input_lz_byte,
-    strip_overlay_path_components_0701,
-    output_lz_byte,
-    read_packed_byte,
-    read_packed_byte_hook,
-    read_packed_word_le_hook,
-    search_decoded_asset_table_c713,
+from .games.overkill.hook_wrappers.common import (
+    call_hook_like_near_call as _call_hook_like_near_call,
+    call_installed_hook_like_near_call as _call_installed_hook_like_near_call,
+    self_disable_if_patched as _self_disable_if_patched,
 )
-from .games.overkill.file_io import open_overlay_container_entry_254a_04d7
+from .games.overkill.hook_wrappers.asset_codecs import (
+    _overkill_read_packed_byte,
+    overkill_decoded_asset_table_search_c713,
+    overkill_expand_4plane_block_4511,
+    overkill_expand_4plane_list_450c,
+    overkill_expand_4plane_row_4537,
+    overkill_expand_bits_45cb,
+    overkill_file_checksum_loop,
+    overkill_file_checksum_loop_c916,
+    overkill_linear_byte_rle_decoder_0367,
+    overkill_lz_backref_copy_ed7a,
+    overkill_lz_decoder_ecf2,
+    overkill_lz_input_byte_ed97,
+    overkill_lz_output_byte_ede9,
+    overkill_overlay_container_open_entry_254a_04d7,
+    overkill_overlay_directory_entry_scan_254a_05a1,
+    overkill_overlay_entry_name_compare_254a_05d9,
+    overkill_overlay_path_normalizer_254a_0701,
+    overkill_overlay_signature_compare_254a_0582,
+    overkill_overlay_xor_decode_254a_05bf,
+    overkill_pack_four_pixels_45f6,
+    overkill_packed_read_byte,
+    overkill_packed_read_byte_0624,
+    overkill_packed_read_word,
+    overkill_packed_read_word_le_0615,
+    overkill_vertical_rle_decoder_03a8,
+    overkill_word_pair_rle_decoder_0324,
+)
+from .games.overkill.hook_wrappers.text import (
+    overkill_score_byte_text_5ef9,
+    overkill_score_nibble_text_5f06,
+    overkill_tandy_text_glyph_3153,
+    overkill_text_dispatch_519a,
+    overkill_text_string_loop_518c,
+)
+from .games.overkill.hook_wrappers.sounds import (
+    _deliver_overkill_timer_irq0,
+    overkill_clear_timer_tick_flag_0672,
+    overkill_fast_timer_isr_06e5,
+    overkill_pc_speaker_tick_d50e,
+    overkill_sound_active_wait_9921,
+    overkill_wait_timer_tick_0679,
+)
 
+from .memory import EGA_CPU_APERTURE, EGA_APERTURE, EGA_PLANE_STRIDE, EGA_PLANE_WINDOW
 from .games.overkill.input_menu import (
     pack_keyboard_poll_bits_017e,
+    run_input_selector_loop_d445,
     run_input_poll_0162,
     run_intro_retrace_delay_loop_96c5,
     run_intro_retrace_delay_loop_tail_96c8,
-)
-
-from .games.overkill.rendering.startup_graphics import (
-    expand_4plane_block_4511,
-    expand_4plane_list_450c,
-    expand_4plane_row_4537,
-    expand_bits_45cb,
-    pack_four_pixels_45f6,
 )
 
 from .games.overkill.rendering.coordinates import (
@@ -60,6 +90,7 @@ from .games.overkill.rendering.layer_sprites import (
     dispatch_menu_cell_source_blit_5a6c,
     dispatch_present_object_5a92,
     run_clear_presence_list_parent_4d64,
+    run_presence_stamp_triplet_4ced,
     run_present_object_scan_pair_a90c,
     run_video_page_toggle_511f,
     draw_compact_layer_sprite_7746,
@@ -78,6 +109,7 @@ from .games.overkill.rendering.tandy import (
     build_startup_coordinate_tables_0f0b as run_tandy_startup_coordinate_tables_0f0b,
     build_video_offset_tables_0fa3 as run_tandy_video_offset_tables_0fa3,
     clear_tandy_interlaced_buffer_30b0 as run_tandy_interlaced_clear_30b0,
+    clear_tandy_interlaced_buffer_3389 as run_tandy_interlaced_clear_3389,
     patched_strided_row_copy_30ba as run_tandy_patched_strided_row_copy_30ba,
     build_pixel_pair_lookup_table_0fe4 as run_tandy_pixel_pair_table_0fe4,
     expand_tandy_cell_33dd as run_expand_tandy_cell_33dd,
@@ -94,6 +126,7 @@ from .games.overkill.rendering.tandy import (
     or_inverted_mask_2f40 as run_tandy_or_inverted_mask_2f40,
     loading_scroll_sequence_60c5 as run_tandy_loading_scroll_sequence_60c5,
     loading_scroll_until_4e0d as run_tandy_loading_scroll_until_4e0d,
+    loading_tile_remap_scan_4e26 as run_tandy_loading_tile_remap_scan_4e26,
     loading_tile_column_copy_36a2 as run_tandy_loading_tile_column_copy_36a2,
     postcopy_scaled_blit_375b as run_tandy_postcopy_scaled_blit_375b,
     present_tandy_frame_3354 as run_present_tandy_frame_3354,
@@ -106,12 +139,11 @@ from .games.overkill.rendering.tandy import (
     tiny_strided_copy_3542 as run_tandy_tiny_strided_copy_3542,
 )
 
-from .games.overkill.rendering.text import (
-    TextRenderRuntime,
-    run_score_nibble_text_5f06,
-    run_tandy_text_glyph_3153,
-    run_text_dispatch_519a,
+from .games.overkill.rendering.effects import (
+    SIG_FRAME_EFFECT_SLASH_77F6,
+    run_frame_effect_slash_77f6,
 )
+
 from .games.overkill.gameplay.collision import (
     run_collision_stc_ret_5059,
     run_object_deactivate_logic_dispatch_c054,
@@ -125,28 +157,26 @@ from .games.overkill.gameplay.collision import (
     run_tile_collision_probe_ac28,
 )
 from .games.overkill.gameplay.game_state import (
+    run_demo_counter_tick_1f8f_081d,
     run_gameplay_counter_tick_1f8f_0922,
     run_gameplay_counter_stride_loop_1f8f_0960,
     run_decrement_first_active_counter_61c5,
     run_decrement_first_active_counter_scan_61ca,
+    run_frame_game_state_update_a940,
+)
+from .games.overkill.gameplay.frame_orchestration import (
+    run_demo_object_list_maintenance_a212,
+    SIG_FRAME_UI_STATE_UPDATE_D04D,
+    run_main_frame_loop_d007,
+    run_frame_service_gate_073c,
+    run_frame_status_counter_update_5f61,
+    run_frame_ui_state_update_d04d,
 )
 from .games.overkill.gameplay.objects import (
     call_object_logic_from_scan_aa01,
     finish_object_logic_scan_tail_aa04,
     run_object_motion_table_ab34,
     run_object_scroll_sprite_ab4f,
-)
-
-from .games.overkill.sounds import (
-    SIG_FAST_TIMER_ISR_06E5,
-    SIG_PC_SPEAKER_TICK_D50E,
-    SIG_TIMER_CLEAR_0672,
-    SIG_TIMER_WAIT_0679,
-    deliver_overkill_timer_irq0,
-    run_clear_timer_tick_flag_0672,
-    run_fast_timer_isr_06e5,
-    run_pc_speaker_tick_d50e,
-    run_wait_timer_tick_0679,
 )
 
 from .games.overkill.asm import (
@@ -194,17 +224,26 @@ from .games.overkill.gameplay.object_runtime import (
     _run_interpreted_near_call_observed,
     _run_linked_effect_spawn_7420_observed,
     _run_movement_direction_5db2,
+    _run_object_bounds_tile_tail_ad60,
+    run_object_bounds_tile_prelude_ad5a,
+    run_object_target_chase_d281,
+    run_object_drift_downright_ae2c,
+    run_object_drift_upright_ae7d,
     _run_object_behavior_8d4f,
     _run_object_behavior_ab77,
+    _run_object_sprite0f_collision_abca,
     _run_object_behavior_ae09,
     _run_object_behavior_aed8,
     _run_object_behavior_b73e,
+    _run_object_behavior_b9f0,
     _run_object_family_dispatch_efae,
     _run_object_logic_ab10,
     _run_object_logic_branch_ad04,
+    _run_tracked_object_selector_to_ab77,
     _run_object_logic_dispatch_aa2b,
     _run_object_overlap_scan_62f6,
     _run_object_postmove_bc4b,
+    run_object_child_coord_update_9fea,
     run_object_postmove_prelude_bc45,
     _run_post_contact_9e69_observed,
     _run_post_contact_9e98_tail_observed,
@@ -217,28 +256,6 @@ from .games.overkill.gameplay.object_runtime import (
     _scan_loop_until_callable,
     _scan_object_logic_via_aa2b,
 )
-
-# Runtime-patched code guard -------------------------------------------------
-#
-# OVERKILL's unpacked EXE still patches/relocates large parts of the 1010h code
-# segment during startup.  A Python replacement bypasses whatever bytes are live
-# at CS:IP, so render hooks that assume one fixed instruction stream should be
-# conservative: if the game later changes the entry bytes, remove the hook and
-# let the interpreter execute the patched original.  Synthetic oracle tests often
-# do not populate the routine bytes at all, so an all-zero signature is treated as
-# "test fixture / no live code available" and the hook remains enabled.
-
-def _self_disable_if_patched(cpu, ip: int, expected: bytes, name: str) -> bool:
-    cs = cpu.s.cs & 0xFFFF
-    start = ((cs << 4) + (ip & 0xFFFF)) & 0xFFFFF
-    live = bytes(cpu.mem.data[start:start + len(expected)])
-    if live == expected or all(b == 0 for b in live):
-        return False
-    raise RuntimeError(
-        f"OVERKILL hook {name} at {cs:04X}:{ip:04X} saw runtime-patched code; "
-        f"live bytes {live.hex(' ')} != expected {expected.hex(' ')}"
-    )
-
 
 _SIG_2750 = bytes.fromhex("8b 36 4c 23 2e 8e 06 a4 95 2e 8e 1e 98 95 bb 0d")
 _SIG_27EB = bytes.fromhex("51 2e 83 3e d6 0b 00 74 0e 56 2e 8b 0e 9c 5b 51")
@@ -258,6 +275,7 @@ _SIG_2F40 = bytes.fromhex("bb 60 00 8b 04 f7 d0 26 09 05 83 c6 04 83 c7 02")
 _SIG_2F81 = bytes.fromhex("bb 60 00 ad 26 23 05 0b 04 83 c6 02 ab ad 26 23")
 _SIG_306F = bytes.fromhex("ad 8b c8 ad 2e 8e 06 a4 95 d1 e0 d1 e0 8b e8 51")
 _SIG_30B0 = bytes.fromhex("2e 8e 06 a4 95 33 ff bd c8 00 b9 34 00 33 c0 f3 ab 83 ef 68 81 c7 00 20 f7 c7 00 80 74 04 81 c7 a0 80 4d 75 e5 c3")
+_SIG_3389 = bytes.fromhex("2e 8e 06 a4 95 33 ff bd c8 00 b9 34 00 33 c0 f3 ab 83 ef 68 81 c7 00 20 f7 c7 00 80 74 04 81 c7 a0 80 4d 75 e5 c3")
 _SIG_30BA_PATCHED_ROW_COPY = bytes.fromhex("8b c8 ad d1 e0 d1 e0 8b e8 51 8b cd f3 a4 2b fd 81 c7 a0 00 59 e2 f2 c3")
 _SIG_33AF = bytes.fromhex("e8 25 11 75 03 e9 f3 10 2e 8b 0e 9e 5b 51 2e 8b")
 _SIG_33B2 = bytes.fromhex("75 03 e9 f3 10 2e 8b 0e 9e 5b 51 2e 8b 0e 9c")
@@ -269,10 +287,12 @@ _SIG_35CC = bytes.fromhex("e8 67 24 89 46 0c 3d ff ff 75 01 c3 03 06 4c 23")
 _SIG_356C = bytes.fromhex("e8 c7 24 89 46 0c 3d ff ff 74 0f 03 06 4c 23")
 _SIG_3657 = bytes.fromhex("e8 dc 23 89 46 0c 3d ff ff 75 01 c3 03 06 4c 23")
 _SIG_4E0D = bytes.fromhex("57 56 e8 6f 59 5e 5f 39 3e 50 23 77 f3 83 3e 4e 23 00 75 ec 89 36 78 a9 c3")
+_SIG_4E26 = bytes.fromhex("50 53 51 52 57 56 55 06 1e 2e 8e 06 92 95 8b 36 50 23 b9 9c 00")
 _SIG_375B = bytes.fromhex("2e c7 06 03 59 00 00 2e 8b 3e f9 58 2e 8b 36 fb 58 2e 8b 0e fd 58 2e 8b 2e ff 58 d1 e5")
 _SIG_35AA = bytes.fromhex("2e 8e 06 96 95 2e 8e 1e 98 95 bb 58 00 b9 10 00")
 _SIG_36A2 = bytes.fromhex("8b da b9 0d 00 2e a1 9a 95 81 3e 50 23 5f 0e 72")
 _SIG_60C5 = bytes.fromhex("c7 06 50 23 a0 0e b9 10 00 51 e8 af 46 59 e2 f9")
+_SIG_5C74 = bytes.fromhex("2e 8b 1e bc 95 d1 e3 2e ff 97 5a 59 e8 46 f4 2e 83 06 01 59 02 2e a1 01 59 2e 3b 06 fd 58 75 e0 2e 8e 1e 96 95 c3")
 _SIG_58DF = bytes.fromhex("51 2e 89 0e 01 59 2e 8b 1e bc 95 d1 e3 2e ff 97")
 _SIG_5DB2 = bytes.fromhex("c7 06 54 a9 00 00 c7 06 0a 23 00 00 8b 46 04 3b")
 _SIG_768E = bytes.fromhex("8b 7e 0c 83 ff ff 75 01 c3 2e 8e 06 98 95 8b 5e")
@@ -280,17 +300,44 @@ _SIG_7746 = bytes.fromhex("8b 7e 0c 83 ff ff 75 01 c3 2e 8e 06 98 95 8b 5e")
 _SIG_75A6 = bytes.fromhex("8b 5e 08 2e 8b 0e a6 95 83 fb 1c 72 08 83 eb 1c")
 _SIG_2FB6 = bytes.fromhex("bb 64 00 ad 26 23 05 0b 04 83 c6 02 ab ad 26")
 _SIG_A8C7 = bytes.fromhex("51 8b d9 d1 e3 8b af ca 32 83 7e 00 00 74 1e 83 3e ac bd")
+_SIG_A846 = bytes.fromhex("b9 24 00")
+_SIG_A876 = bytes.fromhex("e8 74 a4")
 _SIG_A849 = bytes.fromhex("51 8b d9 d1 e3 8b af ca 32 83 7e 00 00 74 03 e8 6d b2")
+_SIG_A85E = bytes.fromhex("b9 22 00 51 8b d9")
+_SIG_A870 = bytes.fromhex("e8 55 b2 59 e2 eb")
+_SIG_A873 = bytes.fromhex("59 e2 eb")
+_SIG_A879 = bytes.fromhex("b9 22 00 51 8b d9")
+_SIG_A88B = bytes.fromhex("e8 b8 ce 59 e2 eb")
+_SIG_A88E = bytes.fromhex("59 e2 eb")
+_SIG_A891 = bytes.fromhex("b9 23 00 51 8b d9")
+_SIG_A8C4 = bytes.fromhex("b9 24 00 51 8b d9")
 _SIG_A90F = bytes.fromhex("51 8b d9 d1 e3 8b af 12 8d 83 7e 00 00 74 03 e8")
+_SIG_A91E = bytes.fromhex("e8 71 b1 59 e2 eb")
+_SIG_A921 = bytes.fromhex("59 e2 eb")
+_SIG_A924 = bytes.fromhex("b9 24 00 51 8b d9")
+_SIG_AA07 = bytes.fromhex("c7 06 46 23 00 00 b9 22 00")
+_SIG_AA25 = bytes.fromhex("9a 22 09 8f 1f c3")
+_SIG_AA1F = bytes.fromhex("e8 09 00")
+_SIG_AA22 = bytes.fromhex("59 e2 eb")
+_SIG_A8F7 = bytes.fromhex("83 3e 7c a4 00 75 01 c3")
+_SIG_5BDC = bytes.fromhex("2e 8b 1e bc 95 d1 e3 2e ff a7 e8 5b")
+_SIG_5160 = bytes.fromhex("2e 83 3e bc 95 01 74 01 c3")
 _SIG_A927 = bytes.fromhex("51 8b d9 d1 e3 8b af ca 32 83 7e 00 00 74 03 e8 59 b1")
 _SIG_A90C = bytes.fromhex("b9 22 00 51 8b d9 d1 e3 8b af 12 8d")
 _SIG_A93C = bytes.fromhex("e8 25 a4 c3")
+_SIG_4CED = bytes.fromhex("2e 8e 06 98 95 be c1 c6 bf b1 c7 bd 4d 4d b9 14 00 e8 14 00")
 _SIG_4D64 = bytes.fromhex("2e 8e 06 98 95 be b1 c7 b9 28 00")
 _SIG_A9E0 = bytes.fromhex("51 8b d9 d1 e3 8b af ca 32 ff 06 40 23 81 3e 40 23 dc 05")
 _SIG_AA10 = bytes.fromhex("51 8b d9 d1 e3 8b af 12 8d 83 7e 00 00 74 03 e8 09 00")
 _SIG_ABA3 = bytes.fromhex("89 1e 2e a4 83 3e 84 23 03 73 12 a1 3c 23 05 14 00")
 _SIG_AB77 = bytes.fromhex("83 3e 84 23 03 73 11 e8 ce ff e8 a4 00 72 09 e8 f8 00")
+_SIG_ABCA = bytes.fromhex("83 3e 84 23 03 73 0b ba 20 a4 e8 5d ff e8 4e 00")
+_SIG_AB59 = bytes.fromhex("c7 06 2c a4 6c a9 eb 16")
+_SIG_AB61 = bytes.fromhex("c7 06 2c a4 6a a9 eb 0e")
+_SIG_AB69 = bytes.fromhex("c7 06 2c a4 68 a9 eb 06")
+_SIG_AB71 = bytes.fromhex("c7 06 2c a4 66 a9")
 _SIG_BC45 = bytes.fromhex("a1 78 a2 01 46 02")
+_SIG_B9F0 = bytes.fromhex("81 3e 82 a4 e4 a4 75 6f 81 3e 40 23 ef 02 75 07")
 _SIG_B73E = bytes.fromhex("83 7e 1c ff 74 4d 8b 5e 1c d1 e3 2e ff a7 4e b7")
 _SIG_AA2B = bytes.fromhex("8b 5e 16 d1 e3 2e ff a7 36 aa")
 _SIG_EFAE = bytes.fromhex("8b 46 04 a3 fe d1 8b 46 02 a3 00 d2 8b 5e 18")
@@ -298,6 +345,7 @@ _SIG_AED8 = bytes.fromhex("ff 4e 1c 75 03 e9 e9 fe b8 50 b2 50 8b 5e 06 d1 e3")
 _SIG_AE09 = bytes.fromhex("83 7e 1c 00 74 0a ff 4e 1c 75 09 c7 46 06 00 00 83 6e 02 02")
 _SIG_AB10 = bytes.fromhex("83 3e 84 23 03 72 03 e9 08 01 83 3e 7c a4 03 72 03 e9 fe 00")
 _SIG_AD04 = bytes.fromhex("83 3e ac bd 01 74 09 81 3e 50 23 b6 00 77 01 c3")
+_SIG_AD60 = bytes.fromhex("83 7e 02 08 73 03 e9 ae 0f 81 7e 02 e0 00 76 03")
 _SIG_AC81 = bytes.fromhex("83 3e ac bd 01 75 03 e9 b9 fd b9 23 00 bb b4 23 8b 46 04 8b 7e 02")
 _SIG_CCAA = bytes.fromhex("b9 08 00 26 8b 04 26 3b 05 74 05 b2 01 26 89 05")
 _SIG_CCC4 = bytes.fromhex("b9 08 00 26 8b 04 26 3b 05 74 05 b2 01 26 89 05")
@@ -305,26 +353,11 @@ _SIG_CCF0 = bytes.fromhex("b9 20 00 26 8a 04 26 3a 05 74 05 b2 01 26 88 05")
 _SIG_CC7F = bytes.fromhex("51 a1 95 bd e8 9e 8d 89 3e 9e bd 8b f7 81 c6 00 7d 32 d2 2e 8e 06 98 95")
 _SIG_CD68 = bytes.fromhex("5f 8b 36 9e bd 2e 8e 06 a4 95 2e 8e 1e 98 95 2e 8b 1e bc 95")
 _SIG_CE40 = bytes.fromhex("80 3e c3 98 00 74 01 c3 51 e8 16 33 59 f6 06 be 98 10")
+_SIG_CF78 = bytes.fromhex("e8 4e 81 51 e8 e3 31 59 f6 06 be 98 10 75 10 80")
 _SIG_CE5C = bytes.fromhex("e2 e2 c3")
 
 
 
-
-
-def _text_render_runtime() -> TextRenderRuntime:
-    return TextRenderRuntime(self_disable_if_patched=_self_disable_if_patched)
-
-
-@registry.replace(0x1010, 0x519A, "overkill_text_dispatch_519a")
-def overkill_text_dispatch_519a(cpu):
-    """Hook wrapper for OVERKILL 1010:519A text-character dispatcher."""
-    run_text_dispatch_519a(cpu, _text_render_runtime())
-
-
-@registry.replace(0x1010, 0x5F06, "overkill_score_nibble_text_5f06")
-def overkill_score_nibble_text_5f06(cpu):
-    """Hook wrapper for OVERKILL 1010:5F06 score nibble text helper."""
-    run_score_nibble_text_5f06(cpu, _text_render_runtime())
 
 
 @registry.replace(0x1010, 0xBDE3, "overkill_player_hazard_object_scan_bde3")
@@ -351,12 +384,10 @@ def overkill_tile_probe_5073(cpu):
     run_tile_probe_5073(cpu, _self_disable_if_patched)
 
 
-@registry.replace(0x1010, 0x3153, "overkill_tandy_text_glyph_3153")
-def overkill_tandy_text_glyph_3153(cpu):
-    """Hook wrapper for OVERKILL 1010:3153 Tandy text/glyph renderer."""
-    run_tandy_text_glyph_3153(cpu, _text_render_runtime())
-
-
+@registry.replace(0x1F8F, 0x081D, "overkill_demo_counter_tick_1f8f_081d")
+def overkill_demo_counter_tick_1f8f_081d(cpu):
+    """Hook wrapper for the far demo/attract counter tick at 1F8F:081D."""
+    run_demo_counter_tick_1f8f_081d(cpu, _self_disable_if_patched)
 
 @registry.replace(0x1F8F, 0x0922, "overkill_gameplay_counter_tick_1f8f_0922")
 def overkill_gameplay_counter_tick_1f8f_0922(cpu):
@@ -374,91 +405,10 @@ def overkill_gameplay_counter_stride_loop_1f8f_0960(cpu):
 overkill_overlay_counter_stride_loop_1f8f_0960 = overkill_gameplay_counter_stride_loop_1f8f_0960
 
 
-@registry.replace(0x1010, 0xC916, "overkill_file_checksum_loop")
-def overkill_file_checksum_loop(cpu):
-    """Hook wrapper for OVERKILL 1010:C916 file checksum loop."""
-    compute_overkill_file_checksum(cpu)
-
-
-@registry.replace(0x1010, 0x45F6, "overkill_pack_four_pixels_45f6")
-def overkill_pack_four_pixels_45f6(cpu):
-    """Hook wrapper for OVERKILL 1010:45F6 startup graphics pixel packer."""
-    pack_four_pixels_45f6(cpu)
-
-
-def _overkill_read_packed_byte(cpu) -> None:
-    """Compatibility alias for the OVERKILL 1010:0624 packed byte reader."""
-    read_packed_byte(cpu)
-
-
-@registry.replace(0x1010, 0x0624, "overkill_packed_read_byte")
-def overkill_packed_read_byte(cpu):
-    """Hook wrapper for OVERKILL 1010:0624 packed byte reader."""
-    read_packed_byte_hook(cpu)
-
-
-@registry.replace(0x1010, 0x0615, "overkill_packed_read_word")
-def overkill_packed_read_word(cpu):
-    """Hook wrapper for OVERKILL 1010:0615 little-endian packed word reader."""
-    read_packed_word_le_hook(cpu)
-
-@registry.replace(0x1010, 0x45CB, "overkill_expand_bits_45cb")
-def overkill_expand_bits_45cb(cpu):
-    """Hook wrapper for OVERKILL 1010:45CB startup graphics bit expander."""
-    expand_bits_45cb(cpu)
 
 
 
 
-
-
-
-
-@registry.replace(0x1010, 0xC713, "overkill_decoded_asset_table_search_c713")
-def overkill_decoded_asset_table_search_c713(cpu):
-    """Hook wrapper for OVERKILL 1010:C713 decoded-asset table search loop."""
-    search_decoded_asset_table_c713(cpu)
-
-
-@registry.replace(0x1010, 0x03A8, "overkill_vertical_rle_decoder_03a8")
-def overkill_vertical_rle_decoder_03a8(cpu):
-    """Hook wrapper for OVERKILL 1010:03A8 vertical startup RLE decoder."""
-    decode_vertical_rle_columns(cpu)
-
-
-def _call_hook_like_near_call(cpu, handler, return_ip: int) -> None:
-    """Run a replacement body with the same stack side effect as CALL/RET."""
-    cpu.push(return_ip & 0xFFFF)
-    handler(cpu)
-
-
-def _call_installed_hook_like_near_call(cpu, key: tuple[int, int], default_handler, return_ip: int) -> None:
-    """Run the currently installed hook with CALL/RET stack semantics.
-
-    Most fused replacements call leaf helpers directly so differential tests stay
-    simple and do not accidentally recurse into the verifier.  Visual timing
-    boundaries are different: ``scripts/play.py`` wraps the retrace/present
-    hooks to publish video and raise ``FramePresented``.  Calling the base helper
-    directly from a larger fused hook bypasses that UI boundary, making intro
-    dirty-cell transitions appear frozen or skipped even though memory matches at
-    the larger verifier boundary.
-
-    Use this helper only for those timing-sensitive nested CALLs.  If the play
-    wrapper raises after returning to ``return_ip``, the exception intentionally
-    escapes; execution can then resume in the original code at that continuation.
-    """
-    handler = cpu.replacement_hooks.get(key, default_handler)
-    cpu.push(return_ip & 0xFFFF)
-    handler(cpu)
-
-
-
-
-
-@registry.replace(0x1010, 0x4511, "overkill_expand_4plane_block_4511")
-def overkill_expand_4plane_block_4511(cpu):
-    """Hook wrapper for OVERKILL 1010:4511 4-plane startup block expander."""
-    expand_4plane_block_4511(cpu)
 
 
 
@@ -502,6 +452,14 @@ def overkill_tandy_video_offset_tables_0fa3(cpu):
 def overkill_tandy_interlaced_clear_30b0(cpu):
     """Hook wrapper for OVERKILL 1010:30B0 Tandy interlaced buffer clear."""
     run_tandy_interlaced_clear_30b0(cpu, _tandy_render_runtime())
+
+
+@registry.replace(0x1010, 0x3389, "overkill_tandy_interlaced_clear_3389")
+def overkill_tandy_interlaced_clear_3389(cpu):
+    """Hook wrapper for OVERKILL 1010:3389 Tandy interlaced clear from current DI."""
+    if _self_disable_if_patched(cpu, 0x3389, _SIG_3389, "overkill_tandy_interlaced_clear_3389"):
+        return
+    run_tandy_interlaced_clear_3389(cpu)
 
 
 @registry.replace(0x1010, 0x30BA, "overkill_tandy_patched_row_copy_30ba")
@@ -640,6 +598,112 @@ def overkill_scan_draw_tail_a85b(cpu):
     finish_draw_scan_tail_a85b(cpu, _layer_sprite_runtime())
 
 
+
+@registry.replace(0x1010, 0xA846, "overkill_scan_draw_setup_32ca_a846")
+def overkill_scan_draw_setup_32ca_a846(cpu):
+    """Set up the 32CA draw scan: MOV CX,24h; fall through to A849."""
+    if _self_disable_if_patched(cpu, 0xA846, _SIG_A846, "overkill_scan_draw_setup_32ca_a846"):
+        return
+    cpu.s.cx = 0x0024
+    cpu.s.ip = 0xA849
+
+
+@registry.replace(0x1010, 0xA876, "overkill_presence_stamp_call_a876")
+def overkill_presence_stamp_call_a876(cpu):
+    """Model A876: CALL 4CED and continue at A879."""
+    if _self_disable_if_patched(cpu, 0xA876, _SIG_A876, "overkill_presence_stamp_call_a876"):
+        return
+    cpu.push(0xA879)
+    overkill_presence_stamp_triplet_4ced(cpu)
+
+
+@registry.replace(0x1010, 0xA85E, "overkill_scan_draw_setup_8d12_a85e")
+def overkill_scan_draw_setup_8d12_a85e(cpu):
+    """Set up the second draw scan: MOV CX,22h; fall through to A861."""
+    if _self_disable_if_patched(cpu, 0xA85E, _SIG_A85E, "overkill_scan_draw_setup_8d12_a85e"):
+        return
+    cpu.s.cx = 0x0022
+    cpu.s.ip = 0xA861
+
+
+@registry.replace(0x1010, 0xA870, "overkill_scan_draw_call_5ac8_a870")
+def overkill_scan_draw_call_5ac8_a870(cpu):
+    """Hook wrapper for A861 active-entry CALL 5AC8 glue."""
+    if _self_disable_if_patched(cpu, 0xA870, _SIG_A870, "overkill_scan_draw_call_5ac8_a870"):
+        return
+    cpu.push(0xA873)
+    dispatch_draw_object_5ac8(cpu)
+
+
+@registry.replace(0x1010, 0xA873, "overkill_scan_draw_tail_a873")
+def overkill_scan_draw_tail_a873(cpu):
+    """Model A873: POP CX ; LOOP A861 for the 8D12 draw scan."""
+    if _self_disable_if_patched(cpu, 0xA873, _SIG_A873, "overkill_scan_draw_tail_a873"):
+        return
+    cpu.s.cx = cpu.pop()
+    cpu.s.cx = (cpu.s.cx - 1) & 0xFFFF
+    cpu.s.ip = 0xA861 if cpu.s.cx != 0 else 0xA876
+
+
+@registry.replace(0x1010, 0xA879, "overkill_compact_layer_scan_setup_a879")
+def overkill_compact_layer_scan_setup_a879(cpu):
+    """Set up the compact layer scan: MOV CX,22h; fall through to A87C."""
+    if _self_disable_if_patched(cpu, 0xA879, _SIG_A879, "overkill_compact_layer_scan_setup_a879"):
+        return
+    cpu.s.cx = 0x0022
+    cpu.s.ip = 0xA87C
+
+
+@registry.replace(0x1010, 0xA88B, "overkill_compact_layer_call_7746_a88b")
+def overkill_compact_layer_call_7746_a88b(cpu):
+    """Hook wrapper for A87C active-entry CALL 7746 glue."""
+    if _self_disable_if_patched(cpu, 0xA88B, _SIG_A88B, "overkill_compact_layer_call_7746_a88b"):
+        return
+    cpu.push(0xA88E)
+    draw_compact_layer_sprite_7746(cpu, _layer_sprite_runtime())
+
+
+@registry.replace(0x1010, 0xA88E, "overkill_compact_layer_scan_tail_a88e")
+def overkill_compact_layer_scan_tail_a88e(cpu):
+    """Model A88E: POP CX ; LOOP A87C for the compact layer scan."""
+    if _self_disable_if_patched(cpu, 0xA88E, _SIG_A88E, "overkill_compact_layer_scan_tail_a88e"):
+        return
+    cpu.s.cx = cpu.pop()
+    cpu.s.cx = (cpu.s.cx - 1) & 0xFFFF
+    cpu.s.ip = 0xA87C if cpu.s.cx != 0 else 0xA891
+
+
+@registry.replace(0x1010, 0xA891, "overkill_layer0_scan_setup_a891")
+def overkill_layer0_scan_setup_a891(cpu):
+    """Set up the layer-0 draw scan: MOV CX,23h; fall through to A894."""
+    if _self_disable_if_patched(cpu, 0xA891, _SIG_A891, "overkill_layer0_scan_setup_a891"):
+        return
+    cpu.s.cx = 0x0023
+    cpu.s.ip = 0xA894
+
+
+@registry.replace(0x1010, 0xA8C4, "overkill_layer1_scan_setup_a8c4")
+def overkill_layer1_scan_setup_a8c4(cpu):
+    """Set up the layer-1 draw scan: MOV CX,24h; fall through to A8C7."""
+    if _self_disable_if_patched(cpu, 0xA8C4, _SIG_A8C4, "overkill_layer1_scan_setup_a8c4"):
+        return
+    cpu.s.cx = 0x0024
+    cpu.s.ip = 0xA8C7
+
+
+@registry.replace(0x1010, 0xA8F7, "overkill_optional_layer_draw_tail_a8f7")
+def overkill_optional_layer_draw_tail_a8f7(cpu):
+    """Model A8F7: optional extra layer draw gate; common path returns immediately."""
+    if _self_disable_if_patched(cpu, 0xA8F7, _SIG_A8F7, "overkill_optional_layer_draw_tail_a8f7"):
+        return
+    value = cpu.mem.rw(cpu.s.ds & 0xFFFF, 0xA47C)
+    _cmp_word(cpu, value, 0)
+    if value == 0:
+        cpu.s.ip = cpu.pop()
+    else:
+        cpu.s.ip = 0xA8FF
+
+
 @registry.replace(0x1010, 0xA936, "overkill_scan_present_call_5a92_a936")
 def overkill_scan_present_call_5a92_a936(cpu):
     """Hook wrapper for A927 active-entry CALL 5A92 glue."""
@@ -652,26 +716,66 @@ def overkill_scan_present_tail_a939(cpu):
     finish_present_scan_tail_a939(cpu, _layer_sprite_runtime())
 
 
-@registry.replace(0x1010, 0x768E, "overkill_tandy_layer_sprite_draw_768e")
-def overkill_tandy_layer_sprite_draw_768e(cpu):
+@registry.replace(0x1010, 0xA91E, "overkill_scan_present_call_5a92_a91e")
+def overkill_scan_present_call_5a92_a91e(cpu):
+    """Hook wrapper for A90F active-entry CALL 5A92 glue."""
+    if _self_disable_if_patched(cpu, 0xA91E, _SIG_A91E, "overkill_scan_present_call_5a92_a91e"):
+        return
+    cpu.push(0xA921)
+    dispatch_present_object_5a92(cpu)
+
+
+@registry.replace(0x1010, 0xA921, "overkill_scan_present_tail_a921")
+def overkill_scan_present_tail_a921(cpu):
+    """Model A921: POP CX ; LOOP A90F for the 8D12 present scan."""
+    if _self_disable_if_patched(cpu, 0xA921, _SIG_A921, "overkill_scan_present_tail_a921"):
+        return
+    cpu.s.cx = cpu.pop()
+    cpu.s.cx = (cpu.s.cx - 1) & 0xFFFF
+    cpu.s.ip = 0xA90F if cpu.s.cx != 0 else 0xA924
+
+
+@registry.replace(0x1010, 0xA924, "overkill_scan_present_setup_32ca_a924")
+def overkill_scan_present_setup_32ca_a924(cpu):
+    """Set up the 32CA present scan: MOV CX,24h; fall through to A927."""
+    if _self_disable_if_patched(cpu, 0xA924, _SIG_A924, "overkill_scan_present_setup_32ca_a924"):
+        return
+    cpu.s.cx = 0x0024
+    cpu.s.ip = 0xA927
+
+
+@registry.replace(0x1010, 0x768E, "overkill_layer_sprite_draw_768e")
+def overkill_layer_sprite_draw_768e(cpu):
     """Hook wrapper for OVERKILL 1010:768E shared layer-sprite draw helper.
 
-    The legacy registry name says Tandy, but this original routine is reached in
-    CGA, EGA, and Tandy.  The readable game-specific implementation lives in
-    ``games.overkill.rendering.layer_sprites``.
+    This original routine is reached in CGA, EGA, and Tandy.  Keep the old
+    ``overkill_tandy_layer_sprite_draw_768e`` Python alias for tests and old
+    diagnostics, but use the shared renderer name in coverage/verifier output.
     """
     draw_layer_sprite_768e(cpu, _layer_sprite_runtime())
 
 
-def _tandy_layer_dispatch_75f5(cpu, obj_bp: int, chain: str) -> None:
+overkill_tandy_layer_sprite_draw_768e = overkill_layer_sprite_draw_768e
+
+
+def _layer_dispatch_tail_75f5(cpu, obj_bp: int, chain: str) -> None:
     """Compatibility wrapper for the shared OVERKILL 1010:75F5 layer tail."""
     dispatch_layer_sprite_tail_75f5(cpu, obj_bp, chain, _layer_sprite_runtime())
 
 
-@registry.replace(0x1010, 0x75A6, "overkill_tandy_layer_sprite_draw_75a6")
-def overkill_tandy_layer_sprite_draw_75a6(cpu):
+@registry.replace(0x1010, 0x77F6, "overkill_frame_effect_slash_77f6")
+def overkill_frame_effect_slash_77f6(cpu):
+    """Frame-effect draw/clear column helper used by 77DF/9EE4."""
+    run_frame_effect_slash_77f6(cpu, _self_disable_if_patched)
+
+
+@registry.replace(0x1010, 0x75A6, "overkill_layer_sprite_draw_75a6")
+def overkill_layer_sprite_draw_75a6(cpu):
     """Hook wrapper for OVERKILL 1010:75A6 shared double-slot layer draw."""
     draw_layer_sprite_75a6(cpu, _layer_sprite_runtime())
+
+
+overkill_tandy_layer_sprite_draw_75a6 = overkill_layer_sprite_draw_75a6
 
 
 @registry.replace(0x1010, 0x2FB6, "overkill_tandy_masked_compact_2fb6")
@@ -699,6 +803,14 @@ def overkill_tandy_loading_scroll_until_4e0d(cpu):
         return
     run_tandy_loading_scroll_until_4e0d(cpu, _tandy_render_runtime())
 
+
+@registry.replace(0x1010, 0x4E26, "overkill_tandy_loading_tile_remap_scan_4e26")
+def overkill_tandy_loading_tile_remap_scan_4e26(cpu):
+    """Replace loading/menu work-buffer tile-id remap scan at 1010:4E26."""
+    if _self_disable_if_patched(cpu, 0x4E26, _SIG_4E26, "overkill_tandy_loading_tile_remap_scan_4e26"):
+        return
+    run_tandy_loading_tile_remap_scan_4e26(cpu)
+
 @registry.replace(0x1010, 0x60C5, "overkill_tandy_loading_scroll_sequence_60c5")
 def overkill_tandy_loading_scroll_sequence_60c5(cpu):
     """Hook wrapper for OVERKILL 1010:60C5 Tandy loading scroll sequence."""
@@ -709,94 +821,13 @@ def overkill_tandy_loading_tile_column_copy_36a2(cpu):
     """Hook wrapper for OVERKILL 1010:36A2 Tandy loading tile-column copy."""
     run_tandy_loading_tile_column_copy_36a2(cpu, _tandy_render_runtime())
 
-@registry.replace(0x1010, 0x7746, "overkill_tandy_compact_layer_draw_7746")
-def overkill_tandy_compact_layer_draw_7746(cpu):
+@registry.replace(0x1010, 0x7746, "overkill_compact_layer_sprite_draw_7746")
+def overkill_compact_layer_sprite_draw_7746(cpu):
     """Hook wrapper for OVERKILL 1010:7746 shared compact layer draw."""
     draw_compact_layer_sprite_7746(cpu, _layer_sprite_runtime())
 
 
-@registry.replace(0x1010, 0xEDE9, "overkill_lz_output_byte_ede9")
-def overkill_lz_output_byte_ede9(cpu):
-    """Hook wrapper for OVERKILL 1010:EDE9 LZ byte-output helper."""
-    output_lz_byte(cpu)
-
-
-@registry.replace(0x1010, 0xED97, "overkill_lz_input_byte_ed97")
-def overkill_lz_input_byte_ed97(cpu):
-    """Hook wrapper for OVERKILL 1010:ED97 LZ byte-input helper."""
-    input_lz_byte(cpu)
-
-
-@registry.replace(0x254A, 0x04D7, "overkill_overlay_container_open_entry_254a_04d7")
-def overkill_overlay_container_open_entry_254a_04d7(cpu):
-    """Hook wrapper for OVERKILL 254A:04D7 overlay/container file-open parent."""
-    open_overlay_container_entry_254a_04d7(cpu)
-
-
-@registry.replace(0x254A, 0x05A1, "overkill_overlay_directory_entry_scan_254a_05a1")
-def overkill_overlay_directory_entry_scan_254a_05a1(cpu):
-    """Hook wrapper for OVERKILL 254A:05A1 overlay directory-entry scan loop."""
-    find_overlay_directory_entry_05a1(cpu)
-
-
-@registry.replace(0x254A, 0x05BF, "overkill_overlay_xor_decode_254a_05bf")
-def overkill_overlay_xor_decode_254a_05bf(cpu):
-    """Hook wrapper for OVERKILL 254A:05BF overlay XOR decoder."""
-    decode_overlay_xor(cpu)
-
-
-@registry.replace(0x254A, 0x0582, "overkill_overlay_signature_compare_254a_0582")
-def overkill_overlay_signature_compare_254a_0582(cpu):
-    """Hook wrapper for OVERKILL 254A:0582 overlay signature compare loop."""
-    compare_overlay_signature_0582(cpu)
-
-
-@registry.replace(0x254A, 0x05D9, "overkill_overlay_entry_name_compare_254a_05d9")
-def overkill_overlay_entry_name_compare_254a_05d9(cpu):
-    """Hook wrapper for OVERKILL 254A:05D9 overlay directory-name compare loop."""
-    compare_overlay_entry_name_05d9(cpu)
-
-
-@registry.replace(0x254A, 0x0701, "overkill_overlay_path_normalizer_254a_0701")
-def overkill_overlay_path_normalizer_254a_0701(cpu):
-    """Hook wrapper for OVERKILL 254A:0701 overlay path-component normalizer."""
-    strip_overlay_path_components_0701(cpu)
-
-
-@registry.replace(0x1010, 0xED7A, "overkill_lz_backref_copy_ed7a")
-def overkill_lz_backref_copy_ed7a(cpu):
-    """Hook wrapper for OVERKILL 1010:ED7A LZ back-reference copy loop."""
-    copy_lz_back_reference(cpu)
-
-@registry.replace(0x1010, 0xECF2, "overkill_lz_decoder_ecf2")
-def overkill_lz_decoder_ecf2(cpu):
-    """Hook wrapper for OVERKILL 1010:ECF2 full LZ asset decoder."""
-    decode_lz_asset(cpu)
-
-@registry.replace(0x1010, 0x0367, "overkill_linear_byte_rle_decoder_0367_fast")
-def overkill_linear_byte_rle_decoder_0367(cpu):
-    """Hook wrapper for OVERKILL 1010:0367 linear byte-RLE decoder."""
-    decode_linear_byte_rle(cpu)
-
-
-@registry.replace(0x1010, 0x0324, "overkill_word_pair_rle_decoder_0324")
-def overkill_word_pair_rle_decoder_0324(cpu):
-    """Hook wrapper for OVERKILL 1010:0324 word-pair RLE decoder."""
-    decode_word_pair_rle(cpu)
-
-
-
-
-@registry.replace(0x1010, 0x4537, "overkill_expand_4plane_row_4537_fast")
-def overkill_expand_4plane_row_4537(cpu):
-    """Hook wrapper for OVERKILL 1010:4537 4-plane startup row expander."""
-    expand_4plane_row_4537(cpu)
-
-@registry.replace(0x1010, 0x450C, "overkill_expand_4plane_list_450c")
-def overkill_expand_4plane_list_450c(cpu):
-    """Hook wrapper for OVERKILL 1010:450C 4-plane startup list expander."""
-    expand_4plane_list_450c(cpu)
-
+overkill_tandy_compact_layer_draw_7746 = overkill_compact_layer_sprite_draw_7746
 
 
 
@@ -2689,6 +2720,14 @@ def _scan_present_objects_via_5a92(
 
 
 
+@registry.replace(0x1010, 0x4CED, "overkill_presence_stamp_triplet_4ced")
+def overkill_presence_stamp_triplet_4ced(cpu):
+    """Compose the 4CED parent from three existing 4D15 presence-stamp calls."""
+    if _self_disable_if_patched(cpu, 0x4CED, _SIG_4CED, "overkill_presence_stamp_triplet_4ced"):
+        return
+    run_presence_stamp_triplet_4ced(cpu, overkill_presence_stamp_list_4d15)
+
+
 @registry.replace(0x1010, 0x4D64, "overkill_clear_presence_list_parent_4d64")
 def overkill_clear_presence_list_parent_4d64(cpu):
     """Set up and tail into the shared 4D6F presence-list clear hook."""
@@ -2745,6 +2784,19 @@ def overkill_scan_objects_call_5a92_a927(cpu):
         return_ip=0xA939,
         parent="1010:A927",
         chain="A927 -> 5A92",
+    )
+
+
+@registry.replace(0x1010, 0xB9F0, "overkill_object_behavior_b9f0")
+def overkill_object_behavior_b9f0(cpu):
+    """Observed object-family behavior B9F0 lifted up to the shared BC4B tail."""
+    if _self_disable_if_patched(cpu, 0xB9F0, _SIG_B9F0, "overkill_object_behavior_b9f0"):
+        return
+    _run_object_behavior_b9f0(
+        cpu,
+        parent="1010:B9F0",
+        chain="B9F0",
+        cx_value=cpu.s.cx & 0xFFFF,
     )
 
 
@@ -2911,6 +2963,44 @@ def overkill_object_logic_branch_ad04(cpu):
 
 
 
+@registry.replace(0x1010, 0xAD60, "overkill_object_bounds_tile_tail_ad60")
+def overkill_object_bounds_tile_tail_ad60(cpu):
+    """Shared object bounds/tile tail reached by several ADxx behaviours."""
+    if _self_disable_if_patched(cpu, 0xAD60, _SIG_AD60, "overkill_object_bounds_tile_tail_ad60"):
+        return
+    _run_object_bounds_tile_tail_ad60(
+        cpu,
+        parent="1010:AD60",
+        chain="AD60",
+        cx_value=cpu.s.cx & 0xFFFF,
+        add_a278_to_x=False,
+    )
+
+
+@registry.replace(0x1010, 0xAE2C, "overkill_object_drift_downright_ae2c")
+def overkill_object_drift_downright_ae2c(cpu):
+    """Observed drift-down/right object tail that joins AD5A/AD60."""
+    run_object_drift_downright_ae2c(cpu, _self_disable_if_patched)
+
+
+@registry.replace(0x1010, 0xAE7D, "overkill_object_drift_upright_ae7d")
+def overkill_object_drift_upright_ae7d(cpu):
+    """Observed drift-up/right object tail that joins AD5A/AD60."""
+    run_object_drift_upright_ae7d(cpu, _self_disable_if_patched)
+
+
+@registry.replace(0x1010, 0xAD5A, "overkill_object_bounds_tile_prelude_ad5a")
+def overkill_object_bounds_tile_prelude_ad5a(cpu):
+    """Object bounds/tile tail prelude that applies DS:A278 to object X."""
+    run_object_bounds_tile_prelude_ad5a(cpu, _self_disable_if_patched)
+
+
+@registry.replace(0x1010, 0xD281, "overkill_object_target_chase_d281")
+def overkill_object_target_chase_d281(cpu):
+    """Observed object target-copy + 5DB2 chase helper tail."""
+    run_object_target_chase_d281(cpu, _self_disable_if_patched)
+
+
 @registry.replace(0x1010, 0xABA3, "overkill_object_behavior_aba3")
 def overkill_object_behavior_aba3(cpu):
     """Observed ABA3 tracked-object follower/probe behaviour."""
@@ -2923,6 +3013,53 @@ def overkill_object_behavior_aba3(cpu):
         cx_value=cpu.s.cx & 0xFFFF,
     )
 
+
+
+
+@registry.replace(0x1010, 0xAB59, "overkill_tracked_object_selector_a96c_ab59")
+def overkill_tracked_object_selector_a96c_ab59(cpu):
+    """Tiny AD04 branch glue: DS:A42C=A96C then jump to AB77."""
+    if _self_disable_if_patched(cpu, 0xAB59, _SIG_AB59, "overkill_tracked_object_selector_a96c_ab59"):
+        return
+    _run_tracked_object_selector_to_ab77(cpu, selector_addr=0xA96C)
+
+
+@registry.replace(0x1010, 0xAB61, "overkill_tracked_object_selector_a96a_ab61")
+def overkill_tracked_object_selector_a96a_ab61(cpu):
+    """Tiny AD04 branch glue: DS:A42C=A96A then jump to AB77."""
+    if _self_disable_if_patched(cpu, 0xAB61, _SIG_AB61, "overkill_tracked_object_selector_a96a_ab61"):
+        return
+    _run_tracked_object_selector_to_ab77(cpu, selector_addr=0xA96A)
+
+
+@registry.replace(0x1010, 0xAB69, "overkill_tracked_object_selector_a968_ab69")
+def overkill_tracked_object_selector_a968_ab69(cpu):
+    """Tiny AD04 branch glue: DS:A42C=A968 then jump to AB77."""
+    if _self_disable_if_patched(cpu, 0xAB69, _SIG_AB69, "overkill_tracked_object_selector_a968_ab69"):
+        return
+    _run_tracked_object_selector_to_ab77(cpu, selector_addr=0xA968)
+
+
+@registry.replace(0x1010, 0xAB71, "overkill_tracked_object_selector_a966_ab71")
+def overkill_tracked_object_selector_a966_ab71(cpu):
+    """Tiny AD04 branch glue: DS:A42C=A966 then jump to AB77."""
+    if _self_disable_if_patched(cpu, 0xAB71, _SIG_AB71, "overkill_tracked_object_selector_a966_ab71"):
+        return
+    _run_tracked_object_selector_to_ab77(cpu, selector_addr=0xA966)
+
+
+@registry.replace(0x1010, 0xABCA, "overkill_object_sprite0f_collision_abca")
+def overkill_object_sprite0f_collision_abca(cpu):
+    """Observed AD04 sprite-000F object collision/deactivation path."""
+    if _self_disable_if_patched(cpu, 0xABCA, _SIG_ABCA, "overkill_object_sprite0f_collision_abca"):
+        return
+    _run_object_sprite0f_collision_abca(
+        cpu,
+        parent="1010:ABCA",
+        chain="ABCA",
+        cx_value=cpu.s.cx & 0xFFFF,
+        run_original_near_call=_run_interpreted_near_call_observed,
+    )
 
 @registry.replace(0x1010, 0xAB77, "overkill_object_behavior_ab77")
 def overkill_object_behavior_ab77(cpu):
@@ -2960,6 +3097,71 @@ def overkill_object_slot_scan_guard_ac81(cpu):
     run_object_slot_scan_guard_ac81(cpu, _self_disable_if_patched)
 
 
+
+
+
+
+@registry.replace(0x1010, 0xD007, "overkill_main_frame_loop_d007")
+def overkill_main_frame_loop_d007(cpu):
+    """One original gameplay/attract frame iteration, composed from child hooks."""
+    run_main_frame_loop_d007(
+        cpu,
+        _self_disable_if_patched,
+        _run_interpreted_near_call_observed,
+    )
+
+@registry.replace(0x1010, 0x073C, "overkill_frame_service_gate_073c")
+def overkill_frame_service_gate_073c(cpu):
+    """Tiny per-frame platform/service gate called from the D007 loop."""
+    run_frame_service_gate_073c(
+        cpu,
+        _self_disable_if_patched,
+        _run_interpreted_near_call_observed,
+    )
+
+
+@registry.replace(0x1010, 0xD04D, "overkill_frame_ui_state_update_d04d")
+def overkill_frame_ui_state_update_d04d(cpu):
+    """Finite per-frame UI/demo-state update block called from D007."""
+    run_frame_ui_state_update_d04d(
+        cpu,
+        _self_disable_if_patched,
+        _run_interpreted_near_call_observed,
+    )
+
+
+@registry.replace(0x1010, 0xA212, "overkill_demo_object_list_maintenance_a212")
+def overkill_demo_object_list_maintenance_a212(cpu):
+    """Hook wrapper for the cold-start/attract demo object-list maintenance glue."""
+    run_demo_object_list_maintenance_a212(
+        cpu,
+        _self_disable_if_patched,
+        _run_interpreted_near_call_observed,
+    )
+
+
+@registry.replace(0x1010, 0x5F61, "overkill_frame_status_counter_update_5f61")
+def overkill_frame_status_counter_update_5f61(cpu):
+    """Hook wrapper for finite per-frame status/counter orchestration glue."""
+    run_frame_status_counter_update_5f61(
+        cpu,
+        _self_disable_if_patched,
+        _run_interpreted_near_call_observed,
+    )
+
+
+@registry.replace(0x1010, 0xA940, "overkill_frame_game_state_update_a940")
+def overkill_frame_game_state_update_a940(cpu):
+    """Hook wrapper for the finite A940 per-frame game-state prelude."""
+    run_frame_game_state_update_a940(cpu, _self_disable_if_patched)
+
+
+@registry.replace(0x1010, 0x9FEA, "overkill_object_child_coord_update_9fea")
+def overkill_object_child_coord_update_9fea(cpu):
+    """Linked-object coordinate update/clamp helper."""
+    run_object_child_coord_update_9fea(cpu, _self_disable_if_patched)
+
+
 @registry.replace(0x1010, 0xA9E0, "overkill_scan_objects_call_aa2b_a9e0")
 def overkill_scan_objects_call_aa2b_a9e0(cpu):
     """Run the 32CA object-logic scan until the next unlifted concrete behavior."""
@@ -2986,6 +3188,62 @@ def overkill_scan_objects_call_aa2b_aa10(cpu):
         call_ip=0xAA1F,
         advance_global_counter=False,
     )
+
+
+
+
+
+
+@registry.replace(0x1010, 0xAA07, "overkill_second_object_scan_setup_aa07")
+def overkill_second_object_scan_setup_aa07(cpu):
+    """Model AA07: clear DS:2346 and set up the 8D12 AA10 object scan."""
+    if _self_disable_if_patched(cpu, 0xAA07, _SIG_AA07, "overkill_second_object_scan_setup_aa07"):
+        return
+    cpu.mem.ww(cpu.s.ds & 0xFFFF, 0x2346, 0)
+    cpu.s.cx = 0x0022
+    cpu.s.ip = 0xAA10
+
+
+@registry.replace(0x1010, 0xAA1F, "overkill_object_logic_call_aa2b_aa1f")
+def overkill_object_logic_call_aa2b_aa1f(cpu):
+    """Hook wrapper for AA10 active-entry CALL AA2B glue."""
+    if _self_disable_if_patched(cpu, 0xAA1F, _SIG_AA1F, "overkill_object_logic_call_aa2b_aa1f"):
+        return
+    cpu.push(0xAA22)
+    _run_object_logic_dispatch_aa2b(
+        cpu,
+        parent="1010:AA1F",
+        chain="AA1F -> AA2B",
+        cx_value=cpu.s.cx & 0xFFFF,
+    )
+
+
+@registry.replace(0x1010, 0xAA22, "overkill_object_logic_scan_tail_aa22")
+def overkill_object_logic_scan_tail_aa22(cpu):
+    """Model AA22: POP CX ; LOOP AA10 for the 8D12 object-logic scan."""
+    if _self_disable_if_patched(cpu, 0xAA22, _SIG_AA22, "overkill_object_logic_scan_tail_aa22"):
+        return
+    cpu.s.cx = cpu.pop()
+    cpu.s.cx = (cpu.s.cx - 1) & 0xFFFF
+    cpu.s.ip = 0xAA10 if cpu.s.cx != 0 else 0xAA25
+
+
+@registry.replace(0x1010, 0xAA25, "overkill_gameplay_counter_tick_tail_aa25")
+def overkill_gameplay_counter_tick_tail_aa25(cpu):
+    """Model AA25: FAR CALL 1F8F:0922 ; RET using the lifted counter hook."""
+    if _self_disable_if_patched(cpu, 0xAA25, _SIG_AA25, "overkill_gameplay_counter_tick_tail_aa25"):
+        return
+    caller_cs = cpu.s.cs & 0xFFFF
+    cpu.push(caller_cs)
+    cpu.push(0xAA2A)
+    cpu.s.cs = 0x1F8F
+    cpu.s.ip = 0x0922
+    run_gameplay_counter_tick_1f8f_0922(cpu, _self_disable_if_patched)
+    if (cpu.s.cs & 0xFFFF, cpu.s.ip & 0xFFFF) != (caller_cs, 0xAA2A):
+        raise RuntimeError(
+            f"1F8F:0922 returned to unexpected IP {cpu.s.cs & 0xFFFF:04X}:{cpu.s.ip & 0xFFFF:04X} inside AA25 tail"
+        )
+    cpu.s.ip = cpu.pop()
 
 
 @registry.replace(0x1010, 0x4D6F, "overkill_clear_presence_list_4d6f")
@@ -3956,6 +4214,60 @@ def _run_menu_transition_input_wait_loop_ce5c(cpu) -> None:
     cpu.s.ip = 0xCE40 if cpu.s.cx != 0 else cpu.pop()
 
 
+def _run_menu_script_input_wait_cf78(cpu) -> None:
+    """Run the CF78 retrace/input wait loop to its in-procedure continuation.
+
+    CF78 is not a normal near subroutine entry; it is a loop body inside the
+    menu/script presenter.  It waits up to CX retraces, polling input once per
+    retrace.  Space/fire in DS:98BE or the latched DS:98C3 byte exits early at
+    CF97; loop exhaustion falls through to CF90.
+    """
+    if _self_disable_if_patched(cpu, 0xCF78, _SIG_CF78, "overkill_menu_script_input_wait_cf78"):
+        return
+
+    ds = cpu.s.ds & 0xFFFF
+    mem = cpu.mem
+    while True:
+        _call_installed_hook_like_near_call(
+            cpu,
+            (0x1010, 0x50C9),
+            overkill_wait_vga_retrace_50c9,
+            0xCF7B,
+        )
+        if cpu.s.ip != 0xCF7B:
+            raise RuntimeError(f"50C9 returned to unexpected IP {cpu.s.ip:04X} inside CF78 input wait")
+
+        cpu.push(cpu.s.cx)
+        _call_hook_like_near_call(cpu, overkill_input_poll_0162, 0xCF7F)
+        if cpu.s.ip != 0xCF7F:
+            raise RuntimeError(f"0162 returned to unexpected IP {cpu.s.ip:04X} inside CF78 input wait")
+        cpu.s.cx = cpu.pop()
+
+        buttons = mem.rb(ds, 0x98BE)
+        cpu.set_logic_flags(buttons & 0x10, 8)
+        if buttons & 0x10:
+            cpu.s.ip = 0xCF97
+            return
+
+        latched = mem.rb(ds, 0x98C3)
+        _cmp_byte(cpu, latched, 0)
+        if latched != 0:
+            cpu.s.ip = 0xCF97
+            return
+
+        cpu.s.cx = (cpu.s.cx - 1) & 0xFFFF  # LOOP preserves flags.
+        if cpu.s.cx != 0:
+            continue
+        cpu.s.ip = 0xCF90
+        return
+
+
+@registry.replace(0x1010, 0xCF78, "overkill_menu_script_input_wait_cf78")
+def overkill_menu_script_input_wait_cf78(cpu):
+    """Replace the CF78 retrace/input wait loop body."""
+    _run_menu_script_input_wait_cf78(cpu)
+
+
 @registry.replace(0x1010, 0xCE40, "overkill_menu_transition_input_wait_ce40")
 def overkill_menu_transition_input_wait_ce40(cpu):
     """Replace the CE40 input-poll/retrace wait subroutine."""
@@ -4202,21 +4514,21 @@ def overkill_postcopy_blit_wait_loop_58df(cpu):
     and the unusual DEC CX + LOOP CX double-decrement.
     """
     cs = cpu.s.cs & 0xFFFF
+    if cpu.mem.rw(cs, 0x95BC) != 0:
+        # This lift is only proven for the mode-0 blitter.  Disable before any
+        # setup side effects so the original mode-1/2 code resumes at the exact
+        # entry state.
+        cpu.replacement_hooks.pop((cs, 0x58DF), None)
+        cpu.hook_names.pop((cs, 0x58DF), None)
+        cpu.s.ip = 0x58DF
+        return
+
     while True:
         cpu.push(cpu.s.cx)                         # 58DF PUSH CX
         cpu.mem.ww(cs, 0x5901, cpu.s.cx)           # 58E0 MOV CS:[5901],CX
         mode = cpu.mem.rw(cs, 0x95BC)
         cpu.s.bx = mode & 0xFFFF
         cpu.s.bx = cpu.shift(4, cpu.s.bx, 1, 16)   # 58E5..58EA
-        if mode != 0:
-            # The mode-1/2 callees are different planar/Tandy blitters and have
-            # not been lifted as part of this narrow mode-0 hook.  Do not crash
-            # EGA/Tandy profiling: make this address self-disabling and let the
-            # original interpreted code run from 58DF on the next CPU step.
-            cpu.replacement_hooks.pop((cs, 0x58DF), None)
-            cpu.hook_names.pop((cs, 0x58DF), None)
-            cpu.s.ip = 0x58DF
-            return
         _call_hook_like_near_call(cpu, overkill_blit_scaled_column_block_497a, 0x58F1)
         if cpu.s.ip != 0x58F1:
             raise RuntimeError(f"497A replacement returned to unexpected IP {cpu.s.ip:04X}")
@@ -4238,37 +4550,81 @@ def overkill_video_page_toggle_511f(cpu):
     run_video_page_toggle_511f(cpu, _self_disable_if_patched)
 
 
-@registry.replace(0x1010, 0x06E5, "overkill_fast_timer_isr_06e5")
-def overkill_fast_timer_isr_06e5(cpu):
-    if _self_disable_if_patched(cpu, 0x06E5, SIG_FAST_TIMER_ISR_06E5, "overkill_fast_timer_isr_06e5"):
+@registry.replace(0x1010, 0x5BDC, "overkill_present_frame_dispatch_5bdc")
+def overkill_present_frame_dispatch_5bdc(cpu):
+    """Lift the per-frame video-mode dispatch stub before the mode presenter."""
+    if _self_disable_if_patched(cpu, 0x5BDC, _SIG_5BDC, "overkill_present_frame_dispatch_5bdc"):
         return
-    run_fast_timer_isr_06e5(cpu)
+    cs = cpu.s.cs & 0xFFFF
+    cpu.s.bx = cpu.mem.rw(cs, 0x95BC)
+    cpu.s.bx = cpu.shift(4, cpu.s.bx, 1, 16)
+    cpu.s.ip = cpu.mem.rw(cs, (0x5BE8 + cpu.s.bx) & 0xFFFF)
 
 
-@registry.replace(0x1010, 0xD50E, "overkill_pc_speaker_tick_d50e")
-def overkill_pc_speaker_tick_d50e(cpu):
-    if _self_disable_if_patched(cpu, 0xD50E, SIG_PC_SPEAKER_TICK_D50E, "overkill_pc_speaker_tick_d50e"):
+@registry.replace(0x1010, 0x5C74, "overkill_tandy_postcopy_mode_sweep_5c74")
+def overkill_tandy_postcopy_mode_sweep_5c74(cpu):
+    """Absorb the Tandy postcopy dispatch/wait loop that feeds the 375B leaf."""
+    if _self_disable_if_patched(cpu, 0x5C74, _SIG_5C74, "overkill_tandy_postcopy_mode_sweep_5c74"):
         return
-    run_pc_speaker_tick_d50e(cpu)
 
+    cs = cpu.s.cs & 0xFFFF
+    while True:
+        mode = cpu.mem.rw(cs, 0x95BC) & 0xFFFF
+        cpu.s.bx = mode & 0xFFFF
+        cpu.s.bx = cpu.shift(4, cpu.s.bx, 1, 16)
+        target = cpu.mem.rw(cs, (0x595A + ((mode & 0xFFFF) << 1)) & 0xFFFF) & 0xFFFF
+        if target == 0x497A:
+            _call_installed_hook_like_near_call(
+                cpu,
+                (0x1010, 0x497A),
+                overkill_blit_scaled_column_block_497a,
+                0x5C80,
+            )
+        elif target == 0x375B:
+            _call_installed_hook_like_near_call(
+                cpu,
+                (0x1010, 0x375B),
+                overkill_tandy_postcopy_scaled_blit_375b,
+                0x5C80,
+            )
+        else:
+            cpu.push(0x5C80)
+            cpu.s.ip = target
+            return
+        if cpu.s.ip != 0x5C80:
+            raise RuntimeError(f"5C74 mode sweep target returned to unexpected IP {cpu.s.ip:04X}")
 
-# Backward-compatible import point for older diagnostics/scripts.  New code should
-# import from overkill_port.games.overkill.sounds directly.
-_deliver_overkill_timer_irq0 = deliver_overkill_timer_irq0
+        _call_installed_hook_like_near_call(
+            cpu,
+            (0x1010, 0x50C9),
+            overkill_wait_vga_retrace_50c9,
+            0x5C83,
+        )
+        if cpu.s.ip != 0x5C83:
+            raise RuntimeError(f"5C74 wait hook returned to unexpected IP {cpu.s.ip:04X}")
 
-
-@registry.replace(0x1010, 0x0672, "overkill_clear_timer_tick_flag_0672")
-def overkill_clear_timer_tick_flag_0672(cpu):
-    run_clear_timer_tick_flag_0672(cpu, _self_disable_if_patched)
-
-
-@registry.replace(0x1010, 0x0679, "overkill_wait_timer_tick_0679")
-def overkill_wait_timer_tick_0679(cpu):
-    if _self_disable_if_patched(cpu, 0x0679, SIG_TIMER_WAIT_0679, "overkill_wait_timer_tick_0679"):
+        _add_mem_word(cpu, cs, 0x5901, 0x0002)
+        cpu.s.ax = cpu.mem.rw(cs, 0x5901)
+        _cmp_word(cpu, cpu.s.ax, cpu.mem.rw(cs, 0x58FD))
+        if cpu.s.ax != cpu.mem.rw(cs, 0x58FD):
+            continue
+        cpu.s.ds = cpu.mem.rw(cs, 0x9596)
+        cpu.s.ip = cpu.pop()
         return
-    run_wait_timer_tick_0679(cpu)
 
 
+@registry.replace(0x1010, 0x5160, "overkill_ega_display_start_wait_5160")
+def overkill_ega_display_start_wait_5160(cpu):
+    """Lift the mode-1-only display-start wait stub; Tandy/CGA return immediately."""
+    if _self_disable_if_patched(cpu, 0x5160, _SIG_5160, "overkill_ega_display_start_wait_5160"):
+        return
+    cs = cpu.s.cs & 0xFFFF
+    mode = cpu.mem.rw(cs, 0x95BC)
+    _cmp_word(cpu, mode, 1)
+    if mode != 1:
+        cpu.s.ip = cpu.pop()
+        return
+    cpu.s.ip = 0x5169
 
 
 @registry.replace(0x1010, 0x3354, "overkill_present_tandy_frame_3354")
@@ -4364,6 +4720,12 @@ def overkill_intro_retrace_delay_loop_tail_96c8(cpu):
 def overkill_input_poll_0162(cpu):
     """Replace the full keyboard/joystick input poller at 1010:0162."""
     run_input_poll_0162(cpu)
+
+
+@registry.replace(0x1010, 0xD445, "overkill_input_selector_loop_d445")
+def overkill_input_selector_loop_d445(cpu):
+    """Replace the observed D445 input/selector loop and BEDC counter path."""
+    run_input_selector_loop_d445(cpu)
 
 
 @registry.replace(0x1010, 0x017E, "overkill_keyboard_poll_bits_017e")

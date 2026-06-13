@@ -32,6 +32,18 @@ class HookStop:
     kind: str
     ip: int | None = None
     ips: tuple[int, ...] = ()
+    min_steps: int = 0
+
+    @classmethod
+    def after_step(cls, kind: str, ip: int | None = None, ips: tuple[int, ...] = ()) -> "HookStop":
+        """Create metadata for a loop whose valid continuation can equal entry IP.
+
+        Same-IP frame loops such as OVERKILL's D007 dispatcher need the ASM
+        oracle to execute at least one instruction before accepting the target.
+        Otherwise the verifier would stop immediately at the entry address and
+        compare a hook that performed a whole frame against an untouched oracle.
+        """
+        return cls(kind, ip=ip, ips=ips, min_steps=1)
 
     def targets(self, cpu: CPU8086, before: CPUState) -> tuple[Addr, ...]:
         cs = before.cs & 0xFFFF
@@ -74,6 +86,13 @@ class HookStop:
                 return ((cs, cpu.mem.rw(before.ss, before.sp)),)
             bx = ((mode & 0xFFFF) << 1) & 0xFFFF
             return ((cs, cpu.mem.rw(cs, (0x5A42 + bx) & 0xFFFF)),)
+        if self.kind == "dispatch_5bdc":
+            mode = cpu.mem.rw(cs, 0x95BC)
+            bx = ((mode & 0xFFFF) << 1) & 0xFFFF
+            return ((cs, cpu.mem.rw(cs, (0x5BE8 + bx) & 0xFFFF)),)
+        if self.kind == "postcopy_58df":
+            mode = cpu.mem.rw(cs, 0x95BC)
+            return ((cs, 0x58F8 if mode == 0 else 0x58DF),)
         if self.kind == "dispatch_5ac8":
             mode = cpu.mem.rw(cs, 0x95BC)
             obj_type = cpu.mem.rw(before.ss, (before.bp + 0x14) & 0xFFFF)
@@ -226,7 +245,7 @@ class HookVerifierConfig:
     stop_on_diff: bool = False
     log_diffs: bool = False
     asm_max_steps: int = 500_000
-    full_memory: bool = False
+    full_memory: bool = True
     require_metadata: bool = False
     progress_callback: Callable[[str], None] | None = None
 
@@ -234,9 +253,12 @@ class HookVerifierConfig:
 DEFAULT_STOPS: dict[Addr, HookStop] = {
     (0x1010, 0x06E5): HookStop("iret"),
     (0x1010, 0x0679): HookStop("near_ret"),
+    (0x1010, 0x073C): HookStop("near_ret"),
+    (0x1010, 0x9921): HookStop("fixed_ip", 0x9928),
     (0x1010, 0x0672): HookStop("near_ret"),
     (0x1010, 0x3153): HookStop("near_ret"),
     (0x1010, 0x519A): HookStop("near_ret"),
+    (0x1010, 0x518C): HookStop("near_ret"),
     (0x1010, 0x5F06): HookStop("near_ret"),
     (0x1010, 0xBDE3): HookStop("near_ret_or_fixed_ip", 0x5059),
     (0x1F8F, 0x0922): HookStop("far_ret"),
@@ -272,6 +294,7 @@ DEFAULT_STOPS: dict[Addr, HookStop] = {
     (0x1010, 0x1AEB): HookStop("near_ret"),
     (0x1010, 0x75A6): HookStop("near_ret"),
     (0x1010, 0xB73E): HookStop("near_ret"),
+    (0x1010, 0xB9F0): HookStop("fixed_ip", 0xBC4B),
     (0x1010, 0x13E7): HookStop("near_ret"),
     (0x1010, 0x1D1B): HookStop("near_ret"),
     (0x1010, 0x2750): HookStop("near_ret"),
@@ -290,6 +313,7 @@ DEFAULT_STOPS: dict[Addr, HookStop] = {
     (0x1010, 0x306F): HookStop("near_ret"),
     (0x1010, 0x30B0): HookStop("near_ret"),
     (0x1010, 0x30BA): HookStop("near_ret"),
+    (0x1010, 0x3389): HookStop("near_ret"),
     (0x1010, 0x33AF): HookStop("fixed_ip", 0x44AA),
     (0x1010, 0x33B2): HookStop("fixed_ips", ips=(0x33AF, 0x44AA)),
     (0x1010, 0x3354): HookStop("near_ret"),
@@ -303,6 +327,7 @@ DEFAULT_STOPS: dict[Addr, HookStop] = {
     (0x1010, 0x60C5): HookStop("near_ret"),
     (0x1010, 0x375B): HookStop("near_ret"),
     (0x1010, 0x4E0D): HookStop("near_ret"),
+    (0x1010, 0x4E26): HookStop("near_ret"),
     (0x1010, 0x35AA): HookStop("near_ret"),
     (0x1010, 0x35CC): HookStop("near_ret"),
     (0x1010, 0x3657): HookStop("near_ret"),
@@ -313,9 +338,11 @@ DEFAULT_STOPS: dict[Addr, HookStop] = {
     (0x1010, 0x38B7): HookStop("near_ret"),
     (0x1010, 0x38F9): HookStop("near_ret"),
     (0x1010, 0x409D): HookStop("near_ret"),
+    (0x1010, 0x41A6): HookStop("near_ret"),
+    (0x1010, 0x41DA): HookStop("near_ret"),
     (0x1010, 0x40D7): HookStop("near_ret"),
     (0x1010, 0x412B): HookStop("near_ret"),
-    (0x1010, 0x450C): HookStop("fixed_ips", ips=(0x450C, 0x44AA)),
+    (0x1010, 0x450C): HookStop("fixed_ip", 0x44AA),
     (0x1010, 0x4511): HookStop("fixed_ip", 0x450C),
     (0x1010, 0x4537): HookStop("near_ret"),
     (0x1010, 0x45CB): HookStop("near_ret"),
@@ -331,18 +358,27 @@ DEFAULT_STOPS: dict[Addr, HookStop] = {
     (0x1010, 0xCD68): HookStop("fixed_ips", ips=(0xCE13, 0xCC7F, 0xCDCC)),
     (0x1010, 0xCE40): HookStop("near_ret"),
     (0x1010, 0xCE5C): HookStop("near_ret_or_fixed_ip", 0xCE40),
+    (0x1010, 0xCF78): HookStop("fixed_ips", ips=(0xCF90, 0xCF97)),
     (0x1010, 0xCCAA): HookStop("fixed_ip", 0xCD08),
     (0x1010, 0xCCC4): HookStop("fixed_ip", 0xCD08),
     (0x1010, 0xCCF0): HookStop("fixed_ip", 0xCD08),
+    (0x1010, 0x4CED): HookStop("near_ret"),
     (0x1010, 0x4D15): HookStop("near_ret"),
     (0x1010, 0x4D64): HookStop("near_ret"),
     (0x1010, 0x4D6F): HookStop("near_ret"),
     (0x1010, 0x511F): HookStop("near_ret"),
+    (0x1010, 0x5160): HookStop("near_ret_or_fixed_ip", 0x5169),
+    (0x1010, 0x5F61): HookStop("near_ret"),
+    (0x1010, 0xA212): HookStop("near_ret"),
+    (0x1010, 0x5BDC): HookStop("dispatch_5bdc"),
+    (0x1010, 0x5C74): HookStop("near_ret"),
+    (0x1010, 0x58DF): HookStop("postcopy_58df"),
     (0x1010, 0x61C5): HookStop("near_ret"),
     (0x1010, 0x61CA): HookStop("near_ret"),
     (0x1010, 0x5059): HookStop("near_ret"),
     (0x1010, 0x505B): HookStop("near_ret"),
     (0x1010, 0x5073): HookStop("near_ret"),
+    (0x1010, 0x50C9): HookStop("near_ret"),
     (0x1010, 0x5DB2): HookStop("near_ret"),
     (0x1010, 0x5827): HookStop("fixed_ip", 0x58A4),
     (0x1010, 0x5A00): HookStop("dispatch_5a00"),
@@ -351,29 +387,50 @@ DEFAULT_STOPS: dict[Addr, HookStop] = {
     (0x1010, 0x5A6C): HookStop("dispatch_5a6c"),
     (0x1010, 0x5AC8): HookStop("dispatch_5ac8"),
     (0x1010, 0x5A92): HookStop("dispatch_5a92"),
+    (0x1010, 0x5EF9): HookStop("near_ret"),
     (0x1010, 0x7596): HookStop("dispatch_7596"),
     (0x1010, 0x768E): HookStop("tandy_layer_sprite_768e"),
     (0x1010, 0x7746): HookStop("near_ret"),
+    (0x1010, 0xA846): HookStop("fixed_ip", 0xA849),
     (0x1010, 0xA849): HookStop("scan_draw_a849"),
     (0x1010, 0xA858): HookStop("dispatch_5ac8"),
     (0x1010, 0xA85B): HookStop("fixed_ips", ips=(0xA849, 0xA85E)),
+    (0x1010, 0xA85E): HookStop("fixed_ip", 0xA861),
     (0x1010, 0xA861): HookStop("fixed_ips", ips=(0xA870, 0xA876)),
+    (0x1010, 0xA870): HookStop("dispatch_5ac8"),
+    (0x1010, 0xA873): HookStop("fixed_ips", ips=(0xA861, 0xA876)),
+    (0x1010, 0xA876): HookStop("fixed_ip", 0xA879),
+    (0x1010, 0xA879): HookStop("fixed_ip", 0xA87C),
     (0x1010, 0xA87C): HookStop("fixed_ips", ips=(0xA88B, 0xA891)),
+    (0x1010, 0xA88B): HookStop("fixed_ip", 0xA88E),
+    (0x1010, 0xA88E): HookStop("fixed_ips", ips=(0xA87C, 0xA891)),
+    (0x1010, 0xA891): HookStop("fixed_ip", 0xA894),
     (0x1010, 0xA894): HookStop("fixed_ips", ips=(0xA8BE, 0xA8C4)),
     (0x1010, 0xA8BE): HookStop("dispatch_7596"),
     (0x1010, 0xA8C1): HookStop("fixed_ips", ips=(0xA894, 0xA8C4)),
+    (0x1010, 0xA8C4): HookStop("fixed_ip", 0xA8C7),
     (0x1010, 0xA8C7): HookStop("scan_layer1_a8c7"),
     (0x1010, 0xA8F1): HookStop("dispatch_7596"),
     (0x1010, 0xA8F4): HookStop("fixed_ips", ips=(0xA8C7, 0xA8F7)),
+    (0x1010, 0xA8F7): HookStop("near_ret_or_fixed_ip", 0xA8FF),
     (0x1010, 0xA90C): HookStop("scan_present_pair_a90c"),
     (0x1010, 0xA90F): HookStop("scan_present_a90f"),
+    (0x1010, 0xA91E): HookStop("dispatch_5a92"),
+    (0x1010, 0xA921): HookStop("fixed_ips", ips=(0xA90F, 0xA924)),
+    (0x1010, 0xA924): HookStop("fixed_ip", 0xA927),
     (0x1010, 0xA927): HookStop("scan_present_a927"),
     (0x1010, 0xA93C): HookStop("near_ret"),
+    (0x1010, 0xA940): HookStop("fixed_ips", ips=(0xA9DA, 0xA9E0)),
+    (0x1010, 0x9FEA): HookStop("near_ret"),
+    (0x1010, 0xD04D): HookStop("near_ret_or_fixed_ips", ips=(0xD160, 0x44AF, 0xD19F, 0xD229, 0xD183, 0xD24A, 0xD1DC, 0xD1F8, 0xD14D, 0xD152, 0xD13A, 0xD159)),
+    (0x1010, 0xD007): HookStop.after_step("fixed_ips", ips=(0xD007, 0xD040)),
     (0x1010, 0xA936): HookStop("dispatch_5a92"),
     (0x1010, 0xA939): HookStop("fixed_ips", ips=(0xA927, 0xA93C)),
     (0x1010, 0xA9E0): HookStop("fixed_ips", ips=(0xAA01, 0xAA07)),
     (0x1010, 0xAA01): HookStop("dispatch_aa2b"),
     (0x1010, 0xAA04): HookStop("fixed_ips", ips=(0xA9E0, 0xAA07)),
+    (0x1010, 0xAA07): HookStop("fixed_ip", 0xAA10),
+    (0x1010, 0x77F6): HookStop("near_ret"),
     (0x1010, 0xAB34): HookStop("near_ret"),
     (0x1010, 0xAB4F): HookStop("near_ret"),
     (0x1010, 0xAC28): HookStop("near_ret_or_fixed_ip", 0xAA44),
@@ -384,12 +441,25 @@ DEFAULT_STOPS: dict[Addr, HookStop] = {
     (0x1010, 0xBC4B): HookStop("near_ret"),
     (0x1010, 0xAA2B): HookStop("dispatch_aa2b"),
     (0x1010, 0xAA10): HookStop("fixed_ips", ips=(0xAA1F, 0xAA25)),
+    (0x1010, 0xAA1F): HookStop("dispatch_aa2b"),
+    (0x1010, 0xAA22): HookStop("fixed_ips", ips=(0xAA10, 0xAA25)),
+    (0x1010, 0xAA25): HookStop("near_ret"),
     (0x1010, 0xAB10): HookStop("near_ret"),
     (0x1010, 0xABA3): HookStop("near_ret_or_fixed_ips", ips=(0xABC0, 0xABBD, 0xACD9)),
+    (0x1010, 0xAB59): HookStop("fixed_ip", 0xAB77),
+    (0x1010, 0xAB61): HookStop("fixed_ip", 0xAB77),
+    (0x1010, 0xAB69): HookStop("fixed_ip", 0xAB77),
+    (0x1010, 0xAB71): HookStop("fixed_ip", 0xAB77),
     (0x1010, 0xAB77): HookStop("near_ret_or_fixed_ips", ips=(0xAB8F, 0xAB8C, 0xACD9)),
+    (0x1010, 0xABCA): HookStop("near_ret_or_fixed_ip", 0xACD9),
     (0x1010, 0xEFAE): HookStop("dispatch_efae"),
     (0x1010, 0xAE09): HookStop("near_ret"),
+    (0x1010, 0xAE2C): HookStop("near_ret"),
+    (0x1010, 0xAE7D): HookStop("near_ret"),
     (0x1010, 0xAED8): HookStop("near_ret"),
+    (0x1010, 0xAD60): HookStop("near_ret"),
+    (0x1010, 0xAD5A): HookStop("near_ret"),
+    (0x1010, 0xD281): HookStop("near_ret"),
     (0x1010, 0xAD04): HookStop("near_ret_or_fixed_ips", ips=(0xABCA, 0xAB71, 0xAB69, 0xAB61, 0xAB59, 0xABA3)),
 }
 
@@ -461,7 +531,7 @@ class HookVerifier:
         targets = stop.targets(asm_cpu, before)
 
         self._restore_passthrough_hooks(asm_cpu)
-        asm_steps = self._run_asm_to_target(asm_cpu, targets)
+        asm_steps = self._run_asm_to_target(asm_cpu, targets, min_steps=stop.min_steps)
         with self._live_passthrough_hooks(cpu):
             handler(cpu)
         self.total_verified += 1
@@ -542,17 +612,34 @@ class HookVerifier:
     def _live_passthrough_hooks(self, cpu: CPU8086) -> "HookVerifier._LivePassthroughHooks":
         return HookVerifier._LivePassthroughHooks(self, cpu)
 
-    def _run_asm_to_target(self, cpu: CPU8086, targets: tuple[Addr, ...]) -> int:
+    def _run_asm_to_target(self, cpu: CPU8086, targets: tuple[Addr, ...], *, min_steps: int = 0) -> int:
         target_set = set(targets)
+        min_steps = max(0, int(min_steps))
         for steps in range(self.config.asm_max_steps + 1):
-            if cpu.addr() in target_set:
+            if steps >= min_steps and cpu.addr() in target_set:
                 return steps
-            if cpu.addr() in ((0x1010, 0x0679), (0x1010, 0x067F)) and cpu.mem.rb(0x1010, 0x066B) == 0:
+            if (
+                cpu.addr() in ((0x1010, 0x0679), (0x1010, 0x067F))
+                and cpu.addr() not in cpu.replacement_hooks
+                and cpu.mem.rb(0x1010, 0x066B) == 0
+            ):
                 from .games.overkill.sounds.pc_speaker import deliver_overkill_timer_irq0
 
                 if not deliver_overkill_timer_irq0(cpu):
                     raise HookVerifyDivergence(
                         "HOOK VERIFY ASM TIMER WAIT has no installed OVERKILL INT 08h "
+                        f"at={cpu.s.cs:04X}:{cpu.s.ip:04X}"
+                    )
+            if (
+                cpu.addr() in ((0x1010, 0x9921), (0x1010, 0x9926))
+                and cpu.addr() not in cpu.replacement_hooks
+                and cpu.mem.rb(cpu.s.ds & 0xFFFF, 0xBEFE) != 0
+            ):
+                from .games.overkill.sounds.pc_speaker import deliver_overkill_timer_irq0
+
+                if not deliver_overkill_timer_irq0(cpu):
+                    raise HookVerifyDivergence(
+                        "HOOK VERIFY ASM SOUND WAIT has no installed OVERKILL INT 08h "
                         f"at={cpu.s.cs:04X}:{cpu.s.ip:04X}"
                     )
             if cpu.addr() == (0x1010, 0x072F):
@@ -610,6 +697,7 @@ class HookVerifier:
         dos._seq_index = getattr(src.dos, "_seq_index", 0)
         dos._crtc_index = getattr(src.dos, "_crtc_index", 0)
         dos.current_scancode = src.dos.current_scancode
+        dos.console_input_fallback = src.dos.console_input_fallback
         dos.key_queue = list(src.dos.key_queue)
         dos.port_log = list(src.dos.port_log)
 
@@ -636,17 +724,26 @@ class HookVerifier:
             return [MemoryRange("full memory", 0, len(rt.program.memory.data))]
 
         s = rt.cpu.s
-        ranges = [
-            MemoryRange("CS:0000-FFFF", linear(s.cs, 0), 0x10000),
-            MemoryRange("CPU A000:0000-FFFF", 0xA0000, 0x10000),
-            MemoryRange("CPU B800:0000-7FFF", 0xB8000, 0x8000),
-            MemoryRange("EGA shadow planes", EGA_APERTURE, EGA_SHADOW_SIZE),
-            MemoryRange("CS:5B00-5BFF temp rows", linear(s.cs, 0x5B00), 0x0100),
-        ]
+        ranges = []
+
+        def add_range(name: str, start: int, size: int) -> None:
+            start = max(0, start)
+            size = max(0, size)
+            if any(existing.start == start and existing.size == size for existing in ranges):
+                return
+            ranges.append(MemoryRange(name, start, size))
+
+        add_range("CS:0000-FFFF", linear(s.cs, 0), 0x10000)
+        add_range("DS:0000-FFFF", linear(s.ds, 0), 0x10000)
+        add_range("SS:0000-FFFF", linear(s.ss, 0), 0x10000)
+        add_range("CPU A000:0000-FFFF", 0xA0000, 0x10000)
+        add_range("CPU B800:0000-7FFF", 0xB8000, 0x8000)
+        add_range("EGA shadow planes", EGA_APERTURE, EGA_SHADOW_SIZE)
+        add_range("CS:5B00-5BFF temp rows", linear(s.cs, 0x5B00), 0x0100)
         sp = s.sp & 0xFFFF
         stack_start = (sp - 0x40) & 0xFFFF
         if stack_start + 0x100 <= 0x10000:
-            ranges.append(MemoryRange("stack around SS:SP", linear(s.ss, stack_start), 0x100))
+            add_range("stack around SS:SP", linear(s.ss, stack_start), 0x100)
         return ranges
 
     def _diff_report(
@@ -725,8 +822,27 @@ class HookVerifier:
 
     def _dos_diff(self, asm_rt: Runtime, hook_rt: Runtime) -> list[str]:
         lines = []
-        if asm_rt.dos.vga_status_reads != hook_rt.dos.vga_status_reads:
-            lines.append(f"  vga_status_reads: asm={asm_rt.dos.vga_status_reads} hook={hook_rt.dos.vga_status_reads}")
+        for field in (
+            "next_handle",
+            "next_alloc_segment",
+            "allocation_limit_segment",
+            "video_mode",
+            "ticks",
+            "vga_status_reads",
+            "_seq_index",
+            "_crtc_index",
+            "current_scancode",
+            "console_input_fallback",
+        ):
+            av = getattr(asm_rt.dos, field)
+            hv = getattr(hook_rt.dos, field)
+            if av != hv:
+                lines.append(f"  {field}: asm={av!r} hook={hv!r}")
+        for field in ("allocations", "key_queue", "stdout"):
+            av = getattr(asm_rt.dos, field)
+            hv = getattr(hook_rt.dos, field)
+            if av != hv:
+                lines.append(f"  {field}: asm={av!r} hook={hv!r}")
         if asm_rt.program.memory.ega_map_mask != hook_rt.program.memory.ega_map_mask:
             lines.append(f"  ega_map_mask: asm={asm_rt.program.memory.ega_map_mask:02X} hook={hook_rt.program.memory.ega_map_mask:02X}")
         if asm_rt.program.memory.ega_read_plane != hook_rt.program.memory.ega_read_plane:
@@ -753,10 +869,33 @@ class HookVerifier:
                 f"    asm={asm_rt.dos.port_log[-8:]}\n"
                 f"    hook={hook_rt.dos.port_log[-8:]}"
             )
-        asm_files = {h: f.pos for h, f in asm_rt.dos.files.items()}
-        hook_files = {h: f.pos for h, f in hook_rt.dos.files.items()}
-        if asm_files != hook_files:
-            lines.append(f"  file offsets: asm={asm_files} hook={hook_files}")
+        lines.extend(self._file_diff(asm_rt, hook_rt))
+        return lines
+
+    @staticmethod
+    def _file_diff(asm_rt: Runtime, hook_rt: Runtime) -> list[str]:
+        lines = []
+        asm_handles = set(asm_rt.dos.files)
+        hook_handles = set(hook_rt.dos.files)
+        if asm_handles != hook_handles:
+            lines.append(f"  file handles: asm={sorted(asm_handles)} hook={sorted(hook_handles)}")
+        for handle in sorted(asm_handles & hook_handles):
+            af = asm_rt.dos.files[handle]
+            hf = hook_rt.dos.files[handle]
+            for field in ("path", "pos", "writable"):
+                av = getattr(af, field)
+                hv = getattr(hf, field)
+                if av != hv:
+                    lines.append(f"  file[{handle}].{field}: asm={av!r} hook={hv!r}")
+            if len(af.data) != len(hf.data):
+                lines.append(f"  file[{handle}].data length: asm={len(af.data)} hook={len(hf.data)}")
+                continue
+            if af.data != hf.data:
+                first = next(i for i, (a, h) in enumerate(zip(af.data, hf.data)) if a != h)
+                lines.append(
+                    f"  file[{handle}].data: first diff at {first} "
+                    f"asm={af.data[first]:02X} hook={hf.data[first]:02X}"
+                )
         return lines
 
     @staticmethod

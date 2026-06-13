@@ -1,3 +1,164 @@
+# 2026-06-13 artifact cleanup checkpoint
+
+Repository cleanup pass after the hook-integrity work.  The runtime/code
+behavior was not intentionally changed.
+
+Removed/generated-pruned material:
+
+- old root `artifacts/snapshot_play_*` gameplay snapshots that were not regression fixtures;
+- old root `artifacts/play_*` captures that were not regression fixtures;
+- `artifacts/tmp_*` stop/verify scratch snapshots that were not regression fixtures;
+- generated `artifacts/frame_verify/` PNG/VRAM diff dumps;
+- non-test, stale `artifacts/evidence/*` probe snapshots;
+- root scratch helpers `dump_at.py` and `headless_coverage.py`.
+
+Kept durable artifacts only:
+
+- `artifacts/test_oracles/*` used by regression tests, including promoted former root snapshots;
+- evidence snapshots still referenced by regression tests;
+- `artifacts/evidence/hook_verify_tandy_20260613_190326` as the current
+  headless hook-verifier seed;
+- `artifacts/hook_coverage_cache.json`;
+- `artifacts/README.md` with the retention policy.
+
+Validation after cleanup:
+
+```text
+python -m pytest -q
+185 passed
+
+python -m compileall -q overkill_port tests scripts
+OK
+
+python scripts/verify_hooks_headless.py --snapshot artifacts/evidence/hook_verify_tandy_20260613_190326 --verify-max 1000 --fast-ranges
+OK HOOK VERIFY LIMIT REACHED verified=1000
+```
+
+Size changed from roughly 183 MB to roughly 30 MB while keeping all regression oracles.
+
+---
+
+## 2026-06-13 Tandy hook integrity / C054 cleanup pass
+
+Continued from the `1010:BC4B overkill_object_postmove_bc4b` full-memory
+divergence at call 3 on `artifacts\snapshot_play_tandy_20260613_190326`.
+
+Results:
+
+- Added `scripts/verify_hooks_headless.py`, a pygame-free live hook verifier for
+  snapshot runs.  It mirrors `play.py --verify-hooks` but can run in CI/minimal
+  shells and automatically disables non-CGA interactive hooks such as `1010:58DF`
+  for Tandy/EGA snapshots unless explicitly requested.
+- Refactored the duplicated `C054:C12D` effect-spawn tail into
+  `_run_c054_c12d_effect_spawn_tail`.  The helper preserves the visible dead
+  stack scratch from `PUSH BX`, `PUSH BP`, `CALL 7420`, and decrements
+  `DS:A47E`, so this is cleanup only, not a behavior change.
+- Removed temporary `tmp_*.py` debugging scripts from the working tree after the
+  reusable headless verifier replaced them.
+
+Verification:
+
+```text
+python -m pytest -q
+# 185 passed
+python scripts/verify_hooks_headless.py --snapshot artifacts/snapshot_play_tandy_20260613_190326 --verify-max 9000
+# HOOK VERIFY LIMIT REACHED verified=9000, no divergence
+python scripts/verify_hooks_headless.py --snapshot artifacts/snapshot_play_tandy_20260613_190326 --verify-max 10000 --fast-ranges
+# HOOK VERIFY LIMIT REACHED verified=10000, no divergence
+```
+
+Note: a full-memory 10k run was attempted too, but it did not finish within the
+available sandbox timeout after passing the 9k checkpoint without divergence.
+
+## 2026-06-13 strict hook verifier cold-start cleanup
+
+Followed up on `scripts\play.py --verify-hooks --verify-stop-on-diff` after
+full-memory verification became the default.
+
+Fixes:
+
+- `HookVerifier._clone_runtime()` now copies `DOSMachine.console_input_fallback`.
+  Interactive play sets this to `None`; the ASM oracle clone was accidentally
+  reverting to the default Esc fallback and producing a false DOS/state diff at
+  `1010:0FE4`.
+- `1010:450C` verifier metadata now treats the lifted routine as the whole
+  4-plane list parent ending at `44AA`, not as a single-block loopback to
+  `450C`.
+- `1010:450C` now preserves the dead-stack scratch word left by the original
+  `CALL 44D7` / `RET` path (`SS:SP-2 = 450F`), which full-memory verification
+  observes.
+- Added verifier metadata for already-understood helpers `41A6`, `41DA`,
+  `50C9`, and `58DF`.
+- `1010:58DF` now self-disables for non-CGA modes before touching stack,
+  registers, or memory.  The previous guard happened after setup side effects,
+  which made raw Tandy all-hooks verification diverge.
+
+Verification:
+
+```text
+C:\Users\Jiri\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe scripts\run_tests.py
+# 185 passed, 0 failed
+headless Tandy cold start with command_tail=(0D,02), --verify-hooks, --verify-require-metadata, --verify-max 500
+# HOOK VERIFY LIMIT REACHED verified=500, no divergence
+```
+
+## 2026-06-13 hook verifier full-state default
+
+Changed live hook verification so full memory comparison is the default instead
+of an opt-in mode.  The old named-range verifier can still be requested with
+`--verify-fast-ranges` for profiling/debug sessions, but normal
+`--verify-hooks` should now catch object/gameplay state divergence immediately
+even when the changed byte is not in CS/video/stack helper ranges.
+
+Also broadened DOS/BIOS/runtime-side comparisons to include allocator state,
+open file metadata/data, keyboard queues, text output, video/timer counters, and
+speaker/port tracking.
+
+Verification:
+
+```text
+C:\Users\Jiri\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe scripts\run_tests.py
+# 185 passed, 0 failed
+C:\Users\Jiri\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -m overkill_port.cli continue-snapshot assets\OVERKILL.UNLZEXE.EXE artifacts\snapshot_play_tandy_20260613_181804 --game-root assets --steps 50000 --verify-hook 1010:BC45 --verify-hook 1010:BC4B --verify-stop-on-diff --verify-max 20 --out-dir artifacts\tmp_verify_full_memory_smoke
+# HOOK VERIFY LIMIT REACHED verified=20, no divergence
+```
+
+## 2026-06-13 BEC5 second-counter collision tail fix
+
+Investigated `artifacts\snapshot_play_tandy_20260613_181804`, where enemies
+appeared to survive longer than the reference.
+
+Findings:
+
+- Frame verification diverged at frame 42.
+- The first gameplay-state difference was `DS:2078`: reference decremented the
+  linked counter from `03` to `02`, while the candidate left it at `03`.
+- A watchpoint showed the reference write happened at original `1010:BFFE`,
+  inside the shared `BFC7` death/transition tail.
+- The lifted `BEC5` variant-2, `BEDC=0` path handled the `BF46` "second counter
+  zero" branch by leaving `IP=BF46`.  That is not safe inside the composed
+  `BC45/BC4B` parent path because the parent unwinds and overwrites the
+  continuation.  The original `BF46` branch jumps to `BFC7`, so the lift must
+  run the BFC7 tail inline.
+
+Fix:
+
+- `BEC5` now routes the observed second-counter-zero path into the shared BFC7
+  tail, matching `BF46 -> BFC7`.
+- Added a focused regression for the exact linked-counter decrement at
+  `DS:2078`.
+- Hook verification now defaults to full-memory comparison, so object/counter
+  state is checked even when it lives outside the old named ranges.
+
+Verification:
+
+```text
+C:\Users\Jiri\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe scripts\run_tests.py
+# 184 passed, 0 failed
+C:\Users\Jiri\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe scripts\play.py --snapshot artifacts\snapshot_play_tandy_20260613_181804 --verify-frames --verify-frame-max 60 --verify-frame-source both
+# FRAME VERIFY OK frames=60
+```
+
 ## 2026-06-13 interactive Tandy timer ordering guard
 
 Investigated a hidden level-start issue where the initial enemy sequence played
@@ -2250,3 +2411,56 @@ python scripts/run_tests.py
 Smoke coverage with dummy SDL now reports cold-start startup materialization as
 `startup_graphics` instead of `asset_codecs`/`tandy_renderer`, and `overlay` is
 reserved for the real `254A:*` overlay helpers.
+## 2026-06-13 - Hook wrapper refactor / naming audit
+
+- Moved asset/loading codec hook wrappers from `overkill_port/replacements.py` to
+  `overkill_port/games/overkill/hook_wrappers/asset_codecs.py`.
+- Kept `overkill_port.replacements` as the compatibility aggregate import that
+  registers all hooks and re-exports existing test imports.
+- Normalized registry labels so all 222 registered hooks include an address
+  suffix.
+- Removed semantic-noise `_fast` from the two asset-codec registry labels where
+  it described implementation speed rather than original-game behavior.
+- Added `docs/hook_naming_audit.md` with the current naming rules and next safe
+  extraction targets.
+- Verification: `python -m pytest -q` => 185 passed;
+  `python scripts/verify_hooks_headless.py --snapshot artifacts/evidence/hook_verify_tandy_20260613_190326 --verify-max 1000 --fast-ranges` => OK.
+
+
+
+## 2026-06-13 - Hook wrapper refactor pass 2
+
+- Extracted shared hook-wrapper mechanics from `overkill_port/replacements.py`
+  into `overkill_port/games/overkill/hook_wrappers/common.py`:
+  runtime-patched-code guard plus near-CALL wrapper helpers.
+- Moved text-rendering hook wrappers into
+  `overkill_port/games/overkill/hook_wrappers/text.py`.
+- Moved timer/PC-speaker hook wrappers into
+  `overkill_port/games/overkill/hook_wrappers/sounds.py`.
+- Kept `overkill_port.replacements` as the aggregate import/re-export surface so
+  old tests and scripts keep working.
+- Renamed misleading shared layer-sprite registry labels:
+  `768E`, `75A6`, and `7746` no longer claim Tandy-only ownership.  Old
+  `overkill_tandy_*` Python names remain as compatibility aliases.
+- Registered hook count remains 222.
+- Verification: `python -m pytest -q` => 185 passed;
+  `python scripts/verify_hooks_headless.py --snapshot artifacts/evidence/hook_verify_tandy_20260613_190326 --verify-max 1000 --fast-ranges` => OK.
+
+Next safe extraction target is still renderer wrappers, but split it carefully:
+move Tandy-only wrappers separately from shared layer-sprite scan/dispatch glue.
+Do not collapse object behavior names into gameplay semantics until trace evidence
+proves the object role.
+
+## 2026-06-13 — hook cleanup pass 3: duplicate pruning and label alignment
+
+- Renamed three asset-codec wrapper functions so decorated Python names match
+  the registry labels: `overkill_file_checksum_loop_c916`,
+  `overkill_packed_read_byte_0624`, and `overkill_packed_read_word_le_0615`.
+- Kept the older unsuffixed names as compatibility aliases exported through
+  `overkill_port.replacements`.
+- Replaced the stale duplicate implementation in
+  `games/overkill/asset_codecs/startup_graphics.py` with a compatibility shim
+  that re-exports `games/overkill/rendering/startup_graphics.py`.
+- Static hook audit now reports 222 hooks and no function/registry-label
+  mismatch.
+

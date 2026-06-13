@@ -7,6 +7,7 @@ kept outside the generic VM and outside the hook-registration module.
 from __future__ import annotations
 
 from overkill_port.cpu import CF
+from overkill_port.games.overkill.gameplay.view_window import _run_view_window_check_aa46
 
 SIG_PLAYER_HAZARD_OBJECT_SCAN_BDE3 = bytes.fromhex(
     "83 3f 00 74 4d 83 7f 0a 01 74 47 83 7f 14 01 75 41"
@@ -88,7 +89,8 @@ def run_postmove_contact_window_aa71(cpu) -> None:
     x = mem.rw(ss, (bp + 0x02) & 0xFFFF)
     _cmp_word(cpu, x, 0)
     if _signed16(x) < 0:
-        raise RuntimeError("unverified original-code path reached in 1010:AA71: negative-X branch")
+        _run_view_window_check_aa46(cpu)
+        return
 
     y = mem.rw(ss, (bp + 0x04) & 0xFFFF)
     guard = mem.rw(ds, 0x2380)
@@ -106,7 +108,9 @@ def run_postmove_contact_window_aa71(cpu) -> None:
     cpu.set_sub_flags(upper, 0x002C, upper - 0x002C, 16)
     _cmp_word(cpu, lower, guard)
     if _signed16(lower) > _signed16(guard):
-        raise RuntimeError("unverified original-code path reached in 1010:AA71: upper AA71 branch")
+        cpu.set_flag(CF, False)
+        s.ip = cpu.pop()
+        return
 
     a8c2 = mem.rw(ds, 0xA8C2)
     _cmp_word(cpu, a8c2, 0x0001)
@@ -123,7 +127,9 @@ def run_postmove_contact_window_aa71(cpu) -> None:
         s.ip = cpu.pop()
         return
 
-    raise RuntimeError("unverified original-code path reached in 1010:AA71: upper AA71 branch")
+    cpu.set_flag(CF, False)
+    s.ip = cpu.pop()
+    return
 
 
 def run_object_deactivate_logic_dispatch_c054(cpu) -> None:
@@ -283,12 +289,46 @@ def run_object_slot_scan_ac97(cpu) -> None:
                                     other = mem.rw(ds, (bx + 0x0E) & 0xFFFF)
                                     _cmp_word(cpu, si, other)
                                     if si != other:
-                                        s.ax = ax
-                                        s.bx = bx
-                                        s.cx = cx & 0xFFFF
-                                        s.di = di
-                                        s.ip = 0xACD9
-                                        return
+                                        # ACD9 is not always a terminal collision
+                                        # continuation.  The hot gameplay path
+                                        # usually proves that the candidate is not
+                                        # an actionable type-4/type-5 overlap and
+                                        # then jumps straight back to ACD2 to keep
+                                        # scanning.  Consuming that tiny tail here
+                                        # keeps AC97 as one whole slot-scan hook
+                                        # instead of bouncing through interpreted
+                                        # ACD9/ACD2 glue for every rejected overlap.
+                                        kind_16 = mem.rw(ds, (bx + 0x16) & 0xFFFF)
+                                        _cmp_word(cpu, kind_16, 0x0005)
+                                        if kind_16 == 0x0005:
+                                            s.ax = ax
+                                            s.bx = bx
+                                            s.cx = cx & 0xFFFF
+                                            s.di = di
+                                            s.ip = 0xACD9
+                                            return
+
+                                        state_20 = mem.rw(ds, (bx + 0x14) & 0xFFFF)
+                                        _cmp_word(cpu, state_20, 0x0001)
+                                        if state_20 != 0x0001:
+                                            s.ax = ax
+                                            s.bx = bx
+                                            s.cx = cx & 0xFFFF
+                                            s.di = di
+                                            cpu.set_flag(CF, True)
+                                            s.ip = cpu.pop()
+                                            return
+
+                                        _cmp_word(cpu, kind_16, 0x0004)
+                                        if kind_16 == 0x0004:
+                                            s.ax = ax
+                                            s.bx = bx
+                                            s.cx = cx & 0xFFFF
+                                            s.di = di
+                                            s.ip = 0xACD9
+                                            return
+                                        # Otherwise mirror ACD9 -> ACD2 and keep
+                                        # scanning from the next slot below.
 
         old_bx = bx
         bx = (bx + 0x0038) & 0xFFFF

@@ -182,6 +182,12 @@ Run tests:
 python scripts/run_tests.py
 ```
 
+Run the lightweight lint pass directly:
+
+```bash
+python scripts/lint.py
+```
+
 Launch interactive play/viewer:
 
 ```bash
@@ -264,15 +270,32 @@ when their original addresses are physically near loader or overlay code.
 
 ## Artifacts
 
-`artifacts/` keeps the root focused on live gameplay captures.
+`artifacts/` is kept intentionally small. It should contain only durable oracle
+data, compact caches, and snapshots that are still used by tests, documented
+findings, or the current verifier workflow.
 
-Keep the live `play_*` captures in the root of `artifacts/`.
-Keep regression-test snapshots in `artifacts/test_oracles/`.
-Keep other evidence, scratch traces, and one-off probes in `artifacts/evidence/`
-so they stay separate from gameplay snapshots.
+Current layout:
 
-Generated scratch traces and one-off probes can be pruned once they stop
-carrying evidence value.
+```text
+artifacts/
+  README.md                         retention policy
+  hook_coverage_cache.json          compact hook coverage/cost cache
+  test_oracles/                     snapshots loaded directly by regression tests
+  evidence/                         minimal non-test evidence still in active use
+```
+
+Generated local captures should not stay in the repository by default:
+
+```text
+artifacts/snapshot_play_*/          live snapshots from scripts/play.py
+artifacts/play_*/                   gameplay captures
+artifacts/tmp_*/                    one-off stop/verify snapshots
+artifacts/frame_verify/             PNG/VRAM frame diff dumps
+```
+
+Promote a generated snapshot into `test_oracles/` or `evidence/` only when a
+test, documented finding, or active verifier command depends on it. Prune it
+once that evidence value is gone.
 
 Snapshot directories usually contain:
 
@@ -282,8 +305,13 @@ state.json
 trace_tail.txt
 ```
 
-Do not delete evidence snapshots that justify hooks or findings unless cleanup is
-explicitly requested.
+The current headless hook-verifier seed is:
+
+```bash
+python scripts/verify_hooks_headless.py \
+  --snapshot artifacts/evidence/hook_verify_tandy_20260613_190326 \
+  --verify-max 1000
+```
 
 ## Documentation Map
 

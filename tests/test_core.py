@@ -39,6 +39,26 @@ def test_hook_verify_range_diff_keeps_exact_mismatch_report():
     assert "first diff: 0000C asm=00 hook=34" in report
 
 
+def test_hook_verify_defaults_to_full_memory_image():
+    from types import SimpleNamespace
+    from overkill_port.hook_verify import HookVerifier, HookVerifierConfig
+
+    mem = Memory()
+    hv = HookVerifier.__new__(HookVerifier)
+    hv.config = HookVerifierConfig()
+    rt = SimpleNamespace(
+        program=SimpleNamespace(memory=mem),
+        cpu=SimpleNamespace(s=CPUState(cs=0x1010, ds=0x2000, es=0x2000, ss=0x2000)),
+    )
+
+    ranges = hv._memory_ranges(rt)
+
+    assert len(ranges) == 1
+    assert ranges[0].name == "full memory"
+    assert ranges[0].start == 0
+    assert ranges[0].size == len(mem.data)
+
+
 def test_rep_movsb_backward():
     mem = Memory()
     mem.load(0x1000, 0, bytes([1, 2, 3, 4]))
@@ -466,6 +486,33 @@ def test_coverage_telemetry_counts_interpreted_and_verified_hooks():
     assert snap["islands"]["asset_codecs"].hooked_verified_equiv == 123
 
 
+def test_coverage_summary_reports_grouped_interpreted_regions():
+    from overkill_port.coverage import CoverageTelemetry, OverkillCoverageClassifier
+
+    cov = CoverageTelemetry(classifier=OverkillCoverageClassifier(), cache_path=None)
+    for ip in (0xACD9, 0xACDD, 0xACDF, 0xACE3, 0xACE8, 0xACEC):
+        for _ in range(10):
+            cov.record_interpreted_instruction((0x1010, ip))
+    for _ in range(100):
+        cov.record_interpreted_instruction((0x1010, 0xADDF))
+
+    snap = cov.snapshot(top_n=4)
+    regions = snap["top_interpreted_regions"]
+    assert regions[0]["start"] == (0x1010, 0xADDF)
+    assert regions[0]["hits"] == 100
+    assert regions[0]["island"] == "gameplay_objects"
+    assert any(
+        item["start"] == (0x1010, 0xACD9)
+        and item["end"] == (0x1010, 0xACEC)
+        and item["hits"] == 60
+        and item["island"] == "collision"
+        for item in regions
+    )
+    text = cov.format_summary(top_n=4)
+    assert "per instruction" in text
+    assert "nearby IPs grouped" in text
+
+
 def test_cpu_emits_coverage_for_generic_asm_and_hook():
     from overkill_port.coverage import CoverageTelemetry, OverkillCoverageClassifier
 
@@ -542,3 +589,12 @@ def test_all_registered_overkill_hooks_have_non_unknown_island_classification():
         if classifier.classify(addr, repl.name) == "unknown"
     ]
     assert unknown == []
+
+
+def test_cold_start_frontier_manifest_classifies_same_ip_and_bootstrap_leftovers():
+    from overkill_port.games.overkill.frontier_manifest import FRONTIER_BY_ADDR, FrontierCategory
+
+    assert FRONTIER_BY_ADDR[(0x1010, 0xD007)].category is FrontierCategory.FINAL_ORCHESTRATOR
+    assert FRONTIER_BY_ADDR[(0x1010, 0xD03E)].category is FrontierCategory.SAME_IP_LOOP_GATE
+    assert FRONTIER_BY_ADDR[(0x32FF, 0x0052)].category is FrontierCategory.DO_NOT_HOOK_BOOTSTRAP
+    assert FRONTIER_BY_ADDR[(0x1010, 0xD03E)].owner == (0x1010, 0xD007)

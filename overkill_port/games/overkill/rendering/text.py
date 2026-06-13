@@ -28,7 +28,9 @@ SIG_TANDY_TEXT_GLYPH_3153 = bytes.fromhex(
 SIG_TEXT_DISPATCH_519A = bytes.fromhex(
     "2e 8e 06 96 95 83 3e a2 21 00 74 12 2e 8b 1e bc 95 d1 e3 2e ff a7 b2 51"
 )
+SIG_TEXT_STRING_LOOP_518C = bytes.fromhex("8a 46 00 0a c0 75 01 c3 e8 03 00 45 eb f2")
 SIG_SCORE_NIBBLE_TEXT_5F06 = bytes.fromhex("24 0f 04 30 e9 8d f2")
+SIG_SCORE_BYTE_TEXT_5EF9 = bytes.fromhex("50 d0 e8 d0 e8 d0 e8 d0 e8 e8 01 00 58")
 
 
 @dataclass(frozen=True)
@@ -68,6 +70,51 @@ def _add_mem_word(cpu, seg: int, off: int, value: int) -> None:
     result = old + addend
     cpu.mem.ww(seg, off, result)
     cpu.set_add_flags(old, addend, result, 16)
+
+
+
+def run_text_string_loop_518c(cpu, runtime: TextRenderRuntime) -> None:
+    """Lift OVERKILL 1010:518C NUL-terminated text loop.
+
+    Original body::
+
+        518C  mov al,[bp+0]
+        518F  or  al,al
+        5191  jnz 5194
+        5193  ret
+        5194  call 519A
+        5197  inc bp
+        5198  jmp 518C
+
+    The helper prints the inline string at SS:BP through the already lifted
+    519A character dispatcher.  Control bytes 10h/11h deliberately let 519A
+    adjust BP first; the parent INC BP below then matches the original skip over
+    the control payload.
+    """
+    if runtime.self_disable_if_patched(cpu, 0x518C, SIG_TEXT_STRING_LOOP_518C, "overkill_text_string_loop_518c"):
+        return
+
+    s = cpu.s
+    ss = s.ss & 0xFFFF
+    mem = cpu.mem
+    while True:
+        al = mem.rb(ss, s.bp & 0xFFFF)
+        s.ax = (s.ax & 0xFF00) | al
+        cpu.set_logic_flags(al, 8)  # OR AL,AL
+        if al == 0:
+            s.ip = cpu.pop()
+            return
+
+        cpu.push(0x5197)
+        run_text_dispatch_519a(cpu, runtime)
+        if (s.ip & 0xFFFF) != 0x5197:
+            raise RuntimeError(f"519A returned to unexpected IP {s.ip:04X} inside 518C text loop")
+        old_bp = s.bp & 0xFFFF
+        old_cf = cpu.get_flag(CF)
+        result = (old_bp + 1) & 0xFFFF
+        s.bp = result
+        cpu.set_add_flags(old_bp, 1, old_bp + 1, 16)
+        cpu.set_flag(CF, old_cf)
 
 
 def run_text_dispatch_519a(cpu, runtime: TextRenderRuntime) -> None:
@@ -169,6 +216,29 @@ def run_score_nibble_text_5f06(cpu, runtime: TextRenderRuntime) -> None:
     cpu.set_reg8(0, result & 0xFF)
     cpu.set_add_flags(old, 0x30, result, 8)
     run_text_dispatch_519a(cpu, runtime)
+
+
+def run_score_byte_text_5ef9(cpu, runtime: TextRenderRuntime) -> None:
+    """Lift ``1010:5EF9`` as high-nibble then low-nibble text output.
+
+    The original body is small glue around the already verified ``5F06`` helper:
+    it saves AX, shifts AL right four times, calls ``5F06`` for the high nibble,
+    restores AX, then falls through into ``5F06`` for the low nibble.  Keeping the
+    real push/call scratch words preserves full-memory verifier comparisons.
+    """
+    if runtime.self_disable_if_patched(cpu, 0x5EF9, SIG_SCORE_BYTE_TEXT_5EF9, "overkill_score_byte_text_5ef9"):
+        return
+
+    original_ax = cpu.s.ax & 0xFFFF
+    cpu.push(original_ax)
+    cpu.set_reg8(0, (original_ax >> 4) & 0x0F)
+    cpu.push(0x5F05)
+    run_score_nibble_text_5f06(cpu, runtime)
+    if (cpu.s.ip & 0xFFFF) != 0x5F05:
+        raise RuntimeError(f"5F06 returned to unexpected IP {cpu.s.ip:04X} inside 5EF9 score-byte helper")
+
+    cpu.s.ax = cpu.pop()
+    run_score_nibble_text_5f06(cpu, runtime)
 
 
 def run_tandy_text_glyph_3153(cpu, runtime: TextRenderRuntime) -> None:

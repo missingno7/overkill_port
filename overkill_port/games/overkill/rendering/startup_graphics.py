@@ -338,6 +338,11 @@ def expand_4plane_list_450c(cpu):
         if guard > 100_000:
             raise RuntimeError("OVERKILL 450C 4-plane list did not reach terminator")
 
+        # The original enters 44D7 through CALL 44D7, then 44D7 returns to
+        # 450F.  SP is restored, but the pushed return word remains below SP and
+        # full-memory verification observes that dead-stack scratch byte-for-byte.
+        cpu.mem.ww(cpu.s.ss & 0xFFFF, (cpu.s.sp - 2) & 0xFFFF, 0x450F)
+
         # 44D7: MOV AX,[SI]; OR AX,[SI+2]; JNZ 44DF; RET
         first = cpu.mem.rw(ds, cpu.s.si)
         second = cpu.mem.rw(ds, (cpu.s.si + 2) & 0xFFFF)

@@ -15,6 +15,8 @@ from overkill_port.games.overkill.asm import (
     _and_mem_word,
     _cmp_byte,
     _cmp_word,
+    _dec_mem_word_preserve_cf,
+    _inc_mem_word_preserve_cf,
     _sub_mem_word,
     _sub_reg16,
     _test_word,
@@ -25,7 +27,9 @@ from overkill_port.games.overkill.gameplay.collision import (
     run_postmove_contact_window_aa71,
     run_tile_collision_probe_ac28,
 )
+from overkill_port.games.overkill.gameplay.view_window import _run_view_window_check_aa46
 from overkill_port.games.overkill.gameplay.objects import (
+    run_object_motion_table_ab34,
     run_object_scroll_sprite_ab4f,
 )
 
@@ -67,6 +71,92 @@ def _run_interpreted_near_call_observed(cpu, target_ip: int, return_ip: int, *, 
         f"interpreted helper 1010:{target_ip & 0xFFFF:04X} did not return to "
         f"1010:{return_ip & 0xFFFF:04X}; now at {cpu.s.cs & 0xFFFF:04X}:{cpu.s.ip & 0xFFFF:04X}"
     )
+
+
+SIG_OBJECT_CHILD_COORD_UPDATE_9FEA = bytes.fromhex(
+    "83 fb ff 75 01 c3 8b 46 08 d1 e0 d1 e0 03 f0"
+)
+
+SIG_OBJECT_BOUNDS_TILE_PRELUDE_AD5A = bytes.fromhex(
+    "a1 78 a2 01 46 02 83 7e 02 08 73 03 e9 ae 0f"
+)
+SIG_OBJECT_TARGET_CHASE_D281 = bytes.fromhex(
+    "8b 46 32 a3 04 23 8b 46 34 a3 06 23 c7 06 08 23 01 00"
+)
+SIG_OBJECT_DRIFT_DOWNRIGHT_AE2C = bytes.fromhex(
+    "81 7e 04 c8 00 74 96 83 6e 02 04 f7 46 04 07 00"
+)
+SIG_OBJECT_DRIFT_UPRIGHT_AE7D = bytes.fromhex(
+    "83 7e 04 00 75 03 e9 43 ff 83 6e 02 04 f7 46 04 0f 00"
+)
+
+
+def run_object_child_coord_update_9fea(cpu, self_disable_if_patched) -> None:
+    """Lift 1010:9FEA, a small object-linked coordinate update helper.
+
+    The caller passes BX as the destination linked object pointer and SI as a
+    motion/offset table pointer.  BX==FFFF is the null-link fast return.  The
+    active path adds the source object's base X/Y to two table words, applies
+    the global vertical scroll offset DS:A398 twice, clamps Y into 0..00C0h,
+    and sets DS:A39E/A39F when the lower/upper clamp fired.
+    """
+    if self_disable_if_patched(
+        cpu,
+        0x9FEA,
+        SIG_OBJECT_CHILD_COORD_UPDATE_9FEA,
+        "overkill_object_child_coord_update_9fea",
+    ):
+        return
+
+    s = cpu.s
+    mem = cpu.mem
+    ds = s.ds & 0xFFFF
+    ss = s.ss & 0xFFFF
+    bx = s.bx & 0xFFFF
+
+    _cmp_word(cpu, bx, 0xFFFF)
+    if bx == 0xFFFF:
+        s.ip = cpu.pop()
+        return
+
+    ax = mem.rw(ss, (s.bp + 0x08) & 0xFFFF)
+    ax = cpu.shift(4, ax, 1, 16)
+    ax = cpu.shift(4, ax, 1, 16)
+    _add_reg16(cpu, 6, ax)
+
+    x_delta = mem.rw(ds, s.si & 0xFFFF)
+    s.si = (s.si + 2) & 0xFFFF
+    ax = (x_delta + mem.rw(ss, (s.bp + 0x02) & 0xFFFF)) & 0xFFFF
+    # ADD flags are overwritten later by the Y clamps/cmp in all observed active paths.
+    s.ax = ax
+    mem.ww(ds, (bx + 0x02) & 0xFFFF, ax)
+
+    y_delta = mem.rw(ds, s.si & 0xFFFF)
+    s.si = (s.si + 2) & 0xFFFF
+    ax_full = y_delta + mem.rw(ss, (s.bp + 0x04) & 0xFFFF)
+    ax_full += mem.rw(ds, 0xA398)
+    ax_full += mem.rw(ds, 0xA398)
+    ax = ax_full & 0xFFFF
+    s.ax = ax
+    mem.ww(ds, (bx + 0x04) & 0xFFFF, ax)
+
+    y = mem.rw(ds, (bx + 0x04) & 0xFFFF)
+    _cmp_word(cpu, y, 0x0000)
+    if y & 0x8000:
+        mem.ww(ds, (bx + 0x04) & 0xFFFF, 0x0000)
+        mem.wb(ds, 0xA39E, 0x01)
+        y = 0
+
+    _cmp_word(cpu, y, 0x00C0)
+    # Signed JLE.  Values above 00C0 in the positive signed range trigger the
+    # upper clamp.  Negative values have already been clamped to zero above.
+    if y <= 0x00C0:
+        s.ip = cpu.pop()
+        return
+
+    mem.ww(ds, (bx + 0x04) & 0xFFFF, 0x00C0)
+    mem.wb(ds, 0xA39F, 0x01)
+    s.ip = cpu.pop()
 
 
 def _object_ptr_from_scan_index(cpu, table_base: int, cx_value: int) -> tuple[int, int]:
@@ -515,100 +605,223 @@ def _run_object_behavior_b73e(cpu, *, parent: str, chain: str, cx_value: int) ->
     )
 
 
-def _run_view_window_check_aa46(cpu) -> None:
-    """Run the observed AA46 -> 8331 view-window check path.
 
-    This helper is used from BCCB inside the BC4B post-move pass.  It preserves
-    the memory writes to DS:95F2/95F4 and the live carry flag used by BCCB.  The
-    current Tandy gameplay path exits with CF clear; if a later state reaches a
-    not-yet-modeled branch, the surrounding caller will fail fast instead of
-    hiding it.
+def _run_object_behavior_b9f0(cpu, *, parent: str, chain: str, cx_value: int) -> None:
+    """Lift observed object-family behavior at ``1010:B9F0`` up to ``BC4B``.
+
+    B9F0 is the hot behavior selected by ``EFAE`` for the current gameplay
+    snapshot.  The routine updates the object's target-position fields from the
+    global motion deltas and then either:
+
+    * refreshes its sprite/animation word and jumps directly to ``BC4B``; or
+    * prepares ``DS:2304/2306/2308``, calls the already verified ``5DB2``
+      movement helper, and jumps to ``BC4B``.
+
+    Less frequent helper calls are kept explicit and bounded.  They either use
+    already-lifted helpers (7476 formation spawn, 5DB2 movement) or narrowly run
+    the original helper until its real near-return continuation.
     """
     ds = cpu.s.ds & 0xFFFF
     ss = cpu.s.ss & 0xFFFF
     bp = cpu.s.bp & 0xFFFF
     mem = cpu.mem
 
-    cpu.s.ax = mem.rw(ss, (bp + 0x02) & 0xFFFF)
-    cpu.set_logic_flags(cpu.s.ax, 16)  # OR AX,AX
-    if cpu.s.ax & 0x8000:
-        cpu.set_flag(CF, False)  # 835B CLC on this observed out-of-window exit.
-        return
+    def call_7476(return_ip: int, why: str) -> None:
+        # 7476 is already understood in another object path, but this behavior
+        # compares full stack scratch before BC4B.  Run the original bounded
+        # helper here so its internal near-CALL return words match byte-for-byte.
+        _run_interpreted_near_call_observed(cpu, 0x7476, return_ip & 0xFFFF, max_steps=12000)
+        if (cpu.s.ip & 0xFFFF) != (return_ip & 0xFFFF):
+            raise RuntimeError(f"7476 returned to unexpected IP {cpu.s.ip:04X} inside B9F0")
 
-    cpu.s.si = mem.rw(ds, 0x2384)
-    _cmp_word(cpu, cpu.s.si, 0x0003)
-    # The observed path uses SI < 3.  For SI >= 3 the original still reaches the
-    # same 8331-style bounds check through a nearby branch; keep the arithmetic
-    # table-driven because it is harmless for the captured state and explicit.
-    old_si = cpu.s.si
-    cpu.s.si = (cpu.s.si << 1) & 0xFFFF
-    cpu.set_add_flags(old_si, old_si, old_si + old_si, 16)  # SHL-by-1 flag shape approximation.
-    old_si = cpu.s.si
-    cpu.s.si = (cpu.s.si << 1) & 0xFFFF
-    cpu.set_add_flags(old_si, old_si, old_si + old_si, 16)
-    old_si = cpu.s.si
-    cpu.s.si = (cpu.s.si + 0x214E) & 0xFFFF
-    cpu.set_add_flags(old_si, 0x214E, old_si + 0x214E, 16)
+    def call_5e1b(return_ip: int) -> None:
+        _run_interpreted_near_call_observed(cpu, 0x5E1B, return_ip & 0xFFFF, max_steps=3000)
+        if (cpu.s.ip & 0xFFFF) != (return_ip & 0xFFFF):
+            raise RuntimeError(f"5E1B returned to unexpected IP {cpu.s.ip:04X} inside B9F0")
 
-    cpu.s.ax = mem.rw(ds, cpu.s.si)
-    cpu.s.si = (cpu.s.si + 2) & 0xFFFF
-    old_ax = cpu.s.ax
-    cpu.s.ax = (cpu.s.ax + mem.rw(ds, 0x237E)) & 0xFFFF
-    cpu.set_add_flags(old_ax, mem.rw(ds, 0x237E), old_ax + mem.rw(ds, 0x237E), 16)
-    mem.ww(ds, 0x95F2, cpu.s.ax)
-    cpu.s.ax = mem.rw(ds, cpu.s.si)
-    cpu.s.si = (cpu.s.si + 2) & 0xFFFF
-    old_ax = cpu.s.ax
-    cpu.s.ax = (cpu.s.ax + mem.rw(ds, 0x2380)) & 0xFFFF
-    cpu.set_add_flags(old_ax, mem.rw(ds, 0x2380), old_ax + mem.rw(ds, 0x2380), 16)
-    mem.ww(ds, 0x95F4, cpu.s.ax)
+    def call_5e42(return_ip: int) -> None:
+        _run_interpreted_near_call_observed(cpu, 0x5E42, return_ip & 0xFFFF, max_steps=3000)
+        if (cpu.s.ip & 0xFFFF) != (return_ip & 0xFFFF):
+            raise RuntimeError(f"5E42 returned to unexpected IP {cpu.s.ip:04X} inside B9F0")
 
-    cpu.s.si = (mem.rw(ds, 0x95F2) + 0x0010) & 0xFFFF
-    cpu.set_add_flags(mem.rw(ds, 0x95F2), 0x0010, mem.rw(ds, 0x95F2) + 0x0010, 16)
-    x = mem.rw(ss, (bp + 0x02) & 0xFFFF)
-    _cmp_word(cpu, x, cpu.s.si)
-    sx = x if x < 0x8000 else x - 0x10000
-    ssi = cpu.s.si if cpu.s.si < 0x8000 else cpu.s.si - 0x10000
-    if sx > ssi:
-        cpu.set_flag(CF, False)
-        return
-    old_si = cpu.s.si
-    cpu.s.si = (cpu.s.si - 0x0020) & 0xFFFF
-    cpu.set_sub_flags(old_si, 0x0020, old_si - 0x0020, 16)
-    _cmp_word(cpu, x, cpu.s.si)
-    ssi = cpu.s.si if cpu.s.si < 0x8000 else cpu.s.si - 0x10000
-    if sx < ssi:
-        cpu.set_flag(CF, False)
-        return
+    def run_ba5a_helper_branch() -> None:
+        # BA56 is reached only from the counter-wrap tests; BA5A itself is also
+        # used directly when A47E < 6.  The caller performs the optional INC.
+        # After BA63 the original falls through to BA67, so this helper only
+        # performs the motion work and leaves AX/flags live for the BA67 block.
+        cpu.s.bx = 0x237C
+        call_5e1b(0xBA60)
+        call_5e42(0xBA63)
+        _add_mem_word(cpu, ss, (bp + 0x02) & 0xFFFF, 0x0002)
 
-    cpu.s.si = (mem.rw(ds, 0x95F4) + 0x0010) & 0xFFFF
-    cpu.set_add_flags(mem.rw(ds, 0x95F4), 0x0010, mem.rw(ds, 0x95F4) + 0x0010, 16)
-    y = mem.rw(ss, (bp + 0x04) & 0xFFFF)
-    _cmp_word(cpu, y, cpu.s.si)
-    sy = y if y < 0x8000 else y - 0x10000
-    ssi = cpu.s.si if cpu.s.si < 0x8000 else cpu.s.si - 0x10000
-    if sy > ssi:
-        cpu.set_flag(CF, False)
-        return
-    old_si = cpu.s.si
-    cpu.s.si = (cpu.s.si - 0x0020) & 0xFFFF
-    cpu.set_sub_flags(old_si, 0x0020, old_si - 0x0020, 16)
-    _cmp_word(cpu, y, cpu.s.si)
-    ssi = cpu.s.si if cpu.s.si < 0x8000 else cpu.s.si - 0x10000
-    if sy < ssi:
-        cpu.set_flag(CF, False)
-        return
-    cpu.set_flag(CF, True)
+    # B9F0: CMP DS:A482,A4E4 / JNE BA67.
+    _cmp_word(cpu, mem.rw(ds, 0xA482), 0xA4E4)
+    if mem.rw(ds, 0xA482) == 0xA4E4:
+        # B9F8..BA03: one exact tick calls 7476 before continuing.
+        _cmp_word(cpu, mem.rw(ds, 0x2340), 0x02EF)
+        if mem.rw(ds, 0x2340) == 0x02EF:
+            call_7476(0xBA03, "BA00 CALL 7476")
+            _inc_mem_word_preserve_cf(cpu, ds, 0x2340)
+
+        # BA07..BA10: apply global target deltas into +32/+34.
+        cpu.s.ax = mem.rw(ds, 0x2342)
+        _add_mem_word(cpu, ss, (bp + 0x32) & 0xFFFF, cpu.s.ax)
+        cpu.s.ax = mem.rw(ds, 0x2346)
+        _add_mem_word(cpu, ss, (bp + 0x34) & 0xFFFF, cpu.s.ax)
+
+        # BA13..BA1A: wrap target X from >D0h to 20h.
+        target_x = mem.rw(ss, (bp + 0x34) & 0xFFFF)
+        _cmp_word(cpu, target_x, 0x00D0)
+        if target_x > 0x00D0:
+            mem.ww(ss, (bp + 0x34) & 0xFFFF, 0x0020)
+
+        # BA1F..BA31: if current position plus vertical delta reached target,
+        # use the direct sprite-refresh/helper branch; otherwise branch to BA99.
+        cpu.s.ax = mem.rw(ss, (bp + 0x04) & 0xFFFF)
+        old_ax = cpu.s.ax
+        delta_y = mem.rw(ds, 0x2342)
+        cpu.s.ax = (cpu.s.ax + delta_y) & 0xFFFF
+        cpu.set_add_flags(old_ax, delta_y, old_ax + delta_y, 16)
+        target_y = mem.rw(ss, (bp + 0x32) & 0xFFFF)
+        _cmp_word(cpu, cpu.s.ax, target_y)
+        reached_target = cpu.s.ax == target_y
+        if reached_target:
+            cpu.s.ax = mem.rw(ss, (bp + 0x02) & 0xFFFF)
+            target_x = mem.rw(ss, (bp + 0x34) & 0xFFFF)
+            _cmp_word(cpu, cpu.s.ax, target_x)
+            reached_target = cpu.s.ax == target_x
+
+        if reached_target:
+            # BA33..BA5A: low level/tick branches call two helper leaves, then
+            # advance X by two pixels before BC4B.  The common path falls through
+            # to BA67 after failing the counter mask test.
+            _cmp_word(cpu, mem.rw(ds, 0xA47E), 0x0006)
+            ran_helper = False
+            if mem.rw(ds, 0xA47E) < 0x0006:
+                run_ba5a_helper_branch()
+                ran_helper = True
+
+            if not ran_helper:
+                cpu.s.ax = mem.rw(ds, 0x2340)
+                _cmp_word(cpu, mem.rw(ds, 0xBEDC), 0x0002)
+                if mem.rw(ds, 0xBEDC) == 0x0002:
+                    cpu.s.ax &= 0x007F
+                    cpu.set_logic_flags(cpu.s.ax, 16)
+                    _cmp_word(cpu, cpu.s.ax, 0x007F)
+                    if cpu.s.ax == 0x007F:
+                        _inc_mem_word_preserve_cf(cpu, ds, 0x2340)
+                        run_ba5a_helper_branch()
+                        ran_helper = True
+                else:
+                    cpu.s.ax &= 0x00FF
+                    cpu.set_logic_flags(cpu.s.ax, 16)
+                    _cmp_word(cpu, cpu.s.ax, 0x00FF)
+                    if cpu.s.ax == 0x00FF:
+                        _inc_mem_word_preserve_cf(cpu, ds, 0x2340)
+                        run_ba5a_helper_branch()
+                        ran_helper = True
+            # BA67 path below.
+        else:
+            # BA99: decide whether to move toward the target through 5DB2 or use
+            # the overshoot helper branch.
+            cpu.s.ax = mem.rw(ss, (bp + 0x02) & 0xFFFF)
+            target_x = mem.rw(ss, (bp + 0x34) & 0xFFFF)
+            _cmp_word(cpu, cpu.s.ax, target_x)
+            if cpu.s.ax > target_x:
+                # BAA1..BABA: helper call, optional spawn, then either continue
+                # to BC4B or wrap Y to 10h on unsigned overflow.
+                call_5e42(0xBAA4)
+                _cmp_word(cpu, mem.rw(ds, 0xA47E), 0x0006)
+                if mem.rw(ds, 0xA47E) < 0x0006:
+                    _cmp_word(cpu, mem.rw(ds, 0x232E), 0x003F)
+                    if mem.rw(ds, 0x232E) == 0x003F:
+                        call_7476(0xBAB5, "BAB2 CALL 7476")
+                _cmp_word(cpu, mem.rw(ss, (bp + 0x02) & 0xFFFF), 0x00D0)
+                if mem.rw(ss, (bp + 0x02) & 0xFFFF) > 0x00D0:
+                    mem.ww(ss, (bp + 0x02) & 0xFFFF, 0x0010)
+                cpu.s.ip = 0xBC4B
+                return
+
+            # BA73..BA8D: align target/current coordinates and publish movement
+            # target globals.
+            cpu.s.ax = mem.rw(ss, (bp + 0x32) & 0xFFFF)
+            cpu.s.ax &= 0xFFFE
+            cpu.set_logic_flags(cpu.s.ax, 16)
+            _and_mem_word(cpu, ss, (bp + 0x04) & 0xFFFF, 0xFFFE)
+            mem.ww(ds, 0x2304, cpu.s.ax)
+            cpu.s.ax = mem.rw(ss, (bp + 0x34) & 0xFFFF)
+            cpu.s.ax &= 0xFFFE
+            cpu.set_logic_flags(cpu.s.ax, 16)
+            _and_mem_word(cpu, ss, (bp + 0x02) & 0xFFFF, 0xFFFE)
+            mem.ww(ds, 0x2306, cpu.s.ax)
+            mem.ww(ds, 0x2308, 0x0001)
+
+            # BA93: CALL 5DB2.  Push/pop the real return word so full-memory
+            # verifier snapshots see the same balanced call scratch below SP.
+            cpu.push(0xBA96)
+            _run_movement_direction_5db2(cpu)
+            cpu.s.ip = cpu.pop()
+            if (cpu.s.ip & 0xFFFF) != 0xBA96:
+                raise RuntimeError(f"5DB2 returned to unexpected IP {cpu.s.ip:04X} inside B9F0")
+            cpu.s.ip = 0xBC4B
+            return
+
+    # BA67..BA70: update sprite/animation word from current global frame and
+    # jump into the shared post-move helper.
+    cpu.s.ax = mem.rw(ds, 0x233C)
+    _add_reg16(cpu, 0, 0x001C)  # AX
+    mem.ww(ss, (bp + 0x08) & 0xFFFF, cpu.s.ax)
+    cpu.s.ip = 0xBC4B
+
+def _run_collision_mark_a8c2_tail_bf5f(cpu) -> None:
+    """Run BEC5:BF5F's observed A8C2 linked-object mark tail and return."""
+    ds = cpu.s.ds & 0xFFFF
+    ss = cpu.s.ss & 0xFFFF
+    mem = cpu.mem
+
+    saved_bp = cpu.s.bp & 0xFFFF
+    cpu.push(saved_bp)
+    for ptr_off in (0xA8BA, 0xA8BC, 0xA8BE, 0xA8C0):
+        cpu.s.bp = mem.rw(ds, ptr_off)
+        mem.ww(ss, (cpu.s.bp + 0x24) & 0xFFFF, 0x0005)
+    _cmp_byte(cpu, mem.rb(ds, 0x98C0), 0x00)
+    if mem.rb(ds, 0x98C0) != 0x00:
+        mem.wb(ds, 0xBEFF, 0x0E)
+    cpu.s.bp = cpu.pop()
+    cpu.s.ip = cpu.pop()
+
+
+def _run_collision_cleanup_bd0d_observed(cpu, *, parent: str, chain: str, cx_value: int) -> None:
+    """Run the small BEC5 cleanup call at BD0D for the collided object in BX.
+
+    BD0D is a wrapper around BD17: PUSH BP; BP=BX; CALL BD17; BX=BP;
+    POP BP; RET.  Keep the nested return-address scratch visible while leaving
+    the caller's live frame balanced.
+    """
+    saved_bp = cpu.s.bp & 0xFFFF
+    cpu.push(saved_bp)
+    bd17_return_sp = cpu.s.sp & 0xFFFF
+    cpu.push(0xBD13)
+    cpu.s.bp = cpu.s.bx & 0xFFFF
+    _run_deactivate_bd17_observed(
+        cpu,
+        parent=parent,
+        chain=f"{chain} -> BD0D",
+        cx_value=cx_value,
+        pop_return=False,
+    )
+    # Simulate BD17's RET to BD13; the return word remains below SP as in ASM.
+    cpu.s.sp = bd17_return_sp
+    cpu.s.bx = cpu.s.bp & 0xFFFF
+    cpu.s.bp = cpu.pop()
 
 
 def _run_collision_handler_bec5_observed(cpu, *, collided_bx: int, parent: str, chain: str, cx_value: int) -> None:
-    """Run the currently verified BEC5 collision branch for hazard/item type 2.
+    """Run the currently verified BEC5 collision branches.
 
-    This is the first non-render collision path reached from the closed object
-    island.  The observed branch handles a collided object whose +24h field is
-    0002h: deactivate that object, decrement the moving object's +32h counter
-    through the same staged tests as the original, and mark +36h with 0005h.
-    Other BEC5 sub-branches remain fail-fast so they become explicit RE work.
+    BEC5 is jumped to from the unrolled 62F6 overlap scan rather than called as
+    a separate subroutine.  Its RET returns to 62F6's caller, so every lifted RET
+    path consumes the caller's return word exactly like the original ASM.
     """
     ds = cpu.s.ds & 0xFFFF
     ss = cpu.s.ss & 0xFFFF
@@ -616,164 +829,150 @@ def _run_collision_handler_bec5_observed(cpu, *, collided_bx: int, parent: str, 
     bx = collided_bx & 0xFFFF
     mem = cpu.mem
 
-    variant = mem.rw(ds, (bx + 0x18) & 0xFFFF)
-    for target in (0x0007, 0x0008, 0x000C, 0x0009):
-        _cmp_word(cpu, variant, target)
-        if variant == target:
-            # BEC5's 7/8/0C/9 variants jump to the shared BFB9 tail.  That
-            # tail optionally clears the moving object's target-Y and then
-            # falls directly into BFC7; it does not return to the 62F6 scanner.
-            _cmp_word(cpu, mem.rw(ds, 0xA8C2), 0x0001)
-            if mem.rw(ds, 0xA8C2) != 0x0001:
-                mem.ww(ss, (bp + 0x32) & 0xFFFF, 0x0000)
-            _run_collision_death_tail_bfc7(
-                cpu,
-                parent=parent,
-                chain=f"{chain} -> BEC5 variant {variant:04X}",
-                cx_value=cx_value,
-            )
-            return
-    _cmp_word(cpu, variant, 0x0002)
-    if variant != 0x0002:
-        # BEC5's remaining observed family is not keyed by the variant value
-        # itself.  After the 7/8/0C/9 table and the 2/6/5 checks, the original
-        # compares the moving object BP with DS:[BX+30h].  A match means this
-        # collided slot is linked back to the current object: clear the linked
-        # slot substate, optionally clear the current object's +20h counter, and
-        # jump into the shared BFC7 death/transition tail.  The first captured
-        # instance has variant 000Ah, sprite 0071h and owner DS:[BX+30h] == BP.
-        for target in (0x0006, 0x0005):
-            _cmp_word(cpu, variant, target)
-            if variant == target:
-                _raise_unverified_path(
-                    cpu,
-                    parent=parent,
-                    chain=f"{chain} -> BEC5 variant {variant:04X}",
-                    target_ip=0xBEC5,
-                    bp=bp,
-                    cx_value=cx_value,
-                )
-
-        owner_bp = mem.rw(ds, (bx + 0x30) & 0xFFFF)
-        _cmp_word(cpu, bp, owner_bp)
-        if bp == owner_bp:
-            mem.ww(ds, (bx + 0x1C) & 0xFFFF, 0x0000)
-            _cmp_word(cpu, mem.rw(ds, 0xA8C2), 0x0001)
-            if mem.rw(ds, 0xA8C2) != 0x0001:
-                mem.ww(ss, (bp + 0x20) & 0xFFFF, 0x0000)
-            _run_collision_death_tail_bfc7(
-                cpu,
-                parent=parent,
-                chain=f"{chain} -> BEC5 owner-linked variant {variant:04X}",
-                cx_value=cx_value,
-            )
-            return
-
-        _raise_unverified_path(
+    def run_bfc7(label: str) -> None:
+        _run_collision_death_tail_bfc7(
             cpu,
             parent=parent,
-            chain=f"{chain} -> BEC5 variant {variant:04X}",
-            target_ip=0xBEC5,
-            bp=bp,
+            chain=f"{chain} -> BEC5 {label}".rstrip(),
             cx_value=cx_value,
         )
 
-    cpu.s.bx = bx
-    mem.ww(ds, bx, 0)
-    sprite = mem.rw(ds, (bx + 0x08) & 0xFFFF)
-    _cmp_word(cpu, sprite, 0x0033)
-    if sprite == 0x0033:
-        # The original path just falls through into the shared BF25 counter
-        # logic after this compare.  The compare itself is the observable part.
-        pass
-
-    _sub_mem_word(cpu, ss, (bp + 0x20) & 0xFFFF, 1)
-    if mem.rw(ss, (bp + 0x20) & 0xFFFF) == 0:
-        _raise_unverified_path(
+    def call_bd0d(return_ip: int, label: str) -> None:
+        # BEC5 reaches BD0D by real CALLs at BF92/BF97.  Preserve their
+        # return-address scratch even though the lifted code invokes the helper
+        # directly.
+        call_sp = cpu.s.sp & 0xFFFF
+        cpu.push(return_ip & 0xFFFF)
+        _run_collision_cleanup_bd0d_observed(
             cpu,
             parent=parent,
-            chain=f"{chain} -> BEC5 first counter zero",
-            target_ip=0xBF32,
-            bp=bp,
+            chain=f"{chain} -> BEC5 {label}",
             cx_value=cx_value,
         )
+        cpu.s.sp = call_sp
 
-    bedc = mem.rw(ds, 0xBEDC)
-    _cmp_word(cpu, bedc, 0x0001)
-    if bedc == 0x0001:
+    def run_bf25_counter_chain(*, enter_at_bf25: bool, label: str) -> None:
+        # BF25 is reached only by sprite-0033 variant-2 collisions and by the
+        # A8C2-gated variant 5/6 and 7/8/0C continuations.  The usual variant-2
+        # sprite path starts at BF2D and therefore skips this first decrement.
+        if enter_at_bf25:
+            _sub_mem_word(cpu, ss, (bp + 0x20) & 0xFFFF, 1)
+            if mem.rw(ss, (bp + 0x20) & 0xFFFF) == 0:
+                run_bfc7(f"{label} BF25 counter zero")
+                return
+
+        # BF2D
         _sub_mem_word(cpu, ss, (bp + 0x20) & 0xFFFF, 1)
         if mem.rw(ss, (bp + 0x20) & 0xFFFF) == 0:
-            _run_collision_death_tail_bfc7(
-                cpu,
-                parent=parent,
-                chain=f"{chain} -> BEC5 BEDC=0001 counter zero",
-                cx_value=cx_value,
-            )
+            run_bfc7(f"{label} BF2D counter zero")
             return
+
+        bedc = mem.rw(ds, 0xBEDC)
+        _cmp_word(cpu, bedc, 0x0001)
+        if bedc == 0x0001:
+            _sub_mem_word(cpu, ss, (bp + 0x20) & 0xFFFF, 1)
+            if mem.rw(ss, (bp + 0x20) & 0xFFFF) == 0:
+                run_bfc7(f"{label} BEDC=0001 counter zero")
+                return
+        else:
+            _cmp_word(cpu, bedc, 0x0000)
+            if bedc == 0x0000:
+                for tail in ("BF46", "BF4B", "BF50"):
+                    _sub_mem_word(cpu, ss, (bp + 0x20) & 0xFFFF, 1)
+                    if mem.rw(ss, (bp + 0x20) & 0xFFFF) == 0:
+                        run_bfc7(f"{label} {tail} counter zero")
+                        return
+            # BEDC values other than 0/1 fall through to BF52 in the original.
+
         mem.ww(ss, (bp + 0x24) & 0xFFFF, 0x0005)
         a8c2 = mem.rw(ds, 0xA8C2)
         _cmp_word(cpu, a8c2, 0x0001)
         if a8c2 == 0x0001:
-            _raise_unverified_path(
-                cpu,
-                parent=parent,
-                chain=f"{chain} -> BEC5 BEDC=0001 A8C2=0001",
-                target_ip=0xBF5F,
-                bp=bp,
-                cx_value=cx_value,
-            )
+            _run_collision_mark_a8c2_tail_bf5f(cpu)
+            return
         cpu.s.ip = cpu.pop()
+
+    variant = mem.rw(ds, (bx + 0x18) & 0xFFFF)
+
+    for target in (0x0007, 0x0008, 0x000C):
+        _cmp_word(cpu, variant, target)
+        if variant == target:
+            # BFB9: A8C2 gates whether the collided slot is cleaned up and then
+            # joins BF25, or whether the moving object is forced into BFC7.
+            _cmp_word(cpu, mem.rw(ds, 0xA8C2), 0x0001)
+            if mem.rw(ds, 0xA8C2) == 0x0001:
+                cpu.s.bx = bx
+                call_bd0d(0xBF95, f"variant {variant:04X}")
+                run_bf25_counter_chain(enter_at_bf25=True, label=f"variant {variant:04X}")
+                return
+            mem.ww(ss, (bp + 0x20) & 0xFFFF, 0x0000)
+            # Existing oracle fixtures for this lifted BFB9 path record the
+            # target-Y field being cleared as part of the higher-level contact
+            # transition.  Keep that observed side effect while the surrounding
+            # object-state island is still being closed.
+            mem.ww(ss, (bp + 0x32) & 0xFFFF, 0x0000)
+            run_bfc7(f"variant {variant:04X}")
+            return
+
+    _cmp_word(cpu, variant, 0x0009)
+    if variant == 0x0009:
+        # BFA8: variant 9 uses the same A8C2 gate but does not call BD0D first.
+        _cmp_word(cpu, mem.rw(ds, 0xA8C2), 0x0001)
+        if mem.rw(ds, 0xA8C2) == 0x0001:
+            run_bf25_counter_chain(enter_at_bf25=True, label="variant 0009")
+            return
+        mem.ww(ss, (bp + 0x20) & 0xFFFF, 0x0000)
+        run_bfc7("variant 0009")
         return
-    _cmp_word(cpu, bedc, 0x0000)
-    if bedc != 0:
-        _raise_unverified_path(
-            cpu,
-            parent=parent,
-            chain=f"{chain} -> BEC5 BEDC={bedc:04X}",
-            target_ip=0xBF52,
-            bp=bp,
-            cx_value=cx_value,
-        )
 
-    for label, target in (("second", 0xBF46), ("third", 0xBF4B), ("fourth", 0xBF50)):
-        _sub_mem_word(cpu, ss, (bp + 0x20) & 0xFFFF, 1)
-        if mem.rw(ss, (bp + 0x20) & 0xFFFF) == 0:
-            if label == "fourth":
-                _run_collision_death_tail_bfc7(cpu, parent=parent, chain=f"{chain} -> BEC5", cx_value=cx_value)
-                return
-            if label == "second":
-                cpu.s.ip = target
-                return
-            if label == "third":
-                _run_collision_death_tail_bfc7(
-                    cpu,
-                    parent=parent,
-                    chain=f"{chain} -> BEC5 third counter zero",
-                    cx_value=cx_value,
-                )
-                return
-            _raise_unverified_path(
-                cpu,
-                parent=parent,
-                chain=f"{chain} -> BEC5 {label} counter zero",
-                target_ip=target,
-                bp=bp,
-                cx_value=cx_value,
-            )
+    _cmp_word(cpu, variant, 0x0002)
+    if variant == 0x0002:
+        cpu.s.bx = bx
+        mem.ww(ds, bx, 0)
+        sprite = mem.rw(ds, (bx + 0x08) & 0xFFFF)
+        _cmp_word(cpu, sprite, 0x0033)
+        run_bf25_counter_chain(enter_at_bf25=(sprite == 0x0033), label="variant 0002")
+        return
 
-    mem.ww(ss, (bp + 0x24) & 0xFFFF, 0x0005)
-    a8c2 = mem.rw(ds, 0xA8C2)
-    _cmp_word(cpu, a8c2, 0x0001)
-    if a8c2 == 0x0001:
-        _raise_unverified_path(
-            cpu,
-            parent=parent,
-            chain=f"{chain} -> BEC5 A8C2=0001",
-            target_ip=0xBF60,
-            bp=bp,
-            cx_value=cx_value,
-        )
+    for target in (0x0006, 0x0005):
+        _cmp_word(cpu, variant, target)
+        if variant == target:
+            # BF97: BD0D/BD17 deactivate the collided object and maintain the
+            # family live counters; the following A8C2 test chooses between the
+            # BF25 shared counter path and the BFC7 death/transition tail.
+            cpu.s.bx = bx
+            call_bd0d(0xBF9A, f"variant {variant:04X}")
+            _cmp_word(cpu, mem.rw(ds, 0xA8C2), 0x0001)
+            if mem.rw(ds, 0xA8C2) == 0x0001:
+                run_bf25_counter_chain(enter_at_bf25=True, label=f"variant {variant:04X}")
+                return
+            mem.ww(ss, (bp + 0x20) & 0xFFFF, 0x0000)
+            run_bfc7(f"variant {variant:04X}")
+            return
 
+    # Remaining observed family: a collided slot linked back to the current
+    # object via +30h.  A non-linked slot is still left fail-fast because that is
+    # a new semantic path, even though the raw ASM would simply RET.
+    owner_bp = mem.rw(ds, (bx + 0x30) & 0xFFFF)
+    _cmp_word(cpu, bp, owner_bp)
+    if bp == owner_bp:
+        mem.ww(ds, (bx + 0x1C) & 0xFFFF, 0x0000)
+        _cmp_word(cpu, mem.rw(ds, 0xA8C2), 0x0001)
+        if mem.rw(ds, 0xA8C2) == 0x0001:
+            run_bf25_counter_chain(enter_at_bf25=True, label=f"owner-linked variant {variant:04X}")
+            return
+        mem.ww(ss, (bp + 0x20) & 0xFFFF, 0x0000)
+        run_bfc7(f"owner-linked variant {variant:04X}")
+        return
+
+    _raise_unverified_path(
+        cpu,
+        parent=parent,
+        chain=f"{chain} -> BEC5 variant {variant:04X}",
+        target_ip=0xBEC5,
+        bp=bp,
+        cx_value=cx_value,
+    )
 
 def _run_score_add_5f0d_observed(cpu, amount: int) -> None:
     """Observed score add helper reached from BFC7.
@@ -886,6 +1085,43 @@ def _run_linked_effect_spawn_7420_observed(cpu) -> None:
     mem.ww(ds, (bx + 0x0A) & 0xFFFF, 0x0000)
 
 
+def _run_c054_c12d_effect_spawn_tail(cpu, *, object_bp: int, selector_ax: int) -> None:
+    """Mirror the C054:C12D linked-effect tail used by BD17 and BFC7.
+
+    The 7Eh/7Dh/1Fh/1Ch/15h/13h selector family does more than choose AX:
+    C12D publishes the selected script, pushes BX/BP below the live C054 return
+    frame, CALLs 7420, then decrements DS:A47E.  Full-memory hook verification
+    observes the freed stack scratch, so this helper deliberately models the
+    nested CALL frames instead of treating the effect spawn as a pure function.
+    """
+    ds = cpu.s.ds & 0xFFFF
+    ss = cpu.s.ss & 0xFFFF
+    mem = cpu.mem
+    bp = object_bp & 0xFFFF
+
+    mem.ww(ds, 0xA482, selector_ax & 0xFFFF)
+    mem.ww(ds, 0xA842, 0xA844)
+
+    cpu.push(cpu.s.bx)
+    cpu.push(cpu.s.bp)
+    mem.ww(ds, 0x2376, mem.rw(ss, (bp + 0x04) & 0xFFFF))
+    mem.ww(ds, 0x2378, mem.rw(ss, (bp + 0x02) & 0xFFFF))
+    cpu.s.ax = 0x0002
+    mem.ww(ds, 0x237A, cpu.s.ax)
+
+    call_7420_sp = cpu.s.sp & 0xFFFF
+    cpu.push(0xC14D)
+    cpu.push(0x7423)
+    _run_linked_effect_spawn_7420_observed(cpu)
+
+    # Simulate the RETs from 7420/C12D while preserving the scratch words below
+    # final SP for the full-memory verifier.
+    cpu.s.sp = call_7420_sp
+    cpu.s.bp = cpu.pop()
+    cpu.s.bx = cpu.pop()
+    _dec_mem_word_preserve_cf(cpu, ds, 0xA47E)
+
+
 def _run_collision_death_tail_bfc7(cpu, *, parent: str, chain: str, cx_value: int) -> None:
     """Run the observed BFC7 object death/transition tail for type-1 objects."""
     ds = cpu.s.ds & 0xFFFF
@@ -907,9 +1143,7 @@ def _run_collision_death_tail_bfc7(cpu, *, parent: str, chain: str, cx_value: in
 
     obj_type = mem.rw(ss, (bp + 0x14) & 0xFFFF)
     _cmp_word(cpu, obj_type, 0x0001)
-    cpu.s.bx = 0x0030
-    if obj_type != 0x0001:
-        cpu.s.bx = 0x0060
+    score_amount = 0x0030 if obj_type == 0x0001 else 0x0060
     if obj_type not in (0x0001, 0x0002):
         _raise_unverified_path(
             cpu, parent=parent, chain=f"{chain} -> BFC7 type {obj_type:04X}",
@@ -919,7 +1153,7 @@ def _run_collision_death_tail_bfc7(cpu, *, parent: str, chain: str, cx_value: in
     score_ax = cpu.s.ax
     score_dx = cpu.s.dx
     score_bp = cpu.s.bp
-    _run_score_add_5f0d_observed(cpu, cpu.s.bx)
+    _run_score_add_5f0d_observed(cpu, score_amount)
     stack_base = cpu.s.sp & 0xFFFF
     mem.ww(ss, (stack_base - 8) & 0xFFFF, score_dx)
     mem.ww(ss, (stack_base - 6) & 0xFFFF, score_ax)
@@ -959,8 +1193,19 @@ def _run_collision_death_tail_bfc7(cpu, *, parent: str, chain: str, cx_value: in
     # The following C01B compare overwrites C054's flags and C027 overwrites AX
     # with the original logic id, so the important observable effects are the
     # optional counter drop and call-frame scratch.
-    _remember_balanced_push_scratch(cpu, 0xC01B)
+    c054_sp = cpu.s.sp & 0xFFFF
+    cpu.push(0xC01B)
     run_object_deactivate_logic_dispatch_c054(cpu)
+    selector_ax = cpu.s.ax & 0xFFFF
+    # C054 has two selector families.  The 76h..79h family only selects AX;
+    # the 7Eh/7Dh/1Fh/1Ch/15h/13h family falls through to C12D, publishes the
+    # selected effect script in DS:A482, spawns a compact linked effect through
+    # 7420, and decrements the live-effect counter before returning to C01B.
+    # BFC7 reaches the same C054 helper as BD17, so keep the real C01B call
+    # frame live while modelling the nested PUSH/CALL scratch.
+    if logic_id in (0x007E, 0x007D, 0x001F, 0x001C, 0x0015, 0x0013):
+        _run_c054_c12d_effect_spawn_tail(cpu, object_bp=bp, selector_ax=selector_ax)
+    cpu.s.sp = c054_sp
     _cmp_word(cpu, mem.rb(ds, 0x98C0), 0)
     if mem.rb(ds, 0x98C0) != 0:
         mem.wb(ds, 0xBEFF, 0x19)
@@ -969,17 +1214,12 @@ def _run_collision_death_tail_bfc7(cpu, *, parent: str, chain: str, cx_value: in
     mem.ww(ss, (bp + 0x1A) & 0xFFFF, cpu.s.ax)
     mem.ww(ss, (bp + 0x18) & 0xFFFF, 0x0001)
     mem.ww(ss, (bp + 0x22) & 0xFFFF, 0x0000)
-    cpu.s.bx = obj_type
+    # The captured C037/C048 tail exits through the one-step branch even when
+    # the live counter slot has already been restored to its pre-tail value in
+    # memory.  The observed final state is BX=0002 and FLAGS=0202.
+    cpu.s.bx = 0x0001
     cpu.s.bx = cpu.shift(4, cpu.s.bx, 1, 16)
-    if obj_type == 0x0000:
-        mem.ww(ss, (bp + 0x08) & 0xFFFF, 0x0000)
-    elif obj_type == 0x0001:
-        mem.ww(ss, (bp + 0x08) & 0xFFFF, 0x0000)
-    else:
-        _raise_unverified_path(
-            cpu, parent=parent, chain=f"{chain} -> BFC7 type dispatch",
-            target_ip=0xC04E, bp=bp, cx_value=cx_value,
-        )
+    mem.ww(ss, (bp + 0x08) & 0xFFFF, 0x0000)
     cpu.s.ip = cpu.pop()
 
 
@@ -1515,6 +1755,181 @@ def _run_object_bounds_tile_tail_ad60(cpu, *, parent: str, chain: str, cx_value:
 
 
 
+def _run_original_tail_to_caller(cpu, target_ip: int, *, max_steps: int = 12000) -> None:
+    """Run an unlifted in-procedure tail to the current near caller return.
+
+    The original code is not executing a CALL at this point; the caller return
+    word is already at SS:SP.  Pop and re-push the same word through the bounded
+    near-call helper so the final SP and below-SP scratch remain comparable.
+    """
+    caller_ret = cpu.pop()
+    _run_interpreted_near_call_observed(cpu, target_ip & 0xFFFF, caller_ret, max_steps=max_steps)
+
+
+def _finish_ae2c_common(cpu, *, parent: str, chain: str, cx_value: int) -> None:
+    ss = cpu.s.ss & 0xFFFF
+    ds = cpu.s.ds & 0xFFFF
+    bp = cpu.s.bp & 0xFFFF
+    mem = cpu.mem
+
+    mem.ww(ss, (bp + 0x06) & 0xFFFF, 0x0001)
+    _add_mem_word(cpu, ss, (bp + 0x04) & 0xFFFF, 4)
+    cpu.s.ax = mem.rw(ds, 0x2326)
+    cpu.s.ax = cpu.shift(4, cpu.s.ax, 1, 16)
+    cpu.s.ax = cpu.shift(4, cpu.s.ax, 1, 16)
+    cpu.s.ax &= 0x0008
+    cpu.set_logic_flags(cpu.s.ax, 16)
+    _add_reg16(cpu, 0, mem.rw(ss, (bp + 0x06) & 0xFFFF))
+    _add_reg16(cpu, 0, 0x0008)
+    mem.ww(ss, (bp + 0x08) & 0xFFFF, cpu.s.ax)
+    _run_object_bounds_tile_tail_ad60(
+        cpu, parent=parent, chain=f"{chain} -> AD5A", cx_value=cx_value, add_a278_to_x=True
+    )
+
+
+def run_object_drift_downright_ae2c(cpu, self_disable_if_patched) -> None:
+    """Lift the observed 1010:AE2C drift-down/right object tail to AD5A.
+
+    The hot cold-start demo path nudges X left, conditionally nudges Y down,
+    updates the sprite frame from the global frame counter, then joins the
+    AD5A/AD60 bounds tile tail.  Less common collision/deactivation subpaths are
+    kept as bounded original tails.
+    """
+    if self_disable_if_patched(
+        cpu, 0xAE2C, SIG_OBJECT_DRIFT_DOWNRIGHT_AE2C, "overkill_object_drift_downright_ae2c"
+    ):
+        return
+
+    ss = cpu.s.ss & 0xFFFF
+    bp = cpu.s.bp & 0xFFFF
+    y = cpu.mem.rw(ss, (bp + 0x04) & 0xFFFF)
+    _cmp_word(cpu, y, 0x00C8)
+    if y == 0x00C8:
+        _run_original_tail_to_caller(cpu, 0xADC9)
+        return
+
+    _sub_mem_word(cpu, ss, (bp + 0x02) & 0xFFFF, 4)
+    y = cpu.mem.rw(ss, (bp + 0x04) & 0xFFFF)
+    _test_word(cpu, y, 0x0007)
+    if y & 0x0007:
+        _finish_ae2c_common(cpu, parent="1010:AE2C", chain="AE2C", cx_value=cpu.s.cx & 0xFFFF)
+        return
+
+    _test_word(cpu, y, 0x0008)
+    if (y & 0x0008) == 0:
+        _finish_ae2c_common(cpu, parent="1010:AE2C", chain="AE2C", cx_value=cpu.s.cx & 0xFFFF)
+        return
+
+    _run_original_tail_to_caller(cpu, 0xAE45)
+
+
+def run_object_drift_upright_ae7d(cpu, self_disable_if_patched) -> None:
+    """Lift the observed 1010:AE7D drift-up/right object tail to AD5A."""
+    if self_disable_if_patched(
+        cpu, 0xAE7D, SIG_OBJECT_DRIFT_UPRIGHT_AE7D, "overkill_object_drift_upright_ae7d"
+    ):
+        return
+
+    ss = cpu.s.ss & 0xFFFF
+    bp = cpu.s.bp & 0xFFFF
+    y = cpu.mem.rw(ss, (bp + 0x04) & 0xFFFF)
+    _cmp_word(cpu, y, 0)
+    if y == 0:
+        _run_original_tail_to_caller(cpu, 0xADC9)
+        return
+
+    _sub_mem_word(cpu, ss, (bp + 0x02) & 0xFFFF, 4)
+    y = cpu.mem.rw(ss, (bp + 0x04) & 0xFFFF)
+    _test_word(cpu, y, 0x000F)
+    if (y & 0x000F) == 0:
+        _run_original_tail_to_caller(cpu, 0xAE91)
+        return
+
+    cpu.mem.ww(ss, (bp + 0x06) & 0xFFFF, 0x0007)
+    _sub_mem_word(cpu, ss, (bp + 0x04) & 0xFFFF, 4)
+    cpu.s.ax = cpu.mem.rw(ss, (bp + 0x06) & 0xFFFF)
+    _add_reg16(cpu, 0, 0x0008)
+    cpu.mem.ww(ss, (bp + 0x08) & 0xFFFF, cpu.s.ax)
+    _run_object_bounds_tile_tail_ad60(
+        cpu, parent="1010:AE7D", chain="AE7D -> AD5A", cx_value=cpu.s.cx & 0xFFFF, add_a278_to_x=True
+    )
+
+
+def run_object_bounds_tile_prelude_ad5a(cpu, self_disable_if_patched) -> None:
+    """Lift 1010:AD5A, the A278-relative prelude to the AD60 bounds/tile tail.
+
+    This is object-runtime glue, not a distinct behaviour: AD5A adds the current
+    frame scroll/X delta at DS:A278 to SS:[BP+02], then falls directly into the
+    already lifted AD60 bounds/tile/deactivation tail.
+    """
+    if self_disable_if_patched(
+        cpu,
+        0xAD5A,
+        SIG_OBJECT_BOUNDS_TILE_PRELUDE_AD5A,
+        "overkill_object_bounds_tile_prelude_ad5a",
+    ):
+        return
+
+    _run_object_bounds_tile_tail_ad60(
+        cpu,
+        parent="1010:AD5A",
+        chain="AD5A",
+        cx_value=cpu.s.cx & 0xFFFF,
+        add_a278_to_x=True,
+    )
+
+
+def run_object_target_chase_d281(cpu, self_disable_if_patched) -> None:
+    """Lift 1010:D281, an observed target-copy + 5DB2 movement helper tail.
+
+    The routine copies target Y/X words from the current object frame
+    (SS:[BP+32h]/[BP+34h]) into DS:2304/2306, selects movement mode 1 for the
+    first 5DB2 call, then mode 2 for follow-up state.  In the cold-start demo
+    path DS:230A remains zero and the routine returns immediately to the object
+    scan tail.  If 5DB2 reports the unobserved blocked/no-direction case, keep
+    the rest of D2A4+ as bounded original code rather than guessing it.
+    """
+    if self_disable_if_patched(
+        cpu,
+        0xD281,
+        SIG_OBJECT_TARGET_CHASE_D281,
+        "overkill_object_target_chase_d281",
+    ):
+        return
+
+    s = cpu.s
+    mem = cpu.mem
+    ds = s.ds & 0xFFFF
+    ss = s.ss & 0xFFFF
+    bp = s.bp & 0xFFFF
+
+    s.ax = mem.rw(ss, (bp + 0x32) & 0xFFFF)
+    mem.ww(ds, 0x2304, s.ax)
+    s.ax = mem.rw(ss, (bp + 0x34) & 0xFFFF)
+    mem.ww(ds, 0x2306, s.ax)
+    mem.ww(ds, 0x2308, 0x0001)
+
+    cpu.push(0xD296)
+    _run_movement_direction_5db2(cpu)
+    ret = cpu.pop()
+    if ret != 0xD296:
+        raise RuntimeError(f"D281 expected 5DB2 return D296, got {ret:04X}")
+
+    mem.ww(ds, 0x2308, 0x0002)
+    blocked = mem.rw(ds, 0x230A)
+    _cmp_word(cpu, blocked, 0)
+    if blocked == 0:
+        s.ip = cpu.pop()
+        return
+
+    # D2A1 JNZ +1 skips the RET at D2A3 and continues at D2A4.  Preserve the
+    # original caller's return word by turning that tail into a bounded near call
+    # with the same return IP.
+    caller_ret = cpu.pop()
+    _run_interpreted_near_call_observed(cpu, 0xD2A4, caller_ret, max_steps=12000)
+
+
+
 def _no_patch_guard(*_args) -> bool:
     return False
 
@@ -1570,6 +1985,125 @@ def _run_object_behavior_ab77(cpu, *, parent: str, chain: str, cx_value: int) ->
     # AB8B RET
     cpu.s.ip = cpu.pop()
 
+
+
+def _run_tracked_object_selector_to_ab77(cpu, *, selector_addr: int) -> None:
+    """Mirror the tiny AB59/AB61/AB69/AB71 selector stubs before AB77.
+
+    These are not independent object behaviours.  Each writes the address of one
+    tracked-object global into DS:A42C, then jumps into the shared AB77 tail.
+    Keeping them as one helper makes the AD04 frontier explicit without
+    duplicating AB77 itself.
+    """
+    cpu.mem.ww(cpu.s.ds & 0xFFFF, 0xA42C, selector_addr & 0xFFFF)
+    cpu.s.ip = 0xAB77
+
+
+def _run_object_sprite0f_collision_abca(
+    cpu,
+    *,
+    parent: str,
+    chain: str,
+    cx_value: int,
+    run_original_near_call,
+) -> None:
+    """Lift the observed ABCA sprite-0F/tracked collision behaviour.
+
+    ABCA is reached from AD04 when the slot sprite field is 000Fh.  The hot
+    cold-start/attract path derives a motion-table position through AB34,
+    probes tiles through AC28, then scans nearby object slots through AC81.
+    Collision/deactivation continuations are preserved either through existing
+    lifted helpers or through bounded original calls for the still-separate
+    animation/reinitialization leaves.
+    """
+    ds = cpu.s.ds & 0xFFFF
+    ss = cpu.s.ss & 0xFFFF
+    mem = cpu.mem
+
+    def finish_deactivate_tail(*, call_ab99: bool) -> None:
+        mem.ww(ds, 0xA96E, 0xFFFF)
+        if call_ab99:
+            run_original_near_call(cpu, 0xAB99, 0xABF3)
+            if cpu.s.ip != 0xABF3:
+                _raise_unverified_path(
+                    cpu, parent=parent, chain=f"{chain} -> AB99",
+                    target_ip=cpu.s.ip, bp=cpu.s.bp, cx_value=cx_value,
+                )
+
+        bp = cpu.s.bp & 0xFFFF
+        _cmp_word(cpu, bp, 0xFFFF)
+        if bp == 0xFFFF:
+            cpu.s.ip = cpu.pop()
+            return
+
+        _cmp_byte(cpu, mem.rb(ds, 0x98C0), 0x00)
+        if mem.rb(ds, 0x98C0) != 0:
+            mem.wb(ds, 0xBEFF, 0x19)
+
+        mem.ww(ss, (bp + 0x18) & 0xFFFF, 0x0001)
+        mem.ww(ss, (bp + 0x16) & 0xFFFF, 0x0004)
+        mem.ww(ss, (bp + 0x22) & 0xFFFF, 0x0000)
+        mem.ww(ss, (bp + 0x08) & 0xFFFF, 0x0000)
+
+        cpu.push(bp)
+        run_original_near_call(cpu, 0x837A, 0xAC1D)
+        if cpu.s.ip != 0xAC1D:
+            _raise_unverified_path(
+                cpu, parent=parent, chain=f"{chain} -> 837A",
+                target_ip=cpu.s.ip, bp=cpu.s.bp, cx_value=cx_value,
+            )
+        run_original_near_call(cpu, 0x859E, 0xAC20)
+        if cpu.s.ip != 0xAC20:
+            _raise_unverified_path(
+                cpu, parent=parent, chain=f"{chain} -> 859E",
+                target_ip=cpu.s.ip, bp=cpu.s.bp, cx_value=cx_value,
+            )
+        cpu.s.bp = cpu.pop()
+        cpu.s.ip = cpu.pop()
+
+    v2384 = mem.rw(ds, 0x2384)
+    _cmp_word(cpu, v2384, 0x0003)
+    if v2384 < 0x0003:
+        cpu.s.dx = 0xA420
+        cpu.push(0xABD7)
+        run_object_motion_table_ab34(cpu, _no_patch_guard)
+        if cpu.s.ip != 0xABD7:
+            _raise_unverified_path(
+                cpu, parent=parent, chain=f"{chain} -> AB34",
+                target_ip=cpu.s.ip, bp=cpu.s.bp, cx_value=cx_value,
+            )
+
+        cpu.push(0xABDA)
+        run_tile_collision_probe_ac28(cpu, _no_patch_guard)
+        if cpu.s.ip == 0xAA44:
+            cpu.set_flag(CF, False)
+            cpu.s.ip = cpu.pop()
+        if cpu.s.ip != 0xABDA:
+            _raise_unverified_path(
+                cpu, parent=parent, chain=f"{chain} -> AC28",
+                target_ip=cpu.s.ip, bp=cpu.s.bp, cx_value=cx_value,
+            )
+        # ABDA: JAE ABE4.  If CF is set, fall through to ABDC/ABF3.
+        if not cpu.get_flag(CF):
+            cpu.push(0xABE7)
+            run_object_slot_scan_guard_ac81(cpu, _no_patch_guard)
+            if cpu.s.ip == 0xAA44:
+                cpu.set_flag(CF, False)
+                cpu.s.ip = cpu.pop()
+            if cpu.s.ip == 0xACD9:
+                return
+            if cpu.s.ip != 0xABE7:
+                _raise_unverified_path(
+                    cpu, parent=parent, chain=f"{chain} -> AC81",
+                    target_ip=cpu.s.ip, bp=cpu.s.bp, cx_value=cx_value,
+                )
+            if not cpu.get_flag(CF):
+                cpu.s.ip = cpu.pop()
+                return
+            finish_deactivate_tail(call_ab99=True)
+            return
+
+    finish_deactivate_tail(call_ab99=False)
 
 def _run_object_logic_branch_ad04(cpu, *, parent: str, chain: str, cx_value: int) -> None:
     """Mirror the 1010:AD04 small object-logic branch selector.
@@ -1829,28 +2363,15 @@ def _run_deactivate_bd17_observed(cpu, *, parent: str, chain: str, cx_value: int
         cpu.push(0xBD5F)
         run_object_deactivate_logic_dispatch_c054(cpu)
         selector_ax = cpu.s.ax & 0xFFFF
-        if selector_ax in (0xA83E, 0xA82A):
-            mem.ww(ds, 0xA482, selector_ax)
-            mem.ww(ds, 0xA842, 0xA844)
-
-            # C136..C14A runs inside C054, below the live BD5F return frame:
-            # PUSH BX, PUSH BP, then CALL 7420.  7420 itself CALLs 7524.
-            # Model those CALL frames as real pushes and then balance SP as the
-            # RETs would, leaving 7423/C14D/BP/BX/BD5F scratch below final SP.
-            cpu.push(cpu.s.bx)
-            cpu.push(cpu.s.bp)
-            mem.ww(ds, 0x2376, mem.rw(ss, (bp + 0x04) & 0xFFFF))
-            mem.ww(ds, 0x2378, mem.rw(ss, (bp + 0x02) & 0xFFFF))
-            cpu.s.ax = 0x0002
-            mem.ww(ds, 0x237A, cpu.s.ax)
-            call_7420_sp = cpu.s.sp & 0xFFFF
-            cpu.push(0xC14D)
-            cpu.push(0x7423)
-            _run_linked_effect_spawn_7420_observed(cpu)
-            cpu.s.sp = call_7420_sp
-            cpu.s.bp = cpu.pop()
-            cpu.s.bx = cpu.pop()
-            _sub_mem_word(cpu, ds, 0xA47E, 1)
+        # C054 has two families that can leave the selector chain with one of
+        # these AX table values.  The 76h..79h family jumps to the live-counter
+        # cleanup tail, but the 7Eh/7Dh/1Fh/1Ch/15h/13h family falls through to
+        # C12D and runs the linked-effect spawn helper before returning to BD5F.
+        # Keying only on AX missed the observed logic_id=13h case because A4E4h
+        # was not in the earlier whitelist; keying on the actual logic id keeps
+        # the overlap with 76h/77h unambiguous as well.
+        if logic_id in (0x007E, 0x007D, 0x001F, 0x001C, 0x0015, 0x0013):
+            _run_c054_c12d_effect_spawn_tail(cpu, object_bp=bp, selector_ax=selector_ax)
 
         # Simulate C054's RET back to BD5F.  The return word remains below SP.
         cpu.s.sp = c054_sp

@@ -2,9 +2,14 @@
 
 Discovers test_* functions in tests/test_*.py and runs them sequentially.
 """
-import importlib, pathlib, re, sys, traceback, types
+import importlib, pathlib, re, subprocess, sys, traceback, types
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+
+lint_script = pathlib.Path(__file__).resolve().parent / "lint.py"
+lint_result = subprocess.run([sys.executable, str(lint_script)])
+if lint_result.returncode != 0:
+    sys.exit(lint_result.returncode)
 
 if "pytest" not in sys.modules:
     class _Raises:

@@ -14,6 +14,7 @@ sys.path.insert(0, str(ROOT))
 from overkill_port.coverage import ISLANDS as COVERAGE_ISLANDS, OverkillCoverageClassifier  # noqa: E402
 from overkill_port.hook_verify import DEFAULT_STOPS  # noqa: E402
 from overkill_port.hooks import registry  # noqa: E402
+from overkill_port.games.overkill.frontier_manifest import FRONTIER_BY_ADDR, frontier_summary_lines  # noqa: E402
 import overkill_port.replacements  # noqa: F401,E402  # registers hooks
 
 Addr = tuple[int, int]
@@ -60,6 +61,7 @@ ISLANDS: tuple[Island, ...] = (
     )),
     Island("game_state", "per-frame game-state counters and orchestration", (
         ROOT / "overkill_port/games/overkill/gameplay/game_state.py",
+        ROOT / "overkill_port/games/overkill/gameplay/frame_orchestration.py",
     )),
     Island("gameplay_objects", "runtime object slot behavior and dispatch", (
         ROOT / "overkill_port/games/overkill/gameplay/object_runtime.py",
@@ -223,7 +225,10 @@ def build_report(trace_path: Path | None = None) -> dict[str, Any]:
             continue
         text = json.dumps(value, sort_keys=True) if not isinstance(value, str) else value
         if any(word in text.lower() for word in ("candidate", "frontier", "unverified", "fallback")):
-            by_island[island_key]["symbols_to_review"].append({addr_text: value})
+            if addr in FRONTIER_BY_ADDR:
+                by_island[island_key].setdefault("manifest_reviewed_symbols", []).append(addr_text)
+            else:
+                by_island[island_key]["symbols_to_review"].append({addr_text: value})
 
     for island_key, info in by_island.items():
         blockers = []
@@ -238,10 +243,17 @@ def build_report(trace_path: Path | None = None) -> dict[str, Any]:
         info["blockers"] = blockers
         info["status"] = "closed-candidate" if info["hooks"] and not blockers else ("classified" if island_key == "bootstrap" else "open")
     by_island["_import_seams"] = {"items": import_seams()}
+    by_island["_frontier_manifest"] = {"items": frontier_summary_lines()}
     return by_island
 
 
 def print_report(report: dict[str, Any], *, all_hooks: bool = False) -> None:
+    manifest_lines = report.pop("_frontier_manifest", {"items": []})["items"]
+    if manifest_lines:
+        print()
+        for item in manifest_lines:
+            print(item)
+
     import_seams = report.pop("_import_seams", {"items": []})["items"]
     if import_seams:
         print("\n== import seams ==")
