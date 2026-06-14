@@ -19,7 +19,7 @@ artifact.
 The current boundary manifest can be written with:
 
 ```bash
-python -m overkill_port.cli bootstrap-boundary --video tandy --sound adlib --out artifacts/static_runtime_boundary.json
+python -m overkill.cli bootstrap-boundary --video tandy --sound adlib --out artifacts/static_runtime_boundary.json
 ```
 
 The next practical step is materializing a canonical initialized runtime bundle
@@ -29,16 +29,16 @@ inner-runtime frontier, writes the normal snapshot files, and adds a reviewable
 and optional sound-driver area:
 
 ```bash
-python -m overkill_port.cli static-runtime-bundle assets/OVERKILL \
+python -m overkill.cli static-runtime-bundle assets/OVERKILL \
   --game-root assets \
   --video tandy \
   --sound adlib \
   --out-dir artifacts/static_runtime_bundle
 ```
 
-See `docs/bootstrap_static_boundary.md` for the policy,
-`overkill_port/games/overkill/bootstrap_boundary.py` for the importable boundary
-manifest, and `overkill_port/games/overkill/static_runtime_bundle.py` for the
+See `docs/overkill/bootstrap_static_boundary.md` for the policy,
+`overkill/bootstrap_boundary.py` for the importable boundary
+manifest, and `overkill/static_runtime_bundle.py` for the
 materializer.
 
 
@@ -105,13 +105,17 @@ The reusable workflow for this project is:
 observe -> classify -> choose boundary -> build ASM oracle -> implement hook -> verify -> document -> move to island
 ```
 
-New work usually starts as an exact `CS:IP` hook in `replacements.py`.  Once the
+New work usually starts as an exact `CS:IP` hook in `overkill/hooks.py`.  Once the
 behavior is understood, the implementation moves into a coherent game module
-under `overkill_port/games/overkill/`, while `replacements.py` keeps only the
+under `overkill/`, while `overkill/hooks.py` keeps only the
 address-facing wrapper.  This keeps reverse-engineering flexible without letting
 the staging file become the permanent source port.
 
-The full playbook is in `docs/source_port_methodology.md`. The compact project mantra is: do not write a source port first and hope it matches; exhaust truth from the original first, then let the source port crystallize from that evidence.
+The full playbook is in `docs/overkill/source_port_methodology.md`, with package
+ownership rules in `docs/architecture/package_boundary.md`. The compact project
+mantra is: do not write a source port first and hope it matches; exhaust truth
+from the original first, then let the source port crystallize from that
+evidence.
 
 
 ## Long-Term Shape
@@ -154,55 +158,82 @@ Practical consequences:
 - Every semantic name must be traceable back to original slots, behavior IDs,
   verified routines, and snapshots/traces.
 
-`docs/island_truth_tables.md` tracks per-island confidence: what is known, what
+`docs/overkill/island_truth_tables.md` tracks per-island confidence: what is known, what
 is verified, what is guessed, what remains unknown, and which tests/snapshots
 cover it.
 
 ## Repository Layout
 
+The project is split by role. The reusable RE/VM environment is not allowed to
+know the game; the game package owns all OVERKILL addresses, assets, islands, and
+source-port findings.
+
 ```text
-overkill_port/
+dos_re/                 reusable reverse-engineering runtime
   mz.py                 MZ parsing and loading
   memory.py             20-bit real-mode memory model
   cpu.py                dependency-free 8086 interpreter core
   dos.py                narrow DOS/BIOS/port services
-  hooks.py              replacement hook registry
-  replacements.py       exact CS:IP hook wrappers and staging area
-  runtime.py            OVERKILL runtime wiring
-  snapshot.py           memory/state snapshot helpers
-  hook_verify.py        live differential hook verifier
-  frame_verify.py       frame-level oracle comparison helpers
-  games/overkill/       lifted game-specific source-port logic
-    asm.py              shared 8086-style helper functions
-    asset_codecs/       asset streams, checksum, RLE/LZ, decoded asset table
-    file_io/            overlay/container file orchestration
-    gameplay/           objects, movement, collision, game-state counters
-    rendering/          startup graphics, coordinates, video primitives, layer sprites
-    sounds/             timer and PC speaker behavior
-assets/                 local user-supplied original game files
-artifacts/              root kept for live `play_*` captures
-  evidence/             non-play evidence snapshots, traces, and probes
-  test_oracles/         snapshots used directly by regression tests
-docs/                   design notes and reverse-engineering findings
+  hooks.py              generic replacement hook registry
+  interrupts.py         generic interrupt delivery helpers
+  keyboard.py           host input -> emulated keyboard state
+  runtime.py            generic DOS-program runtime wiring
+  snapshot.py           generic memory/state snapshot helpers
+  verification.py       reusable differential hook-verifier engine
+  frame_verify.py       reusable frame comparison and diff artifact engine
+
+overkill/               OVERKILL-specific reverse-engineered game layer
+  runtime.py            canonical OVERKILL launch/snapshot wiring
+  cli.py                OVERKILL commands built on top of dos_re
+  hooks.py              exact CS:IP hook registration surface
+  verification.py       OVERKILL hook-verifier stop metadata and adapters
+  frame_verify.py       OVERKILL frame extraction/render adapter
+  coverage.py           OVERKILL island classifier and dashboard
+  bootstrap_boundary.py bootstrap/static-runtime boundary manifest
+  static_runtime_bundle.py deterministic initialized-runtime materializer
+  asm.py                shared 8086-style helper functions
+  asset_codecs/         asset streams, checksum, RLE/LZ, decoded asset table
+  file_io/              overlay/container file orchestration
+  gameplay/             objects, movement, collision, game-state counters
+  rendering/            startup graphics, coordinates, video primitives, layer sprites
+  sounds/               timer, PC speaker, AdLib/YM3812 driver behavior
+
+nuked_opl3/             vendored optional Nuked-OPL3 CFFI binding
+  __init__.py           runtime Python wrapper; safe to import before build
+  _ffi_build.py         in-place CFFI build helper
+  vendor/               LGPL Nuked-OPL3 C core
+
+docs/
+  README.md             documentation map
+  architecture/         cross-package boundaries and dependency rules
+  dos_re/               reusable DOS RE methodology and framework notes
+  overkill/             OVERKILL archaeology, findings, status, and game docs
+
 scripts/                convenience runners and RE helpers
-tests/                  CPU and replacement regression tests
-symbols.json            known addresses, names, hypotheses, and status
-RUN_STATUS.md           current checkpoint and recent work
+assets/                 local user-supplied original game files
+artifacts/              generated snapshots, traces, caches, evidence
+tests/                  DOS runtime and OVERKILL regression tests
+symbols.json            known OVERKILL addresses, names, hypotheses, and status
 AGENTS.md               durable workflow and agent instructions
 ```
+
+See `docs/README.md` for the documentation map. `dos_re` must stay independent
+of OVERKILL. Anything that knows specific addresses, islands, command-tail
+semantics, sound-driver segments, frame boundaries, or game assets belongs in
+`overkill`.
 
 ## Quick Start
 
 Inspect the executable:
 
 ```bash
-python -m overkill_port.cli info assets/OVERKILL
+python -m overkill.cli info assets/OVERKILL
 ```
 
 Run a short trace:
 
 ```bash
-python -m overkill_port.cli trace assets/OVERKILL \
+python -m overkill.cli trace assets/OVERKILL \
   --game-root assets \
   --steps 5000 \
   --out trace_start.txt
@@ -211,7 +242,7 @@ python -m overkill_port.cli trace assets/OVERKILL \
 Create a snapshot:
 
 ```bash
-python -m overkill_port.cli snapshot assets/OVERKILL \
+python -m overkill.cli snapshot assets/OVERKILL \
   --game-root assets \
   --steps 100000 \
   --trace-tail 128 \
@@ -230,6 +261,13 @@ Run the lightweight lint pass directly:
 python scripts/lint.py
 ```
 
+Remove local caches/build outputs before packaging or sharing a tree:
+
+```bash
+python scripts/clean.py
+python scripts/clean.py --artifacts   # also remove unpromoted generated captures
+```
+
 Launch interactive play/viewer:
 
 ```bash
@@ -237,6 +275,12 @@ python scripts/play.py
 python scripts/play.py --video tandy
 python scripts/play.py --video ega
 python scripts/play.py --video cga
+```
+
+Render a saved frame/snapshot without SDL:
+
+```bash
+python scripts/render_frame.py artifacts/test_oracles/snapshot_play_tandy_20260611_152751 --video tandy --out frame.png
 ```
 
 Profile interpreted hotspots:
@@ -262,7 +306,7 @@ Every replacement is treated as a proof obligation.
 3. Run the interpreted original ASM to produce an oracle.
 4. Implement a Python replacement hook.
 5. Compare hook output against the oracle in tests or live hook verification.
-6. Document the finding in `docs/runtime_findings.md` and `symbols.json`.
+6. Document the finding in `docs/overkill/runtime_findings.md` and `symbols.json`.
 
 For focused hook tests, compare registers, flags, segment registers, stack
 scratch, touched memory, DOS state, and relevant video/file/port state.
@@ -282,8 +326,8 @@ python scripts/play.py --snapshot artifacts/evidence/snapshot_name --verify-fram
 
 ## Source-Port Islands
 
-Stable game-specific code belongs under `overkill_port/games/overkill/`.
-`replacements.py` should remain the thin address-facing hook layer.
+Stable game-specific code belongs under `overkill/`.
+`overkill/hooks.py` should remain the thin address-facing hook layer.
 
 Examples of source-port islands include:
 
@@ -305,7 +349,7 @@ python scripts/audit_islands.py
 `closed-candidate` means "no known script-detected blockers"; it is a useful
 closure signal, not a substitute for oracle evidence.
 
-The asset-codec work now lives under `overkill_port/games/overkill/asset_codecs/`
+The asset-codec work now lives under `overkill/asset_codecs/`
 and is limited to bytes becoming decoded asset data. Overlay helpers, file I/O,
 renderer startup materialization, and gameplay counters are separate islands even
 when their original addresses are physically near loader or overlay code.
@@ -359,11 +403,13 @@ python scripts/verify_hooks_headless.py \
 
 - `README.md`: stable project overview.
 - `AGENTS.md`: durable workflow, guardrails, and agent rules.
-- `RUN_STATUS.md`: current checkpoint and recent commands.
-- `docs/runtime_findings.md`: accumulated reverse-engineering findings.
-- `docs/design.md`: runtime architecture notes.
-- `docs/source_port_methodology.md`: reusable evidence-driven porting workflow.
-- `docs/next_steps.md`: tactical investigation notes when useful.
+- `docs/overkill/run_status.md`: current checkpoint and recent commands.
+- `docs/overkill/runtime_findings.md`: accumulated reverse-engineering findings.
+- `docs/overkill/design.md`: runtime architecture notes.
+- `docs/dos_re/source_port_methodology.md`: reusable DOS RE workflow.
+- `docs/overkill/source_port_methodology.md`: OVERKILL-specific source-port playbook.
+- `docs/overkill/next_steps.md`: tactical investigation notes when useful.
+- `docs/architecture/third_party.md`: vendored third-party component policy.
 - `symbols.json`: address labels, hypotheses, and replacement status.
 
 Prefer explicit segment:offset notation (`1010:95C9`) when documenting original
@@ -374,22 +420,44 @@ code.
 - Keep the CPU and DOS layers narrow and game-driven.
 - Add interpreter instructions only when OVERKILL reaches them.
 - Keep hooks readable before making them fast.
-- Move verified logic into `overkill_port/games/overkill/` when it becomes a
+- Move verified logic into `overkill/` when it becomes a
   coherent game-specific module.
 - Avoid broad refactors unless tests and oracle comparisons prove behavior did
   not change.
-- The current state of the project lives in `RUN_STATUS.md`, not in this README.
+- The current state of the project lives in `docs/overkill/run_status.md`, not in this README.
 
 Run:
-    python scripts/play.py [--video cga|ega|tandy] [--sound pc|adlib|roland] [--game-hz 30] [--fps 30] [--palette 1h] [--scale 2]
+    python scripts/play.py [--video cga|ega|tandy] [--sound pc|adlib|roland] [--game-hz 30] [--palette 1h] [--scale 2]
 
 AdLib audio:
     python scripts/play.py --video tandy --sound adlib
 
 `--sound adlib` runs OVERKILL's original optional AdLib driver and forwards its
-YM3812 register writes to the SDL viewer.  Audible FM output is optional: install
-and build the external `nuked_opl3` CFFI package first, then the viewer will
-stream Nuked-OPL3 PCM.  Without it, the VM still models AdLib detection and the
+YM3812 register writes to the SDL viewer.  Audible FM output uses the vendored
+`nuked_opl3` CFFI binding in this repository; build the extension once before
+expecting PCM output:
+
+```bash
+python -m pip install -e .[adlib]
+python -m nuked_opl3._ffi_build
+```
+
+Without the compiled extension, the VM still models AdLib detection and the
 register stream, but the SDL frontend stays silent and reports the missing
 backend.  Use `--adlib-audio off` to run the original driver without attempting
-PCM output.
+PCM output.  If SDL underruns on a machine, increase the PCM chunk size, e.g.
+`--adlib-chunk-ms 70`; underrun counts are shown in the window caption when they
+occur.
+
+Intro/menu code often waits on `1010:50C9`, which is a hardware retrace wait,
+not the `1010:0679` game-frame timer wait.  The viewer paces retrace waits at 60
+Hz by default while keeping gameplay at `--game-hz` (~36.4 Hz by default).  Use
+`--retrace-hz` only when you intentionally want to diagnose or override that
+cadence.
+
+SDL viewer note: intro/menu screens can publish frames from retrace-driven code
+rather than the gameplay timer wait.  The viewer therefore keeps the emulated
+IRQ0/AdLib ISR alive while waiting for SDL to consume those frames; gameplay
+still uses the normal `1010:0679` timer pacing.  The viewer also redraws the last
+published frame after window resize/expose events, so static screens remain
+visible even when no new VM frame is produced.

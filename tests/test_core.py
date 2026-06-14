@@ -1,5 +1,5 @@
-from overkill_port.memory import Memory
-from overkill_port.cpu import CPU8086, CPUState
+from dos_re.memory import Memory
+from dos_re.cpu import CPU8086, CPUState
 
 
 def run_bytes(code: bytes, steps: int = 10):
@@ -23,7 +23,7 @@ def test_memory_operand_decoded_once():
 
 
 def test_hook_verify_range_diff_keeps_exact_mismatch_report():
-    from overkill_port.hook_verify import HookVerifier, MemoryRange
+    from overkill.verification import HookVerifier, MemoryRange
 
     asm = bytearray(b"\x00" * 64)
     hook = bytearray(asm)
@@ -41,7 +41,7 @@ def test_hook_verify_range_diff_keeps_exact_mismatch_report():
 
 def test_hook_verify_defaults_to_full_memory_image():
     from types import SimpleNamespace
-    from overkill_port.hook_verify import HookVerifier, HookVerifierConfig
+    from overkill.verification import HookVerifier, HookVerifierConfig
 
     mem = Memory()
     hv = HookVerifier.__new__(HookVerifier)
@@ -87,8 +87,8 @@ def test_cbw_sign_extends_al_without_changing_flags():
 
 
 def test_dos_version_returns_al_major_ah_minor():
-    from overkill_port.dos import DOSMachine
-    from overkill_port.cpu import CF
+    from dos_re.dos import DOSMachine
+    from dos_re.cpu import CF
     cpu = CPU8086(Memory(), CPUState(cs=0x1000, ds=0x1000, es=0x1000, ss=0x1000, sp=0xFFFE))
     dos = DOSMachine(root=__import__('pathlib').Path('.'))
     cpu.s.ax = 0x3000
@@ -98,7 +98,7 @@ def test_dos_version_returns_al_major_ah_minor():
 
 
 def test_ega_crtc_display_start_tracks_indexed_port_writes():
-    from overkill_port.dos import DOSMachine
+    from dos_re.dos import DOSMachine
 
     mem = Memory()
     cpu = CPU8086(mem, CPUState(cs=0x1000, ds=0x1000, es=0x1000, ss=0x1000, sp=0xFFFE))
@@ -115,7 +115,7 @@ def test_ega_crtc_display_start_tracks_indexed_port_writes():
 
 def test_pc_speaker_tracks_pit_channel2_and_gate():
     from pathlib import Path
-    from overkill_port.dos import DOSMachine
+    from dos_re.dos import DOSMachine
 
     mem = Memory()
     cpu = CPU8086(mem, CPUState(cs=0x1000, ds=0x1000, es=0x1000, ss=0x1000, sp=0xFFFE))
@@ -140,7 +140,7 @@ def test_pc_speaker_tracks_pit_channel2_and_gate():
 
 
 def test_key_dispatcher_holds_tap_for_one_frame():
-    from overkill_port.keyboard import KeyDispatcher
+    from dos_re.keyboard import KeyDispatcher
     log: list[int] = []
     d = KeyDispatcher(log.append)
     # A tap (down+up) arriving before a frame: make this frame, break next frame.
@@ -155,7 +155,7 @@ def test_key_dispatcher_holds_tap_for_one_frame():
 
 
 def test_key_dispatcher_hold_release_and_autorepeat():
-    from overkill_port.keyboard import KeyDispatcher
+    from dos_re.keyboard import KeyDispatcher
     log: list[int] = []
     d = KeyDispatcher(log.append)
     d.post_down(0x10)
@@ -171,7 +171,7 @@ def test_key_dispatcher_hold_release_and_autorepeat():
 
 
 def test_key_dispatcher_drains_release_during_long_no_frame_burst():
-    from overkill_port.keyboard import KeyDispatcher
+    from dos_re.keyboard import KeyDispatcher
     log: list[int] = []
     d = KeyDispatcher(log.append)
 
@@ -186,7 +186,7 @@ def test_key_dispatcher_drains_release_during_long_no_frame_burst():
 
 
 def test_key_dispatcher_can_defer_release_after_present_boundary():
-    from overkill_port.keyboard import KeyDispatcher
+    from dos_re.keyboard import KeyDispatcher
     log: list[int] = []
     d = KeyDispatcher(log.append)
 
@@ -222,7 +222,7 @@ def test_iret_restores_cs_ip_and_flags():
 
 def test_set_get_interrupt_vector_roundtrip():
     from pathlib import Path
-    from overkill_port.dos import DOSMachine
+    from dos_re.dos import DOSMachine
     cpu = CPU8086(Memory(), CPUState(cs=0x1000, ds=0x1000, es=0x1000, ss=0x1000, sp=0xFFFE))
     dos = DOSMachine(root=Path('.'))
 
@@ -245,7 +245,7 @@ def test_set_get_interrupt_vector_roundtrip():
 
 def test_deliver_interrupt_runs_isr_to_iret():
     from types import SimpleNamespace
-    from overkill_port.interrupts import deliver_interrupt
+    from dos_re.interrupts import deliver_interrupt
     mem = Memory()
     # Tiny ISR at 3000:0000 -> inc word ptr [0500]; iret
     mem.load(0x3000, 0x0000, bytes.fromhex('ff 06 00 05 cf'))
@@ -267,8 +267,8 @@ def test_deliver_interrupt_runs_isr_to_iret():
 
 def test_int16_keyboard_queue_and_headless_fallback():
     from pathlib import Path
-    from overkill_port.dos import DOSMachine
-    from overkill_port.cpu import ZF
+    from dos_re.dos import DOSMachine
+    from dos_re.cpu import ZF
     cpu = CPU8086(Memory(), CPUState(cs=0x1000, ds=0x1000, es=0x1000, ss=0x1000, sp=0xFFFE))
     dos = DOSMachine(root=Path('.'))
 
@@ -299,7 +299,7 @@ def test_int16_keyboard_queue_and_headless_fallback():
 
 def test_int16_blocking_read_can_wait_for_interactive_frontend():
     from pathlib import Path
-    from overkill_port.dos import ConsoleInputWouldBlock, DOSMachine
+    from dos_re.dos import ConsoleInputWouldBlock, DOSMachine
 
     cpu = CPU8086(Memory(), CPUState(cs=0x1000, ds=0x1000, es=0x1000, ss=0x1000, sp=0xFFFE, ip=0x0202))
     dos = DOSMachine(root=Path('.'))
@@ -319,7 +319,7 @@ def test_int16_blocking_read_can_wait_for_interactive_frontend():
 
 def test_int10_text_mode_writes_cells_and_tracks_cursor():
     from pathlib import Path
-    from overkill_port.dos import DOSMachine
+    from dos_re.dos import DOSMachine
 
     cpu = CPU8086(Memory(), CPUState(cs=0x1000, ds=0x1000, es=0x1000, ss=0x1000, sp=0xFFFE))
     dos = DOSMachine(root=Path('.'))
@@ -358,7 +358,7 @@ def test_int10_text_mode_writes_cells_and_tracks_cursor():
 
 def test_int10_graphics_mode_set_clears_tandy_vram_unless_no_clear_bit():
     from pathlib import Path
-    from overkill_port.dos import DOSMachine
+    from dos_re.dos import DOSMachine
 
     cpu = CPU8086(Memory(), CPUState(cs=0x1000, ds=0x1000, es=0x1000, ss=0x1000, sp=0xFFFE))
     dos = DOSMachine(root=Path('.'))
@@ -384,7 +384,7 @@ def test_int10_graphics_mode_set_clears_tandy_vram_unless_no_clear_bit():
 
 def test_int21_dollar_console_output_renders_to_active_text_page():
     from pathlib import Path
-    from overkill_port.dos import DOSMachine
+    from dos_re.dos import DOSMachine
 
     cpu = CPU8086(Memory(), CPUState(cs=0x1000, ds=0x1000, es=0x1000, ss=0x1000, sp=0xFFFE))
     dos = DOSMachine(root=Path('.'))
@@ -405,7 +405,7 @@ def test_int21_dollar_console_output_renders_to_active_text_page():
 
 def test_int10_ega_info_reports_colour_adapter_present():
     from pathlib import Path
-    from overkill_port.dos import DOSMachine
+    from dos_re.dos import DOSMachine
 
     cpu = CPU8086(Memory(), CPUState(cs=0x1000, ds=0x1000, es=0x1000, ss=0x1000, sp=0xFFFE))
     dos = DOSMachine(root=Path('.'))
@@ -422,7 +422,7 @@ def test_int10_ega_info_reports_colour_adapter_present():
 
 def test_int21_console_input_uses_keyboard_queue_and_fallback():
     from pathlib import Path
-    from overkill_port.dos import DOSMachine
+    from dos_re.dos import DOSMachine
 
     cpu = CPU8086(Memory(), CPUState(cs=0x1000, ds=0x1000, es=0x1000, ss=0x1000, sp=0xFFFE))
     dos = DOSMachine(root=Path('.'))
@@ -446,7 +446,7 @@ def test_int21_console_input_uses_keyboard_queue_and_fallback():
 
 def test_int21_console_input_can_block_without_consuming_instruction():
     from pathlib import Path
-    from overkill_port.dos import ConsoleInputWouldBlock, DOSMachine
+    from dos_re.dos import ConsoleInputWouldBlock, DOSMachine
 
     cpu = CPU8086(Memory(), CPUState(cs=0x1000, ds=0x1000, es=0x1000, ss=0x1000, sp=0xFFFE))
     dos = DOSMachine(root=Path('.'))
@@ -467,7 +467,7 @@ def test_int21_console_input_can_block_without_consuming_instruction():
 
 def test_int10_teletype_accepts_high_score_editor_bell():
     from pathlib import Path
-    from overkill_port.dos import DOSMachine
+    from dos_re.dos import DOSMachine
 
     cpu = CPU8086(Memory(), CPUState(cs=0x1000, ds=0x1000, es=0x1000, ss=0x1000, sp=0xFFFE))
     dos = DOSMachine(root=Path('.'))
@@ -481,8 +481,8 @@ def test_int10_teletype_accepts_high_score_editor_bell():
 
 def test_dos_seeded_psp_resize_and_distinct_allocations():
     from pathlib import Path
-    from overkill_port.dos import DOSMachine
-    from overkill_port.cpu import CF
+    from dos_re.dos import DOSMachine
+    from dos_re.cpu import CF
     cpu = CPU8086(Memory(), CPUState(cs=0x1000, ds=0x1000, es=0x1000, ss=0x1000, sp=0xFFFE))
     dos = DOSMachine(root=Path('.'))
     dos.seed_initial_memory_block(0x1000, 0xA000)
@@ -515,7 +515,7 @@ def test_dos_seeded_psp_resize_and_distinct_allocations():
 
 
 def test_daa_adjusts_bcd_add_and_sets_carry_for_next_digit():
-    from overkill_port.cpu import CF, AF, PF, ZF, SF
+    from dos_re.cpu import CF, AF, PF, ZF, SF
 
     # OVERKILL overlay code at 1010:5F18 uses ADD/DAA followed by ADC/DAA
     # while updating packed decimal-looking score/text digits.  This covers the
@@ -530,7 +530,7 @@ def test_daa_adjusts_bcd_add_and_sets_carry_for_next_digit():
 
 
 def test_daa_without_adjust_clears_decimal_carry_flags():
-    from overkill_port.cpu import CF, AF
+    from dos_re.cpu import CF, AF
 
     cpu = run_bytes(bytes.fromhex("b0 12 04 03 27 f4"), 4)
     assert cpu.s.ax & 0x00FF == 0x15
@@ -540,7 +540,7 @@ def test_daa_without_adjust_clears_decimal_carry_flags():
 
 def test_create_runtime_accepts_command_tail():
     from pathlib import Path
-    from overkill_port.runtime import create_runtime
+    from dos_re.runtime import create_runtime
 
     root = Path(__file__).resolve().parents[1]
     rt = create_runtime(root / "assets" / "OVERKILL", game_root=root / "assets", command_tail=" /E")
@@ -553,7 +553,7 @@ def test_hook_registry_rejects_duplicate_registration():
     # Two replacements at the same CS:IP must fail loudly.  The map is keyed by
     # CS:IP, so a silent overwrite is exactly how superseded hook bodies used to
     # accrete unnoticed; the guard keeps one address mapped to one replacement.
-    from overkill_port.hooks import HookRegistry
+    from dos_re.hooks import HookRegistry
 
     reg = HookRegistry()
 
@@ -582,15 +582,15 @@ def test_hook_registry_rejects_duplicate_registration():
 
 def test_production_registry_has_no_duplicate_addresses():
     # Importing the real hook table must not trip the duplicate guard, i.e. the
-    # shipped replacements.py keeps exactly one replacement per CS:IP.
-    import overkill_port.replacements  # noqa: F401  (registers hooks on import)
-    from overkill_port.hooks import registry
+    # shipped overkill/hooks.py keeps exactly one replacement per CS:IP.
+    import overkill.hooks  # noqa: F401  (registers hooks on import)
+    from dos_re.hooks import registry
 
     assert len(registry.replacements) > 0
 
 
 def test_coverage_telemetry_counts_interpreted_and_verified_hooks():
-    from overkill_port.coverage import CoverageTelemetry, OverkillCoverageClassifier
+    from overkill.coverage import CoverageTelemetry, OverkillCoverageClassifier
 
     cov = CoverageTelemetry(classifier=OverkillCoverageClassifier(), cache_path=None)
     cov.record_interpreted_instruction((0x1010, 0x03A8))
@@ -609,7 +609,7 @@ def test_coverage_telemetry_counts_interpreted_and_verified_hooks():
 
 
 def test_coverage_summary_reports_grouped_interpreted_regions():
-    from overkill_port.coverage import CoverageTelemetry, OverkillCoverageClassifier
+    from overkill.coverage import CoverageTelemetry, OverkillCoverageClassifier
 
     cov = CoverageTelemetry(classifier=OverkillCoverageClassifier(), cache_path=None)
     for ip in (0xACD9, 0xACDD, 0xACDF, 0xACE3, 0xACE8, 0xACEC):
@@ -636,7 +636,7 @@ def test_coverage_summary_reports_grouped_interpreted_regions():
 
 
 def test_cpu_emits_coverage_for_generic_asm_and_hook():
-    from overkill_port.coverage import CoverageTelemetry, OverkillCoverageClassifier
+    from overkill.coverage import CoverageTelemetry, OverkillCoverageClassifier
 
     mem = Memory()
     # 0000: mov ax,1234 ; hlt.  0010: hook target.
@@ -659,7 +659,7 @@ def test_cpu_emits_coverage_for_generic_asm_and_hook():
     assert snap["unverified_hook_calls"] == 1
 
 def test_coverage_classifier_marks_transient_bootstrap_segment():
-    from overkill_port.coverage import OverkillCoverageClassifier
+    from overkill.coverage import OverkillCoverageClassifier
 
     classifier = OverkillCoverageClassifier()
     assert classifier.classify((0x32FF, 0x0052)) == "bootstrap"
@@ -671,7 +671,7 @@ def test_overkill_coverage_exact_address_sets_do_not_overlap():
     import ast
     from pathlib import Path
 
-    source = Path("overkill_port/coverage.py").read_text(encoding="utf-8")
+    source = Path("overkill/coverage.py").read_text(encoding="utf-8")
     module = ast.parse(source)
     classifier = next(
         node for node in module.body
@@ -700,9 +700,9 @@ def test_overkill_coverage_exact_address_sets_do_not_overlap():
 def test_all_registered_overkill_hooks_have_non_unknown_island_classification():
     from pathlib import Path
 
-    from overkill_port.coverage import OverkillCoverageClassifier
-    from overkill_port.hooks import registry
-    import overkill_port.replacements  # noqa: F401  # registers hooks
+    from overkill.coverage import OverkillCoverageClassifier
+    from dos_re.hooks import registry
+    import overkill.hooks  # noqa: F401  # registers hooks
 
     classifier = OverkillCoverageClassifier(Path("symbols.json"))
     unknown = [
@@ -714,7 +714,7 @@ def test_all_registered_overkill_hooks_have_non_unknown_island_classification():
 
 
 def test_cold_start_frontier_manifest_classifies_same_ip_and_bootstrap_leftovers():
-    from overkill_port.games.overkill.frontier_manifest import FRONTIER_BY_ADDR, FrontierCategory
+    from overkill.frontier_manifest import FRONTIER_BY_ADDR, FrontierCategory
 
     assert FRONTIER_BY_ADDR[(0x1010, 0xD007)].category is FrontierCategory.FINAL_ORCHESTRATOR
     assert FRONTIER_BY_ADDR[(0x1010, 0xD03E)].category is FrontierCategory.SAME_IP_LOOP_GATE
@@ -723,7 +723,7 @@ def test_cold_start_frontier_manifest_classifies_same_ip_and_bootstrap_leftovers
 
 
 def test_overkill_compact_tail_can_select_tandy_and_adlib():
-    from overkill_port.games.overkill.launch import build_command_tail
+    from overkill.launch import build_command_tail
 
     assert build_command_tail("cga", "pc") == b""
     assert build_command_tail("tandy", "pc") == bytes((0x0D, 0x02))
@@ -732,9 +732,9 @@ def test_overkill_compact_tail_can_select_tandy_and_adlib():
 
 
 def test_adlib_timer_presence_probe_status_bits():
-    from overkill_port.dos import DOSMachine
-    from overkill_port.cpu import CPU8086, CPUState
-    from overkill_port.memory import Memory
+    from dos_re.dos import DOSMachine
+    from dos_re.cpu import CPU8086, CPUState
+    from dos_re.memory import Memory
 
     cpu = CPU8086(Memory(), CPUState())
     dos = DOSMachine(root=__import__("pathlib").Path("."))
@@ -758,9 +758,9 @@ def test_adlib_timer_presence_probe_status_bits():
 def test_adlib_register_callback_receives_data_port_writes():
     from pathlib import Path
 
-    from overkill_port.cpu import CPU8086, CPUState
-    from overkill_port.dos import DOSMachine
-    from overkill_port.memory import Memory
+    from dos_re.cpu import CPU8086, CPUState
+    from dos_re.dos import DOSMachine
+    from dos_re.memory import Memory
 
     cpu = CPU8086(Memory(), CPUState())
     dos = DOSMachine(root=Path("."))
@@ -776,9 +776,9 @@ def test_adlib_register_callback_receives_data_port_writes():
 def test_adlib_register_callback_handles_16bit_index_data_write():
     from pathlib import Path
 
-    from overkill_port.cpu import CPU8086, CPUState
-    from overkill_port.dos import DOSMachine
-    from overkill_port.memory import Memory
+    from dos_re.cpu import CPU8086, CPUState
+    from dos_re.dos import DOSMachine
+    from dos_re.memory import Memory
 
     cpu = CPU8086(Memory(), CPUState())
     dos = DOSMachine(root=Path("."))
@@ -793,7 +793,7 @@ def test_adlib_register_callback_handles_16bit_index_data_write():
 def test_adlib_register_callback_can_emit_snapshot_state_on_attach():
     from pathlib import Path
 
-    from overkill_port.dos import DOSMachine
+    from dos_re.dos import DOSMachine
 
     dos = DOSMachine(root=Path("."))
     dos.opl_registers = {0xB0: 0x20, 0x20: 0x01}

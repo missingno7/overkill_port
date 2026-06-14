@@ -45,7 +45,7 @@
   "1010:0679": {
     "island": "sound",
     "name": "overkill_wait_timer_tick_0679",
-    "notes": "Timer-tick busy wait. Now delegated from replacements.py into the sound/timer island; delivers the original IRQ0 handler until CS:[066B] advances, then models the final CMP/JZ/RET iteration and optional frontend pacer.",
+    "notes": "Timer-tick busy wait. Now delegated from overkill/hooks.py into the sound/timer island; delivers the original IRQ0 handler until CS:[066B] advances, then models the final CMP/JZ/RET iteration and optional frontend pacer.",
     "status": "replaced"
   },
   "1010:0682": {
@@ -592,6 +592,12 @@
     "kind": "hook",
     "name": "overkill_object_behavior_b73e",
     "notes": "Partially lifted behavior for the observed logic_id 20h object. Covers the no-substate FFFFh movement path, B7F3/B7C9 target reset, substates B754/B770/B77B, the bounded B82D waypoint-table loop, and the B77B -> BC4B -> AA46 carry-set contact death path verified at frame 383 from snapshot_play_tandy_20260611_152751."
+  },
+  "1010:B86D": {
+    "kind": "hook",
+    "name": "overkill_object_behavior_b86d",
+    "notes": "Observed object-family behavior selected by EFAE for logic id 001Dh. Covers the hot B885 target-align/B729 movement setup path and the B8B0 frame-counter/object-X drift path, then lands on the shared BC4B postmove/collision boundary. The unobserved B8F8 tail remains a fail-fast frontier.",
+    "status": "replaced"
   },
   "1010:BC45": {
     "island": "collision",

@@ -21,7 +21,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from overkill_port.runtime import create_runtime  # noqa: E402
+from overkill.runtime import create_overkill_runtime  # noqa: E402
 
 VIDEO_TAIL_EGA = bytes((0x0D, 0x01))
 BOUNDARY_HOOKS = {
@@ -56,7 +56,7 @@ def main(argv: list[str] | None = None) -> int:
                    help="do not disable 58DF/CCAA/CCC4/CCF0 like play.py does for EGA")
     args = p.parse_args(argv)
 
-    rt = create_runtime(ROOT / "assets" / "OVERKILL",
+    rt = create_overkill_runtime(ROOT / "assets" / "OVERKILL",
                         game_root=ROOT / "assets", command_tail=VIDEO_TAIL_EGA)
     cpu = rt.cpu
     cpu.trace_enabled = False

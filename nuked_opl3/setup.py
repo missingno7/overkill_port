@@ -12,6 +12,8 @@ package placed at the repo root as ``nuked_opl3/``) and installed with
 """
 from setuptools import setup
 
-setup(
-    cffi_modules=["nuked_opl3/_ffi_build.py:ffibuilder"],
-)
+
+if __name__ == "__main__":
+    setup(
+        cffi_modules=["nuked_opl3/_ffi_build.py:ffibuilder"],
+    )

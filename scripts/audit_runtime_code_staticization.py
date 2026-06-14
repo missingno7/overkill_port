@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from overkill_port.games.overkill.runtime_code import (  # noqa: E402
+from overkill.runtime_code import (  # noqa: E402
     RuntimeCodeStaticizationError,
     assert_runtime_code_staticization_ready,
     runtime_code_staticization_report,

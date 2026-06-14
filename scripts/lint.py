@@ -19,7 +19,7 @@ from dataclasses import dataclass
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-PACKAGE_ROOT = ROOT / "overkill_port"
+PACKAGE_ROOTS = (ROOT / "dos_re", ROOT / "overkill", ROOT / "nuked_opl3")
 SCRIPTS_ROOT = ROOT / "scripts"
 
 sys.path.insert(0, str(ROOT))
@@ -71,19 +71,23 @@ def _resolve_relative_module(package: str, level: int, module: str | None) -> st
 
 
 def _iter_python_files() -> list[pathlib.Path]:
-    files = list(PACKAGE_ROOT.rglob("*.py"))
+    files = []
+    for package_root in PACKAGE_ROOTS:
+        files.extend(package_root.rglob("*.py"))
     files.extend(SCRIPTS_ROOT.glob("*.py"))
     return sorted(set(files))
 
 
 def _internal_roots() -> set[str]:
-    roots = {"overkill_port"}
+    roots = {"dos_re", "overkill", "nuked_opl3"}
     roots.update(path.stem for path in SCRIPTS_ROOT.glob("*.py"))
     return roots
 
 
 def _collect_local_imports_issues(path: pathlib.Path, tree: ast.AST) -> list[LintIssue]:
-    if "overkill_port/games/overkill" not in path.as_posix():
+    rel_parts = path.relative_to(ROOT).parts if path.is_relative_to(ROOT) else ()
+    guarded_dirs = {"asset_codecs", "file_io", "gameplay", "rendering", "sounds"}
+    if not path.is_relative_to(ROOT / "overkill") or len(rel_parts) < 2 or rel_parts[1] not in guarded_dirs:
         return []
     issues: list[LintIssue] = []
 
@@ -123,6 +127,64 @@ def _collect_local_imports_issues(path: pathlib.Path, tree: ast.AST) -> list[Lin
     Visitor().visit(tree)
     return issues
 
+
+
+
+
+def _collect_package_boundary_issues(path: pathlib.Path, tree: ast.AST) -> list[LintIssue]:
+    if not path.is_relative_to(ROOT / "dos_re"):
+        return []
+    issues: list[LintIssue] = []
+    package_name = _package_name_for_path(path)
+    for lineno, target in _collect_resolved_import_targets(path, tree):
+        if target.startswith("<relative-import-error>"):
+            continue
+        if target == "overkill" or target.startswith("overkill."):
+            issues.append(
+                LintIssue(
+                    kind="package-boundary",
+                    path=path,
+                    lineno=lineno,
+                    message="dos_re must not import the OVERKILL-specific package",
+                )
+            )
+    return issues
+
+def _collect_vendored_boundary_issues(path: pathlib.Path, tree: ast.AST) -> list[LintIssue]:
+    if not path.is_relative_to(ROOT / "nuked_opl3"):
+        return []
+    issues: list[LintIssue] = []
+    for lineno, target in _collect_resolved_import_targets(path, tree):
+        if target.startswith("<relative-import-error>"):
+            continue
+        if target == "dos_re" or target.startswith("dos_re.") or target == "overkill" or target.startswith("overkill."):
+            issues.append(
+                LintIssue(
+                    kind="package-boundary",
+                    path=path,
+                    lineno=lineno,
+                    message="vendored nuked_opl3 must stay independent of dos_re and overkill",
+                )
+            )
+    return issues
+
+
+def _collect_hardcoded_workspace_path_issues(path: pathlib.Path, source: str) -> list[LintIssue]:
+    if not path.is_relative_to(SCRIPTS_ROOT):
+        return []
+    forbidden = ("/mnt" + "/data/", "C:" + "\\games\\", "C:" + "/games/")
+    issues: list[LintIssue] = []
+    for lineno, line in enumerate(source.splitlines(), start=1):
+        if any(token in line for token in forbidden):
+            issues.append(
+                LintIssue(
+                    kind="hardcoded-workspace-path",
+                    path=path,
+                    lineno=lineno,
+                    message="diagnostic scripts must use repository-relative paths or CLI arguments",
+                )
+            )
+    return issues
 
 def _collect_resolved_import_targets(path: pathlib.Path, tree: ast.AST) -> list[tuple[int, str]]:
     module_name = _module_name_for_path(path)
@@ -171,6 +233,9 @@ def _lint_file(path: pathlib.Path, internal_roots: set[str]) -> list[LintIssue]:
         return issues
 
     issues.extend(_collect_local_imports_issues(path, tree))
+    issues.extend(_collect_package_boundary_issues(path, tree))
+    issues.extend(_collect_vendored_boundary_issues(path, tree))
+    issues.extend(_collect_hardcoded_workspace_path_issues(path, source))
 
     for lineno, target in _collect_resolved_import_targets(path, tree):
         if target.startswith("<relative-import-error>"):
@@ -178,6 +243,9 @@ def _lint_file(path: pathlib.Path, internal_roots: set[str]) -> list[LintIssue]:
             continue
         root = target.split(".", 1)[0]
         if root not in internal_roots:
+            continue
+        if target == "nuked_opl3._opl3_cffi":
+            # Generated local CFFI extension; absent until the user builds it.
             continue
         if importlib.util.find_spec(target) is None:
             issues.append(LintIssue("missing-import", path, lineno, f"cannot resolve import target {target!r}"))
@@ -188,12 +256,18 @@ def _lint_file(path: pathlib.Path, internal_roots: set[str]) -> list[LintIssue]:
 def _import_first_party_modules() -> list[LintIssue]:
     issues: list[LintIssue] = []
     module_paths = []
-    for path in PACKAGE_ROOT.rglob("*.py"):
-        module_name = _module_name_for_path(path)
-        if module_name:
-            module_paths.append((module_name, path))
+    for package_root in PACKAGE_ROOTS:
+        for path in package_root.rglob("*.py"):
+            module_name = _module_name_for_path(path)
+            if module_name:
+                module_paths.append((module_name, path))
 
     for module_name, path in sorted(module_paths):
+        if module_name == "nuked_opl3._ffi_build":
+            # Build helper requires optional cffi and a compiler only when AdLib
+            # PCM synthesis is being enabled; syntax/import-target lint above is
+            # enough for normal test runs.
+            continue
         try:
             importlib.import_module(module_name)
         except Exception:
@@ -210,6 +284,75 @@ def _import_first_party_modules() -> list[LintIssue]:
     return issues
 
 
+
+def _collect_documentation_layout_issues() -> list[LintIssue]:
+    issues: list[LintIssue] = []
+    allowed_root_docs = {"README.md"}
+    docs_root = ROOT / "docs"
+    for path in sorted(docs_root.glob("*.md")):
+        if path.name not in allowed_root_docs:
+            issues.append(
+                LintIssue(
+                    kind="documentation-layout",
+                    path=path,
+                    lineno=1,
+                    message="durable docs must live under docs/dos_re, docs/overkill, or docs/architecture",
+                )
+            )
+    forbidden_root_docs = {"RUN_STATUS.md", "PERFORMANCE_INVESTIGATION.md"}
+    for name in forbidden_root_docs:
+        path = ROOT / name
+        if path.exists():
+            issues.append(
+                LintIssue(
+                    kind="documentation-layout",
+                    path=path,
+                    lineno=1,
+                    message="project status/investigation docs belong under docs/overkill",
+                )
+            )
+    return issues
+
+
+def _collect_legacy_reference_issues() -> list[LintIssue]:
+    issues: list[LintIssue] = []
+    scanned_roots = (ROOT / "README.md", ROOT / "AGENTS.md", ROOT / "docs", ROOT / "dos_re", ROOT / "overkill", ROOT / "scripts", ROOT / "tests", ROOT / "nuked_opl3")
+    forbidden = {
+        "from render_cga import": "use scripts/render_frame.py / render_frame module",
+        "import render_cga as": "use scripts/render_frame.py / render_frame module",
+        "render_cga.py": "use scripts/render_frame.py",
+        "overkill_port.": "use the separated dos_re/overkill packages",
+        "overkill.hook_verify": "use overkill.verification",
+        "replacements.py": "use overkill/hooks.py",
+    }
+    candidates: list[pathlib.Path] = []
+    for root in scanned_roots:
+        if not root.exists():
+            continue
+        if root.is_file():
+            candidates.append(root)
+        else:
+            candidates.extend(path for path in root.rglob("*") if path.suffix in {".py", ".md"})
+    for path in sorted(set(candidates)):
+        if path == ROOT / "scripts" / "lint.py":
+            continue
+        try:
+            source = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+        for lineno, line in enumerate(source.splitlines(), start=1):
+            for token, message in forbidden.items():
+                if token in line:
+                    issues.append(
+                        LintIssue(
+                            kind="legacy-reference",
+                            path=path,
+                            lineno=lineno,
+                            message=message,
+                        )
+                    )
+    return issues
+
 def main() -> int:
     issues: list[LintIssue] = []
     internal_roots = _internal_roots()
@@ -217,6 +360,8 @@ def main() -> int:
         issues.extend(_lint_file(path, internal_roots))
 
     issues.extend(_import_first_party_modules())
+    issues.extend(_collect_documentation_layout_issues())
+    issues.extend(_collect_legacy_reference_issues())
 
     if issues:
         print("LINT FAILED")

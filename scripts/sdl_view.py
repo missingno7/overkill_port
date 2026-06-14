@@ -20,7 +20,7 @@ This backend instead:
     is ~1-2 ms instead of ~15 ms.
 
 The decoders are pixel-identical to the reference ``render_*_ppm`` functions in
-``render_cga.py`` (asserted by ``tests/test_render_rgb.py``); those PPM renderers
+``render_frame.py`` (asserted by ``tests/test_render_rgb.py``); those PPM renderers
 remain as the headless PNG-dump tool and as the decode oracle, while this module
 is what the live viewer uses.
 
@@ -34,7 +34,7 @@ from typing import Callable
 
 import numpy as np
 
-from render_cga import (
+from render_frame import (
     CGA_PALETTES,
     EGA_BYTES_PER_ROW,
     EGA_LEGACY_PLANE_STRIDE,
@@ -55,6 +55,141 @@ _TEXT_PALETTE = [
     (0x55, 0x55, 0x55), (0x55, 0x55, 0xFF), (0x55, 0xFF, 0x55), (0x55, 0xFF, 0xFF),
     (0xFF, 0x55, 0x55), (0xFF, 0x55, 0xFF), (0xFF, 0xFF, 0x55), (0xFF, 0xFF, 0xFF),
 ]
+
+_DOS_5X7_PATTERNS: dict[str, tuple[str, ...]] = {
+    " ": ("00000", "00000", "00000", "00000", "00000", "00000", "00000"),
+    "!": ("00100", "00100", "00100", "00100", "00100", "00000", "00100"),
+    '"': ("01010", "01010", "01010", "00000", "00000", "00000", "00000"),
+    "#": ("01010", "11111", "01010", "01010", "11111", "01010", "01010"),
+    "$": ("00100", "01111", "10100", "01110", "00101", "11110", "00100"),
+    "%": ("11001", "11010", "00100", "01000", "01011", "10011", "00000"),
+    "&": ("01100", "10010", "10100", "01000", "10101", "10010", "01101"),
+    "'": ("00100", "00100", "01000", "00000", "00000", "00000", "00000"),
+    "(": ("00010", "00100", "01000", "01000", "01000", "00100", "00010"),
+    ")": ("01000", "00100", "00010", "00010", "00010", "00100", "01000"),
+    "*": ("00000", "10101", "01110", "11111", "01110", "10101", "00000"),
+    "+": ("00000", "00100", "00100", "11111", "00100", "00100", "00000"),
+    ",": ("00000", "00000", "00000", "00000", "00110", "00100", "01000"),
+    "-": ("00000", "00000", "00000", "11111", "00000", "00000", "00000"),
+    ".": ("00000", "00000", "00000", "00000", "00000", "01100", "01100"),
+    "/": ("00001", "00010", "00100", "01000", "10000", "00000", "00000"),
+    "0": ("01110", "10001", "10011", "10101", "11001", "10001", "01110"),
+    "1": ("00100", "01100", "00100", "00100", "00100", "00100", "01110"),
+    "2": ("01110", "10001", "00001", "00010", "00100", "01000", "11111"),
+    "3": ("11110", "00001", "00001", "01110", "00001", "00001", "11110"),
+    "4": ("00010", "00110", "01010", "10010", "11111", "00010", "00010"),
+    "5": ("11111", "10000", "10000", "11110", "00001", "00001", "11110"),
+    "6": ("00110", "01000", "10000", "11110", "10001", "10001", "01110"),
+    "7": ("11111", "00001", "00010", "00100", "01000", "01000", "01000"),
+    "8": ("01110", "10001", "10001", "01110", "10001", "10001", "01110"),
+    "9": ("01110", "10001", "10001", "01111", "00001", "00010", "11100"),
+    ":": ("00000", "01100", "01100", "00000", "01100", "01100", "00000"),
+    ";": ("00000", "01100", "01100", "00000", "01100", "00100", "01000"),
+    "<": ("00010", "00100", "01000", "10000", "01000", "00100", "00010"),
+    "=": ("00000", "00000", "11111", "00000", "11111", "00000", "00000"),
+    ">": ("01000", "00100", "00010", "00001", "00010", "00100", "01000"),
+    "?": ("01110", "10001", "00001", "00010", "00100", "00000", "00100"),
+    "@": ("01110", "10001", "10111", "10101", "10111", "10000", "01111"),
+    "A": ("01110", "10001", "10001", "11111", "10001", "10001", "10001"),
+    "B": ("11110", "10001", "10001", "11110", "10001", "10001", "11110"),
+    "C": ("01110", "10001", "10000", "10000", "10000", "10001", "01110"),
+    "D": ("11110", "10001", "10001", "10001", "10001", "10001", "11110"),
+    "E": ("11111", "10000", "10000", "11110", "10000", "10000", "11111"),
+    "F": ("11111", "10000", "10000", "11110", "10000", "10000", "10000"),
+    "G": ("01110", "10001", "10000", "10111", "10001", "10001", "01111"),
+    "H": ("10001", "10001", "10001", "11111", "10001", "10001", "10001"),
+    "I": ("01110", "00100", "00100", "00100", "00100", "00100", "01110"),
+    "J": ("00001", "00001", "00001", "00001", "10001", "10001", "01110"),
+    "K": ("10001", "10010", "10100", "11000", "10100", "10010", "10001"),
+    "L": ("10000", "10000", "10000", "10000", "10000", "10000", "11111"),
+    "M": ("10001", "11011", "10101", "10101", "10001", "10001", "10001"),
+    "N": ("10001", "11001", "10101", "10011", "10001", "10001", "10001"),
+    "O": ("01110", "10001", "10001", "10001", "10001", "10001", "01110"),
+    "P": ("11110", "10001", "10001", "11110", "10000", "10000", "10000"),
+    "Q": ("01110", "10001", "10001", "10001", "10101", "10010", "01101"),
+    "R": ("11110", "10001", "10001", "11110", "10100", "10010", "10001"),
+    "S": ("01111", "10000", "10000", "01110", "00001", "00001", "11110"),
+    "T": ("11111", "00100", "00100", "00100", "00100", "00100", "00100"),
+    "U": ("10001", "10001", "10001", "10001", "10001", "10001", "01110"),
+    "V": ("10001", "10001", "10001", "10001", "10001", "01010", "00100"),
+    "W": ("10001", "10001", "10001", "10101", "10101", "10101", "01010"),
+    "X": ("10001", "10001", "01010", "00100", "01010", "10001", "10001"),
+    "Y": ("10001", "10001", "01010", "00100", "00100", "00100", "00100"),
+    "Z": ("11111", "00001", "00010", "00100", "01000", "10000", "11111"),
+    "[": ("01110", "01000", "01000", "01000", "01000", "01000", "01110"),
+    "\\": ("10000", "01000", "00100", "00010", "00001", "00000", "00000"),
+    "]": ("01110", "00010", "00010", "00010", "00010", "00010", "01110"),
+    "^": ("00100", "01010", "10001", "00000", "00000", "00000", "00000"),
+    "_": ("00000", "00000", "00000", "00000", "00000", "00000", "11111"),
+    "`": ("01000", "00100", "00010", "00000", "00000", "00000", "00000"),
+    "|": ("00100", "00100", "00100", "00100", "00100", "00100", "00100"),
+    "~": ("00000", "00000", "01000", "10101", "00010", "00000", "00000"),
+}
+
+_TEXT_GLYPH_CACHE: dict[int, np.ndarray] = {}
+
+
+def _bitmap_mask_for_code(ch: int) -> np.ndarray:
+    """Return a crisp 8x16 bitmap mask for a BIOS text character.
+
+    The F9 boss-key screen is a BIOS text mode screen, not an OVERKILL graphics
+    surface.  Rendering it through pygame's proportional outline font made the
+    fake DOS directory listing look like scaled UI text.  A small ROM-like 5x7
+    bitmap expanded into an 8x16 cell keeps text deterministic, monospace, and
+    nearest-neighbour friendly.  CP437 box/extended glyphs fall back to '?' until
+    we need them; the boss screen itself uses plain ASCII.
+    """
+    ch &= 0xFF
+    cached = _TEXT_GLYPH_CACHE.get(ch)
+    if cached is not None:
+        return cached
+    if 0x61 <= ch <= 0x7A:
+        key = chr(ch - 0x20)
+    elif 0x20 <= ch <= 0x7E:
+        key = chr(ch)
+    else:
+        key = "?"
+    rows = _DOS_5X7_PATTERNS.get(key, _DOS_5X7_PATTERNS["?"])
+    mask = np.zeros((16, 8), dtype=bool)
+    y0 = 1
+    x0 = 1
+    for src_y, row_bits in enumerate(rows):
+        for src_x, bit in enumerate(row_bits):
+            if bit == "1":
+                mask[y0 + src_y * 2:y0 + src_y * 2 + 2, x0 + src_x] = True
+    _TEXT_GLYPH_CACHE[ch] = mask
+    return mask
+
+
+def render_text_rgb(mem: bytes, mode: int, page: int = 0) -> np.ndarray:
+    """Decode BIOS 80x25 text memory to a native 640x400 RGB image.
+
+    This intentionally does not use host fonts.  The source screen is already a
+    character-cell bitmap device, so using a deterministic bitmap mask avoids
+    anti-aliased/proportional glyph artifacts and makes integer SDL scaling look
+    much closer to a DOS text screen.
+    """
+    base = 0xB0000 if (mode & 0xFF) == 7 else 0xB8000
+    page_off = (page & 0x07) * 0x1000
+    cell_w, cell_h = 8, 16
+    arr = np.zeros((25 * cell_h, 80 * cell_w, 3), dtype=np.uint8)
+    mem_arr = np.frombuffer(mem, dtype=np.uint8)
+    for row in range(25):
+        y = row * cell_h
+        for col in range(80):
+            x = col * cell_w
+            off = base + page_off + ((row * 80 + col) * 2)
+            if off + 1 >= mem_arr.size:
+                continue
+            ch = int(mem_arr[off]) or 0x20
+            attr = int(mem_arr[off + 1])
+            fg = _TEXT_PALETTE[attr & 0x0F]
+            bg = _TEXT_PALETTE[(attr >> 4) & 0x07]
+            cell = arr[y:y + cell_h, x:x + cell_w]
+            cell[:, :] = bg
+            mask = _bitmap_mask_for_code(ch)
+            cell[mask] = fg
+    return arr
 
 
 class PcSpeakerAudio:
@@ -107,7 +242,7 @@ class PcSpeakerAudio:
 
 
 class NukedAdlibAudio:
-    """SDL streaming wrapper around the optional ``nuked_opl3`` package.
+    """SDL streaming wrapper around the vendored optional ``nuked_opl3`` package.
 
     The VM already runs OVERKILL's original AdLib driver and forwards completed
     YM3812 register writes.  This class only turns that register stream into PCM.
@@ -115,7 +250,14 @@ class NukedAdlibAudio:
     without compiling the CFFI extension.
     """
 
-    def __init__(self, pygame, status: dict | None = None, *, enabled: bool = True) -> None:
+    def __init__(
+        self,
+        pygame,
+        status: dict | None = None,
+        *,
+        enabled: bool = True,
+        chunk_ms: float = 46.0,
+    ) -> None:
         self._pygame = pygame
         self._status = status
         self._available = False
@@ -123,7 +265,10 @@ class NukedAdlibAudio:
         self._channel = None
         self._rate = 44100
         self._channels = 1
-        self._chunk_frames = 1024
+        self._chunk_frames = 2048
+        self._started = False
+        self._underruns = 0
+        self._last_status_underruns = 0
         if not enabled:
             return
         if not pygame.mixer.get_init():
@@ -134,19 +279,20 @@ class NukedAdlibAudio:
             return
         self._rate = int(init[0])
         self._channels = int(init[2])
+        self._chunk_frames = max(512, int(round(self._rate * max(10.0, float(chunk_ms)) / 1000.0)))
         try:
             from nuked_opl3 import OPL3  # type: ignore
 
             self._chip = OPL3(sample_rate=self._rate)
         except Exception as exc:  # noqa: BLE001 - optional extension/import failure
             self._report(
-                "AdLib register stream active, but Nuked-OPL3 is not built/importable: "
+                "AdLib register stream active, but vendored Nuked-OPL3 is not built/importable: "
                 f"{type(exc).__name__}: {exc}"
             )
             return
         self._available = True
         self._channel = pygame.mixer.Channel(1)
-        self._report("AdLib audio: Nuked-OPL3 backend active")
+        self._report("AdLib audio: vendored Nuked-OPL3 backend active")
 
     def write(self, reg: int, value: int) -> None:
         if not self._available or self._chip is None:
@@ -156,16 +302,33 @@ class NukedAdlibAudio:
     def pump(self) -> None:
         if not self._available or self._chip is None or self._channel is None:
             return
-        # Keep at most one queued chunk ahead.  A larger queue adds audible input
-        # latency; no queue risks underruns while the emulator is waiting for SDL.
+        # Pygame's mixer API is chunk-queue based rather than callback based.
+        # Keep the current chunk plus one queued chunk filled.  If rendering or
+        # the emulator thread briefly takes longer than one chunk, this avoids a
+        # stop/start gap; if the channel did underrun, restart with a prequeued
+        # follow-up chunk so the next interval is stable again.
         if not self._channel.get_busy():
+            if self._started:
+                self._underruns += 1
             self._channel.play(self._next_sound())
+            self._channel.queue(self._next_sound())
+            self._started = True
+            self._report_underrun_status()
         elif self._channel.get_queue() is None:
             self._channel.queue(self._next_sound())
 
     def close(self) -> None:
         if self._channel is not None:
             self._channel.stop()
+
+    def _report_underrun_status(self) -> None:
+        if self._underruns == self._last_status_underruns:
+            return
+        self._last_status_underruns = self._underruns
+        self._report(
+            f"AdLib audio: vendored Nuked-OPL3 backend active, underruns={self._underruns}, "
+            f"chunk={self._chunk_frames * 1000.0 / max(1, self._rate):.0f}ms"
+        )
 
     def _next_sound(self):
         assert self._chip is not None
@@ -183,7 +346,7 @@ class NukedAdlibAudio:
 def render_ega_rgb(mem: bytes, start_offset: int = 0, seg: int = 0xA000) -> np.ndarray:
     """Decode the EGA shadow planes to a native (200, 320, 3) RGB array.
 
-    Mirrors ``render_cga.render_ega_ppm`` exactly, including its three accepted
+    Mirrors ``render_frame.render_ega_ppm`` exactly, including its three accepted
     buffer layouts (distinguished by length): a tight view of just the four shadow
     planes (planes at offset 0, the layout the live viewer publishes), full runtime
     memory (planes at ``EGA_SHADOW_BASE``), or the legacy in-aperture layout for old
@@ -212,7 +375,7 @@ def render_ega_rgb(mem: bytes, start_offset: int = 0, seg: int = 0xA000) -> np.n
 def render_cga_rgb(mem: bytes, palette: str = "1h") -> np.ndarray:
     """Decode CGA B800h 320x200x4 to a native (200, 320, 3) RGB array.
 
-    Mirrors ``render_cga.render_ppm``: interlaced layout
+    Mirrors ``render_frame.render_ppm``: interlaced layout
     ``offset = (y & 1)*0x2000 + (y >> 1)*80``; each byte is four pixels, two bits
     each, most-significant pixel first.
     """
@@ -229,7 +392,7 @@ def render_cga_rgb(mem: bytes, palette: str = "1h") -> np.ndarray:
 def render_tandy_rgb(mem: bytes) -> np.ndarray:
     """Decode Tandy/PCjr B800h 320x200x16 packed graphics to (200, 320, 3) RGB.
 
-    Mirrors ``render_cga.render_tandy_ppm``: four 8 KiB banks,
+    Mirrors ``render_frame.render_tandy_ppm``: four 8 KiB banks,
     ``offset = (y & 3)*0x2000 + (y >> 2)*160 + x_byte``; each byte is two pixels,
     high nibble first.
     """
@@ -244,29 +407,8 @@ def render_tandy_rgb(mem: bytes) -> np.ndarray:
 
 def render_text_surface(pygame, mem: bytes, mode: int, page: int):
     """Render BIOS 80x25 colour/mono text memory to a pygame surface."""
-    base = 0xB0000 if (mode & 0xFF) == 7 else 0xB8000
-    page_off = (page & 0x07) * 0x1000
-    font = pygame.font.Font(None, 16)
-    cell_w, cell_h = 8, 16
-    surf = pygame.Surface((80 * cell_w, 25 * cell_h))
-    surf.fill((0, 0, 0))
-    for row in range(25):
-        for col in range(80):
-            off = base + page_off + ((row * 80 + col) * 2)
-            if off + 1 >= len(mem):
-                continue
-            ch = mem[off]
-            attr = mem[off + 1]
-            if ch == 0:
-                ch = 0x20
-            fg = _TEXT_PALETTE[attr & 0x0F]
-            bg = _TEXT_PALETTE[(attr >> 4) & 0x07]
-            rect = pygame.Rect(col * cell_w, row * cell_h, cell_w, cell_h)
-            surf.fill(bg, rect)
-            glyph = bytes([ch]).decode("cp437", errors="replace")
-            text = font.render(glyph, False, fg)
-            surf.blit(text, (rect.x, rect.y - 1))
-    return surf
+    rgb = render_text_rgb(mem, mode, page)
+    return pygame.image.frombuffer(rgb.tobytes(), (80 * 8, 25 * 16), "RGB")
 
 
 # pygame key -> XT make scan code.  Letters/digits use pygame's lowercase names;
@@ -342,14 +484,19 @@ def run_sdl_ui(
     else:
         decode = lambda snap, ds: render_cga_rgb(snap, palette)
 
-    pygame.mixer.pre_init(frequency=44100, size=-16, channels=1, buffer=512)
+    mixer_buffer = 1024 if getattr(args, "sound", "pc") == "adlib" else 512
+    pygame.mixer.pre_init(frequency=44100, size=-16, channels=1, buffer=mixer_buffer)
     pygame.init()
     speaker = PcSpeakerAudio(pygame)
     pygame.display.set_caption(f"OVERKILL (emulated {video.upper()})  -  Q/A/O/P move, Z/Space fire")
     screen = pygame.display.set_mode((WIDTH * scale, HEIGHT * scale), pygame.RESIZABLE)
     scan = _build_pygame_scan()
     adlib_enabled = getattr(args, "sound", "pc") == "adlib" and getattr(args, "adlib_audio", "auto") != "off"
-    adlib = NukedAdlibAudio(pygame, status, enabled=adlib_enabled) if adlib_events is not None else None
+    adlib = (
+        NukedAdlibAudio(pygame, status, enabled=adlib_enabled, chunk_ms=getattr(args, "adlib_chunk_ms", 46.0))
+        if adlib_events is not None else None
+    )
+    last_present: dict[str, tuple[bytes, int, int | None, int] | None] = {"value": None}
 
     def drain_speaker_events() -> None:
         if speaker_events is None:
@@ -389,6 +536,12 @@ def run_sdl_ui(
         screen.fill((0, 0, 0))
         screen.blit(surf, (x, y))
         pygame.display.flip()
+        last_present["value"] = (snapshot, display_start, video_mode, video_page)
+
+    def redraw_last_present() -> None:
+        last = last_present["value"]
+        if last is not None:
+            present(*last)
 
     def caption() -> None:
         base = f"OVERKILL (emulated {video.upper()})  -  Q/A/O/P move, Z/Space fire"
@@ -415,6 +568,9 @@ def run_sdl_ui(
                     running = False
                 elif ev.type == pygame.VIDEORESIZE:
                     screen = pygame.display.set_mode((max(WIDTH, ev.w), max(HEIGHT, ev.h)), pygame.RESIZABLE)
+                    redraw_last_present()
+                elif ev.type in (getattr(pygame, "VIDEOEXPOSE", -1), getattr(pygame, "WINDOWEXPOSED", -2)):
+                    redraw_last_present()
                 elif ev.type == pygame.KEYDOWN:
                     if ev.key == pygame.K_F12:
                         queue_snapshot_save()

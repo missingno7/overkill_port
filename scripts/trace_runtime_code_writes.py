@@ -16,13 +16,13 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from overkill_port.games.overkill.runtime_code import (
+from overkill.runtime_code import (
     RUNTIME_CODE_SLOTS,
     RuntimeCodeWriteTracer,
     describe_live_runtime_code_state,
 )
-from overkill_port.runtime import create_runtime
-from overkill_port.snapshot import load_snapshot
+from overkill.runtime import create_overkill_runtime
+from overkill.runtime import load_overkill_snapshot
 
 
 def parse_args() -> argparse.Namespace:
@@ -43,9 +43,9 @@ def main() -> int:
     exe = Path(args.exe)
     game_root = Path(args.game_root)
     if args.snapshot:
-        rt = load_snapshot(exe, Path(args.snapshot), game_root=game_root)
+        rt = load_overkill_snapshot(exe, Path(args.snapshot), game_root=game_root)
     else:
-        rt = create_runtime(exe, game_root=game_root)
+        rt = create_overkill_runtime(exe, game_root=game_root)
     rt.cpu.trace_enabled = False
     if args.no_hooks:
         rt.cpu.replacement_hooks.clear()

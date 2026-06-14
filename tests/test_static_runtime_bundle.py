@@ -3,15 +3,15 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
-from overkill_port.cpu import CPUState
-from overkill_port.games.overkill.static_runtime_bundle import (
+from dos_re.cpu import CPUState
+from overkill.static_runtime_bundle import (
     DEFAULT_STATIC_RUNTIME_ENTRY,
     build_static_runtime_bundle_manifest,
     materialized_globals,
     sha256_bytes,
     static_runtime_segments,
 )
-from overkill_port.memory import Memory, linear
+from dos_re.memory import Memory, linear
 
 
 def _fake_runtime():

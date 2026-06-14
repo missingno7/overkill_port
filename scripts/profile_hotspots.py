@@ -13,7 +13,7 @@ sampling the current CS:IP each step.  All counters are local to this script, so
 the interpreter core stays clean and pays nothing when not profiling.
 
 Usage:
-    python scripts/profile_hotspots.py [steps] [--video cga|ega|tandy]
+    python scripts/profile_hotspots.py [steps] [--video cga|ega|tandy] [--sound pc|adlib|roland]
                                        [--stop-at CS:IP] [--top N]
 
 Examples:
@@ -31,8 +31,9 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from overkill_port.runtime import create_runtime  # noqa: E402
-from overkill_port.snapshot import load_snapshot  # noqa: E402
+from overkill.runtime import create_overkill_runtime  # noqa: E402
+from overkill.runtime import load_overkill_snapshot  # noqa: E402
+from overkill.launch import build_command_tail  # noqa: E402
 
 # Present/frame-boundary hooks: time spent here is "graphics/present", not the
 # interpreter or asset-decode work we are trying to speed up.
@@ -56,6 +57,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("steps", nargs="?", type=int, default=3_000_000,
                    help="max interpreted steps to profile (default 3,000,000)")
     p.add_argument("--video", choices=("cga", "ega", "tandy"), default="tandy")
+    p.add_argument("--sound", choices=("pc", "adlib", "roland"), default="pc",
+                   help="compact original sound selector for cold-start profiling")
     p.add_argument("--snapshot", default=None,
                    help="resume profiling from a saved runtime snapshot directory")
     p.add_argument("--stop-at", default=None, help="stop early at CS:IP, e.g. 1010:475A")
@@ -70,12 +73,12 @@ def main(argv: list[str] | None = None) -> int:
     exe = ROOT / "assets" / "OVERKILL"
     assets = ROOT / "assets"
     if args.snapshot:
-        rt = load_snapshot(exe, args.snapshot, game_root=assets)
+        rt = load_overkill_snapshot(exe, args.snapshot, game_root=assets)
     else:
-        rt = create_runtime(
+        rt = create_overkill_runtime(
             exe,
             game_root=assets,
-            command_tail=VIDEO_TAIL[args.video],
+            command_tail=build_command_tail(args.video, args.sound),
         )
     cpu = rt.cpu
     cpu.trace_enabled = False
@@ -138,7 +141,7 @@ def main(argv: list[str] | None = None) -> int:
     interp_time = max(0.0, wall - total_hook_time)
 
     print("=" * 64)
-    print(f"OVERKILL profile  video={args.video}  steps={executed:,}")
+    print(f"OVERKILL profile  video={args.video}  sound={args.sound}  steps={executed:,}")
     print(f"wall={wall:.2f}s   {executed / wall:,.0f} interpreted-steps/sec")
     cs, ip = cpu.addr()
     print(f"final CS:IP = {cs:04X}:{ip:04X}")

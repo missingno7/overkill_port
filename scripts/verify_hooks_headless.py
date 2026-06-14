@@ -16,15 +16,15 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from overkill_port.coverage import CoverageTelemetry, OverkillCoverageClassifier
-from overkill_port.frame_verify import NON_CGA_INTERACTIVE_DISABLE
-from overkill_port.hook_verify import (
+from overkill.coverage import CoverageTelemetry, OverkillCoverageClassifier
+from overkill.frame_verify import NON_CGA_INTERACTIVE_DISABLE
+from overkill.verification import (
     HookVerifierConfig,
     HookVerifyDivergence,
     HookVerifyLimitReached,
     install_hook_verifier,
 )
-from overkill_port.snapshot import load_snapshot
+from overkill.runtime import load_overkill_snapshot
 
 
 def _parse_addr(text: str) -> tuple[int, int]:
@@ -107,7 +107,7 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    rt = load_snapshot(args.exe, args.snapshot, game_root=args.game_root)
+    rt = load_overkill_snapshot(args.exe, args.snapshot, game_root=args.game_root)
 
     if args.coverage:
         rt.cpu.coverage_telemetry = CoverageTelemetry(
@@ -132,6 +132,7 @@ def main() -> int:
             max_verified=args.verify_max,
             stop_on_diff=True,
             full_memory=not args.fast_ranges,
+            asm_max_steps=1_000_000,
         ),
     )
 

@@ -3,15 +3,14 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from overkill_port.frame_verify import (
+from dos_re.frame_verify import (
     FrameSample,
     FrameVerifyConfig,
-    _compose_compare_rgb,
-    _diff_rgb,
-    _dump_divergence,
-    HEIGHT,
-    WIDTH,
+    compose_compare_rgb,
+    diff_rgb_frame,
+    dump_divergence,
 )
+from overkill.frame_verify import HEIGHT, WIDTH
 
 
 def _rgb_frame(fill: bytes) -> bytes:
@@ -34,15 +33,18 @@ def _sample(*, side: str, frame_no: int, rgb: bytes) -> FrameSample:
         raw=b"\x00" * 0x4000,
         rgb=rgb,
         recent_hooks=("1010:447B frame_verify_candidate_present enter=1010:447B",),
+        width=WIDTH,
+        height=HEIGHT,
+        context="tandy",
     )
 
 
 def test_compose_compare_rgb_keeps_all_three_panels():
     ref = _rgb_frame(b"\x10\x20\x30")
     cand = _rgb_frame(b"\x40\x50\x60")
-    diff = _diff_rgb(ref, cand)
+    diff = diff_rgb_frame(ref, cand)
 
-    compare = _compose_compare_rgb(ref, cand, diff)
+    compare = compose_compare_rgb(ref, cand, diff, width=WIDTH, height=HEIGHT)
     row_bytes = (WIDTH * 3 + 8) * 3
 
     assert len(compare) == row_bytes * HEIGHT
@@ -61,7 +63,7 @@ def test_dump_divergence_writes_compare_png():
         dump_dir = Path(tmp)
         config = FrameVerifyConfig(dump_dir=dump_dir, preview_on_diff=False)
 
-        _dump_divergence(ref, cand, report, config)
+        dump_divergence(ref, cand, report, config)
 
         stem = dump_dir / "frame_00007_tandy"
         assert stem.with_name("frame_00007_tandy_ref.png").exists()

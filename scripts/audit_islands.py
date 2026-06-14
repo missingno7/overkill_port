@@ -11,11 +11,11 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from overkill_port.coverage import ISLANDS as COVERAGE_ISLANDS, OverkillCoverageClassifier  # noqa: E402
-from overkill_port.hook_verify import DEFAULT_STOPS  # noqa: E402
-from overkill_port.hooks import registry  # noqa: E402
-from overkill_port.games.overkill.frontier_manifest import FRONTIER_BY_ADDR, frontier_summary_lines  # noqa: E402
-import overkill_port.replacements  # noqa: F401,E402  # registers hooks
+from overkill.coverage import ISLANDS as COVERAGE_ISLANDS, OverkillCoverageClassifier  # noqa: E402
+from overkill.verification import DEFAULT_STOPS  # noqa: E402
+from dos_re.hooks import registry  # noqa: E402
+from overkill.frontier_manifest import FRONTIER_BY_ADDR, frontier_summary_lines  # noqa: E402
+import overkill.hooks  # noqa: F401,E402  # registers hooks
 
 Addr = tuple[int, int]
 
@@ -27,57 +27,57 @@ class Island:
 
 ISLANDS: tuple[Island, ...] = (
     Island("asset_codecs", "asset loading / non-overlay codecs", (
-        ROOT / "overkill_port/games/overkill/asset_codecs/asset_table.py",
-        ROOT / "overkill_port/games/overkill/asset_codecs/checksum.py",
-        ROOT / "overkill_port/games/overkill/asset_codecs/lz.py",
-        ROOT / "overkill_port/games/overkill/asset_codecs/packed_stream.py",
-        ROOT / "overkill_port/games/overkill/asset_codecs/rle.py",
+        ROOT / "overkill/asset_codecs/asset_table.py",
+        ROOT / "overkill/asset_codecs/checksum.py",
+        ROOT / "overkill/asset_codecs/lz.py",
+        ROOT / "overkill/asset_codecs/packed_stream.py",
+        ROOT / "overkill/asset_codecs/rle.py",
     )),
     Island("overlay", "overlay directory / overlay decode helpers", (
-        ROOT / "overkill_port/games/overkill/asset_codecs/overlay.py",
+        ROOT / "overkill/asset_codecs/overlay.py",
     )),
     Island("file_io", "file I/O and overlay/container parent loaders", (
-        ROOT / "overkill_port/games/overkill/file_io/overlay_loader.py",
+        ROOT / "overkill/file_io/overlay_loader.py",
     )),
     Island("bootstrap", "transient unpack/self-relocation bootstrap", ()),
     Island("startup_graphics", "startup graphics / renderer table materialization", (
-        ROOT / "overkill_port/games/overkill/rendering/startup_graphics.py",
-        ROOT / "overkill_port/games/overkill/rendering/tandy.py",
+        ROOT / "overkill/rendering/startup_graphics.py",
+        ROOT / "overkill/rendering/tandy.py",
     )),
     Island("coordinates", "coordinate/address helpers", (
-        ROOT / "overkill_port/games/overkill/rendering/coordinates.py",
+        ROOT / "overkill/rendering/coordinates.py",
     )),
     Island("layer_sprites", "shared layer sprite dispatch / presence lists", (
-        ROOT / "overkill_port/games/overkill/rendering/layer_sprites.py",
+        ROOT / "overkill/rendering/layer_sprites.py",
     )),
     Island("tandy_renderer", "Tandy-specific rendering primitives", (
-        ROOT / "overkill_port/games/overkill/rendering/tandy.py",
+        ROOT / "overkill/rendering/tandy.py",
     )),
     Island("cga_renderer", "CGA / packed-row rendering primitives", (
-        ROOT / "overkill_port/replacements.py",
+        ROOT / "overkill/hooks.py",
     )),
     Island("ega_renderer", "EGA planar rendering primitives", (
-        ROOT / "overkill_port/replacements.py",
+        ROOT / "overkill/hooks.py",
     )),
     Island("game_state", "per-frame game-state counters and orchestration", (
-        ROOT / "overkill_port/games/overkill/gameplay/game_state.py",
-        ROOT / "overkill_port/games/overkill/gameplay/frame_orchestration.py",
+        ROOT / "overkill/gameplay/game_state.py",
+        ROOT / "overkill/gameplay/frame_orchestration.py",
     )),
     Island("gameplay_objects", "runtime object slot behavior and dispatch", (
-        ROOT / "overkill_port/games/overkill/gameplay/object_runtime.py",
-        ROOT / "overkill_port/games/overkill/gameplay/objects.py",
+        ROOT / "overkill/gameplay/object_runtime.py",
+        ROOT / "overkill/gameplay/objects.py",
     )),
     Island("movement", "movement helpers", (
-        ROOT / "overkill_port/replacements.py",
+        ROOT / "overkill/hooks.py",
     )),
     Island("collision", "tile/object collision and contact helpers", (
-        ROOT / "overkill_port/games/overkill/gameplay/collision.py",
+        ROOT / "overkill/gameplay/collision.py",
     )),
     Island("input_menu", "input/menu/prompt/pacing helpers", (
-        ROOT / "overkill_port/games/overkill/input_menu.py",
+        ROOT / "overkill/input_menu.py",
     )),
     Island("sound", "timer IRQ / PC speaker sound", (
-        ROOT / "overkill_port/games/overkill/sounds/pc_speaker.py",
+        ROOT / "overkill/sounds/pc_speaker.py",
     )),
     Island("unknown", "unclassified", ()),
 )
@@ -135,7 +135,7 @@ def module_seams(island: Island) -> list[str]:
     )
     seams: list[str] = []
     for path in island.module_paths:
-        if not path.exists() or path.name == "replacements.py":
+        if not path.exists() or path.name == "hooks.py":
             continue
         rel = path.relative_to(ROOT)
         for lineno, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
@@ -168,14 +168,14 @@ def import_seams() -> list[str]:
     # Currently this is intentionally conservative; it flags only game modules
     # that import from an obviously higher conceptual directory.
     seams: list[str] = []
-    for path in (ROOT / "overkill_port/games/overkill").rglob("*.py"):
+    for path in (ROOT / "overkill").rglob("*.py"):
         rel = path.relative_to(ROOT)
         text = path.read_text(encoding="utf-8", errors="replace")
-        if "games.overkill.gameplay" in text and "asset_codecs" in str(rel):
+        if "overkill.gameplay" in text and "asset_codecs" in str(rel):
             seams.append(f"{rel}: asset codec imports gameplay layer")
-        if "games.overkill.rendering" in text and "asset_codecs" in str(rel):
+        if "overkill.rendering" in text and "asset_codecs" in str(rel):
             seams.append(f"{rel}: asset codec imports rendering layer")
-        if "games.overkill.gameplay" in text and "rendering" in str(rel):
+        if "overkill.gameplay" in text and "rendering" in str(rel):
             seams.append(f"{rel}: rendering imports gameplay layer")
     return seams
 

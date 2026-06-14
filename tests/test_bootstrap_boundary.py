@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from overkill_port.games.overkill.bootstrap_boundary import (
+from overkill.bootstrap_boundary import (
     bootstrap_boundary_manifest,
     write_bootstrap_boundary_manifest,
 )

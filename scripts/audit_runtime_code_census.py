@@ -23,14 +23,14 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from overkill_port.games.overkill.runtime_code import (  # noqa: E402
+from overkill.runtime_code import (  # noqa: E402
     RUNTIME_CODE_SLOTS,
     RuntimeCodeWriteEvent,
     RuntimeCodeWriteTracer,
     describe_live_runtime_code_state,
 )
-from overkill_port.memory import linear  # noqa: E402
-from overkill_port.runtime import create_runtime  # noqa: E402
+from dos_re.memory import linear  # noqa: E402
+from overkill.runtime import create_overkill_runtime  # noqa: E402
 
 VIDEO_TAILS: dict[str, bytes] = {
     "cga": b"",
@@ -146,7 +146,7 @@ def _summarize_post_bootstrap_data(events: Iterable[RuntimeCodeWriteEvent]) -> l
 def _run_mode(video: str, args: argparse.Namespace) -> int:
     exe = Path(args.exe)
     game_root = Path(args.game_root)
-    rt = create_runtime(exe, game_root=game_root, command_tail=VIDEO_TAILS[video])
+    rt = create_overkill_runtime(exe, game_root=game_root, command_tail=VIDEO_TAILS[video])
     rt.cpu.trace_enabled = False
     rt.cpu.replacement_hooks.clear()
     rt.cpu.hook_names.clear()

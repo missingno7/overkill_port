@@ -31,8 +31,8 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from overkill_port.runtime import create_runtime  # noqa: E402
-from overkill_port.memory import EGA_APERTURE, EGA_PLANE_STRIDE  # noqa: E402
+from overkill.runtime import create_overkill_runtime  # noqa: E402
+from dos_re.memory import EGA_APERTURE, EGA_PLANE_STRIDE  # noqa: E402
 
 VIDEO_TAIL = {
     "cga": b"",
@@ -55,7 +55,7 @@ TANDY_BYTES_PER_ROW = 160
 
 
 def run_to_present(video: str, max_steps: int):
-    rt = create_runtime(
+    rt = create_overkill_runtime(
         ROOT / "assets" / "OVERKILL",
         game_root=ROOT / "assets",
         command_tail=VIDEO_TAIL[video],

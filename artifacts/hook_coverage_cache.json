@@ -1,11 +1,11 @@
 {
   "hooks": {
     "1010:0162": {
-      "avg_asm_equiv": 22.0,
+      "avg_asm_equiv": 24.107142857142858,
       "island": "input_menu",
       "last_asm_equiv": 22.0,
       "name": "overkill_input_poll_0162",
-      "samples": 6.0
+      "samples": 28.0
     },
     "1010:017E": {
       "avg_asm_equiv": 48.0,
@@ -22,9 +22,9 @@
       "samples": 2.0
     },
     "1010:03A8": {
-      "avg_asm_equiv": 108699.88888888889,
+      "avg_asm_equiv": 108571.0,
       "island": "asset_codecs",
-      "last_asm_equiv": 29041.0,
+      "last_asm_equiv": 29117.0,
       "name": "overkill_vertical_rle_decoder_03a8",
       "samples": 9.0
     },
@@ -40,21 +40,21 @@
       "island": "sound",
       "last_asm_equiv": 2.0,
       "name": "overkill_clear_timer_tick_flag_0672",
-      "samples": 6.0
+      "samples": 28.0
     },
     "1010:06E5": {
-      "avg_asm_equiv": 32.5,
+      "avg_asm_equiv": 35.2962962962963,
       "island": "sound",
-      "last_asm_equiv": 35.0,
+      "last_asm_equiv": 38.0,
       "name": "overkill_fast_timer_isr_06e5",
-      "samples": 10.0
+      "samples": 54.0
     },
     "1010:073C": {
       "avg_asm_equiv": 3.0,
       "island": "game_state",
       "last_asm_equiv": 3.0,
       "name": "overkill_frame_service_gate_073c",
-      "samples": 5.0
+      "samples": 27.0
     },
     "1010:0F0B": {
       "avg_asm_equiv": 3900.0,
@@ -78,25 +78,25 @@
       "samples": 1.0
     },
     "1010:306F": {
-      "avg_asm_equiv": 206.3978494623656,
+      "avg_asm_equiv": 267.0,
       "island": "tandy_renderer",
       "last_asm_equiv": 156.0,
       "name": "overkill_tandy_rect_copy_306f",
-      "samples": 186.0
+      "samples": 2.0
     },
     "1010:30BA": {
-      "avg_asm_equiv": 176.0,
+      "avg_asm_equiv": 112.68,
       "island": "tandy_renderer",
       "last_asm_equiv": 55.0,
       "name": "overkill_tandy_patched_row_copy_30ba",
-      "samples": 105.0
+      "samples": 25.0
     },
     "1010:3354": {
       "avg_asm_equiv": 1.0,
       "island": "tandy_renderer",
       "last_asm_equiv": 1.0,
       "name": "overkill_present_tandy_frame_3354",
-      "samples": 6.0
+      "samples": 28.0
     },
     "1010:3389": {
       "avg_asm_equiv": 1854.0,
@@ -106,74 +106,81 @@
       "samples": 1.0
     },
     "1010:33AF": {
-      "avg_asm_equiv": 834.421052631579,
+      "avg_asm_equiv": 1050.0,
       "island": "startup_graphics",
       "last_asm_equiv": 26.0,
       "name": "overkill_expand_tandy_list_33af",
-      "samples": 19.0
+      "samples": 15.0
     },
     "1010:34AD": {
       "avg_asm_equiv": 10.0,
       "island": "tandy_renderer",
       "last_asm_equiv": 10.0,
       "name": "overkill_tandy_split_present_copy_34ad",
-      "samples": 6.0
+      "samples": 28.0
     },
     "1010:34D8": {
-      "avg_asm_equiv": 75.0,
+      "avg_asm_equiv": 71.92105263157895,
       "island": "tandy_renderer",
-      "last_asm_equiv": 84.0,
+      "last_asm_equiv": 3.0,
       "name": "overkill_tandy_small_strided_copy_34d8",
-      "samples": 54.0
+      "samples": 570.0
     },
     "1010:3542": {
-      "avg_asm_equiv": 28.0,
+      "avg_asm_equiv": 27.264705882352942,
       "island": "tandy_renderer",
       "last_asm_equiv": 28.0,
       "name": "overkill_tandy_tiny_strided_copy_3542",
-      "samples": 6.0
+      "samples": 34.0
     },
     "1010:356C": {
       "avg_asm_equiv": 24.0,
       "island": "tandy_renderer",
       "last_asm_equiv": 24.0,
       "name": "overkill_tandy_draw_split_object_356c",
-      "samples": 6.0
+      "samples": 28.0
     },
     "1010:35CC": {
-      "avg_asm_equiv": 84.22222222222223,
+      "avg_asm_equiv": 80.87719298245614,
       "island": "tandy_renderer",
-      "last_asm_equiv": 94.0,
+      "last_asm_equiv": 6.0,
       "name": "overkill_tandy_draw_object_block_35cc",
-      "samples": 54.0
+      "samples": 570.0
     },
     "1010:3657": {
-      "avg_asm_equiv": 38.0,
+      "avg_asm_equiv": 37.05882352941177,
       "island": "tandy_renderer",
       "last_asm_equiv": 38.0,
       "name": "overkill_tandy_draw_tiny_object_3657",
-      "samples": 6.0
+      "samples": 34.0
     },
     "1010:36A2": {
       "avg_asm_equiv": 1256.0,
       "island": "tandy_renderer",
       "last_asm_equiv": 1256.0,
       "name": "overkill_tandy_loading_tile_column_copy_36a2",
-      "samples": 3.0
+      "samples": 1.0
     },
     "1010:375B": {
-      "avg_asm_equiv": 3289.0392156862745,
+      "avg_asm_equiv": 3271.373737373737,
       "island": "tandy_renderer",
-      "last_asm_equiv": 3872.0,
+      "last_asm_equiv": 2671.0,
       "name": "overkill_tandy_postcopy_scaled_blit_375b",
-      "samples": 102.0
+      "samples": 99.0
+    },
+    "1010:3824": {
+      "avg_asm_equiv": 1653.0,
+      "island": "tandy_renderer",
+      "last_asm_equiv": 1653.0,
+      "name": "overkill_tandy_full_width_panel_copy_3824",
+      "samples": 1.0
     },
     "1010:4CED": {
       "avg_asm_equiv": 16.0,
       "island": "layer_sprites",
       "last_asm_equiv": 16.0,
       "name": "overkill_presence_stamp_triplet_4ced",
-      "samples": 11.0
+      "samples": 22.0
     },
     "1010:4D15": {
       "avg_asm_equiv": 227.66666666666666,
@@ -187,7 +194,7 @@
       "island": "layer_sprites",
       "last_asm_equiv": 4.0,
       "name": "overkill_clear_presence_list_parent_4d64",
-      "samples": 11.0
+      "samples": 22.0
     },
     "1010:4D6F": {
       "avg_asm_equiv": 140.0,
@@ -208,35 +215,35 @@
       "island": "collision",
       "last_asm_equiv": 8.0,
       "name": "overkill_tile_lookup_505b",
-      "samples": 13.0
+      "samples": 59.0
     },
     "1010:5073": {
       "avg_asm_equiv": 25.0,
       "island": "collision",
       "last_asm_equiv": 25.0,
       "name": "overkill_tile_probe_5073",
-      "samples": 12.0
+      "samples": 28.0
     },
     "1010:511F": {
       "avg_asm_equiv": 3.0,
       "island": "layer_sprites",
       "last_asm_equiv": 3.0,
       "name": "overkill_video_page_toggle_511f",
-      "samples": 6.0
+      "samples": 28.0
     },
     "1010:5160": {
       "avg_asm_equiv": 3.0,
       "island": "ega_renderer",
       "last_asm_equiv": 3.0,
       "name": "overkill_ega_display_start_wait_5160",
-      "samples": 5.0
+      "samples": 27.0
     },
     "1010:518C": {
       "avg_asm_equiv": 18.0,
       "island": "tandy_renderer",
       "last_asm_equiv": 18.0,
       "name": "overkill_text_string_loop_518c",
-      "samples": 43.0
+      "samples": 3.0
     },
     "1010:519A": {
       "avg_asm_equiv": 7.0,
@@ -244,6 +251,13 @@
       "last_asm_equiv": 7.0,
       "name": "overkill_text_dispatch_519a",
       "samples": 3.0
+    },
+    "1010:558B": {
+      "avg_asm_equiv": 31.0,
+      "island": "input_menu",
+      "last_asm_equiv": 31.0,
+      "name": "overkill_main_menu_idle_loop_558b",
+      "samples": 43.0
     },
     "1010:5827": {
       "avg_asm_equiv": 2452.0,
@@ -257,21 +271,21 @@
       "island": "coordinates",
       "last_asm_equiv": 13.0,
       "name": "overkill_xy_to_di_5a00",
-      "samples": 125.0
+      "samples": 3.0
     },
     "1010:5A24": {
       "avg_asm_equiv": 13.0,
       "island": "coordinates",
       "last_asm_equiv": 13.0,
       "name": "overkill_xy_to_di_5a24",
-      "samples": 105.0
+      "samples": 25.0
     },
     "1010:5A6C": {
       "avg_asm_equiv": 3.0,
       "island": "layer_sprites",
       "last_asm_equiv": 3.0,
       "name": "overkill_menu_cell_source_blit_dispatch_5a6c",
-      "samples": 186.0
+      "samples": 2.0
     },
     "1010:5A92": {
       "avg_asm_equiv": 9.0,
@@ -292,7 +306,7 @@
       "island": "game_state",
       "last_asm_equiv": 3.0,
       "name": "overkill_present_frame_dispatch_5bdc",
-      "samples": 6.0
+      "samples": 28.0
     },
     "1010:5C74": {
       "avg_asm_equiv": 972.0,
@@ -302,11 +316,11 @@
       "samples": 2.0
     },
     "1010:5DB2": {
-      "avg_asm_equiv": 25.788113695090438,
+      "avg_asm_equiv": 27.25,
       "island": "movement",
-      "last_asm_equiv": 26.0,
+      "last_asm_equiv": 32.0,
       "name": "overkill_movement_direction_helper_5db2",
-      "samples": 387.0
+      "samples": 40.0
     },
     "1010:5E42": {
       "avg_asm_equiv": 37.34,
@@ -320,7 +334,7 @@
       "island": "tandy_renderer",
       "last_asm_equiv": 15.0,
       "name": "overkill_score_status_text_block_5edb",
-      "samples": 5.0
+      "samples": 27.0
     },
     "1010:5EF9": {
       "avg_asm_equiv": 9.0,
@@ -337,11 +351,11 @@
       "samples": 64.0
     },
     "1010:5F61": {
-      "avg_asm_equiv": 41.6,
+      "avg_asm_equiv": 36.55555555555556,
       "island": "game_state",
-      "last_asm_equiv": 58.0,
+      "last_asm_equiv": 31.0,
       "name": "overkill_frame_status_counter_update_5f61",
-      "samples": 5.0
+      "samples": 27.0
     },
     "1010:60C5": {
       "avg_asm_equiv": 102207.0,
@@ -357,19 +371,33 @@
       "name": "overkill_decrement_first_active_counter_scan_61ca",
       "samples": 96.0
     },
+    "1010:61F7": {
+      "avg_asm_equiv": 72.0,
+      "island": "game_state",
+      "last_asm_equiv": 72.0,
+      "name": "overkill_decrement_first_active_counter_loop_61f7",
+      "samples": 1.0
+    },
+    "1010:6296": {
+      "avg_asm_equiv": 15.0,
+      "island": "game_state",
+      "last_asm_equiv": 15.0,
+      "name": "overkill_status_counter_cell_blit_6296",
+      "samples": 6.0
+    },
     "1010:75A6": {
       "avg_asm_equiv": 57.0,
       "island": "layer_sprites",
       "last_asm_equiv": 57.0,
       "name": "overkill_layer_sprite_draw_75a6",
-      "samples": 6.0
+      "samples": 28.0
     },
     "1010:768E": {
-      "avg_asm_equiv": 24.444444444444443,
+      "avg_asm_equiv": 26.95267489711934,
       "island": "layer_sprites",
       "last_asm_equiv": 27.0,
       "name": "overkill_layer_sprite_draw_768e",
-      "samples": 54.0
+      "samples": 486.0
     },
     "1010:7746": {
       "avg_asm_equiv": 20.0,
@@ -379,11 +407,11 @@
       "samples": 44.0
     },
     "1010:77F6": {
-      "avg_asm_equiv": 811.3409090909091,
+      "avg_asm_equiv": 817.7540983606557,
       "island": "layer_sprites",
       "last_asm_equiv": 833.0,
       "name": "overkill_frame_effect_slash_77f6",
-      "samples": 88.0
+      "samples": 61.0
     },
     "1010:96C5": {
       "avg_asm_equiv": 750.0,
@@ -397,294 +425,294 @@
       "island": "gameplay_objects",
       "last_asm_equiv": 3.0,
       "name": "overkill_object_child_coord_update_9fea",
-      "samples": 24.0
+      "samples": 4.0
     },
     "1010:A212": {
       "avg_asm_equiv": 3.0,
       "island": "game_state",
       "last_asm_equiv": 3.0,
       "name": "overkill_demo_object_list_maintenance_a212",
-      "samples": 6.0
+      "samples": 28.0
     },
     "1010:A846": {
       "avg_asm_equiv": 1.0,
       "island": "layer_sprites",
       "last_asm_equiv": 1.0,
       "name": "overkill_scan_draw_setup_32ca_a846",
-      "samples": 6.0
+      "samples": 28.0
     },
     "1010:A849": {
-      "avg_asm_equiv": 24.2,
+      "avg_asm_equiv": 10.31629392971246,
       "island": "layer_sprites",
-      "last_asm_equiv": 62.0,
+      "last_asm_equiv": 35.0,
       "name": "overkill_scan_objects_call_5ac8_a849",
-      "samples": 60.0
+      "samples": 626.0
     },
     "1010:A858": {
       "avg_asm_equiv": 2.0,
       "island": "layer_sprites",
       "last_asm_equiv": 2.0,
       "name": "overkill_scan_draw_call_5ac8_a858",
-      "samples": 60.0
+      "samples": 598.0
     },
     "1010:A85B": {
       "avg_asm_equiv": 2.0,
       "island": "layer_sprites",
       "last_asm_equiv": 2.0,
       "name": "overkill_scan_draw_tail_a85b",
-      "samples": 60.0
+      "samples": 598.0
     },
     "1010:A85E": {
       "avg_asm_equiv": 1.0,
       "island": "layer_sprites",
       "last_asm_equiv": 1.0,
       "name": "overkill_scan_draw_setup_8d12_a85e",
-      "samples": 6.0
+      "samples": 28.0
     },
     "1010:A861": {
-      "avg_asm_equiv": 118.5,
+      "avg_asm_equiv": 106.93548387096774,
       "island": "layer_sprites",
-      "last_asm_equiv": 21.0,
+      "last_asm_equiv": 63.0,
       "name": "overkill_scan_objects_call_5ac8_a861",
-      "samples": 12.0
+      "samples": 62.0
     },
     "1010:A870": {
       "avg_asm_equiv": 2.0,
       "island": "layer_sprites",
       "last_asm_equiv": 2.0,
       "name": "overkill_scan_draw_call_5ac8_a870",
-      "samples": 6.0
+      "samples": 34.0
     },
     "1010:A873": {
       "avg_asm_equiv": 2.0,
       "island": "layer_sprites",
       "last_asm_equiv": 2.0,
       "name": "overkill_scan_draw_tail_a873",
-      "samples": 6.0
+      "samples": 34.0
     },
     "1010:A876": {
       "avg_asm_equiv": 2.0,
       "island": "layer_sprites",
       "last_asm_equiv": 2.0,
       "name": "overkill_presence_stamp_call_a876",
-      "samples": 6.0
+      "samples": 28.0
     },
     "1010:A879": {
       "avg_asm_equiv": 1.0,
       "island": "layer_sprites",
       "last_asm_equiv": 1.0,
       "name": "overkill_compact_layer_scan_setup_a879",
-      "samples": 6.0
+      "samples": 28.0
     },
     "1010:A87C": {
-      "avg_asm_equiv": 118.5,
+      "avg_asm_equiv": 106.93548387096774,
       "island": "layer_sprites",
-      "last_asm_equiv": 21.0,
+      "last_asm_equiv": 63.0,
       "name": "overkill_scan_objects_call_7746_a87c",
-      "samples": 12.0
+      "samples": 62.0
     },
     "1010:A88B": {
       "avg_asm_equiv": 2.0,
       "island": "layer_sprites",
       "last_asm_equiv": 2.0,
       "name": "overkill_compact_layer_call_7746_a88b",
-      "samples": 6.0
+      "samples": 34.0
     },
     "1010:A88E": {
       "avg_asm_equiv": 2.0,
       "island": "layer_sprites",
       "last_asm_equiv": 2.0,
       "name": "overkill_compact_layer_scan_tail_a88e",
-      "samples": 6.0
+      "samples": 34.0
     },
     "1010:A891": {
       "avg_asm_equiv": 1.0,
       "island": "layer_sprites",
       "last_asm_equiv": 1.0,
       "name": "overkill_layer0_scan_setup_a891",
-      "samples": 6.0
+      "samples": 28.0
     },
     "1010:A894": {
-      "avg_asm_equiv": 32.333333333333336,
+      "avg_asm_equiv": 401.85714285714283,
       "island": "layer_sprites",
-      "last_asm_equiv": 69.0,
+      "last_asm_equiv": 407.0,
       "name": "overkill_scan_layer0_draw_a894",
-      "samples": 54.0
+      "samples": 28.0
     },
     "1010:A8BE": {
       "avg_asm_equiv": 2.0,
       "island": "layer_sprites",
       "last_asm_equiv": 2.0,
       "name": "overkill_layer0_call_7596_a8be",
-      "samples": 48.0
+      "samples": 1.0
     },
     "1010:A8C1": {
       "avg_asm_equiv": 2.0,
       "island": "layer_sprites",
       "last_asm_equiv": 2.0,
       "name": "overkill_layer0_scan_tail_a8c1",
-      "samples": 48.0
+      "samples": 1.0
     },
     "1010:A8C4": {
       "avg_asm_equiv": 1.0,
       "island": "layer_sprites",
       "last_asm_equiv": 1.0,
       "name": "overkill_layer1_scan_setup_a8c4",
-      "samples": 6.0
+      "samples": 28.0
     },
     "1010:A8C7": {
-      "avg_asm_equiv": 155.0,
+      "avg_asm_equiv": 20.58671586715867,
       "island": "layer_sprites",
-      "last_asm_equiv": 298.0,
+      "last_asm_equiv": 88.0,
       "name": "overkill_scan_layer1_draw_a8c7",
-      "samples": 12.0
+      "samples": 542.0
     },
     "1010:A8F1": {
       "avg_asm_equiv": 2.0,
       "island": "layer_sprites",
       "last_asm_equiv": 2.0,
       "name": "overkill_layer1_call_7596_a8f1",
-      "samples": 12.0
+      "samples": 514.0
     },
     "1010:A8F4": {
       "avg_asm_equiv": 2.0,
       "island": "layer_sprites",
       "last_asm_equiv": 2.0,
       "name": "overkill_layer1_scan_tail_a8f4",
-      "samples": 12.0
+      "samples": 514.0
     },
     "1010:A8F7": {
       "avg_asm_equiv": 3.0,
       "island": "layer_sprites",
       "last_asm_equiv": 3.0,
       "name": "overkill_optional_layer_draw_tail_a8f7",
-      "samples": 6.0
+      "samples": 28.0
     },
     "1010:A90C": {
-      "avg_asm_equiv": 2.0,
+      "avg_asm_equiv": 2.0714285714285716,
       "island": "layer_sprites",
       "last_asm_equiv": 2.0,
       "name": "overkill_present_object_scan_pair_a90c",
-      "samples": 6.0
+      "samples": 28.0
     },
     "1010:A90F": {
-      "avg_asm_equiv": 21.0,
+      "avg_asm_equiv": 40.76470588235294,
       "island": "layer_sprites",
-      "last_asm_equiv": 21.0,
+      "last_asm_equiv": 63.0,
       "name": "overkill_scan_objects_call_5a92_a90f",
-      "samples": 6.0
+      "samples": 34.0
     },
     "1010:A91E": {
       "avg_asm_equiv": 2.0,
       "island": "layer_sprites",
       "last_asm_equiv": 2.0,
       "name": "overkill_scan_present_call_5a92_a91e",
-      "samples": 6.0
+      "samples": 34.0
     },
     "1010:A921": {
       "avg_asm_equiv": 2.0,
       "island": "layer_sprites",
       "last_asm_equiv": 2.0,
       "name": "overkill_scan_present_tail_a921",
-      "samples": 6.0
+      "samples": 34.0
     },
     "1010:A924": {
       "avg_asm_equiv": 1.0,
       "island": "layer_sprites",
       "last_asm_equiv": 1.0,
       "name": "overkill_scan_present_setup_32ca_a924",
-      "samples": 6.0
+      "samples": 27.0
     },
     "1010:A927": {
-      "avg_asm_equiv": 24.2,
+      "avg_asm_equiv": 10.3232,
       "island": "layer_sprites",
-      "last_asm_equiv": 62.0,
+      "last_asm_equiv": 35.0,
       "name": "overkill_scan_objects_call_5a92_a927",
-      "samples": 60.0
+      "samples": 625.0
     },
     "1010:A936": {
       "avg_asm_equiv": 2.0,
       "island": "layer_sprites",
       "last_asm_equiv": 2.0,
       "name": "overkill_scan_present_call_5a92_a936",
-      "samples": 60.0
+      "samples": 598.0
     },
     "1010:A939": {
       "avg_asm_equiv": 2.0,
       "island": "layer_sprites",
       "last_asm_equiv": 2.0,
       "name": "overkill_scan_present_tail_a939",
-      "samples": 60.0
+      "samples": 598.0
     },
     "1010:A93C": {
       "avg_asm_equiv": 3.0,
       "island": "layer_sprites",
       "last_asm_equiv": 3.0,
       "name": "overkill_present_scan_clear_presence_a93c",
-      "samples": 6.0
+      "samples": 28.0
     },
     "1010:A940": {
       "avg_asm_equiv": 16.0,
       "island": "game_state",
       "last_asm_equiv": 16.0,
       "name": "overkill_frame_game_state_update_a940",
-      "samples": 6.0
+      "samples": 28.0
     },
     "1010:A9E0": {
-      "avg_asm_equiv": 37.888888888888886,
+      "avg_asm_equiv": 15.42517006802721,
       "island": "gameplay_objects",
-      "last_asm_equiv": 89.0,
+      "last_asm_equiv": 9.0,
       "name": "overkill_scan_objects_call_aa2b_a9e0",
-      "samples": 54.0
+      "samples": 588.0
     },
     "1010:AA01": {
       "avg_asm_equiv": 2.0,
       "island": "gameplay_objects",
       "last_asm_equiv": 2.0,
       "name": "overkill_object_logic_call_aa2b_aa01",
-      "samples": 54.0
+      "samples": 561.0
     },
     "1010:AA04": {
       "avg_asm_equiv": 2.0,
       "island": "gameplay_objects",
       "last_asm_equiv": 2.0,
       "name": "overkill_object_logic_scan_tail_aa04",
-      "samples": 54.0
+      "samples": 560.0
     },
     "1010:AA07": {
       "avg_asm_equiv": 2.0,
       "island": "game_state",
       "last_asm_equiv": 2.0,
       "name": "overkill_second_object_scan_setup_aa07",
-      "samples": 6.0
+      "samples": 27.0
     },
     "1010:AA10": {
-      "avg_asm_equiv": 118.5,
+      "avg_asm_equiv": 104.78688524590164,
       "island": "gameplay_objects",
-      "last_asm_equiv": 21.0,
+      "last_asm_equiv": 63.0,
       "name": "overkill_scan_objects_call_aa2b_aa10",
-      "samples": 12.0
+      "samples": 61.0
     },
     "1010:AA1F": {
       "avg_asm_equiv": 2.0,
       "island": "gameplay_objects",
       "last_asm_equiv": 2.0,
       "name": "overkill_object_logic_call_aa2b_aa1f",
-      "samples": 6.0
+      "samples": 34.0
     },
     "1010:AA22": {
       "avg_asm_equiv": 2.0,
       "island": "gameplay_objects",
       "last_asm_equiv": 2.0,
       "name": "overkill_object_logic_scan_tail_aa22",
-      "samples": 6.0
+      "samples": 34.0
     },
     "1010:AA25": {
       "avg_asm_equiv": 3.0,
       "island": "game_state",
       "last_asm_equiv": 3.0,
       "name": "overkill_gameplay_counter_tick_tail_aa25",
-      "samples": 6.0
+      "samples": 27.0
     },
     "1010:AA2B": {
       "avg_asm_equiv": 3.0,
@@ -698,7 +726,7 @@
       "island": "gameplay_objects",
       "last_asm_equiv": 11.0,
       "name": "overkill_object_logic_ab10",
-      "samples": 6.0
+      "samples": 27.0
     },
     "1010:ABCA": {
       "avg_asm_equiv": 12.0,
@@ -722,11 +750,11 @@
       "samples": 1.0
     },
     "1010:AD04": {
-      "avg_asm_equiv": 7.0,
+      "avg_asm_equiv": 5.0,
       "island": "gameplay_objects",
-      "last_asm_equiv": 7.0,
+      "last_asm_equiv": 5.0,
       "name": "overkill_object_logic_branch_ad04",
-      "samples": 6.0
+      "samples": 81.0
     },
     "1010:AD5A": {
       "avg_asm_equiv": 3.0,
@@ -754,14 +782,21 @@
       "island": "gameplay_objects",
       "last_asm_equiv": 13.0,
       "name": "overkill_object_behavior_aed8",
-      "samples": 14.0
+      "samples": 34.0
     },
     "1010:B73E": {
-      "avg_asm_equiv": 18.0,
+      "avg_asm_equiv": 19.046153846153846,
       "island": "gameplay_objects",
       "last_asm_equiv": 17.0,
       "name": "overkill_object_behavior_b73e",
-      "samples": 60.0
+      "samples": 260.0
+    },
+    "1010:B86D": {
+      "avg_asm_equiv": 23.172043010752688,
+      "island": "gameplay_objects",
+      "last_asm_equiv": 24.0,
+      "name": "overkill_object_behavior_b86d",
+      "samples": 372.0
     },
     "1010:B9F0": {
       "avg_asm_equiv": 29.886710239651418,
@@ -775,14 +810,14 @@
       "island": "collision",
       "last_asm_equiv": 3.0,
       "name": "overkill_object_postmove_prelude_bc45",
-      "samples": 42.0
+      "samples": 39.0
     },
     "1010:BC4B": {
-      "avg_asm_equiv": 203.84410646387832,
+      "avg_asm_equiv": 208.623786407767,
       "island": "collision",
-      "last_asm_equiv": 189.0,
+      "last_asm_equiv": 206.0,
       "name": "overkill_object_postmove_bc4b",
-      "samples": 789.0
+      "samples": 412.0
     },
     "1010:BDE3": {
       "avg_asm_equiv": 168.0,
@@ -806,11 +841,11 @@
       "samples": 111.0
     },
     "1010:CC7F": {
-      "avg_asm_equiv": 583.2777777777778,
+      "avg_asm_equiv": 527.5833333333334,
       "island": "tandy_renderer",
-      "last_asm_equiv": 518.0,
+      "last_asm_equiv": 380.0,
       "name": "overkill_dirty_cell_presenter_row_cc7f",
-      "samples": 324.0
+      "samples": 36.0
     },
     "1010:CCC4": {
       "avg_asm_equiv": 80.86829268292684,
@@ -827,46 +862,67 @@
       "samples": 658.0
     },
     "1010:CE40": {
-      "avg_asm_equiv": 284.70588235294116,
+      "avg_asm_equiv": 75.33333333333333,
       "island": "input_menu",
-      "last_asm_equiv": 550.0,
+      "last_asm_equiv": 3.0,
       "name": "overkill_menu_transition_input_wait_ce40",
-      "samples": 51.0
+      "samples": 6.0
     },
     "1010:CF78": {
       "avg_asm_equiv": 1100.0,
       "island": "input_menu",
       "last_asm_equiv": 1100.0,
       "name": "overkill_menu_script_input_wait_cf78",
-      "samples": 12.0
+      "samples": 4.0
     },
     "1010:D007": {
-      "avg_asm_equiv": 273.36114120621164,
+      "avg_asm_equiv": 253.0098261526833,
       "island": "game_state",
-      "last_asm_equiv": 193.0,
+      "last_asm_equiv": 534.0,
       "name": "overkill_main_frame_loop_d007",
-      "samples": 5538.0
+      "samples": 1323.0
+    },
+    "1010:D445": {
+      "avg_asm_equiv": 15.001006036217303,
+      "island": "input_menu",
+      "last_asm_equiv": 16.0,
+      "name": "overkill_input_selector_loop_d445",
+      "samples": 994.0
     },
     "1010:ECF2": {
-      "avg_asm_equiv": 94421.77777777778,
+      "avg_asm_equiv": 89018.0,
       "island": "asset_codecs",
-      "last_asm_equiv": 21502.0,
+      "last_asm_equiv": 21653.0,
       "name": "overkill_lz_decoder_ecf2",
-      "samples": 9.0
+      "samples": 6.0
     },
     "1010:EFAE": {
       "avg_asm_equiv": 7.0,
       "island": "gameplay_objects",
       "last_asm_equiv": 7.0,
       "name": "overkill_object_family_dispatch_efae",
-      "samples": 48.0
+      "samples": 486.0
+    },
+    "1B65:0069": {
+      "avg_asm_equiv": 285484.0,
+      "island": "bootstrap",
+      "last_asm_equiv": 285484.0,
+      "name": "overkill_bootstrap_lzexe_main_loop_1b65_0069",
+      "samples": 1.0
+    },
+    "1C43:0069": {
+      "avg_asm_equiv": 316969.0,
+      "island": "bootstrap",
+      "last_asm_equiv": 316969.0,
+      "name": "overkill_bootstrap_lzexe_main_loop_1c43_0069",
+      "samples": 1.0
     },
     "1F8F:0922": {
-      "avg_asm_equiv": 11.363636363636363,
+      "avg_asm_equiv": 11.136363636363637,
       "island": "game_state",
       "last_asm_equiv": 6.0,
       "name": "overkill_gameplay_counter_tick_1f8f_0922",
-      "samples": 11.0
+      "samples": 22.0
     },
     "1F8F:0960": {
       "avg_asm_equiv": 101.0,
@@ -875,12 +931,75 @@
       "name": "overkill_overlay_counter_stride_loop_1f8f_0960",
       "samples": 1.0
     },
+    "2032:0181": {
+      "avg_asm_equiv": 88.0,
+      "island": "sound",
+      "last_asm_equiv": 88.0,
+      "name": "overkill_adlib_set_instrument_2032_0181",
+      "samples": 2.0
+    },
+    "2032:0244": {
+      "avg_asm_equiv": 4.0,
+      "island": "sound",
+      "last_asm_equiv": 4.0,
+      "name": "overkill_adlib_channel_helper_2032_0244",
+      "samples": 92.0
+    },
+    "2032:024F": {
+      "avg_asm_equiv": 32.0,
+      "island": "sound",
+      "last_asm_equiv": 32.0,
+      "name": "overkill_adlib_note_frequency_2032_024f",
+      "samples": 15.0
+    },
+    "2032:02AA": {
+      "avg_asm_equiv": 3.0,
+      "island": "sound",
+      "last_asm_equiv": 3.0,
+      "name": "overkill_adlib_channel_helper_2032_02aa",
+      "samples": 92.0
+    },
+    "2032:02C9": {
+      "avg_asm_equiv": 4.0,
+      "island": "sound",
+      "last_asm_equiv": 4.0,
+      "name": "overkill_adlib_channel_mod_a_2032_02c9",
+      "samples": 92.0
+    },
+    "2032:02F6": {
+      "avg_asm_equiv": 6.0,
+      "island": "sound",
+      "last_asm_equiv": 6.0,
+      "name": "overkill_adlib_channel_mod_b_2032_02f6",
+      "samples": 92.0
+    },
+    "2032:04E9": {
+      "avg_asm_equiv": 73781.0,
+      "island": "sound",
+      "last_asm_equiv": 73781.0,
+      "name": "overkill_adlib_detect_2032_04e9",
+      "samples": 1.0
+    },
+    "2032:0557": {
+      "avg_asm_equiv": 64.0,
+      "island": "sound",
+      "last_asm_equiv": 64.0,
+      "name": "overkill_adlib_write_2032_0557",
+      "samples": 16.0
+    },
+    "23AD:0069": {
+      "avg_asm_equiv": 547681.0,
+      "island": "bootstrap",
+      "last_asm_equiv": 547681.0,
+      "name": "overkill_bootstrap_lzexe_main_loop_23ad_0069",
+      "samples": 1.0
+    },
     "254A:04D7": {
       "avg_asm_equiv": 81.0,
       "island": "file_io",
       "last_asm_equiv": 81.0,
       "name": "overkill_overlay_container_open_entry_254a_04d7",
-      "samples": 31.0
+      "samples": 28.0
     },
     "254A:0582": {
       "avg_asm_equiv": 30.0,
@@ -897,6 +1016,6 @@
       "samples": 17.0
     }
   },
-  "updated": 1781392073.2631419,
+  "updated": 1781458421.2062645,
   "version": 1
 }

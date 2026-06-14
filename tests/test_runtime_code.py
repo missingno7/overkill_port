@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from overkill_port.games.overkill.runtime_code import (
+from overkill.runtime_code import (
     RuntimeCodeWriteTracer,
     UnknownRuntimeCodeVariant,
     assert_runtime_code_staticization_ready,
@@ -12,14 +12,14 @@ from overkill_port.games.overkill.runtime_code import (
     identify_runtime_code_variant,
     require_runtime_code_variant,
 )
-from overkill_port.runtime import create_runtime
-from overkill_port.snapshot import load_snapshot
+from overkill.runtime import create_overkill_runtime as create_runtime
+from overkill.runtime import load_overkill_snapshot as load_snapshot
 
 
 ROOT = Path(__file__).resolve().parents[1]
 ASSETS = ROOT / "assets"
 EXE = ASSETS / "OVERKILL"
-SNAP_5E42 = ROOT / "artifacts" / "snapshot_play_tandy_20260613_220042"
+SNAP_5E42 = ROOT / "artifacts" / "test_oracles" / "runtime_code_5e42_gameplay_20260613_220042"
 
 
 def _run_until_5e42_gameplay_variant(rt, *, max_steps: int = 1_300_000) -> None:
@@ -116,8 +116,12 @@ def test_runtime_patched_5e42_bootstrap_installs_same_body_for_video_modes():
     for tail in tails.values():
         rt = create_runtime(EXE, game_root=ASSETS, command_tail=tail)
         rt.cpu.trace_enabled = False
-        rt.cpu.replacement_hooks.clear()
-        rt.cpu.hook_names.clear()
+        # Keep exact bootstrap/codec hooks: this test only cares which runtime
+        # bytes the original bootstrap installs, not how slowly the packed data
+        # stream is decoded.  Disable only the 5E42 runtime hook so the test can
+        # inspect the materialized body directly once bootstrap reaches it.
+        rt.cpu.replacement_hooks.pop((0x1010, 0x5E42), None)
+        rt.cpu.hook_names.pop((0x1010, 0x5E42), None)
         tracer = RuntimeCodeWriteTracer(rt.cpu).install()
         try:
             _run_until_5e42_gameplay_variant(rt)
