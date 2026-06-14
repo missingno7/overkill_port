@@ -8,7 +8,33 @@ observe -> classify -> choose boundary -> build ASM oracle -> implement hook -> 
 
 The detailed playbook is in `docs/source_port_methodology.md`.
 
+Keep the bootstrap/static-runtime boundary explicit when startup issues appear:
+
+```bash
+python -m overkill_port.cli bootstrap-boundary --video tandy --sound adlib --out artifacts/static_runtime_boundary.json
+```
+
+Use `docs/bootstrap_static_boundary.md` to decide whether a new regression belongs
+to startup extraction/materialization or to the target runtime/source-port layer.
+
 ## Current Priorities
+
+0. **Use the static runtime bundle as the canonical inner-runtime checkpoint.**
+   - Generate it from original files, not from `OVERKILL.UNLZEXE.EXE`:
+
+     ```bash
+     python -m overkill_port.cli static-runtime-bundle assets/OVERKILL \
+       --game-root assets \
+       --video tandy \
+       --sound adlib \
+       --out-dir artifacts/static_runtime_bundle
+     ```
+
+   - Treat `static_runtime_bundle.json` as the review surface for bootstrap
+     regressions: PSP tail, `1010:*` hash, optional `2032:*` driver hash, and
+     materialized globals.
+   - The next extraction frontier is splitting derived screens/tables/sound blobs
+     out of the initialized image into named deterministic assets.
 
 1. **Keep shrinking meaningful `unknown` coverage.**
    - Prefer stable game-module boundaries over transient bootstrap code.

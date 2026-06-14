@@ -237,6 +237,8 @@ class _BoundaryRunner:
                 _base(cpu)
             else:
                 self._run_original_near_ret(cpu, _key)
+            if _kind == "present":
+                self.rt.dos.text_mode_active = False
             self.boundary = (_kind, _key, cpu.instruction_count - start_count)
             raise FrameBoundary()
 

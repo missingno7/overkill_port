@@ -20,6 +20,10 @@ static dispatch / parameters / runtime state
 flat verified Python source-port logic
 ```
 
+This policy is one piece of the broader bootstrap/static-runtime boundary:
+bootstrap may install or materialize code, but the source port records accepted
+live bodies as static Python.  See `docs/bootstrap_static_boundary.md`.
+
 ## Hard rules
 
 - A `CS:IP` address is not always a routine identity.  Runtime-patched addresses

@@ -1,0 +1,165 @@
+{
+  "boundary": {
+    "bootstrap_islands": [
+      "outer launcher / text-mode adapter selector",
+      "original OVERKILL MZ/container unpack path",
+      "32FF:* inner unpack/self-relocation bootstrap",
+      "optional AdLib/Roland driver load into 2032:*",
+      "startup asset decoding and screen materialization"
+    ],
+    "canonical_runtime_entries": [
+      {
+        "addr": "1010:D007",
+        "confidence": "observed during current Tandy startup/gameplay runs",
+        "notes": "Useful as a checkpoint for runtime exhaustion.  It does not mean menu, level-select, or boss-key paths are already semantically clean.",
+        "offset": 53255,
+        "role": "current high-level game/frame orchestration frontier",
+        "segment": 4112
+      },
+      {
+        "addr": "1010:D445",
+        "confidence": "hooked regression frontier",
+        "notes": "EDRAX is DS:BEDA == 0; selector zero is valid.",
+        "offset": 54341,
+        "role": "level-select input selector loop head",
+        "segment": 4112
+      }
+    ],
+    "command_tail_hex": "0D 02 41",
+    "command_tail_notes": "The inner game reads compact raw PSP bytes, not launcher ASCII switches. PSP:82 selects video; PSP:83 optionally selects the sound driver.",
+    "derived_asset_classes": [
+      "text/splash screens from assets/OVERKILL.EXE",
+      "startup/menu/level-select graphics materialized by original decoders",
+      "fonts, tiles, sprites, and planar/pixel buffers",
+      "planet/level metadata and object tables",
+      "sound driver blobs and captured YM3812 register streams"
+    ],
+    "first_inner_transfer": {
+      "addr": "1010:95C9",
+      "confidence": "observed",
+      "notes": "This is an archaeology/extraction milestone, not necessarily the final clean source-port entrypoint.",
+      "offset": 38345,
+      "role": "first confirmed transfer into relocated inner runtime code",
+      "segment": 4112
+    },
+    "generated_noncanonical_inputs": [
+      "assets/OVERKILL.UNLZEXE.EXE",
+      "assets/OVERKILL.OVERLAY.BIN"
+    ],
+    "original_inputs": [
+      "assets/OVERKILL",
+      "assets/OVERKILL.EXE"
+    ],
+    "required_initial_state": [
+      "PSP compact selector tail is seeded from build_command_tail(video, sound)",
+      "CS:95BC holds the original video selector word: 0=CGA, 1=EGA, 2=Tandy/PCjr",
+      "DS:0055 is set by the original sound-driver probe when AdLib/Roland is active",
+      "2032:0000 may contain the loaded optional sound driver entry when selected",
+      "registered runtime-code slots, such as 1010:5E42, must match accepted staticized byte variants"
+    ],
+    "schema": "overkill.static_runtime_boundary.v1",
+    "sound": "adlib",
+    "source_port_rule": "Original packed game files are the only canonical inputs.  The unpacker, outer shell, and bootstrap are an extraction/verification layer, not target gameplay source.  The clean source-port runtime should start from a canonical initialized inner-game image plus deterministic derived assets.",
+    "video": "tandy"
+  },
+  "boundary_schema": "overkill.static_runtime_boundary.v1",
+  "command_tail_hex": "0D 02 41",
+  "cpu_snapshot": "AX=0060 BX=0002 CX=0000 DX=A414 SI=A418 DI=A27E BP=2B5C SP=A274 CS:IP=1010:D007 DS=25CC ES=25CC SS=25CC FLAGS=0202",
+  "current_addr": "1010:D007",
+  "derived_assets_status": "Not split into named assets yet.  This bundle captures the canonical initialized image; future extractor passes should promote screens, tables, fonts, sprites, level metadata, and sound-driver blobs into separate deterministic artifacts.",
+  "materialized_globals": [
+    {
+      "addr": "1010:95BC",
+      "name": "video_selector_word",
+      "role": "0=CGA, 1=EGA, 2=Tandy/PCjr; consumed by runtime rendering branches",
+      "value": 2,
+      "value_hex": "0002"
+    },
+    {
+      "addr": "25CC:0055",
+      "name": "sound_driver_active_flag",
+      "role": "set by original sound-driver probe when optional AdLib/Roland driver is active",
+      "value": 1,
+      "value_hex": "0001"
+    },
+    {
+      "addr": "25CC:95DA",
+      "name": "object_allocator_cursor",
+      "role": "runtime object-slot allocator cursor; useful sanity check for gameplay snapshots",
+      "value": 11100,
+      "value_hex": "2B5C"
+    }
+  ],
+  "memory_1mb_sha256": "934acb5436b3d2c7e31ea51a99b94b1bbac7d15c684efdbf2d09658e60c7573e",
+  "reached_requested_entry": true,
+  "requested_entry": "1010:D007",
+  "schema": "overkill.static_runtime_bundle.v1",
+  "segments": [
+    {
+      "end_phys_exclusive_hex": "10100",
+      "name": "psp_and_command_tail",
+      "nonzero_bytes": 9,
+      "role": "DOS PSP plus compact selector tail consumed by the inner game",
+      "sha256": "a69d6c09de2a2698b4a7ec38a3bf22b529cb2751720b41b18d608d355778869c",
+      "size": 256,
+      "start_phys": 65536,
+      "start_phys_hex": "10000"
+    },
+    {
+      "end_phys_exclusive_hex": "20100",
+      "name": "relocated_inner_runtime_1010",
+      "nonzero_bytes": 57919,
+      "role": "current relocated inner game code/data segment used by verified hooks",
+      "sha256": "10d1f6d89a33c567916774f34e44b560177f61a7d3be14bc3cc5e9ef9a145a63",
+      "size": 65536,
+      "start_phys": 65792,
+      "start_phys_hex": "10100"
+    },
+    {
+      "end_phys_exclusive_hex": "24320",
+      "name": "optional_sound_driver_2032",
+      "nonzero_bytes": 15703,
+      "role": "original optional AdLib/Roland driver materialized by bootstrap",
+      "sha256": "bdcb485cfb593534fce9336aa855109fbe0420ad073d75503c839b8da1efb384",
+      "size": 16384,
+      "start_phys": 131872,
+      "start_phys_hex": "20320"
+    }
+  ],
+  "snapshot_files": {
+    "memory": "memory_1mb.bin",
+    "state": "state.json",
+    "trace_tail": "trace_tail.txt"
+  },
+  "sound": "adlib",
+  "source_files": {
+    "exe_path": "assets/OVERKILL",
+    "load_module_size": 50043,
+    "overlay_size": 467649
+  },
+  "status": "reached 1010:D007",
+  "steps": 1245977,
+  "trace_tail": [
+    "1010:9FD9  d252 mov si,A380h                       AX=0000 BX=FFFF CX=0000 DX=03DA SI=A380 DI=A27E BP=237C SP=A270 CS:IP=1010:9FDC DS=25CC ES=25CC SS=25CC FLAGS=0246",
+    "1010:9FDC  d252 mov bx,ds:[A96A]                   AX=0000 BX=FFFF CX=0000 DX=03DA SI=A380 DI=A27E BP=237C SP=A270 CS:IP=1010:9FE0 DS=25CC ES=25CC SS=25CC FLAGS=0246",
+    "1010:9FE0  d253 call near -> 1010:9FEA ret=9FE3    AX=0000 BX=FFFF CX=0000 DX=03DA SI=A380 DI=A27E BP=237C SP=A26E CS:IP=1010:9FEA DS=25CC ES=25CC SS=25CC FLAGS=0246",
+    "1010:9FEA  HOOK overkill_object_child_coord_update_9fea AX=0000 BX=FFFF CX=0000 DX=03DA SI=A380 DI=A27E BP=237C SP=A26E CS:IP=1010:9FEA DS=25CC ES=25CC SS=25CC FLAGS=0246 -> AX=0000 BX=FFFF CX=0000 DX=03DA SI=A380 DI=A27E BP=237C SP=A270 CS:IP=1010:9FE3 DS=25CC ES=25CC SS=25CC FLAGS=0246",
+    "1010:9FE3  d253 mov si,A368h                       AX=0000 BX=FFFF CX=0000 DX=03DA SI=A368 DI=A27E BP=237C SP=A270 CS:IP=1010:9FE6 DS=25CC ES=25CC SS=25CC FLAGS=0246",
+    "1010:9FE6  d253 mov bx,ds:[A966]                   AX=0000 BX=FFFF CX=0000 DX=03DA SI=A368 DI=A27E BP=237C SP=A270 CS:IP=1010:9FEA DS=25CC ES=25CC SS=25CC FLAGS=0246",
+    "1010:9FEA  HOOK overkill_object_child_coord_update_9fea AX=0000 BX=FFFF CX=0000 DX=03DA SI=A368 DI=A27E BP=237C SP=A270 CS:IP=1010:9FEA DS=25CC ES=25CC SS=25CC FLAGS=0246 -> AX=0000 BX=FFFF CX=0000 DX=03DA SI=A368 DI=A27E BP=237C SP=A272 CS:IP=1010:9BFA DS=25CC ES=25CC SS=25CC FLAGS=0246",
+    "1010:9BFA  d252 ret near -> 1010:CFF3              AX=0000 BX=FFFF CX=0000 DX=03DA SI=A368 DI=A27E BP=237C SP=A274 CS:IP=1010:CFF3 DS=25CC ES=25CC SS=25CC FLAGS=0246",
+    "1010:CFF3  d253 call near -> 1010:A940 ret=CFF6    AX=0000 BX=FFFF CX=0000 DX=03DA SI=A368 DI=A27E BP=237C SP=A272 CS:IP=1010:A940 DS=25CC ES=25CC SS=25CC FLAGS=0246",
+    "1010:A940  HOOK overkill_frame_game_state_update_a940 AX=0000 BX=FFFF CX=0000 DX=03DA SI=A368 DI=A27E BP=237C SP=A272 CS:IP=1010:A940 DS=25CC ES=25CC SS=25CC FLAGS=0246 -> AX=0000 BX=FFFF CX=0023 DX=03DA SI=A368 DI=A27E BP=237C SP=A272 CS:IP=1010:A9E0 DS=25CC ES=25CC SS=25CC FLAGS=0297",
+    "1010:A9E0  HOOK overkill_scan_objects_call_aa2b_a9e0 AX=0000 BX=FFFF CX=0023 DX=03DA SI=A368 DI=A27E BP=237C SP=A272 CS:IP=1010:A9E0 DS=25CC ES=25CC SS=25CC FLAGS=0297 -> AX=0000 BX=0002 CX=0001 DX=03DA SI=A368 DI=A27E BP=23B4 SP=A270 CS:IP=1010:AA01 DS=25CC ES=25CC SS=25CC FLAGS=0202",
+    "1010:AA01  HOOK overkill_object_logic_call_aa2b_aa01 AX=0000 BX=0002 CX=0001 DX=03DA SI=A368 DI=A27E BP=23B4 SP=A270 CS:IP=1010:AA01 DS=25CC ES=25CC SS=25CC FLAGS=0202 -> AX=0000 BX=000C CX=0001 DX=03DA SI=A368 DI=A27E BP=23B4 SP=A26E CS:IP=1010:AB10 DS=25CC ES=25CC SS=25CC FLAGS=0206",
+    "1010:AB10  HOOK overkill_object_logic_ab10 AX=0000 BX=000C CX=0001 DX=03DA SI=A368 DI=A27E BP=23B4 SP=A26E CS:IP=1010:AB10 DS=25CC ES=25CC SS=25CC FLAGS=0206 -> AX=0060 BX=237C CX=0001 DX=A414 SI=A418 DI=A27E BP=23B4 SP=A270 CS:IP=1010:AA04 DS=25CC ES=25CC SS=25CC FLAGS=0216",
+    "1010:AA04  HOOK overkill_object_logic_scan_tail_aa04 AX=0060 BX=237C CX=0001 DX=A414 SI=A418 DI=A27E BP=23B4 SP=A270 CS:IP=1010:AA04 DS=25CC ES=25CC SS=25CC FLAGS=0216 -> AX=0060 BX=237C CX=0000 DX=A414 SI=A418 DI=A27E BP=23B4 SP=A272 CS:IP=1010:AA07 DS=25CC ES=25CC SS=25CC FLAGS=0216",
+    "1010:AA07  HOOK overkill_second_object_scan_setup_aa07 AX=0060 BX=237C CX=0000 DX=A414 SI=A418 DI=A27E BP=23B4 SP=A272 CS:IP=1010:AA07 DS=25CC ES=25CC SS=25CC FLAGS=0216 -> AX=0060 BX=237C CX=0022 DX=A414 SI=A418 DI=A27E BP=23B4 SP=A272 CS:IP=1010:AA10 DS=25CC ES=25CC SS=25CC FLAGS=0216",
+    "1010:AA10  HOOK overkill_scan_objects_call_aa2b_aa10 AX=0060 BX=237C CX=0022 DX=A414 SI=A418 DI=A27E BP=23B4 SP=A272 CS:IP=1010:AA10 DS=25CC ES=25CC SS=25CC FLAGS=0216 -> AX=0060 BX=0002 CX=0000 DX=A414 SI=A418 DI=A27E BP=2B5C SP=A272 CS:IP=1010:AA25 DS=25CC ES=25CC SS=25CC FLAGS=0246",
+    "1010:AA25  HOOK overkill_gameplay_counter_tick_tail_aa25 AX=0060 BX=0002 CX=0000 DX=A414 SI=A418 DI=A27E BP=2B5C SP=A272 CS:IP=1010:AA25 DS=25CC ES=25CC SS=25CC FLAGS=0246 -> AX=0060 BX=0002 CX=0000 DX=A414 SI=A418 DI=A27E BP=2B5C SP=A274 CS:IP=1010:CFF6 DS=25CC ES=25CC SS=25CC FLAGS=0202",
+    "1010:CFF6  d253 mov ds:[BE06],0000h                AX=0060 BX=0002 CX=0000 DX=A414 SI=A418 DI=A27E BP=2B5C SP=A274 CS:IP=1010:CFFC DS=25CC ES=25CC SS=25CC FLAGS=0202",
+    "1010:CFFC  d253 mov ds:[BE08],0064h                AX=0060 BX=0002 CX=0000 DX=A414 SI=A418 DI=A27E BP=2B5C SP=A274 CS:IP=1010:D002 DS=25CC ES=25CC SS=25CC FLAGS=0202",
+    "1010:D002  d253 mov ds:[98C3],00h                  AX=0060 BX=0002 CX=0000 DX=A414 SI=A418 DI=A27E BP=2B5C SP=A274 CS:IP=1010:D007 DS=25CC ES=25CC SS=25CC FLAGS=0202"
+  ],
+  "video": "tandy"
+}

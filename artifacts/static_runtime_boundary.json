@@ -1,0 +1,63 @@
+{
+  "bootstrap_islands": [
+    "outer launcher / text-mode adapter selector",
+    "original OVERKILL MZ/container unpack path",
+    "32FF:* inner unpack/self-relocation bootstrap",
+    "optional AdLib/Roland driver load into 2032:*",
+    "startup asset decoding and screen materialization"
+  ],
+  "canonical_runtime_entries": [
+    {
+      "addr": "1010:D007",
+      "confidence": "observed during current Tandy startup/gameplay runs",
+      "notes": "Useful as a checkpoint for runtime exhaustion.  It does not mean menu, level-select, or boss-key paths are already semantically clean.",
+      "offset": 53255,
+      "role": "current high-level game/frame orchestration frontier",
+      "segment": 4112
+    },
+    {
+      "addr": "1010:D445",
+      "confidence": "hooked regression frontier",
+      "notes": "EDRAX is DS:BEDA == 0; selector zero is valid.",
+      "offset": 54341,
+      "role": "level-select input selector loop head",
+      "segment": 4112
+    }
+  ],
+  "command_tail_hex": "0D 02 41",
+  "command_tail_notes": "The inner game reads compact raw PSP bytes, not launcher ASCII switches. PSP:82 selects video; PSP:83 optionally selects the sound driver.",
+  "derived_asset_classes": [
+    "text/splash screens from assets/OVERKILL.EXE",
+    "startup/menu/level-select graphics materialized by original decoders",
+    "fonts, tiles, sprites, and planar/pixel buffers",
+    "planet/level metadata and object tables",
+    "sound driver blobs and captured YM3812 register streams"
+  ],
+  "first_inner_transfer": {
+    "addr": "1010:95C9",
+    "confidence": "observed",
+    "notes": "This is an archaeology/extraction milestone, not necessarily the final clean source-port entrypoint.",
+    "offset": 38345,
+    "role": "first confirmed transfer into relocated inner runtime code",
+    "segment": 4112
+  },
+  "generated_noncanonical_inputs": [
+    "assets/OVERKILL.UNLZEXE.EXE",
+    "assets/OVERKILL.OVERLAY.BIN"
+  ],
+  "original_inputs": [
+    "assets/OVERKILL",
+    "assets/OVERKILL.EXE"
+  ],
+  "required_initial_state": [
+    "PSP compact selector tail is seeded from build_command_tail(video, sound)",
+    "CS:95BC holds the original video selector word: 0=CGA, 1=EGA, 2=Tandy/PCjr",
+    "DS:0055 is set by the original sound-driver probe when AdLib/Roland is active",
+    "2032:0000 may contain the loaded optional sound driver entry when selected",
+    "registered runtime-code slots, such as 1010:5E42, must match accepted staticized byte variants"
+  ],
+  "schema": "overkill.static_runtime_boundary.v1",
+  "sound": "adlib",
+  "source_port_rule": "Original packed game files are the only canonical inputs.  The unpacker, outer shell, and bootstrap are an extraction/verification layer, not target gameplay source.  The clean source-port runtime should start from a canonical initialized inner-game image plus deterministic derived assets.",
+  "video": "tandy"
+}

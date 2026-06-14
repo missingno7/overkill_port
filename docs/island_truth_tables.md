@@ -156,15 +156,23 @@ Status:
 
 ### `bootstrap`
 
-Layer range: 1-2 coverage classification only. Transient unpack/relocation code.
+Layer range: 1-2 oracle/extraction classification only. Transient launcher,
+unpack, relocation, driver-load, and startup materialization code.
 
 What we know:
 - `32FF:*` cold-start code is classified as bootstrap, not unknown gameplay.
-- It is not a stable source-port game island by default.
+- `assets/OVERKILL` and `assets/OVERKILL.EXE` are the only canonical inputs.
+- Generated convenience files such as `OVERKILL.UNLZEXE.EXE` and
+  `OVERKILL.OVERLAY.BIN` are noncanonical artifacts only.
+- Bootstrap may produce code bodies, screens, tables, and driver blobs; these
+  should become deterministic derived assets or staticized Python, not permanent
+  runtime architecture.
+- The current boundary manifest is in
+  `overkill_port/games/overkill/bootstrap_boundary.py`.
 
 Status:
-- Classified-do-not-hook unless boot performance/correctness becomes a real
-  blocker.
+- Classified-do-not-hook for final gameplay.  Run/trace it only as oracle,
+  extraction, or startup-correctness evidence.
 
 ## Promotion Rule Reminder
 

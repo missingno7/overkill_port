@@ -1,3 +1,63 @@
+## 2026-06-14 AdLib startup path through the original OVERKILL container
+
+The optional AdLib path is not a separate synthetic artifact.  The extensionless
+original `assets/OVERKILL` MZ/container reads a compact inner selector after
+unpack:
+
+- `PSP:82` selects video (`0=CGA`, `1=EGA`, `2=Tandy/PCjr`).
+- `PSP:83` selects the optional music driver (`A=AdLib`, `R=Roland`).
+
+That means a documented ASCII command line like ` /A /T` is useful evidence for
+the sound parser, but it puts `/` in `PSP:82`, so the inner startup clamps video
+to EGA.  Tandy plus AdLib must be launched with compact bytes
+`0D 02 41`, now exposed as `scripts/play.py --video tandy --sound adlib`.
+
+AdLib detection also needs a minimal YM3812 timer-status model.  OVERKILL's
+AdLib driver writes timer-control registers through `388h/389h` and expects the
+classic timer-1 status bits (`C0h`) after starting the timer.  Returning zero from
+`388h` makes the driver reject itself and leaves `DS:0055` clear.  The VM now
+tracks the selected OPL register, stores OPL register writes, and models timer
+status enough for the original driver to initialize.
+
+When `DS:0055 == 1`, the timer ISR path at `1010:06E5` must include the original
+far call through `2032:0000`; the PC-speaker lift alone is not faithful.  The
+optional-driver ISR path is therefore interpreted from the original `06E5` entry
+while the common PC-speaker-only path remains lifted.
+
+## 2026-06-14 BIOS/DOS text-mode launcher support
+
+The original asset set has two executable-looking files with different roles:
+
+- `assets/OVERKILL` is the large MZ/container that unpacks into the inner game
+  module.  The interactive player still runs this for normal gameplay and passes
+  the compact inner selector bytes (`PSP:81` option byte, `PSP:82` video mode).
+- `assets/OVERKILL.EXE` is a small text-mode launcher/splash.  It prints the
+  Tech-Noir/registered-version text and the graphics-adapter selector before
+  waiting for DOS console input.
+
+The missing startup selector was a VM display gap, not a different entrypoint
+inside the large container.  The launcher writes through DOS/BIOS text services,
+including `INT 21h/AH=09h` and BIOS text mode 03h/07h, so the SDL viewer needed
+real text-page rendering instead of interpreting B800h as packed graphics at all
+times.
+
+The DOS/BIOS model now tracks cursor row/column and an explicit
+`text_mode_active` display flag.  BIOS text writes update B800h/B000h text cells,
+DOS console output paints the active text page when a text mode is active, and
+graphics present hooks clear `text_mode_active` so normal CGA/EGA/Tandy gameplay
+continues to render as graphics even if the last BIOS mode value is still 03h.
+
+The launcher also probes EGA/VGA with `INT 10h AH=12h, BL=10h`; leaving BL
+unchanged makes old detection code think no colour adapter exists.  The narrow
+VM response now reports a colour EGA with 256 KiB (`BX=0003`, `CX=0009`), which
+lets the original selector reach its input wait instead of the colour-graphics
+error path.
+
+Earlier notes in this section treated AdLib as unproven because only `PSP:81`
+compact values had been tested.  The later AdLib startup audit above supersedes
+that conclusion: the sound selector is `PSP:83`, while `PSP:82` remains the video
+selector.
+
 ## 2026-06-13 Tandy loop sweep lifts
 
 Two additional Tandy hotspots were lifted out of the interpreter:

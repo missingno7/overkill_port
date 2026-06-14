@@ -7208,6 +7208,7 @@ def test_input_selector_loop_d445_matches_interpreted_asm():
         (0x02, 0x04, 0x00, 0x00, 0x01),
         (0x04, 0x04, 0x00, 0x00, 0x05),
         (0x08, 0x04, 0x00, 0x00, 0x03),
+        (0x10, 0x00, 0x00, 0x00, 0x00),
         (0x10, 0x04, 0x00, 0x00, 0x04),
         (0x00, 0x04, 0x01, 0x00, 0x04),
         (0x00, 0x04, 0x01, 0x02, 0x04),
@@ -7273,28 +7274,93 @@ def test_input_selector_loop_d445_matches_interpreted_asm():
         assert asm.s.snapshot() == hook.s.snapshot()
         assert asm.mem.data == hook.mem.data
 
-    # Exercise the "wait once, then continue" branch without hanging forever.
-    asm = make_cpu(
-        False,
-        button_mask=0x00,
-        button_masks=[0x00, 0x04],
-        beda_seed=0x04,
-        bedc_seed=0x00,
-        state98e4=0x00,
-    )
-    hook = make_cpu(
-        True,
-        button_mask=0x00,
-        button_masks=[0x00, 0x04],
-        beda_seed=0x04,
-        bedc_seed=0x00,
-        state98e4=0x00,
-    )
+
+def test_input_selector_loop_d445_idle_yields_at_loop_head():
+    from pathlib import Path
+
+    from overkill_port.replacements import overkill_input_selector_loop_d445
+    from overkill_port.snapshot import load_snapshot
+
+    root = Path(__file__).resolve().parents[1]
+    exe = root / "assets" / "OVERKILL"
+    snapshot = root / "artifacts" / "evidence" / "bc4b_stop"
+
+    def make_cpu(use_hook: bool) -> CPU8086:
+        rt = load_snapshot(exe, snapshot, game_root=root / "assets")
+        ds = rt.cpu.s.ds & 0xFFFF
+        rt.cpu.mem.wb(ds, 0x98E4, 0)
+        rt.cpu.mem.wb(ds, 0xBEDA, 0)
+        rt.cpu.mem.wb(ds, 0xBEDC, 0)
+
+        def fake_0162(cpu):
+            cpu.mem.wb(cpu.s.ds & 0xFFFF, 0x98BE, 0)
+            cpu.s.ip = cpu.pop()
+
+        rt.cpu.replacement_hooks[(0x1010, 0x0162)] = fake_0162
+        if use_hook:
+            rt.cpu.replacement_hooks[(0x1010, 0xD445)] = overkill_input_selector_loop_d445
+        else:
+            rt.cpu.replacement_hooks.pop((0x1010, 0xD445), None)
+        rt.cpu.s.cs = 0x1010
+        rt.cpu.s.ip = 0xD445
+        rt.cpu.trace_enabled = False
+        return rt.cpu
+
+    asm = make_cpu(False)
+    hook = make_cpu(True)
+
+    for _ in range(80):
+        asm.step()
+        if asm.addr() == (0x1010, 0xD445):
+            break
+    hook.step()
+
+    assert asm.addr() == hook.addr() == (0x1010, 0xD445)
+    assert asm.s.snapshot() == hook.s.snapshot()
+    assert asm.mem.data == hook.mem.data
+
+
+def test_input_selector_loop_d445_wait_then_continue_across_hook_calls():
+    from pathlib import Path
+
+    from overkill_port.replacements import overkill_input_selector_loop_d445
+    from overkill_port.snapshot import load_snapshot
+
+    root = Path(__file__).resolve().parents[1]
+    exe = root / "assets" / "OVERKILL"
+    snapshot = root / "artifacts" / "evidence" / "bc4b_stop"
+
+    def make_cpu(use_hook: bool) -> CPU8086:
+        rt = load_snapshot(exe, snapshot, game_root=root / "assets")
+        ds = rt.cpu.s.ds & 0xFFFF
+        rt.cpu.mem.wb(ds, 0x98E4, 0)
+        rt.cpu.mem.wb(ds, 0xBEDA, 0x04)
+        rt.cpu.mem.wb(ds, 0xBEDC, 0)
+        masks = [0x00, 0x04]
+
+        def fake_0162(cpu):
+            cpu.mem.wb(cpu.s.ds & 0xFFFF, 0x98BE, masks.pop(0) if masks else 0x04)
+            cpu.s.ip = cpu.pop()
+
+        rt.cpu.replacement_hooks[(0x1010, 0x0162)] = fake_0162
+        if use_hook:
+            rt.cpu.replacement_hooks[(0x1010, 0xD445)] = overkill_input_selector_loop_d445
+        else:
+            rt.cpu.replacement_hooks.pop((0x1010, 0xD445), None)
+        rt.cpu.s.cs = 0x1010
+        rt.cpu.s.ip = 0xD445
+        rt.cpu.trace_enabled = False
+        return rt.cpu
+
+    asm = make_cpu(False)
+    hook = make_cpu(True)
 
     for _ in range(120):
         if asm.addr() == (0x1010, 0xAA04):
             break
         asm.step()
+    hook.step()
+    assert hook.addr() == (0x1010, 0xD445)
     hook.step()
 
     assert asm.addr() == hook.addr() == (0x1010, 0xAA04)

@@ -1,3 +1,163 @@
+# RUN_STATUS update - static runtime bundle materializer
+
+- Added `overkill_port/games/overkill/static_runtime_bundle.py`.
+- Added `python -m overkill_port.cli static-runtime-bundle` to run the original
+  bootstrap with compact `--video/--sound` selectors, stop at an inner-runtime
+  frontier, and write a canonical initialized snapshot plus
+  `static_runtime_bundle.json`.
+- Cold-start `trace` and `snapshot` now accept `--video`, `--sound`, and explicit
+  `--dos-args` override, so diagnostics can use the same canonical compact tail
+  as `scripts/play.py`.
+- Materialized Tandy + AdLib bundle from original files reached `1010:D007` in
+  1,245,977 steps.  Recorded checks: command tail `0D 02 41`, `CS:95BC=0002`,
+  `DS:0055=0001`, `DS:95DA=2B5C`, nonzero `2032:*` optional driver area.
+- New tests: `tests/test_static_runtime_bundle.py`.
+
+Validation commands run:
+
+```bash
+python -m pytest tests/test_static_runtime_bundle.py -q
+python -m overkill_port.cli static-runtime-bundle assets/OVERKILL \
+  --game-root assets --video tandy --sound adlib \
+  --steps 3000000 --trace-tail 20 \
+  --out-dir artifacts/static_runtime_bundle
+```
+
+## 2026-06-14 bootstrap/static-runtime boundary policy
+
+- Added `docs/bootstrap_static_boundary.md` to make the project rule explicit:
+  original startup/bootstrap is an oracle and extraction layer, not the target
+  source-port gameplay architecture.
+- Added `overkill_port/games/overkill/bootstrap_boundary.py` as an importable
+  manifest for the current boundary: canonical original inputs, noncanonical
+  generated files, bootstrap islands, known inner-runtime frontiers, compact PSP
+  tails, required initial state, and derived asset classes.
+- Added `overkill-port bootstrap-boundary` /
+  `python -m overkill_port.cli bootstrap-boundary` to write the current manifest
+  as JSON without executing the game.
+- Updated design/methodology/island docs to preserve the rule that
+  `assets/OVERKILL` and `assets/OVERKILL.EXE` are the only canonical inputs;
+  unpacked images and overlay blobs are deterministic build/evidence artifacts
+  only.
+
+Validation: `python scripts/lint.py`; `python -m pytest tests/test_bootstrap_boundary.py tests/test_core.py tests/test_replacements.py -q` -> 212 passed.
+
+## 2026-06-14 Nuked-OPL3 AdLib audio backend
+
+- Added an optional SDL-side AdLib audio backend that consumes the original
+  OVERKILL YM3812 register stream from ports `388h/389h` and renders it through
+  `nuked_opl3.OPL3` when the external CFFI extension is installed.
+- `DOSMachine` now exposes `set_adlib_callback(reg, value, emit_current=True)`,
+  mirroring the existing PC-speaker callback shape while keeping AdLib detection,
+  register state, snapshots, and headless tests deterministic.
+- `scripts/play.py --sound adlib` now wires that callback to the SDL viewer.
+  `--adlib-audio off` leaves the original driver active but disables PCM output.
+- If `nuked_opl3` is missing or not built, the game still runs the original
+  AdLib driver and records/register-forwards writes; the viewer reports a clear
+  status message and stays silent instead of crashing.
+- Validation: `python scripts/lint.py`;
+  `python -m pytest tests/test_core.py tests/test_replacements.py -q` -> 209 passed.
+
+## 2026-06-14 Edrax level-select fire fix
+
+- Fixed `1010:D445` selector hook behavior for FIRE on selector value zero.
+- Original ASM at `1010:D46F` is `TEST byte [98BE],10h; JZ D445; RET`, so it
+  accepts FIRE for every `DS:BEDA` value.  The lifted hook had added an
+  incorrect `BEDA != 0` guard while making the loop UI-yieldable.
+- `DS:BEDA == 0` is the first planet slot (Edrax), so the bug only blocked
+  Edrax while all other planets still started normally.
+- Added a regression case comparing interpreted ASM and hook for
+  `buttons=10h, BEDA=0`.
+
+Validation:
+
+```text
+python scripts/lint.py
+python -m pytest tests/test_core.py tests/test_replacements.py -q
+# 206 passed
+```
+
+
+## 2026-06-14 AdLib compact-tail and OPL probe fix
+
+- Added `overkill_port.games.overkill.launch.build_command_tail(video, sound)`.
+  `--video tandy --sound adlib` now passes compact selector bytes `0D 02 41`:
+  Tandy video in `PSP:82`, AdLib driver selector `A` in `PSP:83`.
+- Added a narrow YM3812/AdLib port model for `388h/389h`: selected-register
+  tracking, register storage, and timer-status bits for the original presence
+  probe.
+- `DS:0055` can now become `1`; in that mode `1010:06E5` interprets the original
+  ISR body so the far call through `2032:0000` runs before the shared timer work.
+- Validation: `python scripts/lint.py`; `python -m pytest tests/test_core.py tests/test_replacements.py -q` -> `206 passed`.
+
+## 2026-06-14 text-mode launcher and BIOS console support
+
+Investigated the missing original startup screens:
+
+- `assets\OVERKILL` remains the large MZ/container used for normal gameplay.
+- `assets\OVERKILL.EXE` is a separate text-mode splash/launcher program.  It
+  prints the Tech-Noir/registered-version text and the graphics adapter selector.
+- The selector was invisible because the VM only kept DOS stdout as a log and
+  the SDL viewer always decoded B800h as graphics.
+
+Implemented narrow text-mode support:
+
+- BIOS text modes 00h/01h/02h/03h/07h now track cursor row/column and clear text
+  pages.
+- BIOS teletype and character writes update B800h/B000h text memory.
+- DOS console output (`INT 21h/AH=02h`, `09h`, stdout/stderr writes, and AH=01h
+  echo) paints the active text page when a text mode is active.
+- SDL can render 80x25 text pages with integer scaling and fixed aspect.
+- Graphics presenter hooks mark text mode inactive so Tandy/CGA/EGA gameplay is
+  not mistaken for text just because the last BIOS mode is still 03h.
+- `INT 10h AH=12h BL=10h` now reports a colour EGA/VGA-style adapter so the
+  launcher does not fall into its "must have colour graphics" error path.
+
+Evidence:
+
+```text
+assets\OVERKILL.EXE with console_input_fallback=None now blocks at:
+  'OverKill'
+  Please select video mode:
+    1.  CGA 4 colour
+    2.  EGA/VGA 16 colour
+    3.  Tandy 1000 series
+```
+
+AdLib status:
+
+- The original docs mention `/A`, but ASCII switches are launcher/outer
+  semantics.  The inner game module reads raw compact PSP bytes, so passing
+  ASCII `/A` directly to `assets\OVERKILL` is not a valid AdLib selection.
+- Probes through the current Tandy menu startup with several compact selector
+  bytes produced no OPL `388h/389h` writes and left `DS:0055` clear.  The proven
+  sound path remains the PC-speaker timer ISR.
+
+Verification:
+
+```text
+C:\Users\Jiri\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe scripts\run_tests.py
+# 211 passed, 0 failed
+```
+
+Follow-up correction:
+
+- `scripts/play.py` starts the inner `assets\OVERKILL` game path with
+  `text_mode_active=False`; the first visible inner-game screen is graphical
+  even though the BIOS mode byte may still be 03h.
+- Older snapshots without `text_mode_active` metadata now load as graphics
+  active by default.  A real `INT 10h` text-mode switch, such as the F9 boss key,
+  still enables text rendering.
+- `1010:073C` keeps its hot lifted fast path, but if F9 arms the longer
+  platform/text service branch (`DS:9907 == 1`) the wrapper relinquishes that
+  branch back to original code instead of trying to force it to return inside
+  the hook.
+- `scripts/play.py` also recognizes the `1010:55F1` menu select/fire wait as an
+  interactive yield boundary, so level-select style screens can receive input
+  and F12 snapshot requests can be processed while they are waiting.
+
+---
+
 # 2026-06-13 artifact cleanup checkpoint
 
 Repository cleanup pass after the hook-integrity work.  The runtime/code

@@ -35,6 +35,9 @@ class DOSMachine:
     allocations: dict[int, int] = field(default_factory=dict)
     video_mode: int = 3
     video_page: int = 0
+    text_mode_active: bool = True
+    cursor_row: int = 0
+    cursor_col: int = 0
     ticks: int = 0
     vga_status_reads: int = 0
     _seq_index: int = 0  # last EGA sequencer index latched via 03C4h
@@ -45,6 +48,15 @@ class DOSMachine:
     pit_channel2_reload: int = 0
     speaker_control: int = 0
     speaker_callback: Callable[[bool, float], None] | None = None
+    adlib_callback: Callable[[int, int], None] | None = None
+    # Narrow AdLib/OPL2 model.  OVERKILL's optional /A driver first performs
+    # the standard YM3812 timer-status probe through ports 388h/389h.  DOSMachine
+    # owns detection/status and emits register writes to an optional frontend
+    # callback; an SDL audio backend can then render the exact original driver
+    # stream without making the headless VM depend on an OPL library.
+    opl_selected_register: int = 0
+    opl_status: int = 0
+    opl_registers: dict[int, int] = field(default_factory=dict)
     port_log: list[tuple[str, int, int, int]] = field(default_factory=list)
     # Pending BIOS keystrokes as 16-bit values (high byte = scan code, low byte =
     # ASCII).  An interactive front-end pushes keys here; when empty the runtime
@@ -58,6 +70,97 @@ class DOSMachine:
     # and then invokes the installed INT 9 handler (see overkill_port.interrupts).
     current_scancode: int = 0
 
+    def _text_base_segment(self) -> int:
+        return 0xB000 if self.video_mode == 7 else 0xB800
+
+    def _text_page_offset(self) -> int:
+        return (self.video_page & 0x07) * 0x1000
+
+    def _write_text_cell(self, cpu: CPU8086, row: int, col: int, ch: int, attr: int | None) -> None:
+        row = max(0, min(24, row & 0xFF))
+        col = max(0, min(79, col & 0xFF))
+        off = self._text_page_offset() + ((row * 80 + col) * 2)
+        base = self._text_base_segment()
+        cpu.mem.wb(base, off & 0xFFFF, ch & 0xFF)
+        if attr is not None:
+            cpu.mem.wb(base, (off + 1) & 0xFFFF, attr & 0xFF)
+
+    def _write_text_char(self, cpu: CPU8086, ch: int, attr: int = 0x07) -> None:
+        ch &= 0xFF
+        if ch == 0x07:  # bell
+            self.stdout.append(chr(ch))
+            return
+        if ch == 0x08:  # backspace
+            self.cursor_col = max(0, self.cursor_col - 1)
+            return
+        if ch == 0x0D:
+            self.cursor_col = 0
+            return
+        if ch == 0x0A:
+            self.cursor_row = min(24, self.cursor_row + 1)
+            return
+
+        self._write_text_cell(cpu, self.cursor_row, self.cursor_col, ch, attr)
+        self.cursor_col += 1
+        if self.cursor_col >= 80:
+            self.cursor_col = 0
+            self.cursor_row = min(24, self.cursor_row + 1)
+
+    def _write_text_repeat(self, cpu: CPU8086, ch: int, attr: int | None, count: int) -> None:
+        row = self.cursor_row
+        col = self.cursor_col
+        for _ in range(count):
+            self._write_text_cell(cpu, row, col, ch, attr)
+            col += 1
+            if col >= 80:
+                col = 0
+                row = min(24, row + 1)
+
+    def _console_output(self, cpu: CPU8086, text: str) -> None:
+        self.stdout.append(text)
+        if self.text_mode_active and self.video_mode in (0, 1, 2, 3, 7):
+            for ch in text:
+                if ch != "\x07":
+                    self._write_text_char(cpu, ord(ch), 0x07)
+
+    def _clear_text_window(self, cpu: CPU8086, attr: int, top: int, left: int, bottom: int, right: int) -> None:
+        top = max(0, min(24, top & 0xFF))
+        bottom = max(0, min(24, bottom & 0xFF))
+        left = max(0, min(79, left & 0xFF))
+        right = max(0, min(79, right & 0xFF))
+        if bottom < top or right < left:
+            return
+        base = self._text_base_segment()
+        page = self._text_page_offset()
+        for row in range(top, bottom + 1):
+            off = page + ((row * 80 + left) * 2)
+            for _ in range(left, right + 1):
+                cpu.mem.wb(base, off & 0xFFFF, 0x20)
+                cpu.mem.wb(base, (off + 1) & 0xFFFF, attr & 0xFF)
+                off += 2
+
+    def _clear_graphics_vram_for_mode(self, cpu: CPU8086, mode: int) -> None:
+        """Model BIOS mode-set screen clearing for OVERKILL's graphics modes.
+
+        The F9 boss-key path draws a BIOS text screen directly into B800h, then
+        restores the original game mode through INT 10h AH=00.  Real BIOS mode
+        sets clear display memory unless AL bit 7 requests "no clear"; without
+        this narrow clear, the live Tandy renderer can briefly reinterpret the
+        text cells as packed graphics after returning from the boss screen.
+        """
+        if mode & 0x80:
+            return
+        mode &= 0x7F
+        if mode in (0x04, 0x05, 0x06):
+            start, size = 0xB8000, 0x4000
+        elif mode == 0x09:
+            start, size = 0xB8000, 0x8000
+        elif mode == 0x0D:
+            start, size = 0xA0000, 0x8000
+        else:
+            return
+        cpu.mem.data[start:start + size] = b"\x00" * size
+
     def set_speaker_callback(self, callback: Callable[[bool, float], None] | None, *, emit_current: bool = False) -> None:
         """Install a PC-speaker observer, optionally emitting the current state.
 
@@ -69,6 +172,25 @@ class DOSMachine:
         self.speaker_callback = callback
         if emit_current and callback is not None:
             self._notify_speaker()
+
+    def set_adlib_callback(self, callback: Callable[[int, int], None] | None, *, emit_current: bool = False) -> None:
+        """Install an AdLib register-write observer.
+
+        OVERKILL's original optional AdLib driver writes to YM3812 ports
+        388h/389h from the loaded sound module at 2032:0000.  The core DOS layer
+        keeps the detection/status model deterministic and forwards completed
+        data-port writes to the interactive frontend, where an optional Nuked-OPL3
+        backend can synthesize them.  Snapshots can replay final register state
+        on attach; exact historical write timing resumes from new writes.
+        """
+        self.adlib_callback = callback
+        if emit_current and callback is not None:
+            for reg, value in sorted(self.opl_registers.items()):
+                callback(reg & 0x1FF, value & 0xFF)
+
+    def _notify_adlib(self, reg: int, value: int) -> None:
+        if self.adlib_callback is not None:
+            self.adlib_callback(reg & 0x1FF, value & 0xFF)
 
 
 
@@ -136,13 +258,49 @@ class DOSMachine:
             return self.current_scancode & 0xFF
         if port == 0x61 and bits == 8:
             return self.speaker_control & 0xFF
+        if port in (0x388, 0x389) and bits == 8:
+            # AdLib/YM3812 status port.  Only the timer status bits are needed
+            # for OVERKILL's startup detection; register reads are not used.
+            return self.opl_status & 0xFF
         return 0
 
     def port_write(self, cpu: CPU8086, port: int, value: int, bits: int) -> None:
         if len(self.port_log) < 4096:
             self.port_log.append(("out", port & 0xFFFF, value & ((1 << bits) - 1), bits))
-        self._track_pc_speaker(port & 0xFFFF, value, bits)
-        self._track_ega_ports(cpu, port & 0xFFFF, value, bits)
+        port &= 0xFFFF
+        self._track_pc_speaker(port, value, bits)
+        self._track_ega_ports(cpu, port, value, bits)
+        self._track_adlib_ports(port, value, bits)
+
+    def _track_adlib_ports(self, port: int, value: int, bits: int) -> None:
+        if bits == 16:
+            self._track_adlib_ports(port, value & 0xFF, 8)
+            self._track_adlib_ports((port + 1) & 0xFFFF, (value >> 8) & 0xFF, 8)
+            return
+        if bits != 8:
+            return
+
+        value &= 0xFF
+        if port == 0x388:
+            self.opl_selected_register = value
+            return
+        if port != 0x389:
+            return
+
+        reg = self.opl_selected_register & 0xFF
+        self.opl_registers[reg] = value
+        self._notify_adlib(reg, value)
+        if reg == 0x04:
+            # YM3812 timer-control/status approximation:
+            #   bit 7 resets/clears timer flags;
+            #   bit 0 starts timer 1.
+            # The classic AdLib presence test programs timer 1 then expects
+            # status bits 7 and 6 to become set after a short delay.  Model the
+            # expiration eagerly; the VM does not advance real device time.
+            if value & 0x80:
+                self.opl_status = 0
+            elif value & 0x01:
+                self.opl_status = 0xC0
 
     def _track_pc_speaker(self, port: int, value: int, bits: int) -> None:
         if bits == 16:
@@ -271,11 +429,11 @@ class DOSMachine:
             raise HaltExecution()
         if ah == 0x09:
             text = self.read_dollar_string(cpu, cpu.s.ds, cpu.s.dx)
-            self.stdout.append(text)
+            self._console_output(cpu, text)
             cpu.s.ax = (cpu.s.ax & 0xFF00) | ord("$")
             return
         if ah == 0x02:
-            self.stdout.append(chr(cpu.s.dx & 0xFF))
+            self._console_output(cpu, chr(cpu.s.dx & 0xFF))
             return
         if ah in (0x01, 0x07, 0x08):
             # Console character input.
@@ -305,7 +463,7 @@ class DOSMachine:
                 ch = 0
             cpu.s.ax = (cpu.s.ax & 0xFF00) | ch
             if ah == 0x01:
-                self.stdout.append(chr(ch))
+                self._console_output(cpu, chr(ch))
             return
         if ah == 0x30:  # get DOS version
             cpu.s.ax = 0x0005
@@ -372,7 +530,7 @@ class DOSMachine:
         if ah == 0x40:  # write
             data = cpu.mem.block(cpu.s.ds, cpu.s.dx, cpu.s.cx)
             if cpu.s.bx in (1, 2):
-                self.stdout.append(data.decode("cp437", errors="replace"))
+                self._console_output(cpu, data.decode("cp437", errors="replace"))
                 cpu.s.ax = cpu.s.cx
                 cpu.set_flag(CF, False)
                 return
@@ -480,24 +638,66 @@ class DOSMachine:
         al = cpu.s.ax & 0xFF
         if ah == 0x00:
             self.video_mode = al
+            self.video_page = 0
+            effective_mode = al & 0x7F
+            self.text_mode_active = effective_mode in (0, 1, 2, 3, 7)
+            self.cursor_row = 0
+            self.cursor_col = 0
+            if self.text_mode_active:
+                if not (al & 0x80):
+                    self._clear_text_window(cpu, 0x07, 0, 0, 24, 79)
+            else:
+                self._clear_graphics_vram_for_mode(cpu, al)
+            return
+        if ah == 0x02:
+            self.video_page = (cpu.s.bx >> 8) & 0xFF
+            self.cursor_row = (cpu.s.dx >> 8) & 0xFF
+            self.cursor_col = cpu.s.dx & 0xFF
+            return
+        if ah == 0x03:
+            cpu.s.cx = 0x0607
+            cpu.s.dx = ((self.cursor_row & 0xFF) << 8) | (self.cursor_col & 0xFF)
             return
         if ah == 0x05:
             # Select active display page.  OVERKILL's original packed launcher
             # uses this during video setup before the inner game code starts.
             self.video_page = al
             return
+        if ah in (0x06, 0x07):
+            if al == 0:
+                attr = (cpu.s.bx >> 8) & 0xFF
+                top = (cpu.s.cx >> 8) & 0xFF
+                left = cpu.s.cx & 0xFF
+                bottom = (cpu.s.dx >> 8) & 0xFF
+                right = cpu.s.dx & 0xFF
+                self._clear_text_window(cpu, attr, top, left, bottom, right)
+            return
         if ah == 0x0F:
             cpu.s.ax = (80 << 8) | self.video_mode
             cpu.s.bx = (cpu.s.bx & 0xFF00) | (self.video_page & 0xFF)
+            return
+        if ah == 0x12 and (cpu.s.bx & 0xFF) == 0x10:
+            # EGA information query.  Launchers commonly set BL=10h and treat
+            # BL unchanged after INT 10h as "no EGA/VGA"; report a colour EGA
+            # with 256 KiB so OVERKILL's text-mode launcher sees colour graphics.
+            cpu.s.bx = 0x0003
+            cpu.s.cx = 0x0009
             return
         if ah == 0x0E:
             # BIOS teletype output.  OVERKILL reaches this from the high-score
             # name editor as a bell (AL=07h) on rejected input; keep it as a
             # narrow console side effect instead of trying to render BIOS text
             # over the game's graphics screen.
-            self.stdout.append(chr(al))
+            self._write_text_char(cpu, al, (cpu.s.bx >> 8) & 0xFF or 0x07)
+            if al != 0x07:
+                self.stdout.append(chr(al))
             return
-        if ah in (0x01, 0x02, 0x06, 0x07, 0x0B, 0x10, 0x12):
+        if ah in (0x09, 0x0A):
+            attr = (cpu.s.bx >> 8) & 0xFF if ah == 0x09 else None
+            count = cpu.s.cx & 0xFFFF
+            self._write_text_repeat(cpu, al, attr, count if count != 0 else 0x10000)
+            return
+        if ah in (0x01, 0x0B, 0x10, 0x12):
             return
         raise UnsupportedInstruction(f"Unhandled BIOS INT 10h AH={ah:02X}h")
 
@@ -507,6 +707,9 @@ class DOSMachine:
             if self.key_queue:
                 cpu.s.ax = self.key_queue.pop(0) & 0xFFFF
                 return
+            if self.console_input_fallback is None:
+                cpu.s.ip = (cpu.s.ip - 2) & 0xFFFF
+                raise ConsoleInputWouldBlock()
             cpu.s.ax = 0x011B  # Esc fallback keeps headless runs deterministic
             return
         if ah == 0x01:  # check keystroke: ZF=0 + AX=key if available, ZF=1 if not

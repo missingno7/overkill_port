@@ -54,6 +54,27 @@ evidence: collides with player, deactivates on impact, spawned by enemy behavior
 
 Correctness comes first, readability second, semantic meaning third.
 
+## Bootstrap is extraction, not target gameplay code
+
+For games with packers, launchers, overlays, or runtime-installed code, separate
+"how the original DOS program prepares itself" from "what the final source port
+should run".
+
+For OVERKILL the rule is:
+
+```text
+original files -> faithful bootstrap/extraction -> canonical initialized runtime bundle -> clean source-port runtime
+```
+
+The original bootstrap may be interpreted and traced because it is the oracle.
+But the clean source port should not grow a permanent dependency on the unpacker,
+outer shell, or self-relocation path.  Derived screens, code bodies, tables, and
+drivers should become deterministic build artifacts or explicit static source,
+with provenance back to the original files.
+
+Current OVERKILL-specific details are in `docs/bootstrap_static_boundary.md` and
+`overkill_port/games/overkill/bootstrap_boundary.py`.
+
 ## Logic Crystallization Pyramid
 
 The project intentionally starts with very low-level facts and lets higher-level

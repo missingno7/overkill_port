@@ -48,6 +48,13 @@ from render_cga import (
 WIDTH, HEIGHT = 320, 200
 
 _EGA_PAL = np.array(EGA_PALETTE, dtype=np.uint8)  # (16, 3)
+_TEXT_MODES = {0, 1, 2, 3, 7}
+_TEXT_PALETTE = [
+    (0x00, 0x00, 0x00), (0x00, 0x00, 0xAA), (0x00, 0xAA, 0x00), (0x00, 0xAA, 0xAA),
+    (0xAA, 0x00, 0x00), (0xAA, 0x00, 0xAA), (0xAA, 0x55, 0x00), (0xAA, 0xAA, 0xAA),
+    (0x55, 0x55, 0x55), (0x55, 0x55, 0xFF), (0x55, 0xFF, 0x55), (0x55, 0xFF, 0xFF),
+    (0xFF, 0x55, 0x55), (0xFF, 0x55, 0xFF), (0xFF, 0xFF, 0x55), (0xFF, 0xFF, 0xFF),
+]
 
 
 class PcSpeakerAudio:
@@ -97,6 +104,80 @@ class PcSpeakerAudio:
         sound = self._pygame.sndarray.make_sound(wave)
         self._cache[freq] = sound
         return sound
+
+
+class NukedAdlibAudio:
+    """SDL streaming wrapper around the optional ``nuked_opl3`` package.
+
+    The VM already runs OVERKILL's original AdLib driver and forwards completed
+    YM3812 register writes.  This class only turns that register stream into PCM.
+    Keeping it in the viewer preserves headless determinism and lets tests run
+    without compiling the CFFI extension.
+    """
+
+    def __init__(self, pygame, status: dict | None = None, *, enabled: bool = True) -> None:
+        self._pygame = pygame
+        self._status = status
+        self._available = False
+        self._chip = None
+        self._channel = None
+        self._rate = 44100
+        self._channels = 1
+        self._chunk_frames = 1024
+        if not enabled:
+            return
+        if not pygame.mixer.get_init():
+            pygame.mixer.init(frequency=44100, size=-16, channels=1, buffer=512)
+        init = pygame.mixer.get_init()
+        if init is None:
+            self._report("AdLib audio unavailable: pygame mixer did not initialize")
+            return
+        self._rate = int(init[0])
+        self._channels = int(init[2])
+        try:
+            from nuked_opl3 import OPL3  # type: ignore
+
+            self._chip = OPL3(sample_rate=self._rate)
+        except Exception as exc:  # noqa: BLE001 - optional extension/import failure
+            self._report(
+                "AdLib register stream active, but Nuked-OPL3 is not built/importable: "
+                f"{type(exc).__name__}: {exc}"
+            )
+            return
+        self._available = True
+        self._channel = pygame.mixer.Channel(1)
+        self._report("AdLib audio: Nuked-OPL3 backend active")
+
+    def write(self, reg: int, value: int) -> None:
+        if not self._available or self._chip is None:
+            return
+        self._chip.write(int(reg) & 0x1FF, int(value) & 0xFF)
+
+    def pump(self) -> None:
+        if not self._available or self._chip is None or self._channel is None:
+            return
+        # Keep at most one queued chunk ahead.  A larger queue adds audible input
+        # latency; no queue risks underruns while the emulator is waiting for SDL.
+        if not self._channel.get_busy():
+            self._channel.play(self._next_sound())
+        elif self._channel.get_queue() is None:
+            self._channel.queue(self._next_sound())
+
+    def close(self) -> None:
+        if self._channel is not None:
+            self._channel.stop()
+
+    def _next_sound(self):
+        assert self._chip is not None
+        pcm = self._chip.generate_mono(self._chunk_frames)
+        if self._channels > 1:
+            arr = np.frombuffer(pcm, dtype=np.int16)
+            pcm = np.repeat(arr[:, None], self._channels, axis=1).astype(np.int16).tobytes()
+        return self._pygame.mixer.Sound(buffer=pcm)
+
+    def _report(self, text: str) -> None:
+        if self._status is not None:
+            self._status["text"] = text
 
 
 def render_ega_rgb(mem: bytes, start_offset: int = 0, seg: int = 0xA000) -> np.ndarray:
@@ -161,6 +242,33 @@ def render_tandy_rgb(mem: bytes) -> np.ndarray:
     return _EGA_PAL[idx.reshape(HEIGHT, WIDTH)]
 
 
+def render_text_surface(pygame, mem: bytes, mode: int, page: int):
+    """Render BIOS 80x25 colour/mono text memory to a pygame surface."""
+    base = 0xB0000 if (mode & 0xFF) == 7 else 0xB8000
+    page_off = (page & 0x07) * 0x1000
+    font = pygame.font.Font(None, 16)
+    cell_w, cell_h = 8, 16
+    surf = pygame.Surface((80 * cell_w, 25 * cell_h))
+    surf.fill((0, 0, 0))
+    for row in range(25):
+        for col in range(80):
+            off = base + page_off + ((row * 80 + col) * 2)
+            if off + 1 >= len(mem):
+                continue
+            ch = mem[off]
+            attr = mem[off + 1]
+            if ch == 0:
+                ch = 0x20
+            fg = _TEXT_PALETTE[attr & 0x0F]
+            bg = _TEXT_PALETTE[(attr >> 4) & 0x07]
+            rect = pygame.Rect(col * cell_w, row * cell_h, cell_w, cell_h)
+            surf.fill(bg, rect)
+            glyph = bytes([ch]).decode("cp437", errors="replace")
+            text = font.render(glyph, False, fg)
+            surf.blit(text, (rect.x, rect.y - 1))
+    return surf
+
+
 # pygame key -> XT make scan code.  Letters/digits use pygame's lowercase names;
 # the named keys cover the OVERKILL controls (Q/A/O/P move, Z/Space fire) plus the
 # usual editing/arrow keys, matching the Tk KEYSYM_SCAN table in play.py.
@@ -210,7 +318,10 @@ def run_sdl_ui(
     ega_render_start: Callable[[int], int],
     live_memory: Callable[[], bytes],
     live_display_start: Callable[[], int],
+    live_video_mode: Callable[[], int] | None = None,
+    live_video_page: Callable[[], int] | None = None,
     speaker_events=None,
+    adlib_events=None,
 ) -> None:
     """Run the pygame display loop until the window closes or ``stop`` is set.
 
@@ -237,6 +348,8 @@ def run_sdl_ui(
     pygame.display.set_caption(f"OVERKILL (emulated {video.upper()})  -  Q/A/O/P move, Z/Space fire")
     screen = pygame.display.set_mode((WIDTH * scale, HEIGHT * scale), pygame.RESIZABLE)
     scan = _build_pygame_scan()
+    adlib_enabled = getattr(args, "sound", "pc") == "adlib" and getattr(args, "adlib_audio", "auto") != "off"
+    adlib = NukedAdlibAudio(pygame, status, enabled=adlib_enabled) if adlib_events is not None else None
 
     def drain_speaker_events() -> None:
         if speaker_events is None:
@@ -248,12 +361,27 @@ def run_sdl_ui(
                 break
             speaker.set(enabled, freq)
 
-    def present(snapshot: bytes, display_start: int) -> None:
-        rgb = decode(snapshot, display_start)                        # (200,320,3)
-        surf = pygame.image.frombuffer(rgb.tobytes(), (WIDTH, HEIGHT), "RGB")
+    def drain_adlib_events() -> None:
+        if adlib_events is None or adlib is None:
+            return
+        while True:
+            try:
+                reg, value = adlib_events.get_nowait()
+            except Empty:
+                break
+            adlib.write(reg, value)
+        adlib.pump()
+
+    def present(snapshot: bytes, display_start: int, video_mode: int | None = None, video_page: int = 0) -> None:
+        if video_mode is not None and (video_mode & 0xFF) in _TEXT_MODES:
+            surf = render_text_surface(pygame, snapshot, video_mode & 0xFF, video_page & 0xFF)
+        else:
+            rgb = decode(snapshot, display_start)                        # (200,320,3)
+            surf = pygame.image.frombuffer(rgb.tobytes(), (WIDTH, HEIGHT), "RGB")
         win_w, win_h = screen.get_size()
-        fit = max(1, min(win_w // WIDTH, win_h // HEIGHT))
-        target = (WIDTH * fit, HEIGHT * fit)
+        native_w, native_h = surf.get_size()
+        fit = max(1, min(win_w // native_w, win_h // native_h))
+        target = (native_w * fit, native_h * fit)
         if fit != 1:
             surf = pygame.transform.scale(surf, target)
         x = (win_w - target[0]) // 2
@@ -281,6 +409,7 @@ def run_sdl_ui(
         running = True
         while running and not stop.is_set():
             drain_speaker_events()
+            drain_adlib_events()
             for ev in pygame.event.get():
                 if ev.type == pygame.QUIT:
                     running = False
@@ -302,12 +431,18 @@ def run_sdl_ui(
 
             pending = frame_sync.take_pending()
             if pending is not None:
-                frame_id, snapshot, display_start = pending
-                present(snapshot, display_start)
+                if len(pending) == 3:
+                    frame_id, snapshot, display_start = pending
+                    video_mode, video_page = None, 0
+                else:
+                    frame_id, snapshot, display_start, video_mode, video_page = pending
+                present(snapshot, display_start, video_mode, video_page)
                 frame_sync.mark_displayed(frame_id)
             elif getattr(args, "no_present_sync", False):
                 ds = ega_render_start(live_display_start()) if video == "ega" else 0
-                present(live_memory(), ds)
+                mode = live_video_mode() if live_video_mode is not None else None
+                page = live_video_page() if live_video_page is not None else 0
+                present(live_memory(), ds, mode, page)
             else:
                 # No frame ready: yield the GIL so the emulator thread runs.
                 pygame.time.wait(1)
@@ -318,6 +453,8 @@ def run_sdl_ui(
                 last_caption = now
     finally:
         speaker.close()
+        if adlib is not None:
+            adlib.close()
         stop.set()
         frame_sync.close()
         pygame.quit()

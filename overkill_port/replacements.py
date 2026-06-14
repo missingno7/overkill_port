@@ -3154,6 +3154,12 @@ def overkill_main_frame_loop_d007(cpu):
 @registry.replace(0x1010, 0x073C, "overkill_frame_service_gate_073c")
 def overkill_frame_service_gate_073c(cpu):
     """Tiny per-frame platform/service gate called from the D007 loop."""
+    if cpu.mem.rb(cpu.s.ds & 0xFFFF, 0x9907) == 0x01:
+        key = (0x1010, 0x073C)
+        cpu.replacement_hooks.pop(key, None)
+        cpu.hook_names.pop(key, None)
+        cpu.s.ip = 0x073C
+        return
     run_frame_service_gate_073c(
         cpu,
         _self_disable_if_patched,

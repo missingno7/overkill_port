@@ -218,6 +218,15 @@ def run_fast_timer_isr_06e5(cpu) -> None:
     cs = cpu.s.cs & 0xFFFF
     mem = cpu.mem
 
+    game_ds = mem.rw(cs, 0x9596)
+    if mem.rb(game_ds, 0x0055) == 1:
+        # The optional AdLib/Roland path performs an extra far call at the start
+        # of the original ISR.  Do not run the PC-speaker lift after partially
+        # modelling the ISR prologue; interpret the original body from the raw
+        # 06E5 entry so the saved interrupt frame stays aligned.
+        run_original_fast_timer_isr_06e5(cpu)
+        return
+
     # 06E5..06ED: save interrupted state.
     cpu.push(cpu.s.ax)
     cpu.push(cpu.s.ds)
@@ -229,15 +238,9 @@ def run_fast_timer_isr_06e5(cpu) -> None:
     cpu.push(cpu.s.bp)
     cpu.push(cpu.s.es)
 
-    game_ds = mem.rw(cs, 0x9596)
     cpu.s.ds = game_ds
     driver_flag = mem.rb(game_ds, 0x0055)
     _cmp_byte(cpu, driver_flag, 1)
-    if driver_flag == 1:
-        # The captured Tandy/PC-speaker path has this disabled.  The optional far
-        # sound-driver branch at 2032:0000 is a different island and should not be
-        # silently approximated here.
-        raise RuntimeError("1010:06E5 optional far sound-driver branch is not lifted")
 
     cpu.push(0x0707)
     run_pc_speaker_tick_d50e(cpu)
@@ -283,6 +286,53 @@ def run_fast_timer_isr_06e5(cpu) -> None:
     cpu.s.cs = cpu.pop()
     cpu.s.flags = cpu.pop() | 0x0002
 
+
+
+def run_original_fast_timer_isr_06e5(cpu, *, max_steps: int = 200_000) -> None:
+    """Run the original 1010:06E5 ISR body when the optional far driver is active.
+
+    The lifted PC-speaker path intentionally covers the common ``DS:0055 == 0``
+    case.  When the AdLib/Roland driver initializes successfully, the real ISR
+    performs an additional far call through ``2032:0000`` before the shared sound
+    tick.  Keep that path faithful by temporarily disabling only the 06E5 hook and
+    interpreting the original ISR until it IRETs back to the interrupted code.
+    """
+    key = (0x1010, 0x06E5)
+    saved_hook = cpu.replacement_hooks.pop(key, None)
+    saved_name = cpu.hook_names.get(key)
+    ss = cpu.s.ss & 0xFFFF
+    frame_sp = cpu.s.sp & 0xFFFF
+    ret_ip = cpu.mem.rw(ss, frame_sp)
+    ret_cs = cpu.mem.rw(ss, (frame_sp + 2) & 0xFFFF)
+    return_sp = (frame_sp + 6) & 0xFFFF
+    try:
+        for _ in range(max_steps):
+            if cpu.s.sp == return_sp and cpu.addr() == (ret_cs, ret_ip):
+                return
+            if cpu.addr() == (0x1010, 0x072F):
+                # Same old-BIOS chain boundary used by deliver_overkill_timer_irq0:
+                # POP DS; POP AX; STI; JMP FAR CS:[0738].  The VM does not run a
+                # real BIOS timer, so complete the interrupt frame locally after
+                # the game-side work has finished.
+                cpu.s.ds = cpu.pop()
+                cpu.s.ax = cpu.pop()
+                cpu.set_flag(IF, True)
+                if cpu.port_writer:
+                    cpu.port_writer(cpu, 0x20, 0x20, 8)
+                cpu.s.ip = cpu.pop()
+                cpu.s.cs = cpu.pop()
+                cpu.s.flags = cpu.pop() | 0x0002
+                return
+            cpu.step()
+    finally:
+        if saved_hook is not None:
+            cpu.replacement_hooks[key] = saved_hook
+        if saved_name is not None:
+            cpu.hook_names[key] = saved_name
+    raise RuntimeError(
+        f"original 1010:06E5 optional-driver ISR did not return "
+        f"(cs:ip={cpu.s.cs:04X}:{cpu.s.ip:04X})"
+    )
 
 def _sound_disable_speaker_d62f(cpu, ds: int) -> None:
     # D62F: xor al,al; clear global/channel-active bytes; in 61h; and al,fc; out 61h; ret

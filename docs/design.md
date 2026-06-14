@@ -24,6 +24,29 @@ For the complete reusable workflow, see
 `docs/source_port_methodology.md`.  This design document explains the local
 architecture that supports that workflow.
 
+## Bootstrap/static-runtime boundary
+
+The original startup path is part of the oracle and extraction layer, not the
+final gameplay architecture.  The canonical inputs are the original
+`assets/OVERKILL` and `assets/OVERKILL.EXE` files.  Generated conveniences such
+as `OVERKILL.UNLZEXE.EXE` and `OVERKILL.OVERLAY.BIN` are noncanonical build or
+evidence artifacts only.
+
+The intended source-port shape is:
+
+```text
+original files -> bootstrap/extraction -> canonical initialized inner-game image + derived assets -> source-port runtime
+```
+
+See `docs/bootstrap_static_boundary.md` and the importable manifest in
+`overkill_port/games/overkill/bootstrap_boundary.py`.  Use:
+
+```bash
+python -m overkill_port.cli bootstrap-boundary --video tandy --sound adlib --out artifacts/static_runtime_boundary.json
+```
+
+to write the current boundary manifest.
+
 
 ## Crystallization Layers
 

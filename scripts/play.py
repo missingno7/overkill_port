@@ -57,6 +57,7 @@ from overkill_port.coverage import (
     OverkillCoverageClassifier,
 )
 from overkill_port.games.overkill.sounds import AsyncTimerIrqDriver, OVERKILL_PIT_HZ
+from overkill_port.games.overkill.launch import build_command_tail
 from render_cga import CGA_PALETTES
 
 CGA_PRESENT_HOOK = (0x1010, 0x447B)  # mode-0 CGA frame-present blit
@@ -131,22 +132,22 @@ class FrameSync:
         self._cond = threading.Condition()
         self._next_id = 0
         self._displayed_id = 0
-        self._pending: tuple[int, bytes, int] | None = None
+        self._pending: tuple[int, bytes, int, int, int] | None = None
         self._closed = False
 
-    def publish_and_wait(self, memory: bytearray, *, display_start: int = 0) -> None:
+    def publish_and_wait(self, memory: bytearray, *, display_start: int = 0, video_mode: int = 0xFF, video_page: int = 0) -> None:
         snapshot = bytes(memory)
         with self._cond:
             if self._closed:
                 return
             self._next_id += 1
             frame_id = self._next_id
-            self._pending = (frame_id, snapshot, display_start & 0xFFFF)
+            self._pending = (frame_id, snapshot, display_start & 0xFFFF, video_mode & 0xFF, video_page & 0xFF)
             self._cond.notify_all()
             while not self._closed and self._displayed_id < frame_id:
                 self._cond.wait(timeout=0.25)
 
-    def take_pending(self) -> tuple[int, bytes, int] | None:
+    def take_pending(self) -> tuple[int, bytes, int, int, int] | None:
         with self._cond:
             return self._pending
 
@@ -168,8 +169,12 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description="Interactive CGA/EGA/Tandy viewer for the OVERKILL runtime")
     p.add_argument("--video", choices=("cga", "ega", "tandy"), default="tandy",
                    help="launch/render the original game in CGA, EGA, or Tandy mode (default: tandy)")
+    p.add_argument("--sound", choices=("pc", "adlib", "roland"), default="pc",
+                   help="select the original optional music driver; pc keeps the built-in PC-speaker path")
+    p.add_argument("--adlib-audio", choices=("auto", "off"), default="auto",
+                   help="when --sound adlib is active, stream OPL writes through optional nuked_opl3 if available")
     p.add_argument("--dos-args", default=None,
-                   help="override the PSP command tail passed to the original EXE, e.g. ' /E'")
+                   help="override the PSP command tail passed to the original EXE, e.g. raw compact bytes via tests/diagnostics")
     p.add_argument("--game-hz", type=float, default=36.4,
                    help="real-time game speed (frames/sec); original timer cadence is ~36.4. Lower if choppy.")
     p.add_argument("--fps", type=int, default=30, help="legacy option; timing is controlled by --game-hz")
@@ -237,19 +242,8 @@ def main(argv: list[str] | None = None) -> int:
     assets = ROOT / "assets"
     if args.dos_args is not None:
         command_tail: bytes | str = args.dos_args
-    elif args.video == "ega":
-        # The original OVERKILL container unpacks into the inner game module.
-        # That inner module is selected with a compact binary PSP tail:
-        #   PSP:81 = sound/music option byte, PSP:82 = video mode (0/1/2).
-        # Use the direct selector so non-default modes are unambiguous.
-        command_tail = bytes((0x0D, 0x01))
-    elif args.video == "tandy":
-        # Mode 2 is Tandy/PCjr.
-        command_tail = bytes((0x0D, 0x02))
     else:
-        # With an empty PSP tail the inner parser sees PSP:82 == 0 and selects
-        # CGA mode 0.
-        command_tail = b""
+        command_tail = build_command_tail(args.video, args.sound)
 
     if args.verify_frames and args.verify_frame_preview:
         from overkill_port.frame_verify import FrameSample, FrameVerifyConfig, run_frame_verifier
@@ -282,7 +276,13 @@ def main(argv: list[str] | None = None) -> int:
                 timers["n"] += 1
             elif sample.kind == "retrace":
                 retraces["n"] += 1
-            frame_sync.publish_and_wait(rt.program.memory.data, display_start=sample.display_start)
+            mode = rt.dos.video_mode if rt.dos.text_mode_active and rt.dos.video_mode in (0, 1, 2, 3, 7) else 0xFF
+            frame_sync.publish_and_wait(
+                rt.program.memory.data,
+                display_start=sample.display_start,
+                video_mode=mode,
+                video_page=rt.dos.video_page,
+            )
 
         def pump_inputs(ref_rt, cand_rt) -> None:
             keyboard.pump()
@@ -385,7 +385,10 @@ def main(argv: list[str] | None = None) -> int:
                 ega_render_start=ega_render_start,
                 live_memory=lambda: b"",
                 live_display_start=lambda: 0,
+                live_video_mode=lambda: 0xFF,
+                live_video_page=lambda: 0,
                 speaker_events=None,
+                adlib_events=None,
             )
         finally:
             stop.set()
@@ -417,6 +420,7 @@ def main(argv: list[str] | None = None) -> int:
         rt = load_snapshot(exe, args.snapshot, game_root=assets)
     else:
         rt = create_runtime(exe, game_root=assets, command_tail=command_tail)
+        rt.dos.text_mode_active = False
     rt.dos.console_input_fallback = None
     rt.cpu.trace_enabled = False
     coverage = CoverageTelemetry(
@@ -498,8 +502,18 @@ def main(argv: list[str] | None = None) -> int:
             return (raw_start << 1) & 0xFFFF
         return raw_start
 
+    def is_text_display_active() -> bool:
+        return rt.dos.text_mode_active and rt.dos.video_mode in (0, 1, 2, 3, 7)
+
+    def published_video_mode() -> int:
+        return rt.dos.video_mode if is_text_display_active() else 0xFF
+
     def video_crc(cpu) -> int:
         data = cpu.mem.data
+        if is_text_display_active():
+            base = 0xB0000 if rt.dos.video_mode == 7 else 0xB8000
+            page = (rt.dos.video_page & 0x07) * 0x1000
+            return zlib.crc32(data[base + page:base + page + 0x0FA0]) & 0xFFFFFFFF
         if args.video == "ega":
             # Only hash the hardware-visible 320x200 window from each plane.
             # Hashing the full shadow store lets off-screen/work pages trigger a
@@ -542,13 +556,27 @@ def main(argv: list[str] | None = None) -> int:
                 flush=True,
             )
         if not args.no_present_sync:
-            if args.video == "ega":
+            if is_text_display_active():
+                frame_sync.publish_and_wait(
+                    cpu.mem.data,
+                    display_start=0,
+                    video_mode=rt.dos.video_mode,
+                    video_page=rt.dos.video_page,
+                )
+            elif args.video == "ega":
                 frame_sync.publish_and_wait(
                     memoryview(cpu.mem.data)[video_base:video_base + video_size],
                     display_start=display_start,
+                    video_mode=published_video_mode(),
+                    video_page=rt.dos.video_page,
                 )
             else:
-                frame_sync.publish_and_wait(cpu.mem.data, display_start=display_start)
+                frame_sync.publish_and_wait(
+                    cpu.mem.data,
+                    display_start=display_start,
+                    video_mode=published_video_mode(),
+                    video_page=rt.dos.video_page,
+                )
         return True
 
     def stop_cpu_burst() -> None:
@@ -558,7 +586,8 @@ def main(argv: list[str] | None = None) -> int:
     def queue_dos_key(scancode: int, text: str) -> None:
         cs, ip = rt.cpu.addr()
         in_high_score_editor = cs == 0x1010 and 0x5300 <= ip <= 0x5650
-        if direct_video["n"] == 0 and not in_high_score_editor:
+        in_text_mode = is_text_display_active()
+        if direct_video["n"] == 0 and not in_high_score_editor and not in_text_mode:
             return
         if not text:
             text = {
@@ -593,6 +622,45 @@ def main(argv: list[str] | None = None) -> int:
             return key != 0 and rt.cpu.mem.rb(rt.cpu.s.ds, (0x98C4 + key) & 0xFFFF) != 0
         return False
 
+    def is_menu_fire_select_wait() -> bool:
+        cs, ip = rt.cpu.addr()
+        if cs != 0x1010 or ip not in (0x55F1, 0x55F4, 0x55F9):
+            return False
+        mem = rt.cpu.mem
+        if mem.block(cs, 0x55F1, 12) != bytes.fromhex("e8 4c ab 80 3e be 98 10 74 03 e9"):
+            return False
+        return mem.rb(rt.cpu.s.ds & 0xFFFF, 0x98BE) != 0x10
+
+    def is_menu_fire_release_wait() -> bool:
+        """Detect menu transition loops that wait for FIRE to be released.
+
+        The main menu SPACE/FIRE path falls through a tight D390..D398 poll loop:
+        CALL 0162; TEST byte [98BE],10h; JNZ D390.  There is no presenter or
+        timer wait there, so a held fire key can otherwise make the emulator chew
+        through the full no-boundary budget before the UI gets another turn.
+        """
+        cs, ip = rt.cpu.addr()
+        if cs != 0x1010 or ip not in (0xD390, 0xD393, 0xD396, 0xD398):
+            return False
+        mem = rt.cpu.mem
+        if mem.block(cs, 0xD390, 10) != bytes.fromhex("e8 cf 2d f6 06 be 98 10 75 f6"):
+            return False
+        return (mem.rb(rt.cpu.s.ds & 0xFFFF, 0x98BE) & 0x10) != 0
+
+    def is_input_selector_wait() -> bool:
+        """Detect the level/difficulty selector's idle poll gate.
+
+        1010:D445 is now a one-iteration hook for the original selector
+        busy-wait.  Treating it as an interactive wait lets the SDL side keep
+        rendering, release keys, and process F12 snapshots while the game waits
+        for the next level-select key.
+        """
+        cs, ip = rt.cpu.addr()
+        if cs != 0x1010 or ip != 0xD445:
+            return False
+        mem = rt.cpu.mem
+        return mem.block(cs, 0xD445, 7) == bytes.fromhex("80 3e e4 98 01 75")
+
     def is_overlay_menu_key_wait() -> bool:
         cs, ip = rt.cpu.addr()
         if not (0x099B <= ip <= 0x09DF):
@@ -625,6 +693,39 @@ def main(argv: list[str] | None = None) -> int:
         ds = rt.cpu.s.ds & 0xFFFF
         return mem.rb(ds, 0x98F5) != 1 and mem.rb(ds, 0x98D9) != 1
 
+    def is_boss_key_screen_wait() -> bool:
+        """Detect the F9 boss-key text screen's interactive wait loops.
+
+        F9 arms DS:9907 through OVERKILL's own INT 09h keyboard ISR.  The
+        per-frame 073C service gate then switches to BIOS text mode 3, draws the
+        fake DOS-like boss-key screen, and waits in three tight loops:
+
+        * 07C4 waits for the original F9 press to be released;
+        * 07D0 waits for any key to leave the boss screen;
+        * 07D7 waits for that return key to be released before restoring the
+          game video mode.
+
+        None of those loops reaches a gameplay presenter, timer wait, or retrace
+        wait.  Treat them as cooperative UI boundaries so the text screen is
+        published immediately and key-up/F12 events are not starved behind the
+        full no-boundary frame budget.
+        """
+        cs, ip = rt.cpu.addr()
+        if cs != 0x1010 or ip not in (0x07C4, 0x07D0, 0x07D7):
+            return False
+        mem = rt.cpu.mem
+        if ip == 0x07C4:
+            if mem.block(cs, 0x07C4, 7) != bytes.fromhex("80 3e 07 99 01 74 f9"):
+                return False
+            return mem.rb(rt.cpu.s.ds & 0xFFFF, 0x9907) == 1
+        if ip == 0x07D0:
+            if mem.block(cs, 0x07D0, 7) != bytes.fromhex("80 3e c3 98 00 74 f9"):
+                return False
+            return mem.rb(rt.cpu.s.ds & 0xFFFF, 0x98C3) == 0
+        if mem.block(cs, 0x07D7, 7) != bytes.fromhex("80 3e 07 99 01 74 f9"):
+            return False
+        return mem.rb(rt.cpu.s.ds & 0xFFFF, 0x9907) == 1
+
     def present_hook(cpu) -> None:
         if base_present is not None:
             if hook_verifier is not None:
@@ -632,6 +733,7 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 base_present(cpu)
         blits["n"] += 1
+        rt.dos.text_mode_active = False
         # EGA gameplay alternates the CRTC start between 0000h and 2000h around
         # paired present calls.  The two presents are part of one page-flip/update
         # sequence; painting both through the viewer exposes the intermediate work page
@@ -703,7 +805,10 @@ def main(argv: list[str] | None = None) -> int:
     stop = threading.Event()
     snapshot_requests: SimpleQueue[Path] = SimpleQueue()
     speaker_events: SimpleQueue[tuple[bool, float]] = SimpleQueue()
+    adlib_events: SimpleQueue[tuple[int, int]] | None = SimpleQueue() if args.sound == "adlib" else None
     rt.dos.set_speaker_callback(lambda enabled, freq: speaker_events.put((enabled, freq)), emit_current=True)
+    if adlib_events is not None:
+        rt.dos.set_adlib_callback(lambda reg, value: adlib_events.put((reg, value)), emit_current=True)
 
     def queue_snapshot_save() -> None:
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -765,6 +870,33 @@ def main(argv: list[str] | None = None) -> int:
                         status["text"] = f"waiting for redefine-key input @ {cs:04X}:{ip:04X}"
                         time.sleep(0.01)
                         break
+                    if is_menu_fire_select_wait():
+                        async_timer_irq.poll(rt.cpu)
+                        publish_video_if_changed(rt.cpu)
+                        boundary["n"] += 1
+                        last_boundary["kind"] = "wait"
+                        cs, ip = rt.cpu.addr()
+                        status["text"] = f"waiting for menu select input @ {cs:04X}:{ip:04X}"
+                        time.sleep(0.01)
+                        break
+                    if is_menu_fire_release_wait():
+                        async_timer_irq.poll(rt.cpu)
+                        publish_video_if_changed(rt.cpu)
+                        boundary["n"] += 1
+                        last_boundary["kind"] = "wait"
+                        cs, ip = rt.cpu.addr()
+                        status["text"] = f"waiting for menu fire release @ {cs:04X}:{ip:04X}"
+                        time.sleep(0.01)
+                        break
+                    if is_input_selector_wait():
+                        async_timer_irq.poll(rt.cpu)
+                        publish_video_if_changed(rt.cpu)
+                        boundary["n"] += 1
+                        last_boundary["kind"] = "wait"
+                        cs, ip = rt.cpu.addr()
+                        status["text"] = f"waiting for selector input @ {cs:04X}:{ip:04X}"
+                        time.sleep(0.01)
+                        break
                     if is_overlay_menu_key_wait():
                         async_timer_irq.poll(rt.cpu)
                         publish_video_if_changed(rt.cpu)
@@ -781,6 +913,15 @@ def main(argv: list[str] | None = None) -> int:
                         last_boundary["kind"] = "wait"
                         cs, ip = rt.cpu.addr()
                         status["text"] = f"waiting for exit confirmation @ {cs:04X}:{ip:04X}"
+                        time.sleep(0.01)
+                        break
+                    if is_boss_key_screen_wait():
+                        async_timer_irq.poll(rt.cpu)
+                        publish_video_if_changed(rt.cpu)
+                        boundary["n"] += 1
+                        last_boundary["kind"] = "wait"
+                        cs, ip = rt.cpu.addr()
+                        status["text"] = f"waiting on boss-key screen @ {cs:04X}:{ip:04X}"
                         time.sleep(0.01)
                         break
                     used += max(1, int(args.cpu_chunk_steps))
@@ -832,7 +973,10 @@ def main(argv: list[str] | None = None) -> int:
             ega_render_start=ega_render_start,
             live_memory=lambda: bytes(rt.program.memory.data),
             live_display_start=lambda: rt.program.memory.ega_display_start,
+            live_video_mode=published_video_mode,
+            live_video_page=lambda: rt.dos.video_page,
             speaker_events=speaker_events,
+            adlib_events=adlib_events,
         )
     finally:
         stop.set()

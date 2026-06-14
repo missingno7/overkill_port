@@ -67,6 +67,9 @@ def write_snapshot(rt: Runtime, out_dir: str | Path, *, status: str, steps: int,
         "dos": {
             "video_mode": rt.dos.video_mode,
             "video_page": rt.dos.video_page,
+            "text_mode_active": rt.dos.text_mode_active,
+            "cursor_row": rt.dos.cursor_row,
+            "cursor_col": rt.dos.cursor_col,
             "ticks": rt.dos.ticks,
             "vga_status_reads": rt.dos.vga_status_reads,
             "pit_channel2_access": rt.dos._pit_channel2_access,
@@ -74,6 +77,9 @@ def write_snapshot(rt: Runtime, out_dir: str | Path, *, status: str, steps: int,
             "pit_channel2_write_low": rt.dos._pit_channel2_write_low,
             "pit_channel2_reload": rt.dos.pit_channel2_reload,
             "speaker_control": rt.dos.speaker_control,
+            "opl_selected_register": rt.dos.opl_selected_register,
+            "opl_status": rt.dos.opl_status,
+            "opl_registers": {f"{reg:02X}": value for reg, value in sorted(rt.dos.opl_registers.items())},
             "ega_planar": rt.program.memory.ega_planar,
             "ega_map_mask": rt.program.memory.ega_map_mask,
             "ega_read_plane": rt.program.memory.ega_read_plane,
@@ -116,6 +122,12 @@ def load_snapshot(exe_path: str | Path, snapshot_dir: str | Path, *, game_root: 
     dos_meta = meta.get("dos", {})
     rt.dos.video_mode = dos_meta.get("video_mode", rt.dos.video_mode)
     rt.dos.video_page = dos_meta.get("video_page", rt.dos.video_page)
+    if "text_mode_active" in dos_meta:
+        rt.dos.text_mode_active = dos_meta["text_mode_active"]
+    else:
+        rt.dos.text_mode_active = False
+    rt.dos.cursor_row = dos_meta.get("cursor_row", rt.dos.cursor_row)
+    rt.dos.cursor_col = dos_meta.get("cursor_col", rt.dos.cursor_col)
     rt.dos.ticks = dos_meta.get("ticks", rt.dos.ticks)
     rt.dos.vga_status_reads = dos_meta.get("vga_status_reads", rt.dos.vga_status_reads)
     rt.dos._pit_channel2_access = dos_meta.get("pit_channel2_access", rt.dos._pit_channel2_access)
@@ -123,6 +135,9 @@ def load_snapshot(exe_path: str | Path, snapshot_dir: str | Path, *, game_root: 
     rt.dos._pit_channel2_write_low = dos_meta.get("pit_channel2_write_low", rt.dos._pit_channel2_write_low)
     rt.dos.pit_channel2_reload = dos_meta.get("pit_channel2_reload", rt.dos.pit_channel2_reload)
     rt.dos.speaker_control = dos_meta.get("speaker_control", rt.dos.speaker_control)
+    rt.dos.opl_selected_register = dos_meta.get("opl_selected_register", rt.dos.opl_selected_register)
+    rt.dos.opl_status = dos_meta.get("opl_status", rt.dos.opl_status)
+    rt.dos.opl_registers = {int(reg, 16): int(value) for reg, value in dos_meta.get("opl_registers", {}).items()}
     if "pit_channel2_reload" not in dos_meta and "port_log_tail" in dos_meta:
         _restore_speaker_from_port_log_tail(rt, dos_meta.get("port_log_tail", ()))
     rt.program.memory.ega_planar = dos_meta.get("ega_planar", rt.program.memory.ega_planar)

@@ -195,7 +195,7 @@ def run_input_poll_0162(cpu) -> None:
 
 
 def run_input_selector_loop_d445(cpu) -> None:
-    """Run the observed 1010:D445 input/selector loop to its return.
+    """Run one observed 1010:D445 input/selector loop iteration.
 
     The loop has two distinct observed modes:
 
@@ -205,8 +205,17 @@ def run_input_selector_loop_d445(cpu) -> None:
       as a small 2x3 selector grid driven by the direction bits in
       ``DS:[98BE]``.
 
-    The fire bit ``10h`` exits only when ``DS:[BEDA]`` is nonzero; a zero
-    selection keeps the loop waiting.
+    The fire bit ``10h`` exits immediately for every selector value, including
+    ``DS:[BEDA] == 0``.  That zero slot is the first planet (Edrax), so adding a
+    Python-side nonzero guard would make Edrax impossible to select.
+
+    Important: this is an interactive busy-wait loop when no usable key is
+    pressed.  The hook must not spin in Python until input changes, because that
+    starves the UI thread and prevents queued snapshot requests from being
+    serviced.  For idle/waiting cases it executes exactly one poll iteration and
+    lands back on ``D445h`` with the same observable flags the final branch would
+    have produced.  The outer player can then yield, pump key events, and call the
+    hook again on the next VM slice.
     """
 
     def _write_beda_add(delta: int) -> int:
@@ -269,7 +278,8 @@ def run_input_selector_loop_d445(cpu) -> None:
         if buttons & 0x08:
             cpu.set_logic_flags(beda, 8)
             if beda == 0:
-                continue
+                s.ip = 0xD445
+                return
             old_cf = cpu.get_flag(CF)
             result = _dec_mem_byte_preserve_cf(cpu, ds, 0xBEDA)
             cpu.set_reg8(0, result)
@@ -287,11 +297,20 @@ def run_input_selector_loop_d445(cpu) -> None:
             return
 
         if buttons & 0x10:
-            cpu.set_logic_flags(beda, 8)
-            if beda == 0:
-                continue
+            # Original code at 1010:D46F is simply:
+            #   TEST byte [98BE],10h
+            #   JZ D445
+            #   RET
+            # There is no BEDA/nonzero guard.  BEDA==0 is the Edrax slot.
+            cpu.set_logic_flags(buttons & 0x10, 8)
             s.ip = cpu.pop()
             return
+
+        # Original idle tail is a TEST/JZ back to D445.  Preserve the final
+        # TEST flags instead of looping internally.
+        cpu.set_logic_flags(buttons & 0x10, 8)
+        s.ip = 0xD445
+        return
 
 
 def run_input_release_wait_gate_986e(cpu) -> None:

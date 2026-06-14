@@ -297,6 +297,128 @@ def test_int16_keyboard_queue_and_headless_fallback():
     assert cpu.get_flag(ZF)
 
 
+def test_int16_blocking_read_can_wait_for_interactive_frontend():
+    from pathlib import Path
+    from overkill_port.dos import ConsoleInputWouldBlock, DOSMachine
+
+    cpu = CPU8086(Memory(), CPUState(cs=0x1000, ds=0x1000, es=0x1000, ss=0x1000, sp=0xFFFE, ip=0x0202))
+    dos = DOSMachine(root=Path('.'))
+    dos.console_input_fallback = None
+
+    cpu.s.ax = 0x0000
+    try:
+        dos.interrupt(cpu, 0x16)
+    except ConsoleInputWouldBlock:
+        pass
+    else:
+        raise AssertionError("empty interactive BIOS keyboard read should block")
+
+    assert cpu.s.ip == 0x0200
+    assert cpu.s.ax == 0x0000
+
+
+def test_int10_text_mode_writes_cells_and_tracks_cursor():
+    from pathlib import Path
+    from overkill_port.dos import DOSMachine
+
+    cpu = CPU8086(Memory(), CPUState(cs=0x1000, ds=0x1000, es=0x1000, ss=0x1000, sp=0xFFFE))
+    dos = DOSMachine(root=Path('.'))
+
+    cpu.s.ax = 0x0003
+    dos.interrupt(cpu, 0x10)
+    assert dos.text_mode_active is True
+    assert cpu.mem.rb(0xB800, 0) == 0x20
+    assert cpu.mem.rb(0xB800, 1) == 0x07
+
+    cpu.s.ax = 0x0200
+    cpu.s.bx = 0x0000
+    cpu.s.dx = 0x0205
+    dos.interrupt(cpu, 0x10)
+    cpu.s.ax = 0x0E41
+    cpu.s.bx = 0x1E00
+    dos.interrupt(cpu, 0x10)
+
+    off = ((2 * 80 + 5) * 2)
+    assert cpu.mem.rb(0xB800, off) == ord('A')
+    assert cpu.mem.rb(0xB800, off + 1) == 0x1E
+    assert (dos.cursor_row, dos.cursor_col) == (2, 6)
+
+    cpu.s.ax = 0x0942
+    cpu.s.bx = 0x2F00
+    cpu.s.cx = 3
+    dos.interrupt(cpu, 0x10)
+    off = ((2 * 80 + 6) * 2)
+    assert cpu.mem.block(0xB800, off, 6) == bytes([ord('B'), 0x2F, ord('B'), 0x2F, ord('B'), 0x2F])
+    assert (dos.cursor_row, dos.cursor_col) == (2, 6)
+
+    cpu.s.ax = 0x0013
+    dos.interrupt(cpu, 0x10)
+    assert dos.text_mode_active is False
+
+
+def test_int10_graphics_mode_set_clears_tandy_vram_unless_no_clear_bit():
+    from pathlib import Path
+    from overkill_port.dos import DOSMachine
+
+    cpu = CPU8086(Memory(), CPUState(cs=0x1000, ds=0x1000, es=0x1000, ss=0x1000, sp=0xFFFE))
+    dos = DOSMachine(root=Path('.'))
+
+    start = 0xB8000
+    cpu.mem.data[start:start + 0x8000] = b"\x5A" * 0x8000
+
+    cpu.s.ax = 0x0009
+    dos.interrupt(cpu, 0x10)
+
+    assert dos.video_mode == 0x09
+    assert dos.text_mode_active is False
+    assert cpu.mem.data[start:start + 0x8000] == b"\x00" * 0x8000
+
+    cpu.mem.data[start:start + 0x8000] = b"\xA5" * 0x8000
+    cpu.s.ax = 0x0089
+    dos.interrupt(cpu, 0x10)
+
+    assert dos.video_mode == 0x89
+    assert dos.text_mode_active is False
+    assert cpu.mem.data[start:start + 0x8000] == b"\xA5" * 0x8000
+
+
+def test_int21_dollar_console_output_renders_to_active_text_page():
+    from pathlib import Path
+    from overkill_port.dos import DOSMachine
+
+    cpu = CPU8086(Memory(), CPUState(cs=0x1000, ds=0x1000, es=0x1000, ss=0x1000, sp=0xFFFE))
+    dos = DOSMachine(root=Path('.'))
+
+    cpu.s.ax = 0x0007
+    dos.interrupt(cpu, 0x10)
+    cpu.mem.load(0x1000, 0x0100, b"Hi\r\nThere$")
+    cpu.s.ax = 0x0900
+    cpu.s.dx = 0x0100
+    dos.interrupt(cpu, 0x21)
+
+    assert "".join(dos.stdout) == "Hi\r\nThere"
+    assert cpu.mem.rb(0xB000, 0) == ord('H')
+    assert cpu.mem.rb(0xB000, 2) == ord('i')
+    assert cpu.mem.rb(0xB000, 160) == ord('T')
+    assert cpu.s.ax == 0x0924
+
+
+def test_int10_ega_info_reports_colour_adapter_present():
+    from pathlib import Path
+    from overkill_port.dos import DOSMachine
+
+    cpu = CPU8086(Memory(), CPUState(cs=0x1000, ds=0x1000, es=0x1000, ss=0x1000, sp=0xFFFE))
+    dos = DOSMachine(root=Path('.'))
+
+    cpu.s.ax = 0x1200
+    cpu.s.bx = 0x0010
+    cpu.s.cx = 0xFFFF
+    dos.interrupt(cpu, 0x10)
+
+    assert cpu.s.bx == 0x0003
+    assert cpu.s.cx == 0x0009
+
+
 
 def test_int21_console_input_uses_keyboard_queue_and_fallback():
     from pathlib import Path
@@ -598,3 +720,85 @@ def test_cold_start_frontier_manifest_classifies_same_ip_and_bootstrap_leftovers
     assert FRONTIER_BY_ADDR[(0x1010, 0xD03E)].category is FrontierCategory.SAME_IP_LOOP_GATE
     assert FRONTIER_BY_ADDR[(0x32FF, 0x0052)].category is FrontierCategory.DO_NOT_HOOK_BOOTSTRAP
     assert FRONTIER_BY_ADDR[(0x1010, 0xD03E)].owner == (0x1010, 0xD007)
+
+
+def test_overkill_compact_tail_can_select_tandy_and_adlib():
+    from overkill_port.games.overkill.launch import build_command_tail
+
+    assert build_command_tail("cga", "pc") == b""
+    assert build_command_tail("tandy", "pc") == bytes((0x0D, 0x02))
+    assert build_command_tail("tandy", "adlib") == bytes((0x0D, 0x02, ord("A")))
+    assert build_command_tail("ega", "roland") == bytes((0x0D, 0x01, ord("R")))
+
+
+def test_adlib_timer_presence_probe_status_bits():
+    from overkill_port.dos import DOSMachine
+    from overkill_port.cpu import CPU8086, CPUState
+    from overkill_port.memory import Memory
+
+    cpu = CPU8086(Memory(), CPUState())
+    dos = DOSMachine(root=__import__("pathlib").Path("."))
+
+    dos.port_write(cpu, 0x388, 0x04, 8)
+    dos.port_write(cpu, 0x389, 0x80, 8)
+    assert dos.port_read(cpu, 0x388, 8) == 0x00
+
+    dos.port_write(cpu, 0x388, 0x02, 8)
+    dos.port_write(cpu, 0x389, 0xFF, 8)
+    dos.port_write(cpu, 0x388, 0x04, 8)
+    dos.port_write(cpu, 0x389, 0x21, 8)
+    assert dos.port_read(cpu, 0x388, 8) == 0xC0
+    assert dos.opl_registers[0x02] == 0xFF
+
+    dos.port_write(cpu, 0x388, 0x04, 8)
+    dos.port_write(cpu, 0x389, 0x80, 8)
+    assert dos.port_read(cpu, 0x388, 8) == 0x00
+
+
+def test_adlib_register_callback_receives_data_port_writes():
+    from pathlib import Path
+
+    from overkill_port.cpu import CPU8086, CPUState
+    from overkill_port.dos import DOSMachine
+    from overkill_port.memory import Memory
+
+    cpu = CPU8086(Memory(), CPUState())
+    dos = DOSMachine(root=Path("."))
+    events: list[tuple[int, int]] = []
+    dos.set_adlib_callback(lambda reg, value: events.append((reg, value)))
+
+    dos.port_write(cpu, 0x388, 0x20, 8)
+    assert events == []
+    dos.port_write(cpu, 0x389, 0x7F, 8)
+    assert events == [(0x20, 0x7F)]
+
+
+def test_adlib_register_callback_handles_16bit_index_data_write():
+    from pathlib import Path
+
+    from overkill_port.cpu import CPU8086, CPUState
+    from overkill_port.dos import DOSMachine
+    from overkill_port.memory import Memory
+
+    cpu = CPU8086(Memory(), CPUState())
+    dos = DOSMachine(root=Path("."))
+    events: list[tuple[int, int]] = []
+    dos.set_adlib_callback(lambda reg, value: events.append((reg, value)))
+
+    dos.port_write(cpu, 0x388, 0x3404, 16)
+    assert dos.opl_registers[0x04] == 0x34
+    assert events == [(0x04, 0x34)]
+
+
+def test_adlib_register_callback_can_emit_snapshot_state_on_attach():
+    from pathlib import Path
+
+    from overkill_port.dos import DOSMachine
+
+    dos = DOSMachine(root=Path("."))
+    dos.opl_registers = {0xB0: 0x20, 0x20: 0x01}
+    events: list[tuple[int, int]] = []
+
+    dos.set_adlib_callback(lambda reg, value: events.append((reg, value)), emit_current=True)
+
+    assert events == [(0x20, 0x01), (0xB0, 0x20)]

@@ -695,6 +695,9 @@ class HookVerifier:
         dos.allocations = dict(src.dos.allocations)
         dos.video_mode = src.dos.video_mode
         dos.video_page = src.dos.video_page
+        dos.text_mode_active = src.dos.text_mode_active
+        dos.cursor_row = src.dos.cursor_row
+        dos.cursor_col = src.dos.cursor_col
         dos.ticks = src.dos.ticks
         dos.vga_status_reads = src.dos.vga_status_reads
         dos._pit_channel2_access = getattr(src.dos, "_pit_channel2_access", 3)
@@ -702,6 +705,9 @@ class HookVerifier:
         dos._pit_channel2_write_low = getattr(src.dos, "_pit_channel2_write_low", True)
         dos.pit_channel2_reload = src.dos.pit_channel2_reload
         dos.speaker_control = src.dos.speaker_control
+        dos.opl_selected_register = getattr(src.dos, "opl_selected_register", 0)
+        dos.opl_status = getattr(src.dos, "opl_status", 0)
+        dos.opl_registers = dict(getattr(src.dos, "opl_registers", {}))
         dos._seq_index = getattr(src.dos, "_seq_index", 0)
         dos._crtc_index = getattr(src.dos, "_crtc_index", 0)
         dos.current_scancode = src.dos.current_scancode
@@ -836,6 +842,9 @@ class HookVerifier:
             "allocation_limit_segment",
             "video_mode",
             "video_page",
+            "text_mode_active",
+            "cursor_row",
+            "cursor_col",
             "ticks",
             "vga_status_reads",
             "_seq_index",
@@ -867,6 +876,9 @@ class HookVerifier:
             "_pit_channel2_write_low",
             "pit_channel2_reload",
             "speaker_control",
+            "opl_selected_register",
+            "opl_status",
+            "opl_registers",
         ):
             av = getattr(asm_rt.dos, field)
             hv = getattr(hook_rt.dos, field)

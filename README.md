@@ -1,5 +1,47 @@
 # OVERKILL Runtime And Source-Port Scaffold
 
+## Bootstrap/static-runtime boundary
+
+The project now treats the original startup path as an oracle/extraction layer,
+not as the final source-port architecture.  The only canonical game inputs are:
+
+```text
+assets/OVERKILL
+assets/OVERKILL.EXE
+```
+
+Generated convenience files such as `OVERKILL.UNLZEXE.EXE` or
+`OVERKILL.OVERLAY.BIN` must stay out of `assets/` as source inputs.  If the port
+needs an unpacked image, screen, table, sound driver, or overlay blob, generate it
+deterministically from the original files and treat it as a build/evidence
+artifact.
+
+The current boundary manifest can be written with:
+
+```bash
+python -m overkill_port.cli bootstrap-boundary --video tandy --sound adlib --out artifacts/static_runtime_boundary.json
+```
+
+The next practical step is materializing a canonical initialized runtime bundle
+from the original files.  This runs the historical bootstrap once, stops at an
+inner-runtime frontier, writes the normal snapshot files, and adds a reviewable
+`static_runtime_bundle.json` with hashes of the PSP, relocated runtime segment,
+and optional sound-driver area:
+
+```bash
+python -m overkill_port.cli static-runtime-bundle assets/OVERKILL \
+  --game-root assets \
+  --video tandy \
+  --sound adlib \
+  --out-dir artifacts/static_runtime_bundle
+```
+
+See `docs/bootstrap_static_boundary.md` for the policy,
+`overkill_port/games/overkill/bootstrap_boundary.py` for the importable boundary
+manifest, and `overkill_port/games/overkill/static_runtime_bundle.py` for the
+materializer.
+
+
 This repository is an evidence-driven runtime/source-port project for
 **OVERKILL: The Six-Planet Mega Blast**, a 16-bit DOS game.
 
@@ -337,3 +379,17 @@ code.
 - Avoid broad refactors unless tests and oracle comparisons prove behavior did
   not change.
 - The current state of the project lives in `RUN_STATUS.md`, not in this README.
+
+Run:
+    python scripts/play.py [--video cga|ega|tandy] [--sound pc|adlib|roland] [--game-hz 30] [--fps 30] [--palette 1h] [--scale 2]
+
+AdLib audio:
+    python scripts/play.py --video tandy --sound adlib
+
+`--sound adlib` runs OVERKILL's original optional AdLib driver and forwards its
+YM3812 register writes to the SDL viewer.  Audible FM output is optional: install
+and build the external `nuked_opl3` CFFI package first, then the viewer will
+stream Nuked-OPL3 PCM.  Without it, the VM still models AdLib detection and the
+register stream, but the SDL frontend stays silent and reports the missing
+backend.  Use `--adlib-audio off` to run the original driver without attempting
+PCM output.
