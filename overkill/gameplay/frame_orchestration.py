@@ -25,6 +25,7 @@ from dos_re.cpu import ZF
 
 
 RunOriginalNearCall = Callable[[object, int, int], None]
+RunOriginalFarCall = Callable[[object, int, int, int], None]
 
 
 
@@ -116,7 +117,371 @@ SIG_FRAME_SERVICE_GATE_073C = bytes.fromhex(
 SIG_FRAME_UI_STATE_UPDATE_D04D = bytes.fromhex(
     "c7 06 78 a2 00 00 b0 1f b4 18 e8 a6 89 8b 1e 06 be"
 )
+SIG_FRAME_EFFECT_STATUS_TEXT_60A2 = bytes.fromhex("e8 20 17 e8 b9 fe e8 30 fe c3")
+SIG_FRAME_LOOP_97B2 = bytes.fromhex(
+    "e8 bd 6e e8 67 b9 e8 8b 10 83 3e 7a a9 00 75 03 e8 5a 00 "
+    "e8 14 c4 e8 41 11 e8 60 03 83 3e 44 a3 01 75 03 e9 5c ff "
+    "83 3e 42 a3 01 75 03 e9 20 01 83 3e 46 a3 01 75 03 e9 1c 01 "
+    "e8 51 11 e8 4a 6f e8 ad c8 80 3e 8f 97 00 74 0a 80 3e 02 99 01 "
+    "75 03 e9 2e ff 80 3e 08 99 01 75 03 e8 27 01 80 3e c5 98 01 "
+    "74 4b e8 46 b9 e8 5c 6e eb 93"
+)
 
+SIG_INTERSTITIAL_STATUS_CELL_D367 = bytes.fromhex(
+    "b4 47 b0 03 e8 92 86 33 f6 2e 8e 1e b6 95 e8 f4 86 "
+    "2e 8e 1e 96 95 c3"
+)
+SIG_INTERSTITIAL_TIMED_INPUT_LOOP_D318 = bytes.fromhex(
+    "e8 57 33 e8 01 7e e8 cc 79 2e 83 3e bc 95 01 75 03 "
+    "e8 b0 88 e8 38 00 e8 32 7a 9a 22 09 8f 1f e8 02 34 "
+    "e8 65 8d e8 20 7e e8 36 33 e8 83 7d ff 06 d8 be 81 "
+    "3e d8 be c8 00 77 0a e8 0d 2e f6 06 be 98 10 74 bc "
+    "e8 03 2e f6 06 be 98 10 75 f6 c3"
+)
+SIG_STATUS_CELL_SEED_852B = bytes.fromhex(
+    "b0 1c 50 e8 cf d4 c7 46 00 24 00 89 7e 02 c7 46 08 "
+    "00 00 83 c5 0a 58 80 c4 10 c3"
+)
+SIG_STATUS_CELL_LIST_SEED_8517 = bytes.fromhex(
+    "c7 06 fa 95 ff ff bd 82 96 b4 87 e8 06 00 e8 03 00 e8 00 00"
+)
+
+
+def run_status_cell_seed_852b(
+    cpu,
+    self_disable_if_patched,
+    run_original_near_call: RunOriginalNearCall,
+) -> None:
+    """Lift 1010:852B, one raw status/list cell descriptor seed.
+
+    The routine converts ``AX`` through the existing ``5A00`` coordinate helper,
+    stores a compact 10-byte descriptor at ``SS:BP``, advances ``BP`` by one
+    descriptor, restores the saved AX, increments AH by 10h, and returns.
+    """
+    if self_disable_if_patched(cpu, 0x852B, SIG_STATUS_CELL_SEED_852B, "overkill_status_cell_seed_852b"):
+        return
+
+    s = cpu.s
+    mem = cpu.mem
+    cs = s.cs & 0xFFFF
+    ss = s.ss & 0xFFFF
+
+    s.ax = (s.ax & 0xFF00) | 0x001C
+    cpu.push(s.ax)
+    run_original_near_call(cpu, 0x5A00, 0x8531)
+    if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (cs, 0x8531):
+        raise RuntimeError(
+            f"852B expected 1010:5A00 to return 1010:8531, got {s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X}"
+        )
+    bp = s.bp & 0xFFFF
+    mem.ww(ss, bp + 0x00, 0x0024)
+    mem.ww(ss, bp + 0x02, s.di & 0xFFFF)
+    mem.ww(ss, bp + 0x08, 0x0000)
+    old_bp = s.bp & 0xFFFF
+    result_bp = old_bp + 0x000A
+    s.bp = result_bp & 0xFFFF
+    cpu.set_add_flags(old_bp, 0x000A, result_bp, 16)
+    s.ax = cpu.pop()
+    old_ah = (s.ax >> 8) & 0xFF
+    result_ah = old_ah + 0x10
+    cpu.set_reg8(4, result_ah)
+    cpu.set_add_flags(old_ah, 0x10, result_ah, 8)
+    s.ip = cpu.pop()
+
+
+def run_status_cell_list_seed_8517(
+    cpu,
+    self_disable_if_patched,
+    run_original_near_call: RunOriginalNearCall,
+) -> None:
+    """Lift 1010:8517, a four-entry raw status/list descriptor builder.
+
+    Original ASM deliberately uses three CALLs into 852B and then falls through
+    into 852B for the fourth descriptor.  The hook preserves that call/stack
+    shape so this remains an exact low-level list seed, not a semantic HUD model.
+    """
+    if self_disable_if_patched(cpu, 0x8517, SIG_STATUS_CELL_LIST_SEED_8517, "overkill_status_cell_list_seed_8517"):
+        return
+
+    s = cpu.s
+    mem = cpu.mem
+    cs = s.cs & 0xFFFF
+    ds = s.ds & 0xFFFF
+
+    def call_852b(ret: int) -> None:
+        # The third original CALL returns to 852B itself, so the generic bounded
+        # CALL helper would accept the target before executing any instruction.
+        # Run the lifted 852B body with explicit CALL stack semantics instead.
+        cpu.push(ret & 0xFFFF)
+        run_status_cell_seed_852b(cpu, self_disable_if_patched, run_original_near_call)
+        if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (cs, ret & 0xFFFF):
+            raise RuntimeError(
+                f"8517 expected 852B to return 1010:{ret & 0xFFFF:04X}, "
+                f"got {s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X}"
+            )
+
+    mem.ww(ds, 0x95FA, 0xFFFF)
+    s.bp = 0x9682
+    s.ax = (0x87 << 8) | (s.ax & 0x00FF)
+    call_852b(0x8525)
+    call_852b(0x8528)
+    call_852b(0x852B)
+    # The fourth descriptor is the original fall-through into 852B.  Do not push
+    # a synthetic return word; 852B must consume the caller's return address.
+    run_status_cell_seed_852b(cpu, self_disable_if_patched, run_original_near_call)
+
+
+def run_interstitial_status_cell_d367(
+    cpu,
+    self_disable_if_patched,
+    run_original_near_call: RunOriginalNearCall,
+) -> None:
+    """Lift 1010:D367, a small interstitial/status cell blit helper.
+
+    The helper prepares AX for ``5A00`` coordinate conversion, switches DS to
+    the cell-source segment at ``CS:95B6``, dispatches ``5A6C`` to the current
+    video-mode blitter, then restores DS from ``CS:9596``.  It is still raw
+    frame/HUD glue: no semantic screen or menu model is introduced here.
+    """
+    if self_disable_if_patched(
+        cpu,
+        0xD367,
+        SIG_INTERSTITIAL_STATUS_CELL_D367,
+        "overkill_interstitial_status_cell_d367",
+    ):
+        return
+
+    s = cpu.s
+    mem = cpu.mem
+    cs = s.cs & 0xFFFF
+
+    def call(ip: int, ret: int, *, max_steps: int = 20000) -> None:
+        run_original_near_call(cpu, ip & 0xFFFF, ret & 0xFFFF, max_steps=max_steps)
+        if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (cs, ret & 0xFFFF):
+            raise RuntimeError(
+                f"D367 expected 1010:{ip & 0xFFFF:04X} to return "
+                f"1010:{ret & 0xFFFF:04X}, got {s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X}"
+            )
+
+    s.ax = (0x47 << 8) | 0x03
+    call(0x5A00, 0xD36E)
+    s.si = 0
+    cpu.set_logic_flags(0, 16)  # XOR SI,SI
+    s.ds = mem.rw(cs, 0x95B6)
+    call(0x5A6C, 0xD378)
+    s.ds = mem.rw(cs, 0x9596)
+    s.ip = cpu.pop()
+
+
+def run_interstitial_timed_input_loop_d318(
+    cpu,
+    self_disable_if_patched,
+    run_original_near_call: RunOriginalNearCall,
+    run_original_far_call: RunOriginalFarCall,
+) -> None:
+    """Lift one iteration of 1010:D318 timed interstitial/input-wait loop.
+
+    This loop is a frame-script controller used after the 97B2 path in observed
+    Tandy runs.  Each iteration services graphics/sound/status children, bumps
+    ``DS:BED8``, then either loops back to D318 while the timeout is active or
+    waits for the input-release bit to clear before returning to its caller.
+
+    Keeping this as an ASM-shaped frame glue routine removes repeated anonymous
+    ``D318`` interpreted noise and exposes the higher-level direction without
+    inventing a semantic screen/menu state yet.
+    """
+    if self_disable_if_patched(
+        cpu,
+        0xD318,
+        SIG_INTERSTITIAL_TIMED_INPUT_LOOP_D318,
+        "overkill_interstitial_timed_input_loop_d318",
+    ):
+        return
+
+    s = cpu.s
+    mem = cpu.mem
+    cs = s.cs & 0xFFFF
+    ds = s.ds & 0xFFFF
+
+    def call(ip: int, ret: int, *, max_steps: int = 20000) -> None:
+        run_original_near_call(cpu, ip & 0xFFFF, ret & 0xFFFF, max_steps=max_steps)
+        if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (cs, ret & 0xFFFF):
+            raise RuntimeError(
+                f"D318 expected 1010:{ip & 0xFFFF:04X} to return "
+                f"1010:{ret & 0xFFFF:04X}, got {s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X}"
+            )
+
+    def call_input_until_release(return_ip: int) -> None:
+        while True:
+            call(0x0162, return_ip)
+            input_flags = mem.rb(ds, 0x98BE)
+            cpu.set_logic_flags(input_flags & 0x10, 8)
+            if not (input_flags & 0x10):
+                return
+
+    call(0x0672, 0xD31B)
+    call(0x511F, 0xD31E)
+    call(0x4CED, 0xD321)
+
+    mode = mem.rw(cs, 0x95BC)
+    _cmp_word(cpu, mode, 0x0001)
+    if mode == 0x0001:
+        call(0x5BDC, 0xD32C)
+
+    call(0xD367, 0xD32F)
+    call(0x4D64, 0xD332)
+    run_original_far_call(cpu, 0x1F8F, 0x0922, 0xD337)
+    if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (cs, 0xD337):
+        raise RuntimeError(
+            f"D318 expected 1F8F:0922 to return to 1010:D337, "
+            f"got {s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X}"
+        )
+    call(0x073C, 0xD33A)
+    call(0x60A2, 0xD33D)
+    call(0x5160, 0xD340)
+    call(0x0679, 0xD343)
+    call(0x50C9, 0xD346)
+
+    counter = _inc_mem_word_preserve_cf(cpu, ds, 0xBED8)
+    _cmp_word(cpu, counter, 0x00C8)
+    if counter > 0x00C8:
+        call_input_until_release(0xD35F)
+        s.ip = cpu.pop()
+        return
+
+    call(0x0162, 0xD355)
+    input_flags = mem.rb(ds, 0x98BE)
+    cpu.set_logic_flags(input_flags & 0x10, 8)
+    if not (input_flags & 0x10):
+        s.ip = 0xD318
+        return
+
+    call_input_until_release(0xD35F)
+    s.ip = cpu.pop()
+
+
+
+
+def run_frame_loop_97b2(
+    cpu,
+    self_disable_if_patched,
+    run_original_near_call: RunOriginalNearCall,
+) -> None:
+    """Lift one iteration of the 1010:97B2 gameplay/attract frame loop.
+
+    This is the frame controller that surrounds the large 9B2E input/game-state
+    controller.  The 9B2E child remains bounded original and explicitly
+    classified as the next larger frontier; this wrapper only removes the
+    finite call/branch glue around it.
+    """
+    if self_disable_if_patched(cpu, 0x97B2, SIG_FRAME_LOOP_97B2, "overkill_frame_loop_97b2"):
+        return
+
+    s = cpu.s
+    mem = cpu.mem
+    cs = s.cs & 0xFFFF
+    ds = s.ds & 0xFFFF
+
+    def call(ip: int, ret: int, *, max_steps: int = 20000) -> None:
+        run_original_near_call(cpu, ip & 0xFFFF, ret & 0xFFFF, max_steps=max_steps)
+        if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (cs, ret & 0xFFFF):
+            raise RuntimeError(
+                f"97B2 expected 1010:{ip & 0xFFFF:04X} to return "
+                f"1010:{ret & 0xFFFF:04X}, got {s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X}"
+            )
+
+    call(0x0672, 0x97B5)
+    call(0x511F, 0x97B8)
+    call(0xA846, 0x97BB)
+
+    v_a97a = mem.rw(ds, 0xA97A)
+    _cmp_word(cpu, v_a97a, 0x0000)
+    if v_a97a == 0x0000:
+        call(0x981F, 0x97C5)
+
+    call(0x5BDC, 0x97C8)
+    call(0xA90C, 0x97CB)
+    call(0x9B2E, 0x97CE, max_steps=120000)
+
+    v_a344 = mem.rw(ds, 0xA344)
+    _cmp_word(cpu, v_a344, 0x0001)
+    if v_a344 == 0x0001:
+        s.ip = 0x9734
+        return
+
+    v_a342 = mem.rw(ds, 0xA342)
+    _cmp_word(cpu, v_a342, 0x0001)
+    if v_a342 == 0x0001:
+        s.ip = 0x9902
+        return
+
+    v_a346 = mem.rw(ds, 0xA346)
+    _cmp_word(cpu, v_a346, 0x0001)
+    if v_a346 == 0x0001:
+        s.ip = 0x9908
+        return
+
+    call(0xA940, 0x97EF)
+    call(0x073C, 0x97F2)
+    call(0x60A2, 0x97F5)
+
+    v978f = mem.rb(ds, 0x978F)
+    _cmp_byte(cpu, v978f, 0x00)
+    if v978f != 0:
+        v9902 = mem.rb(ds, 0x9902)
+        _cmp_byte(cpu, v9902, 0x01)
+        if v9902 == 0x01:
+            s.ip = 0x9734
+            return
+
+    v9908 = mem.rb(ds, 0x9908)
+    _cmp_byte(cpu, v9908, 0x01)
+    if v9908 == 0x01:
+        call(0x9937, 0x9810)
+
+    v98c5 = mem.rb(ds, 0x98C5)
+    _cmp_byte(cpu, v98c5, 0x01)
+    if v98c5 == 0x01:
+        s.ip = 0x9862
+        return
+
+    call(0x5160, 0x981A)
+    call(0x0679, 0x981D)
+    s.ip = 0x97B2
+
+def run_frame_effect_status_text_60a2(
+    cpu,
+    self_disable_if_patched,
+    call_effect_gate_77c5,
+    call_status_counter_5f61,
+    call_status_text_5edb,
+) -> None:
+    """Lift 1010:60A2, the per-frame effect/status/text glue block.
+
+    The routine is only a three-call near helper: 77C5 effect gate, 5F61 global
+    status counters, 5EDB HUD/status text.  It is frame orchestration glue, not
+    standalone gameplay behavior, so child ownership remains with the existing
+    effect/text/game-state hooks.
+    """
+    if self_disable_if_patched(cpu, 0x60A2, SIG_FRAME_EFFECT_STATUS_TEXT_60A2, "overkill_frame_effect_status_text_60a2"):
+        return
+
+    s = cpu.s
+    cs = s.cs & 0xFFFF
+
+    call_effect_gate_77c5(0x60A5)
+    if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (cs, 0x60A5):
+        raise RuntimeError(f"60A2 expected 77C5 to return to 60A5, got {s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X}")
+
+    call_status_counter_5f61(0x60A8)
+    if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (cs, 0x60A8):
+        raise RuntimeError(f"60A2 expected 5F61 to return to 60A8, got {s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X}")
+
+    call_status_text_5edb(0x60AB)
+    if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (cs, 0x60AB):
+        raise RuntimeError(f"60A2 expected 5EDB to return to 60AB, got {s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X}")
+
+    s.ip = cpu.pop()
 
 def _run_sound_state_select_cb1c(cpu) -> None:
     """Mirror the tiny 1010:CB1C sound-state selector used by 5F61.

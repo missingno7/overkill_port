@@ -274,6 +274,12 @@
     "name": "overkill_text_string_loop_518c",
     "notes": "NUL-terminated inline text loop: reads SS:BP, exits on zero, otherwise calls 519A and advances BP. Lifted to compose the verified text dispatcher while preserving control-byte BP adjustments and call scratch."
   },
+  "1010:558B": {
+    "island": "input_menu",
+    "name": "overkill_main_menu_idle_loop_558b",
+    "notes": "One-iteration main-menu idle/poll parent. Clears animation deltas, performs the 50C9 retrace wait, increments DS:22BF, polls input via 0162, and stops at 558B or the expiry continuation 55FD/near return. The 2026-06-14 fix removed the incorrect pre-fallback at DS:22BF==02ED and added an inline pure 50C9 fallback for verifier contexts without the nested retrace hook.",
+    "status": "replaced"
+  },
   "1010:5827": {
     "name": "overkill_ega_planar_to_linear_copy_5827",
     "notes": "Narrow hook for 5827..58A4 EGA row-copy loop. Verified at mode 0 on captured snapshot; leaves later render driver code original.",
@@ -329,8 +335,8 @@
   "1010:5EDB": {
     "island": "tandy_renderer",
     "name": "overkill_score_status_text_block_5edb",
-    "status": "replaced",
-    "notes": "HUD/status text glue: prints SS:2318 string through 518C, then four SS:2314..2317 bytes via the 5EF9 two-nibble helper, preserving CALL scratch for intermediate bytes."
+    "notes": "HUD/status text glue: prints SS:2318 string through 518C, then four SS:2314..2317 bytes via the 5EF9 two-nibble helper, preserving CALL scratch for intermediate bytes.",
+    "status": "replaced"
   },
   "1010:5EF9": {
     "island": "tandy_renderer",
@@ -338,11 +344,29 @@
     "notes": "Small HUD/text helper that prints one byte as two score nibbles by composing the existing 5F06 nibble-to-text helper for the high and low nibbles.",
     "status": "replaced"
   },
+  "1010:60A2": {
+    "island": "tandy_renderer",
+    "name": "overkill_frame_effect_status_text_60a2",
+    "notes": "Frame effect/status/text glue: calls 77C5, 5F61, then 5EDB in original order and returns through the parent caller.",
+    "status": "replaced"
+  },
+  "1010:613E": {
+    "island": "game_state",
+    "name": "overkill_status_cursor_advance_613e",
+    "notes": "Mode-dependent status/HUD cursor stride helper. Dispatches on CS:95BC and advances DI by 2/1/4 for CGA/EGA/Tandy-style modes. Verified against interpreted ASM for all observed table targets.",
+    "status": "hooked_verified"
+  },
+  "1010:615A": {
+    "island": "game_state",
+    "name": "overkill_status_cursor_retreat_615a",
+    "notes": "Inverse status/HUD cursor stride helper. Dispatches on CS:95BC and retreats DI by 2/1/4. Verified against interpreted ASM for all observed table targets.",
+    "status": "hooked_verified"
+  },
   "1010:61C7": {
     "island": "game_state",
     "name": "overkill_decrement_first_active_counter_61c7",
-    "status": "replaced",
-    "notes": "Real instruction-boundary entry for the DS:2368..2372 countdown scan. Older metadata accidentally used 61C5, which is inside the preceding CALL immediate in the materialized runtime body."
+    "notes": "Real instruction-boundary entry for the DS:2368..2372 countdown scan. Older metadata accidentally used 61C5, which is inside the preceding CALL immediate in the materialized runtime body.",
+    "status": "replaced"
   },
   "1010:61CA": {
     "island": "game_state",
@@ -353,20 +377,32 @@
   "1010:61F7": {
     "island": "game_state",
     "name": "overkill_decrement_first_active_counter_loop_61f7",
-    "status": "replaced",
-    "notes": "Hot CALL 61C7 / LOOP 61F7 glue inside the status/game-state update path; preserves nested CALL stack scratch and leaves flags from the final scan."
+    "notes": "Hot CALL 61C7 / LOOP 61F7 glue inside the status/game-state update path; preserves nested CALL stack scratch and leaves flags from the final scan.",
+    "status": "replaced"
   },
   "1010:6296": {
-    "name": "overkill_status_counter_cell_blit_6296",
     "island": "game_state",
-    "status": "hooked-verified-tandy",
-    "notes": "Status/counter cell blit helper called by 61DC. Selects CS:0BE4 cell source, composes verified Tandy 306F source-cell blit, then applies 613E video-mode cursor advance. Proven for Tandy-first path."
+    "name": "overkill_status_counter_cell_blit_6296",
+    "notes": "Status/counter cell blit helper called by 61DC. Selects CS:0BE4 cell source, composes verified Tandy 306F source-cell blit, then applies 613E video-mode cursor advance. Proven for Tandy-first path.",
+    "status": "hooked-verified-tandy"
   },
   "1010:62F6": {
     "kind": "helper",
     "name": "object_overlap_scan_observed",
     "notes": "Object overlap scan used from BC4B. The lifted helper covers observed no-collision and BEC5 variant-2 collision paths. Important post-death detail: when current object logic_id is 0001, the original returns immediately with incoming BX preserved rather than advancing to the empty-scan sentinel. The signed SS:[BP+2] < 0020h early exit also preserves BX and the compare flags instead of forcing the empty-scan tail.",
     "status": "partial helper"
+  },
+  "1010:7524": {
+    "island": "gameplay_objects",
+    "name": "overkill_find_free_effect_slot_7524",
+    "notes": "Compact 38h-byte effect-slot allocator. Scans from DS:[95D8] through 23B4..2B5A, wraps at 2B5C back to 23B4, returns BX=FFFF on exhaustion, otherwise stores the free slot back to DS:[95D8].",
+    "status": "replaced"
+  },
+  "1010:7573": {
+    "island": "gameplay_objects",
+    "name": "overkill_find_free_object_slot_7573",
+    "notes": "Main 38h-byte gameplay object-slot allocator. Scans from DS:[95DA] through 2B5C..32CA, repeats the 32CC sentinel wrap check on every loop iteration, returns BX=FFFF on exhaustion, otherwise stores the free slot back to DS:[95DA].",
+    "status": "replaced"
   },
   "1010:7596": {
     "name": "layer_draw_object_type_dispatch",
@@ -380,11 +416,36 @@
     "status": "replaced for verified Tandy compositor targets"
   },
   "1010:7746": "tandy_compact_layer_draw_dispatch",
+  "1010:77C5": {
+    "island": "layer_sprites",
+    "name": "overkill_frame_effect_gate_77c5",
+    "notes": "Finite per-frame slash/effect gate around DS:A97A/A97C. Composes 77F6 and keeps the EGA page-toggle 511F branch explicit.",
+    "status": "replaced"
+  },
   "1010:8331": {
     "kind": "helper",
     "name": "view_contact_rect_test_8331",
     "notes": "Shared rectangle-test tail used by AA46. Tests SS:BP object X/Y against DS:95F2/95F4 +/- 16. Clears carry on any out-of-window exit; sets carry at 8359 when inside the rectangle.",
     "status": "understood"
+  },
+  "1010:8517": {
+    "island": "game_state",
+    "name": "overkill_status_cell_list_seed_8517",
+    "notes": "Four-entry raw status/list descriptor builder. Clears DS:95FA to FFFFh, seeds BP=9682 and AH=87h, calls 852B three times, then falls through into 852B for the fourth descriptor.",
+    "status": "hooked_verified"
+  },
+  "1010:852B": {
+    "island": "game_state",
+    "name": "overkill_status_cell_seed_852b",
+    "notes": "One raw status/list cell descriptor seed. Sets AL=1Ch, converts AX through 5A00, writes descriptor words at SS:BP (+00=24h,+02=DI,+08=0), advances BP by 0Ah, restores AX and adds 10h to AH.",
+    "status": "hooked_verified"
+  },
+  "1010:85D5": {
+    "island": "game_state",
+    "kind": "hook",
+    "name": "overkill_status_cell_composite_85d5",
+    "notes": "Low-level status/HUD cell compositor parent around the verified 613E/615A cursor leaves and 5A6C cell blitter. Raw compositor only; no semantic HUD widget identity assigned.",
+    "status": "hooked_verified"
   },
   "1010:8D4F": "object_logic_waypoint_patrol_observed",
   "1010:95C9": {
@@ -409,28 +470,62 @@
     "notes": "LOOP tail for 96C5 delay used when an interactive 50C9 pacing boundary yields at the original return IP.",
     "status": "replaced"
   },
+  "1010:97B2": {
+    "island": "tandy_renderer",
+    "kind": "hook",
+    "name": "overkill_frame_loop_97b2",
+    "notes": "Gameplay/attract frame-loop controller lifted as one verified iteration. Keeps 9B2E as bounded-original child frontier and uses same-IP-after-step verifier metadata.",
+    "status": "replaced"
+  },
   "1010:986E": {
-    "name": "overkill_input_release_wait_gate_986e",
     "island": "input_menu",
-    "status": "hooked-verified",
-    "notes": "One-iteration state-machine hook for CMP DS:98C5,01 / JE 986E. Keeps interactive key-release wait yieldable instead of spinning inside Python."
+    "name": "overkill_input_release_wait_gate_986e",
+    "notes": "One-iteration state-machine hook for CMP DS:98C5,01 / JE 986E. Keeps interactive key-release wait yieldable instead of spinning inside Python.",
+    "status": "hooked-verified"
   },
   "1010:989E": {
-    "name": "overkill_yes_no_choice_wait_gate_989e",
     "island": "input_menu",
-    "status": "hooked-verified",
-    "notes": "One-iteration Y/N wait gate. Writes DS:22B4 to N/Y and waits on DS:98F5 or DS:98D9 without swallowing frontend input/yield windows."
+    "name": "overkill_yes_no_choice_wait_gate_989e",
+    "notes": "One-iteration Y/N wait gate. Writes DS:22B4 to N/Y and waits on DS:98F5 or DS:98D9 without swallowing frontend input/yield windows.",
+    "status": "hooked-verified"
   },
   "1010:98D8": {
-    "name": "overkill_sound_effect_completion_wait_gate_98d8",
     "island": "input_menu",
-    "status": "hooked-verified",
-    "notes": "One-iteration wait while DS:BEFE is non-zero, used by 9862 transition flow after accepting Y."
+    "name": "overkill_sound_effect_completion_wait_gate_98d8",
+    "notes": "One-iteration wait while DS:BEFE is non-zero, used by 9862 transition flow after accepting Y.",
+    "status": "hooked-verified"
   },
   "1010:9921": {
     "kind": "code",
     "name": "overkill_sound_active_wait_9921",
     "notes": "Inline foreground busy wait: cmp byte ptr DS:[BEFE],0; jnz 9921. DS:BEFE is the global PC-speaker sound-active byte cleared by the real 1010:06E5 timer IRQ/sound driver. The hook delivers the real installed IRQ0 ISR until the byte clears, then exits at 9928 with final CMP flags."
+  },
+  "1010:99CD": {
+    "island": "game_state",
+    "kind": "hook",
+    "name": "overkill_status_coord_list_fill_99cd",
+    "notes": "Compact coordinate-list fill loop that writes ([BP+2]+8,[BP+4]+9) word pairs to ES:DI for CX entries, then falls through to 99DD.",
+    "status": "hooked_verified"
+  },
+  "1010:9B2E": {
+    "island": "input_menu",
+    "name": "bounded_original_frame_controller_9b2e",
+    "notes": "Large input/game-state controller called by 97B2. Classified as the next larger frontier; still executed as bounded original from the 97B2 wrapper.",
+    "status": "bounded_original"
+  },
+  "1010:9BFB": {
+    "island": "game_state",
+    "kind": "hook",
+    "name": "overkill_frame_axis_count_inc_ah_9bfb",
+    "notes": "Tiny 9C01 frame-controller child: INC AH; RET. Counts one observed axis/side condition before the 9C6B jump-table dispatch.",
+    "status": "hooked_verified"
+  },
+  "1010:9BFE": {
+    "island": "game_state",
+    "kind": "hook",
+    "name": "overkill_frame_axis_count_inc_al_9bfe",
+    "notes": "Tiny 9C01 frame-controller child: INC AL; RET. Counts one observed axis/side condition before the 9C6B jump-table dispatch.",
+    "status": "hooked_verified"
   },
   "1010:9E69": {
     "kind": "helper",
@@ -588,6 +683,12 @@
     "name": "overkill_object_behavior_aed8",
     "notes": "Observed logic-id 2/3 countdown/movement object behavior. Runs AED8 through its B250/AD5A postmove branch and returns to the object scan caller; fail-fast leaves unobserved branches explicit."
   },
+  "1010:B24D": {
+    "island": "gameplay_objects",
+    "name": "object_behavior_b24d",
+    "notes": "Observed EFAE-selected object-family steering/overlap prelude. Calls runtime-patched 5E42, checks the object slot against DS:237E/2380 reference box, and lands on AD5A/ADC9. Rare overlap side-effect helper 9E19 remains bounded original.",
+    "status": "hooked_verified"
+  },
   "1010:B73E": {
     "kind": "hook",
     "name": "overkill_object_behavior_b73e",
@@ -630,18 +731,36 @@
   "1010:BEC5": {
     "kind": "helper",
     "name": "collision_handler_observed_variant_2",
-    "notes": "Observed variant-2 collision path reached from B73E/BC4B/62F6. Handles BEDC=0000 staged counter path including the third-counter-zero BF4B/BFC7 tail and the fourth-counter-zero BFC7 type-1 death/logic-transition tail, plus BEDC=0001 tail through BF4D. The sprite=0033 branch falls through into the shared BF25 logic instead of failing fast. The variant table also routes 0007h/0008h/000Ch/0009h to the shared BFB9 tail, which is now preserved instead of failing fast. Other branches remain fail-fast. The owner-linked fallback after the 2/6/5 checks is also covered for observed variant 000Ah: when DS:[BX+30h] equals BP it clears DS:[BX+1Ch], optionally clears SS:[BP+20h], then joins BFC7."
+    "notes": "Observed variant-2 collision path reached from B73E/BC4B/62F6. Handles BEDC=0000 staged counter path including the third-counter-zero BF4B/BFC7 tail and the fourth-counter-zero BFC7 type-1 death/logic-transition tail, plus BEDC=0001 tail through BF4D. The sprite=0033 branch falls through into the shared BF25 logic instead of failing fast. The variant table also routes 0007h/0008h/000Ch/0009h to the shared BFB9 tail, which is now preserved instead of failing fast. Other branches remain fail-fast. The fallback after the 2/6/5 checks is also covered for observed variant 000Ah: when DS:[BX+30h] equals BP it clears DS:[BX+1Ch], optionally clears SS:[BP+20h], then joins BFC7; when DS:[BX+30h] does not equal BP, original ASM simply RETs with the CMP flags live."
   },
   "1010:BFC7": {
     "kind": "helper",
     "name": "collision_death_tail_bfc7_observed",
-    "notes": "Observed death/transition tail reached from BC4B/BCCB and BEC5. It calls the shared C054 selector before the state transition; selector ids such as 0020h decrement DS:A47E through C054, while observed ids 0012h, 002Bh, 0031h, and 003Bh take the same transition without the live-counter drop. The later C037/C048 tail exits with BX=0002 and FLAGS=0202h on the B73E/BEC5 oracles. Logic 003Bh falls through C054 to default AX=A4E4h before AX is overwritten with the original logic id.",
+    "notes": "Observed death/transition tail reached from BC4B/BCCB and BEC5. It calls the shared C054 selector before the state transition; selector ids such as 0020h decrement DS:A47E through C054, while observed ids 0012h, 002Bh, 0031h, and 003Bh take the same transition without the live-counter drop. The later C037/C048 tail exits with BX=0002 and FLAGS=0202h on the B73E/BEC5 oracles. Logic 003Bh falls through C054 to default AX=A4E4h before AX is overwritten with the original logic id. Logic 0021h first gates on DS:2356: when it is not 0004h the helper returns immediately; when it is exactly 0004h it falls through to the ordinary BFD7 death/transition path.",
     "status": "partial helper"
   },
   "1010:C054": {
     "kind": "helper",
     "name": "object_deactivate_logic_dispatch_c054",
     "notes": "Shared object-logic selector used by BD17 and BFC7. The compare chain selects A79Ch, A6F0h, A83Eh, A82Ah, A5C0h, or A4E4h for known selector values, decrements DS:A47E for the smaller counter family, and otherwise falls through to default AX=A4E4h; observed 0000h, 0013h, and 003Bh all use that default/no-counter behavior."
+  },
+  "1010:C3BF": {
+    "island": "gameplay_objects",
+    "name": "overkill_reset_effect_slot_block_c3bf",
+    "notes": "Internal compact/effect slot reset loop reached by setup code. Uses DS:8D12 pointer table, clears selected fields via SS:BP, stamps +0E from CS:C3A2, advances CS:C3A2 by 0040h, and falls through to C3E7. Verified against interpreted ASM.",
+    "status": "hooked_verified"
+  },
+  "1010:C3F1": {
+    "island": "gameplay_objects",
+    "name": "overkill_reset_object_slot_block_c3f1",
+    "notes": "Internal object slot reset loop reached by setup code. Uses DS:32CA pointer table, resets layer +0A, preserves slots whose +16 is 1, otherwise clears runtime fields, stamps +0E from CS:C3A2, advances CS:C3A2 by 0280h, and falls through to C42F. Verified against interpreted ASM.",
+    "status": "hooked_verified"
+  },
+  "1010:C4E5": {
+    "island": "gameplay_objects",
+    "name": "overkill_reset_object_slot_block_c4e5",
+    "notes": "Internal object-slot reset loop reached by the C4DB setup/transition routine. Clears selected fields across the DS:32CA object pointer table, stamps CS:C3A2 present pointers, advances CS:C3A2 by 0280h per slot, and falls through to C51D. Verified against interpreted ASM.",
+    "status": "hooked_verified"
   },
   "1010:C713": {
     "name": "overkill_decoded_asset_table_search_c713",
@@ -714,6 +833,18 @@
     "notes": "Finite per-frame UI/demo-state update block called from D007. It draws the script-selected cell, runs A212 maintenance, advances BE08/BE0A timers and either returns to D019 or hands off to original script continuation targets.",
     "status": "replaced"
   },
+  "1010:D318": {
+    "island": "game_state",
+    "name": "overkill_interstitial_timed_input_loop_d318",
+    "notes": "ASM-shaped timed interstitial/input-wait frame loop. Services existing frame child hooks, increments DS:BED8, then either loops at D318 until timeout/input conditions or waits for input release before near RET. No semantic menu/screen model yet.",
+    "status": "hooked_verified"
+  },
+  "1010:D367": {
+    "island": "game_state",
+    "name": "overkill_interstitial_status_cell_d367",
+    "notes": "Small interstitial/status cell helper: AX=4703h, call 5A00, zero SI, switch DS to CS:95B6, call 5A6C cell blit dispatch, restore DS from CS:9596, near RET.",
+    "status": "hooked_verified"
+  },
   "1010:D445": {
     "island": "input_menu",
     "name": "overkill_input_selector_loop_d445",
@@ -732,6 +863,12 @@
     "kind": "hook",
     "name": "overkill_object_family_dispatch_efae",
     "notes": "Second-level object family dispatcher reached from AA2B. Publishes SS:[BP+04] to DS:D1FE and SS:[BP+02] to DS:D200, then dispatches through CS:EFC4 indexed by SS:[BP+18]. Kept dispatch-only after frame verification showed inline child gameplay execution caused frame-34 drift."
+  },
+  "1F8F:081D": {
+    "island": "game_state",
+    "name": "overkill_demo_counter_tick_1f8f_081d",
+    "notes": "Far-call demo/attract counter tick reached from A940 while DS:2356==5. Decrements DS:98A7, reloads a speed bucket from DS:A47E and increments DS:98A6 when it reaches zero. Live code has two proven equivalent CMP encodings here: compact 83 F8 imm8 and wide 3D imm16; both signatures are accepted by the guard.",
+    "status": "replaced"
   },
   "1F8F:0922": {
     "island": "game_state",
@@ -793,5 +930,26 @@
     "name": "resize_memory_block_support",
     "notes": "Supports OVERKILL startup shrink of the PSP block and deterministic grow/shrink of tracked most-recent allocations.",
     "status": "implemented"
+  },
+  "1010:07C4": {
+    "island": "input_menu",
+    "kind": "hook",
+    "name": "overkill_boss_key_f9_release_wait_gate_07c4",
+    "notes": "One-iteration state-machine hook for the F9 boss-key initial key-release wait: CMP byte DS:9907,01h / JE 07C4. Keeps the text-mode boss-key screen yieldable instead of spinning in interpreted ASM.",
+    "status": "hooked_verified"
+  },
+  "1010:07D0": {
+    "island": "input_menu",
+    "kind": "hook",
+    "name": "overkill_boss_key_any_key_wait_gate_07d0",
+    "notes": "One-iteration state-machine hook for the boss-key any-key wait: CMP byte DS:98C3,00h / JE 07D0. This removes the hot 07D0/07D5 interpreted loop while preserving CMP flags and interactive yields.",
+    "status": "hooked_verified"
+  },
+  "1010:07D7": {
+    "island": "input_menu",
+    "kind": "hook",
+    "name": "overkill_boss_key_return_key_release_wait_gate_07d7",
+    "notes": "One-iteration state-machine hook for the boss-key final key-release wait: CMP byte DS:9907,01h / JE 07D7 before restoring the game video mode.",
+    "status": "hooked_verified"
   }
 }

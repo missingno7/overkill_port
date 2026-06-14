@@ -201,6 +201,30 @@ class FrameSync:
             if wait_poll is not None:
                 wait_poll()
 
+    def publish_nowait(
+        self,
+        memory: bytearray | memoryview,
+        *,
+        display_start: int = 0,
+        video_mode: int = 0xFF,
+        video_page: int = 0,
+    ) -> None:
+        """Queue a frame for the viewer without waiting for consumption.
+
+        Interactive hook verification can spend a long time proving the first
+        gameplay slice before it reaches the next real presenter/timer boundary.
+        Queueing the loaded snapshot immediately avoids a misleading black SDL
+        window during that initial verifier work.
+        """
+        snapshot = bytes(memory)
+        with self._cond:
+            if self._closed:
+                return
+            self._next_id += 1
+            frame_id = self._next_id
+            self._pending = (frame_id, snapshot, display_start & 0xFFFF, video_mode & 0xFF, video_page & 0xFF)
+            self._cond.notify_all()
+
     def take_pending(self) -> tuple[int, bytes, int, int, int] | None:
         with self._cond:
             return self._pending
@@ -261,6 +285,8 @@ def main(argv: list[str] | None = None) -> int:
                    help="debug/perf only: compare named memory ranges instead of the full memory image")
     p.add_argument("--verify-require-metadata", action="store_true",
                    help="fail instead of silently skipping a hook that has no verifier continuation metadata")
+    p.add_argument("--verify-no-nested", action="store_true",
+                   help="legacy/perf mode: do not recursively verify child hooks reached inside a verified parent hook")
     p.add_argument("--verify-frames", action="store_true",
                    help="headless differential frame verifier: reference ASM runtime vs hooked runtime")
     p.add_argument("--verify-frame-max", type=int, default=60,
@@ -484,17 +510,19 @@ def main(argv: list[str] | None = None) -> int:
     rt.cpu.coverage_telemetry = coverage
     status = {"text": ""}
     hook_verifier = None
-    if args.verify_hooks or args.verify_hook:
+    explicit_verify_hooks = {parse_verify_addr(text) for text in args.verify_hook}
+    if args.verify_hooks or explicit_verify_hooks:
         hook_verifier = install_hook_verifier(
             rt,
             HookVerifierConfig(
                 verify_all=args.verify_hooks,
-                hooks={parse_verify_addr(text) for text in args.verify_hook},
+                hooks=explicit_verify_hooks,
                 max_verified=args.verify_max,
                 stop_on_diff=args.verify_stop_on_diff,
                 log_diffs=args.verify_log_diffs,
                 full_memory=not args.verify_fast_ranges,
                 require_metadata=args.verify_require_metadata,
+                verify_nested_hooks=not args.verify_no_nested,
                 asm_max_steps=1_000_000,
                 progress_callback=lambda text: status.__setitem__("text", text),
             ),
@@ -547,8 +575,16 @@ def main(argv: list[str] | None = None) -> int:
 
     base_present = rt.cpu.replacement_hooks.get(present_hook_addr)
     base_present_name = rt.cpu.hook_names.get(present_hook_addr, "replacement")
+    # The SDL presenter hooks are UI pacing boundaries.  Verifying them inline
+    # during interactive ``--verify-hooks`` can delay visible frames for a very
+    # long time, making the window appear black even though the VM is working.
+    # Keep them as passthrough by default; verify a presenter explicitly with
+    # ``--verify-hook 1010:3354`` or use ``--verify-frames`` for visual proof.
+    verify_presenter_inline = present_hook_addr in explicit_verify_hooks
     base_timer_wait = rt.cpu.replacement_hooks.get(TIMER_WAIT_HOOK)
+    base_timer_wait_name = rt.cpu.hook_names.get(TIMER_WAIT_HOOK, "replacement")
     base_retrace_wait = rt.cpu.replacement_hooks.get(RETRACE_WAIT_HOOK)
+    base_retrace_wait_name = rt.cpu.hook_names.get(RETRACE_WAIT_HOOK, "replacement")
     if base_timer_wait is None:
         print(f"missing required timer wait hook {TIMER_WAIT_HOOK[0]:04X}:{TIMER_WAIT_HOOK[1]:04X}")
         return 1
@@ -592,7 +628,13 @@ def main(argv: list[str] | None = None) -> int:
             return crc & 0xFFFFFFFF
         return zlib.crc32(data[video_base:video_base + video_size]) & 0xFFFFFFFF
 
-    def publish_video_if_changed(cpu, *, force: bool = False, poll_audio_while_waiting: bool = False) -> bool:
+    def publish_video_if_changed(
+        cpu,
+        *,
+        force: bool = False,
+        poll_audio_while_waiting: bool = False,
+        wait_for_viewer: bool = True,
+    ) -> bool:
         raw_display_start = cpu.mem.ega_display_start if args.video == "ega" else 0
         display_start = ega_render_start(raw_display_start) if args.video == "ega" else 0
         crc: int | None = None
@@ -617,32 +659,36 @@ def main(argv: list[str] | None = None) -> int:
                 flush=True,
             )
         if not args.no_present_sync:
+            wait_poll = (lambda: async_timer_irq.poll(cpu, max_catchup=1)) if poll_audio_while_waiting else None
+            wait_poll_interval = async_timer_irq.period * 0.5 if async_timer_irq.period > 0 else 0.004
             if is_text_display_active():
-                frame_sync.publish_and_wait(
-                    cpu.mem.data,
-                    display_start=0,
-                    video_mode=rt.dos.video_mode,
-                    video_page=rt.dos.video_page,
-                    wait_poll=(lambda: async_timer_irq.poll(cpu, max_catchup=1)) if poll_audio_while_waiting else None,
-                    wait_poll_interval=async_timer_irq.period * 0.5 if async_timer_irq.period > 0 else 0.004,
-                )
+                frame_memory = cpu.mem.data
+                frame_display_start = 0
+                frame_video_mode = rt.dos.video_mode
             elif args.video == "ega":
+                frame_memory = memoryview(cpu.mem.data)[video_base:video_base + video_size]
+                frame_display_start = display_start
+                frame_video_mode = published_video_mode()
+            else:
+                frame_memory = cpu.mem.data
+                frame_display_start = display_start
+                frame_video_mode = published_video_mode()
+
+            if wait_for_viewer:
                 frame_sync.publish_and_wait(
-                    memoryview(cpu.mem.data)[video_base:video_base + video_size],
-                    display_start=display_start,
-                    video_mode=published_video_mode(),
+                    frame_memory,
+                    display_start=frame_display_start,
+                    video_mode=frame_video_mode,
                     video_page=rt.dos.video_page,
-                    wait_poll=(lambda: async_timer_irq.poll(cpu, max_catchup=1)) if poll_audio_while_waiting else None,
-                    wait_poll_interval=async_timer_irq.period * 0.5 if async_timer_irq.period > 0 else 0.004,
+                    wait_poll=wait_poll,
+                    wait_poll_interval=wait_poll_interval,
                 )
             else:
-                frame_sync.publish_and_wait(
-                    cpu.mem.data,
-                    display_start=display_start,
-                    video_mode=published_video_mode(),
+                frame_sync.publish_nowait(
+                    frame_memory,
+                    display_start=frame_display_start,
+                    video_mode=frame_video_mode,
                     video_page=rt.dos.video_page,
-                    wait_poll=(lambda: async_timer_irq.poll(cpu, max_catchup=1)) if poll_audio_while_waiting else None,
-                    wait_poll_interval=async_timer_irq.period * 0.5 if async_timer_irq.period > 0 else 0.004,
                 )
         return True
 
@@ -797,7 +843,7 @@ def main(argv: list[str] | None = None) -> int:
 
     def present_hook(cpu) -> None:
         if base_present is not None:
-            if hook_verifier is not None:
+            if hook_verifier is not None and verify_presenter_inline:
                 hook_verifier.verify(cpu, present_hook_addr, base_present, base_present_name)
             else:
                 base_present(cpu)
@@ -818,7 +864,15 @@ def main(argv: list[str] | None = None) -> int:
         stop_cpu_burst()
 
     def timer_frame_hook(cpu) -> None:
-        base_timer_wait(cpu)
+        # cpu.step() deliberately treats the interactive timer wrapper as
+        # verifier-pass-through because the wrapper publishes/paces and raises
+        # FramePresented.  Still verify the pure install-time 0679 hook at this
+        # outer boundary; only nested calls inside a verified parent use the
+        # publish-only live passthrough below.
+        if hook_verifier is not None:
+            hook_verifier.verify(cpu, TIMER_WAIT_HOOK, base_timer_wait, base_timer_wait_name)
+        else:
+            base_timer_wait(cpu)
         async_timer_irq.reset_after_synchronous_ticks(2)
         timers["n"] += 1
         # Some paths update video memory directly and only use the timer wait as
@@ -847,7 +901,10 @@ def main(argv: list[str] | None = None) -> int:
         # boundaries, not PIT waits.  The original IRQ0 still fires during them.
         async_timer_irq.poll(cpu)
         if base_retrace_wait is not None:
-            base_retrace_wait(cpu)
+            if hook_verifier is not None:
+                hook_verifier.verify(cpu, RETRACE_WAIT_HOOK, base_retrace_wait, base_retrace_wait_name)
+            else:
+                base_retrace_wait(cpu)
         retraces["n"] += 1
         # Intro/menu/fade code often draws first and then waits for retrace.  For
         # EGA, publish these timed snapshots only until the first explicit EGA
@@ -861,6 +918,56 @@ def main(argv: list[str] | None = None) -> int:
         last_boundary["kind"] = "retrace"
         stop_cpu_burst()
 
+    def present_hook_verify_live(cpu) -> None:
+        """Live-side presenter used inside differential hook transactions.
+
+        A verified parent hook must run atomically to its continuation, so the
+        normal interactive presenter cannot raise FramePresented from inside the
+        transaction.  Still publish a nowait frame from the live CPU after
+        applying the exact base presenter side effects; otherwise --verify-hooks
+        can show only the pre-verification snapshot until a very large parent
+        hook finishes.
+        """
+        if base_present is not None:
+            base_present(cpu)
+        blits["n"] += 1
+        rt.dos.text_mode_active = False
+        if args.video != "ega" or args.ega_publish_all_presents or (cpu.mem.ega_display_start & 0xFFFF) == 0:
+            publish_video_if_changed(cpu, force=True, wait_for_viewer=False)
+        last_boundary["kind"] = "verify-present"
+        cpu.hook_verifier_live_yield_requested = True
+
+    def timer_frame_hook_verify_live(cpu) -> None:
+        """Live-side timer boundary that publishes/paces but does not break verify."""
+        base_timer_wait(cpu)
+        async_timer_irq.reset_after_synchronous_ticks(2)
+        timers["n"] += 1
+        if args.video != "ega" or args.ega_publish_timed_boundaries or blits["n"] == 0:
+            publish_video_if_changed(cpu, wait_for_viewer=False)
+        # Do not raise FramePresented inside a parent-hook transaction, but do
+        # keep the same real-time pacing.  Without this, verified parent hooks
+        # that contain one or more 0679 waits can fast-forward gameplay and make
+        # keyboard input appear unresponsive until the transaction returns.
+        timer_pacer(2)
+        last_boundary["kind"] = "verify-timer"
+        cpu.hook_verifier_live_yield_requested = True
+
+    def retrace_frame_hook_verify_live(cpu) -> None:
+        """Live-side retrace boundary that publishes/paces but does not break verify."""
+        async_timer_irq.poll(cpu)
+        if base_retrace_wait is not None:
+            base_retrace_wait(cpu)
+        retraces["n"] += 1
+        if args.video != "ega" or args.ega_publish_timed_boundaries or blits["n"] == 0:
+            publish_video_if_changed(cpu, wait_for_viewer=False)
+        retrace_pacer(
+            poll=lambda: async_timer_irq.poll(cpu, max_catchup=1),
+            poll_interval=async_timer_irq.period * 0.5 if async_timer_irq.period > 0 else None,
+        )
+        last_boundary["kind"] = "verify-retrace"
+        cpu.hook_verifier_live_yield_requested = True
+
+    rt.cpu.hook_verifier_live_yield_callback = stop_cpu_burst
     rt.cpu.replacement_hooks[present_hook_addr] = present_hook
     rt.cpu.replacement_hooks[TIMER_WAIT_HOOK] = timer_frame_hook
     if base_retrace_wait is not None:
@@ -869,6 +976,10 @@ def main(argv: list[str] | None = None) -> int:
     # directly; present_hook manually verifies the underlying real presenter
     # before publishing to Tk.
     rt.cpu.hook_verifier_passthrough.update({present_hook_addr, TIMER_WAIT_HOOK, RETRACE_WAIT_HOOK})
+    rt.cpu.hook_verifier_live_passthrough_overrides[present_hook_addr] = present_hook_verify_live
+    rt.cpu.hook_verifier_live_passthrough_overrides[TIMER_WAIT_HOOK] = timer_frame_hook_verify_live
+    if base_retrace_wait is not None:
+        rt.cpu.hook_verifier_live_passthrough_overrides[RETRACE_WAIT_HOOK] = retrace_frame_hook_verify_live
 
     keyboard = KeyDispatcher(lambda sc: deliver_scancode(rt, sc))
     stop = threading.Event()
@@ -1037,6 +1148,12 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as exc:
         print(f"the interactive viewer requires pygame and numpy: {exc}")
         return 1
+
+    # Show the loaded/current snapshot immediately.  This is especially important
+    # with interactive hook verification: the verifier may spend a long time
+    # proving object/update hooks before the next natural present boundary, and
+    # otherwise SDL keeps showing its initial black window.
+    publish_video_if_changed(rt.cpu, force=True, wait_for_viewer=False)
 
     dashboard = CoverageDashboardTk(coverage, refresh_hz=args.coverage_refresh_hz) if args.coverage_dashboard else None
     if dashboard is not None:

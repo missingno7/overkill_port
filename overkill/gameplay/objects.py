@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from dos_re.cpu import DF
 
+from overkill.asm import _add_mem_word, loop_count
+
 SIG_OBJECT_LOGIC_CALL_AA2B_AA01 = bytes.fromhex("e8 27 00 59 e2 d9")
 SIG_OBJECT_LOGIC_SCAN_TAIL_AA04 = bytes.fromhex("59 e2 d9")
 
@@ -37,6 +39,167 @@ def finish_object_logic_scan_tail_aa04(cpu, self_disable_if_patched) -> None:
     s.cx = cpu.pop()
     s.cx = (s.cx - 1) & 0xFFFF
     s.ip = 0xA9E0 if s.cx != 0 else 0xAA07
+
+
+SIG_RESET_EFFECT_SLOT_BLOCK_C3BF = bytes.fromhex(
+    "51 8b d9 d1 e3 8b af 12 8d c7 46 00 00 00 c7 46 2e 00 00 "
+    "c7 46 18 00 00 2e a1 a2 c3 89 46 0e 2e 83 06 a2 c3 40 "
+    "59 e2 d8"
+)
+
+SIG_RESET_OBJECT_SLOT_BLOCK_C3F1 = bytes.fromhex(
+    "51 8b d9 d1 e3 8b af ca 32 c7 46 0a 01 00 83 7e 16 01 74 "
+    "19 c7 46 00 00 00 c7 46 2e 00 00 c7 46 24 00 00 c7 46 "
+    "18 00 00 c7 46 06 00 00 2e a1 a2 c3 89 46 0e 2e 81 06 "
+    "a2 c3 80 02 59 e2 c2"
+)
+
+
+def run_reset_effect_slot_block_c3bf(cpu, self_disable_if_patched) -> None:
+    """Lift the internal 1010:C3BF compact-slot reset loop body.
+
+    The parent setup routine enters here with CX loaded and CS:C3A2 pointing at
+    the first compact present-frame cell.  The loop uses the pointer table at
+    DS:8D12 + CX*2, clears selected fields through SS:BP, stamps slot +0E from
+    CS:C3A2, advances CS:C3A2 by 0040h, and falls through to C3E7.
+    """
+    if self_disable_if_patched(
+        cpu,
+        0xC3BF,
+        SIG_RESET_EFFECT_SLOT_BLOCK_C3BF,
+        "overkill_reset_effect_slot_block_c3bf",
+    ):
+        return
+
+    s = cpu.s
+    mem = cpu.mem
+    cs = s.cs & 0xFFFF
+    ds = s.ds & 0xFFFF
+    ss = s.ss & 0xFFFF
+
+    for _ in range(loop_count(s.cx)):
+        cpu.push(s.cx & 0xFFFF)
+        s.bx = s.cx & 0xFFFF
+        s.bx = cpu.shift(4, s.bx, 1, 16)
+        s.bp = mem.rw(ds, (0x8D12 + (s.bx & 0xFFFF)) & 0xFFFF)
+        bp = s.bp & 0xFFFF
+        mem.ww(ss, (bp + 0x00) & 0xFFFF, 0x0000)
+        mem.ww(ss, (bp + 0x2E) & 0xFFFF, 0x0000)
+        mem.ww(ss, (bp + 0x18) & 0xFFFF, 0x0000)
+        s.ax = mem.rw(cs, 0xC3A2)
+        mem.ww(ss, (bp + 0x0E) & 0xFFFF, s.ax)
+        _add_mem_word(cpu, cs, 0xC3A2, 0x0040)
+        s.cx = cpu.pop()
+        s.cx = (s.cx - 1) & 0xFFFF
+        if s.cx == 0:
+            break
+
+    s.ip = 0xC3E7
+
+
+def run_reset_object_slot_block_c3f1(cpu, self_disable_if_patched) -> None:
+    """Lift the internal 1010:C3F1 object-slot reset loop body.
+
+    This is the object-table sibling of C4E5 used by the larger setup routine.
+    It always restores layer field +0A to 1, preserves slots whose +16 field is
+    already 1, clears selected runtime fields for all others, stamps +0E from
+    CS:C3A2, advances CS:C3A2 by 0280h, and falls through to C42F.
+    """
+    if self_disable_if_patched(
+        cpu,
+        0xC3F1,
+        SIG_RESET_OBJECT_SLOT_BLOCK_C3F1,
+        "overkill_reset_object_slot_block_c3f1",
+    ):
+        return
+
+    s = cpu.s
+    mem = cpu.mem
+    cs = s.cs & 0xFFFF
+    ds = s.ds & 0xFFFF
+    ss = s.ss & 0xFFFF
+
+    for _ in range(loop_count(s.cx)):
+        cpu.push(s.cx & 0xFFFF)
+        s.bx = s.cx & 0xFFFF
+        s.bx = cpu.shift(4, s.bx, 1, 16)
+        s.bp = mem.rw(ds, (0x32CA + (s.bx & 0xFFFF)) & 0xFFFF)
+        bp = s.bp & 0xFFFF
+        mem.ww(ss, (bp + 0x0A) & 0xFFFF, 0x0001)
+        keep_slot = mem.rw(ss, (bp + 0x16) & 0xFFFF) == 0x0001
+        cpu.set_sub_flags(mem.rw(ss, (bp + 0x16) & 0xFFFF), 0x0001, mem.rw(ss, (bp + 0x16) & 0xFFFF) - 0x0001, 16)
+        if not keep_slot:
+            mem.ww(ss, (bp + 0x00) & 0xFFFF, 0x0000)
+            mem.ww(ss, (bp + 0x2E) & 0xFFFF, 0x0000)
+            mem.ww(ss, (bp + 0x24) & 0xFFFF, 0x0000)
+            mem.ww(ss, (bp + 0x18) & 0xFFFF, 0x0000)
+            mem.ww(ss, (bp + 0x06) & 0xFFFF, 0x0000)
+        s.ax = mem.rw(cs, 0xC3A2)
+        mem.ww(ss, (bp + 0x0E) & 0xFFFF, s.ax)
+        _add_mem_word(cpu, cs, 0xC3A2, 0x0280)
+        s.cx = cpu.pop()
+        s.cx = (s.cx - 1) & 0xFFFF
+        if s.cx == 0:
+            break
+
+    s.ip = 0xC42F
+
+
+SIG_RESET_OBJECT_SLOT_BLOCK_C4E5 = bytes.fromhex(
+    "51 8b d9 d1 e3 8b af ca 32 c7 46 00 00 00 c7 46 2e 00 00 "
+    "c7 46 24 00 00 c7 46 18 00 00 c7 46 0a 01 00 c7 46 06 "
+    "00 00 2e a1 a2 c3 89 46 0e 2e 81 06 a2 c3 80 02 59 e2 c8"
+)
+
+
+def run_reset_object_slot_block_c4e5(cpu, self_disable_if_patched) -> None:
+    """Lift the internal 1010:C4E5 object-slot reset loop body.
+
+    This block is entered from the C4DB transition/setup routine after
+    CS:C3A2 has been reset and CX has been loaded with the number of object
+    table entries.  It clears selected runtime fields for each object pointer
+    from DS:32CA, stamps the per-slot present pointer from CS:C3A2, advances
+    CS:C3A2 by 0280h per slot, and falls through to C51D.
+
+    The original loop uses PUSH/POP CX each iteration; this replacement keeps
+    that stack scratch visible below SP so full-memory oracle comparisons stay
+    stable.
+    """
+    if self_disable_if_patched(
+        cpu,
+        0xC4E5,
+        SIG_RESET_OBJECT_SLOT_BLOCK_C4E5,
+        "overkill_reset_object_slot_block_c4e5",
+    ):
+        return
+
+    s = cpu.s
+    mem = cpu.mem
+    cs = s.cs & 0xFFFF
+    ds = s.ds & 0xFFFF
+    ss = s.ss & 0xFFFF
+
+    for _ in range(loop_count(s.cx)):
+        cpu.push(s.cx & 0xFFFF)
+        s.bx = s.cx & 0xFFFF
+        s.bx = cpu.shift(4, s.bx, 1, 16)
+        s.bp = mem.rw(ds, (0x32CA + (s.bx & 0xFFFF)) & 0xFFFF)
+        bp = s.bp & 0xFFFF
+        mem.ww(ss, (bp + 0x00) & 0xFFFF, 0x0000)
+        mem.ww(ss, (bp + 0x2E) & 0xFFFF, 0x0000)
+        mem.ww(ss, (bp + 0x24) & 0xFFFF, 0x0000)
+        mem.ww(ss, (bp + 0x18) & 0xFFFF, 0x0000)
+        mem.ww(ss, (bp + 0x0A) & 0xFFFF, 0x0001)
+        mem.ww(ss, (bp + 0x06) & 0xFFFF, 0x0000)
+        s.ax = mem.rw(cs, 0xC3A2)
+        mem.ww(ss, (bp + 0x0E) & 0xFFFF, s.ax)
+        _add_mem_word(cpu, cs, 0xC3A2, 0x0280)
+        s.cx = cpu.pop()
+        s.cx = (s.cx - 1) & 0xFFFF
+        if s.cx == 0:
+            break
+
+    s.ip = 0xC51D
 
 
 SIG_OBJECT_MOTION_TABLE_AB34 = bytes.fromhex(

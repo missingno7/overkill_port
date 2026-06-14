@@ -54,6 +54,10 @@ def test_runtime_patched_5e42_hook_rejects_packed_start_without_fallback():
 def test_runtime_patched_5e42_hook_rejects_unknown_live_bytes_without_fallback():
     rt = load_snapshot(EXE, SNAP_5E42, game_root=ASSETS)
     rt.cpu.trace_enabled = False
+    # B24D now absorbs its nested CALL 5E42.  Disable the parent because this
+    # test intentionally corrupts and exercises the 5E42 leaf hook itself.
+    rt.cpu.replacement_hooks.pop((0x1010, 0xB24D), None)
+    rt.cpu.hook_names.pop((0x1010, 0xB24D), None)
     for _ in range(20_000):
         if rt.cpu.addr() == (0x1010, 0x5E42):
             break

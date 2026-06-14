@@ -195,6 +195,78 @@ def run_input_poll_0162(cpu) -> None:
     s.ip = cpu.pop()
 
 
+
+
+def run_boss_key_f9_release_wait_gate_07c4(cpu) -> None:
+    """Lift one poll of the F9 boss-key initial release wait at 1010:07C4.
+
+    The original loop is ``CMP byte [9907],01h; JE 07C4``.  Keep it as a
+    one-iteration state-machine hook so the text-mode boss screen remains
+    interactive and the outer viewer can publish/pump key-up events between
+    polls.
+    """
+    ds = cpu.s.ds & 0xFFFF
+    value = cpu.mem.rb(ds, 0x9907)
+    _cmp_byte(cpu, value, 0x01)
+    cpu.s.ip = 0x07C4 if value == 0x01 else 0x07CB
+
+
+def run_boss_key_any_key_wait_gate_07d0(cpu) -> None:
+    """Lift one poll of the boss-key any-key wait at 1010:07D0.
+
+    The original loop is ``CMP byte [98C3],00h; JE 07D0``.  ``DS:98C3`` is
+    cleared immediately before entering the loop and set by OVERKILL's keyboard
+    path when a key should leave the fake DOS text screen.
+    """
+    ds = cpu.s.ds & 0xFFFF
+    value = cpu.mem.rb(ds, 0x98C3)
+    _cmp_byte(cpu, value, 0x00)
+    cpu.s.ip = 0x07D0 if value == 0x00 else 0x07D7
+
+
+def run_boss_key_return_key_release_wait_gate_07d7(cpu) -> None:
+    """Lift one poll of the boss-key return-key release wait at 1010:07D7.
+
+    This is the final ``CMP byte [9907],01h; JE 07D7`` gate before the original
+    routine restores the game's video mode.
+    """
+    ds = cpu.s.ds & 0xFFFF
+    value = cpu.mem.rb(ds, 0x9907)
+    _cmp_byte(cpu, value, 0x01)
+    cpu.s.ip = 0x07D7 if value == 0x01 else 0x07DE
+
+def _wait_vga_status_bit3(cpu, *, want_set: bool) -> None:
+    """Inline 1010:50C9-compatible VGA status wait used by menu parents.
+
+    The address-facing 50C9 hook normally owns this behavior.  Differential
+    verification can run this parent with passthrough/UI hooks removed, so keep a
+    tiny local copy rather than falling back to a single original instruction.
+    """
+    cpu.s.dx = 0x03DA
+    for _ in range(100000):
+        value = cpu.port_reader(cpu, 0x03DA, 8) if cpu.port_reader else (0x08 if want_set else 0x00)
+        cpu.set_reg8(0, value)
+        result = value & 0x08
+        cpu.set_logic_flags(result, 8)  # TEST AL,08h
+        if (result != 0) == want_set:
+            return
+    raise RuntimeError("VGA status wait did not converge")
+
+
+def _run_vga_retrace_wait_50c9_inline(cpu) -> None:
+    """Run the pure 1010:50C9 retrace wait body to the near return.
+
+    This mirrors ``overkill_wait_vga_retrace_50c9`` without importing from
+    ``overkill.hooks`` (which would be circular because hooks import this
+    module).
+    """
+    cs = cpu.s.cs & 0xFFFF
+    inverted_order = cpu.mem.rb(cs, 0xCA5A) == 0x01
+    _wait_vga_status_bit3(cpu, want_set=not inverted_order)
+    _wait_vga_status_bit3(cpu, want_set=inverted_order)
+    cpu.mem.ww(cpu.s.ss, (cpu.s.sp - 2) & 0xFFFF, 0xC9F0)
+    cpu.s.ip = cpu.pop()
+
 def _step_original_once(cpu, addr: tuple[int, int]) -> None:
     """Execute one original instruction at an address that also has a hook.
 
@@ -241,17 +313,13 @@ def run_main_menu_idle_loop_558b(cpu) -> None:
             _step_original_once(cpu, (s.cs & 0xFFFF, 0x558B))
             return
 
-    # The counter expiry path below 55FB starts a longer transition/demo branch.
-    # Keep that rare path interpreted until it is lifted as its own routine.
-    if mem.rw(ds, 0x22BF) >= 0x02ED:
-        _step_original_once(cpu, (s.cs & 0xFFFF, 0x558B))
-        return
+    # Do not pre-fallback on the attract counter.  The verified boundary for this
+    # parent explicitly includes the post-increment expiry continuation at 55FD,
+    # so the hook must reproduce the increment/retrace side effects before
+    # stopping there.
 
-    retrace = cpu.replacement_hooks.get((0x1010, 0x50C9))
+    retrace = cpu.replacement_hooks.get((0x1010, 0x50C9), _run_vga_retrace_wait_50c9_inline)
     poll_input = cpu.replacement_hooks.get((0x1010, 0x0162), run_input_poll_0162)
-    if retrace is None:
-        _step_original_once(cpu, (s.cs & 0xFFFF, 0x558B))
-        return
 
     # MOV word [22B9/22BB/22BD],0 does not affect flags.
     mem.ww(ds, 0x22B9, 0)

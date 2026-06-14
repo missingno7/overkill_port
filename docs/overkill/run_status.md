@@ -1,3 +1,434 @@
+## 2026-06-14 - Frame verifier input-pair skew fix
+
+### 2026-06-14 - Hook verifier nested child-boundary honesty audit
+
+- Fixed an oracle blind spot in composed parent hooks: a lifted parent could call an installed child hook directly, while the ASM-oracle clone also used the same child hook.  That made the child a shared black box inside the parent transaction.
+- `call_installed_hook_like_near_call` now routes direct child calls through the active hook verifier when verification is enabled, with original near-CALL stack semantics and the child CS:IP restored before execution.
+- Bounded interpreted near/far helpers now keep nested hook verification active by default, so child hook addresses reached by original helper code are verified at that exact VM state.
+- Added `verify_nested_hooks` to `HookVerifierConfig`; it defaults to strict nested verification.  `play.py --verify-no-nested` and `verify_hooks_headless.py --no-nested` provide the old faster/shared-child mode for profiling only.
+- Added a regression that intentionally makes a child hook wrong and proves the parent verifier catches the nested child divergence instead of passing the parent boundary.
+
+Validation:
+
+```text
+python scripts/lint.py
+# Lint passed for 76 Python files
+
+python -m pytest -q tests/test_overkill_hooks.py::test_hook_verifier_recursively_verifies_direct_child_hook_calls tests/test_overkill_hooks.py::test_hook_verifier_live_passthrough_override_can_publish_without_frame_boundary tests/test_overkill_hooks.py::test_hook_verifier_defers_live_passthrough_yield_until_after_diff tests/test_frame_verify.py
+# 6 passed
+
+python scripts/verify_hooks_headless.py --snapshot artifacts/snapshot_play_tandy_20260614_203152 --verify-max 300 --max-steps 1000000 --fast-ranges
+# OK HOOK VERIFY LIMIT REACHED verified=300
+
+python scripts/verify_hooks_headless.py --snapshot artifacts/snapshot_play_tandy_20260614_203152 --verify-max 80 --max-steps 600000
+# OK HOOK VERIFY LIMIT REACHED verified=80
+```
+
+
+Fixed a live `--verify-frames --verify-frame-preview` verifier scheduling bug.
+The frame verifier used to pump SDL/input events once before the reference ASM
+runtime advanced, and then again between the reference and hooked candidate
+runtimes.  A key pressed while the reference side was running could therefore be
+delivered to the candidate for the current frame after the reference had already
+reached its boundary.  That created a false one-frame input skew and visual
+divergences during active play.
+
+The generic verifier now samples input only at runtime-pair boundaries: once
+before both the reference and candidate advance.  Events collected while the
+reference side is running are intentionally deferred to the next pair so both
+runtimes see them on the same verified frame.
+
+Verification:
+
+```text
+python scripts/lint.py
+# Lint passed for 76 Python files
+
+pytest -q tests/test_frame_verify.py tests/test_overkill_hooks.py::test_hook_verifier_defers_live_passthrough_yield_until_after_diff tests/test_overkill_hooks.py::test_hook_verifier_live_passthrough_override_can_publish_without_frame_boundary
+# 5 passed
+
+python scripts/verify_hooks_headless.py --snapshot artifacts/snapshot_play_tandy_20260614_203152 --verify-max 100 --max-steps 400000 --fast-ranges
+# OK HOOK VERIFY LIMIT REACHED verified=100
+
+python scripts/play.py --video tandy --sound adlib --snapshot artifacts/snapshot_play_tandy_20260614_203152 --verify-frames --verify-frame-max 30 --verify-frame-source both
+# FRAME VERIFY OK frames=30
+
+# Programmatic deterministic key injection at frame boundaries (Right+Space,
+# releases, Left, release) matched for 100 Tandy frame/timer boundaries.
+```
+
+Full `pytest -q` reached 81% with no visible failures before the sandbox
+timeout, so it is not claimed as complete here.
+
+## 2026-06-14 - Interstitial frame-script cleanup and raw status-list seeds
+
+Continued the ASM-noise cleanup around the post-97B2 short-profile path.  This
+pass deliberately stayed in the verified lifted-routine layer: it closes repeated
+frame glue and raw descriptor setup blocks without naming a concrete menu/screen
+or HUD widget yet.
+
+Implemented:
+
+- Captured oracle snapshots:
+  - `artifacts/evidence/snapshot_stop_1010_d318_timed_input_loop`
+  - `artifacts/evidence/snapshot_stop_1010_8517_status_cell_list_seed`
+- `1010:D367 overkill_interstitial_status_cell_d367`
+  - small interstitial/status cell blit helper: sets `AX=4703h`, calls `5A00`,
+    zeroes `SI`, switches `DS` to `CS:95B6`, dispatches `5A6C`, then restores
+    `DS` from `CS:9596`.
+- `1010:D318 overkill_interstitial_timed_input_loop_d318`
+  - one ASM-shaped iteration of the timed interstitial/input-wait frame script;
+  - composes existing frame child hooks, far-calls `1F8F:0922`, increments
+    `DS:BED8`, then either loops at `D318` or waits for the input-release bit
+    before returning.
+- `1010:852B overkill_status_cell_seed_852b`
+  - one raw 10-byte status/list cell descriptor seed at `SS:BP`.
+- `1010:8517 overkill_status_cell_list_seed_8517`
+  - four-entry descriptor builder around `852B`; preserves the odd original
+    call shape where the third `CALL 852B` returns to `852B` and the fourth
+    descriptor is a fall-through into the same body.
+
+Important proof detail:
+
+- The generic bounded near-call helper cannot be used for the `8517` third
+  `CALL 852B`, because the continuation equals the callee entry.  The parent
+  hook therefore pushes the return word and invokes the lifted `852B` body
+  directly so the same-IP call still executes once and leaves the same scratch
+  stack shape.
+
+Validation:
+
+```bash
+python -m pytest -q \
+  tests/test_overkill_hooks.py::test_status_cell_seed_852b_and_list_8517_match_interpreted_asm_with_child_boundary \
+  tests/test_overkill_hooks.py::test_interstitial_status_cell_d367_matches_interpreted_parent_with_child_boundaries \
+  tests/test_overkill_hooks.py::test_interstitial_timed_input_loop_d318_matches_interpreted_parent_with_child_boundaries \
+  tests/test_overkill_hooks.py::test_status_cell_composite_85d5_matches_interpreted_parent_with_child_boundaries \
+  tests/test_overkill_hooks.py::test_status_coord_list_fill_99cd_matches_interpreted_loop \
+  tests/test_overkill_hooks.py::test_frame_axis_count_9bfb_9bfe_tiny_leaves_match_interpreted_asm \
+  tests/test_overkill_hooks.py::test_live_verify_replacement_hooks_have_continuation_metadata
+# 7 passed
+
+python scripts/verify_hooks_headless.py --snapshot artifacts/evidence/snapshot_stop_1010_d318_timed_input_loop --verify-max 1 --max-steps 20 --fast-ranges
+# OK HOOK VERIFY LIMIT REACHED verified=1
+
+python scripts/verify_hooks_headless.py --snapshot artifacts/evidence/snapshot_stop_1010_8517_status_cell_list_seed --verify-max 1 --max-steps 20 --fast-ranges
+# OK HOOK VERIFY LIMIT REACHED verified=1
+
+python scripts/verify_hooks_headless.py --snapshot artifacts/snapshot_play_tandy_20260614_191454 --verify-max 200 --max-steps 400000 --fast-ranges
+# OK HOOK VERIFY LIMIT REACHED verified=200
+
+python scripts/lint.py
+# Lint passed for 76 Python files
+```
+
+A full `pytest -q` run reached 83% with no displayed failures before the sandbox
+timeout, so this package claims the focused tests and live verifier runs above.
+
+Fresh profile result:
+
+- `D318` is now a hook-covered frame-script boundary instead of 200 repeated raw
+  interpreted frames.
+- `8517` is hook-covered; the former `852B/852D/852E/8531/...` descriptor seed
+  noise disappears behind the raw status-list builder.
+- The next visible low-count cleanup targets are now `859E-8653`, `6120-613D`,
+  and the setup tail around `C51D-C562`.  The larger semantic frontier remains
+  `9B2E/9C01-9C6B`.
+
+## 2026-06-14 - Status compositor and tiny frame-controller leaves
+
+Continued the post-97B2 cleanup without entering the large `1010:9B2E` child
+controller.  This pass absorbed small, bounded regions that were already exposed
+by the profile and that compose existing lower-level hooks.
+
+Implemented:
+
+- Captured oracle snapshot: `artifacts/evidence/snapshot_stop_1010_85d5_status_cell`.
+- `1010:85D5 overkill_status_cell_composite_85d5`
+  - low-level status/HUD cell compositor parent around the verified
+    `613E`/`615A` cursor leaves and the existing `5A6C` source-cell blit
+    dispatch;
+  - still a raw compositor, not a semantic HUD widget model.
+- `1010:99CD overkill_status_coord_list_fill_99cd`
+  - compact coordinate-list fill loop that writes `([BP+2]+8,[BP+4]+9)` word
+    pairs into `ES:DI` for `CX` entries, then falls through to `99DD`.
+- `1010:9BFB overkill_frame_axis_count_inc_ah_9bfb`
+- `1010:9BFE overkill_frame_axis_count_inc_al_9bfe`
+  - tiny `INC AH/AL; RET` leaves used inside the `9C01` frame-controller child
+    before the `9C6B` jump-table dispatch.
+
+Validation:
+
+```bash
+python scripts/lint.py
+# Lint passed for 76 Python files
+
+python -m pytest -q \
+  tests/test_overkill_hooks.py::test_status_cell_composite_85d5_matches_interpreted_parent_with_child_boundaries \
+  tests/test_overkill_hooks.py::test_status_coord_list_fill_99cd_matches_interpreted_loop \
+  tests/test_overkill_hooks.py::test_frame_axis_count_9bfb_9bfe_tiny_leaves_match_interpreted_asm \
+  tests/test_overkill_hooks.py::test_status_cell_composite_85d5_matches_captured_snapshot \
+  tests/test_overkill_hooks.py::test_live_verify_replacement_hooks_have_continuation_metadata
+# 5 passed
+
+python scripts/verify_hooks_headless.py --snapshot artifacts/snapshot_play_tandy_20260614_191454 --verify-max 150 --max-steps 300000 --fast-ranges
+# OK HOOK VERIFY LIMIT REACHED verified=150; final CS:IP=1010:97B2
+
+python scripts/profile_hotspots.py 20000 --video tandy --sound adlib --snapshot artifacts/snapshot_play_tandy_20260614_191454 --top 40
+# 85D5 and 99CD now appear as hook-covered call boundaries.
+```
+
+A full `pytest -q` run reached 84% with no failures displayed before the sandbox
+timeout, so this package claims the focused oracle tests and live verification
+above rather than full-suite completion.
+
+Next best targets after this pass:
+
+- classify the caller block around `1010:8517-8545` / `1010:859E-8653`, because
+  `85D5` now exposes it as a likely status/HUD object-cell parent;
+- classify `1010:9C01-9C6B` before lifting larger parts of `9B2E`; the new
+  `9BFB/9BFE` leaves show this area counts four axis/side conditions and jumps
+  through a table at `9C70`;
+- keep `1010:9B2E-9C6B` as the main bounded-original frame-controller frontier
+  until its internal children have a manifest.
+
+## 2026-06-14 - Cursor stride leaves and setup/object-slot reset blocks
+
+Classified and lifted five low-risk regions exposed by the short post-97B2
+profile before entering the large `9B2E` controller.
+
+- Added `1010:613E overkill_status_cursor_advance_613e`, the CS:95BC
+  video-mode cursor advance dispatch used by status/HUD drawing glue.
+- Added `1010:615A overkill_status_cursor_retreat_615a`, the inverse cursor
+  retreat dispatch used by the same status draw family.
+- Added `1010:C3BF overkill_reset_effect_slot_block_c3bf`, a compact-slot
+  reset loop using the `DS:8D12` pointer table and `0040h` present-pointer
+  stride.
+- Added `1010:C3F1 overkill_reset_object_slot_block_c3f1`, the setup object-slot
+  reset loop that preserves slots whose `+16` field is already `0001h`.
+- Added `1010:C4E5 overkill_reset_object_slot_block_c4e5`, the sibling setup
+  loop reached from `C4DB` that clears selected object-slot fields through the
+  `DS:32CA` pointer table, stamps each slot from `CS:C3A2`, advances that
+  source pointer by `0280h`, and falls through to `C51D`.
+- Kept these as low-level lifted routines: no semantic enemy/player/HUD model
+  was introduced.
+
+Validation:
+
+```text
+pytest -q tests/test_overkill_hooks.py::test_status_cursor_613e_and_615a_match_interpreted_asm_all_modes tests/test_overkill_hooks.py::test_setup_reset_blocks_c3bf_and_c3f1_match_interpreted_asm tests/test_overkill_hooks.py::test_reset_object_slot_block_c4e5_matches_interpreted_asm
+# 3 passed
+```
+
+Next likely targets from the same profile are now `1010:861B-864B` / `1010:85D5`
+(status/HUD cell composition around the new cursor leaves), then the larger
+`1010:9B2E-9C6B` frame-controller child and object/frontier regions such as
+`1010:A4D7-A64C`, `1010:A031-A090`, and `1010:AFD8-B01C`.
+
+## 2026-06-14 - BEC5 variant 000A non-owner no-op collision fix
+
+Fixed the fail-fast reported from `BC45 -> BC4B -> 62F6 -> BEC5 variant 000A`
+with current object `logic_id=0029h`.  The earlier lift only covered the
+owner-linked fallback where `DS:[BX+30h] == BP`; the original ASM also has an
+ordinary non-owner case.
+
+- Rechecked the tail of `1010:BEC5`: after the 7/8/0C/9 table and 2/6/5 checks,
+  it executes `CMP BP,[BX+30h]`; if the slot is not owner-linked, the next
+  instruction is a plain `RET`.
+- `_run_collision_handler_bec5_observed` now preserves that no-op contact path,
+  including the live flags from the final `CMP`, instead of fail-fasting.
+- Added an original-ASM-vs-lift regression for `variant=000Ah` with
+  `DS:[BX+30h] != BP`, matching the newly observed collision family.
+
+Validation:
+
+```text
+pytest -q tests/test_overkill_hooks.py::test_bec5_variant_000a_non_owner_contact_is_noop_ret_against_asm
+# 1 passed
+
+python scripts/verify_hooks_headless.py --snapshot artifacts/snapshot_play_tandy_20260614_191454 --verify-max 100 --max-steps 200000 --fast-ranges
+# OK HOOK VERIFY LIMIT REACHED verified=100
+
+python scripts/lint.py
+# Lint passed for 76 Python files
+```
+
+Next hook clues remain the same at the high level: `1010:9B2E-9C6B` is the big
+bounded-original controller inside `97B2`, while `1010:A4D7-A64C`,
+`1010:A031-A090`, and `1010:AFD8-B01C` look like object/gameplay families that
+should be entered with stop snapshots before semantic naming.
+
+## 2026-06-14 - Frame effect/status glue and 97B2 frame-loop lift
+
+Classified and lifted the next low-risk gameplay-loop glue after the allocator pass.
+This pass deliberately stopped short of semantic rewrites: `9B2E` is now isolated
+as the next larger controller frontier, while the finite frame wrappers around it
+are Python-owned and oracle-tested.
+
+- Added `1010:77C5 overkill_frame_effect_gate_77c5`, the per-frame
+  slash/effect gate around `DS:A97A/A97C`.  It composes the existing `77F6`
+  slash renderer and keeps the EGA-only `511F` page-toggle branch explicit.
+- Added `1010:60A2 overkill_frame_effect_status_text_60a2`, a three-call
+  status/effect glue block: `77C5`, `5F61`, then `5EDB`.
+- Added `1010:97B2 overkill_frame_loop_97b2`, one verified iteration of the
+  gameplay/attract frame controller.  It keeps child proof boundaries in the
+  original order and intentionally runs `1010:9B2E` as bounded original for now.
+- Updated verifier metadata for same-IP loop verification, coverage island
+  classification, symbols, and leaf tests that need to bypass the new frame
+  parents when verifying nested `5EF9`/`5EDB` boundaries directly.
+
+Validation:
+
+```text
+python scripts/verify_hooks_headless.py --snapshot artifacts/snapshot_play_tandy_20260614_191454 --verify-max 150 --max-steps 300000 --fast-ranges
+# OK HOOK VERIFY LIMIT REACHED verified=150; final CS:IP=1010:97B2
+
+python scripts/profile_hotspots.py 2000 --video tandy --sound adlib --snapshot artifacts/snapshot_play_tandy_20260614_191454 --top 50
+# 97B2 is hook-covered; 60A2 and 77C5 child glue no longer appears as interpreted loop glue
+
+python scripts/lint.py
+# Lint passed for 76 Python files
+
+python -m pytest -q
+# 248 passed
+```
+
+Next hook clues after this pass:
+
+- `1010:9B2E-9C6B` is now the most important bounded-original child inside
+  `97B2`; classify it before lifting because it appears to own input/game-state
+  control rather than a pure draw or object leaf.
+- After `97B2`, short profiles expose smaller transition/menu/status regions,
+  especially `1010:C4E5-C51B`, `1010:613E-6159`, `1010:861B-864B`, and
+  `1010:C3BF-C3E5`.
+- The previous `60A2/60A5/60A8/60AB` and `77C5/77CA` glue is closed enough to
+  leave alone unless a new snapshot proves an unobserved branch.
+
+## 2026-06-14 - Object allocator hooks 7524/7573
+
+Absorbed the smallest high-confidence next target from the remaining gameplay
+hotspots: the 38h-byte slot allocators at `1010:7524` and `1010:7573`.
+
+- Added `1010:7524 overkill_find_free_effect_slot_7524` for the compact effect
+  pool allocator.  It scans from `DS:[95D8]` through `23B4..2B5A`, wraps at
+  `2B5C`, writes the selected free slot back to `DS:[95D8]`, and returns
+  `BX=FFFF` on exhaustion.
+- Added `1010:7573 overkill_find_free_object_slot_7573` for the main gameplay
+  object pool allocator.  It scans from `DS:[95DA]` through `2B5C..32CA`,
+  repeats the `32CC -> 2B5C` sentinel wrap check on every iteration, writes the
+  selected free slot back to `DS:[95DA]`, and returns `BX=FFFF` on exhaustion.
+- Both wrappers are guarded by exact live-code signatures so later overlay reuse
+  would fall back to interpretation instead of silently applying the wrong lift.
+- Added direct original-ASM-vs-hook tests for wrap, found-slot, and exhausted
+  cases.
+- Updated hook-verifier metadata, coverage island classification, and symbols.
+
+Validation:
+
+```text
+python -m pytest -q tests/test_overkill_hooks.py::test_effect_allocator_7524_hook_matches_original_wrap_and_exhaustion tests/test_overkill_hooks.py::test_object_allocator_7573_hook_wrapper_matches_original
+# 2 passed
+
+python scripts/verify_hooks_headless.py --snapshot artifacts/snapshot_play_tandy_20260614_191454 --verify-max 100 --max-steps 200000 --fast-ranges
+# OK HOOK VERIFY LIMIT REACHED verified=100
+
+python scripts/lint.py
+# Lint passed for 76 Python files
+
+python -m pytest -q
+# 245 passed
+```
+
+Next hook clues after this pass:
+
+- `1010:9B2E-9C6B` is still the largest remaining interpreted region in the
+  long gameplay run and should be classified before lifting.
+- `1010:A490-A780` / `1010:AFD8-B01C` remain likely gameplay-object family
+  frontiers, but they are larger than the allocator leaf and should be entered
+  with a stop snapshot.
+- `1010:77C5/77CA` plus `60A2/60A5/60A8/60AB` show up in short profiles as
+  frame/status glue around already-hooked `5F61` and `5EDB`; useful, but less
+  likely to reveal new object behavior.
+
+## 2026-06-14 - BFC7 logic-0021 collision gate fix
+
+Fixed the fail-fast reported from `artifacts/snapshot_play_tandy_20260614_202217`:
+`BC4B -> 62F6 -> BEC5 variant 0005 -> BFC7 logic 0021 -> BFD2`.
+
+- Rechecked the original bytes around `1010:BFC7`: logic id `0021h` is only a
+  gate.  If `DS:2356 != 0004h`, the helper returns immediately; if
+  `DS:2356 == 0004h`, the `JE` lands at `BFD7` and joins the normal
+  death/transition tail.
+- Removed the stale fail-fast for the `DS:2356 == 0004h` case and let it reuse
+  the already lifted BFD7 path.
+- Added an original-ASM-vs-lift regression test seeded from the gameplay memory
+  image.  The test starts both CPUs at `1010:BFC7` with logic id `0021h` and
+  `DS:2356=0004h`; the interpreted ASM and Python helper now return with
+  identical register state and full memory.
+
+Validation:
+
+```text
+pytest -q tests/test_overkill_hooks.py::test_bfc7_logic_21_gate_four_joins_normal_death_tail_against_asm
+# 1 passed
+
+python scripts/lint.py
+# Lint passed for 76 Python files
+
+pytest -q
+# 243 passed
+```
+
+Next hook clues from the reported coverage:
+
+- `1010:7524-7595`, hottest at `757A`, is probably the best small next target.
+  The project already has `_find_free_object_slot_7573` and `_find_free_effect_slot_7524`
+  helpers, so this region looks like allocator logic that can be promoted into
+  exact hooks with focused oracle tests.
+- `1010:9B2E-9C6B` is the largest remaining interpreted region by hits; it
+  should be classified before lifting because it may be UI/status or scripted
+  gameplay bookkeeping rather than a pure object routine.
+- `1010:A490-A780` and `1010:AFD8-B01C` look like gameplay-object family
+  frontiers and are better candidates after the allocator leaf is closed.
+
+## 2026-06-14 - Object behavior B24D absorption
+
+Continued the Tandy + AdLib gameplay-loop absorption from
+`artifacts/snapshot_play_tandy_20260614_191454`.  The next hot unlifted object
+family path was `EFAE -> B24D -> 5E42`.
+
+- Captured evidence snapshot `artifacts/evidence/snapshot_stop_1010_b24d_behavior`.
+- Added `1010:B24D overkill_object_behavior_b24d` for the observed object-family
+  steering/overlap prelude.
+- The hook composes the already verified runtime-patched `1010:5E42` steering
+  helper, mirrors the signed/unsigned reference-box checks against `DS:237E`
+  and `DS:2380`, and lands on the existing `AD5A`/`ADC9` motion tails.
+- The rare overlap side-effect helper `1010:9E19` remains a bounded original
+  child call from inside B24D; it should be lifted independently if it becomes a
+  real hotspot.
+- Updated leaf-hook tests that intentionally target nested `5E42`/`61C7`
+  boundaries to disable the newly absorbed `B24D` parent, so those tests still
+  exercise the leaf boundary itself.
+
+Validation:
+
+```text
+python scripts/verify_hooks_headless.py --snapshot artifacts/evidence/snapshot_stop_1010_b24d_behavior --verify-max 1 --max-steps 20 --fast-ranges
+# OK HOOK VERIFY LIMIT REACHED verified=1; final CS:IP=1010:AD5A
+
+python scripts/verify_hooks_headless.py --snapshot artifacts/snapshot_play_tandy_20260614_191454 --verify-max 20 --max-steps 20000 --fast-ranges
+# OK HOOK VERIFY LIMIT REACHED verified=20
+
+python scripts/profile_hotspots.py 600000 --video tandy --sound adlib --snapshot artifacts/snapshot_play_tandy_20260614_191454 --top 35
+# B24D now appears as hook-covered; interpreted B24D body is gone
+
+python scripts/lint.py
+# Lint passed for 76 Python files
+
+python -m pytest -q
+# 242 passed
+```
+
 ## 2026-06-14 - Object behavior B86D absorption
 
 Continued from the Tandy + AdLib gameplay snapshot
@@ -7,15 +438,16 @@ remaining interpreted hotspot was `1010:B86D-B8EF`.
 
 - Added `1010:B86D overkill_object_behavior_b86d` for the observed logic-id
   `001Dh` object-family behavior.
-- The hook covers the hot `B885 -> B729 -> 5DB2 -> BC4B` setup path and the
-  adjacent `B8B0 -> BC4B` object-X drift path, while leaving the unobserved
-  `B8F8` tail as an explicit frontier.
+- The hook covers the hot `B885 -> B729 -> 5DB2 -> BC4B` setup path, the
+  adjacent `B8B0 -> BC4B` object-X drift path, and the later
+  `B8F8 -> 5E1B -> 5E42 -> BC4B` edge-steering path.
 - The hook lands on the existing `1010:BC4B` postmove/collision boundary instead
   of composing that tail, keeping ownership with the verified collision helper.
-- Added two evidence snapshots:
-  `artifacts/evidence/snapshot_stop_1010_b86d_behavior` and
-  `artifacts/evidence/snapshot_stop_1010_b8b0_behavior`.
-- Added a full-memory regression for both observed B86D paths.  The B8B0
+- Added evidence snapshots:
+  `artifacts/evidence/snapshot_stop_1010_b86d_behavior`,
+  `artifacts/evidence/snapshot_stop_1010_b8b0_behavior`, and
+  `artifacts/evidence/snapshot_stop_1010_b86d_b8f8_edge`.
+- Added a full-memory regression for the observed B86D paths.  The B8B0
   evidence state is rewound only to the exact `B86D` entry IP because its
   preceding B86D setup instructions are compare-only.
 
@@ -3227,4 +3659,243 @@ python -m overkill.cli static-runtime-bundle assets/OVERKILL --game-root assets 
 
 python scripts/verify_hooks_headless.py --snapshot artifacts/static_runtime_bundle --verify-max 200 --max-steps 200000 --fast-ranges
 # OK HOOK VERIFY LIMIT REACHED verified=200
+```
+
+## 2026-06-14 — 558B verifier expiry fix and 1F8F:081D live-code variant
+
+Follow-up from an interactive Tandy/AdLib run started from
+`artifacts/snapshot_play_tandy_20260614_203152`.
+
+Findings:
+
+- `1F8F:081D overkill_demo_counter_tick_1f8f_081d` was not actually patched to a
+  different behavior.  The uploaded/live image uses `CMP AX,imm16` encodings
+  (`3D xx 00`) where earlier evidence used the shorter `CMP AX,imm8` form
+  (`83 F8 xx`).  The threshold values are small positive words, so both streams
+  are equivalent for this routine.
+- The `1010:558B overkill_main_menu_idle_loop_558b` verifier divergence was a
+  real boundary bug.  The hook pre-fell back when `DS:22BF >= 02ED`, executing
+  only the first original `CMP` and stopping at `5590`.  Original ASM still runs
+  the retrace wait and increments `DS:22BF`; at `02ED` it reaches the valid
+  expiry continuation `55FD` with `DS:22BF == 02EE`.
+- The same parent should not depend on a nested installed `50C9` replacement to
+  be verifier-stable.  Verification/pass-through contexts may restore or remove
+  interactive retrace wrappers, but `558B` still has to reproduce the pure
+  `50C9` side effects before landing on `558B`, `55FD`, or the near return.
+
+Changes:
+
+- `self_disable_if_patched()` now accepts multiple valid byte signatures for a
+  hook entry and reports all accepted variants on mismatch.
+- `1F8F:081D` accepts both compact and wide compare encodings.
+- `558B` no longer pre-falls back on the `DS:22BF == 02ED` expiry edge; it runs
+  the known prelude and stops at `55FD` after reproducing the increment/retrace
+  side effects.
+- `558B` has a local pure `50C9` fallback body for verifier contexts where the
+  nested retrace hook is absent, avoiding one-instruction original fallback at
+  the parent entry.
+- Added regressions for the wide `1F8F:081D` encoding and the `558B` counter
+  expiry boundary without an installed nested retrace hook.
+
+Validation:
+
+```bash
+python scripts/lint.py
+# Lint passed for 76 Python files
+
+pytest -q \
+  tests/test_overkill_hooks.py::test_demo_counter_tick_081d_accepts_wide_cmp_live_code_against_asm \
+  tests/test_overkill_hooks.py::test_main_menu_idle_loop_558b_counter_expiry_boundary_without_installed_retrace_hook \
+  tests/test_overkill_hooks.py::test_main_menu_idle_loop_558b_matches_interpreted_idle_iteration \
+  tests/test_overkill_hooks.py::test_main_menu_idle_loop_558b_returns_on_fire
+# 4 passed
+
+python scripts/verify_hooks_headless.py --snapshot artifacts/snapshot_play_tandy_20260614_191454 --verify-max 200 --max-steps 400000 --fast-ranges
+# OK HOOK VERIFY LIMIT REACHED verified=200
+```
+
+`python scripts/play.py ...` could not be re-run in the sandbox because pygame is
+not installed here.  A full `pytest -q` run reached 82% with no displayed failure
+before the sandbox timeout, so the focused regressions and headless verifier are
+the completed validation for this patch.
+
+## 2026-06-14 — interactive verifier startup visibility / presenter passthrough
+
+Follow-up from running:
+
+```bash
+python scripts/play.py --video tandy --sound adlib \
+  --snapshot artifacts/snapshot_play_tandy_20260614_203152 \
+  --verify-hooks --verify-stop-on-diff
+```
+
+Finding:
+
+- The black SDL window during interactive hook verification was misleading UI
+  starvation, not evidence that the Tandy VRAM was empty.  The uploaded snapshot
+  already has non-zero B800h/Tandy contents, but `play.py` only published frames
+  after a natural presenter/timer/retrace boundary.  With `--verify-hooks`, a
+  large amount of object/frame logic can be differentially verified before the
+  next boundary, especially when full-memory diffs are enabled.
+- The Tandy/CGA/EGA presenter hooks are also UI pacing boundaries in
+  `scripts/play.py`.  Inline-verifying the active presenter on every visible
+  frame makes interactive verification much less useful; visual equivalence is
+  better checked with `--verify-frames`, while live `--verify-hooks` should keep
+  the viewer responsive.
+
+Changes:
+
+- Added `FrameSync.publish_nowait()` so `play.py` can queue the currently loaded
+  video snapshot before the emulator thread reaches the next natural boundary.
+- `play.py` now publishes the loaded/current snapshot once at startup without
+  waiting for the SDL consumer.  This prevents the window from staying black
+  while the hook verifier proves the first gameplay slice.
+- Interactive presenter verification is now opt-in.  `--verify-hooks` treats the
+  active presenter as a passthrough UI boundary; use `--verify-hook 1010:3354`
+  or `--verify-frames` when the presenter itself is the target under test.
+
+Validation:
+
+```bash
+python scripts/lint.py
+# Lint passed for 76 Python files
+
+python scripts/verify_hooks_headless.py \
+  --snapshot artifacts/snapshot_play_tandy_20260614_203152 \
+  --verify-max 150 --max-steps 600000 --fast-ranges
+# OK HOOK VERIFY LIMIT REACHED verified=150
+```
+
+`python scripts/play.py ...` still cannot be visually re-run in the sandbox
+because pygame is not installed here.  The supplied snapshot was loaded and the
+headless verifier passed from that exact state.
+
+## 2026-06-14 — interactive verify live-publish during verified parent hooks
+
+Follow-up after testing the previous visibility patch:
+
+```bash
+python scripts/play.py --video tandy --sound adlib \
+  --snapshot artifacts/snapshot_play_tandy_20260614_203152 \
+  --verify-hooks --verify-stop-on-diff
+```
+
+Finding:
+
+- Publishing only the loaded snapshot fixed the initial black window, but not the
+  real starvation path.  During a differential transaction, the live replacement
+  side temporarily restored presenter/timer/retrace hooks to their install-time
+  pure hooks.  That kept verification atomic, but it also meant long verified
+  parent hooks could execute many visual boundaries without publishing anything
+  to SDL.
+- The correct split is different for the two sides of the transaction:
+  - ASM oracle clone: use install-time pure passthrough hooks.
+  - Live hook side: use CPU-equivalent publish-only wrappers that apply the same
+    base hook side effects and queue a frame, but do not raise `FramePresented`.
+
+Changes:
+
+- Added `CPU8086.hook_verifier_live_passthrough_overrides`.
+- `HookVerifier._LivePassthroughHooks` now prefers those live-only overrides
+  while keeping the ASM oracle clone on install-time pure hooks.
+- `play.py` installs publish-only live overrides for the active presenter,
+  `1010:0679` timer wait, and `1010:50C9` retrace wait.  These wrappers use
+  `FrameSync.publish_nowait()` and never break the verified parent routine.
+- Added a regression proving live passthrough overrides can run inside a verified
+  parent hook without invoking the normal frame-boundary wrapper.
+
+Validation:
+
+```bash
+python scripts/lint.py
+# Lint passed for 76 Python files
+
+pytest -q \
+  tests/test_overkill_hooks.py::test_hook_verifier_uses_base_passthrough_hooks_inside_intro_delay_loop \
+  tests/test_overkill_hooks.py::test_hook_verifier_live_passthrough_override_can_publish_without_frame_boundary
+# 2 passed
+
+python scripts/verify_hooks_headless.py \
+  --snapshot artifacts/snapshot_play_tandy_20260614_203152 \
+  --verify-max 200 --max-steps 600000 --fast-ranges
+# OK HOOK VERIFY LIMIT REACHED verified=200
+
+python scripts/verify_hooks_headless.py \
+  --snapshot artifacts/snapshot_play_tandy_20260614_203152 \
+  --verify-max 20 --max-steps 80000
+# OK HOOK VERIFY LIMIT REACHED verified=20
+
+SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy timeout 10s \
+  python scripts/play.py --video tandy --sound adlib \
+    --snapshot artifacts/snapshot_play_tandy_20260614_203152 \
+    --verify-hooks --verify-stop-on-diff --scale 1 --no-coverage-summary
+# Ran until timeout with no HookVerifyDivergence or crash printed.
+```
+
+## 2026-06-14 — interactive hook verifier yield audit
+
+Follow-up from `play.py --video tandy --sound adlib --snapshot artifacts/snapshot_play_tandy_20260614_203152 --verify-hooks --verify-stop-on-diff` feeling suspiciously smooth but not reacting to keyboard input.
+
+Root cause: interactive live passthrough wrappers for presenter/timer/retrace correctly avoided raising `FramePresented` inside a verified parent hook, but there was no deferred yield after the parent hook finished its ASM-vs-hook diff. When a large parent such as `1010:97B2` was verified, the live side could publish and pace frames inside the transaction, yet `CPU.run()` did not return to the outer SDL/input pump until the chunk ended. That made keyboard input appear ignored and made interactive verification less honest as a gameplay test.
+
+Fix:
+
+- Added `CPU8086.hook_verifier_live_yield_requested` and `hook_verifier_live_yield_callback`.
+- Live-side verifier passthrough wrappers now request a cooperative yield after they publish/pace.
+- `HookVerifier.verify()` computes the normal diff first, then invokes the callback. In `play.py` the callback is the normal `stop_cpu_burst()`, so the outer loop pumps SDL/key events only after the verified hook has reached its continuation and compared cleanly.
+- The ASM oracle clone still uses install-time pure hooks. The live side still uses publish-only wrappers only inside the verified transaction. The change is scheduler-only, not CPU-visible state.
+
+Validation:
+
+```text
+python scripts/lint.py
+# Lint passed for 76 Python files
+
+pytest -q \
+  tests/test_overkill_hooks.py::test_hook_verifier_live_passthrough_override_can_publish_without_frame_boundary \
+  tests/test_overkill_hooks.py::test_hook_verifier_defers_live_passthrough_yield_until_after_diff
+# 2 passed
+
+python scripts/verify_hooks_headless.py --snapshot artifacts/snapshot_play_tandy_20260614_203152 --verify-max 200 --max-steps 600000 --fast-ranges
+# OK HOOK VERIFY LIMIT REACHED verified=200
+```
+
+## 2026-06-14 — Boss-key wait gates lifted out of unknown ASM
+
+The F9 boss-key text screen still left a large interpreted/unknown region in
+profiles while the game waited for the user to release F9, press a key, then
+release the return key.  The hot part was not the text drawing itself but three
+tiny interactive wait gates inside `1010:075F..07EE`:
+
+- `1010:07C4` — `CMP byte DS:9907,01h; JE 07C4`, wait for the original F9 press
+  to be released.
+- `1010:07D0` — `CMP byte DS:98C3,00h; JE 07D0`, wait for any key to leave the
+  fake DOS text screen.  This produced the hot `07D0/07D5` profile pair.
+- `1010:07D7` — `CMP byte DS:9907,01h; JE 07D7`, wait for the return key to be
+  released before restoring the game video mode.
+
+Changes:
+
+- Added one-iteration state-machine hooks:
+  - `overkill_boss_key_f9_release_wait_gate_07c4`
+  - `overkill_boss_key_any_key_wait_gate_07d0`
+  - `overkill_boss_key_return_key_release_wait_gate_07d7`
+- Classified these hooks under `input_menu` rather than leaving the boss-key
+  wait loops as `unknown`.
+- Added verifier metadata with same-IP-after-step stops for all three gates.
+- Added ASM-vs-hook regression tests for both the wait and exit branches.
+
+This deliberately does not lift the whole `075F` boss-key screen routine yet.
+The screen drawing/setup executes once and is not the source of the hot loop; the
+verified lift removes the runtime ASM noise while preserving the existing
+interactive text-frame publishing logic.
+
+Validation:
+
+```bash
+python scripts/lint.py
+pytest -q \
+  tests/test_overkill_hooks.py::test_boss_key_wait_gates_match_interpreted_state_machines \
+  tests/test_overkill_hooks.py::test_input_wait_gate_hook_metadata_uses_after_step_for_same_ip_targets \
+  tests/test_play_boss_key_wait.py
 ```

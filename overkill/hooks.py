@@ -43,6 +43,7 @@ from .hook_wrappers.asset_codecs import (
 )
 from .hook_wrappers.text import (
     overkill_score_byte_text_5ef9,
+    overkill_score_status_text_block_5edb,
     overkill_score_nibble_text_5f06,
     overkill_tandy_text_glyph_3153,
     overkill_text_dispatch_519a,
@@ -69,6 +70,9 @@ from .input_menu import (
     run_input_release_wait_gate_986e,
     run_yes_no_choice_wait_gate_989e,
     run_sound_effect_completion_wait_gate_98d8,
+    run_boss_key_f9_release_wait_gate_07c4,
+    run_boss_key_any_key_wait_gate_07d0,
+    run_boss_key_return_key_release_wait_gate_07d7,
     run_intro_retrace_delay_loop_96c5,
     run_intro_retrace_delay_loop_tail_96c8,
 )
@@ -140,6 +144,8 @@ from .rendering.tandy import (
 
 from .rendering.effects import (
     SIG_FRAME_EFFECT_SLASH_77F6,
+    SIG_FRAME_EFFECT_GATE_77C5,
+    run_frame_effect_gate_77c5,
     run_frame_effect_slash_77f6,
 )
 
@@ -163,11 +169,25 @@ from .gameplay.game_state import (
     run_decrement_first_active_counter_scan_61ca,
     run_decrement_first_active_counter_loop_61f7,
     run_status_counter_cell_blit_6296,
+    run_status_cursor_advance_613e,
+    run_status_cursor_retreat_615a,
+    run_status_cell_composite_85d5,
+    run_status_coord_list_fill_99cd,
+    run_frame_axis_count_inc_ah_9bfb,
+    run_frame_axis_count_inc_al_9bfe,
     run_frame_game_state_update_a940,
 )
 from .gameplay.frame_orchestration import (
     run_demo_object_list_maintenance_a212,
+    SIG_FRAME_EFFECT_STATUS_TEXT_60A2,
+    SIG_FRAME_LOOP_97B2,
     SIG_FRAME_UI_STATE_UPDATE_D04D,
+    run_interstitial_status_cell_d367,
+    run_interstitial_timed_input_loop_d318,
+    run_status_cell_list_seed_8517,
+    run_status_cell_seed_852b,
+    run_frame_effect_status_text_60a2,
+    run_frame_loop_97b2,
     run_main_frame_loop_d007,
     run_frame_service_gate_073c,
     run_frame_status_counter_update_5f61,
@@ -178,6 +198,9 @@ from .gameplay.objects import (
     finish_object_logic_scan_tail_aa04,
     run_object_motion_table_ab34,
     run_object_scroll_sprite_ab4f,
+    run_reset_effect_slot_block_c3bf,
+    run_reset_object_slot_block_c3f1,
+    run_reset_object_slot_block_c4e5,
 )
 
 from .asm import (
@@ -236,6 +259,7 @@ from .gameplay.object_runtime import (
     _run_object_behavior_ae09,
     _run_object_behavior_aed8,
     _run_object_behavior_b86d,
+    _run_object_behavior_b24d,
     _run_object_behavior_b73e,
     _run_object_behavior_b9f0,
     _run_object_family_dispatch_efae,
@@ -271,6 +295,9 @@ _SIG_2E6E = bytes.fromhex("bb 58 00 ad 26 23 05 0b 04 83 c6 02 ab ad 26 23")
 _SIG_986E = bytes.fromhex("80 3e c5 98 01 74 f9")
 _SIG_989E = bytes.fromhex("c6 06 b4 22 4e 80 3e f5 98 01 74 0c c6 06 b4 22 59 80 3e d9 98 01 75 e8")
 _SIG_98D8 = bytes.fromhex("80 3e fe be 00 75 f9")
+_SIG_07C4 = bytes.fromhex("80 3e 07 99 01 74 f9")
+_SIG_07D0 = bytes.fromhex("80 3e c3 98 00 74 f9")
+_SIG_07D7 = bytes.fromhex("80 3e 07 99 01 74 f9")
 _SIG_96C5 = bytes.fromhex("e8 01 ba e2 fb")
 _SIG_558B = bytes.fromhex("80 3e e9 98 01 75 03 e9 a8 00")
 _SIG_96C8 = bytes.fromhex("e2 fb")
@@ -347,6 +374,7 @@ _SIG_AB71 = bytes.fromhex("c7 06 2c a4 66 a9")
 _SIG_BC45 = bytes.fromhex("a1 78 a2 01 46 02")
 _SIG_B9F0 = bytes.fromhex("81 3e 82 a4 e4 a4 75 6f 81 3e 40 23 ef 02 75 07")
 _SIG_B73E = bytes.fromhex("83 7e 1c ff 74 4d 8b 5e 1c d1 e3 2e ff a7 4e b7")
+_SIG_B24D = bytes.fromhex("e8 f2 ab 83 7e 1e 01 74 4d a1 7e 23 8b 1e 80 23")
 _SIG_B86D = bytes.fromhex("83 3e 7e a4 02 77 03 e9 81 00 81 7e 02 c0 00")
 _SIG_AA2B = bytes.fromhex("8b 5e 16 d1 e3 2e ff a7 36 aa")
 _SIG_EFAE = bytes.fromhex("8b 46 04 a3 fe d1 8b 46 02 a3 00 d2 8b 5e 18")
@@ -585,6 +613,40 @@ def overkill_tandy_draw_object_block_35cc(cpu):
     run_tandy_draw_object_block_35cc(cpu, _tandy_render_runtime())
 
 
+_SIG_FIND_FREE_EFFECT_SLOT_7524 = bytes.fromhex(
+    "b9 23 00 8b 1e d8 95 83 3f 00 74 12 83 c3 38 81"
+    " fb 5c 2b 75 03 bb b4 23 e2 ed bb ff ff c3 89 1e"
+    " d8 95 c3"
+)
+
+
+@registry.replace(0x1010, 0x7524, "overkill_find_free_effect_slot_7524")
+def overkill_find_free_effect_slot_7524(cpu):
+    """Replace compact effect-slot allocator 1010:7524."""
+    if not _code_matches(cpu, 0x7524, _SIG_FIND_FREE_EFFECT_SLOT_7524):
+        _interpret_current_instruction_without_hook(cpu)
+        return
+    _find_free_effect_slot_7524(cpu)
+    cpu.s.ip = cpu.pop()
+
+
+_SIG_FIND_FREE_OBJECT_SLOT_7573 = bytes.fromhex(
+    "b9 22 00 8b 1e da 95 81 fb cc 32 75 03 bb 5c 2b"
+    " 83 3f 00 74 09 83 c3 38 e2 ed bb ff ff c3 89 1e"
+    " da 95 c3"
+)
+
+
+@registry.replace(0x1010, 0x7573, "overkill_find_free_object_slot_7573")
+def overkill_find_free_object_slot_7573(cpu):
+    """Replace main gameplay object-slot allocator 1010:7573."""
+    if not _code_matches(cpu, 0x7573, _SIG_FIND_FREE_OBJECT_SLOT_7573):
+        _interpret_current_instruction_without_hook(cpu)
+        return
+    _find_free_object_slot_7573(cpu)
+    cpu.s.ip = cpu.pop()
+
+
 @registry.replace(0x1010, 0x7596, "overkill_layer_draw_type_dispatch_7596")
 def overkill_layer_draw_type_dispatch_7596(cpu):
     """Hook wrapper for OVERKILL 1010:7596 layer draw type jump-table dispatch."""
@@ -777,6 +839,29 @@ def overkill_scan_present_setup_32ca_a924(cpu):
 def overkill_layer_sprite_draw_768e(cpu):
     """Hook wrapper for OVERKILL 1010:768E shared layer-sprite draw helper."""
     draw_layer_sprite_768e(cpu, _layer_sprite_runtime())
+
+
+@registry.replace(0x1010, 0x77C5, "overkill_frame_effect_gate_77c5")
+def overkill_frame_effect_gate_77c5(cpu):
+    """Frame-effect state gate around the 77F6 slash/column renderer."""
+
+    def call_slash(return_ip: int) -> None:
+        _call_installed_hook_like_near_call(
+            cpu,
+            (0x1010, 0x77F6),
+            overkill_frame_effect_slash_77f6,
+            return_ip,
+        )
+
+    def call_page_toggle(return_ip: int) -> None:
+        _call_installed_hook_like_near_call(
+            cpu,
+            (0x1010, 0x511F),
+            overkill_video_page_toggle_511f,
+            return_ip,
+        )
+
+    run_frame_effect_gate_77c5(cpu, _self_disable_if_patched, call_slash, call_page_toggle)
 
 
 @registry.replace(0x1010, 0x77F6, "overkill_frame_effect_slash_77f6")
@@ -2813,6 +2898,20 @@ def overkill_object_behavior_b73e(cpu):
     )
 
 
+@registry.replace(0x1010, 0xB24D, "overkill_object_behavior_b24d")
+def overkill_object_behavior_b24d(cpu):
+    """Lift the observed B24D object-family steering/overlap behavior."""
+    if _self_disable_if_patched(cpu, 0xB24D, _SIG_B24D, "overkill_object_behavior_b24d"):
+        return
+    _run_object_behavior_b24d(
+        cpu,
+        parent="1010:B24D",
+        chain="B24D",
+        cx_value=cpu.s.cx & 0xFFFF,
+    )
+
+
+
 @registry.replace(0x1010, 0xB86D, "overkill_object_behavior_b86d")
 def overkill_object_behavior_b86d(cpu):
     """Observed object-family behavior B86D lifted up to the shared BC4B tail."""
@@ -3146,6 +3245,167 @@ def overkill_status_counter_cell_blit_6296(cpu):
     run_status_counter_cell_blit_6296(cpu, _self_disable_if_patched, call_menu_cell_source_blit)
 
 
+
+
+@registry.replace(0x1010, 0x613E, "overkill_status_cursor_advance_613e")
+def overkill_status_cursor_advance_613e(cpu):
+    """Mode-dependent status/HUD cursor advance helper."""
+    run_status_cursor_advance_613e(cpu, _self_disable_if_patched)
+
+
+@registry.replace(0x1010, 0x615A, "overkill_status_cursor_retreat_615a")
+def overkill_status_cursor_retreat_615a(cpu):
+    """Mode-dependent status/HUD cursor retreat helper."""
+    run_status_cursor_retreat_615a(cpu, _self_disable_if_patched)
+
+
+
+
+@registry.replace(0x1010, 0xC3BF, "overkill_reset_effect_slot_block_c3bf")
+def overkill_reset_effect_slot_block_c3bf(cpu):
+    """Internal compact/effect-slot reset loop reached by setup code."""
+    run_reset_effect_slot_block_c3bf(cpu, _self_disable_if_patched)
+
+
+@registry.replace(0x1010, 0xC3F1, "overkill_reset_object_slot_block_c3f1")
+def overkill_reset_object_slot_block_c3f1(cpu):
+    """Internal object-slot reset loop reached by setup code."""
+    run_reset_object_slot_block_c3f1(cpu, _self_disable_if_patched)
+
+@registry.replace(0x1010, 0xC4E5, "overkill_reset_object_slot_block_c4e5")
+def overkill_reset_object_slot_block_c4e5(cpu):
+    """Internal object-slot reset loop reached by the C4DB setup routine."""
+    run_reset_object_slot_block_c4e5(cpu, _self_disable_if_patched)
+
+@registry.replace(0x1010, 0x60A2, "overkill_frame_effect_status_text_60a2")
+def overkill_frame_effect_status_text_60a2(cpu):
+    """Per-frame glue: 77C5 effect gate, 5F61 counters, then 5EDB text."""
+
+    def call_effect_gate(return_ip: int) -> None:
+        _call_installed_hook_like_near_call(
+            cpu,
+            (0x1010, 0x77C5),
+            overkill_frame_effect_gate_77c5,
+            return_ip,
+        )
+
+    def call_status_counter(return_ip: int) -> None:
+        _call_installed_hook_like_near_call(
+            cpu,
+            (0x1010, 0x5F61),
+            overkill_frame_status_counter_update_5f61,
+            return_ip,
+        )
+
+    def call_status_text(return_ip: int) -> None:
+        _call_installed_hook_like_near_call(
+            cpu,
+            (0x1010, 0x5EDB),
+            overkill_score_status_text_block_5edb,
+            return_ip,
+        )
+
+    run_frame_effect_status_text_60a2(
+        cpu,
+        _self_disable_if_patched,
+        call_effect_gate,
+        call_status_counter,
+        call_status_text,
+    )
+
+
+@registry.replace(0x1010, 0x97B2, "overkill_frame_loop_97b2")
+def overkill_frame_loop_97b2(cpu):
+    """One iteration of the 97B2 gameplay/attract frame controller."""
+    run_frame_loop_97b2(
+        cpu,
+        _self_disable_if_patched,
+        _run_interpreted_near_call_observed,
+    )
+
+
+def _run_interpreted_far_call_observed(cpu, target_cs: int, target_ip: int, return_ip: int, *, max_steps: int = 20000) -> None:
+    """Run a bounded original FAR CALL from inside a lifted frame parent.
+
+    Keep nested hook verification active by default, matching the near-call
+    helper.  If the far helper reaches an installed child hook, that child is
+    verified at the state produced by the original bounded code instead of being
+    silently shared by both sides of the parent transaction.
+    """
+    return_cs = cpu.s.cs & 0xFFFF
+    target = (return_cs, return_ip & 0xFFFF)
+    saved_verifier = cpu.hook_verifier
+    if not getattr(cpu, "hook_verifier_verify_nested_calls", True):
+        cpu.hook_verifier = None
+    cpu.push(return_cs)
+    cpu.push(return_ip & 0xFFFF)
+    cpu.s.cs = target_cs & 0xFFFF
+    cpu.s.ip = target_ip & 0xFFFF
+    try:
+        ctx = (
+            cpu.coverage_telemetry.bounded_original((target_cs & 0xFFFF, target_ip & 0xFFFF), "bounded original far call")
+            if cpu.coverage_telemetry is not None
+            else None
+        )
+        if ctx is not None:
+            ctx.__enter__()
+        try:
+            for _ in range(max_steps):
+                if cpu.addr() == target:
+                    return
+                cpu.step()
+        finally:
+            if ctx is not None:
+                ctx.__exit__(None, None, None)
+    finally:
+        cpu.hook_verifier = saved_verifier
+    raise RuntimeError(
+        f"interpreted far helper {target_cs & 0xFFFF:04X}:{target_ip & 0xFFFF:04X} did not return to "
+        f"{return_cs:04X}:{return_ip & 0xFFFF:04X}; now at {cpu.s.cs & 0xFFFF:04X}:{cpu.s.ip & 0xFFFF:04X}"
+    )
+
+
+@registry.replace(0x1010, 0xD367, "overkill_interstitial_status_cell_d367")
+def overkill_interstitial_status_cell_d367(cpu):
+    """Small interstitial/status cell source blit helper."""
+    run_interstitial_status_cell_d367(
+        cpu,
+        _self_disable_if_patched,
+        _run_interpreted_near_call_observed,
+    )
+
+
+@registry.replace(0x1010, 0x852B, "overkill_status_cell_seed_852b")
+def overkill_status_cell_seed_852b(cpu):
+    """One raw status/list cell descriptor seed."""
+    run_status_cell_seed_852b(
+        cpu,
+        _self_disable_if_patched,
+        _run_interpreted_near_call_observed,
+    )
+
+
+@registry.replace(0x1010, 0x8517, "overkill_status_cell_list_seed_8517")
+def overkill_status_cell_list_seed_8517(cpu):
+    """Four-entry raw status/list descriptor builder."""
+    run_status_cell_list_seed_8517(
+        cpu,
+        _self_disable_if_patched,
+        _run_interpreted_near_call_observed,
+    )
+
+
+@registry.replace(0x1010, 0xD318, "overkill_interstitial_timed_input_loop_d318")
+def overkill_interstitial_timed_input_loop_d318(cpu):
+    """One ASM-shaped iteration of the D318 timed interstitial/input loop."""
+    run_interstitial_timed_input_loop_d318(
+        cpu,
+        _self_disable_if_patched,
+        _run_interpreted_near_call_observed,
+        _run_interpreted_far_call_observed,
+    )
+
+
 @registry.replace(0x1010, 0xD007, "overkill_main_frame_loop_d007")
 def overkill_main_frame_loop_d007(cpu):
     """One original gameplay/attract frame iteration, composed from child hooks."""
@@ -3200,6 +3460,64 @@ def overkill_frame_status_counter_update_5f61(cpu):
         _run_interpreted_near_call_observed,
     )
 
+
+
+@registry.replace(0x1010, 0x85D5, "overkill_status_cell_composite_85d5")
+def overkill_status_cell_composite_85d5(cpu):
+    """Low-level status/HUD cell compositor around 613E/615A and 5A6C."""
+
+    def call_613e(return_ip: int) -> None:
+        _call_installed_hook_like_near_call(
+            cpu,
+            (0x1010, 0x613E),
+            overkill_status_cursor_advance_613e,
+            return_ip,
+        )
+
+    def call_615a(return_ip: int) -> None:
+        _call_installed_hook_like_near_call(
+            cpu,
+            (0x1010, 0x615A),
+            overkill_status_cursor_retreat_615a,
+            return_ip,
+        )
+
+    def call_5a6c(return_ip: int) -> None:
+        _call_installed_hook_like_near_call(
+            cpu,
+            (0x1010, 0x5A6C),
+            overkill_menu_cell_source_blit_dispatch_5a6c,
+            return_ip,
+        )
+        if (cpu.s.cs & 0xFFFF, cpu.s.ip & 0xFFFF) != (0x1010, return_ip & 0xFFFF):
+            # 5A6C is a dispatch stub: the original CALL pushes return_ip,
+            # then 5A6C JMPs to the mode-specific renderer body (for Tandy,
+            # usually 306F).  Execute that installed target hook without an
+            # extra CALL push so the child RET consumes the original return.
+            handler = cpu.replacement_hooks.get((cpu.s.cs & 0xFFFF, cpu.s.ip & 0xFFFF))
+            if handler is None:
+                return
+            handler(cpu)
+
+    run_status_cell_composite_85d5(cpu, _self_disable_if_patched, call_613e, call_615a, call_5a6c)
+
+
+@registry.replace(0x1010, 0x99CD, "overkill_status_coord_list_fill_99cd")
+def overkill_status_coord_list_fill_99cd(cpu):
+    """Raw coordinate-list fill loop used by the 97B2/9B2E frame controller."""
+    run_status_coord_list_fill_99cd(cpu, _self_disable_if_patched)
+
+
+@registry.replace(0x1010, 0x9BFB, "overkill_frame_axis_count_inc_ah_9bfb")
+def overkill_frame_axis_count_inc_ah_9bfb(cpu):
+    """Tiny 9C01 frame-controller leaf: INC AH; RET."""
+    run_frame_axis_count_inc_ah_9bfb(cpu, _self_disable_if_patched)
+
+
+@registry.replace(0x1010, 0x9BFE, "overkill_frame_axis_count_inc_al_9bfe")
+def overkill_frame_axis_count_inc_al_9bfe(cpu):
+    """Tiny 9C01 frame-controller leaf: INC AL; RET."""
+    run_frame_axis_count_inc_al_9bfe(cpu, _self_disable_if_patched)
 
 @registry.replace(0x1010, 0xA940, "overkill_frame_game_state_update_a940")
 def overkill_frame_game_state_update_a940(cpu):
@@ -4765,6 +5083,30 @@ def overkill_sound_effect_completion_wait_gate_98d8(cpu):
     if _self_disable_if_patched(cpu, 0x98D8, _SIG_98D8, "overkill_sound_effect_completion_wait_gate_98d8"):
         return
     run_sound_effect_completion_wait_gate_98d8(cpu)
+
+
+@registry.replace(0x1010, 0x07C4, "overkill_boss_key_f9_release_wait_gate_07c4")
+def overkill_boss_key_f9_release_wait_gate_07c4(cpu):
+    """One-iteration state-machine hook for the boss-key F9-release wait."""
+    if _self_disable_if_patched(cpu, 0x07C4, _SIG_07C4, "overkill_boss_key_f9_release_wait_gate_07c4"):
+        return
+    run_boss_key_f9_release_wait_gate_07c4(cpu)
+
+
+@registry.replace(0x1010, 0x07D0, "overkill_boss_key_any_key_wait_gate_07d0")
+def overkill_boss_key_any_key_wait_gate_07d0(cpu):
+    """One-iteration state-machine hook for the boss-key any-key wait."""
+    if _self_disable_if_patched(cpu, 0x07D0, _SIG_07D0, "overkill_boss_key_any_key_wait_gate_07d0"):
+        return
+    run_boss_key_any_key_wait_gate_07d0(cpu)
+
+
+@registry.replace(0x1010, 0x07D7, "overkill_boss_key_return_key_release_wait_gate_07d7")
+def overkill_boss_key_return_key_release_wait_gate_07d7(cpu):
+    """One-iteration state-machine hook for the boss-key return-key-release wait."""
+    if _self_disable_if_patched(cpu, 0x07D7, _SIG_07D7, "overkill_boss_key_return_key_release_wait_gate_07d7"):
+        return
+    run_boss_key_return_key_release_wait_gate_07d7(cpu)
 
 
 @registry.replace(0x1010, 0x96C5, "overkill_intro_retrace_delay_loop_96c5")

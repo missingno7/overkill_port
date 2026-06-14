@@ -6,7 +6,20 @@ they must not classify concrete enemies/projectiles yet.
 """
 from __future__ import annotations
 
-from overkill.asm import _add_reg16, _and_mem_word, _cmp_byte, _cmp_word, _dec_mem_byte_preserve_cf, _dec_mem_word_preserve_cf, _inc_mem_byte_preserve_cf, _inc_mem_word_preserve_cf, _inc_reg16_preserve_cf, loop_count
+from overkill.asm import (
+    _add_reg16,
+    _and_mem_word,
+    _cmp_byte,
+    _cmp_word,
+    _dec_mem_byte_preserve_cf,
+    _dec_mem_word_preserve_cf,
+    _dec_reg16_preserve_cf,
+    _sub_reg16,
+    _inc_mem_byte_preserve_cf,
+    _inc_mem_word_preserve_cf,
+    _inc_reg16_preserve_cf,
+    loop_count,
+)
 
 
 SIG_GAMEPLAY_COUNTER_STRIDE_LOOP_1F8F_0960 = bytes.fromhex(
@@ -156,10 +169,19 @@ def run_frame_game_state_update_a940(cpu, self_disable_if_patched) -> None:
     s.ip = 0xA9E0
 
 
-SIG_DEMO_COUNTER_TICK_1F8F_081D = bytes.fromhex(
+SIG_DEMO_COUNTER_TICK_1F8F_081D_COMPACT_CMP = bytes.fromhex(
     "fe 0e a7 98 75 2b a1 7e a4 b1 78 83 f8 10 77 17 "
     "b1 64 83 f8 08 77 0f b1 50 83 f8 04 77 07 b1 3c "
     "83 f8 02 77 02 b1 28"
+)
+SIG_DEMO_COUNTER_TICK_1F8F_081D_WIDE_CMP = bytes.fromhex(
+    "fe 0e a7 98 75 2b a1 7e a4 b1 78 3d 10 00 77 17 "
+    "b1 64 3d 08 00 77 10 b1 50 3d 04 00 77 09 b1 3c "
+    "3d 02 00 77 02 b1 28"
+)
+SIG_DEMO_COUNTER_TICK_1F8F_081D = (
+    SIG_DEMO_COUNTER_TICK_1F8F_081D_COMPACT_CMP,
+    SIG_DEMO_COUNTER_TICK_1F8F_081D_WIDE_CMP,
 )
 
 
@@ -366,6 +388,34 @@ def run_status_counter_cell_blit_6296(cpu, self_disable_if_patched, call_menu_ce
     _run_status_cursor_advance_613e(cpu)
 
 
+SIG_STATUS_CURSOR_ADVANCE_613E = bytes.fromhex(
+    "2e 8b 1e bc 95 d1 e3 2e ff a7 4a 61 50 61 54 61 56 61 "
+    "83 c7 02 c3 47 c3 83 c7 04 c3"
+)
+
+SIG_STATUS_CURSOR_RETREAT_615A = bytes.fromhex(
+    "2e 8b 1e bc 95 d1 e3 2e ff a7 66 61 6c 61 70 61 72 61 "
+    "83 ef 02 c3 4f c3 83 ef 04 c3"
+)
+
+
+def run_status_cursor_advance_613e(cpu, self_disable_if_patched) -> None:
+    """Lift the tiny 1010:613E video-mode text/status cursor advance helper.
+
+    The helper is a CS:95BC jump-table dispatch used by status/HUD drawing
+    glue.  Mode 0 advances DI by 2, mode 1 by 1, and mode 2 by 4.  It is a
+    rendering/status cursor stride leaf, not a high-level HUD model.
+    """
+    if self_disable_if_patched(
+        cpu,
+        0x613E,
+        SIG_STATUS_CURSOR_ADVANCE_613E,
+        "overkill_status_cursor_advance_613e",
+    ):
+        return
+    _run_status_cursor_advance_613e(cpu)
+
+
 def _run_status_cursor_advance_613e(cpu) -> None:
     """Mirror the 613E video-mode text/status cursor advance tail."""
     s = cpu.s
@@ -384,6 +434,221 @@ def _run_status_cursor_advance_613e(cpu) -> None:
     else:
         raise RuntimeError(f"unverified 613E status cursor advance target {target:04X}")
     s.ip = cpu.pop()
+
+
+def run_status_cursor_retreat_615a(cpu, self_disable_if_patched) -> None:
+    """Lift the tiny 1010:615A video-mode text/status cursor retreat helper.
+
+    This is the exact inverse dispatch of 613E: mode 0 subtracts 2 from DI,
+    mode 1 decrements DI, and mode 2 subtracts 4.  It is kept as a low-level
+    cursor-stride leaf so parents such as 85D5 can be composed later.
+    """
+    if self_disable_if_patched(
+        cpu,
+        0x615A,
+        SIG_STATUS_CURSOR_RETREAT_615A,
+        "overkill_status_cursor_retreat_615a",
+    ):
+        return
+
+    s = cpu.s
+    mem = cpu.mem
+    cs = s.cs & 0xFFFF
+
+    s.bx = mem.rw(cs, 0x95BC)
+    s.bx = cpu.shift(4, s.bx & 0xFFFF, 1, 16)
+    target = mem.rw(cs, (0x6166 + s.bx) & 0xFFFF)
+    if target == 0x616C:
+        _sub_reg16(cpu, 7, 0x0002)
+    elif target == 0x6170:
+        _dec_reg16_preserve_cf(cpu, 7)
+    elif target == 0x6172:
+        _sub_reg16(cpu, 7, 0x0004)
+    else:
+        raise RuntimeError(f"unverified 615A status cursor retreat target {target:04X}")
+    s.ip = cpu.pop()
+
+
+SIG_STATUS_CELL_COMPOSITE_85D5 = bytes.fromhex(
+    "83 3e fa 95 ff 74 11 8b 36 fa 95 d1 e6 81 c6 fc 95 "
+    "3b 2c b8 01 00 74 02 33 c0 83 3e ac bd 01 75 0c "
+    "3b 3e fa 95 75 06 ff 36 16 be eb 03 ff 76 00 50 "
+    "8b 76 04 03 f0 d1 e6 81 c6 e4 0b 2e 8b 34 8b 7e "
+    "02 57 b9 05 00 e8 20 db e2 fb 2e 8e 1e b4 95 e8 "
+    "44 d4 5f e8 2e db 5e 83 c6 17 d1 e6 81 c6 e4 0b "
+    "2e 8b 34 57 e8 2f d4 5f e8 fd da 5e d1 e6 81 c6 "
+    "e4 0b 2e 8b 34 e8 1e d4 2e 8e 1e 96 95 c3"
+)
+
+SIG_STATUS_COORD_LIST_FILL_99CD = bytes.fromhex(
+    "8b 46 02 05 08 00 ab 8b 46 04 05 09 00 ab e2 f0"
+)
+
+SIG_FRAME_AXIS_COUNT_INC_AH_9BFB = bytes.fromhex("fe c4 c3")
+SIG_FRAME_AXIS_COUNT_INC_AL_9BFE = bytes.fromhex("fe c0 c3")
+
+
+def run_status_cell_composite_85d5(
+    cpu,
+    self_disable_if_patched,
+    call_cursor_advance,
+    call_cursor_retreat,
+    call_cell_blit,
+) -> None:
+    """Lift 1010:85D5, a low-level status/HUD cell composition parent.
+
+    This block decides which of two small status-cell glyph sources to use,
+    advances/retreats the mode-dependent cursor through the already-lifted
+    ``613E``/``615A`` leaves, and calls the existing ``5A6C`` cell blitter three
+    times.  It is intentionally still a raw compositor, not a semantic HUD
+    widget.
+    """
+    if self_disable_if_patched(cpu, 0x85D5, SIG_STATUS_CELL_COMPOSITE_85D5, "overkill_status_cell_composite_85d5"):
+        return
+
+    s = cpu.s
+    mem = cpu.mem
+    cs = s.cs & 0xFFFF
+    ds = s.ds & 0xFFFF
+    ss = s.ss & 0xFFFF
+
+    marker = mem.rw(ds, 0x95FA)
+    _cmp_word(cpu, marker, 0xFFFF)
+    if marker == 0xFFFF:
+        s.ax = 0x0000
+        cpu.set_logic_flags(0, 16)
+    else:
+        s.si = marker
+        s.si = cpu.shift(4, s.si & 0xFFFF, 1, 16)
+        _add_reg16(cpu, 6, 0x95FC)
+        _cmp_word(cpu, s.bp & 0xFFFF, mem.rw(ds, s.si & 0xFFFF))
+        s.ax = 0x0001
+        if (s.bp & 0xFFFF) != mem.rw(ds, s.si & 0xFFFF):
+            s.ax = 0x0000
+            cpu.set_logic_flags(0, 16)
+
+    bdac = mem.rw(ds, 0xBDAC)
+    _cmp_word(cpu, bdac, 0x0001)
+    if bdac == 0x0001:
+        marker = mem.rw(ds, 0x95FA)
+        _cmp_word(cpu, s.di & 0xFFFF, marker)
+        if (s.di & 0xFFFF) == marker:
+            cpu.push(mem.rw(ds, 0xBE16))
+        else:
+            cpu.push(mem.rw(ss, (s.bp + 0x00) & 0xFFFF))
+    else:
+        cpu.push(mem.rw(ss, (s.bp + 0x00) & 0xFFFF))
+
+    cpu.push(s.ax & 0xFFFF)
+    s.si = mem.rw(ss, (s.bp + 0x04) & 0xFFFF)
+    _add_reg16(cpu, 6, s.ax & 0xFFFF)
+    s.si = cpu.shift(4, s.si & 0xFFFF, 1, 16)
+    _add_reg16(cpu, 6, 0x0BE4)
+    s.si = mem.rw(cs, s.si & 0xFFFF)
+    s.di = mem.rw(ss, (s.bp + 0x02) & 0xFFFF)
+    cpu.push(s.di & 0xFFFF)
+    s.cx = 0x0005
+    while True:
+        call_cursor_advance(0x861E)
+        if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (cs, 0x861E):
+            raise RuntimeError(f"85D5 expected 613E to return to 861E, got {s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X}")
+        s.cx = (s.cx - 1) & 0xFFFF
+        if s.cx == 0:
+            break
+
+    s.ds = mem.rw(cs, 0x95B4)
+    call_cell_blit(0x8628)
+    if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (cs, 0x8628):
+        raise RuntimeError(f"85D5 expected 5A6C to return to 8628, got {s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X}")
+    s.di = cpu.pop()
+    call_cursor_retreat(0x862C)
+    if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (cs, 0x862C):
+        raise RuntimeError(f"85D5 expected 615A to return to 862C, got {s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X}")
+
+    s.si = cpu.pop()
+    _add_reg16(cpu, 6, 0x0017)
+    s.si = cpu.shift(4, s.si & 0xFFFF, 1, 16)
+    _add_reg16(cpu, 6, 0x0BE4)
+    s.si = mem.rw(cs, s.si & 0xFFFF)
+    cpu.push(s.di & 0xFFFF)
+    call_cell_blit(0x863D)
+    if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (cs, 0x863D):
+        raise RuntimeError(f"85D5 expected 5A6C to return to 863D, got {s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X}")
+    s.di = cpu.pop()
+    call_cursor_advance(0x8641)
+    if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (cs, 0x8641):
+        raise RuntimeError(f"85D5 expected 613E to return to 8641, got {s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X}")
+
+    s.si = cpu.pop()
+    s.si = cpu.shift(4, s.si & 0xFFFF, 1, 16)
+    _add_reg16(cpu, 6, 0x0BE4)
+    s.si = mem.rw(cs, s.si & 0xFFFF)
+    call_cell_blit(0x864E)
+    if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (cs, 0x864E):
+        raise RuntimeError(f"85D5 expected 5A6C to return to 864E, got {s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X}")
+    s.ds = mem.rw(cs, 0x9596)
+    s.ip = cpu.pop()
+
+
+def run_status_coord_list_fill_99cd(cpu, self_disable_if_patched) -> None:
+    """Lift the compact 1010:99CD coordinate-list fill loop.
+
+    The loop writes ``([BP+2]+8, [BP+4]+9)`` pairs into ``ES:DI`` for ``CX``
+    entries.  It is a raw status/frame data-preparation loop exposed by the
+    post-97B2 profiles, not a semantic object list yet.
+    """
+    if self_disable_if_patched(cpu, 0x99CD, SIG_STATUS_COORD_LIST_FILL_99CD, "overkill_status_coord_list_fill_99cd"):
+        return
+
+    s = cpu.s
+    mem = cpu.mem
+    ss = s.ss & 0xFFFF
+    es = s.es & 0xFFFF
+    count = loop_count(s.cx)
+    di = s.di & 0xFFFF
+    ax = 0
+    for _ in range(count):
+        ax = mem.rw(ss, (s.bp + 0x02) & 0xFFFF)
+        result = ax + 0x0008
+        s.ax = result & 0xFFFF
+        cpu.set_add_flags(ax, 0x0008, result, 16)
+        mem.ww(es, di, s.ax)
+        di = (di + 2) & 0xFFFF
+
+        ax = mem.rw(ss, (s.bp + 0x04) & 0xFFFF)
+        result = ax + 0x0009
+        s.ax = result & 0xFFFF
+        cpu.set_add_flags(ax, 0x0009, result, 16)
+        mem.ww(es, di, s.ax)
+        di = (di + 2) & 0xFFFF
+    s.di = di
+    s.cx = 0
+    s.ip = 0x99DD
+
+
+def _inc_reg8_preserve_cf(cpu, reg_idx: int) -> None:
+    old = cpu.get_reg8(reg_idx)
+    old_cf = cpu.get_flag(0x0001)
+    result = (old + 1) & 0xFF
+    cpu.set_reg8(reg_idx, result)
+    cpu.set_add_flags(old, 1, old + 1, 8)
+    cpu.set_flag(0x0001, old_cf)
+
+
+def run_frame_axis_count_inc_ah_9bfb(cpu, self_disable_if_patched) -> None:
+    """Lift 1010:9BFB, the tiny ``INC AH; RET`` frame-controller leaf."""
+    if self_disable_if_patched(cpu, 0x9BFB, SIG_FRAME_AXIS_COUNT_INC_AH_9BFB, "overkill_frame_axis_count_inc_ah_9bfb"):
+        return
+    _inc_reg8_preserve_cf(cpu, 4)
+    cpu.s.ip = cpu.pop()
+
+
+def run_frame_axis_count_inc_al_9bfe(cpu, self_disable_if_patched) -> None:
+    """Lift 1010:9BFE, the tiny ``INC AL; RET`` frame-controller leaf."""
+    if self_disable_if_patched(cpu, 0x9BFE, SIG_FRAME_AXIS_COUNT_INC_AL_9BFE, "overkill_frame_axis_count_inc_al_9bfe"):
+        return
+    _inc_reg8_preserve_cf(cpu, 0)
+    cpu.s.ip = cpu.pop()
 
 
 def _call_counter_stride_0960(cpu, self_disable_if_patched, return_ip: int) -> None:

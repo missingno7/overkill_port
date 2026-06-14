@@ -105,6 +105,11 @@ def main() -> int:
         metavar="CS:IP",
         help="remove a hook before verification; may be repeated",
     )
+    parser.add_argument(
+        "--no-nested",
+        action="store_true",
+        help="legacy/perf mode: do not recursively verify child hooks reached inside a verified parent hook",
+    )
     args = parser.parse_args()
 
     rt = load_overkill_snapshot(args.exe, args.snapshot, game_root=args.game_root)
@@ -132,6 +137,7 @@ def main() -> int:
             max_verified=args.verify_max,
             stop_on_diff=True,
             full_memory=not args.fast_ranges,
+            verify_nested_hooks=not args.no_nested,
             asm_max_steps=1_000_000,
         ),
     )

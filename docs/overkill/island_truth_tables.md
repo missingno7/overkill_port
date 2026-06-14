@@ -117,6 +117,19 @@ Status:
 Layer range: 2-5 today; layers 6-7 later. Object slots, movement, collision,
 postmove tails, behavior dispatch, and runtime object evidence.
 
+2026-06-14 verified update:
+- `1010:7524 overkill_find_free_effect_slot_7524` and
+  `1010:7573 overkill_find_free_object_slot_7573` cover the compact effect and
+  main gameplay object 38h-byte slot allocators.  The tests pin found-slot,
+  sentinel-wrap, and exhausted-pool behavior against interpreted original ASM.
+- `1010:B24D overkill_object_behavior_b24d` covers the observed EFAE-selected
+  object-family steering/overlap prelude from
+  `snapshot_stop_1010_b24d_behavior`. It composes the runtime-patched `5E42`
+  steering helper and lands on the already-owned `AD5A`/`ADC9` motion tails.
+- `1010:9E19` remains a bounded-original child from the rare overlap side-effect
+  branch; do not promote that side effect semantically until it has its own
+  oracle-backed lift.
+
 What we know:
 - Current facts are mostly layer-4 runtime facts: active flag, coordinates,
   sprite refs, logic ids, owner/link fields, collision side effects.
@@ -299,6 +312,24 @@ What is intentionally not duplicated:
 - The `BC4B` collision/postmove implementation remains the single source of
   truth for the chain after the prelude.
 
+
+### `collision` update: BFC7 logic-0021 gate
+
+What is verified:
+- In `1010:BFC7`, object logic id `0021h` is not a separate behavior body.
+  It checks `DS:2356` first.
+- If `DS:2356 != 0004h`, the original returns immediately.
+- If `DS:2356 == 0004h`, the original jumps to `BFD7` and reuses the ordinary
+  type-based score/death/transition tail.
+
+What is intentionally preserved:
+- The BFD7 tail still owns score updates, Y clamping, optional linked-counter
+  effects, `C054` selector dispatch, and the final object state transition.
+
+Still unknown / frontier:
+- This fix does not classify the semantic object represented by logic id
+  `0021h`; it only proves the low-level branch contract.
+
 ### `tandy_renderer` update: 4E0D loading scroll parent
 
 What is verified:
@@ -337,6 +368,44 @@ What is intentionally preserved:
 - `B86D` stops at the shared `1010:BC4B` postmove/collision boundary; the BC4B
   helper remains the single owner of that tail.
 
+Additional covered path:
+- `B86D -> B8F8` is now covered from `snapshot_stop_1010_b86d_b8f8_edge`: it
+  runs the lifted `5E1B` delta helper, reuses the verified runtime-patched
+  `5E42` steering helper, forces sprite `0076h`, and lands on `BC4B`.
+
+### `game_state` update: status compositor and frame-controller count leaves
+
+What is verified:
+- `1010:85D5 overkill_status_cell_composite_85d5` is a low-level status/HUD
+  cell compositor parent.  It composes the verified cursor leaves `613E` and
+  `615A` and the existing `5A6C` source-cell dispatch.  This is still a raw
+  compositor, not a semantic HUD widget.
+- `1010:99CD overkill_status_coord_list_fill_99cd` fills a coordinate list in
+  `ES:DI` from `SS:[BP+2]` and `SS:[BP+4]` with fixed `+8/+9` offsets.
+- `1010:9BFB` and `1010:9BFE` are verified tiny `INC AH/AL; RET` leaves inside
+  the `9C01` child of the `9B2E` frame controller.
+
+What is guessed / candidate only:
+- `85D5` likely belongs to status/HUD composition, but no higher-level widget
+  names are assigned.
+- `9C01-9C6B` looks like an axis/side condition counter feeding a jump table at
+  `CS:9C70`; this is structural only, not semantic gameplay classification.
+
 Still unknown / frontier:
-- The `B8F8` tail under B86D has not been observed in the current gameplay
-  snapshot and remains a fail-fast frontier.
+- The caller region around `859E-8653` should be classified next; `8517-8545` is now covered as a raw four-entry status/list descriptor seed.
+- `9C01-9C6B` should get a frontier manifest before any parent lift of `9B2E`.
+
+
+### `game_state` update: interstitial frame script and raw status-list seeds
+
+What is verified:
+- `1010:D318 overkill_interstitial_timed_input_loop_d318` is a repeated frame-script/timed-input gate.  It composes existing frame children, increments `DS:BED8`, loops at `D318`, or waits for `DS:98BE & 10h` to clear before returning.
+- `1010:D367 overkill_interstitial_status_cell_d367` is the small cell-blit helper inside that script, switching to the `CS:95B6` source segment for `5A6C` and restoring `DS` afterward.
+- `1010:852B overkill_status_cell_seed_852b` seeds one raw descriptor at `SS:BP`.
+- `1010:8517 overkill_status_cell_list_seed_8517` seeds four such descriptors and preserves the original same-IP `CALL 852B`/fall-through shape.
+
+What is guessed / candidate only:
+- These descriptors likely feed a status/interstitial list, but no concrete HUD/menu widget identity is assigned.
+
+Still unknown / frontier:
+- `859E-8653` appears to be the sibling consumer/compositor around these descriptor records and should be classified next.

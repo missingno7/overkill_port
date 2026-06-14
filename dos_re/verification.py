@@ -83,6 +83,11 @@ class HookVerifierConfig:
     asm_max_steps: int = 500_000
     full_memory: bool = True
     require_metadata: bool = False
+    # Keep verification active when a lifted parent reaches/calls a child hook.
+    # Disabling this restores the older faster mode where nested child hooks were
+    # shared by both sides of a parent transaction and only the parent
+    # continuation was diffed.
+    verify_nested_hooks: bool = True
     progress_callback: Callable[[str], None] | None = None
 
 
@@ -106,6 +111,7 @@ def install_hook_verifier(
         asm_wait_handler=asm_wait_handler,
         context_lines=context_lines,
     )
+    rt.cpu.hook_verifier_verify_nested_calls = config.verify_nested_hooks
     rt.cpu.hook_verifier = verifier.verify
     return verifier
 
@@ -131,9 +137,10 @@ class HookVerifier:
         # the verifier.  Those wrappers sleep, publish frames and raise control-flow
         # exceptions, which is correct for interactive execution but wrong inside a
         # differential hook transaction.  During verification, any hook listed in
-        # cpu.hook_verifier_passthrough is restored from this table on both the
-        # ASM oracle clone and the live hook side, so nested CALLs see the pure
-        # environment hook instead of the UI wrapper.
+        # cpu.hook_verifier_passthrough is restored from this table on the ASM
+        # oracle clone.  The live hook side usually uses the same pure hook, but
+        # interactive front-ends may provide live-only passthrough overrides that
+        # publish frames without raising UI frame-boundary exceptions.
         self._install_time_hooks = dict(rt.cpu.replacement_hooks)
         self._install_time_names = dict(rt.cpu.hook_names)
         self.counts: dict[Addr, int] = {}
@@ -200,6 +207,11 @@ class HookVerifier:
                 raise HookVerifyDivergence(report)
         if self.config.max_verified is not None and self.total_verified >= self.config.max_verified:
             raise HookVerifyLimitReached(f"HOOK VERIFY LIMIT REACHED verified={self.total_verified}")
+        if getattr(cpu, "hook_verifier_live_yield_requested", False):
+            cpu.hook_verifier_live_yield_requested = False
+            callback = getattr(cpu, "hook_verifier_live_yield_callback", None)
+            if callback is not None:
+                callback()
 
     def _should_verify(self, key: Addr) -> bool:
         if self.config.max_verified is not None and self.total_verified >= self.config.max_verified:
@@ -234,7 +246,11 @@ class HookVerifier:
             for key in getattr(self.cpu, "hook_verifier_passthrough", set()):
                 self.saved_hooks[key] = self.cpu.replacement_hooks.get(key)
                 self.saved_names[key] = self.cpu.hook_names.get(key)
-                if key in self.verifier._install_time_hooks:
+                live_overrides = getattr(self.cpu, "hook_verifier_live_passthrough_overrides", {})
+                if key in live_overrides:
+                    self.cpu.replacement_hooks[key] = live_overrides[key]
+                    self.cpu.hook_names[key] = f"verify_live_passthrough_{key[0]:04X}_{key[1]:04X}"
+                elif key in self.verifier._install_time_hooks:
                     self.cpu.replacement_hooks[key] = self.verifier._install_time_hooks[key]
                     if key in self.verifier._install_time_names:
                         self.cpu.hook_names[key] = self.verifier._install_time_names[key]
@@ -326,6 +342,12 @@ class HookVerifier:
         cpu.replacement_hooks = dict(src.cpu.replacement_hooks)
         cpu.hook_names = dict(src.cpu.hook_names)
         cpu.hook_verifier_passthrough = set(src.cpu.hook_verifier_passthrough)
+        cpu.hook_verifier_live_passthrough_overrides = dict(
+            getattr(src.cpu, "hook_verifier_live_passthrough_overrides", {})
+        )
+        cpu.hook_verifier_verify_nested_calls = getattr(
+            src.cpu, "hook_verifier_verify_nested_calls", True
+        )
         self._restore_passthrough_hooks(cpu)
         cpu.interrupt_handler = dos.interrupt
         cpu.port_reader = dos.port_read

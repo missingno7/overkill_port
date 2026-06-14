@@ -40,14 +40,16 @@ def _run_interpreted_near_call_observed(cpu, target_ip: int, return_ip: int, *, 
     This is used for non-hot, display/bookkeeping helper tails that have not yet
     been lifted but are needed to keep gameplay moving through an observed path.
     The helper is still bounded and deterministic: it installs the same near-CALL
-    return word the ASM would have pushed, steps until that continuation is
-    reached, and restores verifier state afterwards so nested fast hooks do not
-    recursively start their own differential verification.
+    return word the ASM would have pushed and steps until that continuation is
+    reached.  When hook verification is active we normally keep it active inside
+    the bounded call too, so any child hook address reached by the original code
+    is verified at that exact VM state.
     """
     cs = cpu.s.cs & 0xFFFF
     target = (cs, return_ip & 0xFFFF)
     saved_verifier = cpu.hook_verifier
-    cpu.hook_verifier = None
+    if not getattr(cpu, "hook_verifier_verify_nested_calls", True):
+        cpu.hook_verifier = None
     cpu.push(return_ip & 0xFFFF)
     cpu.s.ip = target_ip & 0xFFFF
     try:
@@ -105,6 +107,54 @@ def _neg_reg16(cpu, reg_idx: int) -> None:
     cpu.set_sub_flags(0, value, -value, 16)
     cpu.set_reg16(reg_idx, result)
 
+
+
+def _signed16(value: int) -> int:
+    value &= 0xFFFF
+    return value - 0x10000 if value & 0x8000 else value
+
+
+
+def _run_object_delta_helper_5e1b(cpu) -> None:
+    """Mirror the small 1010:5E1B object delta helper.
+
+    The helper is used by several object-family edge/target steering branches.
+    BX points at a target object/box record, BP points at the active object slot.
+    It stores signed Y/X deltas into SS:[BP+2C]/SS:[BP+2A] relative to
+    DS:[BX+04]/DS:[BX+02], with either a 4px or 12px padding depending on
+    DS:[BX+14].  The final live flags are from the X ``SUB AX,CX`` just like
+    the original; the trailing MOV/RET do not alter them.
+    """
+    ds = cpu.s.ds & 0xFFFF
+    ss = cpu.s.ss & 0xFFFF
+    bp = cpu.s.bp & 0xFFFF
+    bx = cpu.s.bx & 0xFFFF
+    mem = cpu.mem
+
+    cpu.s.dx = 0x0004
+    _cmp_word(cpu, mem.rw(ds, (bx + 0x14) & 0xFFFF), 0x0001)
+    if mem.rw(ds, (bx + 0x14) & 0xFFFF) != 0x0001:
+        cpu.s.dx = 0x000C
+
+    cpu.s.ax = mem.rw(ss, (bp + 0x04) & 0xFFFF)
+    cpu.s.cx = mem.rw(ds, (bx + 0x04) & 0xFFFF)
+    old_cx = cpu.s.cx
+    cpu.s.cx = (cpu.s.cx + cpu.s.dx) & 0xFFFF
+    cpu.set_add_flags(old_cx, cpu.s.dx, old_cx + cpu.s.dx, 16)
+    old_ax = cpu.s.ax
+    cpu.s.ax = (cpu.s.ax - cpu.s.cx) & 0xFFFF
+    cpu.set_sub_flags(old_ax, cpu.s.cx, old_ax - cpu.s.cx, 16)
+    mem.ww(ss, (bp + 0x2C) & 0xFFFF, cpu.s.ax)
+
+    cpu.s.ax = mem.rw(ss, (bp + 0x02) & 0xFFFF)
+    cpu.s.cx = mem.rw(ds, (bx + 0x02) & 0xFFFF)
+    old_cx = cpu.s.cx
+    cpu.s.cx = (cpu.s.cx + cpu.s.dx) & 0xFFFF
+    cpu.set_add_flags(old_cx, cpu.s.dx, old_cx + cpu.s.dx, 16)
+    old_ax = cpu.s.ax
+    cpu.s.ax = (cpu.s.ax - cpu.s.cx) & 0xFFFF
+    cpu.set_sub_flags(old_ax, cpu.s.cx, old_ax - cpu.s.cx, 16)
+    mem.ww(ss, (bp + 0x2A) & 0xFFFF, cpu.s.ax)
 
 def _run_runtime_patched_object_steer_5e42(cpu) -> None:
     """Mirror the hot gameplay-patched 1010:5E42 steering helper.
@@ -727,13 +777,108 @@ def _run_object_behavior_b73e(cpu, *, parent: str, chain: str, cx_value: int) ->
     )
 
 
+def _run_object_behavior_b24d(cpu, *, parent: str, chain: str, cx_value: int) -> None:
+    """Lift the observed ``1010:B24D`` object-family behavior prelude.
+
+    B24D is selected by the second-level EFAE object-family dispatcher in the
+    active gameplay snapshot.  The hot path calls the runtime-patched 5E42
+    steering helper, checks whether the steered object overlaps the reference
+    box at DS:237E/2380, and then jumps to the already-lifted AD5A/ADC9 motion
+    tails.  The rare overlap side-effect helper at 9E19 is kept as a bounded
+    original near-call so the B24D control-flow and stack contract are owned by
+    this lift without duplicating that separate helper yet.
+    """
+    ds = cpu.s.ds & 0xFFFF
+    ss = cpu.s.ss & 0xFFFF
+    bp = cpu.s.bp & 0xFFFF
+    mem = cpu.mem
+
+    def jump_to_ad5a() -> None:
+        cpu.s.ip = 0xAD5A
+
+    # B24D: CALL 5E42.  The live 5E42 body is the runtime-patched gameplay
+    # steering helper, not the cold executable bytes at the same address.
+    cpu.push(0xB250)
+    run_runtime_patched_object_steer_5e42(cpu)
+    if (cpu.s.ip & 0xFFFF) != 0xB250:
+        raise RuntimeError(f"5E42 returned to unexpected IP {cpu.s.ip:04X} inside B24D")
+
+    substate_1e = mem.rw(ss, (bp + 0x1E) & 0xFFFF)
+    _cmp_word(cpu, substate_1e, 0x0001)
+    if substate_1e == 0x0001:
+        jump_to_ad5a()
+        return
+
+    cpu.s.ax = mem.rw(ds, 0x237E)
+    cpu.s.bx = mem.rw(ds, 0x2380)
+    _sub_reg16(cpu, 0, 0x0002)  # SUB AX,0002h.
+
+    obj_x = mem.rw(ss, (bp + 0x02) & 0xFFFF)
+    _cmp_word(cpu, obj_x, cpu.s.ax)
+    if _signed16(obj_x) < _signed16(cpu.s.ax):
+        jump_to_ad5a()
+        return
+
+    _add_reg16(cpu, 0, 0x0014)  # ADD AX,0014h.
+    obj_x = mem.rw(ss, (bp + 0x02) & 0xFFFF)
+    _cmp_word(cpu, obj_x, cpu.s.ax)
+    if _signed16(obj_x) > _signed16(cpu.s.ax):
+        jump_to_ad5a()
+        return
+
+    obj_y = mem.rw(ss, (bp + 0x04) & 0xFFFF)
+    _cmp_word(cpu, obj_y, cpu.s.bx)
+    if obj_y < (cpu.s.bx & 0xFFFF):
+        jump_to_ad5a()
+        return
+
+    _add_reg16(cpu, 3, 0x0014)  # ADD BX,0014h.
+    obj_y = mem.rw(ss, (bp + 0x04) & 0xFFFF)
+    _cmp_word(cpu, obj_y, cpu.s.bx)
+    if obj_y > (cpu.s.bx & 0xFFFF):
+        jump_to_ad5a()
+        return
+
+    cpu.s.cx = 0x0001
+    logic_id = mem.rw(ss, (bp + 0x18) & 0xFFFF)
+    _cmp_word(cpu, logic_id, 0x0003)
+    if logic_id == 0x0003:
+        bedc = mem.rw(ds, 0xBEDC)
+        _cmp_word(cpu, bedc, 0x0000)
+        if bedc != 0:
+            cpu.s.cx = 0x0003
+            _cmp_word(cpu, bedc, 0x0001)
+            if bedc != 0x0001:
+                cpu.s.cx = 0x0005
+
+    while True:
+        # B297..B29D: PUSH CX; PUSH BP; CALL 9E19; POP BP; POP CX.
+        # 9E19 is a separate side-effect/counter/display helper.  Keep it
+        # bounded here and lift it independently if it becomes a real hotspot.
+        cpu.push(cpu.s.cx)
+        cpu.push(cpu.s.bp)
+        _run_interpreted_near_call_observed(cpu, 0x9E19, 0xB29C, max_steps=12000)
+        if (cpu.s.ip & 0xFFFF) != 0xB29C:
+            raise RuntimeError(f"9E19 returned to unexpected IP {cpu.s.ip:04X} inside B24D")
+        cpu.s.bp = cpu.pop()
+        cpu.s.cx = cpu.pop()
+
+        # LOOP B297: decrements CX and branches while non-zero, without flags.
+        cpu.s.cx = (cpu.s.cx - 1) & 0xFFFF
+        if cpu.s.cx == 0:
+            break
+
+    cpu.s.ip = 0xADC9
+
+
+
 def _run_object_behavior_b86d(cpu, *, parent: str, chain: str, cx_value: int) -> None:
     """Lift observed 1010:B86D object-slot behavior branches.
 
     This is still low-level object-runtime logic: it updates slot coordinates,
     sprite words, movement-target globals, and then joins the shared BC4B
-    post-move/collision tail.  The unobserved B8F8 tail is kept as a frontier
-    until an oracle snapshot reaches it.
+    post-move/collision tail.  The B8F8 edge-steering tail is now covered too;
+    less frequent later B90x/B93x/B96x continuations remain separate frontiers.
     """
     ds = cpu.s.ds & 0xFFFF
     ss = cpu.s.ss & 0xFFFF
@@ -753,20 +898,29 @@ def _run_object_behavior_b86d(cpu, *, parent: str, chain: str, cx_value: int) ->
         _cmp_word(cpu, mem.rw(ds, 0x230A), 0)
         return mem.rw(ds, 0x230A) == 0
 
+    def run_b8f8_edge_steer() -> None:
+        # B8F8: object has crossed the B86D entry guard (early global phase or
+        # X > 00C0h).  Steer it back toward the DS:237C reference box, force the
+        # outgoing sprite, then join the shared post-move/collision boundary.
+        cpu.s.bx = 0x237C
+        _run_object_delta_helper_5e1b(cpu)
+        cpu.push(0xB901)
+        run_runtime_patched_object_steer_5e42(cpu)
+        if (cpu.s.ip & 0xFFFF) != 0xB901:
+            raise RuntimeError(f"5E42 returned to unexpected IP {cpu.s.ip:04X} inside B86D/B8F8")
+        mem.ww(ss, (bp + 0x08) & 0xFFFF, 0x0076)
+        cpu.s.ip = 0xBC4B
+
     _cmp_word(cpu, mem.rw(ds, 0xA47E), 0x0002)
     if mem.rw(ds, 0xA47E) <= 0x0002:
-        _raise_unverified_path(
-            cpu, parent=parent, chain=f"{chain} -> B86D -> B8F8",
-            target_ip=0xB8F8, bp=bp, cx_value=cx_value,
-        )
+        run_b8f8_edge_steer()
+        return
 
     x = mem.rw(ss, (bp + 0x02) & 0xFFFF)
     _cmp_word(cpu, x, 0x00C0)
     if x > 0x00C0:
-        _raise_unverified_path(
-            cpu, parent=parent, chain=f"{chain} -> B86D -> B8F8",
-            target_ip=0xB8F8, bp=bp, cx_value=cx_value,
-        )
+        run_b8f8_edge_steer()
+        return
 
     _cmp_word(cpu, mem.rw(ds, 0xA7A0), 0x0028)
     if mem.rw(ds, 0xA7A0) < 0x0028:
@@ -1154,9 +1308,10 @@ def _run_collision_handler_bec5_observed(cpu, *, collided_bx: int, parent: str, 
             run_bfc7(f"variant {variant:04X}")
             return
 
-    # Remaining observed family: a collided slot linked back to the current
-    # object via +30h.  A non-linked slot is still left fail-fast because that is
-    # a new semantic path, even though the raw ASM would simply RET.
+    # Remaining family: BEC5 finally checks whether the collided slot is linked
+    # back to the moving object through +30h.  Linked contacts run the observed
+    # counter/death transition below; non-linked contacts are a deliberate no-op
+    # in the original ASM and just RET with the CMP flags live.
     owner_bp = mem.rw(ds, (bx + 0x30) & 0xFFFF)
     _cmp_word(cpu, bp, owner_bp)
     if bp == owner_bp:
@@ -1169,14 +1324,7 @@ def _run_collision_handler_bec5_observed(cpu, *, collided_bx: int, parent: str, 
         run_bfc7(f"owner-linked variant {variant:04X}")
         return
 
-    _raise_unverified_path(
-        cpu,
-        parent=parent,
-        chain=f"{chain} -> BEC5 variant {variant:04X}",
-        target_ip=0xBEC5,
-        bp=bp,
-        cx_value=cx_value,
-    )
+    cpu.s.ip = cpu.pop()
 
 def _run_score_add_5f0d_observed(cpu, amount: int) -> None:
     """Observed score add helper reached from BFC7.
@@ -1340,10 +1488,10 @@ def _run_collision_death_tail_bfc7(cpu, *, parent: str, chain: str, cx_value: in
         if mem.rw(ds, 0x2356) != 0x0004:
             cpu.s.ip = cpu.pop()
             return
-        _raise_unverified_path(
-            cpu, parent=parent, chain=f"{chain} -> BFC7 logic 0021",
-            target_ip=0xBFD2, bp=bp, cx_value=cx_value,
-        )
+        # BFCF: CMP DS:[2356],0004 / BFD4: JE BFD7.  When the
+        # global gate is exactly 4, logic 0021 does *not* branch to a
+        # special body; it merely joins the ordinary BFD7 death/transition
+        # path below.
 
     obj_type = mem.rw(ss, (bp + 0x14) & 0xFFFF)
     _cmp_word(cpu, obj_type, 0x0001)

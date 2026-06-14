@@ -2481,7 +2481,132 @@ selects sprite `0075h` or `0076h`, optionally increments X when `DS:2328==7`,
 and also lands on `1010:BC4B`.
 
 The hook intentionally stops at `1010:BC4B`; that tail already owns the
-postmove/collision proof boundary.  The unobserved `B8F8` tail remains a
-fail-fast frontier.  Note for future trace readers: the CPU trace prints BP
-displacements in decimal (`bp+50` means `+32h`), which matters for this routine's
-target-coordinate fields.
+postmove/collision proof boundary.  The later `B86D -> B8F8` edge path was
+observed from `snapshot_play_tandy_20260614_191454`: it calls the `5E1B`
+object-delta helper with `BX=237Ch`, calls the runtime-patched `5E42` steering
+helper, writes sprite `0076h`, and joins `BC4B`.  Note for future trace readers:
+the CPU trace prints BP displacements in decimal (`bp+50` means `+32h`), which
+matters for this routine's target-coordinate fields.
+
+### 2026-06-14 B24D object-family steering/overlap prelude
+
+`1010:B24D` is reached from the `EFAE` object-family dispatcher in the current
+Tandy gameplay snapshot.  The observed hot path calls the runtime-patched
+`1010:5E42` steering helper, compares the object slot position against the
+reference box in `DS:237E/2380`, and branches to `AD5A` when the object is
+outside that box.  The captured oracle state in
+`artifacts/evidence/snapshot_stop_1010_b24d_behavior` exits with `AX=00BE`,
+`BX=0064`, unchanged `CX=0007`, and `CS:IP=1010:AD5A`.
+
+The overlap branch can call `1010:9E19` one or more times depending on
+`logic_id` and `DS:BEDC`; that helper remains a bounded-original child for now.
+This keeps B24D's dispatch/stack contract lifted while avoiding a premature
+semantic name for the 9E19 side effect.
+
+### 2026-06-14 BFC7 logic-0021 gate
+
+The `BC4B -> 62F6 -> BEC5 variant 0005 -> BFC7` crash with live object
+`logic_id=0021h` was not a new special death body.  The original bytes are:
+
+```text
+BFC7  CMP WORD PTR [BP+18],0021
+BFCD  JNE BFD7
+BFCF  CMP WORD PTR [2356],0004
+BFD4  JE  BFD7
+BFD6  RET
+BFD7  CMP WORD PTR [BP+14],0001
+```
+
+So logic `0021h` has a single global gate.  `DS:2356 != 0004h` returns
+immediately; `DS:2356 == 0004h` joins the same normal BFD7
+score/death/transition tail used by other type-1 objects.  The lifted helper now
+models that fall-through instead of failing fast.  Regression
+`test_bfc7_logic_21_gate_four_joins_normal_death_tail_against_asm` seeds both an
+interpreted CPU and a lifted CPU from the gameplay snapshot memory and verifies
+full-memory equality after the return.
+
+### 2026-06-14 - Frame-loop glue around 97B2
+
+`1010:97B2` is a finite gameplay/attract frame-controller loop, not a renderer
+leaf.  It calls timing/page/object-scan/status helpers in a stable order and
+then either loops to `97B2` or exits through state-specific tails such as `9734`,
+`9902`, `9908`, or `9862`.  The large `1010:9B2E` child remains bounded
+original inside the lifted wrapper and is the next meaningful controller frontier.
+
+`1010:60A2` is only per-frame glue: `77C5` effect gate, `5F61` status counter
+update, then `5EDB` HUD/status text.  `1010:77C5` owns the short-lived slash
+effect state at `DS:A97A/A97C` and composes the already-lifted `77F6` renderer.
+Leaf tests for `5EF9`/`5EDB` must disable the `97B2`/`60A2` parents when they
+want to verify those nested boundaries directly.
+
+
+### 2026-06-14 setup reset loops and 613E/615A cursor stride leaves
+
+Short profiling after the `97B2` frame-loop lift exposed several small regions
+that are safer than the large `9B2E` child controller.  `1010:613E` and
+`1010:615A` are exact inverse CS:95BC dispatch leaves for status/HUD cursor
+movement: mode 0 changes `DI` by two bytes, mode 1 by one byte, and mode 2 by
+four bytes.  They are low-level cursor stride helpers, not a semantic HUD model.
+
+`1010:C3BF`, `1010:C3F1`, and `1010:C4E5` are internal setup reset loops.  `C3BF` walks the compact/effect pointer table at `DS:8D12 + CX*2` and advances `CS:C3A2` by `0040h`; `C3F1` and `C4E5` walk the object pointer table at `DS:32CA + CX*2` and advance `CS:C3A2` by `0280h`.  `C3F1` preserves slots whose `+16` field is `0001h`, while `C4E5` clears the selected fields unconditionally.
+
+`1010:C4E5` is reached after the `C4DB` setup
+routine initializes `CS:C3A2`.  Each iteration indexes the object pointer table
+at `DS:32CA + CX*2`, writes selected fields through `SS:BP`, copies the current
+`CS:C3A2` word into slot offset `+0E`, advances `CS:C3A2` by `0280h`, and loops
+until `CX` reaches zero.  The lift preserves the original `PUSH CX`/`POP CX`
+stack scratch and falls through to `C51D`.
+
+
+### 2026-06-14 - Status compositor parent and 9C01 count leaves
+
+`1010:85D5` is a raw status/HUD cell-composition parent, not a renderer body and
+not yet a semantic HUD widget.  It selects a small source-cell variant from
+`DS:95FA/95FC`, uses the already-lifted `613E`/`615A` mode-dependent cursor
+stride leaves, dispatches three `5A6C` source-cell blits, and restores `DS` from
+`CS:9596` before returning.  One implementation detail matters for parent hooks:
+`5A6C` is a dispatch stub that jumps to the mode-specific renderer body, so a
+composed near call must run the selected child hook without pushing a second
+return address.
+
+`1010:99CD` is a compact coordinate-list fill loop.  For each `CX` entry it
+writes the pair `SS:[BP+2]+8`, `SS:[BP+4]+9` to `ES:DI`, advancing `DI` by four
+bytes total.  This is still classified as frame/status data preparation; no
+object-list semantics are assigned yet.
+
+Inside the larger `1010:9B2E` controller child, `1010:9BFB` and `1010:9BFE` are
+now verified as the tiny `INC AH; RET` and `INC AL; RET` leaves used by
+`1010:9C01-9C6B`.  The surrounding code tests four `A966/A968/A96A/A96C`-style
+globals against `FFFF`, increments the high/low byte counters, folds those
+counters into `BL`, shifts `BX`, and jumps through the table at `CS:9C70`.  The
+controller semantics are still frontier-level; the verified fact is only the
+low-level counter/jump-table shape.
+
+### 2026-06-14 - D318 interstitial frame script and raw status-list seed blocks
+
+`1010:D318` is now verified as an ASM-shaped timed interstitial/input-wait frame
+script.  It is not the main gameplay update controller.  In the observed Tandy
+path it repeatedly composes already-lifted frame children (`0672`, `511F`,
+`4CED`, optional `5BDC`, `D367`, `4D64`, far `1F8F:0922`, `073C`, `60A2`,
+`5160`, `0679`, `50C9`, `0162`), increments `DS:BED8`, then either loops at
+`D318` while the timeout/input condition holds or waits for the input-release bit
+`DS:98BE & 10h` to clear before returning to the caller.  This makes it a
+frame-script / timed-input gate, not a semantic screen class yet.
+
+`1010:D367` is the small cell-blit helper used inside that frame script.  It
+sets `AX=4703h`, uses `5A00` for coordinate conversion, zeroes `SI`, switches
+`DS` to the source-cell segment stored at `CS:95B6`, dispatches through `5A6C`,
+and restores `DS` from `CS:9596`.
+
+`1010:852B` seeds one raw 10-byte descriptor at `SS:BP`: it forces `AL=1Ch`,
+converts through `5A00`, writes `+00=0024h`, `+02=DI`, `+08=0000h`, advances
+`BP` by `0Ah`, restores the saved `AX`, increments `AH` by `10h`, and returns.
+`1010:8517` builds four of those descriptors starting at `BP=9682h` after
+clearing `DS:95FA` to `FFFFh` and setting `AH=87h`.  Its odd call shape is now
+explicitly preserved: three `CALL 852B` invocations, where the third returns to
+`852B`, followed by a fall-through fourth descriptor body.
+
+These routines strengthen the emerging direction: a low-level frame-script layer
+and a raw status/list descriptor preparation layer are separating from renderer
+primitives and object logic.  The code still avoids semantic names for the
+visible screen/HUD elements until more caller/callee evidence is available.

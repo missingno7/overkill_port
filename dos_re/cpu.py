@@ -132,6 +132,25 @@ class CPU8086:
     hook_names: dict[tuple[int, int], str] = field(default_factory=dict)
     hook_verifier: Callable[["CPU8086", tuple[int, int], Callable[["CPU8086"], None], str], None] | None = None
     hook_verifier_passthrough: set[tuple[int, int]] = field(default_factory=set)
+    # Optional live-side replacements used only while a differential hook
+    # transaction is executing the replacement handler.  Interactive front-ends
+    # use this to keep UI presenter/timer hooks publishing frames without letting
+    # their normal frame-boundary exceptions interrupt the verified routine.
+    hook_verifier_live_passthrough_overrides: dict[tuple[int, int], Callable[["CPU8086"], None]] = field(default_factory=dict)
+    # Interactive front-ends sometimes need a publish/pacing boundary while a
+    # verified parent hook is still running.  The live-side passthrough wrapper
+    # cannot raise the normal UI boundary exception immediately, because that
+    # would abort the differential transaction before the ASM-vs-hook diff is
+    # computed.  Instead it sets this flag; HookVerifier raises the optional
+    # callback after the verified hook has reached its continuation and compared
+    # cleanly.
+    hook_verifier_live_yield_requested: bool = False
+    hook_verifier_live_yield_callback: Callable[[], None] | None = None
+    # When a lifted parent executes an original bounded CALL or directly invokes
+    # an installed child hook, keep differential verification active at the
+    # nested hook boundary.  This makes child addresses real oracle checkpoints
+    # instead of shared black boxes inside a larger parent transaction.
+    hook_verifier_verify_nested_calls: bool = True
     # Optional real-time pacer invoked once per modelled timer tick (the 1010:0679
     # wait).  Left None for headless/deterministic runs; an interactive front-end
     # sets it to throttle the game to real time.

@@ -131,8 +131,12 @@ def run_frame_verifier(
             pump_inputs(reference, candidate)
         try:
             ref_sample = ref_runner.run_to_boundary(frame_no)
-            if pump_inputs is not None:
-                pump_inputs(reference, candidate)
+            # Do not pump live input between the oracle and candidate passes.
+            # Any key event collected here would reach the candidate for the
+            # current frame after the reference has already advanced to its
+            # boundary, producing a one-frame input skew and false visual
+            # divergences while the user is actively playing.  Inputs are
+            # sampled only at pair boundaries, before both runtimes advance.
             cand_sample = cand_runner.run_to_boundary(frame_no)
         except (HaltExecution, UnsupportedInstruction) as exc:
             raise FrameVerifyDivergence(
