@@ -754,6 +754,48 @@ def _masked_word_composite_rows(cpu, *, words_per_row: int, row_add: int) -> Non
     s.di = di
 
 
+
+
+def _masked_word_composite_fixed_rows(cpu, *, rows: int, words_per_row: int, row_add: int) -> None:
+    """Composite a fixed-height unrolled Tandy masked block.
+
+    Some original leaves, notably 1010:2FB6, are fully unrolled and do not
+    consume CX.  Keep this separate from the LOOP-based row helper so strict
+    hook verification can catch accidental register clobbers instead of hiding
+    them behind a shared abstraction.
+    """
+    s = cpu.s
+    mem = cpu.mem
+    ds = s.ds & 0xFFFF
+    es = s.es & 0xFFFF
+    si = s.si & 0xFFFF
+    di = s.di & 0xFFFF
+    step = -2 if s.flags & DF else 2
+    bx = row_add & 0xFFFF
+    ax = s.ax & 0xFFFF
+
+    for _ in range(rows):
+        for _col in range(words_per_row):
+            ax = mem.rw(ds, si)              # LODSW
+            si = (si + step) & 0xFFFF
+            ax = (ax & mem.rw(es, di)) & 0xFFFF
+            ax = (ax | mem.rw(ds, si)) & 0xFFFF
+            si_sum = si + 2                  # ADD SI,2
+            si = si_sum & 0xFFFF
+            mem.ww(es, di, ax)               # STOSW
+            di = (di + step) & 0xFFFF
+
+        di_sum = di + bx                     # ADD DI,BX
+        cpu.set_add_flags(di, bx, di_sum, 16)
+        di = di_sum & 0xFFFF
+
+    s.ax = ax
+    s.bx = bx
+    # CX intentionally preserved: the original 2FB6 block is unrolled and has
+    # no LOOP instruction.
+    s.si = si
+    s.di = di
+
 def _or_inverted_source_words_rows(cpu, *, words_per_row: int, row_add: int) -> None:
     """OR inverted source-mask words into ES:DI for Tandy layer/object leaves."""
     s = cpu.s
@@ -940,10 +982,15 @@ def masked_sprite_composite_2f81(cpu, runtime: TandyRenderRuntime) -> None:
 
 
 def masked_compact_2fb6(cpu, runtime: TandyRenderRuntime) -> None:
-    """OVERKILL 1010:2FB6, mode-2 compact two-word masked compositor."""
+    """OVERKILL 1010:2FB6, mode-2 compact two-word masked compositor.
+
+    Unlike the neighbouring 2E6E/2F81 LOOP-based leaves, 2FB6 is an 8-row
+    fully unrolled compact block.  It writes the same two masked words per row
+    but must preserve CX exactly.
+    """
     if runtime.self_disable_if_patched(cpu, 0x2FB6, runtime.signature_2fb6, "overkill_tandy_masked_compact_2fb6"):
         return
-    _masked_word_composite_rows(cpu, words_per_row=2, row_add=0x0064)
+    _masked_word_composite_fixed_rows(cpu, rows=8, words_per_row=2, row_add=0x0064)
     _restore_tandy_display_ds(cpu)
     cpu.s.ip = cpu.pop()
 

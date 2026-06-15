@@ -916,6 +916,57 @@ def test_tandy_masked_sprite_composite_2e6e_hook_matches_interpreted_asm():
             assert asm.mem.data == hook.mem.data
 
 
+def test_tandy_masked_compact_2fb6_hook_matches_interpreted_asm_and_preserves_cx():
+    import random
+    from dos_re.cpu import CPU8086, CPUState
+    from dos_re.memory import Memory
+    from overkill.hooks import overkill_tandy_masked_compact_2fb6
+
+    # 1010:2FB6 is a fixed 8-row compact compositor, not a LOOP-based leaf.
+    # It must preserve CX exactly; strict hook verification caught a previous
+    # shared-helper implementation that incorrectly consumed CX as a row count.
+    row = "ad2623050b0483c602ab" * 2 + "03fb"
+    code = bytes.fromhex("bb6400" + row * 8 + "2e8e1e9695c3")
+
+    def make_cpu(use_hook: bool, *, cx: int, flags: int, seed: int) -> CPU8086:
+        rnd = random.Random(seed)
+        mem = Memory()
+        mem.load(0x1010, 0x2FB6, code)
+        mem.ww(0x1010, 0x9596, 0x2222)
+        ds, es, ss = 0x3000, 0x4000, 0x5000
+        si, di = 0x0180, 0x0240
+        for off in range(-0x40, 0x100):
+            mem.wb(ds, (si + off) & 0xFFFF, rnd.randrange(256))
+        for off in range(-0x40, 0x500):
+            mem.wb(es, (di + off) & 0xFFFF, rnd.randrange(256))
+        state = CPUState(
+            ax=rnd.randrange(0x10000), bx=0x7777, cx=cx, dx=0x7628,
+            si=si, di=di, bp=0x0010, sp=0x9000,
+            cs=0x1010, ds=ds, es=es, ss=ss,
+            ip=0x2FB6, flags=flags,
+        )
+        cpu = CPU8086(mem, state)
+        cpu.trace_enabled = False
+        cpu.push(0xBEEF)
+        if use_hook:
+            cpu.replacement_hooks[(0x1010, 0x2FB6)] = overkill_tandy_masked_compact_2fb6
+        return cpu
+
+    for cx in (0x0000, 0x0008, 0x3333):
+        for flags in (0x0203, 0x0603):
+            asm = make_cpu(False, cx=cx, flags=flags, seed=0x2FB6 + cx + flags)
+            hook = make_cpu(True, cx=cx, flags=flags, seed=0x2FB6 + cx + flags)
+            for _ in range(1000):
+                if asm.addr() == (0x1010, 0xBEEF):
+                    break
+                asm.step()
+            hook.step()
+            assert asm.addr() == hook.addr() == (0x1010, 0xBEEF)
+            assert asm.s.snapshot() == hook.s.snapshot()
+            assert asm.mem.data == hook.mem.data
+
+
+
 def test_tandy_strided_copy_34c5_hook_matches_interpreted_asm():
     import random
     from dos_re.cpu import CPU8086, CPUState

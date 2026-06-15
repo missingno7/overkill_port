@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+import re
+import time
 
 from dos_re.input_demo import InputDemoPlayback
 from dos_re.verification import Addr
@@ -76,6 +78,40 @@ def run_headless_hook_verifier(config: HeadlessHookVerifyConfig) -> int:
         for addr in NON_CGA_INTERACTIVE_DISABLE:
             _remove_hook(rt, addr)
 
+    last_progress = {"at": 0.0, "verified": -1, "kind": "", "start": ""}
+
+    def progress(text: str) -> None:
+        now = time.monotonic()
+        if text.startswith("verified "):
+            print(f"HOOK VERIFY {text}", flush=True)
+            m = re.match(r"verified (\d+)", text)
+            if m:
+                last_progress["verified"] = int(m.group(1))
+            last_progress["at"] = now
+            last_progress["kind"] = "verified"
+            return
+        m = re.search(r"after verified=(\d+)", text)
+        verified = int(m.group(1)) if m else -1
+        if verified <= 0:
+            return
+        if verified % 500 == 0 and (
+            verified != last_progress["verified"]
+            or last_progress["kind"] == "verified"
+            or text != last_progress["start"]
+        ):
+            print(f"HOOK VERIFY {text}", flush=True)
+            last_progress["verified"] = verified
+            last_progress["at"] = now
+            last_progress["kind"] = "verifying"
+            last_progress["start"] = text
+            return
+        if now - last_progress["at"] >= 10.0:
+            print(f"HOOK VERIFY {text}", flush=True)
+            last_progress["verified"] = verified
+            last_progress["at"] = now
+            last_progress["kind"] = "verifying"
+            last_progress["start"] = text
+
     verifier = install_hook_verifier(
         rt,
         HookVerifierConfig.strict(
@@ -83,6 +119,7 @@ def run_headless_hook_verifier(config: HeadlessHookVerifyConfig) -> int:
             hooks=set(config.hooks),
             max_verified=config.max_verified,
             asm_max_steps=1_000_000,
+            progress_callback=progress,
         ),
     )
 

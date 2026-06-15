@@ -227,6 +227,14 @@ def run_fast_timer_isr_06e5(cpu) -> None:
     mem = cpu.mem
 
     game_ds = mem.rw(cs, 0x9596)
+    if mem.rb(game_ds, 0x0055) == 1:
+        # Once the optional AdLib/Roland driver is active, the ISR enters a
+        # loaded far driver at 2032:0000.  The exact stack scratch left by that
+        # path is part of strict full-memory verification, so keep this rare path
+        # bounded-original until the driver ISR is fully lifted with byte-exact
+        # scratch semantics.
+        run_original_fast_timer_isr_06e5(cpu)
+        return
 
     # 06E5..06ED: save interrupted state.
     cpu.push(cpu.s.ax)
@@ -310,12 +318,13 @@ def run_original_fast_timer_isr_06e5(cpu, *, max_steps: int = 200_000) -> None:
     The lifted PC-speaker path intentionally covers the common ``DS:0055 == 0``
     case.  When the AdLib/Roland driver initializes successfully, the real ISR
     performs an additional far call through ``2032:0000`` before the shared sound
-    tick.  Keep that path faithful by temporarily disabling only the 06E5 hook and
+    tick.  Keep that path faithful by temporarily disabling replacement hooks and
     interpreting the original ISR until it IRETs back to the interrupted code.
     """
-    key = (0x1010, 0x06E5)
-    saved_hook = cpu.replacement_hooks.pop(key, None)
-    saved_name = cpu.hook_names.get(key)
+    saved_hooks = dict(cpu.replacement_hooks)
+    saved_names = dict(cpu.hook_names)
+    cpu.replacement_hooks.clear()
+    cpu.hook_names.clear()
     ss = cpu.s.ss & 0xFFFF
     frame_sp = cpu.s.sp & 0xFFFF
     ret_ip = cpu.mem.rw(ss, frame_sp)
@@ -341,10 +350,10 @@ def run_original_fast_timer_isr_06e5(cpu, *, max_steps: int = 200_000) -> None:
                 return
             cpu.step()
     finally:
-        if saved_hook is not None:
-            cpu.replacement_hooks[key] = saved_hook
-        if saved_name is not None:
-            cpu.hook_names[key] = saved_name
+        cpu.replacement_hooks.clear()
+        cpu.replacement_hooks.update(saved_hooks)
+        cpu.hook_names.clear()
+        cpu.hook_names.update(saved_names)
     raise RuntimeError(
         f"original 1010:06E5 optional-driver ISR did not return "
         f"(cs:ip={cpu.s.cs:04X}:{cpu.s.ip:04X})"

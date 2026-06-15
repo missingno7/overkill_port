@@ -800,6 +800,39 @@ def main(argv: list[str] | None = None) -> int:
             return False
         return (mem.rb(rt.cpu.s.ds & 0xFFFF, 0x98BE) & 0x10) != 0
 
+    def is_title_fire_release_wait() -> bool:
+        """Detect the title/attract screen's wait-for-FIRE-release loop.
+
+        The D318 title frame loop polls FIRE at D352; once FIRE (bit 10h of
+        DS:98BE) is pressed it falls into a tight release loop:
+        CALL 0162; TEST byte [98BE],10h; JNZ D35C.  Unlike the D318 body, this
+        loop contains no 0679 timer wait or 50C9 retrace wait, so it never
+        produces a play boundary.  During --demo replay that is fatal: the
+        recorded FIRE-release event is keyed to a later boundary that can never
+        be reached while the boundary counter is frozen here, so the demo
+        deadlocks waiting for a release it can never deliver.  Treat it as an
+        interactive wait (same as the D390 menu release loop) so the boundary
+        advances and queued input/the recorded release can land.
+        """
+        cs, ip = rt.cpu.addr()
+        if cs != 0x1010:
+            return False
+        mem = rt.cpu.mem
+        # The loop is CALL 0162; TEST [98BE],10h; JNZ D35C.  Because CALL 0162 is
+        # hooked, a cooperative CPU burst usually lands at the 0162 entry rather
+        # than on the loop's own three instructions.  Recognize both: parked on
+        # D35C/D35F/D364, or inside the 0162 call this loop makes (return address
+        # D35F on the stack -- which distinguishes it from the D352 press poll
+        # that returns to D355 and from every other 0162 caller).
+        in_loop = ip in (0xD35C, 0xD35F, 0xD364)
+        if not in_loop and ip == 0x0162:
+            in_loop = mem.rw(rt.cpu.s.ss & 0xFFFF, rt.cpu.s.sp & 0xFFFF) == 0xD35F
+        if not in_loop:
+            return False
+        if mem.block(cs, 0xD35C, 10) != bytes.fromhex("e8 03 2e f6 06 be 98 10 75 f6"):
+            return False
+        return (mem.rb(rt.cpu.s.ds & 0xFFFF, 0x98BE) & 0x10) != 0
+
     def is_input_selector_wait() -> bool:
         """Detect the level/difficulty selector's idle poll gate.
 
@@ -1170,6 +1203,15 @@ def main(argv: list[str] | None = None) -> int:
                         status["text"] = f"waiting for menu fire release @ {cs:04X}:{ip:04X}"
                         sleep_with_async_irqs(rt.cpu, 0.01)
                         break
+                    if is_title_fire_release_wait():
+                        async_timer_irq.poll(rt.cpu)
+                        publish_video_if_changed(rt.cpu, poll_audio_while_waiting=True)
+                        boundary["n"] += 1
+                        last_boundary["kind"] = "wait"
+                        cs, ip = rt.cpu.addr()
+                        status["text"] = f"waiting for title fire release @ {cs:04X}:{ip:04X}"
+                        sleep_with_async_irqs(rt.cpu, 0.01)
+                        break
                     if is_input_selector_wait():
                         async_timer_irq.poll(rt.cpu)
                         publish_video_if_changed(rt.cpu, poll_audio_while_waiting=True)
@@ -1227,6 +1269,24 @@ def main(argv: list[str] | None = None) -> int:
                         boundary["n"] += 1
                         last_boundary["kind"] = "direct"
                         status["text"] = f"direct video publish @ {cs:04X}:{ip:04X}"
+                    elif demo_playback is not None and not demo_playback.exhausted:
+                        # Safety net for --demo replay: the VM made no visual or
+                        # timer boundary for a whole frame budget, yet the demo
+                        # still has input to deliver.  That means we are parked in
+                        # a boundary-less wait loop the wait detectors above do not
+                        # recognize, and demo events are gated on the boundary
+                        # counter -- so without advancing it the replay would hang
+                        # forever waiting for input it can never deliver.  Advance
+                        # the boundary so the next recorded event can land.  This
+                        # only triggers after a genuine stall, so it cannot perturb
+                        # demos that already replay cleanly.
+                        boundary["n"] += 1
+                        last_boundary["kind"] = "wait"
+                        status["text"] = (
+                            f"demo stall recovery: advancing boundary at {cs:04X}:{ip:04X} "
+                            f"(consider adding a wait detector here)"
+                        )
+                        print(status["text"], flush=True)
                     else:
                         status["text"] = f"stall (no visual/timer boundary in {used} steps) @ {cs:04X}:{ip:04X}"
             except HookVerifyDivergence as exc:

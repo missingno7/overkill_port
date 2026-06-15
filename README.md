@@ -422,9 +422,8 @@ trace_tail.txt
 The current headless hook-verifier seed is:
 
 ```bash
-python scripts/play.py \
+python scripts/verify_hooks_headless.py \
   --snapshot artifacts/evidence/hook_verify_tandy_20260613_190326 \
-  --verify-hooks \
   --verify-max 1000
 ```
 

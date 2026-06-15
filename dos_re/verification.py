@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import copy
+import os
+import time
 from dataclasses import dataclass, field
 from typing import Callable, Protocol
 
@@ -16,6 +18,24 @@ from .runtime import Runtime
 
 
 Addr = tuple[int, int]
+
+
+def _trace_hook_target() -> Addr | None:
+    """Opt-in ASM-oracle trace target from env ``OK_TRACE_HOOK="CS:IP"``.
+
+    When set, the verifier records the ASM-oracle clone's instruction trace for
+    that hook and prints it if the call diverges -- the disciplined way to see
+    exactly what the original routine does that a lifted hook does not.  Returns
+    None (zero overhead) when unset or malformed.
+    """
+    raw = os.environ.get("OK_TRACE_HOOK")
+    if not raw or ":" not in raw:
+        return None
+    cs_text, ip_text = raw.split(":", 1)
+    try:
+        return int(cs_text, 16) & 0xFFFF, int(ip_text, 16) & 0xFFFF
+    except ValueError:
+        return None
 
 
 class HookVerifyDivergence(RuntimeError):
@@ -95,6 +115,7 @@ class HookVerifierConfig:
     # continuation was diffed.
     verify_nested_hooks: bool = True
     progress_callback: Callable[[str], None] | None = None
+    asm_wall_timeout_s: float | None = 20.0
 
     @classmethod
     def strict(
@@ -105,6 +126,7 @@ class HookVerifierConfig:
         max_verified: int | None = None,
         asm_max_steps: int = 1_000_000,
         progress_callback: Callable[[str], None] | None = None,
+        asm_wall_timeout_s: float | None = 20.0,
     ) -> "HookVerifierConfig":
         """Create the slow, simple, fail-hard verification profile.
 
@@ -126,6 +148,7 @@ class HookVerifierConfig:
             auto_continuation=True,
             verify_nested_hooks=True,
             progress_callback=progress_callback,
+            asm_wall_timeout_s=asm_wall_timeout_s,
         )
 
 
@@ -198,7 +221,10 @@ class HookVerifier:
         self.counts[key] = call_no
         before = CPUState(**cpu.s.__dict__)
         if self.config.progress_callback is not None:
-            self.config.progress_callback(f"verifying {key[0]:04X}:{key[1]:04X} {name} call {call_no}")
+            self.config.progress_callback(
+                f"verifying {key[0]:04X}:{key[1]:04X} {name} call {call_no} "
+                f"after verified={self.total_verified}"
+            )
 
         if self.config.auto_continuation:
             self._verify_auto_continuation(cpu, key, handler, name, call_no)
@@ -227,19 +253,41 @@ class HookVerifier:
         targets = stop.targets(asm_cpu, before)
 
         self._restore_passthrough_hooks(asm_cpu)
-        asm_steps = self._run_asm_to_target(asm_cpu, targets, min_steps=stop.min_steps)
+        capture_trace = _trace_hook_target() == key
+        if capture_trace:
+            asm_cpu.trace_enabled = True
+            asm_cpu.trace.clear()
+        asm_steps = self._run_asm_to_target(
+            asm_cpu,
+            targets,
+            min_steps=stop.min_steps,
+            context=f"{key[0]:04X}:{key[1]:04X} {name} call {call_no}",
+        )
+        captured_trace = list(asm_cpu.trace) if capture_trace else None
         with self._live_passthrough_hooks(cpu):
             handler(cpu)
-        self._finish_verified_hook(
-            cpu=cpu,
-            key=key,
-            name=name,
-            call_no=call_no,
-            targets=targets,
-            asm_rt=asm_rt,
-            hook_rt=self.rt,
-            asm_steps=asm_steps,
-        )
+        try:
+            self._finish_verified_hook(
+                cpu=cpu,
+                key=key,
+                name=name,
+                call_no=call_no,
+                targets=targets,
+                asm_rt=asm_rt,
+                hook_rt=self.rt,
+                asm_steps=asm_steps,
+            )
+        except HookVerifyDivergence:
+            if captured_trace is not None:
+                print(
+                    f"=== ASM ORACLE TRACE {key[0]:04X}:{key[1]:04X} {name} "
+                    f"call {call_no} ({len(captured_trace)} steps) ===",
+                    flush=True,
+                )
+                for line in captured_trace:
+                    print(line, flush=True)
+                print("=== END ASM ORACLE TRACE ===", flush=True)
+            raise
 
     def _verify_auto_continuation(
         self,
@@ -260,9 +308,13 @@ class HookVerifier:
         asm_rt = self._clone_runtime()
         asm_cpu = asm_rt.cpu
         asm_cpu.hook_verifier = None
-        asm_cpu.replacement_hooks.pop(key, None)
-        asm_cpu.hook_names.pop(key, None)
-        self._restore_passthrough_hooks(asm_cpu)
+        # Strict auto-continuation mode uses the real original ASM as the oracle,
+        # not a hybrid oracle that may pass through other Python replacements.
+        # The live side may still reach nested Python hooks and verify them, but
+        # the reference side simply interprets the original program until it
+        # reaches the hook's actual continuation address.
+        asm_cpu.replacement_hooks.clear()
+        asm_cpu.hook_names.clear()
 
         with self._live_passthrough_hooks(cpu):
             handler(cpu)
@@ -271,17 +323,39 @@ class HookVerifier:
         # Always execute at least one original instruction.  This prevents a
         # same-IP loop hook from being accepted against an untouched oracle just
         # because the candidate continuation equals the entry address.
-        asm_steps = self._run_asm_to_target(asm_cpu, targets, min_steps=1)
-        self._finish_verified_hook(
-            cpu=cpu,
-            key=key,
-            name=name,
-            call_no=call_no,
-            targets=targets,
-            asm_rt=asm_rt,
-            hook_rt=self.rt,
-            asm_steps=asm_steps,
+        capture_trace = _trace_hook_target() == key
+        if capture_trace:
+            asm_cpu.trace_enabled = True
+            asm_cpu.trace.clear()
+        asm_steps = self._run_asm_to_target(
+            asm_cpu,
+            targets,
+            min_steps=1,
+            context=f"{key[0]:04X}:{key[1]:04X} {name} call {call_no}",
         )
+        captured_trace = list(asm_cpu.trace) if capture_trace else None
+        try:
+            self._finish_verified_hook(
+                cpu=cpu,
+                key=key,
+                name=name,
+                call_no=call_no,
+                targets=targets,
+                asm_rt=asm_rt,
+                hook_rt=self.rt,
+                asm_steps=asm_steps,
+            )
+        except HookVerifyDivergence:
+            if captured_trace is not None:
+                print(
+                    f"=== ASM ORACLE TRACE {key[0]:04X}:{key[1]:04X} {name} "
+                    f"call {call_no} ({len(captured_trace)} steps) ===",
+                    flush=True,
+                )
+                for line in captured_trace:
+                    print(line, flush=True)
+                print("=== END ASM ORACLE TRACE ===", flush=True)
+            raise
 
     def _finish_verified_hook(
         self,
@@ -298,6 +372,10 @@ class HookVerifier:
         self.total_verified += 1
         if cpu.coverage_telemetry is not None:
             cpu.coverage_telemetry.record_hook_verified(key, name, asm_steps)
+        if self.config.progress_callback is not None and self.total_verified % 500 == 0:
+            self.config.progress_callback(
+                f"verified {self.total_verified}; last {key[0]:04X}:{key[1]:04X} {name} asm_steps={asm_steps}"
+            )
 
         report = self._diff_report(
             key=key,
@@ -382,9 +460,17 @@ class HookVerifier:
     def _live_passthrough_hooks(self, cpu: CPU8086) -> "HookVerifier._LivePassthroughHooks":
         return HookVerifier._LivePassthroughHooks(self, cpu)
 
-    def _run_asm_to_target(self, cpu: CPU8086, targets: tuple[Addr, ...], *, min_steps: int = 0) -> int:
+    def _run_asm_to_target(
+        self,
+        cpu: CPU8086,
+        targets: tuple[Addr, ...],
+        *,
+        min_steps: int = 0,
+        context: str = "<unknown hook>",
+    ) -> int:
         target_set = set(targets)
         min_steps = max(0, int(min_steps))
+        started_at = time.monotonic()
         for steps in range(self.config.asm_max_steps + 1):
             if steps >= min_steps and cpu.addr() in target_set:
                 return steps
@@ -393,9 +479,19 @@ class HookVerifier:
                     return steps
                 continue
             cpu.step()
+            if self.config.asm_wall_timeout_s is not None:
+                elapsed = time.monotonic() - started_at
+                if elapsed >= self.config.asm_wall_timeout_s:
+                    labels = ", ".join(f"{cs:04X}:{ip:04X}" for cs, ip in targets)
+                    raise HookVerifyDivergence(
+                        "HOOK VERIFY ASM WALL TIMEOUT "
+                        f"hook={context} target={labels} "
+                        f"after_steps={steps + 1} elapsed={elapsed:.1f}s "
+                        f"at={cpu.s.cs:04X}:{cpu.s.ip:04X}"
+                    )
         labels = ", ".join(f"{cs:04X}:{ip:04X}" for cs, ip in targets)
         raise HookVerifyDivergence(
-            f"HOOK VERIFY ASM TIMEOUT target={labels} "
+            f"HOOK VERIFY ASM TIMEOUT hook={context} target={labels} "
             f"at={cpu.s.cs:04X}:{cpu.s.ip:04X}"
         )
 

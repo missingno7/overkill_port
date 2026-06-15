@@ -257,3 +257,93 @@ def test_dos_re_strict_hook_verifier_auto_continuation_catches_bad_hook_without_
 
     assert "1000:0000 bad_inc_ret" in report
     assert "AX: asm=0011 hook=0012" in report
+
+
+def test_dos_re_strict_auto_continuation_reference_ignores_other_replacement_hooks(tmp_path: Path) -> None:
+    """Strict mode must run the reference side as original ASM, not hybrid Python.
+
+    The verified routine at 1000:0000 calls 1000:0010.  We deliberately install a
+    bad replacement at 0010.  The live parent hook models the original child
+    effect directly, so verification should pass only if the ASM oracle ignores
+    the unrelated bad child hook and interprets the original bytes.
+    """
+    mem = Memory()
+    create_psp(mem, 0x0FF0)
+    # 0000: call 0010 ; ret
+    # 0010: add ax,1 ; ret
+    mem.load(0x1000, 0x0000, bytes.fromhex("e8 0d 00 c3"))
+    mem.load(0x1000, 0x0010, bytes.fromhex("40 c3"))
+    mem.ww(0x1000, 0xFFFC, 0x0100)
+    header = MZHeader(
+        last_page_bytes=0,
+        pages=1,
+        relocations=0,
+        header_paragraphs=2,
+        min_extra_paragraphs=0,
+        max_extra_paragraphs=0xFFFF,
+        ss=0,
+        sp=0xFFFC,
+        checksum=0,
+        ip=0,
+        cs=0,
+        relocation_table_offset=0x1C,
+        overlay_number=0,
+    )
+    exe = MZExecutable(tmp_path / "SMOKE.EXE", header, b"", (), b"")
+    program = LoadedProgram(
+        exe=exe,
+        memory=mem,
+        psp_segment=0x0FF0,
+        load_segment=0x1000,
+        entry_cs=0x1000,
+        entry_ip=0,
+        initial_ss=0x1000,
+        initial_sp=0xFFFC,
+        overlay=b"",
+    )
+    dos = DOSMachine(tmp_path)
+    dos.seed_initial_memory_block(program.psp_segment)
+    cpu = CPU8086(mem, CPUState(ax=0x0010, cs=0x1000, ip=0, ds=0x1000, es=0x1000, ss=0x1000, sp=0xFFFC))
+    cpu.interrupt_handler = dos.interrupt
+    cpu.port_reader = dos.port_read
+    cpu.port_writer = dos.port_write
+    rt = Runtime(program, cpu, dos)
+
+    parent_key = (0x1000, 0x0000)
+    child_key = (0x1000, 0x0010)
+
+    def parent_hook(hook_cpu: CPU8086) -> None:
+        old_ax = hook_cpu.s.ax & 0xFFFF
+        result = old_ax + 1
+        hook_cpu.s.ax = result & 0xFFFF
+        hook_cpu.set_add_flags(old_ax, 1, result, 16)
+        # The original parent executes CALL 0010 before the parent RET, leaving
+        # the child return address as freed stack scratch below SP.
+        hook_cpu.mem.ww(hook_cpu.s.ss, (hook_cpu.s.sp - 2) & 0xFFFF, 0x0003)
+        hook_cpu.s.ip = hook_cpu.mem.rw(hook_cpu.s.ss, hook_cpu.s.sp)
+        hook_cpu.s.sp = (hook_cpu.s.sp + 2) & 0xFFFF
+
+    def bad_child_hook(hook_cpu: CPU8086) -> None:
+        hook_cpu.s.ax = 0xDEAD
+        hook_cpu.s.ip = hook_cpu.mem.rw(hook_cpu.s.ss, hook_cpu.s.sp)
+        hook_cpu.s.sp = (hook_cpu.s.sp + 2) & 0xFFFF
+
+    cpu.replacement_hooks[parent_key] = parent_hook
+    cpu.hook_names[parent_key] = "parent_models_call"
+    cpu.replacement_hooks[child_key] = bad_child_hook
+    cpu.hook_names[child_key] = "bad_child_must_not_pollute_reference"
+    install_hook_verifier(
+        rt,
+        HookVerifierConfig.strict(hooks={parent_key}, max_verified=1),
+        stops={},
+    )
+
+    try:
+        cpu.step()
+    except HookVerifyLimitReached:
+        pass
+    else:
+        raise AssertionError("strict verifier did not verify the parent hook")
+
+    assert cpu.s.ax == 0x0011
+    assert cpu.s.ip == 0x0100
