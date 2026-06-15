@@ -7,7 +7,6 @@ kept outside the generic VM and outside the hook-registration module.
 from __future__ import annotations
 
 from dos_re.cpu import CF
-from overkill.gameplay.view_window import _run_view_window_check_aa46
 
 SIG_PLAYER_HAZARD_OBJECT_SCAN_BDE3 = bytes.fromhex(
     "83 3f 00 74 4d 83 7f 0a 01 74 47 83 7f 14 01 75 41"
@@ -96,53 +95,80 @@ def run_postmove_contact_window_aa71(cpu) -> None:
     bp = s.bp & 0xFFFF
 
     x = mem.rw(ss, (bp + 0x02) & 0xFFFF)
-    _cmp_word(cpu, x, 0)
+    s.ax = x
+    cpu.set_logic_flags(x, 16)  # OR AX,AX
     if _signed16(x) < 0:
-        _run_view_window_check_aa46(cpu)
+        # AA71 jumps to the shared AA44 CLC/RET tail for negative X.
+        cpu.set_flag(CF, False)
         s.ip = cpu.pop()
         return
 
     y = mem.rw(ss, (bp + 0x04) & 0xFFFF)
-    guard = mem.rw(ds, 0x2380)
-    upper = (y + 0x0018) & 0xFFFF
-    s.ax = upper
+    y_guard = mem.rw(ds, 0x2380)
+    upper_y = (y + 0x0018) & 0xFFFF
+    s.ax = upper_y
     cpu.set_add_flags(y, 0x0018, y + 0x0018, 16)
-    _cmp_word(cpu, upper, guard)
-    if _signed16(upper) < _signed16(guard):
-        cpu.set_flag(CF, False)
+    _cmp_word(cpu, upper_y, y_guard)
+    if _signed16(upper_y) < _signed16(y_guard):
+        cpu.set_flag(CF, False)  # AA44 CLC after the signed JL.
         s.ip = cpu.pop()
         return
 
-    lower = (upper - 0x002C) & 0xFFFF
-    s.ax = lower
-    cpu.set_sub_flags(upper, 0x002C, upper - 0x002C, 16)
-    _cmp_word(cpu, lower, guard)
-    if _signed16(lower) > _signed16(guard):
-        cpu.set_flag(CF, False)
+    lower_y = (upper_y - 0x002C) & 0xFFFF
+    s.ax = lower_y
+    cpu.set_sub_flags(upper_y, 0x002C, upper_y - 0x002C, 16)
+    _cmp_word(cpu, lower_y, y_guard)
+    if _signed16(lower_y) > _signed16(y_guard):
+        cpu.set_flag(CF, False)  # AA44 CLC after the signed JG.
         s.ip = cpu.pop()
         return
 
     a8c2 = mem.rw(ds, 0xA8C2)
     _cmp_word(cpu, a8c2, 0x0001)
+    view_x = mem.rw(ds, 0x237E)
     if a8c2 == 0x0001:
-        # AA71 AAAB path: A8C2=1 (boss final state) bypasses the X window check
-        # and signals contact for any object in the Y window.  BCCB already gates
-        # BFC7 away when A8C2=1, so this CF=1 only triggers the 9E69 display tail.
+        # Final-boss mode narrows the X contact window; it does *not* bypass X.
+        #   AX = X + 8;  if AX < view_x: CLC/RET
+        #   AX -= 12;    if AX > view_x: CLC/RET
+        #   STC/RET
+        upper_x = (x + 0x0008) & 0xFFFF
+        s.ax = upper_x
+        cpu.set_add_flags(x, 0x0008, x + 0x0008, 16)
+        _cmp_word(cpu, upper_x, view_x)
+        if upper_x < view_x:  # JB AA44, unsigned compare.
+            cpu.set_flag(CF, False)
+            s.ip = cpu.pop()
+            return
+        lower_x = (upper_x - 0x000C) & 0xFFFF
+        s.ax = lower_x
+        cpu.set_sub_flags(upper_x, 0x000C, upper_x - 0x000C, 16)
+        _cmp_word(cpu, lower_x, view_x)
+        if lower_x > view_x:  # JA AA44, unsigned compare.
+            cpu.set_flag(CF, False)
+            s.ip = cpu.pop()
+            return
         cpu.set_flag(CF, True)
         s.ip = cpu.pop()
         return
 
-    upper = (x + 0x0018) & 0xFFFF
-    s.ax = upper
+    # Normal mode uses the wider X contact window.
+    upper_x = (x + 0x0018) & 0xFFFF
+    s.ax = upper_x
     cpu.set_add_flags(x, 0x0018, x + 0x0018, 16)
-    view_guard = mem.rw(ds, 0x237E)
-    _cmp_word(cpu, upper, view_guard)
-    if _signed16(upper) < _signed16(view_guard):
+    _cmp_word(cpu, upper_x, view_x)
+    if upper_x < view_x:  # JB AA44, unsigned compare.
         cpu.set_flag(CF, False)
         s.ip = cpu.pop()
         return
-
-    cpu.set_flag(CF, False)
+    lower_x = (upper_x - 0x002C) & 0xFFFF
+    s.ax = lower_x
+    cpu.set_sub_flags(upper_x, 0x002C, upper_x - 0x002C, 16)
+    _cmp_word(cpu, lower_x, view_x)
+    if lower_x > view_x:  # JA AA44, unsigned compare.
+        cpu.set_flag(CF, False)
+        s.ip = cpu.pop()
+        return
+    cpu.set_flag(CF, True)
     s.ip = cpu.pop()
     return
 

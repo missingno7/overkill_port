@@ -1,49 +1,75 @@
-"""Minimal pytest-free test runner (sandbox lacks pytest/PyPI access).
+#!/usr/bin/env python3
+"""Repository test runner that also works without pytest.
 
-Discovers test_* functions in tests/test_*.py and runs them sequentially.
+Use pytest for the richest local experience.  This script is the fail-safe path
+for minimal automation/sandboxes: it supports tmp_path, per-test timeouts, and a
+small DOS_RE smoke scope that avoids pygame, assets, and long OVERKILL hook runs.
 """
-import importlib, pathlib, re, subprocess, sys, traceback, types
+from __future__ import annotations
 
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+import argparse
+from pathlib import Path
+import subprocess
+import sys
 
-lint_script = pathlib.Path(__file__).resolve().parent / "lint.py"
-lint_result = subprocess.run([sys.executable, str(lint_script)])
-if lint_result.returncode != 0:
-    sys.exit(lint_result.returncode)
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
-if "pytest" not in sys.modules:
-    class _Raises:
-        def __init__(self, exc_type, match=None):
-            self.exc_type = exc_type
-            self.match = match
+from dos_re.testing import discover_tests, run_cases
 
-        def __enter__(self):
-            return self
+SCOPES = {
+    "dos-re": ["tests/test_dos_re_smoke.py"],
+    "all": ["tests/test_*.py"],
+}
 
-        def __exit__(self, exc_type, exc, tb):
-            if exc_type is None:
-                raise AssertionError(f"did not raise {self.exc_type.__name__}")
-            if not issubclass(exc_type, self.exc_type):
-                return False
-            if self.match is not None and re.search(self.match, str(exc)) is None:
-                raise AssertionError(f"exception message did not match {self.match!r}: {exc}")
-            return True
 
-    pytest_stub = types.ModuleType("pytest")
-    pytest_stub.raises = _Raises
-    sys.modules["pytest"] = pytest_stub
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Run repository tests without requiring pytest.")
+    parser.add_argument(
+        "patterns",
+        nargs="*",
+        help="optional test file globs relative to repo root; overrides --scope",
+    )
+    parser.add_argument(
+        "--scope",
+        choices=sorted(SCOPES),
+        default="all",
+        help="preselected test scope; 'dos-re' is quick and target-neutral",
+    )
+    parser.add_argument("--name", action="append", default=[], help="test function glob; may be repeated")
+    parser.add_argument("--timeout", type=float, default=20.0, help="seconds per test in isolated mode")
+    parser.add_argument("--in-process", action="store_true", help="faster, but disables hard per-test timeout")
+    parser.add_argument("--fail-fast", action="store_true")
+    parser.add_argument("--list", action="store_true")
+    parser.add_argument("--verbose", action="store_true")
+    parser.add_argument("--no-lint", action="store_true", help="skip scripts/lint.py before tests")
+    args = parser.parse_args(argv)
 
-failed = passed = 0
-for path in sorted(pathlib.Path(__file__).resolve().parents[1].glob("tests/test_*.py")):
-    mod = importlib.import_module(f"tests.{path.stem}")
-    for name in sorted(dir(mod)):
-        if name.startswith("test_") and callable(getattr(mod, name)):
-            try:
-                getattr(mod, name)()
-                passed += 1
-            except Exception:
-                failed += 1
-                print(f"FAIL {path.stem}::{name}")
-                traceback.print_exc()
-print(f"{passed} passed, {failed} failed")
-sys.exit(1 if failed else 0)
+    if not args.no_lint:
+        lint_result = subprocess.run([sys.executable, str(ROOT / "scripts" / "lint.py")])
+        if lint_result.returncode != 0:
+            return lint_result.returncode
+
+    patterns = args.patterns or SCOPES[args.scope]
+    cases = discover_tests(ROOT, patterns, name_globs=tuple(args.name or ["test_*"]))
+    if args.list:
+        for case in cases:
+            print(case.nodeid)
+        print(f"{len(cases)} tests")
+        return 0
+
+    passed, failed, timed_out = run_cases(
+        ROOT,
+        cases,
+        timeout=None if args.in_process else args.timeout,
+        isolated=not args.in_process,
+        fail_fast=args.fail_fast,
+        verbose=args.verbose,
+    )
+    print(f"{passed} passed, {failed} failed, {timed_out} timed out")
+    return 1 if failed or timed_out else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

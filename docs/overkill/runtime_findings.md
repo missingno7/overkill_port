@@ -1961,9 +1961,10 @@ emulator/hooks/`FrameSync`/keyboard/pacing/F12-snapshot session and then runs
 `render_frame.py` are kept as the headless PNG-dump tool and as the decode oracle;
 `tests/test_render_rgb.py` asserts the NumPy decoders are pixel-identical to them
 (full-memory *and* the tight shadow-plane slice the viewer actually publishes), so
-the displayed image is unchanged.  `pygame`/`numpy` are declared in
-`pyproject.toml` and imported only when the viewer launches, so the interpreter
-core, the PNG tool and the test suite still run without them.
+the displayed image is unchanged.  `pygame`/`numpy` are available through the
+optional `viewer` extra in `pyproject.toml` and imported only when the viewer
+launches, so the interpreter core, the PNG tool and the headless test paths still
+run without them.
 
 ### 2026-06-11 fail-fast object-logic frontier: A9E0 -> AA2B -> EFAE -> B73E -> 5DB2
 
@@ -2658,3 +2659,26 @@ shape is now clearer:
   `DS:A39A/A39C` based on object Y, view position `DS:2350`, and input bits in
   `DS:98BE`.  This is a low-level movement/scroll bridge, not yet a semantic
   player/enemy classification.
+
+### 2026-06-15 - AF60 self-call movement entry and verifier-visible child calls
+
+`1010:AF60` is the direct entry for the speed-2 movement mode that was already
+modeled internally by `_run_af60_double_step_for_direction`.  The original bytes
+start with `E8 00 00`, so the near `CALL` returns to `AF63` itself.  The AF63
+2-pixel direction-step body therefore runs once, RET lands at `AF63`, and the
+same body runs a second time before the second RET returns to the caller.  The
+new `overkill_movement_dir_double_step_2px_af60` hook preserves the `AF63`
+return word as balanced stack scratch and pins the full `AF60 + AF63` byte
+signature.
+
+The broader verifier finding is that parent hooks should not call a registered
+child hook's Python function directly.  That hides the child boundary from the
+hook verifier and recreates the same blind-spot class that allowed the old AA71
+final-boss contact shortcut to pass parent-level verification.  Direct child
+calls in the main hook module have now been converted to installed, verifier-
+visible near calls for `306F`, `5A24`, `5A00`, `0162`, `497A`, and `50C9`.
+Tandy renderer composition now does the same for `34C5` and `5A36`.
+
+`scripts/audit_hook_oracle.py` is the static guardrail for this class: it checks
+that every registered hook has stop metadata and rejects direct calls to
+registered child hooks through the raw `_call_hook_like_near_call` path.

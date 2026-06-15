@@ -416,3 +416,31 @@ What is guessed / candidate only:
 
 Still unknown / frontier:
 - `859E-8653` appears to be the sibling consumer/compositor around these descriptor records and should be classified next.
+
+### `movement` update - 2026-06-15 AF60 direct entry
+
+What is verified:
+- `1010:AF60` is a self-call double 2-pixel movement entry: `CALL AF63`, then
+  the `AF63` 2-pixel direction table body runs twice before returning to the
+  original caller.
+- The direct-entry hook is signature-guarded by the `AF60` call plus the full
+  `AF63` entry/table/handler bytes.
+
+Still unknown / frontier:
+- `1010:89FF-8A20` remains a movement setup/controller around direct `AF63`
+  traffic; it should be investigated as a separate parent, not folded into the
+  primitive step table hooks.
+
+### Hook-oracle audit update - 2026-06-15
+
+What is verified:
+- Complete child routines that are also registered hooks should be composed via
+  `call_installed_hook_like_near_call`, not by calling their Python wrapper
+  directly.
+- The current static audit reports no direct registered child calls in
+  `overkill/hooks.py` and no direct Tandy `5A36` calls.
+
+Still unknown / frontier:
+- Metadata-only entries without installed hooks should be reviewed: either
+  promote complete routines to registered hooks, or document them as partial
+  tails/bounded-original frontiers.

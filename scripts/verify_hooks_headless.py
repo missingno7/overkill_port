@@ -137,6 +137,15 @@ def main() -> int:
         action="store_true",
         help="legacy/perf mode: do not recursively verify child hooks reached inside a verified parent hook",
     )
+    parser.add_argument(
+        "--verify-strict",
+        action="store_true",
+        help=(
+            "slow/simple oracle mode: run the Python hook first, use its real "
+            "continuation as the ASM target, compare full memory, verify nested "
+            "hooks, and stop on the first diff"
+        ),
+    )
     args = parser.parse_args()
 
     demo: InputDemoPlayback | None = None
@@ -165,17 +174,23 @@ def main() -> int:
     for addr in args.disable_hook:
         _remove_hook(rt, addr)
 
-    verifier = install_hook_verifier(
-        rt,
-        HookVerifierConfig(
+    if args.verify_strict:
+        verifier_config = HookVerifierConfig.strict(
+            verify_all=True,
+            max_verified=args.verify_max,
+            asm_max_steps=1_000_000,
+        )
+    else:
+        verifier_config = HookVerifierConfig(
             verify_all=True,
             max_verified=args.verify_max,
             stop_on_diff=True,
             full_memory=not args.fast_ranges,
             verify_nested_hooks=not args.no_nested,
             asm_max_steps=1_000_000,
-        ),
-    )
+        )
+
+    verifier = install_hook_verifier(rt, verifier_config)
 
     # Frame/timer/retrace boundaries define the demo's replay clock, exactly as
     # in scripts/play.py and the frame verifier.  The verifier already counts
@@ -190,7 +205,8 @@ def main() -> int:
     print(
         "hook verify start "
         f"snapshot={args.snapshot} video_mode={mode:04X} "
-        f"verify_max={args.verify_max} full_memory={not args.fast_ranges} "
+        f"verify_max={args.verify_max} full_memory={verifier.config.full_memory} "
+        f"strict={verifier.config.auto_continuation} "
         f"demo={args.demo if demo is not None else '<none>'}"
     )
     print(rt.cpu.s.snapshot())

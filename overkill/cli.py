@@ -14,7 +14,9 @@ from dos_re.snapshot import parse_addr, run_until, write_snapshot, load_snapshot
 
 def add_verify_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--verify-hooks", action="store_true", help="differentially verify all hooks at hook boundaries")
+    p.add_argument("--verify-hooks-strict", action="store_true", help="verify all hooks using the slow/simple automatic-continuation oracle")
     p.add_argument("--verify-hook", action="append", default=[], help="differentially verify one hook address; may be repeated")
+    p.add_argument("--verify-strict", action="store_true", help="make --verify-hooks/--verify-hook use the slow/simple automatic-continuation oracle")
     p.add_argument("--verify-max", type=int, default=None, help="stop verifying after N hook calls")
     p.add_argument("--verify-stop-on-diff", action="store_true", help="raise on the first hook divergence")
     p.add_argument("--verify-log-diffs", action="store_true", help="print detailed hook divergence reports and continue")
@@ -36,19 +38,31 @@ def add_launch_args(p: argparse.ArgumentParser) -> None:
 
 
 def maybe_install_verifier(rt, args: argparse.Namespace) -> None:
-    if not getattr(args, "verify_hooks", False) and not getattr(args, "verify_hook", []):
+    if not (
+        getattr(args, "verify_hooks", False)
+        or getattr(args, "verify_hooks_strict", False)
+        or getattr(args, "verify_hook", [])
+    ):
         return
     hooks = {parse_verify_addr(text) for text in args.verify_hook}
-    config = HookVerifierConfig(
-        verify_all=args.verify_hooks,
-        hooks=hooks,
-        max_verified=args.verify_max,
-        stop_on_diff=args.verify_stop_on_diff,
-        log_diffs=args.verify_log_diffs,
-        full_memory=not args.verify_fast_ranges,
-        require_metadata=args.verify_require_metadata,
-        asm_max_steps=1_000_000,
-    )
+    if getattr(args, "verify_strict", False) or getattr(args, "verify_hooks_strict", False):
+        config = HookVerifierConfig.strict(
+            verify_all=getattr(args, "verify_hooks", False) or getattr(args, "verify_hooks_strict", False),
+            hooks=hooks,
+            max_verified=args.verify_max,
+            asm_max_steps=1_000_000,
+        )
+    else:
+        config = HookVerifierConfig(
+            verify_all=args.verify_hooks,
+            hooks=hooks,
+            max_verified=args.verify_max,
+            stop_on_diff=args.verify_stop_on_diff,
+            log_diffs=args.verify_log_diffs,
+            full_memory=not args.verify_fast_ranges,
+            require_metadata=args.verify_require_metadata,
+            asm_max_steps=1_000_000,
+        )
     install_hook_verifier(rt, config)
 
 

@@ -919,6 +919,13 @@
     "notes": "8-direction movement step table, 3-pixel delta. Same dispatch shape as AF63/AEE4 via the CS:AF2C jump table; near RET. Shares the lifted _run_af22_three_pixel_step_for_direction body used by the 5DB2/EFAE-logic-0Ch parents; this entry hook covers direct CALL AF22 sites. Signature-guarded.",
     "status": "hooked_verified"
   },
+  "1010:AF60": {
+    "island": "movement",
+    "kind": "hook",
+    "name": "overkill_movement_dir_double_step_2px_af60",
+    "notes": "Self-call double 2-pixel movement entry. Original bytes are CALL AF63 followed by the AF63 2-pixel step-table body; CALL pushes AF63 as stack scratch, the first AF63 RET re-enters AF63, and the second RET returns to the real caller. Registered as its own hook so direct CALL AF60 sites are verifier-visible instead of hiding inside parent movement helpers. Signature-guarded by E8 00 00 plus the full AF63 entry/table/body bytes.",
+    "status": "hooked_verified"
+  },
   "1010:AF63": {
     "island": "movement",
     "kind": "hook",

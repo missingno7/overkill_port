@@ -4,6 +4,11 @@ from __future__ import annotations
 
 from typing import Callable
 
+from dos_re.hooks import (
+    call_installed_hook_like_near_call as _call_installed_hook_like_near_call,
+    jump_installed_hook_boundary as _jump_installed_hook_boundary,
+)
+
 
 def _signature_matches(live: bytes, expected: bytes | tuple[bytes, ...]) -> bool:
     variants = expected if isinstance(expected, tuple) else (expected,)
@@ -46,26 +51,10 @@ def call_hook_like_near_call(cpu, handler: Callable, return_ip: int) -> None:
 
 
 def call_installed_hook_like_near_call(cpu, key: tuple[int, int], default_handler: Callable, return_ip: int) -> None:
-    """Run an installed child hook with original near-CALL stack semantics.
+    """Backward-compatible OVERKILL import path for the generic DOS_RE helper."""
+    _call_installed_hook_like_near_call(cpu, key, default_handler, return_ip)
 
-    A Python parent hook often composes children directly instead of letting the
-    VM fetch a CALL instruction and dispatch through ``CPU8086.step``.  That is
-    convenient, but it used to bypass the live hook verifier at exactly the child
-    address that the original ASM would have reached.  Route such nested calls
-    through the verifier when it is active so the child entry becomes a real
-    differential checkpoint instead of a shared black box inside the parent.
-    """
-    handler = cpu.replacement_hooks.get(key, default_handler)
-    name = cpu.hook_names.get(key, getattr(handler, "__name__", "replacement"))
-    cpu.push(return_ip & 0xFFFF)
-    cpu.s.cs = key[0] & 0xFFFF
-    cpu.s.ip = key[1] & 0xFFFF
-    verifier = getattr(cpu, "hook_verifier", None)
-    if (
-        verifier is not None
-        and getattr(cpu, "hook_verifier_verify_nested_calls", True)
-        and key not in getattr(cpu, "hook_verifier_passthrough", set())
-    ):
-        verifier(cpu, key, handler, name)
-    else:
-        handler(cpu)
+
+def jump_installed_hook_boundary(cpu, key: tuple[int, int], default_handler: Callable) -> None:
+    """Backward-compatible OVERKILL import path for verifier-visible JMP/fall-through child boundaries."""
+    _jump_installed_hook_boundary(cpu, key, default_handler)

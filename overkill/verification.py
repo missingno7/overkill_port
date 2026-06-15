@@ -354,6 +354,7 @@ DEFAULT_STOPS: dict[Addr, HookStop] = {
     (0x1010, 0xAFD8): HookStop("near_ret"),
     (0x1010, 0xAEE4): HookStop("near_ret"),
     (0x1010, 0xAF22): HookStop("near_ret"),
+    (0x1010, 0xAF60): HookStop("near_ret"),
     (0x1010, 0xAF63): HookStop("near_ret"),
     (0x1010, 0xA66F): HookStop("near_ret"),
     (0x1010, 0xA746): HookStop("near_ret"),
@@ -386,8 +387,8 @@ DEFAULT_STOPS: dict[Addr, HookStop] = {
     (0x1010, 0xED97): HookStop("near_ret"),
     (0x1010, 0xEDE9): HookStop("near_ret"),
     (0x1010, 0xCC7F): HookStop("fixed_ips", ips=(0xCE13, 0x24D7, 0xCDCC)),
-    (0x1010, 0xCD8D): HookStop("near_ret"),
-    (0x1010, 0xCDAA): HookStop("near_ret"),
+    (0x1010, 0xCD8D): HookStop("fixed_ip", 0xCE02),
+    (0x1010, 0xCDAA): HookStop("fixed_ip", 0xCE02),
     (0x1010, 0xCD68): HookStop("fixed_ips", ips=(0xCE13, 0xCC7F, 0xCDCC)),
     (0x1010, 0xCE40): HookStop("near_ret"),
     (0x1010, 0xCE5C): HookStop("near_ret_or_fixed_ip", 0xCE40),
@@ -516,6 +517,7 @@ DEFAULT_STOPS: dict[Addr, HookStop] = {
     (0x1010, 0xAC28): HookStop("near_ret_or_fixed_ip", 0xAA44),
     (0x1010, 0xAC81): HookStop("near_ret_or_fixed_ip", 0xACD9),
     (0x1010, 0xAC97): HookStop("near_ret_or_fixed_ip", 0xACD9),
+    (0x1010, 0xAA71): HookStop("near_ret"),
     (0x1010, 0xBCB1): HookStop("near_ret"),
     (0x1010, 0xBC45): HookStop("near_ret"),
     (0x1010, 0xBC4B): HookStop("near_ret"),
@@ -560,6 +562,7 @@ class HookVerifier(_GenericHookVerifier):
 
 def install_hook_verifier(rt: Runtime, config: HookVerifierConfig) -> HookVerifier:
     verifier = HookVerifier(rt, config)
+    rt.cpu.hook_verifier_verify_nested_calls = config.verify_nested_hooks
     rt.cpu.hook_verifier = verifier.verify
     return verifier
 

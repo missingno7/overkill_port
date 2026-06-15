@@ -287,8 +287,12 @@ def main(argv: list[str] | None = None) -> int:
                    help="pace hardware retrace waits used by intro/menu; default is 60 Hz, not the 36.4 Hz game timer")
     p.add_argument("--verify-hooks", action="store_true",
                    help="differentially verify all hooks at hook boundaries while playing")
+    p.add_argument("--verify-hooks-strict", action="store_true",
+                   help="verify all hooks using the slow/simple automatic-continuation oracle")
     p.add_argument("--verify-hook", action="append", default=[],
                    help="differentially verify one hook address while playing; may be repeated")
+    p.add_argument("--verify-strict", action="store_true",
+                   help="make --verify-hooks/--verify-hook use the slow/simple automatic-continuation oracle")
     p.add_argument("--verify-max", type=int, default=None,
                    help="stop after N verified hook calls")
     p.add_argument("--verify-stop-on-diff", action="store_true",
@@ -313,6 +317,10 @@ def main(argv: list[str] | None = None) -> int:
                    help="show a live SDL preview of the candidate runtime while frame verification runs")
     p.add_argument("--verify-frame-preview-on-diff", action="store_true",
                    help="open the frame compare image when frame verification finds a diff")
+    p.add_argument("--verify-frame-trace-raw", action="store_true",
+                   help="on frame divergence, include recent candidate hooks that changed the sampled raw frame bytes")
+    p.add_argument("--verify-frame-trace-raw-from", type=int, default=1,
+                   help="first frame number where --verify-frame-trace-raw starts sampling; useful for late divergences")
     p.add_argument("--ega-publish-timed-boundaries", action="store_true",
                    help="debug only: publish EGA snapshots at timer/retrace waits as well as the EGA presenter")
     p.add_argument("--ega-start-address-units", choices=("byte", "word", "ignore"), default="byte",
@@ -437,6 +445,8 @@ def main(argv: list[str] | None = None) -> int:
                         dump_dir=Path(args.verify_frame_dump_dir),
                         stop_on_diff=True,
                         preview_on_diff=args.verify_frame_preview_on_diff,
+                        trace_sample_changes=args.verify_frame_trace_raw,
+                        trace_sample_change_start=args.verify_frame_trace_raw_from,
                         ega_start_address_units=args.ega_start_address_units,
                     ),
                     publish_candidate=publish_candidate,
@@ -522,6 +532,8 @@ def main(argv: list[str] | None = None) -> int:
                 dump_dir=Path(args.verify_frame_dump_dir),
                 stop_on_diff=True,
                 preview_on_diff=args.verify_frame_preview_on_diff,
+                trace_sample_changes=args.verify_frame_trace_raw,
+                trace_sample_change_start=args.verify_frame_trace_raw_from,
                 ega_start_address_units=args.ega_start_address_units,
             ),
             pump_inputs=pump_demo_inputs if demo_playback is not None else None,
@@ -544,10 +556,18 @@ def main(argv: list[str] | None = None) -> int:
     status = {"text": ""}
     hook_verifier = None
     explicit_verify_hooks = {parse_verify_addr(text) for text in args.verify_hook}
-    if args.verify_hooks or explicit_verify_hooks:
-        hook_verifier = install_hook_verifier(
-            rt,
-            HookVerifierConfig(
+    use_strict_hook_oracle = args.verify_strict or args.verify_hooks_strict
+    if args.verify_hooks or args.verify_hooks_strict or explicit_verify_hooks:
+        if use_strict_hook_oracle:
+            verifier_config = HookVerifierConfig.strict(
+                verify_all=args.verify_hooks or args.verify_hooks_strict,
+                hooks=explicit_verify_hooks,
+                max_verified=args.verify_max,
+                asm_max_steps=1_000_000,
+                progress_callback=lambda text: status.__setitem__("text", text),
+            )
+        else:
+            verifier_config = HookVerifierConfig(
                 verify_all=args.verify_hooks,
                 hooks=explicit_verify_hooks,
                 max_verified=args.verify_max,
@@ -558,8 +578,8 @@ def main(argv: list[str] | None = None) -> int:
                 verify_nested_hooks=not args.verify_no_nested,
                 asm_max_steps=1_000_000,
                 progress_callback=lambda text: status.__setitem__("text", text),
-            ),
-        )
+            )
+        hook_verifier = install_hook_verifier(rt, verifier_config)
 
     if args.video != "cga":
         for key in NON_CGA_INTERACTIVE_DISABLE:

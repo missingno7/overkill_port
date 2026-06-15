@@ -9,6 +9,7 @@ CS:IP hook-registration layer.
 from __future__ import annotations
 
 from dos_re.cpu import CF, DF, ZF
+from dos_re.hooks import call_installed_hook_like_near_call
 from overkill.asm import (
     _add_mem_word,
     _add_reg16,
@@ -33,6 +34,44 @@ from overkill.gameplay.objects import (
     run_object_scroll_sprite_ab4f,
 )
 from overkill.runtime_code import require_runtime_code_variant
+
+
+
+def _call_verified_child_near(cpu, ip: int, default_handler, return_ip: int) -> None:
+    """Run a lifted child routine through its real ASM hook boundary.
+
+    Parent hooks often inline child helpers for speed/readability.  That is only
+    safe for verification if the child call still reaches the hook verifier at
+    the original CS:IP with the original near-CALL return word on the stack.
+    Otherwise a locally wrong helper can hide inside a larger verified parent and
+    only surface later as a frame/state divergence.
+    """
+    call_installed_hook_like_near_call(
+        cpu,
+        (cpu.s.cs & 0xFFFF, ip & 0xFFFF),
+        default_handler,
+        return_ip & 0xFFFF,
+    )
+
+
+def _call_ab34(cpu, return_ip: int) -> None:
+    _call_verified_child_near(cpu, 0xAB34, lambda c: run_object_motion_table_ab34(c, _no_patch_guard), return_ip)
+
+
+def _call_ab4f(cpu, return_ip: int) -> None:
+    _call_verified_child_near(cpu, 0xAB4F, lambda c: run_object_scroll_sprite_ab4f(c, _no_patch_guard), return_ip)
+
+
+def _call_ac28(cpu, return_ip: int) -> None:
+    _call_verified_child_near(cpu, 0xAC28, lambda c: run_tile_collision_probe_ac28(c, _no_patch_guard), return_ip)
+
+
+def _call_ac81(cpu, return_ip: int) -> None:
+    _call_verified_child_near(cpu, 0xAC81, lambda c: run_object_slot_scan_guard_ac81(c, _no_patch_guard), return_ip)
+
+
+def _call_aa71(cpu, return_ip: int) -> None:
+    _call_verified_child_near(cpu, 0xAA71, run_postmove_contact_window_aa71, return_ip)
 
 def _run_interpreted_near_call_observed(cpu, target_ip: int, return_ip: int, *, max_steps: int = 20000) -> None:
     """Run a rare original near helper from inside a larger lifted path.
@@ -152,6 +191,7 @@ SIG_MOVEMENT_DIR_STEP_2PX_AF63 = bytes.fromhex(
     "83 46 04 02 83 46 02 02 c3 83 6e 04 02 83 6e 02 02 c3 83 6e 02 02 83 46 04 02 c3 "
     "83 46 02 02 83 6e 04 02 c3"
 )
+SIG_MOVEMENT_DOUBLE_STEP_2PX_AF60 = b"\xE8\x00\x00" + SIG_MOVEMENT_DIR_STEP_2PX_AF63
 
 
 def _or_mem_word(cpu, seg: int, off: int, value: int) -> int:
@@ -2739,8 +2779,7 @@ def _run_object_postmove_bc4b(cpu, *, parent: str, chain: str, cx_value: int, cl
                     elif obj_type == 2:
                         # BCF9 CALL AA71 leaves BCFC below BCCB's live frame.
                         saved_sp = cpu.s.sp & 0xFFFF
-                        cpu.push(0xBCFC)
-                        run_postmove_contact_window_aa71(cpu)
+                        _call_aa71(cpu, 0xBCFC)
                         cpu.s.sp = saved_sp
                     else:
                         return
@@ -3103,13 +3142,11 @@ def _run_object_behavior_ab77(cpu, *, parent: str, chain: str, cx_value: int) ->
         cpu.s.ip = 0xAB8F
         return
 
-    cpu.push(0xAB81)
-    run_object_scroll_sprite_ab4f(cpu, _no_patch_guard)
+    _call_ab4f(cpu, 0xAB81)
     if cpu.s.ip != 0xAB81:
         _raise_unverified_path(cpu, parent=parent, chain=f"{chain} -> AB4F", target_ip=cpu.s.ip, bp=cpu.s.bp, cx_value=cx_value)
 
-    cpu.push(0xAB84)
-    run_tile_collision_probe_ac28(cpu, _no_patch_guard)
+    _call_ac28(cpu, 0xAB84)
     if cpu.s.ip == 0xAA44:
         cpu.set_flag(CF, False)
         cpu.s.ip = cpu.pop()
@@ -3119,8 +3156,7 @@ def _run_object_behavior_ab77(cpu, *, parent: str, chain: str, cx_value: int) ->
         cpu.s.ip = 0xAB8F
         return
 
-    cpu.push(0xAB89)
-    run_object_slot_scan_guard_ac81(cpu, _no_patch_guard)
+    _call_ac81(cpu, 0xAB89)
     if cpu.s.ip == 0xAA44:
         cpu.set_flag(CF, False)
         cpu.s.ip = cpu.pop()
@@ -3215,16 +3251,14 @@ def _run_object_sprite0f_collision_abca(
     _cmp_word(cpu, v2384, 0x0003)
     if v2384 < 0x0003:
         cpu.s.dx = 0xA420
-        cpu.push(0xABD7)
-        run_object_motion_table_ab34(cpu, _no_patch_guard)
+        _call_ab34(cpu, 0xABD7)
         if cpu.s.ip != 0xABD7:
             _raise_unverified_path(
                 cpu, parent=parent, chain=f"{chain} -> AB34",
                 target_ip=cpu.s.ip, bp=cpu.s.bp, cx_value=cx_value,
             )
 
-        cpu.push(0xABDA)
-        run_tile_collision_probe_ac28(cpu, _no_patch_guard)
+        _call_ac28(cpu, 0xABDA)
         if cpu.s.ip == 0xAA44:
             cpu.set_flag(CF, False)
             cpu.s.ip = cpu.pop()
@@ -3235,8 +3269,7 @@ def _run_object_sprite0f_collision_abca(
             )
         # ABDA: JAE ABE4.  If CF is set, fall through to ABDC/ABF3.
         if not cpu.get_flag(CF):
-            cpu.push(0xABE7)
-            run_object_slot_scan_guard_ac81(cpu, _no_patch_guard)
+            _call_ac81(cpu, 0xABE7)
             if cpu.s.ip == 0xAA44:
                 cpu.set_flag(CF, False)
                 cpu.s.ip = cpu.pop()
@@ -3343,8 +3376,7 @@ def _run_object_behavior_aba3(cpu, *, parent: str, chain: str, cx_value: int) ->
     cpu.set_add_flags(ax, 0x0014, result, 16)
     mem.ww(ss, (bp + 0x08) & 0xFFFF, cpu.s.ax)
 
-    cpu.push(0xABBA)
-    run_object_slot_scan_guard_ac81(cpu, _no_patch_guard)
+    _call_ac81(cpu, 0xABBA)
     if cpu.s.ip == 0xAA44:
         cpu.set_flag(CF, False)
         cpu.s.ip = cpu.pop()
@@ -3552,13 +3584,29 @@ def _run_deactivate_bd17_observed(cpu, *, parent: str, chain: str, cx_value: int
         (0x0006, 0xA976),
         (0x0005, 0xA976),
         (0x000C, 0xA974),
-        (0x000A, 0xA972),
     ):
         _cmp_word(cpu, logic_id, target)
         if logic_id == target:
             if mem.rw(ds, counter) != 0:
                 _sub_mem_word(cpu, ds, counter, 0x0001)
             return
+
+    # Logic id 000Ah is not the same small counter-only tail as 0009h.
+    # Original BD17 branches to BD9E: it optionally decrements DS:A97E and
+    # then jumps into the AC19 transition/status helper chain.  That chain is
+    # rare, but it has visible register, ES and below-SP scratch side effects;
+    # modelling it as a simple DS:A972 decrement caused AD60 hook divergence
+    # once the attract/demo object left bounds.
+    _cmp_word(cpu, logic_id, 0x000A)
+    if logic_id == 0x000A:
+        _run_original_tail_to_caller(cpu, 0xBD9E, max_steps=20000)
+        if not pop_return:
+            # AD60 reaches BD17 by a direct JMP and its lifted caller still owns
+            # the final caller RET pop.  The bounded original BD9E/AC19 tail has
+            # already executed that RET to reproduce register and below-SP side
+            # effects, so push the same continuation back for the AD60 wrapper.
+            cpu.push(cpu.s.ip & 0xFFFF)
+        return
 
     # BD17 is usually called as a standalone helper in tests/older lifted paths,
     # but BC4B reaches it by a direct branch and its wrapper owns the final RET
@@ -3799,6 +3847,25 @@ def _run_af60_double_step_for_direction(cpu) -> None:
     cpu.mem.ww(ss, (cpu.s.sp - 2) & 0xFFFF, 0xAF63)
     _run_af63_step_for_direction(cpu, parent="1010:AF60")
     _run_af63_step_for_direction(cpu, parent="1010:AF60")
+
+
+def run_movement_dir_double_step_2px_af60(cpu, self_disable_if_patched) -> None:
+    """Hook entry for 1010:AF60, the self-call double 2-pixel step.
+
+    The original is ``CALL AF63`` followed by the AF63 body.  The near CALL
+    pushes ``AF63`` as scratch, the first AF63 RET returns to the AF63 entry,
+    and the second AF63 RET returns to the real caller.  Registering AF60 closes
+    the direct-entry blind spot while preserving the scratch word below SP.
+    """
+    if self_disable_if_patched(
+        cpu,
+        0xAF60,
+        SIG_MOVEMENT_DOUBLE_STEP_2PX_AF60,
+        "overkill_movement_dir_double_step_2px_af60",
+    ):
+        return
+    _run_af60_double_step_for_direction(cpu)
+    cpu.s.ip = cpu.pop()
 
 
 def run_movement_dir_step_2px_af63(cpu, self_disable_if_patched) -> None:

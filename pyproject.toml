@@ -7,13 +7,10 @@ name = "overkill-source-port"
 version = "0.1.0"
 description = "Separated DOS RE toolkit and OVERKILL reverse-engineered source-port layers"
 requires-python = ">=3.11"
-# The 8086 interpreter core has no third-party dependencies.  The interactive
-# viewer (scripts/play.py) needs pygame (SDL) for display/input and numpy for the
-# vectorised frame decode; both are imported only when the viewer launches.
-dependencies = [
-    "numpy>=1.23",
-    "pygame>=2.5",
-]
+# The 8086 interpreter core, headless verifier, and dependency-free test runner
+# intentionally have no third-party runtime dependencies.  Optional extras below
+# install the SDL viewer, pytest, and AdLib CFFI support when needed.
+dependencies = []
 
 [project.scripts]
 overkill = "overkill.cli:main"
@@ -22,6 +19,13 @@ overkill = "overkill.cli:main"
 pythonpath = ["."]
 
 [project.optional-dependencies]
+viewer = [
+    "numpy>=1.23",
+    "pygame>=2.5",
+]
+test = [
+    "pytest>=8",
+]
 adlib = [
     "cffi>=1.15",
 ]

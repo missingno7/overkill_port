@@ -72,3 +72,8 @@ def main(argv):
         raw = bytes(cpu.mem.rb(cs, (before_ip + i) & 0xFFFF) for i in range(n))
         print(f"{cs:04X}:{before_ip:04X}  {raw.hex():<16}  {asm.strip()}")
         ip = before_ip + n
+if __name__ == "__main__":
+    if len(sys.argv) != 5:
+        print(__doc__.strip(), file=sys.stderr)
+        raise SystemExit(2)
+    main(sys.argv[1:])

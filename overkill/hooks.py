@@ -15,6 +15,7 @@ from dos_re.hooks import registry
 from .hook_wrappers.common import (
     call_hook_like_near_call as _call_hook_like_near_call,
     call_installed_hook_like_near_call as _call_installed_hook_like_near_call,
+    jump_installed_hook_boundary as _jump_installed_hook_boundary,
     self_disable_if_patched as _self_disable_if_patched,
 )
 from .hook_wrappers.asset_codecs import (
@@ -264,6 +265,7 @@ from .gameplay.object_runtime import (
     _run_af60_double_step_for_direction,
     _run_af63_step_for_direction,
     run_movement_dir_step_2px_af63,
+    run_movement_dir_double_step_2px_af60,
     run_movement_dir_step_3px_af22,
     run_movement_dir_step_8px_aee4,
     _run_collision_death_tail_bfc7,
@@ -801,6 +803,12 @@ def overkill_movement_dir_step_3px_af22(cpu):
     run_movement_dir_step_3px_af22(cpu, _self_disable_if_patched)
 
 
+@registry.replace(0x1010, 0xAF60, "overkill_movement_dir_double_step_2px_af60")
+def overkill_movement_dir_double_step_2px_af60(cpu):
+    """Self-call double 2-pixel movement step (entry for direct calls)."""
+    run_movement_dir_double_step_2px_af60(cpu, _self_disable_if_patched)
+
+
 @registry.replace(0x1010, 0xAF63, "overkill_movement_dir_step_2px_af63")
 def overkill_movement_dir_step_2px_af63(cpu):
     """8-direction movement step table, 2-pixel delta (entry for direct calls)."""
@@ -936,8 +944,7 @@ def overkill_presence_stamp_call_a876(cpu):
     """Model A876: CALL 4CED and continue at A879."""
     if _self_disable_if_patched(cpu, 0xA876, _SIG_A876, "overkill_presence_stamp_call_a876"):
         return
-    cpu.push(0xA879)
-    overkill_presence_stamp_triplet_4ced(cpu)
+    _call_installed_hook_like_near_call(cpu, (0x1010, 0x4CED), overkill_presence_stamp_triplet_4ced, 0xA879)
 
 
 @registry.replace(0x1010, 0xA85E, "overkill_scan_draw_setup_8d12_a85e")
@@ -954,8 +961,7 @@ def overkill_scan_draw_call_5ac8_a870(cpu):
     """Hook wrapper for A861 active-entry CALL 5AC8 glue."""
     if _self_disable_if_patched(cpu, 0xA870, _SIG_A870, "overkill_scan_draw_call_5ac8_a870"):
         return
-    cpu.push(0xA873)
-    dispatch_draw_object_5ac8(cpu)
+    _call_installed_hook_like_near_call(cpu, (0x1010, 0x5AC8), overkill_dispatch_draw_object_5ac8, 0xA873)
 
 
 @registry.replace(0x1010, 0xA873, "overkill_scan_draw_tail_a873")
@@ -1044,8 +1050,7 @@ def overkill_scan_present_call_5a92_a91e(cpu):
     """Hook wrapper for A90F active-entry CALL 5A92 glue."""
     if _self_disable_if_patched(cpu, 0xA91E, _SIG_A91E, "overkill_scan_present_call_5a92_a91e"):
         return
-    cpu.push(0xA921)
-    dispatch_present_object_5a92(cpu)
+    _call_installed_hook_like_near_call(cpu, (0x1010, 0x5A92), overkill_dispatch_present_object_5a92, 0xA921)
 
 
 @registry.replace(0x1010, 0xA921, "overkill_scan_present_tail_a921")
@@ -1522,23 +1527,13 @@ def overkill_masked_sprite_composite_38b7(cpu):
     s.di = di
     s.ax = ax
     s.cx = 0
-    s.ip = 0x38D0                            # fall through past LOOP
-
-
-
-def _run_cga_masked_sprite_composite_38b7_as_near(cpu) -> None:
-    """Run 38B7 when reached as a jump-table near-return target.
-
-    The registered 38B7 hook intentionally stops at the 38D0 fall-through so the
-    interpreter can execute the shared ``mov ds,cs:[9596]; ret`` tail when 38B7 is
-    entered directly.  The layer dispatcher jumps to 38B7 as the final target, so
-    here we must execute that shared tail explicitly.
-    """
-    overkill_masked_sprite_composite_38b7(cpu)
-    if (cpu.s.ip & 0xFFFF) != 0x38D0:
-        raise RuntimeError(f"38B7 composite returned to unexpected IP {cpu.s.ip:04X}")
-    cpu.s.ds = cpu.mem.rw(cpu.s.cs & 0xFFFF, 0x9596)
-    cpu.s.ip = cpu.pop()
+    # The original 38B7 loop falls into the shared 38D0 tail
+    # (MOV DS,CS:[9596]; RET).  Earlier versions stopped at 38D0 and used a
+    # private helper when 38B7 was reached as a compositor jump target; that made
+    # the registered 38B7 boundary partial.  Keep the hook complete so any
+    # parent that jumps here can route through the hook verifier.
+    s.ds = cpu.mem.rw(s.cs & 0xFFFF, 0x9596)
+    s.ip = cpu.pop()
 
 
 @registry.replace(0x1010, 0x3849, "overkill_masked_sprite_composite_3849")
@@ -2782,7 +2777,7 @@ def _layer_sprite_runtime() -> LayerSpriteRuntime:
             0x38D6: overkill_or_inverted_sprite_composite_38d6,
             0x390E: overkill_or_inverted_sprite_composite_390e,
             0x3849: overkill_masked_sprite_composite_3849,
-            0x38B7: _run_cga_masked_sprite_composite_38b7_as_near,
+            0x38B7: overkill_masked_sprite_composite_38b7,
             0x38F9: overkill_masked_sprite_composite_38f9,
             # EGA full-width layer compositor leaves.
             0x10B7: overkill_ega_layer_or_inverted_composite_10b7,
@@ -3205,6 +3200,12 @@ def overkill_postmove_y_clamp_bcb1(cpu):
     run_postmove_y_clamp_bcb1(cpu)
 
 
+@registry.replace(0x1010, 0xAA71, "overkill_postmove_contact_window_aa71")
+def overkill_postmove_contact_window_aa71(cpu):
+    """Lift the object/player contact-window helper at 1010:AA71."""
+    run_postmove_contact_window_aa71(cpu)
+
+
 
 
 
@@ -3485,7 +3486,7 @@ def overkill_status_counter_cell_blit_6296(cpu):
         cpu.s.bx = mode & 0xFFFF
         cpu.s.bx = cpu.shift(4, cpu.s.bx, 1, 16)
         if mode == 2:
-            _call_hook_like_near_call(cpu, overkill_tandy_rect_copy_306f, return_ip)
+            _call_installed_hook_like_near_call(cpu, (0x1010, 0x306F), overkill_tandy_rect_copy_306f, return_ip)
             return
         # 6296 has only been proven on the Tandy-first source-port path.  Other
         # video modes should be lifted explicitly rather than silently routed
@@ -4166,8 +4167,9 @@ def overkill_ega_row_driver_27eb(cpu):
             while loop_count:
                 # 27FA PUSH CX; 27FB CALL 2932; 27FE POP CX; 27FF LOOP 27FA.
                 cpu.push(cpu.s.cx)
-                cpu.push(0x27FE)
-                overkill_ega_transparency_mask_2932(cpu)
+                _call_installed_hook_like_near_call(cpu, (0x1010, 0x2932), overkill_ega_transparency_mask_2932, 0x27FE)
+                if (cpu.s.ip & 0xFFFF) != 0x27FE:
+                    raise RuntimeError(f"2932 returned to unexpected IP {cpu.s.ip:04X} inside 27EB row driver")
                 cpu.s.cx = cpu.pop()
                 cpu.s.cx = (cpu.s.cx - 1) & 0xFFFF
                 loop_count -= 1
@@ -4179,8 +4181,10 @@ def overkill_ega_row_driver_27eb(cpu):
         cpu.s.di = 0x5AF4
         cpu.s.bp = 0x0004
 
-        overkill_ega_load_temp_rows_280d(cpu)
-        overkill_ega_expand_temp_rows_2824(cpu)
+        _jump_installed_hook_boundary(cpu, (0x1010, 0x280D), overkill_ega_load_temp_rows_280d)
+        if (cpu.s.ip & 0xFFFF) != 0x2824:
+            raise RuntimeError(f"280D fell through to unexpected IP {cpu.s.ip:04X} inside 27EB row driver")
+        _jump_installed_hook_boundary(cpu, (0x1010, 0x2824), overkill_ega_expand_temp_rows_2824)
         if cpu.s.ip != 0x27EB:
             return
 
@@ -4707,7 +4711,6 @@ def _run_menu_cell_source_blit_5a6c_from_cd4f(cpu) -> bool:
         # 5A6C dispatches mode 0 to 4199.  4199 reads height/width, selects the
         # visible video segment, doubles the byte width into BP, then falls into
         # the already lifted 41A6 variable-width interlaced blit and RETs to CD52.
-        cpu.push(0xCD52)
         delta = -2 if cpu.get_flag(DF) else 2
         cpu.s.ax = cpu.mem.rw(cpu.s.ds, cpu.s.si)
         cpu.s.si = (cpu.s.si + delta) & 0xFFFF
@@ -4717,14 +4720,14 @@ def _run_menu_cell_source_blit_5a6c_from_cd4f(cpu) -> bool:
         cpu.s.es = cpu.mem.rw(cs, 0x95A4)
         cpu.s.ax = cpu.shift(4, cpu.s.ax, 1, 16)
         cpu.s.bp = cpu.s.ax & 0xFFFF
-        overkill_variable_width_interlaced_blit_41a6(cpu)
+        _call_installed_hook_like_near_call(cpu, (0x1010, 0x41A6), overkill_variable_width_interlaced_blit_41a6, 0xCD52)
         if cpu.s.ip != 0xCD52:
             raise RuntimeError(f"41A6 returned to unexpected IP {cpu.s.ip:04X} inside CC7F presenter")
         return True
 
     if mode == 2:
         # 5A6C dispatches mode 2 to 306F, the lifted Tandy raw-rectangle copy.
-        _call_hook_like_near_call(cpu, overkill_tandy_rect_copy_306f, 0xCD52)
+        _call_installed_hook_like_near_call(cpu, (0x1010, 0x306F), overkill_tandy_rect_copy_306f, 0xCD52)
         if cpu.s.ip != 0xCD52:
             raise RuntimeError(f"306F returned to unexpected IP {cpu.s.ip:04X} inside CC7F presenter")
         return True
@@ -4752,14 +4755,14 @@ def _run_changed_cell_present_dispatch_cd7e(cpu) -> bool:
 
     if mode == 0:
         cpu.s.cx = 0x0008
-        overkill_changed_word_present_8rows_cd8d(cpu)
+        _jump_installed_hook_boundary(cpu, (0x1010, 0xCD8D), overkill_changed_word_present_8rows_cd8d)
         if cpu.s.ip != 0xCE02:
             raise RuntimeError(f"CD8D returned to unexpected IP {cpu.s.ip:04X} inside CC7F presenter")
         return True
 
     if mode == 2:
         cpu.s.cx = 0x0008
-        overkill_tandy_changed_dword_present_8rows_cdaa(cpu)
+        _jump_installed_hook_boundary(cpu, (0x1010, 0xCDAA), overkill_tandy_changed_dword_present_8rows_cdaa)
         if cpu.s.ip != 0xCE02:
             raise RuntimeError(f"CDAA returned to unexpected IP {cpu.s.ip:04X} inside CC7F presenter")
         return True
@@ -4803,7 +4806,7 @@ def _run_dirty_cell_presenter_row_cc7f_once(cpu) -> None:
     # CC7F push cx; mov ax,[BD95]; call 5A24
     cpu.push(cpu.s.cx)
     cpu.s.ax = mem.rw(ds, 0xBD95)
-    _call_hook_like_near_call(cpu, overkill_xy_to_di_5a24, 0xCC86)
+    _call_installed_hook_like_near_call(cpu, (0x1010, 0x5A24), overkill_xy_to_di_5a24, 0xCC86)
     if cpu.s.ip != 0xCC86:
         raise RuntimeError(f"5A24 returned to unexpected IP {cpu.s.ip:04X} inside CC7F presenter")
 
@@ -4820,11 +4823,11 @@ def _run_dirty_cell_presenter_row_cc7f_once(cpu) -> None:
     cpu.s.bx = cpu.shift(4, cpu.s.bx, 1, 16)
 
     if mode == 0:
-        overkill_dirty_copy_mode1_ccaa(cpu)
+        _jump_installed_hook_boundary(cpu, (0x1010, 0xCCAA), overkill_dirty_copy_mode1_ccaa)
     elif mode == 1:
-        overkill_dirty_copy_mode2_ccf0(cpu)
+        _jump_installed_hook_boundary(cpu, (0x1010, 0xCCF0), overkill_dirty_copy_mode2_ccf0)
     elif mode == 2:
-        overkill_dirty_copy_mode3_ccc4(cpu)
+        _jump_installed_hook_boundary(cpu, (0x1010, 0xCCC4), overkill_dirty_copy_mode3_ccc4)
     else:
         raise RuntimeError(f"unverified original-code path reached in 1010:CC7F: unknown dirty-copy mode {mode:04X}")
     if cpu.s.ip != 0xCD08:
@@ -4851,7 +4854,7 @@ def _run_dirty_cell_presenter_row_cc7f_once(cpu) -> None:
 
         # CD37..CD52 draw the changed source cell to the visible video segment.
         cpu.s.ax = mem.rw(ds, 0xBD95)
-        _call_hook_like_near_call(cpu, overkill_xy_to_di_5a00, 0xCD3D)
+        _call_installed_hook_like_near_call(cpu, (0x1010, 0x5A00), overkill_xy_to_di_5a00, 0xCD3D)
         if cpu.s.ip != 0xCD3D:
             raise RuntimeError(f"5A00 returned to unexpected IP {cpu.s.ip:04X} inside CC7F presenter")
         cpu.push(cpu.s.di)
@@ -4874,10 +4877,12 @@ def _run_dirty_cell_presenter_row_cc7f_once(cpu) -> None:
             if flag == 0:
                 # ip is 0xCD52 here (the CALL site in original ASM); preserve it so
                 # play.py's pacing wrapper can detect this specific call context.
-                installed_50c9 = cpu.replacement_hooks.get(
-                    (0x1010, 0x50C9), overkill_wait_vga_retrace_50c9
+                _call_installed_hook_like_near_call(
+                    cpu,
+                    (0x1010, 0x50C9),
+                    overkill_wait_vga_retrace_50c9,
+                    0xCD68,
                 )
-                _call_hook_like_near_call(cpu, installed_50c9, 0xCD68)
                 if cpu.s.ip != 0xCD68:
                     raise RuntimeError(f"50C9 returned to unexpected IP {cpu.s.ip:04X} inside CC7F presenter")
 
@@ -4953,7 +4958,7 @@ def _run_menu_transition_input_wait_ce40(cpu) -> None:
             return
 
         cpu.push(cpu.s.cx)
-        _call_hook_like_near_call(cpu, overkill_input_poll_0162, 0xCE4C)
+        _call_installed_hook_like_near_call(cpu, (0x1010, 0x0162), overkill_input_poll_0162, 0xCE4C)
         if cpu.s.ip != 0xCE4C:
             raise RuntimeError(f"0162 returned to unexpected IP {cpu.s.ip:04X} inside CE40 input wait")
         cpu.s.cx = cpu.pop()
@@ -5011,7 +5016,7 @@ def _run_menu_script_input_wait_cf78(cpu) -> None:
             raise RuntimeError(f"50C9 returned to unexpected IP {cpu.s.ip:04X} inside CF78 input wait")
 
         cpu.push(cpu.s.cx)
-        _call_hook_like_near_call(cpu, overkill_input_poll_0162, 0xCF7F)
+        _call_installed_hook_like_near_call(cpu, (0x1010, 0x0162), overkill_input_poll_0162, 0xCF7F)
         if cpu.s.ip != 0xCF7F:
             raise RuntimeError(f"0162 returned to unexpected IP {cpu.s.ip:04X} inside CF78 input wait")
         cpu.s.cx = cpu.pop()
@@ -5302,10 +5307,10 @@ def overkill_postcopy_blit_wait_loop_58df(cpu):
         mode = cpu.mem.rw(cs, 0x95BC)
         cpu.s.bx = mode & 0xFFFF
         cpu.s.bx = cpu.shift(4, cpu.s.bx, 1, 16)   # 58E5..58EA
-        _call_hook_like_near_call(cpu, overkill_blit_scaled_column_block_497a, 0x58F1)
+        _call_installed_hook_like_near_call(cpu, (0x1010, 0x497A), overkill_blit_scaled_column_block_497a, 0x58F1)
         if cpu.s.ip != 0x58F1:
             raise RuntimeError(f"497A replacement returned to unexpected IP {cpu.s.ip:04X}")
-        _call_hook_like_near_call(cpu, overkill_wait_vga_retrace_50c9, 0x58F4)
+        _call_installed_hook_like_near_call(cpu, (0x1010, 0x50C9), overkill_wait_vga_retrace_50c9, 0x58F4)
         if cpu.s.ip != 0x58F4:
             raise RuntimeError(f"50C9 replacement returned to unexpected IP {cpu.s.ip:04X}")
         cpu.s.cx = cpu.pop()                       # 58F4 POP CX

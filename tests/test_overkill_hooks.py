@@ -3241,11 +3241,13 @@ def test_masked_sprite_composite_38b7_hook_matches_interpreted_asm():
     from overkill.hooks import overkill_masked_sprite_composite_38b7
 
     # 38B7..38CF: lodsw / and ax,es:[di] / or ax,ds:[si] / add si,2 / stosw  (x2)
-    #             add di,30h / loop 38B7 ; falls through to 38D0.
+    #             add di,30h / loop 38B7 ; then the shared 38D0 tail restores
+    #             DS from CS:[9596] and returns near.
     routine = bytes.fromhex(
         'ad 26 23 05 0b 04 83 c6 02 ab'
         'ad 26 23 05 0b 04 83 c6 02 ab'
-        '83 c7 30 e2 e7'.replace(' ', '')
+        '83 c7 30 e2 e7'
+        '2e 8e 1e 96 95 c3'.replace(' ', '')
     )
 
     def make_cpu(use_hook: bool, rows: int, seed: int) -> CPU8086:
@@ -3257,6 +3259,8 @@ def test_masked_sprite_composite_38b7_hook_matches_interpreted_asm():
             mem.wb(ds, (0x0480 + i) & 0xFFFF, rnd.randint(0, 255))
         for i in range(rows * 0x34 + 16):
             mem.wb(es, (0x25AC + i) & 0xFFFF, rnd.randint(0, 255))
+        mem.ww(0x1010, 0x9596, ds)
+        mem.ww(0x5000, 0x9000, 0xBEEF)
         state = CPUState(
             ax=rnd.randint(0, 0xFFFF), bx=0x1111, cx=rows, dx=0x2222,
             si=0x0480, di=0x25AC, bp=0x3333, sp=0x9000,
@@ -3272,11 +3276,11 @@ def test_masked_sprite_composite_38b7_hook_matches_interpreted_asm():
         asm = make_cpu(False, rows, rows)
         hook = make_cpu(True, rows, rows)
         for _ in range(20000):
-            if asm.addr() == (0x1010, 0x38D0):
+            if asm.addr() == (0x1010, 0xBEEF):
                 break
             asm.step()
         hook.step()
-        assert asm.addr() == hook.addr() == (0x1010, 0x38D0)
+        assert asm.addr() == hook.addr() == (0x1010, 0xBEEF)
         assert asm.s.snapshot() == hook.s.snapshot()
         assert asm.mem.data == hook.mem.data
 
@@ -6803,6 +6807,123 @@ def test_aa71_upper_contact_tail_matches_interpreted_asm_on_captured_snapshot():
     assert asm.program.memory.data == hook.program.memory.data
 
 
+def test_aa71_final_boss_mode_keeps_narrow_x_window_against_asm():
+    from overkill.gameplay.collision import run_postmove_contact_window_aa71
+
+    code = bytes.fromhex(
+        # AA44: CLC; RET, followed by padding up to AA71.
+        "f8 c3" + "90" * (0xAA71 - 0xAA46) +
+        # AA71 original helper: signed Y gate, then A8C2-specific/narrow X gate.
+        "8b46020bc078cc8b46040518003b0680237cc02d2c003b0680237fb7"
+        "833ec2a80175178b46020508003b067e2372a42d0c003b067e23779b"
+        "f9c38b46020518003b067e23728d2d2c003b067e237784f9c3"
+    )
+
+    def make_cpu() -> CPU8086:
+        mem = Memory()
+        mem.load(0x1010, 0xAA44, code)
+        ds = ss = 0x25CC
+        bp = 0x2734
+        # Final-boss projectile/part from the frame-278 divergence: it overlaps
+        # vertically, but X+8 is still left of the player/window guard.
+        mem.ww(ss, bp + 0x02, 0x0068)
+        mem.ww(ss, bp + 0x04, 0x0058)
+        mem.ww(ds, 0x237E, 0x00BE)
+        mem.ww(ds, 0x2380, 0x006E)
+        mem.ww(ds, 0xA8C2, 0x0001)
+        cpu = CPU8086(
+            mem,
+            CPUState(
+                ax=0, bx=0, cx=0, dx=0, si=0, di=0, bp=bp, sp=0x9000,
+                cs=0x1010, ds=ds, es=ds, ss=ss, ip=0xAA71, flags=0x0202,
+            ),
+        )
+        cpu.trace_enabled = False
+        cpu.push(0xBEEF)
+        return cpu
+
+    asm = make_cpu()
+    hook = make_cpu()
+    for _ in range(32):
+        if asm.addr() == (0x1010, 0xBEEF):
+            break
+        asm.step()
+    run_postmove_contact_window_aa71(hook)
+
+    assert asm.addr() == hook.addr() == (0x1010, 0xBEEF)
+    assert asm.s.snapshot() == hook.s.snapshot()
+    assert asm.mem.data == hook.mem.data
+
+
+
+def test_inline_parent_call_to_aa71_reaches_hook_verifier():
+    """Direct Python parent composition must not hide AA71 child bugs.
+
+    This is the exact verification class that the frame-278 damage bug exposed:
+    BC4B was executing Python and called the AA71 helper directly, so the child
+    routine's branch coverage was invisible to --verify-hooks.  The parent path
+    now routes AA71 through its registered hook boundary; an intentionally wrong
+    AA71 replacement must therefore fail immediately at 1010:AA71.
+    """
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    from dos_re.cpu import CF
+    from dos_re.dos import DOSMachine
+    from dos_re.runtime import Runtime
+    from dos_re.verification import GenericHookStop, HookVerifierConfig, HookVerifyDivergence, install_hook_verifier
+    from overkill.gameplay.object_runtime import _call_aa71
+
+    code = bytes.fromhex(
+        # AA44: CLC; RET, followed by padding up to AA71.
+        "f8 c3" + "90" * (0xAA71 - 0xAA46) +
+        # AA71 original helper: signed Y gate, then A8C2-specific/narrow X gate.
+        "8b46020bc078cc8b46040518003b0680237cc02d2c003b0680237fb7"
+        "833ec2a80175178b46020508003b067e2372a42d0c003b067e23779b"
+        "f9c38b46020518003b067e23728d2d2c003b067e237784f9c3"
+    )
+    mem = Memory()
+    mem.load(0x1010, 0xAA44, code)
+    ds = ss = 0x25CC
+    bp = 0x2734
+    mem.ww(ss, bp + 0x02, 0x0068)
+    mem.ww(ss, bp + 0x04, 0x0058)
+    mem.ww(ds, 0x237E, 0x00BE)
+    mem.ww(ds, 0x2380, 0x006E)
+    mem.ww(ds, 0xA8C2, 0x0001)
+    cpu = CPU8086(
+        mem,
+        CPUState(
+            ax=0, bx=0, cx=0, dx=0, si=0, di=0, bp=bp, sp=0x9000,
+            cs=0x1010, ds=ds, es=ds, ss=ss, ip=0xBCF9, flags=0x0202,
+        ),
+    )
+    cpu.trace_enabled = False
+
+    def bad_aa71(c):
+        # The pre-fix shape: once the final-boss Y gate has matched, claim
+        # contact without doing the narrow X-window reject.
+        c.set_flag(CF, True)
+        c.s.ip = c.pop()
+
+    cpu.replacement_hooks[(0x1010, 0xAA71)] = bad_aa71
+    cpu.hook_names[(0x1010, 0xAA71)] = "bad_aa71"
+    rt = Runtime(SimpleNamespace(memory=mem), cpu, DOSMachine(Path.cwd()))
+    install_hook_verifier(
+        rt,
+        HookVerifierConfig(hooks={(0x1010, 0xAA71)}, stop_on_diff=True),
+        stops={(0x1010, 0xAA71): GenericHookStop("near_ret")},
+    )
+
+    with pytest.raises(HookVerifyDivergence) as excinfo:
+        _call_aa71(cpu, 0xBCFC)
+
+    report = str(excinfo.value)
+    assert "1010:AA71 bad_aa71" in report
+    assert "HOOK continuation: 1010:BCFC" in report
+    assert "Flag differences" in report or "Register differences" in report
+
+
 def test_aa71_upper_contact_tail_forced_upper_branch_matches_interpreted_asm():
     from pathlib import Path
     from overkill.gameplay.collision import run_postmove_contact_window_aa71
@@ -7488,7 +7609,12 @@ def test_dirty_cell_presenter_uses_installed_retrace_hook_for_intro_pacing_snaps
     base_retrace = rt.cpu.replacement_hooks[(0x1010, 0x50C9)]
 
     def pacing_wrapper(cpu):
-        nested_dirty_presenter_call = (cpu.s.cs & 0xFFFF, cpu.s.ip & 0xFFFF) == (0x1010, 0xCD52)
+        call_site = getattr(cpu, "hook_call_site", None)
+        nested_dirty_presenter_call = (
+            call_site is not None
+            and call_site[:2] == (0x1010, 0xCD52)
+            and call_site[2:4] == (0x1010, 0x50C9)
+        )
         base_retrace(cpu)
         if nested_dirty_presenter_call:
             raise FrameBoundary()
@@ -10870,6 +10996,7 @@ def test_movement_dir_step_tables_match_interpreted_asm_all_directions():
     from dos_re.memory import Memory
     from overkill.hooks import (
         overkill_movement_dir_step_2px_af63,
+        overkill_movement_dir_double_step_2px_af60,
         overkill_movement_dir_step_3px_af22,
         overkill_movement_dir_step_8px_aee4,
     )
@@ -10889,9 +11016,11 @@ def test_movement_dir_step_tables_match_interpreted_asm_all_directions():
         " 83 46 04 02 83 46 02 02 c3 83 6e 04 02 83 6e 02 02 c3 83 6e 02 02 83 46 04 02 c3"
         " 83 46 02 02 83 6e 04 02 c3"
     )
+    code_af60 = bytes.fromhex("e8 00 00") + code_af63
     tables = (
         (0xAEE4, code_aee4, overkill_movement_dir_step_8px_aee4),
         (0xAF22, code_af22, overkill_movement_dir_step_3px_af22),
+        (0xAF60, code_af60, overkill_movement_dir_double_step_2px_af60),
         (0xAF63, code_af63, overkill_movement_dir_step_2px_af63),
     )
     seeds = ((0x0080, 0x0050), (0x0002, 0x0001), (0x0000, 0xFFFE))

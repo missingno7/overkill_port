@@ -42,6 +42,9 @@ class FrameVerifyConfig:
     stop_on_diff: bool = True
     preview_on_diff: bool = False
     log_every: int = 10
+    trace_sample_changes: bool = False
+    trace_sample_change_limit: int = 16
+    trace_sample_change_start: int = 1
 
 
 @dataclass
@@ -60,18 +63,20 @@ class FrameSample:
     raw: bytes
     rgb: bytes
     recent_hooks: tuple[str, ...]
+    recent_sample_changes: tuple[str, ...] = ()
     width: int = 320
     height: int = 200
     context: str = "frame"
 
 
 BoundarySpec = tuple[Addr, str]
-SampleBuilder = Callable[[Runtime, str, int, str, Addr, int, int, tuple[str, ...]], FrameSample]
+SampleBuilder = Callable[[Runtime, str, int, str, Addr, int, int, tuple[str, ...], tuple[str, ...]], FrameSample]
 RuntimePairCallback = Callable[[Runtime, Runtime], None]
 StopCallback = Callable[[], bool]
 StatusCallback = Callable[[str], None]
 PublishCallback = Callable[[Runtime, FrameSample], None]
 AfterBoundaryCallback = Callable[[Runtime, str, Addr], None]
+TraceSampleCallback = Callable[[Runtime], bytes]
 
 
 def run_frame_verifier(
@@ -84,6 +89,8 @@ def run_frame_verifier(
     reference_env_hooks: set[Addr] | frozenset[Addr] = frozenset(),
     disabled_hooks: set[Addr] | frozenset[Addr] = frozenset(),
     after_boundary: AfterBoundaryCallback | None = None,
+    trace_sample: TraceSampleCallback | None = None,
+    trace_sample_label: str = "sample",
     publish_candidate: PublishCallback | None = None,
     pump_inputs: RuntimePairCallback | None = None,
     stop_requested: StopCallback | None = None,
@@ -111,6 +118,8 @@ def run_frame_verifier(
         reference_env_hooks=set(reference_env_hooks),
         sample_builder=sample_builder,
         after_boundary=after_boundary,
+        trace_sample=None,
+        trace_sample_label=trace_sample_label,
     )
     cand_runner = _BoundaryRunner(
         candidate,
@@ -121,6 +130,8 @@ def run_frame_verifier(
         reference_env_hooks=set(reference_env_hooks),
         sample_builder=sample_builder,
         after_boundary=after_boundary,
+        trace_sample=trace_sample if config.trace_sample_changes else None,
+        trace_sample_label=trace_sample_label,
     )
 
     frame_no = 1
@@ -187,6 +198,8 @@ class _BoundaryRunner:
         reference_env_hooks: set[Addr],
         sample_builder: SampleBuilder,
         after_boundary: AfterBoundaryCallback | None,
+        trace_sample: TraceSampleCallback | None,
+        trace_sample_label: str,
     ) -> None:
         self.rt = rt
         self.config = config
@@ -196,6 +209,9 @@ class _BoundaryRunner:
         self.reference_env_hooks = reference_env_hooks
         self.sample_builder = sample_builder
         self.after_boundary = after_boundary
+        self.trace_sample = trace_sample
+        self.trace_sample_label = trace_sample_label
+        self.recent_sample_changes: deque[str] = deque(maxlen=config.trace_sample_change_limit)
         self._base_hooks = dict(rt.cpu.replacement_hooks)
         self._base_names = dict(rt.cpu.hook_names)
         self.last_hooks: deque[str] = deque(maxlen=48)
@@ -213,11 +229,36 @@ class _BoundaryRunner:
         self.rt.cpu.hook_verifier = self._trace_hook
 
     def _trace_hook(self, cpu: CPU8086, key: Addr, handler: Callable[[CPU8086], None], name: str) -> None:
-        self.last_hooks.append(
+        entry = (
             f"{cpu.instruction_count:09d} {key[0]:04X}:{key[1]:04X} {name} "
             f"enter={cpu.s.cs:04X}:{cpu.s.ip:04X}"
         )
+        self.last_hooks.append(entry)
+        trace_enabled = (
+            self.trace_sample is not None
+            and getattr(self, "frame_no", 0) >= self.config.trace_sample_change_start
+        )
+        before = self.trace_sample(self.rt) if trace_enabled and self.trace_sample is not None else None
+        before_crc = zlib.crc32(before) & 0xFFFFFFFF if before is not None else 0
         handler(cpu)
+        if before is None or self.trace_sample is None:
+            return
+        after = self.trace_sample(self.rt)
+        if before == after:
+            return
+        idx = first_diff(before, after)
+        changed = byte_diff_count(before, after)
+        after_crc = zlib.crc32(after) & 0xFFFFFFFF
+        before_byte = before[idx] if 0 <= idx < len(before) else None
+        after_byte = after[idx] if 0 <= idx < len(after) else None
+        byte_note = (
+            f" {before_byte:02X}->{after_byte:02X}"
+            if before_byte is not None and after_byte is not None else ""
+        )
+        self.recent_sample_changes.append(
+            f"{entry} {self.trace_sample_label}_diffs={changed} "
+            f"first={idx}{byte_note} crc={before_crc:08X}->{after_crc:08X}"
+        )
 
     def _install_boundaries(self, boundary_hooks: Sequence[BoundarySpec]) -> None:
         for key, kind in boundary_hooks:
@@ -271,6 +312,7 @@ class _BoundaryRunner:
 
     def run_to_boundary(self, frame_no: int) -> FrameSample:
         self.boundary = None
+        self.frame_no = frame_no
         start = self.rt.cpu.instruction_count
         for _ in range(self.config.frame_budget):
             try:
@@ -288,6 +330,7 @@ class _BoundaryRunner:
                     boundary_steps,
                     start,
                     tuple(self.last_hooks),
+                    tuple(self.recent_sample_changes),
                 )
         cs, ip = self.rt.cpu.addr()
         raise FrameVerifyDivergence(
@@ -306,8 +349,9 @@ def make_frame_sample(
     boundary_steps: int,
     start_count: int,
     recent_hooks: tuple[str, ...],
-    raw: bytes,
-    rgb: bytes,
+    recent_sample_changes: tuple[str, ...] = (),
+    raw: bytes = b"",
+    rgb: bytes = b"",
     display_start: int = 0,
     width: int = 320,
     height: int = 200,
@@ -328,6 +372,7 @@ def make_frame_sample(
         raw=raw,
         rgb=rgb,
         recent_hooks=recent_hooks,
+        recent_sample_changes=recent_sample_changes,
         width=width,
         height=height,
         context=context,
@@ -377,6 +422,7 @@ def compare_samples(
     if not sections:
         return None
     hook_tail = "\n".join(f"  {line}" for line in cand.recent_hooks[-16:]) or "  <none>"
+    change_tail = "\n".join(f"  {line}" for line in cand.recent_sample_changes[-16:]) or "  <not enabled>"
     ref_tail = "\n".join(f"  {line}" for line in ref.recent_hooks[-8:]) or "  <none>"
     return (
         f"{label} DIVERGENCE\n"
@@ -387,6 +433,7 @@ def compare_samples(
         f"HOOK continuation: {cand.cs:04X}:{cand.ip:04X} steps={cand.steps_since_start}\n"
         + "\n\n".join(sections)
         + "\n\nRecent candidate hooks before divergence:\n" + hook_tail
+        + "\n\nRecent candidate sample-changing hooks before divergence:\n" + change_tail
         + "\n\nRecent reference hooks before divergence:\n" + ref_tail
     )
 
@@ -399,6 +446,12 @@ def first_diff(a: bytes, b: bytes) -> int:
     if len(a) != len(b):
         return n
     return -1
+
+
+def byte_diff_count(a: bytes, b: bytes) -> int:
+    n = min(len(a), len(b))
+    count = sum(1 for i in range(n) if a[i] != b[i])
+    return count + abs(len(a) - len(b))
 
 
 def dump_divergence(
@@ -455,6 +508,7 @@ def sample_meta(sample: FrameSample) -> dict[str, object]:
         "height": sample.height,
         "context": sample.context,
         "recent_hooks": list(sample.recent_hooks),
+        "recent_sample_changes": list(sample.recent_sample_changes),
     }
 
 

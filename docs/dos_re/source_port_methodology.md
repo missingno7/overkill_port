@@ -55,6 +55,28 @@ Target-specific knowledge belongs in that target's package. In this repository,
 that package is `overkill`. See `docs/architecture/package_boundary.md` for the
 hard dependency rules.
 
+
+## Minimal agent/sandbox test loop
+
+When working on the reusable layer, start with the target-neutral smoke scope:
+
+```bash
+python scripts/run_tests.py --scope dos-re
+```
+
+This path intentionally needs only the Python standard library.  It does not load
+OVERKILL assets, open SDL/pygame, or run the long game hook suite.  Each test is
+run in an isolated worker with a timeout by default, which makes it safe for
+automated agents to run even while CPU or verifier bugs are being investigated.
+Use explicit file/function filters for narrow OVERKILL checks when needed:
+
+```bash
+python scripts/run_tests.py tests/test_overkill_hooks.py --name 'test_object_*' --timeout 10 --fail-fast
+```
+
+Use normal `pytest` when you want the richer local developer experience and are
+prepared to debug long-running integration tests.
+
 ## Reusable input demos
 
 `dos_re.input_demo` owns deterministic input-demo recording and replay.  A demo is

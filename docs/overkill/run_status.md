@@ -1,3 +1,181 @@
+## 2026-06-15 - Deep hook-oracle blind-spot cleanup: CALL and JMP child boundaries
+
+Continued the verifier-hardening pass after the AA71 false-contact bug.  The
+previous audit guaranteed that address wrappers in `overkill/hooks.py` were not
+calling registered child hooks through the old raw near-call helper, but it still
+missed two important classes:
+
+- registered child hooks called directly from other OVERKILL modules;
+- original `JMP`/fall-through child transfers, where no synthetic return word
+  should be pushed but the child boundary still needs verifier visibility.
+
+Implemented:
+
+- `dos_re.hooks.jump_installed_hook_boundary()`
+  - sibling of `call_installed_hook_like_near_call`;
+  - routes original JMP/fall-through transfers through the installed hook table
+    and live hook verifier without changing stack semantics;
+  - records `cpu.hook_jump_site` for diagnostics.
+- `call_installed_hook_like_near_call()` now records `cpu.hook_call_site` as
+  `(caller_cs, caller_ip, child_cs, child_ip, return_ip)` while the child runs,
+  so interactive wrappers can still identify original call-site context even
+  though the helper correctly sets `CS:IP` to the child boundary.
+- Strengthened `scripts/audit_hook_oracle.py`:
+  - scans all `overkill/**/*.py`, not just `overkill/hooks.py`;
+  - counts all 314 registered hooks across hook wrapper modules;
+  - fails on any direct Python call to a registered hook function.
+- Routed previously hidden child boundaries through installed/verifier-visible
+  entry points:
+  - `A876 -> 4CED`;
+  - `4CED -> 4D15` triplet;
+  - `A93C -> 4D64 -> 4D6F`;
+  - `A90C -> A90F/A927`;
+  - `A858/A870 -> 5AC8`;
+  - `A936/A91E -> 5A92`;
+  - `A8BE/A8F1 -> 7596`;
+  - layer-sprite compositor JMP targets from `75F5/768E/7746`;
+  - EGA row-driver child boundaries `2932`, `280D`, `2824`;
+  - dirty-cell presenter jump targets `CCAA/CCF0/CCC4` and changed-present
+    targets `CD8D/CDAA`;
+  - source-cell mode-0 `41A6` call inside the CC7F presenter.
+- Completed `1010:38B7` as a full near-return hook.  It now executes the shared
+  `38D0` tail (`MOV DS,CS:[9596]; RET`) itself, instead of stopping at the
+  fall-through and requiring a private compositor helper.  This removes a
+  partial-boundary exception from the layer-sprite path.
+- Corrected `CD8D` and `CDAA` hook-stop metadata from `near_ret` to fixed
+  continuation `CE02`, matching their original JMP-target shape.
+- Updated the frame-verifier test fixture to accept the raw-sample trace argument
+  that the runner now passes.
+
+Validation:
+
+```text
+python scripts/lint.py
+# Lint passed for 81 Python files
+
+python scripts/audit_hook_oracle.py
+# Hook-oracle audit passed: 314 registered hooks, 314 metadata entries,
+# no direct registered child calls detected.
+
+python scripts/run_tests.py --scope dos-re --verbose --no-lint
+# 4 passed, 0 failed, 0 timed out
+
+python scripts/run_tests.py tests/test_core.py --name test_hook_oracle_static_audit_passes --timeout 10 --fail-fast --no-lint --verbose
+# 1 passed
+
+python scripts/run_tests.py tests/test_frame_verify.py --timeout 20 --fail-fast --no-lint --verbose
+# 3 passed
+
+python scripts/run_tests.py tests/test_overkill_hooks.py --name '*38b7*' --timeout 20 --fail-fast --no-lint --verbose
+# 1 passed
+
+python scripts/run_tests.py tests/test_overkill_hooks.py --name '*presence*' --timeout 30 --fail-fast --no-lint --verbose
+# 3 passed
+
+python scripts/run_tests.py tests/test_overkill_hooks.py --name '*scan*' --timeout 30 --fail-fast --no-lint --verbose
+# 13 passed
+
+python scripts/run_tests.py tests/test_overkill_hooks.py --name '*dirty*' --timeout 30 --fail-fast --no-lint --verbose
+# 3 passed
+
+python scripts/run_tests.py tests/test_overkill_hooks.py --name '*27eb*' --timeout 60 --fail-fast --no-lint --verbose
+python scripts/run_tests.py tests/test_overkill_hooks.py --name '*280d*' --timeout 60 --fail-fast --no-lint --verbose
+python scripts/run_tests.py tests/test_overkill_hooks.py --name '*2824*' --timeout 60 --fail-fast --no-lint --verbose
+# 3 focused EGA row-driver tests passed
+
+python scripts/verify_hooks_headless.py --demo artifacts/demos/demo_play_tandy_20260615_132423 --demo-continue --verify-max 5000 --max-steps 1600000 --fast-ranges
+# OK HOOK VERIFY LIMIT REACHED verified=5000
+```
+
+Attempted a 10k headless verifier run in this sandbox, but it exceeded the tool
+time budget before completion.  Re-run it on the reference machine after this
+patch; the 5k run is clean and now includes newly verifier-visible nested child
+boundaries.
+
+Remaining explicit frontier:
+
+- There can still be semantically fused routines that intentionally duplicate a
+  child loop for performance, but they should no longer be silent: any complete
+  registered original boundary called as a child must now go through either
+  `call_installed_hook_like_near_call` or `jump_installed_hook_boundary`, and the
+  static audit enforces that across the OVERKILL package.
+- Rare allow-listed original compositor leaves in `KNOWN_ORIGINAL_LAYER_COMPOSITE_TARGETS`
+  remain bounded-original, not Python source yet.  They are visible frontier
+  entries for CGA/EGA cleanup, not hidden hook-oracle holes.
+
+## 2026-06-15 - Hook-oracle blind-spot sweep and AF60 direct-entry hook
+
+Continued the verifier-hardening pass after the AA71 final-boss contact bug proved
+that parent hooks can hide child-helper mistakes when they call Python children
+directly.  This pass focused on remaining direct child-call blind spots rather
+than semantic gameplay modeling.
+
+Implemented:
+
+- `1010:AF60 overkill_movement_dir_double_step_2px_af60`
+  - direct-entry hook for the self-call double 2-pixel movement step;
+  - original shape is `CALL AF63` followed by the `AF63` step-table body;
+  - preserves the `AF63` return-word stack scratch and returns to the real
+    caller after the second step;
+  - signature-guarded by `E8 00 00` + the full `AF63` entry/table/body bytes.
+- Converted remaining hook-composition calls in `overkill/hooks.py` that invoked
+  registered child hook functions directly to `call_installed_hook_like_near_call`:
+  `306F`, `5A24`, `5A00`, `0162`, `497A`, and `50C9`.
+- Converted Tandy renderer child calls to verifier-visible installed boundaries
+  for `1010:34C5` and `1010:5A36`.
+- Added `scripts/audit_hook_oracle.py`, a static guardrail that fails if:
+  - a registered hook lacks `HookStop` metadata;
+  - `overkill/hooks.py` directly calls a registered child hook through the old
+    raw `_call_hook_like_near_call` helper;
+  - Tandy rendering reintroduces direct `5A36` child calls.
+- Fixed `scripts/lindis.py` so the linear disassembler actually runs from the
+  command line; used it to confirm the `AF60 -> AF63 -> AF63` byte shape.
+
+Validation:
+
+```text
+python scripts/lint.py
+# Lint passed for 80 Python files
+
+python scripts/audit_hook_oracle.py
+# Hook-oracle audit passed: 269 registered hooks, 314 metadata entries,
+# no direct registered child calls detected.
+
+python scripts/run_tests.py tests/test_overkill_hooks.py --name test_movement_dir_step_tables_match_interpreted_asm_all_directions --timeout 20 --fail-fast --no-lint --verbose
+# 1 passed
+
+python scripts/run_tests.py tests/test_core.py --name test_hook_oracle_static_audit_passes --timeout 10 --fail-fast --no-lint --verbose
+# 1 passed
+
+python scripts/run_tests.py tests/test_overkill_hooks.py --name '*aa71*' --timeout 30 --fail-fast --no-lint --verbose
+# 5 passed
+
+python scripts/run_tests.py --scope dos-re --verbose --no-lint
+# 4 passed
+
+python scripts/verify_hooks_headless.py --demo artifacts/demos/demo_play_tandy_20260615_132423 --demo-continue --verify-max 5000 --max-steps 1600000 --fast-ranges
+# OK HOOK VERIFY LIMIT REACHED verified=5000
+```
+
+Known caveat:
+
+- `1010:2ABC -> object_row_address_mode1_2580` is still a raw direct helper call
+  because `2580` is a mode-specific EGA-internal helper, not a registered
+  top-level hook boundary in the current Tandy-first pass.  It remains an
+  explicit audit-visible exception/future EGA cleanup item, not a silent blind
+  spot.
+
+Next useful blind-spot work:
+
+- Move the same static audit style into any future module that composes address
+  wrappers outside `overkill/hooks.py`.
+- Continue shrinking `metadata w/o hook` frontier entries by either registering
+  complete direct-entry hooks or demoting metadata-only partial tails to explicit
+  bounded-original/frontier notes.
+- Re-run a longer demo/headless verifier on the reference machine to see which
+  newly exposed nested child boundaries become hot after the first 5k verified
+  calls.
+
 ## 2026-06-15 - Movement direction step-table entry hooks (AEE4/AF22/AF63)
 
 Lifted the three 8-direction object movement step tables to exact entry hooks.

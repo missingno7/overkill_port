@@ -802,3 +802,18 @@ def test_adlib_register_callback_can_emit_snapshot_state_on_attach():
     dos.set_adlib_callback(lambda reg, value: events.append((reg, value)), emit_current=True)
 
     assert events == [(0x20, 0x01), (0xB0, 0x20)]
+
+
+def test_hook_oracle_static_audit_passes():
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, "scripts/audit_hook_oracle.py"],
+        cwd=__import__("pathlib").Path(__file__).resolve().parents[1],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout

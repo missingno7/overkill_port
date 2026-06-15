@@ -21,6 +21,7 @@ visible and pass the concrete compositor handlers into this module.
 from __future__ import annotations
 
 from dos_re.cpu import CF
+from dos_re.hooks import call_installed_hook_like_near_call, jump_installed_hook_boundary
 from overkill.asm import _cmp_word
 
 from dataclasses import dataclass
@@ -208,12 +209,31 @@ def dispatch_present_object_5a92(cpu) -> None:
     s.ip = cpu.mem.rw(cs, (0x5AB6 + s.bx) & 0xFFFF)
 
 
+def _call_installed_draw_dispatch_5ac8(cpu, return_ip: int) -> None:
+    """CALL 1010:5AC8 through the verifier-visible installed boundary."""
+    call_installed_hook_like_near_call(cpu, (0x1010, 0x5AC8), dispatch_draw_object_5ac8, return_ip)
+
+
+def _call_installed_present_dispatch_5a92(cpu, return_ip: int) -> None:
+    """CALL 1010:5A92 through the verifier-visible installed boundary."""
+    call_installed_hook_like_near_call(cpu, (0x1010, 0x5A92), dispatch_present_object_5a92, return_ip)
+
+
+def _call_installed_layer_draw_type_7596(cpu, return_ip: int) -> None:
+    """CALL 1010:7596 through the verifier-visible installed boundary."""
+    call_installed_hook_like_near_call(cpu, (0x1010, 0x7596), dispatch_layer_draw_type_table_7596, return_ip)
+
+
+def _jump_installed_compositor_target(cpu, target_ip: int, handler: CompositorHandler) -> None:
+    """JMP/fall-through into a registered compositor target with verifier visibility."""
+    jump_installed_hook_boundary(cpu, (0x1010, target_ip & 0xFFFF), handler)
+
+
 def call_draw_dispatch_from_scan_a858(cpu, runtime: LayerSpriteRuntime) -> None:
     """Model ``A858: CALL 5AC8`` while preserving the real return frame."""
     if runtime.self_disable_if_patched(cpu, 0xA858, SIG_SCAN_DRAW_CALL_5AC8_A858, "overkill_scan_draw_call_5ac8_a858"):
         return
-    cpu.push(0xA85B)
-    dispatch_draw_object_5ac8(cpu)
+    _call_installed_draw_dispatch_5ac8(cpu, 0xA85B)
 
 
 def finish_draw_scan_tail_a85b(cpu, runtime: LayerSpriteRuntime) -> None:
@@ -230,8 +250,7 @@ def call_present_dispatch_from_scan_a936(cpu, runtime: LayerSpriteRuntime) -> No
     """Model ``A936: CALL 5A92`` while preserving the real return frame."""
     if runtime.self_disable_if_patched(cpu, 0xA936, SIG_SCAN_PRESENT_CALL_5A92_A936, "overkill_scan_present_call_5a92_a936"):
         return
-    cpu.push(0xA939)
-    dispatch_present_object_5a92(cpu)
+    _call_installed_present_dispatch_5a92(cpu, 0xA939)
 
 
 def finish_present_scan_tail_a939(cpu, runtime: LayerSpriteRuntime) -> None:
@@ -258,21 +277,20 @@ def run_clear_presence_list_parent_4d64(cpu, clear_presence_list_handler: Compos
 
     ``4D6F`` owns the actual presence-list clear body and returns to the word
     already on the caller's stack.  This parent deliberately does not push a
-    synthetic return word; using the existing 4D6F hook keeps the clear logic in
-    one place.
+    synthetic return word; jumping through the installed 4D6F boundary keeps the
+    clear logic verifier-visible without changing the original fall-through stack.
     """
     s = cpu.s
     cs = s.cs & 0xFFFF
     s.es = cpu.mem.rw(cs, 0x9598)
     s.si = 0xC7B1
     s.cx = 0x0028
-    clear_presence_list_handler(cpu)
+    jump_installed_hook_boundary(cpu, (0x1010, 0x4D6F), clear_presence_list_handler)
 
 
 def call_clear_presence_list_parent_a93c(cpu, clear_presence_parent_handler: CompositorHandler) -> None:
     """Model ``A93C: CALL 4D64 ; RET`` without duplicating 4D6F."""
-    cpu.push(0xA93F)
-    clear_presence_parent_handler(cpu)
+    call_installed_hook_like_near_call(cpu, (0x1010, 0x4D64), clear_presence_parent_handler, 0xA93F)
     if (cpu.s.ip & 0xFFFF) != 0xA93F:
         raise RuntimeError(f"4D64 returned to unexpected IP {cpu.s.ip:04X} inside A93C present-scan parent")
     cpu.s.ip = cpu.pop()
@@ -312,8 +330,7 @@ def run_presence_stamp_triplet_4ced(cpu, presence_stamp_handler: CompositorHandl
     for bp, cx, return_ip in ((0x4D4D, 0x0014, 0x4D01), (0x4D51, 0x000A, 0x4D0A), (0x4D51, 0x000A, 0x4D10)):
         s.bp = bp
         s.cx = cx
-        cpu.push(return_ip)
-        presence_stamp_handler(cpu)
+        call_installed_hook_like_near_call(cpu, (0x1010, 0x4D15), presence_stamp_handler, return_ip)
         if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (cs, return_ip):
             raise RuntimeError(f"4D15 returned to unexpected IP {s.cs:04X}:{s.ip:04X} inside 4CED parent")
 
@@ -338,12 +355,12 @@ def run_present_object_scan_pair_a90c(
     """
     s = cpu.s
     s.cx = 0x0022
-    scan_8d12_handler(cpu)
+    jump_installed_hook_boundary(cpu, (0x1010, 0xA90F), scan_8d12_handler)
     if (s.ip & 0xFFFF) != 0xA924:
         return
 
     s.cx = 0x0024
-    scan_32ca_handler(cpu)
+    jump_installed_hook_boundary(cpu, (0x1010, 0xA927), scan_32ca_handler)
     if (s.ip & 0xFFFF) != 0xA93C:
         return
 
@@ -365,8 +382,7 @@ def call_layer0_draw_type_from_scan_a8be(cpu, runtime: LayerSpriteRuntime) -> No
     """Model ``A8BE: CALL 7596`` in the layer-0 scan."""
     if runtime.self_disable_if_patched(cpu, 0xA8BE, SIG_LAYER0_CALL_7596_A8BE, "overkill_layer0_call_7596_a8be"):
         return
-    cpu.push(0xA8C1)
-    dispatch_layer_draw_type_table_7596(cpu)
+    _call_installed_layer_draw_type_7596(cpu, 0xA8C1)
 
 
 def finish_layer0_scan_tail_a8c1(cpu, runtime: LayerSpriteRuntime) -> None:
@@ -383,8 +399,7 @@ def call_layer1_draw_type_from_scan_a8f1(cpu, runtime: LayerSpriteRuntime) -> No
     """Model ``A8F1: CALL 7596`` in the layer-1 scan."""
     if runtime.self_disable_if_patched(cpu, 0xA8F1, SIG_LAYER1_CALL_7596_A8F1, "overkill_layer1_call_7596_a8f1"):
         return
-    cpu.push(0xA8F4)
-    dispatch_layer_draw_type_table_7596(cpu)
+    _call_installed_layer_draw_type_7596(cpu, 0xA8F4)
 
 
 def finish_layer1_scan_tail_a8f4(cpu, runtime: LayerSpriteRuntime) -> None:
@@ -460,7 +475,7 @@ def run_layer_sprite_compositor_target(cpu, target_ip: int, runtime: LayerSprite
     handler = runtime.compositor_handlers.get(target)
     if handler is None:
         return False
-    handler(cpu)
+    _jump_installed_compositor_target(cpu, target, handler)
     return True
 
 

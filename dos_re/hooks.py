@@ -73,4 +73,89 @@ def _parse_disabled(text: str) -> set[tuple[int, int]]:
     return out
 
 
+def call_installed_hook_like_near_call(
+    cpu: CPU8086,
+    key: tuple[int, int],
+    default_handler: Hook,
+    return_ip: int,
+) -> None:
+    """Run an installed child hook with original near-CALL stack semantics.
+
+    Source-port parent hooks often compose child routines directly instead of
+    letting the VM execute an actual CALL instruction.  This helper preserves the
+    CALL/RET stack effect and, when live hook verification is active, routes the
+    child through the verifier at its real CS:IP boundary.  Without this, a bad
+    lifted child can hide inside a larger verified parent and surface only as a
+    later frame/state divergence.
+    """
+    handler = cpu.replacement_hooks.get(key, default_handler)
+    name = cpu.hook_names.get(key, getattr(handler, "__name__", "replacement"))
+    call_site = (cpu.s.cs & 0xFFFF, cpu.s.ip & 0xFFFF)
+    previous_call_site = getattr(cpu, "hook_call_site", None)
+    cpu.hook_call_site = (call_site[0], call_site[1], key[0] & 0xFFFF, key[1] & 0xFFFF, return_ip & 0xFFFF)
+    cpu.push(return_ip & 0xFFFF)
+    cpu.s.cs = key[0] & 0xFFFF
+    cpu.s.ip = key[1] & 0xFFFF
+    verifier = getattr(cpu, "hook_verifier", None)
+    try:
+        if (
+            verifier is not None
+            and getattr(cpu, "hook_verifier_verify_nested_calls", True)
+            and key not in getattr(cpu, "hook_verifier_passthrough", set())
+        ):
+            verifier(cpu, key, handler, name)
+        else:
+            handler(cpu)
+    finally:
+        if previous_call_site is None:
+            try:
+                delattr(cpu, "hook_call_site")
+            except AttributeError:
+                pass
+        else:
+            cpu.hook_call_site = previous_call_site
+
+
 registry = HookRegistry()
+
+
+def jump_installed_hook_boundary(
+    cpu: CPU8086,
+    key: tuple[int, int],
+    default_handler: Hook,
+) -> None:
+    """Run an installed child hook reached by original JMP/fall-through semantics.
+
+    This is the sibling of :func:`call_installed_hook_like_near_call` for
+    original control flow that transfers to another ASM routine without pushing
+    a return word.  Lifted parent hooks use it when they manually jump or
+    fall through into a registered child boundary.  The child still sees its
+    real CS:IP, and live hook verification can therefore diff that child
+    independently instead of letting it become a shared black box inside the
+    parent transaction.
+    """
+    handler = cpu.replacement_hooks.get(key, default_handler)
+    name = cpu.hook_names.get(key, getattr(handler, "__name__", "replacement"))
+    jump_site = (cpu.s.cs & 0xFFFF, cpu.s.ip & 0xFFFF)
+    previous_jump_site = getattr(cpu, "hook_jump_site", None)
+    cpu.hook_jump_site = (jump_site[0], jump_site[1], key[0] & 0xFFFF, key[1] & 0xFFFF)
+    cpu.s.cs = key[0] & 0xFFFF
+    cpu.s.ip = key[1] & 0xFFFF
+    verifier = getattr(cpu, "hook_verifier", None)
+    try:
+        if (
+            verifier is not None
+            and getattr(cpu, "hook_verifier_verify_nested_calls", True)
+            and key not in getattr(cpu, "hook_verifier_passthrough", set())
+        ):
+            verifier(cpu, key, handler, name)
+        else:
+            handler(cpu)
+    finally:
+        if previous_jump_site is None:
+            try:
+                delattr(cpu, "hook_jump_site")
+            except AttributeError:
+                pass
+        else:
+            cpu.hook_jump_site = previous_jump_site

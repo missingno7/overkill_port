@@ -1,5 +1,33 @@
 # OVERKILL Runtime And Source-Port Scaffold
 
+
+## Fast Headless Checks
+
+The reusable `dos_re` layer can be smoke-tested without pygame, pytest, or the
+original OVERKILL assets:
+
+```bash
+python scripts/run_tests.py --scope dos-re
+```
+
+That scope runs only target-neutral CPU, memory/MZ-loader, and hook-verifier
+checks.  The runner is dependency-free, supports the repository's `tmp_path`
+fixture usage, and isolates each test with a per-test timeout so a bad emulator
+loop cannot hang the whole run.  For a specific suspicious test:
+
+```bash
+python scripts/run_tests.py tests/test_overkill_hooks.py \
+  --name test_tandy_text_glyph_3153_hook_verifies_on_gameplay_snapshot \
+  --timeout 5 --fail-fast --no-lint
+```
+
+The interactive viewer remains optional.  Install it only on machines that need
+`play.py`/SDL display support:
+
+```bash
+pip install -e .[viewer]
+```
+
 ## Bootstrap/static-runtime boundary
 
 The project now treats the original startup path as an oracle/extraction layer,

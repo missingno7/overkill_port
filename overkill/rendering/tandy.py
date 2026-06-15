@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from dos_re.cpu import CF, DF, ZF
+from dos_re.hooks import call_installed_hook_like_near_call
 from dos_re.memory import EGA_CPU_APERTURE, EGA_PLANE_WINDOW
 
 Cpu = object
@@ -70,10 +71,24 @@ class TandyRenderRuntime:
     signature_30b0: bytes
 
 
-def _call_hook_like_near_call(cpu, handler: HookHandler, return_ip: int) -> None:
-    """Run a lifted helper with the same stack side effect as CALL/RET."""
-    cpu.push(return_ip & 0xFFFF)
-    handler(cpu)
+def _call_installed_object_row_address_5a36(cpu, runtime: TandyRenderRuntime, return_ip: int) -> None:
+    """Call 1010:5A36 through the installed verifier-visible hook boundary."""
+    call_installed_hook_like_near_call(
+        cpu,
+        (0x1010, 0x5A36),
+        runtime.object_row_address_from_mode_dispatch_5a36,
+        return_ip,
+    )
+
+
+def _call_installed_strided_copy_34c5(cpu, runtime: TandyRenderRuntime, return_ip: int) -> None:
+    """Call 1010:34C5 through the installed verifier-visible hook boundary."""
+    call_installed_hook_like_near_call(
+        cpu,
+        (0x1010, 0x34C5),
+        lambda c: strided_copy_34c5(c, runtime),
+        return_ip,
+    )
 
 
 def _cmp_word(cpu, a: int, b: int) -> None:
@@ -959,7 +974,7 @@ def split_present_copy_34ad(cpu, runtime: TandyRenderRuntime) -> None:
 
     _cmp_word(cpu, cpu.s.di & 0xFFFF, OFFSCREEN_DESTINATION)
     if (cpu.s.di & 0xFFFF) != OFFSCREEN_DESTINATION:
-        _call_hook_like_near_call(cpu, lambda c: strided_copy_34c5(c, runtime), 0x34B5)
+        _call_installed_strided_copy_34c5(cpu, runtime, 0x34B5)
         if cpu.s.ip != 0x34B5:
             raise RuntimeError(f"34C5 first half returned to unexpected IP {cpu.s.ip:04X}")
 
@@ -1033,7 +1048,7 @@ def draw_tiny_object_3657(cpu, runtime: TandyRenderRuntime) -> None:
     bp = cpu.s.bp & 0xFFFF
     mem = cpu.mem
 
-    _call_hook_like_near_call(cpu, runtime.object_row_address_from_mode_dispatch_5a36, 0x365A)
+    _call_installed_object_row_address_5a36(cpu, runtime, 0x365A)
     if cpu.s.ip != 0x365A:
         raise RuntimeError(f"5A36 replacement returned to unexpected IP {cpu.s.ip:04X}")
     ax = cpu.s.ax & 0xFFFF
@@ -1074,7 +1089,7 @@ def draw_split_object_356c(cpu, runtime: TandyRenderRuntime) -> None:
     bp = cpu.s.bp & 0xFFFF
     mem = cpu.mem
 
-    _call_hook_like_near_call(cpu, runtime.object_row_address_from_mode_dispatch_5a36, 0x356F)
+    _call_installed_object_row_address_5a36(cpu, runtime, 0x356F)
     if cpu.s.ip != 0x356F:
         raise RuntimeError(f"5A36 replacement returned to unexpected IP {cpu.s.ip:04X}")
     ax = cpu.s.ax & 0xFFFF
@@ -1089,7 +1104,7 @@ def draw_split_object_356c(cpu, runtime: TandyRenderRuntime) -> None:
         ds = cpu.s.ds & 0xFFFF
 
     _add_mem_word(cpu, ss, (bp + 0x02) & 0xFFFF, 0x0010)
-    _call_hook_like_near_call(cpu, runtime.object_row_address_from_mode_dispatch_5a36, 0x358D)
+    _call_installed_object_row_address_5a36(cpu, runtime, 0x358D)
     if cpu.s.ip != 0x358D:
         raise RuntimeError(f"5A36 replacement returned to unexpected IP {cpu.s.ip:04X}")
     ax = cpu.s.ax & 0xFFFF
@@ -1112,7 +1127,7 @@ def draw_object_block_35cc(cpu, runtime: TandyRenderRuntime) -> None:
     if runtime.self_disable_if_patched(cpu, 0x35CC, runtime.signature_35cc, "overkill_tandy_draw_object_block_35cc"):
         return
 
-    _call_hook_like_near_call(cpu, runtime.object_row_address_from_mode_dispatch_5a36, 0x35CF)
+    _call_installed_object_row_address_5a36(cpu, runtime, 0x35CF)
     if cpu.s.ip != 0x35CF:
         raise RuntimeError(f"5A36 replacement returned to unexpected IP {cpu.s.ip:04X}")
 

@@ -83,12 +83,50 @@ class HookVerifierConfig:
     asm_max_steps: int = 500_000
     full_memory: bool = True
     require_metadata: bool = False
+    # In simple strict mode the hook side is allowed to define its own
+    # continuation: run the Python replacement first, then run the original ASM
+    # from the same pre-hook state until it reaches that exact CS:IP.  This is
+    # deliberately dumb and slow, but removes most hand-written stop-kind
+    # categorisation from small focused verification runs.
+    auto_continuation: bool = False
     # Keep verification active when a lifted parent reaches/calls a child hook.
     # Disabling this restores the older faster mode where nested child hooks were
     # shared by both sides of a parent transaction and only the parent
     # continuation was diffed.
     verify_nested_hooks: bool = True
     progress_callback: Callable[[str], None] | None = None
+
+    @classmethod
+    def strict(
+        cls,
+        *,
+        verify_all: bool = False,
+        hooks: set[Addr] | None = None,
+        max_verified: int | None = None,
+        asm_max_steps: int = 1_000_000,
+        progress_callback: Callable[[str], None] | None = None,
+    ) -> "HookVerifierConfig":
+        """Create the slow, simple, fail-hard verification profile.
+
+        Strict mode is intended for small targeted investigations, not for fast
+        gameplay.  It compares the full memory image, always verifies nested
+        hook boundaries, stops on the first mismatch, and uses the hook's actual
+        resulting CS:IP as the ASM oracle target instead of relying on
+        hand-written continuation metadata.
+        """
+        return cls(
+            verify_all=verify_all,
+            hooks=set() if hooks is None else hooks,
+            max_verified=max_verified,
+            stop_on_diff=True,
+            log_diffs=True,
+            asm_max_steps=asm_max_steps,
+            full_memory=True,
+            require_metadata=False,
+            auto_continuation=True,
+            verify_nested_hooks=True,
+            progress_callback=progress_callback,
+        )
 
 
 def parse_addr(text: str) -> Addr:
@@ -156,6 +194,16 @@ class HookVerifier:
                     cpu.coverage_telemetry.record_hook_unverified(key, name)
             return
 
+        call_no = self.counts.get(key, 0) + 1
+        self.counts[key] = call_no
+        before = CPUState(**cpu.s.__dict__)
+        if self.config.progress_callback is not None:
+            self.config.progress_callback(f"verifying {key[0]:04X}:{key[1]:04X} {name} call {call_no}")
+
+        if self.config.auto_continuation:
+            self._verify_auto_continuation(cpu, key, handler, name, call_no)
+            return
+
         stop = self.stops.get(key)
         if stop is None:
             msg = f"HOOK VERIFY MISSING METADATA {key[0]:04X}:{key[1]:04X} {name}: no continuation metadata"
@@ -171,11 +219,6 @@ class HookVerifier:
                     cpu.coverage_telemetry.record_hook_skipped(key, name)
             return
 
-        call_no = self.counts.get(key, 0) + 1
-        self.counts[key] = call_no
-        before = CPUState(**cpu.s.__dict__)
-        if self.config.progress_callback is not None:
-            self.config.progress_callback(f"verifying {key[0]:04X}:{key[1]:04X} {name} call {call_no}")
         asm_rt = self._clone_runtime()
         asm_cpu = asm_rt.cpu
         asm_cpu.hook_verifier = None
@@ -187,6 +230,71 @@ class HookVerifier:
         asm_steps = self._run_asm_to_target(asm_cpu, targets, min_steps=stop.min_steps)
         with self._live_passthrough_hooks(cpu):
             handler(cpu)
+        self._finish_verified_hook(
+            cpu=cpu,
+            key=key,
+            name=name,
+            call_no=call_no,
+            targets=targets,
+            asm_rt=asm_rt,
+            hook_rt=self.rt,
+            asm_steps=asm_steps,
+        )
+
+    def _verify_auto_continuation(
+        self,
+        cpu: CPU8086,
+        key: Addr,
+        handler: Callable[[CPU8086], None],
+        name: str,
+        call_no: int,
+    ) -> None:
+        """Strict, metadata-free verification using the hook's real CS:IP target.
+
+        This is intentionally simple: the live hook side runs first, its final
+        address becomes the only acceptable ASM-oracle continuation, and then
+        the original routine is interpreted from the pre-hook clone until that
+        same address is reached.  It is slow but avoids maintaining elaborate
+        stop-kind metadata for focused investigations.
+        """
+        asm_rt = self._clone_runtime()
+        asm_cpu = asm_rt.cpu
+        asm_cpu.hook_verifier = None
+        asm_cpu.replacement_hooks.pop(key, None)
+        asm_cpu.hook_names.pop(key, None)
+        self._restore_passthrough_hooks(asm_cpu)
+
+        with self._live_passthrough_hooks(cpu):
+            handler(cpu)
+
+        targets = (cpu.addr(),)
+        # Always execute at least one original instruction.  This prevents a
+        # same-IP loop hook from being accepted against an untouched oracle just
+        # because the candidate continuation equals the entry address.
+        asm_steps = self._run_asm_to_target(asm_cpu, targets, min_steps=1)
+        self._finish_verified_hook(
+            cpu=cpu,
+            key=key,
+            name=name,
+            call_no=call_no,
+            targets=targets,
+            asm_rt=asm_rt,
+            hook_rt=self.rt,
+            asm_steps=asm_steps,
+        )
+
+    def _finish_verified_hook(
+        self,
+        *,
+        cpu: CPU8086,
+        key: Addr,
+        name: str,
+        call_no: int,
+        targets: tuple[Addr, ...],
+        asm_rt: Runtime,
+        hook_rt: Runtime,
+        asm_steps: int,
+    ) -> None:
         self.total_verified += 1
         if cpu.coverage_telemetry is not None:
             cpu.coverage_telemetry.record_hook_verified(key, name, asm_steps)
@@ -197,7 +305,7 @@ class HookVerifier:
             call_no=call_no,
             targets=targets,
             asm_rt=asm_rt,
-            hook_rt=self.rt,
+            hook_rt=hook_rt,
             asm_steps=asm_steps,
         )
         if report:

@@ -81,10 +81,12 @@ def run_frame_verifier(
         candidate=cand,
         config=config,
         boundary_hooks=_boundary_hooks(config),
-        sample_builder=lambda rt, side, frame_no, kind, hook, boundary_steps, start, recent: _sample(
-            rt, config, side, frame_no, kind, hook, boundary_steps, start, recent
+        sample_builder=lambda rt, side, frame_no, kind, hook, boundary_steps, start, recent, recent_changes: _sample(
+            rt, config, side, frame_no, kind, hook, boundary_steps, start, recent, recent_changes
         ),
         reference_env_hooks=REFERENCE_ENV_HOOKS,
+        trace_sample=(lambda rt: _visible_vram(rt, config)) if config.trace_sample_changes else None,
+        trace_sample_label="raw",
         disabled_hooks=NON_CGA_INTERACTIVE_DISABLE if config.video != "cga" else frozenset(),
         after_boundary=_after_boundary,
         publish_candidate=publish_candidate,
@@ -132,6 +134,7 @@ def _sample(
     boundary_steps: int,
     start_count: int,
     recent_hooks: tuple[str, ...],
+    recent_sample_changes: tuple[str, ...] = (),
 ) -> FrameSample:
     raw = _visible_vram(rt, config)
     rgb = _render_rgb_bytes(rt, config)
@@ -144,6 +147,7 @@ def _sample(
         boundary_steps=boundary_steps,
         start_count=start_count,
         recent_hooks=recent_hooks,
+        recent_sample_changes=recent_sample_changes,
         raw=raw,
         rgb=rgb,
         display_start=_display_start(rt, config),

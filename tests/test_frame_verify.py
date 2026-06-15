@@ -124,7 +124,7 @@ def test_run_frame_verifier_pumps_input_only_between_runtime_pairs():
         ref_rt.input_ticks.append(tick)
         cand_rt.input_ticks.append(tick)
 
-    def sample(rt, side, frame_no, kind, hook, boundary_steps, start, recent):
+    def sample(rt, side, frame_no, kind, hook, boundary_steps, start, recent, recent_sample_changes=()):
         # Both sides should see the same input ticks for the same verified pair.
         payload = bytes(rt.input_ticks)
         return make_frame_sample(
