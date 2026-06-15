@@ -67,6 +67,7 @@ from overkill.coverage import (
 from overkill.sounds import AsyncTimerIrqDriver, OVERKILL_PIT_HZ
 from overkill.launch import build_command_tail
 from dos_re.input_demo import InputDemoPlayback, InputDemoRecorder, dos_key_value
+from overkill.input_waits import title_fire_release_wait
 from render_frame import CGA_PALETTES
 
 CGA_PRESENT_HOOK = (0x1010, 0x447B)  # mode-0 CGA frame-present blit
@@ -814,24 +815,10 @@ def main(argv: list[str] | None = None) -> int:
         interactive wait (same as the D390 menu release loop) so the boundary
         advances and queued input/the recorded release can land.
         """
-        cs, ip = rt.cpu.addr()
-        if cs != 0x1010:
-            return False
-        mem = rt.cpu.mem
-        # The loop is CALL 0162; TEST [98BE],10h; JNZ D35C.  Because CALL 0162 is
-        # hooked, a cooperative CPU burst usually lands at the 0162 entry rather
-        # than on the loop's own three instructions.  Recognize both: parked on
-        # D35C/D35F/D364, or inside the 0162 call this loop makes (return address
-        # D35F on the stack -- which distinguishes it from the D352 press poll
-        # that returns to D355 and from every other 0162 caller).
-        in_loop = ip in (0xD35C, 0xD35F, 0xD364)
-        if not in_loop and ip == 0x0162:
-            in_loop = mem.rw(rt.cpu.s.ss & 0xFFFF, rt.cpu.s.sp & 0xFFFF) == 0xD35F
-        if not in_loop:
-            return False
-        if mem.block(cs, 0xD35C, 10) != bytes.fromhex("e8 03 2e f6 06 be 98 10 75 f6"):
-            return False
-        return (mem.rb(rt.cpu.s.ds & 0xFFFF, 0x98BE) & 0x10) != 0
+        # Shared with the frame verifier via overkill.input_waits so the same
+        # boundary-less wait loop is handled identically across interactive play,
+        # --verify-hooks, and --verify-frames.
+        return title_fire_release_wait(rt.cpu)
 
     def is_input_selector_wait() -> bool:
         """Detect the level/difficulty selector's idle poll gate.

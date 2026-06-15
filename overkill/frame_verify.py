@@ -22,6 +22,7 @@ from dos_re.frame_verify import (
 )
 from dos_re.memory import EGA_APERTURE, EGA_PLANE_STRIDE
 from dos_re.runtime import Runtime
+from .input_waits import frame_verify_input_wait
 from .runtime import create_overkill_runtime, load_overkill_snapshot
 
 CGA_PRESENT_HOOK: Addr = (0x1010, 0x447B)
@@ -91,6 +92,7 @@ def run_frame_verifier(
         after_boundary=_after_boundary,
         publish_candidate=publish_candidate,
         pump_inputs=pump_inputs,
+        input_wait_detector=frame_verify_input_wait,
         stop_requested=stop_requested,
         status_callback=status_callback,
         label="FRAME VERIFY",

@@ -77,6 +77,10 @@ StatusCallback = Callable[[str], None]
 PublishCallback = Callable[[Runtime, FrameSample], None]
 AfterBoundaryCallback = Callable[[Runtime, str, Addr], None]
 TraceSampleCallback = Callable[[Runtime], bytes]
+# Returns (kind, canonical_addr) when the CPU is parked in a boundary-less input
+# wait loop, else None.  Lets the verifier treat such a loop as a frame boundary
+# so demo/live input is pumped there instead of spinning until the frame budget.
+InputWaitDetector = Callable[["CPU8086"], "tuple[str, Addr] | None"]
 
 
 def run_frame_verifier(
@@ -93,6 +97,7 @@ def run_frame_verifier(
     trace_sample_label: str = "sample",
     publish_candidate: PublishCallback | None = None,
     pump_inputs: RuntimePairCallback | None = None,
+    input_wait_detector: InputWaitDetector | None = None,
     stop_requested: StopCallback | None = None,
     status_callback: StatusCallback | None = None,
     label: str = "FRAME VERIFY",
@@ -120,6 +125,7 @@ def run_frame_verifier(
         after_boundary=after_boundary,
         trace_sample=None,
         trace_sample_label=trace_sample_label,
+        input_wait_detector=input_wait_detector,
     )
     cand_runner = _BoundaryRunner(
         candidate,
@@ -132,6 +138,7 @@ def run_frame_verifier(
         after_boundary=after_boundary,
         trace_sample=trace_sample if config.trace_sample_changes else None,
         trace_sample_label=trace_sample_label,
+        input_wait_detector=input_wait_detector,
     )
 
     frame_no = 1
@@ -200,9 +207,11 @@ class _BoundaryRunner:
         after_boundary: AfterBoundaryCallback | None,
         trace_sample: TraceSampleCallback | None,
         trace_sample_label: str,
+        input_wait_detector: InputWaitDetector | None = None,
     ) -> None:
         self.rt = rt
         self.config = config
+        self.input_wait_detector = input_wait_detector
         self.side = side
         self.reference = reference
         self.boundary: tuple[str, Addr, int] | None = None
@@ -332,6 +341,28 @@ class _BoundaryRunner:
                     tuple(self.last_hooks),
                     tuple(self.recent_sample_changes),
                 )
+            # A boundary-less input-wait loop (e.g. the title fire-release poll)
+            # never reaches a present/timer/retrace hook, so treat it as a frame
+            # boundary: return a sample here so the outer loop pumps input and
+            # advances instead of spinning until the frame budget.  The detector
+            # fires only at the loop's canonical head address and is checked every
+            # step, so the reference and candidate both stop at the identical
+            # instruction (no sub-loop desync when input is pumped here).
+            if self.input_wait_detector is not None:
+                detected = self.input_wait_detector(self.rt.cpu)
+                if detected is not None:
+                    kind, hook = detected
+                    return self.sample_builder(
+                        self.rt,
+                        self.side,
+                        frame_no,
+                        kind,
+                        hook,
+                        self.rt.cpu.instruction_count - start,
+                        start,
+                        tuple(self.last_hooks),
+                        tuple(self.recent_sample_changes),
+                    )
         cs, ip = self.rt.cpu.addr()
         raise FrameVerifyDivergence(
             f"FRAME VERIFY TIMEOUT side={self.side} frame={frame_no} "
