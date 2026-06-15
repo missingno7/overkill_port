@@ -627,6 +627,13 @@
     "notes": "Post-contact helper called after BFC7 from BC4B/BD09. Observed path checks A47C, 2384, 98C0 and BEDC, toggles byte A362, and returns when the toggle becomes 1. Other BEDC/toggle branches remain explicit fail-fast frontiers.",
     "status": "partial helper"
   },
+  "1010:9FAF": {
+    "island": "gameplay_objects",
+    "kind": "hook",
+    "name": "overkill_linked_object_coord_quad_update_9faf",
+    "notes": "Frame-controller child parent that clears linked-object clamp flags, selects the A39A/A39C vertical offsets, and composes four 9FEA child-coordinate updates for DS:A966/A968/A96A/A96C. Raw linked-slot/ring update; concrete gameplay identity still unclassified.",
+    "status": "hooked_verified"
+  },
   "1010:A031": {
     "island": "game_state",
     "name": "overkill_tracked_object_coord_pull_a031",
@@ -649,11 +656,110 @@
     "notes": "Raw spawned-object anchor helper: copies source SS:BP X/Y plus 10 pixels into destination DS:BX slot. Structural spawn/slot seeding helper, not yet a semantic object constructor.",
     "status": "hooked_verified"
   },
+  "1010:A5D1": {
+    "island": "movement",
+    "kind": "hook",
+    "name": "overkill_object_x_step_left_clamp_a5d1",
+    "notes": "Raw object X decrement helper. Uses the original CALL-next/RET-twice idiom to move up to two pixels left and clamp at X=0020 unless global A47C bypasses the clamp.",
+    "status": "hooked_verified"
+  },
+  "1010:A5EA": {
+    "island": "movement",
+    "kind": "hook",
+    "name": "overkill_object_x_step_right_clamp_a5ea",
+    "notes": "Raw object X increment helper. Uses the original CALL-next/RET-twice idiom to move up to two pixels right and clamp at X=00C0.",
+    "status": "hooked_verified"
+  },
+  "1010:A5F9": {
+    "island": "movement",
+    "kind": "hook",
+    "name": "overkill_object_y_step_up_clamp_a5f9",
+    "notes": "Raw object Y decrement helper. Uses the original CALL-next/RET-twice idiom to move up to two pixels and clamp at Y=0000.",
+    "status": "hooked_verified"
+  },
+  "1010:A607": {
+    "island": "movement",
+    "kind": "hook",
+    "name": "overkill_object_y_step_down_clamp_a607",
+    "notes": "Raw object Y increment helper. Uses the original CALL-next/RET-twice idiom to move down up to two pixels and clamp at Y=00B0.",
+    "status": "hooked_verified"
+  },
+  "1010:A616": {
+    "island": "movement",
+    "kind": "hook",
+    "name": "overkill_object_vertical_scroll_edge_response_a616",
+    "notes": "Raw vertical edge-scroll response helper. After DS:2350 passes the gameplay threshold, composes the top-edge A648 response and bottom-edge DS:A39C bias update based on object Y and input bits.",
+    "status": "hooked_verified"
+  },
+  "1010:A63C": {
+    "island": "movement",
+    "kind": "hook",
+    "name": "overkill_object_bottom_scroll_offset_decay_a63c",
+    "notes": "Decay helper that moves DS:A39C bottom-edge scroll bias back toward zero.",
+    "status": "hooked_verified"
+  },
+  "1010:A648": {
+    "island": "movement",
+    "kind": "hook",
+    "name": "overkill_object_top_scroll_edge_response_a648",
+    "notes": "Top-edge scroll-bias helper: when object Y is zero and input bit 2 is active, decrements DS:A39A down to FFF8; otherwise falls into A662 recovery.",
+    "status": "hooked_verified"
+  },
+  "1010:A662": {
+    "island": "movement",
+    "kind": "hook",
+    "name": "overkill_object_top_scroll_offset_recover_a662",
+    "notes": "Recovery helper that increments DS:A39A top-edge scroll bias toward zero.",
+    "status": "hooked_verified"
+  },
+  "1010:A66F": {
+    "island": "movement",
+    "kind": "hook",
+    "name": "overkill_object_scroll_world_progress_gate_a66f",
+    "notes": "Vertical-scroll/world-progress gate around A6FE. Gates on A47C/A47E/A480, advances row-scroll state, optionally triggers palette/update helper C591, and at EA0h seeds four compact effect slots. Raw world-scroll bookkeeping only.",
+    "status": "hooked_verified"
+  },
+  "1010:A6FE": {
+    "island": "movement",
+    "kind": "hook",
+    "name": "overkill_object_scroll_forward_step_a6fe",
+    "notes": "One forward vertical-scroll bookkeeping step. Advances A278, phase-counters 234E/2350/A978, wraps the source row pointer via A746, and optionally pulls the next row via A74E.",
+    "status": "hooked_verified"
+  },
+  "1010:A746": {
+    "island": "movement",
+    "kind": "hook",
+    "name": "overkill_object_scroll_row_wrap_forward_a746",
+    "notes": "Tiny forward source-row pointer wrap: DS:234C := CS:95C0.",
+    "status": "hooked_verified"
+  },
+  "1010:A74E": {
+    "island": "movement",
+    "kind": "hook",
+    "name": "overkill_object_scroll_forward_row_a74e",
+    "notes": "Forward map/scroll row advance side effect. Delegates display copy to A7EB, advances DS:2350 by one 13-byte row, decrements A978, optionally notifies CB1C, and marks DS:2354 forward.",
+    "status": "hooked_verified"
+  },
   "1010:A781": {
-    "island": "tandy_renderer",
-    "name": "loading_scroll_step_a781",
-    "notes": "Single loading-scroll step reused by 60C5 and 4E0D parent hooks.",
-    "status": "lifted-via-parents"
+    "island": "movement",
+    "kind": "hook",
+    "name": "overkill_object_scroll_backward_step_a781",
+    "notes": "One backward vertical-scroll bookkeeping step, symmetric to A6FE. Moves row counters backward and wraps through A7D0/A7E3.",
+    "status": "hooked_verified"
+  },
+  "1010:A7D0": {
+    "island": "movement",
+    "kind": "hook",
+    "name": "overkill_object_scroll_backward_row_a7d0",
+    "notes": "Backward map/scroll row advance side effect. Delegates display copy to A7EB, subtracts one 13-byte row from DS:2350, increments A978, and marks DS:2354 backward.",
+    "status": "hooked_verified"
+  },
+  "1010:A7E3": {
+    "island": "movement",
+    "kind": "hook",
+    "name": "overkill_object_scroll_row_wrap_backward_a7e3",
+    "notes": "Tiny backward source-row pointer wrap: DS:234C := CS:95BE.",
+    "status": "hooked_verified"
   },
   "1010:A846": {
     "island": "layer_sprites",
@@ -798,6 +904,13 @@
     "kind": "hook",
     "name": "overkill_object_behavior_aed8",
     "notes": "Observed logic-id 2/3 countdown/movement object behavior. Runs AED8 through its B250/AD5A postmove branch and returns to the object scan caller; fail-fast leaves unobserved branches explicit."
+  },
+  "1010:AFD8": {
+    "island": "collision",
+    "kind": "hook",
+    "name": "overkill_object_tile_sweep_probe_afd8",
+    "notes": "Shared object tile-sweep probe wrapper. Snapshots object coordinates into A430 scratch globals, biases X by scroll offset DS:A278, delegates the direction-specific B00D tile response, restores X, and returns flags from CMP DS:A430,0. Raw collision/movement primitive; concrete object role unclassified.",
+    "status": "hooked_verified"
   },
   "1010:B24D": {
     "island": "gameplay_objects",

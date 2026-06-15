@@ -54,3 +54,23 @@ program without target-specific addresses, assets, islands, or semantics.
 Target-specific knowledge belongs in that target's package. In this repository,
 that package is `overkill`. See `docs/architecture/package_boundary.md` for the
 hard dependency rules.
+
+## Reusable input demos
+
+`dos_re.input_demo` owns deterministic input-demo recording and replay.  A demo is
+not a video capture; it is a start snapshot plus VM-visible keyboard events
+indexed by an emulated boundary counter.  Because the events are delivered to the
+DOS runtime rather than replayed from host wall-clock timestamps, the same demo
+can drive a normal run, hook verification, and frame verification.
+
+The format is target-neutral:
+
+- `snapshot` points at the start snapshot directory;
+- `events` contains ordered `scan` and `dos_key` events;
+- `metadata` is an opaque front-end dictionary for game-specific information
+  such as video mode, sound mode, command tail, or executable identity.
+
+A target package should provide only integration policy: which host key toggles
+recording, which boundary counter to use, and what metadata to write.  The
+recorder/replayer itself must not know target addresses, islands, renderers, or
+assets.

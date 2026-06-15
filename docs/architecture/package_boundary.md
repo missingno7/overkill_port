@@ -13,7 +13,8 @@ machinery that can plausibly be reused by another DOS RE project:
 - interrupt and keyboard plumbing,
 - generic hook registry,
 - generic runtime and snapshot helpers,
-- reusable differential frame-verification engine and artifact writer.
+- reusable differential frame-verification engine and artifact writer,
+- target-neutral deterministic input-demo recording/replay (`dos_re.input_demo`).
 
 `dos_re` must not import `overkill` or know OVERKILL addresses, islands,
 filenames, command-tail bytes, frame hooks, sound-driver locations, or gameplay
@@ -52,7 +53,9 @@ OVERKILL asset path, or a field in the game's data segment, it belongs in
 `overkill`, not `dos_re`.
 
 If a module can operate on an arbitrary DOS MZ program with no OVERKILL-specific
-knowledge, it belongs in `dos_re`.
+knowledge, it belongs in `dos_re`.  For example, input-demo storage/replay belongs
+in `dos_re`; the OVERKILL viewer only supplies keybindings, boundary policy, and
+metadata such as video/sound mode.
 
 ## Documentation boundary
 

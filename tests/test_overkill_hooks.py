@@ -10618,9 +10618,14 @@ def test_object_spawn_anchor_offset_a571_matches_original():
     from dos_re.memory import Memory
     from overkill.hooks import overkill_object_spawn_anchor_offset_a571
 
-    code = bytes.fromhex("8b 46 04 83 c0 0a 89 47 04 8b 46 02 83 c0 0a 89 47 02 c3")
+    code_variants = (
+        # Static/install-time form: ADD AX, imm8.
+        bytes.fromhex("8b 46 04 83 c0 0a 89 47 04 8b 46 02 83 c0 0a 89 47 02 c3"),
+        # Runtime-loaded form seen in real gameplay demos: ADD AX, imm16.
+        bytes.fromhex("8b 46 04 05 0a 00 89 47 04 8b 46 02 05 0a 00 89 47 02 c3"),
+    )
 
-    def make_cpu(use_hook: bool, src_x: int, src_y: int) -> CPU8086:
+    def make_cpu(use_hook: bool, code: bytes, src_x: int, src_y: int) -> CPU8086:
         mem = Memory()
         mem.load(0x1010, 0xA571, code)
         bp = 0x2800
@@ -10638,14 +10643,214 @@ def test_object_spawn_anchor_offset_a571_matches_original():
             cpu.replacement_hooks[(0x1010, 0xA571)] = overkill_object_spawn_anchor_offset_a571
         return cpu
 
-    for src_x, src_y in ((0x0010, 0x0020), (0xFFFA, 0x8000)):
-        asm = make_cpu(False, src_x, src_y)
-        hook = make_cpu(True, src_x, src_y)
-        for _ in range(20):
-            if asm.addr() == (0x1010, 0xBEEF):
-                break
-            asm.step()
-        hook.step()
-        assert asm.addr() == hook.addr() == (0x1010, 0xBEEF)
-        assert asm.s.snapshot() == hook.s.snapshot()
-        assert asm.mem.data == hook.mem.data
+    for code in code_variants:
+        for src_x, src_y in ((0x0010, 0x0020), (0xFFFA, 0x8000)):
+            asm = make_cpu(False, code, src_x, src_y)
+            hook = make_cpu(True, code, src_x, src_y)
+            for _ in range(20):
+                if asm.addr() == (0x1010, 0xBEEF):
+                    break
+                asm.step()
+            hook.step()
+            assert asm.addr() == hook.addr() == (0x1010, 0xBEEF)
+            assert asm.s.snapshot() == hook.s.snapshot()
+            assert asm.mem.data == hook.mem.data
+
+
+def test_linked_object_coord_quad_update_9faf_matches_original_parent():
+    from dos_re.cpu import CPU8086, CPUState
+    from dos_re.memory import Memory
+    from overkill.hooks import overkill_linked_object_coord_quad_update_9faf
+
+    code = bytes.fromhex(
+        "c6 06 9e a3 00 c6 06 9f a3 00 a1 9a a3 a3 98 a3"
+        " be 8c a3 8b 1e 6c a9 e8 21 00 be 74 a3 8b 1e 68"
+        " a9 e8 17 00 a1 9c a3 a3 98 a3 be 80 a3 8b 1e 6a"
+        " a9 e8 07 00 be 68 a3 8b 1e 66 a9 83 fb ff 75 01"
+        " c3 8b 46 08 d1 e0 d1 e0 03 f0 ad 03 46 02 89 47"
+        " 02 ad 03 46 04 03 06 98 a3 03 06 98 a3 89 47 04"
+        " 83 7f 04 00 7d 0a c7 47 04 00 00 c6 06 9e a3 01"
+        " 81 7f 04 c0 00 7e 0a c7 47 04 c0 00 c6 06 9f a3"
+        " 01 c3"
+    )
+
+    def make_cpu(use_hook: bool) -> CPU8086:
+        mem = Memory()
+        mem.load(0x1010, 0x9FAF, code)
+        ds = 0x2000
+        ss = 0x4000
+        bp = 0x2600
+        # Source object base and animation/frame index used by 9FEA.
+        mem.ww(ss, bp + 0x02, 0x0030)
+        mem.ww(ss, bp + 0x04, 0x0040)
+        mem.ww(ss, bp + 0x08, 0x0001)
+        # Two vertical scroll offsets used by the parent before the first pair
+        # and the second pair of linked-child updates.
+        mem.ww(ds, 0xA39A, 0x0002)
+        mem.ww(ds, 0xA39C, 0xFFB0)
+        # Four linked destination slots.  The last one intentionally clamps low.
+        for off, ptr in ((0xA966, 0x3000), (0xA968, 0x3040), (0xA96A, 0x3080), (0xA96C, 0x30C0)):
+            mem.ww(ds, off, ptr)
+        # Motion/offset tables.  9FEA adds BP+8*4 before reading each pair.
+        entries = {
+            0xA38C + 4: (0x0001, 0x0002),
+            0xA374 + 4: (0x0003, 0x00A0),
+            0xA380 + 4: (0x0005, 0x0007),
+            0xA368 + 4: (0x0009, 0x0001),
+        }
+        for base, (x_delta, y_delta) in entries.items():
+            mem.ww(ds, base, x_delta)
+            mem.ww(ds, base + 2, y_delta)
+        state = CPUState(
+            ax=0x1111, bx=0x2222, cx=0x3333, dx=0x4444,
+            si=0x5555, di=0x6666, bp=bp, sp=0x9000,
+            cs=0x1010, ds=ds, es=0x3000, ss=ss,
+            ip=0x9FAF, flags=0x0203,
+        )
+        cpu = CPU8086(mem, state)
+        cpu.push(0xBEEF)
+        if use_hook:
+            cpu.replacement_hooks[(0x1010, 0x9FAF)] = overkill_linked_object_coord_quad_update_9faf
+        return cpu
+
+    asm = make_cpu(False)
+    hook = make_cpu(True)
+    for _ in range(200):
+        if asm.addr() == (0x1010, 0xBEEF):
+            break
+        asm.step()
+    hook.step()
+    assert asm.addr() == hook.addr() == (0x1010, 0xBEEF)
+    assert asm.s.snapshot() == hook.s.snapshot()
+    assert asm.mem.data == hook.mem.data
+
+
+def test_object_two_pass_clamp_step_helpers_match_original():
+    from dos_re.cpu import CPU8086, CPUState
+    from dos_re.memory import Memory
+    from overkill.hooks import (
+        overkill_object_x_step_left_clamp_a5d1,
+        overkill_object_x_step_right_clamp_a5ea,
+        overkill_object_y_step_up_clamp_a5f9,
+        overkill_object_y_step_down_clamp_a607,
+    )
+
+    cases = (
+        (0xA5D1, bytes.fromhex("83 3e 7c a4 00 75 0e e8 00 00 83 7e 02 20 75 01 c3 ff 4e 02 c3 ff 4e 02 c3"),
+         overkill_object_x_step_left_clamp_a5d1, 0x02, (0x0020, 0x0021, 0x0030), {0xA47C: 0x0000}),
+        (0xA5D1, bytes.fromhex("83 3e 7c a4 00 75 0e e8 00 00 83 7e 02 20 75 01 c3 ff 4e 02 c3 ff 4e 02 c3"),
+         overkill_object_x_step_left_clamp_a5d1, 0x02, (0x0020, 0x0021, 0x0030), {0xA47C: 0x0001}),
+        (0xA5EA, bytes.fromhex("e8 00 00 81 7e 02 c0 00 75 01 c3 ff 46 02 c3"),
+         overkill_object_x_step_right_clamp_a5ea, 0x02, (0x00C0, 0x00BF, 0x00B0), {}),
+        (0xA5F9, bytes.fromhex("e8 00 00 83 7e 04 00 75 01 c3 ff 4e 04 c3"),
+         overkill_object_y_step_up_clamp_a5f9, 0x04, (0x0000, 0x0001, 0x0010), {}),
+        (0xA607, bytes.fromhex("e8 00 00 81 7e 04 b0 00 72 01 c3 ff 46 04 c3"),
+         overkill_object_y_step_down_clamp_a607, 0x04, (0x00B0, 0x00AF, 0x00A0), {}),
+    )
+
+    def make_cpu(ip: int, code: bytes, hook, field_off: int, field_value: int, globals_: dict[int, int], use_hook: bool) -> CPU8086:
+        mem = Memory()
+        mem.load(0x1010, ip, code)
+        ds = 0x2000
+        ss = 0x4000
+        bp = 0x2600
+        mem.ww(ss, bp + 0x02, 0x1234)
+        mem.ww(ss, bp + 0x04, 0x5678)
+        mem.ww(ss, bp + field_off, field_value)
+        for off, value in globals_.items():
+            mem.ww(ds, off, value)
+        cpu = CPU8086(mem, CPUState(
+            ax=0x1111, bx=0x2222, cx=0x3333, dx=0x4444,
+            si=0x5555, di=0x6666, bp=bp, sp=0x9000,
+            cs=0x1010, ds=ds, es=0x3000, ss=ss,
+            ip=ip, flags=0x0203,
+        ))
+        cpu.push(0xBEEF)
+        if use_hook:
+            cpu.replacement_hooks[(0x1010, ip)] = hook
+        return cpu
+
+    for ip, code, hook, field_off, values, globals_ in cases:
+        for field_value in values:
+            asm = make_cpu(ip, code, hook, field_off, field_value, globals_, False)
+            hooked = make_cpu(ip, code, hook, field_off, field_value, globals_, True)
+            for _ in range(80):
+                if asm.addr() == (0x1010, 0xBEEF):
+                    break
+                asm.step()
+            hooked.step()
+            assert asm.addr() == hooked.addr() == (0x1010, 0xBEEF)
+            assert asm.s.snapshot() == hooked.s.snapshot()
+            assert asm.mem.data == hooked.mem.data
+
+
+def test_object_vertical_scroll_edge_helpers_match_original():
+    from dos_re.cpu import CPU8086, CPUState
+    from dos_re.memory import Memory
+    from overkill.hooks import (
+        overkill_object_vertical_scroll_edge_response_a616,
+        overkill_object_bottom_scroll_offset_decay_a63c,
+        overkill_object_top_scroll_edge_response_a648,
+        overkill_object_top_scroll_offset_recover_a662,
+    )
+
+    code_a616 = bytes.fromhex(
+        "81 3e 50 23 b6 00 77 01 c3 e8 26 00 81 7e 04 b0"
+        " 00 75 13 f6 06 be 98 01 74 0c 83 3e 9c a3 08 74"
+        " 04 ff 06 9c a3 c3 83 3e 9c a3 00 74 04 ff 0e 9c"
+        " a3 c3 83 7e 04 00 75 14 f6 06 be 98 02 74 0d 83"
+        " 3e 9a a3 f8 75 01 c3 ff 0e 9a a3 c3 83 3e 9a a3"
+        " 00 75 01 c3 ff 06 9a a3 c3"
+    )
+    helpers = (
+        (0xA616, code_a616, overkill_object_vertical_scroll_edge_response_a616),
+        (0xA63C, code_a616[0xA63C - 0xA616:], overkill_object_bottom_scroll_offset_decay_a63c),
+        (0xA648, code_a616[0xA648 - 0xA616:], overkill_object_top_scroll_edge_response_a648),
+        (0xA662, code_a616[0xA662 - 0xA616:], overkill_object_top_scroll_offset_recover_a662),
+    )
+
+    scenarios = (
+        # view_y, object_y, input_bits, top_bias, bottom_bias
+        (0x00B6, 0x0000, 0x03, 0x0000, 0x0000),
+        (0x00B7, 0x0000, 0x02, 0x0000, 0x0000),
+        (0x00B7, 0x0000, 0x00, 0xFFFE, 0x0000),
+        (0x00B7, 0x00B0, 0x01, 0x0000, 0x0000),
+        (0x00B7, 0x0080, 0x00, 0x0000, 0x0003),
+        (0x00B7, 0x0001, 0x02, 0xFFF8, 0x0003),
+    )
+
+    def make_cpu(ip: int, code: bytes, hook, scenario, use_hook: bool) -> CPU8086:
+        view_y, object_y, input_bits, top_bias, bottom_bias = scenario
+        mem = Memory()
+        mem.load(0x1010, ip, code)
+        ds = 0x2000
+        ss = 0x4000
+        bp = 0x2600
+        mem.ww(ds, 0x2350, view_y)
+        mem.wb(ds, 0x98BE, input_bits)
+        mem.ww(ds, 0xA39A, top_bias)
+        mem.ww(ds, 0xA39C, bottom_bias)
+        mem.ww(ss, bp + 0x04, object_y)
+        cpu = CPU8086(mem, CPUState(
+            ax=0x1111, bx=0x2222, cx=0x3333, dx=0x4444,
+            si=0x5555, di=0x6666, bp=bp, sp=0x9000,
+            cs=0x1010, ds=ds, es=0x3000, ss=ss,
+            ip=ip, flags=0x0203,
+        ))
+        cpu.push(0xBEEF)
+        if use_hook:
+            cpu.replacement_hooks[(0x1010, ip)] = hook
+        return cpu
+
+    for ip, code, hook in helpers:
+        for scenario in scenarios:
+            asm = make_cpu(ip, code, hook, scenario, False)
+            hooked = make_cpu(ip, code, hook, scenario, True)
+            for _ in range(120):
+                if asm.addr() == (0x1010, 0xBEEF):
+                    break
+                asm.step()
+            hooked.step()
+            assert asm.addr() == hooked.addr() == (0x1010, 0xBEEF)
+            assert asm.s.snapshot() == hooked.s.snapshot()
+            assert asm.mem.data == hooked.mem.data

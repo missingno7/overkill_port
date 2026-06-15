@@ -22,8 +22,10 @@ Threading model (CPython GIL keeps this safe):
     frame-accurate KeyDispatcher.
 
 Controls: Q/A/O/P move, Z or Space fire (the game's own scheme), F12 saves a
-runtime snapshot.  Esc and any other key are forwarded too (full keyboard), in
-case a screen wants them.
+runtime snapshot.  F11 toggles deterministic input-demo recording: it writes a
+start snapshot and records VM-delivered keyboard events until F11 is pressed
+again.  Esc and any other key are forwarded too (full keyboard), in case a screen
+wants them.
 
 Run:
     python scripts/play.py [--video cga|ega|tandy] [--game-hz 30] [--palette 1h] [--scale 2]
@@ -59,6 +61,7 @@ from overkill.coverage import (
 )
 from overkill.sounds import AsyncTimerIrqDriver, OVERKILL_PIT_HZ
 from overkill.launch import build_command_tail
+from dos_re.input_demo import InputDemoPlayback, InputDemoRecorder, dos_key_value
 from render_frame import CGA_PALETTES
 
 CGA_PRESENT_HOOK = (0x1010, 0x447B)  # mode-0 CGA frame-present blit
@@ -267,6 +270,10 @@ def main(argv: list[str] | None = None) -> int:
                    help="load a saved snapshot dir to skip the ~11s asset-decode bootstrap")
     p.add_argument("--save-snapshot-root", default=str(ROOT / "artifacts"),
                    help="root directory for F12 runtime snapshots")
+    p.add_argument("--save-demo-root", default=str(ROOT / "artifacts" / "demos"),
+                   help="root directory for F11 input demos")
+    p.add_argument("--demo", default=None,
+                   help="replay an input demo directory/json; loads its start snapshot unless --snapshot is also given")
     p.add_argument("--no-present-sync", action="store_true",
                    help="debug only: do not wait for the viewer to consume each timer-frame snapshot")
     p.add_argument("--retrace-hz", type=float, default=None,
@@ -324,6 +331,12 @@ def main(argv: list[str] | None = None) -> int:
     else:
         command_tail = build_command_tail(args.video, args.sound)
 
+    demo_playback: InputDemoPlayback | None = None
+    if args.demo:
+        demo_playback = InputDemoPlayback.load(args.demo)
+        if args.snapshot is None:
+            args.snapshot = str(demo_playback.snapshot_path())
+
     if args.verify_frames and args.verify_frame_preview:
         from overkill.frame_verify import FrameSample, FrameVerifyConfig, run_frame_verifier
 
@@ -363,7 +376,13 @@ def main(argv: list[str] | None = None) -> int:
                 video_page=rt.dos.video_page,
             )
 
+        frame_demo_boundary = {"n": 0}
+
         def pump_inputs(ref_rt, cand_rt) -> None:
+            if demo_playback is not None:
+                demo_playback.apply_to_runtimes(frame_demo_boundary["n"], (ref_rt, cand_rt))
+                frame_demo_boundary["n"] += 1
+                return
             keyboard.pump()
             while True:
                 try:
@@ -377,27 +396,9 @@ def main(argv: list[str] | None = None) -> int:
                     scancode, text = dos_key_events.get_nowait()
                 except Empty:
                     break
-                if not text:
-                    text = {
-                        0x02: "1", 0x03: "2", 0x04: "3", 0x05: "4", 0x06: "5",
-                        0x07: "6", 0x08: "7", 0x09: "8", 0x0A: "9", 0x0B: "0",
-                        0x0C: "-", 0x0D: "=", 0x0E: "\b", 0x0F: "\t",
-                        0x10: "q", 0x11: "w", 0x12: "e", 0x13: "r", 0x14: "t",
-                        0x15: "y", 0x16: "u", 0x17: "i", 0x18: "o", 0x19: "p",
-                        0x1A: "[", 0x1B: "]", 0x1C: "\r",
-                        0x1E: "a", 0x1F: "s", 0x20: "d", 0x21: "f", 0x22: "g",
-                        0x23: "h", 0x24: "j", 0x25: "k", 0x26: "l", 0x27: ";",
-                        0x28: "'", 0x29: "`", 0x2B: "\\",
-                        0x2C: "z", 0x2D: "x", 0x2E: "c", 0x2F: "v", 0x30: "b",
-                        0x31: "n", 0x32: "m", 0x33: ",", 0x34: ".", 0x35: "/",
-                        0x39: " ", 0x01: "\x1b",
-                    }.get(scancode, "")
-                if not text:
+                key = dos_key_value(scancode, text)
+                if key is None:
                     continue
-                ch = ord(text[0])
-                if ch < 0x20 and ch not in (0x08, 0x09, 0x0D, 0x1B):
-                    continue
-                key = (((scancode & 0xFF) << 8) | (ch & 0xFF)) & 0xFFFF
                 ref_rt.dos.key_queue.append(key)
                 cand_rt.dos.key_queue.append(key)
 
@@ -408,6 +409,9 @@ def main(argv: list[str] | None = None) -> int:
 
         def queue_snapshot_save() -> None:
             status["text"] = "F12 snapshots are disabled during live frame verification"
+
+        def queue_demo_toggle() -> None:
+            status["text"] = "F11 input-demo recording is disabled during live frame verification"
 
         def verifier_loop() -> None:
             try:
@@ -460,6 +464,7 @@ def main(argv: list[str] | None = None) -> int:
                 counters={"visible": visible, "boundary": boundary, "blits": blits,
                           "timers": timers, "retraces": retraces, "direct_video": direct_video},
                 queue_snapshot_save=queue_snapshot_save,
+                queue_demo_toggle=queue_demo_toggle,
                 queue_dos_key=queue_dos_key,
                 ega_render_start=ega_render_start,
                 live_memory=lambda: b"",
@@ -477,6 +482,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.verify_frames:
         from overkill.frame_verify import FrameVerifyConfig, run_frame_verifier
 
+        frame_demo_boundary = {"n": 0}
+
+        def pump_demo_inputs(ref_rt, cand_rt) -> None:
+            if demo_playback is None:
+                return
+            demo_playback.apply_to_runtimes(frame_demo_boundary["n"], (ref_rt, cand_rt))
+            frame_demo_boundary["n"] += 1
+
         return run_frame_verifier(
             exe=exe,
             assets=assets,
@@ -493,6 +506,7 @@ def main(argv: list[str] | None = None) -> int:
                 preview_on_diff=args.verify_frame_preview_on_diff,
                 ega_start_address_units=args.ega_start_address_units,
             ),
+            pump_inputs=pump_demo_inputs if demo_playback is not None else None,
         )
 
     if args.snapshot:
@@ -702,27 +716,16 @@ def main(argv: list[str] | None = None) -> int:
         in_text_mode = is_text_display_active()
         if direct_video["n"] == 0 and not in_high_score_editor and not in_text_mode:
             return
-        if not text:
-            text = {
-                0x02: "1", 0x03: "2", 0x04: "3", 0x05: "4", 0x06: "5",
-                0x07: "6", 0x08: "7", 0x09: "8", 0x0A: "9", 0x0B: "0",
-                0x0C: "-", 0x0D: "=", 0x0E: "\b", 0x0F: "\t",
-                0x10: "q", 0x11: "w", 0x12: "e", 0x13: "r", 0x14: "t",
-                0x15: "y", 0x16: "u", 0x17: "i", 0x18: "o", 0x19: "p",
-                0x1A: "[", 0x1B: "]", 0x1C: "\r",
-                0x1E: "a", 0x1F: "s", 0x20: "d", 0x21: "f", 0x22: "g",
-                0x23: "h", 0x24: "j", 0x25: "k", 0x26: "l", 0x27: ";",
-                0x28: "'", 0x29: "`", 0x2B: "\\",
-                0x2C: "z", 0x2D: "x", 0x2E: "c", 0x2F: "v", 0x30: "b",
-                0x31: "n", 0x32: "m", 0x33: ",", 0x34: ".", 0x35: "/",
-                0x39: " ", 0x01: "\x1b",
-            }.get(scancode, "")
-        if not text:
+        key = dos_key_value(scancode, text)
+        if key is None:
             return
-        ch = ord(text[0])
-        if ch < 0x20 and ch not in (0x08, 0x09, 0x0D, 0x1B):
-            return
-        rt.dos.key_queue.append((((scancode & 0xFF) << 8) | (ch & 0xFF)) & 0xFFFF)
+        rt.dos.key_queue.append(key)
+        demo_recorder.record_dos_key(
+            boundary=boundary["n"],
+            scancode=scancode,
+            text=text,
+            value=key,
+        )
 
     def is_redefine_key_wait() -> bool:
         cs, ip = rt.cpu.addr()
@@ -981,9 +984,25 @@ def main(argv: list[str] | None = None) -> int:
     if base_retrace_wait is not None:
         rt.cpu.hook_verifier_live_passthrough_overrides[RETRACE_WAIT_HOOK] = retrace_frame_hook_verify_live
 
-    keyboard = KeyDispatcher(lambda sc: deliver_scancode(rt, sc))
+    demo_recorder = InputDemoRecorder(
+        root=Path(args.save_demo_root),
+        name=f"play_{args.video}",
+        metadata={
+            "program": "overkill",
+            "video": args.video,
+            "sound": args.sound,
+            "command_tail": command_tail.decode("latin1") if isinstance(command_tail, bytes) else str(command_tail),
+        },
+    )
+
+    def deliver_live_scancode(sc: int) -> None:
+        deliver_scancode(rt, sc)
+        demo_recorder.record_scan(boundary=boundary["n"], scancode=sc)
+
+    keyboard = KeyDispatcher(deliver_live_scancode)
     stop = threading.Event()
     snapshot_requests: SimpleQueue[Path] = SimpleQueue()
+    demo_toggle_requests: SimpleQueue[None] = SimpleQueue()
     speaker_events: SimpleQueue[tuple[bool, float]] = SimpleQueue()
     adlib_events: SimpleQueue[tuple[int, int]] | None = SimpleQueue() if args.sound == "adlib" else None
     rt.dos.set_speaker_callback(lambda enabled, freq: speaker_events.put((enabled, freq)), emit_current=True)
@@ -995,6 +1014,30 @@ def main(argv: list[str] | None = None) -> int:
         out = Path(args.save_snapshot_root) / f"snapshot_play_{args.video}_{stamp}"
         snapshot_requests.put(out)
         status["text"] = f"snapshot queued: {out}"
+
+    def queue_demo_toggle() -> None:
+        if demo_playback is not None:
+            status["text"] = "F11 recording disabled while replaying --demo"
+            return
+        demo_toggle_requests.put(None)
+        status["text"] = "input demo toggle queued"
+
+    def handle_demo_toggles() -> None:
+        toggled = False
+        while True:
+            try:
+                demo_toggle_requests.get_nowait()
+            except Empty:
+                break
+            toggled = True
+        if not toggled:
+            return
+        if demo_recorder.active:
+            out = demo_recorder.stop(boundary=boundary["n"])
+            status["text"] = f"input demo saved: {out}"
+        else:
+            out = demo_recorder.start(rt, boundary=boundary["n"])
+            status["text"] = f"input demo recording: {out}"
 
     def sleep_with_async_irqs(cpu, seconds: float = 0.01) -> None:
         deadline = time.perf_counter() + max(0.0, float(seconds))
@@ -1010,6 +1053,7 @@ def main(argv: list[str] | None = None) -> int:
     def emulator_loop() -> None:
         while not stop.is_set():
             try:
+                handle_demo_toggles()
                 try:
                     out = snapshot_requests.get_nowait()
                 except Empty:
@@ -1031,7 +1075,12 @@ def main(argv: list[str] | None = None) -> int:
                 # one more VM slice after present boundaries; no-frame busy-wait
                 # pumping below can still release keys once the game reaches its
                 # explicit key-release loop.
-                keyboard.pump(allow_release=last_boundary["kind"] != "present")
+                if demo_playback is not None:
+                    applied = demo_playback.apply_to_runtime(boundary["n"], rt)
+                    if applied:
+                        status["text"] = f"input demo replay boundary={boundary['n']} events={applied}"
+                else:
+                    keyboard.pump(allow_release=last_boundary["kind"] != "present")
                 target = boundary["n"] + 1
                 used = 0
                 while boundary["n"] < target and used < args.frame_budget and not stop.is_set():
@@ -1127,7 +1176,8 @@ def main(argv: list[str] | None = None) -> int:
                     # visible/timer boundary.  Drain key-up events during those
                     # bursts so a short FIRE tap from the menu is not still held
                     # when the newly loaded level-select screen first polls input.
-                    keyboard.pump_events()
+                    if demo_playback is None:
+                        keyboard.pump_events()
                 if boundary["n"] < target and not stop.is_set():
                     cs, ip = rt.cpu.addr()
                     if publish_video_if_changed(rt.cpu, poll_audio_while_waiting=True):
@@ -1172,6 +1222,7 @@ def main(argv: list[str] | None = None) -> int:
             counters={"visible": visible, "boundary": boundary, "blits": blits,
                       "timers": timers, "retraces": retraces, "direct_video": direct_video},
             queue_snapshot_save=queue_snapshot_save,
+            queue_demo_toggle=queue_demo_toggle,
             queue_dos_key=queue_dos_key,
             ega_render_start=ega_render_start,
             live_memory=lambda: bytes(rt.program.memory.data),
@@ -1186,6 +1237,12 @@ def main(argv: list[str] | None = None) -> int:
         frame_sync.close()
         if dashboard is not None:
             dashboard.close()
+        if demo_recorder.active:
+            try:
+                out = demo_recorder.stop(boundary=boundary["n"])
+                print(f"input demo saved: {out}", flush=True)
+            except Exception as exc:
+                print(f"input demo save failed: {type(exc).__name__}: {exc}", flush=True)
         coverage.save_cache()
         if not args.no_coverage_summary:
             print(coverage.format_summary(), flush=True)

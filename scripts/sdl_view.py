@@ -456,7 +456,8 @@ def run_sdl_ui(
     status: dict,
     counters: dict,
     queue_snapshot_save: Callable[[], None],
-    queue_dos_key: Callable[[int, str], None],
+    queue_demo_toggle: Callable[[], None] | None = None,
+    queue_dos_key: Callable[[int, str], None] | None = None,
     ega_render_start: Callable[[int], int],
     live_memory: Callable[[], bytes],
     live_display_start: Callable[[], int],
@@ -488,7 +489,7 @@ def run_sdl_ui(
     pygame.mixer.pre_init(frequency=44100, size=-16, channels=1, buffer=mixer_buffer)
     pygame.init()
     speaker = PcSpeakerAudio(pygame)
-    pygame.display.set_caption(f"OVERKILL (emulated {video.upper()})  -  Q/A/O/P move, Z/Space fire")
+    pygame.display.set_caption(f"OVERKILL (emulated {video.upper()})  -  Q/A/O/P move, Z/Space fire, F11 demo, F12 snapshot")
     screen = pygame.display.set_mode((WIDTH * scale, HEIGHT * scale), pygame.RESIZABLE)
     scan = _build_pygame_scan()
     adlib_enabled = getattr(args, "sound", "pc") == "adlib" and getattr(args, "adlib_audio", "auto") != "off"
@@ -544,7 +545,7 @@ def run_sdl_ui(
             present(*last)
 
     def caption() -> None:
-        base = f"OVERKILL (emulated {video.upper()})  -  Q/A/O/P move, Z/Space fire"
+        base = f"OVERKILL (emulated {video.upper()})  -  Q/A/O/P move, Z/Space fire, F11 demo, F12 snapshot"
         c = counters
         tail = (f"visible={c['visible']['n']} boundaries={c['boundary']['n']} "
                 f"blits={c['blits']['n']} timers={c['timers']['n']} retraces={c['retraces']['n']}")
@@ -574,6 +575,8 @@ def run_sdl_ui(
                 elif ev.type == pygame.KEYDOWN:
                     if ev.key == pygame.K_F12:
                         queue_snapshot_save()
+                    elif ev.key == pygame.K_F11 and queue_demo_toggle is not None:
+                        queue_demo_toggle()
                     else:
                         sc = scan.get(ev.key)
                         if sc is not None:

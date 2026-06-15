@@ -291,7 +291,24 @@ from .gameplay.object_runtime import (
     _run_object_logic_dispatch_aa2b,
     _run_object_overlap_scan_62f6,
     _run_object_postmove_bc4b,
+    run_linked_object_coord_quad_update_9faf,
     run_object_child_coord_update_9fea,
+    run_object_x_step_left_clamp_a5d1,
+    run_object_x_step_right_clamp_a5ea,
+    run_object_y_step_up_clamp_a5f9,
+    run_object_y_step_down_clamp_a607,
+    run_object_vertical_scroll_edge_response_a616,
+    run_object_bottom_scroll_offset_decay_a63c,
+    run_object_top_scroll_edge_response_a648,
+    run_object_top_scroll_offset_recover_a662,
+    run_object_tile_sweep_probe_afd8,
+    run_object_scroll_world_progress_gate_a66f,
+    run_object_scroll_forward_row_a74e,
+    run_object_scroll_backward_row_a7d0,
+    run_object_scroll_row_wrap_forward_a746,
+    run_object_scroll_row_wrap_backward_a7e3,
+    run_object_scroll_forward_step_a6fe,
+    run_object_scroll_backward_step_a781,
     run_runtime_patched_object_steer_5e42,
     run_object_postmove_prelude_bc45,
     _run_post_contact_9e69_observed,
@@ -728,7 +745,12 @@ def overkill_object_spawn_seed_from_source_a4d7(cpu):
         return
     run_object_spawn_seed_from_source_a4d7(cpu)
 
-_SIG_OBJECT_SPAWN_ANCHOR_OFFSET_A571 = bytes.fromhex("8b 46 04 83 c0 0a 89 47 04 8b 46 02 83 c0 0a 89 47 02 c3")
+_SIG_OBJECT_SPAWN_ANCHOR_OFFSET_A571 = (
+    # install-time/static runtime form: ADD AX, imm8
+    bytes.fromhex("8b 46 04 83 c0 0a 89 47 04 8b 46 02 83 c0 0a 89 47 02 c3"),
+    # live/runtime-loaded form seen in demo snapshots: ADD AX, imm16
+    bytes.fromhex("8b 46 04 05 0a 00 89 47 04 8b 46 02 05 0a 00 89 47 02 c3"),
+)
 
 
 @registry.replace(0x1010, 0xA571, "overkill_object_spawn_anchor_offset_a571")
@@ -738,6 +760,102 @@ def overkill_object_spawn_anchor_offset_a571(cpu):
         _interpret_current_instruction_without_hook(cpu)
         return
     run_object_spawn_anchor_offset_a571(cpu)
+
+
+@registry.replace(0x1010, 0xA5D1, "overkill_object_x_step_left_clamp_a5d1")
+def overkill_object_x_step_left_clamp_a5d1(cpu):
+    """Raw object X decrement helper with the original two-pass clamp idiom."""
+    run_object_x_step_left_clamp_a5d1(cpu, _self_disable_if_patched)
+
+
+@registry.replace(0x1010, 0xA5EA, "overkill_object_x_step_right_clamp_a5ea")
+def overkill_object_x_step_right_clamp_a5ea(cpu):
+    """Raw object X increment helper with the original two-pass clamp idiom."""
+    run_object_x_step_right_clamp_a5ea(cpu, _self_disable_if_patched)
+
+
+@registry.replace(0x1010, 0xA5F9, "overkill_object_y_step_up_clamp_a5f9")
+def overkill_object_y_step_up_clamp_a5f9(cpu):
+    """Raw object Y decrement helper with the original two-pass clamp idiom."""
+    run_object_y_step_up_clamp_a5f9(cpu, _self_disable_if_patched)
+
+
+@registry.replace(0x1010, 0xA607, "overkill_object_y_step_down_clamp_a607")
+def overkill_object_y_step_down_clamp_a607(cpu):
+    """Raw object Y increment helper with the original two-pass clamp idiom."""
+    run_object_y_step_down_clamp_a607(cpu, _self_disable_if_patched)
+
+
+@registry.replace(0x1010, 0xA616, "overkill_object_vertical_scroll_edge_response_a616")
+def overkill_object_vertical_scroll_edge_response_a616(cpu):
+    """Raw vertical edge-scroll response around top/bottom scroll-bias globals."""
+    run_object_vertical_scroll_edge_response_a616(cpu, _self_disable_if_patched)
+
+
+@registry.replace(0x1010, 0xA63C, "overkill_object_bottom_scroll_offset_decay_a63c")
+def overkill_object_bottom_scroll_offset_decay_a63c(cpu):
+    """Decay DS:A39C bottom-edge scroll bias toward zero."""
+    run_object_bottom_scroll_offset_decay_a63c(cpu, _self_disable_if_patched)
+
+
+@registry.replace(0x1010, 0xA648, "overkill_object_top_scroll_edge_response_a648")
+def overkill_object_top_scroll_edge_response_a648(cpu):
+    """Top-edge input scroll bias/recovery helper."""
+    run_object_top_scroll_edge_response_a648(cpu, _self_disable_if_patched)
+
+
+@registry.replace(0x1010, 0xA662, "overkill_object_top_scroll_offset_recover_a662")
+def overkill_object_top_scroll_offset_recover_a662(cpu):
+    """Recover DS:A39A top-edge scroll bias toward zero."""
+    run_object_top_scroll_offset_recover_a662(cpu, _self_disable_if_patched)
+
+
+@registry.replace(0x1010, 0xAFD8, "overkill_object_tile_sweep_probe_afd8")
+def overkill_object_tile_sweep_probe_afd8(cpu):
+    """Shared object tile-sweep probe wrapper around B00D."""
+    run_object_tile_sweep_probe_afd8(cpu, _self_disable_if_patched)
+
+
+@registry.replace(0x1010, 0xA66F, "overkill_object_scroll_world_progress_gate_a66f")
+def overkill_object_scroll_world_progress_gate_a66f(cpu):
+    """Vertical scroll/world-progress gate around A6FE."""
+    run_object_scroll_world_progress_gate_a66f(cpu, _self_disable_if_patched)
+
+
+@registry.replace(0x1010, 0xA746, "overkill_object_scroll_row_wrap_forward_a746")
+def overkill_object_scroll_row_wrap_forward_a746(cpu):
+    """Wrap the forward scroll source row pointer."""
+    run_object_scroll_row_wrap_forward_a746(cpu, _self_disable_if_patched)
+
+
+@registry.replace(0x1010, 0xA7E3, "overkill_object_scroll_row_wrap_backward_a7e3")
+def overkill_object_scroll_row_wrap_backward_a7e3(cpu):
+    """Wrap the backward scroll source row pointer."""
+    run_object_scroll_row_wrap_backward_a7e3(cpu, _self_disable_if_patched)
+
+
+@registry.replace(0x1010, 0xA74E, "overkill_object_scroll_forward_row_a74e")
+def overkill_object_scroll_forward_row_a74e(cpu):
+    """Forward map/scroll-row advance bookkeeping around A7EB."""
+    run_object_scroll_forward_row_a74e(cpu, _self_disable_if_patched)
+
+
+@registry.replace(0x1010, 0xA7D0, "overkill_object_scroll_backward_row_a7d0")
+def overkill_object_scroll_backward_row_a7d0(cpu):
+    """Backward map/scroll-row advance bookkeeping around A7EB."""
+    run_object_scroll_backward_row_a7d0(cpu, _self_disable_if_patched)
+
+
+@registry.replace(0x1010, 0xA6FE, "overkill_object_scroll_forward_step_a6fe")
+def overkill_object_scroll_forward_step_a6fe(cpu):
+    """Forward vertical-scroll bookkeeping step."""
+    run_object_scroll_forward_step_a6fe(cpu, _self_disable_if_patched)
+
+
+@registry.replace(0x1010, 0xA781, "overkill_object_scroll_backward_step_a781")
+def overkill_object_scroll_backward_step_a781(cpu):
+    """Backward vertical-scroll bookkeeping step."""
+    run_object_scroll_backward_step_a781(cpu, _self_disable_if_patched)
 
 
 @registry.replace(0x1010, 0x7596, "overkill_layer_draw_type_dispatch_7596")
@@ -3777,6 +3895,12 @@ def overkill_frame_axis_count_inc_ah_9bfb(cpu):
 def overkill_frame_axis_count_inc_al_9bfe(cpu):
     """Tiny 9C01 frame-controller leaf: INC AL; RET."""
     run_frame_axis_count_inc_al_9bfe(cpu, _self_disable_if_patched)
+
+
+@registry.replace(0x1010, 0x9FAF, "overkill_linked_object_coord_quad_update_9faf")
+def overkill_linked_object_coord_quad_update_9faf(cpu):
+    """Frame-controller linked child-coordinate parent around four 9FEA updates."""
+    run_linked_object_coord_quad_update_9faf(cpu, _self_disable_if_patched)
 
 @registry.replace(0x1010, 0xA940, "overkill_frame_game_state_update_a940")
 def overkill_frame_game_state_update_a940(cpu):

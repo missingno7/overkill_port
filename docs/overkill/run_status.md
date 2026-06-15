@@ -4072,3 +4072,181 @@ model yet.
 - These are deliberately still low-level names: `D390/D434` belong to the
   input/menu wait-state layer, while `A571` belongs to raw object-slot spawning,
   not to a confirmed semantic enemy/projectile constructor.
+
+## 2026-06-15 deterministic input demos
+
+Added an interactive input-demo layer for reproducing human gameplay from a
+stable VM state:
+
+- `F11` in `scripts/play.py` starts/stops recording.
+- Starting a recording writes a normal snapshot under
+  `artifacts/demos/demo_play_<video>_<timestamp>/snapshot`.
+- While active, the player records VM-delivered keyboard scan codes and DOS text
+  key values by emulated boundary index into `input_demo.json`.
+- `--demo <dir-or-json>` replays the recorded input and, unless `--snapshot` is
+  explicitly supplied, loads the demo's start snapshot automatically.
+- Demo replay is supported by normal play, `--verify-hooks`, headless
+  `--verify-frames`, and `--verify-frames --verify-frame-preview`.
+
+Useful commands:
+
+```bash
+# Record: press F11, play, press F11 again.
+python scripts/play.py --video tandy --sound adlib \
+  --snapshot artifacts/snapshot_play_tandy_20260614_203152
+
+# Replay the run normally.
+python scripts/play.py --video tandy --sound adlib \
+  --demo artifacts/demos/demo_play_tandy_YYYYMMDD_HHMMSS
+
+# Verify the replay at frame level.
+python scripts/play.py --video tandy --sound adlib \
+  --demo artifacts/demos/demo_play_tandy_YYYYMMDD_HHMMSS \
+  --verify-frames --verify-frame-source both
+
+# Verify hooks while the demo plays for the runtime.
+python scripts/play.py --video tandy --sound adlib \
+  --demo artifacts/demos/demo_play_tandy_YYYYMMDD_HHMMSS \
+  --verify-hooks --verify-stop-on-diff
+```
+
+The demo stores delivered VM events, not host wall-clock timestamps.  That makes
+replay deterministic for oracle/candidate comparison and avoids the one-frame
+input skew that can happen when SDL events are sampled independently for the two
+sides of frame verification.
+
+### 2026-06-15 demo verification fix: A571 dual ADD encoding
+
+The first recorded gameplay demo exposed a verifier divergence at
+`1010:A571 overkill_object_spawn_anchor_offset_a571` during hook verification.
+The routine exists in two equivalent encodings:
+
+- static/install-time code uses `ADD AX, imm8` (`83 C0 0A`),
+- live runtime/demo snapshots can contain `ADD AX, imm16` (`05 0A 00`).
+
+The hook now accepts both byte signatures and the regression test runs the
+same ASM-vs-hook comparison against both encodings.  This keeps `A571` as a
+single raw object-spawn anchor helper while avoiding a false runtime-patched-code
+fallback when verifying recorded demos.
+
+### 2026-06-15 demo-driven linked-child / movement blind-spot cleanup
+
+Used the recorded Tandy demo `artifacts/demos/demo_play_tandy_20260615_104031`
+as a representative input-driven path after the A571 signature fix.  This pass
+stayed in the verified lifted-routine layer and deliberately avoided assigning
+high-level enemy/projectile names.
+
+Lifted:
+
+- `1010:9FAF overkill_linked_object_coord_quad_update_9faf`
+  - frame-controller child parent around four `9FEA` linked-object coordinate
+    updates;
+  - clears `DS:A39E/A39F`, uses `DS:A39A/A39C` as the two vertical offsets, and
+    updates linked slots from `DS:A966/A968/A96A/A96C`;
+  - the fourth child is the original fallthrough into `9FEA`, so it returns
+    directly to the caller.
+- `1010:A5D1/A5EA/A5F9/A607`
+  - raw two-pass clamp-step helpers for object X/Y movement;
+  - these preserve the odd `CALL next; body; RET back to body; RET caller`
+    stack scratch pattern.
+- `1010:A616/A63C/A648/A662`
+  - raw vertical edge-scroll response helpers around `DS:A39A/A39C`;
+  - this starts separating player/object edge-scroll bias from the larger
+    object behavior family without naming the owner semantically.
+
+Validation:
+
+```text
+python scripts/lint.py
+# Lint passed for 77 Python files
+
+pytest -q tests/test_overkill_hooks.py::test_linked_object_coord_quad_update_9faf_matches_original_parent \
+  tests/test_overkill_hooks.py::test_object_two_pass_clamp_step_helpers_match_original \
+  tests/test_overkill_hooks.py::test_object_vertical_scroll_edge_helpers_match_original \
+  tests/test_input_demo.py tests/test_frame_verify.py
+# 9 passed
+
+python scripts/verify_hooks_headless.py --snapshot artifacts/snapshot_play_tandy_20260614_203152 --verify-max 300 --max-steps 1000000 --fast-ranges
+# OK HOOK VERIFY LIMIT REACHED verified=300
+
+python scripts/play.py --video tandy --sound adlib --demo artifacts/demos/demo_play_tandy_20260615_104031 --verify-frames --verify-frame-max 100 --verify-frame-source both
+# FRAME VERIFY OK frames=100
+```
+
+A demo run with `--verify-hooks --verify-stop-on-diff --verify-fast-ranges` ran
+until sandbox timeout without divergence; during that timeout-limited window it
+reported no skipped metadata and no unknown/unmeasured hook calls.
+
+Remaining demo/cold-start blind spots are now more concentrated around:
+
+- `1010:9B2E-9C6B` frame-controller child frontier;
+- `1010:A6FD-A780` / `1010:A66F-A6B7` larger scroll/transition/object-family
+  helpers;
+- `1010:F225-F2AE`, `1010:AFD8-B01C`, `1010:89FF-8A20`, `1010:7CA2-7CDD` as
+  object/map behavior frontiers;
+- `1010:61DC-6295` status display parent, still not lifted as a whole because it
+  reaches display/data-table shaped helpers and should be mapped before a parent
+  replacement.
+
+
+### 2026-06-15 input-demo ownership refactor
+
+Moved deterministic input-demo recording/replay out of the OVERKILL package into
+`dos_re.input_demo`.  The demo format is now explicitly reusable VM tooling: it
+stores a start snapshot plus VM-delivered `scan` / `dos_key` events by emulated
+boundary index, with game-specific information kept only as opaque manifest
+`metadata`.
+
+OVERKILL-specific code now only integrates the generic layer from `scripts/play.py`:
+
+- `F11` remains the OVERKILL viewer toggle for start/stop recording;
+- demo directories keep the existing `demo_play_<video>_<timestamp>` shape;
+- the manifest metadata records `program=overkill`, video mode, sound mode, and
+  command tail;
+- `overkill/input_demo.py` is a compatibility shim that re-exports the generic
+  API for older local scripts, but new code should import from `dos_re.input_demo`.
+
+Validation:
+
+```text
+python scripts/lint.py
+# Lint passed for 78 Python files
+
+python -m pytest -q tests/test_input_demo.py tests/test_frame_verify.py
+# 6 passed
+
+python scripts/play.py --video tandy --sound adlib \
+  --demo artifacts/demos/demo_play_tandy_20260615_104031 \
+  --verify-frames --verify-frame-max 20 --verify-frame-source both
+# FRAME VERIFY OK frames=20
+
+python scripts/verify_hooks_headless.py \
+  --snapshot artifacts/demos/demo_play_tandy_20260615_104031/snapshot \
+  --verify-max 150 --max-steps 600000 --fast-ranges
+# OK HOOK VERIFY LIMIT REACHED verified=150
+```
+
+### 2026-06-15 blind-spot cleanup: scroll/tile-sweep layer
+
+Added demo-driven low-level hooks for the remaining movement/collision blind spots around the frame controller:
+
+- `1010:AFD8 overkill_object_tile_sweep_probe_afd8` — shared object tile-sweep wrapper around the direction-specific `B00D` table. This exposes the A430 scratch globals as a raw collision/movement probe instead of anonymous object ASM.
+- `1010:A66F overkill_object_scroll_world_progress_gate_a66f` — vertical-scroll/world-progress gate around the `A6FE` scroll tick.
+- `1010:A6FE` / `1010:A781` — forward/backward vertical-scroll bookkeeping steps.
+- `1010:A74E` / `1010:A7D0` — forward/backward row-advance side effects around the still-bounded `A7EB` display copy.
+- `1010:A746` / `1010:A7E3` — tiny source-row pointer wrap leaves.
+
+This starts separating a reusable raw layer:
+
+```text
+movement / world-scroll bookkeeping
+  ├── A66F world-progress gate
+  ├── A6FE/A781 forward/backward scroll ticks
+  ├── A74E/A7D0 row advance side effects
+  └── A746/A7E3 source-row pointer wraps
+
+collision / tile sweep
+  └── AFD8 shared object tile-sweep probe wrapper around B00D
+```
+
+No semantic level/camera/enemy names are claimed yet; these are still ASM-shaped roles verified against the DOS oracle.

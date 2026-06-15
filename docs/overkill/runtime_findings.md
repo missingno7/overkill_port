@@ -2637,3 +2637,24 @@ frontier-level evidence only.
 ### 1010:53C9 text-entry prompt loop
 
 `1010:53C9` is the interactive DOS text-entry prompt parent.  Each hot iteration redraws the prompt label at `DS:22A9`, redraws the current 10-byte buffer at `DS:229B`, reads one key through `1010:5497`, and either appends printable ASCII into `DS:[DS:22B0]` or loops for ignored keys.  The lifted hook intentionally models one iteration only.  Backspace, Enter/pad/copy, and full-buffer bell paths still branch to original `5408`, `541E`, and `53FC` so the unusual finish tail through `51AB` remains observable before being named.
+
+### 2026-06-15: demo-driven linked-child coordinate and edge-scroll helpers
+
+The recorded input demo exposed repeated frame-controller child traffic through
+`1010:9FAF` and the surrounding `A5xx/A6xx` movement helpers.  The verified
+shape is now clearer:
+
+- `1010:9FAF` is a parent for four linked-object coordinate updates.  It clears
+  the clamp flags at `DS:A39E/A39F`, sets `DS:A398` from `DS:A39A` for the first
+  two children and from `DS:A39C` for the second two children, then composes the
+  existing `1010:9FEA` linked-coordinate helper for pointers at
+  `DS:A966/A968/A96A/A96C`.  The final update is a fallthrough into `9FEA`, not a
+  normal call.
+- `1010:A5D1`, `A5EA`, `A5F9`, and `A607` are raw two-pass object X/Y clamp-step
+  helpers.  Their `CALL next` idiom is meaningful: it executes the compare/step
+  body twice and naturally becomes one or zero pixels at the edge while leaving
+  the internal return word below the final stack pointer.
+- `1010:A616`, `A648`, `A63C`, and `A662` manage vertical edge-scroll bias in
+  `DS:A39A/A39C` based on object Y, view position `DS:2350`, and input bits in
+  `DS:98BE`.  This is a low-level movement/scroll bridge, not yet a semantic
+  player/enemy classification.
