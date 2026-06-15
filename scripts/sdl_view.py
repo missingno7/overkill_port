@@ -597,11 +597,6 @@ def run_sdl_ui(
                     frame_id, snapshot, display_start, video_mode, video_page = pending
                 present(snapshot, display_start, video_mode, video_page)
                 frame_sync.mark_displayed(frame_id)
-            elif getattr(args, "no_present_sync", False):
-                ds = ega_render_start(live_display_start()) if video == "ega" else 0
-                mode = live_video_mode() if live_video_mode is not None else None
-                page = live_video_page() if live_video_page is not None else 0
-                present(live_memory(), ds, mode, page)
             else:
                 # No frame ready: yield the GIL so the emulator thread runs.
                 pygame.time.wait(1)

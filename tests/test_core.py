@@ -817,3 +817,20 @@ def test_hook_oracle_static_audit_passes():
         check=False,
     )
     assert result.returncode == 0, result.stdout
+
+
+def test_play_help_presents_simplified_verifier_surface():
+    import subprocess
+    import sys
+
+    out = subprocess.check_output([sys.executable, "scripts/play.py", "--help"], text=True)
+
+    assert "--verify-hooks" in out
+    assert "--verify-frames" in out
+    assert "--verify-preview" in out
+    assert "--verify-stop-on-diff" not in out
+    assert "--verify-fast-ranges" not in out
+    assert "--verify-no-nested" not in out
+    assert "--verify-frame-preview" not in out
+    assert "--verify-legacy" not in out
+    assert "--verify-hooks-strict" not in out

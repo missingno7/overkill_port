@@ -78,6 +78,9 @@ B800_BASE = 0xB8000
 B800_SIZE = 0x4000
 A000_BASE = EGA_APERTURE
 TANDY_SIZE = 0x8000
+DEFAULT_FRAME_BUDGET = 6_000_000
+DEFAULT_CPU_CHUNK_STEPS = 1000
+COVERAGE_CACHE = ROOT / "artifacts" / "hook_coverage_cache.json"
 
 # Boss-key wait loops are tiny two-instruction polls.  CPU.run() can yield after
 # any instruction in the loop, not just at the loop head, so the interactive
@@ -252,92 +255,80 @@ class FrameSync:
 
 
 def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(description="Interactive CGA/EGA/Tandy viewer for the OVERKILL runtime")
-    p.add_argument("--video", choices=("cga", "ega", "tandy"), default="tandy",
-                   help="launch/render the original game in CGA, EGA, or Tandy mode (default: tandy)")
-    p.add_argument("--sound", choices=("pc", "adlib", "roland"), default="pc",
-                   help="select the original optional music driver; pc keeps the built-in PC-speaker path")
-    p.add_argument("--adlib-audio", choices=("auto", "off"), default="auto",
-                   help="when --sound adlib is active, stream OPL writes through optional nuked_opl3 if available")
-    p.add_argument("--adlib-chunk-ms", type=float, default=46.0,
-                   help="SDL AdLib PCM chunk size in milliseconds (default: 46; increase to smooth underruns)")
-    p.add_argument("--dos-args", default=None,
-                   help="override the PSP command tail passed to the original EXE, e.g. raw compact bytes via tests/diagnostics")
-    p.add_argument("--game-hz", type=float, default=36.4,
-                   help="real-time game speed (frames/sec); original timer cadence is ~36.4. Lower if choppy.")
-    p.add_argument("--palette", default="1h", choices=sorted(CGA_PALETTES))
-    p.add_argument("--scale", type=int, default=2)
-    p.add_argument("--frame-budget", type=int, default=6_000_000,
-                   help="max interpreted steps to wait for one frame before reporting a stall")
-    p.add_argument("--cpu-chunk-steps", type=int, default=1000,
-                   help="interpreted steps per cooperative UI/sound poll while waiting for a boundary")
-    p.add_argument("--snapshot", default=None,
-                   help="load a saved snapshot dir to skip the ~11s asset-decode bootstrap")
-    p.add_argument("--save-snapshot-root", default=str(ROOT / "artifacts"),
-                   help="root directory for F12 runtime snapshots")
-    p.add_argument("--save-demo-root", default=str(ROOT / "artifacts" / "demos"),
-                   help="root directory for F11 input demos")
-    p.add_argument("--demo", default=None,
-                   help="replay an input demo directory/json; loads its start snapshot unless --snapshot is also given")
-    p.add_argument("--demo-continue", action="store_true",
-                   help="keep running after the input demo ends instead of stopping the game when it finishes")
-    p.add_argument("--no-present-sync", action="store_true",
-                   help="debug only: do not wait for the viewer to consume each timer-frame snapshot")
-    p.add_argument("--retrace-hz", type=float, default=None,
-                   help="pace hardware retrace waits used by intro/menu; default is 60 Hz, not the 36.4 Hz game timer")
-    p.add_argument("--verify-hooks", action="store_true",
-                   help="differentially verify all hooks at hook boundaries while playing")
-    p.add_argument("--verify-hooks-strict", action="store_true",
-                   help="verify all hooks using the slow/simple automatic-continuation oracle")
-    p.add_argument("--verify-hook", action="append", default=[],
-                   help="differentially verify one hook address while playing; may be repeated")
-    p.add_argument("--verify-strict", action="store_true",
-                   help="make --verify-hooks/--verify-hook use the slow/simple automatic-continuation oracle")
-    p.add_argument("--verify-max", type=int, default=None,
-                   help="stop after N verified hook calls")
-    p.add_argument("--verify-stop-on-diff", action="store_true",
-                   help="stop the emulator thread on the first hook divergence")
-    p.add_argument("--verify-log-diffs", action="store_true",
-                   help="print detailed hook divergence reports and continue")
-    p.add_argument("--verify-fast-ranges", action="store_true",
-                   help="debug/perf only: compare named memory ranges instead of the full memory image")
-    p.add_argument("--verify-require-metadata", action="store_true",
-                   help="fail instead of silently skipping a hook that has no verifier continuation metadata")
-    p.add_argument("--verify-no-nested", action="store_true",
-                   help="legacy/perf mode: do not recursively verify child hooks reached inside a verified parent hook")
-    p.add_argument("--verify-frames", action="store_true",
-                   help="headless differential frame verifier: reference ASM runtime vs hooked runtime")
-    p.add_argument("--verify-frame-max", type=int, default=60,
-                   help="stop frame verifier after N frame/timer/retrace boundaries")
-    p.add_argument("--verify-frame-source", choices=("rgb", "vram", "both"), default="both",
-                   help="frame verifier comparison source")
-    p.add_argument("--verify-frame-dump-dir", default=str(ROOT / "artifacts" / "frame_verify"),
-                   help="directory for frame verifier divergence PNG/VRAM/report artifacts")
-    p.add_argument("--verify-frame-preview", action="store_true",
-                   help="show a live SDL preview of the candidate runtime while frame verification runs")
-    p.add_argument("--verify-frame-preview-on-diff", action="store_true",
-                   help="open the frame compare image when frame verification finds a diff")
-    p.add_argument("--verify-frame-trace-raw", action="store_true",
-                   help="on frame divergence, include recent candidate hooks that changed the sampled raw frame bytes")
-    p.add_argument("--verify-frame-trace-raw-from", type=int, default=1,
-                   help="first frame number where --verify-frame-trace-raw starts sampling; useful for late divergences")
-    p.add_argument("--ega-publish-timed-boundaries", action="store_true",
-                   help="debug only: publish EGA snapshots at timer/retrace waits as well as the EGA presenter")
-    p.add_argument("--ega-start-address-units", choices=("byte", "word", "ignore"), default="byte",
-                   help="debug EGA CRTC start interpretation: byte offset, word address*2, or always zero")
-    p.add_argument("--ega-log-starts", action="store_true",
-                   help="print EGA display-start value and interpreted render offset for each published frame")
-    p.add_argument("--ega-publish-all-presents", action="store_true",
-                   help="debug only: publish every EGA present, including alternating off-screen page presents")
-    p.add_argument("--coverage-dashboard", action="store_true",
-                   help="open a live Tk ASM / Hook Coverage dashboard next to the gameplay window")
-    p.add_argument("--coverage-refresh-hz", type=float, default=4.0,
-                   help="Tk coverage dashboard refresh rate (default: 4 Hz)")
-    p.add_argument("--coverage-cache", default=str(ROOT / "artifacts" / "hook_coverage_cache.json"),
-                   help="JSON cache used to estimate hook ASM-equivalent cost outside --verify-hooks")
-    p.add_argument("--no-coverage-summary", action="store_true",
-                   help="do not print the final ASM / Hook Coverage summary on exit")
+    p = argparse.ArgumentParser(
+        description="OVERKILL player and strict verification runner"
+    )
+
+    launch = p.add_argument_group("launch / replay")
+    launch.add_argument("--video", choices=("cga", "ega", "tandy"), default="tandy",
+                        help="launch/render the original game in this video mode")
+    launch.add_argument("--sound", choices=("pc", "adlib", "roland"), default="pc",
+                        help="select the original optional music driver")
+    launch.add_argument("--dos-args", default=None,
+                        help="raw PSP command-tail override; bypasses --video/--sound")
+    launch.add_argument("--snapshot", default=None,
+                        help="load a saved snapshot directory")
+    launch.add_argument("--demo", default=None,
+                        help="replay an input demo directory/json; loads its start snapshot unless --snapshot is also given")
+    launch.add_argument("--demo-continue", action="store_true",
+                        help="keep running/verifying after the input demo ends")
+
+    viewer = p.add_argument_group("interactive viewer")
+    viewer.add_argument("--game-hz", type=float, default=36.4,
+                        help="real-time game speed for interactive play")
+    viewer.add_argument("--retrace-hz", type=float, default=None,
+                        help="interactive hardware-retrace pacing; default is 60 Hz")
+    viewer.add_argument("--palette", default="1h", choices=sorted(CGA_PALETTES),
+                        help="CGA palette used by the viewer/frame renderer")
+    viewer.add_argument("--scale", type=int, default=2,
+                        help="SDL viewer pixel scale")
+    viewer.add_argument("--adlib-audio", choices=("auto", "off"), default="auto",
+                        help="when --sound adlib is active, stream OPL writes through optional nuked_opl3")
+    viewer.add_argument("--adlib-chunk-ms", type=float, default=46.0,
+                        help="SDL AdLib PCM chunk size in milliseconds")
+    viewer.add_argument("--save-snapshot-root", default=str(ROOT / "artifacts"),
+                        help="root directory for F12 runtime snapshots")
+    viewer.add_argument("--save-demo-root", default=str(ROOT / "artifacts" / "demos"),
+                        help="root directory for F11 input demos")
+
+    verify = p.add_argument_group("verification")
+    verify.add_argument("--verify-hooks", action="store_true",
+                        help="headless strict hook verifier; use --verify-preview to show SDL while verifying")
+    verify.add_argument("--verify-hook", action="append", default=[], metavar="CS:IP",
+                        help="verify one hook address; may be repeated and implies hook verification")
+    verify.add_argument("--verify-frames", action="store_true",
+                        help="headless differential frame verifier: reference ASM runtime vs hooked runtime")
+    verify.add_argument("--verify-max", type=int, default=None,
+                        help="hook verifier success limit; headless default is 1000")
+    verify.add_argument("--verify-step-budget", type=int, default=4_000_000,
+                        help="headless hook-verifier outer CPU step budget")
+    verify.add_argument("--verify-preview", action="store_true",
+                        help="show a live SDL preview while a verifier runs")
+    verify.add_argument("--verify-frame-max", type=int, default=60,
+                        help="stop frame verifier after N frame/timer/retrace boundaries")
+    verify.add_argument("--verify-frame-source", choices=("rgb", "vram", "both"), default="both",
+                        help="frame verifier comparison source")
+    verify.add_argument("--verify-frame-dump-dir", default=str(ROOT / "artifacts" / "frame_verify"),
+                        help="directory for frame verifier divergence PNG/VRAM/report artifacts")
+    verify.add_argument("--verify-open-diff", action="store_true",
+                        help="open the frame compare image when frame verification finds a diff")
+    verify.add_argument("--verify-frame-trace-raw", action="store_true",
+                        help="on frame divergence, include recent candidate hooks that changed sampled raw frame bytes")
+    verify.add_argument("--verify-frame-trace-raw-from", type=int, default=1,
+                        help="first frame number where raw-frame tracing starts")
+
+    diagnostics = p.add_argument_group("diagnostics")
+    diagnostics.add_argument("--coverage-dashboard", action="store_true",
+                             help="open a live Tk ASM / Hook Coverage dashboard next to the gameplay window")
+    diagnostics.add_argument("--coverage-refresh-hz", type=float, default=4.0,
+                             help="Tk coverage dashboard refresh rate")
+    diagnostics.add_argument("--no-coverage-summary", action="store_true",
+                             help="do not print the final ASM / Hook Coverage summary on exit")
+
     args = p.parse_args(argv)
+
+    if args.verify_frames and (args.verify_hooks or args.verify_hook):
+        p.error("choose either --verify-frames or --verify-hooks/--verify-hook, not both")
 
     exe = ROOT / "assets" / "OVERKILL"
     assets = ROOT / "assets"
@@ -352,7 +343,28 @@ def main(argv: list[str] | None = None) -> int:
         if args.snapshot is None:
             args.snapshot = str(demo_playback.snapshot_path())
 
-    if args.verify_frames and args.verify_frame_preview:
+    explicit_verify_hooks = {parse_verify_addr(text) for text in args.verify_hook}
+    if (args.verify_hooks or explicit_verify_hooks) and not args.verify_preview:
+        from overkill.headless_verification import HeadlessHookVerifyConfig, run_headless_hook_verifier
+
+        return run_headless_hook_verifier(
+            HeadlessHookVerifyConfig(
+                exe=exe,
+                game_root=assets,
+                snapshot=args.snapshot,
+                demo=args.demo,
+                demo_continue=args.demo_continue,
+                video=args.video,
+                sound=args.sound,
+                command_tail=command_tail,
+                verify_all=args.verify_hooks,
+                hooks=explicit_verify_hooks,
+                max_verified=args.verify_max if args.verify_max is not None else 1000,
+                max_steps=args.verify_step_budget,
+            )
+        )
+
+    if args.verify_frames and args.verify_preview:
         from overkill.frame_verify import FrameSample, FrameVerifyConfig, run_frame_verifier
 
         frame_sync = FrameSync()
@@ -368,9 +380,9 @@ def main(argv: list[str] | None = None) -> int:
         dos_key_events: SimpleQueue[tuple[int, str]] = SimpleQueue()
 
         def ega_render_start(raw: int) -> int:
-            if args.ega_start_address_units == "ignore":
+            if False:
                 return 0
-            if args.ega_start_address_units == "word":
+            if False:
                 return (raw << 1) & 0xFFFF
             return raw & 0xFFFF
 
@@ -440,14 +452,14 @@ def main(argv: list[str] | None = None) -> int:
                         video=args.video,
                         palette=args.palette,
                         max_frames=max_frames,
-                        frame_budget=args.frame_budget,
+                        frame_budget=DEFAULT_FRAME_BUDGET,
                         source=args.verify_frame_source,
                         dump_dir=Path(args.verify_frame_dump_dir),
                         stop_on_diff=True,
-                        preview_on_diff=args.verify_frame_preview_on_diff,
+                        preview_on_diff=args.verify_open_diff,
                         trace_sample_changes=args.verify_frame_trace_raw,
                         trace_sample_change_start=args.verify_frame_trace_raw_from,
-                        ega_start_address_units=args.ega_start_address_units,
+                        ega_start_address_units="byte",
                     ),
                     publish_candidate=publish_candidate,
                     pump_inputs=pump_inputs,
@@ -527,14 +539,14 @@ def main(argv: list[str] | None = None) -> int:
                 video=args.video,
                 palette=args.palette,
                 max_frames=args.verify_frame_max,
-                frame_budget=args.frame_budget,
+                frame_budget=DEFAULT_FRAME_BUDGET,
                 source=args.verify_frame_source,
                 dump_dir=Path(args.verify_frame_dump_dir),
                 stop_on_diff=True,
-                preview_on_diff=args.verify_frame_preview_on_diff,
+                preview_on_diff=args.verify_open_diff,
                 trace_sample_changes=args.verify_frame_trace_raw,
                 trace_sample_change_start=args.verify_frame_trace_raw_from,
-                ega_start_address_units=args.ega_start_address_units,
+                ega_start_address_units="byte",
             ),
             pump_inputs=pump_demo_inputs if demo_playback is not None else None,
             stop_requested=demo_finished if demo_playback is not None else None,
@@ -549,37 +561,23 @@ def main(argv: list[str] | None = None) -> int:
     rt.cpu.trace_enabled = False
     coverage = CoverageTelemetry(
         classifier=OverkillCoverageClassifier(ROOT / "symbols.json"),
-        cache_path=Path(args.coverage_cache) if args.coverage_cache else None,
+        cache_path=COVERAGE_CACHE,
         enabled=True,
     )
     rt.cpu.coverage_telemetry = coverage
     status = {"text": ""}
     hook_verifier = None
-    explicit_verify_hooks = {parse_verify_addr(text) for text in args.verify_hook}
-    use_strict_hook_oracle = args.verify_strict or args.verify_hooks_strict
-    if args.verify_hooks or args.verify_hooks_strict or explicit_verify_hooks:
-        if use_strict_hook_oracle:
-            verifier_config = HookVerifierConfig.strict(
-                verify_all=args.verify_hooks or args.verify_hooks_strict,
-                hooks=explicit_verify_hooks,
-                max_verified=args.verify_max,
-                asm_max_steps=1_000_000,
-                progress_callback=lambda text: status.__setitem__("text", text),
-            )
-        else:
-            verifier_config = HookVerifierConfig(
+    if args.verify_hooks or explicit_verify_hooks:
+        hook_verifier = install_hook_verifier(
+            rt,
+            HookVerifierConfig.strict(
                 verify_all=args.verify_hooks,
                 hooks=explicit_verify_hooks,
                 max_verified=args.verify_max,
-                stop_on_diff=args.verify_stop_on_diff or args.verify_hooks or bool(explicit_verify_hooks),
-                log_diffs=args.verify_log_diffs,
-                full_memory=not args.verify_fast_ranges,
-                require_metadata=args.verify_require_metadata,
-                verify_nested_hooks=not args.verify_no_nested,
                 asm_max_steps=1_000_000,
                 progress_callback=lambda text: status.__setitem__("text", text),
-            )
-        hook_verifier = install_hook_verifier(rt, verifier_config)
+            ),
+        )
 
     if args.video != "cga":
         for key in NON_CGA_INTERACTIVE_DISABLE:
@@ -644,9 +642,9 @@ def main(argv: list[str] | None = None) -> int:
 
     def ega_render_start(raw_start: int) -> int:
         raw_start &= 0xFFFF
-        if args.ega_start_address_units == "ignore":
+        if False:
             return 0
-        if args.ega_start_address_units == "word":
+        if False:
             return (raw_start << 1) & 0xFFFF
         return raw_start
 
@@ -693,7 +691,7 @@ def main(argv: list[str] | None = None) -> int:
         crc: int | None = None
         mode_key = published_video_mode()
         page_key = (rt.dos.video_page & 0xFF) if is_text_display_active() else 0
-        if force and not (args.ega_log_starts and args.video == "ega"):
+        if force and not (False):
             visible_key = (mode_key, page_key, visible["n"] + 1, display_start)
         else:
             crc = video_crc(cpu)
@@ -702,7 +700,7 @@ def main(argv: list[str] | None = None) -> int:
                 return False
         last_video_crc["value"] = visible_key
         visible["n"] += 1
-        if args.ega_log_starts and args.video == "ega":
+        if False:
             if crc is None:
                 crc = video_crc(cpu)
             print(
@@ -711,7 +709,7 @@ def main(argv: list[str] | None = None) -> int:
                 f"crc={crc:08X}",
                 flush=True,
             )
-        if not args.no_present_sync:
+        if True:
             wait_poll = (lambda: async_timer_irq.poll(cpu, max_catchup=1)) if poll_audio_while_waiting else None
             wait_poll_interval = async_timer_irq.period * 0.5 if async_timer_irq.period > 0 else 0.004
             if is_text_display_active():
@@ -897,7 +895,7 @@ def main(argv: list[str] | None = None) -> int:
         # as the visible "every other frame" blink.  Keep executing both in the
         # VM, but only publish the stable page unless the debug flag asks to see
         # every present boundary.
-        if args.video != "ega" or args.ega_publish_all_presents or (cpu.mem.ega_display_start & 0xFFFF) == 0:
+        if args.video != "ega" or (cpu.mem.ega_display_start & 0xFFFF) == 0:
             publish_video_if_changed(cpu, force=True)
         # A visible blit is a safe place to hand control back to the UI.  The
         # following 0679 timer wait still performs the actual gameplay sleep, so
@@ -922,7 +920,7 @@ def main(argv: list[str] | None = None) -> int:
         # present, but after EGA presenting starts, timed-boundary publishing can
         # expose intermediate dirty-panel states that the presenter has not
         # committed as a complete frame yet.
-        if args.video != "ega" or args.ega_publish_timed_boundaries or blits["n"] == 0:
+        if args.video != "ega" or blits["n"] == 0:
             publish_video_if_changed(cpu)
         # Pace one logical OVERKILL frame, not the number of IRQ0 ticks that
         # happened to be delivered inside this particular 0679 hook call.
@@ -951,7 +949,7 @@ def main(argv: list[str] | None = None) -> int:
         # Intro/menu/fade code often draws first and then waits for retrace.  For
         # EGA, publish these timed snapshots only until the first explicit EGA
         # presenter runs; after that, keep retrace as a pacing boundary only.
-        if args.video != "ega" or args.ega_publish_timed_boundaries or blits["n"] == 0:
+        if args.video != "ega" or blits["n"] == 0:
             publish_video_if_changed(cpu, poll_audio_while_waiting=True)
         retrace_pacer(
             poll=lambda: async_timer_irq.poll(cpu, max_catchup=1),
@@ -974,7 +972,7 @@ def main(argv: list[str] | None = None) -> int:
             base_present(cpu)
         blits["n"] += 1
         rt.dos.text_mode_active = False
-        if args.video != "ega" or args.ega_publish_all_presents or (cpu.mem.ega_display_start & 0xFFFF) == 0:
+        if args.video != "ega" or (cpu.mem.ega_display_start & 0xFFFF) == 0:
             publish_video_if_changed(cpu, force=True, wait_for_viewer=False)
         last_boundary["kind"] = "verify-present"
         cpu.hook_verifier_live_yield_requested = True
@@ -984,7 +982,7 @@ def main(argv: list[str] | None = None) -> int:
         base_timer_wait(cpu)
         async_timer_irq.reset_after_synchronous_ticks(2)
         timers["n"] += 1
-        if args.video != "ega" or args.ega_publish_timed_boundaries or blits["n"] == 0:
+        if args.video != "ega" or blits["n"] == 0:
             publish_video_if_changed(cpu, wait_for_viewer=False)
         # Do not raise FramePresented inside a parent-hook transaction, but do
         # keep the same real-time pacing.  Without this, verified parent hooks
@@ -1000,7 +998,7 @@ def main(argv: list[str] | None = None) -> int:
         if base_retrace_wait is not None:
             base_retrace_wait(cpu)
         retraces["n"] += 1
-        if args.video != "ega" or args.ega_publish_timed_boundaries or blits["n"] == 0:
+        if args.video != "ega" or blits["n"] == 0:
             publish_video_if_changed(cpu, wait_for_viewer=False)
         retrace_pacer(
             poll=lambda: async_timer_irq.poll(cpu, max_catchup=1),
@@ -1127,9 +1125,9 @@ def main(argv: list[str] | None = None) -> int:
                     keyboard.pump(allow_release=last_boundary["kind"] != "present")
                 target = boundary["n"] + 1
                 used = 0
-                while boundary["n"] < target and used < args.frame_budget and not stop.is_set():
+                while boundary["n"] < target and used < DEFAULT_FRAME_BUDGET and not stop.is_set():
                     try:
-                        rt.cpu.run(max(1, int(args.cpu_chunk_steps)))
+                        rt.cpu.run(max(1, int(DEFAULT_CPU_CHUNK_STEPS)))
                     except FramePresented:
                         break
                     except HaltExecution:
@@ -1214,7 +1212,7 @@ def main(argv: list[str] | None = None) -> int:
                         status["text"] = f"waiting on boss-key screen @ {cs:04X}:{ip:04X}"
                         sleep_with_async_irqs(rt.cpu, 0.01)
                         break
-                    used += max(1, int(args.cpu_chunk_steps))
+                    used += max(1, int(DEFAULT_CPU_CHUNK_STEPS))
                     async_timer_irq.poll(rt.cpu)
                     # Long screen loads can run for many chunks without a
                     # visible/timer boundary.  Drain key-up events during those
