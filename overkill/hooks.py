@@ -65,6 +65,8 @@ from dos_re.memory import EGA_CPU_APERTURE, EGA_APERTURE, EGA_PLANE_STRIDE, EGA_
 from .input_menu import (
     pack_keyboard_poll_bits_017e,
     run_input_selector_loop_d445,
+    run_menu_fire_release_wait_d390,
+    run_selector_input_release_wait_d434,
     run_main_menu_idle_loop_558b,
     run_input_poll_0162,
     run_input_release_wait_gate_986e,
@@ -73,6 +75,12 @@ from .input_menu import (
     run_boss_key_f9_release_wait_gate_07c4,
     run_boss_key_any_key_wait_gate_07d0,
     run_boss_key_return_key_release_wait_gate_07d7,
+    run_keyboard_state_clear_and_bios_tail_sync_50ab,
+    run_bios_keyboard_buffer_tail_sync_50ba,
+    run_temp_keyboard_vector_install_4e9f,
+    run_temp_keyboard_vector_restore_4ebf,
+    run_text_prompt_key_read_5497,
+    run_text_entry_prompt_loop_53c9,
     run_intro_retrace_delay_loop_96c5,
     run_intro_retrace_delay_loop_tail_96c8,
 )
@@ -158,6 +166,7 @@ from .gameplay.collision import (
     run_postmove_contact_window_aa71,
     run_player_hazard_object_scan_bde3,
     run_tile_lookup_505b,
+    run_tile_contact_probe_4ff9,
     run_tile_probe_5073,
     run_tile_collision_probe_ac28,
 )
@@ -171,8 +180,13 @@ from .gameplay.game_state import (
     run_status_counter_cell_blit_6296,
     run_status_cursor_advance_613e,
     run_status_cursor_retreat_615a,
+    run_status_row_repeat_6120,
+    run_status_cell_quad_composite_859e,
     run_status_cell_composite_85d5,
     run_status_coord_list_fill_99cd,
+    run_frame_tracked_coord_store_9cd9,
+    run_frame_coord_ring_advance_9cf1,
+    run_tracked_object_coord_pull_a031,
     run_frame_axis_count_inc_ah_9bfb,
     run_frame_axis_count_inc_al_9bfe,
     run_frame_game_state_update_a940,
@@ -188,6 +202,8 @@ from .gameplay.frame_orchestration import (
     run_status_cell_seed_852b,
     run_frame_effect_status_text_60a2,
     run_frame_loop_97b2,
+    run_transition_status_wait_9908,
+    run_transition_input_release_tail_9928,
     run_main_frame_loop_d007,
     run_frame_service_gate_073c,
     run_frame_status_counter_update_5f61,
@@ -201,6 +217,8 @@ from .gameplay.objects import (
     run_reset_effect_slot_block_c3bf,
     run_reset_object_slot_block_c3f1,
     run_reset_object_slot_block_c4e5,
+    run_reset_object_slot_and_status_setup_c4db,
+    run_setup_tracked_status_tail_c51d,
 )
 
 from .asm import (
@@ -228,6 +246,10 @@ from .gameplay.object_runtime import (
     _draw_dispatch_target_5ac8,
     _find_free_effect_slot_7524,
     _find_free_object_slot_7573,
+    run_object_slot_allocate_or_reclaim_7547,
+    run_object_spawn_seed_a4ea,
+    run_object_spawn_seed_from_source_a4d7,
+    run_object_spawn_anchor_offset_a571,
     _format_object_context,
     _layer_draw_dispatch_target_7596,
     _object_family_target_efae,
@@ -298,6 +320,12 @@ _SIG_98D8 = bytes.fromhex("80 3e fe be 00 75 f9")
 _SIG_07C4 = bytes.fromhex("80 3e 07 99 01 74 f9")
 _SIG_07D0 = bytes.fromhex("80 3e c3 98 00 74 f9")
 _SIG_07D7 = bytes.fromhex("80 3e 07 99 01 74 f9")
+_SIG_4E9F = bytes.fromhex("1e 06 b4 35 b0 09 cd 21 bf 3a 21 8c 05 89 5d 02 07 1e 0e 1f ba d2 4e b4 25 b0 09 cd 21 1f 1f c3")
+_SIG_4EBF = bytes.fromhex("1e bf 3a 21 8b 55 02 8b 05 8e d8 b4 25 b0 09 cd 21 1f c3")
+_SIG_53C9 = bytes.fromhex("bda922e8bdfdbd9b22e8b7fde8bf003c08742c3c0d743e813eb022a52274143c2072dd3c7a77d98b3eb0228805ff06b022ebcd")
+_SIG_5497 = bytes.fromhex("2e 8e 1e 96 95 e8 20 fa c7 06 b2 22 00 00 b4 07 cd 21 3c 00 74 02 eb 08 cd 21 c7 06 b2 22 01 00 a2 b4 22 50 e8 e1 f9 58 c3")
+_SIG_50AB = bytes.fromhex("2e 8e 06 96 95 bf c4 98 32 c0 b9 80 00 f3 aa fa 33 c0 8e c0 26 a0 1a 04 26 a2 1c 04 fb c3")
+_SIG_50BA = bytes.fromhex("fa 33 c0 8e c0 26 a0 1a 04 26 a2 1c 04 fb c3")
 _SIG_96C5 = bytes.fromhex("e8 01 ba e2 fb")
 _SIG_558B = bytes.fromhex("80 3e e9 98 01 75 03 e9 a8 00")
 _SIG_96C8 = bytes.fromhex("e2 fb")
@@ -440,6 +468,12 @@ def overkill_collision_stc_ret_5059(cpu):
 def overkill_tile_lookup_505b(cpu):
     """Hook wrapper for OVERKILL 1010:505B tile lookup helper."""
     run_tile_lookup_505b(cpu, _self_disable_if_patched)
+
+
+@registry.replace(0x1010, 0x4FF9, "overkill_tile_contact_probe_4ff9")
+def overkill_tile_contact_probe_4ff9(cpu):
+    """Hook wrapper for OVERKILL 1010:4FF9 tile/contact probe helper."""
+    run_tile_contact_probe_4ff9(cpu, _self_disable_if_patched)
 
 
 @registry.replace(0x1010, 0x5073, "overkill_tile_probe_5073")
@@ -645,6 +679,65 @@ def overkill_find_free_object_slot_7573(cpu):
         return
     _find_free_object_slot_7573(cpu)
     cpu.s.ip = cpu.pop()
+
+
+
+_SIG_OBJECT_ALLOC_OR_RECLAIM_7547 = bytes.fromhex(
+    "e8 29 00 83 fb ff 74 01 c3 b9 22 00 bb 5c 2b 83"
+    " 7f 18 09 74 0c 83 7f 18 0a 74 06 83 7f 16 01 75 08"
+    " 83 c3 38 e2 e9 bb 5c 2b e9 9a 47"
+)
+
+
+@registry.replace(0x1010, 0x7547, "overkill_object_slot_allocate_or_reclaim_7547")
+def overkill_object_slot_allocate_or_reclaim_7547(cpu):
+    """Hot object-slot allocation gate with rare original reclaim fallback."""
+    if not _code_matches(cpu, 0x7547, _SIG_OBJECT_ALLOC_OR_RECLAIM_7547):
+        _interpret_current_instruction_without_hook(cpu)
+        return
+    run_object_slot_allocate_or_reclaim_7547(cpu)
+
+
+_SIG_OBJECT_SPAWN_SEED_A4EA = bytes.fromhex(
+    "e8 5a d0 c7 07 01 00 c7 47 1e 01 00 c7 47 06 00"
+    " 00 c7 47 08 32 00 c7 47 14 00 00 c7 47 16 02 00"
+    " c7 47 18 02 00 c7 47 1c ff ff c3"
+)
+
+
+@registry.replace(0x1010, 0xA4EA, "overkill_object_spawn_seed_a4ea")
+def overkill_object_spawn_seed_a4ea(cpu):
+    """Common raw object-slot seed template reached by several object families."""
+    if not _code_matches(cpu, 0xA4EA, _SIG_OBJECT_SPAWN_SEED_A4EA):
+        _interpret_current_instruction_without_hook(cpu)
+        return
+    run_object_spawn_seed_a4ea(cpu)
+
+
+_SIG_OBJECT_SPAWN_SEED_FROM_SOURCE_A4D7 = (
+    bytes.fromhex("e8 10 00 8b 44 02 89 47 02 8b 44 04 83 c0 04 89 47 04 c3"),
+    bytes.fromhex("e8 10 00 8b 44 02 89 47 02 8b 44 04 05 04 00 89 47 04 c3"),
+)
+
+
+@registry.replace(0x1010, 0xA4D7, "overkill_object_spawn_seed_from_source_a4d7")
+def overkill_object_spawn_seed_from_source_a4d7(cpu):
+    """A4EA seed plus source-coordinate copy into the spawned object slot."""
+    if not _code_matches(cpu, 0xA4D7, _SIG_OBJECT_SPAWN_SEED_FROM_SOURCE_A4D7):
+        _interpret_current_instruction_without_hook(cpu)
+        return
+    run_object_spawn_seed_from_source_a4d7(cpu)
+
+_SIG_OBJECT_SPAWN_ANCHOR_OFFSET_A571 = bytes.fromhex("8b 46 04 83 c0 0a 89 47 04 8b 46 02 83 c0 0a 89 47 02 c3")
+
+
+@registry.replace(0x1010, 0xA571, "overkill_object_spawn_anchor_offset_a571")
+def overkill_object_spawn_anchor_offset_a571(cpu):
+    """Copy source object coordinates plus +10/+10 into a spawned object slot."""
+    if not _code_matches(cpu, 0xA571, _SIG_OBJECT_SPAWN_ANCHOR_OFFSET_A571):
+        _interpret_current_instruction_without_hook(cpu)
+        return
+    run_object_spawn_anchor_offset_a571(cpu)
 
 
 @registry.replace(0x1010, 0x7596, "overkill_layer_draw_type_dispatch_7596")
@@ -3226,6 +3319,24 @@ def overkill_object_slot_scan_guard_ac81(cpu):
 
 
 
+
+
+def _run_installed_tail_hook(cpu, key: tuple[int, int], fallback) -> None:
+    """Run an installed hook at its natural entry without pushing a return word."""
+    handler = cpu.replacement_hooks.get(key, fallback)
+    name = cpu.hook_names.get(key, getattr(handler, "__name__", "replacement"))
+    cpu.s.cs = key[0] & 0xFFFF
+    cpu.s.ip = key[1] & 0xFFFF
+    verifier = getattr(cpu, "hook_verifier", None)
+    if (
+        verifier is not None
+        and getattr(cpu, "hook_verifier_verify_nested_calls", True)
+        and key not in getattr(cpu, "hook_verifier_passthrough", set())
+    ):
+        verifier(cpu, key, handler, name)
+    else:
+        handler(cpu)
+
 @registry.replace(0x1010, 0x6296, "overkill_status_counter_cell_blit_6296")
 def overkill_status_counter_cell_blit_6296(cpu):
     """Composed status/counter cell blit helper used by the 61DC display parent."""
@@ -3260,6 +3371,65 @@ def overkill_status_cursor_retreat_615a(cpu):
 
 
 
+
+
+
+@registry.replace(0x1010, 0xC4DB, "overkill_reset_object_slot_and_status_setup_c4db")
+def overkill_reset_object_slot_and_status_setup_c4db(cpu):
+    """Transition/setup parent: C4E5 object reset, C51D status setup, 859E compositor."""
+
+    def run_c4e5_tail() -> None:
+        _run_installed_tail_hook(cpu, (0x1010, 0xC4E5), overkill_reset_object_slot_block_c4e5)
+
+    def run_c51d_tail() -> None:
+        _run_installed_tail_hook(cpu, (0x1010, 0xC51D), overkill_setup_tracked_status_tail_c51d)
+
+    def run_859e_tail() -> None:
+        _run_installed_tail_hook(cpu, (0x1010, 0x859E), overkill_status_cell_quad_composite_859e)
+
+    run_reset_object_slot_and_status_setup_c4db(
+        cpu,
+        _self_disable_if_patched,
+        run_c4e5_tail,
+        run_c51d_tail,
+        run_859e_tail,
+    )
+
+
+@registry.replace(0x1010, 0x9908, "overkill_transition_status_wait_9908")
+def overkill_transition_status_wait_9908(cpu):
+    """Frame-controller transition/status reset and optional input-release wait."""
+
+    def call_c4db(return_ip: int) -> None:
+        _call_installed_hook_like_near_call(
+            cpu,
+            (0x1010, 0xC4DB),
+            overkill_reset_object_slot_and_status_setup_c4db,
+            return_ip,
+        )
+
+    run_transition_status_wait_9908(cpu, _self_disable_if_patched, call_c4db)
+
+
+
+@registry.replace(0x1010, 0x9928, "overkill_transition_input_release_tail_9928")
+def overkill_transition_input_release_tail_9928(cpu):
+    """Post-9921 transition tail that stores BEFF and jumps back to 9773."""
+    run_transition_input_release_tail_9928(cpu, _self_disable_if_patched)
+
+@registry.replace(0x1010, 0xC51D, "overkill_setup_tracked_status_tail_c51d")
+def overkill_setup_tracked_status_tail_c51d(cpu):
+    """Setup tail clearing tracked/status globals before jumping to 859E."""
+
+    def call_8517(return_ip: int) -> None:
+        _call_installed_hook_like_near_call(
+            cpu,
+            (0x1010, 0x8517),
+            overkill_status_cell_list_seed_8517,
+            return_ip,
+        )
+
+    run_setup_tracked_status_tail_c51d(cpu, _self_disable_if_patched, call_8517)
 
 @registry.replace(0x1010, 0xC3BF, "overkill_reset_effect_slot_block_c3bf")
 def overkill_reset_effect_slot_block_c3bf(cpu):
@@ -3462,6 +3632,75 @@ def overkill_frame_status_counter_update_5f61(cpu):
 
 
 
+
+@registry.replace(0x1010, 0x6120, "overkill_status_row_repeat_6120")
+def overkill_status_row_repeat_6120(cpu):
+    """Repeated raw status/HUD row compositor around 5A6C and 613E."""
+
+    def call_5a6c(return_ip: int) -> None:
+        _call_installed_hook_like_near_call(
+            cpu,
+            (0x1010, 0x5A6C),
+            overkill_menu_cell_source_blit_dispatch_5a6c,
+            return_ip,
+        )
+        if (cpu.s.cs & 0xFFFF, cpu.s.ip & 0xFFFF) != (0x1010, return_ip & 0xFFFF):
+            # 5A6C dispatches by JMP to the mode-specific renderer.  Run the
+            # installed target without another CALL push so its RET consumes the
+            # original 5A6C call frame.
+            handler = cpu.replacement_hooks.get((cpu.s.cs & 0xFFFF, cpu.s.ip & 0xFFFF))
+            if handler is not None:
+                handler(cpu)
+
+    def call_613e(return_ip: int) -> None:
+        _call_installed_hook_like_near_call(
+            cpu,
+            (0x1010, 0x613E),
+            overkill_status_cursor_advance_613e,
+            return_ip,
+        )
+
+    run_status_row_repeat_6120(cpu, _self_disable_if_patched, call_5a6c, call_613e)
+
+
+@registry.replace(0x1010, 0x859E, "overkill_status_cell_quad_composite_859e")
+def overkill_status_cell_quad_composite_859e(cpu):
+    """Four-cell status/HUD compositor parent around 85D5 and optional 511F."""
+
+    def call_85d5(return_ip: int) -> None:
+        _call_installed_hook_like_near_call(
+            cpu,
+            (0x1010, 0x85D5),
+            overkill_status_cell_composite_85d5,
+            return_ip,
+        )
+
+    def tail_85d5() -> None:
+        key = (0x1010, 0x85D5)
+        handler = cpu.replacement_hooks.get(key, overkill_status_cell_composite_85d5)
+        name = cpu.hook_names.get(key, getattr(handler, "__name__", "replacement"))
+        cpu.s.cs = key[0]
+        cpu.s.ip = key[1]
+        verifier = getattr(cpu, "hook_verifier", None)
+        if (
+            verifier is not None
+            and getattr(cpu, "hook_verifier_verify_nested_calls", True)
+            and key not in getattr(cpu, "hook_verifier_passthrough", set())
+        ):
+            verifier(cpu, key, handler, name)
+        else:
+            handler(cpu)
+
+    def call_511f(return_ip: int) -> None:
+        _call_installed_hook_like_near_call(
+            cpu,
+            (0x1010, 0x511F),
+            overkill_video_page_toggle_511f,
+            return_ip,
+        )
+
+    run_status_cell_quad_composite_859e(cpu, _self_disable_if_patched, call_85d5, tail_85d5, call_511f)
+
 @registry.replace(0x1010, 0x85D5, "overkill_status_cell_composite_85d5")
 def overkill_status_cell_composite_85d5(cpu):
     """Low-level status/HUD cell compositor around 613E/615A and 5A6C."""
@@ -3506,6 +3745,26 @@ def overkill_status_cell_composite_85d5(cpu):
 def overkill_status_coord_list_fill_99cd(cpu):
     """Raw coordinate-list fill loop used by the 97B2/9B2E frame controller."""
     run_status_coord_list_fill_99cd(cpu, _self_disable_if_patched)
+
+
+
+
+@registry.replace(0x1010, 0x9CD9, "overkill_frame_tracked_coord_store_9cd9")
+def overkill_frame_tracked_coord_store_9cd9(cpu):
+    """Store current object center into the frame coordinate ring."""
+    run_frame_tracked_coord_store_9cd9(cpu, _self_disable_if_patched)
+
+
+@registry.replace(0x1010, 0x9CF1, "overkill_frame_coord_ring_advance_9cf1")
+def overkill_frame_coord_ring_advance_9cf1(cpu):
+    """Advance the delayed frame coordinate-ring cursors."""
+    run_frame_coord_ring_advance_9cf1(cpu, _self_disable_if_patched)
+
+
+@registry.replace(0x1010, 0xA031, "overkill_tracked_object_coord_pull_a031")
+def overkill_tracked_object_coord_pull_a031(cpu):
+    """Pull delayed coordinate-ring entries into tracked object slots."""
+    run_tracked_object_coord_pull_a031(cpu, _self_disable_if_patched)
 
 
 @registry.replace(0x1010, 0x9BFB, "overkill_frame_axis_count_inc_ah_9bfb")
@@ -5109,6 +5368,71 @@ def overkill_boss_key_return_key_release_wait_gate_07d7(cpu):
     run_boss_key_return_key_release_wait_gate_07d7(cpu)
 
 
+@registry.replace(0x1010, 0x53C9, "overkill_text_entry_prompt_loop_53c9")
+def overkill_text_entry_prompt_loop_53c9(cpu):
+    """Run one interactive DOS text-entry prompt iteration."""
+    if _self_disable_if_patched(cpu, 0x53C9, _SIG_53C9, "overkill_text_entry_prompt_loop_53c9"):
+        return
+
+    def call_text_string(return_ip: int) -> None:
+        _call_installed_hook_like_near_call(
+            cpu,
+            (0x1010, 0x518C),
+            overkill_text_string_loop_518c,
+            return_ip,
+        )
+
+    def call_prompt_key_read(return_ip: int) -> None:
+        _call_installed_hook_like_near_call(
+            cpu,
+            (0x1010, 0x5497),
+            overkill_text_prompt_key_read_5497,
+            return_ip,
+        )
+
+    run_text_entry_prompt_loop_53c9(cpu, call_text_string, call_prompt_key_read)
+
+
+@registry.replace(0x1010, 0x50AB, "overkill_keyboard_state_clear_and_bios_tail_sync_50ab")
+def overkill_keyboard_state_clear_and_bios_tail_sync_50ab(cpu):
+    """Clear OVERKILL key-state bytes and flush the BIOS keyboard buffer tail."""
+    if _self_disable_if_patched(cpu, 0x50AB, _SIG_50AB, "overkill_keyboard_state_clear_and_bios_tail_sync_50ab"):
+        return
+    run_keyboard_state_clear_and_bios_tail_sync_50ab(cpu)
+
+
+@registry.replace(0x1010, 0x50BA, "overkill_bios_keyboard_buffer_tail_sync_50ba")
+def overkill_bios_keyboard_buffer_tail_sync_50ba(cpu):
+    """Flush BIOS keyboard buffer tail to head after menu/prompt input."""
+    if _self_disable_if_patched(cpu, 0x50BA, _SIG_50BA, "overkill_bios_keyboard_buffer_tail_sync_50ba"):
+        return
+    run_bios_keyboard_buffer_tail_sync_50ba(cpu)
+
+
+@registry.replace(0x1010, 0x4E9F, "overkill_temp_keyboard_vector_install_4e9f")
+def overkill_temp_keyboard_vector_install_4e9f(cpu):
+    """Install OVERKILL's temporary INT 9 handler for DOS text input."""
+    if _self_disable_if_patched(cpu, 0x4E9F, _SIG_4E9F, "overkill_temp_keyboard_vector_install_4e9f"):
+        return
+    run_temp_keyboard_vector_install_4e9f(cpu)
+
+
+@registry.replace(0x1010, 0x4EBF, "overkill_temp_keyboard_vector_restore_4ebf")
+def overkill_temp_keyboard_vector_restore_4ebf(cpu):
+    """Restore the INT 9 vector saved by the temporary text-input handler."""
+    if _self_disable_if_patched(cpu, 0x4EBF, _SIG_4EBF, "overkill_temp_keyboard_vector_restore_4ebf"):
+        return
+    run_temp_keyboard_vector_restore_4ebf(cpu)
+
+
+@registry.replace(0x1010, 0x5497, "overkill_text_prompt_key_read_5497")
+def overkill_text_prompt_key_read_5497(cpu):
+    """Read one DOS key for the text-entry prompt with temporary INT 9 restore/install."""
+    if _self_disable_if_patched(cpu, 0x5497, _SIG_5497, "overkill_text_prompt_key_read_5497"):
+        return
+    run_text_prompt_key_read_5497(cpu)
+
+
 @registry.replace(0x1010, 0x96C5, "overkill_intro_retrace_delay_loop_96c5")
 def overkill_intro_retrace_delay_loop_96c5(cpu):
     """Replace the intro/menu CALL 50C9 + LOOP delay body at 1010:96C5."""
@@ -5145,6 +5469,30 @@ def overkill_main_menu_idle_loop_558b(cpu):
     if _self_disable_if_patched(cpu, 0x558B, _SIG_558B, "overkill_main_menu_idle_loop_558b"):
         return
     run_main_menu_idle_loop_558b(cpu)
+
+
+_SIG_D390 = bytes.fromhex("e8 cf 2d f6 06 be 98 10 75 f6")
+
+
+@registry.replace(0x1010, 0xD390, "overkill_menu_fire_release_wait_d390")
+def overkill_menu_fire_release_wait_d390(cpu):
+    """One poll of the menu FIRE/SPACE release wait before transition setup."""
+    if not _code_matches(cpu, 0xD390, _SIG_D390):
+        _interpret_current_instruction_without_hook(cpu)
+        return
+    run_menu_fire_release_wait_d390(cpu)
+
+
+_SIG_D434 = bytes.fromhex("80 3e e4 98 01 74 f9 e8 24 2d 80 3e be 98 00 75 f6")
+
+
+@registry.replace(0x1010, 0xD434, "overkill_selector_input_release_wait_d434")
+def overkill_selector_input_release_wait_d434(cpu):
+    """One poll of the selector input-release wait before entering D445."""
+    if not _code_matches(cpu, 0xD434, _SIG_D434):
+        _interpret_current_instruction_without_hook(cpu)
+        return
+    run_selector_input_release_wait_d434(cpu)
 
 
 @registry.replace(0x1010, 0xD445, "overkill_input_selector_loop_d445")
@@ -5232,9 +5580,13 @@ def _interpret_current_instruction_without_hook(cpu) -> None:
             cpu.replacement_hooks[key] = fn
 
 
-def _code_matches(cpu, off: int, expected: bytes) -> bool:
+def _code_matches(cpu, off: int, expected: bytes | tuple[bytes, ...]) -> bool:
     cs = cpu.s.cs & 0xFFFF
-    return all(cpu.mem.rb(cs, (off + i) & 0xFFFF) == b for i, b in enumerate(expected))
+    variants = expected if isinstance(expected, tuple) else (expected,)
+    return any(
+        all(cpu.mem.rb(cs, (off + i) & 0xFFFF) == b for i, b in enumerate(sig))
+        for sig in variants
+    )
 
 
 def _overkill_strided_row_copy(cpu, *, row_advance: int) -> None:

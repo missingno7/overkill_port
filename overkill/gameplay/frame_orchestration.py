@@ -449,6 +449,103 @@ def run_frame_loop_97b2(
     call(0x0679, 0x981D)
     s.ip = 0x97B2
 
+
+
+SIG_TRANSITION_STATUS_WAIT_9908 = bytes.fromhex(
+    "e8 d0 2b ff 0e 58 23 80 3e 8d 97 00 74 04 ff 06 58 23 "
+    "80 3e c0 98 00 74 07"
+)
+SIG_TRANSITION_INPUT_RELEASE_WAIT_9921 = bytes.fromhex(
+    "80 3e fe be 00 75 f9"
+)
+
+
+def run_transition_status_wait_9908(
+    cpu,
+    self_disable_if_patched,
+    call_reset_object_slot_and_status_setup,
+) -> None:
+    """Lift 1010:9908, a transition/status reset plus optional input wait.
+
+    This parent is reached when the 97B2 frame controller observes the A346
+    transition flag.  It resets object/status state via C4DB, adjusts the
+    transition countdown at DS:2358, optionally waits for the BEFE input latch
+    to clear, then jumps back to the 9773 setup/frame-controller prelude.
+    """
+    if self_disable_if_patched(cpu, 0x9908, SIG_TRANSITION_STATUS_WAIT_9908, "overkill_transition_status_wait_9908"):
+        return
+
+    s = cpu.s
+    mem = cpu.mem
+    cs = s.cs & 0xFFFF
+    ds = s.ds & 0xFFFF
+
+    call_reset_object_slot_and_status_setup(0x990B)
+    if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (cs, 0x990B):
+        raise RuntimeError(
+            f"9908 expected C4DB to return to 1010:990B, got "
+            f"{s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X}"
+        )
+
+    _dec_mem_word_preserve_cf(cpu, ds, 0x2358)
+
+    v978d = mem.rb(ds, 0x978D)
+    _cmp_byte(cpu, v978d, 0x00)
+    if v978d != 0:
+        _inc_mem_word_preserve_cf(cpu, ds, 0x2358)
+
+    v98c0 = mem.rb(ds, 0x98C0)
+    _cmp_byte(cpu, v98c0, 0x00)
+    if v98c0 != 0:
+        # Preserve the original boundary: the tight 9921 wait loop is already a
+        # shared hook (``overkill_sound_active_wait_9921``) and is a useful
+        # checkpoint on its own.  Do not consume it inside the 9908 parent.
+        s.ip = 0x9921
+        return
+
+    s.ip = 0x9773
+
+
+
+SIG_TRANSITION_INPUT_RELEASE_TAIL_9928 = bytes.fromhex(
+    "80 3e c0 98 00 74 05 c6 06 ff be 02 e9 3c fe"
+)
+
+
+def run_transition_input_release_tail_9928(cpu, self_disable_if_patched) -> None:
+    """Lift 1010:9928, the post-wait transition input/sound latch tail."""
+    if self_disable_if_patched(
+        cpu,
+        0x9928,
+        SIG_TRANSITION_INPUT_RELEASE_TAIL_9928,
+        "overkill_transition_input_release_tail_9928",
+    ):
+        return
+
+    s = cpu.s
+    ds = s.ds & 0xFFFF
+    v98c0 = cpu.mem.rb(ds, 0x98C0)
+    _cmp_byte(cpu, v98c0, 0x00)
+    if v98c0 != 0:
+        cpu.mem.wb(ds, 0xBEFF, 0x02)
+    s.ip = 0x9773
+
+def run_transition_input_release_wait_9921(cpu, self_disable_if_patched) -> None:
+    """Lift the tight 1010:9921 wait for the BEFE input latch to clear."""
+    if self_disable_if_patched(
+        cpu,
+        0x9921,
+        SIG_TRANSITION_INPUT_RELEASE_WAIT_9921,
+        "overkill_transition_input_release_wait_9921",
+    ):
+        return
+
+    s = cpu.s
+    ds = s.ds & 0xFFFF
+    v_befe = cpu.mem.rb(ds, 0xBEFE)
+    _cmp_byte(cpu, v_befe, 0x00)
+    s.ip = 0x9921 if v_befe != 0 else 0x9928
+
 def run_frame_effect_status_text_60a2(
     cpu,
     self_disable_if_patched,

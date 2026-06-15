@@ -469,6 +469,147 @@ def run_status_cursor_retreat_615a(cpu, self_disable_if_patched) -> None:
     s.ip = cpu.pop()
 
 
+
+SIG_STATUS_ROW_REPEAT_6120 = bytes.fromhex(
+    "e3 16 56 57 51 2e 8e 1e b4 95 e8 3f f9 59 5f 5e "
+    "e8 0b 00 e8 08 00 e2 e8 2e 8e 1e 96 95 c3"
+)
+
+
+def run_status_row_repeat_6120(cpu, self_disable_if_patched, call_cell_blit, call_cursor_advance) -> None:
+    """Lift 1010:6120, a raw repeated status/HUD cell row compositor.
+
+    The routine draws ``CX`` adjacent cells using the mode-specific ``5A6C``
+    source blitter, then advances the text/status cursor twice through ``613E``
+    between cells.  It is deliberately kept below semantic HUD naming: this is a
+    row-repeat primitive over existing blit/cursor leaves.
+    """
+    if self_disable_if_patched(cpu, 0x6120, SIG_STATUS_ROW_REPEAT_6120, "overkill_status_row_repeat_6120"):
+        return
+
+    s = cpu.s
+    mem = cpu.mem
+    cs = s.cs & 0xFFFF
+
+    if (s.cx & 0xFFFF) != 0:
+        while True:
+            # PUSH SI; PUSH DI; PUSH CX
+            cpu.push(s.si & 0xFFFF)
+            cpu.push(s.di & 0xFFFF)
+            cpu.push(s.cx & 0xFFFF)
+
+            s.ds = mem.rw(cs, 0x95B4)
+            call_cell_blit(0x612D)
+            if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (cs, 0x612D):
+                raise RuntimeError(
+                    f"6120 expected 5A6C to return to 612D, got "
+                    f"{s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X}"
+                )
+
+            s.cx = cpu.pop()
+            s.di = cpu.pop()
+            s.si = cpu.pop()
+
+            call_cursor_advance(0x6133)
+            if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (cs, 0x6133):
+                raise RuntimeError(
+                    f"6120 expected first 613E to return to 6133, got "
+                    f"{s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X}"
+                )
+            call_cursor_advance(0x6136)
+            if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (cs, 0x6136):
+                raise RuntimeError(
+                    f"6120 expected second 613E to return to 6136, got "
+                    f"{s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X}"
+                )
+
+            s.cx = (s.cx - 1) & 0xFFFF
+            if s.cx == 0:
+                break
+
+    s.ds = mem.rw(cs, 0x9596)
+    s.ip = cpu.pop()
+
+
+SIG_STATUS_CELL_QUAD_COMPOSITE_859E = bytes.fromhex(
+    "55 e8 13 00 2e 83 3e bc 95 01 75 09 e8 72 cb e8 05 00 "
+    "e8 6c cb 5d c3 bd 82 96 33 ff e8 18 00 bd 8c 96 bf 01 "
+    "00 e8 0f 00 bd 96 96 bf 02 00 e8 06 00 bd a0 96 bf 03 00"
+)
+
+
+def run_status_cell_quad_composite_859e(
+    cpu,
+    self_disable_if_patched,
+    call_cell_composite,
+    tail_cell_composite,
+    call_video_page_toggle,
+) -> None:
+    """Lift 1010:859E, the four-cell status/HUD descriptor compositor parent.
+
+    ``859E`` preserves the caller's BP, calls the tiny ``85B5`` descriptor
+    sequence, and in video mode 1 toggles the active page around a second pass.
+    The internal ``85B5`` is unusual: its fourth cell falls through into
+    ``85D5`` so that ``85D5`` returns directly to the caller of ``85B5``.  The
+    helper below preserves that stack shape instead of inventing a cleaner
+    subroutine boundary.
+    """
+    if self_disable_if_patched(cpu, 0x859E, SIG_STATUS_CELL_QUAD_COMPOSITE_859E, "overkill_status_cell_quad_composite_859e"):
+        return
+
+    s = cpu.s
+    mem = cpu.mem
+    cs = s.cs & 0xFFFF
+
+    def run_85b5_sequence(return_ip: int) -> None:
+        # Model CALL 85B5.  The fourth/fallthrough 85D5 consumes this return.
+        cpu.push(return_ip & 0xFFFF)
+
+        s.bp = 0x9682
+        s.di = 0x0000
+        cpu.set_logic_flags(0, 16)  # XOR DI,DI
+        call_cell_composite(0x85BD)
+        if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (cs, 0x85BD):
+            raise RuntimeError(f"859E expected first 85D5 return to 85BD, got {s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X}")
+
+        s.bp = 0x968C
+        s.di = 0x0001
+        call_cell_composite(0x85C6)
+        if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (cs, 0x85C6):
+            raise RuntimeError(f"859E expected second 85D5 return to 85C6, got {s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X}")
+
+        s.bp = 0x9696
+        s.di = 0x0002
+        call_cell_composite(0x85CF)
+        if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (cs, 0x85CF):
+            raise RuntimeError(f"859E expected third 85D5 return to 85CF, got {s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X}")
+
+        s.bp = 0x96A0
+        s.di = 0x0003
+        tail_cell_composite()
+        if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (cs, return_ip & 0xFFFF):
+            raise RuntimeError(
+                f"859E expected fallthrough 85D5 to return to {return_ip:04X}, "
+                f"got {s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X}"
+            )
+
+    cpu.push(s.bp & 0xFFFF)
+    run_85b5_sequence(0x85A2)
+
+    mode = mem.rw(cs, 0x95BC)
+    _cmp_word(cpu, mode, 0x0001)
+    if mode == 0x0001:
+        call_video_page_toggle(0x85AD)
+        if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (cs, 0x85AD):
+            raise RuntimeError(f"859E expected first 511F return to 85AD, got {s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X}")
+        run_85b5_sequence(0x85B0)
+        call_video_page_toggle(0x85B3)
+        if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (cs, 0x85B3):
+            raise RuntimeError(f"859E expected second 511F return to 85B3, got {s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X}")
+
+    s.bp = cpu.pop()
+    s.ip = cpu.pop()
+
 SIG_STATUS_CELL_COMPOSITE_85D5 = bytes.fromhex(
     "83 3e fa 95 ff 74 11 8b 36 fa 95 d1 e6 81 c6 fc 95 "
     "3b 2c b8 01 00 74 02 33 c0 83 3e ac bd 01 75 0c "
@@ -486,6 +627,13 @@ SIG_STATUS_COORD_LIST_FILL_99CD = bytes.fromhex(
 
 SIG_FRAME_AXIS_COUNT_INC_AH_9BFB = bytes.fromhex("fe c4 c3")
 SIG_FRAME_AXIS_COUNT_INC_AL_9BFE = bytes.fromhex("fe c0 c3")
+
+SIG_FRAME_TRACKED_COORD_STORE_9CD9 = (
+    bytes.fromhex("2e 8e 06 96 95 8b 3e 3a a3 8b 46 02 83 c0 08 ab 8b 46 04 83 c0 08 ab c3"),
+    bytes.fromhex("2e 8e 06 96 95 8b 3e 3a a3 8b 46 02 05 08 00 ab 8b 46 04 05 08 00 ab c3"),
+)
+SIG_FRAME_COORD_RING_ADVANCE_9CF1 = bytes.fromhex("f6 06 be 98 0f 75 08 83 3e 60 a3 00 75 01 c3 83 06 3a a3 04")
+SIG_TRACKED_OBJECT_COORD_PULL_A031 = bytes.fromhex("83 3e 62 a9 ff 74 10 8b 1e 62 a9 8b 36 3c a3 ad 89 47 02 ad 89 47 04 83 3e 64 a9 ff 74 10")
 
 
 def run_status_cell_composite_85d5(
@@ -587,6 +735,96 @@ def run_status_cell_composite_85d5(
     if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (cs, 0x864E):
         raise RuntimeError(f"85D5 expected 5A6C to return to 864E, got {s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X}")
     s.ds = mem.rw(cs, 0x9596)
+    s.ip = cpu.pop()
+
+
+
+
+def run_frame_tracked_coord_store_9cd9(cpu, self_disable_if_patched) -> None:
+    """Lift 1010:9CD9, storing the current object center into the coord ring.
+
+    This is still raw frame-controller data prep: BP points at an object slot,
+    DS:A33A names the current coordinate-ring write cursor, and the routine
+    writes X+8/Y+8 into ES:DI.
+    """
+    if self_disable_if_patched(cpu, 0x9CD9, SIG_FRAME_TRACKED_COORD_STORE_9CD9, "overkill_frame_tracked_coord_store_9cd9"):
+        return
+    s = cpu.s
+    mem = cpu.mem
+    cs = s.cs & 0xFFFF
+    ss = s.ss & 0xFFFF
+    s.es = mem.rw(cs, 0x9596)
+    s.di = mem.rw(s.ds & 0xFFFF, 0xA33A)
+    old_ax = mem.rw(ss, (s.bp + 0x02) & 0xFFFF)
+    s.ax = (old_ax + 0x0008) & 0xFFFF
+    cpu.set_add_flags(old_ax, 0x0008, old_ax + 0x0008, 16)
+    mem.ww(s.es & 0xFFFF, s.di & 0xFFFF, s.ax)
+    s.di = (s.di + 2) & 0xFFFF
+    old_ax = mem.rw(ss, (s.bp + 0x04) & 0xFFFF)
+    s.ax = (old_ax + 0x0008) & 0xFFFF
+    cpu.set_add_flags(old_ax, 0x0008, old_ax + 0x0008, 16)
+    mem.ww(s.es & 0xFFFF, s.di & 0xFFFF, s.ax)
+    s.di = (s.di + 2) & 0xFFFF
+    s.ip = cpu.pop()
+
+
+def _advance_coord_ring_ptr(cpu, ds: int, off: int) -> None:
+    mem = cpu.mem
+    old = mem.rw(ds, off)
+    new = (old + 0x0004) & 0xFFFF
+    mem.ww(ds, off, new)
+    cpu.set_add_flags(old, 0x0004, old + 0x0004, 16)
+    _cmp_word(cpu, new, 0xA33A)
+    if new == 0xA33A:
+        mem.ww(ds, off, 0xA27A)
+
+
+def run_frame_coord_ring_advance_9cf1(cpu, self_disable_if_patched) -> None:
+    """Lift 1010:9CF1, advancing the four-frame coordinate-ring cursors."""
+    if self_disable_if_patched(cpu, 0x9CF1, SIG_FRAME_COORD_RING_ADVANCE_9CF1, "overkill_frame_coord_ring_advance_9cf1"):
+        return
+    s = cpu.s
+    ds = s.ds & 0xFFFF
+    mem = cpu.mem
+    _test = mem.rb(ds, 0x98BE) & 0x0F
+    cpu.set_logic_flags(_test, 8)
+    if _test == 0:
+        _cmp_word(cpu, mem.rw(ds, 0xA360), 0x0000)
+        if mem.rw(ds, 0xA360) == 0x0000:
+            s.ip = cpu.pop()
+            return
+    for off in (0xA33A, 0xA33C, 0xA33E, 0xA340):
+        _advance_coord_ring_ptr(cpu, ds, off)
+    s.ip = cpu.pop()
+
+
+def run_tracked_object_coord_pull_a031(cpu, self_disable_if_patched) -> None:
+    """Lift 1010:A031, pulling delayed ring coordinates into tracked slots."""
+    if self_disable_if_patched(cpu, 0xA031, SIG_TRACKED_OBJECT_COORD_PULL_A031, "overkill_tracked_object_coord_pull_a031"):
+        return
+    s = cpu.s
+    mem = cpu.mem
+    ds = s.ds & 0xFFFF
+    _cmp_word(cpu, mem.rw(ds, 0xA962), 0xFFFF)
+    if mem.rw(ds, 0xA962) != 0xFFFF:
+        s.bx = mem.rw(ds, 0xA962)
+        s.si = mem.rw(ds, 0xA33C)
+        s.ax = mem.rw(ds, s.si & 0xFFFF)
+        s.si = (s.si + 2) & 0xFFFF
+        mem.ww(ds, (s.bx + 0x02) & 0xFFFF, s.ax)
+        s.ax = mem.rw(ds, s.si & 0xFFFF)
+        s.si = (s.si + 2) & 0xFFFF
+        mem.ww(ds, (s.bx + 0x04) & 0xFFFF, s.ax)
+    _cmp_word(cpu, mem.rw(ds, 0xA964), 0xFFFF)
+    if mem.rw(ds, 0xA964) != 0xFFFF:
+        s.bx = mem.rw(ds, 0xA964)
+        s.si = mem.rw(ds, 0xA33E)
+        s.ax = mem.rw(ds, s.si & 0xFFFF)
+        s.si = (s.si + 2) & 0xFFFF
+        mem.ww(ds, (s.bx + 0x02) & 0xFFFF, s.ax)
+        s.ax = mem.rw(ds, s.si & 0xFFFF)
+        s.si = (s.si + 2) & 0xFFFF
+        mem.ww(ds, (s.bx + 0x04) & 0xFFFF, s.ax)
     s.ip = cpu.pop()
 
 

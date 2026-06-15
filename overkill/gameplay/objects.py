@@ -202,6 +202,115 @@ def run_reset_object_slot_block_c4e5(cpu, self_disable_if_patched) -> None:
     s.ip = 0xC51D
 
 
+
+
+
+SIG_RESET_OBJECT_SLOT_AND_STATUS_SETUP_C4DB = bytes.fromhex(
+    "2e c7 06 a2 c3 14 33 b9 24 00"
+)
+
+
+def run_reset_object_slot_and_status_setup_c4db(
+    cpu,
+    self_disable_if_patched,
+    run_reset_object_slots,
+    run_setup_tracked_status_tail,
+    run_status_cell_quad_composite,
+) -> None:
+    """Lift 1010:C4DB, the compact object-reset/status-setup parent.
+
+    C4DB is a short setup parent used by transition/status wait code.  It
+    resets the object-present pointer base, enters the already-lifted C4E5
+    object-slot reset loop, continues through the C51D tracked/status setup
+    tail, and finally falls into the 859E status-cell compositor which returns
+    to the original caller.
+
+    The children are deliberately kept as separate proof boundaries; this parent
+    only exposes the previously-anonymous composition order.
+    """
+    if self_disable_if_patched(
+        cpu,
+        0xC4DB,
+        SIG_RESET_OBJECT_SLOT_AND_STATUS_SETUP_C4DB,
+        "overkill_reset_object_slot_and_status_setup_c4db",
+    ):
+        return
+
+    s = cpu.s
+    mem = cpu.mem
+    cs = s.cs & 0xFFFF
+
+    mem.ww(cs, 0xC3A2, 0x3314)
+    s.cx = 0x0024
+
+    run_reset_object_slots()
+    if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (cs, 0xC51D):
+        raise RuntimeError(
+            f"C4DB expected C4E5 child to fall through to 1010:C51D, got "
+            f"{s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X}"
+        )
+
+    run_setup_tracked_status_tail()
+    if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (cs, 0x859E):
+        raise RuntimeError(
+            f"C4DB expected C51D child to jump to 1010:859E, got "
+            f"{s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X}"
+        )
+
+    run_status_cell_quad_composite()
+
+SIG_SETUP_TRACKED_STATUS_TAIL_C51D = bytes.fromhex(
+    "c7 06 58 a9 00 00 c7 06 5e a9 00 00 c7 06 60 a9 00 00 "
+    "c7 06 62 a9 ff ff c7 06 64 a9 ff ff c7 06 66 a9 ff ff "
+    "c7 06 68 a9 ff ff c7 06 6a a9 ff ff c7 06 6c a9 ff ff "
+    "c7 06 6e a9 ff ff c7 06 84 23 00 00 e8 b5 bf e9 39 c0"
+)
+
+
+def run_setup_tracked_status_tail_c51d(cpu, self_disable_if_patched, call_status_cell_list_seed) -> None:
+    """Lift 1010:C51D, the setup tail before the status-cell compositor.
+
+    C4DB/C4E5 reset object slots, then this tail clears the tracked-coordinate
+    and status descriptor globals, calls the already-lifted ``8517`` descriptor
+    seed, and jumps into ``859E``.  Keeping it explicit makes the setup/status
+    boundary visible without pretending to know the higher-level game state yet.
+    """
+    if self_disable_if_patched(
+        cpu,
+        0xC51D,
+        SIG_SETUP_TRACKED_STATUS_TAIL_C51D,
+        "overkill_setup_tracked_status_tail_c51d",
+    ):
+        return
+
+    s = cpu.s
+    mem = cpu.mem
+    ds = s.ds & 0xFFFF
+    cs = s.cs & 0xFFFF
+
+    for off, value in (
+        (0xA958, 0x0000),
+        (0xA95E, 0x0000),
+        (0xA960, 0x0000),
+        (0xA962, 0xFFFF),
+        (0xA964, 0xFFFF),
+        (0xA966, 0xFFFF),
+        (0xA968, 0xFFFF),
+        (0xA96A, 0xFFFF),
+        (0xA96C, 0xFFFF),
+        (0xA96E, 0xFFFF),
+        (0x2384, 0x0000),
+    ):
+        mem.ww(ds, off, value)
+
+    call_status_cell_list_seed(0xC562)
+    if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (cs, 0xC562):
+        raise RuntimeError(
+            f"C51D expected 8517 to return to C562, got "
+            f"{s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X}"
+        )
+    s.ip = 0x859E
+
 SIG_OBJECT_MOTION_TABLE_AB34 = bytes.fromhex(
     "bb 7c 23 8b 77 08 d1 e6 d1 e6 03 f2 ad 03 47 02 "
     "89 46 02 ad 03 47 04 89 46 04 c3"

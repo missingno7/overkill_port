@@ -24,6 +24,15 @@ SIG_TILE_PROBE_5073 = bytes.fromhex(
     "a1 4e 23 03 46 02 a3 5a 21 78 f1 d1 e8 d1 e8 d1 e8 d1 e8"
 )
 
+SIG_TILE_CONTACT_PROBE_4FF9 = bytes.fromhex(
+    "8b 76 08 83 fe 03 73 58 d1 e6 d1 e6 81 c6 4e 21"
+    "ff 76 02 ff 76 04 ad 01 46 02 ad 01 46 04 e8 59 00"
+    "83 c3 0d a1 5a 21 25 0f 00 3d 0a 00 b9 01 00 76 03"
+    "b9 02 00 51 53 e8 28 00 75 1c f7 46 04 0f 00 74 06"
+    "43 e8 1b 00 75 0f 5b 83 eb 0d 59 e2 e5 8f 46 04 8f"
+    "46 02 f8 c3 5b 59 8f 46 04 8f 46 02 f9 c3"
+)
+
 SIG_OBJECT_SLOT_SCAN_GUARD_AC81 = bytes.fromhex("83 3e ac bd 01 75 03 e9 b9 fd b9 23 00 bb b4 23 8b 46 04 8b 7e 02")
 
 SIG_TILE_COLLISION_PROBE_AC28 = bytes.fromhex(
@@ -624,4 +633,120 @@ def run_tile_probe_5073(cpu, self_disable_if_patched) -> None:
     old_bx = s.bx
     s.bx = (old_bx + s.ax) & 0xFFFF
     cpu.set_add_flags(old_bx, s.ax, old_bx + s.ax, 16)
+    s.ip = cpu.pop()
+
+
+def run_tile_contact_probe_4ff9(cpu, self_disable_if_patched) -> None:
+    """Lift OVERKILL 1010:4FF9 tile/contact probe around an object point.
+
+    This helper is a shared mid-level collision primitive.  ``BP`` points at a
+    small probe/object record; ``[BP+8]`` selects one of three offset pairs from
+    ``DS:214E``.  The helper temporarily offsets ``[BP+2]/[BP+4]``, calls the
+    coordinate-to-tile helper ``5073`` and the tile lookup helper ``505B``, then
+    restores the original coordinates and returns with ``CF`` clear on empty
+    space or set on a blocking/contact tile.
+
+    Keep it as a raw tile/contact probe for now.  It is evidence for the future
+    collision-system layer, not a semantic enemy/player rule yet.
+    """
+    if self_disable_if_patched(cpu, 0x4FF9, SIG_TILE_CONTACT_PROBE_4FF9, "overkill_tile_contact_probe_4ff9"):
+        return
+
+    def no_patch_guard(*_args) -> bool:
+        return False
+
+    s = cpu.s
+    mem = cpu.mem
+    ds = s.ds & 0xFFFF
+    ss = s.ss & 0xFFFF
+    bp = s.bp & 0xFFFF
+
+    s.si = mem.rw(ss, (bp + 0x08) & 0xFFFF)
+    _cmp_word(cpu, s.si, 0x0003)
+    if s.si >= 0x0003:
+        cpu.set_flag(CF, True)  # 5059: STC ; RET, preserving non-CF flags.
+        s.ip = cpu.pop()
+        return
+
+    for _ in range(2):
+        s.si = cpu.shift(4, s.si, 1, 16)  # SHL SI,1 twice.
+    old_si = s.si
+    s.si = (old_si + 0x214E) & 0xFFFF
+    cpu.set_add_flags(old_si, 0x214E, old_si + 0x214E, 16)
+
+    cpu.push(mem.rw(ss, (bp + 0x02) & 0xFFFF))
+    cpu.push(mem.rw(ss, (bp + 0x04) & 0xFFFF))
+
+    s.ax = mem.rw(ds, s.si)
+    s.si = (s.si + 2) & 0xFFFF
+    old = mem.rw(ss, (bp + 0x02) & 0xFFFF)
+    result = old + s.ax
+    mem.ww(ss, (bp + 0x02) & 0xFFFF, result & 0xFFFF)
+    cpu.set_add_flags(old, s.ax, result, 16)
+
+    s.ax = mem.rw(ds, s.si)
+    s.si = (s.si + 2) & 0xFFFF
+    old = mem.rw(ss, (bp + 0x04) & 0xFFFF)
+    result = old + s.ax
+    mem.ww(ss, (bp + 0x04) & 0xFFFF, result & 0xFFFF)
+    cpu.set_add_flags(old, s.ax, result, 16)
+
+    cpu.push(0x501A)
+    run_tile_probe_5073(cpu, no_patch_guard)
+
+    old_bx = s.bx & 0xFFFF
+    s.bx = (old_bx + 0x000D) & 0xFFFF
+    cpu.set_add_flags(old_bx, 0x000D, old_bx + 0x000D, 16)
+
+    s.ax = mem.rw(ds, 0x215A)
+    s.ax &= 0x000F
+    cpu.set_logic_flags(s.ax, 16)
+    _cmp_word(cpu, s.ax, 0x000A)
+    s.cx = 0x0001 if s.ax <= 0x000A else 0x0002
+
+    while True:
+        cpu.push(s.cx)
+        cpu.push(s.bx)
+        cpu.push(0x5033)
+        run_tile_lookup_505b(cpu, no_patch_guard)
+        if not cpu.get_flag(0x0040):  # JNE 5051 after OR AL,AL in 505B.
+            s.bx = cpu.pop()
+            s.cx = cpu.pop()
+            mem.ww(ss, (bp + 0x04) & 0xFFFF, cpu.pop())
+            mem.ww(ss, (bp + 0x02) & 0xFFFF, cpu.pop())
+            cpu.set_flag(CF, True)
+            s.ip = cpu.pop()
+            return
+
+        test_value = mem.rw(ss, (bp + 0x04) & 0xFFFF) & 0x000F
+        cpu.set_logic_flags(test_value, 16)
+        if not cpu.get_flag(0x0040):
+            old_cf = cpu.get_flag(CF)
+            old_bx = s.bx & 0xFFFF
+            s.bx = (old_bx + 1) & 0xFFFF
+            cpu.set_add_flags(old_bx, 1, old_bx + 1, 16)
+            cpu.set_flag(CF, old_cf)  # INC preserves CF.
+            cpu.push(0x5040)
+            run_tile_lookup_505b(cpu, no_patch_guard)
+            if not cpu.get_flag(0x0040):
+                s.bx = cpu.pop()
+                s.cx = cpu.pop()
+                mem.ww(ss, (bp + 0x04) & 0xFFFF, cpu.pop())
+                mem.ww(ss, (bp + 0x02) & 0xFFFF, cpu.pop())
+                cpu.set_flag(CF, True)
+                s.ip = cpu.pop()
+                return
+
+        s.bx = cpu.pop()
+        old_bx = s.bx & 0xFFFF
+        s.bx = (old_bx - 0x000D) & 0xFFFF
+        cpu.set_sub_flags(old_bx, 0x000D, old_bx - 0x000D, 16)
+        s.cx = cpu.pop()
+        s.cx = (s.cx - 1) & 0xFFFF  # LOOP does not alter flags.
+        if s.cx == 0:
+            break
+
+    mem.ww(ss, (bp + 0x04) & 0xFFFF, cpu.pop())
+    mem.ww(ss, (bp + 0x02) & 0xFFFF, cpu.pop())
+    cpu.set_flag(CF, False)
     s.ip = cpu.pop()

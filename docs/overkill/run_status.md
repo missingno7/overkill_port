@@ -1,3 +1,40 @@
+## 2026-06-14 - Tile/contact probe cleanup for collision-system crystallization
+
+Continued the small-target ASM cleanup with a meaning-revealing collision primitive rather than a large controller lift.
+
+Implemented:
+
+- `1010:4FF9 overkill_tile_contact_probe_4ff9`
+  - shared object/probe-point tile/contact helper;
+  - applies one of three `DS:214E` offset pairs to `SS:[BP+2]/[BP+4]`;
+  - calls the already-lifted `5073` coordinate-to-tile-index helper and `505B` tile lookup helper;
+  - restores the probe coordinates and returns with `CF=0` for empty space or `CF=1` for contact/blocking tile.
+
+Classification note:
+
+- This is still a raw collision primitive, not a semantic player/enemy/projectile rule.
+- It helps separate the future `collision_system` layer from higher object behavior families that currently call into it from `9B2E`, `AC28`, and object movement/update paths.
+
+Validation:
+
+```text
+pytest -q tests/test_overkill_hooks.py::test_tile_contact_probe_4ff9_matches_interpreted_asm_paths
+# 1 passed
+
+python scripts/lint.py
+# Lint passed for 76 Python files
+
+python scripts/verify_hooks_headless.py --snapshot artifacts/snapshot_play_tandy_20260614_203152 --verify-max 200 --max-steps 500000 --fast-ranges
+# OK HOOK VERIFY LIMIT REACHED verified=200
+```
+
+Next easy meaning-revealing candidates:
+
+- `1010:4E9F/4EBF`: keyboard ISR install/restore around text input prompts, belongs to `input_menu`.
+- `1010:53C9-54BF`: text-entry prompt wrapper around `518C` and the temporary INT 9 hook.
+- `1010:C51D-C562`: setup/reset tail that seeds tracked-coordinate/status descriptors before jumping to `859E`.
+- Smaller children inside `9C01-9C6B` before lifting the whole `9B2E` controller.
+
 ## 2026-06-14 - Frame verifier input-pair skew fix
 
 ### 2026-06-14 - Hook verifier nested child-boundary honesty audit
@@ -3899,3 +3936,139 @@ pytest -q \
   tests/test_overkill_hooks.py::test_input_wait_gate_hook_metadata_uses_after_step_for_same_ip_targets \
   tests/test_play_boss_key_wait.py
 ```
+
+## 2026-06-14 — Object-spawn seeds and coordinate-ring frame helpers lifted
+
+A short interactive Tandy gameplay profile showed the next useful cleanup targets were no longer renderer loops, but small raw object/state helpers:
+
+- `1010:7547` — hot object-slot allocation gate around the existing `7573` free-slot scan, with a rare fall-through to the original `7550/BD0D` reclaim path when no free slot exists.
+- `1010:A4EA` — common raw object-spawn seed template after allocation. It initializes the active/type/sprite/layer/logic/substate fields but is not yet a semantic gameplay constructor.
+- `1010:A4D7` — `A4EA` plus source-coordinate copy from `DS:SI`, including the original `Y + 4` adjustment.
+- `1010:9CD9` — stores the current object center into the frame coordinate ring.
+- `1010:9CF1` — advances the four delayed coordinate-ring cursors with wraparound from `A33A` back to `A27A`.
+- `1010:A031` — pulls delayed coordinate-ring entries into the tracked object slots referenced by `DS:A962/A964`.
+
+These are deliberately kept as raw memory-backed helpers.  They start to expose an object-spawn/coordinate-tracking layer without naming the specific gameplay entities yet.
+
+Changes:
+
+- Added replacement hooks and verifier metadata for all six addresses.
+- Preserved original nested-call stack scratch bytes so full-memory oracle tests match interpreted ASM, including the `CALL 7547` frames inside `A4EA/A4D7`.
+- Accepted both observed instruction encodings for equivalent `ADD AX,imm` / `CMP AX,imm` forms where the packed live image differs from the static disassembly form.
+- Classified the spawn helpers under `gameplay_objects` and the coordinate-ring helpers under `game_state`.
+
+Validation:
+
+```bash
+python scripts/lint.py
+
+python -m pytest -q \
+  tests/test_overkill_hooks.py::test_object_slot_allocate_or_reclaim_7547_free_path_matches_original \
+  tests/test_overkill_hooks.py::test_object_spawn_seed_a4ea_free_path_matches_original \
+  tests/test_overkill_hooks.py::test_object_spawn_seed_from_source_a4d7_free_path_matches_original \
+  tests/test_overkill_hooks.py::test_frame_coord_ring_helpers_match_interpreted_asm
+
+python scripts/verify_hooks_headless.py \
+  --snapshot artifacts/snapshot_play_tandy_20260614_203152 \
+  --verify-max 200 --max-steps 500000 --fast-ranges
+```
+
+## 2026-06-14 — Text-entry keyboard-vector helpers and BIOS key flush lifted
+
+A blind-spot pass on the remaining interactive profile showed a large amount of
+apparent `unknown` time around the text-entry prompt path.  The high-level prompt
+loop at `1010:53C9` remains bounded original because it is an interactive prompt
+state machine, but its reusable low-level helpers are now lifted and classified:
+
+- `1010:4E9F` — saves the current INT 09h vector at `DS:213A/213C` and installs
+  OVERKILL's temporary keyboard handler at `CS:4ED2`.
+- `1010:4EBF` — restores the saved INT 09h vector.
+- `1010:5497` — DOS AH=07h key read wrapper used by the text-entry prompt.  It
+  temporarily restores the previous INT 9 vector around DOS input, records
+  extended-key state in `DS:22B2`, stores the byte in `DS:22B4`, then reinstalls
+  the temporary handler.
+- `1010:50AB` — clears the 128-byte OVERKILL key-state table at `DS:98C4`.
+- `1010:50BA` — synchronizes BIOS keyboard-buffer tail `BDA:041C` to the head at
+  `BDA:041A`, effectively flushing pending BIOS keyboard input after prompts.
+
+This starts to separate a concrete `input_menu`/text-prompt layer from the frame
+and gameplay-object islands.  The parent `53C9` loop is now documented as a
+bounded original text-entry prompt rather than unexplained unknown ASM.
+
+Validation:
+
+```bash
+python scripts/lint.py
+
+pytest -q \
+  tests/test_overkill_hooks.py::test_keyboard_state_clear_and_bios_tail_sync_50ab_50ba_match_interpreted_asm \
+  tests/test_overkill_hooks.py::test_temp_keyboard_vector_install_and_restore_match_interpreted_asm \
+  tests/test_overkill_hooks.py::test_text_prompt_key_read_5497_matches_interpreted_asm_regular_and_extended_keys \
+  tests/test_overkill_hooks.py::test_live_verify_replacement_hooks_have_continuation_metadata
+
+python scripts/verify_hooks_headless.py \
+  --snapshot artifacts/snapshot_play_tandy_20260614_203152 \
+  --verify-max 250 --max-steps 700000 --fast-ranges
+
+python scripts/play.py --video tandy --sound adlib \
+  --snapshot artifacts/snapshot_play_tandy_20260614_203152 \
+  --verify-frames --verify-frame-max 20 --verify-frame-source both
+```
+
+## 2026-06-14 - text-entry prompt loop cleanup
+
+- Replaced `1010:53C9` with `overkill_text_entry_prompt_loop_53c9`, a one-iteration state-machine hook for the DOS text-entry prompt loop.
+- The hook composes the already lifted `518C` text string loop and `5497` DOS key-read wrapper, handles the hot printable/ignored-key path locally, and leaves rare edit/finish tails at original branch targets `5408`, `541E`, and `53FC`.
+- This removes the large interpreted `53C9-53EA` prompt redraw/input loop from the unknown blind-spot set while keeping the `51AB` finish dispatch visible for later classification.
+- Validation: `python scripts/lint.py`; focused prompt/key-read/metadata tests; `verify_hooks_headless.py --snapshot artifacts/snapshot_play_tandy_20260614_203152 --verify-max 200 --max-steps 700000 --fast-ranges`.
+
+
+### 2026-06-15 status/setup blind-spot cleanup
+
+Added three small meaning-revealing hooks around the remaining status/setup
+noise:
+
+- `1010:6120 overkill_status_row_repeat_6120` is a raw repeated status/HUD
+  row compositor over `5A6C` and the `613E` cursor-advance leaf.
+- `1010:C51D overkill_setup_tracked_status_tail_c51d` clears the tracked
+  coordinate/status globals, calls the already-lifted `8517` descriptor seed,
+  and jumps into `859E`.
+- `1010:859E overkill_status_cell_quad_composite_859e` is the four-cell
+  status/HUD descriptor compositor parent.  It preserves the original odd
+  `85B5 -> 85D5` fallthrough stack shape instead of inventing a cleaner but
+  unproven subroutine boundary.
+
+This moves another chunk of low-count unknown ASM into the `game_state` island
+and clarifies the current setup/status stack without assigning higher-level HUD
+semantics prematurely.
+
+### Transition/status setup cleanup — C4DB / 9908 / 9928
+
+- `1010:C4DB overkill_reset_object_slot_and_status_setup_c4db` is now the explicit
+  transition/setup parent over the already-lifted `C4E5 -> C51D -> 859E` chain.
+- `1010:9908 overkill_transition_status_wait_9908` is the frame-controller branch
+  reached from the `A346` transition flag. It calls `C4DB`, adjusts `DS:2358`, and
+  either returns to the `9773` setup prelude or exposes the existing `9921` wait
+  checkpoint.
+- `1010:9928 overkill_transition_input_release_tail_9928` closes the small tail
+  after the shared `9921` latch wait by optionally writing `DS:BEFF = 02h` and
+  jumping back to `9773`.
+
+This separates another piece of the former `97B2/9773` controller blob into a
+named transition/status-reset layer without inventing a higher-level game-state
+model yet.
+
+## 2026-06-15 cleanup: input release gates and spawn-anchor helper
+
+- Lifted two cold-start / first-level input-menu wait gates that were showing as
+  `unknown` in the latest profile:
+  - `1010:D390 overkill_menu_fire_release_wait_d390` — one-poll FIRE/SPACE
+    release wait before menu/planet transition setup.
+  - `1010:D434 overkill_selector_input_release_wait_d434` — one-poll input
+    release wait before falling into `D445` selector loop.
+- Lifted `1010:A571 overkill_object_spawn_anchor_offset_a571`, a small raw
+  object-spawn anchor helper that copies source `SS:BP` coordinates plus
+  `+10/+10` into destination object slot `DS:BX`.
+- These are deliberately still low-level names: `D390/D434` belong to the
+  input/menu wait-state layer, while `A571` belongs to raw object-slot spawning,
+  not to a confirmed semantic enemy/projectile constructor.

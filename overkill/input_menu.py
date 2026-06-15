@@ -7,7 +7,7 @@ logic so the outer poller and the inner bit-packer do not duplicate code.
 """
 from __future__ import annotations
 
-from dos_re.cpu import CF, IF, ZF
+from dos_re.cpu import CF, DF, IF, ZF
 from overkill.asm import (
     _cmp_byte,
     _cmp_word,
@@ -235,6 +235,217 @@ def run_boss_key_return_key_release_wait_gate_07d7(cpu) -> None:
     _cmp_byte(cpu, value, 0x01)
     cpu.s.ip = 0x07D7 if value == 0x01 else 0x07DE
 
+
+
+
+def run_text_entry_prompt_loop_53c9(cpu, call_text_string, call_prompt_key_read) -> None:
+    """Lift one iteration of the 1010:53C9 DOS text-entry prompt loop.
+
+    This is intentionally a one-iteration state-machine hook, not the full
+    prompt routine.  The hot path repeatedly redraws the prompt/current buffer,
+    reads one DOS key through 5497, accepts printable ASCII into DS:229B..22A4,
+    and jumps back to 53C9.  Rare edit/finish tails are left as original branch
+    targets so they remain oracle-visible until their surrounding dispatches are
+    classified.
+    """
+    s = cpu.s
+    mem = cpu.mem
+    ds = s.ds & 0xFFFF
+
+    # 53C9: MOV BP,22A9 ; CALL 518C ; 53CF: MOV BP,229B ; CALL 518C
+    s.bp = 0x22A9
+    call_text_string(0x53CF)
+    if (s.ip & 0xFFFF) != 0x53CF:
+        raise RuntimeError(f"518C returned to unexpected IP {s.ip:04X} inside 53C9 prompt header draw")
+    s.bp = 0x229B
+    call_text_string(0x53D5)
+    if (s.ip & 0xFFFF) != 0x53D5:
+        raise RuntimeError(f"518C returned to unexpected IP {s.ip:04X} inside 53C9 prompt buffer draw")
+
+    # 53D5: CALL 5497.  If DOS input blocks, 5497 leaves the machine at its
+    # original INT 21h retry IP and propagates ConsoleInputWouldBlock.
+    call_prompt_key_read(0x53D8)
+    if (s.ip & 0xFFFF) != 0x53D8:
+        raise RuntimeError(f"5497 returned to unexpected IP {s.ip:04X} inside 53C9 prompt loop")
+
+    al = s.ax & 0xFF
+    _cmp_byte(cpu, al, 0x08)
+    if al == 0x08:
+        s.ip = 0x5408
+        return
+    _cmp_byte(cpu, al, 0x0D)
+    if al == 0x0D:
+        s.ip = 0x541E
+        return
+
+    cursor = mem.rw(ds, 0x22B0)
+    _cmp_word(cpu, cursor, 0x22A5)
+    if cursor == 0x22A5:
+        # Leave the bell helper/tail in original ASM for now.
+        s.ip = 0x53FC
+        return
+
+    _cmp_byte(cpu, al, 0x20)
+    if al < 0x20:
+        s.ip = 0x53C9
+        return
+    _cmp_byte(cpu, al, 0x7A)
+    if al > 0x7A:
+        s.ip = 0x53C9
+        return
+
+    s.di = mem.rw(ds, 0x22B0)
+    mem.wb(ds, s.di & 0xFFFF, al)
+    _inc_mem_word_preserve_cf(cpu, ds, 0x22B0)
+    s.ip = 0x53C9
+
+def run_bios_keyboard_buffer_tail_sync_50ba(cpu) -> None:
+    """Lift 1010:50BA, synchronize BIOS keyboard-buffer tail to head.
+
+    OVERKILL uses this after prompt/menu reads to flush pending BIOS keyboard
+    characters.  Final flags come from ``XOR AX,AX``; ``STI`` then sets IF.
+    """
+    from dos_re.cpu import IF
+
+    s = cpu.s
+    cpu.set_flag(IF, False)
+    s.ax = 0
+    cpu.set_logic_flags(0, 16)
+    s.es = 0
+    al = cpu.mem.rb(0, 0x041A)
+    s.ax = (s.ax & 0xFF00) | al
+    cpu.mem.wb(0, 0x041C, al)
+    cpu.set_flag(IF, True)
+    s.ip = cpu.pop()
+
+
+def run_keyboard_state_clear_and_bios_tail_sync_50ab(cpu) -> None:
+    """Lift 1010:50AB, clear OVERKILL key-state table then flush BIOS tail."""
+    s = cpu.s
+    ds = cpu.mem.rw(s.cs & 0xFFFF, 0x9596)
+    s.es = ds & 0xFFFF
+    s.di = 0x98C4
+    s.ax = (s.ax & 0xFF00)
+    cpu.set_logic_flags(0, 8)  # XOR AL,AL
+    s.cx = 0x0080
+    for _ in range(0x80):
+        cpu.mem.wb(s.es & 0xFFFF, s.di & 0xFFFF, 0)
+        s.di = (s.di - 1 if cpu.get_flag(DF) else s.di + 1) & 0xFFFF
+    s.cx = 0
+    run_bios_keyboard_buffer_tail_sync_50ba(cpu)
+
+def _call_dos_int21_at(cpu, after_ip: int) -> None:
+    """Run OVERKILL-visible DOS INT 21h from a lifted caller.
+
+    The interpreter fetches ``CD 21`` before invoking the DOS shim, so a blocking
+    console read rewinds IP by two bytes to the INT instruction.  Lifted callers
+    set IP to the post-INT address before delegating so ``ConsoleInputWouldBlock``
+    leaves the VM at the same resumable instruction boundary as interpreted ASM.
+    """
+    cpu.s.ip = after_ip & 0xFFFF
+    if cpu.interrupt_handler is None:
+        from dos_re.cpu import UnsupportedInstruction
+
+        raise UnsupportedInstruction(f"INT 21h not hooked at {cpu.s.cs:04X}:{(after_ip - 2) & 0xFFFF:04X}")
+    cpu.interrupt_handler(cpu, 0x21)
+
+
+def run_temp_keyboard_vector_install_4e9f(cpu) -> None:
+    """Lift 1010:4E9F, install OVERKILL's temporary INT 9 text-input handler.
+
+    The helper saves the current INT 09h vector in ``DS:213A`` and then points the
+    IVT at ``CS:4ED2``.  It is used by the DOS text-entry prompt around 5497; the
+    stack push/pop scratch is preserved because full-memory hook verification
+    compares the stack bytes too.
+    """
+    s = cpu.s
+    mem = cpu.mem
+    entry_ds = s.ds & 0xFFFF
+    entry_es = s.es & 0xFFFF
+
+    cpu.push(entry_ds)
+    cpu.push(entry_es)
+
+    s.ax = (0x35 << 8) | 0x09
+    # DOS AH=35h: get vector AL -> ES:BX.
+    s.bx = mem.rw(0, 0x09 * 4)
+    s.es = mem.rw(0, 0x09 * 4 + 2)
+
+    s.di = 0x213A
+    mem.ww(entry_ds, 0x213A, s.es)
+    mem.ww(entry_ds, 0x213C, s.bx)
+
+    s.es = cpu.pop()
+    cpu.push(entry_ds)
+    cpu.push(s.cs & 0xFFFF)
+    s.ds = cpu.pop()
+
+    s.dx = 0x4ED2
+    s.ax = (0x25 << 8) | 0x09
+    # DOS AH=25h: set vector AL = DS:DX.
+    mem.ww(0, 0x09 * 4, s.dx)
+    mem.ww(0, 0x09 * 4 + 2, s.ds)
+
+    s.ds = cpu.pop()
+    s.ds = cpu.pop()
+    s.ip = cpu.pop()
+
+
+def run_temp_keyboard_vector_restore_4ebf(cpu) -> None:
+    """Lift 1010:4EBF, restore the INT 9 vector saved by 4E9F."""
+    s = cpu.s
+    mem = cpu.mem
+    entry_ds = s.ds & 0xFFFF
+
+    cpu.push(entry_ds)
+    s.di = 0x213A
+    s.dx = mem.rw(entry_ds, 0x213C)
+    s.ax = mem.rw(entry_ds, 0x213A)
+    s.ds = s.ax & 0xFFFF
+    s.ax = (0x25 << 8) | 0x09
+    mem.ww(0, 0x09 * 4, s.dx)
+    mem.ww(0, 0x09 * 4 + 2, s.ds)
+    s.ds = cpu.pop()
+    s.ip = cpu.pop()
+
+
+def run_text_prompt_key_read_5497(cpu) -> None:
+    """Lift 1010:5497, the DOS key read used by the text-entry prompt.
+
+    The original temporarily restores the prior INT 9 vector before DOS AH=07h
+    reads, then reinstalls OVERKILL's temporary handler before returning the
+    character in AL.  Blocking reads remain resumable at the original INT 21h
+    instruction IPs (54A7/54AF).
+    """
+    s = cpu.s
+    ds = cpu.mem.rw(s.cs & 0xFFFF, 0x9596)
+    s.ds = ds & 0xFFFF
+
+    cpu.push(0x549F)
+    run_temp_keyboard_vector_restore_4ebf(cpu)
+    if (s.ip & 0xFFFF) != 0x549F:
+        raise RuntimeError(f"4EBF returned to unexpected IP {s.ip:04X} inside 5497")
+
+    cpu.mem.ww(s.ds & 0xFFFF, 0x22B2, 0)
+    s.ax = (0x07 << 8) | (s.ax & 0x00FF)
+    _call_dos_int21_at(cpu, 0x54A9)
+    al = s.ax & 0xFF
+    _cmp_byte(cpu, al, 0)
+    if al == 0:
+        s.ax = (0x07 << 8) | al
+        _call_dos_int21_at(cpu, 0x54B1)
+        cpu.mem.ww(s.ds & 0xFFFF, 0x22B2, 1)
+        al = s.ax & 0xFF
+
+    cpu.mem.wb(s.ds & 0xFFFF, 0x22B4, al)
+    cpu.push(s.ax & 0xFFFF)
+    cpu.push(0x54BE)
+    run_temp_keyboard_vector_install_4e9f(cpu)
+    if (s.ip & 0xFFFF) != 0x54BE:
+        raise RuntimeError(f"4E9F returned to unexpected IP {s.ip:04X} inside 5497")
+    s.ax = cpu.pop()
+    s.ip = cpu.pop()
+
 def _wait_vga_status_bit3(cpu, *, want_set: bool) -> None:
     """Inline 1010:50C9-compatible VGA status wait used by menu parents.
 
@@ -351,6 +562,55 @@ def run_main_menu_idle_loop_558b(cpu) -> None:
         s.ip = cpu.pop()
     else:
         s.ip = 0x558B
+
+
+def run_menu_fire_release_wait_d390(cpu) -> None:
+    """Lift one poll of the 1010:D390 FIRE-release wait gate.
+
+    The original main-menu/planet transition code waits in a tight loop while
+    FIRE/SPACE remains held::
+
+        D390 CALL 0162
+        D393 TEST byte [98BE],10h
+        D398 JNZ D390
+
+    Keep it as a one-iteration state-machine hook so the outer runtime can
+    yield/pump input instead of burning interpreted ASM while the key is held.
+    """
+    poll_input = cpu.replacement_hooks.get((0x1010, 0x0162), run_input_poll_0162)
+    cpu.push(0xD393)
+    poll_input(cpu)
+    if cpu.s.ip != 0xD393:
+        raise RuntimeError(f"0162 returned to unexpected IP {cpu.s.ip:04X} inside D390 fire-release wait")
+    ds = cpu.s.ds & 0xFFFF
+    buttons = cpu.mem.rb(ds, 0x98BE)
+    cpu.set_logic_flags(buttons & 0x10, 8)
+    cpu.s.ip = 0xD390 if (buttons & 0x10) else 0xD39A
+
+
+def run_selector_input_release_wait_d434(cpu) -> None:
+    """Lift one poll of the 1010:D434 selector input-release wait gate.
+
+    This gate is reached after the level/planet transition visuals.  It waits
+    until the current selector/fire input is released before falling into the
+    normal D445 selector loop.  The hook intentionally performs only one poll so
+    interactive play remains responsive.
+    """
+    ds = cpu.s.ds & 0xFFFF
+    value = cpu.mem.rb(ds, 0x98E4)
+    _cmp_byte(cpu, value, 0x01)
+    if value == 0x01:
+        cpu.s.ip = 0xD434
+        return
+
+    poll_input = cpu.replacement_hooks.get((0x1010, 0x0162), run_input_poll_0162)
+    cpu.push(0xD43E)
+    poll_input(cpu)
+    if cpu.s.ip != 0xD43E:
+        raise RuntimeError(f"0162 returned to unexpected IP {cpu.s.ip:04X} inside D434 selector-release wait")
+    buttons = cpu.mem.rb(ds, 0x98BE)
+    _cmp_byte(cpu, buttons, 0x00)
+    cpu.s.ip = 0xD43B if buttons != 0 else 0xD445
 
 
 def run_input_selector_loop_d445(cpu) -> None:

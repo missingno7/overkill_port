@@ -68,6 +68,27 @@
     "notes": "Reprogrammed IRQ0 (INT 08h) handler. Loads DS from CS:9596, optionally far-calls sound at 2032:0000 when [0055]&1, calls 1010:D50E, bumps 066B via 066C on even sub-ticks, increments [0054] mod 4, sends EOI to port 20h, and chains the original BIOS INT 08h every 4th tick (jmp far cs:[0738]). Not emulated as an ISR; only the 0679 wait is modelled.",
     "status": "understood"
   },
+  "1010:07C4": {
+    "island": "input_menu",
+    "kind": "hook",
+    "name": "overkill_boss_key_f9_release_wait_gate_07c4",
+    "notes": "One-iteration state-machine hook for the F9 boss-key initial key-release wait: CMP byte DS:9907,01h / JE 07C4. Keeps the text-mode boss-key screen yieldable instead of spinning in interpreted ASM.",
+    "status": "hooked_verified"
+  },
+  "1010:07D0": {
+    "island": "input_menu",
+    "kind": "hook",
+    "name": "overkill_boss_key_any_key_wait_gate_07d0",
+    "notes": "One-iteration state-machine hook for the boss-key any-key wait: CMP byte DS:98C3,00h / JE 07D0. This removes the hot 07D0/07D5 interpreted loop while preserving CMP flags and interactive yields.",
+    "status": "hooked_verified"
+  },
+  "1010:07D7": {
+    "island": "input_menu",
+    "kind": "hook",
+    "name": "overkill_boss_key_return_key_release_wait_gate_07d7",
+    "notes": "One-iteration state-machine hook for the boss-key final key-release wait: CMP byte DS:9907,01h / JE 07D7 before restoring the game video mode.",
+    "status": "hooked_verified"
+  },
   "1010:0871": {
     "name": "runtime_error_print_and_exit_delay",
     "notes": "Generic error display path. Reached with DX=0FF6 and stdout \"Memory de-allocation error\" when PSP AH=4Ah resize failed before checkpoint 8.",
@@ -258,6 +279,32 @@
     "notes": "Parent loop around A781 loading-scroll step; preserves SI/DI, steps until DS:2350 <= DI and DS:234E == 0, then stores SI into DS:A978.",
     "status": "replaced"
   },
+  "1010:4E9F": {
+    "name": "overkill_temp_keyboard_vector_install_4e9f",
+    "notes": "Temporary DOS text-input INT 9 vector install helper. Saves current keyboard vector in DS:213A/213C and points INT 09h at CS:4ED2 while preserving the original stack scratch.",
+    "status": "replaced"
+  },
+  "1010:4EBF": {
+    "name": "overkill_temp_keyboard_vector_restore_4ebf",
+    "notes": "Restore helper for the INT 9 vector saved by 4E9F during text-entry prompt key reads.",
+    "status": "replaced"
+  },
+  "1010:4FF9": {
+    "island": "collision",
+    "name": "overkill_tile_contact_probe_4ff9",
+    "notes": "Shared mid-level tile/contact probe. Applies one of three DS:214E probe offsets to SS:[BP+2]/[BP+4], calls 5073 coordinate-to-tile and 505B tile lookup, restores the original probe coordinates, and returns CF clear for empty space or CF set for blocking/contact tiles. Raw collision primitive only; no semantic object role inferred.",
+    "status": "replaced"
+  },
+  "1010:50AB": {
+    "name": "overkill_keyboard_state_clear_and_bios_tail_sync_50ab",
+    "notes": "Clears the 128-byte OVERKILL key-state table at game-data DS:98C4 and falls through to the BIOS keyboard-buffer tail sync at 50BA.",
+    "status": "replaced"
+  },
+  "1010:50BA": {
+    "name": "overkill_bios_keyboard_buffer_tail_sync_50ba",
+    "notes": "Flushes BIOS keyboard buffer tail BDA:041C to current head BDA:041A after menu/prompt input. Final flags mirror XOR AX,AX with IF set by STI.",
+    "status": "replaced"
+  },
   "1010:50C9": {
     "name": "overkill_wait_vga_retrace_50c9",
     "notes": "C9EA wrapper that waits for VGA status bit 3 high/low through port 03DAh. Hook still calls the IO layer so vga_status_reads and AL/flags remain oracle-relative; preserves internal CALL stack scratch C9F0.",
@@ -273,6 +320,16 @@
     "kind": "helper",
     "name": "overkill_text_string_loop_518c",
     "notes": "NUL-terminated inline text loop: reads SS:BP, exits on zero, otherwise calls 519A and advances BP. Lifted to compose the verified text dispatcher while preserving control-byte BP adjustments and call scratch."
+  },
+  "1010:53C9": {
+    "name": "overkill_text_entry_prompt_loop_53c9",
+    "notes": "One-iteration text-entry prompt state machine. Redraws prompt/current buffer through 518C, reads one key through 5497, handles the hot printable/invalid loop locally, and leaves rare backspace/enter/full-buffer tails as original branch targets 5408/541E/53FC.",
+    "status": "replaced"
+  },
+  "1010:5497": {
+    "name": "overkill_text_prompt_key_read_5497",
+    "notes": "DOS AH=07h key-read wrapper used by the text-entry prompt. Temporarily restores the prior INT 9 handler for DOS input, records extended-key state in DS:22B2, stores the returned byte in DS:22B4, then reinstalls OVERKILL temporary INT 9.",
+    "status": "replaced"
   },
   "1010:558B": {
     "island": "input_menu",
@@ -350,6 +407,11 @@
     "notes": "Frame effect/status/text glue: calls 77C5, 5F61, then 5EDB in original order and returns through the parent caller.",
     "status": "replaced"
   },
+  "1010:6120": {
+    "island": "game_state",
+    "name": "overkill_status_row_repeat_6120",
+    "notes": "Raw repeated status/HUD row compositor. For each CX entry it preserves SI/DI/CX, switches to the source segment at CS:95B4, blits through 5A6C, restores registers, advances the status cursor twice through 613E, then restores DS from CS:9596 and returns. Verified against interpreted ASM."
+  },
   "1010:613E": {
     "island": "game_state",
     "name": "overkill_status_cursor_advance_613e",
@@ -398,6 +460,11 @@
     "notes": "Compact 38h-byte effect-slot allocator. Scans from DS:[95D8] through 23B4..2B5A, wraps at 2B5C back to 23B4, returns BX=FFFF on exhaustion, otherwise stores the free slot back to DS:[95D8].",
     "status": "replaced"
   },
+  "1010:7547": {
+    "island": "gameplay_objects",
+    "name": "overkill_object_slot_allocate_or_reclaim_7547",
+    "notes": "Hot object-slot allocation gate. Calls the 7573 free-slot scan and falls through to the rare 7550/BD0D reclaim path when no free slot is available."
+  },
   "1010:7573": {
     "island": "gameplay_objects",
     "name": "overkill_find_free_object_slot_7573",
@@ -439,6 +506,11 @@
     "name": "overkill_status_cell_seed_852b",
     "notes": "One raw status/list cell descriptor seed. Sets AL=1Ch, converts AX through 5A00, writes descriptor words at SS:BP (+00=24h,+02=DI,+08=0), advances BP by 0Ah, restores AX and adds 10h to AH.",
     "status": "hooked_verified"
+  },
+  "1010:859E": {
+    "island": "game_state",
+    "name": "overkill_status_cell_quad_composite_859e",
+    "notes": "Four-cell status/HUD descriptor compositor parent. Preserves caller BP, runs the unusual 85B5 sequence where the fourth cell falls through into 85D5 and returns directly to the 85B5 caller; in video mode 1 it toggles pages through 511F around a second pass. Verified against interpreted ASM."
   },
   "1010:85D5": {
     "island": "game_state",
@@ -495,10 +567,22 @@
     "notes": "One-iteration wait while DS:BEFE is non-zero, used by 9862 transition flow after accepting Y.",
     "status": "hooked-verified"
   },
+  "1010:9908": {
+    "island": "game_state",
+    "name": "overkill_transition_status_wait_9908",
+    "notes": "Frame-controller transition/status wait parent reached from the A346 branch of 97B2. Calls C4DB setup, adjusts DS:2358 transition countdown, then either jumps back to 9773 or exposes the shared 9921 input/sound latch wait boundary.",
+    "status": "hooked_verified"
+  },
   "1010:9921": {
     "kind": "code",
     "name": "overkill_sound_active_wait_9921",
     "notes": "Inline foreground busy wait: cmp byte ptr DS:[BEFE],0; jnz 9921. DS:BEFE is the global PC-speaker sound-active byte cleared by the real 1010:06E5 timer IRQ/sound driver. The hook delivers the real installed IRQ0 ISR until the byte clears, then exits at 9928 with final CMP flags."
+  },
+  "1010:9928": {
+    "island": "game_state",
+    "name": "overkill_transition_input_release_tail_9928",
+    "notes": "Post-9921 transition tail. If DS:98C0 is nonzero, writes BEFF=0002 low byte to trigger/record the completion latch, then jumps back to 9773.",
+    "status": "hooked_verified"
   },
   "1010:99CD": {
     "island": "game_state",
@@ -527,11 +611,43 @@
     "notes": "Tiny 9C01 frame-controller child: INC AL; RET. Counts one observed axis/side condition before the 9C6B jump-table dispatch.",
     "status": "hooked_verified"
   },
+  "1010:9CD9": {
+    "island": "game_state",
+    "name": "overkill_frame_tracked_coord_store_9cd9",
+    "notes": "Frame/tracking helper storing the current object centre into the coordinate ring."
+  },
+  "1010:9CF1": {
+    "island": "game_state",
+    "name": "overkill_frame_coord_ring_advance_9cf1",
+    "notes": "Advances the four delayed coordinate-ring cursors with wraparound at A33A back to A27A, gated by frame low nibble and A360."
+  },
   "1010:9E69": {
     "kind": "helper",
     "name": "post_contact_bookkeeping_9e69_observed",
     "notes": "Post-contact helper called after BFC7 from BC4B/BD09. Observed path checks A47C, 2384, 98C0 and BEDC, toggles byte A362, and returns when the toggle becomes 1. Other BEDC/toggle branches remain explicit fail-fast frontiers.",
     "status": "partial helper"
+  },
+  "1010:A031": {
+    "island": "game_state",
+    "name": "overkill_tracked_object_coord_pull_a031",
+    "notes": "Pulls delayed coordinate-ring entries into tracked object slots referenced by A962/A964."
+  },
+  "1010:A4D7": {
+    "island": "gameplay_objects",
+    "name": "overkill_object_spawn_seed_from_source_a4d7",
+    "notes": "A4EA seed plus source-coordinate copy from DS:SI, including Y+4. Raw object-spawn helper, not yet classified by gameplay role."
+  },
+  "1010:A4EA": {
+    "island": "gameplay_objects",
+    "name": "overkill_object_spawn_seed_a4ea",
+    "notes": "Common raw gameplay-object spawn seed template after allocation. Initializes active/type/sprite/layer/logic/substate fields; not yet a semantic constructor."
+  },
+  "1010:A571": {
+    "island": "gameplay_objects",
+    "kind": "hook",
+    "name": "overkill_object_spawn_anchor_offset_a571",
+    "notes": "Raw spawned-object anchor helper: copies source SS:BP X/Y plus 10 pixels into destination DS:BX slot. Structural spawn/slot seeding helper, not yet a semantic object constructor.",
+    "status": "hooked_verified"
   },
   "1010:A781": {
     "island": "tandy_renderer",
@@ -756,11 +872,22 @@
     "notes": "Internal object slot reset loop reached by setup code. Uses DS:32CA pointer table, resets layer +0A, preserves slots whose +16 is 1, otherwise clears runtime fields, stamps +0E from CS:C3A2, advances CS:C3A2 by 0280h, and falls through to C42F. Verified against interpreted ASM.",
     "status": "hooked_verified"
   },
+  "1010:C4DB": {
+    "island": "game_state",
+    "name": "overkill_reset_object_slot_and_status_setup_c4db",
+    "notes": "Transition/setup parent that resets CS:C3A2, enters the C4E5 object-slot reset loop, continues through C51D tracked/status setup, and falls into 859E status-cell composition. Keeps C4E5/C51D/859E as child proof boundaries.",
+    "status": "hooked_verified"
+  },
   "1010:C4E5": {
     "island": "gameplay_objects",
     "name": "overkill_reset_object_slot_block_c4e5",
     "notes": "Internal object-slot reset loop reached by the C4DB setup/transition routine. Clears selected fields across the DS:32CA object pointer table, stamps CS:C3A2 present pointers, advances CS:C3A2 by 0280h per slot, and falls through to C51D. Verified against interpreted ASM.",
     "status": "hooked_verified"
+  },
+  "1010:C51D": {
+    "island": "game_state",
+    "name": "overkill_setup_tracked_status_tail_c51d",
+    "notes": "Setup tail after C4DB/C4E5 object reset. Clears tracked-coordinate/status globals, calls the 8517 four-entry descriptor seed, and jumps into the 859E status-cell compositor. Verified against interpreted ASM."
   },
   "1010:C713": {
     "name": "overkill_decoded_asset_table_search_c713",
@@ -843,6 +970,20 @@
     "island": "game_state",
     "name": "overkill_interstitial_status_cell_d367",
     "notes": "Small interstitial/status cell helper: AX=4703h, call 5A00, zero SI, switch DS to CS:95B6, call 5A6C cell blit dispatch, restore DS from CS:9596, near RET.",
+    "status": "hooked_verified"
+  },
+  "1010:D390": {
+    "island": "input_menu",
+    "kind": "hook",
+    "name": "overkill_menu_fire_release_wait_d390",
+    "notes": "One-poll FIRE/SPACE release wait gate before the main-menu/planet transition setup. Original D390 loop calls 0162, tests DS:98BE bit 10h, and loops while held.",
+    "status": "hooked_verified"
+  },
+  "1010:D434": {
+    "island": "input_menu",
+    "kind": "hook",
+    "name": "overkill_selector_input_release_wait_d434",
+    "notes": "One-poll selector input-release wait gate before falling into D445 selector loop. Waits for DS:98E4 != 1 and DS:98BE == 0.",
     "status": "hooked_verified"
   },
   "1010:D445": {
@@ -930,26 +1071,5 @@
     "name": "resize_memory_block_support",
     "notes": "Supports OVERKILL startup shrink of the PSP block and deterministic grow/shrink of tracked most-recent allocations.",
     "status": "implemented"
-  },
-  "1010:07C4": {
-    "island": "input_menu",
-    "kind": "hook",
-    "name": "overkill_boss_key_f9_release_wait_gate_07c4",
-    "notes": "One-iteration state-machine hook for the F9 boss-key initial key-release wait: CMP byte DS:9907,01h / JE 07C4. Keeps the text-mode boss-key screen yieldable instead of spinning in interpreted ASM.",
-    "status": "hooked_verified"
-  },
-  "1010:07D0": {
-    "island": "input_menu",
-    "kind": "hook",
-    "name": "overkill_boss_key_any_key_wait_gate_07d0",
-    "notes": "One-iteration state-machine hook for the boss-key any-key wait: CMP byte DS:98C3,00h / JE 07D0. This removes the hot 07D0/07D5 interpreted loop while preserving CMP flags and interactive yields.",
-    "status": "hooked_verified"
-  },
-  "1010:07D7": {
-    "island": "input_menu",
-    "kind": "hook",
-    "name": "overkill_boss_key_return_key_release_wait_gate_07d7",
-    "notes": "One-iteration state-machine hook for the boss-key final key-release wait: CMP byte DS:9907,01h / JE 07D7 before restoring the game video mode.",
-    "status": "hooked_verified"
   }
 }

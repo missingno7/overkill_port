@@ -130,6 +130,13 @@ postmove tails, behavior dispatch, and runtime object evidence.
   branch; do not promote that side effect semantically until it has its own
   oracle-backed lift.
 
+2026-06-14 collision-system update:
+- `1010:4FF9 overkill_tile_contact_probe_4ff9` is now verified as a raw
+  tile/contact probe. It combines the offset table at `DS:214E`, the coordinate
+  probe `5073`, and tile lookup `505B`, restoring probe coordinates and returning
+  contact state in `CF`. This is evidence for a future collision-system layer,
+  not a semantic object archetype.
+
 What we know:
 - Current facts are mostly layer-4 runtime facts: active flag, coordinates,
   sprite refs, logic ids, owner/link fields, collision side effects.

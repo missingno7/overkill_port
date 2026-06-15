@@ -9662,3 +9662,990 @@ def test_hook_verifier_recursively_verifies_direct_child_hook_calls():
         cpu.step()
     assert "1000:0200 bad_child" in str(excinfo.value)
     assert "AX: asm=0002 hook=0003" in str(excinfo.value)
+
+
+def test_object_slot_allocate_or_reclaim_7547_free_path_matches_original():
+    from dos_re.cpu import CPU8086, CPUState
+    from dos_re.memory import Memory
+    from overkill.hooks import overkill_object_slot_allocate_or_reclaim_7547
+
+    code_7547 = bytes.fromhex(
+        "e8 29 00 83 fb ff 74 01 c3 b9 22 00 bb 5c 2b 83 7f 18 09 74 0c "
+        "83 7f 18 0a 74 06 83 7f 16 01 75 08 83 c3 38 e2 e9 bb 5c 2b e9 9a 47"
+    )
+    code_7573 = bytes.fromhex(
+        "b9 22 00 8b 1e da 95 81 fb cc 32 75 03 bb 5c 2b "
+        "83 3f 00 74 09 83 c3 38 e2 ed bb ff ff c3 89 1e da 95 c3"
+    )
+
+    def make_cpu() -> CPU8086:
+        mem = Memory()
+        mem.load(0x1010, 0x7547, code_7547)
+        mem.load(0x1010, 0x7573, code_7573)
+        cpu = CPU8086(mem, CPUState(cs=0x1010, ds=0x2000, ss=0x3000, sp=0x9000, ip=0x7547, flags=0x0202))
+        cpu.trace_enabled = False
+        cpu.push(0xBEEF)
+        cpu.mem.ww(0x2000, 0x95DA, 0x2B5C)
+        cpu.mem.ww(0x2000, 0x2B5C, 0)
+        return cpu
+
+    asm = make_cpu()
+    hook = make_cpu()
+    for _ in range(100):
+        if asm.addr() == (0x1010, 0xBEEF):
+            break
+        asm.step()
+    overkill_object_slot_allocate_or_reclaim_7547(hook)
+
+    assert asm.addr() == hook.addr() == (0x1010, 0xBEEF)
+    assert asm.s.snapshot() == hook.s.snapshot()
+    assert asm.mem.data == hook.mem.data
+
+
+def test_object_spawn_seed_a4ea_free_path_matches_original():
+    from dos_re.cpu import CPU8086, CPUState
+    from dos_re.memory import Memory
+    from overkill.hooks import overkill_object_spawn_seed_a4ea
+
+    code_a4ea = bytes.fromhex(
+        "e8 5a d0 c7 07 01 00 c7 47 1e 01 00 c7 47 06 00 00 c7 47 08 32 00 "
+        "c7 47 14 00 00 c7 47 16 02 00 c7 47 18 02 00 c7 47 1c ff ff c3"
+    )
+    code_7547 = bytes.fromhex(
+        "e8 29 00 83 fb ff 74 01 c3 b9 22 00 bb 5c 2b 83 7f 18 09 74 0c "
+        "83 7f 18 0a 74 06 83 7f 16 01 75 08 83 c3 38 e2 e9 bb 5c 2b e9 9a 47"
+    )
+    code_7573 = bytes.fromhex(
+        "b9 22 00 8b 1e da 95 81 fb cc 32 75 03 bb 5c 2b "
+        "83 3f 00 74 09 83 c3 38 e2 ed bb ff ff c3 89 1e da 95 c3"
+    )
+
+    def make_cpu() -> CPU8086:
+        mem = Memory()
+        mem.load(0x1010, 0xA4EA, code_a4ea)
+        mem.load(0x1010, 0x7547, code_7547)
+        mem.load(0x1010, 0x7573, code_7573)
+        cpu = CPU8086(mem, CPUState(cs=0x1010, ds=0x2000, ss=0x3000, sp=0x9000, ip=0xA4EA, flags=0x0202))
+        cpu.trace_enabled = False
+        cpu.push(0xBEEF)
+        cpu.mem.ww(0x2000, 0x95DA, 0x2B5C)
+        cpu.mem.ww(0x2000, 0x2B5C, 0)
+        return cpu
+
+    asm = make_cpu()
+    hook = make_cpu()
+    for _ in range(160):
+        if asm.addr() == (0x1010, 0xBEEF):
+            break
+        asm.step()
+    overkill_object_spawn_seed_a4ea(hook)
+
+    assert asm.addr() == hook.addr() == (0x1010, 0xBEEF)
+    assert asm.s.snapshot() == hook.s.snapshot()
+    assert asm.mem.data == hook.mem.data
+
+
+def test_object_spawn_seed_from_source_a4d7_free_path_matches_original():
+    from dos_re.cpu import CPU8086, CPUState
+    from dos_re.memory import Memory
+    from overkill.hooks import overkill_object_spawn_seed_from_source_a4d7
+
+    code_a4d7 = bytes.fromhex("e8 10 00 8b 44 02 89 47 02 8b 44 04 05 04 00 89 47 04 c3")
+    code_a4ea = bytes.fromhex(
+        "e8 5a d0 c7 07 01 00 c7 47 1e 01 00 c7 47 06 00 00 c7 47 08 32 00 "
+        "c7 47 14 00 00 c7 47 16 02 00 c7 47 18 02 00 c7 47 1c ff ff c3"
+    )
+    code_7547 = bytes.fromhex(
+        "e8 29 00 83 fb ff 74 01 c3 b9 22 00 bb 5c 2b 83 7f 18 09 74 0c "
+        "83 7f 18 0a 74 06 83 7f 16 01 75 08 83 c3 38 e2 e9 bb 5c 2b e9 9a 47"
+    )
+    code_7573 = bytes.fromhex(
+        "b9 22 00 8b 1e da 95 81 fb cc 32 75 03 bb 5c 2b "
+        "83 3f 00 74 09 83 c3 38 e2 ed bb ff ff c3 89 1e da 95 c3"
+    )
+
+    def make_cpu() -> CPU8086:
+        mem = Memory()
+        mem.load(0x1010, 0xA4D7, code_a4d7)
+        mem.load(0x1010, 0xA4EA, code_a4ea)
+        mem.load(0x1010, 0x7547, code_7547)
+        mem.load(0x1010, 0x7573, code_7573)
+        cpu = CPU8086(
+            mem,
+            CPUState(cs=0x1010, ds=0x2000, ss=0x3000, sp=0x9000, ip=0xA4D7, si=0x0100, flags=0x0202),
+        )
+        cpu.trace_enabled = False
+        cpu.push(0xBEEF)
+        cpu.mem.ww(0x2000, 0x95DA, 0x2B5C)
+        cpu.mem.ww(0x2000, 0x2B5C, 0)
+        cpu.mem.ww(0x2000, 0x0102, 0x1234)
+        cpu.mem.ww(0x2000, 0x0104, 0x00BC)
+        return cpu
+
+    asm = make_cpu()
+    hook = make_cpu()
+    for _ in range(180):
+        if asm.addr() == (0x1010, 0xBEEF):
+            break
+        asm.step()
+    overkill_object_spawn_seed_from_source_a4d7(hook)
+
+    assert asm.addr() == hook.addr() == (0x1010, 0xBEEF)
+    assert asm.s.snapshot() == hook.s.snapshot()
+    assert asm.mem.data == hook.mem.data
+
+
+def test_frame_coord_ring_helpers_match_interpreted_asm():
+    from dos_re.cpu import CPU8086, CPUState
+    from dos_re.memory import Memory
+    from overkill.hooks import (
+        overkill_frame_coord_ring_advance_9cf1,
+        overkill_frame_tracked_coord_store_9cd9,
+        overkill_tracked_object_coord_pull_a031,
+    )
+
+    code_9cd9 = bytes.fromhex("2e 8e 06 96 95 8b 3e 3a a3 8b 46 02 05 08 00 ab 8b 46 04 05 08 00 ab c3")
+    code_9cf1 = bytes.fromhex(
+        "f6 06 be 98 0f 75 08 83 3e 60 a3 00 75 01 c3 83 06 3a a3 04 "
+        "81 3e 3a a3 3a a3 75 06 c7 06 3a a3 7a a2 83 06 3c a3 04 "
+        "81 3e 3c a3 3a a3 75 06 c7 06 3c a3 7a a2 83 06 3e a3 04 "
+        "81 3e 3e a3 3a a3 75 06 c7 06 3e a3 7a a2 83 06 40 a3 04 "
+        "81 3e 40 a3 3a a3 75 06 c7 06 40 a3 7a a2 c3"
+    )
+    code_a031 = bytes.fromhex(
+        "83 3e 62 a9 ff 74 10 8b 1e 62 a9 8b 36 3c a3 ad 89 47 02 ad 89 47 04 "
+        "83 3e 64 a9 ff 74 10 8b 1e 64 a9 8b 36 3e a3 ad 89 47 02 ad 89 47 04 c3"
+    )
+
+    def run_pair(ip: int, code: bytes, hook_fn, setup):
+        def make_cpu() -> CPU8086:
+            mem = Memory()
+            mem.load(0x1010, ip, code)
+            cpu = CPU8086(
+                mem,
+                CPUState(cs=0x1010, ds=0x2000, es=0x3333, ss=0x3000, sp=0x9000, ip=ip, bp=0x0400, flags=0x0202),
+            )
+            cpu.trace_enabled = False
+            cpu.push(0xBEEF)
+            setup(cpu)
+            return cpu
+
+        asm = make_cpu()
+        hook = make_cpu()
+        for _ in range(180):
+            if asm.addr() == (0x1010, 0xBEEF):
+                break
+            asm.step()
+        hook_fn(hook)
+        assert asm.addr() == hook.addr() == (0x1010, 0xBEEF)
+        assert asm.s.snapshot() == hook.s.snapshot()
+        assert asm.mem.data == hook.mem.data
+
+    def setup_9cd9(cpu):
+        cpu.mem.ww(0x1010, 0x9596, 0x2000)
+        cpu.mem.ww(0x2000, 0xA33A, 0x0200)
+        cpu.mem.ww(0x3000, 0x0402, 0x0010)
+        cpu.mem.ww(0x3000, 0x0404, 0x0020)
+
+    run_pair(0x9CD9, code_9cd9, overkill_frame_tracked_coord_store_9cd9, setup_9cd9)
+
+    def setup_9cf1(cpu):
+        cpu.mem.wb(0x2000, 0x98BE, 0x01)
+        for off, value in ((0xA33A, 0xA336), (0xA33C, 0xA33A), (0xA33E, 0xA27A), (0xA340, 0xA330)):
+            cpu.mem.ww(0x2000, off, value)
+
+    run_pair(0x9CF1, code_9cf1, overkill_frame_coord_ring_advance_9cf1, setup_9cf1)
+
+    def setup_a031(cpu):
+        cpu.mem.ww(0x2000, 0xA962, 0x0500)
+        cpu.mem.ww(0x2000, 0xA964, 0x0600)
+        cpu.mem.ww(0x2000, 0xA33C, 0x0700)
+        cpu.mem.ww(0x2000, 0xA33E, 0x0710)
+        cpu.mem.ww(0x2000, 0x0700, 0x1111)
+        cpu.mem.ww(0x2000, 0x0702, 0x2222)
+        cpu.mem.ww(0x2000, 0x0710, 0x3333)
+        cpu.mem.ww(0x2000, 0x0712, 0x4444)
+
+    run_pair(0xA031, code_a031, overkill_tracked_object_coord_pull_a031, setup_a031)
+
+
+def test_tile_contact_probe_4ff9_matches_interpreted_asm_paths():
+    from overkill.hooks import overkill_tile_contact_probe_4ff9
+
+    code = bytes.fromhex(
+        "8b 76 08 83 fe 03 73 58 d1 e6 d1 e6 81 c6 4e 21"
+        "ff 76 02 ff 76 04 ad 01 46 02 ad 01 46 04 e8 59 00"
+        "83 c3 0d a1 5a 21 25 0f 00 3d 0a 00 b9 01 00 76 03"
+        "b9 02 00 51 53 e8 28 00 75 1c f7 46 04 0f 00 74 06"
+        "43 e8 1b 00 75 0f 5b 83 eb 0d 59 e2 e5 8f 46 04 8f"
+        "46 02 f8 c3 5b 59 8f 46 04 8f 46 02 f9 c3"
+        "be aa c3 2e 8e 06 92 95 26 8a 07 32 e4 03 f0 8a 04 0a c0 c3"
+        "bb ff ff c3"
+        "a1 4e 23 03 46 02 a3 5a 21 78 f1 d1 e8 d1 e8 d1 e8 d1 e8"
+        "8b d0 d1 e0 d1 e0 8b c8 d1 e0 03 c1 03 c2 8b 1e 50 23"
+        "2b d8 8b 46 04 25 f0 ff d1 e8 d1 e8 d1 e8 d1 e8 03 d8 c3"
+    )
+
+    def make_cpu(use_hook: bool, *, side: int, y: int, first_blocking: bool, second_blocking: bool) -> CPU8086:
+        mem = Memory()
+        mem.load(0x1010, 0x4FF9, code)
+        ds = ss = 0x2000
+        es = 0x3000
+        bp = 0x2400
+        mem.ww(0x1010, 0x9592, es)
+        # Three candidate probe offsets at DS:214E.  Keep side 0 at zero so the
+        # expected tile index is easy to reason about in the test.
+        for idx, (dx, dy) in enumerate(((0, 0), (4, 0), (0, 4))):
+            mem.ww(ds, 0x214E + idx * 4, dx)
+            mem.ww(ds, 0x2150 + idx * 4, dy)
+        mem.ww(ds, 0x234E, 0x0000)
+        mem.ww(ds, 0x2350, 0x0200)
+        mem.ww(ss, bp + 0x02, 0x0010)
+        mem.ww(ss, bp + 0x04, y)
+        mem.ww(ss, bp + 0x08, side)
+        # 5073 maps x=0010,y~=0 to BX=01F3, and 4FF9 adds 000D before lookup.
+        mem.wb(es, 0x0200, 5 if first_blocking else 0)
+        mem.wb(es, 0x0201, 7 if second_blocking else 0)
+        mem.wb(ds, 0xC3AA + 5, 1)
+        mem.wb(ds, 0xC3AA + 7, 1)
+        state = CPUState(
+            ax=0xAAAA, bx=0xBBBB, cx=0xCCCC, dx=0xDDDD,
+            si=0xEEEE, di=0xF111, bp=bp,
+            cs=0x1010, ds=ds, es=0x4444, ss=ss,
+            sp=0x9000, ip=0x4FF9, flags=0x0202,
+        )
+        cpu = CPU8086(mem, state)
+        cpu.trace_enabled = False
+        cpu.push(0xBEEF)
+        if use_hook:
+            cpu.replacement_hooks[(0x1010, 0x4FF9)] = overkill_tile_contact_probe_4ff9
+        return cpu
+
+    cases = (
+        # Invalid side selects the 5059 STC;RET helper immediately.
+        dict(side=3, y=0x0000, first_blocking=False, second_blocking=False),
+        # Empty aligned tile: restore coordinates and return CF clear.
+        dict(side=0, y=0x0000, first_blocking=False, second_blocking=False),
+        # Blocking first tile: restore coordinates and return CF set.
+        dict(side=0, y=0x0000, first_blocking=True, second_blocking=False),
+        # Unaligned Y probes the adjacent tile when the first lookup is clear.
+        dict(side=0, y=0x0001, first_blocking=False, second_blocking=True),
+    )
+    for kwargs in cases:
+        asm = make_cpu(False, **kwargs)
+        hook = make_cpu(True, **kwargs)
+        for _ in range(300):
+            if asm.addr() == (0x1010, 0xBEEF):
+                break
+            asm.step()
+        hook.step()
+        assert asm.addr() == hook.addr() == (0x1010, 0xBEEF)
+        assert asm.s.snapshot() == hook.s.snapshot()
+        assert bytes(asm.mem.data) == bytes(hook.mem.data)
+
+
+def test_temp_keyboard_vector_install_and_restore_match_interpreted_asm():
+    from overkill.hooks import (
+        overkill_temp_keyboard_vector_install_4e9f,
+        overkill_temp_keyboard_vector_restore_4ebf,
+    )
+
+    code_4e9f = bytes.fromhex(
+        "1e 06 b4 35 b0 09 cd 21 bf 3a 21 8c 05 89 5d 02 07 1e 0e 1f "
+        "ba d2 4e b4 25 b0 09 cd 21 1f 1f c3"
+    )
+    code_4ebf = bytes.fromhex("1e bf 3a 21 8b 55 02 8b 05 8e d8 b4 25 b0 09 cd 21 1f c3")
+
+    def install_int21(cpu: CPU8086) -> None:
+        def handler(c: CPU8086, num: int) -> None:
+            assert num == 0x21
+            ah = (c.s.ax >> 8) & 0xFF
+            al = c.s.ax & 0xFF
+            assert al == 0x09
+            if ah == 0x35:
+                c.s.bx = c.mem.rw(0, al * 4)
+                c.s.es = c.mem.rw(0, al * 4 + 2)
+                return
+            if ah == 0x25:
+                c.mem.ww(0, al * 4, c.s.dx)
+                c.mem.ww(0, al * 4 + 2, c.s.ds)
+                return
+            raise AssertionError(f"unexpected AH={ah:02X}")
+        cpu.interrupt_handler = handler
+
+    def make_cpu(ip: int, use_hook: bool) -> CPU8086:
+        mem = Memory()
+        mem.load(0x1010, 0x4E9F, code_4e9f)
+        mem.load(0x1010, 0x4EBF, code_4ebf)
+        mem.ww(0, 0x09 * 4, 0x1234)
+        mem.ww(0, 0x09 * 4 + 2, 0x5678)
+        mem.ww(0x2000, 0x213A, 0x9ABC)
+        mem.ww(0x2000, 0x213C, 0xDEF0)
+        cpu = CPU8086(
+            mem,
+            CPUState(
+                ax=0xAAAA, bx=0xBBBB, cx=0xCCCC, dx=0xDDDD,
+                si=0x1111, di=0x2222, bp=0x3333,
+                cs=0x1010, ds=0x2000, es=0x3000, ss=0x4000,
+                sp=0x9000, ip=ip, flags=0x0297,
+            ),
+        )
+        cpu.trace_enabled = False
+        cpu.push(0xBEEF)
+        install_int21(cpu)
+        if use_hook:
+            if ip == 0x4E9F:
+                cpu.replacement_hooks[(0x1010, 0x4E9F)] = overkill_temp_keyboard_vector_install_4e9f
+            else:
+                cpu.replacement_hooks[(0x1010, 0x4EBF)] = overkill_temp_keyboard_vector_restore_4ebf
+        return cpu
+
+    for ip in (0x4E9F, 0x4EBF):
+        asm = make_cpu(ip, False)
+        hook = make_cpu(ip, True)
+        for _ in range(80):
+            if asm.addr() == (0x1010, 0xBEEF):
+                break
+            asm.step()
+        hook.step()
+        assert asm.addr() == hook.addr() == (0x1010, 0xBEEF)
+        assert asm.s.snapshot() == hook.s.snapshot()
+        assert asm.mem.data == hook.mem.data
+
+
+def test_text_prompt_key_read_5497_matches_interpreted_asm_regular_and_extended_keys():
+    from overkill.hooks import overkill_text_prompt_key_read_5497
+
+    code_4e9f = bytes.fromhex(
+        "1e 06 b4 35 b0 09 cd 21 bf 3a 21 8c 05 89 5d 02 07 1e 0e 1f "
+        "ba d2 4e b4 25 b0 09 cd 21 1f 1f c3"
+    )
+    code_4ebf = bytes.fromhex("1e bf 3a 21 8b 55 02 8b 05 8e d8 b4 25 b0 09 cd 21 1f c3")
+    code_5497 = bytes.fromhex(
+        "2e 8e 1e 96 95 e8 20 fa c7 06 b2 22 00 00 b4 07 cd 21 3c 00 "
+        "74 02 eb 08 cd 21 c7 06 b2 22 01 00 a2 b4 22 50 e8 e1 f9 58 c3"
+    )
+
+    def make_cpu(use_hook: bool, keys: list[int]) -> CPU8086:
+        mem = Memory()
+        mem.load(0x1010, 0x4E9F, code_4e9f)
+        mem.load(0x1010, 0x4EBF, code_4ebf)
+        mem.load(0x1010, 0x5497, code_5497)
+        mem.ww(0x1010, 0x9596, 0x2000)
+        mem.ww(0, 0x09 * 4, 0x4ED2)
+        mem.ww(0, 0x09 * 4 + 2, 0x1010)
+        mem.ww(0x2000, 0x213A, 0x5678)
+        mem.ww(0x2000, 0x213C, 0x1234)
+        cpu = CPU8086(
+            mem,
+            CPUState(
+                ax=0x3300, bx=0x2222, cx=0x1111, dx=0x4444,
+                si=0x5555, di=0x6666, bp=0x7777,
+                cs=0x1010, ds=0x9999, es=0x8888, ss=0x4000,
+                sp=0x9000, ip=0x5497, flags=0x0202,
+            ),
+        )
+        cpu.trace_enabled = False
+        cpu.push(0xBEEF)
+        queue = list(keys)
+
+        def handler(c: CPU8086, num: int) -> None:
+            assert num == 0x21
+            ah = (c.s.ax >> 8) & 0xFF
+            al = c.s.ax & 0xFF
+            if ah == 0x35:
+                c.s.bx = c.mem.rw(0, al * 4)
+                c.s.es = c.mem.rw(0, al * 4 + 2)
+                return
+            if ah == 0x25:
+                c.mem.ww(0, al * 4, c.s.dx)
+                c.mem.ww(0, al * 4 + 2, c.s.ds)
+                return
+            if ah == 0x07:
+                assert queue, "test key queue unexpectedly empty"
+                c.s.ax = (c.s.ax & 0xFF00) | (queue.pop(0) & 0xFF)
+                return
+            raise AssertionError(f"unexpected AH={ah:02X}")
+
+        cpu.interrupt_handler = handler
+        if use_hook:
+            cpu.replacement_hooks[(0x1010, 0x5497)] = overkill_text_prompt_key_read_5497
+        return cpu
+
+    for keys in ([ord("A")], [0x00, 0x48]):
+        asm = make_cpu(False, list(keys))
+        hook = make_cpu(True, list(keys))
+        for _ in range(160):
+            if asm.addr() == (0x1010, 0xBEEF):
+                break
+            asm.step()
+        hook.step()
+        assert asm.addr() == hook.addr() == (0x1010, 0xBEEF)
+        assert asm.s.snapshot() == hook.s.snapshot()
+        assert asm.mem.data == hook.mem.data
+
+
+
+def test_text_entry_prompt_loop_53c9_matches_interpreted_one_iteration_branches():
+    from overkill.hooks import overkill_text_entry_prompt_loop_53c9
+
+    code_53c9 = bytes.fromhex(
+        "bda922e8bdfdbd9b22e8b7fde8bf003c08742c3c0d743e813eb022a52274143c2072dd3c7a77d98b3eb0228805ff06b022ebcd"
+    )
+
+    def make_cpu(use_hook: bool, key: int, cursor: int) -> CPU8086:
+        mem = Memory()
+        mem.load(0x1010, 0x53C9, code_53c9)
+        # Synthetic children with the same CALL/RET shape as the real routines:
+        # 518C returns without touching state; 5497 returns the requested key.
+        mem.load(0x1010, 0x518C, bytes.fromhex("c3"))
+        mem.load(0x1010, 0x5497, bytes([0xB0, key & 0xFF, 0xC3]))
+        mem.ww(0x2000, 0x22B0, cursor & 0xFFFF)
+        for i in range(0x20):
+            mem.wb(0x2000, 0x2290 + i, (0x41 + i) & 0xFF)
+        cpu = CPU8086(
+            mem,
+            CPUState(
+                ax=0x1200, bx=0xBEEF, cx=0x3333, dx=0x4444,
+                si=0x5555, di=0x6666, bp=0x7777,
+                cs=0x1010, ds=0x2000, es=0x3000, ss=0x4000,
+                sp=0x9000, ip=0x53C9, flags=0x0203,
+            ),
+        )
+        cpu.trace_enabled = False
+
+        def ret_518c(c: CPU8086) -> None:
+            c.s.ip = c.pop()
+
+        def key_5497(c: CPU8086) -> None:
+            c.s.ax = (c.s.ax & 0xFF00) | (key & 0xFF)
+            c.s.ip = c.pop()
+
+        if use_hook:
+            cpu.replacement_hooks[(0x1010, 0x53C9)] = overkill_text_entry_prompt_loop_53c9
+            cpu.replacement_hooks[(0x1010, 0x518C)] = ret_518c
+            cpu.replacement_hooks[(0x1010, 0x5497)] = key_5497
+        return cpu
+
+    cases = (
+        (ord("A"), 0x229B, 0x53C9),  # printable append
+        (0x1B, 0x229B, 0x53C9),       # low non-printable ignored
+        (0x7B, 0x229B, 0x53C9),       # high non-printable ignored
+        (0x08, 0x229C, 0x5408),       # backspace tail remains original
+        (0x0D, 0x229C, 0x541E),       # enter/pad/copy tail remains original
+        (ord("Z"), 0x22A5, 0x53FC),  # full-buffer bell tail remains original
+    )
+    for key, cursor, expected_ip in cases:
+        asm = make_cpu(False, key, cursor)
+        hook = make_cpu(True, key, cursor)
+        asm.step()
+        for _ in range(80):
+            if asm.addr() == (0x1010, expected_ip):
+                break
+            asm.step()
+        hook.step()
+        assert asm.addr() == hook.addr() == (0x1010, expected_ip)
+        assert asm.s.snapshot() == hook.s.snapshot()
+        assert asm.mem.data == hook.mem.data
+
+def test_keyboard_state_clear_and_bios_tail_sync_50ab_50ba_match_interpreted_asm():
+    from overkill.hooks import (
+        overkill_bios_keyboard_buffer_tail_sync_50ba,
+        overkill_keyboard_state_clear_and_bios_tail_sync_50ab,
+    )
+
+    code_50ab = bytes.fromhex(
+        "2e 8e 06 96 95 bf c4 98 32 c0 b9 80 00 f3 aa"
+        "fa 33 c0 8e c0 26 a0 1a 04 26 a2 1c 04 fb c3"
+    )
+    code_50ba = bytes.fromhex("fa 33 c0 8e c0 26 a0 1a 04 26 a2 1c 04 fb c3")
+
+    def make_cpu(ip: int, use_hook: bool) -> CPU8086:
+        mem = Memory()
+        mem.load(0x1010, 0x50AB, code_50ab)
+        mem.load(0x1010, 0x50BA, code_50ba)
+        mem.ww(0x1010, 0x9596, 0x2000)
+        for i in range(0x80):
+            mem.wb(0x2000, 0x98C4 + i, (i * 3 + 1) & 0xFF)
+        mem.wb(0, 0x041A, 0x34)
+        mem.wb(0, 0x041C, 0x12)
+        cpu = CPU8086(
+            mem,
+            CPUState(
+                ax=0xABCD, bx=0x2222, cx=0x3333, dx=0x4444,
+                si=0x5555, di=0x6666, bp=0x7777,
+                cs=0x1010, ds=0x2000, es=0x8888, ss=0x4000,
+                sp=0x9000, ip=ip, flags=0x0003,
+            ),
+        )
+        cpu.trace_enabled = False
+        cpu.push(0xBEEF)
+        if use_hook:
+            if ip == 0x50AB:
+                cpu.replacement_hooks[(0x1010, 0x50AB)] = overkill_keyboard_state_clear_and_bios_tail_sync_50ab
+            else:
+                cpu.replacement_hooks[(0x1010, 0x50BA)] = overkill_bios_keyboard_buffer_tail_sync_50ba
+        return cpu
+
+    for ip in (0x50AB, 0x50BA):
+        asm = make_cpu(ip, False)
+        hook = make_cpu(ip, True)
+        for _ in range(220):
+            if asm.addr() == (0x1010, 0xBEEF):
+                break
+            asm.step()
+        hook.step()
+        assert asm.addr() == hook.addr() == (0x1010, 0xBEEF)
+        assert asm.s.snapshot() == hook.s.snapshot()
+        assert asm.mem.data == hook.mem.data
+
+
+def test_status_row_repeat_6120_matches_interpreted_asm_with_child_hooks():
+    from dos_re.cpu import CPU8086, CPUState
+    from dos_re.memory import Memory
+    from overkill.hooks import overkill_status_row_repeat_6120
+
+    code = bytes.fromhex(
+        "e3 16 56 57 51 2e 8e 1e b4 95 e8 3f f9 59 5f 5e "
+        "e8 0b 00 e8 08 00 e2 e8 2e 8e 1e 96 95 c3"
+    )
+
+    def dummy_5a6c(cpu: CPU8086) -> None:
+        ds = cpu.s.ds & 0xFFFF
+        ss = cpu.s.ss & 0xFFFF
+        idx = cpu.mem.rw(ss, 0x0100)
+        base = 0x0120 + idx * 8
+        cpu.mem.ww(ss, base + 0, ds)
+        cpu.mem.ww(ss, base + 2, cpu.s.si & 0xFFFF)
+        cpu.mem.ww(ss, base + 4, cpu.s.di & 0xFFFF)
+        cpu.mem.ww(ss, base + 6, cpu.s.cx & 0xFFFF)
+        cpu.mem.ww(ss, 0x0100, (idx + 1) & 0xFFFF)
+        old = cpu.s.ax & 0xFFFF
+        result = old + 0x0003
+        cpu.s.ax = result & 0xFFFF
+        cpu.set_add_flags(old, 0x0003, result, 16)
+        cpu.s.ip = cpu.pop()
+
+    def dummy_613e(cpu: CPU8086) -> None:
+        old = cpu.s.di & 0xFFFF
+        result = old + 0x0004
+        cpu.s.di = result & 0xFFFF
+        cpu.set_add_flags(old, 0x0004, result, 16)
+        cpu.s.ip = cpu.pop()
+
+    def make_cpu(use_hook: bool, cx: int) -> CPU8086:
+        mem = Memory()
+        mem.load(0x1010, 0x6120, code)
+        mem.ww(0x1010, 0x95B4, 0x3456)
+        mem.ww(0x1010, 0x9596, 0x2000)
+        state = CPUState(
+            ax=0x0100, bx=0x0200, cx=cx, dx=0x0300,
+            si=0x1111, di=0x0100, bp=0x2222,
+            cs=0x1010, ds=0x2000, es=0x4000, ss=0x3000,
+            sp=0x9000, ip=0x6120, flags=0x0203,
+        )
+        cpu = CPU8086(mem, state)
+        cpu.trace_enabled = False
+        cpu.push(0xBEEF)
+        cpu.replacement_hooks[(0x1010, 0x5A6C)] = dummy_5a6c
+        cpu.replacement_hooks[(0x1010, 0x613E)] = dummy_613e
+        if use_hook:
+            cpu.replacement_hooks[(0x1010, 0x6120)] = overkill_status_row_repeat_6120
+        return cpu
+
+    for cx in (0, 3):
+        asm = make_cpu(False, cx)
+        hook = make_cpu(True, cx)
+        for _ in range(200):
+            if asm.addr() == (0x1010, 0xBEEF):
+                break
+            asm.step()
+        hook.step()
+        assert asm.addr() == hook.addr() == (0x1010, 0xBEEF)
+        assert asm.s.snapshot() == hook.s.snapshot()
+        assert bytes(asm.mem.data) == bytes(hook.mem.data)
+
+
+def test_setup_tracked_status_tail_c51d_matches_interpreted_asm_with_seed_child():
+    from dos_re.cpu import CPU8086, CPUState
+    from dos_re.memory import Memory
+    from overkill.hooks import overkill_setup_tracked_status_tail_c51d
+
+    code = bytes.fromhex(
+        "c7 06 58 a9 00 00 c7 06 5e a9 00 00 c7 06 60 a9 00 00 "
+        "c7 06 62 a9 ff ff c7 06 64 a9 ff ff c7 06 66 a9 ff ff "
+        "c7 06 68 a9 ff ff c7 06 6a a9 ff ff c7 06 6c a9 ff ff "
+        "c7 06 6e a9 ff ff c7 06 84 23 00 00 e8 b5 bf e9 39 c0"
+    )
+
+    def dummy_8517(cpu: CPU8086) -> None:
+        ds = cpu.s.ds & 0xFFFF
+        old = cpu.mem.rw(ds, 0x0100)
+        result = old + 0x1234
+        cpu.mem.ww(ds, 0x0100, result & 0xFFFF)
+        cpu.s.ax = result & 0xFFFF
+        cpu.set_add_flags(old, 0x1234, result, 16)
+        cpu.s.ip = cpu.pop()
+
+    def make_cpu(use_hook: bool) -> CPU8086:
+        mem = Memory()
+        mem.load(0x1010, 0xC51D, code)
+        for off in (0xA958, 0xA95E, 0xA960, 0xA962, 0xA964, 0xA966, 0xA968, 0xA96A, 0xA96C, 0xA96E, 0x2384):
+            mem.ww(0x2000, off, 0x7777)
+        mem.ww(0x2000, 0x0100, 0x0101)
+        state = CPUState(
+            ax=0xAAAA, bx=0xBBBB, cx=0xCCCC, dx=0xDDDD,
+            si=0xEEEE, di=0xF111, bp=0x2222,
+            cs=0x1010, ds=0x2000, es=0x4000, ss=0x3000,
+            sp=0x9000, ip=0xC51D, flags=0x0203,
+        )
+        cpu = CPU8086(mem, state)
+        cpu.trace_enabled = False
+        cpu.replacement_hooks[(0x1010, 0x8517)] = dummy_8517
+        if use_hook:
+            cpu.replacement_hooks[(0x1010, 0xC51D)] = overkill_setup_tracked_status_tail_c51d
+        return cpu
+
+    asm = make_cpu(False)
+    hook = make_cpu(True)
+    for _ in range(200):
+        if asm.addr() == (0x1010, 0x859E):
+            break
+        asm.step()
+    hook.step()
+    assert asm.addr() == hook.addr() == (0x1010, 0x859E)
+    assert asm.s.snapshot() == hook.s.snapshot()
+    assert bytes(asm.mem.data) == bytes(hook.mem.data)
+
+
+def test_status_cell_quad_composite_859e_matches_interpreted_asm_with_children():
+    from dos_re.cpu import CPU8086, CPUState
+    from dos_re.memory import Memory
+    from overkill.hooks import overkill_status_cell_quad_composite_859e
+
+    code = bytes.fromhex(
+        "55 e8 13 00 2e 83 3e bc 95 01 75 09 e8 72 cb e8 05 00 "
+        "e8 6c cb 5d c3 bd 82 96 33 ff e8 18 00 bd 8c 96 bf 01 "
+        "00 e8 0f 00 bd 96 96 bf 02 00 e8 06 00 bd a0 96 bf 03 00"
+    )
+
+    def dummy_85d5(cpu: CPU8086) -> None:
+        ss = cpu.s.ss & 0xFFFF
+        idx = cpu.mem.rw(ss, 0x0100)
+        base = 0x0120 + idx * 6
+        cpu.mem.ww(ss, base + 0, cpu.s.bp & 0xFFFF)
+        cpu.mem.ww(ss, base + 2, cpu.s.di & 0xFFFF)
+        cpu.mem.ww(ss, base + 4, cpu.s.sp & 0xFFFF)
+        cpu.mem.ww(ss, 0x0100, (idx + 1) & 0xFFFF)
+        old = cpu.s.ax & 0xFFFF
+        result = old + 0x0001
+        cpu.s.ax = result & 0xFFFF
+        cpu.set_add_flags(old, 1, result, 16)
+        cpu.s.ip = cpu.pop()
+
+    def dummy_511f(cpu: CPU8086) -> None:
+        ds = cpu.s.ds & 0xFFFF
+        old = cpu.mem.rw(ds, 0x0200)
+        result = old + 1
+        cpu.mem.ww(ds, 0x0200, result & 0xFFFF)
+        cpu.s.dx = result & 0xFFFF
+        cpu.set_add_flags(old, 1, result, 16)
+        cpu.s.ip = cpu.pop()
+
+    def make_cpu(use_hook: bool, mode: int) -> CPU8086:
+        mem = Memory()
+        mem.load(0x1010, 0x859E, code)
+        mem.ww(0x1010, 0x95BC, mode)
+        state = CPUState(
+            ax=0x1000, bx=0xBBBB, cx=0xCCCC, dx=0xDDDD,
+            si=0xEEEE, di=0xF111, bp=0x2222,
+            cs=0x1010, ds=0x2000, es=0x4000, ss=0x3000,
+            sp=0x9000, ip=0x859E, flags=0x0203,
+        )
+        cpu = CPU8086(mem, state)
+        cpu.trace_enabled = False
+        cpu.push(0xBEEF)
+        cpu.replacement_hooks[(0x1010, 0x85D5)] = dummy_85d5
+        cpu.replacement_hooks[(0x1010, 0x511F)] = dummy_511f
+        if use_hook:
+            cpu.replacement_hooks[(0x1010, 0x859E)] = overkill_status_cell_quad_composite_859e
+        return cpu
+
+    for mode in (0, 1, 2):
+        asm = make_cpu(False, mode)
+        hook = make_cpu(True, mode)
+        for _ in range(500):
+            if asm.addr() == (0x1010, 0xBEEF):
+                break
+            asm.step()
+        hook.step()
+        assert asm.addr() == hook.addr() == (0x1010, 0xBEEF)
+        assert asm.s.snapshot() == hook.s.snapshot()
+        assert bytes(asm.mem.data) == bytes(hook.mem.data)
+
+
+def test_reset_object_slot_and_status_setup_c4db_composes_existing_children():
+    from overkill.hooks import overkill_reset_object_slot_and_status_setup_c4db
+
+    code = bytes.fromhex("2e c7 06 a2 c3 14 33 b9 24 00")
+
+    def child_c4e5(cpu: CPU8086) -> None:
+        ds = cpu.s.ds & 0xFFFF
+        cpu.mem.ww(ds, 0x0100, cpu.s.cx & 0xFFFF)
+        cpu.mem.ww(ds, 0x0102, cpu.mem.rw(cpu.s.cs & 0xFFFF, 0xC3A2))
+        cpu.s.cx = 0
+        cpu.s.ip = 0xC51D
+
+    def child_c51d(cpu: CPU8086) -> None:
+        ds = cpu.s.ds & 0xFFFF
+        cpu.mem.ww(ds, 0x0104, (cpu.mem.rw(ds, 0x0104) + 1) & 0xFFFF)
+        cpu.s.ip = 0x859E
+
+    def child_859e(cpu: CPU8086) -> None:
+        ds = cpu.s.ds & 0xFFFF
+        cpu.mem.ww(ds, 0x0106, (cpu.mem.rw(ds, 0x0106) + 1) & 0xFFFF)
+        cpu.s.ip = cpu.pop()
+
+    def make_cpu(use_hook: bool) -> CPU8086:
+        mem = Memory()
+        mem.load(0x1010, 0xC4DB, code)
+        state = CPUState(
+            ax=0x1111, bx=0x2222, cx=0x3333, dx=0x4444,
+            si=0x5555, di=0x6666, bp=0x7777,
+            cs=0x1010, ds=0x2000, es=0x3000, ss=0x4000,
+            sp=0x9000, ip=0xC4DB, flags=0x0203,
+        )
+        cpu = CPU8086(mem, state)
+        cpu.trace_enabled = False
+        cpu.push(0xBEEF)
+        cpu.replacement_hooks[(0x1010, 0xC4E5)] = child_c4e5
+        cpu.replacement_hooks[(0x1010, 0xC51D)] = child_c51d
+        cpu.replacement_hooks[(0x1010, 0x859E)] = child_859e
+        if use_hook:
+            cpu.replacement_hooks[(0x1010, 0xC4DB)] = overkill_reset_object_slot_and_status_setup_c4db
+        return cpu
+
+    asm = make_cpu(False)
+    hook = make_cpu(True)
+    for _ in range(40):
+        if asm.addr() == (0x1010, 0xBEEF):
+            break
+        asm.step()
+    hook.step()
+
+    assert asm.addr() == hook.addr() == (0x1010, 0xBEEF)
+    assert asm.s.snapshot() == hook.s.snapshot()
+    assert bytes(asm.mem.data) == bytes(hook.mem.data)
+
+
+def test_transition_status_wait_9908_matches_interpreted_asm_paths():
+    from overkill.hooks import overkill_transition_status_wait_9908
+
+    code = bytes.fromhex(
+        "e8 d0 2b ff 0e 58 23 80 3e 8d 97 00 74 04 ff 06 58 23 "
+        "80 3e c0 98 00 74 07 80 3e fe be 00 75 f9 80 3e c0 98 "
+        "00 74 05 c6 06 ff be 02 e9 3c fe"
+    )
+
+    def child_c4db(cpu: CPU8086) -> None:
+        ds = cpu.s.ds & 0xFFFF
+        cpu.mem.ww(ds, 0x0200, (cpu.mem.rw(ds, 0x0200) + 1) & 0xFFFF)
+        cpu.s.ax = (cpu.s.ax + 3) & 0xFFFF
+        cpu.set_add_flags((cpu.s.ax - 3) & 0xFFFF, 3, cpu.s.ax, 16)
+        cpu.s.ip = cpu.pop()
+
+    def make_cpu(use_hook: bool, *, byte_978d: int, byte_98c0: int, byte_befe: int) -> CPU8086:
+        mem = Memory()
+        mem.load(0x1010, 0x9908, code)
+        mem.wb(0x2000, 0x978D, byte_978d)
+        mem.wb(0x2000, 0x98C0, byte_98c0)
+        mem.wb(0x2000, 0xBEFE, byte_befe)
+        mem.wb(0x2000, 0xBEFF, 0)
+        mem.ww(0x2000, 0x2358, 0x0120)
+        state = CPUState(
+            ax=0x0101, bx=0x0202, cx=0x0303, dx=0x0404,
+            si=0x0505, di=0x0606, bp=0x0707,
+            cs=0x1010, ds=0x2000, es=0x3000, ss=0x4000,
+            sp=0x9000, ip=0x9908, flags=0x0203,
+        )
+        cpu = CPU8086(mem, state)
+        cpu.trace_enabled = False
+        cpu.replacement_hooks[(0x1010, 0xC4DB)] = child_c4db
+        if use_hook:
+            cpu.replacement_hooks[(0x1010, 0x9908)] = overkill_transition_status_wait_9908
+        return cpu
+
+    cases = (
+        dict(byte_978d=0, byte_98c0=0, byte_befe=0),
+        dict(byte_978d=1, byte_98c0=0, byte_befe=0),
+        dict(byte_978d=0, byte_98c0=1, byte_befe=1),
+        dict(byte_978d=0, byte_98c0=1, byte_befe=0),
+    )
+    for case in cases:
+        asm = make_cpu(False, **case)
+        hook = make_cpu(True, **case)
+        for _ in range(80):
+            if asm.addr() in ((0x1010, 0x9773), (0x1010, 0x9921)):
+                break
+            asm.step()
+        hook.step()
+        assert asm.addr() == hook.addr()
+        assert asm.s.snapshot() == hook.s.snapshot()
+        assert bytes(asm.mem.data) == bytes(hook.mem.data)
+
+
+def test_transition_input_release_tail_9928_matches_interpreted_asm_paths():
+    from overkill.hooks import overkill_transition_input_release_tail_9928
+
+    code = bytes.fromhex("80 3e c0 98 00 74 05 c6 06 ff be 02 e9 3c fe")
+
+    def make_cpu(use_hook: bool, byte_98c0: int) -> CPU8086:
+        mem = Memory()
+        mem.load(0x1010, 0x9928, code)
+        mem.wb(0x2000, 0x98C0, byte_98c0)
+        mem.wb(0x2000, 0xBEFF, 0x44)
+        state = CPUState(
+            ax=0x0101, bx=0x0202, cx=0x0303, dx=0x0404,
+            si=0x0505, di=0x0606, bp=0x0707,
+            cs=0x1010, ds=0x2000, es=0x3000, ss=0x4000,
+            sp=0x9000, ip=0x9928, flags=0x0203,
+        )
+        cpu = CPU8086(mem, state)
+        cpu.trace_enabled = False
+        if use_hook:
+            cpu.replacement_hooks[(0x1010, 0x9928)] = overkill_transition_input_release_tail_9928
+        return cpu
+
+    for byte_98c0 in (0, 1):
+        asm = make_cpu(False, byte_98c0)
+        hook = make_cpu(True, byte_98c0)
+        for _ in range(20):
+            if asm.addr() == (0x1010, 0x9773):
+                break
+            asm.step()
+        hook.step()
+        assert asm.addr() == hook.addr() == (0x1010, 0x9773)
+        assert asm.s.snapshot() == hook.s.snapshot()
+        assert bytes(asm.mem.data) == bytes(hook.mem.data)
+
+
+def test_menu_fire_release_wait_d390_matches_original_poll_gate():
+    from dos_re.cpu import CPU8086, CPUState
+    from dos_re.memory import Memory
+    from overkill.hooks import overkill_menu_fire_release_wait_d390
+
+    code = bytes.fromhex("e8 cf 2d f6 06 be 98 10 75 f6")
+
+    def make_cpu(use_hook: bool, buttons: int) -> CPU8086:
+        mem = Memory()
+        mem.load(0x1010, 0xD390, code)
+        mem.wb(0x2000, 0x98BE, 0x00)
+        cpu = CPU8086(mem, CPUState(
+            ax=0x1111, bx=0x2222, cx=0x3333, dx=0x4444,
+            si=0x5555, di=0x6666, bp=0x7777, sp=0x9000,
+            cs=0x1010, ds=0x2000, es=0x3000, ss=0x4000,
+            ip=0xD390, flags=0x0203,
+        ))
+
+        def poll(cpu2):
+            cpu2.mem.wb(cpu2.s.ds & 0xFFFF, 0x98BE, buttons)
+            cpu2.s.ip = cpu2.pop()
+
+        cpu.replacement_hooks[(0x1010, 0x0162)] = poll
+        if use_hook:
+            cpu.replacement_hooks[(0x1010, 0xD390)] = overkill_menu_fire_release_wait_d390
+        return cpu
+
+    for buttons, expected in ((0x10, (0x1010, 0xD390)), (0x00, (0x1010, 0xD39A)), (0x04, (0x1010, 0xD39A))):
+        asm = make_cpu(False, buttons)
+        hook = make_cpu(True, buttons)
+        for _ in range(8):
+            asm.step()
+            if asm.addr() == expected:
+                break
+        hook.step()
+        assert asm.addr() == hook.addr() == expected
+        assert asm.s.snapshot() == hook.s.snapshot()
+        assert asm.mem.data == hook.mem.data
+
+
+def test_selector_input_release_wait_d434_matches_original_poll_gate():
+    from dos_re.cpu import CPU8086, CPUState
+    from dos_re.memory import Memory
+    from overkill.hooks import overkill_selector_input_release_wait_d434
+
+    code = bytes.fromhex("80 3e e4 98 01 74 f9 e8 24 2d 80 3e be 98 00 75 f6")
+
+    def make_cpu(use_hook: bool, key_latch: int, buttons: int) -> CPU8086:
+        mem = Memory()
+        mem.load(0x1010, 0xD434, code)
+        mem.wb(0x2000, 0x98E4, key_latch)
+        mem.wb(0x2000, 0x98BE, 0)
+        cpu = CPU8086(mem, CPUState(
+            ax=0x1111, bx=0x2222, cx=0x3333, dx=0x4444,
+            si=0x5555, di=0x6666, bp=0x7777, sp=0x9000,
+            cs=0x1010, ds=0x2000, es=0x3000, ss=0x4000,
+            ip=0xD434, flags=0x0203,
+        ))
+
+        def poll(cpu2):
+            cpu2.mem.wb(cpu2.s.ds & 0xFFFF, 0x98BE, buttons)
+            cpu2.s.ip = cpu2.pop()
+
+        cpu.replacement_hooks[(0x1010, 0x0162)] = poll
+        if use_hook:
+            cpu.replacement_hooks[(0x1010, 0xD434)] = overkill_selector_input_release_wait_d434
+        return cpu
+
+    cases = (
+        (1, 0x00, (0x1010, 0xD434), 2),
+        (0, 0x08, (0x1010, 0xD43B), 6),
+        (0, 0x00, (0x1010, 0xD445), 6),
+    )
+    for key_latch, buttons, expected, asm_steps in cases:
+        asm = make_cpu(False, key_latch, buttons)
+        hook = make_cpu(True, key_latch, buttons)
+        for _ in range(asm_steps):
+            asm.step()
+        hook.step()
+        assert asm.addr() == hook.addr() == expected
+        assert asm.s.snapshot() == hook.s.snapshot()
+        assert asm.mem.data == hook.mem.data
+
+
+def test_object_spawn_anchor_offset_a571_matches_original():
+    from dos_re.cpu import CPU8086, CPUState
+    from dos_re.memory import Memory
+    from overkill.hooks import overkill_object_spawn_anchor_offset_a571
+
+    code = bytes.fromhex("8b 46 04 83 c0 0a 89 47 04 8b 46 02 83 c0 0a 89 47 02 c3")
+
+    def make_cpu(use_hook: bool, src_x: int, src_y: int) -> CPU8086:
+        mem = Memory()
+        mem.load(0x1010, 0xA571, code)
+        bp = 0x2800
+        bx = 0x2A00
+        mem.ww(0x4000, bp + 0x02, src_x)
+        mem.ww(0x4000, bp + 0x04, src_y)
+        cpu = CPU8086(mem, CPUState(
+            ax=0xAAAA, bx=bx, cx=0xCCCC, dx=0xDDDD,
+            si=0x1111, di=0x2222, bp=bp, sp=0x9000,
+            cs=0x1010, ds=0x2000, es=0x3000, ss=0x4000,
+            ip=0xA571, flags=0x0203,
+        ))
+        cpu.push(0xBEEF)
+        if use_hook:
+            cpu.replacement_hooks[(0x1010, 0xA571)] = overkill_object_spawn_anchor_offset_a571
+        return cpu
+
+    for src_x, src_y in ((0x0010, 0x0020), (0xFFFA, 0x8000)):
+        asm = make_cpu(False, src_x, src_y)
+        hook = make_cpu(True, src_x, src_y)
+        for _ in range(20):
+            if asm.addr() == (0x1010, 0xBEEF):
+                break
+            asm.step()
+        hook.step()
+        assert asm.addr() == hook.addr() == (0x1010, 0xBEEF)
+        assert asm.s.snapshot() == hook.s.snapshot()
+        assert asm.mem.data == hook.mem.data

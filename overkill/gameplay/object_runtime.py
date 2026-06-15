@@ -1684,6 +1684,138 @@ def _find_free_object_slot_7573(cpu) -> int:
     return 0xFFFF
 
 
+
+
+def run_object_spawn_anchor_offset_a571(cpu) -> None:
+    """Lift 1010:A571, copying a source slot center+offset into a spawned slot.
+
+    BP points at the source object/anchor slot and BX points at the destination
+    object slot.  The routine writes destination Y/X from source Y/X plus ten
+    pixels.  This is still raw slot seeding, not a semantic enemy/projectile
+    constructor.
+    """
+    ds = cpu.s.ds & 0xFFFF
+    ss = cpu.s.ss & 0xFFFF
+    mem = cpu.mem
+    bp = cpu.s.bp & 0xFFFF
+    bx = cpu.s.bx & 0xFFFF
+
+    ax = mem.rw(ss, (bp + 0x04) & 0xFFFF)
+    result = ax + 0x000A
+    ax = result & 0xFFFF
+    cpu.s.ax = ax
+    cpu.set_add_flags((result - 0x000A) & 0xFFFF, 0x000A, result, 16)
+    mem.ww(ds, (bx + 0x04) & 0xFFFF, ax)
+
+    ax = mem.rw(ss, (bp + 0x02) & 0xFFFF)
+    result = ax + 0x000A
+    ax = result & 0xFFFF
+    cpu.s.ax = ax
+    cpu.set_add_flags((result - 0x000A) & 0xFFFF, 0x000A, result, 16)
+    mem.ww(ds, (bx + 0x02) & 0xFFFF, ax)
+    cpu.s.ip = cpu.pop()
+
+
+def run_object_slot_allocate_or_reclaim_7547(cpu) -> None:
+    """Lift the hot 1010:7547 object-slot allocation gate.
+
+    The common path is a thin wrapper around 7573: allocate a free 38h-byte
+    gameplay object slot, compare BX against FFFFh, and return if a slot exists.
+    If the pool is exhausted, the original falls through to 7550 and eventually
+    jumps through BD0D to reclaim/deactivate a candidate object.  Keep that rare
+    fallback as original code for now, but make it an explicit continuation
+    instead of burning the hot allocation path as unknown ASM.
+    """
+    bx = _find_free_object_slot_7573(cpu)
+    _cmp_word(cpu, bx, 0xFFFF)
+    ss = cpu.s.ss & 0xFFFF
+    sp = cpu.s.sp & 0xFFFF
+    cpu.mem.ww(ss, (sp - 2) & 0xFFFF, 0x754A)
+    if bx != 0xFFFF:
+        cpu.s.ip = cpu.pop()
+        return
+    cpu.s.ip = 0x7550
+
+
+def run_object_spawn_seed_a4ea(cpu) -> None:
+    """Lift the common 1010:A4EA object-spawn seed template.
+
+    This routine allocates/reclaims a gameplay object slot through 7547 and then
+    seeds the common active/runtime fields.  It is still a raw object-slot seed,
+    not a semantic enemy/projectile constructor.
+    """
+    bx = _find_free_object_slot_7573(cpu)
+    _cmp_word(cpu, bx, 0xFFFF)
+    if bx == 0xFFFF:
+        # Original A4EA reached this by CALL 7547, so the rare 7550 reclaim path
+        # must eventually return to A4ED before A4EA's field writes execute.
+        cpu.push(0xA4ED)
+        cpu.s.ip = 0x7550
+        return
+
+    ss = cpu.s.ss & 0xFFFF
+    sp = cpu.s.sp & 0xFFFF
+    cpu.mem.ww(ss, (sp - 2) & 0xFFFF, 0xA4ED)
+    cpu.mem.ww(ss, (sp - 4) & 0xFFFF, 0x754A)
+
+    ds = cpu.s.ds & 0xFFFF
+    mem = cpu.mem
+    mem.ww(ds, bx, 0x0001)
+    mem.ww(ds, (bx + 0x1E) & 0xFFFF, 0x0001)
+    mem.ww(ds, (bx + 0x06) & 0xFFFF, 0x0000)
+    mem.ww(ds, (bx + 0x08) & 0xFFFF, 0x0032)
+    mem.ww(ds, (bx + 0x14) & 0xFFFF, 0x0000)
+    mem.ww(ds, (bx + 0x16) & 0xFFFF, 0x0002)
+    mem.ww(ds, (bx + 0x18) & 0xFFFF, 0x0002)
+    mem.ww(ds, (bx + 0x1C) & 0xFFFF, 0xFFFF)
+    cpu.s.ip = cpu.pop()
+
+
+def run_object_spawn_seed_from_source_a4d7(cpu) -> None:
+    """Lift 1010:A4D7: A4EA seed plus source-coordinate copy.
+
+    SI points at a two-word source coordinate pair.  The spawned object receives
+    X from [SI+2] and Y from [SI+4]+4 after the common A4EA seed.
+    """
+    bx = _find_free_object_slot_7573(cpu)
+    _cmp_word(cpu, bx, 0xFFFF)
+    if bx == 0xFFFF:
+        # Original A4D7 CALL A4EA pushes A4DA; A4EA CALL 7547 pushes A4ED.
+        # Let the rare reclaim path continue in original ASM with those call
+        # frames visible, then the original A4EA/A4D7 tails will finish.
+        cpu.push(0xA4DA)
+        cpu.push(0xA4ED)
+        cpu.s.ip = 0x7550
+        return
+
+    ss = cpu.s.ss & 0xFFFF
+    sp = cpu.s.sp & 0xFFFF
+    cpu.mem.ww(ss, (sp - 2) & 0xFFFF, 0xA4DA)
+    cpu.mem.ww(ss, (sp - 4) & 0xFFFF, 0xA4ED)
+    cpu.mem.ww(ss, (sp - 6) & 0xFFFF, 0x754A)
+
+    ds = cpu.s.ds & 0xFFFF
+    mem = cpu.mem
+    mem.ww(ds, bx, 0x0001)
+    mem.ww(ds, (bx + 0x1E) & 0xFFFF, 0x0001)
+    mem.ww(ds, (bx + 0x06) & 0xFFFF, 0x0000)
+    mem.ww(ds, (bx + 0x08) & 0xFFFF, 0x0032)
+    mem.ww(ds, (bx + 0x14) & 0xFFFF, 0x0000)
+    mem.ww(ds, (bx + 0x16) & 0xFFFF, 0x0002)
+    mem.ww(ds, (bx + 0x18) & 0xFFFF, 0x0002)
+    mem.ww(ds, (bx + 0x1C) & 0xFFFF, 0xFFFF)
+
+    si = cpu.s.si & 0xFFFF
+    cpu.s.ax = mem.rw(ds, (si + 0x02) & 0xFFFF)
+    mem.ww(ds, (bx + 0x02) & 0xFFFF, cpu.s.ax)
+    cpu.s.ax = mem.rw(ds, (si + 0x04) & 0xFFFF)
+    old_ax = cpu.s.ax
+    cpu.s.ax = (old_ax + 0x0004) & 0xFFFF
+    cpu.set_add_flags(old_ax, 0x0004, old_ax + 0x0004, 16)
+    mem.ww(ds, (bx + 0x04) & 0xFFFF, cpu.s.ax)
+    cpu.s.ip = cpu.pop()
+
+
 def _run_formation_spawn_7476_observed(cpu, *, parent: str, chain: str, cx_value: int) -> None:
     """Run observed B800 -> 7476 helper that spawns a formation child object."""
     ds = cpu.s.ds & 0xFFFF

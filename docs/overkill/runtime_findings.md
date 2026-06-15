@@ -2610,3 +2610,30 @@ These routines strengthen the emerging direction: a low-level frame-script layer
 and a raw status/list descriptor preparation layer are separating from renderer
 primitives and object logic.  The code still avoids semantic names for the
 visible screen/HUD elements until more caller/callee evidence is available.
+
+### 2026-06-14 - Raw object-spawn seeds and delayed coordinate ring
+
+`1010:7547` is the hot object-slot allocation gate seen next to the already
+verified `7573` free-slot scan.  The common path returns immediately with `BX`
+pointing at a free object slot; the rare full-pool path falls through to
+`7550/BD0D` and remains bounded original code.  The hook preserves the original
+nested `CALL 7573` stack scratch so full-memory oracle comparisons remain exact.
+
+`1010:A4EA` is a common raw object-spawn seed template layered on that allocator.
+It initializes the selected slot as active, clears selected state fields, sets
+sprite `0032h`, draw layer `0002h`, logic id `0002h`, and substate `FFFFh`.
+This is intentionally not named as a specific gameplay constructor yet.
+`1010:A4D7` composes the same seed and then copies source coordinates from
+`DS:SI+2/+4`, adding four to Y exactly as the original code does.
+
+`1010:9CD9`, `1010:9CF1`, and `1010:A031` form a small delayed coordinate-ring
+cluster around the frame/controller code.  `9CD9` stores the current object
+centre into the ring, `9CF1` advances four ring cursors with wraparound at
+`A33A -> A27A`, and `A031` pulls delayed entries into tracked object slots
+referenced by `DS:A962/A964`.  This starts to expose a frame-level tracked-object
+coordinate system, but the higher gameplay meaning of the tracked slots remains
+frontier-level evidence only.
+
+### 1010:53C9 text-entry prompt loop
+
+`1010:53C9` is the interactive DOS text-entry prompt parent.  Each hot iteration redraws the prompt label at `DS:22A9`, redraws the current 10-byte buffer at `DS:229B`, reads one key through `1010:5497`, and either appends printable ASCII into `DS:[DS:22B0]` or loops for ignored keys.  The lifted hook intentionally models one iteration only.  Backspace, Enter/pad/copy, and full-buffer bell paths still branch to original `5408`, `541E`, and `53FC` so the unusual finish tail through `51AB` remains observable before being named.
