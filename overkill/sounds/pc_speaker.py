@@ -58,10 +58,12 @@ def run_wait_timer_tick_0679(cpu) -> None:
     (1010:06E5).  Since the Python VM does not receive asynchronous hardware
     IRQs, this hook explicitly delivers the game's timer ISR at the same
     instruction boundaries used by the verifier's ASM oracle, then models the
-    tiny CMP/JZ/RET loop.  Preserving the delivery point matters: if the first
-    ISR tick does not advance CS:066B, the real foreground code reaches 067F
-    with the CMP flags set, and the next interrupt frame leaves 067F/FLAGS
-    scratch under SP.
+    tiny CMP/JZ/RET loop.  Preserving the delivery point matters: when
+    multiple ticks are needed, the asm oracle (asm_wait_handler) delivers the
+    ISR before each cpu.step() call, so the CMP at 0679 never executes between
+    retries and every stale interrupt frame has IP=0679.  Mirror that here: if
+    flag is still clear after a delivery at 0679, skip the CMP step and retry
+    delivery at 0679.
     """
     cs = cpu.s.cs & 0xFFFF
     delivered = 0
@@ -78,6 +80,11 @@ def run_wait_timer_tick_0679(cpu) -> None:
                 )
             delivered += 1
             flag = cpu.mem.rb(cs, 0x066B)
+            if flag == 0 and cpu.s.ip == 0x0679:
+                # ISR fired at 0679 but didn't advance the flag; the asm oracle
+                # would fire again at 0679 before the next CMP, so skip the CMP
+                # step and retry delivery at ip=0679.
+                continue
 
         if cpu.s.ip == 0x0679:
             _cmp_byte(cpu, flag, 0)

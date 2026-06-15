@@ -125,7 +125,12 @@ def run_postmove_contact_window_aa71(cpu) -> None:
     a8c2 = mem.rw(ds, 0xA8C2)
     _cmp_word(cpu, a8c2, 0x0001)
     if a8c2 == 0x0001:
-        raise RuntimeError("unverified original-code path reached in 1010:AA71: A8C2=0001 branch")
+        # AA71 AAAB path: A8C2=1 (boss final state) bypasses the X window check
+        # and signals contact for any object in the Y window.  BCCB already gates
+        # BFC7 away when A8C2=1, so this CF=1 only triggers the 9E69 display tail.
+        cpu.set_flag(CF, True)
+        s.ip = cpu.pop()
+        return
 
     upper = (x + 0x0018) & 0xFFFF
     s.ax = upper

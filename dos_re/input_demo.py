@@ -193,6 +193,27 @@ class InputDemoPlayback:
     def exhausted(self) -> bool:
         return self._index >= len(self.events)
 
+    @property
+    def end_boundary(self) -> int | None:
+        """Boundary at which recording stopped, if the manifest recorded one.
+
+        Older demos predate the field; callers fall back to :attr:`exhausted`.
+        """
+        raw = self.manifest.get("end_boundary")
+        return None if raw is None else max(0, int(raw))
+
+    def finished(self, boundary: int) -> bool:
+        """Whether replay has reached the end of the recorded demo.
+
+        Prefer the recorded ``end_boundary`` so trailing idle frames (recorded
+        after the last key event) still play back before stopping; fall back to
+        "all events applied" for demos that have no end boundary.
+        """
+        end = self.end_boundary
+        if end is not None:
+            return boundary >= end
+        return self.exhausted
+
     def apply_to_runtime(self, boundary: int, rt: Runtime, *, deliver: Callable[[Runtime, int], None] = deliver_scancode) -> int:
         return self.apply_to_runtimes(boundary, (rt,), deliver=deliver)
 

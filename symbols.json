@@ -905,6 +905,27 @@
     "name": "overkill_object_behavior_aed8",
     "notes": "Observed logic-id 2/3 countdown/movement object behavior. Runs AED8 through its B250/AD5A postmove branch and returns to the object scan caller; fail-fast leaves unobserved branches explicit."
   },
+  "1010:AEE4": {
+    "island": "movement",
+    "kind": "hook",
+    "name": "overkill_movement_dir_step_8px_aee4",
+    "notes": "8-direction movement step table, 8-pixel delta. Reads direction index from SS:[BP+06], doubles it, and dispatches through the CS:AEEE jump table to a handler that adds/subtracts 8 from SS:[BP+02] (X) and/or SS:[BP+04] (Y); near RET. Shares the lifted _run_aee4_step_for_direction body already used by the 5DB2 parent; this entry hook covers direct CALL AEE4 sites. Guarded by the full entry+table+handler signature.",
+    "status": "hooked_verified"
+  },
+  "1010:AF22": {
+    "island": "movement",
+    "kind": "hook",
+    "name": "overkill_movement_dir_step_3px_af22",
+    "notes": "8-direction movement step table, 3-pixel delta. Same dispatch shape as AF63/AEE4 via the CS:AF2C jump table; near RET. Shares the lifted _run_af22_three_pixel_step_for_direction body used by the 5DB2/EFAE-logic-0Ch parents; this entry hook covers direct CALL AF22 sites. Signature-guarded.",
+    "status": "hooked_verified"
+  },
+  "1010:AF63": {
+    "island": "movement",
+    "kind": "hook",
+    "name": "overkill_movement_dir_step_2px_af63",
+    "notes": "8-direction movement step table, 2-pixel delta. Reads direction index from SS:[BP+06], doubles it, dispatches through the CS:AF6E jump table to a handler adjusting SS:[BP+02]/[BP+04] by +/-2; near RET. Shares the lifted _run_af63_step_for_direction body used by the 5DB2/5E42/AF60 parents; this entry hook covers direct CALL AF63 sites (e.g. from 1010:8A1D). Signature-guarded.",
+    "status": "hooked_verified"
+  },
   "1010:AFD8": {
     "island": "collision",
     "kind": "hook",

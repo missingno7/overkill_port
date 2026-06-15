@@ -47,7 +47,12 @@ sys.path.insert(0, str(ROOT))
 
 from dos_re.interrupts import deliver_scancode
 from dos_re.keyboard import KeyDispatcher
-from overkill.verification import HookVerifierConfig, install_hook_verifier, parse_addr as parse_verify_addr
+from overkill.verification import (
+    HookVerifierConfig,
+    HookVerifyDivergence,
+    install_hook_verifier,
+    parse_addr as parse_verify_addr,
+)
 from dos_re.dos import ConsoleInputWouldBlock
 from dos_re.cpu import HaltExecution
 from overkill.runtime import create_overkill_runtime
@@ -274,6 +279,8 @@ def main(argv: list[str] | None = None) -> int:
                    help="root directory for F11 input demos")
     p.add_argument("--demo", default=None,
                    help="replay an input demo directory/json; loads its start snapshot unless --snapshot is also given")
+    p.add_argument("--demo-continue", action="store_true",
+                   help="keep running after the input demo ends instead of stopping the game when it finishes")
     p.add_argument("--no-present-sync", action="store_true",
                    help="debug only: do not wait for the viewer to consume each timer-frame snapshot")
     p.add_argument("--retrace-hz", type=float, default=None,
@@ -434,7 +441,11 @@ def main(argv: list[str] | None = None) -> int:
                     ),
                     publish_candidate=publish_candidate,
                     pump_inputs=pump_inputs,
-                    stop_requested=stop.is_set,
+                    stop_requested=lambda: stop.is_set() or (
+                        demo_playback is not None
+                        and not args.demo_continue
+                        and demo_playback.finished(frame_demo_boundary["n"])
+                    ),
                     status_callback=lambda text: status.__setitem__("text", text),
                 )
                 if result == 0:
@@ -490,6 +501,13 @@ def main(argv: list[str] | None = None) -> int:
             demo_playback.apply_to_runtimes(frame_demo_boundary["n"], (ref_rt, cand_rt))
             frame_demo_boundary["n"] += 1
 
+        def demo_finished() -> bool:
+            return (
+                demo_playback is not None
+                and not args.demo_continue
+                and demo_playback.finished(frame_demo_boundary["n"])
+            )
+
         return run_frame_verifier(
             exe=exe,
             assets=assets,
@@ -507,6 +525,7 @@ def main(argv: list[str] | None = None) -> int:
                 ega_start_address_units=args.ega_start_address_units,
             ),
             pump_inputs=pump_demo_inputs if demo_playback is not None else None,
+            stop_requested=demo_finished if demo_playback is not None else None,
         )
 
     if args.snapshot:
@@ -532,7 +551,7 @@ def main(argv: list[str] | None = None) -> int:
                 verify_all=args.verify_hooks,
                 hooks=explicit_verify_hooks,
                 max_verified=args.verify_max,
-                stop_on_diff=args.verify_stop_on_diff,
+                stop_on_diff=args.verify_stop_on_diff or args.verify_hooks or bool(explicit_verify_hooks),
                 log_diffs=args.verify_log_diffs,
                 full_memory=not args.verify_fast_ranges,
                 require_metadata=args.verify_require_metadata,
@@ -1076,6 +1095,11 @@ def main(argv: list[str] | None = None) -> int:
                 # pumping below can still release keys once the game reaches its
                 # explicit key-release loop.
                 if demo_playback is not None:
+                    if not args.demo_continue and demo_playback.finished(boundary["n"]):
+                        status["text"] = f"input demo finished at boundary={boundary['n']}"
+                        print(status["text"], flush=True)
+                        stop.set()
+                        break
                     applied = demo_playback.apply_to_runtime(boundary["n"], rt)
                     if applied:
                         status["text"] = f"input demo replay boundary={boundary['n']} events={applied}"
@@ -1187,10 +1211,22 @@ def main(argv: list[str] | None = None) -> int:
                         status["text"] = f"direct video publish @ {cs:04X}:{ip:04X}"
                     else:
                         status["text"] = f"stall (no visual/timer boundary in {used} steps) @ {cs:04X}:{ip:04X}"
+            except HookVerifyDivergence as exc:
+                cs, ip = rt.cpu.addr()
+                status["text"] = f"HOOK VERIFY DIVERGENCE @ {cs:04X}:{ip:04X} (see console)"
+                print(exc, flush=True)
+                # A divergence is a fatal verification result: stop the emulator
+                # and wake the UI so the window closes instead of hanging on a
+                # dead emulator thread.
+                stop.set()
+                frame_sync.close()
+                return
             except Exception as exc:
                 cs, ip = rt.cpu.addr()
                 status["text"] = f"CRASH @ {cs:04X}:{ip:04X} - {type(exc).__name__}: {exc}"
                 traceback.print_exc()
+                stop.set()
+                frame_sync.close()
                 return
 
     try:

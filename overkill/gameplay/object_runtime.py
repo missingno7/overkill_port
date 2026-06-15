@@ -131,6 +131,28 @@ SIG_OBJECT_DRIFT_UPRIGHT_AE7D = bytes.fromhex(
     "83 7e 04 00 75 03 e9 43 ff 83 6e 02 04 f7 46 04 0f 00"
 )
 
+# 8-direction movement step tables.  Each routine reads the direction index from
+# SS:[BP+06], doubles it, and dispatches through a CS jump table to a handler
+# that adds/subtracts a fixed delta to SS:[BP+02] (X) and/or SS:[BP+04] (Y).  The
+# three siblings differ only in their per-step delta (8px / 3px / 2px).  The full
+# routine bytes (entry stub + table + handlers) are pinned so a runtime patch of
+# either the dispatch or any handler disables the hook instead of guessing.
+SIG_MOVEMENT_DIR_STEP_8PX_AEE4 = bytes.fromhex(
+    "8b 5e 06 d1 e3 2e ff a7 ee ae 0b af 10 af 14 af fe ae 02 af 19 af 1d af 07 af "
+    "83 46 04 08 83 46 02 08 c3 83 6e 04 08 83 6e 02 08 c3 83 6e 02 08 83 46 04 08 c3 "
+    "83 46 02 08 83 6e 04 08 c3"
+)
+SIG_MOVEMENT_DIR_STEP_3PX_AF22 = bytes.fromhex(
+    "8b 5e 06 d1 e3 2e ff a7 2c af 49 af 4e af 52 af 3c af 40 af 57 af 5b af 45 af "
+    "83 46 04 03 83 46 02 03 c3 83 6e 04 03 83 6e 02 03 c3 83 6e 02 03 83 46 04 03 c3 "
+    "83 46 02 03 83 6e 04 03 c3"
+)
+SIG_MOVEMENT_DIR_STEP_2PX_AF63 = bytes.fromhex(
+    "8b 5e 06 d1 e3 2e ff a7 6e af 90 8b af 90 af 94 af 7e af 82 af 99 af 9d af 87 af "
+    "83 46 04 02 83 46 02 02 c3 83 6e 04 02 83 6e 02 02 c3 83 6e 02 02 83 46 04 02 c3 "
+    "83 46 02 02 83 6e 04 02 c3"
+)
+
 
 def _or_mem_word(cpu, seg: int, off: int, value: int) -> int:
     result = cpu.mem.rw(seg, off) | (value & 0xFFFF)
@@ -1560,11 +1582,6 @@ def _run_collision_handler_bec5_observed(cpu, *, collided_bx: int, parent: str, 
                 run_bf25_counter_chain(enter_at_bf25=True, label=f"variant {variant:04X}")
                 return
             mem.ww(ss, (bp + 0x20) & 0xFFFF, 0x0000)
-            # Existing oracle fixtures for this lifted BFB9 path record the
-            # target-Y field being cleared as part of the higher-level contact
-            # transition.  Keep that observed side effect while the surrounding
-            # object-state island is still being closed.
-            mem.ww(ss, (bp + 0x32) & 0xFFFF, 0x0000)
             run_bfc7(f"variant {variant:04X}")
             return
 
@@ -3782,6 +3799,59 @@ def _run_af60_double_step_for_direction(cpu) -> None:
     cpu.mem.ww(ss, (cpu.s.sp - 2) & 0xFFFF, 0xAF63)
     _run_af63_step_for_direction(cpu, parent="1010:AF60")
     _run_af63_step_for_direction(cpu, parent="1010:AF60")
+
+
+def run_movement_dir_step_2px_af63(cpu, self_disable_if_patched) -> None:
+    """Hook entry for 1010:AF63, the 2-pixel 8-direction movement step table.
+
+    The body is already lifted as ``_run_af63_step_for_direction`` and shared by
+    the 5DB2/5E42/AF60 parents.  This wrapper registers the same body at the
+    exact ASM entry so a *direct* ``CALL AF63`` (for example from 1010:89FF/8A1D)
+    is hook-covered instead of interpreted.  The routine is a near-return.
+    """
+    if self_disable_if_patched(
+        cpu,
+        0xAF63,
+        SIG_MOVEMENT_DIR_STEP_2PX_AF63,
+        "overkill_movement_dir_step_2px_af63",
+    ):
+        return
+    _run_af63_step_for_direction(cpu)
+    cpu.s.ip = cpu.pop()
+
+
+def run_movement_dir_step_3px_af22(cpu, self_disable_if_patched) -> None:
+    """Hook entry for 1010:AF22, the 3-pixel 8-direction movement step table.
+
+    Same dispatch shape as AF63 with a 3-pixel delta; body lifted as
+    ``_run_af22_three_pixel_step_for_direction``.  Near-return entry wrapper.
+    """
+    if self_disable_if_patched(
+        cpu,
+        0xAF22,
+        SIG_MOVEMENT_DIR_STEP_3PX_AF22,
+        "overkill_movement_dir_step_3px_af22",
+    ):
+        return
+    _run_af22_three_pixel_step_for_direction(cpu)
+    cpu.s.ip = cpu.pop()
+
+
+def run_movement_dir_step_8px_aee4(cpu, self_disable_if_patched) -> None:
+    """Hook entry for 1010:AEE4, the 8-pixel 8-direction movement step table.
+
+    Same dispatch shape as AF63 with an 8-pixel delta; body lifted as
+    ``_run_aee4_step_for_direction``.  Near-return entry wrapper.
+    """
+    if self_disable_if_patched(
+        cpu,
+        0xAEE4,
+        SIG_MOVEMENT_DIR_STEP_8PX_AEE4,
+        "overkill_movement_dir_step_8px_aee4",
+    ):
+        return
+    _run_aee4_step_for_direction(cpu)
+    cpu.s.ip = cpu.pop()
 
 
 def _run_aee4_step_for_direction(cpu) -> None:

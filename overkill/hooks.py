@@ -263,6 +263,9 @@ from .gameplay.object_runtime import (
     _run_aee4_step_for_direction,
     _run_af60_double_step_for_direction,
     _run_af63_step_for_direction,
+    run_movement_dir_step_2px_af63,
+    run_movement_dir_step_3px_af22,
+    run_movement_dir_step_8px_aee4,
     _run_collision_death_tail_bfc7,
     _run_collision_handler_bec5_observed,
     _run_deactivate_bd17_observed,
@@ -784,6 +787,24 @@ def overkill_object_y_step_up_clamp_a5f9(cpu):
 def overkill_object_y_step_down_clamp_a607(cpu):
     """Raw object Y increment helper with the original two-pass clamp idiom."""
     run_object_y_step_down_clamp_a607(cpu, _self_disable_if_patched)
+
+
+@registry.replace(0x1010, 0xAEE4, "overkill_movement_dir_step_8px_aee4")
+def overkill_movement_dir_step_8px_aee4(cpu):
+    """8-direction movement step table, 8-pixel delta (entry for direct calls)."""
+    run_movement_dir_step_8px_aee4(cpu, _self_disable_if_patched)
+
+
+@registry.replace(0x1010, 0xAF22, "overkill_movement_dir_step_3px_af22")
+def overkill_movement_dir_step_3px_af22(cpu):
+    """8-direction movement step table, 3-pixel delta (entry for direct calls)."""
+    run_movement_dir_step_3px_af22(cpu, _self_disable_if_patched)
+
+
+@registry.replace(0x1010, 0xAF63, "overkill_movement_dir_step_2px_af63")
+def overkill_movement_dir_step_2px_af63(cpu):
+    """8-direction movement step table, 2-pixel delta (entry for direct calls)."""
+    run_movement_dir_step_2px_af63(cpu, _self_disable_if_patched)
 
 
 @registry.replace(0x1010, 0xA616, "overkill_object_vertical_scroll_edge_response_a616")
@@ -4851,12 +4872,12 @@ def _run_dirty_cell_presenter_row_cc7f_once(cpu) -> None:
             flag = mem.rb(ds, 0x98C3)
             _cmp_byte(cpu, flag, 0)
             if flag == 0:
-                _call_installed_hook_like_near_call(
-                    cpu,
-                    (0x1010, 0x50C9),
-                    overkill_wait_vga_retrace_50c9,
-                    0xCD68,
+                # ip is 0xCD52 here (the CALL site in original ASM); preserve it so
+                # play.py's pacing wrapper can detect this specific call context.
+                installed_50c9 = cpu.replacement_hooks.get(
+                    (0x1010, 0x50C9), overkill_wait_vga_retrace_50c9
                 )
+                _call_hook_like_near_call(cpu, installed_50c9, 0xCD68)
                 if cpu.s.ip != 0xCD68:
                     raise RuntimeError(f"50C9 returned to unexpected IP {cpu.s.ip:04X} inside CC7F presenter")
 

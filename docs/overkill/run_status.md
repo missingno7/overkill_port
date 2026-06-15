@@ -1,3 +1,82 @@
+## 2026-06-15 - Movement direction step-table entry hooks (AEE4/AF22/AF63)
+
+Lifted the three 8-direction object movement step tables to exact entry hooks.
+Re-profiling was attempted from the recommended demo
+(`artifacts/demos/demo_play_tandy_20260615_104031`), but the pure-Python
+interpreter is far slower in this sandbox than on the reference machine, so the
+candidate was instead confirmed by direct linear disassembly of the demo memory
+image and the existing island map.
+
+Finding: `1010:AEE4`, `1010:AF22`, and `1010:AF63` are three sibling
+8-direction movement step tables with identical shape
+(`MOV BX,SS:[BP+06]; SHL BX,1; JMP CS:[table]`) dispatching to handlers that
+add/subtract a fixed per-step delta from `SS:[BP+02]` (X) and `SS:[BP+04]` (Y).
+The deltas are 8px (AEE4), 3px (AF22), and 2px (AF63).  Each body was already
+lifted and verified as a shared helper used by the 5DB2/5E42/AF60 parents
+(`_run_aee4_step_for_direction`, `_run_af22_three_pixel_step_for_direction`,
+`_run_af63_step_for_direction`), but the table *entries themselves* were not
+registered, so a direct `CALL` to any of them (for example `1010:8A1D -> AF63`)
+ran interpreted.
+
+Implemented:
+
+- `1010:AEE4 overkill_movement_dir_step_8px_aee4`
+- `1010:AF22 overkill_movement_dir_step_3px_af22`
+- `1010:AF63 overkill_movement_dir_step_2px_af63`
+  - each is a thin near-return entry wrapper that runs the already-verified
+    shared body and then `RET`;
+  - each is guarded by the full entry+table+handler byte signature, so a
+    runtime-patched dispatch/handler disables the hook (falls back to
+    interpretation) instead of silently applying the wrong lift.
+
+Classification: all three are `movement` (AEE4 added to `MOVEMENT_ADDRS`; AF22
+and AF63 were already listed as bounded movement and are now hook-covered).
+
+Verification (Python 3.10 sandbox; project targets 3.11):
+
+```text
+# focused oracle test: interpreted ASM vs hook, real game region bytes,
+# all 8 directions x 3 coordinate seeds (incl. borrow/zero edges) per table
+tests/test_overkill_hooks.py::test_movement_dir_step_tables_match_interpreted_asm_all_directions
+# PASS (72 cases)
+
+tests/test_overkill_hooks.py::test_live_verify_replacement_hooks_have_continuation_metadata
+# PASS (new hooks have near_ret continuation metadata)
+
+# regression cross-section, run via the pytest-free harness under python3.10:
+#   41/41 movement+object+collision hook tests passed
+#   111/111 every-other hook test passed
+```
+
+Honest limitations in this sandbox:
+
+- `scripts/lint.py` and the full `scripts/run_tests.py` could not be run here:
+  the repo requires Python >= 3.11 (`overkill/frontier_manifest.py` uses
+  `enum.StrEnum`) and only Python 3.10 is available in this environment.  This
+  is pre-existing and unrelated to the change; the edited modules
+  (`hooks`, `gameplay/object_runtime`, `verification`, `coverage`) import and
+  run cleanly under 3.10.
+- The live headless hook verifier
+  (`scripts/verify_hooks_headless.py --snapshot <demo>`) was started but did not
+  finish within the sandbox time budget because the interpreter throughput here
+  is ~100x slower than the reference machine.  It should be re-run on the
+  reference machine:
+  `python scripts/verify_hooks_headless.py --snapshot artifacts/demos/demo_play_tandy_20260615_104031/snapshot --verify-max 200 --max-steps 400000 --fast-ranges`.
+
+Added a small generic linear disassembler helper, `scripts/lindis.py`, that
+sweeps a CS:offset range using the project's own decoder (counting fetched code
+bytes for instruction length, so jump-table data and branches do not derail the
+sweep).  It was used to map the AEE4/AF22/AF63 family.
+
+Next candidates from the same family/profile:
+
+- `1010:AF60` self-call double-step entry (already lifted as
+  `_run_af60_double_step_for_direction`; works today via the AF63 hook, but a
+  dedicated entry hook would cover the self-call trick directly).
+- `1010:89FF-8A20` movement setup that feeds `[BP+06]` then `CALL AF63`.
+- `1010:F225-F2AE` / `1010:F263` object-behavior families that set sprite ids
+  from `DS:2356` game-state then branch through `AFD8`/`BC45`.
+
 ## 2026-06-14 - Tile/contact probe cleanup for collision-system crystallization
 
 Continued the small-target ASM cleanup with a meaning-revealing collision primitive rather than a large controller lift.

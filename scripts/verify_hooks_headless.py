@@ -16,8 +16,16 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from dos_re.input_demo import InputDemoPlayback
 from overkill.coverage import CoverageTelemetry, OverkillCoverageClassifier
-from overkill.frame_verify import NON_CGA_INTERACTIVE_DISABLE
+from overkill.frame_verify import (
+    CGA_PRESENT_HOOK,
+    EGA_PRESENT_HOOK,
+    NON_CGA_INTERACTIVE_DISABLE,
+    RETRACE_WAIT_HOOK,
+    TANDY_PRESENT_HOOK,
+    TIMER_WAIT_HOOK,
+)
 from overkill.verification import (
     HookVerifierConfig,
     HookVerifyDivergence,
@@ -25,6 +33,14 @@ from overkill.verification import (
     install_hook_verifier,
 )
 from overkill.runtime import load_overkill_snapshot
+
+
+def _present_hook_for_mode(mode: int):
+    if mode == 1:
+        return EGA_PRESENT_HOOK
+    if mode == 2:
+        return TANDY_PRESENT_HOOK
+    return CGA_PRESENT_HOOK
 
 
 def _parse_addr(text: str) -> tuple[int, int]:
@@ -48,9 +64,20 @@ def main() -> int:
     )
     parser.add_argument(
         "--snapshot",
-        required=True,
         type=Path,
-        help="snapshot directory created by scripts/play.py",
+        default=None,
+        help="snapshot directory created by scripts/play.py; defaults to the demo's start snapshot when --demo is given",
+    )
+    parser.add_argument(
+        "--demo",
+        type=Path,
+        default=None,
+        help="replay a recorded input demo (dir or input_demo.json) while verifying; loads its start snapshot unless --snapshot is also given",
+    )
+    parser.add_argument(
+        "--demo-continue",
+        action="store_true",
+        help="keep verifying after the input demo ends instead of stopping when it finishes",
     )
     parser.add_argument(
         "--exe",
@@ -112,6 +139,14 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    demo: InputDemoPlayback | None = None
+    if args.demo is not None:
+        demo = InputDemoPlayback.load(args.demo)
+        if args.snapshot is None:
+            args.snapshot = demo.snapshot_path()
+    if args.snapshot is None:
+        parser.error("--snapshot is required unless --demo is given")
+
     rt = load_overkill_snapshot(args.exe, args.snapshot, game_root=args.game_root)
 
     if args.coverage:
@@ -130,7 +165,7 @@ def main() -> int:
     for addr in args.disable_hook:
         _remove_hook(rt, addr)
 
-    install_hook_verifier(
+    verifier = install_hook_verifier(
         rt,
         HookVerifierConfig(
             verify_all=True,
@@ -142,18 +177,40 @@ def main() -> int:
         ),
     )
 
+    # Frame/timer/retrace boundaries define the demo's replay clock, exactly as
+    # in scripts/play.py and the frame verifier.  The verifier already counts
+    # each verified hook call on the live runtime (asm-oracle clones never run
+    # the verifier), so summing those counts gives a clone-safe boundary index
+    # without installing any extra wrapper hooks.
+    boundary_keys = (_present_hook_for_mode(mode), TIMER_WAIT_HOOK, RETRACE_WAIT_HOOK)
+
+    def boundary_count() -> int:
+        return sum(verifier.counts.get(key, 0) for key in boundary_keys)
+
     print(
         "hook verify start "
         f"snapshot={args.snapshot} video_mode={mode:04X} "
-        f"verify_max={args.verify_max} full_memory={not args.fast_ranges}"
+        f"verify_max={args.verify_max} full_memory={not args.fast_ranges} "
+        f"demo={args.demo if demo is not None else '<none>'}"
     )
     print(rt.cpu.s.snapshot())
 
+    demo_boundary = 0
+
     try:
+        if demo is not None:
+            demo.apply_to_runtime(demo_boundary, rt)
         for step in range(1, args.max_steps + 1):
             rt.cpu.step()
+            if demo is not None and boundary_count() > demo_boundary:
+                demo_boundary = boundary_count()
+                if not args.demo_continue and demo.finished(demo_boundary):
+                    print(f"OK input demo finished at boundary={demo_boundary} verified={verifier.total_verified}")
+                    print(rt.cpu.s.snapshot())
+                    return 0
+                demo.apply_to_runtime(demo_boundary, rt)
             if args.progress_every and step % args.progress_every == 0:
-                print(f"step {step}: {rt.cpu.s.snapshot()}")
+                print(f"step {step}: boundary={demo_boundary} {rt.cpu.s.snapshot()}")
     except HookVerifyLimitReached as exc:
         print(f"OK {exc}")
         print(rt.cpu.s.snapshot())

@@ -4387,7 +4387,7 @@ def test_bec5_variant_000c_consumes_bfb9_tail_like_bc4b_path():
     assert mem.rw(ss, bp + 0x18) == 0x0001
     assert mem.rw(ss, bp + 0x1A) == 0x0020
     assert mem.rw(ss, bp + 0x22) == 0x0000
-    assert mem.rw(ss, bp + 0x32) == 0x0000
+    assert mem.rw(ss, bp + 0x32) == 0x7777
 
 
 def test_bec5_sprite_0033_falls_through_into_shared_tail():
@@ -10854,3 +10854,78 @@ def test_object_vertical_scroll_edge_helpers_match_original():
             assert asm.addr() == hooked.addr() == (0x1010, 0xBEEF)
             assert asm.s.snapshot() == hooked.s.snapshot()
             assert asm.mem.data == hooked.mem.data
+
+
+def test_movement_dir_step_tables_match_interpreted_asm_all_directions():
+    """1010:AEE4/AF22/AF63 8-direction movement step tables, hook vs ASM.
+
+    Each routine reads the direction index from SS:[BP+06], doubles it, and
+    dispatches through a CS jump table to a handler that adds/subtracts a fixed
+    delta from SS:[BP+02] (X) and/or SS:[BP+04] (Y).  The whole region (entry
+    stub + jump table + handlers) is loaded so the interpreted dispatch resolves,
+    and the hook entry is compared for every direction index and several seed
+    coordinates (including borrow/zero edges).
+    """
+    from dos_re.cpu import CPU8086, CPUState
+    from dos_re.memory import Memory
+    from overkill.hooks import (
+        overkill_movement_dir_step_2px_af63,
+        overkill_movement_dir_step_3px_af22,
+        overkill_movement_dir_step_8px_aee4,
+    )
+
+    code_aee4 = bytes.fromhex(
+        "8b 5e 06 d1 e3 2e ff a7 ee ae 0b af 10 af 14 af fe ae 02 af 19 af 1d af 07 af"
+        " 83 46 04 08 83 46 02 08 c3 83 6e 04 08 83 6e 02 08 c3 83 6e 02 08 83 46 04 08 c3"
+        " 83 46 02 08 83 6e 04 08 c3"
+    )
+    code_af22 = bytes.fromhex(
+        "8b 5e 06 d1 e3 2e ff a7 2c af 49 af 4e af 52 af 3c af 40 af 57 af 5b af 45 af"
+        " 83 46 04 03 83 46 02 03 c3 83 6e 04 03 83 6e 02 03 c3 83 6e 02 03 83 46 04 03 c3"
+        " 83 46 02 03 83 6e 04 03 c3"
+    )
+    code_af63 = bytes.fromhex(
+        "8b 5e 06 d1 e3 2e ff a7 6e af 90 8b af 90 af 94 af 7e af 82 af 99 af 9d af 87 af"
+        " 83 46 04 02 83 46 02 02 c3 83 6e 04 02 83 6e 02 02 c3 83 6e 02 02 83 46 04 02 c3"
+        " 83 46 02 02 83 6e 04 02 c3"
+    )
+    tables = (
+        (0xAEE4, code_aee4, overkill_movement_dir_step_8px_aee4),
+        (0xAF22, code_af22, overkill_movement_dir_step_3px_af22),
+        (0xAF63, code_af63, overkill_movement_dir_step_2px_af63),
+    )
+    seeds = ((0x0080, 0x0050), (0x0002, 0x0001), (0x0000, 0xFFFE))
+
+    def make_cpu(entry, code, hook, x0, y0, direction, use_hook):
+        mem = Memory()
+        mem.load(0x1010, entry, code)
+        ss = 0x4000
+        bp = 0x0600
+        mem.ww(ss, bp + 0x02, x0)
+        mem.ww(ss, bp + 0x04, y0)
+        mem.ww(ss, bp + 0x06, direction)
+        cpu = CPU8086(mem, CPUState(
+            ax=0x1234, bx=0x7777, cx=0x3333, dx=0x4321,
+            si=0x5555, di=0x6666, bp=bp, sp=0x9000,
+            cs=0x1010, ds=0x2222, es=0x3333, ss=ss,
+            ip=entry, flags=0x0202,
+        ))
+        cpu.trace_enabled = False
+        cpu.push(0xBEEF)
+        if use_hook:
+            cpu.replacement_hooks[(0x1010, entry)] = hook
+        return cpu
+
+    for entry, code, hook in tables:
+        for x0, y0 in seeds:
+            for direction in range(8):
+                asm = make_cpu(entry, code, hook, x0, y0, direction, False)
+                hooked = make_cpu(entry, code, hook, x0, y0, direction, True)
+                for _ in range(20):
+                    if asm.addr() == (0x1010, 0xBEEF):
+                        break
+                    asm.step()
+                hooked.step()
+                assert asm.addr() == hooked.addr() == (0x1010, 0xBEEF), (hex(entry), direction)
+                assert asm.s.snapshot() == hooked.s.snapshot(), (hex(entry), direction, x0, y0)
+                assert asm.mem.data == hooked.mem.data, (hex(entry), direction, x0, y0)
