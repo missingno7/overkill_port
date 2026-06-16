@@ -380,6 +380,30 @@ Additional covered path:
   runs the lifted `5E1B` delta helper, reuses the verified runtime-patched
   `5E42` steering helper, forces sprite `0076h`, and lands on `BC4B`.
 
+### `game_state` update: status display parent and 9C01 frame child
+
+What is verified:
+- `1010:61DC overkill_status_display_parent_61dc` is now a composed raw
+  status/counter display parent.  It owns the six-counter clear, the positive
+  `DS:A95C` countdown loop through `61F7/61C7`, six `6296` status-cell draws,
+  and the optional two trailing marker-cell draws through `5A00`/`5A6C`.
+- `1010:9C01 overkill_frame_axis_condition_dispatch_9c01` is now a lifted child
+  of the still-bounded `9B2E` frame controller.  It counts the four delayed
+  coordinate-slot conditions, combines them into the original jump-table index,
+  and preserves the ret/one-pass `A60A`/`A5FC` tail behavior.
+
+What is intentionally not promoted:
+- `61DC` is still only a low-level status/display compositor, not a named HUD
+  widget.
+- `9C01` is still a frame/controller primitive, not semantic player movement or
+  enemy behavior.
+
+Still unknown / frontier:
+- The larger `9B2E-9BFA` parent remains bounded-original and should be split
+  around its already-lifted children before attempting a full parent hook.
+- `A067/A060-A06C` and `9CB6-9CBB` are now the cleaner next frame-controller
+  child frontiers.
+
 ### `game_state` update: status compositor and frame-controller count leaves
 
 What is verified:

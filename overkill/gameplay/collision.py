@@ -7,6 +7,20 @@ kept outside the generic VM and outside the hook-registration module.
 from __future__ import annotations
 
 from dos_re.cpu import CF
+from overkill.recovered.adapters.asm_flags import set_carry_and_return
+from overkill.recovered.adapters.collision_adapter import (
+    mark_tile_sweep_blocked,
+    run_player_hazard_candidate_checks_bde3,
+    run_signed_center_rect_test_8331,
+    view_contact_centers,
+)
+from overkill.recovered.adapters.object_slot_adapter import read_object_slot_record
+from overkill.recovered.views.object_slots import (
+    OBJECT_SLOT_STRIDE,
+    OBJECT_TABLE_BASE,
+    OBJECT_TABLE_COUNT,
+    ObjectSlotView,
+)
 
 SIG_PLAYER_HAZARD_OBJECT_SCAN_BDE3 = bytes.fromhex(
     "83 3f 00 74 4d 83 7f 0a 01 74 47 83 7f 14 01 75 41"
@@ -33,6 +47,20 @@ SIG_TILE_CONTACT_PROBE_4FF9 = bytes.fromhex(
 )
 
 SIG_OBJECT_SLOT_SCAN_GUARD_AC81 = bytes.fromhex("83 3e ac bd 01 75 03 e9 b9 fd b9 23 00 bb b4 23 8b 46 04 8b 7e 02")
+
+SIG_OBJECT_TILE_SWEEP_BLOCKED_B032 = bytes.fromhex("c7 06 30 a4 01 00 c3")
+
+SIG_PLAYER_HAZARD_SCAN_GUARD_BDD0 = bytes.fromhex(
+    "83 7e 0a 01 74 64 b9 23 00 bb b4 23 a1 36 a4 8b 3e 38 a4"
+)
+
+SIG_VIEW_CONTACT_RECT_TEST_8331 = bytes.fromhex(
+    "8b 36 f2 95 83 c6 10 39 76 02 7f 1e 83 ee 20 39 76 02 "
+    "7c 16 8b 36 f4 95 83 c6 10 39 76 04 7f 0a 83 ee 20 "
+    "39 76 04 7c 02 f9 c3 f8 c3"
+)
+
+SIG_COLLISION_CLC_RET_835B = bytes.fromhex("f8 c3")
 
 SIG_TILE_COLLISION_PROBE_AC28 = bytes.fromhex(
     "83 3e 7c a4 00 74 03 e9 12 fe 83 3e ac bd 01 75 03 e9 08 fe "
@@ -232,6 +260,75 @@ def run_object_deactivate_logic_dispatch_c054(cpu) -> None:
 
 
 
+
+
+def run_object_tile_sweep_blocked_b032(cpu, self_disable_if_patched) -> None:
+    """Lift 1010:B032, the shared tile-sweep blocked sentinel tail.
+
+    Directional branches in the B00D tile-response table jump here when a probe
+    finds a blocking/contact tile.  The routine only marks ``DS:A430`` and
+    returns to the original B00D caller; keep it as a raw scratch flag, not as a
+    semantic collision event.
+    """
+    if self_disable_if_patched(cpu, 0xB032, SIG_OBJECT_TILE_SWEEP_BLOCKED_B032, "overkill_object_tile_sweep_blocked_b032"):
+        return
+    mark_tile_sweep_blocked(cpu)
+    cpu.s.ip = cpu.pop()
+
+def run_collision_clc_ret_835b(cpu, self_disable_if_patched) -> None:
+    """Lift OVERKILL 1010:835B ``CLC ; RET`` view/contact miss helper."""
+    if self_disable_if_patched(cpu, 0x835B, SIG_COLLISION_CLC_RET_835B, "overkill_collision_clc_ret_835b"):
+        return
+    set_carry_and_return(cpu, False)
+
+
+def run_view_contact_rect_test_8331(cpu, self_disable_if_patched) -> None:
+    """Lift 1010:8331, the raw object-vs-view contact rectangle test.
+
+    The address-facing hook now delegates to the recovered source-layer
+    primitive.  That primitive still mutates SI/FLAGS exactly like the ASM
+    instruction sequence, while the wrapper owns the final STC/CLC RET tail.
+    """
+    if self_disable_if_patched(cpu, 0x8331, SIG_VIEW_CONTACT_RECT_TEST_8331, "overkill_view_contact_rect_test_8331"):
+        return
+
+    center_x, center_y = view_contact_centers(cpu)
+    hit = run_signed_center_rect_test_8331(
+        cpu,
+        ObjectSlotView.from_ss_bp(cpu),
+        center_x=center_x,
+        center_y=center_y,
+    )
+    set_carry_and_return(cpu, hit)
+
+def run_player_hazard_scan_guard_bdd0(cpu, self_disable_if_patched) -> None:
+    """Lift 1010:BDD0, guard/setup wrapper around the BDE3 hazard scan.
+
+    BDD0 is the parent of the already-lifted ``BDE3`` object-record scan.  It
+    gates on the current object's layer/type field at ``SS:[BP+0Ah]``, prepares
+    the scan registers from the A436/A438 probe globals, and then transfers into
+    the same BDE3 scan body.
+    """
+    if self_disable_if_patched(cpu, 0xBDD0, SIG_PLAYER_HAZARD_SCAN_GUARD_BDD0, "overkill_player_hazard_scan_guard_bdd0"):
+        return
+
+    s = cpu.s
+    mem = cpu.mem
+    ds = s.ds & 0xFFFF
+    current = ObjectSlotView.from_ss_bp(cpu)
+
+    gate = current.gate_or_layer
+    _cmp_word(cpu, gate, 0x0001)
+    if gate == 0x0001:
+        set_carry_and_return(cpu, False)
+        return
+
+    s.cx = OBJECT_TABLE_COUNT
+    s.bx = OBJECT_TABLE_BASE
+    s.ax = mem.rw(ds, 0xA436)
+    s.di = mem.rw(ds, 0xA438)
+    run_player_hazard_object_scan_bde3(cpu, lambda *_args: False)
+
 def run_object_slot_scan_guard_ac81(cpu, self_disable_if_patched) -> None:
     """Guard/setup wrapper around the shared AC97 object-slot overlap scan.
 
@@ -329,6 +426,7 @@ def run_object_slot_scan_ac97(cpu) -> None:
                                     s.si = si
                                     other = mem.rw(ds, (bx + 0x0E) & 0xFFFF)
                                     _cmp_word(cpu, si, other)
+                                    acd9_entry_flags = s.flags
                                     if si != other:
                                         # ACD9 is not always a terminal collision
                                         # continuation.  The hot gameplay path
@@ -339,6 +437,14 @@ def run_object_slot_scan_ac97(cpu) -> None:
                                         # keeps AC97 as one whole slot-scan hook
                                         # instead of bouncing through interpreted
                                         # ACD9/ACD2 glue for every rejected overlap.
+                                        #
+                                        # When the lifted hook stops at the ACD9
+                                        # continuation, however, it must look as if
+                                        # no ACD9 instruction has executed yet.
+                                        # The CPU-visible flags at that boundary
+                                        # therefore belong to the ACD0 ``CMP
+                                        # SI,[BX+0Eh]``/``JNZ ACD9`` decision, not
+                                        # to our look-ahead checks below.
                                         kind_16 = mem.rw(ds, (bx + 0x16) & 0xFFFF)
                                         _cmp_word(cpu, kind_16, 0x0005)
                                         if kind_16 == 0x0005:
@@ -346,6 +452,7 @@ def run_object_slot_scan_ac97(cpu) -> None:
                                             s.bx = bx
                                             s.cx = cx & 0xFFFF
                                             s.di = di
+                                            s.flags = acd9_entry_flags
                                             s.ip = 0xACD9
                                             return
 
@@ -366,6 +473,7 @@ def run_object_slot_scan_ac97(cpu) -> None:
                                             s.bx = bx
                                             s.cx = cx & 0xFFFF
                                             s.di = di
+                                            s.flags = acd9_entry_flags
                                             s.ip = 0xACD9
                                             return
                                         # Otherwise mirror ACD9 -> ACD2 and keep
@@ -397,87 +505,55 @@ def run_player_hazard_object_scan_bde3(cpu, self_disable_if_patched) -> None:
     in the 82h..94h range that overlap the player probe point.  On no hit it
     falls through to CLC/RET.  On a hit it jumps to 1010:5059 with the current
     object in BX, exactly like the original.
+
+    The object candidate semantics now live in the recovered pure collision
+    system; this hook remains the ASM-compatible scan/continuation shell that
+    preserves BX/CX/AX/DI/SI/FLAGS for verification.
     """
     if self_disable_if_patched(cpu, 0xBDE3, SIG_PLAYER_HAZARD_OBJECT_SCAN_BDE3, "overkill_player_hazard_object_scan_bde3"):
         return
 
     s = cpu.s
-    mem = cpu.mem
     ds = s.ds & 0xFFFF
     ss = s.ss & 0xFFFF
     bp = s.bp & 0xFFFF
     bx = s.bx & 0xFFFF
     cx = s.cx & 0xFFFF
-    ax = s.ax & 0xFFFF
-    di = s.di & 0xFFFF
+    probe_y = s.ax & 0xFFFF
+    probe_x = s.di & 0xFFFF
     if cx == 0:
         cx = 0x10000
 
+    current_view = ObjectSlotView(cpu.mem, ss, bp)
+    current_record = read_object_slot_record(current_view)
+
     while cx:
-        value = mem.rw(ds, bx)
-        _cmp_word(cpu, value, 0)
-        if value != 0:
-            value = mem.rw(ds, (bx + 0x0A) & 0xFFFF)
-            _cmp_word(cpu, value, 1)
-            if value != 1:
-                value = mem.rw(ds, (bx + 0x14) & 0xFFFF)
-                _cmp_word(cpu, value, 1)
-                if value == 1:
-                    value = mem.rw(ds, (bx + 0x16) & 0xFFFF)
-                    _cmp_word(cpu, value, 4)
-                    if value == 4:
-                        obj_id = mem.rw(ds, (bx + 0x18) & 0xFFFF)
-                        _cmp_word(cpu, obj_id, 0x0082)
-                        if obj_id >= 0x0082:
-                            _cmp_word(cpu, obj_id, 0x0094)
-                            if obj_id <= 0x0094:
-                                si0 = mem.rw(ds, (bx + 0x02) & 0xFFFF)
-                                si = (si0 + 0x0010) & 0xFFFF
-                                s.si = si
-                                cpu.set_add_flags(si0, 0x0010, si0 + 0x0010, 16)
-                                _cmp_word(cpu, di, si)
-                                if _signed16(di) < _signed16(si):
-                                    si_before = si
-                                    si = (si - 0x0020) & 0xFFFF
-                                    s.si = si
-                                    cpu.set_sub_flags(si_before, 0x0020, si_before - 0x0020, 16)
-                                    _cmp_word(cpu, di, si)
-                                    if _signed16(di) > _signed16(si):
-                                        si0 = mem.rw(ds, (bx + 0x04) & 0xFFFF)
-                                        si = (si0 + 0x0010) & 0xFFFF
-                                        s.si = si
-                                        cpu.set_add_flags(si0, 0x0010, si0 + 0x0010, 16)
-                                        _cmp_word(cpu, ax, si)
-                                        if _signed16(ax) < _signed16(si):
-                                            si_before = si
-                                            si = (si - 0x0020) & 0xFFFF
-                                            s.si = si
-                                            cpu.set_sub_flags(si_before, 0x0020, si_before - 0x0020, 16)
-                                            _cmp_word(cpu, ax, si)
-                                            if _signed16(ax) > _signed16(si):
-                                                si = mem.rw(ss, (bp + 0x0E) & 0xFFFF)
-                                                s.si = si
-                                                other = mem.rw(ds, (bx + 0x0E) & 0xFFFF)
-                                                _cmp_word(cpu, si, other)
-                                                if si != other:
-                                                    s.bx = bx
-                                                    s.cx = cx
-                                                    s.ax = ax
-                                                    s.di = di
-                                                    s.ip = 0x5059
-                                                    return
+        slot = ObjectSlotView(cpu.mem, ds, bx)
+        if run_player_hazard_candidate_checks_bde3(
+            cpu,
+            current_record=current_record,
+            slot=slot,
+            probe_x=probe_x,
+            probe_y=probe_y,
+        ):
+            s.bx = bx
+            s.cx = cx
+            s.ax = probe_y
+            s.di = probe_x
+            s.ip = 0x5059
+            return
 
         old_bx = bx
-        bx = (bx + 0x0038) & 0xFFFF
-        cpu.set_add_flags(old_bx, 0x0038, old_bx + 0x0038, 16)
+        bx = (bx + OBJECT_SLOT_STRIDE) & 0xFFFF
+        cpu.set_add_flags(old_bx, OBJECT_SLOT_STRIDE, old_bx + OBJECT_SLOT_STRIDE, 16)
         cx = (cx - 1) & 0xFFFF
         if cx == 0:
             break
 
     s.bx = bx
     s.cx = 0
-    s.ax = ax
-    s.di = di
+    s.ax = probe_y
+    s.di = probe_x
     cpu.set_flag(CF, False)
     s.ip = cpu.pop()
 

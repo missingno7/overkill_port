@@ -9,8 +9,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 import re
 import time
+import traceback
 
 from dos_re.input_demo import InputDemoPlayback
+from dos_re.repro_artifacts import write_runtime_repro_snapshot
 from dos_re.verification import Addr
 from overkill.frame_verify import (
     CGA_PRESENT_HOOK,
@@ -44,6 +46,7 @@ class HeadlessHookVerifyConfig:
     hooks: set[Addr] = field(default_factory=set)
     max_verified: int = 1000
     max_steps: int = 4_000_000
+    repro_root: Path | None = None
 
 
 def run_headless_hook_verifier(config: HeadlessHookVerifyConfig) -> int:
@@ -159,6 +162,56 @@ def run_headless_hook_verifier(config: HeadlessHookVerifyConfig) -> int:
     except HookVerifyDivergence as exc:
         print("HOOK VERIFY DIVERGENCE")
         print(exc)
+        if demo is not None and config.repro_root is not None:
+            try:
+                out = demo.write_suffix(
+                    rt,
+                    root=config.repro_root,
+                    name=f"hook_verify_divergence_{config.video}",
+                    boundary=demo_boundary,
+                    status="headless hook verifier divergence snapshot",
+                    metadata={
+                        "program": "overkill",
+                        "video": config.video,
+                        "sound": config.sound,
+                        "created_by": "headless hook verifier divergence",
+                        "verified_before_divergence": verifier.total_verified,
+                    },
+                )
+                print(f"HOOK VERIFY repro demo saved: {out}")
+            except Exception as save_exc:
+                print(f"HOOK VERIFY repro demo save failed: {type(save_exc).__name__}: {save_exc}")
+        print(rt.cpu.s.snapshot())
+        return 1
+    except Exception as exc:
+        print(f"HOOK VERIFY CRASH: {type(exc).__name__}: {exc}")
+        traceback.print_exc()
+        if config.repro_root is not None:
+            try:
+                cs, ip = rt.cpu.addr()
+                out = write_runtime_repro_snapshot(
+                    rt,
+                    root=config.repro_root,
+                    name=f"hook_verify_crash_{config.video}_{type(exc).__name__}",
+                    status=f"headless hook verifier crash at {cs:04X}:{ip:04X}: {type(exc).__name__}: {exc}",
+                    metadata={
+                        "program": "overkill",
+                        "video": config.video,
+                        "sound": config.sound,
+                        "created_by": "headless hook verifier crash handler",
+                        "exception_type": type(exc).__name__,
+                        "exception": str(exc),
+                        "traceback_tail": "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))[-20000:],
+                        "verified_before_crash": verifier.total_verified,
+                        "demo_boundary": demo_boundary,
+                        "source_snapshot": str(snapshot) if snapshot is not None else None,
+                        "source_demo": str(config.demo) if config.demo is not None else None,
+                        "replay_hint": "python scripts/play.py --snapshot <this-directory>",
+                    },
+                )
+                print(f"HOOK VERIFY crash repro snapshot saved: {out}")
+            except Exception as save_exc:
+                print(f"HOOK VERIFY crash repro snapshot save failed: {type(save_exc).__name__}: {save_exc}")
         print(rt.cpu.s.snapshot())
         return 1
 

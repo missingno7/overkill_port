@@ -346,6 +346,157 @@ def _run_decrement_first_active_counter_scan(cpu) -> None:
 
 
 
+SIG_STATUS_DISPLAY_PARENT_61DC = bytes.fromhex(
+    "55 2e 8e 06 96 95 bf 68 23 b9 06 00 b8 04 00 f3 ab "
+    "8b 0e 5c a9 e3 09 0b c9 78 05 e8 cd ff e2 fb b4 40 "
+    "b0 1f e8 fd f7 2e 8e 1e b4 95 36 8b 36 68 23 e8 86 "
+    "00 36 8b 36 6a 23 e8 7e 00 36 8b 36 6c 23 e8 76 00 "
+    "36 8b 36 6e 23 e8 6e 00 36 8b 36 70 23 e8 66 00 36 "
+    "8b 36 72 23 e8 5e 00 2e 8e 1e 96 95 a1 5a a9 3b 06 "
+    "74 23 74 4e b0 1f b4 0c e8 b3 f7 be 00 00 83 3e 5a "
+    "a9 ff 74 04 8b 36 5a a9 83 c6 20 d1 e6 81 c6 e4 0b "
+    "2e 8b 34 2e 8e 1e b4 95 e8 fd f7 2e 8e 1e 96 95 b0 "
+    "21 b4 18 e8 85 f7 be 1e 00 d1 e6 81 c6 e4 0b 2e 8b "
+    "34 2e 8e 1e b4 95 e8 dd f7 2e 8e 1e 96 95 5d c3"
+)
+
+
+def _rep_stosw_preserve_flags(cpu, count: int) -> None:
+    """Execute REP STOSW for the small status-parent clear block.
+
+    The 8086 instruction does not modify FLAGS.  Keep this local instead of
+    promoting a generic helper until another lifted routine needs word stores.
+    """
+    count &= 0xFFFF
+    if count == 0:
+        cpu.s.cx = 0
+        return
+    delta = -2 if cpu.get_flag(0x0400) else 2
+    value = cpu.s.ax & 0xFFFF
+    for _ in range(count):
+        cpu.mem.ww(cpu.s.es & 0xFFFF, cpu.s.di & 0xFFFF, value)
+        cpu.s.di = (cpu.s.di + delta) & 0xFFFF
+    cpu.s.cx = 0
+
+
+def run_status_display_parent_61dc(
+    cpu,
+    self_disable_if_patched,
+    call_xy_to_di,
+    call_status_counter_cell_blit,
+    call_menu_cell_source_blit,
+) -> None:
+    """Lift 1010:61DC, the raw status/counter display parent.
+
+    This parent clears the six status counter words at ``SS:2368..2372``, runs
+    the already-lifted ``61C7`` countdown scan while ``DS:A95C`` is positive,
+    draws those six cells through ``6296``, and optionally draws two trailing
+    marker cells based on ``DS:A95A``.  It remains a low-level display/status
+    compositor: no semantic HUD widget names are introduced here.
+    """
+    if self_disable_if_patched(
+        cpu,
+        0x61DC,
+        SIG_STATUS_DISPLAY_PARENT_61DC,
+        "overkill_status_display_parent_61dc",
+    ):
+        return
+
+    s = cpu.s
+    mem = cpu.mem
+    cs = s.cs & 0xFFFF
+    ds = s.ds & 0xFFFF
+    ss = s.ss & 0xFFFF
+
+    cpu.push(s.bp & 0xFFFF)
+
+    s.es = mem.rw(cs, 0x9596)
+    s.di = 0x2368
+    s.cx = 0x0006
+    s.ax = 0x0004
+    _rep_stosw_preserve_flags(cpu, 6)
+
+    s.cx = mem.rw(ds, 0xA95C)
+    if s.cx != 0:
+        cpu.set_logic_flags(s.cx & 0xFFFF, 16)
+        if (s.cx & 0x8000) == 0:
+            run_decrement_first_active_counter_loop_61f7(cpu, self_disable_if_patched)
+            if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (cs, 0x61FC):
+                raise RuntimeError(
+                    f"61DC expected 61F7 loop to finish at 61FC, got "
+                    f"{s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X}"
+                )
+    else:
+        # JCXZ does not affect FLAGS; keep the incoming status flags.
+        pass
+
+    s.ax = (0x40 << 8) | 0x1F
+    call_xy_to_di(0x6203)
+    if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (cs, 0x6203):
+        raise RuntimeError(f"61DC expected 5A00 return 6203, got {s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X}")
+
+    s.ds = mem.rw(cs, 0x95B4)
+    for offset, return_ip in (
+        (0x2368, 0x6210),
+        (0x236A, 0x6218),
+        (0x236C, 0x6220),
+        (0x236E, 0x6228),
+        (0x2370, 0x6230),
+        (0x2372, 0x6238),
+    ):
+        s.si = mem.rw(ss, offset)
+        call_status_counter_cell_blit(return_ip)
+        if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (cs, return_ip):
+            raise RuntimeError(
+                f"61DC expected 6296 return {return_ip:04X}, got "
+                f"{s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X}"
+            )
+
+    s.ds = mem.rw(cs, 0x9596)
+    ds = s.ds & 0xFFFF
+    s.ax = mem.rw(ds, 0xA95A)
+    _cmp_word(cpu, s.ax & 0xFFFF, mem.rw(ds, 0x2374))
+    if (s.ax & 0xFFFF) != mem.rw(ds, 0x2374):
+        s.ax = (0x0C << 8) | 0x1F
+        call_xy_to_di(0x624D)
+        if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (cs, 0x624D):
+            raise RuntimeError(f"61DC expected 5A00 return 624D, got {s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X}")
+
+        s.si = 0x0000
+        _cmp_word(cpu, mem.rw(ds, 0xA95A), 0xFFFF)
+        if mem.rw(ds, 0xA95A) != 0xFFFF:
+            s.si = mem.rw(ds, 0xA95A)
+        _add_reg16(cpu, 6, 0x0020)
+        s.si = cpu.shift(4, s.si & 0xFFFF, 1, 16)
+        _add_reg16(cpu, 6, 0x0BE4)
+        s.si = mem.rw(cs, s.si & 0xFFFF)
+        s.ds = mem.rw(cs, 0x95B4)
+        call_menu_cell_source_blit(0x626F)
+        if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (cs, 0x626F):
+            raise RuntimeError(f"61DC expected first 5A6C return 626F, got {s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X}")
+
+        s.ds = mem.rw(cs, 0x9596)
+        ds = s.ds & 0xFFFF
+        s.ax = (0x18 << 8) | 0x21
+        call_xy_to_di(0x627B)
+        if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (cs, 0x627B):
+            raise RuntimeError(f"61DC expected 5A00 return 627B, got {s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X}")
+
+        s.si = 0x001E
+        s.si = cpu.shift(4, s.si & 0xFFFF, 1, 16)
+        _add_reg16(cpu, 6, 0x0BE4)
+        s.si = mem.rw(cs, s.si & 0xFFFF)
+        s.ds = mem.rw(cs, 0x95B4)
+        call_menu_cell_source_blit(0x628F)
+        if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (cs, 0x628F):
+            raise RuntimeError(f"61DC expected second 5A6C return 628F, got {s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X}")
+
+        s.ds = mem.rw(cs, 0x9596)
+
+    s.bp = cpu.pop()
+    s.ip = cpu.pop()
+
+
 SIG_STATUS_COUNTER_CELL_BLIT_6296 = bytes.fromhex(
     "83 c6 19 d1 e6 81 c6 e4 0b 2e 8b 34 57 e8 c6 f7 5f e9 94 fe"
 )
@@ -627,6 +778,155 @@ SIG_STATUS_COORD_LIST_FILL_99CD = bytes.fromhex(
 
 SIG_FRAME_AXIS_COUNT_INC_AH_9BFB = bytes.fromhex("fe c4 c3")
 SIG_FRAME_AXIS_COUNT_INC_AL_9BFE = bytes.fromhex("fe c0 c3")
+
+SIG_FRAME_AXIS_CONDITION_DISPATCH_9C01 = bytes.fromhex(
+    "c7 06 60 a3 00 00 f6 06 be 98 02 75 10 80 3e 9e a3 "
+    "01 75 09 e8 ef 09 c7 06 60 a3 01 00 f6 06 be 98 01 "
+    "75 10 80 3e 9f a3 01 75 09 e8 ca 09 c7 06 60 a3 01 "
+    "00 33 c0 83 3e 66 a9 ff 74 03 e8 ba ff 83 3e 68 a9 "
+    "ff 74 03 e8 b3 ff 83 3e 6a a9 ff 74 03 e8 a6 ff 83 "
+    "3e 6c a9 ff 74 03 e8 9f ff 8a d8 32 ff 02 dc 02 dc "
+    "02 dc d1 e3 2e ff a7 70 9c af 44 9c 9c ad 9c 82 9c "
+    "af 44 9c 9c 93 9c 82 9c af 44 83 3e 24 23 01 75 01 "
+    "c3 c7 06 60 a3 01 00 e9 77 09 c7 06 60 a3 01 00 e9 "
+    "6e 09 83 3e 24 23 01 75 01 c3 c7 06 60 a3 01 00 e9 "
+    "4f 09 c7 06 60 a3 01 00 e9 46 09"
+)
+
+
+def _run_object_y_step_down_one_pass_a60a(cpu) -> None:
+    ss = cpu.s.ss & 0xFFFF
+    bp = cpu.s.bp & 0xFFFF
+    value = cpu.mem.rw(ss, (bp + 0x04) & 0xFFFF)
+    _cmp_word(cpu, value, 0x00B0)
+    if value < 0x00B0:
+        _inc_mem_word_preserve_cf(cpu, ss, (bp + 0x04) & 0xFFFF)
+    cpu.s.ip = cpu.pop()
+
+
+def _run_object_y_step_up_one_pass_a5fc(cpu) -> None:
+    ss = cpu.s.ss & 0xFFFF
+    bp = cpu.s.bp & 0xFFFF
+    value = cpu.mem.rw(ss, (bp + 0x04) & 0xFFFF)
+    _cmp_word(cpu, value, 0x0000)
+    if value != 0:
+        _dec_mem_word_preserve_cf(cpu, ss, (bp + 0x04) & 0xFFFF)
+    cpu.s.ip = cpu.pop()
+
+
+def _add_bl_ah(cpu) -> None:
+    old = cpu.s.bx & 0x00FF
+    addend = (cpu.s.ax >> 8) & 0x00FF
+    result = old + addend
+    cpu.s.bx = (cpu.s.bx & 0xFF00) | (result & 0x00FF)
+    cpu.set_add_flags(old, addend, result, 8)
+
+
+def run_frame_axis_condition_dispatch_9c01(
+    cpu,
+    self_disable_if_patched,
+    call_y_step_down,
+    call_y_step_up,
+) -> None:
+    """Lift the 1010:9C01 axis-condition counter and jump-table dispatch.
+
+    This child of the larger ``9B2E`` frame controller combines current input
+    bits, four delayed coordinate slots, and a small jump table.  It is still a
+    runtime frame/controller primitive, not semantic movement intent.
+    """
+    if self_disable_if_patched(
+        cpu,
+        0x9C01,
+        SIG_FRAME_AXIS_CONDITION_DISPATCH_9C01,
+        "overkill_frame_axis_condition_dispatch_9c01",
+    ):
+        return
+
+    s = cpu.s
+    mem = cpu.mem
+    cs = s.cs & 0xFFFF
+    ds = s.ds & 0xFFFF
+
+    mem.ww(ds, 0xA360, 0x0000)
+
+    input_flags = mem.rb(ds, 0x98BE)
+    cpu.set_logic_flags(input_flags & 0x02, 8)
+    if (input_flags & 0x02) == 0:
+        marker = mem.rb(ds, 0xA39E)
+        _cmp_byte(cpu, marker, 0x01)
+        if marker == 0x01:
+            call_y_step_down(0x9C18)
+            if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (cs, 0x9C18):
+                raise RuntimeError(f"9C01 expected A607 return 9C18, got {s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X}")
+            mem.ww(ds, 0xA360, 0x0001)
+
+    input_flags = mem.rb(ds, 0x98BE)
+    cpu.set_logic_flags(input_flags & 0x01, 8)
+    if (input_flags & 0x01) == 0:
+        marker = mem.rb(ds, 0xA39F)
+        _cmp_byte(cpu, marker, 0x01)
+        if marker == 0x01:
+            call_y_step_up(0x9C2F)
+            if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (cs, 0x9C2F):
+                raise RuntimeError(f"9C01 expected A5F9 return 9C2F, got {s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X}")
+            mem.ww(ds, 0xA360, 0x0001)
+
+    s.ax = 0x0000
+    cpu.set_logic_flags(0, 16)
+
+    for off, return_ip, which in (
+        (0xA966, 0x9C41, "ah"),
+        (0xA968, 0x9C4B, "al"),
+        (0xA96A, 0x9C55, "ah"),
+        (0xA96C, 0x9C5F, "al"),
+    ):
+        value = mem.rw(ds, off)
+        _cmp_word(cpu, value, 0xFFFF)
+        if value != 0xFFFF:
+            if which == "ah":
+                cpu.push(return_ip)
+                run_frame_axis_count_inc_ah_9bfb(cpu, self_disable_if_patched)
+            else:
+                cpu.push(return_ip)
+                run_frame_axis_count_inc_al_9bfe(cpu, self_disable_if_patched)
+            if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (cs, return_ip):
+                raise RuntimeError(f"9C01 expected {which.upper()} counter return {return_ip:04X}, got {s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X}")
+
+    s.bx = (s.bx & 0xFF00) | (s.ax & 0x00FF)
+    s.bx &= 0x00FF
+    cpu.set_logic_flags(0, 8)  # XOR BH,BH
+    _add_bl_ah(cpu)
+    _add_bl_ah(cpu)
+    _add_bl_ah(cpu)
+    s.bx = cpu.shift(4, s.bx & 0xFFFF, 1, 16)
+
+    target = mem.rw(cs, (0x9C70 + (s.bx & 0xFFFF)) & 0xFFFF)
+    if target == 0x44AF:
+        s.ip = cpu.pop()
+        return
+    if target in (0x9C82, 0x9C9C):
+        current = mem.rw(ds, 0x2324)
+        _cmp_word(cpu, current, 0x0001)
+        if current == 0x0001:
+            s.ip = cpu.pop()
+            return
+        mem.ww(ds, 0xA360, 0x0001)
+        if target == 0x9C82:
+            _run_object_y_step_down_one_pass_a60a(cpu)
+        else:
+            _run_object_y_step_up_one_pass_a5fc(cpu)
+        return
+    if target == 0x9C93:
+        mem.ww(ds, 0xA360, 0x0001)
+        _run_object_y_step_down_one_pass_a60a(cpu)
+        return
+    if target == 0x9CAD:
+        mem.ww(ds, 0xA360, 0x0001)
+        _run_object_y_step_up_one_pass_a5fc(cpu)
+        return
+    raise RuntimeError(f"unverified 9C01 jump-table target {target:04X}")
+
+
 
 SIG_FRAME_TRACKED_COORD_STORE_9CD9 = (
     bytes.fromhex("2e 8e 06 96 95 8b 3e 3a a3 8b 46 02 83 c0 08 ab 8b 46 04 83 c0 08 ab c3"),

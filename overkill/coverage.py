@@ -210,7 +210,7 @@ class OverkillCoverageClassifier:
         (0x1F8F, 0x093D), (0x1F8F, 0x0941), (0x1F8F, 0x0946), (0x1F8F, 0x0948),
         (0x1F8F, 0x094B), (0x1F8F, 0x094E), (0x1F8F, 0x0952), (0x1F8F, 0x0957),
         (0x1F8F, 0x0959), (0x1F8F, 0x095C), (0x1F8F, 0x095F),
-        (0x1010, 0x61C7), (0x1010, 0x61CA), (0x1010, 0x61CD), (0x1010, 0x61F7), (0x1010, 0x61FA),
+        (0x1010, 0x61C7), (0x1010, 0x61CA), (0x1010, 0x61CD), (0x1010, 0x61DC), (0x1010, 0x61F7), (0x1010, 0x61FA),
         (0x1010, 0x613E), (0x1010, 0x6143), (0x1010, 0x6145), (0x1010, 0x6150), (0x1010, 0x6154), (0x1010, 0x6156),
         (0x1010, 0x6120), (0x1010, 0x6122), (0x1010, 0x6125), (0x1010, 0x612A), (0x1010, 0x612D), (0x1010, 0x6130), (0x1010, 0x6133), (0x1010, 0x6136), (0x1010, 0x6138), (0x1010, 0x613D),
         (0x1010, 0x615A), (0x1010, 0x615F), (0x1010, 0x6161), (0x1010, 0x616C), (0x1010, 0x6170), (0x1010, 0x6172),
@@ -223,7 +223,7 @@ class OverkillCoverageClassifier:
         (0x1010, 0x85D5), (0x1010, 0x85EF), (0x1010, 0x861B), (0x1010, 0x8625), (0x1010, 0x8629),
         (0x1010, 0x863A), (0x1010, 0x863E), (0x1010, 0x864B), (0x1010, 0x864E),
         (0x1010, 0x99CD), (0x1010, 0x99D0), (0x1010, 0x99D3), (0x1010, 0x99D4), (0x1010, 0x99D7), (0x1010, 0x99DA), (0x1010, 0x99DB),
-        (0x1010, 0x9BFB), (0x1010, 0x9BFE),
+        (0x1010, 0x9BFB), (0x1010, 0x9BFE), (0x1010, 0x9C01),
         (0x1010, 0x9CD9), (0x1010, 0x9CF1),
         (0x1010, 0xA031),
         (0x1010, 0xD318), (0x1010, 0xD31B), (0x1010, 0xD31E), (0x1010, 0xD321),
@@ -344,7 +344,9 @@ class OverkillCoverageClassifier:
         (0x1010, 0x5063), (0x1010, 0x5066), (0x1010, 0x5068),
         (0x1010, 0x506A), (0x1010, 0x506C), (0x1010, 0x506E),
         (0x1010, 0x506F), (0x1010, 0x5073),
+        (0x1010, 0x8331), (0x1010, 0x835B),
         (0x1010, 0x9E69), (0x1010, 0xAA44), (0x1010, 0x9E98), (0x1010, 0xAC28), (0x1010, 0xAC81), (0x1010, 0xBCCB),
+        (0x1010, 0xB032),
         (0x1010, 0xACD2), (0x1010, 0xACD5), (0x1010, 0xACD7), (0x1010, 0xACD8),
         (0x1010, 0xACD9), (0x1010, 0xACDD), (0x1010, 0xACDF), (0x1010, 0xACE3),
         (0x1010, 0xACE5), (0x1010, 0xACE8), (0x1010, 0xACEC), (0x1010, 0xACEE),
@@ -388,6 +390,63 @@ class OverkillCoverageClassifier:
         (0x1010, 0xECF2), (0x1010, 0xED7A), (0x1010, 0xED97),
         (0x1010, 0xEDE9),
     }
+
+    # Ranges are used only after the exact-address sets above.  They classify
+    # already-triaged bounded-original frontiers and routine interiors so the
+    # coverage dashboard does not collapse known work into the undifferentiated
+    # ``unknown`` bucket.  They are not hook permissions and must not be used as
+    # proof that a range is fully lifted.
+    ISLAND_RANGES: tuple[tuple[int, int, int, str, str], ...] = (
+        # Large controller still intentionally bounded from 97B2.  It mixes
+        # input polling with frame/game-state child calls, and is documented as
+        # the next input-menu/frame-controller frontier.
+        (0x1010, 0x9B2E, 0x9CBB, "input_menu", "bounded 9B2E frame-controller child/contact probe wrapper"),
+        # A067 is reached from both 9B2E and D04D as a low-level frame UI/input
+        # object helper.  Keep it in game_state until it is lifted separately.
+        (0x1010, 0xA060, 0xA211, "game_state", "A067 frame UI/object helper frontier"),
+        # Observed BE3C/BEC5 collision-handler tail variants reached from the
+        # BC4B postmove chain.
+        (0x1010, 0xBE3C, 0xBEB6, "collision", "observed BEC5/BE3C collision tail"),
+        # Overlay-resident object-spawn script reached through 1F8F:0922.  It
+        # allocates/spawns runtime object slots, so it belongs with object logic
+        # rather than overlay file/decode helpers.
+        (0x1F8F, 0x027A, 0x0451, "gameplay_objects", "overlay object-spawn script"),
+        # Observed object logic waypoint/patrol helper and its far-call entry
+        # veneer.
+        (0x1010, 0x8D4F, 0x8D8D, "gameplay_objects", "object waypoint/patrol helper"),
+        # Observed object deactivation / out-of-bounds helper used by collision
+        # and postmove tails.
+        (0x1010, 0xBD17, 0xBD65, "gameplay_objects", "object deactivation tail"),
+        # Tile/contact probe continuation after the tiny AA44 CLC/RET leaf.
+        (0x1010, 0xAA44, 0xAA70, "collision", "tile/contact probe tail"),
+        # One-instruction 97B2 tail after the timer wait, visible when resuming
+        # snapshots at the last jump of the frame loop.
+        (0x1010, 0x981D, 0x981D, "game_state", "97B2 frame-loop jump tail"),
+        # Object deactivation logic selector used by BD17/BFC7.  This is a
+        # bounded-original selector family, not a renderer/status loop.
+        (0x1010, 0xC054, 0xC15B, "gameplay_objects", "object deactivate logic selector"),
+        # 61DC is now lifted as a parent hook; keep the rest of its interior
+        # classified for historical bounded traces and snapshots that stop
+        # inside the parent.  The exact hook address above wins for 61DC itself.
+        (0x1010, 0x61DD, 0x6295, "game_state", "61DC status display parent interior"),
+        # Packed decimal score helper.  Some object death/contact branches still
+        # run the original helper directly before returning into lifted tails.
+        (0x1010, 0x5F0D, 0x5F42, "game_state", "packed decimal score/status add helper"),
+        # Contact side-effect tail after the AA46 probe; may jump into BD17 or
+        # the BC45 postmove epilogue depending on the live object state.
+        (0x1010, 0xAAC2, 0xAAFB, "collision", "post-contact side-effect tail"),
+        # Rectangle/contact test helper already documented in symbols.json.
+        (0x1010, 0x8331, 0x835A, "collision", "view/contact rectangle test helper"),
+        # 9D67/9EC2 are status/effect redraw tails: they update A95A/A95C and
+        # call the 61DC status-display parent before returning to the object tail.
+        (0x1010, 0x9D67, 0x9EF2, "game_state", "status/effect redraw tail"),
+        # Rare bounded effect renderer reached by 9EE4 and 606F.  Exact helper
+        # entries still win above; the range keeps the wrapper bytes named.
+        (0x1010, 0x77DF, 0x77F5, "layer_sprites", "77DF frame-effect wrapper"),
+        # Tail-jump from the post-contact jump table back into BD17.  The bytes
+        # before AB0C are data, so keep this deliberately tiny.
+        (0x1010, 0xAB0C, 0xAB0D, "gameplay_objects", "post-contact jump-table tail"),
+    )
 
     def __init__(self, symbols_path: Path | None = None) -> None:
         self.symbol_text: dict[Addr, str] = {}
@@ -444,6 +503,11 @@ class OverkillCoverageClassifier:
             return "gameplay_objects"
         if addr in self.ASSET_CODEC_ADDRS:
             return "asset_codecs"
+
+        cs, ip = addr
+        for range_cs, start, end, island, _label in self.ISLAND_RANGES:
+            if cs == range_cs and start <= ip <= end:
+                return island
 
         text = f"{name} {self.symbol_text.get(addr, '')}"
         if self._overlay_re.search(text):
@@ -642,21 +706,20 @@ class CoverageTelemetry:
             island.unmeasured_hook_calls += 1
 
 
-    def _top_interpreted_regions(self, *, top_n: int, gap: int = 16) -> list[dict[str, Any]]:
-        """Aggregate interpreted instruction hits into nearby-address regions.
+    def _top_regions_from(self, hits_by_addr: Counter[Addr], *, top_n: int, gap: int = 16) -> list[dict[str, Any]]:
+        """Aggregate nearby CS:IP hits into routine-like regions.
 
-        ``top_interpreted`` is intentionally per-IP: it answers "which exact
-        instruction was executed most often?"  That is faithful, but it can
-        hide large remaining costs when a routine has many moderately-hot
-        instructions.  This companion view groups nearby IPs inside the same
-        segment so the dashboard points at absorbable routine tails/frontiers.
+        Per-IP counters answer "which exact instruction is hottest?".  That is
+        faithful, but it can hide the next absorbable boundary when a routine has
+        many moderately-hot instructions.  Region grouping is intentionally only
+        diagnostic; it never changes execution or hook eligibility.
         """
-        if not self.interpreted_hits:
+        if not hits_by_addr:
             return []
 
         groups: list[dict[str, Any]] = []
         current: dict[str, Any] | None = None
-        for (cs, ip), hits in sorted(self.interpreted_hits.items(), key=lambda item: (item[0][0], item[0][1])):
+        for (cs, ip), hits in sorted(hits_by_addr.items(), key=lambda item: (item[0][0], item[0][1])):
             if current is None or cs != current["cs"] or ip > int(current["last_ip"]) + gap:
                 current = {
                     "cs": cs,
@@ -705,6 +768,14 @@ class CoverageTelemetry:
         result.sort(key=lambda item: (item["hits"], item["max_hits"]), reverse=True)
         return result[:top_n]
 
+    def _top_interpreted_regions(self, *, top_n: int, gap: int = 16) -> list[dict[str, Any]]:
+        """Aggregate interpreted instruction hits into nearby-address regions."""
+        return self._top_regions_from(self.interpreted_hits, top_n=top_n, gap=gap)
+
+    def _top_bounded_regions(self, *, top_n: int, gap: int = 16) -> list[dict[str, Any]]:
+        """Aggregate bounded-original instruction hits into nearby regions."""
+        return self._top_regions_from(self.bounded_hits, top_n=top_n, gap=gap)
+
     def snapshot(self, *, top_n: int = 12) -> dict[str, Any]:
         with self._lock:
             hook_equiv = sum(h.total_equiv for h in self.hooks.values())
@@ -715,6 +786,7 @@ class CoverageTelemetry:
             interpreted = self.interpreted_hits.most_common(top_n)
             interpreted_regions = self._top_interpreted_regions(top_n=top_n)
             bounded = self.bounded_hits.most_common(top_n)
+            bounded_regions = self._top_bounded_regions(top_n=top_n)
             islands = {key: IslandCoverageStats(**vars(value)) for key, value in self.islands.items()}
             return {
                 "elapsed": elapsed,
@@ -745,6 +817,7 @@ class CoverageTelemetry:
                     {"addr": addr, "hits": hits, "island": self.classifier.classify(addr), "symbol": self.classifier.symbol_text.get(addr, "")}
                     for addr, hits in bounded
                 ],
+                "top_bounded_regions": bounded_regions,
                 "islands": islands,
             }
 
@@ -785,6 +858,23 @@ class CoverageTelemetry:
             lines.append(f"  {fmt_addr(item['addr'])} {item['hits']:10,d}  {item['island']:<16} {symbol}")
         lines += ["", "Top remaining interpreted ASM regions (nearby IPs grouped):", "  range             hits  addrs  hottest       island            symbol/category"]
         for item in snap.get("top_interpreted_regions", [])[:top_n]:
+            symbol = item["symbol"]
+            if len(symbol) > 58:
+                symbol = symbol[:55] + "..."
+            start = fmt_addr(item["start"])
+            end = f"{item['end'][1]:04X}"
+            lines.append(
+                f"  {start}-{end} {item['hits']:10,d} {item['addresses']:6,d}  "
+                f"{fmt_addr(item['max_addr'])} {item['island']:<16} {symbol}"
+            )
+        lines += ["", "Top bounded-original ASM hotspots (per instruction):", "  address       hits  island            symbol/category"]
+        for item in snap["top_bounded"][:top_n]:
+            symbol = item["symbol"]
+            if len(symbol) > 70:
+                symbol = symbol[:67] + "..."
+            lines.append(f"  {fmt_addr(item['addr'])} {item['hits']:10,d}  {item['island']:<16} {symbol}")
+        lines += ["", "Top bounded-original ASM regions (nearby IPs grouped):", "  range             hits  addrs  hottest       island            symbol/category"]
+        for item in snap.get("top_bounded_regions", [])[:top_n]:
             symbol = item["symbol"]
             if len(symbol) > 58:
                 symbol = symbol[:55] + "..."

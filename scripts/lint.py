@@ -169,6 +169,60 @@ def _collect_vendored_boundary_issues(path: pathlib.Path, tree: ast.AST) -> list
     return issues
 
 
+
+def _collect_recovered_layer_boundary_issues(path: pathlib.Path, tree: ast.AST) -> list[LintIssue]:
+    pure_roots = (ROOT / "overkill" / "recovered" / "domain", ROOT / "overkill" / "recovered" / "systems")
+    if not any(path.is_relative_to(root) for root in pure_roots):
+        return []
+    forbidden_imports = (
+        "dos_re",
+        "overkill.hooks",
+        "overkill.gameplay",
+        "overkill.recovered.adapters",
+        "overkill.recovered.views",
+    )
+    forbidden_names = {"cpu", "mem", "memory"}
+    issues: list[LintIssue] = []
+
+    for lineno, target in _collect_resolved_import_targets(path, tree):
+        if target.startswith("<relative-import-error>"):
+            continue
+        if any(target == forbidden or target.startswith(forbidden + ".") for forbidden in forbidden_imports):
+            issues.append(
+                LintIssue(
+                    kind="recovered-layer-boundary",
+                    path=path,
+                    lineno=lineno,
+                    message=f"pure recovered layer must not import {target!r}",
+                )
+            )
+
+    class Visitor(ast.NodeVisitor):
+        def visit_arg(self, node: ast.arg) -> None:
+            if node.arg in forbidden_names:
+                issues.append(
+                    LintIssue(
+                        kind="recovered-layer-boundary",
+                        path=path,
+                        lineno=node.lineno,
+                        message=f"pure recovered layer argument {node.arg!r} looks VM-bound",
+                    )
+                )
+
+        def visit_Name(self, node: ast.Name) -> None:
+            if node.id in forbidden_names:
+                issues.append(
+                    LintIssue(
+                        kind="recovered-layer-boundary",
+                        path=path,
+                        lineno=node.lineno,
+                        message=f"pure recovered layer name {node.id!r} looks VM-bound",
+                    )
+                )
+
+    Visitor().visit(tree)
+    return issues
+
 def _collect_hardcoded_workspace_path_issues(path: pathlib.Path, source: str) -> list[LintIssue]:
     if not path.is_relative_to(SCRIPTS_ROOT):
         return []
@@ -235,6 +289,7 @@ def _lint_file(path: pathlib.Path, internal_roots: set[str]) -> list[LintIssue]:
     issues.extend(_collect_local_imports_issues(path, tree))
     issues.extend(_collect_package_boundary_issues(path, tree))
     issues.extend(_collect_vendored_boundary_issues(path, tree))
+    issues.extend(_collect_recovered_layer_boundary_issues(path, tree))
     issues.extend(_collect_hardcoded_workspace_path_issues(path, source))
 
     for lineno, target in _collect_resolved_import_targets(path, tree):

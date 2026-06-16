@@ -152,6 +152,23 @@ The workflow climbs the pyramid by crystallization, not by guessing. A new
 high-level name is earned when multiple verified lower-level facts point to the
 same concept.
 
+
+## Current concrete recovered split
+
+The abstract methodology above is currently implemented through
+`overkill/recovered/`:
+
+```text
+views/       DOS-memory overlays; may know offsets and segments
+adapters/    CPU/memory projection and ASM flag/register glue
+domain/      pure copied source-like records
+systems/     pure gameplay/system functions
+```
+
+For the detailed refactoring plan, promotion checklist, and anti-duplication
+rules, see `docs/overkill/semantic_crystallization_plan.md`.  For the current
+ObjectSlot/collision seed, see `docs/overkill/recovered_source_layer.md`.
+
 ## Layer Ownership And Dependency Direction
 
 Every new function should have a clear layer. If a function mixes three layers,

@@ -436,6 +436,13 @@
     "notes": "Hot inner countdown scan body. Starting from caller-provided DI, scans DS:2368..2372 word counters, decrements the first non-zero counter, and returns when all are zero.",
     "status": "replaced"
   },
+  "1010:61DC": {
+    "island": "game_state",
+    "kind": "hook",
+    "name": "overkill_status_display_parent_61dc",
+    "notes": "Raw status/counter display parent. Clears six SS:2368..2372 status words, runs the 61F7/61C7 countdown scan while DS:A95C is positive, draws six counter cells through 6296, then optionally draws two trailing marker cells through 5A00/5A6C. Kept below semantic HUD naming.",
+    "status": "hooked_verified"
+  },
   "1010:61F7": {
     "island": "game_state",
     "name": "overkill_decrement_first_active_counter_loop_61f7",
@@ -490,10 +497,18 @@
     "status": "replaced"
   },
   "1010:8331": {
+    "island": "collision",
     "kind": "helper",
     "name": "view_contact_rect_test_8331",
-    "notes": "Shared rectangle-test tail used by AA46. Tests SS:BP object X/Y against DS:95F2/95F4 +/- 16. Clears carry on any out-of-window exit; sets carry at 8359 when inside the rectangle.",
-    "status": "understood"
+    "notes": "Shared rectangle-test tail. Tests SS:BP object X/Y against DS:95F2/95F4 +/- 16 and returns with carry set only when both axes are inside the rectangle; otherwise clears carry.",
+    "status": "replaced"
+  },
+  "1010:835B": {
+    "island": "collision",
+    "kind": "helper",
+    "name": "collision_clc_ret_835b",
+    "notes": "Tiny CLC/RET collision/view miss tail used by the 8331 rectangle test and nearby object scripts.",
+    "status": "replaced"
   },
   "1010:8517": {
     "island": "game_state",
@@ -609,6 +624,13 @@
     "kind": "hook",
     "name": "overkill_frame_axis_count_inc_al_9bfe",
     "notes": "Tiny 9C01 frame-controller child: INC AL; RET. Counts one observed axis/side condition before the 9C6B jump-table dispatch.",
+    "status": "hooked_verified"
+  },
+  "1010:9C01": {
+    "island": "game_state",
+    "kind": "hook",
+    "name": "overkill_frame_axis_condition_dispatch_9c01",
+    "notes": "Frame-controller axis-condition counter and jump-table child of 9B2E. Combines input bits, A39E/A39F edge markers, A966/A968/A96A/A96C delayed coordinate slots, and a small jump table to ret or one-pass Y-step tails A60A/A5FC. Kept as runtime frame/controller logic, not semantic movement intent.",
     "status": "hooked_verified"
   },
   "1010:9CD9": {
@@ -940,6 +962,13 @@
     "notes": "Shared object tile-sweep probe wrapper. Snapshots object coordinates into A430 scratch globals, biases X by scroll offset DS:A278, delegates the direction-specific B00D tile response, restores X, and returns flags from CMP DS:A430,0. Raw collision/movement primitive; concrete object role unclassified.",
     "status": "hooked_verified"
   },
+  "1010:B032": {
+    "island": "collision",
+    "kind": "helper",
+    "name": "object_tile_sweep_blocked_b032",
+    "notes": "Shared B00D tile-sweep blocked sentinel: writes DS:A430=1 and returns to the B00D caller. Raw scratch flag, not a semantic collision event.",
+    "status": "replaced"
+  },
   "1010:B24D": {
     "island": "gameplay_objects",
     "name": "object_behavior_b24d",
@@ -984,6 +1013,13 @@
     "name": "object_deactivate_out_of_bounds_observed",
     "notes": "Observed out-of-bounds deactivation tail from BC4B. The current draw_layer=5, logic_id=0000h branch simply clears the active flag and returns to the caller without touching A47E; the draw_layer-4 branch now also carries the nested C054 dispatcher and the A83Eh/A82Ah selector tail that writes A482/A842, seeds the 7420 linked-effect spawn helper, and decrements DS:A47E before unwinding through BD5F.",
     "status": "partial helper"
+  },
+  "1010:BDD0": {
+    "island": "collision",
+    "kind": "helper",
+    "name": "player_hazard_scan_guard_bdd0",
+    "notes": "Guard/setup parent for the BDE3 player/hazard object scan. If SS:[BP+0Ah] == 1 it returns CLC immediately; otherwise it initializes CX=23h, BX=23B4h, AX=DS:A436, DI=DS:A438 and transfers into the BDE3 scan body.",
+    "status": "replaced"
   },
   "1010:BEC5": {
     "kind": "helper",

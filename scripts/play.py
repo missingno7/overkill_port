@@ -58,6 +58,7 @@ from dos_re.cpu import HaltExecution
 from overkill.runtime import create_overkill_runtime
 from overkill.runtime import load_overkill_snapshot
 from dos_re.snapshot import write_snapshot
+from dos_re.repro_artifacts import write_runtime_repro_snapshot
 from dos_re.memory import EGA_APERTURE, EGA_SHADOW_SIZE
 from overkill.coverage import (
     CoverageDashboardTk,
@@ -291,6 +292,10 @@ def main(argv: list[str] | None = None) -> int:
                         help="root directory for F12 runtime snapshots")
     viewer.add_argument("--save-demo-root", default=str(ROOT / "artifacts" / "demos"),
                         help="root directory for F11 input demos")
+    viewer.add_argument("--save-repro-root", default=str(ROOT / "artifacts" / "repros"),
+                        help="root directory for F11 demo suffixes, verifier divergence repro demos, and crash snapshots")
+    viewer.add_argument("--no-crash-snapshot", action="store_true",
+                        help="do not save a repro snapshot under --save-repro-root when gameplay crashes")
 
     verify = p.add_argument_group("verification")
     verify.add_argument("--verify-hooks", action="store_true",
@@ -362,6 +367,7 @@ def main(argv: list[str] | None = None) -> int:
                 hooks=explicit_verify_hooks,
                 max_verified=args.verify_max if args.verify_max is not None else 1000,
                 max_steps=args.verify_step_budget,
+                repro_root=Path(args.save_repro_root),
             )
         )
 
@@ -1056,6 +1062,42 @@ def main(argv: list[str] | None = None) -> int:
         deliver_scancode(rt, sc)
         demo_recorder.record_scan(boundary=boundary["n"], scancode=sc)
 
+    def save_runtime_crash_snapshot(exc: BaseException, *, context: str) -> Path | None:
+        if args.no_crash_snapshot:
+            return None
+        cs, ip = rt.cpu.addr()
+        exc_text = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))[-20000:]
+        try:
+            return write_runtime_repro_snapshot(
+                rt,
+                root=Path(args.save_repro_root),
+                name=f"crash_{args.video}_{type(exc).__name__}",
+                status=f"{context} crash at {cs:04X}:{ip:04X}: {type(exc).__name__}: {exc}",
+                metadata={
+                    "program": "overkill",
+                    "video": args.video,
+                    "sound": args.sound,
+                    "command_tail": command_tail.decode("latin1") if isinstance(command_tail, bytes) else str(command_tail),
+                    "created_by": "scripts/play.py crash handler",
+                    "context": context,
+                    "exception_type": type(exc).__name__,
+                    "exception": str(exc),
+                    "traceback_tail": exc_text,
+                    "boundary": boundary["n"],
+                    "visible": visible["n"],
+                    "blits": blits["n"],
+                    "timers": timers["n"],
+                    "retraces": retraces["n"],
+                    "direct_video": direct_video["n"],
+                    "source_snapshot": str(args.snapshot) if args.snapshot else None,
+                    "source_demo": str(args.demo) if args.demo else None,
+                    "replay_hint": "python scripts/play.py --snapshot <this-directory>",
+                },
+            )
+        except Exception as save_exc:
+            print(f"crash repro snapshot save failed: {type(save_exc).__name__}: {save_exc}", flush=True)
+            return None
+
     keyboard = KeyDispatcher(deliver_live_scancode)
     stop = threading.Event()
     snapshot_requests: SimpleQueue[Path] = SimpleQueue()
@@ -1073,11 +1115,11 @@ def main(argv: list[str] | None = None) -> int:
         status["text"] = f"snapshot queued: {out}"
 
     def queue_demo_toggle() -> None:
-        if demo_playback is not None:
-            status["text"] = "F11 recording disabled while replaying --demo"
-            return
         demo_toggle_requests.put(None)
-        status["text"] = "input demo toggle queued"
+        if demo_playback is not None:
+            status["text"] = "demo suffix save queued"
+        else:
+            status["text"] = "input demo toggle queued"
 
     def handle_demo_toggles() -> None:
         toggled = False
@@ -1089,7 +1131,23 @@ def main(argv: list[str] | None = None) -> int:
             toggled = True
         if not toggled:
             return
-        if demo_recorder.active:
+        if demo_playback is not None:
+            out = demo_playback.write_suffix(
+                rt,
+                root=Path(args.save_repro_root),
+                name=f"suffix_play_{args.video}",
+                boundary=boundary["n"],
+                status="interactive F11 demo suffix snapshot",
+                metadata={
+                    "program": "overkill",
+                    "video": args.video,
+                    "sound": args.sound,
+                    "command_tail": command_tail.decode("latin1") if isinstance(command_tail, bytes) else str(command_tail),
+                    "created_by": "scripts/play.py F11 while replaying --demo",
+                },
+            )
+            status["text"] = f"demo suffix saved: {out}"
+        elif demo_recorder.active:
             out = demo_recorder.stop(boundary=boundary["n"])
             status["text"] = f"input demo saved: {out}"
         else:
@@ -1280,6 +1338,26 @@ def main(argv: list[str] | None = None) -> int:
                 cs, ip = rt.cpu.addr()
                 status["text"] = f"HOOK VERIFY DIVERGENCE @ {cs:04X}:{ip:04X} (see console)"
                 print(exc, flush=True)
+                if demo_playback is not None:
+                    try:
+                        out = demo_playback.write_suffix(
+                            rt,
+                            root=Path(args.save_repro_root),
+                            name=f"divergence_{args.video}",
+                            boundary=boundary["n"],
+                            status=f"hook verifier divergence snapshot at {cs:04X}:{ip:04X}",
+                            metadata={
+                                "program": "overkill",
+                                "video": args.video,
+                                "sound": args.sound,
+                                "command_tail": command_tail.decode("latin1") if isinstance(command_tail, bytes) else str(command_tail),
+                                "created_by": "scripts/play.py --verify-preview divergence",
+                                "divergence_at": f"{cs:04X}:{ip:04X}",
+                            },
+                        )
+                        print(f"HOOK VERIFY repro demo saved: {out}", flush=True)
+                    except Exception as save_exc:
+                        print(f"HOOK VERIFY repro demo save failed: {type(save_exc).__name__}: {save_exc}", flush=True)
                 # A divergence is a fatal verification result: stop the emulator
                 # and wake the UI so the window closes instead of hanging on a
                 # dead emulator thread.
@@ -1290,6 +1368,10 @@ def main(argv: list[str] | None = None) -> int:
                 cs, ip = rt.cpu.addr()
                 status["text"] = f"CRASH @ {cs:04X}:{ip:04X} - {type(exc).__name__}: {exc}"
                 traceback.print_exc()
+                out = save_runtime_crash_snapshot(exc, context="interactive gameplay")
+                if out is not None:
+                    print(f"CRASH repro snapshot saved: {out}", flush=True)
+                    status["text"] = f"CRASH repro snapshot saved: {out}"
                 stop.set()
                 frame_sync.close()
                 return

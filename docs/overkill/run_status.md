@@ -1,3 +1,175 @@
+## 2026-06-16 - Status parent and 9C01 child absorption
+
+Continued from the bounded-original frontier triage by converting two named
+frontiers into verifier-visible hooks instead of only classifying their bytes.
+The work stayed in the verified lifted-routine layer: no semantic HUD or
+movement model was introduced.
+
+Implemented:
+
+- `1010:61DC overkill_status_display_parent_61dc`:
+  - clears the six `SS:2368..2372` status/counter words with a local
+    `REP STOSW` mirror;
+  - runs the existing `61F7/61C7` countdown scan while `DS:A95C` is positive;
+  - draws the six counter cells through the existing `6296` child;
+  - optionally draws the two trailing marker cells through `5A00`/`5A6C`;
+  - preserves the original near-call/dispatch stack shape for all child calls.
+- `1010:9C01 overkill_frame_axis_condition_dispatch_9c01`:
+  - lifts the child frontier inside the larger bounded `9B2E` frame controller;
+  - combines the `DS:98BE` input bits, `A39E/A39F` edge markers, and the
+    `A966/A968/A96A/A96C` delayed coordinate-slot counters;
+  - preserves the small jump-table dispatch to direct `RET`, `9C82/9C9C`
+    guarded tails, and one-pass `A60A`/`A5FC` Y-step bodies.
+- Updated hook metadata, `symbols.json`, frontier classification, and coverage
+  ownership so `61DC` and `9C01` are no longer only bounded-original frontiers.
+- Updated older leaf tests for `61C7`, `61F7`, and `6296` to explicitly expose
+  those child boundaries now that `61DC` absorbs them by default.
+
+Validation:
+
+```text
+python scripts/run_tests.py tests/test_overkill_hooks.py --name '*61dc*' --timeout 80 --fail-fast --no-lint --verbose
+# 1 passed
+
+python scripts/run_tests.py tests/test_overkill_hooks.py --name '*9c01*' --timeout 80 --fail-fast --no-lint --verbose
+# 1 passed
+
+python scripts/run_tests.py tests/test_overkill_hooks.py --name '*97b2*' --timeout 100 --fail-fast --no-lint --verbose
+# 1 passed
+
+python scripts/run_tests.py tests/test_overkill_hooks.py --name '*61c7*' --timeout 80 --fail-fast --no-lint --verbose
+# 1 passed
+
+python scripts/run_tests.py tests/test_overkill_hooks.py --name '*61f7*' --timeout 80 --fail-fast --no-lint --verbose
+# 1 passed
+
+python scripts/run_tests.py tests/test_overkill_hooks.py --name '*6296*' --timeout 100 --fail-fast --no-lint --verbose
+# 1 passed
+
+python -m pytest tests/test_core.py::test_coverage_classifier_marks_known_bounded_frontier_ranges -q
+# 1 passed
+
+python scripts/audit_hook_oracle.py
+# Hook-oracle audit passed: 316 registered hooks, 316 metadata entries,
+# no direct registered child calls detected.
+
+python scripts/audit_islands.py --all-hooks
+# unknown island hooks: 0
+
+python scripts/lint.py
+# Lint passed for 81 Python files
+
+python scripts/run_tests.py --no-lint --scope dos-re --timeout 20
+# 7 passed, 0 failed, 0 timed out
+```
+
+A 100-step coverage probe from `artifacts/evidence/hook_verify_tandy_20260613_190326`
+now reports:
+
+```text
+ASM interpreted instructions: 1
+Bounded original ASM instructions: 5,436
+Unknown / unmeasured hook calls: 1
+unknown bounded count 0
+unknown interpreted count 0
+```
+
+The remaining bounded-original hotspot is now more concentrated around the parent
+`1010:9B2E-9BFA` frame controller, with `9C01` removed from that frontier.  The
+next useful absorption targets are `A067`/`A060-A06C`, `9CB6-9CBB`, and the
+collision tails (`BE3C`, `AAC2`, `8331`) that are still visible as bounded
+regions.
+
+## 2026-06-16 - Bounded-original coverage frontier triage
+
+Continued the unknown-instruction cleanup from the uploaded `overkill_port(23)`
+snapshot.  The important distinction in this pass is that no gameplay behavior
+was replaced: the changes are diagnostic/classification work that makes the
+remaining bounded-original ASM visible by semantic island instead of hiding it in
+`unknown`.
+
+Implemented:
+
+- Added grouped bounded-original regions to `CoverageTelemetry.format_summary()`.
+  The dashboard now reports both per-instruction and nearby-region views for
+  `BOUNDED_ORIGINAL`, matching the existing interpreted-ASM region view.  This
+  makes parent wrappers such as `9B2E` and rare child tails easier to absorb
+  safely because the next frontier is shown as a range, not only as scattered
+  IPs.
+- Added conservative classifier ranges for already-triaged bounded frontiers:
+  - `1010:9B2E-9CBB` input/menu frame-controller child and contact-probe wrapper;
+  - `1010:A060-A211` game-state/UI object helper reached from `A067`;
+  - `1010:BE3C-BEB6`, `1010:AAC2-AAFB`, `1010:8331-835A`, and
+    `1010:AA44-AA70` collision/contact tails;
+  - `1010:BD17-BD65`, `1010:C054-C15B`, `1010:8D4F-8D8D`, and
+    `1F8F:027A-0451` gameplay-object tails/scripts;
+  - `1010:61DC-6295` rare status-display parent reached from object/status
+    tails;
+  - `1010:5F0D-5F42`, `1010:9D67-9EF2`, and `1010:981D` status/frame-state
+    tails;
+  - `1010:77DF-77F5` bounded layer/effect wrapper;
+  - the tiny `1010:AB0C-AB0D` jump-table tail back into `BD17`.
+- Added focused coverage tests proving the new bounded-original region report and
+  the known frontier range ownership.  Exact address classifications still win
+  before these broad diagnostic ranges, so existing hook/island ownership is not
+  weakened.
+
+Validation:
+
+```text
+python -m pytest \
+  tests/test_core.py::test_coverage_telemetry_counts_interpreted_and_verified_hooks \
+  tests/test_core.py::test_coverage_summary_reports_grouped_interpreted_regions \
+  tests/test_core.py::test_coverage_summary_reports_grouped_bounded_original_regions \
+  tests/test_core.py::test_coverage_classifier_marks_transient_bootstrap_segment \
+  tests/test_core.py::test_coverage_classifier_marks_known_bounded_frontier_ranges \
+  tests/test_core.py::test_all_registered_overkill_hooks_have_non_unknown_island_classification -q
+# 6 passed in 0.93s
+
+python scripts/audit_hook_oracle.py
+# Hook-oracle audit passed: 314 registered hooks, 314 metadata entries,
+# no direct registered child calls detected.
+
+python scripts/audit_islands.py --all-hooks
+# unknown island hooks: 0
+
+python scripts/lint.py
+# Lint passed for 81 Python files
+
+python scripts/run_tests.py --no-lint --scope dos-re --timeout 20
+# 7 passed, 0 failed, 0 timed out
+```
+
+A 100-step probe from `artifacts/evidence/hook_verify_tandy_20260613_190326`
+with coverage telemetry attached now reports:
+
+```text
+ASM interpreted instructions: 1
+Bounded original ASM instructions: 5,492
+Unknown / unmeasured hook calls: 0
+unknown bounded count 0
+unknown interpreted count 0
+```
+
+The one remaining interpreted instruction in that probe is `1010:981D`, now
+classified as `game_state`; it is the final frame-loop jump tail after `97B2`,
+not a new unknown island.
+
+I also tried the full `scripts/run_tests.py --no-lint --scope all --timeout 20
+--fail-fast` runner in this sandbox, but it did not complete before the sandbox
+command timeout.  The focused coverage tests, hook-oracle audit, island audit,
+lint, and DOS-RE smoke scope all passed.
+
+Next absorption targets are now cleaner:
+
+- lift or further wrap the `1010:9B2E` bounded frame-controller child instead of
+  chasing scattered unknown IPs;
+- decide whether `1010:61DC` should be lifted as a full status-display parent or
+  split into its display/data-table children;
+- add missing oracle tests for already-registered but no-test hooks in the open
+  `layer_sprites`, `movement`, `collision`, `input_menu`, and `sound` islands;
+- only then convert more bounded-original leaves into real hooks.
+
 ## 2026-06-15 - Deep hook-oracle blind-spot cleanup: CALL and JMP child boundaries
 
 Continued the verifier-hardening pass after the AA71 false-contact bug.  The
@@ -4507,3 +4679,474 @@ collision / tile sweep
 ```
 
 No semantic level/camera/enemy names are claimed yet; these are still ASM-shaped roles verified against the DOS oracle.
+
+### 2026-06-16 demo suffix repro tooling and AC81 flag fix
+
+Follow-up from a long `--demo ... --verify-hooks --verify-preview --sound adlib`
+run that eventually diverged at `1010:AC81 overkill_object_slot_scan_guard_ac81`
+(call 177).  The reported continuation was correct (`1010:ACD9`), but the hook
+left `FLAGS=0246` while the ASM oracle had `FLAGS=0206`.
+
+Root cause: the lifted `AC81/AC97` object-slot scan does useful look-ahead when
+an overlap candidate reaches the original `ACD9` continuation.  For type-4/type-5
+candidate slots the hook correctly stopped at `ACD9`, but it leaked flags from
+the look-ahead `CMP [BX+16h],4/5` checks.  The real CPU has not executed any
+`ACD9` instruction at that boundary yet; the visible flags must still be from
+the `ACD0 CMP SI,[BX+0Eh]` / `JNZ ACD9` decision.  The hook now snapshots those
+entry flags and restores them before returning to `ACD9`.
+
+Added reusable long-demo reduction tooling in `dos_re.input_demo`:
+
+- `InputDemoPlayback.remaining_events_from_cursor(boundary=...)` returns only
+  not-yet-applied events, rebased to a new boundary-zero snapshot.
+- `InputDemoPlayback.write_suffix(...)` writes a new demo directory containing a
+  current runtime snapshot plus the remaining input stream.
+- This deliberately uses the playback cursor, not `event.boundary > boundary`,
+  so same-boundary key-up/key-down events are not duplicated or dropped.
+
+`scripts/play.py` integration:
+
+- `--save-repro-root` controls where suffix/repro demos are written; default is
+  `artifacts/repros`.
+- While replaying `--demo`, `F11` now saves a suffix demo from the current point
+  instead of being disabled.
+- If interactive `--verify-hooks --verify-preview` diverges while replaying a
+  demo, `play.py` automatically writes a suffix demo under `--save-repro-root`.
+- The headless hook verifier path also writes a suffix demo on divergence when a
+  demo is active.
+
+Validation:
+
+```text
+python -m pytest tests/test_input_demo.py tests/test_overkill_hooks.py::test_ac81_slot_scan_guard_acd9_continuation_preserves_entry_cmp_flags -q
+# 6 passed
+
+python scripts/run_tests.py tests/test_overkill_hooks.py --name '*ac81*' --timeout 20
+# 1 passed, 0 failed, 0 timed out
+
+python scripts/audit_hook_oracle.py
+# Hook-oracle audit passed: 316 registered hooks, 316 metadata entries, no direct registered child calls detected.
+
+python scripts/lint.py
+# Lint passed for 81 Python files
+
+python scripts/run_tests.py --no-lint --scope dos-re --timeout 20
+# 7 passed, 0 failed, 0 timed out
+```
+
+A full `python scripts/run_tests.py --no-lint --timeout 20` attempt was started
+but hit the sandbox command timeout before producing a final suite summary, so
+only the focused validations above are claimed.
+
+### 2026-06-16 BC45 / 62F6 logic-26 pre-scan exemption fix
+
+A suffix repro generated by the new long-demo tooling reproduced a strict verifier
+mismatch after only a few BC45 calls:
+
+```text
+python scripts/play.py --demo artifacts/repros/demo_divergence_tandy_20260616_130609 \
+  --verify-hook 1010:BC45 --sound adlib --verify-max 10
+# previous failure: BX asm=03C4 hook=32CC, FLAGS asm=0246 hook=0206
+```
+
+The hook reached the right continuation (`1010:AA04`) but the lifted `62F6`
+overlap scan incorrectly treated logic-id `0026h` as an empty-scan sentinel.
+The original path is:
+
+```text
+1010:6323  cmp ss:[bp+18],0026h
+1010:6327  jnz 632C
+1010:6329  jmp 741F
+1010:741F  ret
+```
+
+So when `[BP+18] == 0026h`, the routine returns immediately through `741F`,
+preserving caller `BX` and the zero flags from the `CMP`.  It does **not** run
+the `741C ADD BX,0038` sentinel tail.  `_run_object_overlap_scan_62f6` now treats
+`0026h` as a pre-scan exemption like the inactive/low-X/zero-layer/logic 0/1
+paths.
+
+Regression coverage added:
+
+- `test_object_overlap_scan_62f6_preserves_bx_and_flags_on_logic_26_exemption`
+- existing signed-X early-exit preservation test kept as a nearby guard
+
+Validation:
+
+```text
+python -m pytest tests/test_input_demo.py \
+  tests/test_overkill_hooks.py::test_object_overlap_scan_62f6_preserves_bx_and_flags_on_logic_26_exemption \
+  tests/test_overkill_hooks.py::test_object_overlap_scan_62f6_preserves_bx_and_flags_on_signed_x_early_exit -q
+# 7 passed
+
+python scripts/play.py --demo artifacts/repros/demo_divergence_tandy_20260616_130609 \
+  --verify-hook 1010:BC45 --sound adlib --verify-step-budget 400000 --verify-max 10
+# OK HOOK VERIFY LIMIT REACHED verified=10
+
+python scripts/play.py --demo artifacts/repros/demo_divergence_tandy_20260616_130609 \
+  --verify-hooks --sound adlib --verify-step-budget 600000 --verify-max 2000
+# OK HOOK VERIFY LIMIT REACHED verified=2000
+
+python scripts/audit_hook_oracle.py
+# Hook-oracle audit passed: 316 registered hooks, 316 metadata entries, no direct registered child calls detected.
+
+python scripts/audit_islands.py --all-hooks
+# unclassified unknown hooks: 0
+
+python scripts/lint.py
+# Lint passed for 81 Python files
+
+python scripts/run_tests.py --no-lint --scope dos-re --timeout 20
+# 7 passed, 0 failed, 0 timed out
+```
+
+### 2026-06-16 crash repro snapshots for normal play
+
+Normal interactive crashes are now captured as loadable repro snapshots under
+`artifacts/repros` by default.  This covers the case where gameplay reaches an
+exception or explicit fail-fast/unverified path without a recording demo.  The
+snapshot directory can be passed directly back to the player:
+
+```text
+python scripts/play.py --snapshot artifacts/repros/crash_<...> --video tandy --sound adlib
+```
+
+Implementation notes:
+
+- new generic helper: `dos_re.repro_artifacts.write_runtime_repro_snapshot`
+- interactive `scripts/play.py` exception handler now writes a timestamped
+  `crash_<video>_<ExceptionType>_YYYYMMDD_HHMMSS/` directory under
+  `--save-repro-root`
+- each crash artifact contains the normal snapshot files plus `repro.json` with
+  crash context, current boundary counters, source demo/snapshot if any, and a
+  traceback tail
+- `--no-crash-snapshot` disables this behavior when intentionally fuzzing or
+  running a noisy path
+- headless hook verification also writes a crash snapshot on unexpected runtime
+  exceptions; hook divergences still prefer demo suffixes when a source demo is
+  available
+
+Validation:
+
+```text
+python -m pytest tests/test_repro_artifacts.py tests/test_input_demo.py -q
+# 7 passed
+
+python scripts/audit_hook_oracle.py
+# Hook-oracle audit passed: 316 registered hooks, 316 metadata entries, no direct registered child calls detected.
+
+python scripts/audit_islands.py --all-hooks
+# unclassified unknown hooks: 0
+
+python scripts/lint.py
+# Lint passed for 82 Python files
+
+python scripts/run_tests.py --no-lint --scope dos-re --timeout 20
+# 7 passed, 0 failed, 0 timed out
+```
+
+### 2026-06-16 collision/tile-contact micro-frontier absorption
+
+Continued absorbing gameplay/collision logic from the latest long-demo coverage
+frontier instead of spending time on the AdLib interpreted regions.  Three small
+raw collision/tile helpers are now verified hooks:
+
+- `1010:B032 overkill_object_tile_sweep_blocked_b032` — shared B00D tile-sweep
+  blocked sentinel; writes `DS:A430=1` and returns to the B00D caller.
+- `1010:BDD0 overkill_player_hazard_scan_guard_bdd0` — guard/setup parent for
+  the existing `BDE3` player/hazard object scan; early `SS:[BP+0Ah] == 1` exits
+  through `CLC; RET`, otherwise initializes the BDE3 scan registers from
+  `DS:A436/A438`.
+- `1010:8331 overkill_view_contact_rect_test_8331` plus tiny `1010:835B` — raw
+  object-vs-view rectangle test using prepared `DS:95F2/95F4` centers and
+  returning carry set only for in-window contact.
+
+These are deliberately still low-level scratch/register helpers.  No semantic
+player/enemy model was introduced.
+
+Validation:
+
+```text
+python -m pytest \
+  tests/test_overkill_hooks.py::test_object_tile_sweep_blocked_b032_matches_interpreted_asm \
+  tests/test_overkill_hooks.py::test_view_contact_rect_test_8331_matches_interpreted_asm_inside_and_miss \
+  tests/test_overkill_hooks.py::test_player_hazard_scan_guard_bdd0_matches_interpreted_asm_gate_and_empty_scan -q
+# 3 passed
+
+python scripts/run_tests.py tests/test_overkill_hooks.py --name '*b032*' --timeout 20 --no-lint
+# 1 passed, 0 failed, 0 timed out
+
+python scripts/run_tests.py tests/test_overkill_hooks.py --name '*8331*' --timeout 20 --no-lint
+# 1 passed, 0 failed, 0 timed out
+
+python scripts/run_tests.py tests/test_overkill_hooks.py --name '*bdd0*' --timeout 20 --no-lint
+# 1 passed, 0 failed, 0 timed out
+
+SDL_VIDEODRIVER=dummy python scripts/play.py \
+  --demo artifacts/demos/demo_play_tandy_20260615_235831 \
+  --verify-hooks --sound adlib --verify-max 5000 --verify-step-budget 600000
+# OK HOOK VERIFY LIMIT REACHED verified=5000
+
+python scripts/audit_hook_oracle.py
+# Hook-oracle audit passed: 320 registered hooks, 320 metadata entries, no direct registered child calls detected.
+
+python scripts/audit_islands.py --all-hooks
+# unclassified unknown hooks: 0
+
+python scripts/lint.py
+# Lint passed for 82 Python files
+
+python scripts/run_tests.py --no-lint --scope dos-re --timeout 20
+# 7 passed, 0 failed, 0 timed out
+```
+
+Next gameplay-heavy frontiers after this patch are still the larger directional
+B00D table (`B039/B07A/B0CC/B10F` families), object script region
+`1010:81F4-83E9`, and the map/object stream builders around `1010:7948` and
+`1010:4A65`.
+
+### 2026-06-16 recovered source-layer seed
+
+Started the first conservative semantic crystallisation layer under
+`overkill/recovered/`.  This is deliberately not a new engine model; it is a
+source-like layer over the original DOS memory image and verified CPU side
+effects.
+
+Added:
+
+- `overkill/recovered/object_slots.py`
+  - `ObjectSlotView` typed memory overlay for the observed object record.
+  - Object table constants: `DS:23B4`, `0x23` records, stride `0x38`.
+  - Conservative field names for repeatedly observed offsets: active word,
+    X/Y words, gate/layer, link key, scan flag, hazard class, logic id.
+- `overkill/recovered/coords.py`
+  - small 16-bit signed/unsigned and exact CMP/SI ADD/SUB helpers.
+- `overkill/recovered/collision_primitives.py`
+  - recovered `8331` signed center-rectangle primitive.
+  - recovered `B032` tile-sweep blocked scratch flag primitive.
+  - common carry-and-return tail helper for `STC/CLC ; RET` style collision
+    leaves.
+
+Wired existing collision hooks through the recovered layer where the evidence is
+already strong:
+
+- `1010:8331 overkill_view_contact_rect_test_8331`
+- `1010:BDD0 overkill_player_hazard_scan_guard_bdd0`
+- `1010:BDE3 overkill_player_hazard_object_scan_bde3`
+- `1010:B032 overkill_object_tile_sweep_blocked_b032`
+- `1010:835B overkill_collision_clc_ret_835b`
+
+Validation:
+
+```text
+python -m pytest tests/test_recovered_semantics.py \
+  tests/test_overkill_hooks.py::test_view_contact_rect_test_8331_matches_interpreted_asm_inside_and_miss \
+  tests/test_overkill_hooks.py::test_player_hazard_scan_guard_bdd0_matches_interpreted_asm_gate_and_empty_scan \
+  tests/test_overkill_hooks.py::test_object_tile_sweep_blocked_b032_matches_interpreted_asm -q
+# 7 passed
+
+python scripts/audit_hook_oracle.py
+# Hook-oracle audit passed: 320 registered hooks, 320 metadata entries, no direct registered child calls detected.
+
+python scripts/audit_islands.py --all-hooks
+# unclassified unknown hooks: 0
+
+python scripts/lint.py
+# Lint passed for 86 Python files
+
+python scripts/run_tests.py --no-lint --scope dos-re --timeout 20
+# 7 passed, 0 failed, 0 timed out
+
+SDL_VIDEODRIVER=dummy python scripts/play.py \
+  --demo artifacts/demos/demo_play_tandy_20260615_235831 \
+  --verify-hooks --sound adlib --verify-max 5000 --verify-step-budget 600000
+# OK HOOK VERIFY LIMIT REACHED verified=5000
+```
+
+A full `python scripts/run_tests.py --no-lint --timeout 20` command was started,
+but the sandbox command timeout fired before a final summary, so this entry only
+claims the focused validations above.
+
+## 2026-06-16 - recovered source split-layer seed
+
+Started preparing the recovered source layer for a future native source-port path
+instead of only a nicer emulator path.
+
+Added the explicit recovered-layer split:
+
+```text
+overkill/recovered/views/       DOS-memory overlays
+overkill/recovered/adapters/    CPU/memory projection and ASM flag glue
+overkill/recovered/domain/      pure copied source-like records
+overkill/recovered/systems/     pure gameplay/system functions
+```
+
+The first portable system is now
+`overkill.recovered.systems.collision.view_contact_rect_test`, the pure form of
+`1010:8331`.  The hook path still uses the adapter to preserve exact `SI` and
+FLAGS, but the adapter also validates that the pure system agrees with the
+ASM-compatible compare sequence.
+
+Added `ObjectSlotRecord` beside `ObjectSlotView`: the view remains the original
+memory overlay; the record is the first CPU/memory-free representation that a
+future source port could reuse.
+
+Added boundary enforcement:
+
+```text
+python scripts/audit_recovered_layers.py
+```
+
+and wired the same pure-layer boundary check into `scripts/lint.py`, so modules
+under `overkill.recovered.domain` and `overkill.recovered.systems` cannot import
+`dos_re`, views, adapters, hooks, or gameplay code, and cannot introduce obvious
+`cpu`/`mem`/`memory` references.
+
+Validation:
+
+```text
+python -m pytest tests/test_recovered_semantics.py \
+  tests/test_overkill_hooks.py::test_view_contact_rect_test_8331_matches_interpreted_asm_inside_and_miss \
+  tests/test_overkill_hooks.py::test_player_hazard_scan_guard_bdd0_matches_interpreted_asm_gate_and_empty_scan \
+  tests/test_overkill_hooks.py::test_object_tile_sweep_blocked_b032_matches_interpreted_asm -q
+# 9 passed
+
+python scripts/audit_recovered_layers.py
+# Recovered layer audit passed for 6 pure files
+
+python scripts/audit_hook_oracle.py
+# 320 registered hooks, 320 metadata entries, no direct registered child calls
+
+python scripts/audit_islands.py --all-hooks
+# unclassified unknown hooks: 0
+
+python scripts/lint.py
+# passed for 99 Python files
+
+python scripts/run_tests.py --no-lint --scope dos-re --timeout 20
+# 7 passed
+
+SDL_VIDEODRIVER=dummy python scripts/play.py \
+  --demo artifacts/demos/demo_play_tandy_20260615_235831 \
+  --verify-hooks --sound adlib --verify-max 5000 --verify-step-budget 600000
+# OK HOOK VERIFY LIMIT REACHED verified=5000
+```
+
+## 2026-06-16 - BDE3 hazard scan promoted through recovered collision layer
+
+Continued the gradual upward refactor from address-facing hooks toward recovered
+source-like gameplay code.  The BDD0/BDE3 player-hazard scan was the best next
+candidate because it already repeatedly used the recovered object-slot layout:
+active word, gate/layer, scan flag, hazard class, logic id, X/Y words, and link
+key.
+
+Changes:
+
+- Added pure collision-domain `ProbePoint`.
+- Added pure system helpers:
+  - `word_inside_signed_center_window`
+  - `slot_contains_probe_point`
+  - `is_player_hazard_scan_candidate`
+  - `player_hazard_scan_hit`
+- Simplified `view_contact_rect_test` so it reuses the same pure centered-window
+  primitive instead of carrying a separate duplicate rectangle implementation.
+- Added `run_player_hazard_candidate_checks_bde3` in the adapter layer.  This is
+  the only place that still performs the exact BDE3 compare sequence and applies
+  CPU-visible `SI`/FLAGS side effects.
+- Refactored `run_player_hazard_object_scan_bde3` into a scan/continuation shell:
+  it now walks `DS:23B4`, delegates one-slot semantics to the recovered adapter,
+  and owns only `BX/CX/AX/DI`, table advance, `5059` hit continuation, and final
+  `CLC; RET` exhaustion.
+
+Layering consequence:
+
+```text
+pure systems:   gameplay decision only, no CPU/memory
+adapters:       exact ASM flags/register projection
+hooks:          address-facing continuation shell
+```
+
+Validation:
+
+```text
+python -m pytest tests/test_recovered_semantics.py \
+  tests/test_overkill_hooks.py::test_player_hazard_scan_guard_bdd0_matches_interpreted_asm_gate_and_empty_scan \
+  tests/test_overkill_hooks.py::test_player_hazard_scan_guard_bdd0_matches_interpreted_asm_hit_path -q
+# 9 passed
+
+python scripts/audit_recovered_layers.py
+# Recovered layer audit passed for 6 pure files
+
+python scripts/audit_hook_oracle.py
+# Hook-oracle audit passed: 320 registered hooks, 320 metadata entries, no direct registered child calls detected.
+
+python scripts/audit_islands.py --all-hooks
+# unclassified unknown hooks: 0
+
+python scripts/lint.py
+# Lint passed for 99 Python files
+
+python scripts/run_tests.py --no-lint --scope dos-re --timeout 20
+# 7 passed, 0 failed, 0 timed out
+
+SDL_VIDEODRIVER=dummy python scripts/play.py \
+  --demo artifacts/demos/demo_play_tandy_20260615_235831 \
+  --verify-hooks --sound adlib --verify-max 5000 --verify-step-budget 600000
+# OK HOOK VERIFY LIMIT REACHED verified=5000
+```
+
+## 2026-06-16 - semantic crystallization documentation anchored
+
+Audited the project documentation after the recovered-layer split and added a
+central durable brief so future AI agents can find the intended upward refactor
+without relying on chat history.
+
+New durable document:
+
+```text
+docs/overkill/semantic_crystallization_plan.md
+```
+
+It records the north-star direction:
+
+```text
+original binary oracle
+  -> interpreted ASM / exact traces
+  -> ASM-compatible hooks
+  -> lifted game-specific modules
+  -> recovered memory views and adapters
+  -> pure domain records and systems
+  -> native source-port runtime
+```
+
+It also makes explicit the anti-duplication rule: once a gameplay decision has a
+pure recovered system, that pure function is the canonical decision.  Hooks keep
+only address/continuation glue, while adapters project DOS state and preserve
+ASM-visible register/flag side effects.
+
+Updated pointer documents:
+
+- `AGENTS.md`
+  - source-of-truth list now points to the semantic crystallization plan and
+    recovered source-layer document.
+  - added recovered source-port promotion rules directly to the agent guardrail
+    sheet.
+- `README.md`
+  - added a recovered source-port direction section.
+- `docs/README.md`
+  - added the new plan and recovered-source-layer doc to the documentation map.
+- `docs/overkill/source_port_methodology.md`
+  - added the concrete `views/adapters/domain/systems` split and pointers to the
+    detailed plan.
+- `docs/overkill/recovered_source_layer.md`
+  - added a direct pointer to the plan and an explicit anti-duplication rule.
+
+Validation:
+
+```text
+python scripts/audit_recovered_layers.py
+# Recovered layer audit passed for 6 pure files
+
+python scripts/lint.py
+# Lint passed
+```

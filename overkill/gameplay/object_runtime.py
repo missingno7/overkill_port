@@ -2626,8 +2626,10 @@ def _run_object_overlap_scan_62f6(cpu, *, parent: str, chain: str, cx_value: int
         return
     _cmp_word(cpu, mem.rw(ss, (bp + 0x18) & 0xFFFF), 0x0026)
     if mem.rw(ss, (bp + 0x18) & 0xFFFF) == 0x0026:
-        cpu.s.bx = 0x3294
-        finish_empty_scan()
+        # 6323/6329: logic-id 26h is another pre-scan exemption.  The ASM
+        # falls through into ``JMP 741F`` and returns immediately, so BX remains
+        # the caller's BX and the zero flags from ``CMP [BP+18],26h`` stay live.
+        # Do not run the empty-scan sentinel tail (741C ADD BX,38h).
         return
 
     cpu.s.si = mem.rw(ss, (bp + 0x16) & 0xFFFF)

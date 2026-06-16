@@ -633,6 +633,37 @@ def test_coverage_summary_reports_grouped_interpreted_regions():
     text = cov.format_summary(top_n=4)
     assert "per instruction" in text
     assert "nearby IPs grouped" in text
+    assert "Top bounded-original ASM hotspots" in text
+    assert "Top bounded-original ASM regions" in text
+
+
+def test_coverage_summary_reports_grouped_bounded_original_regions():
+    from overkill.coverage import CoverageTelemetry, OverkillCoverageClassifier
+
+    cov = CoverageTelemetry(classifier=OverkillCoverageClassifier(), cache_path=None)
+    with cov.bounded_original((0x1010, 0x9B2E), "bounded 9b2e controller"):
+        for ip in (0x9B2E, 0x9B34, 0x9B3A, 0x9B3D):
+            for _ in range(7):
+                cov.record_interpreted_instruction((0x1010, ip))
+    with cov.bounded_original((0x1010, 0xBE3C), "bounded collision tail"):
+        for ip in (0xBE3C, 0xBE41):
+            for _ in range(11):
+                cov.record_interpreted_instruction((0x1010, ip))
+
+    snap = cov.snapshot(top_n=5)
+    assert snap["total_interpreted_instructions"] == 0
+    assert snap["total_bounded_original_instructions"] == 50
+    assert snap["islands"]["input_menu"].bounded_original == 28
+    assert snap["islands"]["collision"].bounded_original == 22
+    assert any(
+        item["start"] == (0x1010, 0x9B2E)
+        and item["end"] == (0x1010, 0x9B3D)
+        and item["island"] == "input_menu"
+        for item in snap["top_bounded_regions"]
+    )
+    text = cov.format_summary(top_n=5)
+    assert "1010:9B2E-9B3D" in text
+    assert "1010:BE3C-BE41" in text
 
 
 def test_cpu_emits_coverage_for_generic_asm_and_hook():
@@ -664,6 +695,30 @@ def test_coverage_classifier_marks_transient_bootstrap_segment():
     classifier = OverkillCoverageClassifier()
     assert classifier.classify((0x32FF, 0x0052)) == "bootstrap"
     assert classifier.classify((0x32FF, 0x00C0)) == "bootstrap"
+
+
+def test_coverage_classifier_marks_known_bounded_frontier_ranges():
+    from overkill.coverage import OverkillCoverageClassifier
+
+    classifier = OverkillCoverageClassifier()
+    assert classifier.classify((0x1010, 0x981D)) == "game_state"
+    assert classifier.classify((0x1010, 0x9B34)) == "input_menu"
+    assert classifier.classify((0x1010, 0xA067)) == "game_state"
+    assert classifier.classify((0x1010, 0xBE3C)) == "collision"
+    assert classifier.classify((0x1F8F, 0x027A)) == "gameplay_objects"
+    assert classifier.classify((0x1010, 0x8D8B)) == "gameplay_objects"
+    assert classifier.classify((0x1010, 0x9C01)) == "game_state"
+    assert classifier.classify((0x1010, 0x9CBB)) == "input_menu"
+    assert classifier.classify((0x1010, 0xBD65)) == "gameplay_objects"
+    assert classifier.classify((0x1010, 0xC054)) == "gameplay_objects"
+    assert classifier.classify((0x1010, 0x61DC)) == "game_state"
+    assert classifier.classify((0x1010, 0x61DD)) == "game_state"
+    assert classifier.classify((0x1010, 0x5F0D)) == "game_state"
+    assert classifier.classify((0x1010, 0xAAC2)) == "collision"
+    assert classifier.classify((0x1010, 0x8331)) == "collision"
+    assert classifier.classify((0x1010, 0x9EC2)) == "game_state"
+    assert classifier.classify((0x1010, 0x77F5)) == "layer_sprites"
+    assert classifier.classify((0x1010, 0xAB0D)) == "gameplay_objects"
 
 
 

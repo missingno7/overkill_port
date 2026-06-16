@@ -160,13 +160,17 @@ from .rendering.effects import (
 
 from .gameplay.collision import (
     run_collision_stc_ret_5059,
+    run_collision_clc_ret_835b,
     run_object_deactivate_logic_dispatch_c054,
     run_object_slot_scan_ac97,
+    run_object_tile_sweep_blocked_b032,
     run_object_slot_scan_guard_ac81,
     run_postmove_y_clamp_bcb1,
     run_postmove_contact_window_aa71,
     run_player_hazard_object_scan_bde3,
+    run_player_hazard_scan_guard_bdd0,
     run_tile_lookup_505b,
+    run_view_contact_rect_test_8331,
     run_tile_contact_probe_4ff9,
     run_tile_probe_5073,
     run_tile_collision_probe_ac28,
@@ -178,6 +182,7 @@ from .gameplay.game_state import (
     run_decrement_first_active_counter_61c7,
     run_decrement_first_active_counter_scan_61ca,
     run_decrement_first_active_counter_loop_61f7,
+    run_status_display_parent_61dc,
     run_status_counter_cell_blit_6296,
     run_status_cursor_advance_613e,
     run_status_cursor_retreat_615a,
@@ -190,6 +195,7 @@ from .gameplay.game_state import (
     run_tracked_object_coord_pull_a031,
     run_frame_axis_count_inc_ah_9bfb,
     run_frame_axis_count_inc_al_9bfe,
+    run_frame_axis_condition_dispatch_9c01,
     run_frame_game_state_update_a940,
 )
 from .gameplay.frame_orchestration import (
@@ -474,10 +480,34 @@ def overkill_bootstrap_lzexe_main_loop_23ad_0069(cpu):
     _run_bootstrap_lzexe_loop_0069_if_matching(cpu)
 
 
+@registry.replace(0x1010, 0xB032, "overkill_object_tile_sweep_blocked_b032")
+def overkill_object_tile_sweep_blocked_b032(cpu):
+    """Hook wrapper for OVERKILL 1010:B032 tile-sweep blocked sentinel."""
+    run_object_tile_sweep_blocked_b032(cpu, _self_disable_if_patched)
+
+
 @registry.replace(0x1010, 0xBDE3, "overkill_player_hazard_object_scan_bde3")
 def overkill_player_hazard_object_scan_bde3(cpu):
     """Hook wrapper for OVERKILL 1010:BDE3 player/hazard scan."""
     run_player_hazard_object_scan_bde3(cpu, _self_disable_if_patched)
+
+
+@registry.replace(0x1010, 0xBDD0, "overkill_player_hazard_scan_guard_bdd0")
+def overkill_player_hazard_scan_guard_bdd0(cpu):
+    """Hook wrapper for OVERKILL 1010:BDD0 player/hazard scan guard."""
+    run_player_hazard_scan_guard_bdd0(cpu, _self_disable_if_patched)
+
+
+@registry.replace(0x1010, 0x8331, "overkill_view_contact_rect_test_8331")
+def overkill_view_contact_rect_test_8331(cpu):
+    """Hook wrapper for OVERKILL 1010:8331 view/contact rectangle test."""
+    run_view_contact_rect_test_8331(cpu, _self_disable_if_patched)
+
+
+@registry.replace(0x1010, 0x835B, "overkill_collision_clc_ret_835b")
+def overkill_collision_clc_ret_835b(cpu):
+    """Hook wrapper for OVERKILL 1010:835B CLC/RET collision miss tail."""
+    run_collision_clc_ret_835b(cpu, _self_disable_if_patched)
 
 
 @registry.replace(0x1010, 0x5059, "overkill_collision_stc_ret_5059")
@@ -3773,6 +3803,51 @@ def overkill_frame_status_counter_update_5f61(cpu):
 
 
 
+
+@registry.replace(0x1010, 0x61DC, "overkill_status_display_parent_61dc")
+def overkill_status_display_parent_61dc(cpu):
+    """Raw status/counter display parent around 61F7, 5A00, 6296, and 5A6C."""
+
+    def call_5a00(return_ip: int) -> None:
+        _call_installed_hook_like_near_call(
+            cpu,
+            (0x1010, 0x5A00),
+            overkill_xy_to_di_5a00,
+            return_ip,
+        )
+
+    def call_6296(return_ip: int) -> None:
+        _call_installed_hook_like_near_call(
+            cpu,
+            (0x1010, 0x6296),
+            overkill_status_counter_cell_blit_6296,
+            return_ip,
+        )
+
+    def call_5a6c(return_ip: int) -> None:
+        _call_installed_hook_like_near_call(
+            cpu,
+            (0x1010, 0x5A6C),
+            overkill_menu_cell_source_blit_dispatch_5a6c,
+            return_ip,
+        )
+        if (cpu.s.cs & 0xFFFF, cpu.s.ip & 0xFFFF) != (0x1010, return_ip & 0xFFFF):
+            # 5A6C is a dispatch stub whose JMP target owns the RET that consumes
+            # the original 5A6C CALL frame.  Run that installed target without
+            # adding another synthetic CALL word.
+            handler = cpu.replacement_hooks.get((cpu.s.cs & 0xFFFF, cpu.s.ip & 0xFFFF))
+            if handler is not None:
+                handler(cpu)
+
+    run_status_display_parent_61dc(
+        cpu,
+        _self_disable_if_patched,
+        call_5a00,
+        call_6296,
+        call_5a6c,
+    )
+
+
 @registry.replace(0x1010, 0x6120, "overkill_status_row_repeat_6120")
 def overkill_status_row_repeat_6120(cpu):
     """Repeated raw status/HUD row compositor around 5A6C and 613E."""
@@ -3917,6 +3992,35 @@ def overkill_frame_axis_count_inc_ah_9bfb(cpu):
 def overkill_frame_axis_count_inc_al_9bfe(cpu):
     """Tiny 9C01 frame-controller leaf: INC AL; RET."""
     run_frame_axis_count_inc_al_9bfe(cpu, _self_disable_if_patched)
+
+
+
+@registry.replace(0x1010, 0x9C01, "overkill_frame_axis_condition_dispatch_9c01")
+def overkill_frame_axis_condition_dispatch_9c01(cpu):
+    """Frame-controller axis condition counter and jump-table child of 9B2E."""
+
+    def call_a607(return_ip: int) -> None:
+        _call_installed_hook_like_near_call(
+            cpu,
+            (0x1010, 0xA607),
+            overkill_object_y_step_down_clamp_a607,
+            return_ip,
+        )
+
+    def call_a5f9(return_ip: int) -> None:
+        _call_installed_hook_like_near_call(
+            cpu,
+            (0x1010, 0xA5F9),
+            overkill_object_y_step_up_clamp_a5f9,
+            return_ip,
+        )
+
+    run_frame_axis_condition_dispatch_9c01(
+        cpu,
+        _self_disable_if_patched,
+        call_a607,
+        call_a5f9,
+    )
 
 
 @registry.replace(0x1010, 0x9FAF, "overkill_linked_object_coord_quad_update_9faf")

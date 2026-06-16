@@ -1,256 +1,329 @@
-# OVERKILL Runtime And Source-Port Scaffold
+# OVERKILL Runtime & Evidence-Driven Source Port
 
+> A custom 8086/DOS runtime and reverse-engineering framework for rebuilding
+> **OVERKILL: The Six-Planet Mega Blast** from the original executable outward.
 
-## Fast Headless Checks
+This project is not trying to write a new game that merely looks like OVERKILL.
+It runs the original 16-bit DOS program, treats the binary as the behavioral
+oracle, and gradually replaces proven ASM routines with verified Python code.
+Over time, those verified routines are promoted upward into recovered,
+source-like game systems that can become the basis of a native source port.
 
-The reusable `dos_re` layer can be smoke-tested without pygame, pytest, or the
-original OVERKILL assets:
-
-```bash
-python scripts/run_tests.py --scope dos-re
+```text
+original OVERKILL binary
+        ↓
+custom 8086 + DOS runtime
+        ↓
+interpreted ASM oracle traces
+        ↓
+verified CS:IP Python hooks
+        ↓
+recovered views/adapters/domain/systems
+        ↓
+future native source-port core
 ```
 
-That scope runs only target-neutral CPU, memory/MZ-loader, and hook-verifier
-checks.  The runner is dependency-free, supports the repository's `tmp_path`
-fixture usage, and isolates each test with a per-test timeout so a bad emulator
-loop cannot hang the whole run.  For a specific suspicious test:
+The important rule is simple:
 
-```bash
-python scripts/run_tests.py tests/test_overkill_hooks.py \
-  --name test_tandy_text_glyph_3153_hook_verifies_on_gameplay_snapshot \
-  --timeout 5 --fail-fast --no-lint
+> Do not invent the source port. Let it crystallize from verified evidence.
+
+---
+
+## What makes this project interesting?
+
+- It is a **runtime built for one specific DOS game**, not a general emulator.
+- The original executable remains runnable and comparable at every step.
+- Each lifted hook can be verified against interpreted original ASM.
+- Gameplay logic is being moved upward gradually, not rewritten top-down.
+- The project now has a clean split between:
+  - low-level VM/runtime code,
+  - address-facing hooks,
+  - DOS-memory views and adapters,
+  - pure recovered gameplay/domain systems.
+
+This means the repo is both a reverse-engineering tool and the beginning of a
+source-port scaffold.
+
+---
+
+## Start here
+
+| I want to... | Read / run |
+| --- | --- |
+| Understand the project goal | This README, then `docs/overkill/semantic_crystallization_plan.md` |
+| See the latest known state | `docs/overkill/run_status.md` |
+| Work as an AI agent | `AGENTS.md` |
+| Understand the method | `docs/overkill/source_port_methodology.md` |
+| See recovered source-layer rules | `docs/overkill/recovered_source_layer.md` |
+| Check current address knowledge | `symbols.json` and `docs/overkill/island_truth_tables.md` |
+| Run fast non-viewer tests | `python scripts/run_tests.py --scope dos-re` |
+| Play / verify the game | `python scripts/play.py --video tandy --sound adlib` |
+
+---
+
+## Current direction
+
+The project is moving through two connected migrations:
+
+1. **ASM → verified hooks**
+   - Unknown original code still runs through the interpreter.
+   - Understood routines become exact `CS:IP` hooks.
+   - Hook output is compared against original ASM state: registers, flags,
+     memory, stack, files, ports, and continuations.
+
+2. **Verified hooks → recovered source layer**
+   - Stable hook logic moves out of address-shaped code.
+   - DOS state is projected through views/adapters.
+   - Pure gameplay decisions live in `overkill/recovered/domain` and
+     `overkill/recovered/systems`.
+   - Those pure layers must not depend on `cpu`, `mem`, registers, flags,
+     segment offsets, or verifier continuations.
+
+The current crystallization target is deliberately conservative: object slots,
+collision primitives, coordinate helpers, HUD/status composition, renderer
+commands, and other structures that multiple verified routines already point to.
+
+---
+
+## Repository map
+
+```text
+dos_re/                     reusable narrow DOS reverse-engineering runtime
+  cpu.py                    dependency-free 8086 interpreter core
+  memory.py                 20-bit real-mode memory model
+  dos.py                    narrow DOS/BIOS/port services
+  hooks.py                  generic replacement hook registry
+  runtime.py                generic DOS-program runtime wiring
+  snapshot.py               memory/state snapshot helpers
+  verification.py           reusable differential hook verifier
+  frame_verify.py           reusable frame comparison engine
+
+overkill/                   OVERKILL-specific game/runtime layer
+  hooks.py                  exact CS:IP hook registration surface
+  runtime.py                canonical launch/snapshot wiring
+  cli.py                    command-line helpers built on dos_re
+  verification.py           hook verifier stop metadata and game adapters
+  coverage.py               island classifier and coverage summaries
+  gameplay/                 lifted gameplay helpers still close to ASM shape
+  rendering/                startup graphics, sprites, Tandy/CGA/EGA primitives
+  sounds/                   timer, PC speaker, AdLib/YM3812 driver behavior
+  asset_codecs/             checksum, packed streams, RLE/LZ, asset tables
+  file_io/                  overlay/container file orchestration
+  recovered/                source-port crystallization layer
+    views/                  DOS-memory overlays; may know offsets/segments
+    adapters/               CPU/memory projection and ASM flag/register glue
+    domain/                 pure copied source-like records
+    systems/                pure gameplay/system functions
+
+nuked_opl3/                 optional vendored Nuked-OPL3 CFFI binding
+
+docs/                       documentation map, methodology, findings, status
+scripts/                    runners, audits, cleanups, profiling, viewer tools
+assets/                     local user-supplied original game files; gitignored
+artifacts/                  snapshots, traces, caches, verifier evidence
+tests/                      CPU/runtime/hook/recovered-layer regression tests
+symbols.json                known addresses, names, hypotheses, statuses
+AGENTS.md                   durable guardrails for AI agents and humans
 ```
 
-The interactive viewer remains optional.  Install it only on machines that need
-`play.py`/SDL display support:
+`dos_re` must stay game-independent. Anything that knows OVERKILL addresses,
+assets, hooks, islands, command-tail behavior, or game-specific frame semantics
+belongs under `overkill`.
 
-```bash
-pip install -e .[viewer]
+---
+
+## Recovered source-port layers
+
+The recovered layer exists so the upper game logic can eventually run without the
+DOS VM.
+
+```text
+hooks        exact original address/continuation wrappers
+adapters     project DOS memory/register state into source-like data
+views        typed overlays over original memory structures
+records      pure copied data structures
+systems      pure gameplay decisions
 ```
 
-## Bootstrap/static-runtime boundary
+Current package boundary:
 
-The project now treats the original startup path as an oracle/extraction layer,
-not as the final source-port architecture.  The only canonical game inputs are:
+```text
+overkill/recovered/views/       may know original offsets, segments, memory layout
+overkill/recovered/adapters/    may know CPU/memory and preserve ASM-visible effects
+overkill/recovered/domain/      must be pure; no CPU, memory, hooks, offsets
+overkill/recovered/systems/     must be pure; no CPU, memory, hooks, offsets
+```
+
+Enforce this with:
+
+```bash
+python scripts/audit_recovered_layers.py
+python scripts/lint.py
+```
+
+The intended shape of a lifted routine is:
+
+```text
+hook wrapper
+  → adapter reads DOS state
+  → pure recovered system makes the gameplay decision
+  → adapter writes ASM-compatible registers/flags/memory
+  → hook returns to the verified continuation
+```
+
+This prevents duplicated gameplay logic while still preserving exact original
+behavior.
+
+---
+
+## Quick start
+
+### 1. Install the project
+
+```bash
+python -m pip install -e .
+```
+
+For the SDL viewer:
+
+```bash
+python -m pip install -e .[viewer]
+```
+
+For audible AdLib/FM output:
+
+```bash
+python -m pip install -e .[adlib]
+python -m nuked_opl3._ffi_build
+```
+
+Without the compiled AdLib backend, the VM can still model detection and YM3812
+register writes, but the SDL frontend remains silent. Use `--adlib-audio off` if
+you want to run the original AdLib path without PCM output.
+
+### 2. Add original game files
+
+This repository does **not** ship the original game data.
+
+Place your local copy under `assets/`, for example:
 
 ```text
 assets/OVERKILL
 assets/OVERKILL.EXE
 ```
 
-Generated convenience files such as `OVERKILL.UNLZEXE.EXE` or
-`OVERKILL.OVERLAY.BIN` must stay out of `assets/` as source inputs.  If the port
-needs an unpacked image, screen, table, sound driver, or overlay blob, generate it
-deterministically from the original files and treat it as a build/evidence
-artifact.
+The canonical source inputs are the original files. Generated convenience files
+such as unpacked executables or overlay blobs must be treated as build/evidence
+artifacts, not source assets.
 
-The current boundary manifest can be written with:
+### 3. Run fast checks
 
 ```bash
-python -m overkill.cli bootstrap-boundary --video tandy --sound adlib --out artifacts/static_runtime_boundary.json
+python scripts/run_tests.py --scope dos-re
+python scripts/lint.py
 ```
 
-The next practical step is materializing a canonical initialized runtime bundle
-from the original files.  This runs the historical bootstrap once, stops at an
-inner-runtime frontier, writes the normal snapshot files, and adds a reviewable
-`static_runtime_bundle.json` with hashes of the PSP, relocated runtime segment,
-and optional sound-driver area:
+### 4. Launch the game
 
 ```bash
-python -m overkill.cli static-runtime-bundle assets/OVERKILL \
-  --game-root assets \
-  --video tandy \
-  --sound adlib \
-  --out-dir artifacts/static_runtime_bundle
+python scripts/play.py --video tandy --sound adlib
 ```
 
-See `docs/overkill/bootstrap_static_boundary.md` for the policy,
-`overkill/bootstrap_boundary.py` for the importable boundary
-manifest, and `overkill/static_runtime_bundle.py` for the
-materializer.
+Other useful variants:
 
+```bash
+python scripts/play.py --video tandy
+python scripts/play.py --video ega
+python scripts/play.py --video cga
+python scripts/play.py --snapshot artifacts/evidence/<snapshot-dir>
+```
 
-This repository is an evidence-driven runtime/source-port project for
-**OVERKILL: The Six-Planet Mega Blast**, a 16-bit DOS game.
+---
 
-The project runs the original executable in a custom 8086 runtime, observes real
-state transitions, and gradually replaces understood original routines with
-verified Python implementations. The original binary remains the behavioral
-oracle throughout the migration.
+## Verification workflow
 
-This is intentionally **not** a general DOS emulator. The runtime implements the
-DOS, BIOS, CPU, video, file, timer, and input behavior needed by OVERKILL, and no
-more unless the game proves it is required.
-
-## Goals
-
-- Execute the original game deterministically enough to trace and verify it.
-- Preserve the original executable as an oracle for every lifted routine.
-- Replace small, understood routines with Python hooks.
-- Compose proven hooks into larger source-port-like modules over time.
-- Keep reverse-engineering findings documented by address and evidence.
-- Build toward a readable, testable source-level version of the game.
-
-## Non-Goals
-
-- This is not DOSBox.
-- This is not a general x86 emulator.
-- This is not a clean-room rewrite from memory or intuition.
-- This is not a place for speculative high-level gameplay rewrites.
-- Performance improvements are not accepted as proof of correctness.
-
-## Game Files
-
-The repository does **not** ship the original game data.
-
-`assets/` is intended for your local copy of the original files and is ignored by
-git. To run the runtime locally, place the expected OVERKILL files there,
-including:
+Every replacement is a proof obligation.
 
 ```text
-assets/OVERKILL
+observe
+  → classify
+  → choose boundary
+  → build ASM oracle
+  → implement hook
+  → verify
+  → document
+  → move upward when stable
 ```
 
-and the companion game data files opened by the original loader.
+For a focused hook:
 
-## Project Shape
+```bash
+python scripts/play.py --verify-hook 1010:ECF2 --verify-stop-on-diff
+```
 
-The runtime is a hybrid:
+For broad live verification:
 
-- unknown original code still executes through the 8086 interpreter,
-- known routines are replaced by exact `CS:IP` hooks,
-- stable hooks move into game-specific Python modules,
-- tests and snapshots keep the original ASM as the oracle.
+```bash
+python scripts/play.py --verify-hooks --verify-require-metadata
+```
 
-The important boundary is not "Python versus ASM"; it is "verified versus not
-verified".
+For previewing while verifying:
 
-## Methodology In One Loop
+```bash
+python scripts/play.py \
+  --demo artifacts/demos/<demo-name> \
+  --verify-hooks \
+  --verify-preview \
+  --sound adlib
+```
 
-The reusable workflow for this project is:
+For frame-level verification:
+
+```bash
+python scripts/play.py --snapshot artifacts/evidence/<snapshot-dir> --verify-frames
+```
+
+For current island closure signals:
+
+```bash
+python scripts/audit_islands.py --all-hooks
+```
+
+`closed-candidate` means no known script-detected blockers; it is a useful
+signal, not a substitute for oracle evidence.
+
+---
+
+## Repro artifacts and debugging
+
+The runtime can preserve hard-to-reach failures.
+
+When replaying a long demo, hook divergence can create a shorter suffix/repro
+demo under:
 
 ```text
-observe -> classify -> choose boundary -> build ASM oracle -> implement hook -> verify -> document -> move to island
+artifacts/repros/
 ```
 
-New work usually starts as an exact `CS:IP` hook in `overkill/hooks.py`.  Once the
-behavior is understood, the implementation moves into a coherent game module
-under `overkill/`, while `overkill/hooks.py` keeps only the
-address-facing wrapper.  This keeps reverse-engineering flexible without letting
-the staging file become the permanent source port.
+Interactive crashes can also save a crash snapshot with enough VM state to retry
+from the failure point:
 
-The full playbook is in `docs/overkill/source_port_methodology.md`, with package
-ownership rules in `docs/architecture/package_boundary.md`. The compact project
-mantra is: do not write a source port first and hope it matches; exhaust truth
-from the original first, then let the source port crystallize from that
-evidence.
+```bash
+python scripts/play.py --snapshot artifacts/repros/<crash-dir> --video tandy --sound adlib
+```
 
-
-## Long-Term Shape
-
-The source port is expected to crystallize upward through layers rather than be
-rewritten top-down.  Today many gameplay paths are still verified object-slot
-logic: fields, sprites, movement, collision, postmove tails, and renderer
-presenters.  Over time these should form clearer systems, then archetypes, then
-a semantic game model.
+Typical snapshot contents:
 
 ```text
-8. Modern game / enhanced port layer
-7. Semantic game model layer
-6. Gameplay archetype layer
-5. Game systems layer
-4. Runtime object/data model layer
-3. Verified lifted routine layer
-2. ASM-compatible hook/runtime layer
-1. Original binary oracle layer
+memory_1mb.bin
+state.json
+trace_tail.txt
+repro.json        # for repro/crash artifacts when available
 ```
 
-The rule is: let high-level meaning emerge from verified lower-level evidence.
-Do not guess a semantic model just because a sprite or behavior looks familiar.
+---
 
-
-## Crystallization Rules
-
-The project uses a strict evidence ladder. A higher layer may only be created
-from proof in the layer below it. It is fine to investigate rendering, asset
-loading, collision, input, and sound in parallel, but their outputs must remain
-separate until the evidence converges.
-
-Practical consequences:
-
-- `ObjectSlot` comes before `Enemy`.
-- `ObjectKindCandidate` comes before a definitive archetype name.
-- Refactors must not change behavior.
-- Fixes must not introduce semantic models.
-- Lower layers must not import higher layers.
-- Every semantic name must be traceable back to original slots, behavior IDs,
-  verified routines, and snapshots/traces.
-
-`docs/overkill/island_truth_tables.md` tracks per-island confidence: what is known, what
-is verified, what is guessed, what remains unknown, and which tests/snapshots
-cover it.
-
-## Repository Layout
-
-The project is split by role. The reusable RE/VM environment is not allowed to
-know the game; the game package owns all OVERKILL addresses, assets, islands, and
-source-port findings.
-
-```text
-dos_re/                 reusable reverse-engineering runtime
-  mz.py                 MZ parsing and loading
-  memory.py             20-bit real-mode memory model
-  cpu.py                dependency-free 8086 interpreter core
-  dos.py                narrow DOS/BIOS/port services
-  hooks.py              generic replacement hook registry
-  interrupts.py         generic interrupt delivery helpers
-  keyboard.py           host input -> emulated keyboard state
-  runtime.py            generic DOS-program runtime wiring
-  snapshot.py           generic memory/state snapshot helpers
-  verification.py       reusable differential hook-verifier engine
-  frame_verify.py       reusable frame comparison and diff artifact engine
-
-overkill/               OVERKILL-specific reverse-engineered game layer
-  runtime.py            canonical OVERKILL launch/snapshot wiring
-  cli.py                OVERKILL commands built on top of dos_re
-  hooks.py              exact CS:IP hook registration surface
-  verification.py       OVERKILL hook-verifier stop metadata and adapters
-  frame_verify.py       OVERKILL frame extraction/render adapter
-  coverage.py           OVERKILL island classifier and dashboard
-  bootstrap_boundary.py bootstrap/static-runtime boundary manifest
-  static_runtime_bundle.py deterministic initialized-runtime materializer
-  asm.py                shared 8086-style helper functions
-  asset_codecs/         asset streams, checksum, RLE/LZ, decoded asset table
-  file_io/              overlay/container file orchestration
-  gameplay/             objects, movement, collision, game-state counters
-  rendering/            startup graphics, coordinates, video primitives, layer sprites
-  sounds/               timer, PC speaker, AdLib/YM3812 driver behavior
-
-nuked_opl3/             vendored optional Nuked-OPL3 CFFI binding
-  __init__.py           runtime Python wrapper; safe to import before build
-  _ffi_build.py         in-place CFFI build helper
-  vendor/               LGPL Nuked-OPL3 C core
-
-docs/
-  README.md             documentation map
-  architecture/         cross-package boundaries and dependency rules
-  dos_re/               reusable DOS RE methodology and framework notes
-  overkill/             OVERKILL archaeology, findings, status, and game docs
-
-scripts/                convenience runners and RE helpers
-assets/                 local user-supplied original game files
-artifacts/              generated snapshots, traces, caches, evidence
-tests/                  DOS runtime and OVERKILL regression tests
-symbols.json            known OVERKILL addresses, names, hypotheses, and status
-AGENTS.md               durable workflow and agent instructions
-```
-
-See `docs/README.md` for the documentation map. `dos_re` must stay independent
-of OVERKILL. Anything that knows specific addresses, islands, command-tail
-semantics, sound-driver segments, frame boundaries, or game assets belongs in
-`overkill`.
-
-## Quick Start
+## Useful commands
 
 Inspect the executable:
 
@@ -277,38 +350,13 @@ python -m overkill.cli snapshot assets/OVERKILL \
   --out-dir artifacts/evidence/snapshot_after_bootstrap_100k
 ```
 
-Run tests:
+Render a saved frame without SDL:
 
 ```bash
-python scripts/run_tests.py
-```
-
-Run the lightweight lint pass directly:
-
-```bash
-python scripts/lint.py
-```
-
-Remove local caches/build outputs before packaging or sharing a tree:
-
-```bash
-python scripts/clean.py
-python scripts/clean.py --artifacts   # also remove unpromoted generated captures
-```
-
-Launch interactive play/viewer:
-
-```bash
-python scripts/play.py
-python scripts/play.py --video tandy
-python scripts/play.py --video ega
-python scripts/play.py --video cga
-```
-
-Render a saved frame/snapshot without SDL:
-
-```bash
-python scripts/render_frame.py artifacts/test_oracles/snapshot_play_tandy_20260611_152751 --video tandy --out frame.png
+python scripts/render_frame.py \
+  artifacts/evidence/<snapshot-dir> \
+  --video tandy \
+  --out frame.png
 ```
 
 Profile interpreted hotspots:
@@ -317,175 +365,78 @@ Profile interpreted hotspots:
 python scripts/profile_hotspots.py 2000000
 ```
 
-Audit source-port island closure signals:
+Clean generated local outputs:
 
 ```bash
-python scripts/audit_islands.py --all-hooks
+python scripts/clean.py
+python scripts/clean.py --artifacts
 ```
 
-## Verification Workflow
+---
 
-Every replacement is treated as a proof obligation.
+## Bootstrap/static-runtime boundary
 
-1. Identify the exact original address, such as `1010:ECF2`.
-2. Understand the original boundary: entry state, exit IP, stack behavior,
-   flags, registers, segment state, memory writes, file offsets, and port
-   effects.
-3. Run the interpreted original ASM to produce an oracle.
-4. Implement a Python replacement hook.
-5. Compare hook output against the oracle in tests or live hook verification.
-6. Document the finding in `docs/overkill/runtime_findings.md` and `symbols.json`.
+The project treats the original startup path as an oracle/extraction layer, not
+as the final source-port architecture.
 
-For focused hook tests, compare registers, flags, segment registers, stack
-scratch, touched memory, DOS state, and relevant video/file/port state.
-
-For real runtime paths, use the live verifier:
+Write the current bootstrap boundary manifest:
 
 ```bash
-python scripts/play.py --verify-hook 1010:ECF2 --verify-stop-on-diff
-python scripts/play.py --verify-hooks --verify-require-metadata
+python -m overkill.cli bootstrap-boundary \
+  --video tandy \
+  --sound adlib \
+  --out artifacts/static_runtime_boundary.json
 ```
 
-For rendered behavior, use frame verification where appropriate:
+Materialize an initialized runtime bundle from the original files:
 
 ```bash
-python scripts/play.py --snapshot artifacts/evidence/snapshot_name --verify-frames
+python -m overkill.cli static-runtime-bundle assets/OVERKILL \
+  --game-root assets \
+  --video tandy \
+  --sound adlib \
+  --out-dir artifacts/static_runtime_bundle
 ```
 
-## Source-Port Islands
+See `docs/overkill/bootstrap_static_boundary.md`,
+`overkill/bootstrap_boundary.py`, and `overkill/static_runtime_bundle.py`.
 
-Stable game-specific code belongs under `overkill/`.
-`overkill/hooks.py` should remain the thin address-facing hook layer.
+---
 
-Examples of source-port islands include:
+## Documentation map
 
-- `asset_codecs`: packed streams, checksum, RLE/LZ, decoded asset tables,
-- `overlay`: overlay signature/directory/name/path/XOR helpers,
-- `file_io`: overlay/container open/read/seek orchestration,
-- `startup_graphics`: startup renderer table and graphics materialization helpers,
-- `rendering`: coordinate/address helpers, Tandy/CGA/EGA primitives, layer sprites,
-- `gameplay`: object scan, movement, object behavior, postmove, collision tails,
-- `sounds`: timer ISR and PC speaker behavior,
-- `input_menu`: keyboard polling and interactive wait/yield points.
+| Document | Purpose |
+| --- | --- |
+| `AGENTS.md` | Durable workflow and guardrails for AI agents/humans |
+| `docs/README.md` | Full documentation index |
+| `docs/overkill/run_status.md` | Current checkpoint, recent validations, next work |
+| `docs/overkill/semantic_crystallization_plan.md` | Main plan for lifting verified behavior into recovered source layers |
+| `docs/overkill/recovered_source_layer.md` | Current `views/adapters/domain/systems` split |
+| `docs/overkill/source_port_methodology.md` | OVERKILL-specific source-port playbook |
+| `docs/dos_re/source_port_methodology.md` | Reusable DOS RE methodology |
+| `docs/overkill/runtime_findings.md` | Accumulated reverse-engineering findings |
+| `docs/overkill/island_truth_tables.md` | Per-island evidence, confidence, guesses, frontiers |
+| `docs/architecture/package_boundary.md` | Package ownership and dependency rules |
+| `docs/architecture/third_party.md` | Vendored third-party policy |
+| `symbols.json` | Address labels, hypotheses, hook status |
 
-Use the audit script to see whether an island still has obvious open seams:
+Prefer explicit segment:offset notation such as `1010:95C9` when documenting
+original code.
 
-```bash
-python scripts/audit_islands.py
-```
+---
 
-`closed-candidate` means "no known script-detected blockers"; it is a useful
-closure signal, not a substitute for oracle evidence.
+## Development rules
 
-The asset-codec work now lives under `overkill/asset_codecs/`
-and is limited to bytes becoming decoded asset data. Overlay helpers, file I/O,
-renderer startup materialization, and gameplay counters are separate islands even
-when their original addresses are physically near loader or overlay code.
+- Fidelity first, readability second, meaning third.
+- Do not add high-level gameplay names without evidence.
+- Do not duplicate gameplay decisions across hooks and recovered systems.
+- Keep `overkill/hooks.py` as a thin address-facing wrapper layer.
+- Promote stable behavior upward only when the core decision can be expressed
+  without CPU/memory/register/flag dependencies.
+- Keep `dos_re` independent of OVERKILL.
+- Run verifier, audit, and focused tests after behavioral changes.
+- Keep durable policy in docs; keep time-sensitive status in
+  `docs/overkill/run_status.md`.
 
-## Artifacts
-
-`artifacts/` is kept intentionally small. It should contain only durable oracle
-data, compact caches, and snapshots that are still used by tests, documented
-findings, or the current verifier workflow.
-
-Current layout:
-
-```text
-artifacts/
-  README.md                         retention policy
-  hook_coverage_cache.json          compact hook coverage/cost cache
-  test_oracles/                     snapshots loaded directly by regression tests
-  evidence/                         minimal non-test evidence still in active use
-```
-
-Generated local captures should not stay in the repository by default:
-
-```text
-artifacts/snapshot_play_*/          live snapshots from scripts/play.py
-artifacts/play_*/                   gameplay captures
-artifacts/tmp_*/                    one-off stop/verify snapshots
-artifacts/frame_verify/             PNG/VRAM frame diff dumps
-```
-
-Promote a generated snapshot into `test_oracles/` or `evidence/` only when a
-test, documented finding, or active verifier command depends on it. Prune it
-once that evidence value is gone.
-
-Snapshot directories usually contain:
-
-```text
-memory_1mb.bin
-state.json
-trace_tail.txt
-```
-
-The current headless hook-verifier seed is:
-
-```bash
-python scripts/verify_hooks_headless.py \
-  --snapshot artifacts/evidence/hook_verify_tandy_20260613_190326 \
-  --verify-max 1000
-```
-
-## Documentation Map
-
-- `README.md`: stable project overview.
-- `AGENTS.md`: durable workflow, guardrails, and agent rules.
-- `docs/overkill/run_status.md`: current checkpoint and recent commands.
-- `docs/overkill/runtime_findings.md`: accumulated reverse-engineering findings.
-- `docs/overkill/design.md`: runtime architecture notes.
-- `docs/dos_re/source_port_methodology.md`: reusable DOS RE workflow.
-- `docs/overkill/source_port_methodology.md`: OVERKILL-specific source-port playbook.
-- `docs/overkill/next_steps.md`: tactical investigation notes when useful.
-- `docs/architecture/third_party.md`: vendored third-party component policy.
-- `symbols.json`: address labels, hypotheses, and replacement status.
-
-Prefer explicit segment:offset notation (`1010:95C9`) when documenting original
-code.
-
-## Development Notes
-
-- Keep the CPU and DOS layers narrow and game-driven.
-- Add interpreter instructions only when OVERKILL reaches them.
-- Keep hooks readable before making them fast.
-- Move verified logic into `overkill/` when it becomes a
-  coherent game-specific module.
-- Avoid broad refactors unless tests and oracle comparisons prove behavior did
-  not change.
-- The current state of the project lives in `docs/overkill/run_status.md`, not in this README.
-
-Run:
-    python scripts/play.py [--video cga|ega|tandy] [--sound pc|adlib|roland] [--game-hz 30] [--palette 1h] [--scale 2]
-
-AdLib audio:
-    python scripts/play.py --video tandy --sound adlib
-
-`--sound adlib` runs OVERKILL's original optional AdLib driver and forwards its
-YM3812 register writes to the SDL viewer.  Audible FM output uses the vendored
-`nuked_opl3` CFFI binding in this repository; build the extension once before
-expecting PCM output:
-
-```bash
-python -m pip install -e .[adlib]
-python -m nuked_opl3._ffi_build
-```
-
-Without the compiled extension, the VM still models AdLib detection and the
-register stream, but the SDL frontend stays silent and reports the missing
-backend.  Use `--adlib-audio off` to run the original driver without attempting
-PCM output.  If SDL underruns on a machine, increase the PCM chunk size, e.g.
-`--adlib-chunk-ms 70`; underrun counts are shown in the window caption when they
-occur.
-
-Intro/menu code often waits on `1010:50C9`, which is a hardware retrace wait,
-not the `1010:0679` game-frame timer wait.  The viewer paces retrace waits at 60
-Hz by default while keeping gameplay at `--game-hz` (~36.4 Hz by default).  Use
-`--retrace-hz` only when you intentionally want to diagnose or override that
-cadence.
-
-SDL viewer note: intro/menu screens can publish frames from retrace-driven code
-rather than the gameplay timer wait.  The viewer therefore keeps the emulated
-IRQ0/AdLib ISR alive while waiting for SDL to consume those frames; gameplay
-still uses the normal `1010:0679` timer pacing.  The viewer also redraws the last
-published frame after window resize/expose events, so static screens remain
-visible even when no new VM frame is produced.
+This project should get cleaner because evidence converges, not because a model
+was guessed early.

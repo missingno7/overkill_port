@@ -28,6 +28,11 @@ package.
 
 - `overkill/source_port_methodology.md` — OVERKILL-specific evidence ladder,
   island workflow, and source-port playbook.
+- `overkill/semantic_crystallization_plan.md` — durable plan for promoting
+  verified hooks upward into recovered source-port layers without duplicating
+  gameplay logic.
+- `overkill/recovered_source_layer.md` — current recovered views/adapters/domain/systems
+  split and the already promoted source-like collision/object-slot seed.
 - `overkill/bootstrap_static_boundary.md` — original bootstrap vs canonical
   initialized runtime bundle.
 - `overkill/design.md` — OVERKILL runtime/source-port architecture.

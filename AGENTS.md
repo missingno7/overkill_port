@@ -42,6 +42,11 @@ Use these files for different kinds of truth:
 
 - `docs/overkill/run_status.md`: current checkpoint, latest commands, recent decisions, and
   near-term work.
+- `docs/overkill/semantic_crystallization_plan.md`: durable target architecture
+  for promoting verified hooks upward into recovered source-port code. Start here
+  before refactoring gameplay logic across layers.
+- `docs/overkill/recovered_source_layer.md`: current `views`/`adapters`/`domain`/`systems`
+  split and the already crystallized source-like seed.
 - `docs/overkill/runtime_findings.md`: accumulated reverse-engineering findings,
   address meanings, pitfalls, and hook explanations.
 - `docs/overkill/island_truth_tables.md`: per-island confidence, known facts, guesses,
@@ -161,6 +166,51 @@ Dependencies point upward only:
 original oracle -> ASM runtime -> lifted routines -> runtime model -> systems -> semantic entities -> modern port
 ```
 
+
+
+## Recovered Source-Port Promotion Rules
+
+The project is now explicitly promoting verified behavior upward into recovered
+source-port layers. Treat this as a gradual crystallization of the original
+source-code shape, not as a top-down rewrite.
+
+Current recovered package boundary:
+
+```text
+overkill/recovered/views/       DOS-memory overlays; may know offsets/segments
+overkill/recovered/adapters/    CPU/memory projection and ASM flag glue
+overkill/recovered/domain/      pure copied source-like records
+overkill/recovered/systems/     pure gameplay/system functions
+```
+
+Hard rule: `overkill.recovered.domain` and `overkill.recovered.systems` must not
+import or refer to CPU, memory, `dos_re`, hooks, views, adapters, original
+segment offsets, or verifier continuations. The pure layers are the future
+native source-port core. Their boundary is enforced by:
+
+```bash
+python scripts/audit_recovered_layers.py
+python scripts/lint.py
+```
+
+Do not duplicate gameplay decisions. Once a decision has a pure system function,
+the hook should only be address/continuation glue and the adapter should only
+project DOS state, call the pure function, and preserve ASM-visible
+register/flag side effects. If the adapter replays the old compare sequence for
+verifier compatibility, it should assert that the pure system agrees.
+
+Promotion direction:
+
+```text
+ASM trace -> verified hook -> lifted island helper -> view/adapter -> domain record -> pure system
+```
+
+Only promote code upward when the core decision can be expressed without
+`cpu`/`mem`/registers/flags and the behavior has an evidence root in exact ASM
+addresses, tests, snapshots, or repeated memory-layout observations.
+
+See `docs/overkill/semantic_crystallization_plan.md` before any non-trivial
+refactor in gameplay, collision, rendering, HUD, input, or object runtime.
 
 
 ## Hard Anti-Chaos Rules
