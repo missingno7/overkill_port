@@ -73,6 +73,8 @@ def test_object_runtime_split_modules_keep_their_surface():
 
     from overkill.gameplay import (
         contact_side_effects,
+        object_behaviors,
+        object_bounds,
         object_deactivation,
         object_movement,
         object_postmove,
@@ -87,6 +89,11 @@ def test_object_runtime_split_modules_keep_their_surface():
     assert callable(contact_side_effects._run_object_overlap_scan_62f6)
     assert callable(contact_side_effects._run_collision_handler_bec5_observed)
     assert callable(object_runtime_common._remember_balanced_push_scratch)
+    # Behaviour families + bounds tail own their seams.
+    assert callable(object_behaviors._run_object_behavior_b73e)
+    assert callable(object_behaviors._run_object_logic_dispatch_aa2b)
+    assert callable(object_bounds._run_object_bounds_tile_tail_ad60)
+    assert callable(object_bounds.run_object_bounds_tile_prelude_ad5a)
 
     # Each new module owns a clear responsibility.
     assert callable(object_spawns.run_object_spawn_seed_a4ea)
@@ -115,5 +122,9 @@ def test_object_runtime_split_modules_keep_their_surface():
         "_run_collision_handler_bec5_observed",
         "_run_post_contact_9e69_observed",
         "_remember_balanced_push_scratch",
+        "_run_object_behavior_b73e",
+        "_run_object_logic_dispatch_aa2b",
+        "_run_object_bounds_tile_tail_ad60",
+        "run_object_bounds_tile_prelude_ad5a",
     ):
         assert hasattr(object_runtime, name), f"object_runtime lost re-export of {name}"

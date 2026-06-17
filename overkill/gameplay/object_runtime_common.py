@@ -174,3 +174,17 @@ def _remember_balanced_push_scratch(cpu, cx_value: int) -> None:
     # PUSH/POP pairs leave the last pushed word below SP. Full-memory oracle
     # comparisons can see it even though SP is balanced afterwards.
     cpu.mem.ww(cpu.s.ss & 0xFFFF, (cpu.s.sp - 2) & 0xFFFF, cx_value & 0xFFFF)
+
+
+def _object_ptr_from_scan_index(cpu, table_base: int, cx_value: int) -> tuple[int, int]:
+    """Return (BX, BP) for OVERKILL's descending object-list scan loops."""
+    bx = ((cx_value & 0xFFFF) << 1) & 0xFFFF
+    bp = cpu.mem.rw(cpu.s.ds & 0xFFFF, (table_base + bx) & 0xFFFF)
+    cpu.s.bx = bx
+    cpu.s.bp = bp
+    return bx, bp
+
+
+def _push_loop_count_for_interpreted_tail(cpu, cx_value: int) -> None:
+    cpu.s.sp = (cpu.s.sp - 2) & 0xFFFF
+    cpu.mem.ww(cpu.s.ss & 0xFFFF, cpu.s.sp, cx_value & 0xFFFF)

@@ -71,23 +71,22 @@ Such exceptions are whitelisted explicitly in `audit_architecture.py`.
 
 ## Known-messy / next refactors
 
-- `overkill/gameplay/object_runtime.py` (~2.2k lines, down from 4.5k = −51%) is
-  being split along real seams. Carved out: `object_spawns.py` (allocation +
-  spawn-stamping), `object_runtime_common.py` (leaf infra: fail-fast guard,
-  near-call helpers, ALU shims, `_no_patch_guard`, `_remember_balanced_push_scratch`),
-  `object_deactivation.py` (BD17/BFC7/BD0D death + 5F0D score + BCB1 clamp tails),
-  `object_movement.py` (~1.4k lines: steps, clamps, scroll, coord updates,
-  5DB2/5E42 steer, B729/B15A/D281 seek), `object_postmove.py` (BC45 prelude +
-  BC4B hub), `contact_side_effects.py` (62F6 overlap scan, BEC5 collision handler
-  + A8C2/BF5F mark, 9E69/9E98 post-contact), and `contact_overlap.py` (B250
-  selector). Still mixed in `object_runtime.py`: behaviour-family dispatch
-  (AA2B/EFAE/ABxx), the movement *behaviours* that route to postmove (drift
-  AE2C/AE7D, chase B1B0, sweep B00D), candidate scans, the bounds-tile tail
-  (AD60/AD5A), and the EFAE/8D4F behaviour bodies. Next seam: the behaviour
-  families (F0EE/F185/F1F1) and the AA2B/EFAE dispatch spine. **Open behavioural
-  target:** 9E19 is still run as bounded interpreted ASM inside the B250 selector
-  (`contact_overlap.py`); lifting it would absorb the last interpreted contact
-  side-effect, but needs its own oracle before a non-speculative lift.
+- `overkill/gameplay/object_runtime.py` (~1.1k lines, down from 4.5k = −76%) is
+  now close to a thin dispatch spine. Carved out: `object_spawns.py`,
+  `object_runtime_common.py` (leaf infra), `object_deactivation.py` (death/score/
+  clamp tails), `object_movement.py` (~1.4k: steps/clamps/scroll/coord/steer/seek),
+  `object_postmove.py` (BC45/BC4B hub), `contact_side_effects.py` (62F6/BEC5/
+  9E69), `contact_overlap.py` (B250 selector), `object_behaviors.py` (~1.1k: the
+  B73E/B86D/B9F0/ABxx/AED8 behaviour families + AA2B/EFAE logic dispatch), and
+  `object_bounds.py` (AD60/AD5A bounds-tile + 5073/505B tile probes). What's left
+  in `object_runtime.py`: the candidate-scan infrastructure (`_scan_*`), the
+  dispatch-target resolvers (`_*_target_*`), the runtime-patched-steer plumbing,
+  the registered-hook wrapper bodies, and the *movement behaviours* that route to
+  postmove (drift AE2C/AE7D, chase B1B0, tile-sweep B00D). Next seam: split those
+  movement behaviours into `object_movement_behaviors.py`, leaving a pure scan +
+  dispatch spine. **Open behavioural target:** 9E19 is still run as bounded
+  interpreted ASM inside the B250 selector (`contact_overlap.py`); lifting it
+  would absorb the last interpreted contact side-effect, but needs its own oracle.
 - `overkill/hooks.py` still holds non-EGA inline blits (`497A`, `477E`, `38B7`,
   `41DA`, `447B`, presence-stamp, dirty-cell presenter); move them behind thin
   wrappers like the EGA renderer already is.
