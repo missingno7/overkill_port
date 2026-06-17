@@ -72,19 +72,32 @@ def test_object_runtime_split_modules_keep_their_surface():
     import overkill.hooks  # noqa: F401 - registers hooks
 
     from overkill.gameplay import (
+        contact_side_effects,
         object_deactivation,
+        object_movement,
+        object_postmove,
         object_runtime,
         object_runtime_common,
         object_spawns,
     )
+
+    # Postmove hub + contact side-effects own their seams.
+    assert callable(object_postmove.run_object_postmove_prelude_bc45)
+    assert callable(object_postmove._run_object_postmove_bc4b)
+    assert callable(contact_side_effects._run_object_overlap_scan_62f6)
+    assert callable(contact_side_effects._run_collision_handler_bec5_observed)
+    assert callable(object_runtime_common._remember_balanced_push_scratch)
 
     # Each new module owns a clear responsibility.
     assert callable(object_spawns.run_object_spawn_seed_a4ea)
     assert callable(object_spawns._find_free_object_slot_7573)
     assert callable(object_runtime_common._raise_unverified_path)
     assert callable(object_runtime_common._run_interpreted_near_call_observed)
+    assert callable(object_runtime_common._no_patch_guard)
     assert callable(object_deactivation._run_collision_death_tail_bfc7)
     assert callable(object_deactivation._run_deactivate_bd17_observed)
+    assert callable(object_movement.run_object_x_step_left_clamp_a5d1)
+    assert callable(object_movement.run_object_target_move_b729)
 
     # object_runtime re-exports them (the hooks.py import surface relies on this).
     for name in (
@@ -93,5 +106,14 @@ def test_object_runtime_split_modules_keep_their_surface():
         "_run_collision_death_tail_bfc7",
         "_run_deactivate_bd17_observed",
         "_raise_unverified_path",
+        "run_object_x_step_left_clamp_a5d1",
+        "run_object_target_move_b729",
+        "_no_patch_guard",
+        "run_object_postmove_prelude_bc45",
+        "_run_object_postmove_bc4b",
+        "_run_object_overlap_scan_62f6",
+        "_run_collision_handler_bec5_observed",
+        "_run_post_contact_9e69_observed",
+        "_remember_balanced_push_scratch",
     ):
         assert hasattr(object_runtime, name), f"object_runtime lost re-export of {name}"

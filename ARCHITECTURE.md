@@ -71,16 +71,23 @@ Such exceptions are whitelisted explicitly in `audit_architecture.py`.
 
 ## Known-messy / next refactors
 
-- `overkill/gameplay/object_runtime.py` (~3.9k lines, down from 4.5k) is being
-  split along real seams. Already carved out: `object_spawns.py` (allocation +
-  spawn-stamping, zero back-deps), `object_runtime_common.py` (leaf infra:
-  fail-fast guard, near-call helpers, ALU shims), `object_deactivation.py`
-  (BD17/BFC7/BD0D death + 5F0D score + BCB1 clamp tails), and the earlier
-  `contact_overlap.py` (B250 selector). Still mixed in `object_runtime.py`:
-  behaviour-family dispatch, movement (~1.3k lines, the biggest remaining
-  cluster), candidate scans, contact handlers (9E19/BEC5/62F6), and the postmove
-  hub (BC45/BC4B). Next seam: movement (steps/clamps/scroll are leaf-ish) or the
-  behaviour families (F0EE/F185/F1F1).
+- `overkill/gameplay/object_runtime.py` (~2.2k lines, down from 4.5k = −51%) is
+  being split along real seams. Carved out: `object_spawns.py` (allocation +
+  spawn-stamping), `object_runtime_common.py` (leaf infra: fail-fast guard,
+  near-call helpers, ALU shims, `_no_patch_guard`, `_remember_balanced_push_scratch`),
+  `object_deactivation.py` (BD17/BFC7/BD0D death + 5F0D score + BCB1 clamp tails),
+  `object_movement.py` (~1.4k lines: steps, clamps, scroll, coord updates,
+  5DB2/5E42 steer, B729/B15A/D281 seek), `object_postmove.py` (BC45 prelude +
+  BC4B hub), `contact_side_effects.py` (62F6 overlap scan, BEC5 collision handler
+  + A8C2/BF5F mark, 9E69/9E98 post-contact), and `contact_overlap.py` (B250
+  selector). Still mixed in `object_runtime.py`: behaviour-family dispatch
+  (AA2B/EFAE/ABxx), the movement *behaviours* that route to postmove (drift
+  AE2C/AE7D, chase B1B0, sweep B00D), candidate scans, the bounds-tile tail
+  (AD60/AD5A), and the EFAE/8D4F behaviour bodies. Next seam: the behaviour
+  families (F0EE/F185/F1F1) and the AA2B/EFAE dispatch spine. **Open behavioural
+  target:** 9E19 is still run as bounded interpreted ASM inside the B250 selector
+  (`contact_overlap.py`); lifting it would absorb the last interpreted contact
+  side-effect, but needs its own oracle before a non-speculative lift.
 - `overkill/hooks.py` still holds non-EGA inline blits (`497A`, `477E`, `38B7`,
   `41DA`, `447B`, presence-stamp, dirty-cell presenter); move them behind thin
   wrappers like the EGA renderer already is.

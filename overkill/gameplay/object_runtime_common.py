@@ -164,3 +164,13 @@ def _call_verified_child_near(cpu, ip: int, default_handler, return_ip: int) -> 
         default_handler,
         return_ip & 0xFFFF,
     )
+
+
+def _no_patch_guard(*_args) -> bool:
+    return False
+
+
+def _remember_balanced_push_scratch(cpu, cx_value: int) -> None:
+    # PUSH/POP pairs leave the last pushed word below SP. Full-memory oracle
+    # comparisons can see it even though SP is balanced afterwards.
+    cpu.mem.ww(cpu.s.ss & 0xFFFF, (cpu.s.sp - 2) & 0xFFFF, cx_value & 0xFFFF)

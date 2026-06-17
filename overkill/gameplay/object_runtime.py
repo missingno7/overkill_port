@@ -45,6 +45,85 @@ from overkill.gameplay.object_runtime_common import (
     _run_original_tail_to_caller,
     _call_verified_child_near,
 )
+from overkill.gameplay.object_movement import (
+    SIG_OBJECT_CHILD_COORD_UPDATE_9FEA,
+    SIG_LINKED_OBJECT_COORD_QUAD_UPDATE_9FAF,
+    SIG_OBJECT_X_STEP_LEFT_CLAMP_A5D1,
+    SIG_OBJECT_X_STEP_RIGHT_CLAMP_A5EA,
+    SIG_OBJECT_Y_STEP_UP_CLAMP_A5F9,
+    SIG_OBJECT_Y_STEP_DOWN_CLAMP_A607,
+    SIG_OBJECT_VERTICAL_SCROLL_EDGE_RESPONSE_A616,
+    SIG_OBJECT_BOTTOM_SCROLL_OFFSET_DECAY_A63C,
+    SIG_OBJECT_TOP_SCROLL_EDGE_RESPONSE_A648,
+    SIG_OBJECT_TOP_SCROLL_OFFSET_RECOVER_A662,
+    SIG_OBJECT_TARGET_CHASE_D281,
+    SIG_MOVEMENT_DIR_STEP_8PX_AEE4,
+    SIG_MOVEMENT_DIR_STEP_3PX_AF22,
+    SIG_MOVEMENT_DIR_STEP_2PX_AF63,
+    SIG_MOVEMENT_DOUBLE_STEP_2PX_AF60,
+    SIG_OBJECT_TARGET_MOVE_B729,
+    SIG_OBJECT_SCROLL_FORWARD_STEP_A6FE,
+    SIG_OBJECT_SCROLL_BACKWARD_STEP_A781,
+    SIG_OBJECT_SCROLL_FORWARD_ROW_A74E,
+    SIG_OBJECT_SCROLL_BACKWARD_ROW_A7D0,
+    SIG_OBJECT_SCROLL_ROW_WRAP_A746,
+    SIG_OBJECT_SCROLL_ROW_WRAP_A7E3,
+    SIG_OBJECT_SCROLL_WORLD_PROGRESS_GATE_A66F,
+    SIG_OBJECT_PLAYER_CHASE_CANDIDATE_SCAN_B15A,
+    _run_object_delta_helper_5e1b,
+    _run_runtime_patched_object_steer_5e42,
+    run_runtime_patched_object_steer_5e42,
+    run_object_child_coord_update_9fea,
+    run_linked_object_coord_quad_update_9faf,
+    _run_two_pass_word_clamp_step,
+    run_object_x_step_left_clamp_a5d1,
+    run_object_x_step_right_clamp_a5ea,
+    run_object_y_step_up_clamp_a5f9,
+    run_object_y_step_down_clamp_a607,
+    run_object_bottom_scroll_offset_decay_a63c,
+    run_object_top_scroll_offset_recover_a662,
+    _assert_vertical_scroll_biases,
+    _run_object_top_scroll_edge_response_a648_body,
+    run_object_top_scroll_edge_response_a648,
+    run_object_vertical_scroll_edge_response_a616,
+    run_object_scroll_world_progress_gate_a66f,
+    run_object_scroll_forward_row_a74e,
+    run_object_scroll_backward_row_a7d0,
+    run_object_scroll_row_wrap_forward_a746,
+    run_object_scroll_row_wrap_backward_a7e3,
+    run_object_scroll_forward_step_a6fe,
+    run_object_scroll_backward_step_a781,
+    _run_af22_three_pixel_step_for_direction,
+    run_object_target_chase_d281,
+    _run_af63_step_for_direction,
+    _run_af60_double_step_for_direction,
+    run_movement_dir_double_step_2px_af60,
+    run_movement_dir_step_2px_af63,
+    run_movement_dir_step_3px_af22,
+    run_movement_dir_step_8px_aee4,
+    _run_aee4_step_for_direction,
+    _run_movement_direction_5db2,
+    _call_tile_lookup_505b,
+    _b00d_tile_is_blocking,
+    _call_b00d_component,
+    _run_player_chase_candidate_scan_b15a,
+    run_player_chase_candidate_scan_b15a,
+    run_object_target_move_b729,
+)
+from overkill.gameplay.object_runtime_common import _no_patch_guard
+from overkill.gameplay.contact_side_effects import (
+    _run_object_overlap_scan_62f6,
+    _run_collision_handler_bec5_observed,
+    _run_collision_mark_a8c2_tail_bf5f,
+    _run_post_contact_9e69_observed,
+    _run_post_contact_9e98_tail_observed,
+)
+from overkill.gameplay.object_postmove import (
+    _call_aa71,
+    run_object_postmove_prelude_bc45,
+    _run_object_postmove_bc4b,
+)
+from overkill.gameplay.object_runtime_common import _remember_balanced_push_scratch
 from overkill.gameplay.object_deactivation import (
     _run_deactivate_bd17_observed,
     _run_collision_death_tail_bfc7,
@@ -140,58 +219,13 @@ def _call_ac81(cpu, return_ip: int) -> None:
     _call_verified_child_near(cpu, 0xAC81, lambda c: run_object_slot_scan_guard_ac81(c, _no_patch_guard), return_ip)
 
 
-def _call_aa71(cpu, return_ip: int) -> None:
-    _call_verified_child_near(cpu, 0xAA71, run_postmove_contact_window_aa71, return_ip)
 
 
 
-SIG_OBJECT_CHILD_COORD_UPDATE_9FEA = bytes.fromhex(
-    "83 fb ff 75 01 c3 8b 46 08 d1 e0 d1 e0 03 f0"
-)
 
-SIG_LINKED_OBJECT_COORD_QUAD_UPDATE_9FAF = bytes.fromhex(
-    "c6 06 9e a3 00 c6 06 9f a3 00 a1 9a a3 a3 98 a3"
-    " be 8c a3 8b 1e 6c a9 e8 21 00 be 74 a3 8b 1e 68"
-    " a9 e8 17 00 a1 9c a3 a3 98 a3 be 80 a3 8b 1e 6a"
-    " a9 e8 07 00 be 68 a3 8b 1e 66 a9"
-)
-SIG_OBJECT_X_STEP_LEFT_CLAMP_A5D1 = bytes.fromhex(
-    "83 3e 7c a4 00 75 0e e8 00 00 83 7e 02 20 75 01 c3 ff 4e 02 c3 ff 4e 02 c3"
-)
-SIG_OBJECT_X_STEP_RIGHT_CLAMP_A5EA = bytes.fromhex(
-    "e8 00 00 81 7e 02 c0 00 75 01 c3 ff 46 02 c3"
-)
-SIG_OBJECT_Y_STEP_UP_CLAMP_A5F9 = bytes.fromhex(
-    "e8 00 00 83 7e 04 00 75 01 c3 ff 4e 04 c3"
-)
-SIG_OBJECT_Y_STEP_DOWN_CLAMP_A607 = bytes.fromhex(
-    "e8 00 00 81 7e 04 b0 00 72 01 c3 ff 46 04 c3"
-)
-SIG_OBJECT_VERTICAL_SCROLL_EDGE_RESPONSE_A616 = bytes.fromhex(
-    "81 3e 50 23 b6 00 77 01 c3 e8 26 00 81 7e 04 b0"
-    " 00 75 13 f6 06 be 98 01 74 0c 83 3e 9c a3 08 74"
-    " 04 ff 06 9c a3 c3 83 3e 9c a3 00 74 04 ff 0e 9c"
-    " a3 c3 83 7e 04 00 75 14 f6 06 be 98 02 74 0d 83"
-    " 3e 9a a3 f8 75 01 c3 ff 0e 9a a3 c3 83 3e 9a a3"
-    " 00 75 01 c3 ff 06 9a a3 c3"
-)
-SIG_OBJECT_BOTTOM_SCROLL_OFFSET_DECAY_A63C = bytes.fromhex(
-    "83 3e 9c a3 00 74 04 ff 0e 9c a3 c3"
-)
-SIG_OBJECT_TOP_SCROLL_EDGE_RESPONSE_A648 = bytes.fromhex(
-    "83 7e 04 00 75 14 f6 06 be 98 02 74 0d 83 3e 9a"
-    " a3 f8 75 01 c3 ff 0e 9a a3 c3 83 3e 9a a3 00"
-    " 75 01 c3 ff 06 9a a3 c3"
-)
-SIG_OBJECT_TOP_SCROLL_OFFSET_RECOVER_A662 = bytes.fromhex(
-    "83 3e 9a a3 00 75 01 c3 ff 06 9a a3 c3"
-)
 
 SIG_OBJECT_BOUNDS_TILE_PRELUDE_AD5A = bytes.fromhex(
     "a1 78 a2 01 46 02 83 7e 02 08 73 03 e9 ae 0f"
-)
-SIG_OBJECT_TARGET_CHASE_D281 = bytes.fromhex(
-    "8b 46 32 a3 04 23 8b 46 34 a3 06 23 c7 06 08 23 01 00"
 )
 SIG_OBJECT_DRIFT_DOWNRIGHT_AE2C = bytes.fromhex(
     "81 7e 04 c8 00 74 96 83 6e 02 04 f7 46 04 07 00"
@@ -206,25 +240,6 @@ SIG_OBJECT_DRIFT_UPRIGHT_AE7D = bytes.fromhex(
 # three siblings differ only in their per-step delta (8px / 3px / 2px).  The full
 # routine bytes (entry stub + table + handlers) are pinned so a runtime patch of
 # either the dispatch or any handler disables the hook instead of guessing.
-SIG_MOVEMENT_DIR_STEP_8PX_AEE4 = bytes.fromhex(
-    "8b 5e 06 d1 e3 2e ff a7 ee ae 0b af 10 af 14 af fe ae 02 af 19 af 1d af 07 af "
-    "83 46 04 08 83 46 02 08 c3 83 6e 04 08 83 6e 02 08 c3 83 6e 02 08 83 46 04 08 c3 "
-    "83 46 02 08 83 6e 04 08 c3"
-)
-SIG_MOVEMENT_DIR_STEP_3PX_AF22 = bytes.fromhex(
-    "8b 5e 06 d1 e3 2e ff a7 2c af 49 af 4e af 52 af 3c af 40 af 57 af 5b af 45 af "
-    "83 46 04 03 83 46 02 03 c3 83 6e 04 03 83 6e 02 03 c3 83 6e 02 03 83 46 04 03 c3 "
-    "83 46 02 03 83 6e 04 03 c3"
-)
-SIG_MOVEMENT_DIR_STEP_2PX_AF63 = bytes.fromhex(
-    "8b 5e 06 d1 e3 2e ff a7 6e af 90 8b af 90 af 94 af 7e af 82 af 99 af 9d af 87 af "
-    "83 46 04 02 83 46 02 02 c3 83 6e 04 02 83 6e 02 02 c3 83 6e 02 02 83 46 04 02 c3 "
-    "83 46 02 02 83 6e 04 02 c3"
-)
-SIG_MOVEMENT_DOUBLE_STEP_2PX_AF60 = b"\xE8\x00\x00" + SIG_MOVEMENT_DIR_STEP_2PX_AF63
-SIG_OBJECT_TARGET_MOVE_B729 = bytes.fromhex(
-    "8b 46 32 a3 04 23 8b 46 34 a3 06 23 e8 7a a6 83 3e 0a 23 00 c3"
-)
 SIG_OBJECT_TILE_SWEEP_DISPATCH_B00D = bytes.fromhex(
     "e8 63 a0 83 fb ff 74 1d 8b d3 8b 5e 06 d1 e3 "
     "2e ff a7 22 b0 90 7d b0 c9 b0 cc b0 39 b0 "
@@ -247,536 +262,35 @@ SIG_OBJECT_PLAYER_CHASE_B1B0 = bytes.fromhex(
 
 
 
-def _run_object_delta_helper_5e1b(cpu) -> None:
-    """Mirror the small 1010:5E1B object delta helper.
 
-    The helper is used by several object-family edge/target steering branches.
-    BX points at a target object/box record, BP points at the active object slot.
-    It stores signed Y/X deltas into SS:[BP+2C]/SS:[BP+2A] relative to
-    DS:[BX+04]/DS:[BX+02], with either a 4px or 12px padding depending on
-    DS:[BX+14].  The final live flags are from the X ``SUB AX,CX`` just like
-    the original; the trailing MOV/RET do not alter them.
-    """
-    ds = cpu.s.ds & 0xFFFF
-    ss = cpu.s.ss & 0xFFFF
-    bp = cpu.s.bp & 0xFFFF
-    bx = cpu.s.bx & 0xFFFF
-    mem = cpu.mem
 
-    cpu.s.dx = 0x0004
-    _cmp_word(cpu, mem.rw(ds, (bx + 0x14) & 0xFFFF), 0x0001)
-    if mem.rw(ds, (bx + 0x14) & 0xFFFF) != 0x0001:
-        cpu.s.dx = 0x000C
 
-    cpu.s.ax = mem.rw(ss, (bp + OFF_Y) & 0xFFFF)
-    cpu.s.cx = mem.rw(ds, (bx + 0x04) & 0xFFFF)
-    old_cx = cpu.s.cx
-    cpu.s.cx = (cpu.s.cx + cpu.s.dx) & 0xFFFF
-    cpu.set_add_flags(old_cx, cpu.s.dx, old_cx + cpu.s.dx, 16)
-    old_ax = cpu.s.ax
-    cpu.s.ax = (cpu.s.ax - cpu.s.cx) & 0xFFFF
-    cpu.set_sub_flags(old_ax, cpu.s.cx, old_ax - cpu.s.cx, 16)
-    mem.ww(ss, (bp + 0x2C) & 0xFFFF, cpu.s.ax)
 
-    cpu.s.ax = mem.rw(ss, (bp + OFF_X) & 0xFFFF)
-    cpu.s.cx = mem.rw(ds, (bx + 0x02) & 0xFFFF)
-    old_cx = cpu.s.cx
-    cpu.s.cx = (cpu.s.cx + cpu.s.dx) & 0xFFFF
-    cpu.set_add_flags(old_cx, cpu.s.dx, old_cx + cpu.s.dx, 16)
-    old_ax = cpu.s.ax
-    cpu.s.ax = (cpu.s.ax - cpu.s.cx) & 0xFFFF
-    cpu.set_sub_flags(old_ax, cpu.s.cx, old_ax - cpu.s.cx, 16)
-    mem.ww(ss, (bp + 0x2A) & 0xFFFF, cpu.s.ax)
 
-def _run_runtime_patched_object_steer_5e42(cpu) -> None:
-    """Mirror the hot gameplay-patched 1010:5E42 steering helper.
 
-    The original executable overlays this address with a small helper during
-    gameplay.  It converts signed Y/X deltas at ``SS:[BP+2C]/[BP+2A]`` into a
-    direction through the ``DS:A348`` table, then tail-jumps to AF22 for a
-    3-pixel move when ``DS:2312 == 3`` or AF63 for a 2-pixel move otherwise.
-    """
-    ds = cpu.s.ds & 0xFFFF
-    ss = cpu.s.ss & 0xFFFF
-    bp = cpu.s.bp & 0xFFFF
-    entry_sp = cpu.s.sp & 0xFFFF
-    mem = cpu.mem
 
-    def remember_internal_call(ret_ip: int) -> None:
-        # 5E42 uses real CALLs to the 5EB5/5EC8 flag-bit leaves before the final
-        # JMP AF22/AF63.  Those CALLs are balanced, but the last return word
-        # remains below the caller's live return word after AF22/AF63 RETs.
-        mem.ww(ss, (entry_sp - 2) & 0xFFFF, ret_ip & 0xFFFF)
 
-    def call_5eb5(ret_ip: int) -> None:
-        remember_internal_call(ret_ip)
-        _cmp_word(cpu, mem.rw(ds, 0x230C), 0x0001)
-        if mem.rw(ds, 0x230C) == 0x0001:
-            _or_mem_word(cpu, ds, 0x2310, 0x0001)
-        else:
-            _or_mem_word(cpu, ds, 0x2310, 0x0002)
 
-    def call_5ec8(ret_ip: int) -> None:
-        remember_internal_call(ret_ip)
-        _cmp_word(cpu, mem.rw(ds, 0x230E), 0x0001)
-        if mem.rw(ds, 0x230E) == 0x0001:
-            _or_mem_word(cpu, ds, 0x2310, 0x0004)
-        else:
-            _or_mem_word(cpu, ds, 0x2310, 0x0008)
 
-    mem.ww(ds, 0x230C, 0x0000)
-    mem.ww(ds, 0x230E, 0x0000)
-    mem.ww(ds, 0x2310, 0x0000)
 
-    cpu.s.ax = mem.rw(ss, (bp + 0x2C) & 0xFFFF)
-    cpu.set_logic_flags(cpu.s.ax, 16)
-    if (cpu.s.ax & 0x8000) != 0:
-        _neg_reg16(cpu, 0)
-        _inc_mem_word_preserve_cf(cpu, ds, 0x230C)
 
-    cpu.s.bx = mem.rw(ss, (bp + 0x2A) & 0xFFFF)
-    cpu.set_logic_flags(cpu.s.bx, 16)
-    if (cpu.s.bx & 0x8000) != 0:
-        _neg_reg16(cpu, 3)
-        _inc_mem_word_preserve_cf(cpu, ds, 0x230E)
 
-    ax = cpu.s.ax & 0xFFFF
-    bx = cpu.s.bx & 0xFFFF
-    _cmp_word(cpu, ax, bx)
-    if ax == bx:
-        call_5eb5(0x5E96)
-        call_5ec8(0x5E99)
-    elif ax > bx:
-        _add_mem_word(cpu, ss, (bp + 0x2E) & 0xFFFF, bx)
-        frac = mem.rw(ss, (bp + 0x2E) & 0xFFFF)
-        _cmp_word(cpu, frac, ax)
-        if frac <= ax:
-            call_5eb5(0x5E91)
-        else:
-            _sub_mem_word(cpu, ss, (bp + 0x2E) & 0xFFFF, ax)
-            call_5eb5(0x5E96)
-            call_5ec8(0x5E99)
-    else:
-        _add_mem_word(cpu, ss, (bp + 0x2E) & 0xFFFF, ax)
-        frac = mem.rw(ss, (bp + 0x2E) & 0xFFFF)
-        _cmp_word(cpu, frac, bx)
-        if frac <= bx:
-            call_5ec8(0x5E99)
-        else:
-            _sub_mem_word(cpu, ss, (bp + 0x2E) & 0xFFFF, bx)
-            call_5eb5(0x5E96)
-            call_5ec8(0x5E99)
 
-    cpu.s.bx = 0xA348
-    cpu.s.ax = mem.rw(ds, 0x2310)
-    cpu.set_reg8(0, mem.rb(ds, (cpu.s.bx + (cpu.s.ax & 0x00FF)) & 0xFFFF))
-    _cmp_byte(cpu, cpu.s.ax & 0x00FF, 0xFF)
-    if (cpu.s.ax & 0x00FF) == 0xFF:
-        cpu.s.ip = cpu.pop()
-        return
 
-    mem.ww(ss, (bp + OFF_DIRECTION_OR_STEP) & 0xFFFF, cpu.s.ax)
-    _cmp_word(cpu, mem.rw(ds, 0x2312), 0x0003)
-    if mem.rw(ds, 0x2312) == 0x0003:
-        _run_af22_three_pixel_step_for_direction(cpu, parent="1010:5E42 -> AF22")
-    else:
-        _run_af63_step_for_direction(cpu, parent="1010:5E42 -> AF63")
-    cpu.s.ip = cpu.pop()
 
 
-def run_runtime_patched_object_steer_5e42(cpu) -> None:
-    """Hook wrapper body for the gameplay-patched 1010:5E42 variant.
 
-    This address is polyvariant.  The hook is valid only for the known gameplay
-    materialized body; known-cold or unknown live bytes fail fast so runtime code
-    exhaustion cannot hide behind interpreted fallback.
-    """
-    require_runtime_code_variant(cpu, (cpu.s.cs & 0xFFFF, 0x5E42), "gameplay_object_steer_5e42")
-    _run_runtime_patched_object_steer_5e42(cpu)
 
 
-def run_object_child_coord_update_9fea(cpu, self_disable_if_patched) -> None:
-    """Lift 1010:9FEA, a small object-linked coordinate update helper.
 
-    The caller passes BX as the destination linked object pointer and SI as a
-    motion/offset table pointer.  BX==FFFF is the null-link fast return.  The
-    active path adds the source object's base X/Y to two table words, applies
-    the global vertical scroll offset DS:A398 twice, clamps Y into 0..00C0h,
-    and sets DS:A39E/A39F when the lower/upper clamp fired.
-    """
-    if self_disable_if_patched(
-        cpu,
-        0x9FEA,
-        SIG_OBJECT_CHILD_COORD_UPDATE_9FEA,
-        "overkill_object_child_coord_update_9fea",
-    ):
-        return
 
-    s = cpu.s
-    mem = cpu.mem
-    ds = s.ds & 0xFFFF
-    ss = s.ss & 0xFFFF
-    bx = s.bx & 0xFFFF
 
-    _cmp_word(cpu, bx, 0xFFFF)
-    if bx == 0xFFFF:
-        s.ip = cpu.pop()
-        return
 
-    ax = mem.rw(ss, (s.bp + 0x08) & 0xFFFF)
-    ax = cpu.shift(4, ax, 1, 16)
-    ax = cpu.shift(4, ax, 1, 16)
-    _add_reg16(cpu, 6, ax)
 
-    x_delta = mem.rw(ds, s.si & 0xFFFF)
-    s.si = (s.si + 2) & 0xFFFF
-    ax = (x_delta + mem.rw(ss, (s.bp + 0x02) & 0xFFFF)) & 0xFFFF
-    # ADD flags are overwritten later by the Y clamps/cmp in all observed active paths.
-    s.ax = ax
-    mem.ww(ds, (bx + 0x02) & 0xFFFF, ax)
 
-    y_delta = mem.rw(ds, s.si & 0xFFFF)
-    s.si = (s.si + 2) & 0xFFFF
-    ax_full = y_delta + mem.rw(ss, (s.bp + 0x04) & 0xFFFF)
-    ax_full += mem.rw(ds, 0xA398)
-    ax_full += mem.rw(ds, 0xA398)
-    ax = ax_full & 0xFFFF
-    s.ax = ax
-    mem.ww(ds, (bx + 0x04) & 0xFFFF, ax)
 
-    y = mem.rw(ds, (bx + 0x04) & 0xFFFF)
-    _cmp_word(cpu, y, 0x0000)
-    if y & 0x8000:
-        mem.ww(ds, (bx + 0x04) & 0xFFFF, 0x0000)
-        mem.wb(ds, 0xA39E, 0x01)
-        y = 0
 
-    _cmp_word(cpu, y, 0x00C0)
-    # Signed JLE.  Values above 00C0 in the positive signed range trigger the
-    # upper clamp.  Negative values have already been clamped to zero above.
-    if y <= 0x00C0:
-        s.ip = cpu.pop()
-        return
 
-    mem.ww(ds, (bx + 0x04) & 0xFFFF, 0x00C0)
-    mem.wb(ds, 0xA39F, 0x01)
-    s.ip = cpu.pop()
-
-
-def run_linked_object_coord_quad_update_9faf(cpu, self_disable_if_patched) -> None:
-    """Lift 1010:9FAF, the four-linked-object coordinate update parent.
-
-    The frame-controller child calls this block to update four linked object
-    pointers from motion/offset tables.  It composes the already verified
-    ``9FEA`` child-coordinate helper three times via real CALL scratch and then
-    falls through into the fourth ``9FEA`` call, which returns directly to the
-    original caller.  This is still raw linked-slot/ring behavior; it does not
-    assign a semantic enemy/projectile identity to the four children.
-    """
-    if self_disable_if_patched(
-        cpu,
-        0x9FAF,
-        SIG_LINKED_OBJECT_COORD_QUAD_UPDATE_9FAF,
-        "overkill_linked_object_coord_quad_update_9faf",
-    ):
-        return
-
-    s = cpu.s
-    mem = cpu.mem
-    ds = s.ds & 0xFFFF
-
-    def call_child(si: int, bx_global: int, ret_ip: int) -> None:
-        s.si = si & 0xFFFF
-        s.bx = mem.rw(ds, bx_global & 0xFFFF)
-        cpu.push(ret_ip & 0xFFFF)
-        run_object_child_coord_update_9fea(cpu, self_disable_if_patched)
-        if (s.ip & 0xFFFF) != (ret_ip & 0xFFFF):
-            raise RuntimeError(
-                f"9FAF expected 9FEA child to return to 1010:{ret_ip & 0xFFFF:04X}, "
-                f"got {s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X}"
-            )
-
-    mem.wb(ds, 0xA39E, 0x00)
-    mem.wb(ds, 0xA39F, 0x00)
-
-    s.ax = mem.rw(ds, 0xA39A)
-    mem.ww(ds, 0xA398, s.ax)
-    call_child(0xA38C, 0xA96C, 0x9FC9)
-    call_child(0xA374, 0xA968, 0x9FD3)
-
-    s.ax = mem.rw(ds, 0xA39C)
-    mem.ww(ds, 0xA398, s.ax)
-    call_child(0xA380, 0xA96A, 0x9FE3)
-
-    s.si = 0xA368
-    s.bx = mem.rw(ds, 0xA966)
-    # Fall through into 9FEA: no new return word is pushed, so the child helper
-    # consumes 9FAF's caller return exactly like the original ASM.
-    run_object_child_coord_update_9fea(cpu, self_disable_if_patched)
-
-
-def _run_two_pass_word_clamp_step(cpu, *, field_off: int, limit: int, increment: bool, below_condition: bool = False) -> None:
-    """Mirror OVERKILL's odd CALL-next/RET-twice clamp-step idiom.
-
-    The pure recovered movement system owns the final value and step count.  This
-    lifted adapter still replays the original compare/INC/DEC choreography so the
-    CALL-next stack scratch and live 8086 flags remain oracle-compatible.
-    """
-    ss = cpu.s.ss & 0xFFFF
-    bp = cpu.s.bp & 0xFFFF
-    field_addr = (bp + field_off) & 0xFFFF
-    decision = two_pass_axis_clamp_step(
-        cpu.mem.rw(ss, field_addr),
-        limit_word=limit,
-        increment=increment,
-        below_condition=below_condition,
-    )
-
-    # The synthetic CALL-next return word remains visible below SP after both
-    # RETs complete, so full-memory oracle comparisons can see it.
-    cpu.mem.ww(ss, ((cpu.s.sp & 0xFFFF) - 2) & 0xFFFF, cpu.s.ip & 0xFFFF)
-    applied_steps = 0
-    for _ in range(2):
-        value = cpu.mem.rw(ss, field_addr)
-        _cmp_word(cpu, value, limit & 0xFFFF)
-        if below_condition:
-            should_step = value < (limit & 0xFFFF)
-        else:
-            should_step = value != (limit & 0xFFFF)
-        if not should_step:
-            continue
-        if increment:
-            _inc_mem_word_preserve_cf(cpu, ss, field_addr)
-        else:
-            _dec_mem_word_preserve_cf(cpu, ss, field_addr)
-        applied_steps += 1
-
-    if cpu.mem.rw(ss, field_addr) != decision.final_word or applied_steps != decision.step_count:
-        raise AssertionError("pure two-pass axis clamp disagrees with ASM-compatible replay")
-    cpu.s.ip = cpu.pop()
-
-
-def run_object_x_step_left_clamp_a5d1(cpu, self_disable_if_patched) -> None:
-    """Lift 1010:A5D1, a raw leftward object X clamp-step helper."""
-    if self_disable_if_patched(
-        cpu,
-        0xA5D1,
-        SIG_OBJECT_X_STEP_LEFT_CLAMP_A5D1,
-        "overkill_object_x_step_left_clamp_a5d1",
-    ):
-        return
-    ds = cpu.s.ds & 0xFFFF
-    ss = cpu.s.ss & 0xFFFF
-    bp = cpu.s.bp & 0xFFFF
-    _cmp_word(cpu, cpu.mem.rw(ds, 0xA47C), 0x0000)
-    if cpu.mem.rw(ds, 0xA47C) != 0:
-        field_addr = (bp + OFF_X) & 0xFFFF
-        decision = one_pixel_axis_step(cpu.mem.rw(ss, field_addr), increment=False)
-        _dec_mem_word_preserve_cf(cpu, ss, field_addr)
-        if cpu.mem.rw(ss, field_addr) != decision.final_word:
-            raise AssertionError("pure A5D1 unclamped one-pixel step disagrees with ASM-compatible replay")
-        cpu.s.ip = cpu.pop()
-        return
-    # A5D8 CALL A5DB pushes A5DB and executes the compare/decrement body twice.
-    cpu.s.ip = 0xA5DB
-    _run_two_pass_word_clamp_step(cpu, field_off=0x02, limit=0x0020, increment=False)
-
-
-def run_object_x_step_right_clamp_a5ea(cpu, self_disable_if_patched) -> None:
-    """Lift 1010:A5EA, a raw rightward object X clamp-step helper."""
-    if self_disable_if_patched(
-        cpu,
-        0xA5EA,
-        SIG_OBJECT_X_STEP_RIGHT_CLAMP_A5EA,
-        "overkill_object_x_step_right_clamp_a5ea",
-    ):
-        return
-    cpu.s.ip = 0xA5ED
-    _run_two_pass_word_clamp_step(cpu, field_off=0x02, limit=0x00C0, increment=True)
-
-
-def run_object_y_step_up_clamp_a5f9(cpu, self_disable_if_patched) -> None:
-    """Lift 1010:A5F9, a raw upward object Y clamp-step helper."""
-    if self_disable_if_patched(
-        cpu,
-        0xA5F9,
-        SIG_OBJECT_Y_STEP_UP_CLAMP_A5F9,
-        "overkill_object_y_step_up_clamp_a5f9",
-    ):
-        return
-    cpu.s.ip = 0xA5FC
-    _run_two_pass_word_clamp_step(cpu, field_off=0x04, limit=0x0000, increment=False)
-
-
-def run_object_y_step_down_clamp_a607(cpu, self_disable_if_patched) -> None:
-    """Lift 1010:A607, a raw downward object Y clamp-step helper."""
-    if self_disable_if_patched(
-        cpu,
-        0xA607,
-        SIG_OBJECT_Y_STEP_DOWN_CLAMP_A607,
-        "overkill_object_y_step_down_clamp_a607",
-    ):
-        return
-    cpu.s.ip = 0xA60A
-    _run_two_pass_word_clamp_step(cpu, field_off=0x04, limit=0x00B0, increment=True, below_condition=True)
-
-
-def run_object_bottom_scroll_offset_decay_a63c(cpu, self_disable_if_patched) -> None:
-    """Lift 1010:A63C, decay the bottom-edge scroll offset toward zero."""
-    if self_disable_if_patched(
-        cpu,
-        0xA63C,
-        SIG_OBJECT_BOTTOM_SCROLL_OFFSET_DECAY_A63C,
-        "overkill_object_bottom_scroll_offset_decay_a63c",
-    ):
-        return
-    ds = cpu.s.ds & 0xFFFF
-    value = cpu.mem.rw(ds, 0xA39C)
-    expected = decay_bottom_scroll_bias_a63c(value)
-    _cmp_word(cpu, value, 0x0000)
-    if value != 0:
-        _dec_mem_word_preserve_cf(cpu, ds, 0xA39C)
-    if cpu.mem.rw(ds, 0xA39C) != expected:
-        raise AssertionError("pure A63C bottom-bias decay disagrees with ASM-compatible replay")
-    cpu.s.ip = cpu.pop()
-
-
-def run_object_top_scroll_offset_recover_a662(cpu, self_disable_if_patched) -> None:
-    """Lift 1010:A662, recover the top-edge scroll offset toward zero."""
-    if self_disable_if_patched(
-        cpu,
-        0xA662,
-        SIG_OBJECT_TOP_SCROLL_OFFSET_RECOVER_A662,
-        "overkill_object_top_scroll_offset_recover_a662",
-    ):
-        return
-    ds = cpu.s.ds & 0xFFFF
-    value = cpu.mem.rw(ds, 0xA39A)
-    expected = recover_top_scroll_bias_a662(value)
-    _cmp_word(cpu, value, 0x0000)
-    if value != 0:
-        _inc_mem_word_preserve_cf(cpu, ds, 0xA39A)
-    if cpu.mem.rw(ds, 0xA39A) != expected:
-        raise AssertionError("pure A662 top-bias recovery disagrees with ASM-compatible replay")
-    cpu.s.ip = cpu.pop()
-
-
-def _assert_vertical_scroll_biases(cpu, expected: VerticalScrollEdgeDecision) -> None:
-    ds = cpu.s.ds & 0xFFFF
-    if (
-        cpu.mem.rw(ds, 0xA39A) != (expected.top_bias_word & 0xFFFF)
-        or cpu.mem.rw(ds, 0xA39C) != (expected.bottom_bias_word & 0xFFFF)
-    ):
-        raise AssertionError("pure A616 vertical scroll-bias response disagrees with ASM-compatible replay")
-
-
-def _run_object_top_scroll_edge_response_a648_body(cpu) -> None:
-    ds = cpu.s.ds & 0xFFFF
-    ss = cpu.s.ss & 0xFFFF
-    bp = cpu.s.bp & 0xFFFF
-    y = cpu.mem.rw(ss, (bp + OFF_Y) & 0xFFFF)
-    input_bits = cpu.mem.rb(ds, 0x98BE)
-    start_top_bias = cpu.mem.rw(ds, 0xA39A)
-    expected_top_bias = top_scroll_edge_response_a648(
-        object_y_word=y,
-        input_bits=input_bits,
-        top_bias_word=start_top_bias,
-    )
-    _cmp_word(cpu, y, 0x0000)
-    if y == 0:
-        _test_word(cpu, input_bits, 0x0002)
-        if (input_bits & 0x02) != 0:
-            value = cpu.mem.rw(ds, 0xA39A)
-            _cmp_word(cpu, value, 0xFFF8)
-            if value == 0xFFF8:
-                if cpu.mem.rw(ds, 0xA39A) != expected_top_bias:
-                    raise AssertionError("pure A648 top-bias response disagrees with ASM-compatible replay")
-                cpu.s.ip = cpu.pop()
-                return
-            _dec_mem_word_preserve_cf(cpu, ds, 0xA39A)
-            if cpu.mem.rw(ds, 0xA39A) != expected_top_bias:
-                raise AssertionError("pure A648 top-bias response disagrees with ASM-compatible replay")
-            cpu.s.ip = cpu.pop()
-            return
-    run_object_top_scroll_offset_recover_a662(cpu, lambda *_args, **_kwargs: False)
-    if cpu.mem.rw(ds, 0xA39A) != expected_top_bias:
-        raise AssertionError("pure A648 top-bias response disagrees with ASM-compatible replay")
-
-
-def run_object_top_scroll_edge_response_a648(cpu, self_disable_if_patched) -> None:
-    """Lift 1010:A648, top-edge input scroll bias / recovery helper."""
-    if self_disable_if_patched(
-        cpu,
-        0xA648,
-        SIG_OBJECT_TOP_SCROLL_EDGE_RESPONSE_A648,
-        "overkill_object_top_scroll_edge_response_a648",
-    ):
-        return
-    _run_object_top_scroll_edge_response_a648_body(cpu)
-
-
-def run_object_vertical_scroll_edge_response_a616(cpu, self_disable_if_patched) -> None:
-    """Lift 1010:A616, raw vertical edge-scroll response helper.
-
-    This is a frame-controller/object bridge: once the view has advanced past
-    the gameplay threshold, it updates top and bottom scroll-bias globals
-    ``DS:A39A/A39C`` based on the active object's Y coordinate and input bits.
-    """
-    if self_disable_if_patched(
-        cpu,
-        0xA616,
-        SIG_OBJECT_VERTICAL_SCROLL_EDGE_RESPONSE_A616,
-        "overkill_object_vertical_scroll_edge_response_a616",
-    ):
-        return
-    ds = cpu.s.ds & 0xFFFF
-    ss = cpu.s.ss & 0xFFFF
-    bp = cpu.s.bp & 0xFFFF
-
-    value = cpu.mem.rw(ds, 0x2350)
-    expected = vertical_scroll_edge_response_a616(
-        VerticalScrollEdgeInput(
-            view_y_word=value,
-            object_y_word=cpu.mem.rw(ss, (bp + OFF_Y) & 0xFFFF),
-            input_bits=cpu.mem.rb(ds, 0x98BE),
-            top_bias_word=cpu.mem.rw(ds, 0xA39A),
-            bottom_bias_word=cpu.mem.rw(ds, 0xA39C),
-        )
-    )
-    _cmp_word(cpu, value, 0x00B6)
-    if value <= 0x00B6:
-        if expected.view_gate_open:
-            raise AssertionError("pure A616 view gate disagrees with ASM-compatible replay")
-        _assert_vertical_scroll_biases(cpu, expected)
-        cpu.s.ip = cpu.pop()
-        return
-
-    # A61F CALL A648 leaves A622 below the live caller return word after the
-    # nested helper returns.
-    cpu.mem.ww(ss, ((cpu.s.sp & 0xFFFF) - 2) & 0xFFFF, 0xA622)
-    cpu.push(0xA622)
-    _run_object_top_scroll_edge_response_a648_body(cpu)
-    if (cpu.s.ip & 0xFFFF) != 0xA622:
-        raise RuntimeError(f"A616 expected A648 to return to A622, got {cpu.s.ip & 0xFFFF:04X}")
-
-    y = cpu.mem.rw(ss, (bp + OFF_Y) & 0xFFFF)
-    _cmp_word(cpu, y, 0x00B0)
-    if y == 0x00B0:
-        _test_word(cpu, cpu.mem.rb(ds, 0x98BE), 0x0001)
-        if (cpu.mem.rb(ds, 0x98BE) & 0x01) != 0:
-            value = cpu.mem.rw(ds, 0xA39C)
-            _cmp_word(cpu, value, 0x0008)
-            if value == 0x0008:
-                _assert_vertical_scroll_biases(cpu, expected)
-                cpu.s.ip = cpu.pop()
-                return
-            _inc_mem_word_preserve_cf(cpu, ds, 0xA39C)
-            _assert_vertical_scroll_biases(cpu, expected)
-            cpu.s.ip = cpu.pop()
-            return
-
-    run_object_bottom_scroll_offset_decay_a63c(cpu, lambda *_args, **_kwargs: False)
-    _assert_vertical_scroll_biases(cpu, expected)
 
 
 def _object_ptr_from_scan_index(cpu, table_base: int, cx_value: int) -> tuple[int, int]:
@@ -793,10 +307,6 @@ def _push_loop_count_for_interpreted_tail(cpu, cx_value: int) -> None:
     cpu.mem.ww(cpu.s.ss & 0xFFFF, cpu.s.sp, cx_value & 0xFFFF)
 
 
-def _remember_balanced_push_scratch(cpu, cx_value: int) -> None:
-    # PUSH/POP pairs leave the last pushed word below SP. Full-memory oracle
-    # comparisons can see it even though SP is balanced afterwards.
-    cpu.mem.ww(cpu.s.ss & 0xFFFF, (cpu.s.sp - 2) & 0xFFFF, cx_value & 0xFFFF)
 
 
 def _scan_loop_until_callable(cpu, table_base: int, callable_ip: int, done_ip: int, should_call) -> None:
@@ -1476,172 +986,6 @@ def _run_object_behavior_b9f0(cpu, *, parent: str, chain: str, cx_value: int) ->
     mem.ww(ss, (bp + OFF_SPRITE_OR_STATE) & 0xFFFF, cpu.s.ax)
     cpu.s.ip = 0xBC4B
 
-def _run_collision_mark_a8c2_tail_bf5f(cpu) -> None:
-    """Run BEC5:BF5F's observed A8C2 linked-object mark tail and return."""
-    ds = cpu.s.ds & 0xFFFF
-    ss = cpu.s.ss & 0xFFFF
-    mem = cpu.mem
-
-    saved_bp = cpu.s.bp & 0xFFFF
-    cpu.push(saved_bp)
-    for ptr_off in (0xA8BA, 0xA8BC, 0xA8BE, 0xA8C0):
-        cpu.s.bp = mem.rw(ds, ptr_off)
-        mem.ww(ss, (cpu.s.bp + 0x24) & 0xFFFF, 0x0005)
-    _cmp_byte(cpu, mem.rb(ds, 0x98C0), 0x00)
-    if mem.rb(ds, 0x98C0) != 0x00:
-        mem.wb(ds, 0xBEFF, 0x0E)
-    cpu.s.bp = cpu.pop()
-    cpu.s.ip = cpu.pop()
-
-
-
-
-def _run_collision_handler_bec5_observed(cpu, *, collided_bx: int, parent: str, chain: str, cx_value: int) -> None:
-    """Run the currently verified BEC5 collision branches.
-
-    BEC5 is jumped to from the unrolled 62F6 overlap scan rather than called as
-    a separate subroutine.  Its RET returns to 62F6's caller, so every lifted RET
-    path consumes the caller's return word exactly like the original ASM.
-    """
-    ds = cpu.s.ds & 0xFFFF
-    ss = cpu.s.ss & 0xFFFF
-    bp = cpu.s.bp & 0xFFFF
-    bx = collided_bx & 0xFFFF
-    mem = cpu.mem
-
-    def run_bfc7(label: str) -> None:
-        _run_collision_death_tail_bfc7(
-            cpu,
-            parent=parent,
-            chain=f"{chain} -> BEC5 {label}".rstrip(),
-            cx_value=cx_value,
-        )
-
-    def call_bd0d(return_ip: int, label: str) -> None:
-        # BEC5 reaches BD0D by real CALLs at BF92/BF97.  Preserve their
-        # return-address scratch even though the lifted code invokes the helper
-        # directly.
-        call_sp = cpu.s.sp & 0xFFFF
-        cpu.push(return_ip & 0xFFFF)
-        _run_collision_cleanup_bd0d_observed(
-            cpu,
-            parent=parent,
-            chain=f"{chain} -> BEC5 {label}",
-            cx_value=cx_value,
-        )
-        cpu.s.sp = call_sp
-
-    def run_bf25_counter_chain(*, enter_at_bf25: bool, label: str) -> None:
-        # BF25 is reached only by sprite-0033 variant-2 collisions and by the
-        # A8C2-gated variant 5/6 and 7/8/0C continuations.  The usual variant-2
-        # sprite path starts at BF2D and therefore skips this first decrement.
-        if enter_at_bf25:
-            _sub_mem_word(cpu, ss, (bp + 0x20) & 0xFFFF, 1)
-            if mem.rw(ss, (bp + 0x20) & 0xFFFF) == 0:
-                run_bfc7(f"{label} BF25 counter zero")
-                return
-
-        # BF2D
-        _sub_mem_word(cpu, ss, (bp + 0x20) & 0xFFFF, 1)
-        if mem.rw(ss, (bp + 0x20) & 0xFFFF) == 0:
-            run_bfc7(f"{label} BF2D counter zero")
-            return
-
-        bedc = mem.rw(ds, 0xBEDC)
-        _cmp_word(cpu, bedc, 0x0001)
-        if bedc == 0x0001:
-            _sub_mem_word(cpu, ss, (bp + 0x20) & 0xFFFF, 1)
-            if mem.rw(ss, (bp + 0x20) & 0xFFFF) == 0:
-                run_bfc7(f"{label} BEDC=0001 counter zero")
-                return
-        else:
-            _cmp_word(cpu, bedc, 0x0000)
-            if bedc == 0x0000:
-                for tail in ("BF46", "BF4B", "BF50"):
-                    _sub_mem_word(cpu, ss, (bp + 0x20) & 0xFFFF, 1)
-                    if mem.rw(ss, (bp + 0x20) & 0xFFFF) == 0:
-                        run_bfc7(f"{label} {tail} counter zero")
-                        return
-            # BEDC values other than 0/1 fall through to BF52 in the original.
-
-        mem.ww(ss, (bp + 0x24) & 0xFFFF, 0x0005)
-        a8c2 = mem.rw(ds, 0xA8C2)
-        _cmp_word(cpu, a8c2, 0x0001)
-        if a8c2 == 0x0001:
-            _run_collision_mark_a8c2_tail_bf5f(cpu)
-            return
-        cpu.s.ip = cpu.pop()
-
-    variant = mem.rw(ds, (bx + 0x18) & 0xFFFF)
-
-    for target in (0x0007, 0x0008, 0x000C):
-        _cmp_word(cpu, variant, target)
-        if variant == target:
-            # BFB9: A8C2 gates whether the collided slot is cleaned up and then
-            # joins BF25, or whether the moving object is forced into BFC7.
-            _cmp_word(cpu, mem.rw(ds, 0xA8C2), 0x0001)
-            if mem.rw(ds, 0xA8C2) == 0x0001:
-                cpu.s.bx = bx
-                call_bd0d(0xBF95, f"variant {variant:04X}")
-                run_bf25_counter_chain(enter_at_bf25=True, label=f"variant {variant:04X}")
-                return
-            mem.ww(ss, (bp + 0x20) & 0xFFFF, 0x0000)
-            run_bfc7(f"variant {variant:04X}")
-            return
-
-    _cmp_word(cpu, variant, 0x0009)
-    if variant == 0x0009:
-        # BFA8: variant 9 uses the same A8C2 gate but does not call BD0D first.
-        _cmp_word(cpu, mem.rw(ds, 0xA8C2), 0x0001)
-        if mem.rw(ds, 0xA8C2) == 0x0001:
-            run_bf25_counter_chain(enter_at_bf25=True, label="variant 0009")
-            return
-        mem.ww(ss, (bp + 0x20) & 0xFFFF, 0x0000)
-        run_bfc7("variant 0009")
-        return
-
-    _cmp_word(cpu, variant, 0x0002)
-    if variant == 0x0002:
-        cpu.s.bx = bx
-        mem.ww(ds, bx, 0)
-        sprite = mem.rw(ds, (bx + 0x08) & 0xFFFF)
-        _cmp_word(cpu, sprite, 0x0033)
-        run_bf25_counter_chain(enter_at_bf25=(sprite == 0x0033), label="variant 0002")
-        return
-
-    for target in (0x0006, 0x0005):
-        _cmp_word(cpu, variant, target)
-        if variant == target:
-            # BF97: BD0D/BD17 deactivate the collided object and maintain the
-            # family live counters; the following A8C2 test chooses between the
-            # BF25 shared counter path and the BFC7 death/transition tail.
-            cpu.s.bx = bx
-            call_bd0d(0xBF9A, f"variant {variant:04X}")
-            _cmp_word(cpu, mem.rw(ds, 0xA8C2), 0x0001)
-            if mem.rw(ds, 0xA8C2) == 0x0001:
-                run_bf25_counter_chain(enter_at_bf25=True, label=f"variant {variant:04X}")
-                return
-            mem.ww(ss, (bp + 0x20) & 0xFFFF, 0x0000)
-            run_bfc7(f"variant {variant:04X}")
-            return
-
-    # Remaining family: BEC5 finally checks whether the collided slot is linked
-    # back to the moving object through +30h.  Linked contacts run the observed
-    # counter/death transition below; non-linked contacts are a deliberate no-op
-    # in the original ASM and just RET with the CMP flags live.
-    owner_bp = mem.rw(ds, (bx + 0x30) & 0xFFFF)
-    _cmp_word(cpu, bp, owner_bp)
-    if bp == owner_bp:
-        mem.ww(ds, (bx + 0x1C) & 0xFFFF, 0x0000)
-        _cmp_word(cpu, mem.rw(ds, 0xA8C2), 0x0001)
-        if mem.rw(ds, 0xA8C2) == 0x0001:
-            run_bf25_counter_chain(enter_at_bf25=True, label=f"owner-linked variant {variant:04X}")
-            return
-        mem.ww(ss, (bp + 0x20) & 0xFFFF, 0x0000)
-        run_bfc7(f"owner-linked variant {variant:04X}")
-        return
-
-    cpu.s.ip = cpu.pop()
 
 
 
@@ -1655,76 +999,6 @@ def _run_collision_handler_bec5_observed(cpu, *, collided_bx: int, parent: str, 
 
 
 
-def _run_post_contact_9e69_observed(cpu, *, parent: str, chain: str, cx_value: int) -> None:
-    """Run the observed 1010:9E69 post-contact bookkeeping path."""
-    ds = cpu.s.ds & 0xFFFF
-    mem = cpu.mem
-
-    _cmp_word(cpu, mem.rw(ds, 0xA47C), 0x0001)
-    if mem.rw(ds, 0xA47C) == 0x0001:
-        return
-    _cmp_word(cpu, mem.rw(ds, 0x2384), 0x0003)
-    if mem.rw(ds, 0x2384) >= 0x0003:
-        return
-    _cmp_byte(cpu, mem.rb(ds, 0x98C0), 0x00)
-    if mem.rb(ds, 0x98C0) != 0:
-        mem.wb(ds, 0xBEFF, 0x03)
-    _cmp_word(cpu, mem.rw(ds, 0xBEDC), 0x0000)
-    if mem.rw(ds, 0xBEDC) != 0:
-        # JNE 9E98: skip the A362 every-other-call toggle and run the same tail
-        # immediately while BEDC is active.
-        _run_post_contact_9e98_tail_observed(cpu)
-        return
-    old = mem.rb(ds, 0xA362)
-    new = (old + 1) & 0xFF
-    mem.wb(ds, 0xA362, new)
-    cpu.set_add_flags(old, 1, old + 1, 8)
-    new &= 0x01
-    mem.wb(ds, 0xA362, new)
-    cpu.set_logic_flags(new, 8)
-    if new == 0:
-        _run_post_contact_9e98_tail_observed(cpu)
-
-
-def _run_post_contact_9e98_tail_observed(cpu) -> None:
-    """Run the observed 1010:9E98 tail of post-contact bookkeeping.
-
-    9E69 toggles DS:A362 and returns immediately on odd toggles.  On even
-    toggles it falls into 9E98, which advances global counters and redraws the
-    associated status/formation strip through 61DC.  The gameplay-relevant
-    branches are lifted here; the rare display helper 61DC is still executed by
-    bounded original interpretation so the visible frame and scratch registers
-    stay faithful until that helper is lifted separately.
-    """
-    ds = cpu.s.ds & 0xFFFF
-    cs = cpu.s.cs & 0xFFFF
-    resume_ip = cpu.s.ip & 0xFFFF
-    mem = cpu.mem
-
-    old_counter = mem.rw(ds, 0xA95A)
-    new_counter = (old_counter - 1) & 0xFFFF
-    mem.ww(ds, 0xA95A, new_counter)
-    cpu.set_sub_flags(old_counter, 1, old_counter - 1, 16)
-    _cmp_word(cpu, new_counter, 0xFFFF)
-    if new_counter == 0xFFFF:
-        mem.ww(ds, 0xA95C, 0x0000)
-        _cmp_byte(cpu, mem.rb(ds, 0x9791), 0x01)
-        if mem.rb(ds, 0x9791) == 0x01:
-            mem.ww(ds, 0xA95A, 0x0003)
-            mem.ww(ds, 0xA95C, 0x0018)
-            return
-        mem.ww(ds, 0x2384, 0x0003)
-        _cmp_byte(cpu, mem.rb(ds, 0x98C0), 0x00)
-        if mem.rb(ds, 0x98C0) != 0:
-            mem.wb(ds, 0xBEFF, 0x19)
-
-    _run_interpreted_near_call_observed(cpu, 0x61DC, 0x9EC5)
-    _cmp_word(cpu, mem.rw(cs, 0x95BC), 0x0001)
-    if mem.rw(cs, 0x95BC) == 0x0001:
-        _run_interpreted_near_call_observed(cpu, 0x511F, 0x9ED0)
-        _run_interpreted_near_call_observed(cpu, 0x61DC, 0x9ED3)
-        _run_interpreted_near_call_observed(cpu, 0x511F, 0x9ED6)
-    cpu.s.ip = resume_ip
 
 
 
@@ -1732,25 +1006,12 @@ def _run_post_contact_9e98_tail_observed(cpu) -> None:
 
 
 
-SIG_OBJECT_SCROLL_FORWARD_STEP_A6FE = bytes.fromhex(
-    "55 83 06 78 a2 01 c7 06 52 23 00 00 83 3e 4e 23 00 75 03 "
-    "e8 3a 00 ff 0e 4e 23 83 26 4e 23 0f 75 10 83 3e 54 23 00 "
-    "74 09 83 06 50 23 0d ff 0e 78 a9 2e a1 be 95"
-)
-SIG_OBJECT_SCROLL_BACKWARD_STEP_A781 = bytes.fromhex(
-    "55 c7 06 52 23 01 00 83 3e 50 23 00 74 b5 83 06 78 a2 ff "
-    "83 3e 4e 23 00 75 03 e8 32 00 ff 06 4e 23 83 26 4e 23 0f "
-    "75 10 83 3e 54 23 01"
-)
-SIG_OBJECT_SCROLL_FORWARD_ROW_A74E = bytes.fromhex(
-    "e8 9a 00 81 3e 50 23 b6 00 77 0c 80 3e c0 98 00 74 05 "
-    "c6 06 ff be 07 83 06 50 23 0d"
-)
-SIG_OBJECT_SCROLL_BACKWARD_ROW_A7D0 = bytes.fromhex(
-    "e8 18 00 83 2e 50 23 0d ff 06 78 a9 c7 06 54 23 01 00 c3"
-)
-SIG_OBJECT_SCROLL_ROW_WRAP_A746 = bytes.fromhex("2e a1 c0 95 a3 4c 23 c3")
-SIG_OBJECT_SCROLL_ROW_WRAP_A7E3 = bytes.fromhex("2e a1 be 95 a3 4c 23 c3")
+
+
+
+
+
+
 
 
 SIG_OBJECT_TILE_SWEEP_PROBE_AFD8 = bytes.fromhex(
@@ -1800,283 +1061,6 @@ def run_object_tile_sweep_probe_afd8(cpu, self_disable_if_patched) -> None:
     s.ip = cpu.pop()
 
 
-SIG_OBJECT_SCROLL_WORLD_PROGRESS_GATE_A66F = bytes.fromhex(
-    "83 3e 7c a4 00 74 03 e9 84 00 83 3e 7e a4 00 75 7d "
-    "83 3e 80 a4 00 75 76 e8 74 00 83 3e 4e 23 00 75 6c "
-    "50 53 51 52 57 56 55 06 1e be 82 a9"
-)
-
-
-def run_object_scroll_world_progress_gate_a66f(cpu, self_disable_if_patched) -> None:
-    """Lift 1010:A66F, the vertical-scroll/world-progress gate.
-
-    This parent is the low-level controller around the A6FE scroll tick.  It
-    gates on transition globals, advances the scroll row state, optionally
-    updates the EGA palette at a milestone, and when the scroll reaches EA0h it
-    seeds four compact effect slots from the A3EE descriptor table.  It is still
-    raw world-scroll bookkeeping, not a semantic level-completion model.
-    """
-    if self_disable_if_patched(cpu, 0xA66F, SIG_OBJECT_SCROLL_WORLD_PROGRESS_GATE_A66F, "overkill_object_scroll_world_progress_gate_a66f"):
-        return
-    s = cpu.s
-    mem = cpu.mem
-    ds = s.ds & 0xFFFF
-    cs = s.cs & 0xFFFF
-
-    value = mem.rw(ds, 0xA47C)
-    _cmp_word(cpu, value, 0)
-    if value != 0:
-        s.ip = cpu.pop()
-        return
-    value = mem.rw(ds, 0xA47E)
-    _cmp_word(cpu, value, 0)
-    if value != 0:
-        s.ip = cpu.pop()
-        return
-    value = mem.rw(ds, 0xA480)
-    _cmp_word(cpu, value, 0)
-    if value != 0:
-        s.ip = cpu.pop()
-        return
-
-    cpu.push(0xA68A)
-    run_object_scroll_forward_step_a6fe(cpu, self_disable_if_patched)
-    if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (cs, 0xA68A):
-        raise RuntimeError(f"A66F expected A6FE to return to 1010:A68A, got {s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X}")
-
-    value = mem.rw(ds, 0x234E)
-    _cmp_word(cpu, value, 0)
-    if value != 0:
-        s.ip = cpu.pop()
-        return
-
-    # PUSH AX,BX,CX,DX,DI,SI,BP,ES,DS
-    for value in (s.ax, s.bx, s.cx, s.dx, s.di, s.si, s.bp, s.es, s.ds):
-        cpu.push(value)
-    s.si = 0xA982
-    value_2350 = mem.rw(ds, 0x2350)
-    _cmp_word(cpu, value_2350, 0x0E52)
-    if value_2350 == 0x0E52:
-        _run_interpreted_near_call_observed(cpu, 0xC591, 0xA6A8, max_steps=12000)
-        if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (cs, 0xA6A8):
-            raise RuntimeError(f"A66F expected C591 to return to 1010:A6A8, got {s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X}")
-    # POP DS,ES,BP,SI,DI,DX,CX,BX,AX
-    s.ds = cpu.pop()
-    s.es = cpu.pop()
-    s.bp = cpu.pop()
-    s.si = cpu.pop()
-    s.di = cpu.pop()
-    s.dx = cpu.pop()
-    s.cx = cpu.pop()
-    s.bx = cpu.pop()
-    s.ax = cpu.pop()
-    ds = s.ds & 0xFFFF
-
-    value_2350 = mem.rw(ds, 0x2350)
-    _cmp_word(cpu, value_2350, 0x0EA0)
-    if value_2350 != 0x0EA0:
-        s.ip = cpu.pop()
-        return
-
-    mem.ww(ds, 0xA47C, 0x0001)
-    _run_interpreted_near_call_observed(cpu, 0x62AA, 0xA6C2, max_steps=60000)
-    if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (cs, 0xA6C2):
-        raise RuntimeError(f"A66F expected 62AA to return to 1010:A6C2, got {s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X}")
-
-    s.si = 0xA3EE
-    s.cx = 0x0004
-    while True:
-        cpu.push(s.cx)
-        cpu.push(s.si)
-        _run_interpreted_near_call_observed(cpu, 0x7524, 0xA6CD, max_steps=20000)
-        if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (cs, 0xA6CD):
-            raise RuntimeError(f"A66F expected 7524 to return to 1010:A6CD, got {s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X}")
-        s.si = cpu.pop()
-        _cmp_word(cpu, s.bx, 0xFFFF)
-        if s.bx != 0xFFFF:
-            bx = s.bx & 0xFFFF
-            mem.ww(ds, bx, 0x0001)
-            mem.ww(ds, (bx + 0x14) & 0xFFFF, 0x0002)
-            mem.ww(ds, (bx + 0x16) & 0xFFFF, 0x0004)
-            mem.ww(ds, (bx + 0x18) & 0xFFFF, 0x0053)
-            mem.ww(ds, (bx + 0x28) & 0xFFFF, 0xFFFF)
-            s.ax = mem.rw(ds, s.si)
-            s.si = (s.si + 2) & 0xFFFF
-            mem.ww(ds, (bx + 0x02) & 0xFFFF, s.ax)
-            s.ax = mem.rw(ds, s.si)
-            s.si = (s.si + 2) & 0xFFFF
-            mem.ww(ds, (bx + 0x04) & 0xFFFF, s.ax)
-            s.ax = mem.rw(ds, s.si)
-            s.si = (s.si + 2) & 0xFFFF
-            mem.ww(ds, (bx + 0x08) & 0xFFFF, s.ax)
-            mem.ww(ds, (bx + 0x36) & 0xFFFF, s.ax)
-        s.cx = cpu.pop()
-        s.cx = (s.cx - 1) & 0xFFFF
-        if s.cx == 0:
-            s.ip = cpu.pop()
-            return
-
-
-def run_object_scroll_forward_row_a74e(cpu, self_disable_if_patched) -> None:
-    """Lift 1010:A74E, the forward map/scroll-row advance side effect.
-
-    The heavy display copy at A7EB remains a bounded original child for now.
-    This wrapper names the finite bookkeeping around it: advance DS:2350 by one
-    13-byte tile row, decrement the remaining row counter DS:A978, optionally
-    notify the sound/transition helper at CB1C, and mark DS:2354 as forward.
-    """
-    if self_disable_if_patched(cpu, 0xA74E, SIG_OBJECT_SCROLL_FORWARD_ROW_A74E, "overkill_object_scroll_forward_row_a74e"):
-        return
-    ds = cpu.s.ds & 0xFFFF
-    mem = cpu.mem
-
-    _run_interpreted_near_call_observed(cpu, 0xA7EB, 0xA751, max_steps=60000)
-    if (cpu.s.cs & 0xFFFF, cpu.s.ip & 0xFFFF) != (0x1010, 0xA751):
-        raise RuntimeError(f"A74E expected A7EB to return to 1010:A751, got {cpu.s.cs & 0xFFFF:04X}:{cpu.s.ip & 0xFFFF:04X}")
-
-    value_2350 = mem.rw(ds, 0x2350)
-    _cmp_word(cpu, value_2350, 0x00B6)
-    if value_2350 <= 0x00B6:
-        flag = mem.rb(ds, 0x98C0)
-        _cmp_byte(cpu, flag, 0)
-        if flag != 0:
-            mem.wb(ds, 0xBEFF, 0x07)
-
-    _add_mem_word(cpu, ds, 0x2350, 0x000D)
-    _dec_mem_word_preserve_cf(cpu, ds, 0xA978)
-    cpu.set_reg8(0, 0x05)
-    value_a978 = mem.rw(ds, 0xA978)
-    _cmp_word(cpu, value_a978, 0x0004)
-    if value_a978 == 0x0004:
-        _run_interpreted_near_call_observed(cpu, 0xCB1C, 0xA77A, max_steps=20000)
-        if (cpu.s.cs & 0xFFFF, cpu.s.ip & 0xFFFF) != (0x1010, 0xA77A):
-            raise RuntimeError(f"A74E expected CB1C to return to 1010:A77A, got {cpu.s.cs & 0xFFFF:04X}:{cpu.s.ip & 0xFFFF:04X}")
-    mem.ww(ds, 0x2354, 0x0000)
-    cpu.s.ip = cpu.pop()
-
-
-def run_object_scroll_backward_row_a7d0(cpu, self_disable_if_patched) -> None:
-    """Lift 1010:A7D0, the backward map/scroll-row bookkeeping side effect."""
-    if self_disable_if_patched(cpu, 0xA7D0, SIG_OBJECT_SCROLL_BACKWARD_ROW_A7D0, "overkill_object_scroll_backward_row_a7d0"):
-        return
-    ds = cpu.s.ds & 0xFFFF
-    mem = cpu.mem
-    _run_interpreted_near_call_observed(cpu, 0xA7EB, 0xA7D3, max_steps=60000)
-    if (cpu.s.cs & 0xFFFF, cpu.s.ip & 0xFFFF) != (0x1010, 0xA7D3):
-        raise RuntimeError(f"A7D0 expected A7EB to return to 1010:A7D3, got {cpu.s.cs & 0xFFFF:04X}:{cpu.s.ip & 0xFFFF:04X}")
-    _sub_mem_word(cpu, ds, 0x2350, 0x000D)
-    _inc_mem_word_preserve_cf(cpu, ds, 0xA978)
-    mem.ww(ds, 0x2354, 0x0001)
-    cpu.s.ip = cpu.pop()
-
-
-def run_object_scroll_row_wrap_forward_a746(cpu, self_disable_if_patched) -> None:
-    """Lift 1010:A746, wrapping the source row pointer to CS:95C0."""
-    if self_disable_if_patched(cpu, 0xA746, SIG_OBJECT_SCROLL_ROW_WRAP_A746, "overkill_object_scroll_row_wrap_forward_a746"):
-        return
-    cs = cpu.s.cs & 0xFFFF
-    ds = cpu.s.ds & 0xFFFF
-    cpu.s.ax = cpu.mem.rw(cs, 0x95C0)
-    cpu.mem.ww(ds, 0x234C, cpu.s.ax)
-    cpu.s.ip = cpu.pop()
-
-
-def run_object_scroll_row_wrap_backward_a7e3(cpu, self_disable_if_patched) -> None:
-    """Lift 1010:A7E3, wrapping the source row pointer to CS:95BE."""
-    if self_disable_if_patched(cpu, 0xA7E3, SIG_OBJECT_SCROLL_ROW_WRAP_A7E3, "overkill_object_scroll_row_wrap_backward_a7e3"):
-        return
-    cs = cpu.s.cs & 0xFFFF
-    ds = cpu.s.ds & 0xFFFF
-    cpu.s.ax = cpu.mem.rw(cs, 0x95BE)
-    cpu.mem.ww(ds, 0x234C, cpu.s.ax)
-    cpu.s.ip = cpu.pop()
-
-
-def run_object_scroll_forward_step_a6fe(cpu, self_disable_if_patched) -> None:
-    """Lift 1010:A6FE, one forward vertical-scroll bookkeeping step.
-
-    This is still raw scroll/map bookkeeping, not a semantic camera system: it
-    advances the sub-row phase counters, occasionally pulls the next tile row
-    through A74E, wraps the source row pointer, and returns.
-    """
-    if self_disable_if_patched(cpu, 0xA6FE, SIG_OBJECT_SCROLL_FORWARD_STEP_A6FE, "overkill_object_scroll_forward_step_a6fe"):
-        return
-    ds = cpu.s.ds & 0xFFFF
-    cs = cpu.s.cs & 0xFFFF
-    mem = cpu.mem
-    cpu.push(cpu.s.bp)
-    _add_mem_word(cpu, ds, 0xA278, 0x0001)
-    mem.ww(ds, 0x2352, 0x0000)
-    value_234e = mem.rw(ds, 0x234E)
-    _cmp_word(cpu, value_234e, 0)
-    if value_234e == 0:
-        cpu.push(0xA714)
-        run_object_scroll_forward_row_a74e(cpu, self_disable_if_patched)
-        if (cpu.s.cs & 0xFFFF, cpu.s.ip & 0xFFFF) != (cs, 0xA714):
-            raise RuntimeError(f"A6FE expected A74E to return to 1010:A714, got {cpu.s.cs & 0xFFFF:04X}:{cpu.s.ip & 0xFFFF:04X}")
-    _dec_mem_word_preserve_cf(cpu, ds, 0x234E)
-    _and_mem_word(cpu, ds, 0x234E, 0x000F)
-    if mem.rw(ds, 0x234E) == 0:
-        value_2354 = mem.rw(ds, 0x2354)
-        _cmp_word(cpu, value_2354, 0)
-        if value_2354 != 0:
-            _add_mem_word(cpu, ds, 0x2350, 0x000D)
-            _dec_mem_word_preserve_cf(cpu, ds, 0xA978)
-    cpu.s.ax = mem.rw(cs, 0x95BE)
-    _cmp_word(cpu, mem.rw(ds, 0x234C), cpu.s.ax)
-    if mem.rw(ds, 0x234C) == cpu.s.ax:
-        cpu.push(0xA73C)
-        run_object_scroll_row_wrap_forward_a746(cpu, self_disable_if_patched)
-        if (cpu.s.cs & 0xFFFF, cpu.s.ip & 0xFFFF) != (cs, 0xA73C):
-            raise RuntimeError(f"A6FE expected A746 to return to 1010:A73C, got {cpu.s.cs & 0xFFFF:04X}:{cpu.s.ip & 0xFFFF:04X}")
-    cpu.s.ax = mem.rw(cs, 0x959E)
-    _sub_mem_word(cpu, ds, 0x234C, cpu.s.ax)
-    cpu.s.bp = cpu.pop()
-    cpu.s.ip = cpu.pop()
-
-
-def run_object_scroll_backward_step_a781(cpu, self_disable_if_patched) -> None:
-    """Lift 1010:A781, one backward vertical-scroll bookkeeping step."""
-    if self_disable_if_patched(cpu, 0xA781, SIG_OBJECT_SCROLL_BACKWARD_STEP_A781, "overkill_object_scroll_backward_step_a781"):
-        return
-    ds = cpu.s.ds & 0xFFFF
-    cs = cpu.s.cs & 0xFFFF
-    mem = cpu.mem
-    cpu.push(cpu.s.bp)
-    mem.ww(ds, 0x2352, 0x0001)
-    value_2350 = mem.rw(ds, 0x2350)
-    _cmp_word(cpu, value_2350, 0)
-    if value_2350 == 0:
-        cpu.s.bp = cpu.pop()
-        cpu.s.ip = cpu.pop()
-        return
-    _add_mem_word(cpu, ds, 0xA278, 0xFFFF)
-    value_234e = mem.rw(ds, 0x234E)
-    _cmp_word(cpu, value_234e, 0)
-    if value_234e == 0:
-        cpu.push(0xA79E)
-        run_object_scroll_backward_row_a7d0(cpu, self_disable_if_patched)
-        if (cpu.s.cs & 0xFFFF, cpu.s.ip & 0xFFFF) != (cs, 0xA79E):
-            raise RuntimeError(f"A781 expected A7D0 to return to 1010:A79E, got {cpu.s.cs & 0xFFFF:04X}:{cpu.s.ip & 0xFFFF:04X}")
-    _inc_mem_word_preserve_cf(cpu, ds, 0x234E)
-    _and_mem_word(cpu, ds, 0x234E, 0x000F)
-    if mem.rw(ds, 0x234E) == 0:
-        value_2354 = mem.rw(ds, 0x2354)
-        _cmp_word(cpu, value_2354, 1)
-        if value_2354 != 1:
-            _sub_mem_word(cpu, ds, 0x2350, 0x000D)
-            _inc_mem_word_preserve_cf(cpu, ds, 0xA978)
-    cpu.s.ax = mem.rw(cs, 0x95C0)
-    _cmp_word(cpu, mem.rw(ds, 0x234C), cpu.s.ax)
-    if mem.rw(ds, 0x234C) == cpu.s.ax:
-        cpu.push(0xA7C6)
-        run_object_scroll_row_wrap_backward_a7e3(cpu, self_disable_if_patched)
-        if (cpu.s.cs & 0xFFFF, cpu.s.ip & 0xFFFF) != (cs, 0xA7C6):
-            raise RuntimeError(f"A781 expected A7E3 to return to 1010:A7C6, got {cpu.s.cs & 0xFFFF:04X}:{cpu.s.ip & 0xFFFF:04X}")
-    cpu.s.ax = mem.rw(cs, 0x959E)
-    _add_mem_word(cpu, ds, 0x234C, cpu.s.ax)
-    cpu.s.bp = cpu.pop()
-    cpu.s.ip = cpu.pop()
 
 
 
@@ -2088,251 +1072,25 @@ def run_object_scroll_backward_step_a781(cpu, self_disable_if_patched) -> None:
 
 
 
-def _run_object_overlap_scan_62f6(cpu, *, parent: str, chain: str, cx_value: int) -> None:
-    """Run the no-collision path of the 1010:62F6 object-overlap scan.
-
-    The original is a large unrolled scan over 32CA-era object slots.  This
-    compact loop preserves the observed no-collision semantics and fail-fasts if
-    a candidate would jump to the unlifted collision handler at BEC5.
-    """
-    ss = cpu.s.ss & 0xFFFF
-    ds = cpu.s.ds & 0xFFFF
-    bp = cpu.s.bp & 0xFFFF
-    mem = cpu.mem
-
-    def finish_empty_scan() -> None:
-        # 741C: ADD BX,0038 ; 741F: RET in the unrolled original.
-        _add_reg16(cpu, 3, OBJECT_SLOT_STRIDE)  # BX
-
-    _cmp_word(cpu, mem.rw(ss, bp), 0)
-    if mem.rw(ss, bp) == 0:
-        # 62FA: an inactive object slot ([bp+00]==0) jumps straight to the shared
-        # RET at 741F, bypassing the 741C "ADD BX,38h" tail.  So BX and the
-        # zero-compare flags from this 62F6 CMP are preserved unchanged -- it is
-        # NOT the empty-scan sentinel exit (which does run the 741C add and lands
-        # at BX=32CC).  Conflating the two left BX=32CC / ZF=0 instead of the
-        # original's incoming BX / ZF=1.
-        return
-
-    _cmp_word(cpu, mem.rw(ss, (bp + OFF_X) & 0xFFFF), 0x0020)
-    if (mem.rw(ss, (bp + OFF_X) & 0xFFFF) if mem.rw(ss, (bp + OFF_X) & 0xFFFF) < 0x8000 else mem.rw(ss, (bp + OFF_X) & 0xFFFF) - 0x10000) < 0x20:
-        # The original bails out before the slot scan here, so keep BX and the
-        # compare flags from 62FE intact instead of forcing the empty-scan tail.
-        return
-
-    for off, bad in ((0x16, 0), (0x18, 0)):
-        _cmp_word(cpu, mem.rw(ss, (bp + off) & 0xFFFF), bad)
-        if mem.rw(ss, (bp + off) & 0xFFFF) == bad:
-            # 6308/6311: zero draw-layer/logic-id does not enter the slot scan.
-            # The original falls through/jumps directly to the shared RET at
-            # 741F, preserving the incoming BX and the zero-compare flags.  Do
-            # not force the empty-scan sentinel tail here.
-            return
-    _cmp_word(cpu, mem.rw(ss, (bp + OFF_LOGIC_ID) & 0xFFFF), 0x0001)
-    if mem.rw(ss, (bp + OFF_LOGIC_ID) & 0xFFFF) == 0x0001:
-        return
-    _cmp_word(cpu, mem.rw(ss, (bp + OFF_LOGIC_ID) & 0xFFFF), 0x0026)
-    if mem.rw(ss, (bp + OFF_LOGIC_ID) & 0xFFFF) == 0x0026:
-        # 6323/6329: logic-id 26h is another pre-scan exemption.  The ASM
-        # falls through into ``JMP 741F`` and returns immediately, so BX remains
-        # the caller's BX and the zero flags from ``CMP [BP+18],26h`` stay live.
-        # Do not run the empty-scan sentinel tail (741C ADD BX,38h).
-        return
-
-    cpu.s.si = mem.rw(ss, (bp + OFF_DRAW_LAYER) & 0xFFFF)
-    cpu.s.di = mem.rw(ss, (bp + 0x0A) & 0xFFFF)
-    cpu.s.dx = mem.rw(ss, (bp + OFF_Y) & 0xFFFF) & 0xFFF8
-    cpu.set_logic_flags(cpu.s.dx, 16)
-    cpu.s.cx = mem.rw(ss, (bp + OFF_X) & 0xFFFF) & 0xFFF8
-    cpu.set_logic_flags(cpu.s.cx, 16)
-
-    obj_type = mem.rw(ss, (bp + OFF_OBJECT_TYPE) & 0xFFFF)
-    logic_id = mem.rw(ss, (bp + OFF_LOGIC_ID) & 0xFFFF)
-    bx = GAMEPLAY_OBJECT_TABLE_BASE
-    while True:
-        cpu.s.bx = bx
-        _cmp_word(cpu, mem.rw(ds, bx), 0)
-        if mem.rw(ds, bx) != 0:
-            _cmp_word(cpu, mem.rw(ds, (bx + 0x1E) & 0xFFFF), 0)
-            if mem.rw(ds, (bx + 0x1E) & 0xFFFF) != 0:
-                ax = mem.rw(ds, (bx + 0x04) & 0xFFFF)
-                _test_word(cpu, ax, 0x0007)
-                y_candidates = []
-                if ax & 0x0007:
-                    aligned = (ax & 0xFFF8)
-                    y_candidates.append((aligned + 8) & 0xFFFF)
-                    y_candidates.append(aligned)
-                else:
-                    y_candidates.append(ax)
-                y_candidates.append((y_candidates[-1] - 8) & 0xFFFF)
-                if obj_type == 2:
-                    y_candidates.append((y_candidates[-1] - 8) & 0xFFFF)
-                    y_candidates.append((y_candidates[-1] - 8) & 0xFFFF)
-                if cpu.s.dx in y_candidates:
-                    used_x_branch = False
-                    ax = mem.rw(ds, (bx + 0x02) & 0xFFFF) & 0xFFF8
-                    x_candidates = [ax, (ax - 8) & 0xFFFF]
-                    if obj_type == 2 and logic_id not in (0x78, 0x79):
-                        x_candidates.append((x_candidates[-1] - 8) & 0xFFFF)
-                        x_candidates.append((x_candidates[-1] - 8) & 0xFFFF)
-                    used_x_branch = True
-                    if cpu.s.cx in x_candidates:
-                        # The original arrives at BEC5 with AX holding the
-                        # matched tile X and BX pointing at the collided slot.
-                        cpu.s.ax = cpu.s.cx & 0xFFFF
-                        _run_collision_handler_bec5_observed(
-                            cpu,
-                            collided_bx=bx,
-                            parent=parent,
-                            chain=f"{chain} -> 62F6",
-                            cx_value=cx_value,
-                        )
-                        return
-                    # The original leaves AX at the last X candidate once the
-                    # X branch has been entered, even on a miss.
-                    cpu.s.ax = x_candidates[-1]
-                else:
-                    # Leave AX at the last tested Y coordinate when the Y
-                    # branch misses entirely.
-                    cpu.s.ax = y_candidates[-1]
-        if bx == GAMEPLAY_OBJECT_LAST_SLOT_BASE:
-            cpu.s.bx = bx
-            finish_empty_scan()
-            return
-        old_bx = bx
-        bx = (bx + OBJECT_SLOT_STRIDE) & 0xFFFF
-        cpu.set_add_flags(old_bx, OBJECT_SLOT_STRIDE, old_bx + OBJECT_SLOT_STRIDE, 16)
 
 
 
 
-def run_object_postmove_prelude_bc45(cpu, *, parent: str = "1010:BC45", chain: str = "BC45 -> BC4B", cx_value: int | None = None) -> None:
-    """Run the tiny 1010:BC45 prelude and the shared BC4B postmove chain.
 
-    Several object behaviours jump to ``BC45`` instead of calling ``BC4B``
-    directly.  The prelude reloads ``AX`` from the global vertical delta
-    ``DS:A278`` and adds it into ``SS:[BP+02]`` before falling through to BC4B.
-    Keep this as a wrapper around the single BC4B implementation so the
-    collision/postmove tail is not duplicated.
-    """
-    ds = cpu.s.ds & 0xFFFF
-    ss = cpu.s.ss & 0xFFFF
-    bp = cpu.s.bp & 0xFFFF
-    cpu.s.ax = cpu.mem.rw(ds, 0xA278)
-    _add_mem_word(cpu, ss, (bp + OFF_X) & 0xFFFF, cpu.s.ax)
-    if cx_value is None:
-        cx_value = cpu.s.cx & 0xFFFF
-    _run_object_postmove_bc4b(cpu, parent=parent, chain=chain, cx_value=cx_value & 0xFFFF)
-    cpu.s.ip = cpu.pop()
 
-def _run_object_postmove_bc4b(cpu, *, parent: str, chain: str, cx_value: int, clamp_y: bool = True) -> None:
-    """Run the observed BC4B post-move/bounds/collision helper path."""
-    ds = cpu.s.ds & 0xFFFF
-    ss = cpu.s.ss & 0xFFFF
-    bp = cpu.s.bp & 0xFFFF
-    mem = cpu.mem
 
-    if clamp_y:
-        # BCB1: clamp Y into the 0..C0h range.  Some callers jump directly to
-        # BC4F, after this call; those use clamp_y=False.
-        y = mem.rw(ss, (bp + OFF_Y) & 0xFFFF)
-        _cmp_word(cpu, y, 0x00C0)
-        sy = y if y < 0x8000 else y - 0x10000
-        if sy > 0x00C0:
-            mem.ww(ss, (bp + OFF_Y) & 0xFFFF, 0x00C0)
-        else:
-            _cmp_word(cpu, y, 0)
-            if sy < 0:
-                mem.ww(ss, (bp + OFF_Y) & 0xFFFF, 0)
-        _remember_balanced_push_scratch(cpu, 0xBC4E)
 
-    global_disable = mem.rw(ds, 0xA47C)
-    _cmp_word(cpu, global_disable, 0)
-    skip_precise_x = global_disable != 0 or mem.rw(ss, (bp + OFF_LOGIC_ID) & 0xFFFF) in (0, 0x48, 0x26, 0x86, 0x28, 0x29, 0x34)
-    x = mem.rw(ss, (bp + OFF_X) & 0xFFFF)
-    sx = x if x < 0x8000 else x - 0x10000
-    if not skip_precise_x:
-        _cmp_word(cpu, x, 0xFF40)
-        if sx < -0x00C0:
-            _run_deactivate_bd17_observed(cpu, parent=parent, chain=f"{chain} -> BC4B", cx_value=cx_value, pop_return=False)
-            return
-        _cmp_word(cpu, x, 0x00F0)
-        if sx >= 0x00F0:
-            _run_deactivate_bd17_observed(cpu, parent=parent, chain=f"{chain} -> BC4B", cx_value=cx_value, pop_return=False)
-            return
-    else:
-        _cmp_word(cpu, x, 0xFFEC)
-        if sx < -0x0014:
-            _run_deactivate_bd17_observed(cpu, parent=parent, chain=f"{chain} -> BC4B", cx_value=cx_value, pop_return=False)
-            return
-        _cmp_word(cpu, x, 0x00F0)
-        if sx >= 0x00F0:
-            _run_deactivate_bd17_observed(cpu, parent=parent, chain=f"{chain} -> BC4B", cx_value=cx_value, pop_return=False)
-            return
 
-    _cmp_word(cpu, global_disable, 0)
-    if global_disable == 0:
-        # BC4B reaches the contact checks through CALL BCCB.  Even though BCCB
-        # balances SP before returning, its nested CALLs leave return-address
-        # scratch below SP; keep the real BCAD call frame live while modelling
-        # BCCB so later nested calls land at the same stack offsets.
-        bccb_sp = cpu.s.sp & 0xFFFF
-        cpu.push(0xBCAD)
-        try:
-            # BCCB early exits for inactive/exempt objects; otherwise it may call
-            # the view-window helper and only continues into hit logic if CF is set.
-            _cmp_word(cpu, mem.rw(ss, bp), 0)
-            if mem.rw(ss, bp) != 0:
-                for off, bad in ((0x16, 5), (0x18, 0), (0x18, 1)):
-                    _cmp_word(cpu, mem.rw(ss, (bp + off) & 0xFFFF), bad)
-                    if mem.rw(ss, (bp + off) & 0xFFFF) == bad:
-                        break
-                else:
-                    obj_type = mem.rw(ss, (bp + OFF_OBJECT_TYPE) & 0xFFFF)
-                    _cmp_word(cpu, obj_type, 1)
-                    if obj_type == 1:
-                        # BCF4 CALL AA46 leaves BCF7 below BCCB's live frame.
-                        saved_sp = cpu.s.sp & 0xFFFF
-                        cpu.push(0xBCF7)
-                        _run_view_window_check_aa46(cpu)
-                        cpu.s.sp = saved_sp
-                    elif obj_type == 2:
-                        # BCF9 CALL AA71 leaves BCFC below BCCB's live frame.
-                        saved_sp = cpu.s.sp & 0xFFFF
-                        _call_aa71(cpu, 0xBCFC)
-                        cpu.s.sp = saved_sp
-                    else:
-                        return
-                    if cpu.get_flag(CF):
-                        _cmp_word(cpu, mem.rw(ds, 0xA8C2), 0x0001)
-                        if mem.rw(ds, 0xA8C2) != 0x0001:
-                            cpu.push(0xBD09)
-                            _run_collision_death_tail_bfc7(
-                                cpu,
-                                parent=parent,
-                                chain=f"{chain} -> BCCB",
-                                cx_value=cx_value,
-                            )
-                        # BD09 CALL 9E69 must run with BD0C on the stack, not
-                        # merely written below the current SP.  The 9E69 -> 9E98
-                        # display tail calls 61DC, whose nested scratch is part
-                        # of the verifier-visible freed stack bytes.
-                        saved_sp = cpu.s.sp & 0xFFFF
-                        cpu.push(0xBD0C)
-                        _run_post_contact_9e69_observed(
-                            cpu,
-                            parent=parent,
-                            chain=f"{chain} -> BCCB -> BD09",
-                            cx_value=cx_value,
-                        )
-                        cpu.s.sp = saved_sp
-        finally:
-            cpu.s.sp = bccb_sp
-        # BCAD CALL 62F6 leaves the BCB0 return word as stack scratch below SP.
-        saved_sp = cpu.s.sp & 0xFFFF
-        cpu.push(0xBCB0)
-        _run_object_overlap_scan_62f6(cpu, parent=parent, chain=f"{chain} -> BC4B", cx_value=cx_value)
-        cpu.s.sp = saved_sp
+
+
+
+
+
+
+
+
+
+
 
 
 def _run_object_family_dispatch_efae(cpu, *, parent: str, chain: str, cx_value: int) -> None:
@@ -2359,23 +1117,6 @@ def _run_object_family_dispatch_efae(cpu, *, parent: str, chain: str, cx_value: 
 
 
 
-def _run_af22_three_pixel_step_for_direction(cpu, *, parent: str = "1010:AF22") -> None:
-    """Mirror 1010:AF22: one 3-pixel diagonal/cardinal step by SS:[BP+06]."""
-    ss = cpu.s.ss & 0xFFFF
-    bp = cpu.s.bp & 0xFFFF
-    direction = cpu.mem.rw(ss, (bp + OFF_DIRECTION_OR_STEP) & 0xFFFF) & 0xFFFF
-    cpu.s.bx = direction
-    cpu.s.bx = cpu.shift(4, cpu.s.bx, 1, 16)
-    if direction > 7:
-        _raise_unverified_path(
-            cpu,
-            parent=parent,
-            chain="AF22 direction table",
-            target_ip=cpu.mem.rw(cpu.s.cs & 0xFFFF, (0xAF2C + ((direction << 1) & 0xFFFF)) & 0xFFFF),
-            bp=bp,
-            cx_value=cpu.s.cx & 0xFFFF,
-        )
-    apply_direction_step_to_current_object(cpu, direction=direction, pixels=3)
 
 
 def _run_object_bounds_tile_tail_ad60(cpu, *, parent: str, chain: str, cx_value: int, add_a278_to_x: bool) -> None:
@@ -2559,59 +1300,9 @@ def run_object_bounds_tile_prelude_ad5a(cpu, self_disable_if_patched) -> None:
     )
 
 
-def run_object_target_chase_d281(cpu, self_disable_if_patched) -> None:
-    """Lift 1010:D281, an observed target-copy + 5DB2 movement helper tail.
-
-    The routine copies target Y/X words from the current object frame
-    (SS:[BP+32h]/[BP+34h]) into DS:2304/2306, selects movement mode 1 for the
-    first 5DB2 call, then mode 2 for follow-up state.  In the cold-start demo
-    path DS:230A remains zero and the routine returns immediately to the object
-    scan tail.  If 5DB2 reports the unobserved blocked/no-direction case, keep
-    the rest of D2A4+ as bounded original code rather than guessing it.
-    """
-    if self_disable_if_patched(
-        cpu,
-        0xD281,
-        SIG_OBJECT_TARGET_CHASE_D281,
-        "overkill_object_target_chase_d281",
-    ):
-        return
-
-    s = cpu.s
-    mem = cpu.mem
-    ds = s.ds & 0xFFFF
-    ss = s.ss & 0xFFFF
-    bp = s.bp & 0xFFFF
-
-    s.ax = mem.rw(ss, (bp + OFF_TARGET_Y) & 0xFFFF)
-    mem.ww(ds, 0x2304, s.ax)
-    s.ax = mem.rw(ss, (bp + OFF_TARGET_X) & 0xFFFF)
-    mem.ww(ds, 0x2306, s.ax)
-    mem.ww(ds, 0x2308, 0x0001)
-
-    cpu.push(0xD296)
-    _run_movement_direction_5db2(cpu)
-    ret = cpu.pop()
-    if ret != 0xD296:
-        raise RuntimeError(f"D281 expected 5DB2 return D296, got {ret:04X}")
-
-    mem.ww(ds, 0x2308, 0x0002)
-    blocked = mem.rw(ds, 0x230A)
-    _cmp_word(cpu, blocked, 0)
-    if blocked == 0:
-        s.ip = cpu.pop()
-        return
-
-    # D2A1 JNZ +1 skips the RET at D2A3 and continues at D2A4.  Preserve the
-    # original caller's return word by turning that tail into a bounded near call
-    # with the same return IP.
-    caller_ret = cpu.pop()
-    _run_interpreted_near_call_observed(cpu, 0xD2A4, caller_ret, max_steps=12000)
 
 
 
-def _no_patch_guard(*_args) -> bool:
-    return False
 
 
 def _run_object_behavior_ab77(cpu, *, parent: str, chain: str, cx_value: int) -> None:
@@ -3158,221 +1849,20 @@ def _scan_object_logic_via_aa2b(
     cpu.s.ip = done_ip & 0xFFFF
 
 
-def _run_af63_step_for_direction(cpu, *, parent: str = "1010:AF63") -> None:
-    """Mirror one 1010:AF63 2-pixel direction step.
-
-    AF63 dispatches through the CS:AF6E table using SS:[BP+06].  AF60 is built
-    from this same body with a self-call trick, so keeping the one-step body
-    separate lets 5DB2 mode 1 (direct AF63) and mode 2 (AF60 double step) share
-    exactly the same movement mapping.
-    """
-    ss = cpu.s.ss & 0xFFFF
-    bp = cpu.s.bp & 0xFFFF
-    direction = cpu.mem.rw(ss, (bp + OFF_DIRECTION_OR_STEP) & 0xFFFF) & 0xFFFF
-    cpu.s.bx = direction
-    cpu.s.bx = cpu.shift(4, cpu.s.bx, 1, 16)  # SHL BX,1 before table JMP.
-    if direction > 7:
-        _raise_unverified_path(
-            cpu,
-            parent=parent,
-            chain="AF63 direction table",
-            target_ip=cpu.mem.rw(cpu.s.cs & 0xFFFF, (0xAF6E + ((direction << 1) & 0xFFFF)) & 0xFFFF),
-            bp=bp,
-            cx_value=cpu.s.cx & 0xFFFF,
-        )
-    apply_direction_step_to_current_object(cpu, direction=direction, pixels=2)
 
 
-def _run_af60_double_step_for_direction(cpu) -> None:
-    """Mirror 1010:AF60 for the movement helper's speed-2 mode.
-
-    AF60 is another OVERKILL self-call trick: ``CALL AF63`` pushes AF63, so
-    the direction movement body runs once, RET returns to AF63, and the same
-    body runs a second time before returning to the original caller.
-    """
-    ss = cpu.s.ss & 0xFFFF
-    # AF60 begins with CALL AF63.  After the self-call trick completes, SP is
-    # back where it started but the pushed return word remains as stack scratch.
-    cpu.mem.ww(ss, (cpu.s.sp - 2) & 0xFFFF, 0xAF63)
-    _run_af63_step_for_direction(cpu, parent="1010:AF60")
-    _run_af63_step_for_direction(cpu, parent="1010:AF60")
 
 
-def run_movement_dir_double_step_2px_af60(cpu, self_disable_if_patched) -> None:
-    """Hook entry for 1010:AF60, the self-call double 2-pixel step.
-
-    The original is ``CALL AF63`` followed by the AF63 body.  The near CALL
-    pushes ``AF63`` as scratch, the first AF63 RET returns to the AF63 entry,
-    and the second AF63 RET returns to the real caller.  Registering AF60 closes
-    the direct-entry blind spot while preserving the scratch word below SP.
-    """
-    if self_disable_if_patched(
-        cpu,
-        0xAF60,
-        SIG_MOVEMENT_DOUBLE_STEP_2PX_AF60,
-        "overkill_movement_dir_double_step_2px_af60",
-    ):
-        return
-    _run_af60_double_step_for_direction(cpu)
-    cpu.s.ip = cpu.pop()
 
 
-def run_movement_dir_step_2px_af63(cpu, self_disable_if_patched) -> None:
-    """Hook entry for 1010:AF63, the 2-pixel 8-direction movement step table.
-
-    The body is already lifted as ``_run_af63_step_for_direction`` and shared by
-    the 5DB2/5E42/AF60 parents.  This wrapper registers the same body at the
-    exact ASM entry so a *direct* ``CALL AF63`` (for example from 1010:89FF/8A1D)
-    is hook-covered instead of interpreted.  The routine is a near-return.
-    """
-    if self_disable_if_patched(
-        cpu,
-        0xAF63,
-        SIG_MOVEMENT_DIR_STEP_2PX_AF63,
-        "overkill_movement_dir_step_2px_af63",
-    ):
-        return
-    _run_af63_step_for_direction(cpu)
-    cpu.s.ip = cpu.pop()
 
 
-def run_movement_dir_step_3px_af22(cpu, self_disable_if_patched) -> None:
-    """Hook entry for 1010:AF22, the 3-pixel 8-direction movement step table.
-
-    Same dispatch shape as AF63 with a 3-pixel delta; body lifted as
-    ``_run_af22_three_pixel_step_for_direction``.  Near-return entry wrapper.
-    """
-    if self_disable_if_patched(
-        cpu,
-        0xAF22,
-        SIG_MOVEMENT_DIR_STEP_3PX_AF22,
-        "overkill_movement_dir_step_3px_af22",
-    ):
-        return
-    _run_af22_three_pixel_step_for_direction(cpu)
-    cpu.s.ip = cpu.pop()
 
 
-def run_movement_dir_step_8px_aee4(cpu, self_disable_if_patched) -> None:
-    """Hook entry for 1010:AEE4, the 8-pixel 8-direction movement step table.
-
-    Same dispatch shape as AF63 with an 8-pixel delta; body lifted as
-    ``_run_aee4_step_for_direction``.  Near-return entry wrapper.
-    """
-    if self_disable_if_patched(
-        cpu,
-        0xAEE4,
-        SIG_MOVEMENT_DIR_STEP_8PX_AEE4,
-        "overkill_movement_dir_step_8px_aee4",
-    ):
-        return
-    _run_aee4_step_for_direction(cpu)
-    cpu.s.ip = cpu.pop()
 
 
-def _run_aee4_step_for_direction(cpu) -> None:
-    """Mirror 1010:AEE4: one 8-pixel direction step via the AEEE table."""
-    ss = cpu.s.ss & 0xFFFF
-    bp = cpu.s.bp & 0xFFFF
-    direction = cpu.mem.rw(ss, (bp + OFF_DIRECTION_OR_STEP) & 0xFFFF) & 0xFFFF
-    cpu.s.bx = direction
-    cpu.s.bx = cpu.shift(4, cpu.s.bx, 1, 16)
-    if direction > 7:
-        _raise_unverified_path(
-            cpu,
-            parent="1010:AEE4",
-            chain="AEE4 direction table",
-            target_ip=cpu.mem.rw(cpu.s.cs & 0xFFFF, (0xAEEE + ((direction << 1) & 0xFFFF)) & 0xFFFF),
-            bp=bp,
-            cx_value=cpu.s.cx & 0xFFFF,
-        )
-    apply_direction_step_to_current_object(cpu, direction=direction, pixels=8)
 
 
-def _run_movement_direction_5db2(cpu) -> None:
-    """Run the 1010:5DB2 target-seeking movement/direction helper.
-
-    The helper compares object Y/X against DS:2304/2306, encodes the desired
-    direction into DS:A954, maps that nibble through DS:A348 into the object's
-    animation/direction word at SS:[BP+06], then dispatches through CS:5E0C by
-    DS:2308.  For the currently opened object-logic island, the verified mode is
-    DS:2308 == 2, which is the AF60 double 2-pixel step.
-    """
-    ds = cpu.s.ds & 0xFFFF
-    ss = cpu.s.ss & 0xFFFF
-    bp = cpu.s.bp & 0xFFFF
-
-    slot = ObjectSlotView.from_ss_bp(cpu)
-    pure_decision = decide_target_seek_direction_from_dos(cpu, slot)
-
-    cpu.mem.ww(ds, MOVEMENT_DIRECTION_BITS, 0)
-    cpu.mem.ww(ds, MOVEMENT_BLOCKED_FLAG, 0)
-
-    y = cpu.mem.rw(ss, (bp + OFF_Y) & 0xFFFF)
-    target_y = cpu.mem.rw(ds, 0x2304)
-    _cmp_word(cpu, y, target_y)
-    if y < target_y:
-        cpu.mem.ww(ds, MOVEMENT_DIRECTION_BITS, 1)
-    elif y > target_y:
-        cpu.mem.ww(ds, MOVEMENT_DIRECTION_BITS, 2)
-
-    x = cpu.mem.rw(ss, (bp + OFF_X) & 0xFFFF)
-    target_x = cpu.mem.rw(ds, 0x2306)
-    _cmp_word(cpu, x, target_x)
-    # Original uses signed JL/JG for X after CMP AX,DS:[2306].
-    sx = x if x < 0x8000 else x - 0x10000
-    starget_x = target_x if target_x < 0x8000 else target_x - 0x10000
-    direction_bits = cpu.mem.rw(ds, MOVEMENT_DIRECTION_BITS)
-    if sx < starget_x:
-        direction_bits |= 0x0004
-        cpu.mem.ww(ds, MOVEMENT_DIRECTION_BITS, direction_bits)
-    elif sx > starget_x:
-        direction_bits |= 0x0008
-        cpu.mem.ww(ds, MOVEMENT_DIRECTION_BITS, direction_bits)
-
-    if (direction_bits & 0xFFFF) != pure_decision.direction_bits:
-        raise AssertionError(
-            "pure 5DB2 target-seek direction bits disagree with ASM-compatible compares"
-        )
-
-    cpu.s.bx = 0xA348
-    cpu.s.ax = cpu.mem.rw(ds, MOVEMENT_DIRECTION_BITS)
-    mapped = cpu.mem.rb(ds, (cpu.s.bx + (cpu.s.ax & 0xFF)) & 0xFFFF)
-    cpu.set_reg8(0, mapped)  # XLAT updates AL only.
-    cpu.set_sub_flags(mapped, 0xFF, mapped - 0xFF, 8)  # CMP AL,FFh.
-    if mapped != pure_decision.mapped_direction:
-        raise AssertionError("pure 5DB2 direction-table result disagrees with XLAT")
-    if mapped == 0xFF:
-        if not pure_decision.blocked:
-            raise AssertionError("pure 5DB2 blocked flag disagrees with CMP AL,FFh")
-        cpu.mem.ww(ds, MOVEMENT_BLOCKED_FLAG, 1)
-        # MOV word and RET do not affect flags; leave CMP AL,FFh flags live.
-        return
-    if pure_decision.blocked:
-        raise AssertionError("pure 5DB2 blocked flag disagrees with movement dispatch path")
-
-    cpu.mem.ww(ss, (bp + OFF_DIRECTION_OR_STEP) & 0xFFFF, cpu.s.ax)
-    cpu.s.bx = cpu.mem.rw(ds, MOVEMENT_MODE)
-    cpu.s.bx = cpu.shift(4, cpu.s.bx, 1, 16)  # SHL BX,1 before 5E0C table JMP.
-    mode = cpu.mem.rw(ds, MOVEMENT_MODE)
-    target_ip = cpu.mem.rw(cpu.s.cs & 0xFFFF, (0x5E0C + ((mode << 1) & 0xFFFF)) & 0xFFFF)
-    if target_ip == 0xAF63:
-        _run_af63_step_for_direction(cpu, parent="1010:5DB2")
-        return
-    if target_ip == 0xAF60:
-        _run_af60_double_step_for_direction(cpu)
-        return
-    if target_ip == 0xAEE4:
-        _run_aee4_step_for_direction(cpu)
-        return
-    _raise_unverified_path(
-        cpu,
-        parent="1010:5DB2",
-        chain="5DB2 -> 5E0C movement-mode dispatch",
-        target_ip=target_ip,
-        bp=bp,
-        cx_value=cpu.s.cx & 0xFFFF,
-    )
 
 
 
@@ -3380,8 +1870,6 @@ def _call_tile_probe_5073(cpu, return_ip: int) -> None:
     _call_verified_child_near(cpu, 0x5073, lambda c: run_tile_probe_5073(c, _no_patch_guard), return_ip)
 
 
-def _call_tile_lookup_505b(cpu, return_ip: int) -> None:
-    _call_verified_child_near(cpu, 0x505B, lambda c: run_tile_lookup_505b(c, _no_patch_guard), return_ip)
 
 
 def _call_player_hazard_scan_bdd0(cpu, return_ip: int) -> None:
@@ -3412,9 +1900,6 @@ def _jump_object_tile_sweep_blocked_b032(cpu) -> None:
         handler(cpu)
 
 
-def _b00d_tile_is_blocking(cpu, return_ip: int) -> bool:
-    _call_tile_lookup_505b(cpu, return_ip)
-    return not bool(cpu.get_flag(ZF))
 
 
 def _run_b00d_move_right(cpu) -> bool:
@@ -3580,19 +2065,6 @@ def _run_b00d_move_up(cpu) -> bool:
 
 
 
-def _call_b00d_component(cpu, component, return_ip: int) -> None:
-    """Simulate the internal CALL/RET used by diagonal B00D branches.
-
-    B032 is a shared tail, not a global abort.  When a cardinal component is
-    reached via CALL inside a diagonal branch, a JMP B032 returns to that
-    component's internal caller, and the second component still runs.
-    """
-    cpu.push(return_ip & 0xFFFF)
-    blocked = component(cpu)
-    if not blocked:
-        cpu.s.ip = cpu.pop()
-    if (cpu.s.ip & 0xFFFF) != (return_ip & 0xFFFF):
-        raise RuntimeError(f"B00D internal component expected return {return_ip:04X}, got {cpu.s.ip & 0xFFFF:04X}")
 
 
 def run_object_tile_sweep_dispatch_b00d(cpu, self_disable_if_patched) -> None:
@@ -3654,71 +2126,10 @@ def run_object_tile_sweep_dispatch_b00d(cpu, self_disable_if_patched) -> None:
         s.ip = cpu.pop()
 
 
-SIG_OBJECT_PLAYER_CHASE_CANDIDATE_SCAN_B15A = bytes.fromhex(
-    "b9 23 00 8b 1e 3a a4 81 fb 5c 2b 73 33 83 3f 00 "
-    "74 25 83 7f 18 01 74 1f 83 7f 18 26 74 19 83 "
-    "7f 18 21 74 13 83 7f 18 22 74 0d 81 7f 02 e0 "
-    "00 77 06 83 7f 16 04 74 15 83 c3 38 e2 cb bb "
-    "ff ff c3 c7 06 3a a4 b4 23 8b 1e 3a a4 eb bb "
-    "53 83 c3 38 89 1e 3a a4 5b c3"
-)
 
 
-def _run_player_chase_candidate_scan_b15a(cpu) -> None:
-    """Mirror B15A, the B1B0 target-acquisition scan over effect/contact slots.
-
-    The pure predicate owns the candidate meaning; this adapter keeps the exact
-    loop/cursor/register/flag behavior.  DS:A43A is a rotating cursor through
-    the DS:23B4..2B5C pool.  On success the cursor advances to the next slot but
-    BX is restored to the found slot, matching the original PUSH/ADD/STORE/POP.
-    """
-    ds = cpu.s.ds & 0xFFFF
-    mem = cpu.mem
-    cpu.s.cx = 0x0023
-    cpu.s.bx = mem.rw(ds, 0xA43A)
-
-    while True:
-        bx = cpu.s.bx & 0xFFFF
-        _cmp_word(cpu, bx, GAMEPLAY_OBJECT_TABLE_BASE)
-        if bx >= GAMEPLAY_OBJECT_TABLE_BASE:
-            mem.ww(ds, 0xA43A, EFFECT_OBJECT_TABLE_BASE)
-            cpu.s.bx = mem.rw(ds, 0xA43A)
-            continue
-
-        slot = ObjectSlotView.from_ds(cpu, bx)
-        if run_player_chase_candidate_checks_b15a(cpu, slot):
-            found_bx = bx
-            cpu.push(found_bx)
-            _add_reg16(cpu, 3, OBJECT_SLOT_STRIDE)
-            mem.ww(ds, 0xA43A, cpu.s.bx & 0xFFFF)
-            cpu.s.bx = cpu.pop()
-            return
-
-        _add_reg16(cpu, 3, OBJECT_SLOT_STRIDE)
-        cpu.s.cx = (cpu.s.cx - 1) & 0xFFFF
-        if cpu.s.cx == 0:
-            cpu.s.bx = 0xFFFF
-            return
 
 
-def run_player_chase_candidate_scan_b15a(cpu, self_disable_if_patched) -> None:
-    """Lift 1010:B15A as a standalone rotating target-candidate scan.
-
-    This helper is shared by the B1B0 chase-acquisition behavior and by the
-    A515 action/spawn link helper.  Keep the loop mechanics raw: DS:A43A is the
-    cursor through DS:23B4..2B5C, BX returns either the found slot or FFFFh, and
-    the pure object predicate owns only the candidate decision.
-    """
-    if self_disable_if_patched(
-        cpu,
-        0xB15A,
-        SIG_OBJECT_PLAYER_CHASE_CANDIDATE_SCAN_B15A,
-        "overkill_player_chase_candidate_scan_b15a",
-    ):
-        return
-
-    _run_player_chase_candidate_scan_b15a(cpu)
-    cpu.s.ip = cpu.pop()
 
 
 def run_object_player_chase_b1b0(cpu, self_disable_if_patched) -> None:
@@ -3826,27 +2237,3 @@ def run_object_player_chase_b1b0(cpu, self_disable_if_patched) -> None:
     jump_ad5a()
 
 
-def run_object_target_move_b729(cpu, self_disable_if_patched) -> None:
-    """Lift 1010:B729, the object target-copy + 5DB2 movement prelude.
-
-    B729 is the small source-like wrapper used by several object behaviours:
-    copy the slot's observed target pair (``+32h/+34h``) into the shared 5DB2
-    target globals, call the recovered target-seeking movement helper, compare
-    the blocked flag, and return to the caller.  The nested 5DB2 call is routed
-    through its hook boundary so verifier coverage still sees the child routine.
-    """
-    if self_disable_if_patched(cpu, 0xB729, SIG_OBJECT_TARGET_MOVE_B729, "overkill_object_target_move_b729"):
-        return
-
-    publish_object_slot_target_to_movement_globals(cpu, ObjectSlotView.from_ss_bp(cpu))
-
-    def run_5db2(c):
-        _run_movement_direction_5db2(c)
-        c.s.ip = c.pop()
-
-    _call_verified_child_near(cpu, 0x5DB2, run_5db2, 0xB738)
-    if (cpu.s.ip & 0xFFFF) != 0xB738:
-        raise RuntimeError(f"B729 expected 5DB2 to return to B738, got {cpu.s.ip:04X}")
-
-    _cmp_word(cpu, cpu.mem.rw(cpu.s.ds & 0xFFFF, MOVEMENT_BLOCKED_FLAG), 0)
-    cpu.s.ip = cpu.pop()
