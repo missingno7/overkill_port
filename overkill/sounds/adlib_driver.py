@@ -9,6 +9,7 @@ available as the oracle until the whole driver is understood.
 from __future__ import annotations
 
 from dos_re.cpu import CF
+from ._asm import cmp_byte, dec_mem_byte_preserve_cf, in_al, out_value
 from .loaded_driver import OPTIONAL_SOUND_DRIVER_SEGMENT
 
 # 2032:04E9 AdLib/YM3812 probe.  It starts by saving BX/CX/DX/DS and then writes
@@ -59,29 +60,6 @@ SIG_ADLIB_CHANNEL_MOD_B_2032_02F6 = bytes.fromhex(
 )
 
 
-def _cmp_byte(cpu, a: int, b: int) -> None:
-    a &= 0xFF
-    b &= 0xFF
-    cpu.set_sub_flags(a, b, a - b, 8)
-
-
-def _in_al(cpu, port: int) -> int:
-    value = cpu.port_reader(cpu, port & 0xFFFF, 8) if cpu.port_reader else 0
-    cpu.set_reg8(0, value & 0xFF)
-    return value & 0xFF
-
-
-def _out(cpu, port: int, value: int) -> None:
-    if cpu.port_writer:
-        cpu.port_writer(cpu, port & 0xFFFF, value & 0xFF, 8)
-
-
-def _write_ym3812(cpu, dx: int, ax: int) -> None:
-    """Mirror 2032:0557 without the PIT-speaker delay subroutine."""
-    _out(cpu, dx, ax & 0xFF)
-    _out(cpu, (dx + 1) & 0xFFFF, (ax >> 8) & 0xFF)
-
-
 def _call_adlib_write(cpu, ax: int, return_ip: int) -> None:
     """Call the lifted 2032:0557 helper with the original near-call shape."""
     cpu.s.ax = ax & 0xFFFF
@@ -94,16 +72,6 @@ def _call_adlib_write(cpu, ax: int, return_ip: int) -> None:
         )
 
 
-def _dec_mem_byte_preserve_cf(cpu, seg: int, off: int) -> int:
-    old = cpu.mem.rb(seg, off)
-    old_cf = cpu.get_flag(CF)
-    result = (old - 1) & 0xFF
-    cpu.mem.wb(seg, off, result)
-    cpu.set_sub_flags(old, 1, old - 1, 8)
-    cpu.set_flag(CF, old_cf)
-    return result
-
-
 def _emulate_0579_delay_side_effects(cpu, compare_threshold: int) -> None:
     """Model the port-visible tail of 2032:0579 without the busy wait.
 
@@ -112,27 +80,27 @@ def _emulate_0579_delay_side_effects(cpu, compare_threshold: int) -> None:
     so only port side effects and the final AND flags are observable by callers.
     """
     ax0 = cpu.s.ax & 0xFFFF
-    _out(cpu, 0x43, 0xB6)
-    al = (_in_al(cpu, 0x61) | 0x03) & 0xFF
+    out_value(cpu, 0x43, 0xB6)
+    al = (in_al(cpu, 0x61) | 0x03) & 0xFF
     cpu.set_reg8(0, al)
     cpu.set_logic_flags(al, 8)
-    _out(cpu, 0x61, al)
+    out_value(cpu, 0x61, al)
     # The delay routine always programs PIT channel 2 with 1FFFh; BX holds only
     # the later comparison threshold (1FFCh or 1FECh).
     _ = compare_threshold
-    _out(cpu, 0x42, 0xFF)
-    _out(cpu, 0x42, 0x1F)
-    _out(cpu, 0x43, 0x86)
-    _out(cpu, 0x43, 0xB6)
+    out_value(cpu, 0x42, 0xFF)
+    out_value(cpu, 0x42, 0x1F)
+    out_value(cpu, 0x43, 0x86)
+    out_value(cpu, 0x43, 0xB6)
 
     # The real loop samples channel 2 until the counter reaches the requested
     # range.  The VM's port-42 reads are synthetic and not game data, so skip the
     # wait and model the final speaker-control clear.
-    al = _in_al(cpu, 0x61)
+    al = in_al(cpu, 0x61)
     al &= 0xFE
     cpu.set_reg8(0, al)
     cpu.set_logic_flags(al, 8)
-    _out(cpu, 0x61, al)
+    out_value(cpu, 0x61, al)
     cpu.s.ax = ax0
 
 
@@ -202,9 +170,9 @@ def run_adlib_write_2032_0557(cpu) -> None:
     ax = s.ax & 0xFFFF
     dx = cpu.mem.rw(s.ds & 0xFFFF, 0x000E)
 
-    _out(cpu, dx, ax & 0xFF)
+    out_value(cpu, dx, ax & 0xFF)
     _emulate_0579_delay_side_effects(cpu, 0x1FFC)
-    _out(cpu, (dx + 1) & 0xFFFF, (ax >> 8) & 0xFF)
+    out_value(cpu, (dx + 1) & 0xFFFF, (ax >> 8) & 0xFF)
     _emulate_0579_delay_side_effects(cpu, 0x1FEC)
 
     # Preserve dead stack scratch left by PUSH BX/PUSH DX and the two CALL 0579
@@ -235,7 +203,7 @@ def run_adlib_page_gate_2032_0409(cpu) -> None:
     if cpu.mem.rb(ds, 0x0009) != 0 and cpu.mem.rb(ds, 0x005F) == 0:
         cpu.set_reg8(4, 0)  # XOR AH,AH
         cpu.set_reg8(0, 0)  # MOV AL,[005F]
-        _cmp_byte(cpu, 0, 0)
+        cmp_byte(cpu, 0, 0)
         cpu.s.ip = cpu.pop()
         return
     _run_original_near(cpu, 0x0409)
@@ -259,7 +227,7 @@ def run_adlib_set_instrument_2032_0181(cpu) -> None:
     s.ax = (s.ax & 0xFF00) | inst
     cpu.set_sub_flags(al0, 0xA0, al0 - 0xA0, 8)
     current = mem.rb(ds, (di + 0x04) & 0xFFFF)
-    _cmp_byte(cpu, inst, current)
+    cmp_byte(cpu, inst, current)
     if inst == current:
         s.ip = 0x00F7
         return
@@ -401,7 +369,7 @@ def run_adlib_channel_helper_2032_02aa(cpu) -> None:
     di = cpu.s.di & 0xFFFF
     bx = cpu.s.bx & 0xFFFF
     stream_byte = cpu.mem.rb(ds, bx)
-    _cmp_byte(cpu, stream_byte, 0x82)
+    cmp_byte(cpu, stream_byte, 0x82)
     if stream_byte == 0x82:
         cpu.s.ip = cpu.pop()
         return
@@ -414,7 +382,7 @@ def run_adlib_channel_helper_2032_02aa(cpu) -> None:
         cpu.s.ip = cpu.pop()
         return
     delay = cpu.mem.rb(ds, (di + 0x01) & 0xFFFF)
-    _cmp_byte(cpu, note_state, delay)
+    cmp_byte(cpu, note_state, delay)
     if note_state != delay:
         cpu.s.ip = cpu.pop()
         return
@@ -456,16 +424,16 @@ def run_adlib_channel_mod_a_2032_02c9(cpu) -> None:
     cpu.set_reg8(0, 0)
     cpu.set_logic_flags(0, 8)
     value = cpu.mem.rb(ds, (di + 0x1D) & 0xFFFF)
-    _cmp_byte(cpu, 0, value)
+    cmp_byte(cpu, 0, value)
     if value == 0:
         cpu.s.ip = cpu.pop()
         return
     counter = cpu.mem.rb(ds, (di + 0x1E) & 0xFFFF)
-    _cmp_byte(cpu, 0, counter)
+    cmp_byte(cpu, 0, counter)
     if counter == 0:
         cpu.s.ip = cpu.pop()
         return
-    counter = _dec_mem_byte_preserve_cf(cpu, ds, (di + 0x1E) & 0xFFFF)
+    counter = dec_mem_byte_preserve_cf(cpu, ds, (di + 0x1E) & 0xFFFF)
     if counter == 0:
         cpu.s.ip = cpu.pop()
         return
@@ -486,18 +454,18 @@ def run_adlib_channel_mod_b_2032_02f6(cpu) -> None:
     cpu.set_reg8(0, 0)
     cpu.set_logic_flags(0, 8)
     first = cpu.mem.rb(ds, (di + 0x18) & 0xFFFF)
-    _cmp_byte(cpu, 0, first)
+    cmp_byte(cpu, 0, first)
     if first != 0:
-        first = _dec_mem_byte_preserve_cf(cpu, ds, (di + 0x18) & 0xFFFF)
+        first = dec_mem_byte_preserve_cf(cpu, ds, (di + 0x18) & 0xFFFF)
         if first != 0:
             cpu.s.ip = cpu.pop()
             return
     second = cpu.mem.rb(ds, (di + 0x19) & 0xFFFF)
-    _cmp_byte(cpu, 0, second)
+    cmp_byte(cpu, 0, second)
     if second == 0:
         cpu.s.ip = cpu.pop()
         return
-    _dec_mem_byte_preserve_cf(cpu, ds, (di + 0x19) & 0xFFFF)
+    dec_mem_byte_preserve_cf(cpu, ds, (di + 0x19) & 0xFFFF)
     cx0 = cpu.s.cx & 0xFFFF
     cpu.push(cx0)
     cx = cpu.mem.rw(ds, (di + 0x08) & 0xFFFF)
@@ -521,7 +489,7 @@ def run_adlib_channel_tick_2032_00cd(cpu) -> None:
     di = cpu.s.di & 0xFFFF
 
     pause = cpu.mem.rb(ds, 0x005F)
-    _cmp_byte(cpu, pause, 0)
+    cmp_byte(cpu, pause, 0)
     if pause != 0:
         cpu.s.ip = cpu.pop()
         return
@@ -535,7 +503,7 @@ def run_adlib_channel_tick_2032_00cd(cpu) -> None:
 
     cpu.s.bx = cpu.mem.rw(ds, (di + 0x0C) & 0xFFFF)
     gate = cpu.mem.rb(ds, 0x000D)
-    _cmp_byte(cpu, gate, 0)
+    cmp_byte(cpu, gate, 0)
 
     mod_a_delay = cpu.mem.rb(ds, (di + 0x1D) & 0xFFFF)
     mod_b_delay_a = cpu.mem.rb(ds, (di + 0x18) & 0xFFFF)
@@ -546,9 +514,9 @@ def run_adlib_channel_tick_2032_00cd(cpu) -> None:
             # CALL 02C9 takes its disabled exit, then CALL 02F6 takes its
             # disabled exit.  Both leave AL=0; final flags are from CMP AL,[DI+19].
             cpu.set_reg8(0, 0)
-            _cmp_byte(cpu, 0, mod_a_delay)
-            _cmp_byte(cpu, 0, mod_b_delay_a)
-            _cmp_byte(cpu, 0, mod_b_delay_b)
+            cmp_byte(cpu, 0, mod_a_delay)
+            cmp_byte(cpu, 0, mod_b_delay_a)
+            cmp_byte(cpu, 0, mod_b_delay_b)
             cpu.mem.ww(cpu.s.ss & 0xFFFF, (cpu.s.sp - 2) & 0xFFFF, 0x00F6)
             cpu.s.ip = cpu.pop()
             return
@@ -585,11 +553,11 @@ def run_adlib_channel_tick_2032_00cd(cpu) -> None:
                 # calls finally leave flags from CMP AL,[DI+19].
                 cpu.s.si = si_candidate
                 cpu.set_reg8(0, 0)
-                _cmp_byte(cpu, stream_byte, 0x82)
+                cmp_byte(cpu, stream_byte, 0x82)
                 cpu.set_logic_flags(0, 8)
-                _cmp_byte(cpu, 0, mod_a_delay)
-                _cmp_byte(cpu, 0, mod_b_delay_a)
-                _cmp_byte(cpu, 0, mod_b_delay_b)
+                cmp_byte(cpu, 0, mod_a_delay)
+                cmp_byte(cpu, 0, mod_b_delay_a)
+                cmp_byte(cpu, 0, mod_b_delay_b)
                 cpu.mem.ww(cpu.s.ss & 0xFFFF, (cpu.s.sp - 2) & 0xFFFF, 0x00F6)
                 cpu.s.ip = cpu.pop()
                 return
@@ -621,7 +589,7 @@ def run_adlib_driver_tick_2032_0063(cpu) -> None:
     s.ds = cs  # PUSH CS; POP DS
     s.si = 0x0062
     busy = mem.rb(s.ds, s.si)
-    _cmp_byte(cpu, busy, 0)
+    cmp_byte(cpu, busy, 0)
     if busy != 0:
         s.ax, s.bx, s.cx, s.dx = ax0, bx0, cx0, dx0
         s.di, s.si, s.ds = di0, si0, ds0
@@ -663,7 +631,7 @@ def run_adlib_driver_tick_2032_0063(cpu) -> None:
             raise RuntimeError(f"2032:00CD returned to unexpected IP {s.ip:04X}, expected {ret:04X}")
 
     gate = mem.rb(s.ds, 0x000D)
-    _cmp_byte(cpu, gate, 0)
+    cmp_byte(cpu, gate, 0)
     if gate == 0:
         al = mem.rb(s.ds, 0x000C)
         s.ax = (s.ax & 0xFF00) | al

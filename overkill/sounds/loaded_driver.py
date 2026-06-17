@@ -21,6 +21,23 @@ Addr: TypeAlias = tuple[int, int]
 OPTIONAL_SOUND_DRIVER_SEGMENT = 0x2032
 OPTIONAL_SOUND_DRIVER_NAME = "optional_sound_driver_2032"
 
+# Coverage island used for everything executing inside the loaded driver blob.
+# It is intentionally distinct from the gameplay-adjacent ``sound`` island
+# (1010 PC-speaker / timer-tick helpers): the blob is non-gameplay third-party
+# resident code that can dominate hit counts simply because audio/timer logic
+# runs on every frame.  Coverage and verifier metadata should classify it here
+# so it never masquerades as unlifted gameplay work.
+SOUND_DRIVER_BLOB_ISLAND = "sound_driver_blob"
+
+# Canonical span of the resident driver image inside its segment.  The blob is
+# a single contiguous code/data image; the whole segment is the driver, but the
+# observed executable frontier lives within ``0000..06FF``.
+OPTIONAL_SOUND_DRIVER_BLOB_RANGE: tuple[int, int, int] = (
+    OPTIONAL_SOUND_DRIVER_SEGMENT,
+    0x0000,
+    0x06FF,
+)
+
 # Exact helpers that are already lifted/documented.  The whole segment still
 # classifies as sound because not every internal near-call target is hooked, but
 # this set describes the proof-backed public frontier inside that resident blob.
@@ -43,6 +60,23 @@ OPTIONAL_SOUND_DRIVER_HOOK_ADDRS: frozenset[Addr] = frozenset(
 
 
 def is_optional_sound_driver_addr(addr: Addr) -> bool:
-    """Return true for code executing inside the loaded optional sound driver."""
+    """Return true for code executing inside the loaded optional sound driver.
+
+    The whole segment is the resident driver image, so this is segment-wide on
+    purpose: any IP inside ``2032h`` belongs to the blob and must not be counted
+    as gameplay.
+    """
     cs, _ip = addr
     return (cs & 0xFFFF) == OPTIONAL_SOUND_DRIVER_SEGMENT
+
+
+def is_sound_driver_blob_addr(addr: Addr) -> bool:
+    """Return true for addresses inside the canonical driver blob span.
+
+    Narrower than :func:`is_optional_sound_driver_addr`: it restricts to the
+    observed executable frontier ``2032:0000-06FF``.  Use this when a consumer
+    wants the proven image extent rather than the whole 64K segment.
+    """
+    cs, ip = addr
+    seg, start, end = OPTIONAL_SOUND_DRIVER_BLOB_RANGE
+    return (cs & 0xFFFF) == seg and start <= (ip & 0xFFFF) <= end

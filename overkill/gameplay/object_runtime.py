@@ -34,6 +34,35 @@ from overkill.gameplay.collision import (
     run_tile_lookup_505b,
     run_tile_probe_5073,
 )
+from overkill.gameplay.contact_overlap import run_overlap_contact_selector_b250
+from overkill.gameplay.object_runtime_common import (
+    _or_mem_word,
+    _neg_reg16,
+    _signed16,
+    _format_object_context,
+    _raise_unverified_path,
+    _run_interpreted_near_call_observed,
+    _run_original_tail_to_caller,
+    _call_verified_child_near,
+)
+from overkill.gameplay.object_deactivation import (
+    _run_deactivate_bd17_observed,
+    _run_collision_death_tail_bfc7,
+    _run_collision_cleanup_bd0d_observed,
+    _run_score_add_5f0d_observed,
+    _run_y_clamp_bcb1,
+)
+from overkill.gameplay.object_spawns import (
+    _find_free_effect_slot_7524,
+    _find_free_object_slot_7573,
+    _run_c054_c12d_effect_spawn_tail,
+    _run_formation_spawn_7476_observed,
+    _run_linked_effect_spawn_7420_observed,
+    run_object_slot_allocate_or_reclaim_7547,
+    run_object_spawn_anchor_offset_a571,
+    run_object_spawn_seed_a4ea,
+    run_object_spawn_seed_from_source_a4d7,
+)
 from overkill.gameplay.view_window import _run_view_window_check_aa46
 from overkill.gameplay.objects import (
     run_object_motion_table_ab34,
@@ -93,21 +122,6 @@ from overkill.runtime_code import require_runtime_code_variant
 
 
 
-def _call_verified_child_near(cpu, ip: int, default_handler, return_ip: int) -> None:
-    """Run a lifted child routine through its real ASM hook boundary.
-
-    Parent hooks often inline child helpers for speed/readability.  That is only
-    safe for verification if the child call still reaches the hook verifier at
-    the original CS:IP with the original near-CALL return word on the stack.
-    Otherwise a locally wrong helper can hide inside a larger verified parent and
-    only surface later as a frame/state divergence.
-    """
-    call_installed_hook_like_near_call(
-        cpu,
-        (cpu.s.cs & 0xFFFF, ip & 0xFFFF),
-        default_handler,
-        return_ip & 0xFFFF,
-    )
 
 
 def _call_ab34(cpu, return_ip: int) -> None:
@@ -129,46 +143,6 @@ def _call_ac81(cpu, return_ip: int) -> None:
 def _call_aa71(cpu, return_ip: int) -> None:
     _call_verified_child_near(cpu, 0xAA71, run_postmove_contact_window_aa71, return_ip)
 
-def _run_interpreted_near_call_observed(cpu, target_ip: int, return_ip: int, *, max_steps: int = 20000) -> None:
-    """Run a rare original near helper from inside a larger lifted path.
-
-    This is used for non-hot, display/bookkeeping helper tails that have not yet
-    been lifted but are needed to keep gameplay moving through an observed path.
-    The helper is still bounded and deterministic: it installs the same near-CALL
-    return word the ASM would have pushed and steps until that continuation is
-    reached.  When hook verification is active we normally keep it active inside
-    the bounded call too, so any child hook address reached by the original code
-    is verified at that exact VM state.
-    """
-    cs = cpu.s.cs & 0xFFFF
-    target = (cs, return_ip & 0xFFFF)
-    saved_verifier = cpu.hook_verifier
-    if not getattr(cpu, "hook_verifier_verify_nested_calls", True):
-        cpu.hook_verifier = None
-    cpu.push(return_ip & 0xFFFF)
-    cpu.s.ip = target_ip & 0xFFFF
-    try:
-        ctx = (
-            cpu.coverage_telemetry.bounded_original((cs, target_ip & 0xFFFF), "bounded original near call")
-            if cpu.coverage_telemetry is not None
-            else None
-        )
-        if ctx is not None:
-            ctx.__enter__()
-        try:
-            for _ in range(max_steps):
-                if cpu.addr() == target:
-                    return
-                cpu.step()
-        finally:
-            if ctx is not None:
-                ctx.__exit__(None, None, None)
-    finally:
-        cpu.hook_verifier = saved_verifier
-    raise RuntimeError(
-        f"interpreted helper 1010:{target_ip & 0xFFFF:04X} did not return to "
-        f"1010:{return_ip & 0xFFFF:04X}; now at {cpu.s.cs & 0xFFFF:04X}:{cpu.s.ip & 0xFFFF:04X}"
-    )
 
 
 SIG_OBJECT_CHILD_COORD_UPDATE_9FEA = bytes.fromhex(
@@ -265,24 +239,11 @@ SIG_OBJECT_PLAYER_CHASE_B1B0 = bytes.fromhex(
 )
 
 
-def _or_mem_word(cpu, seg: int, off: int, value: int) -> int:
-    result = cpu.mem.rw(seg, off) | (value & 0xFFFF)
-    cpu.mem.ww(seg, off, result)
-    cpu.set_logic_flags(result, 16)
-    return result
-
-
-def _neg_reg16(cpu, reg_idx: int) -> None:
-    value = cpu.get_reg16(reg_idx)
-    result = (-value) & 0xFFFF
-    cpu.set_sub_flags(0, value, -value, 16)
-    cpu.set_reg16(reg_idx, result)
 
 
 
-def _signed16(value: int) -> int:
-    value &= 0xFFFF
-    return value - 0x10000 if value & 0x8000 else value
+
+
 
 
 
@@ -919,55 +880,8 @@ def _scan_layered_object_call(cpu, wanted_layer: int, callable_ip: int, done_ip:
     _scan_loop_until_callable(cpu, 0x32CA, callable_ip, done_ip, should_call)
 
 
-def _format_object_context(cpu, bp: int | None = None, cx_value: int | None = None) -> str:
-    parts = [
-        f"CS:IP={cpu.s.cs & 0xFFFF:04X}:{cpu.s.ip & 0xFFFF:04X}",
-        f"DS={cpu.s.ds & 0xFFFF:04X}",
-        f"SS={cpu.s.ss & 0xFFFF:04X}",
-        f"SP={cpu.s.sp & 0xFFFF:04X}",
-        f"CX={cpu.s.cx & 0xFFFF:04X}",
-    ]
-    if cx_value is not None:
-        parts.append(f"scan_cx={cx_value & 0xFFFF:04X}")
-    if bp is not None:
-        ss = cpu.s.ss & 0xFFFF
-        bp &= 0xFFFF
-        parts.append(f"BP={bp:04X}")
-        for off, name in (
-            (OFF_ACTIVE_WORD, "active"),
-            (OFF_SPRITE_OR_STATE, "sprite_state"),
-            (OFF_GATE_OR_LAYER, "layer_gate"),
-            (0x0C, "draw_scratch_di"),
-            (0x0E, "present_si_or_link"),
-            (0x12, "row_phase"),
-            (OFF_OBJECT_TYPE, "object_type_or_scan_flag"),
-            (OFF_DRAW_LAYER, "draw_layer_or_hazard_class"),
-            (OFF_LOGIC_ID, "logic_id"),
-            (OFF_SUBSTATE, "substate"),
-            (0x24, "variant"),
-            (OFF_ACQUIRED_TARGET_PTR, "acquired_target_ptr"),
-            (OFF_TARGET_Y, "target_y"),
-            (OFF_TARGET_X, "target_x"),
-        ):
-            parts.append(f"{name}@+{off:02X}={cpu.mem.rw(ss, (bp + off) & 0xFFFF):04X}")
-    return "; ".join(parts)
 
 
-def _raise_unverified_path(
-    cpu,
-    *,
-    parent: str,
-    chain: str,
-    target_ip: int | None = None,
-    bp: int | None = None,
-    cx_value: int | None = None,
-) -> None:
-    target = "immediate-ret" if target_ip is None else f"{target_ip:04X}"
-    raise RuntimeError(
-        f"unverified original-code path reached in {parent}: {chain} -> {target}. "
-        f"Fail-fast is intentional; reverse and hook this target instead of "
-        f"falling back to interpreted ASM. {_format_object_context(cpu, bp, cx_value)}"
-    )
 
 
 def _present_dispatch_target_5a92(cpu, bp: int) -> int:
@@ -1266,85 +1180,16 @@ def _run_object_behavior_b73e(cpu, *, parent: str, chain: str, cx_value: int) ->
 
 
 def _run_b250_overlap_contact_selector(cpu, *, caller: str) -> int:
-    """Run the shared B250..B2A3 overlap/contact selector.
+    """Run the shared B250 overlap/contact selector.
 
-    Several object behaviors reach B250 after a movement helper returns.  B250
-    first routes the ``+1E == 1`` state directly to AD5A.  Otherwise it checks
-    whether the object overlaps the reference box rooted at DS:237E/2380.  A
-    miss also routes to AD5A; a hit emits one, three, or five 9E19
-    status/contact side-effect calls and routes to ADC9.
-
-    The returned value is the selected original target IP (AD5A or ADC9).  The
-    helper intentionally preserves the low-level AX/BX/CX/flag side effects of
-    the selector, while leaving the caller to decide whether to compose the
-    selected AD5A/ADC9 tail or stop at that frontier.
+    The selector itself now lives in :mod:`overkill.gameplay.contact_overlap`.
+    This thin shim injects the object-runtime near-call helper so the original
+    ``9E19`` contact side-effect remains a bounded, verifier-visible boundary,
+    and returns the selected original tail IP (AD5A/ADC9) to the caller.
     """
-    ds = cpu.s.ds & 0xFFFF
-    ss = cpu.s.ss & 0xFFFF
-    bp = cpu.s.bp & 0xFFFF
-    mem = cpu.mem
-
-    substate_1e = mem.rw(ss, (bp + 0x1E) & 0xFFFF)
-    _cmp_word(cpu, substate_1e, 0x0001)
-    if substate_1e == 0x0001:
-        return 0xAD5A
-
-    cpu.s.ax = mem.rw(ds, 0x237E)
-    cpu.s.bx = mem.rw(ds, 0x2380)
-    _sub_reg16(cpu, 0, 0x0002)  # B25D: SUB AX,0002h.
-
-    obj_x = mem.rw(ss, (bp + OFF_X) & 0xFFFF)
-    _cmp_word(cpu, obj_x, cpu.s.ax)
-    if _signed16(obj_x) < _signed16(cpu.s.ax):
-        return 0xAD5A
-
-    _add_reg16(cpu, 0, 0x0014)  # B265: ADD AX,0014h.
-    obj_x = mem.rw(ss, (bp + OFF_X) & 0xFFFF)
-    _cmp_word(cpu, obj_x, cpu.s.ax)
-    if _signed16(obj_x) > _signed16(cpu.s.ax):
-        return 0xAD5A
-
-    obj_y = mem.rw(ss, (bp + OFF_Y) & 0xFFFF)
-    _cmp_word(cpu, obj_y, cpu.s.bx)
-    if obj_y < (cpu.s.bx & 0xFFFF):
-        return 0xAD5A
-
-    _add_reg16(cpu, 3, 0x0014)  # B272: ADD BX,0014h.
-    obj_y = mem.rw(ss, (bp + OFF_Y) & 0xFFFF)
-    _cmp_word(cpu, obj_y, cpu.s.bx)
-    if obj_y > (cpu.s.bx & 0xFFFF):
-        return 0xAD5A
-
-    cpu.s.cx = 0x0001
-    logic_id = mem.rw(ss, (bp + OFF_LOGIC_ID) & 0xFFFF)
-    _cmp_word(cpu, logic_id, 0x0003)
-    if logic_id == 0x0003:
-        bedc = mem.rw(ds, 0xBEDC)
-        _cmp_word(cpu, bedc, 0x0000)
-        if bedc != 0:
-            cpu.s.cx = 0x0003
-            _cmp_word(cpu, bedc, 0x0001)
-            if bedc != 0x0001:
-                cpu.s.cx = 0x0005
-
-    while True:
-        # B297..B29D: PUSH CX; PUSH BP; CALL 9E19; POP BP; POP CX.
-        # 9E19 owns the raw status/counter side effects; this selector owns
-        # only the original save/restore loop shape.
-        cpu.push(cpu.s.cx)
-        cpu.push(cpu.s.bp)
-        _run_interpreted_near_call_observed(cpu, 0x9E19, 0xB29C, max_steps=12000)
-        if (cpu.s.ip & 0xFFFF) != 0xB29C:
-            raise RuntimeError(f"9E19 returned to unexpected IP {cpu.s.ip:04X} inside {caller}")
-        cpu.s.bp = cpu.pop()
-        cpu.s.cx = cpu.pop()
-
-        # LOOP B297: decrements CX and branches while non-zero, without flags.
-        cpu.s.cx = (cpu.s.cx - 1) & 0xFFFF
-        if cpu.s.cx == 0:
-            break
-
-    return 0xADC9
+    return run_overlap_contact_selector_b250(
+        cpu, caller=caller, near_call=_run_interpreted_near_call_observed
+    )
 
 
 def _run_object_behavior_b24d(cpu, *, parent: str, chain: str, cx_value: int) -> None:
@@ -1649,29 +1494,6 @@ def _run_collision_mark_a8c2_tail_bf5f(cpu) -> None:
     cpu.s.ip = cpu.pop()
 
 
-def _run_collision_cleanup_bd0d_observed(cpu, *, parent: str, chain: str, cx_value: int) -> None:
-    """Run the small BEC5 cleanup call at BD0D for the collided object in BX.
-
-    BD0D is a wrapper around BD17: PUSH BP; BP=BX; CALL BD17; BX=BP;
-    POP BP; RET.  Keep the nested return-address scratch visible while leaving
-    the caller's live frame balanced.
-    """
-    saved_bp = cpu.s.bp & 0xFFFF
-    cpu.push(saved_bp)
-    bd17_return_sp = cpu.s.sp & 0xFFFF
-    cpu.push(0xBD13)
-    cpu.s.bp = cpu.s.bx & 0xFFFF
-    _run_deactivate_bd17_observed(
-        cpu,
-        parent=parent,
-        chain=f"{chain} -> BD0D",
-        cx_value=cx_value,
-        pop_return=False,
-    )
-    # Simulate BD17's RET to BD13; the return word remains below SP as in ASM.
-    cpu.s.sp = bd17_return_sp
-    cpu.s.bx = cpu.s.bp & 0xFFFF
-    cpu.s.bp = cpu.pop()
 
 
 def _run_collision_handler_bec5_observed(cpu, *, collided_bx: int, parent: str, chain: str, cx_value: int) -> None:
@@ -1821,271 +1643,16 @@ def _run_collision_handler_bec5_observed(cpu, *, collided_bx: int, parent: str, 
 
     cpu.s.ip = cpu.pop()
 
-def _run_score_add_5f0d_observed(cpu, amount: int) -> None:
-    """Observed score add helper reached from BFC7.
-
-    The original is a packed decimal add starting at 1010:5F0D.  The death-tail
-    paths seen so far add 0030h or 0060h into DS:2314..2318 and preserve AX, DX,
-    and BP.  Later code in the tail overwrites flags, so this helper only needs
-    the memory effect for the verified branch.
-    """
-    ss = cpu.s.ss & 0xFFFF
-    carry = amount & 0xFFFF
-    off = 0x2314
-    for _ in range(5):
-        value = cpu.mem.rb(ss, off)
-        addend = carry & 0xFF
-        total = (value & 0x0F) + (addend & 0x0F)
-        high = (value >> 4) + (addend >> 4)
-        if total > 9:
-            total -= 10
-            high += 1
-        carry = 0
-        if high > 9:
-            high -= 10
-            carry = 1
-        cpu.mem.wb(ss, off, ((high << 4) | total) & 0xFF)
-        off = (off + 1) & 0xFFFF
 
 
-def _run_y_clamp_bcb1(cpu) -> None:
-    """Run BCB1's shared post-move Y clamp without consuming a return word."""
-    run_postmove_y_clamp_bcb1_body(cpu, pop_return=False)
 
 
-def _find_free_effect_slot_7524(cpu) -> int:
-    """Mirror the small 1010:7524 allocator used by the BFC7 linked effect.
-
-    It scans from DS:[95D8] through the compact 38h-byte object records before
-    the main 2B5C object pool, stores the found slot back to DS:[95D8], and
-    leaves BX/CX/flags as the original allocator.
-    """
-    ds = cpu.s.ds & 0xFFFF
-    mem = cpu.mem
-    cpu.s.cx = 0x0023
-    cpu.s.bx = mem.rw(ds, 0x95D8)
-    while True:
-        bx = cpu.s.bx & 0xFFFF
-        _cmp_word(cpu, mem.rw(ds, bx), 0x0000)
-        if mem.rw(ds, bx) == 0:
-            mem.ww(ds, 0x95D8, bx)
-            return bx
-        _add_reg16(cpu, 3, OBJECT_SLOT_STRIDE)
-        _cmp_word(cpu, cpu.s.bx, GAMEPLAY_OBJECT_TABLE_BASE)
-        if cpu.s.bx == GAMEPLAY_OBJECT_TABLE_BASE:
-            cpu.s.bx = EFFECT_OBJECT_TABLE_BASE
-        old_cx = cpu.s.cx
-        cpu.s.cx = (cpu.s.cx - 1) & 0xFFFF
-        if cpu.s.cx == 0:
-            cpu.s.bx = 0xFFFF
-            return 0xFFFF
 
 
-def _run_linked_effect_spawn_7420_observed(cpu) -> None:
-    """Run the observed 1010:7420 spawn helper used by BFC7/BFEE.
-
-    The helper publishes source Y/X/type in DS:2376/2378/237A, allocates a
-    compact effect slot via 7524, and seeds a short-lived visual object.
-    """
-    ds = cpu.s.ds & 0xFFFF
-    mem = cpu.mem
-
-    bx = _find_free_effect_slot_7524(cpu)
-    _cmp_word(cpu, cpu.s.bx, 0xFFFF)
-    if bx == 0xFFFF:
-        return
-
-    mem.ww(ds, bx, 0x0001)
-    cpu.s.ax = mem.rw(ds, 0x2378)
-    old_ax = cpu.s.ax
-    addend = mem.rw(ds, 0xA278)
-    cpu.s.ax = (cpu.s.ax + addend) & 0xFFFF
-    cpu.set_add_flags(old_ax, addend, old_ax + addend, 16)
-    mem.ww(ds, (bx + 0x02) & 0xFFFF, cpu.s.ax)
-
-    cpu.s.ax = mem.rw(ds, 0x2376)
-    _cmp_word(cpu, cpu.s.ax, 0x00C0)
-    if cpu.s.ax > 0x00C0:
-        cpu.s.ax = 0x00C0
-    mem.ww(ds, (bx + 0x04) & 0xFFFF, cpu.s.ax)
-
-    mem.ww(ds, (bx + 0x22) & 0xFFFF, 0x0000)
-    mem.ww(ds, (bx + 0x14) & 0xFFFF, 0x0001)
-    mem.ww(ds, (bx + 0x16) & 0xFFFF, 0x0005)
-    mem.ww(ds, (bx + 0x18) & 0xFFFF, 0x0000)
-    mem.ww(ds, (bx + 0x28) & 0xFFFF, 0xFFFF)
-    mem.ww(ds, (bx + 0x24) & 0xFFFF, 0x0000)
-
-    cpu.s.si = mem.rw(ds, 0x237A)
-    mem.ww(ds, (bx + 0x26) & 0xFFFF, cpu.s.si)
-    _add_reg16(cpu, 6, 0x0046)
-    mem.ww(ds, (bx + 0x08) & 0xFFFF, cpu.s.si)
-    mem.ww(ds, (bx + 0x0A) & 0xFFFF, 0x0000)
 
 
-def _run_c054_c12d_effect_spawn_tail(cpu, *, object_bp: int, selector_ax: int) -> None:
-    """Mirror the C054:C12D linked-effect tail used by BD17 and BFC7.
-
-    The 7Eh/7Dh/1Fh/1Ch/15h/13h selector family does more than choose AX:
-    C12D publishes the selected script, pushes BX/BP below the live C054 return
-    frame, CALLs 7420, then decrements DS:A47E.  Full-memory hook verification
-    observes the freed stack scratch, so this helper deliberately models the
-    nested CALL frames instead of treating the effect spawn as a pure function.
-    """
-    ds = cpu.s.ds & 0xFFFF
-    ss = cpu.s.ss & 0xFFFF
-    mem = cpu.mem
-    bp = object_bp & 0xFFFF
-
-    mem.ww(ds, 0xA482, selector_ax & 0xFFFF)
-    mem.ww(ds, 0xA842, 0xA844)
-
-    cpu.push(cpu.s.bx)
-    cpu.push(cpu.s.bp)
-    mem.ww(ds, 0x2376, mem.rw(ss, (bp + OFF_Y) & 0xFFFF))
-    mem.ww(ds, 0x2378, mem.rw(ss, (bp + OFF_X) & 0xFFFF))
-    cpu.s.ax = 0x0002
-    mem.ww(ds, 0x237A, cpu.s.ax)
-
-    call_7420_sp = cpu.s.sp & 0xFFFF
-    cpu.push(0xC14D)
-    cpu.push(0x7423)
-    _run_linked_effect_spawn_7420_observed(cpu)
-
-    # Simulate the RETs from 7420/C12D while preserving the scratch words below
-    # final SP for the full-memory verifier.
-    cpu.s.sp = call_7420_sp
-    cpu.s.bp = cpu.pop()
-    cpu.s.bx = cpu.pop()
-    _dec_mem_word_preserve_cf(cpu, ds, 0xA47E)
 
 
-def _run_collision_death_tail_bfc7(cpu, *, parent: str, chain: str, cx_value: int) -> None:
-    """Run the observed BFC7 object death/transition tail for type-1 objects."""
-    ds = cpu.s.ds & 0xFFFF
-    ss = cpu.s.ss & 0xFFFF
-    bp = cpu.s.bp & 0xFFFF
-    mem = cpu.mem
-
-    logic_id = mem.rw(ss, (bp + OFF_LOGIC_ID) & 0xFFFF)
-    _cmp_word(cpu, logic_id, 0x0021)
-    if logic_id == 0x0021:
-        _cmp_word(cpu, mem.rw(ds, 0x2356), 0x0004)
-        if mem.rw(ds, 0x2356) != 0x0004:
-            cpu.s.ip = cpu.pop()
-            return
-        # BFCF: CMP DS:[2356],0004 / BFD4: JE BFD7.  When the
-        # global gate is exactly 4, logic 0021 does *not* branch to a
-        # special body; it merely joins the ordinary BFD7 death/transition
-        # path below.
-
-    obj_type = mem.rw(ss, (bp + OFF_OBJECT_TYPE) & 0xFFFF)
-    _cmp_word(cpu, obj_type, 0x0001)
-    score_amount = 0x0030 if obj_type == 0x0001 else 0x0060
-    # BFC7 materializes the score value in BX (MOV BX,0030h/0060h) before
-    # calling the score-add helper.  Later nested selector/effect helpers may
-    # push BX as freed stack scratch, so full-memory verification observes this
-    # even though the live gameplay transition overwrites BX before returning.
-    cpu.s.bx = score_amount
-    if obj_type not in (0x0001, 0x0002):
-        _raise_unverified_path(
-            cpu, parent=parent, chain=f"{chain} -> BFC7 type {obj_type:04X}",
-            target_ip=0xBFE1, bp=bp, cx_value=cx_value,
-        )
-
-    score_ax = cpu.s.ax
-    score_dx = cpu.s.dx
-    score_bp = cpu.s.bp
-    _run_score_add_5f0d_observed(cpu, score_amount)
-    stack_base = cpu.s.sp & 0xFFFF
-    mem.ww(ss, (stack_base - 8) & 0xFFFF, score_dx)
-    mem.ww(ss, (stack_base - 6) & 0xFFFF, score_ax)
-    mem.ww(ss, (stack_base - 4) & 0xFFFF, score_bp)
-    _run_y_clamp_bcb1(cpu)
-
-    saved_bp = bp
-    cpu.push(saved_bp)
-    linked_slot = mem.rw(ss, (bp + 0x28) & 0xFFFF)
-    _cmp_word(cpu, linked_slot, 0xFFFF)
-    if linked_slot != 0xFFFF:
-        cpu.s.si = linked_slot
-        cpu.s.si = cpu.shift(4, cpu.s.si, 1, 16)
-        _add_reg16(cpu, 6, 0x2078)
-        linked_counter = mem.rb(ds, cpu.s.si & 0xFFFF)
-        _cmp_byte(cpu, linked_counter, 0)
-        if linked_counter != 0:
-            old_counter = linked_counter
-            new_counter = (old_counter - 1) & 0xFF
-            mem.wb(ds, cpu.s.si & 0xFFFF, new_counter)
-            cpu.set_sub_flags(old_counter, 1, old_counter - 1, 8)
-            if new_counter == 0:
-                mem.ww(ds, 0x2376, mem.rw(ss, (bp + OFF_Y) & 0xFFFF))
-                mem.ww(ds, 0x2378, mem.rw(ss, (bp + OFF_X) & 0xFFFF))
-                cpu.s.ax = mem.rb(ds, (cpu.s.si + 1) & 0xFFFF)
-                cpu.set_logic_flags(cpu.s.ax, 16)
-                mem.ww(ds, 0x237A, cpu.s.ax)
-                # C014 CALL 7420 leaves C017 below the live saved-BP word, and
-                # 7420's own CALL 7524 leaves its 7423 return address one word
-                # further down.  Both calls return, so SP is unchanged here, but
-                # the two return-address words remain as freed-stack scratch that
-                # full-memory verification observes.  Modelling 7524 in Python
-                # (inside the helper) skips the real CALL, so lay down the 7423
-                # scratch explicitly -- matching _run_c054_c12d_effect_spawn_tail.
-                mem.ww(ss, (cpu.s.sp - 2) & 0xFFFF, 0xC017)
-                mem.ww(ss, (cpu.s.sp - 4) & 0xFFFF, 0x7423)
-                _run_linked_effect_spawn_7420_observed(cpu)
-    cpu.s.bp = cpu.pop()
-
-    # BFC7 always CALLs the shared C054 selector before the state transition.
-    # Earlier revisions whitelisted only a few observed logic ids here, but the
-    # real helper is just the same compare chain used by BD17: some ids decrement
-    # DS:A47E, while all other ids fall through to the default AX selector.
-    # The following C01B compare overwrites C054's flags and C027 overwrites AX
-    # with the original logic id, so the important observable effects are the
-    # optional counter drop and call-frame scratch.
-    c054_sp = cpu.s.sp & 0xFFFF
-    cpu.push(0xC01B)
-    run_object_deactivate_logic_dispatch_c054(cpu)
-    selector_ax = cpu.s.ax & 0xFFFF
-    # C054 has two selector families.  The 76h..79h family only selects AX;
-    # the 7Eh/7Dh/1Fh/1Ch/15h/13h family falls through to C12D, publishes the
-    # selected effect script in DS:A482, spawns a compact linked effect through
-    # 7420, and decrements the live-effect counter before returning to C01B.
-    # BFC7 reaches the same C054 helper as BD17, so keep the real C01B call
-    # frame live while modelling the nested PUSH/CALL scratch.
-    if logic_id in (0x007E, 0x007D, 0x001F, 0x001C, 0x0015, 0x0013):
-        _run_c054_c12d_effect_spawn_tail(cpu, object_bp=bp, selector_ax=selector_ax)
-    cpu.s.sp = c054_sp
-    _cmp_word(cpu, mem.rb(ds, 0x98C0), 0)
-    if mem.rb(ds, 0x98C0) != 0:
-        mem.wb(ds, 0xBEFF, 0x19)
-
-    cpu.s.ax = logic_id
-    mem.ww(ss, (bp + 0x1A) & 0xFFFF, cpu.s.ax)
-    mem.ww(ss, (bp + OFF_LOGIC_ID) & 0xFFFF, 0x0001)
-    mem.ww(ss, (bp + OFF_TRANSITION_LATCH) & 0xFFFF, 0x0000)
-    # C037 dispatches through a tiny table keyed by the object type at +14h.
-    # Earlier lifts hard-coded the type-1 C048 tail (BX=0002, +08=0000), but
-    # multi-part/final-boss objects use type 2 and the original takes C04E
-    # instead (BX=0004, +08=0003).  Keep this as a source-like type dispatch
-    # rather than a per-snapshot special case.
-    obj_type = mem.rw(ss, (bp + OFF_OBJECT_TYPE) & 0xFFFF)
-    cpu.s.bx = obj_type & 0xFFFF
-    cpu.s.bx = cpu.shift(4, cpu.s.bx, 1, 16)
-    if obj_type == 0x0001:
-        mem.ww(ss, (bp + OFF_SPRITE_OR_STATE) & 0xFFFF, 0x0000)
-    elif obj_type == 0x0002:
-        mem.ww(ss, (bp + OFF_SPRITE_OR_STATE) & 0xFFFF, 0x0003)
-    else:
-        _raise_unverified_path(
-            cpu,
-            parent=parent,
-            chain=f"{chain} -> BFC7 C037 type dispatch {obj_type:04X}",
-            target_ip=cpu.mem.rw(cpu.s.cs & 0xFFFF, (0xC042 + cpu.s.bx) & 0xFFFF),
-            bp=bp,
-            cx_value=cx_value,
-        )
-    cpu.s.ip = cpu.pop()
 
 
 def _run_post_contact_9e69_observed(cpu, *, parent: str, chain: str, cx_value: int) -> None:
@@ -2160,36 +1727,6 @@ def _run_post_contact_9e98_tail_observed(cpu) -> None:
     cpu.s.ip = resume_ip
 
 
-def _find_free_object_slot_7573(cpu) -> int:
-    """Mirror the original 1010:7573 object-slot allocator.
-
-    The loop target in the ASM is 757A, not 7583, so the sentinel/wrap check is
-    repeated on every scan iteration.  A lifted version that only wrapped once
-    before the loop could let DS:[95DA] advance past 32CC into Tandy draw
-    scratch space; the next projectile allocation would then overlap the sprite
-    buffer and vanish on the following draw pass.
-    """
-    ds = cpu.s.ds & 0xFFFF
-    bx = cpu.mem.rw(ds, 0x95DA)
-    cx = 0x0022
-    while cx:
-        _cmp_word(cpu, bx, GAMEPLAY_OBJECT_ALLOCATOR_WRAP_SENTINEL)
-        if bx == GAMEPLAY_OBJECT_ALLOCATOR_WRAP_SENTINEL:
-            bx = GAMEPLAY_OBJECT_TABLE_BASE
-        value = cpu.mem.rw(ds, bx)
-        _cmp_word(cpu, value, 0)
-        if value == 0:
-            cpu.mem.ww(ds, 0x95DA, bx)
-            cpu.s.bx = bx
-            cpu.s.cx = cx
-            return bx
-        old_bx = bx
-        bx = (bx + OBJECT_SLOT_STRIDE) & 0xFFFF
-        cpu.set_add_flags(old_bx, OBJECT_SLOT_STRIDE, old_bx + OBJECT_SLOT_STRIDE, 16)
-        cx = (cx - 1) & 0xFFFF
-    cpu.s.bx = 0xFFFF
-    cpu.s.cx = 0
-    return 0xFFFF
 
 
 
@@ -2541,197 +2078,14 @@ def run_object_scroll_backward_step_a781(cpu, self_disable_if_patched) -> None:
     cpu.s.bp = cpu.pop()
     cpu.s.ip = cpu.pop()
 
-def run_object_spawn_anchor_offset_a571(cpu) -> None:
-    """Lift 1010:A571, copying a source slot center+offset into a spawned slot.
-
-    BP points at the source object/anchor slot and BX points at the destination
-    object slot.  The routine writes destination Y/X from source Y/X plus ten
-    pixels.  This is still raw slot seeding, not a semantic enemy/projectile
-    constructor.
-    """
-    ds = cpu.s.ds & 0xFFFF
-    ss = cpu.s.ss & 0xFFFF
-    mem = cpu.mem
-    bp = cpu.s.bp & 0xFFFF
-    bx = cpu.s.bx & 0xFFFF
-
-    ax = mem.rw(ss, (bp + OFF_Y) & 0xFFFF)
-    result = ax + 0x000A
-    ax = result & 0xFFFF
-    cpu.s.ax = ax
-    cpu.set_add_flags((result - 0x000A) & 0xFFFF, 0x000A, result, 16)
-    mem.ww(ds, (bx + 0x04) & 0xFFFF, ax)
-
-    ax = mem.rw(ss, (bp + OFF_X) & 0xFFFF)
-    result = ax + 0x000A
-    ax = result & 0xFFFF
-    cpu.s.ax = ax
-    cpu.set_add_flags((result - 0x000A) & 0xFFFF, 0x000A, result, 16)
-    mem.ww(ds, (bx + 0x02) & 0xFFFF, ax)
-    cpu.s.ip = cpu.pop()
 
 
-def run_object_slot_allocate_or_reclaim_7547(cpu) -> None:
-    """Lift the hot 1010:7547 object-slot allocation gate.
-
-    The common path is a thin wrapper around 7573: allocate a free 38h-byte
-    gameplay object slot, compare BX against FFFFh, and return if a slot exists.
-    If the pool is exhausted, the original falls through to 7550 and eventually
-    jumps through BD0D to reclaim/deactivate a candidate object.  Keep that rare
-    fallback as original code for now, but make it an explicit continuation
-    instead of burning the hot allocation path as unknown ASM.
-    """
-    bx = _find_free_object_slot_7573(cpu)
-    _cmp_word(cpu, bx, 0xFFFF)
-    ss = cpu.s.ss & 0xFFFF
-    sp = cpu.s.sp & 0xFFFF
-    cpu.mem.ww(ss, (sp - 2) & 0xFFFF, 0x754A)
-    if bx != 0xFFFF:
-        cpu.s.ip = cpu.pop()
-        return
-    cpu.s.ip = 0x7550
 
 
-def run_object_spawn_seed_a4ea(cpu) -> None:
-    """Lift the common 1010:A4EA object-spawn seed template.
-
-    This routine allocates/reclaims a gameplay object slot through 7547 and then
-    seeds the common active/runtime fields.  It is still a raw object-slot seed,
-    not a semantic enemy/projectile constructor.
-    """
-    bx = _find_free_object_slot_7573(cpu)
-    _cmp_word(cpu, bx, 0xFFFF)
-    if bx == 0xFFFF:
-        # Original A4EA reached this by CALL 7547 (pushes A4ED) → CALL 7573
-        # (pushes 754A) → 7573 returns → JZ 7550.  Simulate both stack writes so
-        # the stale 754A left by CALL 7573 is present, matching the ASM state.
-        cpu.push(0xA4ED)
-        ss = cpu.s.ss & 0xFFFF
-        sp = cpu.s.sp & 0xFFFF
-        cpu.mem.ww(ss, (sp - 2) & 0xFFFF, 0x754A)
-        cpu.s.ip = 0x7550
-        return
-
-    ss = cpu.s.ss & 0xFFFF
-    sp = cpu.s.sp & 0xFFFF
-    cpu.mem.ww(ss, (sp - 2) & 0xFFFF, 0xA4ED)
-    cpu.mem.ww(ss, (sp - 4) & 0xFFFF, 0x754A)
-
-    ds = cpu.s.ds & 0xFFFF
-    mem = cpu.mem
-    mem.ww(ds, bx, 0x0001)
-    mem.ww(ds, (bx + 0x1E) & 0xFFFF, 0x0001)
-    mem.ww(ds, (bx + 0x06) & 0xFFFF, 0x0000)
-    mem.ww(ds, (bx + 0x08) & 0xFFFF, 0x0032)
-    mem.ww(ds, (bx + 0x14) & 0xFFFF, 0x0000)
-    mem.ww(ds, (bx + 0x16) & 0xFFFF, 0x0002)
-    mem.ww(ds, (bx + 0x18) & 0xFFFF, 0x0002)
-    mem.ww(ds, (bx + 0x1C) & 0xFFFF, 0xFFFF)
-    cpu.s.ip = cpu.pop()
 
 
-def run_object_spawn_seed_from_source_a4d7(cpu) -> None:
-    """Lift 1010:A4D7: A4EA seed plus source-coordinate copy.
-
-    SI points at a two-word source coordinate pair.  The spawned object receives
-    X from [SI+2] and Y from [SI+4]+4 after the common A4EA seed.
-    """
-    bx = _find_free_object_slot_7573(cpu)
-    _cmp_word(cpu, bx, 0xFFFF)
-    if bx == 0xFFFF:
-        # Original A4D7 CALL A4EA (→ A4DA), A4EA CALL 7547 (→ A4ED),
-        # 7547 CALL 7573 (→ 754A stale).  Mirror all three stack writes.
-        cpu.push(0xA4DA)
-        cpu.push(0xA4ED)
-        ss = cpu.s.ss & 0xFFFF
-        sp = cpu.s.sp & 0xFFFF
-        cpu.mem.ww(ss, (sp - 2) & 0xFFFF, 0x754A)
-        cpu.s.ip = 0x7550
-        return
-
-    ss = cpu.s.ss & 0xFFFF
-    sp = cpu.s.sp & 0xFFFF
-    cpu.mem.ww(ss, (sp - 2) & 0xFFFF, 0xA4DA)
-    cpu.mem.ww(ss, (sp - 4) & 0xFFFF, 0xA4ED)
-    cpu.mem.ww(ss, (sp - 6) & 0xFFFF, 0x754A)
-
-    ds = cpu.s.ds & 0xFFFF
-    mem = cpu.mem
-    mem.ww(ds, bx, 0x0001)
-    mem.ww(ds, (bx + 0x1E) & 0xFFFF, 0x0001)
-    mem.ww(ds, (bx + 0x06) & 0xFFFF, 0x0000)
-    mem.ww(ds, (bx + 0x08) & 0xFFFF, 0x0032)
-    mem.ww(ds, (bx + 0x14) & 0xFFFF, 0x0000)
-    mem.ww(ds, (bx + 0x16) & 0xFFFF, 0x0002)
-    mem.ww(ds, (bx + 0x18) & 0xFFFF, 0x0002)
-    mem.ww(ds, (bx + 0x1C) & 0xFFFF, 0xFFFF)
-
-    si = cpu.s.si & 0xFFFF
-    cpu.s.ax = mem.rw(ds, (si + 0x02) & 0xFFFF)
-    mem.ww(ds, (bx + 0x02) & 0xFFFF, cpu.s.ax)
-    cpu.s.ax = mem.rw(ds, (si + 0x04) & 0xFFFF)
-    old_ax = cpu.s.ax
-    cpu.s.ax = (old_ax + 0x0004) & 0xFFFF
-    cpu.set_add_flags(old_ax, 0x0004, old_ax + 0x0004, 16)
-    mem.ww(ds, (bx + 0x04) & 0xFFFF, cpu.s.ax)
-    cpu.s.ip = cpu.pop()
 
 
-def _run_formation_spawn_7476_observed(cpu, *, parent: str, chain: str, cx_value: int) -> None:
-    """Run observed B800 -> 7476 helper that spawns a formation child object."""
-    ds = cpu.s.ds & 0xFFFF
-    ss = cpu.s.ss & 0xFFFF
-    bp = cpu.s.bp & 0xFFFF
-    mem = cpu.mem
-
-    bx = _find_free_object_slot_7573(cpu)
-    _cmp_word(cpu, cpu.s.bx, 0xFFFF)
-    if bx == 0xFFFF:
-        return
-    if mem.rb(ds, 0x98C0) != 0:
-        mem.wb(ds, 0xBEFF, 0x1A)
-
-    cpu.s.cx = 0x000C
-    cpu.s.dx = 0x000C
-    _cmp_word(cpu, mem.rw(ds, 0xA8C2), 0x0001)
-    if mem.rw(ds, 0xA8C2) == 0x0001:
-        cpu.s.cx = 0x001C
-        cpu.s.dx = 0x0008
-
-    cpu.s.ax = mem.rw(ss, (bp + OFF_Y) & 0xFFFF)
-    old_ax = cpu.s.ax
-    cpu.s.ax = (cpu.s.ax + cpu.s.cx) & 0xFFFF
-    cpu.set_add_flags(old_ax, cpu.s.cx, old_ax + cpu.s.cx, 16)
-    mem.ww(ds, (bx + 0x04) & 0xFFFF, cpu.s.ax)
-    cpu.s.ax = mem.rw(ss, (bp + OFF_X) & 0xFFFF)
-    old_ax = cpu.s.ax
-    cpu.s.ax = (cpu.s.ax + cpu.s.dx) & 0xFFFF
-    cpu.set_add_flags(old_ax, cpu.s.dx, old_ax + cpu.s.dx, 16)
-    mem.ww(ds, (bx + 0x02) & 0xFFFF, cpu.s.ax)
-
-    mem.ww(ds, bx, 0x0001)
-    mem.ww(ds, (bx + 0x1E) & 0xFFFF, 0x0000)
-    mem.ww(ds, (bx + 0x06) & 0xFFFF, 0x0000)
-    mem.ww(ds, (bx + 0x08) & 0xFFFF, 0x0031)
-    mem.ww(ds, (bx + 0x0A) & 0xFFFF, 0x0001)
-    mem.ww(ds, (bx + 0x14) & 0xFFFF, 0x0000)
-    mem.ww(ds, (bx + 0x16) & 0xFFFF, 0x0002)
-    mem.ww(ds, (bx + 0x18) & 0xFFFF, 0x000B)
-    mem.ww(ds, (bx + 0x1C) & 0xFFFF, 0xFFFF)
-
-    cpu.s.ax = mem.rw(ds, (bx + 0x04) & 0xFFFF)
-    cpu.s.cx = (mem.rw(ds, 0x2380) + 0x0009) & 0xFFFF
-    cpu.set_add_flags(mem.rw(ds, 0x2380), 0x0009, mem.rw(ds, 0x2380) + 0x0009, 16)
-    old_ax = cpu.s.ax
-    cpu.s.ax = (cpu.s.ax - cpu.s.cx) & 0xFFFF
-    cpu.set_sub_flags(old_ax, cpu.s.cx, old_ax - cpu.s.cx, 16)
-    mem.ww(ds, (bx + 0x2C) & 0xFFFF, cpu.s.ax)
-    cpu.s.ax = mem.rw(ds, (bx + 0x02) & 0xFFFF)
-    cpu.s.cx = mem.rw(ds, 0x237E)
-    old_ax = cpu.s.ax
-    cpu.s.ax = (cpu.s.ax - cpu.s.cx) & 0xFFFF
-    cpu.set_sub_flags(old_ax, cpu.s.cx, old_ax - cpu.s.cx, 16)
-    mem.ww(ds, (bx + 0x2A) & 0xFFFF, cpu.s.ax)
 
 
 def _run_object_overlap_scan_62f6(cpu, *, parent: str, chain: str, cx_value: int) -> None:
@@ -3090,15 +2444,6 @@ def _run_object_bounds_tile_tail_ad60(cpu, *, parent: str, chain: str, cx_value:
 
 
 
-def _run_original_tail_to_caller(cpu, target_ip: int, *, max_steps: int = 12000) -> None:
-    """Run an unlifted in-procedure tail to the current near caller return.
-
-    The original code is not executing a CALL at this point; the caller return
-    word is already at SS:SP.  Pop and re-push the same word through the bounded
-    near-call helper so the final SP and below-SP scratch remain comparable.
-    """
-    caller_ret = cpu.pop()
-    _run_interpreted_near_call_observed(cpu, target_ip & 0xFFFF, caller_ret, max_steps=max_steps)
 
 
 def _finish_ae2c_common(cpu, *, parent: str, chain: str, cx_value: int) -> None:
@@ -3629,104 +2974,6 @@ def _run_tile_lookup_505b(cpu) -> None:
     run_tile_lookup_505b_body(cpu, pop_return=False)
 
 
-def _run_deactivate_bd17_observed(cpu, *, parent: str, chain: str, cx_value: int, pop_return: bool = True) -> None:
-    """Run observed 1010:BD17 object deactivation tail.
-
-    BD17 is reached from BC4B when an object leaves the allowed X bounds.  The
-    currently observed gameplay case is the B73E formation/attack object with
-    draw layer 4.  One observed selector result takes the longer BD5F tail that
-    publishes DS:A482, seeds the 7420 linked-effect spawn helper, and then
-    unwinds back to BC4B.  Other draw-layer/logic-id combinations still fall
-    through to the smaller cleanup branches that were already modeled.
-    """
-    ds = cpu.s.ds & 0xFFFF
-    ss = cpu.s.ss & 0xFFFF
-    bp = cpu.s.bp & 0xFFFF
-    mem = cpu.mem
-
-    mem.ww(ss, (bp + 0x00) & 0xFFFF, 0x0000)
-
-    draw_layer = mem.rw(ss, (bp + OFF_DRAW_LAYER) & 0xFFFF)
-    _cmp_word(cpu, draw_layer, 0x0004)
-    if draw_layer == 0x0004:
-        logic_id = mem.rw(ss, (bp + OFF_LOGIC_ID) & 0xFFFF)
-        # BD5C is a real CALL C054.  Even after the call returns, the BD5F
-        # return word remains in freed stack space and is visible to full-stack
-        # verifier comparisons.  Keep the frame live while modelling the C054
-        # selector tail so nested CALL scratch lands at the original offsets.
-        c054_sp = cpu.s.sp & 0xFFFF
-        cpu.push(0xBD5F)
-        run_object_deactivate_logic_dispatch_c054(cpu)
-        selector_ax = cpu.s.ax & 0xFFFF
-        # C054 has two families that can leave the selector chain with one of
-        # these AX table values.  The 76h..79h family jumps to the live-counter
-        # cleanup tail, but the 7Eh/7Dh/1Fh/1Ch/15h/13h family falls through to
-        # C12D and runs the linked-effect spawn helper before returning to BD5F.
-        # Keying only on AX missed the observed logic_id=13h case because A4E4h
-        # was not in the earlier whitelist; keying on the actual logic id keeps
-        # the overlap with 76h/77h unambiguous as well.
-        if logic_id in (0x007E, 0x007D, 0x001F, 0x001C, 0x0015, 0x0013):
-            _run_c054_c12d_effect_spawn_tail(cpu, object_bp=bp, selector_ax=selector_ax)
-
-        # Simulate C054's RET back to BD5F.  The return word remains below SP.
-        cpu.s.sp = c054_sp
-
-        _cmp_word(cpu, logic_id, 0x0001)
-        if logic_id == 0x0001:
-            return
-        slot = mem.rw(ss, (bp + 0x28) & 0xFFFF)
-        _cmp_word(cpu, slot, 0xFFFF)
-        if slot == 0xFFFF:
-            return
-        cpu.s.si = slot
-        cpu.s.si = cpu.shift(4, cpu.s.si, 1, 16)  # SHL SI,1
-        _add_reg16(cpu, 6, 0x2078)                # ADD SI,2078h
-        mem.wb(ds, cpu.s.si & 0xFFFF, 0x00)
-        return
-
-    _cmp_word(cpu, draw_layer, 0x0001)
-    if draw_layer == 0x0001:
-        mem.ww(ss, (bp + OFF_DRAW_LAYER) & 0xFFFF, 0x0002)
-        return
-
-    logic_id = mem.rw(ss, (bp + OFF_LOGIC_ID) & 0xFFFF)
-    for target, counter in (
-        (0x0007, 0xA970),
-        (0x0008, 0xA970),
-        (0x0009, 0xA972),
-        (0x0006, 0xA976),
-        (0x0005, 0xA976),
-        (0x000C, 0xA974),
-    ):
-        _cmp_word(cpu, logic_id, target)
-        if logic_id == target:
-            if mem.rw(ds, counter) != 0:
-                _sub_mem_word(cpu, ds, counter, 0x0001)
-            return
-
-    # Logic id 000Ah is not the same small counter-only tail as 0009h.
-    # Original BD17 branches to BD9E: it optionally decrements DS:A97E and
-    # then jumps into the AC19 transition/status helper chain.  That chain is
-    # rare, but it has visible register, ES and below-SP scratch side effects;
-    # modelling it as a simple DS:A972 decrement caused AD60 hook divergence
-    # once the attract/demo object left bounds.
-    _cmp_word(cpu, logic_id, 0x000A)
-    if logic_id == 0x000A:
-        _run_original_tail_to_caller(cpu, 0xBD9E, max_steps=20000)
-        if not pop_return:
-            # AD60 reaches BD17 by a direct JMP and its lifted caller still owns
-            # the final caller RET pop.  The bounded original BD9E/AC19 tail has
-            # already executed that RET to reproduce register and below-SP side
-            # effects, so push the same continuation back for the AD60 wrapper.
-            cpu.push(cpu.s.ip & 0xFFFF)
-        return
-
-    # BD17 is usually called as a standalone helper in tests/older lifted paths,
-    # but BC4B reaches it by a direct branch and its wrapper owns the final RET
-    # pop.  Preserve both boundary shapes explicitly.
-    if pop_return:
-        cpu.s.ip = cpu.pop()
-    return
 
 
 def _run_object_behavior_aed8(cpu, *, parent: str, chain: str, cx_value: int) -> None:

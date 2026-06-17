@@ -653,12 +653,14 @@ def test_coverage_summary_reports_grouped_bounded_original_regions():
     snap = cov.snapshot(top_n=5)
     assert snap["total_interpreted_instructions"] == 0
     assert snap["total_bounded_original_instructions"] == 50
-    assert snap["islands"]["input_menu"].bounded_original == 28
+    # The 9B2E frame-controller family is now proven game_state (exact 9B2E hook
+    # plus the 9B2E-9CBB interior range), not input_menu.
+    assert snap["islands"]["game_state"].bounded_original == 28
     assert snap["islands"]["collision"].bounded_original == 22
     assert any(
         item["start"] == (0x1010, 0x9B2E)
         and item["end"] == (0x1010, 0x9B3D)
-        and item["island"] == "input_menu"
+        and item["island"] == "game_state"
         for item in snap["top_bounded_regions"]
     )
     text = cov.format_summary(top_n=5)
@@ -702,13 +704,15 @@ def test_coverage_classifier_marks_known_bounded_frontier_ranges():
 
     classifier = OverkillCoverageClassifier()
     assert classifier.classify((0x1010, 0x981D)) == "game_state"
-    assert classifier.classify((0x1010, 0x9B34)) == "input_menu"
+    # 9B2E is a proven game_state frame controller; its interior (9B2E-9CBB)
+    # follows it instead of the old input_menu guess.
+    assert classifier.classify((0x1010, 0x9B34)) == "game_state"
     assert classifier.classify((0x1010, 0xA067)) == "game_state"
     assert classifier.classify((0x1010, 0xBE3C)) == "collision"
     assert classifier.classify((0x1F8F, 0x027A)) == "gameplay_objects"
     assert classifier.classify((0x1010, 0x8D8B)) == "gameplay_objects"
     assert classifier.classify((0x1010, 0x9C01)) == "game_state"
-    assert classifier.classify((0x1010, 0x9CBB)) == "input_menu"
+    assert classifier.classify((0x1010, 0x9CBB)) == "game_state"
     assert classifier.classify((0x1010, 0xBD65)) == "gameplay_objects"
     assert classifier.classify((0x1010, 0xC054)) == "gameplay_objects"
     assert classifier.classify((0x1010, 0x61DC)) == "game_state"
@@ -720,6 +724,152 @@ def test_coverage_classifier_marks_known_bounded_frontier_ranges():
     assert classifier.classify((0x1010, 0x77F5)) == "layer_sprites"
     assert classifier.classify((0x1010, 0xAB0D)) == "gameplay_objects"
 
+
+def test_coverage_classifier_separates_loaded_sound_driver_blob_from_gameplay_sound():
+    from overkill.coverage import OverkillCoverageClassifier
+    from overkill.sounds.loaded_driver import (
+        OPTIONAL_SOUND_DRIVER_SEGMENT,
+        is_sound_driver_blob_addr,
+    )
+
+    classifier = OverkillCoverageClassifier()
+    # The whole loaded driver segment is its own non-gameplay island, distinct
+    # from the 1010 PC-speaker / timer-tick "sound" helpers.
+    assert classifier.classify((OPTIONAL_SOUND_DRIVER_SEGMENT, 0x0000)) == "sound_driver_blob"
+    assert classifier.classify((OPTIONAL_SOUND_DRIVER_SEGMENT, 0x0557)) == "sound_driver_blob"
+    assert classifier.classify((0x1010, 0xD50E)) == "sound"
+    # The canonical blob range helper restricts to the proven image frontier.
+    assert is_sound_driver_blob_addr((OPTIONAL_SOUND_DRIVER_SEGMENT, 0x0123))
+    assert not is_sound_driver_blob_addr((OPTIONAL_SOUND_DRIVER_SEGMENT, 0x0700))
+
+
+def test_coverage_classifier_marks_timer_input_and_object_candidate_ranges():
+    from overkill.coverage import OverkillCoverageClassifier
+
+    classifier = OverkillCoverageClassifier()
+    # PC-speaker / sound tick family interior.
+    assert classifier.classify((0x1010, 0xD540)) == "sound"
+    assert classifier.classify((0x1010, 0xD65C)) == "sound"
+    # Fast timer IRQ / ISR body.
+    assert classifier.classify((0x1010, 0x0700)) == "sound"
+    # Keyboard IRQ / input ISR interior.
+    assert classifier.classify((0x1010, 0x4ED2)) == "input_menu"
+    assert classifier.classify((0x1010, 0x4F07)) == "input_menu"
+    # Frame-loop / game-state tail candidate.
+    assert classifier.classify((0x1010, 0x97C8)) == "game_state"
+    # Object behaviour family candidate near EFAE.
+    assert classifier.classify((0x1010, 0xF225)) == "gameplay_objects"
+    assert classifier.classify((0x1010, 0xF2AE)) == "gameplay_objects"
+
+
+def test_coverage_classifier_reclassifies_object_contact_regions_out_of_unknown():
+    from overkill.coverage import OverkillCoverageClassifier, category_for_island
+
+    classifier = OverkillCoverageClassifier()
+    # B250 overlap/contact selector body is collision (contact), not the old
+    # gameplay_objects exact-set guess; B24D prelude stays gameplay_objects.
+    assert classifier.classify((0x1010, 0xB250)) == "collision"
+    assert classifier.classify((0x1010, 0xB297)) == "collision"
+    assert classifier.classify((0x1010, 0xB2A3)) == "collision"
+    assert classifier.classify((0x1010, 0xB24D)) == "gameplay_objects"
+    # Previously-unknown object/contact regions now classify as gameplay.
+    for ip in (0xB2A6, 0xAEBF, 0xAECA, 0xBAE1, 0xBB80, 0xBB3D, 0xBC44, 0xBFC7, 0xC053):
+        island = classifier.classify((0x1010, ip))
+        assert island == "gameplay_objects", (hex(ip), island)
+        assert category_for_island(island) == "gameplay"
+    # F1F1-F318 object behavior family (hottest F225).
+    assert classifier.classify((0x1010, 0xF1F1)) == "gameplay_objects"
+    assert classifier.classify((0x1010, 0xF318)) == "gameplay_objects"
+    # BE3C contact tail extended over the BEA4-BEC2 body.
+    assert classifier.classify((0x1010, 0xBEC2)) == "collision"
+    # 5F43-5F5E sprite-id selector kept in the game_state score/status family.
+    assert classifier.classify((0x1010, 0x5F5E)) == "game_state"
+
+
+def test_coverage_classifier_absorbs_round3_object_and_glue_regions():
+    from overkill.coverage import OverkillCoverageClassifier, category_for_island
+
+    classifier = OverkillCoverageClassifier()
+    # Object-runtime regions disassembled out of "unknown" -> gameplay.
+    object_ips = (
+        0x7420, 0x7C3F, 0x7C65, 0x803B, 0x8166, 0x81F2, 0x8209, 0x8247,
+        0x8744, 0x878C, 0x8D0A, 0xAE91, 0xAEBC, 0xB3BF, 0xC237, 0xC2C9,
+        0xF0EE, 0xF185, 0xF391,
+    )
+    for ip in object_ips:
+        island = classifier.classify((0x1010, ip))
+        assert island == "gameplay_objects", (hex(ip), island)
+        assert category_for_island(island) == "gameplay"
+    assert classifier.classify((0x1F8F, 0x0163)) == "gameplay_objects"
+    # Rendering-glue dispatchers -> glue, not unknown.
+    for ip in (0x7948, 0x4A65, 0x4C74, 0x5A7E):
+        assert classifier.classify((0x1010, ip)) == "layer_sprites"
+    assert classifier.classify((0x1010, 0xA7EB)) == "tandy_renderer"
+    for ip in (0x7948, 0x4A65, 0x5A7E, 0xA7EB):
+        assert category_for_island(classifier.classify((0x1010, ip))) == "glue"
+    # Timer/input glue.
+    assert classifier.classify((0x1010, 0x066C)) == "sound"
+    assert classifier.classify((0x1010, 0x4F22)) == "input_menu"
+
+
+def test_contact_overlap_module_is_the_b250_selector_source():
+    from overkill.gameplay import contact_overlap
+    from overkill.gameplay import object_runtime
+
+    # The object-runtime shim delegates to the extracted subsystem module.
+    assert hasattr(contact_overlap, "run_overlap_contact_selector_b250")
+    assert contact_overlap.TAIL_NO_CONTACT == 0xAD5A
+    assert contact_overlap.TAIL_CONTACT == 0xADC9
+    assert contact_overlap.CONTACT_SIDE_EFFECT_IP == 0x9E19
+    assert (
+        object_runtime.run_overlap_contact_selector_b250
+        is contact_overlap.run_overlap_contact_selector_b250
+    )
+
+
+def test_coverage_category_rollup_separates_gameplay_from_sound_driver_and_glue():
+    from overkill.coverage import (
+        CATEGORY_GAMEPLAY,
+        CATEGORY_GLUE,
+        CATEGORY_SOUND_DRIVER,
+        CoverageTelemetry,
+        OverkillCoverageClassifier,
+        category_for_island,
+    )
+
+    assert category_for_island("gameplay_objects") == CATEGORY_GAMEPLAY
+    assert category_for_island("sound_driver_blob") == CATEGORY_SOUND_DRIVER
+    assert category_for_island("sound") == CATEGORY_GLUE
+    assert category_for_island("input_menu") == CATEGORY_GLUE
+
+    cov = CoverageTelemetry(classifier=OverkillCoverageClassifier(), cache_path=None)
+    for _ in range(5):
+        cov.record_interpreted_instruction((0x1010, 0xF225))  # gameplay_objects
+    for _ in range(40):
+        cov.record_interpreted_instruction((0x2032, 0x0100))  # sound driver blob
+    for _ in range(7):
+        cov.record_interpreted_instruction((0x1010, 0xD540))  # sound glue
+
+    snap = cov.snapshot(top_n=8)
+    rollup = snap["category_rollup"]
+    assert rollup[CATEGORY_GAMEPLAY]["interpreted_asm"] == 5
+    assert rollup[CATEGORY_SOUND_DRIVER]["interpreted_asm"] == 40
+    assert rollup[CATEGORY_GLUE]["interpreted_asm"] == 7
+
+    buckets = snap["categorized_interpreted_regions"]
+    assert any(
+        item["island"] == "gameplay_objects"
+        for item in buckets["Real gameplay unknowns"]
+    )
+    assert any(
+        item["island"] == "sound_driver_blob"
+        for item in buckets["Sound driver internals"]
+    )
+
+    text = cov.format_summary(top_n=8)
+    assert "Remaining work by category:" in text
+    assert "Top interpreted regions - Real gameplay unknowns:" in text
+    assert "Top interpreted regions - Sound driver internals:" in text
 
 
 def test_overkill_coverage_exact_address_sets_do_not_overlap():
@@ -872,6 +1022,43 @@ def test_hook_oracle_static_audit_passes():
         check=False,
     )
     assert result.returncode == 0, result.stdout
+
+
+def test_ega_renderer_logic_lives_in_rendering_module_and_wrappers_stay_registered():
+    """Guard the EGA extraction: logic in rendering.ega, thin wrappers registered.
+
+    The EGA composite/expand/copy/present routines were relocated out of the
+    monolithic hooks.py into overkill/rendering/ega.py.  The address-bound
+    @registry.replace wrappers must still be registered (so the verifier sees the
+    same boundaries), and the pure run_* logic must be importable from the new
+    module.  This catches accidental import-surface regressions if the boundary
+    is reshuffled again.
+    """
+    import overkill.hooks  # noqa: F401 - registers hooks
+    from overkill import rendering
+    from overkill.rendering import ega
+    from dos_re.hooks import registry
+
+    # A representative spread of the moved EGA hook addresses must stay registered.
+    ega_hook_addrs = [
+        (0x1010, 0x2824), (0x1010, 0x2750), (0x1010, 0x27EB), (0x1010, 0x5827),
+        (0x1010, 0x13E7), (0x1010, 0x1D1B), (0x1010, 0x103C), (0x1010, 0x2193),
+        (0x1010, 0x409D), (0x1010, 0x291C), (0x1010, 0x2932), (0x1010, 0x5160),
+    ]
+    for addr in ega_hook_addrs:
+        assert addr in registry.replacements, f"EGA hook {addr[0]:04X}:{addr[1]:04X} lost its registration"
+
+    # The lifted logic now lives as pure run_* functions in rendering.ega.
+    for name in (
+        "run_ega_expand_temp_rows_2824",
+        "run_present_ega_frame_2750",
+        "run_ega_planar_to_linear_copy_5827",
+        "run_ega_spread_masked_composite_wide_13e7",
+    ):
+        assert callable(getattr(ega, name)), f"rendering.ega missing {name}"
+
+    # The relocated low-level ASM helpers must resolve from the shared asm module.
+    from overkill.asm import _rep_movsw, _out_dx_al, _out_dx_ax, _inc_reg8_preserve_cf  # noqa: F401
 
 
 def test_play_help_presents_simplified_verifier_surface():

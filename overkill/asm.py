@@ -239,3 +239,54 @@ def _ega_next_scanline_di(cpu) -> None:
 
 def _cmp_byte(cpu, a: int, b: int) -> None:
     cpu.set_sub_flags(a & 0xFF, b & 0xFF, (a & 0xFF) - (b & 0xFF), 8)
+
+
+def _rep_movsw(cpu, count: int) -> None:
+    count &= 0xFFFF
+    if count == 0:
+        cpu.s.cx = 0
+        return
+
+    byte_count = count * 2
+    if not cpu.get_flag(DF):
+        si = cpu.s.si & 0xFFFF
+        di = cpu.s.di & 0xFFFF
+        if si + byte_count <= 0x10000 and di + byte_count <= 0x10000 \
+                and not (cpu.mem.ega_planar and (
+                    _ega_aperture_overlap(cpu.s.ds, si, byte_count)
+                    or _ega_aperture_overlap(cpu.s.es, di, byte_count)
+                )):
+            src = (((cpu.s.ds & 0xFFFF) << 4) + si) & 0xFFFFF
+            dst = (((cpu.s.es & 0xFFFF) << 4) + di) & 0xFFFFF
+            if src + byte_count <= len(cpu.mem.data) and dst + byte_count <= len(cpu.mem.data):
+                cpu.mem.data[dst:dst + byte_count] = cpu.mem.data[src:src + byte_count]
+                cpu.s.si = (si + byte_count) & 0xFFFF
+                cpu.s.di = (di + byte_count) & 0xFFFF
+                cpu.s.cx = 0
+                return
+
+    delta = -2 if cpu.get_flag(DF) else 2
+    for _ in range(count):
+        cpu.mem.ww(cpu.s.es, cpu.s.di, cpu.mem.rw(cpu.s.ds, cpu.s.si))
+        cpu.s.si = (cpu.s.si + delta) & 0xFFFF
+        cpu.s.di = (cpu.s.di + delta) & 0xFFFF
+    cpu.s.cx = 0
+
+
+def _inc_reg8_preserve_cf(cpu, idx: int) -> None:
+    old_cf = cpu.get_flag(CF)
+    old = cpu.get_reg8(idx)
+    result = old + 1
+    cpu.set_reg8(idx, result)
+    cpu.set_add_flags(old, 1, result, 8)
+    cpu.set_flag(CF, old_cf)
+
+
+def _out_dx_ax(cpu) -> None:
+    if cpu.port_writer:
+        cpu.port_writer(cpu, cpu.s.dx & 0xFFFF, cpu.s.ax & 0xFFFF, 16)
+
+
+def _out_dx_al(cpu) -> None:
+    if cpu.port_writer:
+        cpu.port_writer(cpu, cpu.s.dx & 0xFFFF, cpu.get_reg8(0), 8)

@@ -57,6 +57,7 @@ ISLANDS: tuple[Island, ...] = (
         ROOT / "overkill/hooks.py",
     )),
     Island("ega_renderer", "EGA planar rendering primitives", (
+        ROOT / "overkill/rendering/ega.py",
         ROOT / "overkill/hooks.py",
     )),
     Island("game_state", "per-frame game-state counters and orchestration", (
@@ -76,8 +77,14 @@ ISLANDS: tuple[Island, ...] = (
     Island("input_menu", "input/menu/prompt/pacing helpers", (
         ROOT / "overkill/input_menu.py",
     )),
-    Island("sound", "timer IRQ / PC speaker sound", (
+    Island("sound", "timer IRQ / PC speaker sound effects", (
         ROOT / "overkill/sounds/pc_speaker.py",
+        ROOT / "overkill/sounds/timing.py",
+        ROOT / "overkill/sounds/_asm.py",
+    )),
+    Island("sound_driver_blob", "loaded optional AdLib/Roland driver blob (non-gameplay)", (
+        ROOT / "overkill/sounds/loaded_driver.py",
+        ROOT / "overkill/sounds/adlib_driver.py",
     )),
     Island("unknown", "unclassified", ()),
 )

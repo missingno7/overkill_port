@@ -10,7 +10,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from overkill.sounds.loaded_driver import is_optional_sound_driver_addr
+from overkill.sounds.loaded_driver import (
+    SOUND_DRIVER_BLOB_ISLAND,
+    is_optional_sound_driver_addr,
+)
 
 Addr = tuple[int, int]
 
@@ -39,8 +42,63 @@ ISLANDS = (
     "collision",
     "input_menu",
     "sound",
+    SOUND_DRIVER_BLOB_ISLAND,
     "unknown",
 )
+
+# Diagnostic meta-categories that group the fine-grained islands above into the
+# buckets a human triaging coverage actually cares about.  This is purely a
+# reporting aid: it never affects classification, hook eligibility, or
+# execution.  The point is to keep sound-driver, timer/input, and rendering glue
+# from masquerading as unlifted gameplay work in the "remaining unknowns" view.
+CATEGORY_GAMEPLAY = "gameplay"
+CATEGORY_NON_GAMEPLAY = "non_gameplay"
+CATEGORY_SOUND_DRIVER = "sound_driver"
+CATEGORY_GLUE = "glue"
+CATEGORY_UNCLASSIFIED = "unclassified"
+
+ISLAND_CATEGORY: dict[str, str] = {
+    # Real gameplay simulation.
+    "game_state": CATEGORY_GAMEPLAY,
+    "gameplay_objects": CATEGORY_GAMEPLAY,
+    "movement": CATEGORY_GAMEPLAY,
+    "collision": CATEGORY_GAMEPLAY,
+    # Loaded optional AdLib/Roland driver blob (third-party resident code).
+    SOUND_DRIVER_BLOB_ISLAND: CATEGORY_SOUND_DRIVER,
+    # Timer / input / rendering glue.  Runs every frame, dominates hit counts,
+    # but is not the gameplay model.
+    "sound": CATEGORY_GLUE,
+    "input_menu": CATEGORY_GLUE,
+    "coordinates": CATEGORY_GLUE,
+    "layer_sprites": CATEGORY_GLUE,
+    "tandy_renderer": CATEGORY_GLUE,
+    "cga_renderer": CATEGORY_GLUE,
+    "ega_renderer": CATEGORY_GLUE,
+    "startup_graphics": CATEGORY_GLUE,
+    # Non-gameplay: asset decode, file/overlay IO, cold-start bootstrap.
+    "asset_codecs": CATEGORY_NON_GAMEPLAY,
+    "overlay": CATEGORY_NON_GAMEPLAY,
+    "file_io": CATEGORY_NON_GAMEPLAY,
+    "bootstrap": CATEGORY_NON_GAMEPLAY,
+    # Genuinely unclassified.
+    "unknown": CATEGORY_UNCLASSIFIED,
+}
+
+# Display buckets for the split "remaining work" report, in priority order.
+# Each maps a human heading to the set of meta-categories it absorbs.  Unknown
+# (genuinely unclassified) is folded into the non-gameplay bucket so the report
+# matches the five-way split the taxonomy targets.
+REPORT_BUCKETS: tuple[tuple[str, frozenset[str]], ...] = (
+    ("Real gameplay unknowns", frozenset({CATEGORY_GAMEPLAY})),
+    ("Non-gameplay unknowns", frozenset({CATEGORY_NON_GAMEPLAY, CATEGORY_UNCLASSIFIED})),
+    ("Sound driver internals", frozenset({CATEGORY_SOUND_DRIVER})),
+    ("Timer/input/rendering glue", frozenset({CATEGORY_GLUE})),
+)
+
+
+def category_for_island(island: str) -> str:
+    """Map a fine-grained coverage island to its diagnostic meta-category."""
+    return ISLAND_CATEGORY.get(island, CATEGORY_UNCLASSIFIED)
 
 
 def fmt_addr(addr: Addr) -> str:
@@ -298,7 +356,10 @@ class OverkillCoverageClassifier:
         (0x1010, 0xB8A8), (0x1010, 0xB8AD), (0x1010, 0xB8B0), (0x1010, 0xB8B6),
         (0x1010, 0xB8BB), (0x1010, 0xB8C1), (0x1010, 0xB8C6), (0x1010, 0xB8CB),
         (0x1010, 0xB8D0), (0x1010, 0xB8D3), (0x1010, 0xB8D5), (0x1010, 0xB8D8),
-        (0x1010, 0xB24D), (0x1010, 0xB250), (0x1010, 0xB2A3), (0x1010, 0xADC9),
+        # B250/B2A3 are the overlap/contact selector body and are reclassified
+        # as collision via ISLAND_RANGES below; B24D (object-behavior prelude)
+        # stays here.
+        (0x1010, 0xB24D), (0x1010, 0xADC9),
         (0x1010, 0xB8DB), (0x1010, 0xB8E0), (0x1010, 0xB8E2), (0x1010, 0xB8E5),
         (0x1010, 0xB8E8), (0x1010, 0xB8ED), (0x1010, 0xB8EF), (0x1010, 0xB8F3),
         (0x1010, 0xB909), (0x1010, 0xB90F), (0x1010, 0xB912), (0x1010, 0xB914),
@@ -414,7 +475,10 @@ class OverkillCoverageClassifier:
         (0x1010, 0xA060, 0xA211, "game_state", "A067 frame UI/object helper frontier"),
         # Observed BE3C/BEC5 collision-handler tail variants reached from the
         # BC4B postmove chain.
-        (0x1010, 0xBE3C, 0xBEB6, "collision", "observed BEC5/BE3C collision tail"),
+        # BE3C..BEC2 contact/collision tail: jump-table dispatch on slot substate
+        # routing to BD17/BC45.  Extended to BEC4 to absorb the BEA4-BEC2 body
+        # that was previously left as unknown.
+        (0x1010, 0xBE3C, 0xBEC4, "collision", "observed BEC5/BE3C collision/contact tail"),
         # Overlay-resident object-spawn script reached through 1F8F:0922.  It
         # allocates/spawns runtime object slots, so it belongs with object logic
         # rather than overlay file/decode helpers.
@@ -449,6 +513,10 @@ class OverkillCoverageClassifier:
         # Packed decimal score helper.  Some object death/contact branches still
         # run the original helper directly before returning into lifted tails.
         (0x1010, 0x5F0D, 0x5F42, "game_state", "packed decimal score/status add helper"),
+        # Adjacent object sprite-id selector (al=04/05 by DS:2350, xlat via the
+        # 231E table indexed by object type DS:2356, then jmp CB1C).  Distinct
+        # routine from the score helper above but same game_state family.
+        (0x1010, 0x5F43, 0x5F5E, "game_state", "object sprite-id selector by type -> CB1C"),
         # Contact side-effect tail after the AA46 probe; may jump into BD17 or
         # the BC45 postmove epilogue depending on the live object state.
         (0x1010, 0xAAC2, 0xAAFB, "collision", "post-contact side-effect tail"),
@@ -463,6 +531,97 @@ class OverkillCoverageClassifier:
         # Tail-jump from the post-contact jump table back into BD17.  The bytes
         # before AB0C are data, so keep this deliberately tiny.
         (0x1010, 0xAB0C, 0xAB0D, "gameplay_objects", "post-contact jump-table tail"),
+        # ---- Timer / input / sound glue and frame-loop tails -----------------
+        # These ranges keep audio/timer/input plumbing out of the "remaining
+        # gameplay" view.  They run constantly and dominate hit counts, so
+        # attributing them precisely stops them masquerading as gameplay work.
+        #
+        # PC-speaker tick family.  D50E/D566/... are exact sound leaves; this
+        # span keeps the interior bytes between them attributed to sound.
+        (0x1010, 0xD50E, 0xD65C, "sound", "PC speaker / sound tick family interior"),
+        # Fast timer IRQ / ISR + timer-tick wait helpers.  06E5/0672/0679 are
+        # exact sound leaves; the surrounding ISR body is timer/sound timing.
+        (0x1010, 0x06E5, 0x072E, "sound", "fast timer IRQ / ISR / sound timing"),
+        # Keyboard IRQ / input vector body installed by 4E9F.  The exact input
+        # entries (4E9F/4EBF) win above; this span covers the ISR interior.
+        # Keyboard IRQ / input ISR.  4ED2-4F07 is the body; 4F08-4F36 is the
+        # key-store branch plus the PIC-EOI/pop-all/iret epilogue (out 20h,al).
+        (0x1010, 0x4ED2, 0x4F36, "input_menu", "keyboard IRQ / input ISR + epilogue"),
+        # Frame-loop / game-state tail candidate after the 97B2 timer wait,
+        # leading into the 981D jump tail.  Conservatively game_state until a
+        # dedicated lift proves a narrower role.
+        (0x1010, 0x97C8, 0x981D, "game_state", "frame loop / game-state tail candidate"),
+        # Object-behaviour family candidate near EFAE.  Reached from object
+        # logic dispatch; classify as gameplay_objects pending a dedicated lift.
+        # Object-behavior family at F0EE..F391 (hottest F225).  Every path
+        # manipulates the active object slot (SS:[bp+...]), looks up a sprite via
+        # a per-type table, calls AFD8, and jumps to the shared BC45/BC4B
+        # post-move or BFC7/BB03 tails.  Widened from the earlier F1F1-F318 span
+        # now that the surrounding F0EE/F185/F319 branches are disassembled.
+        (0x1010, 0xF0EE, 0xF391, "gameplay_objects", "object behavior family (hottest F225)"),
+        # ---- Object/contact regions reclassified out of "unknown" ------------
+        # All operate on the active object slot at SS:[bp+...] and feed the
+        # shared post-move/contact tails (BC45/BC4B); none are non-gameplay.
+        #
+        # B250 overlap/contact selector: overlap-box predicate -> 1/3/5 fanout ->
+        # 9E19 contact side effect.  Now lifted in gameplay/contact_overlap.py.
+        (0x1010, 0xB250, 0xB2A5, "collision", "B250 overlap/contact selector (predicate->fanout->9E19)"),
+        # Object behavior tail that sets a draw field and routes to BAE1/BB03.
+        (0x1010, 0xB2A6, 0xB2B9, "gameplay_objects", "object behavior tail -> BAE1/BB03"),
+        # Object behavior prelude that pushes the B250 selector then routes to
+        # AF60 movement; fills the AEBC..AED8 gap.
+        (0x1010, 0xAEBF, 0xAED7, "gameplay_objects", "object behavior prelude -> B250 overlap selector"),
+        # Object behavior/contact state tails (BAE1 draw-field helper, BB80 sprite
+        # index, BB03 state machine) merging into the BC45 post-move epilogue.
+        (0x1010, 0xBAE1, 0xBC44, "gameplay_objects", "object behavior/contact state tails -> BC45"),
+        # Object/collision death tail: substate dispatch calling 5F0D (score) and
+        # BCB1 (clamp) before the C054 deactivate selector takes over at C054.
+        (0x1010, 0xBFC7, 0xC053, "gameplay_objects", "object/collision death tail -> C054 selector"),
+
+        # ---- Round-3 absorption: object-runtime regions formerly "unknown" -----
+        # All operate on object slots (DS:[bx+..] records or SS:[bp+..]) and feed
+        # the shared spawn/post-move tails; disassembled against the 5E42 gameplay
+        # snapshot.  None are non-gameplay.
+        #
+        # Effect/object spawn stamping: find a free slot (7524/7573) then write the
+        # x/y/state record fields.
+        (0x1010, 0x7420, 0x74FD, "gameplay_objects", "linked effect/object spawn stamping"),
+        # Object command/script byte dispatcher: range-checks a command and jumps
+        # through a table, far-calling the overlay script at 1F8F:0163.
+        (0x1010, 0x7C3F, 0x7C68, "gameplay_objects", "object command/script dispatcher -> 1F8F:0163"),
+        # Object slot field init/spawn family (gated by the 819E/81C9 waiters).
+        (0x1010, 0x803B, 0x81F2, "gameplay_objects", "object slot field init/spawn (819E/81C9 gates)"),
+        (0x1010, 0x8209, 0x8247, "gameplay_objects", "object slot spawn/stamping record fields"),
+        # Object behaviors that steer (5E42) or spawn (C237) then join BC45.
+        (0x1010, 0x8744, 0x87A4, "gameplay_objects", "object behavior (5E42 steer / C237 spawn) -> BC45"),
+        # Object behavior coordinate update -> BC45 post-move.
+        (0x1010, 0x8D0A, 0x8D23, "gameplay_objects", "object behavior coord update -> BC45"),
+        # Object behavior tile-probe movement (5073 probe / 505B lookup).
+        (0x1010, 0xAE91, 0xAEBC, "gameplay_objects", "object behavior tile-probe movement"),
+        # Object behavior sprite-id from DS:2342 -> BC45.
+        (0x1010, 0xB3BF, 0xB3F8, "gameplay_objects", "object behavior sprite-id (2342) -> BC45"),
+        # Object spawn/contact gate: reads the BEDC contact selector and A956
+        # counter, then allocates an object slot via 7573.
+        (0x1010, 0xC237, 0xC2C9, "gameplay_objects", "object spawn/contact gate (BEDC/7573)"),
+        # Overlay-resident object script helper far-called from the 7C3F dispatcher.
+        (0x1F8F, 0x0163, 0x018F, "gameplay_objects", "overlay-resident object script helper"),
+
+        # ---- Round-3 absorption: rendering-glue regions formerly "unknown" -----
+        # Per-type object draw dispatch: 13-cell loop calling through a draw
+        # handler table indexed by object type (DS:2356), ES = video segment.
+        (0x1010, 0x7948, 0x7976, "layer_sprites", "per-type object draw dispatch (13-cell loop)"),
+        # Object draw-list walker by type: reads a FFFF-terminated coordinate list
+        # selected by object type and emits draws.
+        (0x1010, 0x4A65, 0x4C75, "layer_sprites", "object draw-list walker by type"),
+        # Renderer mode dispatch via the CS:95BC function-pointer table.
+        (0x1010, 0x5A7E, 0x5A87, "layer_sprites", "renderer mode dispatch (CS:95BC table)"),
+        # View scroll: strided rep-movsw copy between the CS:9596/9598 video pages.
+        (0x1010, 0xA7EB, 0xA843, "tandy_renderer", "view scroll strided video copy"),
+
+        # ---- Round-3 absorption: timer glue formerly "unknown" ----------------
+        # timer_tick_inc: inc byte ptr cs:[066B]; ret -- the IRQ0 frame counter
+        # bump, adjacent to the 0672/0679 timer-wait sound helpers.
+        (0x1010, 0x066C, 0x0671, "sound", "timer_tick_inc (IRQ0 frame counter bump)"),
     )
 
     def __init__(self, symbols_path: Path | None = None) -> None:
@@ -490,7 +649,11 @@ class OverkillCoverageClassifier:
         # dispatcher look like an asset loader.
         if addr in self.INPUT_MENU_ADDRS:
             return "input_menu"
-        if addr in self.SOUND_ADDRS or is_optional_sound_driver_addr(addr):
+        # The loaded optional driver blob is non-gameplay third-party code and
+        # gets its own island so it never competes with real gameplay unknowns.
+        if is_optional_sound_driver_addr(addr):
+            return SOUND_DRIVER_BLOB_ISLAND
+        if addr in self.SOUND_ADDRS:
             return "sound"
         if addr in self.OVERLAY_ADDRS:
             return "overlay"
@@ -793,6 +956,45 @@ class CoverageTelemetry:
         """Aggregate bounded-original instruction hits into nearby regions."""
         return self._top_regions_from(self.bounded_hits, top_n=top_n, gap=gap)
 
+    def _category_rollup(self, islands: dict[str, IslandCoverageStats]) -> dict[str, dict[str, int]]:
+        """Roll island stats up into the diagnostic meta-categories.
+
+        Diagnostic only: it re-buckets already-classified per-island counters so
+        a reader can see how much remaining interpreted/bounded work is real
+        gameplay versus sound-driver/glue noise, without changing any of them.
+        """
+        rollup: dict[str, dict[str, int]] = {}
+        for island_key, stat in islands.items():
+            category = category_for_island(island_key)
+            agg = rollup.setdefault(
+                category,
+                {"interpreted_asm": 0, "bounded_original": 0, "hook_equiv": 0, "hook_calls": 0},
+            )
+            agg["interpreted_asm"] += stat.interpreted_asm
+            agg["bounded_original"] += stat.bounded_original
+            agg["hook_equiv"] += stat.hooked_verified_equiv + stat.hooked_estimated_equiv
+            agg["hook_calls"] += stat.hook_calls
+        return rollup
+
+    def _categorized_interpreted_regions(self, *, per_bucket: int, pool: int) -> dict[str, list[dict[str, Any]]]:
+        """Split the hottest interpreted regions into the report display buckets.
+
+        ``pool`` regions are grouped, then routed to the first :data:`REPORT_BUCKETS`
+        entry that owns their island's meta-category and truncated to
+        ``per_bucket`` rows.  This is what keeps real gameplay unknowns visible
+        instead of being buried under sound/timer/input churn.
+        """
+        regions = self._top_interpreted_regions(top_n=pool)
+        buckets: dict[str, list[dict[str, Any]]] = {heading: [] for heading, _cats in REPORT_BUCKETS}
+        for region in regions:
+            category = category_for_island(region["island"])
+            for heading, categories in REPORT_BUCKETS:
+                if category in categories:
+                    if len(buckets[heading]) < per_bucket:
+                        buckets[heading].append(region)
+                    break
+        return buckets
+
     def snapshot(self, *, top_n: int = 12) -> dict[str, Any]:
         with self._lock:
             hook_equiv = sum(h.total_equiv for h in self.hooks.values())
@@ -805,6 +1007,10 @@ class CoverageTelemetry:
             bounded = self.bounded_hits.most_common(top_n)
             bounded_regions = self._top_bounded_regions(top_n=top_n)
             islands = {key: IslandCoverageStats(**vars(value)) for key, value in self.islands.items()}
+            category_rollup = self._category_rollup(islands)
+            categorized_interpreted_regions = self._categorized_interpreted_regions(
+                per_bucket=top_n, pool=max(top_n * 4, 48)
+            )
             return {
                 "elapsed": elapsed,
                 "states": COVERAGE_STATES,
@@ -836,6 +1042,8 @@ class CoverageTelemetry:
                 ],
                 "top_bounded_regions": bounded_regions,
                 "islands": islands,
+                "category_rollup": category_rollup,
+                "categorized_interpreted_regions": categorized_interpreted_regions,
             }
 
     def format_summary(self, *, top_n: int = 12) -> str:
@@ -909,6 +1117,48 @@ class CoverageTelemetry:
                 f"  {key:<17} {island.interpreted_asm:11,d} {island.bounded_original:17,d} "
                 f"{hook_equiv:11,d} {island.hook_calls:11,d} {island.unmeasured_hook_calls:10,d}"
             )
+
+        # Split "remaining work" view.  The flat island table mixes gameplay,
+        # sound-driver, timer/input and rendering glue; this section regroups the
+        # same data into the buckets a human triaging coverage actually wants, so
+        # sound/timer churn does not hide real gameplay unknowns.
+        rollup = snap.get("category_rollup", {})
+        lines += ["", "Remaining work by category:", "  category        interpreted  bounded-original  hook-equiv  hook-calls"]
+        for category in (
+            CATEGORY_GAMEPLAY,
+            CATEGORY_NON_GAMEPLAY,
+            CATEGORY_SOUND_DRIVER,
+            CATEGORY_GLUE,
+            CATEGORY_UNCLASSIFIED,
+        ):
+            agg = rollup.get(category, {})
+            lines.append(
+                f"  {category:<14} {agg.get('interpreted_asm', 0):11,d} {agg.get('bounded_original', 0):17,d} "
+                f"{agg.get('hook_equiv', 0):11,d} {agg.get('hook_calls', 0):11,d}"
+            )
+
+        categorized = snap.get("categorized_interpreted_regions", {})
+        for heading, _categories in REPORT_BUCKETS:
+            regions = categorized.get(heading, [])
+            lines += ["", f"Top interpreted regions - {heading}:"]
+            if not regions:
+                lines.append("  (none)")
+                continue
+            lines.append("  range             hits  addrs  hottest       island            symbol/category")
+            for item in regions:
+                symbol = item["symbol"]
+                if len(symbol) > 58:
+                    symbol = symbol[:55] + "..."
+                start = fmt_addr(item["start"])
+                end = f"{item['end'][1]:04X}"
+                lines.append(
+                    f"  {start}-{end} {item['hits']:10,d} {item['addresses']:6,d}  "
+                    f"{fmt_addr(item['max_addr'])} {item['island']:<16} {symbol}"
+                )
+        lines += [
+            "",
+            "Bounded original code is reported under 'Top bounded-original ASM regions' above.",
+        ]
         return "\n".join(lines)
 
     def format_dashboard(self, *, top_n: int = 10) -> str:

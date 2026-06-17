@@ -604,7 +604,7 @@ def _overkill_asm_wait_handler(cpu: CPU8086, target_set: set[Addr]) -> bool:
         and cpu.addr() not in cpu.replacement_hooks
         and cpu.mem.rb(0x1010, 0x066B) == 0
     ):
-        from .sounds.pc_speaker import deliver_overkill_timer_irq0
+        from .sounds.timing import deliver_overkill_timer_irq0
 
         if not deliver_overkill_timer_irq0(cpu):
             raise HookVerifyDivergence(
@@ -617,7 +617,7 @@ def _overkill_asm_wait_handler(cpu: CPU8086, target_set: set[Addr]) -> bool:
         and cpu.addr() not in cpu.replacement_hooks
         and cpu.mem.rb(cpu.s.ds & 0xFFFF, 0xBEFE) != 0
     ):
-        from .sounds.pc_speaker import deliver_overkill_timer_irq0
+        from .sounds.timing import deliver_overkill_timer_irq0
 
         if not deliver_overkill_timer_irq0(cpu):
             raise HookVerifyDivergence(
