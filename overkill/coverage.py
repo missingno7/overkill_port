@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from overkill.sounds.loaded_driver import is_optional_sound_driver_addr
+
 Addr = tuple[int, int]
 
 COVERAGE_STATES = (
@@ -247,6 +249,10 @@ class OverkillCoverageClassifier:
         (0x1010, 0xA9B3), (0x1010, 0xA9B8), (0x1010, 0xA9BD), (0x1010, 0xA9C2),
         (0x1010, 0xA9C7), (0x1010, 0xA9C9), (0x1010, 0xA9CE), (0x1010, 0xA9D3),
         (0x1010, 0xA9D8), (0x1010, 0xA9DA), (0x1010, 0xA9DD),
+        # Raw A067/A0E8 action-spawn child frontiers.  Keep these exact so
+        # wrapper relocation does not depend on fuzzy hook-name regex matches.
+        (0x1010, 0xA2F6), (0x1010, 0xA337), (0x1010, 0xA3FF),
+        (0x1010, 0xA515), (0x1010, 0xA584),
         (0x1010, 0xAA07), (0x1010, 0xAA0D), (0x1010, 0xAA25), (0x1010, 0xAA2A),
         (0x1010, 0x5BDC), (0x1010, 0x5BE1), (0x1010, 0x5BE3),
         (0x1010, 0x5F61), (0x1010, 0x60A2), (0x1010, 0x60A5), (0x1010, 0x60A8), (0x1010, 0x60AB),
@@ -484,7 +490,7 @@ class OverkillCoverageClassifier:
         # dispatcher look like an asset loader.
         if addr in self.INPUT_MENU_ADDRS:
             return "input_menu"
-        if addr in self.SOUND_ADDRS or addr[0] == 0x2032:
+        if addr in self.SOUND_ADDRS or is_optional_sound_driver_addr(addr):
             return "sound"
         if addr in self.OVERLAY_ADDRS:
             return "overlay"

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dos_re.hooks import registry
+from ..sounds.loaded_driver import OPTIONAL_SOUND_DRIVER_SEGMENT
 from ..sounds import (
     SIG_ADLIB_CHANNEL_MOD_A_2032_02C9,
     SIG_ADLIB_FAR_ENTRY_2032_0000,
@@ -42,7 +43,7 @@ from .common import self_disable_if_patched
 
 
 
-@registry.replace(0x2032, 0x0000, "overkill_adlib_far_entry_2032_0000")
+@registry.replace(OPTIONAL_SOUND_DRIVER_SEGMENT, 0x0000, "overkill_adlib_far_entry_2032_0000")
 def overkill_adlib_far_entry_2032_0000(cpu):
     """Loaded AdLib driver far-call entry: CALL 0063; RETF."""
     if self_disable_if_patched(cpu, 0x0000, SIG_ADLIB_FAR_ENTRY_2032_0000, "overkill_adlib_far_entry_2032_0000"):
@@ -50,7 +51,7 @@ def overkill_adlib_far_entry_2032_0000(cpu):
     run_adlib_far_entry_2032_0000(cpu)
 
 
-@registry.replace(0x2032, 0x04E9, "overkill_adlib_detect_2032_04e9")
+@registry.replace(OPTIONAL_SOUND_DRIVER_SEGMENT, 0x04E9, "overkill_adlib_detect_2032_04e9")
 def overkill_adlib_detect_2032_04e9(cpu):
     """Loaded AdLib driver YM3812 probe without PIT delay busy loops."""
     if self_disable_if_patched(cpu, 0x04E9, SIG_ADLIB_DETECT_2032_04E9, "overkill_adlib_detect_2032_04e9"):
@@ -64,7 +65,7 @@ def overkill_adlib_detect_2032_04e9(cpu):
 
 
 
-@registry.replace(0x2032, 0x0063, "overkill_adlib_driver_tick_2032_0063")
+@registry.replace(OPTIONAL_SOUND_DRIVER_SEGMENT, 0x0063, "overkill_adlib_driver_tick_2032_0063")
 def overkill_adlib_driver_tick_2032_0063(cpu):
     """Loaded AdLib driver top-level timer tick."""
     if self_disable_if_patched(cpu, 0x0063, SIG_ADLIB_DRIVER_TICK_2032_0063, "overkill_adlib_driver_tick_2032_0063"):
@@ -72,7 +73,7 @@ def overkill_adlib_driver_tick_2032_0063(cpu):
     run_adlib_driver_tick_2032_0063(cpu)
 
 
-@registry.replace(0x2032, 0x00CD, "overkill_adlib_channel_tick_2032_00cd")
+@registry.replace(OPTIONAL_SOUND_DRIVER_SEGMENT, 0x00CD, "overkill_adlib_channel_tick_2032_00cd")
 def overkill_adlib_channel_tick_2032_00cd(cpu):
     """Fast-path loaded-AdLib per-channel idle tick."""
     if self_disable_if_patched(cpu, 0x00CD, SIG_ADLIB_CHANNEL_TICK_2032_00CD, "overkill_adlib_channel_tick_2032_00cd"):
@@ -80,7 +81,7 @@ def overkill_adlib_channel_tick_2032_00cd(cpu):
     run_adlib_channel_tick_2032_00cd(cpu)
 
 
-@registry.replace(0x2032, 0x0557, "overkill_adlib_write_2032_0557")
+@registry.replace(OPTIONAL_SOUND_DRIVER_SEGMENT, 0x0557, "overkill_adlib_write_2032_0557")
 def overkill_adlib_write_2032_0557(cpu):
     """Loaded AdLib driver YM3812 register write without PIT delay loops."""
     if self_disable_if_patched(cpu, 0x0557, SIG_ADLIB_WRITE_2032_0557, "overkill_adlib_write_2032_0557"):
@@ -88,7 +89,7 @@ def overkill_adlib_write_2032_0557(cpu):
     run_adlib_write_2032_0557(cpu)
 
 
-@registry.replace(0x2032, 0x0409, "overkill_adlib_page_gate_2032_0409")
+@registry.replace(OPTIONAL_SOUND_DRIVER_SEGMENT, 0x0409, "overkill_adlib_page_gate_2032_0409")
 def overkill_adlib_page_gate_2032_0409(cpu):
     """Fast-path loaded-AdLib page/pause gate hot no-op route."""
     if self_disable_if_patched(cpu, 0x0409, SIG_ADLIB_PAGE_GATE_2032_0409, "overkill_adlib_page_gate_2032_0409"):
@@ -96,7 +97,7 @@ def overkill_adlib_page_gate_2032_0409(cpu):
     run_adlib_page_gate_2032_0409(cpu)
 
 
-@registry.replace(0x2032, 0x0244, "overkill_adlib_channel_helper_2032_0244")
+@registry.replace(OPTIONAL_SOUND_DRIVER_SEGMENT, 0x0244, "overkill_adlib_channel_helper_2032_0244")
 def overkill_adlib_channel_helper_2032_0244(cpu):
     """Fast-path loaded-AdLib per-channel disabled accumulator helper."""
     if self_disable_if_patched(cpu, 0x0244, SIG_ADLIB_CHANNEL_HELPER_2032_0244, "overkill_adlib_channel_helper_2032_0244"):
@@ -104,7 +105,7 @@ def overkill_adlib_channel_helper_2032_0244(cpu):
     run_adlib_channel_helper_2032_0244(cpu)
 
 
-@registry.replace(0x2032, 0x02AA, "overkill_adlib_channel_helper_2032_02aa")
+@registry.replace(OPTIONAL_SOUND_DRIVER_SEGMENT, 0x02AA, "overkill_adlib_channel_helper_2032_02aa")
 def overkill_adlib_channel_helper_2032_02aa(cpu):
     """Fast-path loaded-AdLib no-pending-note helper."""
     if self_disable_if_patched(cpu, 0x02AA, SIG_ADLIB_CHANNEL_HELPER_2032_02AA, "overkill_adlib_channel_helper_2032_02aa"):
@@ -112,7 +113,7 @@ def overkill_adlib_channel_helper_2032_02aa(cpu):
     run_adlib_channel_helper_2032_02aa(cpu)
 
 
-@registry.replace(0x2032, 0x0181, "overkill_adlib_set_instrument_2032_0181")
+@registry.replace(OPTIONAL_SOUND_DRIVER_SEGMENT, 0x0181, "overkill_adlib_set_instrument_2032_0181")
 def overkill_adlib_set_instrument_2032_0181(cpu):
     """Loaded-AdLib instrument-select command body."""
     if self_disable_if_patched(cpu, 0x0181, SIG_ADLIB_SET_INSTRUMENT_2032_0181, "overkill_adlib_set_instrument_2032_0181"):
@@ -120,7 +121,7 @@ def overkill_adlib_set_instrument_2032_0181(cpu):
     run_adlib_set_instrument_2032_0181(cpu)
 
 
-@registry.replace(0x2032, 0x024F, "overkill_adlib_note_frequency_2032_024f")
+@registry.replace(OPTIONAL_SOUND_DRIVER_SEGMENT, 0x024F, "overkill_adlib_note_frequency_2032_024f")
 def overkill_adlib_note_frequency_2032_024f(cpu):
     """Loaded-AdLib note/frequency register helper."""
     if self_disable_if_patched(cpu, 0x024F, SIG_ADLIB_NOTE_FREQUENCY_2032_024F, "overkill_adlib_note_frequency_2032_024f"):
@@ -128,7 +129,7 @@ def overkill_adlib_note_frequency_2032_024f(cpu):
     run_adlib_note_frequency_2032_024f(cpu)
 
 
-@registry.replace(0x2032, 0x02C9, "overkill_adlib_channel_mod_a_2032_02c9")
+@registry.replace(OPTIONAL_SOUND_DRIVER_SEGMENT, 0x02C9, "overkill_adlib_channel_mod_a_2032_02c9")
 def overkill_adlib_channel_mod_a_2032_02c9(cpu):
     """Fast-path disabled loaded-AdLib channel modulation helper."""
     if self_disable_if_patched(cpu, 0x02C9, SIG_ADLIB_CHANNEL_MOD_A_2032_02C9, "overkill_adlib_channel_mod_a_2032_02c9"):
@@ -136,7 +137,7 @@ def overkill_adlib_channel_mod_a_2032_02c9(cpu):
     run_adlib_channel_mod_a_2032_02c9(cpu)
 
 
-@registry.replace(0x2032, 0x02F6, "overkill_adlib_channel_mod_b_2032_02f6")
+@registry.replace(OPTIONAL_SOUND_DRIVER_SEGMENT, 0x02F6, "overkill_adlib_channel_mod_b_2032_02f6")
 def overkill_adlib_channel_mod_b_2032_02f6(cpu):
     """Fast-path disabled loaded-AdLib channel modulation helper."""
     if self_disable_if_patched(cpu, 0x02F6, SIG_ADLIB_CHANNEL_MOD_B_2032_02F6, "overkill_adlib_channel_mod_b_2032_02f6"):
@@ -180,3 +181,5 @@ def overkill_sound_active_wait_9921(cpu):
     if self_disable_if_patched(cpu, 0x9921, SIG_SOUND_ACTIVE_WAIT_9921, "overkill_sound_active_wait_9921"):
         return
     run_sound_active_wait_9921(cpu)
+
+__all__ = [name for name in globals() if name.startswith("overkill_")]

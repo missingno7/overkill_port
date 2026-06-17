@@ -1,0 +1,29 @@
+{
+  "cpu_addr": "1010:0102",
+  "created_at": "20260617_161750",
+  "kind": "runtime_snapshot",
+  "metadata": {
+    "blits": 493,
+    "boundary": 1746,
+    "command_tail": "\r\u0002A",
+    "context": "interactive gameplay",
+    "created_by": "scripts/play.py crash handler",
+    "direct_video": 0,
+    "exception": "AFD8 expected B00D to return to 1010:AFFD, got 1010:0102",
+    "exception_type": "RuntimeError",
+    "program": "overkill",
+    "replay_hint": "python scripts/play.py --snapshot <this-directory>",
+    "retraces": 729,
+    "sound": "adlib",
+    "source_demo": null,
+    "source_snapshot": null,
+    "timers": 518,
+    "traceback_tail": "Traceback (most recent call last):\n  File \"D:\\Games\\DOS\\overkill_port\\scripts\\play.py\", line 1317, in emulator_loop\n    rt.cpu.run(max(1, int(DEFAULT_CPU_CHUNK_STEPS)))\n  File \"D:\\Games\\DOS\\overkill_port\\dos_re\\cpu.py\", line 400, in run\n    self.step()\n  File \"D:\\Games\\DOS\\overkill_port\\dos_re\\cpu.py\", line 370, in step\n    handler(self)\n  File \"D:\\Games\\DOS\\overkill_port\\overkill\\hooks.py\", line 887, in overkill_object_tile_sweep_probe_afd8\n    run_object_tile_sweep_probe_afd8(cpu, _self_disable_if_patched)\n  File \"D:\\Games\\DOS\\overkill_port\\overkill\\gameplay\\object_runtime.py\", line 2184, in run_object_tile_sweep_probe_afd8\n    raise RuntimeError(f\"AFD8 expected B00D to return to 1010:AFFD, got {s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X}\")\nRuntimeError: AFD8 expected B00D to return to 1010:AFFD, got 1010:0102\n",
+    "video": "tandy",
+    "visible": 1234
+  },
+  "snapshot": ".",
+  "status": "interactive gameplay crash at 1010:0102: RuntimeError: AFD8 expected B00D to return to 1010:AFFD, got 1010:0102",
+  "steps": 1394960,
+  "version": 1
+}

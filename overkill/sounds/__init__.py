@@ -1,4 +1,10 @@
 """OVERKILL-specific sound/timer island."""
+from .loaded_driver import (
+    OPTIONAL_SOUND_DRIVER_HOOK_ADDRS,
+    OPTIONAL_SOUND_DRIVER_NAME,
+    OPTIONAL_SOUND_DRIVER_SEGMENT,
+    is_optional_sound_driver_addr,
+)
 from .adlib_driver import (
     SIG_ADLIB_CHANNEL_MOD_A_2032_02C9,
     SIG_ADLIB_FAR_ENTRY_2032_0000,
@@ -42,6 +48,10 @@ from .pc_speaker import (
 )
 
 __all__ = [
+    "OPTIONAL_SOUND_DRIVER_HOOK_ADDRS",
+    "OPTIONAL_SOUND_DRIVER_NAME",
+    "OPTIONAL_SOUND_DRIVER_SEGMENT",
+    "is_optional_sound_driver_addr",
     "SIG_ADLIB_CHANNEL_MOD_A_2032_02C9",
     "SIG_ADLIB_FAR_ENTRY_2032_0000",
     "SIG_ADLIB_CHANNEL_TICK_2032_00CD",

@@ -1,3 +1,18 @@
+## 2026-06-17 - Loaded optional sound-driver segment classification
+
+A coverage surprise was the number of unhooked calls classified as `sound`.  They are not a scattered set of unrelated gameplay routines.  The unifying element is the runtime segment: `2032:*` is the loaded optional AdLib/Roland driver blob installed by the original startup path.
+
+That segment contains near/far entrypoints, channel sequencer helpers, YM3812 register writes, delay/paging helpers, and state-machine tails belonging to the optional sound driver.  The source-port code now keeps this fact in one place:
+
+```text
+overkill/sounds/loaded_driver.py
+  OPTIONAL_SOUND_DRIVER_SEGMENT = 2032h
+  OPTIONAL_SOUND_DRIVER_HOOK_ADDRS = explicit lifted/proven driver boundaries
+  is_optional_sound_driver_addr(...) = coverage/classifier predicate
+```
+
+Coverage intentionally continues to classify the full `2032:*` range as `sound`, even when individual offsets are not yet hooked.  That is safer than treating unlifted driver internals as unknown gameplay.  The explicit lifted boundaries remain separate from the segment-wide island classification, so later AdLib/Roland work can still distinguish proven entrypoints from interpreted driver tails.
+
 ## 2026-06-14 - Main-menu AdLib runtime hook lifting
 
 Reduced the remaining main-menu slowdown caused by interpreting the loaded
@@ -2833,4 +2848,34 @@ This is still deliberately structural: raw action-spawn counters, list cursors, 
 `A2F6` and `A337` are sibling two-slot table tails behind `A958==4` and `A958==3`.  Both gate on `A3A0`, increment `A970` twice, call `A4EA` twice, project through `A1AE`, and offset the second slot's X by `+8`.  `A2F6` emits `BEFF=17` and stamps `+18=8/+8=35h`; `A337` emits `BEFF=16` and stamps `+18=7/+8=37h`.
 
 This completes the main named child split behind `A067` without promoting the code to named weapon/projectile semantics.  Remaining uncertainty is now mostly real observed invalid/out-of-range `A958` table targets, plus higher list/coordinate maintenance paths if traces prove they still own gameplay-side effects.
+## 2026-06-17 AED8/B250 overlap-contact branch from crash repro
+
+The interactive Tandy/AdLib repro `crash_tandy_RuntimeError_20260617_201926` hit
+the intentionally fail-fast path `AED8 -> B250 -> B254`.  This was not a wrapper
+relocation regression; it exposed that AED8 reaches the same B250 overlap/contact
+selector previously lifted only inside the B24D frontier.
+
+Cleanup/fix in this pass:
+
+- Extracted `_run_b250_overlap_contact_selector` as the single source of truth
+  for the B250..B2A3 selector.
+- `B24D` now calls the shared selector and still stops at the selected AD5A/ADC9
+  frontier as before.
+- `AED8` now calls the same selector and composes the selected tail to its own
+  near-return boundary:
+  - `AD5A`: add `DS:A278` to X, then run the shared AD60 bounds/tile tail.
+  - `ADC9`: set X to `FFFFh`, then run the same AD60 tail without the AD5A
+    pre-add.
+- Added `artifacts/evidence/snapshot_stop_1010_aed8_b250_overlap` and a focused
+  ASM-vs-hook regression test for the repro branch.
+
+Validation:
+
+```text
+python -m pytest tests/test_overkill_hooks.py::test_object_behavior_aed8_b250_overlap_branch_matches_interpreted_repro tests/test_overkill_hooks.py::test_object_behavior_b24d_hook_matches_interpreted_observed_path -q
+# 2 passed
+
+python scripts/play.py --snapshot artifacts/evidence/snapshot_stop_1010_aed8_b250_overlap --video tandy --sound adlib --verify-hook 1010:AED8 --verify-max 1 --verify-step-budget 200000 --no-coverage-summary
+# OK HOOK VERIFY LIMIT REACHED verified=1
+```
 

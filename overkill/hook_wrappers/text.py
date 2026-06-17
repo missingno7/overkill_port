@@ -53,3 +53,5 @@ def overkill_score_byte_text_5ef9(cpu):
 def overkill_tandy_text_glyph_3153(cpu):
     """OVERKILL 1010:3153 Tandy text/glyph renderer."""
     run_tandy_text_glyph_3153(cpu, _text_render_runtime())
+
+__all__ = [name for name in globals() if name.startswith("overkill_")]

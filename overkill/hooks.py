@@ -15,52 +15,21 @@ from dos_re.hooks import registry
 from .hook_wrappers.common import (
     call_hook_like_near_call as _call_hook_like_near_call,
     call_installed_hook_like_near_call as _call_installed_hook_like_near_call,
+    code_matches as _code_matches,
+    interpret_current_instruction_without_hook as _interpret_current_instruction_without_hook,
     jump_installed_hook_boundary as _jump_installed_hook_boundary,
     self_disable_if_patched as _self_disable_if_patched,
 )
-from .hook_wrappers.asset_codecs import (
-    overkill_decoded_asset_table_search_c713,
-    overkill_expand_4plane_block_4511,
-    overkill_expand_4plane_list_450c,
-    overkill_expand_4plane_row_4537,
-    overkill_expand_bits_45cb,
-    overkill_file_checksum_loop_c916,
-    overkill_linear_byte_rle_decoder_0367,
-    overkill_lz_backref_copy_ed7a,
-    overkill_lz_decoder_ecf2,
-    overkill_lz_input_byte_ed97,
-    overkill_lz_output_byte_ede9,
-    overkill_overlay_container_open_entry_254a_04d7,
-    overkill_overlay_directory_entry_scan_254a_05a1,
-    overkill_overlay_entry_name_compare_254a_05d9,
-    overkill_overlay_path_normalizer_254a_0701,
-    overkill_overlay_signature_compare_254a_0582,
-    overkill_overlay_xor_decode_254a_05bf,
-    overkill_pack_four_pixels_45f6,
-    overkill_packed_read_byte_0624,
-    overkill_packed_read_word_le_0615,
-    overkill_vertical_rle_decoder_03a8,
-    overkill_word_pair_rle_decoder_0324,
-)
-from .hook_wrappers.text import (
-    overkill_score_byte_text_5ef9,
-    overkill_score_status_text_block_5edb,
-    overkill_score_nibble_text_5f06,
-    overkill_tandy_text_glyph_3153,
-    overkill_text_dispatch_519a,
-    overkill_text_string_loop_518c,
-)
+from .hook_wrappers.asset_codecs import *  # noqa: F401,F403 - register/re-export address wrappers
+from .hook_wrappers.text import *  # noqa: F401,F403 - register/re-export address wrappers
 from .bootstrap_lzexe import (
     SIG_LZEXE_MAIN_LOOP_0069,
     run_lzexe_bootstrap_main_loop_0069,
 )
-from .hook_wrappers.sounds import (
-    overkill_clear_timer_tick_flag_0672,
-    overkill_fast_timer_isr_06e5,
-    overkill_pc_speaker_tick_d50e,
-    overkill_sound_active_wait_9921,
-    overkill_wait_timer_tick_0679,
-)
+from .hook_wrappers.sounds import *  # noqa: F401,F403 - register/re-export address wrappers
+from .hook_wrappers.gameplay_frontiers import *  # noqa: F401,F403 - register/re-export address wrappers
+from .hook_wrappers.object_runtime_frontiers import *  # noqa: F401,F403 - register/re-export address wrappers
+
 
 from dos_re.memory import EGA_CPU_APERTURE, EGA_APERTURE, EGA_PLANE_STRIDE, EGA_PLANE_WINDOW
 from .input_menu import (
@@ -159,28 +128,16 @@ from .rendering.effects import (
 )
 
 from .gameplay.collision import (
-    run_collision_stc_ret_5059,
-    run_collision_clc_ret_835b,
     run_object_deactivate_logic_dispatch_c054,
     run_object_slot_scan_ac97,
-    run_object_tile_sweep_blocked_b032,
     run_object_slot_scan_guard_ac81,
     run_postmove_y_clamp_bcb1,
     run_postmove_contact_window_aa71,
-    run_player_hazard_object_scan_bde3,
-    run_player_hazard_scan_guard_bdd0,
-    run_tile_lookup_505b,
-    run_view_contact_rect_test_8331,
-    run_tile_contact_probe_4ff9,
-    run_tile_probe_5073,
     run_tile_collision_probe_ac28,
     run_frame_contact_probe_fanout_9cb6,
     run_post_contact_status_helper_9e19,
 )
 from .gameplay.game_state import (
-    run_demo_counter_tick_1f8f_081d,
-    run_gameplay_counter_tick_1f8f_0922,
-    run_gameplay_counter_stride_loop_1f8f_0960,
     run_decrement_first_active_counter_61c7,
     run_decrement_first_active_counter_scan_61ca,
     run_decrement_first_active_counter_loop_61f7,
@@ -199,6 +156,7 @@ from .gameplay.game_state import (
     run_frame_axis_count_inc_al_9bfe,
     run_frame_axis_condition_dispatch_9c01,
     run_frame_game_state_update_a940,
+    run_gameplay_counter_tick_1f8f_0922,
 )
 from .gameplay.frame_orchestration import (
     run_demo_object_list_maintenance_a212,
@@ -211,14 +169,6 @@ from .gameplay.frame_orchestration import (
     run_status_cell_seed_852b,
     run_frame_effect_status_text_60a2,
     run_frame_controller_9b2e,
-    run_frame_action_spawn_fanout_a067,
-    run_frame_action_linked_anchor_spawn_a515,
-    run_frame_action_dual_anchor_spawn_a584,
-    run_frame_action_side_anchor_spawn_a3ca,
-    run_frame_action_mirrored_anchor_spawn_a3ff,
-    run_frame_action_listed_anchor_spawn_a2a0,
-    run_frame_action_pair_spawn_a2f6,
-    run_frame_action_pair_spawn_a337,
     run_frame_loop_97b2,
     run_transition_status_wait_9908,
     run_transition_input_release_tail_9928,
@@ -281,8 +231,6 @@ from .gameplay.object_runtime import (
     _run_aee4_step_for_direction,
     _run_af60_double_step_for_direction,
     _run_af63_step_for_direction,
-    run_movement_dir_step_2px_af63,
-    run_movement_dir_double_step_2px_af60,
     run_movement_dir_step_3px_af22,
     run_movement_dir_step_8px_aee4,
     _run_collision_death_tail_bfc7,
@@ -323,19 +271,6 @@ from .gameplay.object_runtime import (
     run_object_x_step_right_clamp_a5ea,
     run_object_y_step_up_clamp_a5f9,
     run_object_y_step_down_clamp_a607,
-    run_object_vertical_scroll_edge_response_a616,
-    run_object_bottom_scroll_offset_decay_a63c,
-    run_object_top_scroll_edge_response_a648,
-    run_object_top_scroll_offset_recover_a662,
-    run_object_tile_sweep_dispatch_b00d,
-    run_object_tile_sweep_probe_afd8,
-    run_object_scroll_world_progress_gate_a66f,
-    run_object_scroll_forward_row_a74e,
-    run_object_scroll_backward_row_a7d0,
-    run_object_scroll_row_wrap_forward_a746,
-    run_object_scroll_row_wrap_backward_a7e3,
-    run_object_scroll_forward_step_a6fe,
-    run_object_scroll_backward_step_a781,
     run_runtime_patched_object_steer_5e42,
     run_object_postmove_prelude_bc45,
     _run_post_contact_9e69_observed,
@@ -350,125 +285,7 @@ from .gameplay.object_runtime import (
     _scan_object_logic_via_aa2b,
 )
 
-_SIG_2750 = bytes.fromhex("8b 36 4c 23 2e 8e 06 a4 95 2e 8e 1e 98 95 bb 0d")
-_SIG_27EB = bytes.fromhex("51 2e 83 3e d6 0b 00 74 0e 56 2e 8b 0e 9c 5b 51")
-_SIG_280D = bytes.fromhex("2e 8b 0e 9c 5b ac 2e 88 05 47 e2 f9 2e 2b 3e 9c")
-_SIG_2824 = bytes.fromhex("bf f4 5a 2e 8b 0e 9c 5b 51 2e 8a 05 2e 8a 65 28")
-_SIG_291C = bytes.fromhex("51 2e 8a 05 47 57 2e 8b 3e a6 5b aa 2e 89 3e a6")
-_SIG_2932 = bytes.fromhex("2e c6 06 a0 5b 00 2e 8b 1e 9c 5b 8a 04 8a 20 d1")
-_SIG_5A6C = bytes.fromhex("2e 8b 1e bc 95 d1 e3 2e ff a7 78 5a")
-_SIG_2E6E = bytes.fromhex("bb 58 00 ad 26 23 05 0b 04 83 c6 02 ab ad 26 23")
-_SIG_986E = bytes.fromhex("80 3e c5 98 01 74 f9")
-_SIG_989E = bytes.fromhex("c6 06 b4 22 4e 80 3e f5 98 01 74 0c c6 06 b4 22 59 80 3e d9 98 01 75 e8")
-_SIG_98D8 = bytes.fromhex("80 3e fe be 00 75 f9")
-_SIG_07C4 = bytes.fromhex("80 3e 07 99 01 74 f9")
-_SIG_07D0 = bytes.fromhex("80 3e c3 98 00 74 f9")
-_SIG_07D7 = bytes.fromhex("80 3e 07 99 01 74 f9")
-_SIG_4E9F = bytes.fromhex("1e 06 b4 35 b0 09 cd 21 bf 3a 21 8c 05 89 5d 02 07 1e 0e 1f ba d2 4e b4 25 b0 09 cd 21 1f 1f c3")
-_SIG_4EBF = bytes.fromhex("1e bf 3a 21 8b 55 02 8b 05 8e d8 b4 25 b0 09 cd 21 1f c3")
-_SIG_53C9 = bytes.fromhex("bda922e8bdfdbd9b22e8b7fde8bf003c08742c3c0d743e813eb022a52274143c2072dd3c7a77d98b3eb0228805ff06b022ebcd")
-_SIG_5497 = bytes.fromhex("2e 8e 1e 96 95 e8 20 fa c7 06 b2 22 00 00 b4 07 cd 21 3c 00 74 02 eb 08 cd 21 c7 06 b2 22 01 00 a2 b4 22 50 e8 e1 f9 58 c3")
-_SIG_50AB = bytes.fromhex("2e 8e 06 96 95 bf c4 98 32 c0 b9 80 00 f3 aa fa 33 c0 8e c0 26 a0 1a 04 26 a2 1c 04 fb c3")
-_SIG_50BA = bytes.fromhex("fa 33 c0 8e c0 26 a0 1a 04 26 a2 1c 04 fb c3")
-_SIG_96C5 = bytes.fromhex("e8 01 ba e2 fb")
-_SIG_558B = bytes.fromhex("80 3e e9 98 01 75 03 e9 a8 00")
-_SIG_96C8 = bytes.fromhex("e2 fb")
-_SIG_0F0B = bytes.fromhex("2e 8e 1e 96 95 2e 8e 06 96 95 bf c8 99 b9 10 00 b8 ff ff f3 ab 2e a1 9e 95 d1 e0 d1 e0 d1 e0 d1 e0 f7 d8 b9 d0 00 ab 2e 03 06 9e 95 e2 f8 b8 ff ff b9 20 00 f3 ab bf c8 9b 33 c0 b9 c8 00 ab 2e 03 06 9e 95 e2 f8 bf 58 9d 33 c0 b9 c8 00 ab 2e 03 06 a0 95 e2 f8 bf e8 9e b9 c8 00 33 c0 ab 97 2e 8b 1e bc 95 d1 e3 2e ff a7 77 0f 7d 0f 8d 0f 92 0f 81 c7 00 20 f7 c7 00 40 74 04 81 c7 50 c0 eb 13 83 c7 28 eb 0e 81 c7 00 20 f7 c7 00 80 74 04 81 c7 a0 80 97 e2 c6")
-_SIG_0FA3 = bytes.fromhex("0e 07 bf 92 8d b9 00 01 33 c0 ab 03 06 70 10 e2 f9 bf 92 8f b9 00 01 33 c0 ab 03 06 24 10 e2 f9 bf 92 91 b9 00 01 33 c0 ab 03 06 26 10 e2 f9 bf 92 93 b9 00 01 33 c0 ab 03 06 28 10 e2 f9 e9 86 42")
-_SIG_0FE4 = bytes.fromhex("2e 8e 06 96 95 bf 17 15 32 f6 8a d6 32 c0 d0 da 73 02 b0 0f d0 da 73 02 04 f0 88 05 4f 32 c0 d0 da 73 02 b0 0f d0 da 73 02 04 f0 88 05 4f 32 c0 d0 da 73 02 b0 0f d0 da 73 02 04 f0 88 05 4f 32 c0 d0 da 73 02 b0 0f d0 da 73 02 04 f0 88 05 4f 83 c7 08 fe c6 75 b3 c3")
-_SIG_2ECB = bytes.fromhex("bb 58 00 8b 04 f7 d0 26 09 05 83 c6 04 83 c7 02")
-_SIG_2F40 = bytes.fromhex("bb 60 00 8b 04 f7 d0 26 09 05 83 c6 04 83 c7 02")
-_SIG_2F81 = bytes.fromhex("bb 60 00 ad 26 23 05 0b 04 83 c6 02 ab ad 26 23")
-_SIG_306F = bytes.fromhex("ad 8b c8 ad 2e 8e 06 a4 95 d1 e0 d1 e0 8b e8 51")
-_SIG_30B0 = bytes.fromhex("2e 8e 06 a4 95 33 ff bd c8 00 b9 34 00 33 c0 f3 ab 83 ef 68 81 c7 00 20 f7 c7 00 80 74 04 81 c7 a0 80 4d 75 e5 c3")
-_SIG_3389 = bytes.fromhex("2e 8e 06 a4 95 33 ff bd c8 00 b9 34 00 33 c0 f3 ab 83 ef 68 81 c7 00 20 f7 c7 00 80 74 04 81 c7 a0 80 4d 75 e5 c3")
-_SIG_30BA_PATCHED_ROW_COPY = bytes.fromhex("8b c8 ad d1 e0 d1 e0 8b e8 51 8b cd f3 a4 2b fd 81 c7 a0 00 59 e2 f2 c3")
-_SIG_33AF = bytes.fromhex("e8 25 11 75 03 e9 f3 10 2e 8b 0e 9e 5b 51 2e 8b")
-_SIG_33B2 = bytes.fromhex("75 03 e9 f3 10 2e 8b 0e 9e 5b 51 2e 8b 0e 9c")
-_SIG_34AD = bytes.fromhex("83 ff ff 74 03 e8 10 00 8b 7e 10 8b 76 0e 81 c6")
-_SIG_34C5 = bytes.fromhex("bb 58 00 b9 10 00 a5 a5 a5 a5 a5 a5 a5 a5 03 fb")
-_SIG_34D8 = bytes.fromhex("83 ff ff 75 01 c3 bb 60 00 a5 a5 a5 a5 03 fb")
-_SIG_3542 = bytes.fromhex("83 ff ff 75 01 c3 bb 64 00 a5 a5 03 fb a5 a5 03")
-_SIG_35CC = bytes.fromhex("e8 67 24 89 46 0c 3d ff ff 75 01 c3 03 06 4c 23")
-_SIG_356C = bytes.fromhex("e8 c7 24 89 46 0c 3d ff ff 74 0f 03 06 4c 23")
-_SIG_3657 = bytes.fromhex("e8 dc 23 89 46 0c 3d ff ff 75 01 c3 03 06 4c 23")
-_SIG_4E0D = bytes.fromhex("57 56 e8 6f 59 5e 5f 39 3e 50 23 77 f3 83 3e 4e 23 00 75 ec 89 36 78 a9 c3")
-_SIG_4E26 = bytes.fromhex("50 53 51 52 57 56 55 06 1e 2e 8e 06 92 95 8b 36 50 23 b9 9c 00")
-_SIG_375B = bytes.fromhex("2e c7 06 03 59 00 00 2e 8b 3e f9 58 2e 8b 36 fb 58 2e 8b 0e fd 58 2e 8b 2e ff 58 d1 e5")
-_SIG_3824 = bytes.fromhex("2e 8e 1e 98 95 b9 50 00 f3 a5 81 ef a0 00 81 c7 00 20")
-_SIG_35AA = bytes.fromhex("2e 8e 06 96 95 2e 8e 1e 98 95 bb 58 00 b9 10 00")
-_SIG_36A2 = bytes.fromhex("8b da b9 0d 00 2e a1 9a 95 81 3e 50 23 5f 0e 72")
-_SIG_60C5 = bytes.fromhex("c7 06 50 23 a0 0e b9 10 00 51 e8 af 46 59 e2 f9")
-_SIG_5C74 = bytes.fromhex("2e 8b 1e bc 95 d1 e3 2e ff 97 5a 59 e8 46 f4 2e 83 06 01 59 02 2e a1 01 59 2e 3b 06 fd 58 75 e0 2e 8e 1e 96 95 c3")
-_SIG_58DF = bytes.fromhex("51 2e 89 0e 01 59 2e 8b 1e bc 95 d1 e3 2e ff 97")
-_SIG_5DB2 = bytes.fromhex("c7 06 54 a9 00 00 c7 06 0a 23 00 00 8b 46 04 3b")
-_SIG_768E = bytes.fromhex("8b 7e 0c 83 ff ff 75 01 c3 2e 8e 06 98 95 8b 5e")
-_SIG_7746 = bytes.fromhex("8b 7e 0c 83 ff ff 75 01 c3 2e 8e 06 98 95 8b 5e")
-_SIG_75A6 = bytes.fromhex("8b 5e 08 2e 8b 0e a6 95 83 fb 1c 72 08 83 eb 1c")
-_SIG_2FB6 = bytes.fromhex("bb 64 00 ad 26 23 05 0b 04 83 c6 02 ab ad 26")
-_SIG_A8C7 = bytes.fromhex("51 8b d9 d1 e3 8b af ca 32 83 7e 00 00 74 1e 83 3e ac bd")
-_SIG_A846 = bytes.fromhex("b9 24 00")
-_SIG_A876 = bytes.fromhex("e8 74 a4")
-_SIG_A849 = bytes.fromhex("51 8b d9 d1 e3 8b af ca 32 83 7e 00 00 74 03 e8 6d b2")
-_SIG_A85E = bytes.fromhex("b9 22 00 51 8b d9")
-_SIG_A870 = bytes.fromhex("e8 55 b2 59 e2 eb")
-_SIG_A873 = bytes.fromhex("59 e2 eb")
-_SIG_A879 = bytes.fromhex("b9 22 00 51 8b d9")
-_SIG_A88B = bytes.fromhex("e8 b8 ce 59 e2 eb")
-_SIG_A88E = bytes.fromhex("59 e2 eb")
-_SIG_A891 = bytes.fromhex("b9 23 00 51 8b d9")
-_SIG_A8C4 = bytes.fromhex("b9 24 00 51 8b d9")
-_SIG_A90F = bytes.fromhex("51 8b d9 d1 e3 8b af 12 8d 83 7e 00 00 74 03 e8")
-_SIG_A91E = bytes.fromhex("e8 71 b1 59 e2 eb")
-_SIG_A921 = bytes.fromhex("59 e2 eb")
-_SIG_A924 = bytes.fromhex("b9 24 00 51 8b d9")
-_SIG_AA07 = bytes.fromhex("c7 06 46 23 00 00 b9 22 00")
-_SIG_AA25 = bytes.fromhex("9a 22 09 8f 1f c3")
-_SIG_AA1F = bytes.fromhex("e8 09 00")
-_SIG_AA22 = bytes.fromhex("59 e2 eb")
-_SIG_A8F7 = bytes.fromhex("83 3e 7c a4 00 75 01 c3")
-_SIG_5BDC = bytes.fromhex("2e 8b 1e bc 95 d1 e3 2e ff a7 e8 5b")
-_SIG_5160 = bytes.fromhex("2e 83 3e bc 95 01 74 01 c3")
-_SIG_A927 = bytes.fromhex("51 8b d9 d1 e3 8b af ca 32 83 7e 00 00 74 03 e8 59 b1")
-_SIG_A90C = bytes.fromhex("b9 22 00 51 8b d9 d1 e3 8b af 12 8d")
-_SIG_A93C = bytes.fromhex("e8 25 a4 c3")
-_SIG_4CED = bytes.fromhex("2e 8e 06 98 95 be c1 c6 bf b1 c7 bd 4d 4d b9 14 00 e8 14 00")
-_SIG_4D64 = bytes.fromhex("2e 8e 06 98 95 be b1 c7 b9 28 00")
-_SIG_A9E0 = bytes.fromhex("51 8b d9 d1 e3 8b af ca 32 ff 06 40 23 81 3e 40 23 dc 05")
-_SIG_AA10 = bytes.fromhex("51 8b d9 d1 e3 8b af 12 8d 83 7e 00 00 74 03 e8 09 00")
-_SIG_ABA3 = bytes.fromhex("89 1e 2e a4 83 3e 84 23 03 73 12 a1 3c 23 05 14 00")
-_SIG_AB77 = bytes.fromhex("83 3e 84 23 03 73 11 e8 ce ff e8 a4 00 72 09 e8 f8 00")
-_SIG_ABCA = bytes.fromhex("83 3e 84 23 03 73 0b ba 20 a4 e8 5d ff e8 4e 00")
-_SIG_AB59 = bytes.fromhex("c7 06 2c a4 6c a9 eb 16")
-_SIG_AB61 = bytes.fromhex("c7 06 2c a4 6a a9 eb 0e")
-_SIG_AB69 = bytes.fromhex("c7 06 2c a4 68 a9 eb 06")
-_SIG_AB71 = bytes.fromhex("c7 06 2c a4 66 a9")
-_SIG_BC45 = bytes.fromhex("a1 78 a2 01 46 02")
-_SIG_B9F0 = bytes.fromhex("81 3e 82 a4 e4 a4 75 6f 81 3e 40 23 ef 02 75 07")
-_SIG_B73E = bytes.fromhex("83 7e 1c ff 74 4d 8b 5e 1c d1 e3 2e ff a7 4e b7")
-_SIG_B24D = bytes.fromhex("e8 f2 ab 83 7e 1e 01 74 4d a1 7e 23 8b 1e 80 23")
-_SIG_B86D = bytes.fromhex("83 3e 7e a4 02 77 03 e9 81 00 81 7e 02 c0 00")
-_SIG_AA2B = bytes.fromhex("8b 5e 16 d1 e3 2e ff a7 36 aa")
-_SIG_EFAE = bytes.fromhex("8b 46 04 a3 fe d1 8b 46 02 a3 00 d2 8b 5e 18")
-_SIG_AED8 = bytes.fromhex("ff 4e 1c 75 03 e9 e9 fe b8 50 b2 50 8b 5e 06 d1 e3")
-_SIG_AE09 = bytes.fromhex("83 7e 1c 00 74 0a ff 4e 1c 75 09 c7 46 06 00 00 83 6e 02 02")
-_SIG_AB10 = bytes.fromhex("83 3e 84 23 03 72 03 e9 08 01 83 3e 7c a4 03 72 03 e9 fe 00")
-_SIG_AD04 = bytes.fromhex("83 3e ac bd 01 74 09 81 3e 50 23 b6 00 77 01 c3")
-_SIG_AD60 = bytes.fromhex("83 7e 02 08 73 03 e9 ae 0f 81 7e 02 e0 00 76 03")
-_SIG_AC81 = bytes.fromhex("83 3e ac bd 01 75 03 e9 b9 fd b9 23 00 bb b4 23 8b 46 04 8b 7e 02")
-_SIG_CCAA = bytes.fromhex("b9 08 00 26 8b 04 26 3b 05 74 05 b2 01 26 89 05")
-_SIG_CCC4 = bytes.fromhex("b9 08 00 26 8b 04 26 3b 05 74 05 b2 01 26 89 05")
-_SIG_CCF0 = bytes.fromhex("b9 20 00 26 8a 04 26 3a 05 74 05 b2 01 26 88 05")
-_SIG_CC7F = bytes.fromhex("51 a1 95 bd e8 9e 8d 89 3e 9e bd 8b f7 81 c6 00 7d 32 d2 2e 8e 06 98 95")
-_SIG_CD68 = bytes.fromhex("5f 8b 36 9e bd 2e 8e 06 a4 95 2e 8e 1e 98 95 2e 8b 1e bc 95")
-_SIG_CE40 = bytes.fromhex("80 3e c3 98 00 74 01 c3 51 e8 16 33 59 f6 06 be 98 10")
-_SIG_CF78 = bytes.fromhex("e8 4e 81 51 e8 e3 31 59 f6 06 be 98 10 75 10 80")
-_SIG_CE5C = bytes.fromhex("e2 e2 c3")
-
-
-
-
-
+from .hook_wrappers.runtime_signatures import *  # noqa: F403 - intentional private signature re-export
 
 
 def _run_bootstrap_lzexe_loop_0069_if_matching(cpu) -> None:
@@ -496,74 +313,11 @@ def overkill_bootstrap_lzexe_main_loop_23ad_0069(cpu):
     _run_bootstrap_lzexe_loop_0069_if_matching(cpu)
 
 
-@registry.replace(0x1010, 0xB032, "overkill_object_tile_sweep_blocked_b032")
-def overkill_object_tile_sweep_blocked_b032(cpu):
-    """Hook wrapper for OVERKILL 1010:B032 tile-sweep blocked sentinel."""
-    run_object_tile_sweep_blocked_b032(cpu, _self_disable_if_patched)
 
 
-@registry.replace(0x1010, 0xBDE3, "overkill_player_hazard_object_scan_bde3")
-def overkill_player_hazard_object_scan_bde3(cpu):
-    """Hook wrapper for OVERKILL 1010:BDE3 player/hazard scan."""
-    run_player_hazard_object_scan_bde3(cpu, _self_disable_if_patched)
 
 
-@registry.replace(0x1010, 0xBDD0, "overkill_player_hazard_scan_guard_bdd0")
-def overkill_player_hazard_scan_guard_bdd0(cpu):
-    """Hook wrapper for OVERKILL 1010:BDD0 player/hazard scan guard."""
-    run_player_hazard_scan_guard_bdd0(cpu, _self_disable_if_patched)
 
-
-@registry.replace(0x1010, 0x8331, "overkill_view_contact_rect_test_8331")
-def overkill_view_contact_rect_test_8331(cpu):
-    """Hook wrapper for OVERKILL 1010:8331 view/contact rectangle test."""
-    run_view_contact_rect_test_8331(cpu, _self_disable_if_patched)
-
-
-@registry.replace(0x1010, 0x835B, "overkill_collision_clc_ret_835b")
-def overkill_collision_clc_ret_835b(cpu):
-    """Hook wrapper for OVERKILL 1010:835B CLC/RET collision miss tail."""
-    run_collision_clc_ret_835b(cpu, _self_disable_if_patched)
-
-
-@registry.replace(0x1010, 0x5059, "overkill_collision_stc_ret_5059")
-def overkill_collision_stc_ret_5059(cpu):
-    """Hook wrapper for OVERKILL 1010:5059 STC/RET collision-hit helper."""
-    run_collision_stc_ret_5059(cpu, _self_disable_if_patched)
-
-
-@registry.replace(0x1010, 0x505B, "overkill_tile_lookup_505b")
-def overkill_tile_lookup_505b(cpu):
-    """Hook wrapper for OVERKILL 1010:505B tile lookup helper."""
-    run_tile_lookup_505b(cpu, _self_disable_if_patched)
-
-
-@registry.replace(0x1010, 0x4FF9, "overkill_tile_contact_probe_4ff9")
-def overkill_tile_contact_probe_4ff9(cpu):
-    """Hook wrapper for OVERKILL 1010:4FF9 tile/contact probe helper."""
-    run_tile_contact_probe_4ff9(cpu, _self_disable_if_patched)
-
-
-@registry.replace(0x1010, 0x5073, "overkill_tile_probe_5073")
-def overkill_tile_probe_5073(cpu):
-    """Hook wrapper for OVERKILL 1010:5073 coordinate-to-tile probe helper."""
-    run_tile_probe_5073(cpu, _self_disable_if_patched)
-
-
-@registry.replace(0x1F8F, 0x081D, "overkill_demo_counter_tick_1f8f_081d")
-def overkill_demo_counter_tick_1f8f_081d(cpu):
-    """Hook wrapper for the far demo/attract counter tick at 1F8F:081D."""
-    run_demo_counter_tick_1f8f_081d(cpu, _self_disable_if_patched)
-
-@registry.replace(0x1F8F, 0x0922, "overkill_gameplay_counter_tick_1f8f_0922")
-def overkill_gameplay_counter_tick_1f8f_0922(cpu):
-    """Hook wrapper for the per-frame far counter tick at 1F8F:0922."""
-    run_gameplay_counter_tick_1f8f_0922(cpu, _self_disable_if_patched)
-
-@registry.replace(0x1F8F, 0x0960, "overkill_gameplay_counter_stride_loop_1f8f_0960")
-def overkill_gameplay_counter_stride_loop_1f8f_0960(cpu):
-    """Hook wrapper for OVERKILL 1F8F:0960 gameplay counter stride loop."""
-    run_gameplay_counter_stride_loop_1f8f_0960(cpu, _self_disable_if_patched)
 
 
 
@@ -715,310 +469,63 @@ def overkill_tandy_draw_object_block_35cc(cpu):
     run_tandy_draw_object_block_35cc(cpu, _tandy_render_runtime())
 
 
-_SIG_FIND_FREE_EFFECT_SLOT_7524 = bytes.fromhex(
-    "b9 23 00 8b 1e d8 95 83 3f 00 74 12 83 c3 38 81"
-    " fb 5c 2b 75 03 bb b4 23 e2 ed bb ff ff c3 89 1e"
-    " d8 95 c3"
-)
-
-
-@registry.replace(0x1010, 0x7524, "overkill_find_free_effect_slot_7524")
-def overkill_find_free_effect_slot_7524(cpu):
-    """Replace compact effect-slot allocator 1010:7524."""
-    if not _code_matches(cpu, 0x7524, _SIG_FIND_FREE_EFFECT_SLOT_7524):
-        _interpret_current_instruction_without_hook(cpu)
-        return
-    _find_free_effect_slot_7524(cpu)
-    cpu.s.ip = cpu.pop()
 
 
-_SIG_FIND_FREE_OBJECT_SLOT_7573 = bytes.fromhex(
-    "b9 22 00 8b 1e da 95 81 fb cc 32 75 03 bb 5c 2b"
-    " 83 3f 00 74 09 83 c3 38 e2 ed bb ff ff c3 89 1e"
-    " da 95 c3"
-)
 
 
-@registry.replace(0x1010, 0x7573, "overkill_find_free_object_slot_7573")
-def overkill_find_free_object_slot_7573(cpu):
-    """Replace main gameplay object-slot allocator 1010:7573."""
-    if not _code_matches(cpu, 0x7573, _SIG_FIND_FREE_OBJECT_SLOT_7573):
-        _interpret_current_instruction_without_hook(cpu)
-        return
-    _find_free_object_slot_7573(cpu)
-    cpu.s.ip = cpu.pop()
 
 
 
-_SIG_OBJECT_ALLOC_OR_RECLAIM_7547 = bytes.fromhex(
-    "e8 29 00 83 fb ff 74 01 c3 b9 22 00 bb 5c 2b 83"
-    " 7f 18 09 74 0c 83 7f 18 0a 74 06 83 7f 16 01 75 08"
-    " 83 c3 38 e2 e9 bb 5c 2b e9 9a 47"
-)
 
 
-@registry.replace(0x1010, 0x7547, "overkill_object_slot_allocate_or_reclaim_7547")
-def overkill_object_slot_allocate_or_reclaim_7547(cpu):
-    """Hot object-slot allocation gate with rare original reclaim fallback."""
-    if not _code_matches(cpu, 0x7547, _SIG_OBJECT_ALLOC_OR_RECLAIM_7547):
-        _interpret_current_instruction_without_hook(cpu)
-        return
-    run_object_slot_allocate_or_reclaim_7547(cpu)
 
 
-_SIG_OBJECT_SPAWN_SEED_A4EA = bytes.fromhex(
-    "e8 5a d0 c7 07 01 00 c7 47 1e 01 00 c7 47 06 00"
-    " 00 c7 47 08 32 00 c7 47 14 00 00 c7 47 16 02 00"
-    " c7 47 18 02 00 c7 47 1c ff ff c3"
-)
 
 
-@registry.replace(0x1010, 0xA4EA, "overkill_object_spawn_seed_a4ea")
-def overkill_object_spawn_seed_a4ea(cpu):
-    """Common raw object-slot seed template reached by several object families."""
-    if not _code_matches(cpu, 0xA4EA, _SIG_OBJECT_SPAWN_SEED_A4EA):
-        _interpret_current_instruction_without_hook(cpu)
-        return
-    run_object_spawn_seed_a4ea(cpu)
 
 
-_SIG_OBJECT_SPAWN_SEED_FROM_SOURCE_A4D7 = (
-    bytes.fromhex("e8 10 00 8b 44 02 89 47 02 8b 44 04 83 c0 04 89 47 04 c3"),
-    bytes.fromhex("e8 10 00 8b 44 02 89 47 02 8b 44 04 05 04 00 89 47 04 c3"),
-)
 
 
-@registry.replace(0x1010, 0xA4D7, "overkill_object_spawn_seed_from_source_a4d7")
-def overkill_object_spawn_seed_from_source_a4d7(cpu):
-    """A4EA seed plus source-coordinate copy into the spawned object slot."""
-    if not _code_matches(cpu, 0xA4D7, _SIG_OBJECT_SPAWN_SEED_FROM_SOURCE_A4D7):
-        _interpret_current_instruction_without_hook(cpu)
-        return
-    run_object_spawn_seed_from_source_a4d7(cpu)
 
-_SIG_OBJECT_SPAWN_ANCHOR_OFFSET_A571 = (
-    # install-time/static runtime form: ADD AX, imm8
-    bytes.fromhex("8b 46 04 83 c0 0a 89 47 04 8b 46 02 83 c0 0a 89 47 02 c3"),
-    # live/runtime-loaded form seen in demo snapshots: ADD AX, imm16
-    bytes.fromhex("8b 46 04 05 0a 00 89 47 04 8b 46 02 05 0a 00 89 47 02 c3"),
-)
 
 
-@registry.replace(0x1010, 0xA571, "overkill_object_spawn_anchor_offset_a571")
-def overkill_object_spawn_anchor_offset_a571(cpu):
-    """Copy source object coordinates plus +10/+10 into a spawned object slot."""
-    if not _code_matches(cpu, 0xA571, _SIG_OBJECT_SPAWN_ANCHOR_OFFSET_A571):
-        _interpret_current_instruction_without_hook(cpu)
-        return
-    run_object_spawn_anchor_offset_a571(cpu)
 
 
-@registry.replace(0x1010, 0xA5D1, "overkill_object_x_step_left_clamp_a5d1")
-def overkill_object_x_step_left_clamp_a5d1(cpu):
-    """Raw object X decrement helper with the original two-pass clamp idiom."""
-    run_object_x_step_left_clamp_a5d1(cpu, _self_disable_if_patched)
 
 
-@registry.replace(0x1010, 0xA5EA, "overkill_object_x_step_right_clamp_a5ea")
-def overkill_object_x_step_right_clamp_a5ea(cpu):
-    """Raw object X increment helper with the original two-pass clamp idiom."""
-    run_object_x_step_right_clamp_a5ea(cpu, _self_disable_if_patched)
 
 
-@registry.replace(0x1010, 0xA5F9, "overkill_object_y_step_up_clamp_a5f9")
-def overkill_object_y_step_up_clamp_a5f9(cpu):
-    """Raw object Y decrement helper with the original two-pass clamp idiom."""
-    run_object_y_step_up_clamp_a5f9(cpu, _self_disable_if_patched)
 
 
-@registry.replace(0x1010, 0xA607, "overkill_object_y_step_down_clamp_a607")
-def overkill_object_y_step_down_clamp_a607(cpu):
-    """Raw object Y increment helper with the original two-pass clamp idiom."""
-    run_object_y_step_down_clamp_a607(cpu, _self_disable_if_patched)
 
 
-@registry.replace(0x1010, 0xAEE4, "overkill_movement_dir_step_8px_aee4")
-def overkill_movement_dir_step_8px_aee4(cpu):
-    """8-direction movement step table, 8-pixel delta (entry for direct calls)."""
-    run_movement_dir_step_8px_aee4(cpu, _self_disable_if_patched)
 
 
-@registry.replace(0x1010, 0xAF22, "overkill_movement_dir_step_3px_af22")
-def overkill_movement_dir_step_3px_af22(cpu):
-    """8-direction movement step table, 3-pixel delta (entry for direct calls)."""
-    run_movement_dir_step_3px_af22(cpu, _self_disable_if_patched)
 
 
-@registry.replace(0x1010, 0xAF60, "overkill_movement_dir_double_step_2px_af60")
-def overkill_movement_dir_double_step_2px_af60(cpu):
-    """Self-call double 2-pixel movement step (entry for direct calls)."""
-    run_movement_dir_double_step_2px_af60(cpu, _self_disable_if_patched)
 
 
-@registry.replace(0x1010, 0xAF63, "overkill_movement_dir_step_2px_af63")
-def overkill_movement_dir_step_2px_af63(cpu):
-    """8-direction movement step table, 2-pixel delta (entry for direct calls)."""
-    run_movement_dir_step_2px_af63(cpu, _self_disable_if_patched)
 
 
-@registry.replace(0x1010, 0xA616, "overkill_object_vertical_scroll_edge_response_a616")
-def overkill_object_vertical_scroll_edge_response_a616(cpu):
-    """Raw vertical edge-scroll response around top/bottom scroll-bias globals."""
-    run_object_vertical_scroll_edge_response_a616(cpu, _self_disable_if_patched)
 
 
-@registry.replace(0x1010, 0xA63C, "overkill_object_bottom_scroll_offset_decay_a63c")
-def overkill_object_bottom_scroll_offset_decay_a63c(cpu):
-    """Decay DS:A39C bottom-edge scroll bias toward zero."""
-    run_object_bottom_scroll_offset_decay_a63c(cpu, _self_disable_if_patched)
 
 
-@registry.replace(0x1010, 0xA648, "overkill_object_top_scroll_edge_response_a648")
-def overkill_object_top_scroll_edge_response_a648(cpu):
-    """Top-edge input scroll bias/recovery helper."""
-    run_object_top_scroll_edge_response_a648(cpu, _self_disable_if_patched)
 
 
-@registry.replace(0x1010, 0xA662, "overkill_object_top_scroll_offset_recover_a662")
-def overkill_object_top_scroll_offset_recover_a662(cpu):
-    """Recover DS:A39A top-edge scroll bias toward zero."""
-    run_object_top_scroll_offset_recover_a662(cpu, _self_disable_if_patched)
 
 
 
 
-@registry.replace(0x1010, 0xB00D, "overkill_object_tile_sweep_dispatch_b00d")
-def overkill_object_tile_sweep_dispatch_b00d(cpu):
-    """Recovered direction-specific object tile-sweep dispatcher at 1010:B00D."""
-    run_object_tile_sweep_dispatch_b00d(cpu, _self_disable_if_patched)
 
 
-@registry.replace(0x1010, 0xAFD8, "overkill_object_tile_sweep_probe_afd8")
-def overkill_object_tile_sweep_probe_afd8(cpu):
-    """Shared object tile-sweep probe wrapper around B00D."""
-    run_object_tile_sweep_probe_afd8(cpu, _self_disable_if_patched)
 
 
-@registry.replace(0x1010, 0xA067, "overkill_frame_action_spawn_fanout_a067")
-def overkill_frame_action_spawn_fanout_a067(cpu):
-    """Frame input-bit gated action/object-spawn fanout exposed by 9B2E/D04D."""
-    run_frame_action_spawn_fanout_a067(
-        cpu,
-        _self_disable_if_patched,
-        _run_interpreted_near_call_observed,
-    )
 
 
-@registry.replace(0x1010, 0xA515, "overkill_frame_action_linked_anchor_spawn_a515")
-def overkill_frame_action_linked_anchor_spawn_a515(cpu):
-    """Gated raw anchored-slot spawn child behind A067."""
-    run_frame_action_linked_anchor_spawn_a515(
-        cpu,
-        _self_disable_if_patched,
-        _run_interpreted_near_call_observed,
-    )
 
 
-@registry.replace(0x1010, 0xA584, "overkill_frame_action_dual_anchor_spawn_a584")
-def overkill_frame_action_dual_anchor_spawn_a584(cpu):
-    """Gated two-slot anchored spawn child behind A067."""
-    run_frame_action_dual_anchor_spawn_a584(
-        cpu,
-        _self_disable_if_patched,
-        _run_interpreted_near_call_observed,
-    )
 
-
-@registry.replace(0x1010, 0xA3CA, "overkill_frame_action_side_anchor_spawn_a3ca")
-def overkill_frame_action_side_anchor_spawn_a3ca(cpu):
-    """Four-source raw side-anchor spawn dispatcher behind A067."""
-    run_frame_action_side_anchor_spawn_a3ca(
-        cpu,
-        _self_disable_if_patched,
-        _run_interpreted_near_call_observed,
-    )
-
-
-@registry.replace(0x1010, 0xA3FF, "overkill_frame_action_mirrored_anchor_spawn_a3ff")
-def overkill_frame_action_mirrored_anchor_spawn_a3ff(cpu):
-    """Two-source mirrored raw anchor spawn dispatcher behind A067."""
-    run_frame_action_mirrored_anchor_spawn_a3ff(
-        cpu,
-        _self_disable_if_patched,
-        _run_interpreted_near_call_observed,
-    )
-
-
-@registry.replace(0x1010, 0xA2A0, "overkill_frame_action_listed_anchor_spawn_a2a0")
-def overkill_frame_action_listed_anchor_spawn_a2a0(cpu):
-    """Raw listed two-slot action-spawn child behind A067/A0E8."""
-    run_frame_action_listed_anchor_spawn_a2a0(
-        cpu,
-        _self_disable_if_patched,
-        _run_interpreted_near_call_observed,
-    )
-
-
-@registry.replace(0x1010, 0xA2F6, "overkill_frame_action_pair_spawn_a2f6")
-def overkill_frame_action_pair_spawn_a2f6(cpu):
-    """Raw two-slot action-spawn table tail behind A067/A0E8."""
-    run_frame_action_pair_spawn_a2f6(
-        cpu,
-        _self_disable_if_patched,
-        _run_interpreted_near_call_observed,
-    )
-
-
-@registry.replace(0x1010, 0xA337, "overkill_frame_action_pair_spawn_a337")
-def overkill_frame_action_pair_spawn_a337(cpu):
-    """Sibling raw two-slot action-spawn table tail behind A067/A0E8."""
-    run_frame_action_pair_spawn_a337(
-        cpu,
-        _self_disable_if_patched,
-        _run_interpreted_near_call_observed,
-    )
-
-
-@registry.replace(0x1010, 0xA66F, "overkill_object_scroll_world_progress_gate_a66f")
-def overkill_object_scroll_world_progress_gate_a66f(cpu):
-    """Vertical scroll/world-progress gate around A6FE."""
-    run_object_scroll_world_progress_gate_a66f(cpu, _self_disable_if_patched)
-
-
-@registry.replace(0x1010, 0xA746, "overkill_object_scroll_row_wrap_forward_a746")
-def overkill_object_scroll_row_wrap_forward_a746(cpu):
-    """Wrap the forward scroll source row pointer."""
-    run_object_scroll_row_wrap_forward_a746(cpu, _self_disable_if_patched)
-
-
-@registry.replace(0x1010, 0xA7E3, "overkill_object_scroll_row_wrap_backward_a7e3")
-def overkill_object_scroll_row_wrap_backward_a7e3(cpu):
-    """Wrap the backward scroll source row pointer."""
-    run_object_scroll_row_wrap_backward_a7e3(cpu, _self_disable_if_patched)
-
-
-@registry.replace(0x1010, 0xA74E, "overkill_object_scroll_forward_row_a74e")
-def overkill_object_scroll_forward_row_a74e(cpu):
-    """Forward map/scroll-row advance bookkeeping around A7EB."""
-    run_object_scroll_forward_row_a74e(cpu, _self_disable_if_patched)
-
-
-@registry.replace(0x1010, 0xA7D0, "overkill_object_scroll_backward_row_a7d0")
-def overkill_object_scroll_backward_row_a7d0(cpu):
-    """Backward map/scroll-row advance bookkeeping around A7EB."""
-    run_object_scroll_backward_row_a7d0(cpu, _self_disable_if_patched)
-
-
-@registry.replace(0x1010, 0xA6FE, "overkill_object_scroll_forward_step_a6fe")
-def overkill_object_scroll_forward_step_a6fe(cpu):
-    """Forward vertical-scroll bookkeeping step."""
-    run_object_scroll_forward_step_a6fe(cpu, _self_disable_if_patched)
-
-
-@registry.replace(0x1010, 0xA781, "overkill_object_scroll_backward_step_a781")
-def overkill_object_scroll_backward_step_a781(cpu):
-    """Backward vertical-scroll bookkeeping step."""
-    run_object_scroll_backward_step_a781(cpu, _self_disable_if_patched)
 
 
 @registry.replace(0x1010, 0x7596, "overkill_layer_draw_type_dispatch_7596")
@@ -3233,70 +2740,6 @@ def overkill_scan_objects_call_5a92_a927(cpu):
     )
 
 
-@registry.replace(0x1010, 0xB9F0, "overkill_object_behavior_b9f0")
-def overkill_object_behavior_b9f0(cpu):
-    """Observed object-family behavior B9F0 lifted up to the shared BC4B tail."""
-    if _self_disable_if_patched(cpu, 0xB9F0, _SIG_B9F0, "overkill_object_behavior_b9f0"):
-        return
-    _run_object_behavior_b9f0(
-        cpu,
-        parent="1010:B9F0",
-        chain="B9F0",
-        cx_value=cpu.s.cx & 0xFFFF,
-    )
-
-
-@registry.replace(0x1010, 0xB73E, "overkill_object_behavior_b73e")
-def overkill_object_behavior_b73e(cpu):
-    """Fail-fast lifted branch of object behavior B73E."""
-    if _self_disable_if_patched(cpu, 0xB73E, _SIG_B73E, "overkill_object_behavior_b73e"):
-        return
-    _run_object_behavior_b73e(
-        cpu,
-        parent="1010:B73E",
-        chain="B73E",
-        cx_value=cpu.s.cx & 0xFFFF,
-    )
-
-
-@registry.replace(0x1010, 0xB24D, "overkill_object_behavior_b24d")
-def overkill_object_behavior_b24d(cpu):
-    """Lift the observed B24D object-family steering/overlap behavior."""
-    if _self_disable_if_patched(cpu, 0xB24D, _SIG_B24D, "overkill_object_behavior_b24d"):
-        return
-    _run_object_behavior_b24d(
-        cpu,
-        parent="1010:B24D",
-        chain="B24D",
-        cx_value=cpu.s.cx & 0xFFFF,
-    )
-
-
-
-@registry.replace(0x1010, 0xB15A, "overkill_player_chase_candidate_scan_b15a")
-def overkill_player_chase_candidate_scan_b15a(cpu):
-    """Shared rotating object-slot candidate scan used by B1B0 and A515."""
-    run_player_chase_candidate_scan_b15a(cpu, _self_disable_if_patched)
-
-
-@registry.replace(0x1010, 0xB1B0, "overkill_object_player_chase_b1b0")
-def overkill_object_player_chase_b1b0(cpu):
-    """Recovered player/view-centered chase behavior at 1010:B1B0."""
-    run_object_player_chase_b1b0(cpu, _self_disable_if_patched)
-
-
-
-@registry.replace(0x1010, 0xB86D, "overkill_object_behavior_b86d")
-def overkill_object_behavior_b86d(cpu):
-    """Observed object-family behavior B86D lifted up to the shared BC4B tail."""
-    if _self_disable_if_patched(cpu, 0xB86D, _SIG_B86D, "overkill_object_behavior_b86d"):
-        return
-    _run_object_behavior_b86d(
-        cpu,
-        parent="1010:B86D",
-        chain="B86D",
-        cx_value=cpu.s.cx & 0xFFFF,
-    )
 
 
 
@@ -3307,56 +2750,33 @@ def overkill_object_behavior_b86d(cpu):
 
 
 
-@registry.replace(0x1010, 0x5E42, "overkill_runtime_patched_object_steer_5e42")
-def overkill_runtime_patched_object_steer_5e42(cpu):
-    """Lift the gameplay-patched object steering helper at 1010:5E42."""
-    run_runtime_patched_object_steer_5e42(cpu)
 
 
 
-@registry.replace(0x1010, 0x5DB2, "overkill_movement_direction_helper_5db2")
-def overkill_movement_direction_helper_5db2(cpu):
-    """Verified target-seeking movement helper at 1010:5DB2."""
-    if _self_disable_if_patched(cpu, 0x5DB2, _SIG_5DB2, "overkill_movement_direction_helper_5db2"):
-        return
-    _run_movement_direction_5db2(cpu)
-    cpu.s.ip = cpu.pop()
 
 
-@registry.replace(0x1010, 0xB729, "overkill_object_target_move_b729")
-def overkill_object_target_move_b729(cpu):
-    """Recovered object target-copy + 5DB2 movement wrapper at 1010:B729."""
-    run_object_target_move_b729(cpu, _self_disable_if_patched)
 
 
-@registry.replace(0x1010, 0xAA01, "overkill_object_logic_call_aa2b_aa01")
-def overkill_object_logic_call_aa2b_aa01(cpu):
-    """Hook wrapper for A9E0 active-entry CALL AA2B glue."""
-    call_object_logic_from_scan_aa01(cpu, _self_disable_if_patched)
 
 
-@registry.replace(0x1010, 0xAA04, "overkill_object_logic_scan_tail_aa04")
-def overkill_object_logic_scan_tail_aa04(cpu):
-    """Hook wrapper for A9E0 post-logic POP/LOOP glue."""
-    finish_object_logic_scan_tail_aa04(cpu, _self_disable_if_patched)
 
 
-@registry.replace(0x1010, 0xAC97, "overkill_object_slot_scan_ac97")
-def overkill_object_slot_scan_ac97(cpu):
-    """Lift the hot 35-slot object-record scan at 1010:AC97."""
-    run_object_slot_scan_ac97(cpu)
 
 
-@registry.replace(0x1010, 0xBCB1, "overkill_postmove_y_clamp_bcb1")
-def overkill_postmove_y_clamp_bcb1(cpu):
-    """Lift the hot BC4B Y-clamp leaf at 1010:BCB1."""
-    run_postmove_y_clamp_bcb1(cpu)
 
 
-@registry.replace(0x1010, 0xAA71, "overkill_postmove_contact_window_aa71")
-def overkill_postmove_contact_window_aa71(cpu):
-    """Lift the object/player contact-window helper at 1010:AA71."""
-    run_postmove_contact_window_aa71(cpu)
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -3381,231 +2801,52 @@ def overkill_decrement_first_active_counter_scan_61ca(cpu):
     run_decrement_first_active_counter_scan_61ca(cpu, _self_disable_if_patched)
 
 
-@registry.replace(0x1010, 0xBC45, "overkill_object_postmove_prelude_bc45")
-def overkill_object_postmove_prelude_bc45(cpu):
-    """Replace BC45 prelude and reuse the shared BC4B postmove implementation."""
-    if _self_disable_if_patched(cpu, 0xBC45, _SIG_BC45, "overkill_object_postmove_prelude_bc45"):
-        return
-    run_object_postmove_prelude_bc45(cpu, cx_value=cpu.s.cx & 0xFFFF)
-
-@registry.replace(0x1010, 0xBC4B, "overkill_object_postmove_bc4b")
-def overkill_object_postmove_bc4b(cpu):
-    """Lift the hot BC4B post-move helper call-site at 1010:BC4B."""
-    _run_object_postmove_bc4b(cpu, parent="1010:BC4B", chain="BC4B", cx_value=cpu.s.cx & 0xFFFF)
-    cpu.s.ip = cpu.pop()
-
-
-@registry.replace(0x1010, 0xAA2B, "overkill_object_logic_dispatch_aa2b")
-def overkill_object_logic_dispatch_aa2b(cpu):
-    """Fail-fast first-level object logic dispatcher indexed by SS:[BP+16]."""
-    if _self_disable_if_patched(cpu, 0xAA2B, _SIG_AA2B, "overkill_object_logic_dispatch_aa2b"):
-        return
-    _run_object_logic_dispatch_aa2b(
-        cpu,
-        parent="1010:AA2B",
-        chain="AA2B",
-        cx_value=cpu.s.cx & 0xFFFF,
-    )
-
-
-@registry.replace(0x1010, 0xEFAE, "overkill_object_family_dispatch_efae")
-def overkill_object_family_dispatch_efae(cpu):
-    """Fail-fast second-level object-family dispatcher indexed by SS:[BP+18]."""
-    if _self_disable_if_patched(cpu, 0xEFAE, _SIG_EFAE, "overkill_object_family_dispatch_efae"):
-        return
-    _run_object_family_dispatch_efae(
-        cpu,
-        parent="1010:EFAE",
-        chain="EFAE",
-        cx_value=cpu.s.cx & 0xFFFF,
-    )
-
-
-@registry.replace(0x1010, 0xAE09, "overkill_object_behavior_ae09")
-def overkill_object_behavior_ae09(cpu):
-    """Observed logic-id 0Ch timer/3-pixel-step behavior."""
-    if _self_disable_if_patched(cpu, 0xAE09, _SIG_AE09, "overkill_object_behavior_ae09"):
-        return
-    _run_object_behavior_ae09(
-        cpu,
-        parent="1010:AE09",
-        chain="AE09",
-        cx_value=cpu.s.cx & 0xFFFF,
-    )
-
-
-@registry.replace(0x1010, 0xAED8, "overkill_object_behavior_aed8")
-def overkill_object_behavior_aed8(cpu):
-    """Observed logic-id 2/3 object behavior: countdown, movement, and postmove tail."""
-    if _self_disable_if_patched(cpu, 0xAED8, _SIG_AED8, "overkill_object_behavior_aed8"):
-        return
-    _run_object_behavior_aed8(
-        cpu,
-        parent="1010:AED8",
-        chain="AED8",
-        cx_value=cpu.s.cx & 0xFFFF,
-    )
-
-
-
-@registry.replace(0x1010, 0xAB10, "overkill_object_logic_ab10")
-def overkill_object_logic_ab10(cpu):
-    """Observed AA2B target AB10 position/sprite update helper."""
-    if _self_disable_if_patched(cpu, 0xAB10, _SIG_AB10, "overkill_object_logic_ab10"):
-        return
-    _run_object_logic_ab10(
-        cpu,
-        parent="1010:AB10",
-        chain="AB10",
-        cx_value=cpu.s.cx & 0xFFFF,
-    )
-
-@registry.replace(0x1010, 0xAD04, "overkill_object_logic_branch_ad04")
-def overkill_object_logic_branch_ad04(cpu):
-    """Small object-logic selector that jumps to ABxx tails or returns."""
-    if _self_disable_if_patched(cpu, 0xAD04, _SIG_AD04, "overkill_object_logic_branch_ad04"):
-        return
-    _run_object_logic_branch_ad04(
-        cpu,
-        parent="1010:AD04",
-        chain="AD04",
-        cx_value=cpu.s.cx & 0xFFFF,
-    )
-
-
-
-@registry.replace(0x1010, 0xAD60, "overkill_object_bounds_tile_tail_ad60")
-def overkill_object_bounds_tile_tail_ad60(cpu):
-    """Shared object bounds/tile tail reached by several ADxx behaviours."""
-    if _self_disable_if_patched(cpu, 0xAD60, _SIG_AD60, "overkill_object_bounds_tile_tail_ad60"):
-        return
-    _run_object_bounds_tile_tail_ad60(
-        cpu,
-        parent="1010:AD60",
-        chain="AD60",
-        cx_value=cpu.s.cx & 0xFFFF,
-        add_a278_to_x=False,
-    )
-
-
-@registry.replace(0x1010, 0xAE2C, "overkill_object_drift_downright_ae2c")
-def overkill_object_drift_downright_ae2c(cpu):
-    """Observed drift-down/right object tail that joins AD5A/AD60."""
-    run_object_drift_downright_ae2c(cpu, _self_disable_if_patched)
-
-
-@registry.replace(0x1010, 0xAE7D, "overkill_object_drift_upright_ae7d")
-def overkill_object_drift_upright_ae7d(cpu):
-    """Observed drift-up/right object tail that joins AD5A/AD60."""
-    run_object_drift_upright_ae7d(cpu, _self_disable_if_patched)
-
-
-@registry.replace(0x1010, 0xAD5A, "overkill_object_bounds_tile_prelude_ad5a")
-def overkill_object_bounds_tile_prelude_ad5a(cpu):
-    """Object bounds/tile tail prelude that applies DS:A278 to object X."""
-    run_object_bounds_tile_prelude_ad5a(cpu, _self_disable_if_patched)
-
-
-@registry.replace(0x1010, 0xD281, "overkill_object_target_chase_d281")
-def overkill_object_target_chase_d281(cpu):
-    """Observed object target-copy + 5DB2 chase helper tail."""
-    run_object_target_chase_d281(cpu, _self_disable_if_patched)
-
-
-@registry.replace(0x1010, 0xABA3, "overkill_object_behavior_aba3")
-def overkill_object_behavior_aba3(cpu):
-    """Observed ABA3 tracked-object follower/probe behaviour."""
-    if _self_disable_if_patched(cpu, 0xABA3, _SIG_ABA3, "overkill_object_behavior_aba3"):
-        return
-    _run_object_behavior_aba3(
-        cpu,
-        parent="1010:ABA3",
-        chain="ABA3",
-        cx_value=cpu.s.cx & 0xFFFF,
-    )
 
 
 
 
-@registry.replace(0x1010, 0xAB59, "overkill_tracked_object_selector_a96c_ab59")
-def overkill_tracked_object_selector_a96c_ab59(cpu):
-    """Tiny AD04 branch glue: DS:A42C=A96C then jump to AB77."""
-    if _self_disable_if_patched(cpu, 0xAB59, _SIG_AB59, "overkill_tracked_object_selector_a96c_ab59"):
-        return
-    _run_tracked_object_selector_to_ab77(cpu, selector_addr=0xA96C)
 
 
-@registry.replace(0x1010, 0xAB61, "overkill_tracked_object_selector_a96a_ab61")
-def overkill_tracked_object_selector_a96a_ab61(cpu):
-    """Tiny AD04 branch glue: DS:A42C=A96A then jump to AB77."""
-    if _self_disable_if_patched(cpu, 0xAB61, _SIG_AB61, "overkill_tracked_object_selector_a96a_ab61"):
-        return
-    _run_tracked_object_selector_to_ab77(cpu, selector_addr=0xA96A)
 
 
-@registry.replace(0x1010, 0xAB69, "overkill_tracked_object_selector_a968_ab69")
-def overkill_tracked_object_selector_a968_ab69(cpu):
-    """Tiny AD04 branch glue: DS:A42C=A968 then jump to AB77."""
-    if _self_disable_if_patched(cpu, 0xAB69, _SIG_AB69, "overkill_tracked_object_selector_a968_ab69"):
-        return
-    _run_tracked_object_selector_to_ab77(cpu, selector_addr=0xA968)
 
 
-@registry.replace(0x1010, 0xAB71, "overkill_tracked_object_selector_a966_ab71")
-def overkill_tracked_object_selector_a966_ab71(cpu):
-    """Tiny AD04 branch glue: DS:A42C=A966 then jump to AB77."""
-    if _self_disable_if_patched(cpu, 0xAB71, _SIG_AB71, "overkill_tracked_object_selector_a966_ab71"):
-        return
-    _run_tracked_object_selector_to_ab77(cpu, selector_addr=0xA966)
 
 
-@registry.replace(0x1010, 0xABCA, "overkill_object_sprite0f_collision_abca")
-def overkill_object_sprite0f_collision_abca(cpu):
-    """Observed AD04 sprite-000F object collision/deactivation path."""
-    if _self_disable_if_patched(cpu, 0xABCA, _SIG_ABCA, "overkill_object_sprite0f_collision_abca"):
-        return
-    _run_object_sprite0f_collision_abca(
-        cpu,
-        parent="1010:ABCA",
-        chain="ABCA",
-        cx_value=cpu.s.cx & 0xFFFF,
-        run_original_near_call=_run_interpreted_near_call_observed,
-    )
-
-@registry.replace(0x1010, 0xAB77, "overkill_object_behavior_ab77")
-def overkill_object_behavior_ab77(cpu):
-    """Observed AB77 tracked-object behaviour driver."""
-    if _self_disable_if_patched(cpu, 0xAB77, _SIG_AB77, "overkill_object_behavior_ab77"):
-        return
-    _run_object_behavior_ab77(
-        cpu,
-        parent="1010:AB77",
-        chain="AB77",
-        cx_value=cpu.s.cx & 0xFFFF,
-    )
-
-@registry.replace(0x1010, 0xAB34, "overkill_object_motion_table_ab34")
-def overkill_object_motion_table_ab34(cpu):
-    """Runtime-patched object motion table helper."""
-    run_object_motion_table_ab34(cpu, _self_disable_if_patched)
 
 
-@registry.replace(0x1010, 0xAB4F, "overkill_object_scroll_sprite_ab4f")
-def overkill_object_scroll_sprite_ab4f(cpu):
-    """Runtime-patched object scroll/sprite helper."""
-    run_object_scroll_sprite_ab4f(cpu, _self_disable_if_patched)
 
 
-@registry.replace(0x1010, 0xAC28, "overkill_tile_collision_probe_ac28")
-def overkill_tile_collision_probe_ac28(cpu):
-    """Runtime-patched tile-collision probe used by ABxx object behaviours."""
-    run_tile_collision_probe_ac28(cpu, _self_disable_if_patched)
 
 
-@registry.replace(0x1010, 0xAC81, "overkill_object_slot_scan_guard_ac81")
-def overkill_object_slot_scan_guard_ac81(cpu):
-    """Guard/setup wrapper around the shared AC97 object-slot overlap scan."""
-    run_object_slot_scan_guard_ac81(cpu, _self_disable_if_patched)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -5963,33 +5204,8 @@ def overkill_tandy_changed_dword_present_8rows_cdaa(cpu):
     run_tandy_changed_dword_present_cdaa(cpu)
 
 
-def _interpret_current_instruction_without_hook(cpu) -> None:
-    """Interpret the current instruction when an overlaid address no longer matches a hook signature."""
-    key = cpu.addr()
-    fn = cpu.replacement_hooks.pop(key, None)
-    ctx = (
-        cpu.coverage_telemetry.bounded_original(key, "overlaid hook signature mismatch")
-        if cpu.coverage_telemetry is not None
-        else None
-    )
-    try:
-        if ctx is not None:
-            ctx.__enter__()
-        cpu.step()
-    finally:
-        if ctx is not None:
-            ctx.__exit__(None, None, None)
-        if fn is not None:
-            cpu.replacement_hooks[key] = fn
 
 
-def _code_matches(cpu, off: int, expected: bytes | tuple[bytes, ...]) -> bool:
-    cs = cpu.s.cs & 0xFFFF
-    variants = expected if isinstance(expected, tuple) else (expected,)
-    return any(
-        all(cpu.mem.rb(cs, (off + i) & 0xFFFF) == b for i, b in enumerate(sig))
-        for sig in variants
-    )
 
 
 def _overkill_strided_row_copy(cpu, *, row_advance: int) -> None:

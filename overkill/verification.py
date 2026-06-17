@@ -16,6 +16,7 @@ from dos_re.verification import (
     parse_addr,
     install_hook_verifier as _install_generic_hook_verifier,
 )
+from overkill.sounds.loaded_driver import OPTIONAL_SOUND_DRIVER_SEGMENT
 
 
 @dataclass(frozen=True)
@@ -251,18 +252,18 @@ DEFAULT_STOPS: dict[Addr, HookStop] = {
     (0x23AD, 0x0069): HookStop("fixed_ip", 0x00FC),
     # Loaded optional AdLib driver at 2032:*; these are near/far routines inside
     # the resident sound driver selected by the compact PSP tail.
-    (0x2032, 0x0000): HookStop("far_ret"),
-    (0x2032, 0x0063): HookStop("near_ret"),
-    (0x2032, 0x00CD): HookStop("near_ret"),
-    (0x2032, 0x0181): HookStop("fixed_ip", 0x00F7),
-    (0x2032, 0x0244): HookStop("near_ret"),
-    (0x2032, 0x024F): HookStop("near_ret"),
-    (0x2032, 0x02AA): HookStop("near_ret"),
-    (0x2032, 0x02C9): HookStop("near_ret"),
-    (0x2032, 0x02F6): HookStop("near_ret"),
-    (0x2032, 0x0409): HookStop("near_ret"),
-    (0x2032, 0x04E9): HookStop("near_ret"),
-    (0x2032, 0x0557): HookStop("near_ret"),
+    (OPTIONAL_SOUND_DRIVER_SEGMENT, 0x0000): HookStop("far_ret"),
+    (OPTIONAL_SOUND_DRIVER_SEGMENT, 0x0063): HookStop("near_ret"),
+    (OPTIONAL_SOUND_DRIVER_SEGMENT, 0x00CD): HookStop("near_ret"),
+    (OPTIONAL_SOUND_DRIVER_SEGMENT, 0x0181): HookStop("fixed_ip", 0x00F7),
+    (OPTIONAL_SOUND_DRIVER_SEGMENT, 0x0244): HookStop("near_ret"),
+    (OPTIONAL_SOUND_DRIVER_SEGMENT, 0x024F): HookStop("near_ret"),
+    (OPTIONAL_SOUND_DRIVER_SEGMENT, 0x02AA): HookStop("near_ret"),
+    (OPTIONAL_SOUND_DRIVER_SEGMENT, 0x02C9): HookStop("near_ret"),
+    (OPTIONAL_SOUND_DRIVER_SEGMENT, 0x02F6): HookStop("near_ret"),
+    (OPTIONAL_SOUND_DRIVER_SEGMENT, 0x0409): HookStop("near_ret"),
+    (OPTIONAL_SOUND_DRIVER_SEGMENT, 0x04E9): HookStop("near_ret"),
+    (OPTIONAL_SOUND_DRIVER_SEGMENT, 0x0557): HookStop("near_ret"),
     (0x1010, 0x0162): HookStop("near_ret"),
     (0x1010, 0x017E): HookStop("fixed_ip", 0x018B),
     (0x254A, 0x04D7): HookStop("far_ret"),

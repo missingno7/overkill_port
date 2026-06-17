@@ -9,6 +9,7 @@ available as the oracle until the whole driver is understood.
 from __future__ import annotations
 
 from dos_re.cpu import CF
+from .loaded_driver import OPTIONAL_SOUND_DRIVER_SEGMENT
 
 # 2032:04E9 AdLib/YM3812 probe.  It starts by saving BX/CX/DX/DS and then writes
 # timer registers through 0557 before checking the status bits from port 388h.
@@ -169,7 +170,7 @@ def run_adlib_far_entry_2032_0000(cpu) -> None:
     the lifted ``1010:06E5`` ISR a clean way to preserve the original far-call
     stack shape while still using the already lifted ``0063`` driver tick.
     """
-    handler = cpu.replacement_hooks.get((0x2032, 0x0063), run_adlib_driver_tick_2032_0063)
+    handler = cpu.replacement_hooks.get((OPTIONAL_SOUND_DRIVER_SEGMENT, 0x0063), run_adlib_driver_tick_2032_0063)
     cpu.push(0x0003)
     cpu.s.ip = 0x0063
     handler(cpu)

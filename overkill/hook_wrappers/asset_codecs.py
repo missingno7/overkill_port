@@ -167,3 +167,5 @@ def overkill_expand_4plane_row_4537(cpu):
 def overkill_expand_4plane_list_450c(cpu):
     """OVERKILL 1010:450C 4-plane startup list expander."""
     expand_4plane_list_450c(cpu)
+
+__all__ = [name for name in globals() if name.startswith("overkill_")]

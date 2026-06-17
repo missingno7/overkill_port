@@ -996,7 +996,7 @@
   "1010:AED8": {
     "kind": "hook",
     "name": "overkill_object_behavior_aed8",
-    "notes": "Observed logic-id 2/3 countdown/movement object behavior. Runs AED8 through its B250/AD5A postmove branch and returns to the object scan caller; fail-fast leaves unobserved branches explicit."
+    "notes": "Observed EFAE logic-id 2/3 countdown/movement object behavior. Runs AED8 through the shared B250 overlap/contact selector; AD5A composes the add-A278 AD60 postmove tail, while ADC9 sets X=FFFFh and composes AD60 without that pre-add before returning to the object scan caller."
   },
   "1010:AEE4": {
     "island": "movement",
@@ -1120,7 +1120,7 @@
   "1010:B24D": {
     "island": "gameplay_objects",
     "name": "object_behavior_b24d",
-    "notes": "Observed EFAE-selected object-family steering/overlap prelude. Calls runtime-patched 5E42, checks the object slot against DS:237E/2380 reference box, and lands on AD5A/ADC9. Rare overlap side-effect helper 9E19 is now a separate verified status-counter hook boundary.",
+    "notes": "Observed object-family behavior prelude. Calls the runtime-patched 5E42 steering helper, then uses the shared B250 overlap/contact selector and stops at the selected AD5A/ADC9 frontier.",
     "status": "hooked_verified"
   },
   "1010:B729": {

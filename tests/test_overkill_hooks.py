@@ -9078,6 +9078,40 @@ def test_object_behavior_b24d_hook_matches_interpreted_observed_path():
     assert asm.program.memory.data == hook.program.memory.data
 
 
+def test_object_behavior_aed8_b250_overlap_branch_matches_interpreted_repro():
+    from pathlib import Path
+
+    from overkill.hooks import overkill_object_behavior_aed8
+    from overkill.runtime import load_overkill_snapshot as load_snapshot
+
+    root = Path(__file__).resolve().parents[1]
+    exe = root / "assets" / "OVERKILL"
+    snapshot = root / "artifacts" / "evidence" / "snapshot_stop_1010_aed8_b250_overlap"
+    assert snapshot.exists(), f"captured AED8/B250 oracle snapshot is missing: {snapshot}"
+
+    asm = load_snapshot(exe, snapshot, game_root=root / "assets")
+    hook = load_snapshot(exe, snapshot, game_root=root / "assets")
+    assert asm.cpu.addr() == hook.cpu.addr() == (0x1010, 0xAED8)
+
+    continuation = asm.cpu.mem.rw(asm.cpu.s.ss & 0xFFFF, asm.cpu.s.sp & 0xFFFF)
+    assert continuation == 0xAA22
+
+    asm.cpu.replacement_hooks.pop((0x1010, 0xAED8), None)
+    hook.cpu.replacement_hooks[(0x1010, 0xAED8)] = overkill_object_behavior_aed8
+    asm.cpu.trace_enabled = False
+    hook.cpu.trace_enabled = False
+
+    for _ in range(200):
+        if asm.cpu.addr() == (0x1010, continuation):
+            break
+        asm.cpu.step()
+    hook.cpu.step()
+
+    assert asm.cpu.addr() == hook.cpu.addr() == (0x1010, continuation)
+    assert asm.cpu.s.snapshot() == hook.cpu.s.snapshot()
+    assert asm.program.memory.data == hook.program.memory.data
+
+
 def test_object_behavior_b86d_hook_matches_interpreted_observed_paths():
     from pathlib import Path
 
@@ -12704,3 +12738,53 @@ def test_object_tile_sweep_dispatch_b00d_matches_interpreted_direction_table():
         assert hook.addr() == (0x1010, 0xBEEF)
         assert asm.s.snapshot() == hook.s.snapshot()
         assert asm.mem.data == hook.mem.data
+
+
+def test_hook_module_wrappers_have_bound_globals():
+    """Catch relocation regressions where a wrapper still calls a moved helper."""
+    import builtins
+    import dis
+    import inspect
+    import overkill.hooks as hooks
+
+    missing = {}
+    for name, obj in vars(hooks).items():
+        if not inspect.isfunction(obj) or obj.__module__ != hooks.__name__:
+            continue
+        missing_names = []
+        for ins in dis.get_instructions(obj):
+            if ins.opname != "LOAD_GLOBAL":
+                continue
+            global_name = ins.argval
+            if global_name not in hooks.__dict__ and not hasattr(builtins, global_name):
+                missing_names.append(global_name)
+        if missing_names:
+            missing[name] = sorted(set(missing_names))
+
+    assert missing == {}
+
+
+def test_gameplay_counter_tick_tail_aa25_can_call_relocated_far_helper():
+    from dos_re.cpu import CPU8086, CPUState
+    from dos_re.memory import Memory
+    from overkill.hooks import overkill_gameplay_counter_tick_tail_aa25
+
+    mem = Memory()
+    state = CPUState(
+        cs=0x1010,
+        ds=0x1010,
+        es=0x1010,
+        ss=0x4000,
+        ip=0xAA25,
+        sp=0x9000,
+        flags=0x0202,
+    )
+    cpu = CPU8086(mem, state)
+    cpu.trace_enabled = False
+    cpu.mem.ww(0x1010, 0xA95A, 0xFFFF)  # fast path: no nested 0960 stride calls
+    cpu.push(0xBEEF)
+
+    overkill_gameplay_counter_tick_tail_aa25(cpu)
+
+    assert cpu.addr() == (0x1010, 0xBEEF)
+

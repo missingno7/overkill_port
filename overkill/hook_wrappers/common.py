@@ -44,6 +44,36 @@ def self_disable_if_patched(cpu, ip: int, expected: bytes | tuple[bytes, ...], n
     )
 
 
+def code_matches(cpu, off: int, expected: bytes | tuple[bytes, ...]) -> bool:
+    """Return whether live CS:off bytes still match a lifted hook signature."""
+    cs = cpu.s.cs & 0xFFFF
+    variants = expected if isinstance(expected, tuple) else (expected,)
+    return any(
+        all(cpu.mem.rb(cs, (off + i) & 0xFFFF) == b for i, b in enumerate(sig))
+        for sig in variants
+    )
+
+
+def interpret_current_instruction_without_hook(cpu) -> None:
+    """Interpret live ASM once when an overlaid hook signature no longer matches."""
+    key = cpu.addr()
+    fn = cpu.replacement_hooks.pop(key, None)
+    ctx = (
+        cpu.coverage_telemetry.bounded_original(key, "overlaid hook signature mismatch")
+        if cpu.coverage_telemetry is not None
+        else None
+    )
+    try:
+        if ctx is not None:
+            ctx.__enter__()
+        cpu.step()
+    finally:
+        if ctx is not None:
+            ctx.__exit__(None, None, None)
+        if fn is not None:
+            cpu.replacement_hooks[key] = fn
+
+
 def call_hook_like_near_call(cpu, handler: Callable, return_ip: int) -> None:
     """Run a replacement body with the same stack side effect as CALL/RET."""
     cpu.push(return_ip & 0xFFFF)

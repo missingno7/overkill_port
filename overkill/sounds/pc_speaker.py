@@ -20,6 +20,7 @@ import time
 
 from dos_re.cpu import CF, IF, TF, ZF
 from .adlib_driver import run_adlib_far_entry_2032_0000
+from .loaded_driver import OPTIONAL_SOUND_DRIVER_SEGMENT
 
 # Live-byte signatures used by the hook wrappers in overkill/hooks.py.
 SIG_FAST_TIMER_ISR_06E5 = bytes.fromhex("50 1e 53 51 52 57 56 55 06 2e 8e 1e 96 95 80 3e")
@@ -255,9 +256,9 @@ def run_fast_timer_isr_06e5(cpu) -> None:
         # the loaded driver's RETF lands at the same 1010:06FF continuation.
         cpu.push(0x1010)
         cpu.push(0x06FF)
-        cpu.s.cs = 0x2032
+        cpu.s.cs = OPTIONAL_SOUND_DRIVER_SEGMENT
         cpu.s.ip = 0x0000
-        handler = cpu.replacement_hooks.get((0x2032, 0x0000), run_adlib_far_entry_2032_0000)
+        handler = cpu.replacement_hooks.get((OPTIONAL_SOUND_DRIVER_SEGMENT, 0x0000), run_adlib_far_entry_2032_0000)
         handler(cpu)
         if cpu.addr() != (0x1010, 0x06FF):
             raise RuntimeError(

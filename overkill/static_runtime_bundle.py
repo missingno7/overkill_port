@@ -17,6 +17,7 @@ from typing import Any, Iterable
 
 from dos_re.memory import CPU_MEM_SIZE, linear
 from dos_re.runtime import Runtime
+from overkill.sounds.loaded_driver import OPTIONAL_SOUND_DRIVER_NAME, OPTIONAL_SOUND_DRIVER_SEGMENT
 from .runtime import create_overkill_runtime
 from dos_re.snapshot import run_until, write_snapshot
 from .bootstrap_boundary import bootstrap_boundary_manifest
@@ -115,17 +116,17 @@ def static_runtime_segments(rt: Runtime) -> tuple[StaticMemorySegment, ...]:
         ),
     ]
 
-    # Optional sound drivers are loaded by the original startup into 2032:* when
+    # Optional sound drivers are loaded by the original startup into OPTIONAL_SOUND_DRIVER_SEGMENT:* when
     # AdLib/Roland is selected.  Keep the range broad and hash-based for now; the
     # exact driver ABI can be narrowed when the sound island is lifted further.
-    driver = _slice_memory(rt, linear(0x2032, 0x0000), 0x4000)
+    driver = _slice_memory(rt, linear(OPTIONAL_SOUND_DRIVER_SEGMENT, 0x0000), 0x4000)
     if any(driver):
         segments.append(
             _segment(
                 rt,
-                name="optional_sound_driver_2032",
+                name=OPTIONAL_SOUND_DRIVER_NAME,
                 role="original optional AdLib/Roland driver materialized by bootstrap",
-                start_phys=linear(0x2032, 0x0000),
+                start_phys=linear(OPTIONAL_SOUND_DRIVER_SEGMENT, 0x0000),
                 size=0x4000,
             )
         )

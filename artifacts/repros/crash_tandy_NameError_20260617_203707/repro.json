@@ -1,0 +1,29 @@
+{
+  "cpu_addr": "1F8F:0922",
+  "created_at": "20260617_203707",
+  "kind": "runtime_snapshot",
+  "metadata": {
+    "blits": 0,
+    "boundary": 0,
+    "command_tail": "\r\u0002A",
+    "context": "interactive gameplay",
+    "created_by": "scripts/play.py crash handler",
+    "direct_video": 0,
+    "exception": "name 'run_gameplay_counter_tick_1f8f_0922' is not defined",
+    "exception_type": "NameError",
+    "program": "overkill",
+    "replay_hint": "python scripts/play.py --snapshot <this-directory>",
+    "retraces": 0,
+    "sound": "adlib",
+    "source_demo": null,
+    "source_snapshot": "artifacts\\snapshot_play_tandy_20260617_201735",
+    "timers": 0,
+    "traceback_tail": "Traceback (most recent call last):\n  File \"C:\\games\\overkill_port\\scripts\\play.py\", line 1317, in emulator_loop\n    rt.cpu.run(max(1, int(DEFAULT_CPU_CHUNK_STEPS)))\n  File \"C:\\games\\overkill_port\\dos_re\\cpu.py\", line 400, in run\n    self.step()\n  File \"C:\\games\\overkill_port\\dos_re\\cpu.py\", line 370, in step\n    handler(self)\n  File \"C:\\games\\overkill_port\\overkill\\hooks.py\", line 3508, in overkill_gameplay_counter_tick_tail_aa25\n    run_gameplay_counter_tick_1f8f_0922(cpu, _self_disable_if_patched)\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nNameError: name 'run_gameplay_counter_tick_1f8f_0922' is not defined\n",
+    "video": "tandy",
+    "visible": 1
+  },
+  "snapshot": ".",
+  "status": "interactive gameplay crash at 1F8F:0922: NameError: name 'run_gameplay_counter_tick_1f8f_0922' is not defined",
+  "steps": 139,
+  "version": 1
+}

@@ -1,3 +1,47 @@
+## 2026-06-17 - High-level action layer extraction and sound-driver unification
+
+Performed a structural cleanup pass after the hook-registry split.  The goal was not to lift a new gameplay routine, but to make the emerging source-like gameplay layer more visible and to remove one confusing coverage convention around sound addresses.
+
+Implemented:
+
+- Added `overkill/gameplay/action_spawns.py` and moved the `A067` action-spawn family out of `frame_orchestration.py`.
+- `frame_orchestration.py` is now back to frame/controller concerns, while `action_spawns.py` owns the raw `A067/A0E8` action fanout, `A515/A584`, `A3CA/A3FF`, and `A2A0/A2F6/A337` children.
+- Added small source-like structures around already-proven behavior:
+  - `ActionCounterSnapshot` for the `A970/A972/A976/A974 -> A3A0/A3A2/A3A4/A3A6` counter publish step.
+  - `PairSpawnTailPlan` for the duplicated `A2F6/A337` two-slot spawn tail shape.
+  - `action_trigger_is_pressed(...)` and `action_latch_allows_repeat(...)` for the raw `98BE & 10h` and `A980/9790/232A` gates.
+- Added `overkill/sounds/loaded_driver.py` as the single source of truth for the loaded optional sound-driver segment `2032h`.
+- Updated coverage classification, verifier stops, sound wrappers, the static runtime bundle, and sound-driver helpers to use `OPTIONAL_SOUND_DRIVER_SEGMENT` instead of repeating literal `2032h`.
+- Updated `scripts/audit_hook_oracle.py` so the static hook audit understands named integer constants in decorators and `HookStop` metadata.
+
+The important sound clarification: the many unhooked calls classified as `sound` share a real unifying element.  They are in the loaded optional AdLib/Roland driver segment `2032:*`, not arbitrary gameplay routines that happen to be near sound code.  The currently lifted driver entrypoints remain explicit in `OPTIONAL_SOUND_DRIVER_HOOK_ADDRS`, while the whole segment stays classified as the `sound` island for coverage purposes.
+
+No new high-level entity semantics were introduced.  In particular, `A067` remains a proven action/object-spawn fanout, not yet a named weapon or player-shooting model.
+
+Validation:
+
+```text
+python scripts/lint.py
+# Lint passed for 124 Python files
+
+python scripts/audit_hook_oracle.py
+# Hook-oracle audit passed: 335 registered hooks, 335 metadata entries
+
+python scripts/audit_recovered_layers.py
+# Recovered layer audit passed for 14 pure files
+
+python -m pytest tests/test_recovered_semantics.py -q
+# 25 passed
+
+python -m pytest focused action/frame-controller tests -q
+# 5 passed
+
+python -m pytest focused sound-driver tests -q
+# 4 passed
+```
+
+Next cleanup direction: continue extracting source-like gameplay clusters from the frame/controller layer only when they are already proven at ASM boundaries.  The remaining action-spawn unknown with the highest semantic value is still the out-of-range `44AF` tail observed behind `A958`.
+
 ## 2026-06-17 - A2A0/A2F6/A337 action-spawn table tails
 
 Continued the gameplay-logic understanding pass behind `A067/A0E8`.  After `A3CA/A3FF`, the highest-value remaining in-range action fanout was the `A2xx` cluster selected by `DS:A958`: the pre-table `A2A0` path when `A958 == 5`, plus the table tails `A2F6` (`A958 == 4`) and `A337` (`A958 == 3`).
@@ -6810,3 +6854,79 @@ SDL_VIDEODRIVER=dummy python scripts/play.py --sound adlib --demo artifacts/demo
 
 Observed result: all focused tests/audits passed and the smoke verifier reached
 `OK HOOK VERIFY LIMIT REACHED verified=100`.
+
+## 2026-06-17 - hook registry cleanup: object-runtime frontier split
+
+Refactored the hook-registration layer without changing gameplay behavior.  The
+main cleanup was moving the object-slot allocation/spawn/movement and observed
+object-family wrappers out of the aggregate `overkill/hooks.py` into:
+
+```text
+overkill/hook_wrappers/object_runtime_frontiers.py
+```
+
+`overkill/hooks.py` remains the compatibility import surface that registers and
+re-exports all known `overkill_*` hook names, but the object-runtime CS:IP glue
+now sits next to the other hook-wrapper modules.  Shared overlay-signature
+fallback helpers were promoted into `overkill/hook_wrappers/common.py`, so future
+wrapper modules do not need to copy the local `_code_matches` / single-step
+bounded-original fallback idiom.
+
+Additional cleanup:
+
+- Added explicit `__all__` re-export contracts to the stable wrapper modules.
+- Replaced long explicit wrapper import lists in `overkill/hooks.py` with compact
+  side-effect/re-export imports.
+- Kept the refactor strictly at the wrapper/registry layer; no object semantics,
+  hook continuations, or recovered gameplay decisions changed.
+
+Validation:
+
+```bash
+python scripts/lint.py
+python scripts/audit_hook_oracle.py
+python scripts/audit_recovered_layers.py
+python scripts/audit_islands.py --all-hooks
+python -m pytest tests/test_recovered_semantics.py \
+  tests/test_overkill_hooks.py::test_player_chase_candidate_scan_b15a_matches_interpreted_paths \
+  tests/test_overkill_hooks.py::test_frame_action_spawn_children_a515_a584_match_interpreted_paths \
+  tests/test_overkill_hooks.py::test_frame_action_spawn_fanout_a067_matches_interpreted_paths -q
+SDL_VIDEODRIVER=dummy python scripts/play.py --snapshot artifacts/test_oracles/runtime_code_5e42_gameplay_20260613_220042 --video tandy --sound pc --verify-hook 1010:A067 --verify-max 1 --verify-step-budget 300000 --no-coverage-summary
+SDL_VIDEODRIVER=dummy python scripts/play.py --snapshot artifacts/test_oracles/runtime_code_5e42_gameplay_20260613_220042 --video tandy --sound pc --verify-hook 1010:9B2E --verify-max 1 --verify-step-budget 300000 --no-coverage-summary
+```
+
+All focused checks passed.  The broader `tests/test_core.py` still has the known
+pre-existing coverage-classifier expectation mismatch for `1010:9B34` / `9B2E`
+(`input_menu` expected by the stale test, `game_state` returned by the current
+classifier), which was already present before this cleanup.
+## 2026-06-17 AED8/B250 overlap-contact branch from crash repro
+
+The interactive Tandy/AdLib repro `crash_tandy_RuntimeError_20260617_201926` hit
+the intentionally fail-fast path `AED8 -> B250 -> B254`.  This was not a wrapper
+relocation regression; it exposed that AED8 reaches the same B250 overlap/contact
+selector previously lifted only inside the B24D frontier.
+
+Cleanup/fix in this pass:
+
+- Extracted `_run_b250_overlap_contact_selector` as the single source of truth
+  for the B250..B2A3 selector.
+- `B24D` now calls the shared selector and still stops at the selected AD5A/ADC9
+  frontier as before.
+- `AED8` now calls the same selector and composes the selected tail to its own
+  near-return boundary:
+  - `AD5A`: add `DS:A278` to X, then run the shared AD60 bounds/tile tail.
+  - `ADC9`: set X to `FFFFh`, then run the same AD60 tail without the AD5A
+    pre-add.
+- Added `artifacts/evidence/snapshot_stop_1010_aed8_b250_overlap` and a focused
+  ASM-vs-hook regression test for the repro branch.
+
+Validation:
+
+```text
+python -m pytest tests/test_overkill_hooks.py::test_object_behavior_aed8_b250_overlap_branch_matches_interpreted_repro tests/test_overkill_hooks.py::test_object_behavior_b24d_hook_matches_interpreted_observed_path -q
+# 2 passed
+
+python scripts/play.py --snapshot artifacts/evidence/snapshot_stop_1010_aed8_b250_overlap --video tandy --sound adlib --verify-hook 1010:AED8 --verify-max 1 --verify-step-budget 200000 --no-coverage-summary
+# OK HOOK VERIFY LIMIT REACHED verified=1
+```
+

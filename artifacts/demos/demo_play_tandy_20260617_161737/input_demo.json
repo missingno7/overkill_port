@@ -1,0 +1,672 @@
+{
+  "version": 1,
+  "status": "complete",
+  "created_at": "2026-06-17T16:17:37",
+  "stopped_at": "2026-06-17T16:17:50",
+  "snapshot": "snapshot",
+  "metadata": {
+    "program": "overkill",
+    "video": "tandy",
+    "sound": "adlib",
+    "command_tail": "\r\u0002A"
+  },
+  "start_boundary": 0,
+  "end_boundary": 980,
+  "event_count": 109,
+  "events": [
+    {
+      "boundary": 47,
+      "seq": 0,
+      "kind": "scan",
+      "value": 77
+    },
+    {
+      "boundary": 73,
+      "seq": 1,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 79,
+      "seq": 2,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 83,
+      "seq": 3,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 91,
+      "seq": 4,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 93,
+      "seq": 5,
+      "kind": "scan",
+      "value": 72
+    },
+    {
+      "boundary": 95,
+      "seq": 6,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 103,
+      "seq": 7,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 107,
+      "seq": 8,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 111,
+      "seq": 9,
+      "kind": "scan",
+      "value": 200
+    },
+    {
+      "boundary": 113,
+      "seq": 10,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 119,
+      "seq": 11,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 121,
+      "seq": 12,
+      "kind": "scan",
+      "value": 72
+    },
+    {
+      "boundary": 125,
+      "seq": 13,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 128,
+      "seq": 14,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 131,
+      "seq": 15,
+      "kind": "scan",
+      "value": 200
+    },
+    {
+      "boundary": 133,
+      "seq": 16,
+      "kind": "scan",
+      "value": 75
+    },
+    {
+      "boundary": 133,
+      "seq": 17,
+      "kind": "scan",
+      "value": 205
+    },
+    {
+      "boundary": 137,
+      "seq": 18,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 139,
+      "seq": 19,
+      "kind": "scan",
+      "value": 80
+    },
+    {
+      "boundary": 141,
+      "seq": 20,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 145,
+      "seq": 21,
+      "kind": "scan",
+      "value": 208
+    },
+    {
+      "boundary": 149,
+      "seq": 22,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 153,
+      "seq": 23,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 161,
+      "seq": 24,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 165,
+      "seq": 25,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 171,
+      "seq": 26,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 177,
+      "seq": 27,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 183,
+      "seq": 28,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 185,
+      "seq": 29,
+      "kind": "scan",
+      "value": 72
+    },
+    {
+      "boundary": 189,
+      "seq": 30,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 197,
+      "seq": 31,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 201,
+      "seq": 32,
+      "kind": "scan",
+      "value": 200
+    },
+    {
+      "boundary": 203,
+      "seq": 33,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 209,
+      "seq": 34,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 211,
+      "seq": 35,
+      "kind": "scan",
+      "value": 80
+    },
+    {
+      "boundary": 215,
+      "seq": 36,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 219,
+      "seq": 37,
+      "kind": "scan",
+      "value": 208
+    },
+    {
+      "boundary": 223,
+      "seq": 38,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 227,
+      "seq": 39,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 235,
+      "seq": 40,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 239,
+      "seq": 41,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 247,
+      "seq": 42,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 251,
+      "seq": 43,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 257,
+      "seq": 44,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 263,
+      "seq": 45,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 267,
+      "seq": 46,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 273,
+      "seq": 47,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 279,
+      "seq": 48,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 284,
+      "seq": 49,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 299,
+      "seq": 50,
+      "kind": "scan",
+      "value": 72
+    },
+    {
+      "boundary": 303,
+      "seq": 51,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 303,
+      "seq": 52,
+      "kind": "scan",
+      "value": 203
+    },
+    {
+      "boundary": 307,
+      "seq": 53,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 309,
+      "seq": 54,
+      "kind": "scan",
+      "value": 77
+    },
+    {
+      "boundary": 311,
+      "seq": 55,
+      "kind": "scan",
+      "value": 200
+    },
+    {
+      "boundary": 313,
+      "seq": 56,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 320,
+      "seq": 57,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 327,
+      "seq": 58,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 331,
+      "seq": 59,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 351,
+      "seq": 60,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 357,
+      "seq": 61,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 373,
+      "seq": 62,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 377,
+      "seq": 63,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 379,
+      "seq": 64,
+      "kind": "scan",
+      "value": 75
+    },
+    {
+      "boundary": 379,
+      "seq": 65,
+      "kind": "scan",
+      "value": 205
+    },
+    {
+      "boundary": 383,
+      "seq": 66,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 388,
+      "seq": 67,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 395,
+      "seq": 68,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 397,
+      "seq": 69,
+      "kind": "scan",
+      "value": 77
+    },
+    {
+      "boundary": 397,
+      "seq": 70,
+      "kind": "scan",
+      "value": 203
+    },
+    {
+      "boundary": 401,
+      "seq": 71,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 407,
+      "seq": 72,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 413,
+      "seq": 73,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 417,
+      "seq": 74,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 425,
+      "seq": 75,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 429,
+      "seq": 76,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 435,
+      "seq": 77,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 441,
+      "seq": 78,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 446,
+      "seq": 79,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 453,
+      "seq": 80,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 457,
+      "seq": 81,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 465,
+      "seq": 82,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 469,
+      "seq": 83,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 475,
+      "seq": 84,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 481,
+      "seq": 85,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 487,
+      "seq": 86,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 494,
+      "seq": 87,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 499,
+      "seq": 88,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 506,
+      "seq": 89,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 511,
+      "seq": 90,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 517,
+      "seq": 91,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 522,
+      "seq": 92,
+      "kind": "scan",
+      "value": 75
+    },
+    {
+      "boundary": 525,
+      "seq": 93,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 525,
+      "seq": 94,
+      "kind": "scan",
+      "value": 205
+    },
+    {
+      "boundary": 541,
+      "seq": 95,
+      "kind": "scan",
+      "value": 80
+    },
+    {
+      "boundary": 573,
+      "seq": 96,
+      "kind": "scan",
+      "value": 208
+    },
+    {
+      "boundary": 613,
+      "seq": 97,
+      "kind": "scan",
+      "value": 72
+    },
+    {
+      "boundary": 629,
+      "seq": 98,
+      "kind": "scan",
+      "value": 203
+    },
+    {
+      "boundary": 643,
+      "seq": 99,
+      "kind": "scan",
+      "value": 200
+    },
+    {
+      "boundary": 949,
+      "seq": 100,
+      "kind": "scan",
+      "value": 77
+    },
+    {
+      "boundary": 954,
+      "seq": 101,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 961,
+      "seq": 102,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 967,
+      "seq": 103,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 969,
+      "seq": 104,
+      "kind": "scan",
+      "value": 75
+    },
+    {
+      "boundary": 973,
+      "seq": 105,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 975,
+      "seq": 106,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 975,
+      "seq": 107,
+      "kind": "scan",
+      "value": 80
+    },
+    {
+      "boundary": 979,
+      "seq": 108,
+      "kind": "scan",
+      "value": 205
+    }
+  ]
+}

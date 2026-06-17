@@ -1265,67 +1265,55 @@ def _run_object_behavior_b73e(cpu, *, parent: str, chain: str, cx_value: int) ->
     )
 
 
-def _run_object_behavior_b24d(cpu, *, parent: str, chain: str, cx_value: int) -> None:
-    """Lift the observed ``1010:B24D`` object-family behavior prelude.
+def _run_b250_overlap_contact_selector(cpu, *, caller: str) -> int:
+    """Run the shared B250..B2A3 overlap/contact selector.
 
-    B24D is selected by the second-level EFAE object-family dispatcher in the
-    active gameplay snapshot.  The hot path calls the runtime-patched 5E42
-    steering helper, checks whether the steered object overlaps the reference
-    box at DS:237E/2380, and then jumps to the already-lifted AD5A/ADC9 motion
-    tails.  The overlap side-effect helper at 9E19 is now a separate verified
-    hook boundary; this B24D lift preserves the PUSH CX/PUSH BP call contract
-    and lets the child hook own the raw status/counter side effects.
+    Several object behaviors reach B250 after a movement helper returns.  B250
+    first routes the ``+1E == 1`` state directly to AD5A.  Otherwise it checks
+    whether the object overlaps the reference box rooted at DS:237E/2380.  A
+    miss also routes to AD5A; a hit emits one, three, or five 9E19
+    status/contact side-effect calls and routes to ADC9.
+
+    The returned value is the selected original target IP (AD5A or ADC9).  The
+    helper intentionally preserves the low-level AX/BX/CX/flag side effects of
+    the selector, while leaving the caller to decide whether to compose the
+    selected AD5A/ADC9 tail or stop at that frontier.
     """
     ds = cpu.s.ds & 0xFFFF
     ss = cpu.s.ss & 0xFFFF
     bp = cpu.s.bp & 0xFFFF
     mem = cpu.mem
 
-    def jump_to_ad5a() -> None:
-        cpu.s.ip = 0xAD5A
-
-    # B24D: CALL 5E42.  The live 5E42 body is the runtime-patched gameplay
-    # steering helper, not the cold executable bytes at the same address.
-    cpu.push(0xB250)
-    run_runtime_patched_object_steer_5e42(cpu)
-    if (cpu.s.ip & 0xFFFF) != 0xB250:
-        raise RuntimeError(f"5E42 returned to unexpected IP {cpu.s.ip:04X} inside B24D")
-
     substate_1e = mem.rw(ss, (bp + 0x1E) & 0xFFFF)
     _cmp_word(cpu, substate_1e, 0x0001)
     if substate_1e == 0x0001:
-        jump_to_ad5a()
-        return
+        return 0xAD5A
 
     cpu.s.ax = mem.rw(ds, 0x237E)
     cpu.s.bx = mem.rw(ds, 0x2380)
-    _sub_reg16(cpu, 0, 0x0002)  # SUB AX,0002h.
+    _sub_reg16(cpu, 0, 0x0002)  # B25D: SUB AX,0002h.
 
     obj_x = mem.rw(ss, (bp + OFF_X) & 0xFFFF)
     _cmp_word(cpu, obj_x, cpu.s.ax)
     if _signed16(obj_x) < _signed16(cpu.s.ax):
-        jump_to_ad5a()
-        return
+        return 0xAD5A
 
-    _add_reg16(cpu, 0, 0x0014)  # ADD AX,0014h.
+    _add_reg16(cpu, 0, 0x0014)  # B265: ADD AX,0014h.
     obj_x = mem.rw(ss, (bp + OFF_X) & 0xFFFF)
     _cmp_word(cpu, obj_x, cpu.s.ax)
     if _signed16(obj_x) > _signed16(cpu.s.ax):
-        jump_to_ad5a()
-        return
+        return 0xAD5A
 
     obj_y = mem.rw(ss, (bp + OFF_Y) & 0xFFFF)
     _cmp_word(cpu, obj_y, cpu.s.bx)
     if obj_y < (cpu.s.bx & 0xFFFF):
-        jump_to_ad5a()
-        return
+        return 0xAD5A
 
-    _add_reg16(cpu, 3, 0x0014)  # ADD BX,0014h.
+    _add_reg16(cpu, 3, 0x0014)  # B272: ADD BX,0014h.
     obj_y = mem.rw(ss, (bp + OFF_Y) & 0xFFFF)
     _cmp_word(cpu, obj_y, cpu.s.bx)
     if obj_y > (cpu.s.bx & 0xFFFF):
-        jump_to_ad5a()
-        return
+        return 0xAD5A
 
     cpu.s.cx = 0x0001
     logic_id = mem.rw(ss, (bp + OFF_LOGIC_ID) & 0xFFFF)
@@ -1341,13 +1329,13 @@ def _run_object_behavior_b24d(cpu, *, parent: str, chain: str, cx_value: int) ->
 
     while True:
         # B297..B29D: PUSH CX; PUSH BP; CALL 9E19; POP BP; POP CX.
-        # 9E19 is a separate verifier-visible status/counter helper; keep this
-        # parent responsible only for the original save/restore loop contract.
+        # 9E19 owns the raw status/counter side effects; this selector owns
+        # only the original save/restore loop shape.
         cpu.push(cpu.s.cx)
         cpu.push(cpu.s.bp)
         _run_interpreted_near_call_observed(cpu, 0x9E19, 0xB29C, max_steps=12000)
         if (cpu.s.ip & 0xFFFF) != 0xB29C:
-            raise RuntimeError(f"9E19 returned to unexpected IP {cpu.s.ip:04X} inside B24D")
+            raise RuntimeError(f"9E19 returned to unexpected IP {cpu.s.ip:04X} inside {caller}")
         cpu.s.bp = cpu.pop()
         cpu.s.cx = cpu.pop()
 
@@ -1356,7 +1344,26 @@ def _run_object_behavior_b24d(cpu, *, parent: str, chain: str, cx_value: int) ->
         if cpu.s.cx == 0:
             break
 
-    cpu.s.ip = 0xADC9
+    return 0xADC9
+
+
+def _run_object_behavior_b24d(cpu, *, parent: str, chain: str, cx_value: int) -> None:
+    """Lift the observed ``1010:B24D`` object-family behavior prelude.
+
+    B24D is selected by the second-level EFAE object-family dispatcher in the
+    active gameplay snapshot.  The hot path calls the runtime-patched 5E42
+    steering helper, then runs the shared B250 overlap/contact selector.  This
+    hook stops at the selected AD5A/ADC9 frontier; larger parents may compose
+    those tails when their own verifier boundary requires a near return.
+    """
+    # B24D: CALL 5E42.  The live 5E42 body is the runtime-patched gameplay
+    # steering helper, not the cold executable bytes at the same address.
+    cpu.push(0xB250)
+    run_runtime_patched_object_steer_5e42(cpu)
+    if (cpu.s.ip & 0xFFFF) != 0xB250:
+        raise RuntimeError(f"5E42 returned to unexpected IP {cpu.s.ip:04X} inside B24D")
+
+    cpu.s.ip = _run_b250_overlap_contact_selector(cpu, caller="B24D")
 
 
 
@@ -3739,19 +3746,29 @@ def _run_object_behavior_aed8(cpu, *, parent: str, chain: str, cx_value: int) ->
     mem.ww(ss, (cpu.s.sp - 2) & 0xFFFF, 0xB250)
     _run_aee4_step_for_direction(cpu)
 
-    # Observed B250 branch: object +1Eh == 1 jumps to B2A3 -> AD5A.
-    marker = mem.rw(ss, (bp + 0x1E) & 0xFFFF)
-    _cmp_word(cpu, marker, 0x0001)
-    if marker != 0x0001:
-        _raise_unverified_path(cpu, parent=parent, chain=f"{chain} -> AED8 -> B250", target_ip=0xB254, bp=bp, cx_value=cx_value)
-
-    _run_object_bounds_tile_tail_ad60(
-        cpu,
-        parent=parent,
-        chain=f"{chain} -> AED8",
-        cx_value=cx_value,
-        add_a278_to_x=True,
-    )
+    selected_tail = _run_b250_overlap_contact_selector(cpu, caller="AED8")
+    if selected_tail == 0xAD5A:
+        _run_object_bounds_tile_tail_ad60(
+            cpu,
+            parent=parent,
+            chain=f"{chain} -> AED8 -> B250 -> AD5A",
+            cx_value=cx_value,
+            add_a278_to_x=True,
+        )
+        return
+    if selected_tail == 0xADC9:
+        # ADC9: MOV SS:[BP+02],FFFFh; JMP AD60.  Unlike AD5A, this tail does
+        # not first add DS:A278 to X.
+        mem.ww(ss, (bp + OFF_X) & 0xFFFF, 0xFFFF)
+        _run_object_bounds_tile_tail_ad60(
+            cpu,
+            parent=parent,
+            chain=f"{chain} -> AED8 -> B250 -> ADC9",
+            cx_value=cx_value,
+            add_a278_to_x=False,
+        )
+        return
+    raise RuntimeError(f"unexpected B250 selector target 1010:{selected_tail:04X} inside AED8")
 
 
 def _run_object_logic_ab10(cpu, *, parent: str, chain: str, cx_value: int) -> None:

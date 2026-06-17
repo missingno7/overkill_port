@@ -14,9 +14,22 @@ import re
 import sys
 from pathlib import Path
 
+
 ROOT = Path(__file__).resolve().parents[1]
 
 Addr = tuple[int, int]
+
+INT_CONSTANTS = {
+    "OPTIONAL_SOUND_DRIVER_SEGMENT": 0x2032,
+}
+
+
+def _int_expr(node: ast.AST) -> int | None:
+    if isinstance(node, ast.Constant) and isinstance(node.value, int):
+        return int(node.value)
+    if isinstance(node, ast.Name):
+        return INT_CONSTANTS.get(node.id)
+    return None
 
 
 def _parse_registered_hooks(paths: list[Path]) -> dict[str, Addr]:
@@ -40,17 +53,43 @@ def _parse_registered_hooks(paths: list[Path]) -> dict[str, Addr]:
                 if len(deco.args) < 2:
                     continue
                 cs_node, ip_node = deco.args[:2]
-                if isinstance(cs_node, ast.Constant) and isinstance(ip_node, ast.Constant):
-                    out[node.name] = (int(cs_node.value) & 0xFFFF, int(ip_node.value) & 0xFFFF)
+                cs = _int_expr(cs_node)
+                ip = _int_expr(ip_node)
+                if cs is not None and ip is not None:
+                    out[node.name] = (cs & 0xFFFF, ip & 0xFFFF)
     return out
 
 
 def _parse_hookstop_metadata(verification_py: Path) -> set[Addr]:
-    text = verification_py.read_text()
-    return {
-        (int(cs, 16) & 0xFFFF, int(ip, 16) & 0xFFFF)
-        for cs, ip in re.findall(r"\(0x([0-9A-Fa-f]+),\s*0x([0-9A-Fa-f]+)\):\s*HookStop", text)
-    }
+    tree = ast.parse(verification_py.read_text(), filename=str(verification_py))
+    out: set[Addr] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Dict):
+            continue
+        for key, value in zip(node.keys, node.values, strict=False):
+            is_hook_stop = (
+                isinstance(value, ast.Call)
+                and (
+                    (isinstance(value.func, ast.Name) and value.func.id == "HookStop")
+                    or (
+                        isinstance(value.func, ast.Attribute)
+                        and value.func.attr == "after_step"
+                        and isinstance(value.func.value, ast.Name)
+                        and value.func.value.id == "HookStop"
+                    )
+                )
+            )
+            if not (
+                isinstance(key, ast.Tuple)
+                and len(key.elts) == 2
+                and is_hook_stop
+            ):
+                continue
+            cs = _int_expr(key.elts[0])
+            ip = _int_expr(key.elts[1])
+            if cs is not None and ip is not None:
+                out.add((cs & 0xFFFF, ip & 0xFFFF))
+    return out
 
 
 def _iter_parent_map(tree: ast.AST) -> dict[ast.AST, ast.AST]:
