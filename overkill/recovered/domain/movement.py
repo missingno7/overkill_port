@@ -1,0 +1,74 @@
+"""Pure movement records recovered from target-seeking object helpers."""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Literal
+
+
+@dataclass(frozen=True, slots=True)
+class MovementTarget:
+    """Copied target point used by the recovered 1010:5DB2 seeker.
+
+    The original globals are ordered as Y then X (``DS:2304``/``DS:2306``).
+    The pure record keeps that evidence-shaped order explicit while remaining
+    independent from DOS memory.
+    """
+
+    y_word: int
+    x_word: int
+
+
+@dataclass(frozen=True, slots=True)
+class TargetSeekDecision:
+    """Portable result of the recovered 1010:5DB2 target-direction decision."""
+
+    direction_bits: int
+    mapped_direction: int
+    blocked: bool
+
+
+@dataclass(frozen=True, slots=True)
+class MovementStepOperation:
+    """One ordered axis mutation from the recovered 8-way step tables.
+
+    ``axis`` names the object-slot coordinate to mutate.  ``delta_word`` is a
+    wrapped signed word so the pure layer can describe both increments and
+    decrements without knowing how the ASM adapter will materialize flags.
+    """
+
+    axis: Literal["x", "y"]
+    delta_word: int
+
+
+@dataclass(frozen=True, slots=True)
+class AxisClampStepDecision:
+    """Portable result of the recovered two-pass clamp-step helpers.
+
+    The A5D1/A5EA/A5F9/A607 family performs up to two one-pixel axis mutations
+    through the original CALL-next/RET-twice idiom.  The pure result records only
+    source-level state; the adapter still owns stack scratch and flags.
+    """
+
+    start_word: int
+    final_word: int
+    step_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class VerticalScrollEdgeInput:
+    """Pure input snapshot for the recovered A616/A648 scroll-bias helpers."""
+
+    view_y_word: int
+    object_y_word: int
+    input_bits: int
+    top_bias_word: int
+    bottom_bias_word: int
+
+
+@dataclass(frozen=True, slots=True)
+class VerticalScrollEdgeDecision:
+    """Portable final scroll-bias state after the recovered edge response."""
+
+    top_bias_word: int
+    bottom_bias_word: int
+    view_gate_open: bool

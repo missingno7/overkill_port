@@ -1,3 +1,550 @@
+## 2026-06-17 - A2A0/A2F6/A337 action-spawn table tails
+
+Continued the gameplay-logic understanding pass behind `A067/A0E8`.  After `A3CA/A3FF`, the highest-value remaining in-range action fanout was the `A2xx` cluster selected by `DS:A958`: the pre-table `A2A0` path when `A958 == 5`, plus the table tails `A2F6` (`A958 == 4`) and `A337` (`A958 == 3`).
+
+Implemented:
+
+- `1010:A2A0 overkill_frame_action_listed_anchor_spawn_a2a0` as a standalone hook.
+- `1010:A2F6 overkill_frame_action_pair_spawn_a2f6` as a standalone hook.
+- `1010:A337 overkill_frame_action_pair_spawn_a337` as a standalone hook.
+- Local lifted bodies for the shared `A2D6` spawn/list/projection body, `A294` list append, and `A1AE` BP-relative coordinate projection.
+- Updated hook metadata, frontier notes, symbols, runtime findings, and island truth-table notes.
+
+Recovered structure:
+
+```text
+A2A0:
+  gate: A3A2 == 0
+  if 98C0 != 0: BEFF = 11
+  ES = CS:9596
+  A3EA = A3B4
+  clear 1Ah words at ES:A3B4 to FFFF
+  call A2D6
+  stamp first slot +8 = 006A
+  subtract 8 from first slot Y
+  fall through into A2D6 again
+
+A2D6 body:
+  A972++
+  call A4EA
+  call A294       ; append BX to the A3EA list
+  stamp +18 = 9
+  call A1AE       ; BP+8 coordinate source + BP+2/BP+4 offsets
+  align/offset Y with AND FFF8, +8
+  stamp +8 = 006C
+
+A2F6:
+  gate: A3A0 == 0
+  if 98C0 != 0: BEFF = 17
+  allocate/project two slots through A4EA/A1AE
+  stamp both +18 = 8, +8 = 35
+  add 8 to the second slot X
+
+A337:
+  gate: A3A0 == 0
+  if 98C0 != 0: BEFF = 16
+  allocate/project two slots through A4EA/A1AE
+  stamp both +18 = 7, +8 = 37
+  add 8 to the second slot X
+```
+
+The important quirk in `A2A0` is the same kind of call/fallthrough shape seen in `A3FF/A378`: one local `CALL A2D6`, then first-slot postprocessing at `A2CD`, then fallthrough into `A2D6` again.  So this path deliberately creates two slot actions, not one.
+
+Semantic interpretation remains structural.  These are proven raw action-spawn table tails behind `A067`, with counters (`A970/A972`), `BEFF` event/status bytes, raw slot fields, and the `A3B4`/`A3EA` list.  They are not yet promoted to a named weapon, projectile, player, enemy, or pickup semantic.  The remaining major `A067` action-spawn frontier is now the real out-of-range `A958` target `44AF` observed when `A958 == 5` after the pre-call `A2A0`.
+
+Validation:
+
+```text
+python -m pytest tests/test_overkill_hooks.py::test_frame_action_a2xx_spawn_tails_match_interpreted_paths -q
+# 1 passed
+
+python -m pytest \
+  tests/test_overkill_hooks.py::test_frame_action_a2xx_spawn_tails_match_interpreted_paths \
+  tests/test_overkill_hooks.py::test_frame_action_anchor_dispatch_children_a3ca_a3ff_match_interpreted_paths \
+  tests/test_overkill_hooks.py::test_frame_action_spawn_fanout_a067_matches_interpreted_paths \
+  tests/test_overkill_hooks.py::test_frame_action_spawn_children_a515_a584_match_interpreted_paths \
+  tests/test_overkill_hooks.py::test_post_contact_status_helper_9e19_matches_interpreted_paths \
+  tests/test_recovered_semantics.py -q
+# 30 passed
+
+python scripts/audit_hook_oracle.py
+# Hook-oracle audit passed: 335 registered hooks, 335 metadata entries
+python scripts/audit_recovered_layers.py
+# passed
+python scripts/lint.py
+# passed
+
+SDL_VIDEODRIVER=dummy python scripts/play.py \
+  --snapshot artifacts/test_oracles/runtime_code_5e42_gameplay_20260613_220042 \
+  --video tandy --sound pc --verify-hook 1010:A067 \
+  --verify-max 1 --verify-step-budget 300000 --no-coverage-summary
+# OK HOOK VERIFY LIMIT REACHED verified=1
+```
+
+A direct headless `--verify-hook 1010:A2A0` from the bundled gameplay snapshot did not naturally reach the new A2xx child before the existing unrelated text-input DOS read blocked at `5497`; the proof added here is the focused ASM-vs-hook oracle test plus successful parent `A067` verifier coverage.
+
+Next highest-value boundary is `44AF`, because the in-range `A067/A0E8` action-spawn children are now lifted and `44AF` is the remaining table tail that can still hide a larger action variant.
+
+## 2026-06-17 - A3CA/A3FF action-side anchor dispatch hooks
+
+Continued the gameplay-logic understanding pass behind the `A067` action/object-spawn fanout.  The best next boundary was the `A3CA`/`A3FF` pair because both are direct `A067` children, both share the same local `A41A` dispatch body, and together they explain most of the remaining side/mirrored raw slot-spawn behavior before the still-larger `A2A0` path.
+
+Implemented:
+
+- `1010:A3CA overkill_frame_action_side_anchor_spawn_a3ca` as a standalone hook.
+- `1010:A3FF overkill_frame_action_mirrored_anchor_spawn_a3ff` as a standalone hook.
+- A lifted local `A41A` body used by both hooks.  It dispatches `DS:A958` through the raw `CS:A42C` table: `A4D7`, `A490`, `A499`, `A464`, `A438`.
+- A lifted local `A378` follow-up used by `A3FF`.  Important recovered quirk: the open path creates two slots, because the original code `CALL`s `A396`, stamps the first slot's `+18` field to `6`, and then falls through into `A396` a second time.
+- Updated `symbols.json`, frontier notes, runtime findings, and island truth-table notes.
+
+Recovered structure:
+
+```text
+A3CA:
+  A3EC = 7; SI = [A966]; call A41A
+  A3EC = 1; SI = [A968]; call A41A
+  A3EC = 7; SI = [A96A]; call A41A
+  A3EC = 1; SI = [A96C]; call A41A
+
+A3FF:
+  A3EC = FFFF
+  SI = [A962]; call A41A; call A378
+  SI = [A964]; call A41A; call A378
+
+A41A table selected by A958:
+  0 -> A4D7 coordinate-copy spawn
+  1 -> A490 A4D7 + +8=0033
+  2 -> A499 A3EC/direction-stamped spawn
+  3 -> A464 gated two-spawn pair, +18=7/+8=37
+  4 -> A438 gated two-spawn pair, +18=8/+8=35
+```
+
+Semantic interpretation stays deliberately structural.  `A3CA`/`A3FF` look like side/mirrored action-spawn helpers, but they are not yet promoted to a named weapon, projectile, enemy, pickup, or player semantic.  The evidence is raw source pointers, `A3EC` stamps, `A958` table targets, `A970/A976` counters, `BEFF=12` on the `A378/A396` path when `98C0 != 0`, and raw slot fields.
+
+Validation:
+
+```text
+python -m pytest \
+  tests/test_overkill_hooks.py::test_frame_action_anchor_dispatch_children_a3ca_a3ff_match_interpreted_paths \
+  tests/test_overkill_hooks.py::test_frame_action_spawn_fanout_a067_matches_interpreted_paths \
+  tests/test_overkill_hooks.py::test_frame_action_spawn_children_a515_a584_match_interpreted_paths \
+  tests/test_overkill_hooks.py::test_post_contact_status_helper_9e19_matches_interpreted_paths \
+  tests/test_recovered_semantics.py -q
+# 29 passed
+
+python scripts/audit_hook_oracle.py
+# Hook-oracle audit passed: 332 registered hooks, 332 metadata entries
+python scripts/audit_recovered_layers.py
+# passed
+python scripts/lint.py
+# passed
+```
+
+A direct headless `--verify-hook 1010:A3CA` from the currently bundled gameplay snapshot did not naturally reach the new hook before an unrelated text-input DOS read blocked, so the proof added here is the focused ASM-vs-hook oracle test plus metadata/audit coverage.  A full repository `pytest -q -x` still stops at the existing coverage-classifier expectation in `tests/test_core.py::test_coverage_summary_reports_grouped_bounded_original_regions` (`input_menu` expected for a synthetic `9B2E` bounded region), which is unrelated to this hook work.
+
+Next highest-value boundary is now `A2A0` behind the `A067/A0E8` action fanout, plus any real out-of-range `A958` table targets observed in traces.
+
+## 2026-06-17 - 9E19 shared post-contact/status helper hook
+
+Continued the gameplay-logic understanding pass from the `9CB6` contact fanout and the `B24D` overlap branch.  The best next boundary was `1010:9E19`, because it is shared by both paths and owns the raw contact/status counters that were still opaque after `9CB6`.
+
+Implemented:
+
+- `1010:9E19 overkill_post_contact_status_helper_9e19` as a standalone hook.
+- Kept `9CB6` as a pure fanout parent: it now composes a verifier-visible `9E19` child instead of a bounded-original helper.
+- Updated the `B24D` overlap behavior comments/metadata so its `PUSH CX; PUSH BP; CALL 9E19; POP BP; POP CX` loop remains a parent contract around a separate child hook.
+- Updated symbols/frontier metadata and runtime findings.
+
+Recovered structure:
+
+```text
+guards:
+  if A47C == 1      -> RET
+  if DS:2384 >= 3   -> RET
+  if A95A == FFFF   -> RET
+
+contact-status path:
+  DS:23A0 = 8
+  if 98C0 != 0: BEFF = 0F
+  decrement A95C by:
+    BEDC == 0     -> 1 step
+    BEDC == 1     -> up to 2 steps
+    BEDC other    -> up to 3 steps
+  if A95C remains non-zero:
+    call 61DC
+    if CS:95BC == 1: call 511F, 61DC, 511F
+    RET
+
+A95C refill path:
+  A95C = 18
+  repeat A47C/2384 guards
+  if 98C0 != 0: BEFF = 03
+  if BEDC == 0:
+    A362 = (A362 + 1) & 1
+    if A362 != 0: RET
+  decrement A95A
+  if A95A != FFFF:
+    display as above
+    RET
+
+A95A expiry path:
+  A95C = 0
+  if byte 9791 == 1:
+    A95A = 3
+    A95C = 18
+    RET
+  DS:2384 = 3
+  if 98C0 != 0: BEFF = 19
+  display as above
+  RET
+```
+
+Semantic interpretation remains narrow: `9E19` is a shared raw post-contact/status counter helper.  It looks very damage/hit/cooldown-adjacent because of `A95A/A95C`, `2384`, `A362`, `23A0`, and `BEFF`, but the hook deliberately does not yet rename those fields as health/lives/invulnerability without more cross-routine evidence.
+
+Validation:
+
+```text
+python -m pytest tests/test_overkill_hooks.py::test_post_contact_status_helper_9e19_matches_interpreted_paths -q
+# 1 passed
+
+python -m pytest tests/test_overkill_hooks.py::test_post_contact_status_helper_9e19_matches_interpreted_paths \
+  tests/test_overkill_hooks.py::test_frame_contact_probe_fanout_9cb6_matches_interpreted_paths \
+  tests/test_overkill_hooks.py::test_frame_controller_9b2e_matches_interpreted_parent_paths \
+  tests/test_recovered_semantics.py -q
+# 28 passed
+
+SDL_VIDEODRIVER=dummy python scripts/play.py \
+  --snapshot artifacts/test_oracles/runtime_code_5e42_gameplay_20260613_220042 \
+  --video tandy --sound pc --verify-hook 1010:9E19 \
+  --verify-max 1 --verify-step-budget 300000 --no-coverage-summary
+# OK HOOK VERIFY LIMIT REACHED verified=1
+
+SDL_VIDEODRIVER=dummy python scripts/play.py \
+  --snapshot artifacts/test_oracles/runtime_code_5e42_gameplay_20260613_220042 \
+  --video tandy --sound pc --verify-hook 1010:9CB6 \
+  --verify-max 1 --verify-step-budget 300000 --no-coverage-summary
+# OK HOOK VERIFY LIMIT REACHED verified=1
+
+python scripts/audit_hook_oracle.py
+# Hook-oracle audit passed: 332 registered hooks, 332 metadata entries
+python scripts/audit_recovered_layers.py
+# passed
+python scripts/lint.py
+# passed
+```
+
+Next highest-value boundary after `9E19` was the `A3CA`/`A3FF` pair behind the `A067`/`A0E8` action fanout; the follow-up section above records that lift.
+
+## 2026-06-17 - B15A shared candidate-scan hook
+
+Continued the gameplay-logic understanding pass from the `A067`/`A515` action-spawn frontier.  The best next boundary was `1010:B15A`, because it is shared by the already lifted `B1B0` chase-acquisition behavior and by the new `A515` anchored spawn/link helper.
+
+Implemented:
+
+- `1010:B15A overkill_player_chase_candidate_scan_b15a` as a standalone hook.
+- Kept the source-like candidate predicate in `overkill.recovered.systems.objects` and the exact cursor/register/flag behavior in the lifted gameplay layer.
+- Updated `B1B0` so its `CALL B15A` goes through the real hook boundary via verifier-visible near-call semantics instead of calling the internal helper directly.
+- Updated symbols/frontier metadata and runtime findings.
+
+Recovered structure:
+
+```text
+CX = 0023h
+BX = DS:A43A
+if BX >= 2B5Ch: DS:A43A = 23B4h; restart without consuming CX
+scan DS:23B4..2B5C in 38h-byte slots
+candidate iff:
+  active_word != 0
+  logic_id not in {0001h, 0026h, 0021h, 0022h}
+  x <= 00E0h
+  hazard_class == 0004h
+success -> DS:A43A = found_bx + 38h, BX = found_bx
+failure after 23h slots -> BX = FFFFh
+```
+
+Semantic interpretation remains narrow: this is a shared rotating effect/contact-slot candidate scan.  It should not yet be treated as a global enemy/projectile/pickup classifier.
+
+Validation:
+
+```text
+python -m pytest tests/test_overkill_hooks.py::test_player_chase_candidate_scan_b15a_matches_interpreted_paths -q
+# 1 passed
+
+python -m pytest tests/test_recovered_semantics.py   tests/test_overkill_hooks.py::test_player_chase_candidate_scan_b15a_matches_interpreted_paths   tests/test_overkill_hooks.py::test_frame_action_spawn_children_a515_a584_match_interpreted_paths   tests/test_overkill_hooks.py::test_frame_action_spawn_fanout_a067_matches_interpreted_paths -q
+# 28 passed
+
+python scripts/audit_hook_oracle.py
+# Hook-oracle audit passed: 329 registered hooks, 329 metadata entries
+python scripts/audit_recovered_layers.py
+# passed
+python scripts/lint.py
+# passed
+```
+
+A direct headless `--verify-hook 1010:B15A` from the currently bundled gameplay snapshots did not naturally reach `B15A` before unrelated input/menu blocking or timeout, so the proof added here is the focused ASM-vs-hook oracle test plus the verifier-visible child boundary from `B1B0`/`A515` composition.
+
+Next highest-value boundaries remain `A3FF`, `A3CA`, and `A2A0` behind the `A067` action fanout, plus `9E19` behind the `9CB6` contact fanout.
+
+## 2026-06-17 - A515/A584 A067 child spawn-frontier split
+
+Continued the gameplay-logic understanding pass from the lifted `A067` action/object-spawn fanout.  Instead of adding a speculative high-level weapon/player model, this pass split two concrete child frontiers that `A067` had isolated: `1010:A515` and `1010:A584`.
+
+Implemented:
+
+- `1010:A515 overkill_frame_action_linked_anchor_spawn_a515`:
+  - gates on raw counters `DS:A960` and `DS:A97E`;
+  - allocates one destination slot through `7547`;
+  - anchors destination coordinates from the current `SS:BP` slot through `A571`;
+  - temporarily switches `BP=BX` and calls the still-separate `B15A` child;
+  - if `B15A` returns `BX != FFFF`, stamps the destination slot fields, stores the returned word at `BX+30`, optionally writes `BEFF=11`, increments `A97E`, and decrements `A960`.
+- `1010:A584 overkill_frame_action_dual_anchor_spawn_a584`:
+  - gates on raw `DS:A95E` and copied counter `DS:A3A4`;
+  - increments `A976` before each allocation;
+  - creates two destination slots through `A4EA` + `A571`;
+  - aligns each spawned slot's Y field with `AND [BX+4], FFFC`;
+  - stamps `BX+8 = 8` and `BX+18 = 5/6`.
+
+Semantic interpretation remains deliberately structural.  These are now proven as `A067` child spawn/slot side-effect helpers, but they are not yet named as player weapon, enemy, projectile, or pickup logic.  `B15A`, `A3FF`, `A3CA`, and `A2A0` remain the best next child frontiers behind this action fanout.
+
+Validation:
+
+```text
+python -m pytest tests/test_overkill_hooks.py::test_frame_action_spawn_children_a515_a584_match_interpreted_paths -q
+# 1 passed
+
+python -m pytest \
+  tests/test_overkill_hooks.py::test_frame_action_spawn_fanout_a067_matches_interpreted_paths \
+  tests/test_overkill_hooks.py::test_frame_action_spawn_children_a515_a584_match_interpreted_paths \
+  tests/test_overkill_hooks.py::test_frame_controller_9b2e_matches_interpreted_parent_paths -q
+# 3 passed
+
+SDL_VIDEODRIVER=dummy python scripts/play.py \
+  --snapshot artifacts/test_oracles/runtime_code_5e42_gameplay_20260613_220042 \
+  --video tandy --sound pc --verify-hook 1010:A067 \
+  --verify-max 1 --verify-step-budget 300000 --no-coverage-summary
+# OK HOOK VERIFY LIMIT REACHED verified=1
+
+python scripts/audit_hook_oracle.py
+# Hook-oracle audit passed: 328 registered hooks, 328 metadata entries
+python scripts/audit_recovered_layers.py
+# passed
+python scripts/lint.py
+# passed
+```
+
+Direct headless verification of `A515`/`A584` from the available gameplay snapshot did not naturally hit those routines before unrelated menu/input blocking, so the proof added here is a focused ASM-vs-hook oracle test with explicit child boundaries plus parent `A067` verifier coverage.
+
+## 2026-06-17 - A067 frame action/object-spawn fanout hook
+
+Split the highest-value frontier left under the lifted `1010:9B2E` frame
+controller.  The new `1010:A067 overkill_frame_action_spawn_fanout_a067` hook
+covers the input-bit-gated action/object-spawn fanout that is also reached from
+`1010:D04D`.
+
+Observed structure:
+
+- `DS:98BE & 10h` is the outer gate.  When clear, the routine tails through
+  `A060`, clears `DS:A980`, and returns.
+- `DS:A980` is a one-shot/repeat latch.  Re-entry is blocked unless `DS:9790`
+  equals `1` or `DS:232A` equals `0x000F`.
+- Entering the action path sets `DS:A980 = 1`.
+- High-view paths copy `A970/A972/A974/A976` into `A3A0/A3A2/A3A6/A3A4` before
+  dispatch.
+- Low-view `BDAC == 0` paths jump directly to the `A958` action tails:
+  `A958 == 2` uses the double-spawn `A1C8` tail; other tested values use
+  `A19F`.
+- The high-view main path composes bounded child frontiers `A515`, `A584`,
+  `A3FF`, `A3CA`, and the `A0E8` sub-dispatch.
+- `A0E8` optionally calls `A2A0`, optionally calls the `A114` three-spawn
+  helper when `A96E != FFFF`, then jumps through the `A958` table.
+- Proven in-hook tails are `A114`, `A175`, `A18A`, `A19F`, `A1AB/A1AE`, and
+  `A1C8`.  Out-of-range `A958` table entries still tail-jump to bounded
+  original code rather than being guessed.
+
+Validation:
+
+```text
+python -m pytest   tests/test_overkill_hooks.py::test_frame_action_spawn_fanout_a067_matches_interpreted_paths   tests/test_overkill_hooks.py::test_frame_controller_9b2e_matches_interpreted_parent_paths   tests/test_overkill_hooks.py::test_frame_contact_probe_fanout_9cb6_matches_interpreted_paths -q
+# 3 passed
+
+SDL_VIDEODRIVER=dummy python scripts/play.py   --snapshot artifacts/test_oracles/runtime_code_5e42_gameplay_20260613_220042   --video tandy --sound pc --verify-hook 1010:A067   --verify-max 1 --verify-step-budget 300000 --no-coverage-summary
+# OK HOOK VERIFY LIMIT REACHED verified=1
+
+python scripts/audit_hook_oracle.py
+# Hook-oracle audit passed: 326 registered hooks, 326 metadata entries
+python scripts/audit_recovered_layers.py
+# passed
+python scripts/lint.py
+# passed
+```
+
+Important correction found during the lift: calls to `A1AE` inside the `A1C8`
+tail intentionally skip the `A1AB` allocation call because the caller already
+called `A4EA`.  Treating `A1AE` as if it were `A1AB` doubles the spawned-slot
+count and leaves `BX`/stack scratch different from ASM.
+
+Next high-value work is now either the remaining larger children behind this
+fanout (`A515/A584/A3FF/A3CA/A2A0`) or the post-contact/status helper `9E19`.
+`A067` should still be described as raw action/object-spawn glue, not as a named
+weapon/player semantic.
+
+## 2026-06-17 - 9CB6 contact-probe fanout hook
+
+Split the next high-value child frontier exposed by `9B2E`.  The new
+`1010:9CB6 overkill_frame_contact_probe_fanout_9cb6` hook is a narrow
+frame/collision fanout primitive: it calls the already recovered `4FF9`
+tile/contact probe, returns immediately when carry is clear, and on carry-set
+preserves `BP` while calling the still-bounded `9E19` post-contact/status helper
+according to raw `DS:BEDC`.
+
+Recovered fanout shape:
+
+```text
+4FF9 CF clear -> RET
+4FF9 CF set, BEDC == 0     -> 9E19, 9E19
+4FF9 CF set, BEDC == 1     -> 9E19, 9E19, 9E19
+4FF9 CF set, BEDC other    -> 9E19, 9E19, 9E19, 9E19
+```
+
+This deliberately does not classify the contact as player/enemy/projectile
+semantics.  It only proves that `9CB6` is the frame-controller contact side
+effect fanout around the lower tile/contact sampler and the still-separate
+`9E19` status/counter helper.
+
+Validation:
+
+```text
+python -m pytest \
+  tests/test_overkill_hooks.py::test_frame_controller_9b2e_matches_interpreted_parent_paths \
+  tests/test_overkill_hooks.py::test_frame_contact_probe_fanout_9cb6_matches_interpreted_paths -q
+# 2 passed
+
+SDL_VIDEODRIVER=dummy python scripts/play.py \
+  --snapshot artifacts/test_oracles/runtime_code_5e42_gameplay_20260613_220042 \
+  --video tandy --sound pc --verify-hook 1010:9CB6 \
+  --verify-max 1 --verify-step-budget 200000 --no-coverage-summary
+# OK HOOK VERIFY LIMIT REACHED verified=1
+
+python -m pytest tests/test_recovered_semantics.py \
+  tests/test_overkill_hooks.py::test_frame_contact_probe_fanout_9cb6_matches_interpreted_paths -q
+# 26 passed
+
+python scripts/audit_hook_oracle.py
+# Hook-oracle audit passed: 325 registered hooks, 325 metadata entries, no direct registered child calls detected.
+
+python scripts/audit_recovered_layers.py
+# Recovered layer audit passed for 14 pure files
+
+python scripts/lint.py
+# Lint passed for 119 Python files
+```
+
+Next best frontier is now `A067/A060-A211`, because `9CB6` is no longer a black
+box and its remaining unknown child is specifically the bounded `9E19` helper.
+
+## 2026-06-17 - 9B2E frame-controller parent hook
+
+Promoted the next large game-logic frontier from bounded original to a
+verifier-visible parent hook without introducing semantic player/enemy names.
+The new `1010:9B2E overkill_frame_controller_9b2e` hook composes the existing
+children in original order: input poll, `BP=237C` current object/script slot,
+direct movement bits, `A66F`, the still-separate `A067` action/helper frontier,
+optional `9D4D`, `A616`, `9CB6`, `9C01`, coordinate-ring maintenance, and
+`9FAF` linked child-coordinate propagation.
+
+Important recovered fact:
+
+- The backwards branch target `9AFF` is not simply an early return.  Its two
+  `JZ +1` instructions mean "skip the RET and continue".  The tail only reaches
+  `4DBF` when `DS:2326 == 3` and the incremented `SS:[BP+8] == 0Fh`; then it
+  clears `SS:[BP+0]`, sets `DS:A346`, and sets `DS:A342` only when `DS:A97A` is
+  zero.
+
+Validation:
+
+```text
+python -m pytest \
+  tests/test_overkill_hooks.py::test_frame_controller_9b2e_matches_interpreted_parent_paths \
+  tests/test_overkill_hooks.py::test_frame_axis_condition_dispatch_9c01_hook_matches_composed_interpreted_snapshot \
+  tests/test_recovered_semantics.py -q
+# 27 passed
+
+python scripts/lint.py
+# Lint passed for 119 Python files
+
+python scripts/audit_recovered_layers.py
+# Recovered layer audit passed for 14 pure files
+
+python scripts/audit_hook_oracle.py
+# Hook-oracle audit passed: 324 registered hooks, 324 metadata entries, no direct registered child calls detected.
+
+SDL_VIDEODRIVER=dummy python scripts/play.py \
+  --snapshot artifacts/test_oracles/runtime_code_5e42_gameplay_20260613_220042 \
+  --video tandy --sound pc --verify-hook 1010:9B2E \
+  --verify-max 1 --verify-step-budget 200000 --no-coverage-summary
+# OK HOOK VERIFY LIMIT REACHED verified=1
+```
+
+Next best game-logic frontiers are now smaller and clearer: split `A067/A060-A211`
+from direct replay evidence, then split `9CB6/9CBC` instead of treating `9B2E`
+as the remaining monolith.
+
+## 2026-06-17 - A5xx/A6xx movement and edge-scroll crystallisation
+
+Continued the game-logic refactor in the recovered source-port direction.  This
+pass deliberately avoided new high-level entity names: it promoted only the
+source-level value decisions behind already verified low-level movement helpers.
+
+Implemented:
+
+- Added pure movement-domain records for axis-clamp and vertical edge-scroll
+  results.
+- Promoted the final value logic behind `1010:A5D1`, `A5EA`, `A5F9`, and `A607`
+  into `overkill.recovered.systems.movement.two_pass_axis_clamp_step` and
+  `one_pixel_axis_step`.
+- Promoted the final `DS:A39A/A39C` edge-scroll bias logic behind `1010:A616`,
+  `A648`, `A63C`, and `A662` into pure recovered movement helpers.
+- Kept the lifted hook path responsible for all ASM-visible behavior: CMP/TEST
+  order, INC/DEC flags, CALL-next stack scratch, nested return words, and near
+  RET continuation behavior.  The hook path now asserts that its replay agrees
+  with the pure system result.
+- Added a source-port-safe recovered semantics test for the new pure helpers and
+  updated recovered-layer/runtime/island documentation.
+
+Validation:
+
+```text
+python -m pytest tests/test_recovered_semantics.py -q
+# 25 passed
+
+python -m pytest \
+  tests/test_recovered_semantics.py::test_recovered_axis_clamp_and_vertical_scroll_bias_are_pure_source_port_helpers \
+  tests/test_overkill_hooks.py::test_object_two_pass_clamp_step_helpers_match_original \
+  tests/test_overkill_hooks.py::test_object_vertical_scroll_edge_helpers_match_original -q
+# 3 passed
+
+python scripts/run_tests.py tests/test_overkill_hooks.py --name '*vertical_scroll*' --timeout 80 --fail-fast --no-lint --verbose
+# 1 passed
+
+python scripts/run_tests.py tests/test_overkill_hooks.py --name '*clamp_step*' --timeout 80 --fail-fast --no-lint --verbose
+# 1 passed
+
+python scripts/audit_recovered_layers.py
+# Recovered layer audit passed for 14 pure files
+
+python scripts/lint.py
+# Lint passed for 119 Python files
+```
+
+Next best crystallisation candidates:
+
+- `9B2E` has now been lifted as a parent; continue with `A067/A060-A211` or
+  `9CB6/9CBC` using focused oracle tests, not input-name guesses;
+- look for duplicated value decisions in the `B00D` directional tile-response
+  path and promote only the pure sampling/plan layer;
+- keep `A067`/`A060-A211` bounded until a direct replay snapshot proves the
+  exact UI/frame-state side effects.
+
 ## 2026-06-16 - Status parent and 9C01 child absorption
 
 Continued from the bounded-original frontier triage by converting two named
@@ -5150,3 +5697,1116 @@ python scripts/audit_recovered_layers.py
 python scripts/lint.py
 # Lint passed
 ```
+
+## 2026-06-16 - B729 target-move wrapper promoted into recovered movement layer
+
+Moved the next gameplay-significant movement frontier upward instead of adding
+another isolated hook.  The hot remaining bounded region `1010:B729-B73D` is the
+small object target-copy wrapper used by object behaviours before the shared
+`5DB2` target-seeking movement helper:
+
+```text
+B729: SS:[BP+32h] -> DS:2304   target Y
+B72F: SS:[BP+34h] -> DS:2306   target X
+B735: CALL 5DB2                target-seeking movement helper
+B738: CMP DS:230A,0            blocked/no-direction flag
+B73D: RET
+```
+
+New hook:
+
+```text
+1010:B729 overkill_object_target_move_b729
+```
+
+The hook does not duplicate the `5DB2` direction logic.  It copies the target
+pair through the recovered movement adapter, calls `5DB2` through the nested hook
+boundary so verifier coverage still sees the child routine, then performs the
+original `CMP DS:230A,0` and returns with those flags live.
+
+New recovered source-port slice:
+
+```text
+overkill/recovered/domain/movement.py
+overkill/recovered/systems/movement.py
+overkill/recovered/adapters/movement_adapter.py
+```
+
+Pure decisions added:
+
+```text
+encode_target_seek_bits(slot, target)
+choose_target_seek_direction(slot, target, direction_table)
+step_delta_for_direction(direction, pixels)
+```
+
+`5DB2` now computes the portable decision first, then replays the original
+ASM-compatible compare/XLAT/dispatch sequence and asserts that both paths agree.
+This keeps the source-port logic canonical without losing register/flag fidelity.
+
+Validation:
+
+```text
+python -m pytest tests/test_recovered_semantics.py \
+  tests/test_overkill_hooks.py::test_object_target_move_b729_matches_interpreted_wrapper_with_5db2_hook \
+  tests/test_overkill_hooks.py::test_movement_direction_5db2_hook_matches_interpreted_asm_on_captured_snapshot -q
+# 10 passed
+
+python scripts/audit_recovered_layers.py
+# Recovered layer audit passed for 8 pure files
+
+python scripts/audit_hook_oracle.py
+# Hook-oracle audit passed: 321 registered hooks, 321 metadata entries, no direct registered child calls detected.
+
+python scripts/audit_islands.py --all-hooks
+# unclassified unknown hooks: 0
+
+python scripts/lint.py
+# Lint passed for 102 Python files
+
+python scripts/run_tests.py --no-lint --scope dos-re --timeout 20
+# 7 passed, 0 failed, 0 timed out
+
+SDL_VIDEODRIVER=dummy python scripts/play.py \
+  --sound adlib --demo artifacts/demos/demo_play_tandy_20260616_000527 \
+  --verify-hook 1010:B729 --verify-max 3 --verify-step-budget 600000
+# OK HOOK VERIFY LIMIT REACHED verified=3
+
+SDL_VIDEODRIVER=dummy python scripts/play.py \
+  --sound adlib --demo artifacts/demos/demo_play_tandy_20260616_000527 \
+  --verify-hooks --verify-max 5000 --verify-step-budget 600000
+# OK HOOK VERIFY LIMIT REACHED verified=5000
+```
+
+Next gameplay-crystallization candidates from the supplied coverage remain:
+
+- `1010:B0CC-B159` / `1010:B00D-B01C`: directional tile-response table family.
+- `1010:9B2E-9BFA`: frame/input controller child, useful but larger and less
+  isolated.
+- `1010:81F4-83E9` and `1010:8B3B-8B6C`: object/script state helpers that need
+  more trace classification before promotion.
+- `1010:7948-7976` / `1010:7B06-7B12`: likely object/list setup or stream walk;
+  classify before abstracting.
+
+Sound/AdLib still dominates interpreted ASM, but it is not the best target for
+closing gameplay semantics.
+
+## 2026-06-16 - BFC7 type-dispatch fix for multi-part boss death
+
+A live final-boss replay reached a `1010:BC45` divergence after the recovered
+movement refactor. The failing path still returned to the correct continuation
+`1010:AA04`, but the full-memory verifier showed `SS:[BP+08]` as `0022h` in the
+hook and `0003h` in the ASM oracle, with live `BX=0002` in the hook and
+`BX=0004` in ASM.
+
+Disassembling the original `BFC7 -> C037` tail showed the problem: the lift had
+hard-coded the type-1 dispatch tail (`C048`, `BX=0002`, `SS:[BP+08]=0000`). The
+original code actually loads `BX = SS:[BP+14]`, shifts it, and jumps through the
+small table at `C042`. Type-2 objects, which are used by multi-part/final-boss
+pieces, take `C04E` instead and set `SS:[BP+08]=0003` while leaving `BX=0004`.
+
+Changes:
+
+- `_run_collision_death_tail_bfc7` now dispatches the final `C037` tail by the
+  live object type at `SS:[BP+14]` instead of hard-coding type 1.
+- Type 1 still takes the observed `C048` tail and writes sprite/state word `0000`.
+- Type 2 takes the `C04E` tail and writes sprite/state word `0003`, matching the
+  final-boss/multi-part object path.
+- Other object types deliberately raise an unverified path with the original
+  jump-table target.
+- Added `test_bfc7_type2_death_tail_takes_c04e_dispatch_against_asm`, which runs
+  raw ASM from `1010:BFC7` and compares the lifted tail against it.
+
+Validated with focused BFC7/BC4B tests, recovered-layer audit, hook-oracle audit,
+lint, and a 5,000-hook verifier pass on `demo_play_tandy_20260616_000527`.
+
+## 2026-06-16 - C054 final-boss group transition fix
+
+The previous `BFC7` type-2 tail fix corrected the final per-object `C037 -> C04E`
+transition, but it did not explain the user's visible bug: the final boss still
+appeared to die part by part. Re-disassembling `1010:C054` showed that the
+`76h/77h/78h/79h` family is not a simple selector family at all.
+
+Original flow:
+
+```text
+C054  cmp [bp+18h],0076h / 0077h / 0078h / 0079h
+      jmp C15B
+C15B  for DS:A8BA, A8BC, A8BE, A8C0:
+        if slot != BP: call C194
+      DS:A47E = 0
+      DS:A8C2 = 0
+C194  old_logic = DS:[BX+18h]
+      DS:[BX+1Ah] = old_logic
+      DS:[BX+18h] = 0001h
+      DS:[BX+22h] = 0000h
+      DS:[BX+08h] = 0003h
+```
+
+So the final boss/multipart death transition is a group operation. The old lift
+only changed the current part in the later `BFC7` tail, leaving sibling parts in
+their old `76h..79h` logic/state and making the boss visibly die in pieces.
+
+Changes:
+
+- Added `_run_c15b_boss_group_transition` and `_run_c194_boss_group_slot_transition`.
+- `run_object_deactivate_logic_dispatch_c054` now runs the real group transition
+  for logic ids `0076h..0079h` instead of returning AX selector values.
+- The helper writes the nested `CALL C194` return word as freed stack scratch, so
+  full-memory hook verification remains honest when C054 is called under BFC7 or
+  BD17.
+- Added `test_c054_logic_76_79_group_transitions_all_boss_parts_against_asm`,
+  which seeds the four boss-part pointers and compares lifted C054 against raw
+  original ASM.
+
+Validation:
+
+```text
+python -m pytest \
+  tests/test_overkill_hooks.py::test_c054_logic_76_79_group_transitions_all_boss_parts_against_asm \
+  tests/test_overkill_hooks.py::test_bfc7_type2_death_tail_takes_c04e_dispatch_against_asm \
+  tests/test_overkill_hooks.py::test_bd17_deactivate_selector_a83e_tail_matches_interpreted_asm_on_captured_snapshot -q
+# 3 passed
+
+SDL_VIDEODRIVER=dummy python scripts/play.py \
+  --sound adlib --demo artifacts/repros/demo_divergence_tandy_20260616_160515 \
+  --verify-hook 1010:BC45 --verify-max 20 --verify-step-budget 1000000
+# OK HOOK VERIFY LIMIT REACHED verified=20
+
+SDL_VIDEODRIVER=dummy python scripts/play.py \
+  --sound adlib --demo artifacts/repros/demo_divergence_tandy_20260616_160515 \
+  --verify-hooks --verify-max 1000 --verify-step-budget 800000
+# OK HOOK VERIFY LIMIT REACHED verified=1000
+
+SDL_VIDEODRIVER=dummy python scripts/play.py \
+  --sound adlib --demo artifacts/repros/demo_divergence_tandy_20260616_171145 \
+  --verify-hooks --verify-max 2000 --verify-step-budget 800000
+# OK HOOK VERIFY LIMIT REACHED verified=2000
+```
+
+Note on repro suffixes: `demo_divergence_tandy_20260616_160515` is the useful
+pre-fix repro because it still reaches the failing transition. The later
+`demo_divergence_tandy_20260616_171145` was produced from an already-advanced
+post-divergence runtime point, so it can be useful as a continuation smoke test
+but should not be treated as the canonical pre-hook divergence reproducer.
+
+### 2026-06-16 verifier repros now capture pre-hook/pre-frame state
+
+The hook-verifier divergence repro path now saves from the verifier-owned
+pre-hook clone instead of the live runtime after the failing hook has already
+mutated state.  This fixes the failure mode where a suffix demo could start from
+an already-divergent/post-divergence point and then no longer reproduce the
+original mismatch deterministically.
+
+Implementation details:
+
+- `dos_re.verification.HookVerifyDivergence` can now carry `repro_runtime` plus
+  `repro_metadata`.
+- strict hook verification captures `pre_hook_rt` immediately before executing
+  the candidate hook and attaches that clone to the divergence exception.
+- both headless hook verification and `--verify-preview` prefer that pre-hook
+  clone when writing `demo.write_suffix(...)`; only if unavailable do they fall
+  back to the live post-divergence runtime.
+- hook divergence without a source demo now also writes a loadable runtime
+  snapshot under `--save-repro-root`.
+- frame verification gained an `on_divergence` callback.  When enabled from
+  `scripts/play.py`, it captures the candidate runtime before the first
+  divergent frame and writes either a suffix demo (when replaying `--demo`) or a
+  runtime snapshot.
+
+The new repro metadata includes `repro_state` values such as `pre_hook` and
+`candidate_pre_divergent_frame`, so later investigations can tell whether an
+artifact starts before the bad mutation or is only a live fallback.
+
+Validation:
+
+```text
+python -m pytest tests/test_dos_re_smoke.py::test_dos_re_strict_hook_verifier_auto_continuation_catches_bad_hook_without_metadata tests/test_frame_verify.py -q
+# 4 passed
+
+python -m pytest tests/test_repro_artifacts.py tests/test_dos_re_smoke.py::test_dos_re_strict_hook_verifier_auto_continuation_catches_bad_hook_without_metadata tests/test_input_demo.py -q
+# 8 passed
+```
+
+### 2026-06-16 B00D directional tile-sweep dispatcher lifted
+
+The next gameplay-logic crystallisation step lifts `1010:B00D`, the direction
+specific tile/object collision sweep called by `AFD8` after it prepares the
+`DS:A430/A432/A434/A436/A438` scratch rectangle.
+
+Recovered shape:
+
+```text
+AFD8 prepares object probe scratch globals
+  -> CALL B00D
+     -> CALL 5073 coordinate-to-tile index
+     -> dispatch by SS:[BP+06]
+        0: left
+        1: left, down
+        2: down
+        3: down, right
+        4: right
+        5: right, up
+        6: up
+        7: up, left
+     -> each cardinal body probes blocking tiles through 505B
+     -> each successful step checks object hazards through BDD0
+     -> blocked/contact paths tail-jump to B032, preserving the current CALL frame
+```
+
+The pure, portable part is deliberately small: `tile_sweep_plan_for_direction()`
+lives in `overkill.recovered.systems.collision` and returns only the recovered
+component order.  The address-facing hook keeps the ASM glue: scratch globals,
+child hook boundaries (`5073`, `505B`, `BDD0`, `B032`), registers, flags, stack
+scratch, and near-return/tail-jump behaviour.
+
+Important nuance: diagonal entries use real `CALL` + fallthrough composition.
+If the first cardinal component tail-jumps to `B032`, the `RET` returns to the
+second component, not to B00D's external caller.  The lifted hook preserves this
+by simulating the internal CALL frame before running the first component.
+
+Validation:
+
+```text
+python -m pytest tests/test_recovered_semantics.py \
+  tests/test_overkill_hooks.py::test_object_tile_sweep_dispatch_b00d_matches_interpreted_direction_table -q
+# 10 passed
+
+python scripts/audit_recovered_layers.py
+# Recovered layer audit passed for 8 pure files
+
+python scripts/audit_hook_oracle.py
+# 322 registered hooks, 322 metadata entries, no direct registered child calls detected
+
+python scripts/lint.py
+# Lint passed for 102 Python files
+
+python scripts/run_tests.py --no-lint --scope dos-re --timeout 20
+# 7 passed
+
+SDL_VIDEODRIVER=dummy python scripts/play.py \
+  --sound adlib --demo artifacts/demos/demo_play_tandy_20260616_000527 \
+  --verify-hooks --verify-max 3000 --verify-step-budget 800000
+# OK HOOK VERIFY LIMIT REACHED verified=3000
+```
+
+## 2026-06-16 - Runtime world projection tooling for level/editor evidence
+
+Added a first evidence-gathering layer for future level-editor and source-port
+work:
+
+- `overkill/recovered/domain/world.py` defines pure runtime-world projection
+  records that do not import the VM.
+- `overkill/recovered/adapters/world_adapter.py` projects the DOS runtime into
+  those records.
+- `scripts/dump_world.py` dumps known object/effect slots, pointer tables,
+  boss-group pointers, and important globals from a snapshot or input-demo start
+  snapshot.
+- `scripts/trace_world_writes.py` traces writes to those recovered world regions
+  so we can identify materialisation/setup routines instead of guessing where
+  level/object data comes from.
+
+Important clarification discovered while preparing the dump layer:
+
+```text
+DS:23B4  0x23 records, stride 0x38  effect/contact slots walked by BDD0/BDE3/AC81
+DS:2B5C  0x22 records, stride 0x38  main gameplay object slots before the DS:32CA pointer table
+DS:32CA  pointer table used by update/draw/present scans
+DS:8D12  compact/effect pointer table used by compact-layer scans
+```
+
+The older `ObjectSlotView.table_slot()` constants remain the DS:23B4 scan-family
+view for compatibility, but the new world dump explicitly models both slot
+families.  This is useful for level-editor work because it separates the live
+object/effect record pools from the pointer tables that order update/render
+passes.
+
+Example commands:
+
+```text
+python scripts/dump_world.py --demo artifacts/demos/demo_play_tandy_20260616_000527 \
+  --active-only --summary -o artifacts/world_dump_demo_20260616_000527_start.json
+
+python scripts/trace_world_writes.py --demo artifacts/demos/demo_play_tandy_20260616_000527 \
+  --max-steps 1000 -o artifacts/world_write_trace_demo_start_1000.json
+```
+
+## 2026-06-16 - Enriched world-write materialisation traces
+
+Expanded the runtime-world tracing tools so write traces are no longer raw
+linear-memory events only:
+
+- `trace_world_writes.py` now decorates each event with writer island/symbol and
+  a decoded target (`object_slot_field`, `pointer_table_entry`, `runtime_global`,
+  or `boss_group_pointer`).
+- `world_adapter.describe_world_write_target()` maps traced region offsets back
+  to slot table, slot index, record offset, and currently known field name.
+- `world_adapter.resolve_pointer_value()` resolves 16-bit old/new pointer values
+  back to recovered slot tables when possible.
+- `scripts/summarize_world_writes.py` groups trace events by writer, target, and
+  target family, and highlights repeatedly written unknown object fields.
+- Added regression tests for target decoding and summary grouping.
+
+Generated example artefacts from `demo_play_tandy_20260616_000527`:
+
+```text
+artifacts/world_write_trace_demo_20260616_000527_enriched_20000.json
+artifacts/world_write_summary_demo_20260616_000527_enriched_20000.json
+```
+
+Early conclusions from that trace:
+
+```text
+1010:35CF is Tandy renderer interior writing +0C, so +0C should be treated as draw/address scratch evidence, not level semantics.
+1010:5A36 writes +12 from coordinate row-address logic.
+1010:5DB2 writes +06 together with x/y from movement direction logic.
+1010:AB10 and 1010:B86D write +08 together with x/y/target fields from object behavior code.
+1010:7524 advances DS:95D8, strengthening the allocator-cursor interpretation.
+```
+
+This is intentionally not a field rename yet.  It gives the next crystallisation
+step a stronger evidence map: promote only after the same offset's role converges
+across writers, hooks, snapshots, and gameplay observations.
+
+## 2026-06-16 - Gameplay crystallisation: movement step unification and B1B0 chase behavior
+
+Refocused away from level-editor/tooling work and back onto gameplay/source-port
+crystallisation.
+
+Movement cleanup:
+
+- Introduced `MovementStepOperation` in `overkill.recovered.domain.movement`.
+- Added pure `step_operations_for_direction(direction, pixels)` in
+  `overkill.recovered.systems.movement`.
+- Moved the repeated AEE4/AF22/AF63 direction-step axis order into that pure
+  recovered system.
+- Added `apply_direction_step_to_current_object()` in the adapter layer so the
+  hook path still materialises the exact original ADD/SUB memory operations and
+  preserves live flags.
+
+This removes three copies of the same eight-way movement table logic while
+keeping the VM-facing flag/register behavior in the adapter layer.
+
+New gameplay hook:
+
+- Added `1010:B1B0 overkill_object_player_chase_b1b0`.
+- Added recovered pure helpers for the player/view-centered chase target and the
+  B15A target-candidate predicate.
+- The unacquired phase now projects `DS:237E/2380` into the aligned 5DB2 target
+  globals, runs the verified 5DB2 seeker, and only enters the B15A acquisition
+  scan when movement reports blocked.
+- The acquired phase validates `SS:[BP+30h]`, computes deltas through 5E1B,
+  steers via runtime-patched 5E42, and rejoins the already lifted AD5A/AD60
+  bounds tails.
+- The helper `B15A` is modelled as a recovered rotating candidate scan over the
+  `DS:23B4` effect/contact slot pool, using `DS:A43A` as the scan cursor.
+
+This closes the hot `1010:B1B0-B1F3` interpreted gameplay cluster while moving
+its stable decisions into the recovered source layer rather than adding another
+isolated hook body.
+
+Validation:
+
+```text
+python -m pytest tests/test_recovered_semantics.py \
+  tests/test_overkill_hooks.py::test_object_player_chase_b1b0_matches_interpreted_asm_key_paths \
+  tests/test_overkill_hooks.py::test_movement_dir_step_tables_match_interpreted_asm_all_directions -q
+# 14 passed
+```
+
+
+## 2026-06-16 - B1B0 behavior refactor: canonical chase predicates and adapter glue
+
+Cleaned up the newly lifted B1B0 player/view-centered chase behavior so the
+hook body is closer to a recovered source procedure and less like a pile of
+inline compare logic.
+
+Refactor details:
+
+- Added `is_player_chase_acquired_target_valid()` in
+  `overkill.recovered.systems.objects`.
+- Added `run_player_chase_candidate_checks_b15a()` and
+  `run_player_chase_acquired_target_validity_b1b0()` in
+  `overkill.recovered.adapters.object_behavior_adapter`.
+- Moved the B1BF view-target setup into
+  `run_player_center_target_setup_b1bf()` in the movement adapter.
+- Removed the duplicate inline B15A candidate gate and acquired-target validity
+  chain from `overkill.gameplay.object_runtime`.
+
+The source-port ownership is now clearer:
+
+```text
+recovered.systems.objects     owns B15A/B1B0 candidate/validity decisions
+recovered.systems.movement    owns view/player-center target projection
+recovered.adapters.*          replays exact CMP/MOV/ADD/AND order for flags
+object_runtime.B1B0           owns behavior control flow and continuations
+```
+
+This keeps the pure gameplay decisions canonical while preserving the exact
+ASM-visible flags/register/memory behavior in the adapter layer.
+
+Validation:
+
+```text
+python -m pytest tests/test_recovered_semantics.py -q
+# 14 passed
+
+python -m pytest \
+  tests/test_overkill_hooks.py::test_object_player_chase_b1b0_matches_interpreted_asm_key_paths \
+  tests/test_overkill_hooks.py::test_movement_dir_step_tables_match_interpreted_asm_all_directions -q
+# 2 passed
+
+python scripts/audit_recovered_layers.py
+# Recovered layer audit passed for 10 pure files
+
+python scripts/audit_hook_oracle.py
+# 323 registered hooks, 323 metadata entries, no direct registered child calls detected
+
+python scripts/lint.py
+# Lint passed for 109 Python files
+
+python scripts/run_tests.py --no-lint --scope dos-re --timeout 20
+# 7 passed
+
+timeout 90s env SDL_VIDEODRIVER=dummy python scripts/play.py \
+  --sound adlib --demo artifacts/demos/demo_play_tandy_20260616_000527 \
+  --verify-hooks --verify-max 100 --verify-step-budget 800000
+# OK HOOK VERIFY LIMIT REACHED verified=100
+```
+
+## 2026-06-16 - Recovered layout constants and shared direction crystal
+
+Refactored a set of proven duplicate constants so future gameplay cleanup can
+refer to the same recovered source facts instead of scattering magic offsets and
+direction tables through hook bodies.
+
+Changes:
+
+- Expanded `overkill.recovered.views.object_slots` into the canonical place for
+  recovered 0x38-byte object-slot layout offsets.
+- Added context aliases for reused fields, especially the important `+14` / `+16`
+  pair:
+  - `OFF_SCAN_FLAG` / `OFF_OBJECT_TYPE`
+  - `OFF_HAZARD_CLASS` / `OFF_DRAW_LAYER`
+- Added named table bounds:
+  - `EFFECT_OBJECT_TABLE_END`
+  - `GAMEPLAY_OBJECT_LAST_SLOT_BASE`
+  - `GAMEPLAY_OBJECT_TABLE_END`
+  - `GAMEPLAY_OBJECT_ALLOCATOR_WRAP_SENTINEL`
+- Added `overkill.recovered.domain.directions` as the single pure source for the
+  recovered clockwise 8-way direction order.
+- Reused that direction crystal from both:
+  - `systems.movement.step_operations_for_direction()`
+  - `systems.collision.tile_sweep_plan_for_direction()`
+- Promoted repeated gameplay predicate constants in:
+  - `systems.collision` for BDE3 hazard candidate gates and contact half-extent,
+  - `systems.objects` for B1B0/B15A chase target gates,
+  - `systems.movement` for B1BF view-center target biases and the 4px grid mask.
+- Updated adapters to import these constants while keeping the exact original
+  compare order where flags matter.
+- Updated world write tracing so newly understood offsets like `+1A`, `+1C`,
+  `+22`, `+30`, `+32`, `+34` are no longer reported as unknown pressure.
+
+Important note: this does **not** claim that every table uses the same semantic
+meaning for each offset. It records one proven binary layout with context aliases
+where the same byte offset has different source-like names in different routines.
+That is closer to the likely original C/ASM source shape than parallel magic
+numbers in each hook.
+
+Validation:
+
+```text
+python -m pytest tests/test_recovered_semantics.py tests/test_world_trace_tools.py \
+  tests/test_overkill_hooks.py::test_object_player_chase_b1b0_matches_interpreted_asm_key_paths \
+  tests/test_overkill_hooks.py::test_movement_dir_step_tables_match_interpreted_asm_all_directions \
+  tests/test_overkill_hooks.py::test_object_tile_sweep_dispatch_b00d_matches_interpreted_direction_table \
+  tests/test_overkill_hooks.py::test_player_hazard_scan_guard_bdd0_matches_interpreted_asm_gate_and_empty_scan -q
+# 21 passed
+
+python -m pytest tests/test_overkill_hooks.py \
+  -k '7573 or 7524 or b1b0 or b00d or bdd0 or bde3 or 62f6 or bc45 or bfc7 or c054 or movement_dir_step' -q
+# 23 passed, 215 deselected
+
+python scripts/audit_recovered_layers.py
+# Recovered layer audit passed for 11 pure files
+
+python scripts/lint.py
+# Lint passed for 110 Python files
+
+python scripts/run_tests.py --no-lint --scope dos-re --timeout 20
+# 7 passed
+
+SDL_VIDEODRIVER=dummy python scripts/play.py \
+  --sound adlib --demo artifacts/demos/demo_play_tandy_20260616_000527 \
+  --verify-hooks --verify-max 100 --verify-step-budget 800000
+# OK HOOK VERIFY LIMIT REACHED verified=100
+```
+
+## 2026-06-16 - Tilemap probe/lookup source crystal
+
+Refactored the shared tilemap helpers instead of adding another gameplay hook.
+The important cleanup was that `5073` and `505B` existed twice: once as public
+collision hooks and once as private in-place mirrors inside object behavior
+tails.  Both copies now delegate to one recovered adapter, and that adapter
+validates one pure source-like tilemap system.
+
+Changes:
+
+- Added pure records in `overkill.recovered.domain.tilemap`:
+  - `TileProbeInput`
+  - `TileProbeResult`
+  - `TileLookupInput`
+  - `TileLookupResult`
+- Added pure portable logic in `overkill.recovered.systems.tilemap`:
+  - `compute_tile_probe_5073()`
+  - `lookup_tile_class_505b()`
+- Added adapter glue in `overkill.recovered.adapters.collision_adapter`:
+  - `run_tile_probe_5073_body()`
+  - `run_tile_lookup_505b_body()`
+- Reduced `gameplay.collision.run_tile_probe_5073()` and
+  `gameplay.collision.run_tile_lookup_505b()` to patch-guard wrappers.
+- Reduced the older private `_run_tile_probe_5073()` / `_run_tile_lookup_505b()`
+  mirrors in `gameplay.object_runtime` to delegates, so parent tails no longer
+  carry their own copy of tilemap arithmetic.
+
+Recovered source facts made explicit:
+
+```text
+5073 adjusted_x = DS:234E + object.x
+5073 stores adjusted_x into DS:215A
+if adjusted_x is signed-negative: BX = FFFFh
+otherwise:
+  x_tile = adjusted_x >> 4
+  y_tile = (object.y & FFF0h) >> 4
+  BX = DS:2350 - x_tile * 13 + y_tile
+
+505B raw_tile = ES:[BX], where ES = CS:[9592]
+505B class_byte = DS:C3AA[raw_tile]
+```
+
+This gives movement/collision/tile probing one canonical source-like arithmetic
+home while preserving the original instruction-shaped flags/register effects in
+the adapter.
+
+Validation:
+
+```text
+python -m pytest tests/test_recovered_semantics.py \
+  tests/test_overkill_hooks.py -k '5073 or 505b or 4ff9 or ac28 or b00d or b1b0 or b729 or movement_dir_step' -q
+# 23 passed total across the focused runs used during this patch
+
+python scripts/audit_recovered_layers.py
+# Recovered layer audit passed for 13 pure files
+
+python scripts/lint.py
+# Lint passed for 112 Python files
+
+SDL_VIDEODRIVER=dummy python scripts/play.py \
+  --sound adlib --demo artifacts/demos/demo_play_tandy_20260616_000527 \
+  --verify-hooks --verify-max 100 --verify-step-budget 800000
+# OK HOOK VERIFY LIMIT REACHED verified=100
+```
+
+## 2026-06-16 - AC97 overlap-scan source cleanup
+
+Refactored the hot `1010:AC97` object-overlap scan without changing its hook
+boundary.  The previous lift already consumed the ACD9->ACD2 non-actionable tail,
+but it still kept the slot candidate, rectangle, link-key, and type-4/type-5
+decisions inline in `gameplay.collision`.  That duplicated the style of the
+already-cleaned `BDE3` hazard scan and made the source-port layer less obvious.
+
+Changes:
+
+- Added pure record `ObjectOverlapScanDecision` in
+  `overkill.recovered.domain.collision`.
+- Added pure portable logic in `overkill.recovered.systems.collision`:
+  - `object_overlap_scan_decision()`
+  - `OBJECT_OVERLAP_SCAN_REQUIRED_FLAG`
+  - `OBJECT_OVERLAP_INACTIVE_LOGIC_ID`
+  - `OBJECT_OVERLAP_ACTIONABLE_CLASSES`
+- Added ASM-compatible adapter glue:
+  - `run_object_overlap_candidate_checks_ac97()`
+- Reduced `gameplay.collision.run_object_slot_scan_ac97()` to the scan shell:
+  `BX/CX` loop, final `CLC;RET`, or exact stop at `ACD9` with the pre-ACD9 CMP
+  flags restored.
+
+Recovered source facts now live in one place:
+
+```text
+AC97 overlap candidate:
+  active_word != 0
+  logic_id != 0001h
+  scan_flag == 0001h
+  probe point lies inside signed inclusive +/-16 object window
+  current.link_key != slot.link_key
+
+AC97 actionable overlap:
+  candidate && hazard_class in {0004h, 0005h}
+```
+
+The scan is still deliberately named as an overlap/contact scan, not as a
+semantic enemy/player rule.  It uses the same DS:23B4 pool as `BDE3`, but its
+candidate gates and actionable classes are distinct and therefore stay separate
+from the player-hazard predicate.
+
+Validation:
+
+```text
+python -m pytest tests/test_recovered_semantics.py \
+  tests/test_overkill_hooks.py::test_object_slot_scan_ac97_hook_matches_interpreted_asm_on_captured_snapshot \
+  tests/test_overkill_hooks.py::test_object_slot_scan_ac97_absorbs_non_actionable_acd9_continue_tail \
+  tests/test_overkill_hooks.py::test_ac81_slot_scan_guard_acd9_continuation_preserves_entry_cmp_flags -q
+# 19 passed
+
+python scripts/audit_recovered_layers.py
+# Recovered layer audit passed for 13 pure files
+
+python scripts/audit_hook_oracle.py
+# 323 registered hooks, 323 metadata entries, no direct registered child calls detected
+
+python scripts/audit_islands.py --all-hooks
+# unclassified unknown hooks: 0
+
+python scripts/lint.py
+# Lint passed for 112 Python files
+
+python scripts/run_tests.py --no-lint --scope dos-re --timeout 20
+# 7 passed, 0 failed, 0 timed out
+
+SDL_VIDEODRIVER=dummy python scripts/play.py \
+  --sound adlib --demo artifacts/demos/demo_play_tandy_20260616_000527 \
+  --verify-hooks --verify-max 100 --verify-step-budget 800000
+# OK HOOK VERIFY LIMIT REACHED verified=100
+```
+
+## 2026-06-16 AA71 post-move contact-window source cleanup
+
+Continued the gameplay crystallization pass by moving the recovered `1010:AA71`
+BC4B post-move contact-window decision out of the address-facing gameplay hook
+and into the recovered source layer.
+
+Changes:
+
+- Added `PostMoveContactWindow` to `overkill.recovered.domain.collision`.
+- Added pure portable logic in `overkill.recovered.systems.collision`:
+  - `postmove_contact_window_test_aa71()`
+  - `POSTMOVE_CONTACT_Y_UPPER_BIAS/SPAN`
+  - `POSTMOVE_CONTACT_X_NORMAL_*`
+  - `POSTMOVE_CONTACT_X_BOSS_*`
+- Added ASM-compatible adapter glue:
+  - `run_postmove_contact_window_aa71_body()`
+- Reduced `gameplay.collision.run_postmove_contact_window_aa71()` to an
+  address-facing wrapper.
+
+Recovered source facts:
+
+```text
+AA71 contact window:
+  negative signed X -> miss
+  Y uses signed bounds around DS:2380 with +18h / -2Ch shape
+  normal X uses unsigned bounds around DS:237E with +18h / -2Ch shape
+  final-boss mode DS:A8C2 == 1 narrows only X to +08h / -0Ch
+```
+
+This avoids duplicating AA71 contact-window rules in hook code.  The pure system
+owns the gameplay decision; the adapter still replays the original compare/add
+sequence so `AX`, flags, and `CLC/STC;RET` behavior remain verifier-compatible.
+
+Validation:
+
+```text
+python -m pytest tests/test_recovered_semantics.py -q
+# 18 passed
+
+python -m pytest tests/test_overkill_hooks.py -k 'aa71' -q
+# 5 passed, 233 deselected
+
+python scripts/audit_recovered_layers.py
+# Recovered layer audit passed for 13 pure files
+
+python scripts/audit_hook_oracle.py
+# 323 registered hooks, 323 metadata entries, no direct registered child calls detected
+
+python scripts/lint.py
+# Lint passed for 112 Python files
+
+python scripts/run_tests.py --no-lint --scope dos-re --timeout 20
+# 7 passed, 0 failed, 0 timed out
+
+SDL_VIDEODRIVER=dummy python scripts/play.py \
+  --sound adlib --demo artifacts/demos/demo_play_tandy_20260616_000527 \
+  --verify-hooks --verify-max 100 --verify-step-budget 800000
+# OK HOOK VERIFY LIMIT REACHED verified=100
+```
+
+## 2026-06-16 shared object-centered probe-window adapter cleanup
+
+Continued the collision crystallization pass by deduplicating the verifier-visible
+object-centered `+/-16` rectangle compare sequence used by the BDE3 player-hazard
+scan and the AC97 object-overlap scan.
+
+Changes:
+
+- Added `run_slot_probe_window_compare_sequence()` in
+  `overkill.recovered.adapters.collision_adapter`.
+- Rewired:
+  - `run_player_hazard_candidate_checks_bde3()`
+  - `run_object_overlap_candidate_checks_ac97()`
+- Kept the pure gameplay decisions in `overkill.recovered.systems.collision`:
+  - `player_hazard_scan_hit()`
+  - `object_overlap_scan_decision()`
+
+Recovered source fact:
+
+```text
+BDE3 and AC97 use the same object-centered SI compare choreography:
+  SI = slot.x + 10h; CMP probe_x, SI
+  SI -= 20h;         CMP probe_x, SI
+  SI = slot.y + 10h; CMP probe_y, SI
+  SI -= 20h;         CMP probe_y, SI
+
+BDE3 is strict:    lower < probe < upper
+AC97 is inclusive: lower <= probe <= upper
+```
+
+This keeps one canonical adapter implementation for the CPU-visible compare
+sequence while leaving the scan-specific gate predicates and pure gameplay
+meaning separate.  It also documents a real uncertainty resolution: BDE3 and
+AC97 are related contact-window scans, but they intentionally differ at the
+edges and should not be collapsed into one gameplay predicate.
+
+Validation:
+
+```text
+python -m pytest tests/test_recovered_semantics.py \
+  tests/test_overkill_hooks.py::test_object_slot_scan_ac97_hook_matches_interpreted_asm_on_captured_snapshot \
+  tests/test_overkill_hooks.py::test_object_slot_scan_ac97_absorbs_non_actionable_acd9_continue_tail \
+  tests/test_overkill_hooks.py::test_ac81_slot_scan_guard_acd9_continuation_preserves_entry_cmp_flags \
+  tests/test_overkill_hooks.py::test_player_hazard_scan_guard_bdd0_matches_interpreted_asm_gate_and_empty_scan \
+  tests/test_overkill_hooks.py::test_player_hazard_scan_guard_bdd0_matches_interpreted_asm_hit_path -q
+# 23 passed
+```
+
+Additional validation for this cleanup:
+
+```text
+python scripts/audit_recovered_layers.py
+# Recovered layer audit passed for 13 pure files
+
+python scripts/lint.py
+# Lint passed for 112 Python files
+
+python scripts/audit_hook_oracle.py
+# 323 registered hooks, 323 metadata entries, no direct registered child calls detected
+
+python scripts/run_tests.py --no-lint --scope dos-re --timeout 20
+# 7 passed, 0 failed, 0 timed out
+
+SDL_VIDEODRIVER=dummy python scripts/play.py \
+  --sound adlib --demo artifacts/demos/demo_play_tandy_20260616_000527 \
+  --verify-hooks --verify-max 100 --verify-step-budget 800000
+# OK HOOK VERIFY LIMIT REACHED verified=100
+```
+
+## 2026-06-17 4FF9 tile/contact probe sampling-plan cleanup
+
+Continued the recovered-source cleanup by pulling the remaining source-like
+sampling decisions out of the `1010:4FF9` tile/contact probe wrapper.
+
+Changes:
+
+- Added pure tilemap domain/system support:
+  - `TileContactProbePlan`
+  - `is_tile_contact_side_valid_4ff9()`
+  - `tile_contact_probe_plan_4ff9()`
+  - `tile_contact_offset_table_byte_offset()`
+- Added `run_tile_contact_probe_4ff9_body()` in
+  `overkill.recovered.adapters.collision_adapter`.
+- Reduced `overkill.gameplay.collision.run_tile_contact_probe_4ff9()` to an
+  address-facing patch-guard wrapper.
+
+Recovered source facts now named in one place:
+
+```text
+4FF9 tile/contact probe:
+  side selector [BP+8] must be < 3
+  side selector indexes 4-byte dx/dy pairs at DS:214E
+  after 5073, DS:215A low nibble chooses one or two column samples
+    <= 0Ah -> one column
+    >  0Ah -> two columns
+  adjusted Y low nibble controls the optional adjacent-Y lookup
+  row delta is the same recovered tile-column stride: 13
+```
+
+This removes another long mixed block from `gameplay/collision.py` and keeps the
+pure sampling plan portable while the adapter preserves the original stack
+restore, BX/CX loop, `505B` calls, and CF result.
+
+Validation:
+
+```text
+python -m pytest tests/test_overkill_hooks.py::test_tile_contact_probe_4ff9_matches_interpreted_asm_paths \
+  tests/test_recovered_semantics.py::test_recovered_tile_contact_probe_plan_is_pure_4ff9_sampling_shape -q
+# 2 passed
+
+python -m pytest tests/test_recovered_semantics.py \
+  tests/test_overkill_hooks.py -k '4ff9 or 5073 or 505b or ac28 or b00d or ac97 or bde3 or aa71' -q
+# 14 passed, 243 deselected
+
+python scripts/audit_recovered_layers.py
+# Recovered layer audit passed for 13 pure files
+
+python scripts/lint.py
+# Lint passed for 112 Python files
+
+python scripts/audit_hook_oracle.py
+# 323 registered hooks, 323 metadata entries, no direct registered child calls detected
+
+python scripts/audit_islands.py --all-hooks
+# passed, no unclassified unknown hooks
+
+python scripts/run_tests.py --no-lint --scope dos-re --timeout 20
+# 7 passed, 0 failed, 0 timed out
+
+SDL_VIDEODRIVER=dummy python scripts/play.py \
+  --sound adlib --demo artifacts/demos/demo_play_tandy_20260616_000527 \
+  --verify-hooks --verify-max 100 --verify-step-budget 800000
+# OK HOOK VERIFY LIMIT REACHED verified=100
+```
+
+## 2026-06-17 AC28 tile-collision probe sampling cleanup
+
+Continued the gameplay/source-crystallization cleanup by pulling the remaining
+source-like sampling plan out of the `1010:AC28` tile-collision probe.  This is
+the ABxx object-behaviour collision helper that reuses the shared `5073` tile
+coordinate probe and `505B` tile-class lookup.
+
+Changes:
+
+- Added pure tilemap support:
+  - `TileCollisionProbePlan`
+  - `tile_collision_probe_plan_ac28()`
+- Added `run_tile_collision_probe_ac28_body()` in
+  `overkill.recovered.adapters.collision_adapter`.
+- Reduced `overkill.gameplay.collision.run_tile_collision_probe_ac28()` to an
+  address-facing patch-guard wrapper.
+- Added an oracle regression test that loads real AC28/505B/5073 bytes and
+  compares interpreted ASM against the hook for clear, direct-blocked, and
+  adjacent-Y-blocked paths.
+
+Recovered source facts now named in one place:
+
+```text
+AC28 tile-collision probe:
+  first checks global gates DS:A47C and DS:BDAC
+  calls 5073 for object coordinate -> tile offset
+  samples one row below the object using the recovered tile stride 13
+  if object Y low nibble is nonzero, also samples the adjacent Y tile
+  on collision, writes object +24h = 0005 and decrements object +20h
+  when the countdown reaches zero, clears +24h and returns CF set
+```
+
+This keeps the gameplay-facing wrapper small while preserving the exact
+ASM-visible global gates, `5073`/`505B` calls, stack/return behavior, counter
+side effects, and carry result in the adapter.
+
+Validation:
+
+```text
+python -m pytest tests/test_recovered_semantics.py \
+  tests/test_overkill_hooks.py -k 'ac28 or 4ff9 or 5073 or 505b or b00d or ac97 or bde3 or aa71' -q
+# 16 passed, 243 deselected
+
+python scripts/audit_recovered_layers.py
+# Recovered layer audit passed for 13 pure files
+
+python scripts/audit_hook_oracle.py
+# 323 registered hooks, 323 metadata entries, no direct registered child calls detected
+
+python scripts/lint.py
+# Lint passed for 112 Python files
+
+python scripts/run_tests.py --no-lint --scope dos-re --timeout 20
+# 7 passed, 0 failed, 0 timed out
+
+SDL_VIDEODRIVER=dummy python scripts/play.py \
+  --sound adlib --demo artifacts/demos/demo_play_tandy_20260616_000527 \
+  --verify-hooks --verify-max 100 --verify-step-budget 800000
+# OK HOOK VERIFY LIMIT REACHED verified=100
+```
+
+## 2026-06-17 BCB1/C054 source-cleanup pass
+
+Continued the gameplay/source-crystallization cleanup by targeting two places
+where already-understood logic was still duplicated or hidden behind magic
+constants in address-facing code.
+
+Changes:
+
+- Added pure post-move Y clamp support:
+  - `PostMoveYClampResult`
+  - `clamp_postmove_y_bcb1()`
+  - shared adapter `run_postmove_y_clamp_bcb1_body(pop_return=...)`
+- Replaced the duplicate inline `_run_y_clamp_bcb1` implementation inside the
+  larger `BC4B/BFC7` parent chain with the same adapter used by the public
+  `1010:BCB1` hook.  The public hook consumes the near return; the composed
+  parent path does not.
+- Added pure C054 deactivate-dispatch classification:
+  - `ObjectDeactivateDispatchDecision`
+  - `object_deactivate_dispatch_decision_c054()`
+  - named selector families for boss-group transition, counter-drop, and AX
+    script-selection paths.
+- Kept the original C054 `CMP` order in `overkill.gameplay.collision` so flags
+  remain oracle-compatible, while asserting that the pure recovered dispatcher
+  classification agrees with the ASM-shaped path.
+
+Recovered source facts now centralized:
+
+```text
+BCB1:
+  clamp current object Y into signed inclusive 0000h..00C0h
+
+C054:
+  logic 0076..0079 -> multi-part boss group transition
+  selected logic ids -> decrement DS:A47E counter family
+  logic 0093 -> same counter family plus debug/status byte DS:98A8 = 1
+  selected logic ids -> AX script address selection for caller follow-up
+```
+
+Validation:
+
+```text
+python -m pytest tests/test_recovered_semantics.py \
+  tests/test_overkill_hooks.py -k 'bcb1 or c054 or bfc7 or bd17 or bc4b or aa71 or ac28 or 4ff9 or ac97 or bde3' -q
+# 35 passed, 226 deselected
+
+python scripts/audit_recovered_layers.py
+# Recovered layer audit passed for 14 pure files
+
+python scripts/lint.py
+# Lint passed for 113 Python files
+
+python scripts/audit_hook_oracle.py
+# 323 registered hooks, 323 metadata entries, no direct registered child calls detected
+
+python scripts/run_tests.py --no-lint --scope dos-re --timeout 20
+# 7 passed, 0 failed, 0 timed out
+
+SDL_VIDEODRIVER=dummy python scripts/play.py \
+  --sound adlib --demo artifacts/demos/demo_play_tandy_20260616_000527 \
+  --verify-hooks --verify-max 100 --verify-step-budget 800000
+# OK HOOK VERIFY LIMIT REACHED verified=100
+```
+
+## 2026-06-17 C054/C15B/C194 boss-group adapter cleanup
+
+Continued source-crystallization cleanup after the BCB1/C054 pass.  The C054
+classifier was already pure, but the C15B/C194 boss-group transition itself was
+still embedded in `overkill.gameplay.collision` with raw offsets and globals.
+This pass moved that ASM/DOS glue into the recovered object-behavior adapter and
+kept only the address-facing C054 entry point in gameplay code.
+
+Changes:
+
+- Added live object-slot properties for repeatedly proven transition fields:
+  - `sprite_or_state`
+  - `logic_id` setter
+  - `previous_logic_id`
+  - `transition_latch`
+- Added pure boss-group transition records/helpers:
+  - `BossGroupSlotTransition`
+  - `boss_group_transition_targets(...)`
+  - `boss_group_slot_transition_c194(...)`
+- Added recovered adapter glue:
+  - `run_boss_group_slot_transition_c194(...)`
+  - `run_boss_group_transition_c15b(...)`
+  - `run_object_deactivate_logic_dispatch_c054_body(...)`
+- Removed the C194/C15B implementation from `overkill.gameplay.collision`; that
+  module now exposes only the address-facing `run_object_deactivate_logic_dispatch_c054(...)` wrapper.
+- Fixed a small duplicated `view_contact_centers(cpu)` call in the 8331 wrapper.
+
+Recovered source split is now clearer:
+
+```text
+recovered.systems.objects
+  owns pure C054/C15B/C194 classification and state-update facts
+
+recovered.adapters.object_behavior_adapter
+  owns DOS globals, CMP order, CALL scratch words, AX/debug side effects
+
+gameplay.collision
+  owns only the exported address-facing C054 entry point
+```
+
+Validation:
+
+```text
+python -m pytest tests/test_recovered_semantics.py::test_recovered_boss_group_transition_targets_and_slot_state_are_pure \
+  tests/test_recovered_semantics.py::test_recovered_c054_deactivate_dispatch_classification_is_pure_and_named \
+  tests/test_overkill_hooks.py::test_c054_deactivate_dispatch_0013_selects_a4e4 \
+  tests/test_overkill_hooks.py::test_c054_logic_76_79_group_transitions_all_boss_parts_against_asm -q
+# 4 passed
+
+python -m pytest tests/test_recovered_semantics.py \
+  tests/test_overkill_hooks.py -k 'c054 or c15b or c194 or bfc7 or bd17 or bcb1 or bc4b or aa71 or ac28 or 4ff9 or ac97 or bde3' -q
+# 35 passed, 227 deselected
+
+python scripts/audit_recovered_layers.py
+# Recovered layer audit passed for 14 pure files
+
+python scripts/audit_hook_oracle.py
+# 323 registered hooks, 323 metadata entries, no direct registered child calls detected
+
+python scripts/audit_islands.py --all-hooks
+# unclassified unknown hooks: 0
+
+python scripts/lint.py
+# Lint passed for 113 Python files
+
+python scripts/run_tests.py --no-lint --scope dos-re --timeout 20
+# 7 passed, 0 failed, 0 timed out
+
+SDL_VIDEODRIVER=dummy python scripts/play.py \
+  --sound adlib --demo artifacts/demos/demo_play_tandy_20260616_000527 \
+  --verify-hooks --verify-max 100 --verify-step-budget 800000
+# OK HOOK VERIFY LIMIT REACHED verified=100
+```
+
+## 2026-06-17 - AA46 view/contact projection cleanup
+
+Continued the gameplay crystallisation cleanup by removing the remaining
+hand-written AA46 rectangle-test body from `overkill/gameplay/view_window.py`.
+AA46 is the BCCB contact path for object-type-1 records: it projects a selected
+DS:214E dx/dy pair from the live view globals (`DS:237E/2380`) into the prepared
+contact-center globals (`DS:95F2/95F4`) and then runs the same signed +/-16
+rectangle test as `1010:8331`.
+
+Changes:
+
+- Added pure source-like projection
+  `recovered.systems.collision.view_contact_center_from_offsets_aa46(...)`.
+- Added adapter glue
+  `recovered.adapters.collision_adapter.run_view_window_check_aa46_body(...)`.
+- Replaced `gameplay/view_window.py` with a thin address-facing compatibility
+  wrapper around the recovered adapter.
+- AA46 now shares the canonical `run_signed_center_rect_test_8331(...)` adapter
+  instead of carrying a second copy of the SI/FLAGS rectangle choreography.
+
+This keeps the semantic claim narrow: AA46 is not a new collision system.  It is
+an offset-table contact-center projection followed by the already-recovered 8331
+object/contact rectangle test.
+
+Validation:
+
+```bash
+python -m pytest tests/test_recovered_semantics.py::test_recovered_aa46_view_window_projection_reuses_8331_adapter -q
+python -m pytest tests/test_recovered_semantics.py tests/test_overkill_hooks.py -k 'aa46 or 8331 or aa71 or bc4b or bfc7 or c054' -q
+python scripts/audit_recovered_layers.py
+python scripts/lint.py
+python scripts/audit_hook_oracle.py
+python scripts/run_tests.py --no-lint --scope dos-re --timeout 20
+SDL_VIDEODRIVER=dummy python scripts/play.py --sound adlib --demo artifacts/demos/demo_play_tandy_20260616_000527 --verify-hooks --verify-max 100 --verify-step-budget 800000
+```
+
+Observed result: all focused tests/audits passed and the smoke verifier reached
+`OK HOOK VERIFY LIMIT REACHED verified=100`.

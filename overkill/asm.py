@@ -215,6 +215,20 @@ def _rep_stosb(cpu, count: int) -> None:
     cpu.s.cx = 0
 
 
+def _rep_stosw_preserve_flags(cpu, count: int) -> None:
+    """Execute REP STOSW without changing FLAGS."""
+    count &= 0xFFFF
+    if count == 0:
+        cpu.s.cx = 0
+        return
+    delta = -2 if cpu.get_flag(DF) else 2
+    value = cpu.s.ax & 0xFFFF
+    for _ in range(count):
+        cpu.mem.ww(cpu.s.es & 0xFFFF, cpu.s.di & 0xFFFF, value)
+        cpu.s.di = (cpu.s.di + delta) & 0xFFFF
+    cpu.s.cx = 0
+
+
 def _ega_next_scanline_di(cpu) -> None:
     """Mirror OVERKILL's planar 80-byte EGA/VGA row address advance."""
     _add_reg16(cpu, 7, 0x2000)  # ADD DI,2000h

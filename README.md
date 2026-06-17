@@ -305,6 +305,13 @@ demo under:
 artifacts/repros/
 ```
 
+Hook-verifier divergence repros are captured from the verifier's **pre-hook**
+clone whenever possible, not from the already-mutated live runtime after the
+mismatch.  Frame-verifier divergence repros similarly save the candidate runtime
+before the first divergent frame.  Check `input_demo.json`/`repro.json` metadata
+for `repro_state` values such as `pre_hook` or
+`candidate_pre_divergent_frame`.
+
 Interactive crashes can also save a crash snapshot with enough VM state to retry
 from the failure point:
 
@@ -322,6 +329,31 @@ repro.json        # for repro/crash artifacts when available
 ```
 
 ---
+
+## Runtime world / level-editor probes
+
+These commands help turn live verified snapshots into source-like evidence for
+future level editor and source-port work:
+
+```text
+python scripts/dump_world.py --demo artifacts/demos/demo_play_tandy_20260616_000527 \
+  --active-only --summary -o artifacts/world_dump_demo_20260616_000527_start.json
+
+python scripts/trace_world_writes.py --demo artifacts/demos/demo_play_tandy_20260616_000527 \
+  --max-steps 20000 --max-events 2000 \
+  -o artifacts/world_write_trace_demo_20260616_000527_enriched_20000.json
+
+python scripts/summarize_world_writes.py \
+  artifacts/world_write_trace_demo_20260616_000527_enriched_20000.json \
+  -o artifacts/world_write_summary_demo_20260616_000527_enriched_20000.json --text
+```
+
+`dump_world.py` projects recovered object/effect slots, pointer tables, boss
+group pointers, and important globals into JSON.  `trace_world_writes.py` traces
+writes to those regions and decorates each event with writer island/symbol plus
+a decoded target such as `effect_contact_slots_23b4[3].logic_id`.
+`summarize_world_writes.py` groups those events by writer and field so
+materialisation/setup routines can be found from evidence instead of guessed.
 
 ## Useful commands
 

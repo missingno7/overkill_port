@@ -6,14 +6,25 @@ kept outside the generic VM and outside the hook-registration module.
 """
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from dos_re.cpu import CF
-from overkill.recovered.adapters.asm_flags import set_carry_and_return
+from overkill.asm import _and_mem_byte, _dec_mem_word_preserve_cf
+from overkill.recovered.adapters.asm_flags import cmp_byte as _cmp_byte, cmp_word as _cmp_word, set_carry_and_return
 from overkill.recovered.adapters.collision_adapter import (
     mark_tile_sweep_blocked,
+    run_object_overlap_candidate_checks_ac97,
     run_player_hazard_candidate_checks_bde3,
+    run_postmove_contact_window_aa71_body,
+    run_postmove_y_clamp_bcb1_body,
+    run_tile_collision_probe_ac28_body,
+    run_tile_contact_probe_4ff9_body,
     run_signed_center_rect_test_8331,
+    run_tile_lookup_505b_body,
+    run_tile_probe_5073_body,
     view_contact_centers,
 )
+from overkill.recovered.adapters.object_behavior_adapter import run_object_deactivate_logic_dispatch_c054_body
 from overkill.recovered.adapters.object_slot_adapter import read_object_slot_record
 from overkill.recovered.views.object_slots import (
     OBJECT_SLOT_STRIDE,
@@ -46,6 +57,29 @@ SIG_TILE_CONTACT_PROBE_4FF9 = bytes.fromhex(
     "46 02 f8 c3 5b 59 8f 46 04 8f 46 02 f9 c3"
 )
 
+SIG_FRAME_CONTACT_PROBE_FANOUT_9CB6 = bytes.fromhex(
+    "e8 40 b3 72 01 c3 55 83 3e dc be 00 74 0d 83"
+    "3e dc be 01 74 03 e8 4b 01 e8 48 01 e8 45 01"
+    "e8 42 01 5d c3"
+)
+
+SIG_POST_CONTACT_STATUS_HELPER_9E19 = bytes.fromhex(
+    "83 3e 7c a4 01 75 01 c3 83 3e 84 23 03 72 01 c3"
+    "83 3e 5a a9 ff 75 01 c3 c7 06 a0 23 08 00 80 3e"
+    "c0 98 00 74 05 c6 06 ff be 0f 83 3e dc be 00 74"
+    "13 83 3e dc be 01 74 06 ff 0e 5c a9 74 0c ff 0e"
+    "5c a9 74 06 ff 0e 5c a9 75 5f c7 06 5c a9 18 00"
+    "83 3e 7c a4 01 75 01 c3 83 3e 84 23 03 72 01 c3"
+    "80 3e c0 98 00 74 05 c6 06 ff be 03 83 3e dc be"
+    "00 75 0c fe 06 62 a3 80 26 62 a3 01 74 01 c3 ff"
+    "0e 5a a9 83 3e 5a a9 ff 75 1f c7 06 5c a9 00 00"
+    "80 3e 91 97 01 74 27 c7 06 84 23 03 00 80 3e c0"
+    "98 00 74 05 c6 06 ff be 19 e8 17 c3 2e 83 3e bc 95"
+    "01 75 09 e8 4f b2 e8 09 c3 e8 49 b2 c3"
+)
+
+RunOriginalNearCall = Callable[..., None]
+
 SIG_OBJECT_SLOT_SCAN_GUARD_AC81 = bytes.fromhex("83 3e ac bd 01 75 03 e9 b9 fd b9 23 00 bb b4 23 8b 46 04 8b 7e 02")
 
 SIG_OBJECT_TILE_SWEEP_BLOCKED_B032 = bytes.fromhex("c7 06 30 a4 01 00 c3")
@@ -71,194 +105,35 @@ SIG_TILE_COLLISION_PROBE_AC28 = bytes.fromhex(
 )
 
 
-def _signed16(value: int) -> int:
-    value &= 0xFFFF
-    return value - 0x10000 if value & 0x8000 else value
-
-
-def _cmp_word(cpu, a: int, b: int) -> None:
-    a &= 0xFFFF
-    b &= 0xFFFF
-    cpu.set_sub_flags(a, b, a - b, 16)
-
-
 def run_postmove_y_clamp_bcb1(cpu) -> None:
-    """Clamp the BC4B post-move Y coordinate and return to BC4E.
+    """Lift 1010:BCB1, the shared BC4B post-move Y clamp leaf.
 
-    The original helper compares SS:[BP+4] against 00C0h and 0000h, clamps the
-    stored Y into the inclusive 0..00C0h range, then returns to the BC4E
-    continuation.  This is a tiny hot leaf that is repeatedly executed from
-    the object post-move path.
+    The portable clamp decision lives in ``recovered.systems.collision`` and
+    the exact CMP/FLAGS/store choreography lives in the collision adapter.
+    This address-facing wrapper only owns the original near-return boundary.
     """
-    s = cpu.s
-    mem = cpu.mem
-    ss = s.ss & 0xFFFF
-    bp = s.bp & 0xFFFF
-    y = mem.rw(ss, (bp + 0x04) & 0xFFFF)
-    _cmp_word(cpu, y, 0x00C0)
-    sy = _signed16(y)
-    if sy > 0x00C0:
-        mem.ww(ss, (bp + 0x04) & 0xFFFF, 0x00C0)
-    else:
-        _cmp_word(cpu, y, 0)
-        if sy < 0:
-            mem.ww(ss, (bp + 0x04) & 0xFFFF, 0)
-    s.ip = cpu.pop()
+    run_postmove_y_clamp_bcb1_body(cpu, pop_return=True)
 
 
 def run_postmove_contact_window_aa71(cpu) -> None:
-    """Model the observed AA71 contact-window helper used from BC4B.
+    """Lift 1010:AA71, the BC4B post-move contact-window helper.
 
-    The snapshot path entered this helper with an object that already passed the
-    BC4B clamp/bounds logic.  The observed branch checks the signed X position
-    against the top-of-window guard at DS:2380 and returns via AA44 on the
-    current gameplay path.  The same snapshot also exercises the higher
-    AAAB->AA44 tail that reuses the X+18 compare against DS:237E.  Negative X
-    still goes back to the AA46 helper.
+    The gameplay predicate now lives in ``recovered.systems.collision`` and the
+    ASM-compatible compare/flags sequence lives in the collision adapter.  This
+    address-facing wrapper only preserves the original hook name and boundary.
     """
-    s = cpu.s
-    mem = cpu.mem
-    ds = s.ds & 0xFFFF
-    ss = s.ss & 0xFFFF
-    bp = s.bp & 0xFFFF
-
-    x = mem.rw(ss, (bp + 0x02) & 0xFFFF)
-    s.ax = x
-    cpu.set_logic_flags(x, 16)  # OR AX,AX
-    if _signed16(x) < 0:
-        # AA71 jumps to the shared AA44 CLC/RET tail for negative X.
-        cpu.set_flag(CF, False)
-        s.ip = cpu.pop()
-        return
-
-    y = mem.rw(ss, (bp + 0x04) & 0xFFFF)
-    y_guard = mem.rw(ds, 0x2380)
-    upper_y = (y + 0x0018) & 0xFFFF
-    s.ax = upper_y
-    cpu.set_add_flags(y, 0x0018, y + 0x0018, 16)
-    _cmp_word(cpu, upper_y, y_guard)
-    if _signed16(upper_y) < _signed16(y_guard):
-        cpu.set_flag(CF, False)  # AA44 CLC after the signed JL.
-        s.ip = cpu.pop()
-        return
-
-    lower_y = (upper_y - 0x002C) & 0xFFFF
-    s.ax = lower_y
-    cpu.set_sub_flags(upper_y, 0x002C, upper_y - 0x002C, 16)
-    _cmp_word(cpu, lower_y, y_guard)
-    if _signed16(lower_y) > _signed16(y_guard):
-        cpu.set_flag(CF, False)  # AA44 CLC after the signed JG.
-        s.ip = cpu.pop()
-        return
-
-    a8c2 = mem.rw(ds, 0xA8C2)
-    _cmp_word(cpu, a8c2, 0x0001)
-    view_x = mem.rw(ds, 0x237E)
-    if a8c2 == 0x0001:
-        # Final-boss mode narrows the X contact window; it does *not* bypass X.
-        #   AX = X + 8;  if AX < view_x: CLC/RET
-        #   AX -= 12;    if AX > view_x: CLC/RET
-        #   STC/RET
-        upper_x = (x + 0x0008) & 0xFFFF
-        s.ax = upper_x
-        cpu.set_add_flags(x, 0x0008, x + 0x0008, 16)
-        _cmp_word(cpu, upper_x, view_x)
-        if upper_x < view_x:  # JB AA44, unsigned compare.
-            cpu.set_flag(CF, False)
-            s.ip = cpu.pop()
-            return
-        lower_x = (upper_x - 0x000C) & 0xFFFF
-        s.ax = lower_x
-        cpu.set_sub_flags(upper_x, 0x000C, upper_x - 0x000C, 16)
-        _cmp_word(cpu, lower_x, view_x)
-        if lower_x > view_x:  # JA AA44, unsigned compare.
-            cpu.set_flag(CF, False)
-            s.ip = cpu.pop()
-            return
-        cpu.set_flag(CF, True)
-        s.ip = cpu.pop()
-        return
-
-    # Normal mode uses the wider X contact window.
-    upper_x = (x + 0x0018) & 0xFFFF
-    s.ax = upper_x
-    cpu.set_add_flags(x, 0x0018, x + 0x0018, 16)
-    _cmp_word(cpu, upper_x, view_x)
-    if upper_x < view_x:  # JB AA44, unsigned compare.
-        cpu.set_flag(CF, False)
-        s.ip = cpu.pop()
-        return
-    lower_x = (upper_x - 0x002C) & 0xFFFF
-    s.ax = lower_x
-    cpu.set_sub_flags(upper_x, 0x002C, upper_x - 0x002C, 16)
-    _cmp_word(cpu, lower_x, view_x)
-    if lower_x > view_x:  # JA AA44, unsigned compare.
-        cpu.set_flag(CF, False)
-        s.ip = cpu.pop()
-        return
-    cpu.set_flag(CF, True)
-    s.ip = cpu.pop()
-    return
+    run_postmove_contact_window_aa71_body(cpu)
 
 
 def run_object_deactivate_logic_dispatch_c054(cpu) -> None:
-    """Model the observed BD17 -> C054 variant dispatcher.
+    """Model the observed BD17/BFC7 -> C054 variant dispatcher.
 
-    The original disassembler prints this field as ``[BP+24]`` because the
-    displacement is decimal 24; in the object record this is offset 18h, the
-    logic id.  C054 first handles the live-counter family and otherwise falls
-    through a selector-to-AX chain whose final/default value is A4E4h.
+    C054 is now split the same way as other recovered source-like helpers:
+    the pure object system classifies the logic-id family, the object-behavior
+    adapter replays the original CMP/order/side effects, and this exported
+    function remains only the address-facing entry used by parent hooks.
     """
-    s = cpu.s
-    mem = cpu.mem
-    ds = s.ds & 0xFFFF
-    ss = s.ss & 0xFFFF
-    bp = s.bp & 0xFFFF
-    selector = mem.rw(ss, (bp + 0x18) & 0xFFFF)
-
-    for value, ax in (
-        (0x0076, 0xA79C),
-        (0x0077, 0xA6F0),
-        (0x0078, 0xA83E),
-        (0x0079, 0xA82A),
-    ):
-        _cmp_word(cpu, selector, value)
-        if selector == value:
-            s.ax = ax
-            return
-
-    c14f_ids = (
-        0x0061, 0x0062, 0x0065,
-        0x0014, 0x0016, 0x0017, 0x0018,
-        0x007F, 0x0080, 0x0081,
-        0x0093,
-        0x001D, 0x001E, 0x0020, 0x0021, 0x0022,
-    )
-    for value in c14f_ids:
-        _cmp_word(cpu, selector, value)
-        if selector == value:
-            if selector == 0x0093:
-                mem.wb(ds, 0x98A8, 0x01)
-            old = mem.rw(ds, 0xA47E)
-            result = (old - 1) & 0xFFFF
-            mem.ww(ds, 0xA47E, result)
-            cpu.set_sub_flags(old, 1, old - 1, 16)
-            return
-
-    for value, ax in (
-        (0x007E, 0xA79C),
-        (0x007D, 0xA6F0),
-        (0x001F, 0xA83E),
-        (0x001C, 0xA82A),
-        (0x0015, 0xA5C0),
-        (0x0013, 0xA4E4),
-    ):
-        _cmp_word(cpu, selector, value)
-        s.ax = ax
-        if selector == value:
-            return
-
-
+    run_object_deactivate_logic_dispatch_c054_body(cpu)
 
 
 
@@ -357,17 +232,13 @@ def run_object_slot_scan_guard_ac81(cpu, self_disable_if_patched) -> None:
 
 
 def run_object_slot_scan_ac97(cpu) -> None:
-    """Collapse the hot 1010:AC97 object-record scan loop.
+    """Collapse the hot 1010:AC97 object-overlap scan loop.
 
-    AC97 is the inner scan body entered after the caller has initialized
-    ``BX=23B4h``, ``CX=23h``, ``AX=SS:[BP+4]``, and ``DI=SS:[BP+2]``.  The
-    original body either walks all slots and returns with ``CLC``, or exits the
-    lifted loop at ``ACD9`` when it finds a candidate slot that must continue
-    through the still-interpreted collision/reaction tail.
-
-    Keep the boundary the verifier expects: one hook invocation consumes the
-    whole scan up to the original ``RET`` or the exact ``ACD9`` continuation,
-    rather than re-entering the hook one slot at a time.
+    AC97 walks the effect/contact slot table prepared by AC81 and finds object
+    overlaps around the current object's probe point.  The pure source-like
+    decision now lives in ``recovered.systems.collision``; this lifted routine
+    keeps only the scan loop, continuation choices, and ASM-visible register /
+    flag state.
     """
     s = cpu.s
     mem = cpu.mem
@@ -376,8 +247,8 @@ def run_object_slot_scan_ac97(cpu) -> None:
     bp = s.bp & 0xFFFF
     bx = s.bx & 0xFFFF
     cx = s.cx & 0xFFFF
-    ax = s.ax & 0xFFFF
-    di = s.di & 0xFFFF
+    probe_y = s.ax & 0xFFFF
+    probe_x = s.di & 0xFFFF
 
     # 8086 LOOP decrements CX before testing it, so an initial CX=0000 means
     # 65536 iterations.  Captured gameplay uses CX=0023, but preserve the CPU
@@ -385,109 +256,35 @@ def run_object_slot_scan_ac97(cpu) -> None:
     if cx == 0:
         cx = 0x10000
 
+    current_record = read_object_slot_record(ObjectSlotView(cpu.mem, ss, bp))
+
     while cx:
-        value = mem.rw(ds, bx)
-        _cmp_word(cpu, value, 0)
-        if value != 0:
-            state_24 = mem.rw(ds, (bx + 0x18) & 0xFFFF)
-            _cmp_word(cpu, state_24, 1)
-            if state_24 != 1:
-                state_20 = mem.rw(ds, (bx + 0x14) & 0xFFFF)
-                _cmp_word(cpu, state_20, 1)
-                if state_20 == 1:
-                    si0 = mem.rw(ds, (bx + 0x02) & 0xFFFF)
-                    si = (si0 + 0x0010) & 0xFFFF
-                    s.si = si
-                    cpu.set_add_flags(si0, 0x0010, si0 + 0x0010, 16)
-                    _cmp_word(cpu, di, si)
-                    if _signed16(di) <= _signed16(si):
-                        si_before = si
-                        si = (si - 0x0020) & 0xFFFF
-                        s.si = si
-                        cpu.set_sub_flags(si_before, 0x0020, si_before - 0x0020, 16)
-                        _cmp_word(cpu, di, si)
-                        if _signed16(di) >= _signed16(si):
-                            si0 = mem.rw(ds, (bx + 0x04) & 0xFFFF)
-                            si = (si0 + 0x0010) & 0xFFFF
-                            s.si = si
-                            cpu.set_add_flags(si0, 0x0010, si0 + 0x0010, 16)
-                            _cmp_word(cpu, ax, si)
-                            if _signed16(ax) <= _signed16(si):
-                                si_before = si
-                                si = (si - 0x0020) & 0xFFFF
-                                s.si = si
-                                cpu.set_sub_flags(si_before, 0x0020, si_before - 0x0020, 16)
-                                _cmp_word(cpu, ax, si)
-                                if _signed16(ax) >= _signed16(si):
-                                    # 8B 76 0E / 3B 77 0E:
-                                    #     MOV SI, SS:[BP+0Eh]
-                                    #     CMP SI, DS:[BX+0Eh]
-                                    si = mem.rw(ss, (bp + 0x0E) & 0xFFFF)
-                                    s.si = si
-                                    other = mem.rw(ds, (bx + 0x0E) & 0xFFFF)
-                                    _cmp_word(cpu, si, other)
-                                    acd9_entry_flags = s.flags
-                                    if si != other:
-                                        # ACD9 is not always a terminal collision
-                                        # continuation.  The hot gameplay path
-                                        # usually proves that the candidate is not
-                                        # an actionable type-4/type-5 overlap and
-                                        # then jumps straight back to ACD2 to keep
-                                        # scanning.  Consuming that tiny tail here
-                                        # keeps AC97 as one whole slot-scan hook
-                                        # instead of bouncing through interpreted
-                                        # ACD9/ACD2 glue for every rejected overlap.
-                                        #
-                                        # When the lifted hook stops at the ACD9
-                                        # continuation, however, it must look as if
-                                        # no ACD9 instruction has executed yet.
-                                        # The CPU-visible flags at that boundary
-                                        # therefore belong to the ACD0 ``CMP
-                                        # SI,[BX+0Eh]``/``JNZ ACD9`` decision, not
-                                        # to our look-ahead checks below.
-                                        kind_16 = mem.rw(ds, (bx + 0x16) & 0xFFFF)
-                                        _cmp_word(cpu, kind_16, 0x0005)
-                                        if kind_16 == 0x0005:
-                                            s.ax = ax
-                                            s.bx = bx
-                                            s.cx = cx & 0xFFFF
-                                            s.di = di
-                                            s.flags = acd9_entry_flags
-                                            s.ip = 0xACD9
-                                            return
-
-                                        state_20 = mem.rw(ds, (bx + 0x14) & 0xFFFF)
-                                        _cmp_word(cpu, state_20, 0x0001)
-                                        if state_20 != 0x0001:
-                                            s.ax = ax
-                                            s.bx = bx
-                                            s.cx = cx & 0xFFFF
-                                            s.di = di
-                                            cpu.set_flag(CF, True)
-                                            s.ip = cpu.pop()
-                                            return
-
-                                        _cmp_word(cpu, kind_16, 0x0004)
-                                        if kind_16 == 0x0004:
-                                            s.ax = ax
-                                            s.bx = bx
-                                            s.cx = cx & 0xFFFF
-                                            s.di = di
-                                            s.flags = acd9_entry_flags
-                                            s.ip = 0xACD9
-                                            return
-                                        # Otherwise mirror ACD9 -> ACD2 and keep
-                                        # scanning from the next slot below.
+        slot = ObjectSlotView(cpu.mem, ds, bx)
+        overlaps, actionable, acd9_entry_flags = run_object_overlap_candidate_checks_ac97(
+            cpu,
+            current_record=current_record,
+            slot=slot,
+            probe_x=probe_x,
+            probe_y=probe_y,
+        )
+        if overlaps and actionable:
+            s.ax = probe_y
+            s.bx = bx
+            s.cx = cx & 0xFFFF
+            s.di = probe_x
+            s.flags = acd9_entry_flags
+            s.ip = 0xACD9
+            return
 
         old_bx = bx
-        bx = (bx + 0x0038) & 0xFFFF
-        cpu.set_add_flags(old_bx, 0x0038, old_bx + 0x0038, 16)
+        bx = (bx + OBJECT_SLOT_STRIDE) & 0xFFFF
+        cpu.set_add_flags(old_bx, OBJECT_SLOT_STRIDE, old_bx + OBJECT_SLOT_STRIDE, 16)
         cx = (cx - 1) & 0xFFFF
 
         s.bx = bx
         s.cx = cx
-        s.ax = ax
-        s.di = di
+        s.ax = probe_y
+        s.di = probe_x
         if cx == 0:
             break
 
@@ -540,7 +337,7 @@ def run_player_hazard_object_scan_bde3(cpu, self_disable_if_patched) -> None:
             s.cx = cx
             s.ax = probe_y
             s.di = probe_x
-            s.ip = 0x5059
+            set_carry_and_return(cpu, True)  # JMP 5059 = STC; RET
             return
 
         old_bx = bx
@@ -561,90 +358,15 @@ def run_player_hazard_object_scan_bde3(cpu, self_disable_if_patched) -> None:
 def run_tile_collision_probe_ac28(cpu, self_disable_if_patched) -> None:
     """Lift the runtime-patched AC28 tile collision probe.
 
-    The ABxx object behaviours call this helper after preparing an object probe
-    point.  It checks the tile under/near the object through the existing 5073
-    coordinate-to-tile and 505B tile-id lookup helpers.  On clear space it
-    returns with CF clear; on an actionable collision it decrements the object
-    countdown at BP+20h and returns with CF set only when that counter reaches
-    zero.  Global gates A47C or BDAC jump to AA44 exactly like the patched ASM.
+    The recovered tilemap layer owns the pure row-below/adjacent-Y sampling
+    plan, and the collision adapter owns the ASM-compatible 5073/505B calls,
+    global gates, object countdown side effects, and carry/continuation
+    semantics.  Keep this wrapper as the patch guard and original hook entry
+    point only.
     """
     if self_disable_if_patched(cpu, 0xAC28, SIG_TILE_COLLISION_PROBE_AC28, "overkill_tile_collision_probe_ac28"):
         return
-
-    def no_patch_guard(*_args) -> bool:
-        return False
-
-    s = cpu.s
-    mem = cpu.mem
-    ds = s.ds & 0xFFFF
-    ss = s.ss & 0xFFFF
-    bp = s.bp & 0xFFFF
-
-    _cmp_word(cpu, mem.rw(ds, 0xA47C), 0)
-    if not cpu.get_flag(0x0040):  # JZ not taken -> JMP AA44.
-        s.ip = 0xAA44
-        return
-    _cmp_word(cpu, mem.rw(ds, 0xBDAC), 1)
-    if cpu.get_flag(0x0040):  # JNE not taken -> JMP AA44.
-        s.ip = 0xAA44
-        return
-
-    cpu.push(0xAC3F)
-    run_tile_probe_5073(cpu, no_patch_guard)
-    # 5073 returns to AC3F.
-    old_bx = s.bx & 0xFFFF
-    s.bx = (old_bx + 0x000D) & 0xFFFF
-    cpu.set_add_flags(old_bx, 0x000D, old_bx + 0x000D, 16)
-    cpu.push(0xAC45)
-    run_tile_lookup_505b(cpu, no_patch_guard)
-    if not cpu.get_flag(0x0040):  # JNE AC56
-        collided = True
-    else:
-        cpu.set_logic_flags(mem.rw(ss, (bp + 0x04) & 0xFFFF) & 0x000F, 16)  # TEST [BP+4],000Fh
-        if cpu.get_flag(0x0040):
-            collided = False
-        else:
-            old_bx = s.bx & 0xFFFF
-            old_cf = cpu.get_flag(CF)
-            s.bx = (old_bx + 1) & 0xFFFF
-            cpu.set_add_flags(old_bx, 1, old_bx + 1, 16)
-            cpu.set_flag(CF, old_cf)  # INC preserves CF.
-            cpu.push(0xAC52)
-            run_tile_lookup_505b(cpu, no_patch_guard)
-            collided = not cpu.get_flag(0x0040)
-
-    if not collided:
-        cpu.set_flag(CF, False)
-        s.ip = cpu.pop()
-        return
-
-    _cmp_word(cpu, mem.rb(ds, 0x98C0), 0)
-    if not cpu.get_flag(0x0040):
-        mem.wb(ds, 0xBEFF, 0x0E)
-    mem.ww(ss, (bp + 0x24) & 0xFFFF, 0x0005)
-    _cmp_word(cpu, mem.rw(ds, 0xBEDC), 0)
-    if cpu.get_flag(0x0040):
-        _cmp_word(cpu, mem.rw(ds, 0x2324), 1)
-        if not cpu.get_flag(0x0040):
-            cpu.set_flag(CF, False)
-            s.ip = cpu.pop()
-            return
-
-    old = mem.rw(ss, (bp + 0x20) & 0xFFFF)
-    old_cf = cpu.get_flag(CF)
-    result_full = old - 1
-    mem.ww(ss, (bp + 0x20) & 0xFFFF, result_full & 0xFFFF)
-    cpu.set_sub_flags(old, 1, result_full, 16)
-    cpu.set_flag(CF, old_cf)  # DEC preserves CF.
-    if not cpu.get_flag(0x0040):
-        cpu.set_flag(CF, False)
-        s.ip = cpu.pop()
-        return
-
-    mem.ww(ss, (bp + 0x24) & 0xFFFF, 0x0000)
-    cpu.set_flag(CF, True)
-    s.ip = cpu.pop()
-
+    run_tile_collision_probe_ac28_body(cpu)
 
 def run_collision_stc_ret_5059(cpu, self_disable_if_patched) -> None:
     """Lift OVERKILL 1010:5059 ``STC ; RET`` collision-hit helper."""
@@ -657,13 +379,61 @@ def run_collision_stc_ret_5059(cpu, self_disable_if_patched) -> None:
 def run_tile_lookup_505b(cpu, self_disable_if_patched) -> None:
     """Lift OVERKILL 1010:505B tile-id lookup helper.
 
-    The helper maps the tile-plane byte at ES:[BX] through DS:C3AA and leaves
-    ZF/SF/PF from ``OR AL,AL``.  It is hot in collision/object movement paths
-    and was previously only modeled as a private helper inside larger object
-    behavior hooks, so direct interpreted calls still showed up as ``505B``
-    hotspots.
+    The shared adapter owns the exact instruction-shaped body and validates it
+    against the pure recovered tile-class mapping.  Keep this wrapper as the
+    patch guard and original hook entry point only.
     """
     if self_disable_if_patched(cpu, 0x505B, SIG_TILE_LOOKUP_505B, "overkill_tile_lookup_505b"):
+        return
+    run_tile_lookup_505b_body(cpu, pop_return=True)
+
+
+def run_tile_probe_5073(cpu, self_disable_if_patched) -> None:
+    """Lift OVERKILL 1010:5073 coordinate-to-tile-index helper.
+
+    The shared adapter owns the exact instruction-shaped body and validates it
+    against the pure recovered tile-offset formula.  Keep this wrapper as the
+    patch guard and original hook entry point only.
+    """
+    if self_disable_if_patched(cpu, 0x5073, SIG_TILE_PROBE_5073, "overkill_tile_probe_5073"):
+        return
+    run_tile_probe_5073_body(cpu, pop_return=True)
+
+
+def run_tile_contact_probe_4ff9(cpu, self_disable_if_patched) -> None:
+    """Lift OVERKILL 1010:4FF9 tile/contact probe around an object point.
+
+    The recovered tilemap system now owns the pure sampling plan: three
+    side-offset entries from DS:214E, one/two column samples based on DS:215A
+    low nibble, and optional adjacent-Y sampling.  The adapter preserves the
+    original stack restore, BX/CX loop, and CF result.  Keep this wrapper as the
+    patch guard and original hook entry point only.
+    """
+    if self_disable_if_patched(cpu, 0x4FF9, SIG_TILE_CONTACT_PROBE_4FF9, "overkill_tile_contact_probe_4ff9"):
+        return
+    run_tile_contact_probe_4ff9_body(cpu)
+
+
+def run_post_contact_status_helper_9e19(
+    cpu,
+    self_disable_if_patched,
+    run_original_near_call: RunOriginalNearCall,
+) -> None:
+    """Lift 1010:9E19, the post-contact/status counter helper.
+
+    This helper is reached by the lifted ``9CB6`` contact fanout and by the
+    ``B24D`` overlap branch.  The proven behavior is still raw state/counter
+    management, not a semantic damage/player-health model: it gates on
+    ``A47C``, ``2384`` and ``A95A``, decrements ``A95C`` by a BEDC-dependent
+    amount, occasionally decrements ``A95A``, emits raw ``BEFF`` event bytes,
+    and calls the existing status/display children ``61DC``/``511F``.
+    """
+    if self_disable_if_patched(
+        cpu,
+        0x9E19,
+        SIG_POST_CONTACT_STATUS_HELPER_9E19,
+        "overkill_post_contact_status_helper_9e19",
+    ):
         return
 
     s = cpu.s
@@ -671,189 +441,184 @@ def run_tile_lookup_505b(cpu, self_disable_if_patched) -> None:
     cs = s.cs & 0xFFFF
     ds = s.ds & 0xFFFF
 
-    s.si = 0xC3AA
-    s.es = mem.rw(cs, 0x9592)
-    tile_index = mem.rb(s.es & 0xFFFF, s.bx & 0xFFFF)
-    s.ax = tile_index & 0x00FF  # MOV AL / XOR AH,AH
-    old_si = s.si
-    s.si = (old_si + s.ax) & 0xFFFF
-    cpu.set_add_flags(old_si, s.ax, old_si + s.ax, 16)
-    cpu.set_reg8(0, mem.rb(ds, s.si & 0xFFFF))
-    cpu.set_logic_flags(cpu.get_reg8(0), 8)
-    s.ip = cpu.pop()
-
-
-def run_tile_probe_5073(cpu, self_disable_if_patched) -> None:
-    """Lift OVERKILL 1010:5073 coordinate-to-tile-index helper.
-
-    This converts the current object/probe point into a tilemap byte offset in
-    ``BX``.  If the adjusted X coordinate is negative the original jumps into
-    the tiny ``MOV BX,FFFFh ; RET`` helper at 506F; that path is modeled here
-    instead of using the older partial private helper.
-    """
-    if self_disable_if_patched(cpu, 0x5073, SIG_TILE_PROBE_5073, "overkill_tile_probe_5073"):
-        return
-
-    s = cpu.s
-    mem = cpu.mem
-    ds = s.ds & 0xFFFF
-    ss = s.ss & 0xFFFF
-    bp = s.bp & 0xFFFF
-
-    s.ax = mem.rw(ds, 0x234E)
-    addend = mem.rw(ss, (bp + 0x02) & 0xFFFF)
-    old_ax = s.ax
-    s.ax = (old_ax + addend) & 0xFFFF
-    cpu.set_add_flags(old_ax, addend, old_ax + addend, 16)
-    mem.ww(ds, 0x215A, s.ax)
-    if s.ax & 0x8000:
-        s.bx = 0xFFFF
+    def ret() -> None:
         s.ip = cpu.pop()
+
+    def call(ip: int, ret_ip: int, *, max_steps: int = 120000) -> None:
+        run_original_near_call(cpu, ip & 0xFFFF, ret_ip & 0xFFFF, max_steps=max_steps)
+        if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (cs, ret_ip & 0xFFFF):
+            raise RuntimeError(
+                f"9E19 expected 1010:{ip & 0xFFFF:04X} to return "
+                f"1010:{ret_ip & 0xFFFF:04X}, got "
+                f"{s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X}"
+            )
+
+    def set_beff_when_98c0_nonzero(value: int) -> None:
+        v98c0 = mem.rb(ds, 0x98C0)
+        _cmp_byte(cpu, v98c0, 0x00)
+        if v98c0 != 0:
+            mem.wb(ds, 0xBEFF, value & 0xFF)
+
+    def display_status_effects() -> None:
+        call(0x61DC, 0x9EC5, max_steps=120000)
+        v95bc = mem.rw(cs, 0x95BC)
+        _cmp_word(cpu, v95bc, 0x0001)
+        if v95bc == 0x0001:
+            call(0x511F, 0x9ED0, max_steps=120000)
+            call(0x61DC, 0x9ED3, max_steps=120000)
+            call(0x511F, 0x9ED6, max_steps=120000)
+        ret()
+
+    def reset_short_cooldown_and_ret() -> None:
+        mem.ww(ds, 0xA95A, 0x0003)
+        mem.ww(ds, 0xA95C, 0x0018)
+        ret()
+
+    def active_guard() -> bool:
+        v_a47c = mem.rw(ds, 0xA47C)
+        _cmp_word(cpu, v_a47c, 0x0001)
+        if v_a47c == 0x0001:
+            ret()
+            return False
+        v2384 = mem.rw(ds, 0x2384)
+        _cmp_word(cpu, v2384, 0x0003)
+        if v2384 >= 0x0003:
+            ret()
+            return False
+        return True
+
+    if not active_guard():
         return
 
-    for _ in range(4):
-        s.ax = cpu.shift(5, s.ax, 1, 16)  # SHR AX,1
-    s.dx = s.ax
-
-    for _ in range(2):
-        s.ax = cpu.shift(4, s.ax, 1, 16)  # SHL AX,1
-    s.cx = s.ax
-    s.ax = cpu.shift(4, s.ax, 1, 16)
-    old_ax = s.ax
-    s.ax = (old_ax + s.cx) & 0xFFFF
-    cpu.set_add_flags(old_ax, s.cx, old_ax + s.cx, 16)
-    old_ax = s.ax
-    s.ax = (old_ax + s.dx) & 0xFFFF
-    cpu.set_add_flags(old_ax, s.dx, old_ax + s.dx, 16)
-
-    s.bx = mem.rw(ds, 0x2350)
-    old_bx = s.bx
-    s.bx = (old_bx - s.ax) & 0xFFFF
-    cpu.set_sub_flags(old_bx, s.ax, old_bx - s.ax, 16)
-
-    s.ax = mem.rw(ss, (bp + 0x04) & 0xFFFF)
-    s.ax &= 0xFFF0
-    cpu.set_logic_flags(s.ax, 16)
-    for _ in range(4):
-        s.ax = cpu.shift(5, s.ax, 1, 16)  # SHR AX,1
-
-    old_bx = s.bx
-    s.bx = (old_bx + s.ax) & 0xFFFF
-    cpu.set_add_flags(old_bx, s.ax, old_bx + s.ax, 16)
-    s.ip = cpu.pop()
-
-
-def run_tile_contact_probe_4ff9(cpu, self_disable_if_patched) -> None:
-    """Lift OVERKILL 1010:4FF9 tile/contact probe around an object point.
-
-    This helper is a shared mid-level collision primitive.  ``BP`` points at a
-    small probe/object record; ``[BP+8]`` selects one of three offset pairs from
-    ``DS:214E``.  The helper temporarily offsets ``[BP+2]/[BP+4]``, calls the
-    coordinate-to-tile helper ``5073`` and the tile lookup helper ``505B``, then
-    restores the original coordinates and returns with ``CF`` clear on empty
-    space or set on a blocking/contact tile.
-
-    Keep it as a raw tile/contact probe for now.  It is evidence for the future
-    collision-system layer, not a semantic enemy/player rule yet.
-    """
-    if self_disable_if_patched(cpu, 0x4FF9, SIG_TILE_CONTACT_PROBE_4FF9, "overkill_tile_contact_probe_4ff9"):
+    v_a95a = mem.rw(ds, 0xA95A)
+    _cmp_word(cpu, v_a95a, 0xFFFF)
+    if v_a95a == 0xFFFF:
+        ret()
         return
 
-    def no_patch_guard(*_args) -> bool:
-        return False
+    mem.ww(ds, 0x23A0, 0x0008)
+    set_beff_when_98c0_nonzero(0x0F)
 
-    s = cpu.s
-    mem = cpu.mem
-    ds = s.ds & 0xFFFF
-    ss = s.ss & 0xFFFF
-    bp = s.bp & 0xFFFF
+    bedc = mem.rw(ds, 0xBEDC)
+    _cmp_word(cpu, bedc, 0x0000)
+    if bedc != 0x0000:
+        bedc = mem.rw(ds, 0xBEDC)
+        _cmp_word(cpu, bedc, 0x0001)
+        if bedc != 0x0001:
+            dec = _dec_mem_word_preserve_cf(cpu, ds, 0xA95C)
+            if dec == 0:
+                goto_refill = True
+            else:
+                goto_refill = False
+        else:
+            goto_refill = False
+        if not goto_refill:
+            dec = _dec_mem_word_preserve_cf(cpu, ds, 0xA95C)
+            if dec == 0:
+                goto_refill = True
+    else:
+        goto_refill = False
 
-    s.si = mem.rw(ss, (bp + 0x08) & 0xFFFF)
-    _cmp_word(cpu, s.si, 0x0003)
-    if s.si >= 0x0003:
-        cpu.set_flag(CF, True)  # 5059: STC ; RET, preserving non-CF flags.
-        s.ip = cpu.pop()
-        return
-
-    for _ in range(2):
-        s.si = cpu.shift(4, s.si, 1, 16)  # SHL SI,1 twice.
-    old_si = s.si
-    s.si = (old_si + 0x214E) & 0xFFFF
-    cpu.set_add_flags(old_si, 0x214E, old_si + 0x214E, 16)
-
-    cpu.push(mem.rw(ss, (bp + 0x02) & 0xFFFF))
-    cpu.push(mem.rw(ss, (bp + 0x04) & 0xFFFF))
-
-    s.ax = mem.rw(ds, s.si)
-    s.si = (s.si + 2) & 0xFFFF
-    old = mem.rw(ss, (bp + 0x02) & 0xFFFF)
-    result = old + s.ax
-    mem.ww(ss, (bp + 0x02) & 0xFFFF, result & 0xFFFF)
-    cpu.set_add_flags(old, s.ax, result, 16)
-
-    s.ax = mem.rw(ds, s.si)
-    s.si = (s.si + 2) & 0xFFFF
-    old = mem.rw(ss, (bp + 0x04) & 0xFFFF)
-    result = old + s.ax
-    mem.ww(ss, (bp + 0x04) & 0xFFFF, result & 0xFFFF)
-    cpu.set_add_flags(old, s.ax, result, 16)
-
-    cpu.push(0x501A)
-    run_tile_probe_5073(cpu, no_patch_guard)
-
-    old_bx = s.bx & 0xFFFF
-    s.bx = (old_bx + 0x000D) & 0xFFFF
-    cpu.set_add_flags(old_bx, 0x000D, old_bx + 0x000D, 16)
-
-    s.ax = mem.rw(ds, 0x215A)
-    s.ax &= 0x000F
-    cpu.set_logic_flags(s.ax, 16)
-    _cmp_word(cpu, s.ax, 0x000A)
-    s.cx = 0x0001 if s.ax <= 0x000A else 0x0002
-
-    while True:
-        cpu.push(s.cx)
-        cpu.push(s.bx)
-        cpu.push(0x5033)
-        run_tile_lookup_505b(cpu, no_patch_guard)
-        if not cpu.get_flag(0x0040):  # JNE 5051 after OR AL,AL in 505B.
-            s.bx = cpu.pop()
-            s.cx = cpu.pop()
-            mem.ww(ss, (bp + 0x04) & 0xFFFF, cpu.pop())
-            mem.ww(ss, (bp + 0x02) & 0xFFFF, cpu.pop())
-            cpu.set_flag(CF, True)
-            s.ip = cpu.pop()
+    if not goto_refill:
+        dec = _dec_mem_word_preserve_cf(cpu, ds, 0xA95C)
+        if dec != 0:
+            display_status_effects()
             return
 
-        test_value = mem.rw(ss, (bp + 0x04) & 0xFFFF) & 0x000F
-        cpu.set_logic_flags(test_value, 16)
-        if not cpu.get_flag(0x0040):
-            old_cf = cpu.get_flag(CF)
-            old_bx = s.bx & 0xFFFF
-            s.bx = (old_bx + 1) & 0xFFFF
-            cpu.set_add_flags(old_bx, 1, old_bx + 1, 16)
-            cpu.set_flag(CF, old_cf)  # INC preserves CF.
-            cpu.push(0x5040)
-            run_tile_lookup_505b(cpu, no_patch_guard)
-            if not cpu.get_flag(0x0040):
-                s.bx = cpu.pop()
-                s.cx = cpu.pop()
-                mem.ww(ss, (bp + 0x04) & 0xFFFF, cpu.pop())
-                mem.ww(ss, (bp + 0x02) & 0xFFFF, cpu.pop())
-                cpu.set_flag(CF, True)
-                s.ip = cpu.pop()
-                return
+    mem.ww(ds, 0xA95C, 0x0018)
+    if not active_guard():
+        return
 
-        s.bx = cpu.pop()
-        old_bx = s.bx & 0xFFFF
-        s.bx = (old_bx - 0x000D) & 0xFFFF
-        cpu.set_sub_flags(old_bx, 0x000D, old_bx - 0x000D, 16)
-        s.cx = cpu.pop()
-        s.cx = (s.cx - 1) & 0xFFFF  # LOOP does not alter flags.
-        if s.cx == 0:
-            break
+    set_beff_when_98c0_nonzero(0x03)
 
-    mem.ww(ss, (bp + 0x04) & 0xFFFF, cpu.pop())
-    mem.ww(ss, (bp + 0x02) & 0xFFFF, cpu.pop())
-    cpu.set_flag(CF, False)
-    s.ip = cpu.pop()
+    bedc = mem.rw(ds, 0xBEDC)
+    _cmp_word(cpu, bedc, 0x0000)
+    if bedc == 0x0000:
+        old_a362 = mem.rb(ds, 0xA362)
+        result_a362 = (old_a362 + 1) & 0xFF
+        mem.wb(ds, 0xA362, result_a362)
+        cpu.set_add_flags(old_a362, 1, old_a362 + 1, 8)
+        result_a362 = _and_mem_byte(cpu, ds, 0xA362, 0x01)
+        if result_a362 != 0:
+            ret()
+            return
+
+    dec = _dec_mem_word_preserve_cf(cpu, ds, 0xA95A)
+    _cmp_word(cpu, dec, 0xFFFF)
+    if dec != 0xFFFF:
+        display_status_effects()
+        return
+
+    mem.ww(ds, 0xA95C, 0x0000)
+    v9791 = mem.rb(ds, 0x9791)
+    _cmp_byte(cpu, v9791, 0x01)
+    if v9791 == 0x01:
+        reset_short_cooldown_and_ret()
+        return
+
+    mem.ww(ds, 0x2384, 0x0003)
+    set_beff_when_98c0_nonzero(0x19)
+    display_status_effects()
+
+
+def run_frame_contact_probe_fanout_9cb6(
+    cpu,
+    self_disable_if_patched,
+    run_original_near_call: RunOriginalNearCall,
+) -> None:
+    """Lift 1010:9CB6, the frame-controller contact-probe fanout.
+
+    9CB6 is the small contact side-effect wrapper isolated by the larger 9B2E
+    frame-controller lift.  It first runs the recovered 4FF9 tile/contact probe.
+    A clear carry returns immediately; a set carry fans out to the still-bounded
+    9E19 post-contact/status helper two, three, or four times depending on the
+    raw ``DS:BEDC`` selector.
+
+    This is intentionally a frame/collision fanout primitive only.  The helper
+    does not name the affected object as player/enemy/projectile; it preserves
+    the original BP save/restore, CMP flag choreography, and near-return shape.
+    """
+    if self_disable_if_patched(
+        cpu,
+        0x9CB6,
+        SIG_FRAME_CONTACT_PROBE_FANOUT_9CB6,
+        "overkill_frame_contact_probe_fanout_9cb6",
+    ):
+        return
+
+    s = cpu.s
+    mem = cpu.mem
+    cs = s.cs & 0xFFFF
+    ds = s.ds & 0xFFFF
+
+    def ret() -> None:
+        s.ip = cpu.pop()
+
+    def call(ip: int, ret_ip: int, *, max_steps: int = 40000) -> None:
+        run_original_near_call(cpu, ip & 0xFFFF, ret_ip & 0xFFFF, max_steps=max_steps)
+        if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (cs, ret_ip & 0xFFFF):
+            raise RuntimeError(
+                f"9CB6 expected 1010:{ip & 0xFFFF:04X} to return "
+                f"1010:{ret_ip & 0xFFFF:04X}, got "
+                f"{s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X}"
+            )
+
+    call(0x4FF9, 0x9CB9, max_steps=80000)
+    if not (s.flags & CF):
+        ret()
+        return
+
+    cpu.push(s.bp & 0xFFFF)
+    bedc = mem.rw(ds, 0xBEDC)
+    _cmp_word(cpu, bedc, 0x0000)
+    if bedc != 0x0000:
+        bedc = mem.rw(ds, 0xBEDC)
+        _cmp_word(cpu, bedc, 0x0001)
+        if bedc != 0x0001:
+            call(0x9E19, 0x9CCE, max_steps=120000)
+        call(0x9E19, 0x9CD1, max_steps=120000)
+
+    call(0x9E19, 0x9CD4, max_steps=120000)
+    call(0x9E19, 0x9CD7, max_steps=120000)
+    s.bp = cpu.pop()
+    ret()

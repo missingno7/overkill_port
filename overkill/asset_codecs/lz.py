@@ -178,7 +178,22 @@ def decode_lz_asset(cpu) -> None:
         cpu.s.si &= 0x03FF
 
         if cpu.s.si == 0:
-            saved = (cpu.s.ax, cpu.s.bx, cpu.s.cx, cpu.s.dx, cpu.s.si, cpu.s.di, cpu.s.bp, cpu.s.flags)
+            # LODSB already set AL to the new byte in the original ASM before
+            # the ring-wrap check.  Mirror that so PUSH AX saves the same value.
+            cpu.set_reg8(0, value)
+            # AND SI,03FF sets ZF=1/PF=1 (SI=0), clears OF/CF.  Update flags so
+            # PUSHF captures the same flag word as the oracle.
+            cpu.set_logic_flags(cpu.s.si, 16)
+            # PUSHF; PUSH AX…BP — matches ASM register-save sequence so the
+            # dead-stack slots below SP get the same values as the oracle run.
+            cpu.push(cpu.s.flags)
+            cpu.push(cpu.s.ax)
+            cpu.push(cpu.s.bx)
+            cpu.push(cpu.s.cx)
+            cpu.push(cpu.s.dx)
+            cpu.push(cpu.s.si)
+            cpu.push(cpu.s.di)
+            cpu.push(cpu.s.bp)
             cpu.s.dx = INPUT_RING_BASE
             cpu.s.ax = 0x3F00
             cpu.s.bx = mem.rw(cs, DOS_FILE_HANDLE_OFF)
@@ -186,7 +201,16 @@ def decode_lz_asset(cpu) -> None:
             if cpu.interrupt_handler is None:
                 raise RuntimeError("OVERKILL LZ decoder needs DOS INT 21h handler")
             cpu.interrupt_handler(cpu, 0x21)
-            cpu.s.ax, cpu.s.bx, cpu.s.cx, cpu.s.dx, cpu.s.si, cpu.s.di, cpu.s.bp, cpu.s.flags = saved
+            # POP BP…AX; POPF — mirrors the ASM pop sequence.
+            cpu.s.bp = cpu.pop()
+            cpu.s.di = cpu.pop()
+            cpu.s.si = cpu.pop()
+            cpu.s.dx = cpu.pop()
+            cpu.s.cx = cpu.pop()
+            cpu.s.bx = cpu.pop()
+            cpu.s.ax = cpu.pop()
+            cpu.s.flags = cpu.pop()
+            return value
 
         cpu.set_reg8(0, value)
         return value
@@ -245,7 +269,7 @@ def decode_lz_asset(cpu) -> None:
         cpu.s.dx = (cpu.s.dx >> 1) & 0xFFFF
         if (cpu.s.dx & 0x0100) == 0:
             flag_byte = input_from_call(0xED31)
-            cpu.s.dx = 0xFF00 | flag_byte
+            cpu.s.dx = 0xFF00 | flag_byte  # MOV DL,AL; MOV DH,FFh
 
         if cpu.s.dx & 1:
             value = input_from_call(0xED3E)
@@ -256,6 +280,9 @@ def decode_lz_asset(cpu) -> None:
             continue
 
         first = input_from_call(0xED50)
+        # MOV AH,AL at ED50: save first byte in AH before second read so that
+        # any ring-wrap inside the second CALL ED97 pushes the correct AX word.
+        cpu.set_reg8(4, cpu.get_reg8(0))
         second = input_from_call(0xED55)
         cpu.s.ax = ((second & 0xFF) << 8) | first
         cpu.set_sub_flags(cpu.s.ax, 0, cpu.s.ax, 16)
@@ -276,6 +303,9 @@ def decode_lz_asset(cpu) -> None:
         ah = (cpu.s.ax >> 8) & 0xFF
         length = (ah & 0x0F) + 3
         offset = (((ah >> 4) << 8) | (cpu.s.ax & 0xFF)) & 0x0FFF
+        # ASM: MOV CL,AH; SHR AH,1 ×4; MOV BX,AX — AH becomes ah>>4 as a
+        # side-effect of the shift sequence before the copy loop.
+        cpu.s.ax = ((ah >> 4) << 8) | (cpu.s.ax & 0xFF)
         cpu.s.bx = offset
         cpu.s.cx = length
 

@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Callable, Literal, Sequence
 
 from .cpu import CPU8086, HaltExecution, UnsupportedInstruction
+from .repro_artifacts import clone_runtime_state
 from .runtime import Runtime
 
 Addr = tuple[int, int]
@@ -75,6 +76,7 @@ RuntimePairCallback = Callable[[Runtime, Runtime], None]
 StopCallback = Callable[[], bool]
 StatusCallback = Callable[[str], None]
 PublishCallback = Callable[[Runtime, FrameSample], None]
+DivergenceCallback = Callable[[Runtime, Runtime, FrameSample, FrameSample, str], None]
 AfterBoundaryCallback = Callable[[Runtime, str, Addr], None]
 TraceSampleCallback = Callable[[Runtime], bytes]
 # Returns (kind, canonical_addr) when the CPU is parked in a boundary-less input
@@ -97,6 +99,7 @@ def run_frame_verifier(
     trace_sample_label: str = "sample",
     publish_candidate: PublishCallback | None = None,
     pump_inputs: RuntimePairCallback | None = None,
+    on_divergence: DivergenceCallback | None = None,
     input_wait_detector: InputWaitDetector | None = None,
     stop_requested: StopCallback | None = None,
     status_callback: StatusCallback | None = None,
@@ -147,6 +150,12 @@ def run_frame_verifier(
             return 0
         if pump_inputs is not None:
             pump_inputs(reference, candidate)
+        # Capture the pair-start state only when a caller asked for divergence
+        # repros.  This lets frame verification save a snapshot before the frame
+        # that first diverged instead of after the candidate has already drawn
+        # the differing frame.
+        pre_frame_reference = clone_runtime_state(reference) if on_divergence is not None else None
+        pre_frame_candidate = clone_runtime_state(candidate) if on_divergence is not None else None
         try:
             ref_sample = ref_runner.run_to_boundary(frame_no)
             # Do not pump live input between the oracle and candidate passes.
@@ -169,6 +178,8 @@ def run_frame_verifier(
             print(report, flush=True)
             if status_callback is not None:
                 status_callback(f"{label} divergence at frame {frame_no}")
+            if on_divergence is not None and pre_frame_reference is not None and pre_frame_candidate is not None:
+                on_divergence(pre_frame_reference, pre_frame_candidate, ref_sample, cand_sample, report)
             return 1 if config.stop_on_diff else 0
 
         if config.log_every and (frame_no == 1 or frame_no % config.log_every == 0):

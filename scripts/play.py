@@ -438,6 +438,59 @@ def main(argv: list[str] | None = None) -> int:
 
         keyboard = KeyDispatcher(lambda sc: scancode_events.put(sc))
 
+        def save_frame_divergence_repro(ref_rt, cand_rt, ref_sample, cand_sample, report: str) -> None:
+            metadata = {
+                "program": "overkill",
+                "video": args.video,
+                "sound": args.sound,
+                "command_tail": command_tail.decode("latin1") if isinstance(command_tail, bytes) else str(command_tail),
+                "created_by": "scripts/play.py --verify-frames --verify-preview divergence",
+                "frame": ref_sample.frame_no,
+                "boundary": frame_demo_boundary["n"],
+                "reference_boundary": f"{ref_sample.kind} {ref_sample.hook[0]:04X}:{ref_sample.hook[1]:04X}",
+                "candidate_boundary": f"{cand_sample.kind} {cand_sample.hook[0]:04X}:{cand_sample.hook[1]:04X}",
+                "reference_continuation": f"{ref_sample.cs:04X}:{ref_sample.ip:04X}",
+                "candidate_continuation": f"{cand_sample.cs:04X}:{cand_sample.ip:04X}",
+                "repro_state": "candidate_pre_divergent_frame",
+                "frame_report_tail": report[-20000:],
+            }
+            if demo_playback is not None:
+                try:
+                    out = demo_playback.write_suffix(
+                        cand_rt,
+                        root=Path(args.save_repro_root),
+                        name=f"frame_divergence_{args.video}",
+                        boundary=frame_demo_boundary["n"],
+                        status=(
+                            f"frame verifier candidate pre-divergent-frame snapshot "
+                            f"before frame {ref_sample.frame_no}"
+                        ),
+                        metadata=metadata,
+                    )
+                    print(f"FRAME VERIFY repro demo saved: {out}", flush=True)
+                    status["text"] = f"FRAME VERIFY repro demo saved: {out}"
+                except Exception as save_exc:
+                    print(f"FRAME VERIFY repro demo save failed: {type(save_exc).__name__}: {save_exc}", flush=True)
+            else:
+                try:
+                    out = write_runtime_repro_snapshot(
+                        cand_rt,
+                        root=Path(args.save_repro_root),
+                        name=f"frame_divergence_{args.video}",
+                        status=(
+                            f"frame verifier candidate pre-divergent-frame snapshot "
+                            f"before frame {ref_sample.frame_no}"
+                        ),
+                        metadata={
+                            **metadata,
+                            "replay_hint": "python scripts/play.py --snapshot <this-directory> --verify-frames",
+                        },
+                    )
+                    print(f"FRAME VERIFY repro snapshot saved: {out}", flush=True)
+                    status["text"] = f"FRAME VERIFY repro snapshot saved: {out}"
+                except Exception as save_exc:
+                    print(f"FRAME VERIFY repro snapshot save failed: {type(save_exc).__name__}: {save_exc}", flush=True)
+
         def queue_dos_key(scancode: int, text: str) -> None:
             dos_key_events.put((scancode, text))
 
@@ -470,6 +523,7 @@ def main(argv: list[str] | None = None) -> int:
                     ),
                     publish_candidate=publish_candidate,
                     pump_inputs=pump_inputs,
+                    on_divergence=save_frame_divergence_repro,
                     stop_requested=lambda: stop.is_set() or (
                         demo_playback is not None
                         and not args.demo_continue
@@ -537,6 +591,57 @@ def main(argv: list[str] | None = None) -> int:
                 and demo_playback.finished(frame_demo_boundary["n"])
             )
 
+        def save_frame_divergence_repro(ref_rt, cand_rt, ref_sample, cand_sample, report: str) -> None:
+            metadata = {
+                "program": "overkill",
+                "video": args.video,
+                "sound": args.sound,
+                "command_tail": command_tail.decode("latin1") if isinstance(command_tail, bytes) else str(command_tail),
+                "created_by": "scripts/play.py --verify-frames divergence",
+                "frame": ref_sample.frame_no,
+                "boundary": frame_demo_boundary["n"],
+                "reference_boundary": f"{ref_sample.kind} {ref_sample.hook[0]:04X}:{ref_sample.hook[1]:04X}",
+                "candidate_boundary": f"{cand_sample.kind} {cand_sample.hook[0]:04X}:{cand_sample.hook[1]:04X}",
+                "reference_continuation": f"{ref_sample.cs:04X}:{ref_sample.ip:04X}",
+                "candidate_continuation": f"{cand_sample.cs:04X}:{cand_sample.ip:04X}",
+                "repro_state": "candidate_pre_divergent_frame",
+                "frame_report_tail": report[-20000:],
+            }
+            if demo_playback is not None:
+                try:
+                    out = demo_playback.write_suffix(
+                        cand_rt,
+                        root=Path(args.save_repro_root),
+                        name=f"frame_divergence_{args.video}",
+                        boundary=frame_demo_boundary["n"],
+                        status=(
+                            f"frame verifier candidate pre-divergent-frame snapshot "
+                            f"before frame {ref_sample.frame_no}"
+                        ),
+                        metadata=metadata,
+                    )
+                    print(f"FRAME VERIFY repro demo saved: {out}", flush=True)
+                except Exception as save_exc:
+                    print(f"FRAME VERIFY repro demo save failed: {type(save_exc).__name__}: {save_exc}", flush=True)
+            else:
+                try:
+                    out = write_runtime_repro_snapshot(
+                        cand_rt,
+                        root=Path(args.save_repro_root),
+                        name=f"frame_divergence_{args.video}",
+                        status=(
+                            f"frame verifier candidate pre-divergent-frame snapshot "
+                            f"before frame {ref_sample.frame_no}"
+                        ),
+                        metadata={
+                            **metadata,
+                            "replay_hint": "python scripts/play.py --snapshot <this-directory> --verify-frames",
+                        },
+                    )
+                    print(f"FRAME VERIFY repro snapshot saved: {out}", flush=True)
+                except Exception as save_exc:
+                    print(f"FRAME VERIFY repro snapshot save failed: {type(save_exc).__name__}: {save_exc}", flush=True)
+
         return run_frame_verifier(
             exe=exe,
             assets=assets,
@@ -556,6 +661,7 @@ def main(argv: list[str] | None = None) -> int:
                 ega_start_address_units="byte",
             ),
             pump_inputs=pump_demo_inputs if demo_playback is not None else None,
+            on_divergence=save_frame_divergence_repro,
             stop_requested=demo_finished if demo_playback is not None else None,
         )
 
@@ -581,7 +687,7 @@ def main(argv: list[str] | None = None) -> int:
                 verify_all=args.verify_hooks,
                 hooks=explicit_verify_hooks,
                 max_verified=args.verify_max,
-                asm_max_steps=1_000_000,
+                asm_max_steps=5_000_000,
                 progress_callback=lambda text: status.__setitem__("text", text),
             ),
         )
@@ -755,6 +861,8 @@ def main(argv: list[str] | None = None) -> int:
         raise FramePresented()
 
     def queue_dos_key(scancode: int, text: str) -> None:
+        if getattr(rt.cpu, "_hook_verify_live_depth", 0) > 0:
+            return
         cs, ip = rt.cpu.addr()
         in_high_score_editor = cs == 0x1010 and 0x5300 <= ip <= 0x5650
         in_text_mode = is_text_display_active()
@@ -1020,16 +1128,17 @@ def main(argv: list[str] | None = None) -> int:
 
     def retrace_frame_hook_verify_live(cpu) -> None:
         """Live-side retrace boundary that publishes/paces but does not break verify."""
-        async_timer_irq.poll(cpu)
+        # Do NOT call async_timer_irq.poll() here.  This function runs as the
+        # live side of a passthrough retrace boundary inside an outer verified
+        # parent hook (e.g. 5C74).  Delivering a timer ISR tick increments
+        # CS:066B on the live CPU; the outer oracle runs raw ASM from the
+        # pre-hook clone and never calls poll(), so the two sides diverge.
         if base_retrace_wait is not None:
             base_retrace_wait(cpu)
         retraces["n"] += 1
         if args.video != "ega" or blits["n"] == 0:
             publish_video_if_changed(cpu, wait_for_viewer=False)
-        retrace_pacer(
-            poll=lambda: async_timer_irq.poll(cpu, max_catchup=1),
-            poll_interval=async_timer_irq.period * 0.5 if async_timer_irq.period > 0 else None,
-        )
+        retrace_pacer()
         last_boundary["kind"] = "verify-retrace"
         cpu.hook_verifier_live_yield_requested = True
 
@@ -1336,28 +1445,58 @@ def main(argv: list[str] | None = None) -> int:
                         status["text"] = f"stall (no visual/timer boundary in {used} steps) @ {cs:04X}:{ip:04X}"
             except HookVerifyDivergence as exc:
                 cs, ip = rt.cpu.addr()
+                repro_rt = exc.repro_runtime if exc.repro_runtime is not None else rt
+                repro_cs, repro_ip = repro_rt.cpu.addr()
                 status["text"] = f"HOOK VERIFY DIVERGENCE @ {cs:04X}:{ip:04X} (see console)"
                 print(exc, flush=True)
+                repro_metadata = {
+                    "program": "overkill",
+                    "video": args.video,
+                    "sound": args.sound,
+                    "command_tail": command_tail.decode("latin1") if isinstance(command_tail, bytes) else str(command_tail),
+                    "created_by": "scripts/play.py --verify-preview divergence",
+                    "divergence_at": f"{cs:04X}:{ip:04X}",
+                    "repro_entry_at": f"{repro_cs:04X}:{repro_ip:04X}",
+                    "repro_state": "pre_hook" if exc.repro_runtime is not None else "live_after_divergence_fallback",
+                    "boundary": boundary["n"],
+                    **exc.repro_metadata,
+                }
                 if demo_playback is not None:
                     try:
                         out = demo_playback.write_suffix(
-                            rt,
+                            repro_rt,
                             root=Path(args.save_repro_root),
                             name=f"divergence_{args.video}",
                             boundary=boundary["n"],
-                            status=f"hook verifier divergence snapshot at {cs:04X}:{ip:04X}",
-                            metadata={
-                                "program": "overkill",
-                                "video": args.video,
-                                "sound": args.sound,
-                                "command_tail": command_tail.decode("latin1") if isinstance(command_tail, bytes) else str(command_tail),
-                                "created_by": "scripts/play.py --verify-preview divergence",
-                                "divergence_at": f"{cs:04X}:{ip:04X}",
-                            },
+                            status=(
+                                f"hook verifier divergence pre-hook snapshot at {repro_cs:04X}:{repro_ip:04X}"
+                                if exc.repro_runtime is not None
+                                else f"hook verifier divergence live fallback snapshot at {cs:04X}:{ip:04X}"
+                            ),
+                            metadata=repro_metadata,
                         )
                         print(f"HOOK VERIFY repro demo saved: {out}", flush=True)
                     except Exception as save_exc:
                         print(f"HOOK VERIFY repro demo save failed: {type(save_exc).__name__}: {save_exc}", flush=True)
+                else:
+                    try:
+                        out = write_runtime_repro_snapshot(
+                            repro_rt,
+                            root=Path(args.save_repro_root),
+                            name=f"hook_verify_divergence_{args.video}",
+                            status=(
+                                f"hook verifier divergence pre-hook snapshot at {repro_cs:04X}:{repro_ip:04X}"
+                                if exc.repro_runtime is not None
+                                else f"hook verifier divergence live fallback snapshot at {cs:04X}:{ip:04X}"
+                            ),
+                            metadata={
+                                **repro_metadata,
+                                "replay_hint": "python scripts/play.py --snapshot <this-directory> --verify-hooks",
+                            },
+                        )
+                        print(f"HOOK VERIFY repro snapshot saved: {out}", flush=True)
+                    except Exception as save_exc:
+                        print(f"HOOK VERIFY repro snapshot save failed: {type(save_exc).__name__}: {save_exc}", flush=True)
                 # A divergence is a fatal verification result: stop the emulator
                 # and wake the UI so the window closes instead of hanging on a
                 # dead emulator thread.

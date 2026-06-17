@@ -248,15 +248,22 @@ def test_dos_re_strict_hook_verifier_auto_continuation_catches_bad_hook_without_
         stops={},
     )
 
+    divergence: HookVerifyDivergence | None = None
     try:
         cpu.step()
     except HookVerifyDivergence as exc:
+        divergence = exc
         report = str(exc)
     else:
         raise AssertionError("strict verifier accepted an intentionally wrong hook")
 
+    assert divergence is not None
     assert "1000:0000 bad_inc_ret" in report
     assert "AX: asm=0011 hook=0012" in report
+    assert divergence.repro_runtime is not None
+    assert divergence.repro_runtime.cpu.addr() == key
+    assert divergence.repro_runtime.cpu.s.ax == 0x0010
+    assert cpu.s.ax == 0x0012
 
 
 def test_dos_re_strict_auto_continuation_reference_ignores_other_replacement_hooks(tmp_path: Path) -> None:

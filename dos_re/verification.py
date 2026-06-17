@@ -39,7 +39,25 @@ def _trace_hook_target() -> Addr | None:
 
 
 class HookVerifyDivergence(RuntimeError):
-    pass
+    """Strict hook verifier mismatch with optional pre-hook repro state.
+
+    When a lifted hook mutates the live runtime and then diverges, the caller
+    must not save the already-mutated live state as the reproduction point.
+    The verifier therefore attaches a clone captured immediately before the
+    candidate hook was executed whenever that state is available.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        repro_runtime: Runtime | None = None,
+        repro_metadata: dict[str, object] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.repro_runtime = repro_runtime
+        self.repro_metadata = dict(repro_metadata or {})
+
 
 
 class HookVerifyLimitReached(RuntimeError):
@@ -245,6 +263,7 @@ class HookVerifier:
                     cpu.coverage_telemetry.record_hook_skipped(key, name)
             return
 
+        pre_hook_rt = self._clone_runtime()
         asm_rt = self._clone_runtime()
         asm_cpu = asm_rt.cpu
         asm_cpu.hook_verifier = None
@@ -276,6 +295,7 @@ class HookVerifier:
                 asm_rt=asm_rt,
                 hook_rt=self.rt,
                 asm_steps=asm_steps,
+                pre_hook_rt=pre_hook_rt,
             )
         except HookVerifyDivergence:
             if captured_trace is not None:
@@ -305,6 +325,7 @@ class HookVerifier:
         same address is reached.  It is slow but avoids maintaining elaborate
         stop-kind metadata for focused investigations.
         """
+        pre_hook_rt = self._clone_runtime()
         asm_rt = self._clone_runtime()
         asm_cpu = asm_rt.cpu
         asm_cpu.hook_verifier = None
@@ -344,6 +365,7 @@ class HookVerifier:
                 asm_rt=asm_rt,
                 hook_rt=self.rt,
                 asm_steps=asm_steps,
+                pre_hook_rt=pre_hook_rt,
             )
         except HookVerifyDivergence:
             if captured_trace is not None:
@@ -368,6 +390,7 @@ class HookVerifier:
         asm_rt: Runtime,
         hook_rt: Runtime,
         asm_steps: int,
+        pre_hook_rt: Runtime | None = None,
     ) -> None:
         self.total_verified += 1
         if cpu.coverage_telemetry is not None:
@@ -390,7 +413,17 @@ class HookVerifier:
             if self.config.log_diffs or self.config.stop_on_diff:
                 print(report)
             if self.config.stop_on_diff:
-                raise HookVerifyDivergence(report)
+                raise HookVerifyDivergence(
+                    report,
+                    repro_runtime=pre_hook_rt,
+                    repro_metadata={
+                        "hook": f"{key[0]:04X}:{key[1]:04X}",
+                        "hook_name": name,
+                        "call_no": call_no,
+                        "asm_steps": asm_steps,
+                        "expected_continuation": self._format_targets(targets),
+                    },
+                )
         if self.config.max_verified is not None and self.total_verified >= self.config.max_verified:
             raise HookVerifyLimitReached(f"HOOK VERIFY LIMIT REACHED verified={self.total_verified}")
         if getattr(cpu, "hook_verifier_live_yield_requested", False):
@@ -429,6 +462,8 @@ class HookVerifier:
             self.saved_names: dict[Addr, str | None] = {}
 
         def __enter__(self) -> None:
+            depth = getattr(self.cpu, "_hook_verify_live_depth", 0)
+            self.cpu._hook_verify_live_depth = depth + 1
             for key in getattr(self.cpu, "hook_verifier_passthrough", set()):
                 self.saved_hooks[key] = self.cpu.replacement_hooks.get(key)
                 self.saved_names[key] = self.cpu.hook_names.get(key)
@@ -445,6 +480,8 @@ class HookVerifier:
                     self.cpu.hook_names.pop(key, None)
 
         def __exit__(self, exc_type, exc, tb) -> bool:
+            depth = getattr(self.cpu, "_hook_verify_live_depth", 1)
+            self.cpu._hook_verify_live_depth = max(0, depth - 1)
             for key, hook in self.saved_hooks.items():
                 if hook is None:
                     self.cpu.replacement_hooks.pop(key, None)

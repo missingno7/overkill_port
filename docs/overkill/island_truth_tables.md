@@ -126,7 +126,7 @@ postmove tails, behavior dispatch, and runtime object evidence.
   object-family steering/overlap prelude from
   `snapshot_stop_1010_b24d_behavior`. It composes the runtime-patched `5E42`
   steering helper and lands on the already-owned `AD5A`/`ADC9` motion tails.
-- `1010:9E19` remains a bounded-original child from the rare overlap side-effect
+- `1010:9E19` is now a lifted child from the overlap/contact side-effect
   branch; do not promote that side effect semantically until it has its own
   oracle-backed lift.
 
@@ -380,29 +380,55 @@ Additional covered path:
   runs the lifted `5E1B` delta helper, reuses the verified runtime-patched
   `5E42` steering helper, forces sprite `0076h`, and lands on `BC4B`.
 
-### `game_state` update: status display parent and 9C01 frame child
+### `game_state` update: 9B2E frame-controller parent, status display parent, and 9C01 frame child
 
 What is verified:
+- `1010:9B2E overkill_frame_controller_9b2e` is now a composed frame-controller
+  parent under `97B2`.  It preserves the original order between input polling,
+  the `BP=237C` current object/script slot, direct movement-bit helpers, `A66F`,
+  the now-lifted `A067` action/object-spawn fanout, optional `9D4D`, `A616`,
+  `9CB6`, `9C01`, coordinate-ring maintenance, and `9FAF`.
+- `1010:A067 overkill_frame_action_spawn_fanout_a067` is a lifted input-bit
+  gated action/object-spawn fanout.  It gates on `DS:98BE & 10h`, maintains the
+  `DS:A980` latch, copies `A970/A972/A974/A976` into `A3A0/A3A2/A3A6/A3A4`, and
+  dispatches through the `A958` table for the proven `A19F`, `A18A`, and `A1C8`
+  tails while composing `A4EA` and the larger child frontiers.
+- `1010:9CB6 overkill_frame_contact_probe_fanout_9cb6` is now a lifted contact
+  fanout child: `4FF9` carry clear returns, while carry set saves `BP` and calls
+  the lifted `9E19` helper two/three/four times for `BEDC=0/1/other`.
+- The `9AFF` tail inside the parent continues only when `DS:2326 == 3` and the
+  incremented `SS:[BP+8] == 0Fh`; otherwise it returns early.  When it continues
+  it clears `SS:[BP+0]`, calls `4DBF`, sets `DS:A346`, and sets `DS:A342` only
+  if `DS:A97A` is zero.
 - `1010:61DC overkill_status_display_parent_61dc` is now a composed raw
   status/counter display parent.  It owns the six-counter clear, the positive
   `DS:A95C` countdown loop through `61F7/61C7`, six `6296` status-cell draws,
   and the optional two trailing marker-cell draws through `5A00`/`5A6C`.
-- `1010:9C01 overkill_frame_axis_condition_dispatch_9c01` is now a lifted child
-  of the still-bounded `9B2E` frame controller.  It counts the four delayed
-  coordinate-slot conditions, combines them into the original jump-table index,
-  and preserves the ret/one-pass `A60A`/`A5FC` tail behavior.
+- `1010:9C01 overkill_frame_axis_condition_dispatch_9c01` is a lifted child
+  absorbed by the `9B2E` frame controller during normal runs.  It counts the four
+  delayed coordinate-slot conditions, combines them into the original jump-table
+  index, and preserves the ret/one-pass `A60A`/`A5FC` tail behavior.
 
 What is intentionally not promoted:
+- `9B2E` and `9C01` are still frame/controller primitives, not semantic player
+  movement, enemy behavior, or a modern input system.
 - `61DC` is still only a low-level status/display compositor, not a named HUD
   widget.
-- `9C01` is still a frame/controller primitive, not semantic player movement or
-  enemy behavior.
+- `A067` is now lifted, but only as raw frame action/object-spawn glue.  Do not
+  promote it to a named weapon/player semantic yet.
+- `9CB6` is lifted only as a contact fanout; `9E19` is now a lifted child and
+  no player/enemy/projectile semantic name has been promoted from this alone.
 
 Still unknown / frontier:
-- The larger `9B2E-9BFA` parent remains bounded-original and should be split
-  around its already-lifted children before attempting a full parent hook.
-- `A067/A060-A06C` and `9CB6-9CBB` are now the cleaner next frame-controller
-  child frontiers.
+- `A515` and `A584` are now lifted as structural child spawn helpers behind
+  `A067`; they remain raw slot side effects, not semantic entity names.
+- `B15A` is now lifted as a shared rotating candidate scan used by `B1B0` and
+  `A515`; it remains a structural effect/contact-slot scan, not a semantic
+  enemy/projectile/pickup classifier.
+- `A3CA` and `A3FF` are now lifted structural children behind `A067`; they remain raw side/mirrored anchor spawn helpers, not semantic entity names.  Their shared `A41A` body dispatches `A958` through the `A4D7/A490/A499/A464/A438` table, and the open `A378` follow-up inside `A3FF` intentionally creates two slots via `CALL A396; stamp +18=6; fall through A396`.
+- `A2A0`, `A2F6`, and `A337` are now lifted structural action-spawn table tails behind `A067/A0E8`; `A2A0` deliberately creates two entries through `CALL A2D6` followed by fallthrough into `A2D6`.  The remaining action fanout frontier is the real out-of-range `A958` target `44AF`.
+- `9E19` is now the lifted post-contact/status helper reached by `9CB6`
+  and other object/contact paths.
 
 ### `game_state` update: status compositor and frame-controller count leaves
 
@@ -440,6 +466,18 @@ What is guessed / candidate only:
 
 Still unknown / frontier:
 - `859E-8653` appears to be the sibling consumer/compositor around these descriptor records and should be classified next.
+
+### `movement` update - 2026-06-17 A5xx/A6xx crystallised pure helpers
+
+- `1010:A5D1`, `A5EA`, `A5F9`, and `A607` remain verifier-compatible lifted
+  hooks, but their final axis value and step-count decision is now canonical in
+  `overkill.recovered.systems.movement.two_pass_axis_clamp_step` /
+  `one_pixel_axis_step`.
+- `1010:A616`, `A648`, `A63C`, and `A662` remain low-level movement / scroll-bias
+  helpers.  Their final `DS:A39A/A39C` top/bottom bias-word results are now
+  canonical in pure movement helpers and replay-checked by the lifted hook layer.
+- Confidence: high for the source-level value updates and ASM-compatible replay;
+  low for any semantic camera/player naming beyond "vertical edge-scroll bias".
 
 ### `movement` update - 2026-06-15 AF60 direct entry
 

@@ -607,10 +607,11 @@
     "status": "hooked_verified"
   },
   "1010:9B2E": {
-    "island": "input_menu",
-    "name": "bounded_original_frame_controller_9b2e",
-    "notes": "Large input/game-state controller called by 97B2. Classified as the next larger frontier; still executed as bounded original from the 97B2 wrapper.",
-    "status": "bounded_original"
+    "island": "game_state",
+    "kind": "hook",
+    "name": "overkill_frame_controller_9b2e",
+    "notes": "Frame-controller child of 97B2. Composes input poll, current BP object slot movement bits, the now-lifted A067 action/object-spawn fanout, optional contact probe 9CB6, coordinate-ring updates, and linked child-coordinate propagation.",
+    "status": "replaced"
   },
   "1010:9BFB": {
     "island": "game_state",
@@ -633,6 +634,13 @@
     "notes": "Frame-controller axis-condition counter and jump-table child of 9B2E. Combines input bits, A39E/A39F edge markers, A966/A968/A96A/A96C delayed coordinate slots, and a small jump table to ret or one-pass Y-step tails A60A/A5FC. Kept as runtime frame/controller logic, not semantic movement intent.",
     "status": "hooked_verified"
   },
+  "1010:9CB6": {
+    "island": "game_state",
+    "kind": "hook",
+    "name": "overkill_frame_contact_probe_fanout_9cb6",
+    "notes": "Frame-controller contact-probe fanout isolated from 9B2E. Calls 4FF9, returns immediately when CF is clear, or preserves BP and calls the now-lifted 9E19 post-contact/status helper two, three, or four times depending on raw DS:BEDC.",
+    "status": "replaced"
+  },
   "1010:9CD9": {
     "island": "game_state",
     "name": "overkill_frame_tracked_coord_store_9cd9",
@@ -642,6 +650,13 @@
     "island": "game_state",
     "name": "overkill_frame_coord_ring_advance_9cf1",
     "notes": "Advances the four delayed coordinate-ring cursors with wraparound at A33A back to A27A, gated by frame low nibble and A360."
+  },
+  "1010:9E19": {
+    "island": "game_state",
+    "kind": "hook",
+    "name": "overkill_post_contact_status_helper_9e19",
+    "notes": "Shared post-contact/status counter helper reached by 9CB6 and by the B24D overlap branch. Gates on A47C, 2384, and A95A; sets 23A0=8; decrements A95C by a BEDC-dependent amount; on refill may toggle A362, decrement A95A, transition 2384 to 3, emit raw BEFF bytes 0F/03/19, and compose 61DC/511F display children. Structural counter/status helper only, not yet a semantic damage/health model.",
+    "status": "replaced"
   },
   "1010:9E69": {
     "kind": "helper",
@@ -661,6 +676,48 @@
     "name": "overkill_tracked_object_coord_pull_a031",
     "notes": "Pulls delayed coordinate-ring entries into tracked object slots referenced by A962/A964."
   },
+  "1010:A067": {
+    "island": "game_state",
+    "kind": "hook",
+    "name": "overkill_frame_action_spawn_fanout_a067",
+    "notes": "Input-bit gated frame action/object-spawn fanout reached from 9B2E and D04D. Gates on DS:98BE bit 10h, latches DS:A980, copies A970/A972/A974/A976 into A3A0..A3A6, dispatches the A958 jump table, and composes A4EA plus now-lifted A515/A584/A3FF/A3CA/A2A0/A2F6/A337 children. The real out-of-range A958 target 44AF remains the main action-spawn frontier. Still raw frame action glue, not named weapon/player semantics.",
+    "status": "replaced"
+  },
+  "1010:A2A0": {
+    "island": "game_state",
+    "kind": "hook",
+    "name": "overkill_frame_action_listed_anchor_spawn_a2a0",
+    "notes": "A067/A0E8 child frontier: A958==5 raw listed two-slot spawn; clears a CS:9596-segment A3B4 word list, seeds DS:A3EA, then runs the A2D6 spawn/list/projection body through call and fallthrough. Structural only; not promoted to weapon/projectile semantics.",
+    "status": "replaced"
+  },
+  "1010:A2F6": {
+    "island": "game_state",
+    "kind": "hook",
+    "name": "overkill_frame_action_pair_spawn_a2f6",
+    "notes": "A067/A0E8 child frontier: A958==4 gated raw two-slot spawn tail; optional BEFF=17, A970 increments twice, A4EA/A1AE compose both slots with +18=8 and +8=35. Structural only.",
+    "status": "replaced"
+  },
+  "1010:A337": {
+    "island": "game_state",
+    "kind": "hook",
+    "name": "overkill_frame_action_pair_spawn_a337",
+    "notes": "A067/A0E8 child frontier: A958==3 sibling raw two-slot spawn tail; optional BEFF=16, A970 increments twice, A4EA/A1AE compose both slots with +18=7 and +8=37. Structural only.",
+    "status": "replaced"
+  },
+  "1010:A3CA": {
+    "island": "game_state",
+    "kind": "hook",
+    "name": "overkill_frame_action_side_anchor_spawn_a3ca",
+    "notes": "Child frontier behind A067. Four-source raw side-anchor spawn dispatcher that alternates A3EC direction stamps 7/1 while dispatching A966/A968/A96A/A96C through the A41A jump-table body. A41A targets A4D7/A490/A499/A464/A438 via A958. Structural spawn helper only; not a named gameplay entity.",
+    "status": "replaced"
+  },
+  "1010:A3FF": {
+    "island": "game_state",
+    "kind": "hook",
+    "name": "overkill_frame_action_mirrored_anchor_spawn_a3ff",
+    "notes": "Child frontier behind A067. Two-source mirrored anchor spawn dispatcher over A962/A964 with A3EC=FFFF, the A41A jump-table body, and the A378 SI-relative follow-up. The open A378 path has an intentional CALL A396; stamp +18=6; fall through into A396 shape, so it creates two SI-relative slots per source. Structural spawn helper only; not a named gameplay entity.",
+    "status": "replaced"
+  },
   "1010:A4D7": {
     "island": "gameplay_objects",
     "name": "overkill_object_spawn_seed_from_source_a4d7",
@@ -671,12 +728,26 @@
     "name": "overkill_object_spawn_seed_a4ea",
     "notes": "Common raw gameplay-object spawn seed template after allocation. Initializes active/type/sprite/layer/logic/substate fields; not yet a semantic constructor."
   },
+  "1010:A515": {
+    "island": "game_state",
+    "kind": "hook",
+    "name": "overkill_frame_action_linked_anchor_spawn_a515",
+    "notes": "Child frontier behind A067. Gated by raw A960/A97E counters, allocates one slot through 7547, anchors it from the current BP slot with A571, probes/links through B15A, stamps slot fields including linked word at +30, then increments A97E and decrements A960. Structural spawn helper only; not a named gameplay entity.",
+    "status": "replaced"
+  },
   "1010:A571": {
     "island": "gameplay_objects",
     "kind": "hook",
     "name": "overkill_object_spawn_anchor_offset_a571",
     "notes": "Raw spawned-object anchor helper: copies source SS:BP X/Y plus 10 pixels into destination DS:BX slot. Structural spawn/slot seeding helper, not yet a semantic object constructor.",
     "status": "hooked_verified"
+  },
+  "1010:A584": {
+    "island": "game_state",
+    "kind": "hook",
+    "name": "overkill_frame_action_dual_anchor_spawn_a584",
+    "notes": "Child frontier behind A067. Gated by raw A95E and copied A3A4 counter, increments A976 before each allocation, creates two anchored slots through A4EA/A571, aligns destination Y with AND FFFC, and stamps fields +8=8 and +18=5/6. Structural two-slot spawn helper only.",
+    "status": "replaced"
   },
   "1010:A5D1": {
     "island": "movement",
@@ -962,6 +1033,13 @@
     "notes": "Shared object tile-sweep probe wrapper. Snapshots object coordinates into A430 scratch globals, biases X by scroll offset DS:A278, delegates the direction-specific B00D tile response, restores X, and returns flags from CMP DS:A430,0. Raw collision/movement primitive; concrete object role unclassified.",
     "status": "hooked_verified"
   },
+  "1010:B00D": {
+    "island": "collision",
+    "kind": "hook",
+    "name": "overkill_object_tile_sweep_dispatch_b00d",
+    "notes": "Direction-specific object tile-sweep dispatcher called by AFD8. Converts the prepared object probe point through 5073, dispatches by SS:[BP+06] into the eight movement directions, probes blocking tiles via 505B, checks hazards via BDD0, and tail-jumps to B032 on blocked/contact paths. This starts lifting the B00D/B039/B07D/B0CC/B10F directional tile-response table into source-like collision/movement code while keeping child hook boundaries visible.",
+    "status": "hooked_verified"
+  },
   "1010:B032": {
     "island": "collision",
     "kind": "helper",
@@ -969,10 +1047,87 @@
     "notes": "Shared B00D tile-sweep blocked sentinel: writes DS:A430=1 and returns to the B00D caller. Raw scratch flag, not a semantic collision event.",
     "status": "replaced"
   },
+  "1010:B039": {
+    "island": "collision",
+    "kind": "interior",
+    "name": "B00D down+right / right tile-response branch",
+    "notes": "Interior branch of the recovered 1010:B00D directional tile-sweep dispatcher.",
+    "status": "absorbed_by_parent"
+  },
+  "1010:B03C": {
+    "island": "collision",
+    "kind": "interior",
+    "name": "B00D right tile-response branch",
+    "notes": "Interior branch of the recovered 1010:B00D directional tile-sweep dispatcher.",
+    "status": "absorbed_by_parent"
+  },
+  "1010:B07A": {
+    "island": "collision",
+    "kind": "interior",
+    "name": "B00D up+left composite branch",
+    "notes": "Interior branch of the recovered 1010:B00D directional tile-sweep dispatcher.",
+    "status": "absorbed_by_parent"
+  },
+  "1010:B07D": {
+    "island": "collision",
+    "kind": "interior",
+    "name": "B00D left tile-response branch",
+    "notes": "Interior branch of the recovered 1010:B00D directional tile-sweep dispatcher.",
+    "status": "absorbed_by_parent"
+  },
+  "1010:B0C9": {
+    "island": "collision",
+    "kind": "interior",
+    "name": "B00D left+down composite branch",
+    "notes": "Interior branch of the recovered 1010:B00D directional tile-sweep dispatcher.",
+    "status": "absorbed_by_parent"
+  },
+  "1010:B0CC": {
+    "island": "collision",
+    "kind": "interior",
+    "name": "B00D down tile-response branch",
+    "notes": "Interior branch of the recovered 1010:B00D directional tile-sweep dispatcher.",
+    "status": "absorbed_by_parent"
+  },
+  "1010:B10C": {
+    "island": "collision",
+    "kind": "interior",
+    "name": "B00D right+up composite branch",
+    "notes": "Interior branch of the recovered 1010:B00D directional tile-sweep dispatcher.",
+    "status": "absorbed_by_parent"
+  },
+  "1010:B10F": {
+    "island": "collision",
+    "kind": "interior",
+    "name": "B00D up tile-response branch",
+    "notes": "Interior branch of the recovered 1010:B00D directional tile-sweep dispatcher.",
+    "status": "absorbed_by_parent"
+  },
+  "1010:B15A": {
+    "island": "gameplay_objects",
+    "kind": "hook",
+    "name": "overkill_player_chase_candidate_scan_b15a",
+    "notes": "Shared rotating DS:A43A scan over the DS:23B4..2B5C effect/contact slot pool, now a standalone hook used by B1B0 and A515. Finds active chase/link candidates excluding logic ids 0001/0021/0022/0026, requiring X<=00E0 and hazard_class==0004, advances DS:A43A to the next slot on success, and returns BX as the found slot or FFFFh.",
+    "status": "hooked_verified"
+  },
+  "1010:B1B0": {
+    "island": "gameplay_objects",
+    "kind": "hook",
+    "name": "overkill_object_player_chase_b1b0",
+    "notes": "Player/view-centered chase behavior. Unacquired phase projects DS:237E/2380 plus small offsets onto the 4px 5DB2 target grid, runs target-seeking movement, and only scans B15A when blocked. Acquired phase validates the stored target slot SS:[BP+30h], steers via 5E1B/5E42, and rejoins AD5A/AD60 bounds tails. Pure target/candidate decisions live in overkill.recovered.systems.movement/objects.",
+    "status": "hooked_verified"
+  },
   "1010:B24D": {
     "island": "gameplay_objects",
     "name": "object_behavior_b24d",
-    "notes": "Observed EFAE-selected object-family steering/overlap prelude. Calls runtime-patched 5E42, checks the object slot against DS:237E/2380 reference box, and lands on AD5A/ADC9. Rare overlap side-effect helper 9E19 remains bounded original.",
+    "notes": "Observed EFAE-selected object-family steering/overlap prelude. Calls runtime-patched 5E42, checks the object slot against DS:237E/2380 reference box, and lands on AD5A/ADC9. Rare overlap side-effect helper 9E19 is now a separate verified status-counter hook boundary.",
+    "status": "hooked_verified"
+  },
+  "1010:B729": {
+    "island": "movement",
+    "kind": "hook",
+    "name": "overkill_object_target_move_b729",
+    "notes": "Small target-copy movement wrapper. Copies the current object slot target pair SS:[BP+32h]/SS:[BP+34h] into DS:2304/2306, calls the verified 5DB2 target-seeking movement helper through the nested hook boundary, compares DS:230A against zero, and near-returns with the CMP flags live. This closes the hot B885/B86D target-move prelude while keeping the core direction decision in overkill.recovered.systems.movement.",
     "status": "hooked_verified"
   },
   "1010:B73E": {
@@ -1035,7 +1190,7 @@
   "1010:C054": {
     "kind": "helper",
     "name": "object_deactivate_logic_dispatch_c054",
-    "notes": "Shared object-logic selector used by BD17 and BFC7. The compare chain selects A79Ch, A6F0h, A83Eh, A82Ah, A5C0h, or A4E4h for known selector values, decrements DS:A47E for the smaller counter family, and otherwise falls through to default AX=A4E4h; observed 0000h, 0013h, and 003Bh all use that default/no-counter behavior."
+    "notes": "Shared object-logic selector used by BD17 and BFC7. The 76h..79h final-boss/multipart family jumps to C15B, walks DS:A8BA/A8BC/A8BE/A8C0, calls C194 for every sibling slot except current BP, transitions those parts to logic 1/state 3, then clears DS:A47E and DS:A8C2. The 61h/62h/65h/14h/16h/17h/18h/7Fh/80h/81h/93h/1Dh/1Eh/20h/21h/22h family decrements DS:A47E (with 93h also setting DS:98A8). The 7Eh/7Dh/1Fh/1Ch/15h/13h family selects an AX script for the caller's optional C12D effect-spawn tail; observed default/no-counter values fall through to AX=A4E4h."
   },
   "1010:C3BF": {
     "island": "gameplay_objects",

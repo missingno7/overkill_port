@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from overkill.recovered.domain.directions import DirectionComponent
+
 
 @dataclass(frozen=True, slots=True)
 class ViewContactCenter:
@@ -19,9 +21,67 @@ class RectContactResult:
     hit: bool
 
 
+
+
+@dataclass(frozen=True, slots=True)
+class PostMoveYClampResult:
+    """Pure result for the recovered 1010:BCB1 post-move Y clamp.
+
+    The original clamps the current object Y coordinate into the signed
+    inclusive 0..00C0h gameplay window.  The adapter owns the exact CMP/flags
+    sequence and optional near-return behavior.
+    """
+
+    y_word: int
+    changed: bool
+
+
 @dataclass(frozen=True, slots=True)
 class ProbePoint:
     """Pure point/probe words used by object-centered collision scans."""
 
     x_word: int
     y_word: int
+
+
+@dataclass(frozen=True, slots=True)
+class TileSweepPlan:
+    """Pure direction decomposition for the recovered B00D tile-sweep table.
+
+    The original routine dispatches by direction index into four cardinal tile
+    response bodies and four diagonal CALL+fallthrough compositions.  This pure
+    record names only the gameplay order; ASM return addresses stay in the
+    adapter/hook layer.
+    """
+
+    components: tuple[DirectionComponent, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class PostMoveContactWindow:
+    """Pure AA71/BC4B post-move contact-window inputs.
+
+    The original helper compares the current object slot against the live
+    view/contact globals.  ``final_boss_narrow_x`` names the DS:A8C2 == 1
+    mode that narrows only the X window; the adapter owns the original globals
+    and flags.
+    """
+
+    view_x_word: int
+    y_guard_word: int
+    final_boss_narrow_x: bool
+
+
+@dataclass(frozen=True, slots=True)
+class ObjectOverlapScanDecision:
+    """Pure result for one AC97 object-overlap slot candidate.
+
+    ``overlaps`` means the current probe point and link/type gates matched far
+    enough that AC97 reaches its ACD9 reaction decision.  ``actionable`` names
+    the recovered type-4/type-5 family whose reaction must continue at ACD9;
+    non-actionable overlaps are consumed by the lifted loop and scanning
+    continues, exactly like the original ACD9 -> ACD2 tail.
+    """
+
+    overlaps: bool
+    actionable: bool

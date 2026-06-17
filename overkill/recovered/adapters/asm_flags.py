@@ -11,6 +11,13 @@ def cmp_word(cpu, a: int, b: int) -> None:
     cpu.set_sub_flags(a, b, a - b, 16)
 
 
+def cmp_byte(cpu, a: int, b: int) -> None:
+    """Apply 8086 ``CMP byte a,b`` flags without changing either operand."""
+    a &= 0xFF
+    b &= 0xFF
+    cpu.set_sub_flags(a, b, a - b, 8)
+
+
 def add_word_to_si(cpu, value: int) -> int:
     """Model ``ADD SI,imm`` and return the wrapped result."""
     old = cpu.s.si & 0xFFFF

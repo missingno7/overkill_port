@@ -162,25 +162,55 @@ def run_headless_hook_verifier(config: HeadlessHookVerifyConfig) -> int:
     except HookVerifyDivergence as exc:
         print("HOOK VERIFY DIVERGENCE")
         print(exc)
+        repro_rt = exc.repro_runtime if exc.repro_runtime is not None else rt
+        repro_metadata = {
+            "program": "overkill",
+            "video": config.video,
+            "sound": config.sound,
+            "created_by": "headless hook verifier divergence",
+            "verified_before_divergence": verifier.total_verified,
+            "demo_boundary": demo_boundary,
+            "source_snapshot": str(snapshot) if snapshot is not None else None,
+            "source_demo": str(config.demo) if config.demo is not None else None,
+            "repro_state": "pre_hook" if exc.repro_runtime is not None else "live_after_divergence_fallback",
+            **exc.repro_metadata,
+        }
         if demo is not None and config.repro_root is not None:
             try:
                 out = demo.write_suffix(
-                    rt,
+                    repro_rt,
                     root=config.repro_root,
                     name=f"hook_verify_divergence_{config.video}",
                     boundary=demo_boundary,
-                    status="headless hook verifier divergence snapshot",
-                    metadata={
-                        "program": "overkill",
-                        "video": config.video,
-                        "sound": config.sound,
-                        "created_by": "headless hook verifier divergence",
-                        "verified_before_divergence": verifier.total_verified,
-                    },
+                    status=(
+                        "headless hook verifier divergence pre-hook snapshot"
+                        if exc.repro_runtime is not None
+                        else "headless hook verifier divergence live fallback snapshot"
+                    ),
+                    metadata=repro_metadata,
                 )
                 print(f"HOOK VERIFY repro demo saved: {out}")
             except Exception as save_exc:
                 print(f"HOOK VERIFY repro demo save failed: {type(save_exc).__name__}: {save_exc}")
+        elif config.repro_root is not None:
+            try:
+                out = write_runtime_repro_snapshot(
+                    repro_rt,
+                    root=config.repro_root,
+                    name=f"hook_verify_divergence_{config.video}",
+                    status=(
+                        "headless hook verifier divergence pre-hook snapshot"
+                        if exc.repro_runtime is not None
+                        else "headless hook verifier divergence live fallback snapshot"
+                    ),
+                    metadata={
+                        **repro_metadata,
+                        "replay_hint": "python scripts/play.py --snapshot <this-directory> --verify-hooks",
+                    },
+                )
+                print(f"HOOK VERIFY repro snapshot saved: {out}")
+            except Exception as save_exc:
+                print(f"HOOK VERIFY repro snapshot save failed: {type(save_exc).__name__}: {save_exc}")
         print(rt.cpu.s.snapshot())
         return 1
     except Exception as exc:

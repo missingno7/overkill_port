@@ -1887,27 +1887,27 @@ def _tandy_block_header_44d7(cpu) -> bool:
 
 
 def expand_tandy_list_33af(cpu, runtime: TandyRenderRuntime) -> None:
-    """OVERKILL 1010:33AF Tandy startup list driver.
+    """OVERKILL 1010:33AF Tandy startup list driver — one iteration per call.
 
-    This composes the small original header reader at ``44D7`` with the already
-    verified ``33B2`` block expander, removing hundreds of interpreted
-    call/return/header iterations during Tandy startup materialization.
+    Reads the 44D7 block header for the current iteration and dispatches to
+    33B2.  The 33B2 hook processes the block and sets ip=33AF, which re-enters
+    this hook for the next iteration.  Keeping each hook call cheap lets the
+    ASM oracle verify 33AF and 33B2 independently without exhausting the step
+    budget on a large list.
     """
     if runtime.self_disable_if_patched(cpu, 0x33AF, runtime.signature_33af, "overkill_expand_tandy_list_33af"):
         return
 
     s = cpu.s
     ss = s.ss & 0xFFFF
-    while True:
-        # CALL 44D7 writes return IP 33B2 below SP, then RET restores SP.  Keep
-        # the scratch word because full-memory oracles can observe it.
-        cpu.mem.ww(ss, (s.sp - 2) & 0xFFFF, 0x33B2)
-        if not _tandy_block_header_44d7(cpu):
-            s.ip = 0x44AA
-            return
-        expand_tandy_block_33b2(cpu, runtime)
-        if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (s.cs & 0xFFFF, 0x33AF):
-            return
+    # CALL 44D7 writes return IP 33B2 below SP, then RET restores SP.  Keep
+    # the scratch word because full-memory oracles can observe it.
+    cpu.mem.ww(ss, (s.sp - 2) & 0xFFFF, 0x33B2)
+    if not _tandy_block_header_44d7(cpu):
+        s.ip = 0x44AA
+        return
+    # Dispatch to 33B2; its hook handles the block and sets ip=33AF to loop.
+    s.ip = 0x33B2
 
 
 def expand_tandy_block_33b2(cpu, runtime: TandyRenderRuntime) -> None:

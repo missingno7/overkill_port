@@ -174,6 +174,8 @@ from .gameplay.collision import (
     run_tile_contact_probe_4ff9,
     run_tile_probe_5073,
     run_tile_collision_probe_ac28,
+    run_frame_contact_probe_fanout_9cb6,
+    run_post_contact_status_helper_9e19,
 )
 from .gameplay.game_state import (
     run_demo_counter_tick_1f8f_081d,
@@ -208,6 +210,15 @@ from .gameplay.frame_orchestration import (
     run_status_cell_list_seed_8517,
     run_status_cell_seed_852b,
     run_frame_effect_status_text_60a2,
+    run_frame_controller_9b2e,
+    run_frame_action_spawn_fanout_a067,
+    run_frame_action_linked_anchor_spawn_a515,
+    run_frame_action_dual_anchor_spawn_a584,
+    run_frame_action_side_anchor_spawn_a3ca,
+    run_frame_action_mirrored_anchor_spawn_a3ff,
+    run_frame_action_listed_anchor_spawn_a2a0,
+    run_frame_action_pair_spawn_a2f6,
+    run_frame_action_pair_spawn_a337,
     run_frame_loop_97b2,
     run_transition_status_wait_9908,
     run_transition_input_release_tail_9928,
@@ -281,6 +292,10 @@ from .gameplay.object_runtime import (
     _run_interpreted_near_call_observed,
     _run_linked_effect_spawn_7420_observed,
     _run_movement_direction_5db2,
+    run_object_target_move_b729,
+    run_object_player_chase_b1b0,
+    run_player_chase_candidate_scan_b15a,
+    SIG_OBJECT_PLAYER_CHASE_B1B0,
     _run_object_bounds_tile_tail_ad60,
     run_object_bounds_tile_prelude_ad5a,
     run_object_target_chase_d281,
@@ -312,6 +327,7 @@ from .gameplay.object_runtime import (
     run_object_bottom_scroll_offset_decay_a63c,
     run_object_top_scroll_edge_response_a648,
     run_object_top_scroll_offset_recover_a662,
+    run_object_tile_sweep_dispatch_b00d,
     run_object_tile_sweep_probe_afd8,
     run_object_scroll_world_progress_gate_a66f,
     run_object_scroll_forward_row_a74e,
@@ -869,10 +885,98 @@ def overkill_object_top_scroll_offset_recover_a662(cpu):
     run_object_top_scroll_offset_recover_a662(cpu, _self_disable_if_patched)
 
 
+
+
+@registry.replace(0x1010, 0xB00D, "overkill_object_tile_sweep_dispatch_b00d")
+def overkill_object_tile_sweep_dispatch_b00d(cpu):
+    """Recovered direction-specific object tile-sweep dispatcher at 1010:B00D."""
+    run_object_tile_sweep_dispatch_b00d(cpu, _self_disable_if_patched)
+
+
 @registry.replace(0x1010, 0xAFD8, "overkill_object_tile_sweep_probe_afd8")
 def overkill_object_tile_sweep_probe_afd8(cpu):
     """Shared object tile-sweep probe wrapper around B00D."""
     run_object_tile_sweep_probe_afd8(cpu, _self_disable_if_patched)
+
+
+@registry.replace(0x1010, 0xA067, "overkill_frame_action_spawn_fanout_a067")
+def overkill_frame_action_spawn_fanout_a067(cpu):
+    """Frame input-bit gated action/object-spawn fanout exposed by 9B2E/D04D."""
+    run_frame_action_spawn_fanout_a067(
+        cpu,
+        _self_disable_if_patched,
+        _run_interpreted_near_call_observed,
+    )
+
+
+@registry.replace(0x1010, 0xA515, "overkill_frame_action_linked_anchor_spawn_a515")
+def overkill_frame_action_linked_anchor_spawn_a515(cpu):
+    """Gated raw anchored-slot spawn child behind A067."""
+    run_frame_action_linked_anchor_spawn_a515(
+        cpu,
+        _self_disable_if_patched,
+        _run_interpreted_near_call_observed,
+    )
+
+
+@registry.replace(0x1010, 0xA584, "overkill_frame_action_dual_anchor_spawn_a584")
+def overkill_frame_action_dual_anchor_spawn_a584(cpu):
+    """Gated two-slot anchored spawn child behind A067."""
+    run_frame_action_dual_anchor_spawn_a584(
+        cpu,
+        _self_disable_if_patched,
+        _run_interpreted_near_call_observed,
+    )
+
+
+@registry.replace(0x1010, 0xA3CA, "overkill_frame_action_side_anchor_spawn_a3ca")
+def overkill_frame_action_side_anchor_spawn_a3ca(cpu):
+    """Four-source raw side-anchor spawn dispatcher behind A067."""
+    run_frame_action_side_anchor_spawn_a3ca(
+        cpu,
+        _self_disable_if_patched,
+        _run_interpreted_near_call_observed,
+    )
+
+
+@registry.replace(0x1010, 0xA3FF, "overkill_frame_action_mirrored_anchor_spawn_a3ff")
+def overkill_frame_action_mirrored_anchor_spawn_a3ff(cpu):
+    """Two-source mirrored raw anchor spawn dispatcher behind A067."""
+    run_frame_action_mirrored_anchor_spawn_a3ff(
+        cpu,
+        _self_disable_if_patched,
+        _run_interpreted_near_call_observed,
+    )
+
+
+@registry.replace(0x1010, 0xA2A0, "overkill_frame_action_listed_anchor_spawn_a2a0")
+def overkill_frame_action_listed_anchor_spawn_a2a0(cpu):
+    """Raw listed two-slot action-spawn child behind A067/A0E8."""
+    run_frame_action_listed_anchor_spawn_a2a0(
+        cpu,
+        _self_disable_if_patched,
+        _run_interpreted_near_call_observed,
+    )
+
+
+@registry.replace(0x1010, 0xA2F6, "overkill_frame_action_pair_spawn_a2f6")
+def overkill_frame_action_pair_spawn_a2f6(cpu):
+    """Raw two-slot action-spawn table tail behind A067/A0E8."""
+    run_frame_action_pair_spawn_a2f6(
+        cpu,
+        _self_disable_if_patched,
+        _run_interpreted_near_call_observed,
+    )
+
+
+@registry.replace(0x1010, 0xA337, "overkill_frame_action_pair_spawn_a337")
+def overkill_frame_action_pair_spawn_a337(cpu):
+    """Sibling raw two-slot action-spawn table tail behind A067/A0E8."""
+    run_frame_action_pair_spawn_a337(
+        cpu,
+        _self_disable_if_patched,
+        _run_interpreted_near_call_observed,
+    )
 
 
 @registry.replace(0x1010, 0xA66F, "overkill_object_scroll_world_progress_gate_a66f")
@@ -3169,6 +3273,19 @@ def overkill_object_behavior_b24d(cpu):
 
 
 
+@registry.replace(0x1010, 0xB15A, "overkill_player_chase_candidate_scan_b15a")
+def overkill_player_chase_candidate_scan_b15a(cpu):
+    """Shared rotating object-slot candidate scan used by B1B0 and A515."""
+    run_player_chase_candidate_scan_b15a(cpu, _self_disable_if_patched)
+
+
+@registry.replace(0x1010, 0xB1B0, "overkill_object_player_chase_b1b0")
+def overkill_object_player_chase_b1b0(cpu):
+    """Recovered player/view-centered chase behavior at 1010:B1B0."""
+    run_object_player_chase_b1b0(cpu, _self_disable_if_patched)
+
+
+
 @registry.replace(0x1010, 0xB86D, "overkill_object_behavior_b86d")
 def overkill_object_behavior_b86d(cpu):
     """Observed object-family behavior B86D lifted up to the shared BC4B tail."""
@@ -3204,6 +3321,12 @@ def overkill_movement_direction_helper_5db2(cpu):
         return
     _run_movement_direction_5db2(cpu)
     cpu.s.ip = cpu.pop()
+
+
+@registry.replace(0x1010, 0xB729, "overkill_object_target_move_b729")
+def overkill_object_target_move_b729(cpu):
+    """Recovered object target-copy + 5DB2 movement wrapper at 1010:B729."""
+    run_object_target_move_b729(cpu, _self_disable_if_patched)
 
 
 @registry.replace(0x1010, 0xAA01, "overkill_object_logic_call_aa2b_aa01")
@@ -3962,6 +4085,32 @@ def overkill_status_coord_list_fill_99cd(cpu):
     run_status_coord_list_fill_99cd(cpu, _self_disable_if_patched)
 
 
+
+
+@registry.replace(0x1010, 0x9B2E, "overkill_frame_controller_9b2e")
+def overkill_frame_controller_9b2e(cpu):
+    """Frame-controller child around input, movement, A067, contacts, and coord rings."""
+    run_frame_controller_9b2e(cpu, _self_disable_if_patched, _run_interpreted_near_call_observed)
+
+
+@registry.replace(0x1010, 0x9CB6, "overkill_frame_contact_probe_fanout_9cb6")
+def overkill_frame_contact_probe_fanout_9cb6(cpu):
+    """Frame contact-probe fanout around 4FF9 and BEDC-gated 9E19 calls."""
+    run_frame_contact_probe_fanout_9cb6(
+        cpu,
+        _self_disable_if_patched,
+        _run_interpreted_near_call_observed,
+    )
+
+
+@registry.replace(0x1010, 0x9E19, "overkill_post_contact_status_helper_9e19")
+def overkill_post_contact_status_helper_9e19(cpu):
+    """Post-contact/status counter helper reached by 9CB6 and B24D."""
+    run_post_contact_status_helper_9e19(
+        cpu,
+        _self_disable_if_patched,
+        _run_interpreted_near_call_observed,
+    )
 
 
 @registry.replace(0x1010, 0x9CD9, "overkill_frame_tracked_coord_store_9cd9")

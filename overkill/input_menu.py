@@ -589,28 +589,22 @@ def run_menu_fire_release_wait_d390(cpu) -> None:
 
 
 def run_selector_input_release_wait_d434(cpu) -> None:
-    """Lift one poll of the 1010:D434 selector input-release wait gate.
+    """Lift one poll of phase 1 of the 1010:D434 selector input-release gate.
 
-    This gate is reached after the level/planet transition visuals.  It waits
-    until the current selector/fire input is released before falling into the
-    normal D445 selector loop.  The hook intentionally performs only one poll so
-    interactive play remains responsive.
+    Phase 1 (D434-D43A): waits until DS:[98E4] is cleared.
+    Phase 2 (D43B-D443): waits until all buttons in DS:[98BE] are released.
+
+    This hook only models phase 1.  When DS:[98E4] is already 0 the gate falls
+    through immediately to D43B (which starts phase 2 in raw ASM).  The raw
+    ASM is:
+        D434: CMP byte [98E4], 01h
+        D439: JE D434
+        D43B: CALL 0162         ; phase 2 starts here
     """
     ds = cpu.s.ds & 0xFFFF
     value = cpu.mem.rb(ds, 0x98E4)
     _cmp_byte(cpu, value, 0x01)
-    if value == 0x01:
-        cpu.s.ip = 0xD434
-        return
-
-    poll_input = cpu.replacement_hooks.get((0x1010, 0x0162), run_input_poll_0162)
-    cpu.push(0xD43E)
-    poll_input(cpu)
-    if cpu.s.ip != 0xD43E:
-        raise RuntimeError(f"0162 returned to unexpected IP {cpu.s.ip:04X} inside D434 selector-release wait")
-    buttons = cpu.mem.rb(ds, 0x98BE)
-    _cmp_byte(cpu, buttons, 0x00)
-    cpu.s.ip = 0xD43B if buttons != 0 else 0xD445
+    cpu.s.ip = 0xD434 if value == 0x01 else 0xD43B
 
 
 def run_input_selector_loop_d445(cpu) -> None:

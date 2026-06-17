@@ -1,0 +1,3802 @@
+{
+  "by_target": [
+    {
+      "count": 240,
+      "first_step": 160235,
+      "first_writer": "1010:356F",
+      "first_writer_island": "tandy_renderer",
+      "first_writer_symbol": null,
+      "target": "camera_or_view_x_237e",
+      "writers": [
+        {
+          "count": 60,
+          "writer": "1010:356F"
+        },
+        {
+          "count": 60,
+          "writer": "1010:358D"
+        },
+        {
+          "count": 60,
+          "writer": "1010:4FF9"
+        },
+        {
+          "count": 60,
+          "writer": "1010:5033"
+        }
+      ]
+    },
+    {
+      "count": 120,
+      "first_step": 160239,
+      "first_writer": "1010:35CF",
+      "first_writer_island": "tandy_renderer",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[0].unknown_0x0C+0",
+      "writers": [
+        {
+          "count": 120,
+          "writer": "1010:35CF"
+        }
+      ]
+    },
+    {
+      "count": 120,
+      "first_step": 160554,
+      "first_writer": "1010:4FF9",
+      "first_writer_island": "collision",
+      "first_writer_symbol": "overkill_tile_contact_probe_4ff9",
+      "target": "camera_or_view_y_2380",
+      "writers": [
+        {
+          "count": 60,
+          "writer": "1010:4FF9"
+        },
+        {
+          "count": 60,
+          "writer": "1010:5033"
+        }
+      ]
+    },
+    {
+      "count": 105,
+      "first_step": 176239,
+      "first_writer": "1010:BC4B",
+      "first_writer_island": "collision",
+      "first_writer_symbol": "overkill_object_postmove_bc4b",
+      "target": "view_contact_center_x_95f2",
+      "writers": [
+        {
+          "count": 105,
+          "writer": "1010:BC4B"
+        }
+      ]
+    },
+    {
+      "count": 105,
+      "first_step": 176239,
+      "first_writer": "1010:BC4B",
+      "first_writer_island": "collision",
+      "first_writer_symbol": "overkill_object_postmove_bc4b",
+      "target": "view_contact_center_y_95f4",
+      "writers": [
+        {
+          "count": 105,
+          "writer": "1010:BC4B"
+        }
+      ]
+    },
+    {
+      "count": 83,
+      "first_step": 176113,
+      "first_writer": "1010:35CF",
+      "first_writer_island": "tandy_renderer",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[1].unknown_0x0C+0",
+      "writers": [
+        {
+          "count": 83,
+          "writer": "1010:35CF"
+        }
+      ]
+    },
+    {
+      "count": 60,
+      "first_step": 160239,
+      "first_writer": "1010:5A36",
+      "first_writer_island": "coordinates",
+      "first_writer_symbol": "overkill_object_row_addr_5a36",
+      "target": "effect_contact_slots_23b4[0].unknown_0x12+0",
+      "writers": [
+        {
+          "count": 60,
+          "writer": "1010:5A36"
+        }
+      ]
+    },
+    {
+      "count": 59,
+      "first_step": 160573,
+      "first_writer": "1010:AB10",
+      "first_writer_island": "gameplay_objects",
+      "first_writer_symbol": "overkill_object_logic_ab10",
+      "target": "effect_contact_slots_23b4[0].unknown_0x08+0",
+      "writers": [
+        {
+          "count": 59,
+          "writer": "1010:AB10"
+        }
+      ]
+    },
+    {
+      "count": 59,
+      "first_step": 160573,
+      "first_writer": "1010:AB10",
+      "first_writer_island": "gameplay_objects",
+      "first_writer_symbol": "overkill_object_logic_ab10",
+      "target": "effect_contact_slots_23b4[0].x_word+0",
+      "writers": [
+        {
+          "count": 59,
+          "writer": "1010:AB10"
+        }
+      ]
+    },
+    {
+      "count": 59,
+      "first_step": 160573,
+      "first_writer": "1010:AB10",
+      "first_writer_island": "gameplay_objects",
+      "first_writer_symbol": "overkill_object_logic_ab10",
+      "target": "effect_contact_slots_23b4[0].y_word+0",
+      "writers": [
+        {
+          "count": 59,
+          "writer": "1010:AB10"
+        }
+      ]
+    },
+    {
+      "count": 44,
+      "first_step": 175208,
+      "first_writer": "1010:4B07",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[1].unknown_0x08+0",
+      "writers": [
+        {
+          "count": 43,
+          "writer": "1F8F:0451"
+        },
+        {
+          "count": 1,
+          "writer": "1010:4B07"
+        }
+      ]
+    },
+    {
+      "count": 40,
+      "first_step": 179542,
+      "first_writer": "1010:5A36",
+      "first_writer_island": "coordinates",
+      "first_writer_symbol": "overkill_object_row_addr_5a36",
+      "target": "effect_contact_slots_23b4[1].unknown_0x12+0",
+      "writers": [
+        {
+          "count": 40,
+          "writer": "1010:5A36"
+        }
+      ]
+    },
+    {
+      "count": 38,
+      "first_step": 202008,
+      "first_writer": "1010:35CF",
+      "first_writer_island": "tandy_renderer",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[2].unknown_0x0C+0",
+      "writers": [
+        {
+          "count": 38,
+          "writer": "1010:35CF"
+        }
+      ]
+    },
+    {
+      "count": 37,
+      "first_step": 175217,
+      "first_writer": "1010:4B27",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[1].unknown_0x06+0",
+      "writers": [
+        {
+          "count": 36,
+          "writer": "1010:5DB2"
+        },
+        {
+          "count": 1,
+          "writer": "1010:4B27"
+        }
+      ]
+    },
+    {
+      "count": 34,
+      "first_step": 201192,
+      "first_writer": "1010:821D",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[2].x_word+0",
+      "writers": [
+        {
+          "count": 18,
+          "writer": "1010:B86D"
+        },
+        {
+          "count": 15,
+          "writer": "1010:5DB2"
+        },
+        {
+          "count": 1,
+          "writer": "1010:821D"
+        }
+      ]
+    },
+    {
+      "count": 32,
+      "first_step": 201195,
+      "first_writer": "1010:8226",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[2].y_word+0",
+      "writers": [
+        {
+          "count": 16,
+          "writer": "1010:B86D"
+        },
+        {
+          "count": 15,
+          "writer": "1010:5DB2"
+        },
+        {
+          "count": 1,
+          "writer": "1010:8226"
+        }
+      ]
+    },
+    {
+      "count": 32,
+      "first_step": 205815,
+      "first_writer": "1010:35CF",
+      "first_writer_island": "tandy_renderer",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[3].unknown_0x0C+0",
+      "writers": [
+        {
+          "count": 32,
+          "writer": "1010:35CF"
+        }
+      ]
+    },
+    {
+      "count": 31,
+      "first_step": 204995,
+      "first_writer": "1010:8226",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[3].y_word+0",
+      "writers": [
+        {
+          "count": 15,
+          "writer": "1010:B86D"
+        },
+        {
+          "count": 15,
+          "writer": "1010:5DB2"
+        },
+        {
+          "count": 1,
+          "writer": "1010:8226"
+        }
+      ]
+    },
+    {
+      "count": 26,
+      "first_step": 208873,
+      "first_writer": "1010:35CF",
+      "first_writer_island": "tandy_renderer",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[4].unknown_0x0C+0",
+      "writers": [
+        {
+          "count": 26,
+          "writer": "1010:35CF"
+        }
+      ]
+    },
+    {
+      "count": 25,
+      "first_step": 175214,
+      "first_writer": "1010:4B1A",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[1].y_word+0",
+      "writers": [
+        {
+          "count": 24,
+          "writer": "1010:5DB2"
+        },
+        {
+          "count": 1,
+          "writer": "1010:4B1A"
+        }
+      ]
+    },
+    {
+      "count": 25,
+      "first_step": 208058,
+      "first_writer": "1010:8226",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[4].y_word+0",
+      "writers": [
+        {
+          "count": 12,
+          "writer": "1010:B86D"
+        },
+        {
+          "count": 12,
+          "writer": "1010:5DB2"
+        },
+        {
+          "count": 1,
+          "writer": "1010:8226"
+        }
+      ]
+    },
+    {
+      "count": 24,
+      "first_step": 204992,
+      "first_writer": "1010:821D",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[3].x_word+0",
+      "writers": [
+        {
+          "count": 15,
+          "writer": "1010:B86D"
+        },
+        {
+          "count": 8,
+          "writer": "1010:5DB2"
+        },
+        {
+          "count": 1,
+          "writer": "1010:821D"
+        }
+      ]
+    },
+    {
+      "count": 20,
+      "first_step": 212247,
+      "first_writer": "1010:35CF",
+      "first_writer_island": "tandy_renderer",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[5].unknown_0x0C+0",
+      "writers": [
+        {
+          "count": 20,
+          "writer": "1010:35CF"
+        }
+      ]
+    },
+    {
+      "count": 19,
+      "first_step": 175211,
+      "first_writer": "1010:4B11",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[1].x_word+0",
+      "writers": [
+        {
+          "count": 18,
+          "writer": "1010:5DB2"
+        },
+        {
+          "count": 1,
+          "writer": "1010:4B11"
+        }
+      ]
+    },
+    {
+      "count": 19,
+      "first_step": 201197,
+      "first_writer": "1010:822E",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[2].unknown_0x06+0",
+      "writers": [
+        {
+          "count": 15,
+          "writer": "1010:5DB2"
+        },
+        {
+          "count": 3,
+          "writer": "1010:B86D"
+        },
+        {
+          "count": 1,
+          "writer": "1010:822E"
+        }
+      ]
+    },
+    {
+      "count": 19,
+      "first_step": 202008,
+      "first_writer": "1010:5A36",
+      "first_writer_island": "coordinates",
+      "first_writer_symbol": "overkill_object_row_addr_5a36",
+      "target": "effect_contact_slots_23b4[2].unknown_0x12+0",
+      "writers": [
+        {
+          "count": 19,
+          "writer": "1010:5A36"
+        }
+      ]
+    },
+    {
+      "count": 19,
+      "first_step": 211022,
+      "first_writer": "1010:8226",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[5].y_word+0",
+      "writers": [
+        {
+          "count": 9,
+          "writer": "1010:B86D"
+        },
+        {
+          "count": 9,
+          "writer": "1010:5DB2"
+        },
+        {
+          "count": 1,
+          "writer": "1010:8226"
+        }
+      ]
+    },
+    {
+      "count": 18,
+      "first_step": 202125,
+      "first_writer": "1010:B901",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[2].unknown_0x08+0",
+      "writers": [
+        {
+          "count": 15,
+          "writer": "1010:B86D"
+        },
+        {
+          "count": 3,
+          "writer": "1010:B901"
+        }
+      ]
+    },
+    {
+      "count": 17,
+      "first_step": 201193,
+      "first_writer": "1010:8220",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[2].target_x_word+0",
+      "writers": [
+        {
+          "count": 15,
+          "writer": "1010:B86D"
+        },
+        {
+          "count": 1,
+          "writer": "1010:8220"
+        },
+        {
+          "count": 1,
+          "writer": "1F8F:03C2"
+        }
+      ]
+    },
+    {
+      "count": 17,
+      "first_step": 201196,
+      "first_writer": "1010:8229",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[2].target_y_word+0",
+      "writers": [
+        {
+          "count": 15,
+          "writer": "1010:B86D"
+        },
+        {
+          "count": 1,
+          "writer": "1010:8229"
+        },
+        {
+          "count": 1,
+          "writer": "1F8F:03C6"
+        }
+      ]
+    },
+    {
+      "count": 17,
+      "first_step": 204993,
+      "first_writer": "1010:8220",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[3].target_x_word+0",
+      "writers": [
+        {
+          "count": 15,
+          "writer": "1010:B86D"
+        },
+        {
+          "count": 1,
+          "writer": "1010:8220"
+        },
+        {
+          "count": 1,
+          "writer": "1F8F:03C2"
+        }
+      ]
+    },
+    {
+      "count": 17,
+      "first_step": 204996,
+      "first_writer": "1010:8229",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[3].target_y_word+0",
+      "writers": [
+        {
+          "count": 15,
+          "writer": "1010:B86D"
+        },
+        {
+          "count": 1,
+          "writer": "1010:8229"
+        },
+        {
+          "count": 1,
+          "writer": "1F8F:03C6"
+        }
+      ]
+    },
+    {
+      "count": 16,
+      "first_step": 204997,
+      "first_writer": "1010:822E",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[3].unknown_0x06+0",
+      "writers": [
+        {
+          "count": 15,
+          "writer": "1010:5DB2"
+        },
+        {
+          "count": 1,
+          "writer": "1010:822E"
+        }
+      ]
+    },
+    {
+      "count": 16,
+      "first_step": 205815,
+      "first_writer": "1010:5A36",
+      "first_writer_island": "coordinates",
+      "first_writer_symbol": "overkill_object_row_addr_5a36",
+      "target": "effect_contact_slots_23b4[3].unknown_0x12+0",
+      "writers": [
+        {
+          "count": 16,
+          "writer": "1010:5A36"
+        }
+      ]
+    },
+    {
+      "count": 15,
+      "first_step": 205944,
+      "first_writer": "1010:B86D",
+      "first_writer_island": "gameplay_objects",
+      "first_writer_symbol": "overkill_object_behavior_b86d",
+      "target": "effect_contact_slots_23b4[3].unknown_0x08+0",
+      "writers": [
+        {
+          "count": 15,
+          "writer": "1010:B86D"
+        }
+      ]
+    },
+    {
+      "count": 14,
+      "first_step": 208056,
+      "first_writer": "1010:8220",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[4].target_x_word+0",
+      "writers": [
+        {
+          "count": 12,
+          "writer": "1010:B86D"
+        },
+        {
+          "count": 1,
+          "writer": "1010:8220"
+        },
+        {
+          "count": 1,
+          "writer": "1F8F:03C2"
+        }
+      ]
+    },
+    {
+      "count": 14,
+      "first_step": 208059,
+      "first_writer": "1010:8229",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[4].target_y_word+0",
+      "writers": [
+        {
+          "count": 12,
+          "writer": "1010:B86D"
+        },
+        {
+          "count": 1,
+          "writer": "1010:8229"
+        },
+        {
+          "count": 1,
+          "writer": "1F8F:03C6"
+        }
+      ]
+    },
+    {
+      "count": 14,
+      "first_step": 215205,
+      "first_writer": "1010:35CF",
+      "first_writer_island": "tandy_renderer",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[6].unknown_0x0C+0",
+      "writers": [
+        {
+          "count": 14,
+          "writer": "1010:35CF"
+        }
+      ]
+    },
+    {
+      "count": 13,
+      "first_step": 208055,
+      "first_writer": "1010:821D",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[4].x_word+0",
+      "writers": [
+        {
+          "count": 12,
+          "writer": "1010:B86D"
+        },
+        {
+          "count": 1,
+          "writer": "1010:821D"
+        }
+      ]
+    },
+    {
+      "count": 13,
+      "first_step": 208060,
+      "first_writer": "1010:822E",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[4].unknown_0x06+0",
+      "writers": [
+        {
+          "count": 12,
+          "writer": "1010:5DB2"
+        },
+        {
+          "count": 1,
+          "writer": "1010:822E"
+        }
+      ]
+    },
+    {
+      "count": 13,
+      "first_step": 208873,
+      "first_writer": "1010:5A36",
+      "first_writer_island": "coordinates",
+      "first_writer_symbol": "overkill_object_row_addr_5a36",
+      "target": "effect_contact_slots_23b4[4].unknown_0x12+0",
+      "writers": [
+        {
+          "count": 13,
+          "writer": "1010:5A36"
+        }
+      ]
+    },
+    {
+      "count": 13,
+      "first_step": 214253,
+      "first_writer": "1010:8226",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[6].y_word+0",
+      "writers": [
+        {
+          "count": 6,
+          "writer": "1010:B86D"
+        },
+        {
+          "count": 6,
+          "writer": "1010:5DB2"
+        },
+        {
+          "count": 1,
+          "writer": "1010:8226"
+        }
+      ]
+    },
+    {
+      "count": 12,
+      "first_step": 209014,
+      "first_writer": "1010:B86D",
+      "first_writer_island": "gameplay_objects",
+      "first_writer_symbol": "overkill_object_behavior_b86d",
+      "target": "effect_contact_slots_23b4[4].unknown_0x08+0",
+      "writers": [
+        {
+          "count": 12,
+          "writer": "1010:B86D"
+        }
+      ]
+    },
+    {
+      "count": 11,
+      "first_step": 211020,
+      "first_writer": "1010:8220",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[5].target_x_word+0",
+      "writers": [
+        {
+          "count": 9,
+          "writer": "1010:B86D"
+        },
+        {
+          "count": 1,
+          "writer": "1010:8220"
+        },
+        {
+          "count": 1,
+          "writer": "1F8F:03C2"
+        }
+      ]
+    },
+    {
+      "count": 11,
+      "first_step": 211023,
+      "first_writer": "1010:8229",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[5].target_y_word+0",
+      "writers": [
+        {
+          "count": 9,
+          "writer": "1010:B86D"
+        },
+        {
+          "count": 1,
+          "writer": "1010:8229"
+        },
+        {
+          "count": 1,
+          "writer": "1F8F:03C6"
+        }
+      ]
+    },
+    {
+      "count": 10,
+      "first_step": 211019,
+      "first_writer": "1010:821D",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[5].x_word+0",
+      "writers": [
+        {
+          "count": 9,
+          "writer": "1010:B86D"
+        },
+        {
+          "count": 1,
+          "writer": "1010:821D"
+        }
+      ]
+    },
+    {
+      "count": 10,
+      "first_step": 211024,
+      "first_writer": "1010:822E",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[5].unknown_0x06+0",
+      "writers": [
+        {
+          "count": 9,
+          "writer": "1010:5DB2"
+        },
+        {
+          "count": 1,
+          "writer": "1010:822E"
+        }
+      ]
+    },
+    {
+      "count": 10,
+      "first_step": 212247,
+      "first_writer": "1010:5A36",
+      "first_writer_island": "coordinates",
+      "first_writer_symbol": "overkill_object_row_addr_5a36",
+      "target": "effect_contact_slots_23b4[5].unknown_0x12+0",
+      "writers": [
+        {
+          "count": 10,
+          "writer": "1010:5A36"
+        }
+      ]
+    },
+    {
+      "count": 9,
+      "first_step": 212400,
+      "first_writer": "1010:B86D",
+      "first_writer_island": "gameplay_objects",
+      "first_writer_symbol": "overkill_object_behavior_b86d",
+      "target": "effect_contact_slots_23b4[5].unknown_0x08+0",
+      "writers": [
+        {
+          "count": 9,
+          "writer": "1010:B86D"
+        }
+      ]
+    },
+    {
+      "count": 8,
+      "first_step": 175198,
+      "first_writer": "1010:7524",
+      "first_writer_island": "gameplay_objects",
+      "first_writer_symbol": "overkill_find_free_effect_slot_7524",
+      "target": "effect_allocator_cursor_95d8",
+      "writers": [
+        {
+          "count": 8,
+          "writer": "1010:7524"
+        }
+      ]
+    },
+    {
+      "count": 8,
+      "first_step": 175248,
+      "first_writer": "1F8F:021D",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "boss_or_object_counter_a47e",
+      "writers": [
+        {
+          "count": 7,
+          "writer": "1F8F:03E4"
+        },
+        {
+          "count": 1,
+          "writer": "1F8F:021D"
+        }
+      ]
+    },
+    {
+      "count": 8,
+      "first_step": 214251,
+      "first_writer": "1010:8220",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[6].target_x_word+0",
+      "writers": [
+        {
+          "count": 6,
+          "writer": "1010:B86D"
+        },
+        {
+          "count": 1,
+          "writer": "1010:8220"
+        },
+        {
+          "count": 1,
+          "writer": "1F8F:03C2"
+        }
+      ]
+    },
+    {
+      "count": 8,
+      "first_step": 214254,
+      "first_writer": "1010:8229",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[6].target_y_word+0",
+      "writers": [
+        {
+          "count": 6,
+          "writer": "1010:B86D"
+        },
+        {
+          "count": 1,
+          "writer": "1010:8229"
+        },
+        {
+          "count": 1,
+          "writer": "1F8F:03C6"
+        }
+      ]
+    },
+    {
+      "count": 8,
+      "first_step": 220163,
+      "first_writer": "1010:35CF",
+      "first_writer_island": "tandy_renderer",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[7].unknown_0x0C+0",
+      "writers": [
+        {
+          "count": 8,
+          "writer": "1010:35CF"
+        }
+      ]
+    },
+    {
+      "count": 7,
+      "first_step": 214250,
+      "first_writer": "1010:821D",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[6].x_word+0",
+      "writers": [
+        {
+          "count": 6,
+          "writer": "1010:B86D"
+        },
+        {
+          "count": 1,
+          "writer": "1010:821D"
+        }
+      ]
+    },
+    {
+      "count": 7,
+      "first_step": 214255,
+      "first_writer": "1010:822E",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[6].unknown_0x06+0",
+      "writers": [
+        {
+          "count": 6,
+          "writer": "1010:5DB2"
+        },
+        {
+          "count": 1,
+          "writer": "1010:822E"
+        }
+      ]
+    },
+    {
+      "count": 7,
+      "first_step": 215205,
+      "first_writer": "1010:5A36",
+      "first_writer_island": "coordinates",
+      "first_writer_symbol": "overkill_object_row_addr_5a36",
+      "target": "effect_contact_slots_23b4[6].unknown_0x12+0",
+      "writers": [
+        {
+          "count": 7,
+          "writer": "1010:5A36"
+        }
+      ]
+    },
+    {
+      "count": 7,
+      "first_step": 219340,
+      "first_writer": "1010:821D",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[7].x_word+0",
+      "writers": [
+        {
+          "count": 3,
+          "writer": "1010:B86D"
+        },
+        {
+          "count": 3,
+          "writer": "1010:5DB2"
+        },
+        {
+          "count": 1,
+          "writer": "1010:821D"
+        }
+      ]
+    },
+    {
+      "count": 7,
+      "first_step": 219343,
+      "first_writer": "1010:8226",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[7].y_word+0",
+      "writers": [
+        {
+          "count": 3,
+          "writer": "1010:B86D"
+        },
+        {
+          "count": 3,
+          "writer": "1010:5DB2"
+        },
+        {
+          "count": 1,
+          "writer": "1010:8226"
+        }
+      ]
+    },
+    {
+      "count": 6,
+      "first_step": 215370,
+      "first_writer": "1010:B86D",
+      "first_writer_island": "gameplay_objects",
+      "first_writer_symbol": "overkill_object_behavior_b86d",
+      "target": "effect_contact_slots_23b4[6].unknown_0x08+0",
+      "writers": [
+        {
+          "count": 6,
+          "writer": "1010:B86D"
+        }
+      ]
+    },
+    {
+      "count": 5,
+      "first_step": 219341,
+      "first_writer": "1010:8220",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[7].target_x_word+0",
+      "writers": [
+        {
+          "count": 3,
+          "writer": "1010:B86D"
+        },
+        {
+          "count": 1,
+          "writer": "1010:8220"
+        },
+        {
+          "count": 1,
+          "writer": "1F8F:03C2"
+        }
+      ]
+    },
+    {
+      "count": 5,
+      "first_step": 219344,
+      "first_writer": "1010:8229",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[7].target_y_word+0",
+      "writers": [
+        {
+          "count": 3,
+          "writer": "1010:B86D"
+        },
+        {
+          "count": 1,
+          "writer": "1010:8229"
+        },
+        {
+          "count": 1,
+          "writer": "1F8F:03C6"
+        }
+      ]
+    },
+    {
+      "count": 4,
+      "first_step": 202125,
+      "first_writer": "1010:B86D",
+      "first_writer_island": "gameplay_objects",
+      "first_writer_symbol": "overkill_object_behavior_b86d",
+      "target": "effect_contact_slots_23b4[2].unknown_0x2E+0",
+      "writers": [
+        {
+          "count": 4,
+          "writer": "1010:B86D"
+        }
+      ]
+    },
+    {
+      "count": 4,
+      "first_step": 219345,
+      "first_writer": "1010:822E",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[7].unknown_0x06+0",
+      "writers": [
+        {
+          "count": 3,
+          "writer": "1010:5DB2"
+        },
+        {
+          "count": 1,
+          "writer": "1010:822E"
+        }
+      ]
+    },
+    {
+      "count": 4,
+      "first_step": 220163,
+      "first_writer": "1010:5A36",
+      "first_writer_island": "coordinates",
+      "first_writer_symbol": "overkill_object_row_addr_5a36",
+      "target": "effect_contact_slots_23b4[7].unknown_0x12+0",
+      "writers": [
+        {
+          "count": 4,
+          "writer": "1010:5A36"
+        }
+      ]
+    },
+    {
+      "count": 3,
+      "first_step": 175226,
+      "first_writer": "1010:4BEC",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[1].unknown_0x20+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:4BEC"
+        },
+        {
+          "count": 1,
+          "writer": "1010:4BF3"
+        },
+        {
+          "count": 1,
+          "writer": "1F8F:0217"
+        }
+      ]
+    },
+    {
+      "count": 3,
+      "first_step": 202125,
+      "first_writer": "1010:B86D",
+      "first_writer_island": "gameplay_objects",
+      "first_writer_symbol": "overkill_object_behavior_b86d",
+      "target": "effect_contact_slots_23b4[2].unknown_0x2C+0",
+      "writers": [
+        {
+          "count": 3,
+          "writer": "1010:B86D"
+        }
+      ]
+    },
+    {
+      "count": 3,
+      "first_step": 202125,
+      "first_writer": "1010:B86D",
+      "first_writer_island": "gameplay_objects",
+      "first_writer_symbol": "overkill_object_behavior_b86d",
+      "target": "effect_contact_slots_23b4[2].unknown_0x2A+0",
+      "writers": [
+        {
+          "count": 3,
+          "writer": "1010:B86D"
+        }
+      ]
+    },
+    {
+      "count": 3,
+      "first_step": 220340,
+      "first_writer": "1010:B86D",
+      "first_writer_island": "gameplay_objects",
+      "first_writer_symbol": "overkill_object_behavior_b86d",
+      "target": "effect_contact_slots_23b4[7].unknown_0x08+0",
+      "writers": [
+        {
+          "count": 3,
+          "writer": "1010:B86D"
+        }
+      ]
+    },
+    {
+      "count": 3,
+      "first_step": 222723,
+      "first_writer": "1010:8229",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[8].target_y_word+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:8229"
+        },
+        {
+          "count": 1,
+          "writer": "1F8F:03C6"
+        },
+        {
+          "count": 1,
+          "writer": "1010:B86D"
+        }
+      ]
+    },
+    {
+      "count": 2,
+      "first_step": 201200,
+      "first_writer": "1010:823D",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[2].logic_id+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:823D"
+        },
+        {
+          "count": 1,
+          "writer": "1F8F:03CB"
+        }
+      ]
+    },
+    {
+      "count": 2,
+      "first_step": 205000,
+      "first_writer": "1010:823D",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[3].logic_id+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:823D"
+        },
+        {
+          "count": 1,
+          "writer": "1F8F:03CB"
+        }
+      ]
+    },
+    {
+      "count": 2,
+      "first_step": 208063,
+      "first_writer": "1010:823D",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[4].logic_id+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:823D"
+        },
+        {
+          "count": 1,
+          "writer": "1F8F:03CB"
+        }
+      ]
+    },
+    {
+      "count": 2,
+      "first_step": 211027,
+      "first_writer": "1010:823D",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[5].logic_id+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:823D"
+        },
+        {
+          "count": 1,
+          "writer": "1F8F:03CB"
+        }
+      ]
+    },
+    {
+      "count": 2,
+      "first_step": 214258,
+      "first_writer": "1010:823D",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[6].logic_id+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:823D"
+        },
+        {
+          "count": 1,
+          "writer": "1F8F:03CB"
+        }
+      ]
+    },
+    {
+      "count": 2,
+      "first_step": 219348,
+      "first_writer": "1010:823D",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[7].logic_id+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:823D"
+        },
+        {
+          "count": 1,
+          "writer": "1F8F:03CB"
+        }
+      ]
+    },
+    {
+      "count": 2,
+      "first_step": 222720,
+      "first_writer": "1010:8220",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[8].target_x_word+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:8220"
+        },
+        {
+          "count": 1,
+          "writer": "1F8F:03C2"
+        }
+      ]
+    },
+    {
+      "count": 2,
+      "first_step": 222727,
+      "first_writer": "1010:823D",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[8].logic_id+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:823D"
+        },
+        {
+          "count": 1,
+          "writer": "1F8F:03CB"
+        }
+      ]
+    },
+    {
+      "count": 2,
+      "first_step": 223537,
+      "first_writer": "1010:35CF",
+      "first_writer_island": "tandy_renderer",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[8].unknown_0x0C+0",
+      "writers": [
+        {
+          "count": 2,
+          "writer": "1010:35CF"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 175204,
+      "first_writer": "1010:4AF8",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[1].unknown_0x28+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:4AF8"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 175205,
+      "first_writer": "1010:4AFC",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[1].active_word+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:4AFC"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 175207,
+      "first_writer": "1010:4B02",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[1].gate_or_layer+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:4B02"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 175215,
+      "first_writer": "1010:4B1D",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[1].target_y_word+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:4B1D"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 175216,
+      "first_writer": "1010:4B22",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[1].target_x_word+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:4B22"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 175219,
+      "first_writer": "1010:4B2D",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[1].scan_flag+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:4B2D"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 175220,
+      "first_writer": "1010:4B32",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[1].hazard_class+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:4B32"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 175222,
+      "first_writer": "1010:4B38",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[1].logic_id+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:4B38"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 175232,
+      "first_writer": "1010:4C03",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[1].unknown_0x24+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:4C03"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 201188,
+      "first_writer": "1010:820E",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[2].unknown_0x28+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:820E"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 201189,
+      "first_writer": "1010:8212",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[2].active_word+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:8212"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 201190,
+      "first_writer": "1010:8217",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[2].gate_or_layer+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:8217"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 201198,
+      "first_writer": "1010:8233",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[2].scan_flag+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:8233"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 201199,
+      "first_writer": "1010:8238",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[2].hazard_class+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:8238"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 201201,
+      "first_writer": "1010:8242",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[2].unknown_0x20+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:8242"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 201202,
+      "first_writer": "1010:8247",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[2].unknown_0x24+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:8247"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 201215,
+      "first_writer": "1F8F:03E0",
+      "first_writer_island": "gameplay_objects",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[2].unknown_0x1C+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1F8F:03E0"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 204988,
+      "first_writer": "1010:820E",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[3].unknown_0x28+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:820E"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 204989,
+      "first_writer": "1010:8212",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[3].active_word+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:8212"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 204990,
+      "first_writer": "1010:8217",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[3].gate_or_layer+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:8217"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 204998,
+      "first_writer": "1010:8233",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[3].scan_flag+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:8233"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 204999,
+      "first_writer": "1010:8238",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[3].hazard_class+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:8238"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 205001,
+      "first_writer": "1010:8242",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[3].unknown_0x20+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:8242"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 205002,
+      "first_writer": "1010:8247",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[3].unknown_0x24+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:8247"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 205015,
+      "first_writer": "1F8F:03E0",
+      "first_writer_island": "gameplay_objects",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[3].unknown_0x1C+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1F8F:03E0"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 208051,
+      "first_writer": "1010:820E",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[4].unknown_0x28+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:820E"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 208052,
+      "first_writer": "1010:8212",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[4].active_word+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:8212"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 208053,
+      "first_writer": "1010:8217",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[4].gate_or_layer+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:8217"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 208061,
+      "first_writer": "1010:8233",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[4].scan_flag+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:8233"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 208062,
+      "first_writer": "1010:8238",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[4].hazard_class+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:8238"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 208064,
+      "first_writer": "1010:8242",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[4].unknown_0x20+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:8242"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 208065,
+      "first_writer": "1010:8247",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[4].unknown_0x24+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:8247"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 208078,
+      "first_writer": "1F8F:03E0",
+      "first_writer_island": "gameplay_objects",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[4].unknown_0x1C+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1F8F:03E0"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 211015,
+      "first_writer": "1010:820E",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[5].unknown_0x28+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:820E"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 211016,
+      "first_writer": "1010:8212",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[5].active_word+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:8212"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 211017,
+      "first_writer": "1010:8217",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[5].gate_or_layer+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:8217"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 211025,
+      "first_writer": "1010:8233",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[5].scan_flag+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:8233"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 211026,
+      "first_writer": "1010:8238",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[5].hazard_class+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:8238"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 211028,
+      "first_writer": "1010:8242",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[5].unknown_0x20+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:8242"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 211029,
+      "first_writer": "1010:8247",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[5].unknown_0x24+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:8247"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 211042,
+      "first_writer": "1F8F:03E0",
+      "first_writer_island": "gameplay_objects",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[5].unknown_0x1C+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1F8F:03E0"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 214246,
+      "first_writer": "1010:820E",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[6].unknown_0x28+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:820E"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 214247,
+      "first_writer": "1010:8212",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[6].active_word+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:8212"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 214248,
+      "first_writer": "1010:8217",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[6].gate_or_layer+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:8217"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 214256,
+      "first_writer": "1010:8233",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[6].scan_flag+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:8233"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 214257,
+      "first_writer": "1010:8238",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[6].hazard_class+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:8238"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 214259,
+      "first_writer": "1010:8242",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[6].unknown_0x20+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:8242"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 214260,
+      "first_writer": "1010:8247",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[6].unknown_0x24+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:8247"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 214273,
+      "first_writer": "1F8F:03E0",
+      "first_writer_island": "gameplay_objects",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[6].unknown_0x1C+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1F8F:03E0"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 219336,
+      "first_writer": "1010:820E",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[7].unknown_0x28+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:820E"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 219337,
+      "first_writer": "1010:8212",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[7].active_word+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:8212"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 219338,
+      "first_writer": "1010:8217",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[7].gate_or_layer+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:8217"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 219346,
+      "first_writer": "1010:8233",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[7].scan_flag+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:8233"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 219347,
+      "first_writer": "1010:8238",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[7].hazard_class+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:8238"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 219349,
+      "first_writer": "1010:8242",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[7].unknown_0x20+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:8242"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 219350,
+      "first_writer": "1010:8247",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[7].unknown_0x24+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:8247"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 219363,
+      "first_writer": "1F8F:03E0",
+      "first_writer_island": "gameplay_objects",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[7].unknown_0x1C+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1F8F:03E0"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 222715,
+      "first_writer": "1010:820E",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[8].unknown_0x28+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:820E"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 222716,
+      "first_writer": "1010:8212",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[8].active_word+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:8212"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 222717,
+      "first_writer": "1010:8217",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[8].gate_or_layer+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:8217"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 222719,
+      "first_writer": "1010:821D",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[8].x_word+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:821D"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 222722,
+      "first_writer": "1010:8226",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[8].y_word+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:8226"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 222724,
+      "first_writer": "1010:822E",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[8].unknown_0x06+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:822E"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 222725,
+      "first_writer": "1010:8233",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[8].scan_flag+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:8233"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 222726,
+      "first_writer": "1010:8238",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[8].hazard_class+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:8238"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 222728,
+      "first_writer": "1010:8242",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[8].unknown_0x20+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:8242"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 222729,
+      "first_writer": "1010:8247",
+      "first_writer_island": "unknown",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[8].unknown_0x24+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:8247"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 222742,
+      "first_writer": "1F8F:03E0",
+      "first_writer_island": "gameplay_objects",
+      "first_writer_symbol": null,
+      "target": "effect_contact_slots_23b4[8].unknown_0x1C+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1F8F:03E0"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 223537,
+      "first_writer": "1010:5A36",
+      "first_writer_island": "coordinates",
+      "first_writer_symbol": "overkill_object_row_addr_5a36",
+      "target": "effect_contact_slots_23b4[8].unknown_0x12+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:5A36"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "first_step": 223726,
+      "first_writer": "1010:B86D",
+      "first_writer_island": "gameplay_objects",
+      "first_writer_symbol": "overkill_object_behavior_b86d",
+      "target": "effect_contact_slots_23b4[8].unknown_0x08+0",
+      "writers": [
+        {
+          "count": 1,
+          "writer": "1010:B86D"
+        }
+      ]
+    }
+  ],
+  "by_target_family": [
+    {
+      "count": 343,
+      "target_family": "effect_contact_slots_23b4.unknown_0x0C"
+    },
+    {
+      "count": 240,
+      "target_family": "camera_or_view_x_237e"
+    },
+    {
+      "count": 212,
+      "target_family": "effect_contact_slots_23b4.y_word"
+    },
+    {
+      "count": 174,
+      "target_family": "effect_contact_slots_23b4.x_word"
+    },
+    {
+      "count": 170,
+      "target_family": "effect_contact_slots_23b4.unknown_0x12"
+    },
+    {
+      "count": 167,
+      "target_family": "effect_contact_slots_23b4.unknown_0x08"
+    },
+    {
+      "count": 120,
+      "target_family": "camera_or_view_y_2380"
+    },
+    {
+      "count": 107,
+      "target_family": "effect_contact_slots_23b4.unknown_0x06"
+    },
+    {
+      "count": 105,
+      "target_family": "view_contact_center_x_95f2"
+    },
+    {
+      "count": 105,
+      "target_family": "view_contact_center_y_95f4"
+    },
+    {
+      "count": 76,
+      "target_family": "effect_contact_slots_23b4.target_y_word"
+    },
+    {
+      "count": 75,
+      "target_family": "effect_contact_slots_23b4.target_x_word"
+    },
+    {
+      "count": 15,
+      "target_family": "effect_contact_slots_23b4.logic_id"
+    },
+    {
+      "count": 10,
+      "target_family": "effect_contact_slots_23b4.unknown_0x20"
+    },
+    {
+      "count": 8,
+      "target_family": "effect_allocator_cursor_95d8"
+    },
+    {
+      "count": 8,
+      "target_family": "effect_contact_slots_23b4.unknown_0x28"
+    },
+    {
+      "count": 8,
+      "target_family": "effect_contact_slots_23b4.active_word"
+    },
+    {
+      "count": 8,
+      "target_family": "effect_contact_slots_23b4.gate_or_layer"
+    },
+    {
+      "count": 8,
+      "target_family": "effect_contact_slots_23b4.scan_flag"
+    },
+    {
+      "count": 8,
+      "target_family": "effect_contact_slots_23b4.hazard_class"
+    },
+    {
+      "count": 8,
+      "target_family": "effect_contact_slots_23b4.unknown_0x24"
+    },
+    {
+      "count": 8,
+      "target_family": "boss_or_object_counter_a47e"
+    },
+    {
+      "count": 7,
+      "target_family": "effect_contact_slots_23b4.unknown_0x1C"
+    },
+    {
+      "count": 4,
+      "target_family": "effect_contact_slots_23b4.unknown_0x2E"
+    },
+    {
+      "count": 3,
+      "target_family": "effect_contact_slots_23b4.unknown_0x2C"
+    },
+    {
+      "count": 3,
+      "target_family": "effect_contact_slots_23b4.unknown_0x2A"
+    }
+  ],
+  "by_writer": [
+    {
+      "count": 343,
+      "csip": "1010:35CF",
+      "first_step": 160239,
+      "island": "tandy_renderer",
+      "last_step": 223569,
+      "symbol": null,
+      "top_targets": [
+        {
+          "count": 120,
+          "target": "effect_contact_slots_23b4[0].unknown_0x0C+0"
+        },
+        {
+          "count": 83,
+          "target": "effect_contact_slots_23b4[1].unknown_0x0C+0"
+        },
+        {
+          "count": 38,
+          "target": "effect_contact_slots_23b4[2].unknown_0x0C+0"
+        },
+        {
+          "count": 32,
+          "target": "effect_contact_slots_23b4[3].unknown_0x0C+0"
+        },
+        {
+          "count": 26,
+          "target": "effect_contact_slots_23b4[4].unknown_0x0C+0"
+        },
+        {
+          "count": 20,
+          "target": "effect_contact_slots_23b4[5].unknown_0x0C+0"
+        },
+        {
+          "count": 14,
+          "target": "effect_contact_slots_23b4[6].unknown_0x0C+0"
+        },
+        {
+          "count": 8,
+          "target": "effect_contact_slots_23b4[7].unknown_0x0C+0"
+        },
+        {
+          "count": 2,
+          "target": "effect_contact_slots_23b4[8].unknown_0x0C+0"
+        }
+      ]
+    },
+    {
+      "count": 319,
+      "csip": "1010:B86D",
+      "first_step": 202125,
+      "island": "gameplay_objects",
+      "last_step": 223726,
+      "symbol": "overkill_object_behavior_b86d",
+      "top_targets": [
+        {
+          "count": 18,
+          "target": "effect_contact_slots_23b4[2].x_word+0"
+        },
+        {
+          "count": 16,
+          "target": "effect_contact_slots_23b4[2].y_word+0"
+        },
+        {
+          "count": 15,
+          "target": "effect_contact_slots_23b4[3].unknown_0x08+0"
+        },
+        {
+          "count": 15,
+          "target": "effect_contact_slots_23b4[3].target_y_word+0"
+        },
+        {
+          "count": 15,
+          "target": "effect_contact_slots_23b4[3].y_word+0"
+        },
+        {
+          "count": 15,
+          "target": "effect_contact_slots_23b4[3].target_x_word+0"
+        },
+        {
+          "count": 15,
+          "target": "effect_contact_slots_23b4[3].x_word+0"
+        },
+        {
+          "count": 15,
+          "target": "effect_contact_slots_23b4[2].unknown_0x08+0"
+        },
+        {
+          "count": 15,
+          "target": "effect_contact_slots_23b4[2].target_y_word+0"
+        },
+        {
+          "count": 15,
+          "target": "effect_contact_slots_23b4[2].target_x_word+0"
+        },
+        {
+          "count": 12,
+          "target": "effect_contact_slots_23b4[4].unknown_0x08+0"
+        },
+        {
+          "count": 12,
+          "target": "effect_contact_slots_23b4[4].target_y_word+0"
+        }
+      ]
+    },
+    {
+      "count": 224,
+      "csip": "1010:5DB2",
+      "first_step": 175362,
+      "island": "movement",
+      "last_step": 222676,
+      "symbol": "object_movement_direction_helper_5db2",
+      "top_targets": [
+        {
+          "count": 36,
+          "target": "effect_contact_slots_23b4[1].unknown_0x06+0"
+        },
+        {
+          "count": 24,
+          "target": "effect_contact_slots_23b4[1].y_word+0"
+        },
+        {
+          "count": 18,
+          "target": "effect_contact_slots_23b4[1].x_word+0"
+        },
+        {
+          "count": 15,
+          "target": "effect_contact_slots_23b4[3].unknown_0x06+0"
+        },
+        {
+          "count": 15,
+          "target": "effect_contact_slots_23b4[3].y_word+0"
+        },
+        {
+          "count": 15,
+          "target": "effect_contact_slots_23b4[2].unknown_0x06+0"
+        },
+        {
+          "count": 15,
+          "target": "effect_contact_slots_23b4[2].x_word+0"
+        },
+        {
+          "count": 15,
+          "target": "effect_contact_slots_23b4[2].y_word+0"
+        },
+        {
+          "count": 12,
+          "target": "effect_contact_slots_23b4[4].unknown_0x06+0"
+        },
+        {
+          "count": 12,
+          "target": "effect_contact_slots_23b4[4].y_word+0"
+        },
+        {
+          "count": 9,
+          "target": "effect_contact_slots_23b4[5].unknown_0x06+0"
+        },
+        {
+          "count": 9,
+          "target": "effect_contact_slots_23b4[5].y_word+0"
+        }
+      ]
+    },
+    {
+      "count": 210,
+      "csip": "1010:BC4B",
+      "first_step": 176239,
+      "island": "collision",
+      "last_step": 222750,
+      "symbol": "overkill_object_postmove_bc4b",
+      "top_targets": [
+        {
+          "count": 105,
+          "target": "view_contact_center_x_95f2"
+        },
+        {
+          "count": 105,
+          "target": "view_contact_center_y_95f4"
+        }
+      ]
+    },
+    {
+      "count": 177,
+      "csip": "1010:AB10",
+      "first_step": 160573,
+      "island": "gameplay_objects",
+      "last_step": 222754,
+      "symbol": "overkill_object_logic_ab10",
+      "top_targets": [
+        {
+          "count": 59,
+          "target": "effect_contact_slots_23b4[0].unknown_0x08+0"
+        },
+        {
+          "count": 59,
+          "target": "effect_contact_slots_23b4[0].x_word+0"
+        },
+        {
+          "count": 59,
+          "target": "effect_contact_slots_23b4[0].y_word+0"
+        }
+      ]
+    },
+    {
+      "count": 170,
+      "csip": "1010:5A36",
+      "first_step": 160239,
+      "island": "coordinates",
+      "last_step": 223569,
+      "symbol": "overkill_object_row_addr_5a36",
+      "top_targets": [
+        {
+          "count": 60,
+          "target": "effect_contact_slots_23b4[0].unknown_0x12+0"
+        },
+        {
+          "count": 40,
+          "target": "effect_contact_slots_23b4[1].unknown_0x12+0"
+        },
+        {
+          "count": 19,
+          "target": "effect_contact_slots_23b4[2].unknown_0x12+0"
+        },
+        {
+          "count": 16,
+          "target": "effect_contact_slots_23b4[3].unknown_0x12+0"
+        },
+        {
+          "count": 13,
+          "target": "effect_contact_slots_23b4[4].unknown_0x12+0"
+        },
+        {
+          "count": 10,
+          "target": "effect_contact_slots_23b4[5].unknown_0x12+0"
+        },
+        {
+          "count": 7,
+          "target": "effect_contact_slots_23b4[6].unknown_0x12+0"
+        },
+        {
+          "count": 4,
+          "target": "effect_contact_slots_23b4[7].unknown_0x12+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[8].unknown_0x12+0"
+        }
+      ]
+    },
+    {
+      "count": 120,
+      "csip": "1010:4FF9",
+      "first_step": 160554,
+      "island": "collision",
+      "last_step": 223706,
+      "symbol": "overkill_tile_contact_probe_4ff9",
+      "top_targets": [
+        {
+          "count": 60,
+          "target": "camera_or_view_x_237e"
+        },
+        {
+          "count": 60,
+          "target": "camera_or_view_y_2380"
+        }
+      ]
+    },
+    {
+      "count": 120,
+      "csip": "1010:5033",
+      "first_step": 160554,
+      "island": "collision",
+      "last_step": 223706,
+      "symbol": null,
+      "top_targets": [
+        {
+          "count": 60,
+          "target": "camera_or_view_y_2380"
+        },
+        {
+          "count": 60,
+          "target": "camera_or_view_x_237e"
+        }
+      ]
+    },
+    {
+      "count": 60,
+      "csip": "1010:356F",
+      "first_step": 160235,
+      "island": "tandy_renderer",
+      "last_step": 223533,
+      "symbol": null,
+      "top_targets": [
+        {
+          "count": 60,
+          "target": "camera_or_view_x_237e"
+        }
+      ]
+    },
+    {
+      "count": 60,
+      "csip": "1010:358D",
+      "first_step": 160235,
+      "island": "tandy_renderer",
+      "last_step": 223533,
+      "symbol": null,
+      "top_targets": [
+        {
+          "count": 60,
+          "target": "camera_or_view_x_237e"
+        }
+      ]
+    },
+    {
+      "count": 43,
+      "csip": "1F8F:0451",
+      "first_step": 175369,
+      "island": "gameplay_objects",
+      "last_step": 222747,
+      "symbol": null,
+      "top_targets": [
+        {
+          "count": 43,
+          "target": "effect_contact_slots_23b4[1].unknown_0x08+0"
+        }
+      ]
+    },
+    {
+      "count": 8,
+      "csip": "1010:7524",
+      "first_step": 175198,
+      "island": "gameplay_objects",
+      "last_step": 222709,
+      "symbol": "overkill_find_free_effect_slot_7524",
+      "top_targets": [
+        {
+          "count": 8,
+          "target": "effect_allocator_cursor_95d8"
+        }
+      ]
+    },
+    {
+      "count": 7,
+      "csip": "1010:820E",
+      "first_step": 201188,
+      "island": "unknown",
+      "last_step": 222715,
+      "symbol": null,
+      "top_targets": [
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[2].unknown_0x28+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[3].unknown_0x28+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[4].unknown_0x28+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[5].unknown_0x28+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[6].unknown_0x28+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[7].unknown_0x28+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[8].unknown_0x28+0"
+        }
+      ]
+    },
+    {
+      "count": 7,
+      "csip": "1010:8212",
+      "first_step": 201189,
+      "island": "unknown",
+      "last_step": 222716,
+      "symbol": null,
+      "top_targets": [
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[2].active_word+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[3].active_word+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[4].active_word+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[5].active_word+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[6].active_word+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[7].active_word+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[8].active_word+0"
+        }
+      ]
+    },
+    {
+      "count": 7,
+      "csip": "1010:8217",
+      "first_step": 201190,
+      "island": "unknown",
+      "last_step": 222717,
+      "symbol": null,
+      "top_targets": [
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[2].gate_or_layer+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[3].gate_or_layer+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[4].gate_or_layer+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[5].gate_or_layer+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[6].gate_or_layer+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[7].gate_or_layer+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[8].gate_or_layer+0"
+        }
+      ]
+    },
+    {
+      "count": 7,
+      "csip": "1010:821D",
+      "first_step": 201192,
+      "island": "unknown",
+      "last_step": 222719,
+      "symbol": null,
+      "top_targets": [
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[2].x_word+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[3].x_word+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[4].x_word+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[5].x_word+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[6].x_word+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[7].x_word+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[8].x_word+0"
+        }
+      ]
+    },
+    {
+      "count": 7,
+      "csip": "1010:8220",
+      "first_step": 201193,
+      "island": "unknown",
+      "last_step": 222720,
+      "symbol": null,
+      "top_targets": [
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[2].target_x_word+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[3].target_x_word+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[4].target_x_word+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[5].target_x_word+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[6].target_x_word+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[7].target_x_word+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[8].target_x_word+0"
+        }
+      ]
+    },
+    {
+      "count": 7,
+      "csip": "1010:8226",
+      "first_step": 201195,
+      "island": "unknown",
+      "last_step": 222722,
+      "symbol": null,
+      "top_targets": [
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[2].y_word+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[3].y_word+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[4].y_word+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[5].y_word+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[6].y_word+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[7].y_word+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[8].y_word+0"
+        }
+      ]
+    },
+    {
+      "count": 7,
+      "csip": "1010:8229",
+      "first_step": 201196,
+      "island": "unknown",
+      "last_step": 222723,
+      "symbol": null,
+      "top_targets": [
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[2].target_y_word+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[3].target_y_word+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[4].target_y_word+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[5].target_y_word+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[6].target_y_word+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[7].target_y_word+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[8].target_y_word+0"
+        }
+      ]
+    },
+    {
+      "count": 7,
+      "csip": "1010:822E",
+      "first_step": 201197,
+      "island": "unknown",
+      "last_step": 222724,
+      "symbol": null,
+      "top_targets": [
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[2].unknown_0x06+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[3].unknown_0x06+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[4].unknown_0x06+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[5].unknown_0x06+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[6].unknown_0x06+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[7].unknown_0x06+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[8].unknown_0x06+0"
+        }
+      ]
+    },
+    {
+      "count": 7,
+      "csip": "1010:8233",
+      "first_step": 201198,
+      "island": "unknown",
+      "last_step": 222725,
+      "symbol": null,
+      "top_targets": [
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[2].scan_flag+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[3].scan_flag+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[4].scan_flag+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[5].scan_flag+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[6].scan_flag+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[7].scan_flag+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[8].scan_flag+0"
+        }
+      ]
+    },
+    {
+      "count": 7,
+      "csip": "1010:8238",
+      "first_step": 201199,
+      "island": "unknown",
+      "last_step": 222726,
+      "symbol": null,
+      "top_targets": [
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[2].hazard_class+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[3].hazard_class+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[4].hazard_class+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[5].hazard_class+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[6].hazard_class+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[7].hazard_class+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[8].hazard_class+0"
+        }
+      ]
+    },
+    {
+      "count": 7,
+      "csip": "1010:823D",
+      "first_step": 201200,
+      "island": "unknown",
+      "last_step": 222727,
+      "symbol": null,
+      "top_targets": [
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[2].logic_id+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[3].logic_id+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[4].logic_id+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[5].logic_id+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[6].logic_id+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[7].logic_id+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[8].logic_id+0"
+        }
+      ]
+    },
+    {
+      "count": 7,
+      "csip": "1010:8242",
+      "first_step": 201201,
+      "island": "unknown",
+      "last_step": 222728,
+      "symbol": null,
+      "top_targets": [
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[2].unknown_0x20+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[3].unknown_0x20+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[4].unknown_0x20+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[5].unknown_0x20+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[6].unknown_0x20+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[7].unknown_0x20+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[8].unknown_0x20+0"
+        }
+      ]
+    },
+    {
+      "count": 7,
+      "csip": "1010:8247",
+      "first_step": 201202,
+      "island": "unknown",
+      "last_step": 222729,
+      "symbol": null,
+      "top_targets": [
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[2].unknown_0x24+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[3].unknown_0x24+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[4].unknown_0x24+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[5].unknown_0x24+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[6].unknown_0x24+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[7].unknown_0x24+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[8].unknown_0x24+0"
+        }
+      ]
+    },
+    {
+      "count": 7,
+      "csip": "1F8F:03C2",
+      "first_step": 201209,
+      "island": "gameplay_objects",
+      "last_step": 222736,
+      "symbol": null,
+      "top_targets": [
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[2].target_x_word+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[3].target_x_word+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[4].target_x_word+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[5].target_x_word+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[6].target_x_word+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[7].target_x_word+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[8].target_x_word+0"
+        }
+      ]
+    },
+    {
+      "count": 7,
+      "csip": "1F8F:03C6",
+      "first_step": 201211,
+      "island": "gameplay_objects",
+      "last_step": 222738,
+      "symbol": null,
+      "top_targets": [
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[2].target_y_word+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[3].target_y_word+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[4].target_y_word+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[5].target_y_word+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[6].target_y_word+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[7].target_y_word+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[8].target_y_word+0"
+        }
+      ]
+    },
+    {
+      "count": 7,
+      "csip": "1F8F:03CB",
+      "first_step": 201212,
+      "island": "gameplay_objects",
+      "last_step": 222739,
+      "symbol": null,
+      "top_targets": [
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[2].logic_id+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[3].logic_id+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[4].logic_id+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[5].logic_id+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[6].logic_id+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[7].logic_id+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[8].logic_id+0"
+        }
+      ]
+    },
+    {
+      "count": 7,
+      "csip": "1F8F:03E0",
+      "first_step": 201215,
+      "island": "gameplay_objects",
+      "last_step": 222742,
+      "symbol": null,
+      "top_targets": [
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[2].unknown_0x1C+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[3].unknown_0x1C+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[4].unknown_0x1C+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[5].unknown_0x1C+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[6].unknown_0x1C+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[7].unknown_0x1C+0"
+        },
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[8].unknown_0x1C+0"
+        }
+      ]
+    },
+    {
+      "count": 7,
+      "csip": "1F8F:03E4",
+      "first_step": 201216,
+      "island": "gameplay_objects",
+      "last_step": 222743,
+      "symbol": null,
+      "top_targets": [
+        {
+          "count": 7,
+          "target": "boss_or_object_counter_a47e"
+        }
+      ]
+    },
+    {
+      "count": 3,
+      "csip": "1010:B901",
+      "first_step": 202125,
+      "island": "unknown",
+      "last_step": 204949,
+      "symbol": null,
+      "top_targets": [
+        {
+          "count": 3,
+          "target": "effect_contact_slots_23b4[2].unknown_0x08+0"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "csip": "1010:4AF8",
+      "first_step": 175204,
+      "island": "unknown",
+      "last_step": 175204,
+      "symbol": null,
+      "top_targets": [
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[1].unknown_0x28+0"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "csip": "1010:4AFC",
+      "first_step": 175205,
+      "island": "unknown",
+      "last_step": 175205,
+      "symbol": null,
+      "top_targets": [
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[1].active_word+0"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "csip": "1010:4B02",
+      "first_step": 175207,
+      "island": "unknown",
+      "last_step": 175207,
+      "symbol": null,
+      "top_targets": [
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[1].gate_or_layer+0"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "csip": "1010:4B07",
+      "first_step": 175208,
+      "island": "unknown",
+      "last_step": 175208,
+      "symbol": null,
+      "top_targets": [
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[1].unknown_0x08+0"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "csip": "1010:4B11",
+      "first_step": 175211,
+      "island": "unknown",
+      "last_step": 175211,
+      "symbol": null,
+      "top_targets": [
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[1].x_word+0"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "csip": "1010:4B1A",
+      "first_step": 175214,
+      "island": "unknown",
+      "last_step": 175214,
+      "symbol": null,
+      "top_targets": [
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[1].y_word+0"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "csip": "1010:4B1D",
+      "first_step": 175215,
+      "island": "unknown",
+      "last_step": 175215,
+      "symbol": null,
+      "top_targets": [
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[1].target_y_word+0"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "csip": "1010:4B22",
+      "first_step": 175216,
+      "island": "unknown",
+      "last_step": 175216,
+      "symbol": null,
+      "top_targets": [
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[1].target_x_word+0"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "csip": "1010:4B27",
+      "first_step": 175217,
+      "island": "unknown",
+      "last_step": 175217,
+      "symbol": null,
+      "top_targets": [
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[1].unknown_0x06+0"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "csip": "1010:4B2D",
+      "first_step": 175219,
+      "island": "unknown",
+      "last_step": 175219,
+      "symbol": null,
+      "top_targets": [
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[1].scan_flag+0"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "csip": "1010:4B32",
+      "first_step": 175220,
+      "island": "unknown",
+      "last_step": 175220,
+      "symbol": null,
+      "top_targets": [
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[1].hazard_class+0"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "csip": "1010:4B38",
+      "first_step": 175222,
+      "island": "unknown",
+      "last_step": 175222,
+      "symbol": null,
+      "top_targets": [
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[1].logic_id+0"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "csip": "1010:4BEC",
+      "first_step": 175226,
+      "island": "unknown",
+      "last_step": 175226,
+      "symbol": null,
+      "top_targets": [
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[1].unknown_0x20+0"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "csip": "1010:4BF3",
+      "first_step": 175229,
+      "island": "unknown",
+      "last_step": 175229,
+      "symbol": null,
+      "top_targets": [
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[1].unknown_0x20+0"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "csip": "1010:4C03",
+      "first_step": 175232,
+      "island": "unknown",
+      "last_step": 175232,
+      "symbol": null,
+      "top_targets": [
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[1].unknown_0x24+0"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "csip": "1F8F:0217",
+      "first_step": 175247,
+      "island": "unknown",
+      "last_step": 175247,
+      "symbol": null,
+      "top_targets": [
+        {
+          "count": 1,
+          "target": "effect_contact_slots_23b4[1].unknown_0x20+0"
+        }
+      ]
+    },
+    {
+      "count": 1,
+      "csip": "1F8F:021D",
+      "first_step": 175248,
+      "island": "unknown",
+      "last_step": 175248,
+      "symbol": null,
+      "top_targets": [
+        {
+          "count": 1,
+          "target": "boss_or_object_counter_a47e"
+        }
+      ]
+    }
+  ],
+  "event_count": 2000,
+  "source": {
+    "demo": "artifacts/demos/demo_play_tandy_20260616_000527",
+    "exe": "/mnt/data/ok_work/assets/OVERKILL",
+    "snapshot": "artifacts/demos/demo_play_tandy_20260616_000527/snapshot"
+  },
+  "status": "max_events",
+  "steps": 258,
+  "target_count": 149,
+  "unknown_object_field_writes": [
+    {
+      "count": 343,
+      "field": "effect_contact_slots_23b4.unknown_0x0C"
+    },
+    {
+      "count": 170,
+      "field": "effect_contact_slots_23b4.unknown_0x12"
+    },
+    {
+      "count": 167,
+      "field": "effect_contact_slots_23b4.unknown_0x08"
+    },
+    {
+      "count": 107,
+      "field": "effect_contact_slots_23b4.unknown_0x06"
+    },
+    {
+      "count": 10,
+      "field": "effect_contact_slots_23b4.unknown_0x20"
+    },
+    {
+      "count": 8,
+      "field": "effect_contact_slots_23b4.unknown_0x28"
+    },
+    {
+      "count": 8,
+      "field": "effect_contact_slots_23b4.unknown_0x24"
+    },
+    {
+      "count": 7,
+      "field": "effect_contact_slots_23b4.unknown_0x1C"
+    },
+    {
+      "count": 4,
+      "field": "effect_contact_slots_23b4.unknown_0x2E"
+    },
+    {
+      "count": 3,
+      "field": "effect_contact_slots_23b4.unknown_0x2C"
+    },
+    {
+      "count": 3,
+      "field": "effect_contact_slots_23b4.unknown_0x2A"
+    }
+  ],
+  "writer_count": 48
+}

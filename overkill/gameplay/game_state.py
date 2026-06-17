@@ -17,6 +17,7 @@ from overkill.asm import (
     _sub_reg16,
     _inc_mem_byte_preserve_cf,
     _inc_mem_word_preserve_cf,
+    _rep_stosw_preserve_flags,
     _inc_reg16_preserve_cf,
     loop_count,
 )
@@ -360,23 +361,6 @@ SIG_STATUS_DISPLAY_PARENT_61DC = bytes.fromhex(
     "34 2e 8e 1e b4 95 e8 dd f7 2e 8e 1e 96 95 5d c3"
 )
 
-
-def _rep_stosw_preserve_flags(cpu, count: int) -> None:
-    """Execute REP STOSW for the small status-parent clear block.
-
-    The 8086 instruction does not modify FLAGS.  Keep this local instead of
-    promoting a generic helper until another lifted routine needs word stores.
-    """
-    count &= 0xFFFF
-    if count == 0:
-        cpu.s.cx = 0
-        return
-    delta = -2 if cpu.get_flag(0x0400) else 2
-    value = cpu.s.ax & 0xFFFF
-    for _ in range(count):
-        cpu.mem.ww(cpu.s.es & 0xFFFF, cpu.s.di & 0xFFFF, value)
-        cpu.s.di = (cpu.s.di + delta) & 0xFFFF
-    cpu.s.cx = 0
 
 
 def run_status_display_parent_61dc(

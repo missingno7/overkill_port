@@ -223,7 +223,7 @@ class OverkillCoverageClassifier:
         (0x1010, 0x85D5), (0x1010, 0x85EF), (0x1010, 0x861B), (0x1010, 0x8625), (0x1010, 0x8629),
         (0x1010, 0x863A), (0x1010, 0x863E), (0x1010, 0x864B), (0x1010, 0x864E),
         (0x1010, 0x99CD), (0x1010, 0x99D0), (0x1010, 0x99D3), (0x1010, 0x99D4), (0x1010, 0x99D7), (0x1010, 0x99DA), (0x1010, 0x99DB),
-        (0x1010, 0x9BFB), (0x1010, 0x9BFE), (0x1010, 0x9C01),
+        (0x1010, 0x9B2E), (0x1010, 0x9BFB), (0x1010, 0x9BFE), (0x1010, 0x9C01),
         (0x1010, 0x9CD9), (0x1010, 0x9CF1),
         (0x1010, 0xA031),
         (0x1010, 0xD318), (0x1010, 0xD31B), (0x1010, 0xD31E), (0x1010, 0xD321),
@@ -346,7 +346,9 @@ class OverkillCoverageClassifier:
         (0x1010, 0x506F), (0x1010, 0x5073),
         (0x1010, 0x8331), (0x1010, 0x835B),
         (0x1010, 0x9E69), (0x1010, 0xAA44), (0x1010, 0x9E98), (0x1010, 0xAC28), (0x1010, 0xAC81), (0x1010, 0xBCCB),
-        (0x1010, 0xB032),
+        (0x1010, 0xB00D), (0x1010, 0xB032), (0x1010, 0xB039), (0x1010, 0xB03C),
+        (0x1010, 0xB07A), (0x1010, 0xB07D), (0x1010, 0xB0C9), (0x1010, 0xB0CC),
+        (0x1010, 0xB10C), (0x1010, 0xB10F),
         (0x1010, 0xACD2), (0x1010, 0xACD5), (0x1010, 0xACD7), (0x1010, 0xACD8),
         (0x1010, 0xACD9), (0x1010, 0xACDD), (0x1010, 0xACDF), (0x1010, 0xACE3),
         (0x1010, 0xACE5), (0x1010, 0xACE8), (0x1010, 0xACEC), (0x1010, 0xACEE),
@@ -397,10 +399,10 @@ class OverkillCoverageClassifier:
     # ``unknown`` bucket.  They are not hook permissions and must not be used as
     # proof that a range is fully lifted.
     ISLAND_RANGES: tuple[tuple[int, int, int, str, str], ...] = (
-        # Large controller still intentionally bounded from 97B2.  It mixes
-        # input polling with frame/game-state child calls, and is documented as
-        # the next input-menu/frame-controller frontier.
-        (0x1010, 0x9B2E, 0x9CBB, "input_menu", "bounded 9B2E frame-controller child/contact probe wrapper"),
+        # Interior/child addresses around the now-lifted 9B2E parent.  9B2E
+        # and 9CB6 are exact game_state hooks; this range keeps any remaining
+        # nearby interpreted tails attributed to the same frame-controller family.
+        (0x1010, 0x9B2E, 0x9CBB, "game_state", "9B2E frame-controller interior/contact probe family"),
         # A067 is reached from both 9B2E and D04D as a low-level frame UI/input
         # object helper.  Keep it in game_state until it is lifted separately.
         (0x1010, 0xA060, 0xA211, "game_state", "A067 frame UI/object helper frontier"),
@@ -414,6 +416,15 @@ class OverkillCoverageClassifier:
         # Observed object logic waypoint/patrol helper and its far-call entry
         # veneer.
         (0x1010, 0x8D4F, 0x8D8D, "gameplay_objects", "object waypoint/patrol helper"),
+        # B729 is now a hook; this range keeps historical/interior traces named
+        # as the target-copy + 5DB2 movement wrapper rather than unknown glue.
+        (0x1010, 0xB72A, 0xB73D, "movement", "B729 object target-copy movement wrapper interior"),
+        (0x1010, 0xB00E, 0xB159, "collision", "B00D directional tile-sweep dispatcher interior"),
+        # Interior writes observed by world-write tracing while the 35CC hook
+        # composes Tandy object draw blocks.  These touch object-record draw
+        # scratch fields, not gameplay materialisation.
+        (0x1010, 0x356C, 0x35A9, "tandy_renderer", "356C Tandy split-object draw interior"),
+        (0x1010, 0x35CC, 0x361D, "tandy_renderer", "35CC Tandy object draw block interior"),
         # Observed object deactivation / out-of-bounds helper used by collision
         # and postmove tails.
         (0x1010, 0xBD17, 0xBD65, "gameplay_objects", "object deactivation tail"),

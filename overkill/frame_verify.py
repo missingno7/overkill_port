@@ -64,6 +64,7 @@ def run_frame_verifier(
     config: FrameVerifyConfig,
     publish_candidate: Callable[[Runtime, FrameSample], None] | None = None,
     pump_inputs: Callable[[Runtime, Runtime], None] | None = None,
+    on_divergence: Callable[[Runtime, Runtime, FrameSample, FrameSample, str], None] | None = None,
     stop_requested: Callable[[], bool] | None = None,
     status_callback: Callable[[str], None] | None = None,
 ) -> int:
@@ -92,6 +93,7 @@ def run_frame_verifier(
         after_boundary=_after_boundary,
         publish_candidate=publish_candidate,
         pump_inputs=pump_inputs,
+        on_divergence=on_divergence,
         input_wait_detector=frame_verify_input_wait,
         stop_requested=stop_requested,
         status_callback=status_callback,

@@ -189,3 +189,123 @@ DOS object table -> ObjectSlotView -> ObjectSlotRecord -> pure collision system 
 No separate duplicated gameplay decision should be reintroduced in the hook.  If
 a later refactor changes the BDE3 semantics, change the pure system first and let
 the adapter/hook preserve only CPU-visible register and flag effects.
+
+## Movement clamp and edge-scroll bias promoted to pure movement semantics
+
+The A5xx/A6xx movement edge helpers now have a portable recovered core while
+keeping the lifted hook path byte-compatible with the original ASM:
+
+```text
+overkill.recovered.systems.movement.two_pass_axis_clamp_step
+overkill.recovered.systems.movement.one_pixel_axis_step
+overkill.recovered.systems.movement.recover_top_scroll_bias_a662
+overkill.recovered.systems.movement.decay_bottom_scroll_bias_a63c
+overkill.recovered.systems.movement.top_scroll_edge_response_a648
+overkill.recovered.systems.movement.bottom_scroll_edge_response_a63c
+overkill.recovered.systems.movement.vertical_scroll_edge_response_a616
+```
+
+Evidence root:
+
+```text
+1010:A5D1  left X clamp/unclamped one-pixel step
+1010:A5EA  right X two-pass clamp step
+1010:A5F9  upward Y two-pass clamp step
+1010:A607  downward Y unsigned-below two-pass clamp step
+1010:A616  vertical edge-scroll parent
+1010:A648  top-edge bias response
+1010:A63C  bottom-bias decay
+1010:A662  top-bias recovery
+```
+
+The pure layer owns only final source-level values: object X/Y after a two-pass
+axis clamp and the `DS:A39A/A39C` top/bottom scroll-bias words after the edge
+response.  The lifted hook layer still replays the original compare/INC/DEC,
+CALL-next scratch, nested return, and flag-producing instruction order, then
+asserts that the pure system agrees.  These helpers are still low-level movement
+/ scroll-bias primitives, not semantic player/enemy intent.
+
+Validation for this crystallisation pass:
+
+```text
+python -m pytest tests/test_recovered_semantics.py::test_recovered_axis_clamp_and_vertical_scroll_bias_are_pure_source_port_helpers -q
+# 1 passed
+
+python scripts/run_tests.py tests/test_overkill_hooks.py --name '*vertical_scroll*' --timeout 80 --fail-fast --no-lint --verbose
+# 1 passed
+
+python scripts/run_tests.py tests/test_overkill_hooks.py --name '*clamp_step*' --timeout 80 --fail-fast --no-lint --verbose
+# 1 passed
+```
+
+## Runtime-world projection and level-editor evidence
+
+The recovered layer now has a non-gameplay probe for turning a live snapshot into
+source-like data:
+
+```text
+overkill/recovered/domain/world.py      pure records, no VM dependency
+overkill/recovered/adapters/world_adapter.py
+scripts/dump_world.py
+scripts/trace_world_writes.py
+```
+
+This is not a level-file parser yet.  It is a bridge from a verified runtime
+state to a stable editor/source-port data model.  The first confirmed split is:
+
+```text
+DS:23B4  effect/contact slots, 0x23 records, stride 0x38
+DS:2B5C  gameplay object slots, 0x22 records, stride 0x38
+DS:32CA  update/draw/present pointer table
+DS:8D12  compact/effect pointer table
+```
+
+Use `dump_world.py` to compare snapshots/levels and `trace_world_writes.py` to
+find routines that populate or mutate these tables.  Those traces should guide
+the next semantic-crystallisation steps; do not guess a level format from one
+snapshot alone.
+
+## World-write trace summaries
+
+`trace_world_writes.py` now enriches each write event with:
+
+```text
+writer cs:ip, coverage island, exact symbol when known
+target kind: object slot field, pointer-table entry, runtime global, boss pointer
+resolved object-slot table/index and field offset
+resolved old/new pointer values when a 16-bit pointer is written
+```
+
+`scripts/summarize_world_writes.py` turns that raw trace into a materialisation
+map.  This is useful for deciding which fields are gameplay state and which are
+renderer scratch.
+
+Example:
+
+```text
+python scripts/trace_world_writes.py \
+  --demo artifacts/demos/demo_play_tandy_20260616_000527 \
+  --max-steps 20000 --max-events 2000 \
+  -o artifacts/world_write_trace_demo_20260616_000527_enriched_20000.json
+
+python scripts/summarize_world_writes.py \
+  artifacts/world_write_trace_demo_20260616_000527_enriched_20000.json \
+  -o artifacts/world_write_summary_demo_20260616_000527_enriched_20000.json \
+  --text
+```
+
+The current demo-start trace already separates several kinds of writes:
+
+```text
+1010:35CF tandy_renderer     writes +0C heavily: likely draw/address scratch, not level materialisation
+1010:5A36 coordinates        writes +12 heavily: row/address/dispatch helper evidence
+1010:5DB2 movement           writes +06 plus x/y: movement-direction helper evidence
+1010:AB10 gameplay_objects   writes +08 plus x/y: object-logic/sprite-table evidence
+1010:B86D gameplay_objects   writes x/y, +08, target_x/y: object behavior state/movement evidence
+1010:7524 gameplay_objects   advances DS:95D8 effect allocator cursor
+```
+
+Do not promote these unknown offsets directly to semantic names yet.  The trace
+summary is evidence pressure: repeated writes from one subsystem suggest the next
+field candidates, while writes from renderer interiors warn us not to mistake
+render scratch for source-port gameplay state.

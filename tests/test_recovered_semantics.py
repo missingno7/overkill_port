@@ -216,3 +216,690 @@ def test_pure_recovered_player_hazard_scan_hit_is_source_port_safe():
     )
     assert not is_player_hazard_scan_candidate(inert)
     assert not player_hazard_scan_hit(current, inert, ProbePoint(x_word=0x0050, y_word=0x0060))
+
+
+def test_pure_recovered_movement_target_seek_decision_has_no_vm_dependency():
+    from overkill.recovered.domain.movement import MovementTarget
+    from overkill.recovered.domain.object_slots import ObjectSlotRecord
+    from overkill.recovered.systems.movement import (
+        choose_target_seek_direction,
+        encode_target_seek_bits,
+        step_delta_for_direction,
+    )
+
+    obj = ObjectSlotRecord(
+        active_word=1,
+        x_word=0x0050,
+        y_word=0x0060,
+        gate_or_layer=0,
+        link_key=0,
+        scan_flag=0,
+        hazard_class=0,
+        logic_id=0x26,
+    )
+    target = MovementTarget(y_word=0x0062, x_word=0x0052)
+    table = [0xFF] * 16
+    table[0x0005] = 4
+
+    assert encode_target_seek_bits(obj, target) == 0x0005
+    decision = choose_target_seek_direction(obj, target, table)
+    assert decision.direction_bits == 0x0005
+    assert decision.mapped_direction == 4
+    assert not decision.blocked
+    assert step_delta_for_direction(4, 2) == (2, 0)
+
+
+def test_recovered_tile_sweep_direction_plans_are_pure_b00d_order():
+    from overkill.recovered.systems.collision import tile_sweep_plan_for_direction
+
+    assert [tile_sweep_plan_for_direction(i).components for i in range(8)] == [
+        ("left",),
+        ("left", "down"),
+        ("down",),
+        ("down", "right"),
+        ("right",),
+        ("right", "up"),
+        ("up",),
+        ("up", "left"),
+    ]
+
+
+
+def test_recovered_direction_step_operations_preserve_asm_order():
+    from overkill.recovered.domain.coords import i16
+    from overkill.recovered.systems.movement import step_operations_for_direction
+
+    assert [op.axis for op in step_operations_for_direction(1, 3)] == ["x", "y"]
+    assert [i16(op.delta_word) for op in step_operations_for_direction(1, 3)] == [-3, 3]
+    assert [op.axis for op in step_operations_for_direction(3, 8)] == ["y", "x"]
+    assert [i16(op.delta_word) for op in step_operations_for_direction(3, 8)] == [8, 8]
+    assert [op.axis for op in step_operations_for_direction(7, 2)] == ["y", "x"]
+    assert [i16(op.delta_word) for op in step_operations_for_direction(7, 2)] == [-2, -2]
+
+
+
+def test_recovered_player_chase_target_projection_and_candidate_gate():
+    from overkill.recovered.domain.object_slots import ObjectSlotRecord
+    from overkill.recovered.systems.movement import player_center_target_from_view, align_word_to_four
+    from overkill.recovered.systems.objects import is_player_chase_target_candidate
+
+    target = player_center_target_from_view(0x0051, 0x0062)
+    assert target.x_word == align_word_to_four(0x005B)
+    assert target.y_word == align_word_to_four(0x006E)
+
+    candidate = ObjectSlotRecord(
+        active_word=1,
+        x_word=0x00E0,
+        y_word=0x0040,
+        gate_or_layer=0,
+        link_key=0,
+        scan_flag=0,
+        hazard_class=4,
+        logic_id=0x0020,
+    )
+    assert is_player_chase_target_candidate(candidate)
+    assert not is_player_chase_target_candidate(
+        ObjectSlotRecord(1, 0x00E0, 0x0040, 0, 0, 0, 4, 0x0026)
+    )
+    assert not is_player_chase_target_candidate(
+        ObjectSlotRecord(1, 0x00E1, 0x0040, 0, 0, 0, 4, 0x0020)
+    )
+
+
+def test_world_projection_dumps_object_slots_and_pointer_tables():
+    from dos_re.cpu import CPU8086, CPUState
+    from dos_re.memory import Memory
+    from overkill.recovered.adapters.world_adapter import (
+        object_slot_index_for_offset,
+        project_runtime_world,
+        read_boss_group_pointer_entries,
+        read_runtime_globals,
+    )
+    from overkill.recovered.views.object_slots import OBJECT_SLOT_STRIDE
+
+    mem = Memory()
+    cpu = CPU8086(mem, CPUState(ds=0x2000, ss=0x3000))
+    ds = 0x2000
+    slot1 = 0x23B4 + OBJECT_SLOT_STRIDE
+    mem.ww(ds, slot1 + 0x00, 1)
+    mem.ww(ds, slot1 + 0x02, 0xFFFE)
+    mem.ww(ds, slot1 + 0x04, 0x0012)
+    mem.ww(ds, slot1 + 0x0A, 2)
+    mem.ww(ds, slot1 + 0x0E, 0x3333)
+    mem.ww(ds, slot1 + 0x14, 1)
+    mem.ww(ds, slot1 + 0x16, 4)
+    mem.ww(ds, slot1 + 0x18, 0x0076)
+    mem.ww(ds, slot1 + 0x32, 0x0044)
+    mem.ww(ds, slot1 + 0x34, 0x0055)
+    mem.ww(ds, 0x32CA + 3 * 2, slot1)
+    mem.ww(ds, 0xA8BA, slot1)
+    mem.ww(ds, 0x95F2, 0x0100)
+    mem.ww(ds, 0xA430, 1)
+
+    projection = project_runtime_world(cpu)
+    slot = projection.objects[1]
+
+    assert slot.active
+    assert slot.x_word == 0xFFFE
+    assert slot.logic_id == 0x0076
+    assert slot.target_y_word == 0x0044
+    assert slot.target_x_word == 0x0055
+    assert object_slot_index_for_offset(slot1) == 1
+    assert object_slot_index_for_offset(slot1 + 2) is None
+    assert any(entry.table == "object_update_draw_32ca" and entry.index == 3 and entry.object_slot_index == 1
+               for entry in projection.pointer_entries)
+    assert projection.active_logic_counts == ((0x0076, 1),)
+    assert read_boss_group_pointer_entries(cpu)[0].object_slot_index == 1
+    globals_ = read_runtime_globals(cpu)
+    assert globals_["view_contact_center_x_95f2"] == 0x0100
+    assert globals_["tile_sweep_blocked_a430"] == 1
+
+
+def test_recovered_player_chase_acquired_target_validity_is_pure_and_adapter_checked():
+    from dos_re.cpu import ZF
+    from overkill.recovered.adapters.object_behavior_adapter import (
+        run_player_chase_acquired_target_validity_b1b0,
+    )
+    from overkill.recovered.domain.object_slots import ObjectSlotRecord
+    from overkill.recovered.systems.objects import is_player_chase_acquired_target_valid
+    from overkill.recovered.views.object_slots import ObjectSlotView
+
+    assert is_player_chase_acquired_target_valid(ObjectSlotRecord(1, 0x00DC, 0, 0, 0, 0, 0, 0x0020))
+    assert not is_player_chase_acquired_target_valid(ObjectSlotRecord(0, 0x00DC, 0, 0, 0, 0, 0, 0x0020))
+    assert not is_player_chase_acquired_target_valid(ObjectSlotRecord(1, 0x00DD, 0, 0, 0, 0, 0, 0x0020))
+    assert not is_player_chase_acquired_target_valid(ObjectSlotRecord(1, 0x00DC, 0, 0, 0, 0, 0, 0x0001))
+
+    cpu = CPU8086(Memory(), CPUState(ds=0x2000, flags=0x0202))
+    slot = ObjectSlotView(cpu.mem, 0x2000, 0x0100)
+    slot.set_u16(0x00, 1)
+    slot.x_word = 0x00DC
+    slot.set_u16(0x18, 0x0020)
+
+    assert run_player_chase_acquired_target_validity_b1b0(cpu, slot)
+    # The live flags are from the final CMP logic_id,0001h acceptance gate.
+    assert not cpu.get_flag(ZF)
+
+    rejected = CPU8086(Memory(), CPUState(ds=0x2000, flags=0x0202))
+    rejected_slot = ObjectSlotView(rejected.mem, 0x2000, 0x0100)
+    rejected_slot.set_u16(0x00, 1)
+    rejected_slot.x_word = 0x00DD
+    rejected_slot.set_u16(0x18, 0x0020)
+
+    assert not run_player_chase_acquired_target_validity_b1b0(rejected, rejected_slot)
+    # This rejection leaves flags from CMP x,00DCh.
+    assert not rejected.get_flag(ZF)
+
+
+def test_recovered_player_chase_candidate_gate_adapter_matches_pure_predicate():
+    from overkill.recovered.adapters.object_behavior_adapter import run_player_chase_candidate_checks_b15a
+    from overkill.recovered.views.object_slots import ObjectSlotView
+
+    cpu = CPU8086(Memory(), CPUState(ds=0x2000, flags=0x0202))
+    slot = ObjectSlotView(cpu.mem, 0x2000, 0x0100)
+    slot.set_u16(0x00, 1)
+    slot.x_word = 0x00E0
+    slot.set_u16(0x16, 4)
+    slot.set_u16(0x18, 0x0020)
+
+    assert run_player_chase_candidate_checks_b15a(cpu, slot)
+
+    excluded = CPU8086(Memory(), CPUState(ds=0x2000, flags=0x0202))
+    excluded_slot = ObjectSlotView(excluded.mem, 0x2000, 0x0100)
+    excluded_slot.set_u16(0x00, 1)
+    excluded_slot.x_word = 0x00E0
+    excluded_slot.set_u16(0x16, 4)
+    excluded_slot.set_u16(0x18, 0x0026)
+
+    assert not run_player_chase_candidate_checks_b15a(excluded, excluded_slot)
+
+
+def test_recovered_tilemap_probe_and_lookup_are_pure_source_port_helpers():
+    from overkill.recovered.domain.tilemap import TileLookupInput, TileProbeInput
+    from overkill.recovered.systems.tilemap import compute_tile_probe_5073, lookup_tile_class_505b
+
+    probe = compute_tile_probe_5073(
+        TileProbeInput(
+            origin_x_word=0x0040,
+            row_base_word=0x0200,
+            object_x_word=0x0010,
+            object_y_word=0x0034,
+        )
+    )
+    # adjusted_x=0x50 -> x_tile=5, y_tile=3, row_base - 5*13 + 3.
+    assert probe.adjusted_x_word == 0x0050
+    assert probe.tile_offset_word == 0x01C2
+    assert not probe.negative_adjusted_x
+
+    negative = compute_tile_probe_5073(
+        TileProbeInput(0x0001, 0x0200, 0x8000, 0x0034)
+    )
+    assert negative.adjusted_x_word == 0x8001
+    assert negative.tile_offset_word == 0xFFFF
+    assert negative.negative_adjusted_x
+
+    table = tuple((idx ^ 0x5A) & 0xFF for idx in range(256))
+    lookup = lookup_tile_class_505b(TileLookupInput(raw_tile_byte=0xC3, class_table=table))
+    assert lookup.raw_tile_byte == 0xC3
+    assert lookup.class_byte == (0xC3 ^ 0x5A)
+
+
+def test_recovered_tilemap_adapters_match_5073_505b_state_effects():
+    """Covers 0x5073 overkill_tile_probe_5073 and 0x505B overkill_tile_lookup_505b."""
+    from overkill.recovered.adapters.collision_adapter import (
+        TILE_CLASS_TABLE,
+        TILE_PLANE_SEGMENT_PTR,
+        TILE_PROBE_ADJUSTED_X_SCRATCH,
+        TILE_PROBE_ORIGIN_X,
+        TILE_PROBE_ROW_BASE,
+        run_tile_lookup_505b_body,
+        run_tile_probe_5073_body,
+    )
+    from overkill.recovered.views.object_slots import OFF_X, OFF_Y
+
+    mem = Memory()
+    cpu = CPU8086(
+        mem,
+        CPUState(cs=0x1010, ds=0x2000, ss=0x3000, bp=0x0100, bx=0x0012, sp=0x8000),
+    )
+    ds = 0x2000
+    ss = 0x3000
+    mem.ww(ds, TILE_PROBE_ORIGIN_X, 0x0040)
+    mem.ww(ds, TILE_PROBE_ROW_BASE, 0x0200)
+    mem.ww(ss, 0x0100 + OFF_X, 0x0010)
+    mem.ww(ss, 0x0100 + OFF_Y, 0x0034)
+
+    result = run_tile_probe_5073_body(cpu, pop_return=False)
+
+    assert result.adjusted_x_word == 0x0050
+    assert result.tile_offset_word == 0x01C2
+    assert mem.rw(ds, TILE_PROBE_ADJUSTED_X_SCRATCH) == 0x0050
+    assert cpu.s.bx == 0x01C2
+
+    tile_segment = 0x4000
+    mem.ww(0x1010, TILE_PLANE_SEGMENT_PTR, tile_segment)
+    mem.wb(tile_segment, cpu.s.bx, 0x3A)
+    mem.wb(ds, TILE_CLASS_TABLE + 0x3A, 0x07)
+    cpu.push(0x7777)
+
+    lookup = run_tile_lookup_505b_body(cpu, pop_return=True)
+
+    assert lookup.raw_tile_byte == 0x3A
+    assert lookup.class_byte == 0x07
+    assert cpu.get_reg8(0) == 0x07
+    assert cpu.s.si == TILE_CLASS_TABLE + 0x3A
+    assert cpu.s.ip == 0x7777
+
+
+def test_recovered_ac97_overlap_scan_decision_is_pure_and_adapter_checked():
+    from overkill.recovered.adapters.collision_adapter import run_object_overlap_candidate_checks_ac97
+    from overkill.recovered.domain.collision import ProbePoint
+    from overkill.recovered.domain.object_slots import ObjectSlotRecord
+    from overkill.recovered.systems.collision import object_overlap_scan_decision
+    from overkill.recovered.views.object_slots import ObjectSlotView
+
+    current = ObjectSlotRecord(1, 0x0050, 0x0060, 0, 0x1111, 1, 4, 0x0020)
+    candidate = ObjectSlotRecord(1, 0x0050, 0x0060, 0, 0x2222, 1, 4, 0x0020)
+    decision = object_overlap_scan_decision(current, candidate, ProbePoint(0x0050, 0x0060))
+    assert decision.overlaps
+    assert decision.actionable
+
+    linked = ObjectSlotRecord(1, 0x0050, 0x0060, 0, 0x1111, 1, 4, 0x0020)
+    linked_decision = object_overlap_scan_decision(current, linked, ProbePoint(0x0050, 0x0060))
+    assert not linked_decision.overlaps
+    assert not linked_decision.actionable
+
+    non_actionable = ObjectSlotRecord(1, 0x0050, 0x0060, 0, 0x2222, 1, 3, 0x0020)
+    non_actionable_decision = object_overlap_scan_decision(current, non_actionable, ProbePoint(0x0050, 0x0060))
+    assert non_actionable_decision.overlaps
+    assert not non_actionable_decision.actionable
+
+    cpu = CPU8086(Memory(), CPUState(ds=0x2000, ss=0x3000, bp=0x0100, flags=0x0202))
+    current_view = ObjectSlotView(cpu.mem, 0x3000, 0x0100)
+    current_view.set_u16(0x0E, 0x1111)
+    slot = ObjectSlotView(cpu.mem, 0x2000, 0x0200)
+    slot.set_u16(0x00, 1)
+    slot.x_word = 0x0050
+    slot.y_word = 0x0060
+    slot.set_u16(0x0E, 0x2222)
+    slot.set_u16(0x14, 1)
+    slot.set_u16(0x16, 5)
+    slot.set_u16(0x18, 0x0020)
+
+    overlaps, actionable, acd9_flags = run_object_overlap_candidate_checks_ac97(
+        cpu,
+        current_record=current,
+        slot=slot,
+        probe_x=0x0050,
+        probe_y=0x0060,
+    )
+
+    assert overlaps
+    assert actionable
+    assert acd9_flags != 0
+
+
+def test_recovered_aa71_postmove_contact_window_is_pure_and_adapter_checked():
+    from dos_re.cpu import CF, ZF
+    from overkill.recovered.adapters.collision_adapter import (
+        FINAL_BOSS_CONTACT_MODE,
+        POSTMOVE_CONTACT_VIEW_X,
+        POSTMOVE_CONTACT_Y_GUARD,
+        run_postmove_contact_window_aa71_body,
+    )
+    from overkill.recovered.domain.collision import PostMoveContactWindow
+    from overkill.recovered.domain.object_slots import ObjectSlotRecord
+    from overkill.recovered.systems.collision import postmove_contact_window_test_aa71
+    from overkill.recovered.views.object_slots import OFF_X, OFF_Y
+
+    slot = ObjectSlotRecord(1, 0x0050, 0x0060, 0, 0, 0, 0, 0x0020)
+    window = PostMoveContactWindow(view_x_word=0x0050, y_guard_word=0x0060, final_boss_narrow_x=False)
+    assert postmove_contact_window_test_aa71(slot, window).hit
+    assert not postmove_contact_window_test_aa71(
+        ObjectSlotRecord(1, 0xFFF0, 0x0060, 0, 0, 0, 0, 0x0020),
+        window,
+    ).hit
+    # Final-boss mode narrows the X span: x=0x50 covers view_x 0x50 normally,
+    # but misses 0x60 in boss mode because x+8 < 0x60.
+    assert postmove_contact_window_test_aa71(
+        slot,
+        PostMoveContactWindow(view_x_word=0x0060, y_guard_word=0x0060, final_boss_narrow_x=False),
+    ).hit
+    assert not postmove_contact_window_test_aa71(
+        slot,
+        PostMoveContactWindow(view_x_word=0x0060, y_guard_word=0x0060, final_boss_narrow_x=True),
+    ).hit
+
+    mem = Memory()
+    cpu = CPU8086(
+        mem,
+        CPUState(ds=0x2000, ss=0x3000, bp=0x0100, sp=0x8000, flags=0x0202),
+    )
+    cpu.push(0x7777)
+    mem.ww(0x3000, 0x0100 + OFF_X, 0x0050)
+    mem.ww(0x3000, 0x0100 + OFF_Y, 0x0060)
+    mem.ww(0x2000, POSTMOVE_CONTACT_VIEW_X, 0x0050)
+    mem.ww(0x2000, POSTMOVE_CONTACT_Y_GUARD, 0x0060)
+    mem.ww(0x2000, FINAL_BOSS_CONTACT_MODE, 0x0000)
+
+    assert run_postmove_contact_window_aa71_body(cpu)
+    assert cpu.get_flag(CF)
+    assert cpu.s.ip == 0x7777
+    # Hit leaves ZF from the final CMP lower_x,view_x before the STC tail.
+    assert not cpu.get_flag(ZF)
+
+    rejected = CPU8086(
+        Memory(),
+        CPUState(ds=0x2000, ss=0x3000, bp=0x0100, sp=0x8000, flags=0x0202),
+    )
+    rejected.push(0x8888)
+    rejected.mem.ww(0x3000, 0x0100 + OFF_X, 0x0050)
+    rejected.mem.ww(0x3000, 0x0100 + OFF_Y, 0x0060)
+    rejected.mem.ww(0x2000, POSTMOVE_CONTACT_VIEW_X, 0x0060)
+    rejected.mem.ww(0x2000, POSTMOVE_CONTACT_Y_GUARD, 0x0060)
+    rejected.mem.ww(0x2000, FINAL_BOSS_CONTACT_MODE, 0x0001)
+
+    assert not run_postmove_contact_window_aa71_body(rejected)
+    assert not rejected.get_flag(CF)
+    assert rejected.s.ip == 0x8888
+
+
+def test_recovered_tile_contact_probe_plan_is_pure_4ff9_sampling_shape():
+    from overkill.recovered.systems.tilemap import (
+        TILE_CONTACT_ROW_DELTA,
+        is_tile_contact_side_valid_4ff9,
+        tile_contact_offset_table_byte_offset,
+        tile_contact_probe_plan_4ff9,
+    )
+
+    assert TILE_CONTACT_ROW_DELTA == 13
+    assert is_tile_contact_side_valid_4ff9(0)
+    assert is_tile_contact_side_valid_4ff9(2)
+    assert not is_tile_contact_side_valid_4ff9(3)
+    assert tile_contact_offset_table_byte_offset(2) == 8
+
+    aligned = tile_contact_probe_plan_4ff9(
+        side_index_word=0,
+        adjusted_x_word=0x001A,  # low nibble A -> one column
+        y_word=0x0020,
+    )
+    assert aligned.valid_side
+    assert aligned.offset_table_index == 0
+    assert aligned.column_sample_count == 1
+    assert not aligned.probe_adjacent_y
+
+    edge = tile_contact_probe_plan_4ff9(
+        side_index_word=1,
+        adjusted_x_word=0x001B,  # low nibble B -> two columns
+        y_word=0x0021,
+    )
+    assert edge.valid_side
+    assert edge.offset_table_index == 1
+    assert edge.column_sample_count == 2
+    assert edge.probe_adjacent_y
+
+    invalid = tile_contact_probe_plan_4ff9(
+        side_index_word=3,
+        adjusted_x_word=0,
+        y_word=0,
+    )
+    assert not invalid.valid_side
+
+
+
+def test_recovered_ac28_tile_collision_plan_and_adapter_are_canonical():
+    from dos_re.cpu import CF
+    from overkill.recovered.adapters.collision_adapter import (
+        TILE_CLASS_TABLE,
+        TILE_COLLISION_BEDC_GATE,
+        TILE_COLLISION_DISABLE_GLOBAL,
+        TILE_COLLISION_GLOBAL_GATE,
+        TILE_COLLISION_ROW_DELTA,
+        TILE_PLANE_SEGMENT_PTR,
+        TILE_PROBE_ORIGIN_X,
+        TILE_PROBE_ROW_BASE,
+        run_tile_collision_probe_ac28_body,
+    )
+    from overkill.recovered.systems.tilemap import tile_collision_probe_plan_ac28
+    from overkill.recovered.views.object_slots import OFF_COUNTER_20, OFF_VARIANT, OFF_X, OFF_Y
+
+    assert tile_collision_probe_plan_ac28(y_word=0x0020).row_delta == TILE_COLLISION_ROW_DELTA
+    assert not tile_collision_probe_plan_ac28(y_word=0x0020).probe_adjacent_y
+    assert tile_collision_probe_plan_ac28(y_word=0x0021).probe_adjacent_y
+
+    def make_cpu(*, y: int, first_class: int, second_class: int = 0, counter: int = 1):
+        mem = Memory()
+        cpu = CPU8086(
+            mem,
+            CPUState(cs=0x1010, ds=0x2000, ss=0x3000, bp=0x0100, sp=0x8000, flags=0x0202),
+        )
+        cpu.push(0x7777)
+        ds = 0x2000
+        ss = 0x3000
+        tile_seg = 0x4000
+        mem.ww(0x1010, TILE_PLANE_SEGMENT_PTR, tile_seg)
+        mem.ww(ds, TILE_COLLISION_GLOBAL_GATE, 0)
+        mem.ww(ds, TILE_COLLISION_DISABLE_GLOBAL, 0)
+        mem.ww(ds, TILE_COLLISION_BEDC_GATE, 1)
+        mem.ww(ds, TILE_PROBE_ORIGIN_X, 0)
+        mem.ww(ds, TILE_PROBE_ROW_BASE, 0x0200)
+        mem.ww(ss, 0x0100 + OFF_X, 0x0010)
+        mem.ww(ss, 0x0100 + OFF_Y, y)
+        mem.ww(ss, 0x0100 + OFF_COUNTER_20, counter)
+        # 5073 maps x=0010,y~=0 to BX=01F3; AC28 samples BX+0D -> 0200.
+        mem.wb(tile_seg, 0x0200, 5)
+        mem.wb(tile_seg, 0x0201, 7)
+        mem.wb(ds, TILE_CLASS_TABLE + 5, first_class)
+        mem.wb(ds, TILE_CLASS_TABLE + 7, second_class)
+        return cpu
+
+    clear = make_cpu(y=0x0000, first_class=0)
+    assert not run_tile_collision_probe_ac28_body(clear)
+    assert not clear.get_flag(CF)
+    assert clear.s.ip == 0x7777
+
+    blocked = make_cpu(y=0x0000, first_class=1, counter=1)
+    assert run_tile_collision_probe_ac28_body(blocked)
+    assert blocked.get_flag(CF)
+    assert blocked.mem.rw(0x3000, 0x0100 + OFF_VARIANT) == 0
+    assert blocked.s.ip == 0x7777
+
+    adjacent = make_cpu(y=0x0001, first_class=0, second_class=1, counter=2)
+    assert run_tile_collision_probe_ac28_body(adjacent)
+    assert not adjacent.get_flag(CF)
+    assert adjacent.mem.rw(0x3000, 0x0100 + OFF_VARIANT) == 5
+    assert adjacent.mem.rw(0x3000, 0x0100 + OFF_COUNTER_20) == 1
+    assert adjacent.s.ip == 0x7777
+
+
+def test_recovered_bcb1_y_clamp_system_and_shared_adapter_are_canonical():
+    from overkill.recovered.adapters.collision_adapter import run_postmove_y_clamp_bcb1_body
+    from overkill.recovered.systems.collision import clamp_postmove_y_bcb1
+    from overkill.recovered.views.object_slots import OFF_Y
+
+    assert clamp_postmove_y_bcb1(0x00C1).y_word == 0x00C0
+    assert clamp_postmove_y_bcb1(0xFFFF).y_word == 0x0000
+    assert clamp_postmove_y_bcb1(0x0060).y_word == 0x0060
+
+    def make_cpu(y_word: int, *, push_return: bool = True):
+        mem = Memory()
+        cpu = CPU8086(
+            mem,
+            CPUState(cs=0x1010, ds=0x2000, ss=0x3000, bp=0x0100, sp=0x8000, flags=0x0202),
+        )
+        mem.ww(0x3000, 0x0100 + OFF_Y, y_word)
+        if push_return:
+            cpu.push(0x7777)
+        return cpu
+
+    high = make_cpu(0x00C1)
+    run_postmove_y_clamp_bcb1_body(high, pop_return=True)
+    assert high.mem.rw(0x3000, 0x0100 + OFF_Y) == 0x00C0
+    assert high.s.ip == 0x7777
+
+    negative = make_cpu(0xFFFF)
+    run_postmove_y_clamp_bcb1_body(negative, pop_return=True)
+    assert negative.mem.rw(0x3000, 0x0100 + OFF_Y) == 0x0000
+    assert negative.s.ip == 0x7777
+
+    inline = make_cpu(0x0060, push_return=False)
+    start_sp = inline.s.sp
+    run_postmove_y_clamp_bcb1_body(inline, pop_return=False)
+    assert inline.mem.rw(0x3000, 0x0100 + OFF_Y) == 0x0060
+    assert inline.s.sp == start_sp
+
+
+
+def test_recovered_boss_group_transition_targets_and_slot_state_are_pure():
+    from overkill.recovered.systems.objects import (
+        BOSS_GROUP_DEACTIVATED_LOGIC_ID,
+        BOSS_GROUP_SPRITE_OR_STATE_DEATH,
+        BOSS_GROUP_TRANSITION_LATCH_CLEAR,
+        boss_group_slot_transition_c194,
+        boss_group_transition_targets,
+    )
+
+    assert boss_group_transition_targets(0x268C, (0x2654, 0x268C, 0x26C4, 0x2734)) == (
+        0x2654,
+        0x26C4,
+        0x2734,
+    )
+
+    transition = boss_group_slot_transition_c194(0x0077)
+    assert transition.previous_logic_id == 0x0077
+    assert transition.logic_id == BOSS_GROUP_DEACTIVATED_LOGIC_ID
+    assert transition.transition_latch == BOSS_GROUP_TRANSITION_LATCH_CLEAR
+    assert transition.sprite_or_state == BOSS_GROUP_SPRITE_OR_STATE_DEATH
+
+def test_recovered_c054_deactivate_dispatch_classification_is_pure_and_named():
+    from overkill.recovered.systems.objects import (
+        OBJECT_DEACTIVATE_DEBUG_BYTE_LOGIC_ID,
+        object_deactivate_dispatch_decision_c054,
+    )
+
+    assert object_deactivate_dispatch_decision_c054(0x0076).kind == "boss_group_transition"
+    assert object_deactivate_dispatch_decision_c054(OBJECT_DEACTIVATE_DEBUG_BYTE_LOGIC_ID).kind == "counter_drop"
+    script = object_deactivate_dispatch_decision_c054(0x001F)
+    assert script.kind == "script_select"
+    assert script.ax_script == 0xA83E
+    assert object_deactivate_dispatch_decision_c054(0x1234).kind == "none"
+
+
+def test_recovered_aa46_view_window_projection_reuses_8331_adapter():
+    from dos_re.cpu import CF
+    from overkill.recovered.adapters.collision_adapter import (
+        POSTMOVE_CONTACT_VIEW_X,
+        POSTMOVE_CONTACT_Y_GUARD,
+        TILE_CONTACT_OFFSET_TABLE,
+        VIEW_CONTACT_CENTER_X,
+        VIEW_CONTACT_CENTER_Y,
+        VIEW_WINDOW_SIDE_SELECTOR,
+        run_view_window_check_aa46_body,
+    )
+    from overkill.recovered.systems.collision import view_contact_center_from_offsets_aa46
+    from overkill.recovered.views.object_slots import OFF_X, OFF_Y
+
+    pure = view_contact_center_from_offsets_aa46(
+        view_x_word=0x0100,
+        view_y_word=0x0200,
+        offset_x_word=0xFFF0,
+        offset_y_word=0x0010,
+    )
+    assert (pure.x_word, pure.y_word) == (0x00F0, 0x0210)
+
+    mem = Memory()
+    cpu = CPU8086(
+        mem,
+        CPUState(cs=0x1010, ds=0x2000, ss=0x3000, bp=0x0100, sp=0x8000, flags=0x0202),
+    )
+    ds = 0x2000
+    ss = 0x3000
+    mem.ww(ds, POSTMOVE_CONTACT_VIEW_X, 0x0100)
+    mem.ww(ds, POSTMOVE_CONTACT_Y_GUARD, 0x0200)
+    mem.ww(ds, VIEW_WINDOW_SIDE_SELECTOR, 0x0001)
+    mem.ww(ds, TILE_CONTACT_OFFSET_TABLE + 4, 0xFFF0)
+    mem.ww(ds, TILE_CONTACT_OFFSET_TABLE + 6, 0x0010)
+    mem.ww(ss, 0x0100 + OFF_X, 0x00F0)
+    mem.ww(ss, 0x0100 + OFF_Y, 0x0210)
+
+    assert run_view_window_check_aa46_body(cpu)
+    assert cpu.get_flag(CF)
+    assert mem.rw(ds, VIEW_CONTACT_CENTER_X) == 0x00F0
+    assert mem.rw(ds, VIEW_CONTACT_CENTER_Y) == 0x0210
+
+    negative = CPU8086(
+        Memory(),
+        CPUState(cs=0x1010, ds=0x2000, ss=0x3000, bp=0x0100, sp=0x8000, flags=0x0203),
+    )
+    negative.mem.ww(0x3000, 0x0100 + OFF_X, 0xFFFF)
+    assert not run_view_window_check_aa46_body(negative)
+    assert not negative.get_flag(CF)
+
+
+def test_recovered_axis_clamp_and_vertical_scroll_bias_are_pure_source_port_helpers():
+    from overkill.recovered.domain.movement import VerticalScrollEdgeInput
+    from overkill.recovered.systems.movement import (
+        bottom_scroll_edge_response_a63c,
+        decay_bottom_scroll_bias_a63c,
+        one_pixel_axis_step,
+        recover_top_scroll_bias_a662,
+        top_scroll_edge_response_a648,
+        two_pass_axis_clamp_step,
+        vertical_scroll_edge_response_a616,
+    )
+
+    assert one_pixel_axis_step(0x0020, increment=False).final_word == 0x001F
+    assert two_pass_axis_clamp_step(0x0020, limit_word=0x0020, increment=False).step_count == 0
+    assert two_pass_axis_clamp_step(0x0021, limit_word=0x0020, increment=False).final_word == 0x0020
+    assert two_pass_axis_clamp_step(0x0030, limit_word=0x0020, increment=False).final_word == 0x002E
+    assert two_pass_axis_clamp_step(
+        0x00AF,
+        limit_word=0x00B0,
+        increment=True,
+        below_condition=True,
+    ).final_word == 0x00B0
+
+    assert recover_top_scroll_bias_a662(0xFFFE) == 0xFFFF
+    assert recover_top_scroll_bias_a662(0x0000) == 0x0000
+    assert decay_bottom_scroll_bias_a63c(0x0003) == 0x0002
+    assert decay_bottom_scroll_bias_a63c(0x0000) == 0x0000
+    assert top_scroll_edge_response_a648(
+        object_y_word=0x0000,
+        input_bits=0x02,
+        top_bias_word=0x0000,
+    ) == 0xFFFF
+    assert top_scroll_edge_response_a648(
+        object_y_word=0x0000,
+        input_bits=0x02,
+        top_bias_word=0xFFF8,
+    ) == 0xFFF8
+    assert bottom_scroll_edge_response_a63c(
+        object_y_word=0x00B0,
+        input_bits=0x01,
+        bottom_bias_word=0x0007,
+    ) == 0x0008
+
+    gated = vertical_scroll_edge_response_a616(
+        VerticalScrollEdgeInput(
+            view_y_word=0x00B6,
+            object_y_word=0x0000,
+            input_bits=0x03,
+            top_bias_word=0x0001,
+            bottom_bias_word=0x0002,
+        )
+    )
+    assert not gated.view_gate_open
+    assert gated.top_bias_word == 0x0001
+    assert gated.bottom_bias_word == 0x0002
+
+    active = vertical_scroll_edge_response_a616(
+        VerticalScrollEdgeInput(
+            view_y_word=0x00B7,
+            object_y_word=0x00B0,
+            input_bits=0x01,
+            top_bias_word=0xFFFE,
+            bottom_bias_word=0x0007,
+        )
+    )
+    assert active.view_gate_open
+    assert active.top_bias_word == 0xFFFF
+    assert active.bottom_bias_word == 0x0008

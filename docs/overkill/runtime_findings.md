@@ -2660,6 +2660,32 @@ shape is now clearer:
   `DS:98BE`.  This is a low-level movement/scroll bridge, not yet a semantic
   player/enemy classification.
 
+### 2026-06-17: A5xx/A6xx movement clamp and edge-scroll crystallisation
+
+The already-verified A5D1/A5EA/A5F9/A607 clamp-step family and A616/A648/A63C/A662
+vertical edge-scroll-bias family were refactored so their source-level decisions
+now live in `overkill.recovered.systems.movement`.  The lifted hook bodies still
+own all ASM-visible details: compare order, flags, one-pixel INC/DEC writes,
+CALL-next scratch words, nested return addresses, and exact near-RET behavior.
+
+New pure helpers cover:
+
+```text
+two_pass_axis_clamp_step        final value/step count for A5EA/A5F9/A607 and the clamped A5D1 path
+one_pixel_axis_step             A5D1's DS:A47C != 0 unclamped decrement path
+recover_top_scroll_bias_a662    DS:A39A recovery toward zero
+decay_bottom_scroll_bias_a63c   DS:A39C decay toward zero
+top_scroll_edge_response_a648   top-edge input response, including FFF8 lower bound
+bottom_scroll_edge_response_a63c bottom-edge input response, including 0008 upper bound
+vertical_scroll_edge_response_a616 parent view-gated composition of the top and bottom responses
+```
+
+This is a layer-4/5 crystallisation only.  It does not classify the controlled
+object as player/enemy or turn scroll bias into a modern camera model.  The
+semantic statement is narrower: the original source likely had small movement /
+edge-scroll helper routines whose final object-coordinate and bias-word updates
+are now portable and tested independently of the VM.
+
 ### 2026-06-15 - AF60 self-call movement entry and verifier-visible child calls
 
 `1010:AF60` is the direct entry for the speed-2 movement mode that was already
@@ -2682,3 +2708,129 @@ Tandy renderer composition now does the same for `34C5` and `5A36`.
 `scripts/audit_hook_oracle.py` is the static guardrail for this class: it checks
 that every registered hook has stop metadata and rejects direct calls to
 registered child hooks through the raw `_call_hook_like_near_call` path.
+
+### 2026-06-17: 9CB6 frame contact-probe fanout
+
+`1010:9CB6` is the contact-probe fanout child inside the lifted `9B2E` frame
+controller.  It is not another object AI routine.  The routine first calls the
+recovered `1010:4FF9` tile/contact probe and branches only on the carry flag
+left by that probe.  Carry clear returns immediately.  Carry set saves `BP`,
+then fans out to `1010:9E19` according to raw `DS:BEDC`: two calls for `BEDC=0`,
+three calls for `BEDC=1`, and four calls for other non-zero values.
+
+`9E19` remains a bounded post-contact/status helper.  The useful semantic
+advance is narrower: `9CB6` is now proven to be the frame-controller contact
+side-effect fanout linking low-level tile contact (`4FF9`) to status/counter
+side effects (`9E19`), without naming the object class involved.
+
+### 2026-06-17: A067 frame action/object-spawn fanout
+
+`1010:A067` is now lifted as `overkill_frame_action_spawn_fanout_a067`, the
+main action/object-spawn frontier exposed by the `9B2E` frame controller and the
+`D04D` UI/demo-state path.
+
+The routine is gated by `DS:98BE & 10h`.  If that bit is clear, it tails through
+`A060`, clears `DS:A980`, and returns.  If the bit is set, `DS:A980` behaves as
+a latch: re-entry returns early unless `DS:9790 == 1` or `DS:232A == 000Fh`.
+Once the action path opens, `A067` sets `DS:A980 = 1`.
+
+The high-view path copies raw counters/anchors from `A970/A972/A974/A976` into
+`A3A0/A3A2/A3A6/A3A4`, then composes child frontiers `A515`, `A584`, `A3FF`,
+`A3CA`, and the local `A0E8` sub-dispatch.  The low-view `BDAC == 0` path skips
+those larger children and jumps directly to `A958` action tails: `A958 == 2`
+uses the `A1C8` double-spawn tail, while the tested non-2 path uses `A19F`.
+
+Local tails now proven inside the hook are `A114`, `A175`, `A18A`, `A19F`,
+`A1AB/A1AE`, and `A1C8`.  `A114` is a three-spawn helper gated by `A3A6 == 0`;
+`A175` allocates/seeds one raw slot through `A4EA`, stamps fields at `BX+18` and
+`BX+1C`, then loads coordinates through `A96E`; `A1AB` is allocation plus
+coordinate projection from the `A3A8` offset table; `A1AE` is only the coordinate
+projection half.  This split matters: the `A1C8` tail calls `A4EA` first and then
+calls `A1AE`, intentionally skipping the `A1AB` allocation call.
+
+Do not yet call this “player shooting” or any specific weapon.  The proof is a
+raw frame action/object-spawn fanout: `BEFF` status/effect bytes, `A970..A976`
+counters, `A958` table dispatch, and raw object allocation through `A4EA`.
+Out-of-range `A958` table targets still tail to bounded original code.
+### 2026-06-17: A515/A584 child frontiers behind A067
+
+`1010:A515` and `1010:A584` are now lifted as the next structural children behind the `A067` action/object-spawn fanout.  The useful finding is not a high-level entity name; it is the split between two raw slot-spawn side effects:
+
+- `A515` is a gated one-slot anchor/link spawn: `A960` must be non-zero and `A97E` must not already be `1`; it calls `7547`, anchors with `A571`, then calls `B15A` with `BP` temporarily set to the destination slot.  If `B15A` returns `FFFF`, the routine exits before stamping the slot.  Otherwise it writes the returned word into `BX+30`, stamps raw state fields, optionally writes `BEFF=11`, increments `A97E`, and decrements `A960`.
+- `A584` is a gated two-slot anchor spawn: `A95E` must be non-zero and copied counter `A3A4` must be zero.  It increments `A976` for each of two allocations through `A4EA`, anchors both with `A571`, aligns Y via `AND [BX+4], FFFC`, and stamps `BX+8=8` with `BX+18=5` then `6`.
+
+This keeps `A067`'s high-view main path more legible: after this point the remaining opaque children are the side/mirrored `A3FF`/`A3CA` pair, `A2A0`, and the still-separate `B15A` relationship/probe helper used by `A515`.
+
+### 2026-06-17: A3CA/A3FF action-side anchor dispatch children
+
+`1010:A3CA` and `1010:A3FF` are now lifted as structural children behind the `A067` action/object-spawn fanout.  They share the local `1010:A41A` dispatch body, which gates on `SI != FFFFh`, loads `BX = DS:A958 * 2`, and jumps through the raw table at `CS:A42C`:
+
+```text
+A958 == 0 -> A4D7  copy SI-relative source coordinates after A4EA
+A958 == 1 -> A490  A4D7 + stamp BX+8 = 0033
+A958 == 2 -> A499  A4EA + source coordinates + A3EC/direction stamp
+A958 == 3 -> A464  gated two-spawn pair, stamps +18=7/+8=37
+A958 == 4 -> A438  gated two-spawn pair, stamps +18=8/+8=35
+```
+
+`A3CA` runs four sources in order: `A966`, `A968`, `A96A`, `A96C`.  Before each dispatch it writes `A3EC` as `7, 1, 7, 1`, so the `A499` table target can stamp different raw direction/state values for alternating side sources.
+
+`A3FF` sets `A3EC=FFFFh`, then runs source `A962` and source `A964`.  After each `A41A` dispatch it calls the local `A378` SI-relative follow-up.  A key recovered quirk is that the open `A378` path is not a single spawn: it `CALL`s `A396`, overwrites the first allocated slot's `BX+18` stamp to `6` at `A391`, and then falls through into `A396` a second time.  So each open `A378` produces two SI-relative slots.
+
+This remains raw action-spawn glue.  It is tempting to name these as left/right/mirrored projectiles, but the verified facts are still only source pointers, counters (`A970/A976`), `A3EC` direction stamps, `BEFF=12` on the `A378/A396` path when `98C0 != 0`, and raw slot fields (`+2/+4/+6/+8/+18`).  `A2A0/A2F6/A337` are now the next lifted action-spawn table tails; the remaining action fanout frontier is the real out-of-range `44AF` target.
+
+
+### 2026-06-17: B15A shared rotating candidate scan
+
+`1010:B15A` is now lifted as `overkill_player_chase_candidate_scan_b15a` instead
+of remaining an internal helper hidden inside `B1B0`.  This matters because the
+same routine is also called from `A515` after `A515` temporarily switches `BP` to
+the newly allocated destination slot.  The proven structure is a shared rotating
+scan, not a new high-level entity class.
+
+The scan initializes `CX=0023h`, starts at the cursor stored in `DS:A43A`, and
+walks the `DS:23B4..2B5C` effect/contact slot pool in `38h`-byte strides.  If
+`BX >= 2B5Ch`, it resets `DS:A43A` to `23B4h` and restarts the check without
+consuming a loop count.  A candidate must have a non-zero active word, must not
+use logic ids `0001h`, `0026h`, `0021h`, or `0022h`, must have `X <= 00E0h`,
+and must have hazard/class field `0004h`.  On success, the cursor advances to
+the next slot but `BX` is restored to the found slot via the original
+`PUSH/ADD/MOV/POP` shape.  On failure after all `23h` slots, `BX=FFFFh`.
+
+The candidate predicate remains owned by `overkill.recovered.systems.objects`;
+this hook owns the ASM-visible loop/cursor/register/flag behavior.  `B1B0` now
+routes its acquisition call through the real `B15A` hook boundary, so future
+parent-hook verification can no longer hide a bad candidate scan inside the
+larger chase behavior.
+
+
+### 2026-06-17: 9E19 shared post-contact/status helper
+
+`1010:9E19` is now lifted as `overkill_post_contact_status_helper_9e19`.  This removes the remaining bounded child behind the `9CB6` contact fanout and also gives the `B24D` overlap behavior a real verifier-visible child boundary.
+
+The routine is a raw state/counter helper: it first gates on `A47C != 1`, `DS:2384 < 3`, and `A95A != FFFF`, writes `DS:23A0 = 8`, optionally emits `BEFF=0F`, then decrements `A95C` by a `BEDC`-dependent amount: one step for `BEDC==0`, up to two for `BEDC==1`, and up to three for other `BEDC` values.  If `A95C` reaches zero it refills `A95C=18`, optionally emits `BEFF=03`, toggles `A362` on the `BEDC==0` path, and may decrement `A95A`.  Expiring `A95A` writes `A95C=0`; when byte `9791==1` it instead resets `A95A=3/A95C=18`, otherwise it writes `DS:2384=3`, optionally emits `BEFF=19`, and runs the same display/status children.
+
+The display tail calls `61DC` once, and when `CS:95BC==1` it additionally calls `511F`, `61DC`, and `511F`.  This is still deliberately named as a post-contact/status counter helper, not as a proven damage/health/life system.
+
+### 2026-06-17: A2A0/A2F6/A337 action-spawn table tails
+
+`1010:A2A0`, `1010:A2F6`, and `1010:A337` are now lifted as structural action-spawn children behind `A067/A0E8`.  This closes the main in-range `A958` action-spawn table children after the earlier `A515/A584` and `A3CA/A3FF` work.
+
+`A2A0` is the pre-table path taken by `A0E8` when `DS:A958 == 5`.  It gates on copied counter `A3A2 == 0`, optionally emits `BEFF=11` when `98C0 != 0`, sets `ES = CS:9596`, initializes `DS:A3EA = A3B4`, clears `1Ah` words at `ES:A3B4` to `FFFF`, then creates two entries through the local `A2D6` body.  The first entry is produced by `CALL A2D6`, stamped with `BX+8=006A`, and moved upward by subtracting `8` from `BX+4`; then execution falls through into `A2D6` for a second entry.
+
+The shared `A2D6` body increments `A972`, allocates through `A4EA`, appends the allocated `BX` through `A294` to the list cursor in `A3EA`, stamps `BX+18=9`, projects coordinates through the BP-relative `A1AE` helper, aligns/offsets Y with `AND FFF8` then `+8`, and finally stamps `BX+8=006C`.
+
+`A2F6` and `A337` are sibling two-slot table tails.  Both gate on `A3A0 == 0`, allocate/project two slots through `A4EA/A1AE`, and add `8` to the second slot's X coordinate.  Their raw stamps differ: `A2F6` emits `BEFF=17` when `98C0 != 0` and stamps `+18=8`, `+8=35`; `A337` emits `BEFF=16` when `98C0 != 0` and stamps `+18=7`, `+8=37`.
+
+This is still deliberately structural: raw action-spawn counters, list cursors, event/status bytes, and slot fields only.  The remaining high-value action fanout frontier is the real out-of-range `A958` target `44AF`; do not yet infer a named weapon/projectile/player/enemy semantic from the `A2xx` cluster alone.
+
+### 2026-06-17: A2A0/A2F6/A337 action-list/table children
+
+`1010:A2A0`, `1010:A2F6`, and `1010:A337` are now lifted as structural children behind the `A067/A0E8` action/object-spawn fanout.
+
+`A2A0` is the most useful finding: it gates on `A3A2`, optionally emits `BEFF=11`, loads `ES` from `CS:9596`, clears the raw `A3B4` word list to `FFFF`, seeds `DS:A3EA`, then runs the local `A2D6` spawn/list/projection body twice.  The first run is a normal `CALL`; after stamping the first slot with `+8=006A` and subtracting 8 from its Y word, original control flow falls through into `A2D6` again.  The local `A2D6` body increments `A972`, calls `A4EA`, appends `BX` through `A294`, stamps `+18=0009`, projects coordinates through `A1AE`, aligns Y with `(Y & FFF8) + 8`, and stamps `+8=006C`.
+
+`A2F6` and `A337` are sibling two-slot table tails behind `A958==4` and `A958==3`.  Both gate on `A3A0`, increment `A970` twice, call `A4EA` twice, project through `A1AE`, and offset the second slot's X by `+8`.  `A2F6` emits `BEFF=17` and stamps `+18=8/+8=35h`; `A337` emits `BEFF=16` and stamps `+18=7/+8=37h`.
+
+This completes the main named child split behind `A067` without promoting the code to named weapon/projectile semantics.  Remaining uncertainty is now mostly real observed invalid/out-of-range `A958` table targets, plus higher list/coordinate maintenance paths if traces prove they still own gameplay-side effects.
+

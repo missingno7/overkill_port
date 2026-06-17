@@ -206,9 +206,12 @@ is not a semantic model task; a semantic task is not renderer cleanup.
 2. Hook the `1010:A846/A85E/A876` layer-scan parents only if they can be cleanly
    composed from existing `A849`, `A861`, `A87C`, `5AC8`, `7746`, and `4CED`
    helpers.
-3. Keep `1010:A940` classified as `game_state` frontier until child calls such as
+3. `1010:9B2E` is now lifted as a parent, `9CB6` is split as a contact
+   fanout, and `A067` is split as raw action/object-spawn fanout. Continue with
+   the remaining out-of-range `A067/A958` child (`44AF`); `9E19` is already lifted as post-contact/status fanout. Do not add semantic player/enemy/weapon names yet.
+4. Keep `1010:A940` classified as `game_state` frontier until child calls such as
    `1F8F:081D`, `F797`, and the object scan tails are sufficiently understood.
-4. Treat `1010:D007` as a main-loop orchestration boundary, not an early hook
+5. Treat `1010:D007` as a main-loop orchestration boundary, not an early hook
    target.  It should be lifted late, after children are exhausted.
 
 ## Current next candidates after A90C/A93C/4D64 cleanup

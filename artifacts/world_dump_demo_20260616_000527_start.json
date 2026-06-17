@@ -1,0 +1,589 @@
+{
+  "active_logic_counts": [
+    {
+      "count": 1,
+      "logic_id": 0
+    }
+  ],
+  "boss_group_pointers": [
+    {
+      "index": 0,
+      "object_slot_index": null,
+      "object_slot_table": null,
+      "table": "boss_group_a8ba",
+      "value": 0
+    },
+    {
+      "index": 1,
+      "object_slot_index": null,
+      "object_slot_table": null,
+      "table": "boss_group_a8ba",
+      "value": 0
+    },
+    {
+      "index": 2,
+      "object_slot_index": null,
+      "object_slot_table": null,
+      "table": "boss_group_a8ba",
+      "value": 0
+    },
+    {
+      "index": 3,
+      "object_slot_index": null,
+      "object_slot_table": null,
+      "table": "boss_group_a8ba",
+      "value": 0
+    }
+  ],
+  "cpu": {
+    "bp": 8980,
+    "cs": 4112,
+    "ds": 9676,
+    "ip": 54083,
+    "ss": 9676
+  },
+  "globals": {
+    "boss_group_latch_a8c2": 0,
+    "boss_or_object_counter_a47e": 0,
+    "camera_or_view_x_237e": 192,
+    "camera_or_view_y_2380": 88,
+    "effect_allocator_cursor_95d8": 9140,
+    "hazard_probe_x_a436": 0,
+    "hazard_probe_y_a438": 0,
+    "object_allocator_cursor_95da": 11100,
+    "tile_sweep_blocked_a430": 0,
+    "view_contact_center_x_95f2": 0,
+    "view_contact_center_y_95f4": 0
+  },
+  "logic_counts": [
+    {
+      "count": 69,
+      "logic_id": 0
+    }
+  ],
+  "object_slot_tables": [
+    {
+      "base": 9140,
+      "count": 35,
+      "name": "effect_contact_slots_23b4"
+    },
+    {
+      "base": 11100,
+      "count": 34,
+      "name": "gameplay_object_slots_2b5c"
+    }
+  ],
+  "objects": [
+    {
+      "active_word": 1,
+      "gate_or_layer": 1,
+      "hazard_class": 6,
+      "index": 0,
+      "link_key": 35476,
+      "logic_id": 0,
+      "scan_flag": 1,
+      "table": "effect_contact_slots_23b4",
+      "target_x_word": 0,
+      "target_y_word": 0,
+      "x_word": 217,
+      "y_word": 96
+    }
+  ],
+  "pointer_entries": [
+    {
+      "index": 0,
+      "object_slot_index": null,
+      "object_slot_table": null,
+      "table": "object_update_draw_32ca",
+      "value": 0
+    },
+    {
+      "index": 1,
+      "object_slot_index": 0,
+      "object_slot_table": "effect_contact_slots_23b4",
+      "table": "object_update_draw_32ca",
+      "value": 9140
+    },
+    {
+      "index": 2,
+      "object_slot_index": 1,
+      "object_slot_table": "effect_contact_slots_23b4",
+      "table": "object_update_draw_32ca",
+      "value": 9196
+    },
+    {
+      "index": 3,
+      "object_slot_index": 2,
+      "object_slot_table": "effect_contact_slots_23b4",
+      "table": "object_update_draw_32ca",
+      "value": 9252
+    },
+    {
+      "index": 4,
+      "object_slot_index": 3,
+      "object_slot_table": "effect_contact_slots_23b4",
+      "table": "object_update_draw_32ca",
+      "value": 9308
+    },
+    {
+      "index": 5,
+      "object_slot_index": 4,
+      "object_slot_table": "effect_contact_slots_23b4",
+      "table": "object_update_draw_32ca",
+      "value": 9364
+    },
+    {
+      "index": 6,
+      "object_slot_index": 5,
+      "object_slot_table": "effect_contact_slots_23b4",
+      "table": "object_update_draw_32ca",
+      "value": 9420
+    },
+    {
+      "index": 7,
+      "object_slot_index": 6,
+      "object_slot_table": "effect_contact_slots_23b4",
+      "table": "object_update_draw_32ca",
+      "value": 9476
+    },
+    {
+      "index": 8,
+      "object_slot_index": 7,
+      "object_slot_table": "effect_contact_slots_23b4",
+      "table": "object_update_draw_32ca",
+      "value": 9532
+    },
+    {
+      "index": 9,
+      "object_slot_index": 8,
+      "object_slot_table": "effect_contact_slots_23b4",
+      "table": "object_update_draw_32ca",
+      "value": 9588
+    },
+    {
+      "index": 10,
+      "object_slot_index": 9,
+      "object_slot_table": "effect_contact_slots_23b4",
+      "table": "object_update_draw_32ca",
+      "value": 9644
+    },
+    {
+      "index": 11,
+      "object_slot_index": 10,
+      "object_slot_table": "effect_contact_slots_23b4",
+      "table": "object_update_draw_32ca",
+      "value": 9700
+    },
+    {
+      "index": 12,
+      "object_slot_index": 11,
+      "object_slot_table": "effect_contact_slots_23b4",
+      "table": "object_update_draw_32ca",
+      "value": 9756
+    },
+    {
+      "index": 13,
+      "object_slot_index": 12,
+      "object_slot_table": "effect_contact_slots_23b4",
+      "table": "object_update_draw_32ca",
+      "value": 9812
+    },
+    {
+      "index": 14,
+      "object_slot_index": 13,
+      "object_slot_table": "effect_contact_slots_23b4",
+      "table": "object_update_draw_32ca",
+      "value": 9868
+    },
+    {
+      "index": 15,
+      "object_slot_index": 14,
+      "object_slot_table": "effect_contact_slots_23b4",
+      "table": "object_update_draw_32ca",
+      "value": 9924
+    },
+    {
+      "index": 16,
+      "object_slot_index": 15,
+      "object_slot_table": "effect_contact_slots_23b4",
+      "table": "object_update_draw_32ca",
+      "value": 9980
+    },
+    {
+      "index": 17,
+      "object_slot_index": 16,
+      "object_slot_table": "effect_contact_slots_23b4",
+      "table": "object_update_draw_32ca",
+      "value": 10036
+    },
+    {
+      "index": 18,
+      "object_slot_index": 17,
+      "object_slot_table": "effect_contact_slots_23b4",
+      "table": "object_update_draw_32ca",
+      "value": 10092
+    },
+    {
+      "index": 19,
+      "object_slot_index": 18,
+      "object_slot_table": "effect_contact_slots_23b4",
+      "table": "object_update_draw_32ca",
+      "value": 10148
+    },
+    {
+      "index": 20,
+      "object_slot_index": 19,
+      "object_slot_table": "effect_contact_slots_23b4",
+      "table": "object_update_draw_32ca",
+      "value": 10204
+    },
+    {
+      "index": 21,
+      "object_slot_index": 20,
+      "object_slot_table": "effect_contact_slots_23b4",
+      "table": "object_update_draw_32ca",
+      "value": 10260
+    },
+    {
+      "index": 22,
+      "object_slot_index": 21,
+      "object_slot_table": "effect_contact_slots_23b4",
+      "table": "object_update_draw_32ca",
+      "value": 10316
+    },
+    {
+      "index": 23,
+      "object_slot_index": 22,
+      "object_slot_table": "effect_contact_slots_23b4",
+      "table": "object_update_draw_32ca",
+      "value": 10372
+    },
+    {
+      "index": 24,
+      "object_slot_index": 23,
+      "object_slot_table": "effect_contact_slots_23b4",
+      "table": "object_update_draw_32ca",
+      "value": 10428
+    },
+    {
+      "index": 25,
+      "object_slot_index": 24,
+      "object_slot_table": "effect_contact_slots_23b4",
+      "table": "object_update_draw_32ca",
+      "value": 10484
+    },
+    {
+      "index": 26,
+      "object_slot_index": 25,
+      "object_slot_table": "effect_contact_slots_23b4",
+      "table": "object_update_draw_32ca",
+      "value": 10540
+    },
+    {
+      "index": 27,
+      "object_slot_index": 26,
+      "object_slot_table": "effect_contact_slots_23b4",
+      "table": "object_update_draw_32ca",
+      "value": 10596
+    },
+    {
+      "index": 28,
+      "object_slot_index": 27,
+      "object_slot_table": "effect_contact_slots_23b4",
+      "table": "object_update_draw_32ca",
+      "value": 10652
+    },
+    {
+      "index": 29,
+      "object_slot_index": 28,
+      "object_slot_table": "effect_contact_slots_23b4",
+      "table": "object_update_draw_32ca",
+      "value": 10708
+    },
+    {
+      "index": 30,
+      "object_slot_index": 29,
+      "object_slot_table": "effect_contact_slots_23b4",
+      "table": "object_update_draw_32ca",
+      "value": 10764
+    },
+    {
+      "index": 31,
+      "object_slot_index": 30,
+      "object_slot_table": "effect_contact_slots_23b4",
+      "table": "object_update_draw_32ca",
+      "value": 10820
+    },
+    {
+      "index": 32,
+      "object_slot_index": 31,
+      "object_slot_table": "effect_contact_slots_23b4",
+      "table": "object_update_draw_32ca",
+      "value": 10876
+    },
+    {
+      "index": 33,
+      "object_slot_index": 32,
+      "object_slot_table": "effect_contact_slots_23b4",
+      "table": "object_update_draw_32ca",
+      "value": 10932
+    },
+    {
+      "index": 34,
+      "object_slot_index": 33,
+      "object_slot_table": "effect_contact_slots_23b4",
+      "table": "object_update_draw_32ca",
+      "value": 10988
+    },
+    {
+      "index": 35,
+      "object_slot_index": 34,
+      "object_slot_table": "effect_contact_slots_23b4",
+      "table": "object_update_draw_32ca",
+      "value": 11044
+    },
+    {
+      "index": 0,
+      "object_slot_index": null,
+      "object_slot_table": null,
+      "table": "compact_effect_8d12",
+      "value": 0
+    },
+    {
+      "index": 1,
+      "object_slot_index": 0,
+      "object_slot_table": "gameplay_object_slots_2b5c",
+      "table": "compact_effect_8d12",
+      "value": 11100
+    },
+    {
+      "index": 2,
+      "object_slot_index": 1,
+      "object_slot_table": "gameplay_object_slots_2b5c",
+      "table": "compact_effect_8d12",
+      "value": 11156
+    },
+    {
+      "index": 3,
+      "object_slot_index": 2,
+      "object_slot_table": "gameplay_object_slots_2b5c",
+      "table": "compact_effect_8d12",
+      "value": 11212
+    },
+    {
+      "index": 4,
+      "object_slot_index": 3,
+      "object_slot_table": "gameplay_object_slots_2b5c",
+      "table": "compact_effect_8d12",
+      "value": 11268
+    },
+    {
+      "index": 5,
+      "object_slot_index": 4,
+      "object_slot_table": "gameplay_object_slots_2b5c",
+      "table": "compact_effect_8d12",
+      "value": 11324
+    },
+    {
+      "index": 6,
+      "object_slot_index": 5,
+      "object_slot_table": "gameplay_object_slots_2b5c",
+      "table": "compact_effect_8d12",
+      "value": 11380
+    },
+    {
+      "index": 7,
+      "object_slot_index": 6,
+      "object_slot_table": "gameplay_object_slots_2b5c",
+      "table": "compact_effect_8d12",
+      "value": 11436
+    },
+    {
+      "index": 8,
+      "object_slot_index": 7,
+      "object_slot_table": "gameplay_object_slots_2b5c",
+      "table": "compact_effect_8d12",
+      "value": 11492
+    },
+    {
+      "index": 9,
+      "object_slot_index": 8,
+      "object_slot_table": "gameplay_object_slots_2b5c",
+      "table": "compact_effect_8d12",
+      "value": 11548
+    },
+    {
+      "index": 10,
+      "object_slot_index": 9,
+      "object_slot_table": "gameplay_object_slots_2b5c",
+      "table": "compact_effect_8d12",
+      "value": 11604
+    },
+    {
+      "index": 11,
+      "object_slot_index": 10,
+      "object_slot_table": "gameplay_object_slots_2b5c",
+      "table": "compact_effect_8d12",
+      "value": 11660
+    },
+    {
+      "index": 12,
+      "object_slot_index": 11,
+      "object_slot_table": "gameplay_object_slots_2b5c",
+      "table": "compact_effect_8d12",
+      "value": 11716
+    },
+    {
+      "index": 13,
+      "object_slot_index": 12,
+      "object_slot_table": "gameplay_object_slots_2b5c",
+      "table": "compact_effect_8d12",
+      "value": 11772
+    },
+    {
+      "index": 14,
+      "object_slot_index": 13,
+      "object_slot_table": "gameplay_object_slots_2b5c",
+      "table": "compact_effect_8d12",
+      "value": 11828
+    },
+    {
+      "index": 15,
+      "object_slot_index": 14,
+      "object_slot_table": "gameplay_object_slots_2b5c",
+      "table": "compact_effect_8d12",
+      "value": 11884
+    },
+    {
+      "index": 16,
+      "object_slot_index": 15,
+      "object_slot_table": "gameplay_object_slots_2b5c",
+      "table": "compact_effect_8d12",
+      "value": 11940
+    },
+    {
+      "index": 17,
+      "object_slot_index": 16,
+      "object_slot_table": "gameplay_object_slots_2b5c",
+      "table": "compact_effect_8d12",
+      "value": 11996
+    },
+    {
+      "index": 18,
+      "object_slot_index": 17,
+      "object_slot_table": "gameplay_object_slots_2b5c",
+      "table": "compact_effect_8d12",
+      "value": 12052
+    },
+    {
+      "index": 19,
+      "object_slot_index": 18,
+      "object_slot_table": "gameplay_object_slots_2b5c",
+      "table": "compact_effect_8d12",
+      "value": 12108
+    },
+    {
+      "index": 20,
+      "object_slot_index": 19,
+      "object_slot_table": "gameplay_object_slots_2b5c",
+      "table": "compact_effect_8d12",
+      "value": 12164
+    },
+    {
+      "index": 21,
+      "object_slot_index": 20,
+      "object_slot_table": "gameplay_object_slots_2b5c",
+      "table": "compact_effect_8d12",
+      "value": 12220
+    },
+    {
+      "index": 22,
+      "object_slot_index": 21,
+      "object_slot_table": "gameplay_object_slots_2b5c",
+      "table": "compact_effect_8d12",
+      "value": 12276
+    },
+    {
+      "index": 23,
+      "object_slot_index": 22,
+      "object_slot_table": "gameplay_object_slots_2b5c",
+      "table": "compact_effect_8d12",
+      "value": 12332
+    },
+    {
+      "index": 24,
+      "object_slot_index": 23,
+      "object_slot_table": "gameplay_object_slots_2b5c",
+      "table": "compact_effect_8d12",
+      "value": 12388
+    },
+    {
+      "index": 25,
+      "object_slot_index": 24,
+      "object_slot_table": "gameplay_object_slots_2b5c",
+      "table": "compact_effect_8d12",
+      "value": 12444
+    },
+    {
+      "index": 26,
+      "object_slot_index": 25,
+      "object_slot_table": "gameplay_object_slots_2b5c",
+      "table": "compact_effect_8d12",
+      "value": 12500
+    },
+    {
+      "index": 27,
+      "object_slot_index": 26,
+      "object_slot_table": "gameplay_object_slots_2b5c",
+      "table": "compact_effect_8d12",
+      "value": 12556
+    },
+    {
+      "index": 28,
+      "object_slot_index": 27,
+      "object_slot_table": "gameplay_object_slots_2b5c",
+      "table": "compact_effect_8d12",
+      "value": 12612
+    },
+    {
+      "index": 29,
+      "object_slot_index": 28,
+      "object_slot_table": "gameplay_object_slots_2b5c",
+      "table": "compact_effect_8d12",
+      "value": 12668
+    },
+    {
+      "index": 30,
+      "object_slot_index": 29,
+      "object_slot_table": "gameplay_object_slots_2b5c",
+      "table": "compact_effect_8d12",
+      "value": 12724
+    },
+    {
+      "index": 31,
+      "object_slot_index": 30,
+      "object_slot_table": "gameplay_object_slots_2b5c",
+      "table": "compact_effect_8d12",
+      "value": 12780
+    },
+    {
+      "index": 32,
+      "object_slot_index": 31,
+      "object_slot_table": "gameplay_object_slots_2b5c",
+      "table": "compact_effect_8d12",
+      "value": 12836
+    },
+    {
+      "index": 33,
+      "object_slot_index": 32,
+      "object_slot_table": "gameplay_object_slots_2b5c",
+      "table": "compact_effect_8d12",
+      "value": 12892
+    }
+  ],
+  "source": {
+    "demo": "artifacts/demos/demo_play_tandy_20260616_000527",
+    "exe": "/mnt/data/current/assets/OVERKILL",
+    "snapshot": "artifacts/demos/demo_play_tandy_20260616_000527/snapshot"
+  }
+}
