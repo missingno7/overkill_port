@@ -1,3 +1,19 @@
+## 2026-06-19 - Loop slice: final raw-offset sweep (raw-drain complete)
+
+Byte-exact: 10 `bp` (SS:BP object-slot) accesses across 4 files -> named OFF_*.
+collision.py (X/Y in the AC81 scan setup), game_state.py (Y in the A60A/A5FC
+one-pass Y-step helpers), object_deactivation.py (ACTIVE_WORD, PREVIOUS_LOGIC_ID),
+object_runtime.py (ACQUIRED_TARGET_PTR in the B1B0 chase). Dashboard: record
+offset accesses 13 -> 3 raw (4% -> 1%).
+
+The raw-drain is now at its floor: the only remaining "raw" hits are the two
+genuinely-unnamed words (object_spawns 0x26, object_movement 0x36 - both written
+with no lifted reader, so they stay honest unknowns) and a register-arithmetic
+false positive (`si = si + 0x0006`). Total drained this run: 138 -> 3 (40% -> 1%).
+
+Verified: fresh imports (all 4 files), lint (151), audit (17 pure), the AC81/
+Y-step/BD17/C054/B1B0 oracles, demo-replay (only the logged divergences fail).
+
 ## 2026-06-19 - Loop slice: drain contact_side_effects.py raw offsets
 
 Byte-exact raw-offset drain: 22 object-record accesses in contact_side_effects.py

@@ -30,6 +30,8 @@ from overkill.recovered.views.object_slots import (
     OBJECT_SLOT_STRIDE,
     OBJECT_TABLE_BASE,
     OBJECT_TABLE_COUNT,
+    OFF_X,
+    OFF_Y,
     ObjectSlotView,
 )
 
@@ -226,8 +228,8 @@ def run_object_slot_scan_guard_ac81(cpu, self_disable_if_patched) -> None:
         return
     s.cx = 0x0023
     s.bx = 0x23B4
-    s.ax = mem.rw(ss, (bp + 0x04) & 0xFFFF)
-    s.di = mem.rw(ss, (bp + 0x02) & 0xFFFF)
+    s.ax = mem.rw(ss, (bp + OFF_Y) & 0xFFFF)
+    s.di = mem.rw(ss, (bp + OFF_X) & 0xFFFF)
     run_object_slot_scan_ac97(cpu)
 
 

@@ -23,10 +23,12 @@ from overkill.gameplay.object_spawns import (
 )
 from overkill.recovered.adapters.collision_adapter import run_postmove_y_clamp_bcb1_body
 from overkill.recovered.views.object_slots import (
+    OFF_ACTIVE_WORD,
     OFF_DRAW_LAYER,
     OFF_LINKED_COUNTER_INDEX,
     OFF_LOGIC_ID,
     OFF_OBJECT_TYPE,
+    OFF_PREVIOUS_LOGIC_ID,
     OFF_SPRITE_OR_STATE,
     OFF_TRANSITION_LATCH,
     OFF_X,
@@ -50,7 +52,7 @@ def _run_deactivate_bd17_observed(cpu, *, parent: str, chain: str, cx_value: int
     bp = cpu.s.bp & 0xFFFF
     mem = cpu.mem
 
-    mem.ww(ss, (bp + 0x00) & 0xFFFF, 0x0000)
+    mem.ww(ss, (bp + OFF_ACTIVE_WORD) & 0xFFFF, 0x0000)
 
     draw_layer = mem.rw(ss, (bp + OFF_DRAW_LAYER) & 0xFFFF)
     _cmp_word(cpu, draw_layer, 0x0004)
@@ -262,7 +264,7 @@ def _run_collision_death_tail_bfc7(cpu, *, parent: str, chain: str, cx_value: in
         mem.wb(ds, 0xBEFF, 0x19)
 
     cpu.s.ax = logic_id
-    mem.ww(ss, (bp + 0x1A) & 0xFFFF, cpu.s.ax)
+    mem.ww(ss, (bp + OFF_PREVIOUS_LOGIC_ID) & 0xFFFF, cpu.s.ax)
     mem.ww(ss, (bp + OFF_LOGIC_ID) & 0xFFFF, 0x0001)
     mem.ww(ss, (bp + OFF_TRANSITION_LATCH) & 0xFFFF, 0x0000)
     # C037 dispatches through a tiny table keyed by the object type at +14h.

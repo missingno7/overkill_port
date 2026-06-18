@@ -1064,7 +1064,7 @@ def run_object_player_chase_b1b0(cpu, self_disable_if_patched) -> None:
         if (s.bx & 0xFFFF) == 0xFFFF:
             _run_original_tail_to_caller(cpu, 0xADC9)
             return
-        mem.ww(ss, (bp + 0x30) & 0xFFFF, s.bx & 0xFFFF)
+        mem.ww(ss, (bp + OFF_ACQUIRED_TARGET_PTR) & 0xFFFF, s.bx & 0xFFFF)
         mem.ww(ss, (bp + OFF_SUBSTATE) & 0xFFFF, 0x0001)
         _cmp_byte(cpu, mem.rb(ds, 0x98C0), 0x00)
         if mem.rb(ds, 0x98C0) != 0:
@@ -1074,7 +1074,7 @@ def run_object_player_chase_b1b0(cpu, self_disable_if_patched) -> None:
         return
 
     # B227: already acquired; validate stored target slot and steer toward it.
-    s.bx = mem.rw(ss, (bp + 0x30) & 0xFFFF)
+    s.bx = mem.rw(ss, (bp + OFF_ACQUIRED_TARGET_PTR) & 0xFFFF)
     target_bx = s.bx & 0xFFFF
     target_slot = ObjectSlotView.from_ds(cpu, target_bx)
     if not run_player_chase_acquired_target_validity_b1b0(cpu, target_slot):
