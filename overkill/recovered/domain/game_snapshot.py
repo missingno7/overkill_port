@@ -41,6 +41,11 @@ class GameSnapshot:
     frame_timers: tuple[int, ...]
     score_bcd: bytes
     objects: tuple[ObjectSlotSnapshot, ...]
+    # Named global counters/gates (e.g. the action-spawn/weapon-list counters,
+    # camera, allocator cursors).  Decoded by the adapter from curated addresses;
+    # this record keeps only names + values so it stays pure.  Default empty so
+    # older callers/tests still construct a snapshot without them.
+    state_globals: tuple[tuple[str, int], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,6 +88,13 @@ def diff_game_snapshot(expected: GameSnapshot, actual: GameSnapshot) -> list[Fie
     else:
         for exp_obj, act_obj in zip(expected.objects, actual.objects):
             out.extend(_diff_slot(exp_obj, act_obj))
+    exp_globals = dict(expected.state_globals)
+    act_globals = dict(actual.state_globals)
+    for name in sorted(exp_globals.keys() | act_globals.keys()):
+        ev = exp_globals.get(name)
+        av = act_globals.get(name)
+        if ev != av:
+            out.append(FieldDivergence(f"globals.{name}", ev, av))
     return out
 
 

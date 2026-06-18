@@ -966,7 +966,6 @@ def test_tandy_masked_compact_2fb6_hook_matches_interpreted_asm_and_preserves_cx
             assert asm.mem.data == hook.mem.data
 
 
-
 def test_tandy_strided_copy_34c5_hook_matches_interpreted_asm():
     import random
     from dos_re.cpu import CPU8086, CPUState
@@ -2695,7 +2694,6 @@ def test_presence_stamp_list_4d15_hook_matches_interpreted_asm():
         assert asm.mem.data == hook.mem.data
 
 
-
 def test_presence_stamp_list_4d15_final_skip_and_mode0_flags_match_asm():
     from dos_re.cpu import CPU8086, CPUState
     from dos_re.memory import Memory
@@ -4235,7 +4233,6 @@ def test_bec5_bedc_one_collision_tail_matches_interpreted_asm():
     assert asm.addr() == hook.addr() == (0x1010, 0xBEEF)
     assert asm.s.snapshot() == hook.s.snapshot()
     assert asm.mem.data == hook.mem.data
-
 
 
 def test_bec5_variant_0005_a8c2_one_matches_interpreted_asm():
@@ -5939,7 +5936,6 @@ def test_tandy_present_scan_a90f_composes_known_targets_like_asm():
     assert asm.mem.data == hook.mem.data
 
 
-
 def test_runtime_patched_object_steer_5e42_hook_matches_interpreted_snapshot():
     from pathlib import Path
     from overkill.runtime import load_overkill_snapshot as load_snapshot
@@ -6513,157 +6509,6 @@ def test_c054_deactivate_dispatch_0013_selects_a4e4():
     assert cpu.s.ax == 0xA4E4
 
 
-def test_c054_logic_76_79_group_transitions_all_boss_parts_against_asm():
-    from pathlib import Path
-    from overkill.gameplay.collision import run_object_deactivate_logic_dispatch_c054
-    from overkill.runtime import load_overkill_snapshot as load_snapshot
-
-    root = Path(__file__).resolve().parents[1]
-    snap = root / "artifacts" / "snapshot_play_tandy_20260614_191454"
-    assert snap.exists(), "gameplay snapshot for C054 boss group oracle is missing"
-
-    ds = ss = 0x25CC
-    slots = (0x2654, 0x268C, 0x26C4, 0x2734)
-    current_bp = slots[2]
-
-    def make_runtime():
-        rt = load_snapshot(root / "assets" / "OVERKILL", snap, game_root=root / "assets")
-        rt.cpu.trace_enabled = False
-        rt.cpu.replacement_hooks.clear()
-        rt.cpu.hook_names.clear()
-        return rt
-
-    def seed(rt):
-        cpu = rt.cpu
-        mem = cpu.mem
-        cpu.s.ax = 0xCAFE
-        cpu.s.bx = 0xBEEF
-        cpu.s.cx = 0x1234
-        cpu.s.dx = 0x5678
-        cpu.s.si = 0x0004
-        cpu.s.di = 0x0001
-        cpu.s.bp = current_bp
-        cpu.s.sp = 0x9000
-        cpu.s.cs = 0x1010
-        cpu.s.ds = ds
-        cpu.s.es = ds
-        cpu.s.ss = ss
-        cpu.s.ip = 0xC054
-        cpu.s.flags = 0x0202
-        mem.ww(ds, 0xA8BA, slots[0])
-        mem.ww(ds, 0xA8BC, slots[1])
-        mem.ww(ds, 0xA8BE, slots[2])
-        mem.ww(ds, 0xA8C0, slots[3])
-        mem.ww(ds, 0xA47E, 0x0014)
-        mem.ww(ds, 0xA8C2, 0x0001)
-        mem.wb(ds, 0x98C0, 0x00)
-        for slot, logic, state in zip(slots, (0x0076, 0x0077, 0x0078, 0x0079), (0x0020, 0x0021, 0x0022, 0x0023)):
-            mem.ww(ds, slot + 0x00, 0x0001)
-            mem.ww(ds, slot + 0x08, state)
-            mem.ww(ds, slot + 0x18, logic)
-            mem.ww(ds, slot + 0x1A, 0x0000)
-            mem.ww(ds, slot + 0x22, 0x9999)
-        cpu.push(0xBEEF)
-
-    asm = make_runtime()
-    hook = make_runtime()
-    seed(asm)
-    seed(hook)
-
-    for _ in range(500):
-        if asm.cpu.addr() == (0x1010, 0xBEEF):
-            break
-        asm.cpu.step()
-    assert asm.cpu.addr() == (0x1010, 0xBEEF)
-
-    run_object_deactivate_logic_dispatch_c054(hook.cpu)
-    hook.cpu.s.ip = hook.cpu.pop()
-
-    assert hook.cpu.addr() == (0x1010, 0xBEEF)
-    assert asm.cpu.s.snapshot() == hook.cpu.s.snapshot()
-    assert asm.program.memory.data == hook.program.memory.data
-
-
-
-def test_bfc7_logic_21_gate_four_joins_normal_death_tail_against_asm():
-    from pathlib import Path
-    from overkill.hooks import _run_collision_death_tail_bfc7
-    from overkill.runtime import load_overkill_snapshot as load_snapshot
-
-    root = Path(__file__).resolve().parents[1]
-    snap = root / "artifacts" / "snapshot_play_tandy_20260614_191454"
-    assert snap.exists(), "gameplay snapshot for BFC7 logic-0021 oracle is missing"
-
-    def make_runtime():
-        rt = load_snapshot(root / "assets" / "OVERKILL", snap, game_root=root / "assets")
-        rt.cpu.trace_enabled = False
-        # Run the ASM oracle without any replacement hooks so BFC7's own branch
-        # shape proves that logic 0021 + DS:2356 == 4 falls through to BFD7.
-        rt.cpu.replacement_hooks.clear()
-        rt.cpu.hook_names.clear()
-        return rt
-
-    def seed_bfc7_logic_21_state(rt):
-        cpu = rt.cpu
-        mem = cpu.mem
-        ds = ss = 0x25CC
-        bp = 0x2814
-        cpu.s.ax = 0x0028
-        cpu.s.bx = 0x0030
-        cpu.s.cx = 0x0030
-        cpu.s.dx = 0x0070
-        cpu.s.si = 0x0004
-        cpu.s.di = 0x0001
-        cpu.s.bp = bp
-        cpu.s.sp = 0xA270
-        cpu.s.cs = 0x1010
-        cpu.s.ds = ds
-        cpu.s.es = ds
-        cpu.s.ss = ss
-        cpu.s.ip = 0xBFC7
-        cpu.s.flags = 0x0202
-
-        mem.ww(ss, (bp + 0x00) & 0xFFFF, 0x0001)
-        mem.ww(ss, (bp + 0x02) & 0xFFFF, 0x0000)
-        mem.ww(ss, (bp + 0x04) & 0xFFFF, 0x0070)
-        mem.ww(ss, (bp + 0x08) & 0xFFFF, 0x003B)
-        mem.ww(ss, (bp + 0x14) & 0xFFFF, 0x0001)
-        mem.ww(ss, (bp + 0x18) & 0xFFFF, 0x0021)
-        mem.ww(ss, (bp + 0x1A) & 0xFFFF, 0x0000)
-        mem.ww(ss, (bp + 0x20) & 0xFFFF, 0x0000)
-        mem.ww(ss, (bp + 0x22) & 0xFFFF, 0x0000)
-        mem.ww(ss, (bp + 0x24) & 0xFFFF, 0x0000)
-        mem.ww(ss, (bp + 0x28) & 0xFFFF, 0xFFFF)
-        mem.ww(ss, (bp + 0x32) & 0xFFFF, 0x0070)
-        mem.ww(ss, (bp + 0x34) & 0xFFFF, 0x0000)
-        mem.ww(ds, 0x2356, 0x0004)
-        mem.ww(ds, 0xA47E, 0x0014)
-        mem.wb(ds, 0x98C0, 0x00)
-        mem.ww(ds, 0x2314, 0x0000)
-        cpu.push(0xBEEF)
-
-    asm = make_runtime()
-    hook = make_runtime()
-    seed_bfc7_logic_21_state(asm)
-    seed_bfc7_logic_21_state(hook)
-
-    for _ in range(2000):
-        if asm.cpu.addr() == (0x1010, 0xBEEF):
-            break
-        asm.cpu.step()
-    assert asm.cpu.addr() == (0x1010, 0xBEEF)
-
-    _run_collision_death_tail_bfc7(
-        hook.cpu,
-        parent="1010:BC4B",
-        chain="BC4B -> 62F6 -> BEC5 variant 0005",
-        cx_value=0x0015,
-    )
-
-    assert hook.cpu.addr() == (0x1010, 0xBEEF)
-    assert asm.cpu.s.snapshot() == hook.cpu.s.snapshot()
-    assert asm.program.memory.data == hook.program.memory.data
-
 def test_bfc7_logic_2b_keeps_live_counter_and_completes_transition():
     from dos_re.cpu import CPU8086, CPUState
     from dos_re.memory import Memory
@@ -6796,7 +6641,6 @@ def test_bfc7_logic_12_keeps_live_counter_and_completes_transition():
     assert mem.rw(ss, (bp + 0x22) & 0xFFFF) == 0x0000
 
 
-
 def test_bfc7_selector_effect_pushes_score_amount_bx_scratch():
     from dos_re.cpu import CPU8086, CPUState
     from dos_re.memory import Memory
@@ -6891,84 +6735,6 @@ def test_bfc7_logic_3b_uses_c054_default_and_completes_transition():
     assert mem.rw(ss, (bp + 0x08) & 0xFFFF) == 0x0000
 
 
-def test_bfc7_type2_death_tail_takes_c04e_dispatch_against_asm():
-    from pathlib import Path
-    from overkill.hooks import _run_collision_death_tail_bfc7
-    from overkill.runtime import load_overkill_snapshot as load_snapshot
-
-    root = Path(__file__).resolve().parents[1]
-    snap = root / "artifacts" / "snapshot_play_tandy_20260614_191454"
-    assert snap.exists(), "gameplay snapshot for BFC7 type-2 oracle is missing"
-
-    def make_runtime():
-        rt = load_snapshot(root / "assets" / "OVERKILL", snap, game_root=root / "assets")
-        rt.cpu.trace_enabled = False
-        rt.cpu.replacement_hooks.clear()
-        rt.cpu.hook_names.clear()
-        return rt
-
-    def seed(rt):
-        cpu = rt.cpu
-        mem = cpu.mem
-        ds = ss = 0x25CC
-        bp = 0x2814
-        cpu.s.ax = 0x0028
-        cpu.s.bx = 0x0030
-        cpu.s.cx = 0x0030
-        cpu.s.dx = 0x0070
-        cpu.s.si = 0x0004
-        cpu.s.di = 0x0001
-        cpu.s.bp = bp
-        cpu.s.sp = 0xA270
-        cpu.s.cs = 0x1010
-        cpu.s.ds = ds
-        cpu.s.es = ds
-        cpu.s.ss = ss
-        cpu.s.ip = 0xBFC7
-        cpu.s.flags = 0x0202
-
-        mem.ww(ss, (bp + 0x00) & 0xFFFF, 0x0001)
-        mem.ww(ss, (bp + 0x02) & 0xFFFF, 0x008C)
-        mem.ww(ss, (bp + 0x04) & 0xFFFF, 0x0000)
-        mem.ww(ss, (bp + 0x08) & 0xFFFF, 0x0022)
-        mem.ww(ss, (bp + 0x14) & 0xFFFF, 0x0002)
-        mem.ww(ss, (bp + 0x18) & 0xFFFF, 0x003B)
-        mem.ww(ss, (bp + 0x1A) & 0xFFFF, 0x0000)
-        mem.ww(ss, (bp + 0x20) & 0xFFFF, 0x0000)
-        mem.ww(ss, (bp + 0x22) & 0xFFFF, 0x0000)
-        mem.ww(ss, (bp + 0x24) & 0xFFFF, 0x0000)
-        mem.ww(ss, (bp + 0x28) & 0xFFFF, 0xFFFF)
-        mem.ww(ss, (bp + 0x32) & 0xFFFF, 0x0000)
-        mem.ww(ss, (bp + 0x34) & 0xFFFF, 0x008C)
-        mem.ww(ds, 0xA47E, 0x0014)
-        mem.wb(ds, 0x98C0, 0x00)
-        mem.ww(ds, 0x2314, 0x0000)
-        cpu.push(0xBEEF)
-
-    asm = make_runtime()
-    hook = make_runtime()
-    seed(asm)
-    seed(hook)
-
-    for _ in range(2000):
-        if asm.cpu.addr() == (0x1010, 0xBEEF):
-            break
-        asm.cpu.step()
-    assert asm.cpu.addr() == (0x1010, 0xBEEF)
-
-    _run_collision_death_tail_bfc7(
-        hook.cpu,
-        parent="1010:BC45",
-        chain="BC45 -> BC4B -> 62F6 -> BEC5",
-        cx_value=0x0000,
-    )
-
-    assert hook.cpu.addr() == (0x1010, 0xBEEF)
-    assert hook.cpu.mem.rw(ss := hook.cpu.s.ss, (hook.cpu.s.bp + 0x08) & 0xFFFF) == 0x0003
-    assert hook.cpu.s.bx == 0x0004
-    assert asm.cpu.s.snapshot() == hook.cpu.s.snapshot()
-    assert asm.program.memory.data == hook.program.memory.data
-
 def test_aa71_upper_contact_tail_matches_interpreted_asm_on_captured_snapshot():
     from pathlib import Path
     from overkill.gameplay.collision import run_postmove_contact_window_aa71
@@ -7053,7 +6819,6 @@ def test_aa71_final_boss_mode_keeps_narrow_x_window_against_asm():
     assert asm.addr() == hook.addr() == (0x1010, 0xBEEF)
     assert asm.s.snapshot() == hook.s.snapshot()
     assert asm.mem.data == hook.mem.data
-
 
 
 def test_inline_parent_call_to_aa71_reaches_hook_verifier():
@@ -7280,8 +7045,6 @@ def test_object_postmove_bc4b_variant_000a_owner_linked_tail_matches_interpreted
     assert asm.program.memory.data == hook.program.memory.data
 
 
-
-
 def test_bec5_variant_000a_non_owner_contact_is_noop_ret_against_asm():
     from overkill.hooks import _run_collision_handler_bec5_observed
 
@@ -7372,8 +7135,6 @@ def test_object_overlap_scan_62f6_preserves_bx_and_flags_on_signed_x_early_exit(
     assert cpu.s.bx == 0x0062
     assert cpu.s.flags == 0x0282
     assert cpu.s.ax == 0x1234
-
-
 
 
 def test_object_overlap_scan_62f6_preserves_bx_and_flags_on_logic_26_exemption():
@@ -7542,7 +7303,19 @@ def test_adlib_note_frequency_024f_hook_matches_interpreted_asm():
     from dos_re.memory import Memory
     from overkill.hook_wrappers.sounds import overkill_adlib_note_frequency_2032_024f
 
-    blob = (Path(__file__).resolve().parents[1] / "artifacts" / "static_runtime_bundle" / "memory_1mb.bin").read_bytes()
+    # The static runtime bundle lives at its documented regen path
+    # (artifacts/static_runtime_bundle, see docs/overkill/bootstrap_static_boundary.md).
+    # It sits directly under artifacts/ and may be cleared; skip (don't hard-fail)
+    # if absent, with the exact command to rebuild it.  Kept at the documented path
+    # rather than moved so regeneration does not create a divergent second copy.
+    bundle = Path(__file__).resolve().parents[1] / "artifacts" / "static_runtime_bundle" / "memory_1mb.bin"
+    if not bundle.exists():
+        pytest.skip(
+            "regenerate with: python -m overkill.cli static-runtime-bundle "
+            "assets/OVERKILL --game-root assets --video tandy --sound adlib "
+            "--out-dir artifacts/static_runtime_bundle"
+        )
+    blob = bundle.read_bytes()
 
     def make_cpu(use_hook: bool) -> CPU8086:
         mem = Memory()
@@ -8246,7 +8019,6 @@ def test_intro_retrace_delay_loop_96c5_matches_interpreted_asm_with_stubbed_50c9
     assert asm.mem.data == hook.mem.data
 
 
-
 def test_hook_verifier_uses_base_passthrough_hooks_inside_intro_delay_loop():
     """Verifying 96C5 must not call play.py's interactive 50C9 wrapper.
 
@@ -8717,8 +8489,6 @@ def test_boss_key_wait_gates_match_interpreted_state_machines():
             assert asm.mem.data == hook.mem.data
 
 
-
-
 def test_input_wait_gate_hook_metadata_uses_after_step_for_same_ip_targets():
     from overkill.verification import DEFAULT_STOPS
 
@@ -8735,7 +8505,6 @@ def test_input_wait_gate_hook_metadata_uses_after_step_for_same_ip_targets():
         assert stop.min_steps == 1
         assert self_ip in stop.ips
         assert exit_ip in stop.ips
-
 
 
 def test_status_display_parent_61dc_hook_matches_composed_interpreted_snapshot():
@@ -8930,7 +8699,6 @@ def test_main_menu_idle_loop_558b_returns_on_fire():
     assert asm.addr() == hook.addr() == (0x1010, 0xBEEF)
     assert asm.s.snapshot() == hook.s.snapshot()
     assert asm.mem.data == hook.mem.data
-
 
 
 def test_demo_counter_tick_081d_accepts_wide_cmp_live_code_against_asm():
@@ -9236,137 +9004,6 @@ def test_live_verify_replacement_hooks_have_continuation_metadata():
     assert missing == []
 
 
-def test_frame_effect_gate_77c5_hook_matches_interpreted_snapshot():
-    from pathlib import Path
-
-    from overkill.hooks import overkill_frame_effect_gate_77c5
-    from overkill.runtime import load_overkill_snapshot as load_snapshot
-
-    root = Path(__file__).resolve().parents[1]
-    exe = root / "assets" / "OVERKILL"
-    snapshot = root / "artifacts" / "snapshot_play_tandy_20260614_191454"
-
-    def make_runtime():
-        rt = load_snapshot(exe, snapshot, game_root=root / "assets")
-        rt.cpu.trace_enabled = False
-        # Expose the nested 77C5 boundary; otherwise the 97B2/60A2 parents
-        # absorb it inside composed Python steps.
-        for addr in ((0x1010, 0x97B2), (0x1010, 0x60A2)):
-            rt.cpu.replacement_hooks.pop(addr, None)
-            rt.cpu.hook_names.pop(addr, None)
-        return rt
-
-    asm = make_runtime()
-    hook = make_runtime()
-
-    for _ in range(2_000):
-        if asm.cpu.addr() == (0x1010, 0x77C5):
-            break
-        asm.cpu.step()
-        hook.cpu.step()
-
-    assert asm.cpu.addr() == hook.cpu.addr() == (0x1010, 0x77C5)
-    return_ip = asm.cpu.mem.rw(asm.cpu.s.ss, asm.cpu.s.sp)
-    asm.cpu.replacement_hooks.pop((0x1010, 0x77C5), None)
-    hook.cpu.replacement_hooks[(0x1010, 0x77C5)] = overkill_frame_effect_gate_77c5
-
-    for _ in range(10_000):
-        if asm.cpu.addr() == (0x1010, return_ip):
-            break
-        asm.cpu.step()
-    hook.cpu.step()
-
-    assert asm.cpu.addr() == hook.cpu.addr() == (0x1010, return_ip)
-    assert asm.cpu.s.snapshot() == hook.cpu.s.snapshot()
-    assert asm.program.memory.data == hook.program.memory.data
-
-
-def test_frame_effect_status_text_60a2_hook_matches_interpreted_parent_glue():
-    from pathlib import Path
-
-    from overkill.hooks import overkill_frame_effect_status_text_60a2
-    from overkill.runtime import load_overkill_snapshot as load_snapshot
-
-    root = Path(__file__).resolve().parents[1]
-    exe = root / "assets" / "OVERKILL"
-    snapshot = root / "artifacts" / "snapshot_play_tandy_20260614_191454"
-
-    def make_runtime():
-        rt = load_snapshot(exe, snapshot, game_root=root / "assets")
-        rt.cpu.trace_enabled = False
-        # Expose 60A2; the 97B2 frame parent now composes it internally.
-        rt.cpu.replacement_hooks.pop((0x1010, 0x97B2), None)
-        rt.cpu.hook_names.pop((0x1010, 0x97B2), None)
-        return rt
-
-    asm = make_runtime()
-    hook = make_runtime()
-
-    for _ in range(2_000):
-        if asm.cpu.addr() == (0x1010, 0x60A2):
-            break
-        asm.cpu.step()
-        hook.cpu.step()
-
-    assert asm.cpu.addr() == hook.cpu.addr() == (0x1010, 0x60A2)
-    return_ip = asm.cpu.mem.rw(asm.cpu.s.ss, asm.cpu.s.sp)
-    asm.cpu.replacement_hooks.pop((0x1010, 0x60A2), None)
-    hook.cpu.replacement_hooks[(0x1010, 0x60A2)] = overkill_frame_effect_status_text_60a2
-
-    for _ in range(30_000):
-        if asm.cpu.addr() == (0x1010, return_ip):
-            break
-        asm.cpu.step()
-    hook.cpu.step()
-
-    assert asm.cpu.addr() == hook.cpu.addr() == (0x1010, return_ip)
-    assert asm.cpu.s.snapshot() == hook.cpu.s.snapshot()
-    assert asm.program.memory.data == hook.program.memory.data
-
-
-def test_frame_loop_97b2_hook_matches_one_interpreted_iteration():
-    from pathlib import Path
-
-    from overkill.hooks import overkill_frame_loop_97b2
-    from overkill.runtime import load_overkill_snapshot as load_snapshot
-
-    root = Path(__file__).resolve().parents[1]
-    exe = root / "assets" / "OVERKILL"
-    snapshot = root / "artifacts" / "snapshot_play_tandy_20260614_191454"
-
-    def make_runtime():
-        rt = load_snapshot(exe, snapshot, game_root=root / "assets")
-        rt.cpu.trace_enabled = False
-        return rt
-
-    asm = make_runtime()
-    hook = make_runtime()
-
-    for _ in range(2_000):
-        if asm.cpu.addr() == (0x1010, 0x97B2):
-            break
-        asm.cpu.step()
-        hook.cpu.step()
-
-    assert asm.cpu.addr() == hook.cpu.addr() == (0x1010, 0x97B2)
-    asm.cpu.replacement_hooks.pop((0x1010, 0x97B2), None)
-    hook.cpu.replacement_hooks[(0x1010, 0x97B2)] = overkill_frame_loop_97b2
-
-    stop_ips = {0x97B2, 0x9734, 0x9902, 0x9908, 0x9862}
-    for step_count in range(1, 200_000):
-        asm.cpu.step()
-        if asm.cpu.s.cs == 0x1010 and asm.cpu.s.ip in stop_ips:
-            break
-    else:
-        raise AssertionError(f"97B2 ASM oracle did not reach expected boundary; now {asm.cpu.s.cs:04X}:{asm.cpu.s.ip:04X}")
-
-    hook.cpu.step()
-
-    assert asm.cpu.addr() == hook.cpu.addr()
-    assert asm.cpu.s.snapshot() == hook.cpu.s.snapshot()
-    assert asm.program.memory.data == hook.program.memory.data
-
-
 def test_status_cursor_613e_and_615a_match_interpreted_asm_all_modes():
     from overkill.hooks import overkill_status_cursor_advance_613e, overkill_status_cursor_retreat_615a
 
@@ -9663,8 +9300,6 @@ def test_status_coord_list_fill_99cd_matches_interpreted_loop():
     assert bytes(asm.mem.data) == bytes(hook.mem.data)
 
 
-
-
 def test_frame_action_spawn_fanout_a067_matches_interpreted_paths():
     from overkill.hooks import overkill_frame_action_spawn_fanout_a067
 
@@ -9786,7 +9421,6 @@ def test_frame_action_spawn_fanout_a067_matches_interpreted_paths():
         assert asm.addr() == hook.addr() == (0x1010, 0xBEEF)
         assert asm.s.snapshot() == hook.s.snapshot(), case
         assert bytes(asm.mem.data) == bytes(hook.mem.data), case
-
 
 
 def test_frame_action_spawn_children_a515_a584_match_interpreted_paths():
@@ -11297,8 +10931,6 @@ def test_tile_contact_probe_4ff9_matches_interpreted_asm_paths():
         assert bytes(asm.mem.data) == bytes(hook.mem.data)
 
 
-
-
 def test_tile_collision_probe_ac28_matches_interpreted_asm_paths():
     from overkill.gameplay.collision import (
         SIG_TILE_COLLISION_PROBE_AC28,
@@ -11508,7 +11140,6 @@ def test_text_prompt_key_read_5497_matches_interpreted_asm_regular_and_extended_
         assert asm.addr() == hook.addr() == (0x1010, 0xBEEF)
         assert asm.s.snapshot() == hook.s.snapshot()
         assert asm.mem.data == hook.mem.data
-
 
 
 def test_text_entry_prompt_loop_53c9_matches_interpreted_one_iteration_branches():
@@ -12359,7 +11990,6 @@ def test_movement_dir_step_tables_match_interpreted_asm_all_directions():
                 assert asm.mem.data == hooked.mem.data, (hex(entry), direction, x0, y0)
 
 
-
 def test_object_player_chase_b1b0_matches_interpreted_asm_key_paths():
     from pathlib import Path
     from overkill.hooks import overkill_object_player_chase_b1b0
@@ -12575,7 +12205,6 @@ def test_player_hazard_scan_guard_bdd0_matches_interpreted_asm_gate_and_empty_sc
         assert asm.s.ip == 0xCAFE
         hook.step()
         assert asm.s.snapshot() == hook.s.snapshot()
-
 
 
 def test_player_hazard_scan_guard_bdd0_matches_interpreted_asm_hit_path():

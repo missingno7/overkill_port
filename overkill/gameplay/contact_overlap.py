@@ -27,7 +27,12 @@ from __future__ import annotations
 from typing import Callable
 
 from overkill.asm import _add_reg16, _cmp_word, _sub_reg16
-from overkill.recovered.views.object_slots import OFF_LOGIC_ID, OFF_X, OFF_Y
+from overkill.recovered.views.object_slots import (
+    OFF_LOGIC_ID,
+    OFF_SCAN_ENABLE_OR_SOLID,
+    OFF_X,
+    OFF_Y,
+)
 
 # ---------------------------------------------------------------------------
 # Proven layout facts for the B250 overlap/contact selector.
@@ -40,9 +45,14 @@ OVERLAP_REF_BOX_Y = 0x2380
 OVERLAP_BOX_X_INSET = 0x0002
 OVERLAP_BOX_SPAN = 0x0014
 
-# Object-slot substate at SS:[bp+1E]: when it is 1 the selector short-circuits
-# straight to the no-contact tail without testing the box.
-OFF_SUBSTATE_1E = 0x1E
+# Object-slot flag at SS:[bp+1E]: when it is 1 the selector short-circuits
+# straight to the no-contact tail without testing the box.  This is the same
+# record word object_slots maps as OFF_SCAN_ENABLE_OR_SOLID (a "guessed" field in
+# OBJECT_RECORD_FIELDS); the two lifts named its role differently.  Aliased to the
+# canonical offset so there is one source for the number -- the local name stays
+# until evidence settles whether "skip-overlap" and "scan-enable/solid" are one
+# role, then this collapses to a single name.
+OFF_SUBSTATE_1E = OFF_SCAN_ENABLE_OR_SOLID
 SUBSTATE_SKIP_OVERLAP = 0x0001
 
 # DS global that scales the contact fanout count (1, 3, or 5 side-effect calls)

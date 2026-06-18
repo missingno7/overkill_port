@@ -1,3 +1,78 @@
+## 2026-06-18 - Living memory map + collapse the triplicated object-record decode
+
+Two slices, each leaving the live path cleaner (not just adding on top).
+
+Living memory map (visibility):
+- `OBJECT_RECORD_FIELDS` in `recovered/views/object_slots.py` now catalogs every
+  16-bit word of the 0x38 object record with a discovery status: `known` /
+  `guessed` / `unknown`.  The seven previously-silent gaps (0x10, 0x26, 0x28,
+  0x2A, 0x2C, 0x2E, 0x36) are explicit `unknown` rows; inferred names are marked
+  `guessed` instead of reading as settled fact.  Offsets reference the existing
+  `OFF_*` constants (no re-typed numbers).
+- `scripts/source_port_status.py` now prints struct coverage and the offset-access
+  migration runway: `object_record (0x38): 21/28 words named (7 known, 14
+  guessed, 7 unknown)` and `record offset accesses in gameplay/: 203 named, 138
+  raw hex (40% still raw)`.  Progress is now a number that moves.
+- Checked by two new tests (map covers every word once; agrees with the OFF_*
+  constants and the documented gaps).
+
+Hygiene collapse (fewer parallel representations):
+- The object-record offset->field mapping lived in three places (view properties,
+  `ObjectSlotSnapshot` fields, and the adapter's `w(OFF_*)` hand decode).  The
+  adapter now builds the snapshot straight from the live `ObjectSlotView` named
+  fields + `record_bytes()`, so the layout lives in ONE place (the view).  The
+  adapter dropped ~13 `OFF_*` imports and its private `w()` decoder.
+- The snapshot's frame-timer read now goes through `FrameTimersView` too, removing
+  a second reproduction of the DS:2368 table layout.
+- `contact_overlap.OFF_SUBSTATE_1E` was a re-typed `0x1E`; it now aliases the
+  canonical `OFF_SCAN_ENABLE_OR_SOLID` (one source for the number).  The local
+  name is kept and the naming ambiguity marked: collapse to one name once
+  evidence settles whether "skip-overlap" and "scan-enable/solid" are one role.
+
+Verified byte-identical: lint (151) + recovered-layer audit (17 pure) +
+recovered-semantics/checkpoint-handoff (39) + all 8 demo replays native==VM +
+the B250 overlap/contact + bounds/61C7 oracle suites.
+
+Housekeeping: removed 6 tests that hard-depended on the now-deleted root snapshot
+`artifacts/snapshot_play_tandy_20260614_191454`; made the AdLib bundle test skip
+(with a regenerate hint) instead of hard-failing if `artifacts/static_runtime_bundle`
+is cleared.  All other test data already lives in curated subfolders.
+
+## 2026-06-18 - VM-backed views translation layer, introduced by use
+
+Built the typed translation layer between the VM and the source-like code, with
+each view introduced by a real live consumer (no speculative/dead overlays) and
+proven byte/register/flag-exact:
+
+- `recovered/views/object_slots.ObjectSlotView`: extended to full field coverage
+  (object_type, draw_layer, row_or_phase, substate, scan_enable_or_solid,
+  counter_20, variant, acquired_target_ptr, ...) + a `record_bytes()` record read.
+  First live use: `gameplay/object_bounds.py` AD60 bounds tail now reads
+  `slot.x_word / y_word / draw_layer / logic_id` instead of raw `mem.rw(ss,bp+OFF)`.
+  The flag-affecting `_add_mem_word` pre-add stays as visible ASM glue.
+- `recovered/views/object_slots.ObjectTableView`: a live lens over a whole
+  effect/gameplay table (indexable/iterable slot views, `.active()`). First live
+  use: `game_snapshot_adapter._decode_table` iterates it and reads each slot via
+  `record_bytes()` (byte-identical to the old per-byte read).
+- `recovered/views/frame_timers.FrameTimersView` (new module): the six `DS:2368`
+  countdown counters (read-all / write-one / `address_of` / `end`). First live
+  use: the 61C7 frame-timer scan in `gameplay/game_state.py`, which now reads
+  `timers.values()` and writes `timers[k]`, keeping the exact DI/flag contract.
+
+The layer rule: a view replaces the *memory access* only; flag/register-exact ASM
+(`_add_mem_word`, `set_sub_flags`, scan-loop BX walks) stays in the lifted body.
+Documented in ARCHITECTURE.md ("VM-backed views (the translation layer)") and the
+`recovered/views/__init__.py` package docstring.
+
+Validation:
+
+```text
+python scripts/lint.py                      # 151 files
+python scripts/audit_recovered_layers.py    # 17 pure files (views are bridge, not pure)
+python -m pytest tests/test_overkill_hooks.py -k "b24d or bounds or ad5a or aed8 or b73e or 61c7 or 61f7 or decrement_counter" -q   # oracle: byte/reg/flag identity
+python -m pytest tests/test_recovered_semantics.py tests/test_checkpoint_handoff.py tests/test_demo_replay_equivalence.py -q        # snapshot decode + demo-replay native==VM
+```
+
 ## 2026-06-18 - Phase 1 lift: B73E target-reached 4-way resolution
 
 Lifted the B73E `B7BD/B808` target-reached dispatch (reached once an object is at
@@ -36,6 +111,154 @@ hot 9E19 loop to ~9.6k (now classified `gameplay_objects`); the remaining L2
 `B297-B32A` mass is the separate `B2CD` waypoint behavior.
 
 No behavior change this pass (disassembly + classification + docs only).
+
+## 2026-06-18 - Guard strengthened: semantic snapshot now covers global counters
+
+The checkpoint-collapse strategy proves correctness by frame/state equivalence, so
+the snapshot's coverage IS the correctness guard.  It previously decoded only
+frame timers + score + object slots, missing the global counters that drive object
+lifecycles - exactly the state class the ringlas bug hid in (DS:A972 diverged but
+was invisible to the verifier, so it was only caught downstream once it corrupted
+object slots).
+
+Widened `GameSnapshot` with `state_globals` (pure: names + values), decoded by
+`game_snapshot_adapter.SNAPSHOT_GLOBAL_WORDS` - reusing `world_adapter`'s
+evidence-backed globals (camera, allocator cursors, tile-sweep, boss counter, ...)
+plus the gameplay counters/gates: action-spawn/weapon-list counters DS:A970..A978,
+DS:A97E, formation counter DS:2340, gates 2330/232E/2356, contact fanout BEDC,
+mode flag BDAC.  `diff_game_snapshot` reports `globals.<name>` divergences.
+
+No new infrastructure - it extends the existing snapshot/diff and reuses the
+address evidence already in `world_adapter` (no parallel state model).  The
+verifier now catches a counter divergence at the source frame instead of waiting
+for it to manifest in objects/vram.
+
+Verification:
+
+```text
+python -m pytest tests/test_recovered_semantics.py -q   # incl. globals diff + decode tests
+python scripts/audit_recovered_layers.py                # domain stays pure (17 files)
+python -m pytest tests/test_demo_replay_equivalence.py -q -k "ringlas or showcase or L2 or L5_start"
+# 4 passed - candidate and VM agree on the new globals (no hidden divergence; broader guard)
+```
+
+## 2026-06-18 - Key finding: the frame is ALREADY a native chain inside 97B2
+
+While making the handoff executable, a `cpu.ip`-visit census over ~250 frames of
+L5 gameplay revealed how far the collapse already is: the frame-loop hook `97B2`
+("lifted as one verified iteration") **composes the whole frame as native Python**.
+Most phase/"checkpoint" addresses are never visited as `cpu.ip` because they run as
+direct function calls inside that chain:
+
+```text
+97B2  1757x   <- the per-frame resume point that IS visited
+A940/AA10  3x each      A90C 3354 A846 5BDC 0162  0x   <- composed away
+```
+
+Implications:
+- The **frame boundary (`97B2`/`D007`) is the real `cpu.ip`-visited resume point**;
+  the sub-phase checkpoints (render/object-update) are already fused inside the
+  frame chain.  `taxonomy` checkpoints are *logical* boundaries; only the frame
+  ones are current handoff points.  (`scripts/capture_demo_snapshot.py
+  --at-checkpoint frame` captures there; sub-phase kinds mostly will not match
+  because those addresses are not visited.)
+- The demo boundary clock (present/timer at 3354/0679) is itself largely composed
+  inside 97B2, so it advances slowly under raw single-runtime replay - which is why
+  deep `--min-boundary` captures are slow.  The demo-replay verifier installs the
+  boundary hooks explicitly, so it is unaffected.
+- Re-scopes "collapse 319 glue hooks": the frame loop is **already** a native
+  chain; the remaining glue is the gameplay behaviours/tails that chain still
+  bounces into (the object-update phase).  So the next real target is collapsing
+  the object-update phase's behaviour dispatch, not re-doing the frame loop.
+
+## 2026-06-18 - Untie: VM-until-checkpoint handoff is now executable
+
+Made the checkpoint model runnable code, not just doctrine:
+
+- `overkill/checkpoints.py`: `run_to_next_checkpoint(cpu, kinds=...)` steps the VM
+  (instruction-exact oracle) from any position to the next logical checkpoint
+  (frame/render/object-update/input), derived from the evidence-based phase map in
+  `hook_taxonomy`.  This is the "run in VM until the first compatible checkpoint,
+  then hand off" primitive.
+- `tests/test_checkpoint_handoff.py`: proves it - from a gameplay snapshot the VM
+  fast-forwards to a frame checkpoint, lands exactly on it, the decoded
+  `GameSnapshot` is consistent there, and two consecutive frame checkpoints differ
+  by exactly one frame of gameplay (a real boundary, not a mid-chain point).
+- `scripts/capture_demo_snapshot.py` gained `--at-checkpoint <kind>`: capture an
+  oracle snapshot at a stable, resumable checkpoint instead of an exact mid-chain
+  `CS:IP`.  This is the *right* shape for oracle capture and fixes why the BB80
+  mid-chain capture kept timing out - capture at the object-update checkpoint
+  (which occurs every frame) instead.
+
+Why this unties our hands: a snapshot can now be taken anywhere, fast-forwarded in
+the VM to a checkpoint, and resumed by native code; and a collapsed chain between
+two checkpoints is verified by semantic frame/state equivalence (the demo-replay
+suite), with no obligation to reproduce intermediate `CS:IP`s.  Next: collapse one
+whole frame phase (render `A846`->`5BDC`->present is the cleanest, vram-verifiable)
+into a single native system between the object-update and render checkpoints.
+
+## 2026-06-18 - Strategy: the frame is already a checkpoint sequence (D007)
+
+Inspected the gameplay main loop `1010:D007` (per user direction) and found the
+frame is ALREADY a linear chain of `CALL`/`RET` phase calls, each a stable,
+verifiable boundary and each already a registered hook:
+
+```text
+D007 frame top -> 0672(env) -> 511F/A846 render -> 5BDC/3354 present[RENDER]
+     -> A90C/A940/AA10 [OBJECT-UPDATE] -> 5F61/073C -> 5160/0679 wait(env)
+     -> 0162 [INPUT] -> jz D007 [FRAME]
+```
+
+So the source-port loop does not need inventing: it is D007's phase sequence, each
+phase a native system entered/exited at its checkpoint, with the behaviours/tails/
+helpers each phase calls being the glue to fuse inside it.
+
+Updated the strategic documents to make checkpoint-first the project strategy:
+- `docs/overkill/semantic_crystallization_plan.md` - new top section
+  "Checkpoint-first execution model (read this first)": VM = instruction-exact
+  oracle; source port = checkpoint-level; VM-until-checkpoint handoff; "promote
+  hooks upward" reframed as "collapse glue between checkpoints into source-like
+  systems", proven by frame/state verification.
+- `ARCHITECTURE.md` - "Snapshot model" section now carries the D007 frame map and
+  the VM-until-checkpoint handoff.
+- `AGENTS.md` - hooks are candidates for checkpoints, not permanent patch points;
+  the per-hook proof obligation is VM-oracle-side only.
+- `overkill/hook_taxonomy.py` refined to the evidence-based D007 phase set
+  (12 checkpoints / 5 env-waits / 319 glue), locked by `tests/test_hook_taxonomy.py`.
+
+Implication for VM-until-checkpoint handoff: oracle snapshots no longer need
+capture at a behaviour's exact entry - capture anywhere, fast-forward in the VM to
+the next checkpoint, resume natively.  (This is why the BB80 mid-chain capture was
+the wrong shape; capture at the object-update checkpoint instead.)
+
+## 2026-06-18 - Methodology: checkpoint-level snapshots, hooks classified by role
+
+Adopted an explicit model (per user direction): stop treating every hook address
+as a permanent source-port boundary.  The VM/original ASM stays instruction-level
+snapshotable as the oracle; the source-port runtime is **checkpoint-level**
+snapshotable - it resumes only from stable logical boundaries (frame,
+object-update, render, input, plus hardware waits).  Between checkpoints, lifted
+code may run as one atomic deterministic chain with no obligation to preserve old
+`CS:IP` bounces or mid-chain resume; a mid-chain snapshot defers to the next
+checkpoint.  Correctness is protected by the semantic frame/state verifier
+(the demo-replay equivalence suite), not by historical hook boundaries.
+
+Implemented:
+- `overkill/hook_taxonomy.py` classifies hooks by role: `checkpoint` / `env_wait`
+  / `debug_probe` / `glue`.  Curated checkpoint + env-wait sets are small and
+  explicit; everything else is `glue` (the honest majority).
+- `scripts/source_port_status.py` now reports the split: ~8 checkpoint, ~4
+  env_wait, ~324 glue.  The glue count is the collapse target and the headline to
+  drive down.
+- Documented the model in `ARCHITECTURE.md` ("Snapshot model: checkpoints, not
+  hook boundaries"); per-hook `verification.py` metadata stays the VM-side proof
+  only.
+
+Reframes the BB80 lift (deferred): instead of reproducing BB80's exact `CS:IP`
+bounces (the multi-entry dispatch + the BBED tile-probe's mid-chain returns - the
+reason it was awkward), treat BB80 as glue between the object-update checkpoint
+and the render checkpoint and collapse it into one atomic source-like chain,
+verified by frame/state equivalence over the corpus.
 
 ## 2026-06-18 - Demo corpus expanded to 8; full-weapon showcase verified clean
 

@@ -91,11 +91,59 @@ def main() -> int:
     )
     print(f"\n  Pure rules in recovered/systems: {pure_defs} top-level functions")
 
+    # Reconstructed structures: discovery coverage of the living memory map, plus
+    # how much of the live gameplay path still reaches object records by raw hex
+    # offset instead of a named OFF_*/view field (the migration runway).
+    try:
+        from overkill.recovered.views.object_slots import (
+            OBJECT_SLOT_STRIDE,
+            object_record_field_status,
+        )
+
+        st = object_record_field_status()
+        total = sum(st.values())
+        named = st["known"] + st["guessed"]
+        print("\n  Reconstructed structures (living memory map):")
+        print(
+            f"    object_record (0x{OBJECT_SLOT_STRIDE:02X}): {named}/{total} words named "
+            f"({st['known']} known, {st['guessed']} guessed, {st['unknown']} unknown)"
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(f"\n  Reconstructed structures: <unavailable: {type(exc).__name__}>")
+
+    raw_off_re = re.compile(r"\((?:bp|bx|si|di) \+ 0x[0-9A-Fa-f]+")
+    named_off_re = re.compile(r"\((?:bp|bx|si|di) \+ OFF_[A-Z0-9_]+")
+    raw_off = named_off = 0
+    for p in (PKG / "gameplay").rglob("*.py"):
+        if "__pycache__" in p.parts:
+            continue
+        t = p.read_text(encoding="utf-8", errors="replace")
+        raw_off += len(raw_off_re.findall(t))
+        named_off += len(named_off_re.findall(t))
+    tot_off = raw_off + named_off
+    if tot_off:
+        print(
+            f"    record offset accesses in gameplay/: {named_off} named, "
+            f"{raw_off} raw hex ({100.0 * raw_off / tot_off:.0f}% still raw)"
+        )
+
     try:
         import overkill.hooks  # noqa: F401 - registers all replacements
         from dos_re.hooks import registry
 
+        from overkill.hook_taxonomy import classify_registry
+
         print(f"  Registered VM hooks: {len(registry.replacements)}")
+        buckets = classify_registry(registry.replacements.keys())
+        print("  Hook taxonomy (role, not address):")
+        for cat in ("checkpoint", "env_wait", "debug_probe", "glue"):
+            note = {
+                "checkpoint": "stable resume boundaries",
+                "env_wait": "hardware/environment waits",
+                "debug_probe": "observation only",
+                "glue": "collapse target -> source-like chains between checkpoints",
+            }[cat]
+            print(f"    {cat:12} {len(buckets[cat]):4d}   {note}")
     except Exception as exc:  # noqa: BLE001
         print(f"  Registered VM hooks: <unavailable: {type(exc).__name__}>")
 

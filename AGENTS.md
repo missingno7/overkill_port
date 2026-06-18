@@ -355,7 +355,19 @@ python scripts/audit_islands.py --all-hooks
 
 ## Replacement Hook Rules
 
-A replacement hook is a proof obligation.
+A hook address is a **candidate for a higher-level checkpoint, not a permanent
+ASM patch point**.  The source-port runtime resumes only from stable logical
+checkpoints (frame/render/object-update/input + hardware waits); between
+checkpoints, lifted code may run as one atomic deterministic chain and need not
+preserve historical `CS:IP` bounces.  Classify hooks by role
+(`overkill/hook_taxonomy.py`: checkpoint / env_wait / debug_probe / glue) and
+collapse `glue` into source-like systems between checkpoints, proving equivalence
+with the semantic frame/state verifier (demo-replay suite), not by preserving
+boundaries.  See `ARCHITECTURE.md` ("Snapshot model") and
+`docs/overkill/semantic_crystallization_plan.md` (read first).
+
+A replacement hook is a proof obligation **for the VM-oracle side** (it must still
+match interpreted ASM so the VM stays an exact oracle).
 
 Before adding or changing a hook:
 

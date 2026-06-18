@@ -1137,6 +1137,24 @@ def test_game_snapshot_diff_localises_object_field_divergence():
     c = GameSnapshot((1, 2, 0, 4, 5, 6), b"\x00" * 5, (slot(0, 100), slot(1, 200)))
     assert any(d.path == "frame_timers" for d in diff_game_snapshot(a, c))
 
+    # a global counter differs -> localised named global divergence.  This is the
+    # state class the ringlas bug hid in (DS:A972) before it was in the snapshot.
+    g1 = GameSnapshot((1,), b"", (), state_globals=(("action_spawn_counter_a972", 0x14),))
+    g2 = GameSnapshot((1,), b"", (), state_globals=(("action_spawn_counter_a972", 0x13),))
+    assert diff_game_snapshot(g1, g1) == []
+    gdiffs = diff_game_snapshot(g1, g2)
+    assert any(d.path == "globals.action_spawn_counter_a972" for d in gdiffs)
+
+
+def test_decoded_snapshot_includes_state_globals():
+    from overkill.recovered.adapters.game_snapshot_adapter import SNAPSHOT_GLOBAL_WORDS
+
+    # The verifier now compares these global counters/gates each frame; the
+    # action-spawn/weapon-list counters must be among them (the ringlas guard).
+    names = {name for name, _off in SNAPSHOT_GLOBAL_WORDS}
+    for required in ("action_spawn_counter_a972", "formation_game_counter_2340", "game_mode_2356"):
+        assert required in names
+
 
 def test_status_cursor_stride_rule_per_video_mode():
     import pytest
@@ -1154,3 +1172,40 @@ def test_status_cursor_stride_rule_per_video_mode():
     # Unknown mode must fail loudly (the original jump tables have no entry).
     with pytest.raises(ValueError):
         status_cursor_stride(3)
+
+
+def test_object_record_memory_map_covers_every_word_exactly_once():
+    from overkill.recovered.views.object_slots import (
+        FIELD_UNKNOWN,
+        OBJECT_RECORD_FIELDS,
+        OBJECT_SLOT_STRIDE,
+        object_record_field_status,
+    )
+
+    offsets = [off for off, _name, _status in OBJECT_RECORD_FIELDS]
+    # Every 16-bit word of the 0x38-byte record, each exactly once, in order:
+    # the map can never silently drift from the record stride.
+    assert offsets == list(range(0, OBJECT_SLOT_STRIDE, 2))
+
+    for off, name, status in OBJECT_RECORD_FIELDS:
+        if status == FIELD_UNKNOWN:
+            assert name == "", f"unknown word 0x{off:02X} must stay unnamed"
+        else:
+            assert name, f"mapped word 0x{off:02X} must carry a name"
+
+    counts = object_record_field_status()
+    assert sum(counts.values()) == OBJECT_SLOT_STRIDE // 2 == len(OBJECT_RECORD_FIELDS)
+
+
+def test_object_record_memory_map_agrees_with_off_constants():
+    from overkill.recovered.views import object_slots as m
+
+    by_off = {off: (name, status) for off, name, status in m.OBJECT_RECORD_FIELDS}
+    # Rock-solid fields are marked known and sit at their OFF_* offset.
+    assert by_off[m.OFF_X] == ("x", m.FIELD_KNOWN)
+    assert by_off[m.OFF_LOGIC_ID][1] == m.FIELD_KNOWN
+    # Inferred fields stay honest as "guessed" until evidence firms up.
+    assert by_off[m.OFF_SCAN_ENABLE_OR_SOLID][1] == m.FIELD_GUESSED
+    # The seven documented gaps are explicit unknowns, not silent holes.
+    for gap in (0x10, 0x26, 0x28, 0x2A, 0x2C, 0x2E, 0x36):
+        assert by_off[gap] == ("", m.FIELD_UNKNOWN)

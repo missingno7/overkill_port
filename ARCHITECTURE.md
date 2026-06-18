@@ -11,6 +11,71 @@ engine.** Higher layers may depend on lower layers; lower (cleaner) layers must
 never depend back up on the VM/CPU/segment world. Tandy is the primary backend
 target; EGA/CGA are preserved but isolated and do not drive architecture.
 
+## Snapshot model: checkpoints, not hook boundaries
+
+A registered hook address is **not** automatically a permanent source-port
+boundary.  Treat the two runtimes differently:
+
+- **The VM (original ASM) stays instruction-level** snapshotable/stepable - it is
+  the oracle, and every historical `CS:IP` is observable there.
+- **The source-port runtime is checkpoint-level** snapshotable.  It resumes only
+  from stable *logical* boundaries - **frame, object-update, render, input** (and
+  the hardware/environment waits).  Between two checkpoints, lifted source-like
+  code may run as **one atomic deterministic chain**: it does not need to preserve
+  every old `CS:IP` bounce or support arbitrary mid-chain resume.  A snapshot
+  requested mid-chain is deferred to the next checkpoint, or represented as the
+  previous checkpoint + deterministic replay.
+
+So classify every hook by **role**, not address (`overkill/hook_taxonomy.py`,
+reported by `scripts/source_port_status.py`):
+
+| Category | Meaning | Direction |
+|----------|---------|-----------|
+| **checkpoint** | a real logical resume boundary (frame/object-update/render/input) | keep, make explicit |
+| **env_wait** | hardware/environment wait (PIT/IRQ0 timer, CRTC retrace, INT9) the interpreter can't satisfy natively | keep hooked, even on the oracle reference |
+| **debug_probe** | exists only to observe/verify | keep out of the hot path |
+| **glue** | accidental ASM-boundary plumbing: behaviours, tails, helpers, per-object/row scan steps | **collapse** into source-like chains between checkpoints |
+
+Today that split is ~12 checkpoints / ~5 env-waits / ~319 glue.  The glue is the
+collapse target.  **Correctness during collapse is protected by the semantic
+frame/state verifier against the VM (the demo-replay equivalence suite), not by
+preserving every historical hook boundary.**  Per-hook oracle metadata
+(`verification.py`) remains the VM-side proof; it does not constrain how the
+source-port chain is shaped between checkpoints.
+
+### The frame is already a checkpoint sequence
+
+The gameplay main loop `1010:D007` (and the attract loop `97B2`) is a linear chain
+of `CALL`/`RET` phase calls - the frame is *already* decomposed into RET-bounded
+systems, each a place where state is consistent:
+
+```
+D007  frame top ───────────────── FRAME checkpoint
+  0672              clear timer flag                     (env)
+  511F  A846        per-frame video setup + layer render  RENDER phase
+  5BDC  -> 3354/2750/447B  present dispatch + blit ────── RENDER checkpoint
+  A90C  A940  (AA10)  presence scan + state update ────── OBJECT-UPDATE checkpoint
+  5F61  073C        score/status, sound                  (sub-systems)
+  5160  0679        display-start + timer wait ────────── FRAME-PACING (env waits)
+  0162              input poll ───────────────────────── INPUT checkpoint
+  jz D007                                                 loop
+```
+
+Every phase entry above is already a registered hook.  So the source-port loop
+does not need inventing - it is `D007`'s phase sequence, with each phase a native
+system entered/exited at its checkpoint, and the behaviours/tails/helpers each
+phase calls are the glue to fuse inside it.
+
+### VM-until-checkpoint handoff
+
+A demo or snapshot taken at *any* instruction can run in **VM mode (instruction-
+exact) until it reaches the first compatible checkpoint**, then hand off to native
+source-like code.  This means oracle snapshots no longer need to be captured at a
+behaviour's exact entry to be usable by the source port - capture anywhere, fast-
+forward in the VM to the next frame/object-update/render/input checkpoint, and
+resume natively from there.  Between checkpoints the native chain is atomic and
+deterministic; a snapshot requested mid-chain is the previous checkpoint + replay.
+
 ## Layers (high = closest to ASM, low = closest to pure source)
 
 | Layer | Packages | May depend on | Notes |
@@ -56,6 +121,51 @@ Such exceptions are whitelisted explicitly in `audit_architecture.py`.
   `game_core`).
 - Backend-specific drawing/sound/asset work → `rendering/`, `sounds/`,
   `asset_codecs/`, `file_io/`.
+
+## VM-backed views (the translation layer)
+
+`overkill/recovered/views/*` are the typed lenses between the VM and the
+source-like code.  A view is a **live overlay**, never an owned entity: every
+field read/write goes straight to the original DOS memory at `seg:base+offset`,
+so `slot.x_word += dx` updates the real VM image and the emulator and the
+source-like code never disagree.  There is **no parallel native state** — the DOS
+image stays the single source of truth.
+
+Current views and the live consumer that introduced each (a view is added **only
+when a real hook/adapter uses it** — no speculative/dead overlays):
+
+| View (`recovered/views/…`) | Shape | First live consumer |
+|----------------------------|-------|---------------------|
+| `object_slots.ObjectSlotView` | one 0x38-byte object/effect slot; named fields + `record_bytes()` | `gameplay/object_bounds.py` AD60 bounds tail |
+| `object_slots.ObjectTableView` | a whole object table (effect/gameplay), indexable/iterable slot views | `recovered/adapters/game_snapshot_adapter.py` |
+| `frame_timers.FrameTimersView` | the six `DS:2368` countdown counters; read-all / write-one / `address_of` | `gameplay/game_state.py` 61C7 scan |
+
+Rules for this layer:
+
+- **Views may know layout** (segment:offset, strides, table bases) but hold **no
+  gameplay decisions** — those live in `recovered/systems` (pure) and are replayed
+  by the lifted hook.
+- **Keep them explicit and debuggable**: one plain property/method per field, no
+  descriptor/decorator magic.
+- **Flag/register-exact contracts stay in the hook.** A view replaces the *memory
+  access* (`mem.rw(ss, bp+OFF_X)` → `slot.x_word`); it does **not** absorb
+  flag-affecting ASM helpers (`_add_mem_word`, `set_sub_flags`, the BX walk in a
+  scan loop) — those remain visible in the lifted body so it stays byte-exact.
+- **Adding a view is proven, not asserted**: convert the consumer, then show the
+  per-hook oracle test (byte/register/flag identity vs interpreted ASM) plus
+  `test_demo_replay_equivalence.py` (and `test_recovered_semantics.py` for the
+  snapshot path) still pass.
+
+A view is also the **living memory map** of its structure: `OBJECT_RECORD_FIELDS`
+in `object_slots.py` catalogs every word of the 0x38 object record with a
+discovery status — `known` (role proven), `guessed` (offset proven, role
+inferred — names often carry `_OR_`), or `unknown` (a real record word not yet
+identified, listed explicitly rather than left as a silent gap). It is the single
+status source the dashboard reads (`source_port_status.py` → "Reconstructed
+structures"), so "what have we mapped, what's left" is a number, and promoting a
+field (`unknown`→named, `guessed`→`known`) is a visible, test-checked step. Offset
+*facts* stay single-sourced: the map references the `OFF_*` constants, and the
+snapshot is built from the view's named fields (no parallel offset→field decode).
 
 ## Status / visibility
 

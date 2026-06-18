@@ -71,6 +71,67 @@ OFF_EFFECT_SCAN_FLAG = OFF_SCAN_FLAG
 OFF_EFFECT_HAZARD_CLASS = OFF_HAZARD_CLASS
 OFF_PRESENT_SI = OFF_LINK_KEY
 
+# --- Living memory map of the object record -------------------------------
+# Discovery status of every 16-bit word in the 0x38-byte record.  This makes the
+# map honest: unmapped bytes are explicit "unknown" rows instead of silent gaps,
+# and inferred names are visibly marked rather than reading as settled fact.
+# Offsets reference the OFF_* constants above (no re-typed numbers); the rows
+# with no constant are the not-yet-named gaps.  Single status source consumed by
+# scripts/source_port_status.py and checked by tests/test_recovered_semantics.py.
+#
+# Status convention:
+#   "known"   - role established by direct evidence; stable name.
+#   "guessed" - offset proven but role inferred (names often carry _OR_ or a
+#               context alias); promote to "known" as evidence firms up.
+#   "unknown" - byte belongs to the record but is not yet identified.
+FIELD_KNOWN = "known"
+FIELD_GUESSED = "guessed"
+FIELD_UNKNOWN = "unknown"
+
+OBJECT_RECORD_FIELDS: tuple[tuple[int, str, str], ...] = (
+    (OFF_ACTIVE_WORD, "active_word", FIELD_KNOWN),
+    (OFF_X, "x", FIELD_KNOWN),
+    (OFF_Y, "y", FIELD_KNOWN),
+    (OFF_DIRECTION_OR_STEP, "direction_or_step", FIELD_GUESSED),
+    (OFF_SPRITE_OR_STATE, "sprite_or_state", FIELD_GUESSED),
+    (OFF_GATE_OR_LAYER, "gate_or_layer", FIELD_GUESSED),
+    (OFF_DRAW_SCRATCH_OR_DI, "draw_scratch_or_di", FIELD_GUESSED),
+    (OFF_LINK_KEY, "link_key", FIELD_GUESSED),
+    (0x10, "", FIELD_UNKNOWN),
+    (OFF_ROW_OR_PHASE, "row_or_phase", FIELD_GUESSED),
+    (OFF_SCAN_FLAG, "scan_flag / object_type", FIELD_GUESSED),
+    (OFF_HAZARD_CLASS, "hazard_class / draw_layer", FIELD_GUESSED),
+    (OFF_LOGIC_ID, "logic_id", FIELD_KNOWN),
+    (OFF_PREVIOUS_LOGIC_ID, "previous_logic_id", FIELD_KNOWN),
+    (OFF_SUBSTATE, "substate", FIELD_GUESSED),
+    (OFF_SCAN_ENABLE_OR_SOLID, "scan_enable_or_solid", FIELD_GUESSED),
+    (OFF_COUNTER_20, "counter_20", FIELD_GUESSED),
+    (OFF_TRANSITION_LATCH, "transition_latch", FIELD_GUESSED),
+    (OFF_VARIANT, "variant", FIELD_GUESSED),
+    (0x26, "", FIELD_UNKNOWN),
+    (0x28, "", FIELD_UNKNOWN),
+    (0x2A, "", FIELD_UNKNOWN),
+    (0x2C, "", FIELD_UNKNOWN),
+    (0x2E, "", FIELD_UNKNOWN),
+    (OFF_ACQUIRED_TARGET_PTR, "acquired_target_ptr", FIELD_GUESSED),
+    (OFF_TARGET_Y, "target_y", FIELD_KNOWN),
+    (OFF_TARGET_X, "target_x", FIELD_KNOWN),
+    (0x36, "", FIELD_UNKNOWN),
+)
+
+
+def object_record_field_status() -> dict[str, int]:
+    """Object-record words counted by discovery status (known/guessed/unknown).
+
+    A small queryable coverage summary; the status dashboard is the live consumer
+    that keeps :data:`OBJECT_RECORD_FIELDS` honest as fields get promoted.
+    """
+    counts = {FIELD_KNOWN: 0, FIELD_GUESSED: 0, FIELD_UNKNOWN: 0}
+    for _offset, _name, status in OBJECT_RECORD_FIELDS:
+        counts[status] += 1
+    return counts
+
+
 # Per-frame countdown-timer table scanned by 1010:61C7 (six 16-bit counters,
 # DS:2368..2372, ending at the 2374h sentinel) and the packed-BCD score written
 # by 1010:5F0D (DS:2314, five bytes).  Canonical DS-relative layout facts so the
@@ -232,6 +293,120 @@ class ObjectSlotView:
     def target_x_word(self, value: int) -> None:
         self.set_u16(OFF_TARGET_X, value)
 
+    # Context aliases over the shared 0x38-byte record (effect vs gameplay slots
+    # reuse the same layout): the scan flag doubles as object type, the hazard
+    # class doubles as draw layer.  Read-only - the writers use the base name.
+    @property
+    def object_type(self) -> int:
+        return self.u16(OFF_OBJECT_TYPE)
+
+    @property
+    def draw_layer(self) -> int:
+        return self.u16(OFF_DRAW_LAYER)
+
+    @property
+    def row_or_phase(self) -> int:
+        return self.u16(OFF_ROW_OR_PHASE)
+
+    @row_or_phase.setter
+    def row_or_phase(self, value: int) -> None:
+        self.set_u16(OFF_ROW_OR_PHASE, value)
+
+    @property
+    def draw_scratch_or_di(self) -> int:
+        return self.u16(OFF_DRAW_SCRATCH_OR_DI)
+
+    @draw_scratch_or_di.setter
+    def draw_scratch_or_di(self, value: int) -> None:
+        self.set_u16(OFF_DRAW_SCRATCH_OR_DI, value)
+
+    @property
+    def substate(self) -> int:
+        return self.u16(OFF_SUBSTATE)
+
+    @substate.setter
+    def substate(self, value: int) -> None:
+        self.set_u16(OFF_SUBSTATE, value)
+
+    @property
+    def scan_enable_or_solid(self) -> int:
+        return self.u16(OFF_SCAN_ENABLE_OR_SOLID)
+
+    @scan_enable_or_solid.setter
+    def scan_enable_or_solid(self, value: int) -> None:
+        self.set_u16(OFF_SCAN_ENABLE_OR_SOLID, value)
+
+    @property
+    def counter_20(self) -> int:
+        return self.u16(OFF_COUNTER_20)
+
+    @counter_20.setter
+    def counter_20(self, value: int) -> None:
+        self.set_u16(OFF_COUNTER_20, value)
+
+    @property
+    def variant(self) -> int:
+        return self.u16(OFF_VARIANT)
+
+    @variant.setter
+    def variant(self, value: int) -> None:
+        self.set_u16(OFF_VARIANT, value)
+
+    @property
+    def acquired_target_ptr(self) -> int:
+        return self.u16(OFF_ACQUIRED_TARGET_PTR)
+
+    @acquired_target_ptr.setter
+    def acquired_target_ptr(self, value: int) -> None:
+        self.set_u16(OFF_ACQUIRED_TARGET_PTR, value)
+
+    def record_bytes(self) -> bytes:
+        """The whole 0x38-byte slot record, read once from live memory.
+
+        Byte-for-byte the original record at ``seg:base`` - used where a snapshot
+        needs the raw bytes for exact fidelity alongside the named fields.
+        """
+        return bytes(self.u8(i) for i in range(OBJECT_SLOT_STRIDE))
+
     def advanced(self, count: int = 1) -> "ObjectSlotView":
         """Return a view over a later slot using the observed 0x38 stride."""
         return type(self)(self.mem, self.seg, (self.base + count * OBJECT_SLOT_STRIDE) & 0xFFFF)
+
+
+@dataclass
+class ObjectTableView:
+    """Typed overlay for a whole object table (effect or gameplay) in DOS memory.
+
+    A live lens, like :class:`ObjectSlotView`: indexing/iterating yields slot
+    views over the real VM bytes, so ``table[i].active_word = 0`` writes through.
+    No copy of the table is held.
+    """
+
+    mem: object
+    seg: int
+    base: int
+    count: int
+
+    @classmethod
+    def effect(cls, cpu) -> "ObjectTableView":
+        return cls(cpu.mem, cpu.s.ds & 0xFFFF, EFFECT_OBJECT_TABLE_BASE, EFFECT_OBJECT_TABLE_COUNT)
+
+    @classmethod
+    def gameplay(cls, cpu) -> "ObjectTableView":
+        return cls(cpu.mem, cpu.s.ds & 0xFFFF, GAMEPLAY_OBJECT_TABLE_BASE, GAMEPLAY_OBJECT_TABLE_COUNT)
+
+    def __len__(self) -> int:
+        return self.count
+
+    def __getitem__(self, index: int) -> ObjectSlotView:
+        if not 0 <= index < self.count:
+            raise IndexError(index)
+        return ObjectSlotView(self.mem, self.seg, (self.base + index * OBJECT_SLOT_STRIDE) & 0xFFFF)
+
+    def __iter__(self):
+        for i in range(self.count):
+            yield self[i]
+
+    def active(self):
+        """Iterate only the slots whose active word is non-zero."""
+        return (slot for slot in self if slot.active_word != 0)

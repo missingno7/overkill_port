@@ -22,7 +22,7 @@ from overkill.recovered.systems.objects import (
     OBJECT_BOUNDS_TILE_PROBE_LOGIC_IDS,
     object_bounds_tile_decision_ad60,
 )
-from overkill.recovered.views.object_slots import OFF_DRAW_LAYER, OFF_LOGIC_ID, OFF_X, OFF_Y
+from overkill.recovered.views.object_slots import OFF_X, ObjectSlotView
 
 
 
@@ -45,10 +45,11 @@ def _run_object_bounds_tile_tail_ad60(cpu, *, parent: str, chain: str, cx_value:
     # The pure recovered system owns the AD60 branch classification.  This tail
     # keeps the original CMP order so live flags match the oracle at each branch,
     # and asserts the pure decision agrees with the ASM-compatible walk.
-    x = mem.rw(ss, (bp + OFF_X) & 0xFFFF)
-    y = mem.rw(ss, (bp + OFF_Y) & 0xFFFF)
-    draw_layer = mem.rw(ss, (bp + OFF_DRAW_LAYER) & 0xFFFF)
-    logic_id = mem.rw(ss, (bp + OFF_LOGIC_ID) & 0xFFFF)
+    slot = ObjectSlotView.from_ss_bp(cpu)
+    x = slot.x_word
+    y = slot.y_word
+    draw_layer = slot.draw_layer
+    logic_id = slot.logic_id
     bdac = mem.rw(ds, 0xBDAC)
     decision = object_bounds_tile_decision_ad60(
         x, y, draw_layer, logic_id, tile_probe_suppressed=bdac == 0x0001

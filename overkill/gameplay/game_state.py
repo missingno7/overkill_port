@@ -24,11 +24,7 @@ from overkill.asm import (
 from dos_re.cpu import CF
 from overkill.recovered.systems.frame_timers import step_first_active_timer
 from overkill.recovered.systems.status_display import status_cursor_stride
-from overkill.recovered.views.object_slots import (
-    FRAME_TIMER_COUNT,
-    FRAME_TIMER_TABLE_BASE,
-    FRAME_TIMER_TABLE_END,
-)
+from overkill.recovered.views.frame_timers import FrameTimersView
 
 
 SIG_GAMEPLAY_COUNTER_STRIDE_LOOP_1F8F_0960 = bytes.fromhex(
@@ -346,31 +342,28 @@ def _run_decrement_first_active_counter_scan(cpu) -> None:
     61C7 CPU-boundary contract (final DI, the dec/compare flags, and the near
     return) so the live hook stays byte/register/flag identical to the ASM oracle.
     """
-    ds = cpu.s.ds & 0xFFFF
+    timers = FrameTimersView.from_ds(cpu)
     di = cpu.s.di & 0xFFFF
-    if di & 1 or not (FRAME_TIMER_TABLE_BASE <= di <= FRAME_TIMER_TABLE_END):
+    if di & 1 or not (timers.base <= di <= timers.end):
         raise RuntimeError(f"61C7 frame-timer scan reached unexpected DI {di:04X}")
-    start_index = (di - FRAME_TIMER_TABLE_BASE) // 2
+    start_index = (di - timers.base) // 2
 
-    counters = tuple(
-        cpu.mem.rw(ds, (FRAME_TIMER_TABLE_BASE + i * 2) & 0xFFFF) for i in range(FRAME_TIMER_COUNT)
-    )
+    counters = timers.values()
     step = step_first_active_timer(counters, start_index)
 
     if step.decremented_index is not None:
         k = step.decremented_index
-        addr = (FRAME_TIMER_TABLE_BASE + k * 2) & 0xFFFF
-        cpu.mem.ww(ds, addr, step.counters[k])
-        cpu.s.di = addr
+        timers[k] = step.counters[k]
+        cpu.s.di = timers.address_of(k)
         # Loop exit after DEC mem,1 on a non-zero value: CF was cleared by the
         # preceding CMP value,0 and the DEC preserves it.
         old = counters[k] & 0xFFFF
         cpu.set_sub_flags(old, 1, old - 1, 16)
         cpu.set_flag(CF, False)
     else:
-        cpu.s.di = FRAME_TIMER_TABLE_END & 0xFFFF
+        cpu.s.di = timers.end
         # Loop exit after CMP DI,2374h with DI == 2374h: ZF set, CF clear.
-        cpu.set_sub_flags(FRAME_TIMER_TABLE_END, FRAME_TIMER_TABLE_END, 0, 16)
+        cpu.set_sub_flags(timers.end, timers.end, 0, 16)
 
     cpu.s.ip = cpu.pop()
 

@@ -43,7 +43,10 @@ def _parse_addr(text: str) -> tuple[int, int]:
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--demo", required=True, help="input demo directory/json")
-    p.add_argument("--stop-at", required=True, help="target CS:IP, e.g. 1010:BB80")
+    p.add_argument("--stop-at", help="target CS:IP, e.g. 1010:BB80 (exact mid-chain capture)")
+    p.add_argument("--at-checkpoint", help="capture at the next logical checkpoint of this kind "
+                                           "(frame/render/object-update/input) - the preferred, "
+                                           "resumable boundary; use instead of --stop-at")
     p.add_argument("--out", required=True, help="snapshot output directory")
     p.add_argument("--exe", default=str(ROOT / "assets" / "OVERKILL"))
     p.add_argument("--game-root", default=str(ROOT / "assets"))
@@ -53,11 +56,21 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--max-steps", type=int, default=300_000_000)
     args = p.parse_args(argv)
 
-    target = _parse_addr(args.stop_at)
+    if not args.stop_at and not args.at_checkpoint:
+        p.error("pass --stop-at <CS:IP> or --at-checkpoint <kind>")
+
     demo = InputDemoPlayback.load(args.demo)
     rt = load_overkill_snapshot(args.exe, demo.snapshot_path(), game_root=args.game_root)
     rt.cpu.trace_enabled = False
     rt.cpu.coverage_telemetry = None
+
+    if args.at_checkpoint:
+        from overkill.checkpoints import checkpoints_for
+        target_set = set(checkpoints_for(args.at_checkpoint))
+        label = f"checkpoint:{args.at_checkpoint}"
+    else:
+        target_set = {_parse_addr(args.stop_at)}
+        label = args.stop_at
 
     boundary_hooks = {
         (0x1010, PRESENT_IP_BY_VIDEO[args.video]),
@@ -73,16 +86,18 @@ def main(argv: list[str] | None = None) -> int:
     # (cs, ip) tuple every instruction) so deep demo replays finish in time.
     s = rt.cpu.s
     step_fn = rt.cpu.step
-    target_cs, target_ip = target
     boundary_ips = {ip for (cs, ip) in boundary_hooks}
+    # All target addresses are in segment 1010; match on IP with int compares so
+    # the per-step overhead stays low over multi-million-step replays.
+    target_ips = {ip for (cs, ip) in target_set}
     min_boundary = args.min_boundary
 
     for step in range(1, args.max_steps + 1):
-        ip = s.ip
         cs = s.cs
-        if ip == target_ip and cs == target_cs and boundary >= min_boundary:
-            write_snapshot(rt, args.out, status=f"stop_at_{target_cs:04X}_{target_ip:04X}", steps=step)
-            print(f"OK captured {target_cs:04X}:{target_ip:04X} at step={step} boundary={boundary} -> {args.out}")
+        ip = s.ip
+        if boundary >= min_boundary and cs == 0x1010 and ip in target_ips:
+            write_snapshot(rt, args.out, status=f"stop_at_{cs:04X}_{ip:04X}", steps=step)
+            print(f"OK captured {cs:04X}:{ip:04X} ({label}) at step={step} boundary={boundary} -> {args.out}", flush=True)
             print(rt.cpu.s.snapshot())
             return 0
         if cs == 0x1010 and ip in boundary_ips:
@@ -90,12 +105,12 @@ def main(argv: list[str] | None = None) -> int:
             if boundary > demo_boundary:
                 demo_boundary = boundary
                 if demo.finished(demo_boundary):
-                    print(f"FAIL demo finished at boundary={demo_boundary} without reaching {args.stop_at}")
+                    print(f"FAIL demo finished at boundary={demo_boundary} without reaching {label}")
                     return 1
                 demo.apply_to_runtime(demo_boundary, rt)
         step_fn()
 
-    print(f"FAIL reached --max-steps without hitting {args.stop_at}")
+    print(f"FAIL reached --max-steps without hitting {label}")
     return 1
 
 

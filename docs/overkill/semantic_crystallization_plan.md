@@ -38,6 +38,58 @@ execution world.  Everything in `domain/` and `systems/` must be portable game
 logic/data and must not know about CPU registers, segment:offset memory, hook
 addresses, or verifier continuations.
 
+## Checkpoint-first execution model (read this first)
+
+The single most important framing for the source port:
+
+- **The VM (original ASM) is the instruction-exact oracle.**  It can step and
+  snapshot at *any* `CS:IP`.  We never give that up - it is how we prove
+  equivalence.
+- **The source-port runtime is checkpoint-level, not instruction-level.**  It only
+  needs to resume from stable *logical* boundaries: **frame, render,
+  object-update, input** (plus hardware/environment waits).  Between two
+  checkpoints, native source-like code runs as **one atomic deterministic chain**.
+  It does NOT have to preserve every historical ASM bounce, reproduce intermediate
+  `CS:IP`s, or support arbitrary mid-chain resume.
+
+This unties our hands.  A hook address is a **candidate for one of four roles**
+(`overkill/hook_taxonomy.py`):
+
+```text
+checkpoint   - a real logical resume boundary (frame/render/object-update/input)
+env_wait     - a hardware/environment wait (PIT/IRQ0 timer, CRTC retrace, display-start)
+debug_probe  - observation/verification only
+glue         - accidental ASM-boundary plumbing -> the collapse target
+```
+
+The frame is **already** a checkpoint sequence.  The gameplay main loop `1010:D007`
+is a linear chain of `CALL`/`RET` phase calls, each a place where state is
+consistent and every one already a registered hook:
+
+```text
+D007 frame top -> 0672 (env) -> 511F/A846 render -> 5BDC/3354 present[RENDER]
+     -> A90C/A940/AA10 [OBJECT-UPDATE] -> 5F61/073C -> 5160/0679 wait (env)
+     -> 0162 [INPUT] -> back to D007 [FRAME]
+```
+
+So the source-port loop is not invented; it is `D007`'s phase sequence, each phase
+a native system entered/exited at its checkpoint, with the behaviours/tails/
+helpers each phase calls being the glue to fuse inside it.
+
+**VM-until-checkpoint handoff.**  A demo or snapshot taken at any instruction can
+run in VM mode until the first compatible checkpoint, then hand off to native
+code.  Oracle snapshots therefore do not need to be captured at a behaviour's
+exact entry - capture anywhere, fast-forward in the VM to the next checkpoint,
+resume natively.
+
+**How this changes "promote hooks upward".**  The job is not to preserve each of
+the ~319 glue hooks as a permanent boundary.  It is to **collapse the glue between
+checkpoints into source-like systems** - one frame phase at a time - with
+correctness proved by the semantic frame/state verifier against the VM (the
+demo-replay equivalence suite), not by preserving any historical hook boundary.
+Per-hook oracle metadata stays the VM-side proof only.  Progress metric: the glue
+count in `scripts/source_port_status.py` falling as phases become native systems.
+
 ## Repository layers
 
 The recovered source-port path is intentionally split by dependency direction:
