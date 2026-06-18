@@ -17,7 +17,7 @@ from overkill.recovered.domain.object_slots import ObjectSlotRecord, ObjectSpawn
 # 1010:8209 object-slot spawn template.  Stamps a freshly allocated effect slot
 # with a fixed logic-id-14h object at the caller's source position.
 OBJECT_SPAWN_SEED_8209_LOGIC_ID = 0x0014
-OBJECT_SPAWN_SEED_8209_FIELD_28_CLEAR = 0xFFFF
+OBJECT_SPAWN_SEED_8209_LINKED_COUNTER_INDEX_NONE = 0xFFFF
 
 
 def object_spawn_seed_8209(source_x: int, source_y: int) -> ObjectSpawnSeed:
@@ -26,8 +26,8 @@ def object_spawn_seed_8209(source_x: int, source_y: int) -> ObjectSpawnSeed:
     A new effect slot is initialised as an active ``logic_id=0014h`` object at the
     caller's source ``(X, Y)``, with position and target both set to that source,
     ``direction_or_step=4``, ``hazard_class=4``, ``scan_flag=1``, ``gate=1``,
-    ``counter_20=4``, ``variant=0``, and the unnamed ``0x28`` field cleared to
-    ``FFFFh``.  The hook owns the DOS slot pointer and write order; this owns the
+    ``counter_20=4``, ``variant=0``, and the linked-counter index cleared to
+    ``FFFFh`` (no link).  The hook owns the DOS slot pointer and write order; this owns the
     field values.
     """
     x = source_x & 0xFFFF
@@ -45,7 +45,7 @@ def object_spawn_seed_8209(source_x: int, source_y: int) -> ObjectSpawnSeed:
         variant=0x0000,
         target_x_word=x,
         target_y_word=y,
-        field_28=OBJECT_SPAWN_SEED_8209_FIELD_28_CLEAR,
+        linked_counter_index=OBJECT_SPAWN_SEED_8209_LINKED_COUNTER_INDEX_NONE,
     )
 
 

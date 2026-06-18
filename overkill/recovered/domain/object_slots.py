@@ -41,8 +41,9 @@ class ObjectSpawnSeed:
     Recovered from the straight-line MOV sequence at 8209..8247 that initialises
     a new effect slot.  Most fields are constants; ``x_word``/``target_x_word``
     and ``y_word``/``target_y_word`` come from the caller's source position.
-    ``field_28`` is the one slot field with no proven name yet (offset 0x28),
-    kept explicit so the seed stays byte-faithful to the original stamp.
+    ``linked_counter_index`` (offset 0x28) is the object's index into the DS:2078
+    linked-counter table (``FFFFh`` when unlinked); kept explicit so the seed
+    stays byte-faithful to the original stamp.
     """
 
     active_word: int
@@ -57,4 +58,4 @@ class ObjectSpawnSeed:
     variant: int
     target_x_word: int
     target_y_word: int
-    field_28: int
+    linked_counter_index: int

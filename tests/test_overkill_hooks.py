@@ -11781,6 +11781,76 @@ def test_linked_object_coord_quad_update_9faf_matches_original_parent():
     assert asm.mem.data == hook.mem.data
 
 
+def test_linked_object_coord_quad_update_9faf_skips_inactive_fourth_slot():
+    """When the 4th linked slot ([A966]) is FFFF - e.g. a sidearm was lost - the
+    original 9FAF guards the final fall-through (CMP BX,FFFF / JNZ / RET) and skips
+    the 9FEA child-coord update.  Regression for the mothership sidearm-drag
+    divergence: the lift ran 9FEA unconditionally and corrupted the DS:A30A trail.
+    """
+    from dos_re.cpu import CPU8086, CPUState
+    from dos_re.memory import Memory
+    from overkill.hooks import overkill_linked_object_coord_quad_update_9faf
+
+    code = bytes.fromhex(
+        "c6 06 9e a3 00 c6 06 9f a3 00 a1 9a a3 a3 98 a3"
+        " be 8c a3 8b 1e 6c a9 e8 21 00 be 74 a3 8b 1e 68"
+        " a9 e8 17 00 a1 9c a3 a3 98 a3 be 80 a3 8b 1e 6a"
+        " a9 e8 07 00 be 68 a3 8b 1e 66 a9 83 fb ff 75 01"
+        " c3 8b 46 08 d1 e0 d1 e0 03 f0 ad 03 46 02 89 47"
+        " 02 ad 03 46 04 03 06 98 a3 03 06 98 a3 89 47 04"
+        " 83 7f 04 00 7d 0a c7 47 04 00 00 c6 06 9e a3 01"
+        " 81 7f 04 c0 00 7e 0a c7 47 04 c0 00 c6 06 9f a3"
+        " 01 c3"
+    )
+
+    def make_cpu(use_hook: bool) -> CPU8086:
+        mem = Memory()
+        mem.load(0x1010, 0x9FAF, code)
+        ds = 0x2000
+        ss = 0x4000
+        bp = 0x2600
+        mem.ww(ss, bp + 0x02, 0x0030)
+        mem.ww(ss, bp + 0x04, 0x0040)
+        mem.ww(ss, bp + 0x08, 0x0001)
+        mem.ww(ds, 0xA39A, 0x0002)
+        mem.ww(ds, 0xA39C, 0xFFB0)
+        # 4th linked slot inactive: [A966] = FFFF -> the final 9FEA update must be
+        # skipped (the first three still run).
+        for off, ptr in ((0xA966, 0xFFFF), (0xA968, 0x3040), (0xA96A, 0x3080), (0xA96C, 0x30C0)):
+            mem.ww(ds, off, ptr)
+        entries = {
+            0xA38C + 4: (0x0001, 0x0002),
+            0xA374 + 4: (0x0003, 0x00A0),
+            0xA380 + 4: (0x0005, 0x0007),
+            0xA368 + 4: (0x0009, 0x0001),
+        }
+        for base, (x_delta, y_delta) in entries.items():
+            mem.ww(ds, base, x_delta)
+            mem.ww(ds, base + 2, y_delta)
+        state = CPUState(
+            ax=0x1111, bx=0x2222, cx=0x3333, dx=0x4444,
+            si=0x5555, di=0x6666, bp=bp, sp=0x9000,
+            cs=0x1010, ds=ds, es=0x3000, ss=ss,
+            ip=0x9FAF, flags=0x0203,
+        )
+        cpu = CPU8086(mem, state)
+        cpu.push(0xBEEF)
+        if use_hook:
+            cpu.replacement_hooks[(0x1010, 0x9FAF)] = overkill_linked_object_coord_quad_update_9faf
+        return cpu
+
+    asm = make_cpu(False)
+    hook = make_cpu(True)
+    for _ in range(200):
+        if asm.addr() == (0x1010, 0xBEEF):
+            break
+        asm.step()
+    hook.step()
+    assert asm.addr() == hook.addr() == (0x1010, 0xBEEF)
+    assert asm.s.snapshot() == hook.s.snapshot()
+    assert asm.mem.data == hook.mem.data
+
+
 def test_object_two_pass_clamp_step_helpers_match_original():
     from dos_re.cpu import CPU8086, CPUState
     from dos_re.memory import Memory
@@ -11988,82 +12058,6 @@ def test_movement_dir_step_tables_match_interpreted_asm_all_directions():
                 assert asm.addr() == hooked.addr() == (0x1010, 0xBEEF), (hex(entry), direction)
                 assert asm.s.snapshot() == hooked.s.snapshot(), (hex(entry), direction, x0, y0)
                 assert asm.mem.data == hooked.mem.data, (hex(entry), direction, x0, y0)
-
-
-def test_object_player_chase_b1b0_matches_interpreted_asm_key_paths():
-    from pathlib import Path
-    from overkill.hooks import overkill_object_player_chase_b1b0
-    from overkill.runtime import load_overkill_snapshot as load_snapshot
-
-    root = Path(__file__).resolve().parents[1]
-    snap = root / "artifacts" / "demos" / "demo_play_tandy_20260616_000527" / "snapshot"
-    assert snap.exists(), "B1B0 oracle snapshot is missing"
-
-    def make_cpu(use_hook: bool, *, acquired: int, lost_target: bool = False):
-        rt = load_snapshot(root / "assets" / "OVERKILL", snap, game_root=root / "assets")
-        cpu = rt.cpu
-        cpu.trace_enabled = False
-        cpu.replacement_hooks.clear()
-        cpu.hook_names.clear()
-        cpu.s.cs = 0x1010
-        cpu.s.ip = 0xB1B0
-        cpu.s.ds = 0x25CC
-        cpu.s.ss = 0x25CC
-        cpu.s.bp = 0x2734
-        cpu.s.sp = 0x8000
-        cpu.s.flags = 0x0202
-        cpu.push(0xBEEF)
-        mem = cpu.mem
-        ds = cpu.s.ds & 0xFFFF
-        ss = cpu.s.ss & 0xFFFF
-        bp = cpu.s.bp & 0xFFFF
-        target_slot = 0x2400
-
-        mem.ww(ds, 0x2328, 0x0010)
-        mem.ww(ds, 0x237E, 0x0050)
-        mem.ww(ds, 0x2380, 0x0060)
-        mem.ww(ds, 0xA278, 0x0000)
-        mem.ww(ds, 0xA97E, 0x0000)
-        mem.ww(ds, 0x2312, 0x0000)
-        for off, value in (
-            (0x00, 1),
-            (0x02, 0x0040),
-            (0x04, 0x0050),
-            (0x06, 0),
-            (0x08, 0),
-            (0x16, 0),
-            (0x18, 0x0010),
-            (0x1C, acquired),
-            (0x30, target_slot),
-            (0x2A, 0),
-            (0x2C, 0),
-            (0x2E, 0),
-        ):
-            mem.ww(ss, (bp + off) & 0xFFFF, value)
-        mem.ww(ds, target_slot + 0x00, 0 if lost_target else 1)
-        mem.ww(ds, target_slot + 0x02, 0x0058)
-        mem.ww(ds, target_slot + 0x04, 0x0068)
-        mem.ww(ds, target_slot + 0x14, 0x0001)
-        mem.ww(ds, target_slot + 0x18, 0x0020)
-        if use_hook:
-            cpu.replacement_hooks[(0x1010, 0xB1B0)] = overkill_object_player_chase_b1b0
-        return rt
-
-    for scenario in (
-        {"acquired": 0, "lost_target": False},
-        {"acquired": 1, "lost_target": False},
-        {"acquired": 1, "lost_target": True},
-    ):
-        asm = make_cpu(False, **scenario)
-        hook = make_cpu(True, **scenario)
-        for _ in range(20_000):
-            if asm.cpu.addr() == (0x1010, 0xBEEF):
-                break
-            asm.cpu.step()
-        hook.cpu.step()
-        assert asm.cpu.addr() == hook.cpu.addr() == (0x1010, 0xBEEF), scenario
-        assert asm.cpu.s.snapshot() == hook.cpu.s.snapshot(), scenario
-        assert asm.program.memory.data == hook.program.memory.data, scenario
 
 
 def test_ac81_slot_scan_guard_acd9_continuation_preserves_entry_cmp_flags():

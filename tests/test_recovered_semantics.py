@@ -1206,6 +1206,15 @@ def test_object_record_memory_map_agrees_with_off_constants():
     assert by_off[m.OFF_LOGIC_ID][1] == m.FIELD_KNOWN
     # Inferred fields stay honest as "guessed" until evidence firms up.
     assert by_off[m.OFF_SCAN_ENABLE_OR_SOLID][1] == m.FIELD_GUESSED
-    # The seven documented gaps are explicit unknowns, not silent holes.
-    for gap in (0x10, 0x26, 0x28, 0x2A, 0x2C, 0x2E, 0x36):
+    # The 5E1B delta helper and 5E42 steer routine pinned 0x2A/0x2C/0x2E as the
+    # signed X/Y movement deltas and the Bresenham step-error accumulator;
+    # promoted unknown -> known.
+    assert by_off[m.OFF_MOVE_DELTA_X] == ("move_delta_x", m.FIELD_KNOWN)
+    assert by_off[m.OFF_MOVE_DELTA_Y] == ("move_delta_y", m.FIELD_KNOWN)
+    assert by_off[m.OFF_MOVE_STEP_ERROR] == ("move_step_error", m.FIELD_KNOWN)
+    # 0x28 indexes the DS:2078 linked-counter table; the mechanism is proven but
+    # the exact grouping is inferred, so it stays "guessed", not "known".
+    assert by_off[m.OFF_LINKED_COUNTER_INDEX] == ("linked_counter_index", m.FIELD_GUESSED)
+    # The remaining documented gaps are explicit unknowns, not silent holes.
+    for gap in (0x10, 0x26, 0x36):
         assert by_off[gap] == ("", m.FIELD_UNKNOWN)

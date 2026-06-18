@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "status": "complete",
+  "created_at": "2026-06-18T23:13:27",
+  "stopped_at": "2026-06-18T23:13:34",
+  "snapshot": "snapshot",
+  "metadata": {
+    "program": "overkill",
+    "video": "tandy",
+    "sound": "pc",
+    "command_tail": "\r\u0002"
+  },
+  "start_boundary": 0,
+  "end_boundary": 519,
+  "event_count": 0,
+  "events": []
+}

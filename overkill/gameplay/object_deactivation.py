@@ -24,6 +24,7 @@ from overkill.gameplay.object_spawns import (
 from overkill.recovered.adapters.collision_adapter import run_postmove_y_clamp_bcb1_body
 from overkill.recovered.views.object_slots import (
     OFF_DRAW_LAYER,
+    OFF_LINKED_COUNTER_INDEX,
     OFF_LOGIC_ID,
     OFF_OBJECT_TYPE,
     OFF_SPRITE_OR_STATE,
@@ -79,7 +80,7 @@ def _run_deactivate_bd17_observed(cpu, *, parent: str, chain: str, cx_value: int
         _cmp_word(cpu, logic_id, 0x0001)
         if logic_id == 0x0001:
             return
-        slot = mem.rw(ss, (bp + 0x28) & 0xFFFF)
+        slot = mem.rw(ss, (bp + OFF_LINKED_COUNTER_INDEX) & 0xFFFF)
         _cmp_word(cpu, slot, 0xFFFF)
         if slot == 0xFFFF:
             return
@@ -205,7 +206,7 @@ def _run_collision_death_tail_bfc7(cpu, *, parent: str, chain: str, cx_value: in
 
     saved_bp = bp
     cpu.push(saved_bp)
-    linked_slot = mem.rw(ss, (bp + 0x28) & 0xFFFF)
+    linked_slot = mem.rw(ss, (bp + OFF_LINKED_COUNTER_INDEX) & 0xFFFF)
     _cmp_word(cpu, linked_slot, 0xFFFF)
     if linked_slot != 0xFFFF:
         cpu.s.si = linked_slot

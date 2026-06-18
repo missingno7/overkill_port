@@ -1,3 +1,44 @@
+## 2026-06-18 - Name 4 object-record fields, drain raw offsets, fix the 9FAF sidearm-drag bug
+
+Map-driven slices (the dashboard surfaced unnamed-but-used words; a quick trace
+named them), then byte-exact raw-offset drains, then a real edge-case bug fix.
+
+Field discovery (object record now 25/28 mapped: 10 known, 15 guessed, 3 unknown):
+- 0x2E -> `move_step_error` (Bresenham movement step accumulator; known).
+- 0x2A/0x2C -> `move_delta_x`/`move_delta_y` (signed object-minus-target deltas;
+  known) - the 5E1B delta helper computes them, the 5E42 steer consumes them.
+- 0x28 -> `linked_counter_index` (guessed): index x16 into the DS:2078 linked-
+  counter table (FFFF = unlinked).  Cross-layer rename that removed the `field_28`
+  placeholder from the pure domain/system and deleted a duplicate offset constant.
+- Each adds a view getter (consumed by a real read), a map row, and a test row.
+  The 3 remaining unknowns (0x10/0x26/0x36) lack a lifted reader, so they stay
+  honestly `unknown` rather than guessed.
+
+Raw-offset drain (byte-exact, scoped per register to confirmed object records):
+- object_spawns.py: 41 `bx`/`si` slot accesses -> named OFF_* constants.
+- object_movement.py: 18 `bx`/`s.bp` accesses -> named.
+- Left untouched: `bp` caller-frame reads (different struct), table pointers, and
+  the unknown 0x26/0x36.  Dashboard: record offset accesses 138 -> 63 raw
+  (40% -> 19%).
+
+BUGFIX - mothership sidearm-drag divergence (1010:9FAF): the lift called the final
+9FEA child-coord update unconditionally, but the original guards it
+(`CMP BX,FFFF / JNZ / RET`) and skips it when the 4th linked slot is inactive -
+i.e. a ship carrying fewer than 4 sidearms/drones.  The extra write corrupted the
+DS:A30A coord trail (DI off by one entry).  Added the guard + a regression test
+for the `[A966]==FFFF` case the original oracle never covered.
+
+Housekeeping: removed `test_object_player_chase_b1b0_*` (bound to the deleted demo
+`demo_play_tandy_20260616_000527`); the live B1B0 hook stays covered by demo
+replay.  Committed the new short demos as fixtures (L5/L6/menu/mothership/death).
+
+Known open (separate, pre-existing): mothership camera-Y (`DS:2380`) +1 and a
+player-death `BC4B`/`BFC7` death-tail divergence - both edge branches in the
+still-partial death/deactivation frontier (BFC7/BD17/C054).
+
+Verified: lint (151) + recovered-layer audit (17 pure) + map tests + the
+9FAF/5E1B/5E42/5db2/spawn oracles + all demo replays native==VM (non-mothership).
+
 ## 2026-06-18 - Living memory map + collapse the triplicated object-record decode
 
 Two slices, each leaving the live path cleaner (not just adding on top).

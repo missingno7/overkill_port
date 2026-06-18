@@ -59,6 +59,19 @@ OFF_SCAN_ENABLE_OR_SOLID = 0x1E
 OFF_COUNTER_20 = 0x20
 OFF_TRANSITION_LATCH = 0x22
 OFF_VARIANT = 0x24
+# Index (x16 stride) into the DS:2078 linked-counter table; FFFFh = unlinked.
+# On the object's death the deactivation path decrements/clears that counter, and
+# completion effects fire when it reaches zero (the precise grouping is inferred).
+OFF_LINKED_COUNTER_INDEX = 0x28
+# Signed per-object movement deltas (object position minus target): computed by
+# the 5E1B delta helper and consumed by the 5E42 steer routine's step logic.
+OFF_MOVE_DELTA_X = 0x2A
+OFF_MOVE_DELTA_Y = 0x2C
+# Per-object movement step-error accumulator (Bresenham-style): the 5E42 steer
+# routine adds the minor-axis delta here each step and subtracts the major delta
+# when it overflows, to decide when the minor axis advances.  Cleared to 0 when a
+# slot is (re)initialised.
+OFF_MOVE_STEP_ERROR = 0x2E
 OFF_ACQUIRED_TARGET_PTR = 0x30
 OFF_TARGET_Y = 0x32
 OFF_TARGET_X = 0x34
@@ -109,10 +122,10 @@ OBJECT_RECORD_FIELDS: tuple[tuple[int, str, str], ...] = (
     (OFF_TRANSITION_LATCH, "transition_latch", FIELD_GUESSED),
     (OFF_VARIANT, "variant", FIELD_GUESSED),
     (0x26, "", FIELD_UNKNOWN),
-    (0x28, "", FIELD_UNKNOWN),
-    (0x2A, "", FIELD_UNKNOWN),
-    (0x2C, "", FIELD_UNKNOWN),
-    (0x2E, "", FIELD_UNKNOWN),
+    (OFF_LINKED_COUNTER_INDEX, "linked_counter_index", FIELD_GUESSED),
+    (OFF_MOVE_DELTA_X, "move_delta_x", FIELD_KNOWN),
+    (OFF_MOVE_DELTA_Y, "move_delta_y", FIELD_KNOWN),
+    (OFF_MOVE_STEP_ERROR, "move_step_error", FIELD_KNOWN),
     (OFF_ACQUIRED_TARGET_PTR, "acquired_target_ptr", FIELD_GUESSED),
     (OFF_TARGET_Y, "target_y", FIELD_KNOWN),
     (OFF_TARGET_X, "target_x", FIELD_KNOWN),
@@ -351,6 +364,22 @@ class ObjectSlotView:
     @variant.setter
     def variant(self, value: int) -> None:
         self.set_u16(OFF_VARIANT, value)
+
+    @property
+    def move_delta_x(self) -> int:
+        """Signed X movement delta (object X - target X); set by the 5E1B helper."""
+        return self.u16(OFF_MOVE_DELTA_X)
+
+    @property
+    def move_delta_y(self) -> int:
+        """Signed Y movement delta (object Y - target Y); set by the 5E1B helper."""
+        return self.u16(OFF_MOVE_DELTA_Y)
+
+    @property
+    def move_step_error(self) -> int:
+        """Bresenham-style movement step-error accumulator (read-only here; the
+        5E42 steer routine mutates it through flag-affecting add/sub helpers)."""
+        return self.u16(OFF_MOVE_STEP_ERROR)
 
     @property
     def acquired_target_ptr(self) -> int:

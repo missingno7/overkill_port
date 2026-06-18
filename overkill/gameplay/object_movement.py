@@ -35,7 +35,9 @@ from overkill.recovered.systems.movement import (
 )
 from overkill.recovered.views.object_slots import (
     EFFECT_OBJECT_TABLE_BASE, GAMEPLAY_OBJECT_TABLE_BASE, OBJECT_SLOT_STRIDE,
-    OFF_DIRECTION_OR_STEP, OFF_TARGET_X, OFF_TARGET_Y, OFF_X, OFF_Y, ObjectSlotView,
+    OFF_DIRECTION_OR_STEP, OFF_HAZARD_CLASS, OFF_LINKED_COUNTER_INDEX, OFF_LOGIC_ID,
+    OFF_MOVE_DELTA_X, OFF_MOVE_DELTA_Y, OFF_MOVE_STEP_ERROR, OFF_SCAN_FLAG,
+    OFF_SPRITE_OR_STATE, OFF_TARGET_X, OFF_TARGET_Y, OFF_X, OFF_Y, ObjectSlotView,
 )
 from overkill.runtime_code import require_runtime_code_variant
 
@@ -200,29 +202,29 @@ def _run_object_delta_helper_5e1b(cpu) -> None:
     mem = cpu.mem
 
     cpu.s.dx = 0x0004
-    _cmp_word(cpu, mem.rw(ds, (bx + 0x14) & 0xFFFF), 0x0001)
-    if mem.rw(ds, (bx + 0x14) & 0xFFFF) != 0x0001:
+    _cmp_word(cpu, mem.rw(ds, (bx + OFF_SCAN_FLAG) & 0xFFFF), 0x0001)
+    if mem.rw(ds, (bx + OFF_SCAN_FLAG) & 0xFFFF) != 0x0001:
         cpu.s.dx = 0x000C
 
     cpu.s.ax = mem.rw(ss, (bp + OFF_Y) & 0xFFFF)
-    cpu.s.cx = mem.rw(ds, (bx + 0x04) & 0xFFFF)
+    cpu.s.cx = mem.rw(ds, (bx + OFF_Y) & 0xFFFF)
     old_cx = cpu.s.cx
     cpu.s.cx = (cpu.s.cx + cpu.s.dx) & 0xFFFF
     cpu.set_add_flags(old_cx, cpu.s.dx, old_cx + cpu.s.dx, 16)
     old_ax = cpu.s.ax
     cpu.s.ax = (cpu.s.ax - cpu.s.cx) & 0xFFFF
     cpu.set_sub_flags(old_ax, cpu.s.cx, old_ax - cpu.s.cx, 16)
-    mem.ww(ss, (bp + 0x2C) & 0xFFFF, cpu.s.ax)
+    mem.ww(ss, (bp + OFF_MOVE_DELTA_Y) & 0xFFFF, cpu.s.ax)
 
     cpu.s.ax = mem.rw(ss, (bp + OFF_X) & 0xFFFF)
-    cpu.s.cx = mem.rw(ds, (bx + 0x02) & 0xFFFF)
+    cpu.s.cx = mem.rw(ds, (bx + OFF_X) & 0xFFFF)
     old_cx = cpu.s.cx
     cpu.s.cx = (cpu.s.cx + cpu.s.dx) & 0xFFFF
     cpu.set_add_flags(old_cx, cpu.s.dx, old_cx + cpu.s.dx, 16)
     old_ax = cpu.s.ax
     cpu.s.ax = (cpu.s.ax - cpu.s.cx) & 0xFFFF
     cpu.set_sub_flags(old_ax, cpu.s.cx, old_ax - cpu.s.cx, 16)
-    mem.ww(ss, (bp + 0x2A) & 0xFFFF, cpu.s.ax)
+    mem.ww(ss, (bp + OFF_MOVE_DELTA_X) & 0xFFFF, cpu.s.ax)
 
 
 def _run_runtime_patched_object_steer_5e42(cpu) -> None:
@@ -238,6 +240,7 @@ def _run_runtime_patched_object_steer_5e42(cpu) -> None:
     bp = cpu.s.bp & 0xFFFF
     entry_sp = cpu.s.sp & 0xFFFF
     mem = cpu.mem
+    slot = ObjectSlotView(mem, ss, bp)  # this object's record (SS:BP)
 
     def remember_internal_call(ret_ip: int) -> None:
         # 5E42 uses real CALLs to the 5EB5/5EC8 flag-bit leaves before the final
@@ -265,13 +268,13 @@ def _run_runtime_patched_object_steer_5e42(cpu) -> None:
     mem.ww(ds, 0x230E, 0x0000)
     mem.ww(ds, 0x2310, 0x0000)
 
-    cpu.s.ax = mem.rw(ss, (bp + 0x2C) & 0xFFFF)
+    cpu.s.ax = slot.move_delta_y
     cpu.set_logic_flags(cpu.s.ax, 16)
     if (cpu.s.ax & 0x8000) != 0:
         _neg_reg16(cpu, 0)
         _inc_mem_word_preserve_cf(cpu, ds, 0x230C)
 
-    cpu.s.bx = mem.rw(ss, (bp + 0x2A) & 0xFFFF)
+    cpu.s.bx = slot.move_delta_x
     cpu.set_logic_flags(cpu.s.bx, 16)
     if (cpu.s.bx & 0x8000) != 0:
         _neg_reg16(cpu, 3)
@@ -284,23 +287,23 @@ def _run_runtime_patched_object_steer_5e42(cpu) -> None:
         call_5eb5(0x5E96)
         call_5ec8(0x5E99)
     elif ax > bx:
-        _add_mem_word(cpu, ss, (bp + 0x2E) & 0xFFFF, bx)
-        frac = mem.rw(ss, (bp + 0x2E) & 0xFFFF)
+        _add_mem_word(cpu, ss, (bp + OFF_MOVE_STEP_ERROR) & 0xFFFF, bx)
+        frac = slot.move_step_error
         _cmp_word(cpu, frac, ax)
         if frac <= ax:
             call_5eb5(0x5E91)
         else:
-            _sub_mem_word(cpu, ss, (bp + 0x2E) & 0xFFFF, ax)
+            _sub_mem_word(cpu, ss, (bp + OFF_MOVE_STEP_ERROR) & 0xFFFF, ax)
             call_5eb5(0x5E96)
             call_5ec8(0x5E99)
     else:
-        _add_mem_word(cpu, ss, (bp + 0x2E) & 0xFFFF, ax)
-        frac = mem.rw(ss, (bp + 0x2E) & 0xFFFF)
+        _add_mem_word(cpu, ss, (bp + OFF_MOVE_STEP_ERROR) & 0xFFFF, ax)
+        frac = slot.move_step_error
         _cmp_word(cpu, frac, bx)
         if frac <= bx:
             call_5ec8(0x5E99)
         else:
-            _sub_mem_word(cpu, ss, (bp + 0x2E) & 0xFFFF, bx)
+            _sub_mem_word(cpu, ss, (bp + OFF_MOVE_STEP_ERROR) & 0xFFFF, bx)
             call_5eb5(0x5E96)
             call_5ec8(0x5E99)
 
@@ -360,31 +363,31 @@ def run_object_child_coord_update_9fea(cpu, self_disable_if_patched) -> None:
         s.ip = cpu.pop()
         return
 
-    ax = mem.rw(ss, (s.bp + 0x08) & 0xFFFF)
+    ax = mem.rw(ss, (s.bp + OFF_SPRITE_OR_STATE) & 0xFFFF)
     ax = cpu.shift(4, ax, 1, 16)
     ax = cpu.shift(4, ax, 1, 16)
     _add_reg16(cpu, 6, ax)
 
     x_delta = mem.rw(ds, s.si & 0xFFFF)
     s.si = (s.si + 2) & 0xFFFF
-    ax = (x_delta + mem.rw(ss, (s.bp + 0x02) & 0xFFFF)) & 0xFFFF
+    ax = (x_delta + mem.rw(ss, (s.bp + OFF_X) & 0xFFFF)) & 0xFFFF
     # ADD flags are overwritten later by the Y clamps/cmp in all observed active paths.
     s.ax = ax
-    mem.ww(ds, (bx + 0x02) & 0xFFFF, ax)
+    mem.ww(ds, (bx + OFF_X) & 0xFFFF, ax)
 
     y_delta = mem.rw(ds, s.si & 0xFFFF)
     s.si = (s.si + 2) & 0xFFFF
-    ax_full = y_delta + mem.rw(ss, (s.bp + 0x04) & 0xFFFF)
+    ax_full = y_delta + mem.rw(ss, (s.bp + OFF_Y) & 0xFFFF)
     ax_full += mem.rw(ds, 0xA398)
     ax_full += mem.rw(ds, 0xA398)
     ax = ax_full & 0xFFFF
     s.ax = ax
-    mem.ww(ds, (bx + 0x04) & 0xFFFF, ax)
+    mem.ww(ds, (bx + OFF_Y) & 0xFFFF, ax)
 
-    y = mem.rw(ds, (bx + 0x04) & 0xFFFF)
+    y = mem.rw(ds, (bx + OFF_Y) & 0xFFFF)
     _cmp_word(cpu, y, 0x0000)
     if y & 0x8000:
-        mem.ww(ds, (bx + 0x04) & 0xFFFF, 0x0000)
+        mem.ww(ds, (bx + OFF_Y) & 0xFFFF, 0x0000)
         mem.wb(ds, 0xA39E, 0x01)
         y = 0
 
@@ -395,7 +398,7 @@ def run_object_child_coord_update_9fea(cpu, self_disable_if_patched) -> None:
         s.ip = cpu.pop()
         return
 
-    mem.ww(ds, (bx + 0x04) & 0xFFFF, 0x00C0)
+    mem.ww(ds, (bx + OFF_Y) & 0xFFFF, 0x00C0)
     mem.wb(ds, 0xA39F, 0x01)
     s.ip = cpu.pop()
 
@@ -447,8 +450,18 @@ def run_linked_object_coord_quad_update_9faf(cpu, self_disable_if_patched) -> No
 
     s.si = 0xA368
     s.bx = mem.rw(ds, 0xA966)
-    # Fall through into 9FEA: no new return word is pushed, so the child helper
-    # consumes 9FAF's caller return exactly like the original ASM.
+    _cmp_word(cpu, s.bx & 0xFFFF, 0xFFFF)
+    if (s.bx & 0xFFFF) == 0xFFFF:
+        # The original guards the final fall-through (CMP BX,FFFF / JNZ / RET):
+        # when the 4th linked slot is inactive - e.g. a sidearm was lost - it
+        # skips the 9FEA child-coord update and returns, consuming 9FAF's caller
+        # return word exactly as the fall-through path otherwise would.  Without
+        # this guard the lift ran an extra child-coord write, corrupting the
+        # DS:A30A coord trail (the mothership sidearm-drag divergence).
+        s.ip = cpu.pop()
+        return
+    # Fall through into 9FEA (BX != FFFF): no new return word is pushed, so the
+    # child helper consumes 9FAF's caller return exactly like the original ASM.
     run_object_child_coord_update_9fea(cpu, self_disable_if_patched)
 
 
@@ -805,19 +818,19 @@ def run_object_scroll_world_progress_gate_a66f(cpu, self_disable_if_patched) -> 
         if s.bx != 0xFFFF:
             bx = s.bx & 0xFFFF
             mem.ww(ds, bx, 0x0001)
-            mem.ww(ds, (bx + 0x14) & 0xFFFF, 0x0002)
-            mem.ww(ds, (bx + 0x16) & 0xFFFF, 0x0004)
-            mem.ww(ds, (bx + 0x18) & 0xFFFF, 0x0053)
-            mem.ww(ds, (bx + 0x28) & 0xFFFF, 0xFFFF)
+            mem.ww(ds, (bx + OFF_SCAN_FLAG) & 0xFFFF, 0x0002)
+            mem.ww(ds, (bx + OFF_HAZARD_CLASS) & 0xFFFF, 0x0004)
+            mem.ww(ds, (bx + OFF_LOGIC_ID) & 0xFFFF, 0x0053)
+            mem.ww(ds, (bx + OFF_LINKED_COUNTER_INDEX) & 0xFFFF, 0xFFFF)
             s.ax = mem.rw(ds, s.si)
             s.si = (s.si + 2) & 0xFFFF
-            mem.ww(ds, (bx + 0x02) & 0xFFFF, s.ax)
+            mem.ww(ds, (bx + OFF_X) & 0xFFFF, s.ax)
             s.ax = mem.rw(ds, s.si)
             s.si = (s.si + 2) & 0xFFFF
-            mem.ww(ds, (bx + 0x04) & 0xFFFF, s.ax)
+            mem.ww(ds, (bx + OFF_Y) & 0xFFFF, s.ax)
             s.ax = mem.rw(ds, s.si)
             s.si = (s.si + 2) & 0xFFFF
-            mem.ww(ds, (bx + 0x08) & 0xFFFF, s.ax)
+            mem.ww(ds, (bx + OFF_SPRITE_OR_STATE) & 0xFFFF, s.ax)
             mem.ww(ds, (bx + 0x36) & 0xFFFF, s.ax)
         s.cx = cpu.pop()
         s.cx = (s.cx - 1) & 0xFFFF

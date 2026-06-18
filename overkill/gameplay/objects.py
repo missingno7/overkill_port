@@ -8,6 +8,7 @@ from __future__ import annotations
 from dos_re.cpu import DF
 
 from overkill.asm import _add_mem_word, loop_count
+from overkill.recovered.views.object_slots import OFF_MOVE_STEP_ERROR
 
 SIG_OBJECT_LOGIC_CALL_AA2B_AA01 = bytes.fromhex("e8 27 00 59 e2 d9")
 SIG_OBJECT_LOGIC_SCAN_TAIL_AA04 = bytes.fromhex("59 e2 d9")
@@ -84,7 +85,7 @@ def run_reset_effect_slot_block_c3bf(cpu, self_disable_if_patched) -> None:
         s.bp = mem.rw(ds, (0x8D12 + (s.bx & 0xFFFF)) & 0xFFFF)
         bp = s.bp & 0xFFFF
         mem.ww(ss, (bp + 0x00) & 0xFFFF, 0x0000)
-        mem.ww(ss, (bp + 0x2E) & 0xFFFF, 0x0000)
+        mem.ww(ss, (bp + OFF_MOVE_STEP_ERROR) & 0xFFFF, 0x0000)
         mem.ww(ss, (bp + 0x18) & 0xFFFF, 0x0000)
         s.ax = mem.rw(cs, 0xC3A2)
         mem.ww(ss, (bp + 0x0E) & 0xFFFF, s.ax)
@@ -130,7 +131,7 @@ def run_reset_object_slot_block_c3f1(cpu, self_disable_if_patched) -> None:
         cpu.set_sub_flags(mem.rw(ss, (bp + 0x16) & 0xFFFF), 0x0001, mem.rw(ss, (bp + 0x16) & 0xFFFF) - 0x0001, 16)
         if not keep_slot:
             mem.ww(ss, (bp + 0x00) & 0xFFFF, 0x0000)
-            mem.ww(ss, (bp + 0x2E) & 0xFFFF, 0x0000)
+            mem.ww(ss, (bp + OFF_MOVE_STEP_ERROR) & 0xFFFF, 0x0000)
             mem.ww(ss, (bp + 0x24) & 0xFFFF, 0x0000)
             mem.ww(ss, (bp + 0x18) & 0xFFFF, 0x0000)
             mem.ww(ss, (bp + 0x06) & 0xFFFF, 0x0000)
@@ -186,7 +187,7 @@ def run_reset_object_slot_block_c4e5(cpu, self_disable_if_patched) -> None:
         s.bp = mem.rw(ds, (0x32CA + (s.bx & 0xFFFF)) & 0xFFFF)
         bp = s.bp & 0xFFFF
         mem.ww(ss, (bp + 0x00) & 0xFFFF, 0x0000)
-        mem.ww(ss, (bp + 0x2E) & 0xFFFF, 0x0000)
+        mem.ww(ss, (bp + OFF_MOVE_STEP_ERROR) & 0xFFFF, 0x0000)
         mem.ww(ss, (bp + 0x24) & 0xFFFF, 0x0000)
         mem.ww(ss, (bp + 0x18) & 0xFFFF, 0x0000)
         mem.ww(ss, (bp + 0x0A) & 0xFFFF, 0x0001)
