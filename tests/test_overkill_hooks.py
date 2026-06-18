@@ -12348,60 +12348,6 @@ def test_object_target_move_b729_matches_interpreted_wrapper_with_5db2_hook():
     assert asm.s.snapshot() == hook.s.snapshot()
     assert asm.mem.data == hook.mem.data
 
-def test_object_tile_sweep_dispatch_b00d_matches_interpreted_direction_table():
-    from pathlib import Path
-    from overkill.hooks import overkill_object_tile_sweep_dispatch_b00d
-    from overkill.runtime import load_overkill_snapshot as load_snapshot
-
-    root = Path(__file__).resolve().parents[1]
-    snap = root / "artifacts" / "repros" / "demo_divergence_tandy_20260616_160515" / "snapshot"
-    assert snap.exists(), "B00D tile-sweep oracle snapshot is missing"
-
-    def make_cpu(use_hook: bool, *, direction: int, x_word: int, y_word: int):
-        rt = load_snapshot(root / "assets" / "OVERKILL", snap, game_root=root / "assets")
-        cpu = rt.cpu
-        cpu.trace_enabled = False
-        cpu.replacement_hooks.clear()
-        cpu.hook_names.clear()
-        cpu.s.cs = 0x1010
-        cpu.s.ip = 0xB00D
-        cpu.s.ds = 0x25CC
-        cpu.s.ss = 0x25CC
-        cpu.s.bp = 0x2734
-        cpu.s.sp = 0x8000
-        cpu.s.flags = 0x0202
-        cpu.push(0xBEEF)
-        mem = cpu.mem
-        bp = cpu.s.bp & 0xFFFF
-        mem.ww(cpu.s.ss, (bp + 0x02) & 0xFFFF, x_word)
-        mem.ww(cpu.s.ss, (bp + 0x04) & 0xFFFF, y_word)
-        mem.ww(cpu.s.ss, (bp + 0x06) & 0xFFFF, direction)
-        mem.ww(cpu.s.ds, 0xA430, 0x0000)
-        mem.ww(cpu.s.ds, 0xA432, x_word)
-        mem.ww(cpu.s.ds, 0xA438, x_word)
-        mem.ww(cpu.s.ds, 0xA434, y_word)
-        mem.ww(cpu.s.ds, 0xA436, y_word)
-        if use_hook:
-            cpu.replacement_hooks[(0x1010, 0xB00D)] = overkill_object_tile_sweep_dispatch_b00d
-        return cpu
-
-    # The eight direction entries cover the four cardinal bodies plus the four
-    # diagonal CALL+fallthrough compositions.  The final case also exercises the
-    # B032 blocked tail with a non-trivial stack/return state.
-    cases = [(direction, 0x00A4, 0x001C) for direction in range(8)] + [(0, 0x0031, 0xFFF0)]
-    for direction, x_word, y_word in cases:
-        asm = make_cpu(False, direction=direction, x_word=x_word, y_word=y_word)
-        hook = make_cpu(True, direction=direction, x_word=x_word, y_word=y_word)
-        for _ in range(3000):
-            if asm.addr() == (0x1010, 0xBEEF):
-                break
-            asm.step()
-        assert asm.addr() == (0x1010, 0xBEEF)
-        hook.step()
-        assert hook.addr() == (0x1010, 0xBEEF)
-        assert asm.s.snapshot() == hook.s.snapshot()
-        assert asm.mem.data == hook.mem.data
-
 
 def test_hook_module_wrappers_have_bound_globals():
     """Catch relocation regressions where a wrapper still calls a moved helper."""

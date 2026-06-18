@@ -1,3 +1,16 @@
+## 2026-06-19 - Loop slice: oracle-suite scan; remove a missing-data test
+
+Ran the full hook oracle suite to find pre-existing failures now that raw-drains
+are done. 4 failed / 241 passed. Triage:
+- `b00d_..._direction_table`: bound to `artifacts/repros/demo_divergence_tandy_
+  20260616_160515` which is gitignored/gone -> REMOVED the test (same as the
+  earlier b1b0 cleanup; the B00D hook stays covered by demo replay). 244 collect.
+- `bdd0_..._hit_path`: already logged in loop_blockers.md (jmp-5059 granularity).
+- `d434_..._poll_gate`: only FLAGS differ (hook 0202 vs asm 0297) -> a flags-
+  replication gap; queued.
+- `expand_tandy_list_33af`: control-flow divergence (hook 44AA vs asm 33B2);
+  queued.
+
 ## 2026-06-19 - Loop slice: final raw-offset sweep (raw-drain complete)
 
 Byte-exact: 10 `bp` (SS:BP object-slot) accesses across 4 files -> named OFF_*.
