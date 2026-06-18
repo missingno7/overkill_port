@@ -23,13 +23,12 @@ from overkill.asm import (
 )
 from dos_re.cpu import CF
 from overkill.recovered.systems.frame_timers import step_first_active_timer
-
-# Per-frame countdown-timer table scanned by 1010:61C7: six 16-bit counters; the
-# table ends at the 2374h sentinel.  This is the original-memory layout the
-# adapter owns; the rule itself lives in recovered.systems.frame_timers.
-FRAME_TIMER_TABLE_BASE = 0x2368
-FRAME_TIMER_COUNT = 6
-FRAME_TIMER_TABLE_END = 0x2374
+from overkill.recovered.systems.status_display import status_cursor_stride
+from overkill.recovered.views.object_slots import (
+    FRAME_TIMER_COUNT,
+    FRAME_TIMER_TABLE_BASE,
+    FRAME_TIMER_TABLE_END,
+)
 
 
 SIG_GAMEPLAY_COUNTER_STRIDE_LOOP_1F8F_0960 = bytes.fromhex(
@@ -582,31 +581,36 @@ def run_status_cursor_advance_613e(cpu, self_disable_if_patched) -> None:
 
 
 def _run_status_cursor_advance_613e(cpu) -> None:
-    """Mirror the 613E video-mode text/status cursor advance tail."""
+    """Advance the status/HUD cursor by one cell (the lifted 613E rule).
+
+    The game logic -- how far one status cell advances the video cursor in the
+    active mode -- now lives in :func:`status_cursor_stride`.  This adapter keeps
+    only the VM-boundary ceremony: it reproduces the BX=mode<<1 / SHL-flags
+    register effect, applies the stride with the original DI op (INC when the
+    stride is one byte, ADD otherwise, which differ in their carry behaviour),
+    and near-returns.
+    """
     s = cpu.s
     mem = cpu.mem
     cs = s.cs & 0xFFFF
 
     s.bx = mem.rw(cs, 0x95BC)
-    s.bx = cpu.shift(4, s.bx & 0xFFFF, 1, 16)
-    target = mem.rw(cs, (0x614A + s.bx) & 0xFFFF)
-    if target == 0x6150:
-        _add_reg16(cpu, 7, 0x0002)
-    elif target == 0x6154:
-        _inc_reg16_preserve_cf(cpu, 7)
-    elif target == 0x6156:
-        _add_reg16(cpu, 7, 0x0004)
+    s.bx = cpu.shift(4, s.bx & 0xFFFF, 1, 16)  # BX = video_mode << 1, SHL flags
+    stride = status_cursor_stride((s.bx >> 1) & 0xFFFF)
+    if stride == 1:
+        _inc_reg16_preserve_cf(cpu, 7)  # INC DI keeps CF (the SHL result)
     else:
-        raise RuntimeError(f"unverified 613E status cursor advance target {target:04X}")
+        _add_reg16(cpu, 7, stride)
     s.ip = cpu.pop()
 
 
 def run_status_cursor_retreat_615a(cpu, self_disable_if_patched) -> None:
-    """Lift the tiny 1010:615A video-mode text/status cursor retreat helper.
+    """Retreat the status/HUD cursor by one cell (the lifted 615A rule).
 
-    This is the exact inverse dispatch of 613E: mode 0 subtracts 2 from DI,
-    mode 1 decrements DI, and mode 2 subtracts 4.  It is kept as a low-level
-    cursor-stride leaf so parents such as 85D5 can be composed later.
+    The inverse of 613E and the same lifted rule: one status cell is
+    :func:`status_cursor_stride` bytes wide in the active mode.  This adapter
+    keeps only the VM-boundary ceremony, applying the stride with the original
+    backward DI op (DEC for a one-byte stride, SUB otherwise).
     """
     if self_disable_if_patched(
         cpu,
@@ -621,16 +625,12 @@ def run_status_cursor_retreat_615a(cpu, self_disable_if_patched) -> None:
     cs = s.cs & 0xFFFF
 
     s.bx = mem.rw(cs, 0x95BC)
-    s.bx = cpu.shift(4, s.bx & 0xFFFF, 1, 16)
-    target = mem.rw(cs, (0x6166 + s.bx) & 0xFFFF)
-    if target == 0x616C:
-        _sub_reg16(cpu, 7, 0x0002)
-    elif target == 0x6170:
-        _dec_reg16_preserve_cf(cpu, 7)
-    elif target == 0x6172:
-        _sub_reg16(cpu, 7, 0x0004)
+    s.bx = cpu.shift(4, s.bx & 0xFFFF, 1, 16)  # BX = video_mode << 1, SHL flags
+    stride = status_cursor_stride((s.bx >> 1) & 0xFFFF)
+    if stride == 1:
+        _dec_reg16_preserve_cf(cpu, 7)  # DEC DI keeps CF (the SHL result)
     else:
-        raise RuntimeError(f"unverified 615A status cursor retreat target {target:04X}")
+        _sub_reg16(cpu, 7, stride)
     s.ip = cpu.pop()
 
 

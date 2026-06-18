@@ -927,3 +927,49 @@ def test_frame_timer_step_decrements_first_active_from_start():
     # 16-bit wrap.
     assert step_first_active_timer((0x0000, 0x0001)).counters == (0x0000, 0x0000)
     assert step_first_active_timer((0x8000,)).counters == (0x7FFF,)
+
+
+def test_game_snapshot_diff_localises_object_field_divergence():
+    from overkill.recovered.domain.game_snapshot import (
+        GameSnapshot,
+        ObjectSlotSnapshot,
+        diff_game_snapshot,
+    )
+
+    def slot(idx, x):
+        return ObjectSlotSnapshot(
+            table="gameplay", index=idx, active_word=1, x_word=x, y_word=0,
+            direction_or_step=0, sprite_or_state=0, object_type=0, draw_layer=0,
+            logic_id=0, previous_logic_id=0, substate=0, target_x_word=0,
+            target_y_word=0, raw=bytes(0x38),
+        )
+
+    a = GameSnapshot((1, 2, 3, 4, 5, 6), b"\x00" * 5, (slot(0, 100), slot(1, 200)))
+    assert diff_game_snapshot(a, a) == []
+
+    # an object x position differs -> one localised field divergence
+    b = GameSnapshot((1, 2, 3, 4, 5, 6), b"\x00" * 5, (slot(0, 100), slot(1, 201)))
+    diffs = diff_game_snapshot(a, b)
+    assert any(d.path == "objects[gameplay:1].x_word" for d in diffs)
+
+    # a frame timer differs -> reported at the top level
+    c = GameSnapshot((1, 2, 0, 4, 5, 6), b"\x00" * 5, (slot(0, 100), slot(1, 200)))
+    assert any(d.path == "frame_timers" for d in diff_game_snapshot(a, c))
+
+
+def test_status_cursor_stride_rule_per_video_mode():
+    import pytest
+
+    from overkill.recovered.systems.status_display import (
+        STATUS_CURSOR_STRIDE_BY_MODE,
+        status_cursor_stride,
+    )
+
+    # The single rule the 613E/615A hooks now share: cursor stride per mode.
+    assert STATUS_CURSOR_STRIDE_BY_MODE == {0: 2, 1: 1, 2: 4}
+    assert status_cursor_stride(0) == 2
+    assert status_cursor_stride(1) == 1
+    assert status_cursor_stride(2) == 4
+    # Unknown mode must fail loudly (the original jump tables have no entry).
+    with pytest.raises(ValueError):
+        status_cursor_stride(3)

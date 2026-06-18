@@ -23,6 +23,8 @@ from dos_re.frame_verify import (
 from dos_re.memory import EGA_APERTURE, EGA_PLANE_STRIDE
 from dos_re.runtime import Runtime
 from .input_waits import frame_verify_input_wait
+from .recovered.adapters.game_snapshot_adapter import decode_game_snapshot
+from .recovered.domain.game_snapshot import diff_game_snapshot, format_divergence_report
 from .runtime import create_overkill_runtime, load_overkill_snapshot
 
 CGA_PRESENT_HOOK: Addr = (0x1010, 0x447B)
@@ -53,6 +55,51 @@ class FrameVerifyConfig(GenericFrameVerifyConfig):
     video: Literal["cga", "ega", "tandy"] = "tandy"
     palette: str = "1h"
     ega_start_address_units: Literal["byte", "word", "ignore"] = "byte"
+    # Decode the running game's gameplay state each frame and diff the ASM-oracle
+    # runtime against the hooked runtime at the *semantic* level (objects,
+    # positions, flags, timers, score) -- catching divergences a pixel diff can
+    # miss.  On by default so frame verification covers state, not just frames.
+    semantic_state_check: bool = True
+
+
+class SemanticFrameComparator:
+    """Per-frame semantic state diff between the reference and candidate runtimes.
+
+    ``_sample`` calls :meth:`observe` for the reference then the candidate at the
+    same frame boundary; this decodes each into a recovered ``GameSnapshot`` and,
+    once both sides of a frame are seen, diffs them.  The first divergence is
+    reported loudly (a field-level report, not pixels); the run records that it
+    diverged so the verifier can exit non-zero.
+    """
+
+    def __init__(self, status_callback: Callable[[str], None] | None = None) -> None:
+        self._reference: dict[int, object] = {}
+        self._status = status_callback
+        self.divergence_frames = 0
+        self.first_report: str | None = None
+
+    def observe(self, cpu, side: str, frame_no: int) -> None:
+        snapshot = decode_game_snapshot(cpu)
+        if side == "reference":
+            self._reference[frame_no] = snapshot
+            return
+        reference = self._reference.pop(frame_no, None)
+        if reference is None:
+            return
+        divergences = diff_game_snapshot(reference, snapshot)
+        if not divergences:
+            return
+        self.divergence_frames += 1
+        if self.first_report is None:
+            self.first_report = format_divergence_report(divergences)
+            print(
+                f"FRAME VERIFY SEMANTIC DIVERGENCE at frame {frame_no} "
+                f"(decoded gameplay state differs between ASM oracle and hooked runtime):\n"
+                f"{self.first_report}",
+                flush=True,
+            )
+            if self._status is not None:
+                self._status(f"semantic state divergence at frame {frame_no}")
 
 
 def run_frame_verifier(
@@ -74,17 +121,20 @@ def run_frame_verifier(
 
     print(
         f"FRAME VERIFY start video={config.video} source={config.source} "
-        f"max_frames={config.max_frames} snapshot={snapshot or '<fresh>'}",
+        f"max_frames={config.max_frames} snapshot={snapshot or '<fresh>'} "
+        f"semantic_state_check={config.semantic_state_check}",
         flush=True,
     )
 
-    return run_generic_frame_verifier(
+    semantic = SemanticFrameComparator(status_callback) if config.semantic_state_check else None
+
+    result = run_generic_frame_verifier(
         reference=ref,
         candidate=cand,
         config=config,
         boundary_hooks=_boundary_hooks(config),
         sample_builder=lambda rt, side, frame_no, kind, hook, boundary_steps, start, recent, recent_changes: _sample(
-            rt, config, side, frame_no, kind, hook, boundary_steps, start, recent, recent_changes
+            rt, config, side, frame_no, kind, hook, boundary_steps, start, recent, recent_changes, semantic
         ),
         reference_env_hooks=REFERENCE_ENV_HOOKS,
         trace_sample=(lambda rt: _visible_vram(rt, config)) if config.trace_sample_changes else None,
@@ -99,6 +149,14 @@ def run_frame_verifier(
         status_callback=status_callback,
         label="FRAME VERIFY",
     )
+
+    if semantic is not None and semantic.divergence_frames:
+        print(
+            f"FRAME VERIFY semantic state diverged on {semantic.divergence_frames} frame(s)",
+            flush=True,
+        )
+        return result or 1
+    return result
 
 
 def _load_runtime(exe: Path, assets: Path, snapshot: str | None, command_tail: bytes | str) -> Runtime:
@@ -139,7 +197,10 @@ def _sample(
     start_count: int,
     recent_hooks: tuple[str, ...],
     recent_sample_changes: tuple[str, ...] = (),
+    semantic: "SemanticFrameComparator | None" = None,
 ) -> FrameSample:
+    if semantic is not None:
+        semantic.observe(rt.cpu, side, frame_no)
     raw = _visible_vram(rt, config)
     rgb = _render_rgb_bytes(rt, config)
     return make_frame_sample(

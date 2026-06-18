@@ -71,6 +71,16 @@ OFF_EFFECT_SCAN_FLAG = OFF_SCAN_FLAG
 OFF_EFFECT_HAZARD_CLASS = OFF_HAZARD_CLASS
 OFF_PRESENT_SI = OFF_LINK_KEY
 
+# Per-frame countdown-timer table scanned by 1010:61C7 (six 16-bit counters,
+# DS:2368..2372, ending at the 2374h sentinel) and the packed-BCD score written
+# by 1010:5F0D (DS:2314, five bytes).  Canonical DS-relative layout facts so the
+# 61C7 adapter and the game-state decoder share one source.
+FRAME_TIMER_TABLE_BASE = 0x2368
+FRAME_TIMER_COUNT = 6
+FRAME_TIMER_TABLE_END = FRAME_TIMER_TABLE_BASE + FRAME_TIMER_COUNT * 2  # 0x2374
+SCORE_BCD_BASE = 0x2314
+SCORE_BCD_LENGTH = 5
+
 
 @dataclass
 class ObjectSlotView:
