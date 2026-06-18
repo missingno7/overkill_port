@@ -83,9 +83,33 @@ Read this file at the start of each iteration and do exactly one slice.
   added without a live consumer ("introduced by use").
 - **Don't build a parallel runtime / detached GameState.** Source-like code mutates
   the real VM memory through views; there is one source of truth.
-- **Stop and report** (end the iteration without committing) if: a verify step
-  fails and you can't make it green byte-exactly, a fix would require guessing, or a
-  divergence needs the user's gameplay context to interpret.
+- **When blocked** (a verify step fails and you can't make it green byte-exactly, a
+  fix would require guessing, or a divergence needs gameplay context): if running
+  *attended*, stop and report. If running *unattended*, follow **Unattended mode**
+  below — revert, log, move on. Never commit a red or partial slice either way.
+
+## Unattended (overnight) mode
+
+When the user is away and wants the loop to run for hours, stay productive across
+the whole window instead of halting on the first hard problem:
+
+- **Keep the tree green at all times.** Start each iteration from a clean
+  `git status`. If a slice can't be finished byte-exact, **revert all its changes**
+  (`git restore <files>` / `git checkout -- <files>`) so the next iteration starts
+  clean. Never commit or leave a red/partial slice.
+- **Skip, don't stop.** If a target is blocked, append it to
+  `docs/overkill/loop_blockers.md` (what you tried, the exact divergence, why it's
+  blocked / what you'd need), then move to the NEXT backlog item.
+- **Never re-attempt a logged blocker.** Read `loop_blockers.md` first each
+  iteration and pick a target not already listed there.
+- **Commit + push every green slice** so progress is saved incrementally — the
+  user should wake to a chain of small verified commits.
+- **Favor tractable wins** (9FAF-style missing-guard divergence fixes, field
+  naming, raw-offset drain) so the night accumulates many verified improvements;
+  if a divergence proves deep after ~2 trace attempts, log it and move on.
+- **Only fully stop** if the repo is broken and you cannot restore it to green, or
+  every remaining backlog item is already in `loop_blockers.md`. Leave a final
+  summary at the top of `loop_blockers.md`.
 
 ## One-iteration definition of done
 
