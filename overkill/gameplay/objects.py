@@ -8,7 +8,19 @@ from __future__ import annotations
 from dos_re.cpu import DF
 
 from overkill.asm import _add_mem_word, loop_count
-from overkill.recovered.views.object_slots import OFF_MOVE_STEP_ERROR
+from overkill.recovered.views.object_slots import (
+    OFF_ACTIVE_WORD,
+    OFF_DIRECTION_OR_STEP,
+    OFF_GATE_OR_LAYER,
+    OFF_HAZARD_CLASS,
+    OFF_LINK_KEY,
+    OFF_LOGIC_ID,
+    OFF_MOVE_STEP_ERROR,
+    OFF_SPRITE_OR_STATE,
+    OFF_VARIANT,
+    OFF_X,
+    OFF_Y,
+)
 
 SIG_OBJECT_LOGIC_CALL_AA2B_AA01 = bytes.fromhex("e8 27 00 59 e2 d9")
 SIG_OBJECT_LOGIC_SCAN_TAIL_AA04 = bytes.fromhex("59 e2 d9")
@@ -19,7 +31,7 @@ def dispatch_object_logic_aa2b(cpu) -> None:
     s = cpu.s
     ss = s.ss & 0xFFFF
     bp = s.bp & 0xFFFF
-    s.bx = cpu.mem.rw(ss, (bp + 0x16) & 0xFFFF)
+    s.bx = cpu.mem.rw(ss, (bp + OFF_HAZARD_CLASS) & 0xFFFF)
     s.bx = cpu.shift(4, s.bx, 1, 16)
     s.ip = cpu.mem.rw(s.cs & 0xFFFF, (0xAA36 + s.bx) & 0xFFFF)
 
@@ -84,11 +96,11 @@ def run_reset_effect_slot_block_c3bf(cpu, self_disable_if_patched) -> None:
         s.bx = cpu.shift(4, s.bx, 1, 16)
         s.bp = mem.rw(ds, (0x8D12 + (s.bx & 0xFFFF)) & 0xFFFF)
         bp = s.bp & 0xFFFF
-        mem.ww(ss, (bp + 0x00) & 0xFFFF, 0x0000)
+        mem.ww(ss, (bp + OFF_ACTIVE_WORD) & 0xFFFF, 0x0000)
         mem.ww(ss, (bp + OFF_MOVE_STEP_ERROR) & 0xFFFF, 0x0000)
-        mem.ww(ss, (bp + 0x18) & 0xFFFF, 0x0000)
+        mem.ww(ss, (bp + OFF_LOGIC_ID) & 0xFFFF, 0x0000)
         s.ax = mem.rw(cs, 0xC3A2)
-        mem.ww(ss, (bp + 0x0E) & 0xFFFF, s.ax)
+        mem.ww(ss, (bp + OFF_LINK_KEY) & 0xFFFF, s.ax)
         _add_mem_word(cpu, cs, 0xC3A2, 0x0040)
         s.cx = cpu.pop()
         s.cx = (s.cx - 1) & 0xFFFF
@@ -126,17 +138,17 @@ def run_reset_object_slot_block_c3f1(cpu, self_disable_if_patched) -> None:
         s.bx = cpu.shift(4, s.bx, 1, 16)
         s.bp = mem.rw(ds, (0x32CA + (s.bx & 0xFFFF)) & 0xFFFF)
         bp = s.bp & 0xFFFF
-        mem.ww(ss, (bp + 0x0A) & 0xFFFF, 0x0001)
-        keep_slot = mem.rw(ss, (bp + 0x16) & 0xFFFF) == 0x0001
-        cpu.set_sub_flags(mem.rw(ss, (bp + 0x16) & 0xFFFF), 0x0001, mem.rw(ss, (bp + 0x16) & 0xFFFF) - 0x0001, 16)
+        mem.ww(ss, (bp + OFF_GATE_OR_LAYER) & 0xFFFF, 0x0001)
+        keep_slot = mem.rw(ss, (bp + OFF_HAZARD_CLASS) & 0xFFFF) == 0x0001
+        cpu.set_sub_flags(mem.rw(ss, (bp + OFF_HAZARD_CLASS) & 0xFFFF), 0x0001, mem.rw(ss, (bp + OFF_HAZARD_CLASS) & 0xFFFF) - 0x0001, 16)
         if not keep_slot:
-            mem.ww(ss, (bp + 0x00) & 0xFFFF, 0x0000)
+            mem.ww(ss, (bp + OFF_ACTIVE_WORD) & 0xFFFF, 0x0000)
             mem.ww(ss, (bp + OFF_MOVE_STEP_ERROR) & 0xFFFF, 0x0000)
-            mem.ww(ss, (bp + 0x24) & 0xFFFF, 0x0000)
-            mem.ww(ss, (bp + 0x18) & 0xFFFF, 0x0000)
-            mem.ww(ss, (bp + 0x06) & 0xFFFF, 0x0000)
+            mem.ww(ss, (bp + OFF_VARIANT) & 0xFFFF, 0x0000)
+            mem.ww(ss, (bp + OFF_LOGIC_ID) & 0xFFFF, 0x0000)
+            mem.ww(ss, (bp + OFF_DIRECTION_OR_STEP) & 0xFFFF, 0x0000)
         s.ax = mem.rw(cs, 0xC3A2)
-        mem.ww(ss, (bp + 0x0E) & 0xFFFF, s.ax)
+        mem.ww(ss, (bp + OFF_LINK_KEY) & 0xFFFF, s.ax)
         _add_mem_word(cpu, cs, 0xC3A2, 0x0280)
         s.cx = cpu.pop()
         s.cx = (s.cx - 1) & 0xFFFF
@@ -186,14 +198,14 @@ def run_reset_object_slot_block_c4e5(cpu, self_disable_if_patched) -> None:
         s.bx = cpu.shift(4, s.bx, 1, 16)
         s.bp = mem.rw(ds, (0x32CA + (s.bx & 0xFFFF)) & 0xFFFF)
         bp = s.bp & 0xFFFF
-        mem.ww(ss, (bp + 0x00) & 0xFFFF, 0x0000)
+        mem.ww(ss, (bp + OFF_ACTIVE_WORD) & 0xFFFF, 0x0000)
         mem.ww(ss, (bp + OFF_MOVE_STEP_ERROR) & 0xFFFF, 0x0000)
-        mem.ww(ss, (bp + 0x24) & 0xFFFF, 0x0000)
-        mem.ww(ss, (bp + 0x18) & 0xFFFF, 0x0000)
-        mem.ww(ss, (bp + 0x0A) & 0xFFFF, 0x0001)
-        mem.ww(ss, (bp + 0x06) & 0xFFFF, 0x0000)
+        mem.ww(ss, (bp + OFF_VARIANT) & 0xFFFF, 0x0000)
+        mem.ww(ss, (bp + OFF_LOGIC_ID) & 0xFFFF, 0x0000)
+        mem.ww(ss, (bp + OFF_GATE_OR_LAYER) & 0xFFFF, 0x0001)
+        mem.ww(ss, (bp + OFF_DIRECTION_OR_STEP) & 0xFFFF, 0x0000)
         s.ax = mem.rw(cs, 0xC3A2)
-        mem.ww(ss, (bp + 0x0E) & 0xFFFF, s.ax)
+        mem.ww(ss, (bp + OFF_LINK_KEY) & 0xFFFF, s.ax)
         _add_mem_word(cpu, cs, 0xC3A2, 0x0280)
         s.cx = cpu.pop()
         s.cx = (s.cx - 1) & 0xFFFF
@@ -355,13 +367,13 @@ def run_object_motion_table_ab34(cpu, self_disable_if_patched) -> None:
     old_ax = s.ax
     s.ax = (old_ax + addend) & 0xFFFF
     cpu.set_add_flags(old_ax, addend, old_ax + addend, 16)
-    mem.ww(ss, (bp + 0x02) & 0xFFFF, s.ax)
+    mem.ww(ss, (bp + OFF_X) & 0xFFFF, s.ax)
     _lodsw(cpu)
     addend = mem.rw(ds, (s.bx + 0x04) & 0xFFFF)
     old_ax = s.ax
     s.ax = (old_ax + addend) & 0xFFFF
     cpu.set_add_flags(old_ax, addend, old_ax + addend, 16)
-    mem.ww(ss, (bp + 0x04) & 0xFFFF, s.ax)
+    mem.ww(ss, (bp + OFF_Y) & 0xFFFF, s.ax)
     s.ip = cpu.pop()
 
 
@@ -377,5 +389,5 @@ def run_object_scroll_sprite_ab4f(cpu, self_disable_if_patched) -> None:
     old_ax = s.ax
     s.ax = (old_ax + 0x0018) & 0xFFFF
     cpu.set_add_flags(old_ax, 0x0018, old_ax + 0x0018, 16)
-    cpu.mem.ww(ss, (bp + 0x08) & 0xFFFF, s.ax)
+    cpu.mem.ww(ss, (bp + OFF_SPRITE_OR_STATE) & 0xFFFF, s.ax)
     s.ip = cpu.pop()

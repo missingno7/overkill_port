@@ -1,3 +1,18 @@
+## 2026-06-19 - Loop slice: drain objects.py raw offsets
+
+Byte-exact raw-offset drain: 22 `bp` (SS:BP object-slot) accesses in objects.py's
+slot-init/reset loops and the AB4F scroll-sprite helper -> named OFF_* constants
+(ACTIVE_WORD / X / Y / DIRECTION_OR_STEP / SPRITE_OR_STATE / GATE_OR_LAYER /
+LINK_KEY / HAZARD_CLASS / LOGIC_ID / VARIANT). Dashboard: record offset accesses
+57 -> 35 raw (17% -> 10%). The `s.bx +` source reads were left raw (separate
+struct, role less certain). Verified: fresh import, lint (151), audit (17 pure),
+objects oracles (aa2b/ab4f/...), demo-replay (no new failures; the 2 pre-existing
+mothership/menu divergences are logged in loop_blockers.md).
+
+Also: installed capstone and logged loop_blockers.md - disassembled the BFC7
+player-death tail and proved its C037 jump-table dispatch is correctly lifted, so
+that divergence is elsewhere in BC4B's path (logged for a reproduction trace).
+
 ## 2026-06-19 - Loop slice: drain action_spawns.py raw offsets
 
 Byte-exact raw-offset drain: the 6 `bx` slot-stamp accesses in action_spawns.py's
