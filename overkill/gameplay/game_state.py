@@ -21,6 +21,15 @@ from overkill.asm import (
     _inc_reg16_preserve_cf,
     loop_count,
 )
+from dos_re.cpu import CF
+from overkill.recovered.systems.frame_timers import step_first_active_timer
+
+# Per-frame countdown-timer table scanned by 1010:61C7: six 16-bit counters; the
+# table ends at the 2374h sentinel.  This is the original-memory layout the
+# adapter owns; the rule itself lives in recovered.systems.frame_timers.
+FRAME_TIMER_TABLE_BASE = 0x2368
+FRAME_TIMER_COUNT = 6
+FRAME_TIMER_TABLE_END = 0x2374
 
 
 SIG_GAMEPLAY_COUNTER_STRIDE_LOOP_1F8F_0960 = bytes.fromhex(
@@ -330,20 +339,41 @@ def run_decrement_first_active_counter_loop_61f7(cpu, self_disable_if_patched) -
 
 
 def _run_decrement_first_active_counter_scan(cpu) -> None:
+    """Thin VM boundary adapter over the recovered frame-timer rule.
+
+    Decodes the countdown table from DS, runs the source-like
+    :func:`~overkill.recovered.systems.frame_timers.step_first_active_timer`, and
+    writes only the decremented slot back -- then reproduces exactly the original
+    61C7 CPU-boundary contract (final DI, the dec/compare flags, and the near
+    return) so the live hook stays byte/register/flag identical to the ASM oracle.
+    """
     ds = cpu.s.ds & 0xFFFF
-    while True:
-        value = cpu.mem.rw(ds, cpu.s.di & 0xFFFF)
-        _cmp_word(cpu, value, 0)
-        if value != 0:
-            _dec_mem_word_preserve_cf(cpu, ds, cpu.s.di & 0xFFFF)
-            cpu.s.ip = cpu.pop()
-            return
-        _add_reg16(cpu, 7, 0x0002)
-        _cmp_word(cpu, cpu.s.di & 0xFFFF, 0x2374)
-        if cpu.s.di != 0x2374:
-            continue
-        cpu.s.ip = cpu.pop()
-        return
+    di = cpu.s.di & 0xFFFF
+    if di & 1 or not (FRAME_TIMER_TABLE_BASE <= di <= FRAME_TIMER_TABLE_END):
+        raise RuntimeError(f"61C7 frame-timer scan reached unexpected DI {di:04X}")
+    start_index = (di - FRAME_TIMER_TABLE_BASE) // 2
+
+    counters = tuple(
+        cpu.mem.rw(ds, (FRAME_TIMER_TABLE_BASE + i * 2) & 0xFFFF) for i in range(FRAME_TIMER_COUNT)
+    )
+    step = step_first_active_timer(counters, start_index)
+
+    if step.decremented_index is not None:
+        k = step.decremented_index
+        addr = (FRAME_TIMER_TABLE_BASE + k * 2) & 0xFFFF
+        cpu.mem.ww(ds, addr, step.counters[k])
+        cpu.s.di = addr
+        # Loop exit after DEC mem,1 on a non-zero value: CF was cleared by the
+        # preceding CMP value,0 and the DEC preserves it.
+        old = counters[k] & 0xFFFF
+        cpu.set_sub_flags(old, 1, old - 1, 16)
+        cpu.set_flag(CF, False)
+    else:
+        cpu.s.di = FRAME_TIMER_TABLE_END & 0xFFFF
+        # Loop exit after CMP DI,2374h with DI == 2374h: ZF set, CF clear.
+        cpu.set_sub_flags(FRAME_TIMER_TABLE_END, FRAME_TIMER_TABLE_END, 0, 16)
+
+    cpu.s.ip = cpu.pop()
 
 
 

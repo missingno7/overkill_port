@@ -903,3 +903,27 @@ def test_recovered_axis_clamp_and_vertical_scroll_bias_are_pure_source_port_help
     assert active.view_gate_open
     assert active.top_bias_word == 0xFFFF
     assert active.bottom_bias_word == 0x0008
+
+
+def test_frame_timer_step_decrements_first_active_from_start():
+    from overkill.recovered.systems.frame_timers import step_first_active_timer
+
+    # First non-zero from the start is decremented; nothing else changes.
+    step = step_first_active_timer((0, 0, 5, 3, 0, 0))
+    assert step.counters == (0, 0, 4, 3, 0, 0)
+    assert step.decremented_index == 2
+
+    # All zero -> no change, no index.
+    step = step_first_active_timer((0, 0, 0, 0, 0, 0))
+    assert step.counters == (0, 0, 0, 0, 0, 0)
+    assert step.decremented_index is None
+
+    # start_index models the 61CA entry where the caller pre-positions DI past
+    # earlier slots.
+    step = step_first_active_timer((9, 9, 0, 4, 0, 0), start_index=2)
+    assert step.counters == (9, 9, 0, 3, 0, 0)
+    assert step.decremented_index == 3
+
+    # 16-bit wrap.
+    assert step_first_active_timer((0x0000, 0x0001)).counters == (0x0000, 0x0000)
+    assert step_first_active_timer((0x8000,)).counters == (0x7FFF,)
