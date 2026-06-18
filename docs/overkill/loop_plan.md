@@ -1,8 +1,14 @@
-# Source-port advancement loop
+# Source-port advancement playbook
 
-Autonomous playbook: **one small, verified, byte-exact slice per iteration.**
-The VM is the oracle; every slice must stay provably equivalent to the original.
-Read this file at the start of each iteration and do exactly one slice.
+**Goal:** drive OVERKILL toward clean, complete, *source-like* code that stays
+byte-exact with the original — gradually, one verified slice at a time. Progress
+is measured by `scripts/source_port_status.py` (% pure source up, raw offsets and
+divergences down) and by demo-replay staying native==VM.
+
+Works with `/loop` or any goal-directed autonomous mode: **one small, verified,
+byte-exact slice per iteration.** The VM is the oracle; every slice must stay
+provably equivalent to the original. Read this file at the start of each
+iteration and do exactly one slice.
 
 ## The loop (do this once per iteration)
 
