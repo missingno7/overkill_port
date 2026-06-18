@@ -40,3 +40,22 @@ context. Each has the analysis already done so a human can pick up fast.
   interpreted (`1F8F:0980` loop); the divergence is a lifted hook in the menu/input
   path, not the interpreted core (both runtimes share that). Not yet bisected — the
   field/object that diverges still needs to be captured with frame-verify.
+
+## BDD0 player-hazard-scan hit-path oracle (`bdd0_..._hit_path`)
+- Pre-existing FAILING oracle (red at loop baseline): on a hazard hit the hook
+  ends at the caller (`CAFE`) but the original is at `1010:5059`.
+- **Root cause (confirmed by disasm):** `BE32: JMP 1010:5059`, and `5059` is
+  `STC; RET` (`f9 c3`, already has `SIG_COLLISION_STC_RET_5059`). The lift
+  (`collision.py run_player_hazard_object_scan_bde3`) collapses the tail-jump into
+  `set_carry_and_return(cpu, True)` (STC+RET eagerly) -> lands on the caller.
+- **The conflict:** changing the hit-path to `cpu.s.ip = 0x5059` (match the jmp
+  granularity) makes the *oracle pass* but REGRESSES a demo — because BDD0 is also
+  invoked as a child via `object_runtime.py _call_player_hazard_scan_bdd0` /
+  `_call_verified_child_near`, whose continuation logic expects the collapsed
+  return, not an IP landing on `5059`. (Verified: that change took demo-replay from
+  2 -> 3 failures.) Reverted.
+- **Resolution needs a human call:** reconcile the oracle's single-step
+  expectation (IP=5059, then the 5059 hook runs STC;RET) with the child-call
+  wrapper (which must then step through 5059). Either update the wrapper to run the
+  5059 stub, or adjust the oracle to compare the collapsed end state. Both the
+  `5059` STC;RET hook and `_call_verified_child_near` need to agree.
