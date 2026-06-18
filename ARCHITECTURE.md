@@ -57,6 +57,14 @@ Such exceptions are whitelisted explicitly in `audit_architecture.py`.
 - Backend-specific drawing/sound/asset work → `rendering/`, `sounds/`,
   `asset_codecs/`, `file_io/`.
 
+## Status / visibility
+
+- `scripts/source_port_status.py` — read-only dashboard of the ASM→source
+  migration: per-layer line mass + `cpu`/`mem` density, the headline "% of
+  game-logic mass that is pure source", the pure-rule count, and structural flags
+  (oversized hook-boundary files). Run it before deciding *what to clean next* —
+  it reuses the enforced `layer_of` map so it never drifts from the build.
+
 ## Enforcement
 
 - `scripts/audit_architecture.py` — project-wide layer map + hard rules above.
@@ -84,12 +92,19 @@ Such exceptions are whitelisted explicitly in `audit_architecture.py`.
   the registered-hook wrapper bodies, and the *movement behaviours* that route to
   postmove (drift AE2C/AE7D, chase B1B0, tile-sweep B00D). Next seam: split those
   movement behaviours into `object_movement_behaviors.py`, leaving a pure scan +
-  dispatch spine. **Open behavioural target:** 9E19 is still run as bounded
-  interpreted ASM inside the B250 selector (`contact_overlap.py`); lifting it
-  would absorb the last interpreted contact side-effect, but needs its own oracle.
-- `overkill/hooks.py` still holds non-EGA inline blits (`497A`, `477E`, `38B7`,
-  `41DA`, `447B`, presence-stamp, dirty-cell presenter); move them behind thin
-  wrappers like the EGA renderer already is.
+  dispatch spine. **9E19 contact side-effect: done** — the `B250` selector's
+  `B297` loop now calls the native `run_post_contact_status_helper_9e19` instead
+  of interpreting it (Phase-2 collapse, covered by the demo-replay suite); only
+  its `61DC`/`511F` display children remain bounded.
+- **Next gameplay interpreted target:** `1010:B2CD`, a waypoint path-following
+  movement loop (walks the `A45C`/`A43C` coordinate tables, calls the lifted
+  `5DB2` per waypoint, sets `logic_id=12h`). Hottest unhooked gameplay routine in
+  the L2 coverage dump; reached alongside `BB03`/`BB80`. Needs an oracle capture.
+- `overkill/hooks.py` still holds non-EGA inline blits; move them behind thin
+  wrappers like the EGA renderer already is. **Done:** `477E`, `41DA` (bodies now
+  in `rendering/tandy.py`). **Remaining:** `497A`, `38B7`, `3849`, `41A6`, `447B`,
+  presence-stamp, dirty-cell presenter. The 8086 helpers most blits need already
+  live in `rendering/tandy.py`; `497A` additionally uses the `SF` flag.
 - `game_core` has no live VM-backed adapters yet (Tandy-video→Framebuffer,
   scancode→InputEvent, PC-speaker/OPL→AudioBackend, 0679→TimingBackend,
   overlay→AssetProvider). Building those is how the VM becomes an oracle.

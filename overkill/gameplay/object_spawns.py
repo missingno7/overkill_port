@@ -12,14 +12,71 @@ no higher-level gameplay semantics are asserted.
 from __future__ import annotations
 
 from overkill.asm import _add_reg16, _cmp_word, _dec_mem_word_preserve_cf
+from overkill.recovered.systems.objects import object_spawn_seed_8209
 from overkill.recovered.views.object_slots import (
     EFFECT_OBJECT_TABLE_BASE,
     GAMEPLAY_OBJECT_ALLOCATOR_WRAP_SENTINEL,
     GAMEPLAY_OBJECT_TABLE_BASE,
     OBJECT_SLOT_STRIDE,
+    OFF_ACTIVE_WORD,
+    OFF_COUNTER_20,
+    OFF_DIRECTION_OR_STEP,
+    OFF_GATE_OR_LAYER,
+    OFF_HAZARD_CLASS,
+    OFF_LOGIC_ID,
+    OFF_SCAN_FLAG,
+    OFF_TARGET_X,
+    OFF_TARGET_Y,
+    OFF_VARIANT,
     OFF_X,
     OFF_Y,
 )
+
+# Source position the 8209 template reads from the caller's BP frame, and the
+# one slot field (offset 0x28) that has no proven name yet.
+OBJECT_SPAWN_SEED_8209_SOURCE_X_BP = 0x02
+OBJECT_SPAWN_SEED_8209_SOURCE_Y_BP = 0x04
+OBJECT_SPAWN_SEED_8209_FIELD_28 = 0x28
+
+
+def run_object_spawn_seed_8209(cpu) -> None:
+    """Lift 1010:8209, the shared object-slot spawn-stamp template.
+
+    Reached from both sibling allocate-then-stamp paths (``81E9`` jumps here, and
+    the ``81F4`` debug-gated path falls through).  ``BX`` is the freshly allocated
+    DS-relative slot; the caller's source position is at ``SS:[BP+2]``/``[BP+4]``.
+    The pure :func:`object_spawn_seed_8209` owns the field values; this adapter
+    owns the DOS slot pointer and write order, leaves ``AX`` = source Y like the
+    original's final ``MOV``, and near-returns.
+    """
+    s = cpu.s
+    mem = cpu.mem
+    ds = s.ds & 0xFFFF
+    ss = s.ss & 0xFFFF
+    bp = s.bp & 0xFFFF
+    bx = s.bx & 0xFFFF
+
+    source_x = mem.rw(ss, (bp + OBJECT_SPAWN_SEED_8209_SOURCE_X_BP) & 0xFFFF)
+    source_y = mem.rw(ss, (bp + OBJECT_SPAWN_SEED_8209_SOURCE_Y_BP) & 0xFFFF)
+    seed = object_spawn_seed_8209(source_x, source_y)
+
+    # Stamp in the original 8209..8247 order (offsets distinct, so order is only
+    # for faithfulness).
+    mem.ww(ds, (bx + OBJECT_SPAWN_SEED_8209_FIELD_28) & 0xFFFF, seed.field_28)
+    mem.ww(ds, (bx + OFF_ACTIVE_WORD) & 0xFFFF, seed.active_word)
+    mem.ww(ds, (bx + OFF_GATE_OR_LAYER) & 0xFFFF, seed.gate_or_layer)
+    mem.ww(ds, (bx + OFF_X) & 0xFFFF, seed.x_word)
+    mem.ww(ds, (bx + OFF_TARGET_X) & 0xFFFF, seed.target_x_word)
+    mem.ww(ds, (bx + OFF_Y) & 0xFFFF, seed.y_word)
+    mem.ww(ds, (bx + OFF_TARGET_Y) & 0xFFFF, seed.target_y_word)
+    mem.ww(ds, (bx + OFF_DIRECTION_OR_STEP) & 0xFFFF, seed.direction_or_step)
+    mem.ww(ds, (bx + OFF_SCAN_FLAG) & 0xFFFF, seed.scan_flag)
+    mem.ww(ds, (bx + OFF_HAZARD_CLASS) & 0xFFFF, seed.hazard_class)
+    mem.ww(ds, (bx + OFF_LOGIC_ID) & 0xFFFF, seed.logic_id)
+    mem.ww(ds, (bx + OFF_COUNTER_20) & 0xFFFF, seed.counter_20)
+    mem.ww(ds, (bx + OFF_VARIANT) & 0xFFFF, seed.variant)
+    s.ax = source_y & 0xFFFF
+    s.ip = cpu.pop()
 
 
 

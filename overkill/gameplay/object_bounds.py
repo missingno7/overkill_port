@@ -14,6 +14,14 @@ from overkill.gameplay.object_deactivation import _run_deactivate_bd17_observed
 from overkill.recovered.adapters.collision_adapter import (
     run_tile_lookup_505b_body, run_tile_probe_5073_body,
 )
+from overkill.recovered.systems.objects import (
+    OBJECT_BOUNDS_MAX_X,
+    OBJECT_BOUNDS_MAX_Y,
+    OBJECT_BOUNDS_MIN_X,
+    OBJECT_BOUNDS_TILE_PROBE_DRAW_LAYER,
+    OBJECT_BOUNDS_TILE_PROBE_LOGIC_IDS,
+    object_bounds_tile_decision_ad60,
+)
 from overkill.recovered.views.object_slots import OFF_DRAW_LAYER, OFF_LOGIC_ID, OFF_X, OFF_Y
 
 
@@ -34,42 +42,59 @@ def _run_object_bounds_tile_tail_ad60(cpu, *, parent: str, chain: str, cx_value:
         cpu.s.ax = mem.rw(ds, 0xA278)
         _add_mem_word(cpu, ss, (bp + OFF_X) & 0xFFFF, cpu.s.ax)
 
+    # The pure recovered system owns the AD60 branch classification.  This tail
+    # keeps the original CMP order so live flags match the oracle at each branch,
+    # and asserts the pure decision agrees with the ASM-compatible walk.
     x = mem.rw(ss, (bp + OFF_X) & 0xFFFF)
-    _cmp_word(cpu, x, 0x0008)
-    if x < 0x0008:
-        _run_deactivate_bd17_observed(cpu, parent=parent, chain=f"{chain} -> AD60", cx_value=cx_value, pop_return=False)
-        cpu.s.ip = cpu.pop()
-        return
-    _cmp_word(cpu, x, 0x00E0)
-    if x > 0x00E0:
-        _run_deactivate_bd17_observed(cpu, parent=parent, chain=f"{chain} -> AD60", cx_value=cx_value, pop_return=False)
-        cpu.s.ip = cpu.pop()
-        return
     y = mem.rw(ss, (bp + OFF_Y) & 0xFFFF)
-    _cmp_word(cpu, y, 0x00C8)
-    if y > 0x00C8:
-        _run_deactivate_bd17_observed(cpu, parent=parent, chain=f"{chain} -> AD60", cx_value=cx_value, pop_return=False)
-        cpu.s.ip = cpu.pop()
-        return
     draw_layer = mem.rw(ss, (bp + OFF_DRAW_LAYER) & 0xFFFF)
-    _cmp_word(cpu, draw_layer, 0x0002)
-    if draw_layer != 0x0002:
-        cpu.s.ip = cpu.pop()
-        return
     logic_id = mem.rw(ss, (bp + OFF_LOGIC_ID) & 0xFFFF)
-    for good in (0x0002, 0x0004, 0x000C, 0x0005, 0x0006, 0x0009, 0x0008):
+    bdac = mem.rw(ds, 0xBDAC)
+    decision = object_bounds_tile_decision_ad60(
+        x, y, draw_layer, logic_id, tile_probe_suppressed=bdac == 0x0001
+    )
+
+    def _deactivate(chain_suffix: str) -> None:
+        if decision.kind != "deactivate":
+            raise AssertionError("pure AD60 decision disagrees on out-of-bounds deactivate")
+        _run_deactivate_bd17_observed(cpu, parent=parent, chain=f"{chain} -> {chain_suffix}", cx_value=cx_value, pop_return=False)
+        cpu.s.ip = cpu.pop()
+
+    def _skip() -> None:
+        if decision.kind != "skip":
+            raise AssertionError("pure AD60 decision disagrees on tile-probe skip")
+        cpu.s.ip = cpu.pop()
+
+    _cmp_word(cpu, x, OBJECT_BOUNDS_MIN_X)
+    if x < OBJECT_BOUNDS_MIN_X:
+        _deactivate("AD60")
+        return
+    _cmp_word(cpu, x, OBJECT_BOUNDS_MAX_X)
+    if x > OBJECT_BOUNDS_MAX_X:
+        _deactivate("AD60")
+        return
+    _cmp_word(cpu, y, OBJECT_BOUNDS_MAX_Y)
+    if y > OBJECT_BOUNDS_MAX_Y:
+        _deactivate("AD60")
+        return
+    _cmp_word(cpu, draw_layer, OBJECT_BOUNDS_TILE_PROBE_DRAW_LAYER)
+    if draw_layer != OBJECT_BOUNDS_TILE_PROBE_DRAW_LAYER:
+        _skip()
+        return
+    for good in OBJECT_BOUNDS_TILE_PROBE_LOGIC_IDS:
         _cmp_word(cpu, logic_id, good)
         if logic_id == good:
             break
     else:
-        cpu.s.ip = cpu.pop()
+        _skip()
         return
 
-    bdac = mem.rw(ds, 0xBDAC)
     _cmp_word(cpu, bdac, 0x0001)
     if bdac == 0x0001:
-        cpu.s.ip = cpu.pop()
+        _skip()
         return
+    if decision.kind != "tile_probe":
+        raise AssertionError("pure AD60 decision missed the tile-probe family")
     _run_tile_probe_5073(cpu)
     _add_reg16(cpu, 3, 0x000D)
     mem.ww(ss, (cpu.s.sp - 2) & 0xFFFF, 0xADBF)

@@ -32,3 +32,29 @@ class ObjectSlotRecord:
     @property
     def y(self) -> int:
         return i16(self.y_word)
+
+
+@dataclass(frozen=True, slots=True)
+class ObjectSpawnSeed:
+    """Pure field values stamped into a freshly allocated slot by 1010:8209.
+
+    Recovered from the straight-line MOV sequence at 8209..8247 that initialises
+    a new effect slot.  Most fields are constants; ``x_word``/``target_x_word``
+    and ``y_word``/``target_y_word`` come from the caller's source position.
+    ``field_28`` is the one slot field with no proven name yet (offset 0x28),
+    kept explicit so the seed stays byte-faithful to the original stamp.
+    """
+
+    active_word: int
+    gate_or_layer: int
+    x_word: int
+    y_word: int
+    direction_or_step: int
+    scan_flag: int
+    hazard_class: int
+    logic_id: int
+    counter_20: int
+    variant: int
+    target_x_word: int
+    target_y_word: int
+    field_28: int

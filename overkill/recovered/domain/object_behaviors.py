@@ -18,6 +18,50 @@ class ObjectDeactivateDispatchDecision:
     ax_script: int | None = None
 
 @dataclass(frozen=True, slots=True)
+class B73ETargetReachedResolution:
+    """Pure 4-way dispatch for B73E once an object is already at its target.
+
+    Recovered from the B7BD/B808 tail.  After the object reaches its waypoint and
+    the optional B800 formation spawn, B73E chooses how to continue from three
+    globals.  ``kind`` is one of:
+
+    - ``"reset_target_check_2324"``: low ``DS:A47E`` -> reset the target row with
+      the B7C7 ``DS:2324`` guard.
+    - ``"reset_target_direct"``: low ``DS:2340`` counter -> reset the target row
+      directly through B7CE.
+    - ``"postmove"``: ``DS:232E`` is not the ``003Fh`` sentinel -> join the shared
+      BC4B post-move tail.
+    - ``"waypoint_loop"``: otherwise -> enter the B82D waypoint-table loop.
+
+    Names the branch decision without owning the reset side effects, the BC4B
+    tail, or the waypoint loop body.
+    """
+
+    kind: str
+
+@dataclass(frozen=True, slots=True)
+class ObjectBoundsTileDecision:
+    """Pure classification for the recovered 1010:AD60 bounds/tile tail.
+
+    AD60 first tests the moved object against the play-field bounds, then decides
+    whether the object is eligible for the under-object tile probe.  ``kind`` is
+    one of:
+
+    - ``"deactivate"``: the object left the play-field box and AD60 routes it to
+      the BD17 deactivate tail.
+    - ``"skip"``: the object stayed in bounds but is not a tile-probing family
+      (wrong draw layer, non-probing logic id, or the BDAC probe-suppress flag),
+      so AD60 just returns.
+    - ``"tile_probe"``: an in-bounds probing family with BDAC clear, so AD60 runs
+      the 5073/505B tile probe tail.
+
+    This names the AD60 branch decision without owning the deactivate side
+    effects, the tile-probe sampling, or any DOS memory.
+    """
+
+    kind: str
+
+@dataclass(frozen=True, slots=True)
 class BossGroupSlotTransition:
     """Pure state update performed by the recovered C194 boss-part helper.
 

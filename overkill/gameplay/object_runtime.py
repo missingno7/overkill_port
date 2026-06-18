@@ -173,6 +173,7 @@ from overkill.gameplay.object_spawns import (
     _run_linked_effect_spawn_7420_observed,
     run_object_slot_allocate_or_reclaim_7547,
     run_object_spawn_anchor_offset_a571,
+    run_object_spawn_seed_8209,
     run_object_spawn_seed_a4ea,
     run_object_spawn_seed_from_source_a4d7,
 )

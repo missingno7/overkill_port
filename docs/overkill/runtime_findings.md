@@ -1,3 +1,52 @@
+## 2026-06-18 - Remaining interpreted-ASM wiring map (from L2 + L3 coverage)
+
+Full L2/L3 demo coverage runs put the game at **~95-96% hook-covered**, ~4-5%
+interpreted.  Disassembling the hot interpreted regions shows the whole picture of
+how OVERKILL gameplay is wired and exactly what is left.  The remaining interpreted
+ASM falls into four buckets:
+
+1. **Engine spine (native, do not touch):** the per-frame loop is
+   `97B2 -> 97C8 (main_frame_loop_body) -> {A90C present scan, 9B2E frame controller,
+   A940 state update, 60A2 status text, 0679 timer wait} -> jmp 97B2`.  Object work
+   is `AA10/AA2B` object scan -> `EFAE/EFC4` per-logic-id behavior dispatch ->
+   `BC45/BC4B` postmove/collision hub -> `A8xx/768E/75A6` layer-sprite present ->
+   `35CC` Tandy render.  Almost all of this is hooked; the interpreted cost at
+   `97C8` (~87-131k) is just the loop's own dispatch/compare overhead.  Collapsing
+   the loop to native is the last, riskiest step (Phase 6), so it stays interpreted.
+
+2. **Object-behavior bodies (the bulk of remaining gameplay interpreted; the Phase-1
+   lift queue):** a large *family* of per-`logic_id` handlers, all the same shape -
+   advance an animation frame (often an `XLAT` sprite table, e.g. `DS:96AA` at
+   `8654`), move (waypoint walk or step), optionally spawn via `7476`, then `jmp
+   BC45`.  They cluster in three address ranges:
+   - `8xxx`: `8654` (anim-frame helper), `8676`, `8697`, `88AA`, `89FF`,
+     `8C6D` (waypoint patrol), `87B5` - ~118k in L2.
+   - `Bxxx`: `B2CD` (waypoint path-follow, classified), `BB80`
+     (sprite/animate + `2330==57h` formation spawn, classified), `B35D`, `B556`,
+     `B701`.
+   - `Fxxx` (level-3 specific, via the `EFC4` dispatch): `F0EE`, `F185`, `F1F1` -
+     ~100k in L3 only (level-3 boss/enemy behaviors).
+   Lift these one `logic_id` at a time with the established adapter+oracle pattern;
+   each needs an oracle capture where that behavior runs.
+
+3. **Collision / contact tails (interpreted remnants of mostly-hooked collision):**
+   `BFC7-C12C` death tail (partially lifted, `C054` selector), `BE3C`, `BEA4`,
+   `BB03`.  The `9E19` post-contact side effect was just collapsed to native inside
+   the `B250` selector; these are the next collision frontier.
+
+4. **Sound driver (the longest pole; ~88% of all interpreted instructions):** the
+   loaded AdLib/OPL blob `2032:*` (the `0063-0167` channel sequencer, `0557-05A8`,
+   `02F6-0354` register-write loops) plus `1010:D50E-D65C` and the `06E5` timer ISR.
+   ~5M interpreted instrs in L2.  This is a separate track - "exact audio" means
+   reproducing its OPL register stream, not a per-`logic_id` lift - and should not
+   block the gameplay source port.
+
+Net: the gameplay source port is nearly complete in *coverage* terms; what remains
+is (a) a finite queue of structurally-identical object behaviors, (b) a few
+collision tails, (c) the frame-loop spine (last), and (d) the sound driver (separate
+long pole).  `symbols.json` now classifies `97C8`, `BB80`, and `B2CD` so the
+coverage dashboard reflects this instead of "unknown".
+
 ## 2026-06-17 - Loaded optional sound-driver segment classification
 
 A coverage surprise was the number of unhooked calls classified as `sound`.  They are not a scattered set of unrelated gameplay routines.  The unifying element is the runtime segment: `2032:*` is the loaded optional AdLib/Roland driver blob installed by the original startup path.
@@ -2225,6 +2274,16 @@ Absorbed several hot unknown/gameplay instructions without duplicating existing 
 - `1010:AE09 overkill_object_behavior_ae09` handles the observed logic-id `0Ch` timer/3-pixel movement behavior, then reuses the same shared `AD60` tail as `AED8`.
 
 The previous inline `AD60` implementation inside `AED8` was refactored into `_run_object_bounds_tile_tail_ad60` so new behaviors do not clone the same bounds/tile/deactivation logic.
+
+`AD60`'s gameplay branch decision was later lifted to the pure
+`overkill.recovered.systems.objects.object_bounds_tile_decision_ad60`
+(`deactivate` / `skip` / `tile_probe`).  The recovered play-field box is
+`X in [0008h, 00E0h]`, `Y <= 00C8h`; the tile-probing family is draw layer
+`0002h` with `logic_id in {0002,0004,000C,0005,0006,0009,0008}` and the `DS:BDAC`
+probe-suppress flag clear.  `_run_object_bounds_tile_tail_ad60` now replays the
+original CMP order and asserts agreement with that pure decision, so the branch
+choice is native source-port logic while the BD17 deactivate, 5073/505B probe,
+and ADC1 sub-deactivate remain ASM-exact side effects.
 
 Validation: `python scripts/run_tests.py` => `162 passed, 0 failed`; `python -m compileall -q dos_re overkill tests scripts`; live hook verifier samples were recorded for `AC81`, `AD04`, `AE09`, and `AED8` and added to `artifacts/hook_coverage_cache.json`.
 

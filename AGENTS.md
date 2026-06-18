@@ -439,6 +439,23 @@ python scripts/play.py --verify-hook 1010:ECF2 --verify-stop-on-diff
 python scripts/play.py --verify-hooks --verify-require-metadata
 ```
 
+Beyond per-hook checks, the standing whole-game proof is the demo-replay
+equivalence suite (`tests/test_demo_replay_equivalence.py`). It replays each
+recorded demo under `artifacts/demos/` into a reference runtime (original ASM,
+hooks stripped) and a candidate runtime (all native hooks) and asserts they stay
+identical on framebuffer + RGB + decoded semantic `GameSnapshot` every frame. This
+is the verification that must grow stronger as the VM is hollowed out, so collapse
+or chain-fusion work is trusted only when this stays green:
+
+```bash
+python -m pytest tests/test_demo_replay_equivalence.py -q            # bounded prefix
+OVERKILL_FULL_DEMO_VERIFY=1 python -m pytest tests/test_demo_replay_equivalence.py -q  # full demos
+```
+
+When adding gameplay coverage, prefer extending the demo corpus (record new demos
+with F11) and, when an address is proven, widening the `GameSnapshot` decoder so a
+divergence cannot hide in unmodeled state.
+
 ## Source-Port Islands
 
 As behavior becomes stable, move it out of `overkill/hooks.py` into established

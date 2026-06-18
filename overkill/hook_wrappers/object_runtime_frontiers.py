@@ -54,6 +54,7 @@ from ..gameplay.object_runtime import (
     run_object_postmove_prelude_bc45,
     run_object_slot_allocate_or_reclaim_7547,
     run_object_spawn_anchor_offset_a571,
+    run_object_spawn_seed_8209,
     run_object_spawn_seed_a4ea,
     run_object_spawn_seed_from_source_a4d7,
     run_object_target_chase_d281,
@@ -163,6 +164,23 @@ def overkill_object_spawn_anchor_offset_a571(cpu):
         _interpret_current_instruction_without_hook(cpu)
         return
     run_object_spawn_anchor_offset_a571(cpu)
+
+
+_SIG_OBJECT_SPAWN_SEED_8209 = bytes.fromhex(
+    "c7 47 28 ff ff c7 07 01 00 c7 47 0a 01 00 8b 46"
+    " 02 89 47 02 89 47 34 8b 46 04 89 47 04 89 47 32"
+    " c7 47 06 04 00 c7 47 14 01 00 c7 47 16 04 00 c7"
+    " 47 18 14 00 c7 47 20 04 00 c7 47 24 00 00 c3"
+)
+
+
+@registry.replace(0x1010, 0x8209, "overkill_object_spawn_seed_8209")
+def overkill_object_spawn_seed_8209(cpu):
+    """Shared object-slot spawn-stamp template reached from 81E9/81F4."""
+    if not _code_matches(cpu, 0x8209, _SIG_OBJECT_SPAWN_SEED_8209):
+        _interpret_current_instruction_without_hook(cpu)
+        return
+    run_object_spawn_seed_8209(cpu)
 
 
 @registry.replace(0x1010, 0xA5D1, "overkill_object_x_step_left_clamp_a5d1")

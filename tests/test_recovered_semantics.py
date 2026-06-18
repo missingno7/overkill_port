@@ -784,6 +784,187 @@ def test_recovered_c054_deactivate_dispatch_classification_is_pure_and_named():
     assert object_deactivate_dispatch_decision_c054(0x1234).kind == "none"
 
 
+def test_recovered_ad60_bounds_tile_decision_is_pure_and_named():
+    from overkill.recovered.systems.objects import (
+        OBJECT_BOUNDS_MAX_X,
+        OBJECT_BOUNDS_MAX_Y,
+        OBJECT_BOUNDS_MIN_X,
+        OBJECT_BOUNDS_TILE_PROBE_DRAW_LAYER,
+        OBJECT_BOUNDS_TILE_PROBE_LOGIC_IDS,
+        object_bounds_tile_decision_ad60,
+    )
+
+    in_bounds_x = (OBJECT_BOUNDS_MIN_X + OBJECT_BOUNDS_MAX_X) // 2
+    in_bounds_y = OBJECT_BOUNDS_MAX_Y - 1
+    probe_layer = OBJECT_BOUNDS_TILE_PROBE_DRAW_LAYER
+    probe_logic = OBJECT_BOUNDS_TILE_PROBE_LOGIC_IDS[0]
+
+    # Out-of-bounds families route to the deactivate tail on any failing edge.
+    assert object_bounds_tile_decision_ad60(
+        OBJECT_BOUNDS_MIN_X - 1, in_bounds_y, probe_layer, probe_logic, False
+    ).kind == "deactivate"
+    assert object_bounds_tile_decision_ad60(
+        OBJECT_BOUNDS_MAX_X + 1, in_bounds_y, probe_layer, probe_logic, False
+    ).kind == "deactivate"
+    assert object_bounds_tile_decision_ad60(
+        in_bounds_x, OBJECT_BOUNDS_MAX_Y + 1, probe_layer, probe_logic, False
+    ).kind == "deactivate"
+
+    # In-bounds but non-probing: wrong draw layer, non-probing logic id, or the
+    # BDAC probe-suppress flag all return without a tile probe.
+    assert object_bounds_tile_decision_ad60(
+        in_bounds_x, in_bounds_y, probe_layer + 1, probe_logic, False
+    ).kind == "skip"
+    assert object_bounds_tile_decision_ad60(
+        in_bounds_x, in_bounds_y, probe_layer, 0x9999, False
+    ).kind == "skip"
+    assert object_bounds_tile_decision_ad60(
+        in_bounds_x, in_bounds_y, probe_layer, probe_logic, True
+    ).kind == "skip"
+
+    # In-bounds probing family with BDAC clear runs the tile probe.
+    for logic_id in OBJECT_BOUNDS_TILE_PROBE_LOGIC_IDS:
+        assert object_bounds_tile_decision_ad60(
+            in_bounds_x, in_bounds_y, probe_layer, logic_id, False
+        ).kind == "tile_probe"
+
+    # Edges are inclusive on the in-bounds side (MIN_X and MAX_X stay in play).
+    assert object_bounds_tile_decision_ad60(
+        OBJECT_BOUNDS_MIN_X, in_bounds_y, probe_layer, probe_logic, False
+    ).kind == "tile_probe"
+    assert object_bounds_tile_decision_ad60(
+        OBJECT_BOUNDS_MAX_X, in_bounds_y, probe_layer, probe_logic, False
+    ).kind == "tile_probe"
+
+
+def test_recovered_ad60_bounds_tile_tail_adapter_matches_pure_decision():
+    from overkill.gameplay import object_bounds
+    from overkill.recovered.systems.objects import (
+        OBJECT_BOUNDS_MAX_X,
+        OBJECT_BOUNDS_MAX_Y,
+        OBJECT_BOUNDS_MIN_X,
+        OBJECT_BOUNDS_TILE_PROBE_DRAW_LAYER,
+        OBJECT_BOUNDS_TILE_PROBE_LOGIC_IDS,
+    )
+    from overkill.recovered.views.object_slots import OFF_DRAW_LAYER, OFF_LOGIC_ID, OFF_X, OFF_Y
+
+    def make_cpu(x, y, draw_layer, logic_id, bdac):
+        mem = Memory()
+        cpu = CPU8086(
+            mem,
+            CPUState(cs=0x1010, ds=0x2000, ss=0x3000, bp=0x0100, sp=0x8000, flags=0x0202),
+        )
+        mem.ww(0x3000, (0x0100 + OFF_X) & 0xFFFF, x)
+        mem.ww(0x3000, (0x0100 + OFF_Y) & 0xFFFF, y)
+        mem.ww(0x3000, (0x0100 + OFF_DRAW_LAYER) & 0xFFFF, draw_layer)
+        mem.ww(0x3000, (0x0100 + OFF_LOGIC_ID) & 0xFFFF, logic_id)
+        mem.ww(0x2000, 0xBDAC, bdac)
+        cpu.push(0x7777)
+        return cpu
+
+    in_x = (OBJECT_BOUNDS_MIN_X + OBJECT_BOUNDS_MAX_X) // 2
+    in_y = OBJECT_BOUNDS_MAX_Y - 1
+    layer = OBJECT_BOUNDS_TILE_PROBE_DRAW_LAYER
+    logic = OBJECT_BOUNDS_TILE_PROBE_LOGIC_IDS[0]
+
+    # The skip branches (in-bounds, non-probing) just return to the pushed IP and
+    # must agree with the pure decision without raising.
+    skip = make_cpu(in_x, in_y, layer + 1, logic, 0)
+    object_bounds._run_object_bounds_tile_tail_ad60(
+        skip, parent="test", chain="test", cx_value=0, add_a278_to_x=False
+    )
+    assert skip.s.ip == 0x7777
+
+    suppressed = make_cpu(in_x, in_y, layer, logic, 1)
+    object_bounds._run_object_bounds_tile_tail_ad60(
+        suppressed, parent="test", chain="test", cx_value=0, add_a278_to_x=False
+    )
+    assert suppressed.s.ip == 0x7777
+
+
+def test_recovered_b73e_idle_phase_rules_are_pure_and_named():
+    from overkill.recovered.systems.objects import (
+        B73E_IDLE_HIGH_Y_FRAME_BASE,
+        B73E_IDLE_LOW_Y_FRAME_BASE,
+        B73E_IDLE_LOW_Y_THRESHOLD,
+        B73E_SPAWN_WINDOW_MAX,
+        B73E_SPAWN_WINDOW_MIN,
+        b73e_idle_sprite_frame,
+        b73e_reaches_b808,
+    )
+
+    # High objects (above the Y line) count down from 007Fh.
+    assert b73e_idle_sprite_frame(0x0001, B73E_IDLE_LOW_Y_THRESHOLD - 1) == B73E_IDLE_LOW_Y_FRAME_BASE - 1
+    assert b73e_idle_sprite_frame(0x0000, 0x0000) == B73E_IDLE_LOW_Y_FRAME_BASE
+    # NEG/ADD wraps to 16 bits when the timer exceeds the base.
+    assert b73e_idle_sprite_frame(0x0080, 0x0000) == ((B73E_IDLE_LOW_Y_FRAME_BASE - 0x0080) & 0xFFFF)
+    # Low objects (at/below the Y line) count up from 007Ah.
+    assert b73e_idle_sprite_frame(0x0005, B73E_IDLE_LOW_Y_THRESHOLD) == B73E_IDLE_HIGH_Y_FRAME_BASE + 0x0005
+    assert b73e_idle_sprite_frame(0x0001, 0x00FF) == B73E_IDLE_HIGH_Y_FRAME_BASE + 0x0001
+
+    # Spawn window: inside [02BCh, 02D0h] the spawn block runs (does not reach
+    # B808); outside the band control reaches B808 and skips it.
+    assert b73e_reaches_b808(B73E_SPAWN_WINDOW_MIN - 1) is True
+    assert b73e_reaches_b808(B73E_SPAWN_WINDOW_MAX + 1) is True
+    assert b73e_reaches_b808(B73E_SPAWN_WINDOW_MIN) is False
+    assert b73e_reaches_b808(B73E_SPAWN_WINDOW_MAX) is False
+    assert b73e_reaches_b808((B73E_SPAWN_WINDOW_MIN + B73E_SPAWN_WINDOW_MAX) // 2) is False
+
+
+def test_recovered_b73e_target_reached_resolution_is_pure_and_named():
+    from overkill.recovered.systems.objects import (
+        B73E_TARGET_POSTMOVE_232E_SENTINEL,
+        B73E_TARGET_RESET_A47E_MAX,
+        B73E_TARGET_RESET_DIRECT_COUNTER_MAX,
+        b73e_target_reached_resolution,
+    )
+
+    high_a47e = B73E_TARGET_RESET_A47E_MAX + 1
+    high_counter = B73E_TARGET_RESET_DIRECT_COUNTER_MAX + 10
+
+    # Low A47E wins first regardless of the other globals.
+    assert b73e_target_reached_resolution(
+        B73E_TARGET_RESET_A47E_MAX, high_counter, 0x0000
+    ).kind == "reset_target_check_2324"
+    # Then a low DS:2340 counter.
+    assert b73e_target_reached_resolution(
+        high_a47e, B73E_TARGET_RESET_DIRECT_COUNTER_MAX - 1, 0x0000
+    ).kind == "reset_target_direct"
+    # Then DS:232E not at the sentinel -> shared post-move tail.
+    assert b73e_target_reached_resolution(
+        high_a47e, high_counter, B73E_TARGET_POSTMOVE_232E_SENTINEL + 1
+    ).kind == "postmove"
+    # Otherwise the waypoint-table loop.
+    assert b73e_target_reached_resolution(
+        high_a47e, high_counter, B73E_TARGET_POSTMOVE_232E_SENTINEL
+    ).kind == "waypoint_loop"
+
+
+def test_recovered_b86d_common_path_rules_are_pure_and_named():
+    from overkill.recovered.systems.objects import (
+        B86D_FORMATION_SPAWN_TICKS,
+        B86D_OUTGOING_SPRITE_FALLING,
+        B86D_OUTGOING_SPRITE_RISING,
+        B86D_VERTICAL_DELTA_RISING,
+        b86d_formation_spawn_tick_index,
+        b86d_outgoing_sprite_for_delta,
+    )
+
+    # Formation spawn fires only on the three exact counter ticks.
+    assert b86d_formation_spawn_tick_index(B86D_FORMATION_SPAWN_TICKS[0]) == 0
+    assert b86d_formation_spawn_tick_index(B86D_FORMATION_SPAWN_TICKS[1]) == 1
+    assert b86d_formation_spawn_tick_index(B86D_FORMATION_SPAWN_TICKS[2]) == 2
+    assert b86d_formation_spawn_tick_index(0x00CB) is None
+    assert b86d_formation_spawn_tick_index(B86D_FORMATION_SPAWN_TICKS[0] - 1) is None
+    assert b86d_formation_spawn_tick_index(B86D_FORMATION_SPAWN_TICKS[0] + 1) is None
+
+    # Outgoing sprite: only the FFFFh (one-pixel-up) delta keeps the rising sprite.
+    assert b86d_outgoing_sprite_for_delta(B86D_VERTICAL_DELTA_RISING) == B86D_OUTGOING_SPRITE_RISING
+    assert b86d_outgoing_sprite_for_delta(0x0000) == B86D_OUTGOING_SPRITE_FALLING
+    assert b86d_outgoing_sprite_for_delta(0x0001) == B86D_OUTGOING_SPRITE_FALLING
+    assert b86d_outgoing_sprite_for_delta(0xFFFE) == B86D_OUTGOING_SPRITE_FALLING
+
+
 def test_recovered_aa46_view_window_projection_reuses_8331_adapter():
     from dos_re.cpu import CF
     from overkill.recovered.adapters.collision_adapter import (

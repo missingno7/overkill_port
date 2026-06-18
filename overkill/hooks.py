@@ -144,6 +144,8 @@ from .rendering.tandy import (
     small_strided_copy_34d8 as run_tandy_small_strided_copy_34d8,
     source_strided_copy_35aa as run_tandy_source_strided_copy_35aa,
     split_present_copy_34ad as run_tandy_split_present_copy_34ad,
+    sprite_blit_9x16_477e as run_tandy_sprite_blit_9x16_477e,
+    linear_rows_to_work_buffer_41da as run_tandy_linear_rows_to_work_buffer_41da,
     strided_copy_34c5 as run_tandy_strided_copy_34c5,
     tiny_strided_copy_3542 as run_tandy_tiny_strided_copy_3542,
 )
@@ -247,6 +249,7 @@ from .gameplay.object_runtime import (
     _find_free_effect_slot_7524,
     _find_free_object_slot_7573,
     run_object_slot_allocate_or_reclaim_7547,
+    run_object_spawn_seed_8209,
     run_object_spawn_seed_a4ea,
     run_object_spawn_seed_from_source_a4d7,
     run_object_spawn_anchor_offset_a571,
@@ -1001,149 +1004,20 @@ def overkill_blit_scaled_column_block_497a(cpu):
 def overkill_linear_rows_to_work_buffer_41da(cpu):
     """Replace 1010:41DA row-copy routine selected by the 5A5A table.
 
-    Direct transliteration of 41DA..41F4.  The current captured startup call has
-    both header words zero, which is exactly the kind of 8086 edge case that is
-    slow in the interpreter: LOOP with CX=0000 performs 65,536 iterations.  The
-    hook preserves that behavior instead of treating zero as zero iterations.
+    Thin boundary wrapper; the body lives in
+    :func:`overkill.rendering.tandy.linear_rows_to_work_buffer_41da`.
     """
-    cs = cpu.s.cs & 0xFFFF
-    cpu.s.es = cpu.mem.rw(cs, 0x9598)
-    # LODSW; MOV CX,AX
-    cpu.s.ax = cpu.mem.rw(cpu.s.ds, cpu.s.si)
-    cpu.s.si = (cpu.s.si + (-2 if cpu.get_flag(DF) else 2)) & 0xFFFF
-    cpu.s.cx = cpu.s.ax & 0xFFFF
-    # LODSW; SHL AX,1; MOV BP,AX
-    cpu.s.ax = cpu.mem.rw(cpu.s.ds, cpu.s.si)
-    cpu.s.si = (cpu.s.si + (-2 if cpu.get_flag(DF) else 2)) & 0xFFFF
-    cpu.s.ax = cpu.shift(4, cpu.s.ax, 1, 16)
-    cpu.s.bp = cpu.s.ax & 0xFFFF
-
-    # LOOP executes 65,536 times when the input count word is zero.
-    iterations = cpu.s.cx if cpu.s.cx != 0 else 0x10000
-
-    if cpu.s.bp != 0 and iterations * (cpu.s.bp & 0xFFFF) > 10_000_000:
-        raise RuntimeError(
-            f"suspicious 41DA row copy header: rows={iterations} width_bytes={cpu.s.bp:04X} "
-            f"DS:SI={cpu.s.ds:04X}:{(cpu.s.si - 4) & 0xFFFF:04X} DI={cpu.s.di:04X}"
-        )
-
-    if cpu.s.bp == 0:
-        # Hot startup edge case: zero-width rows.  The original still performs
-        # every LOOP iteration, but each row only does SUB DI,0 and ADD DI,50h.
-        # Collapse it while preserving the final ADD flags from the last row.
-        start_di = cpu.s.di & 0xFFFF
-        if iterations:
-            last_old_di = (start_di + (0x50 * (iterations - 1))) & 0xFFFF
-            final_di_full = last_old_di + 0x50
-            cpu.s.di = final_di_full & 0xFFFF
-            cpu.set_add_flags(last_old_di, 0x50, final_di_full, 16)
-            # The collapsed loop still has one observable memory side-effect:
-            # PUSH CX writes to SS:SP-2 every row and POP restores SP.  The
-            # last iteration always pushes 0001h before LOOP consumes it.
-            cpu.mem.ww(cpu.s.ss, (cpu.s.sp - 2) & 0xFFFF, 0x0001)
-        cpu.s.cx = 0
-        cpu.s.ip = cpu.pop()
-        return
-
-    for _ in range(iterations):
-        cpu.push(cpu.s.cx)
-        cpu.s.cx = cpu.s.bp & 0xFFFF
-        _rep_movsb(cpu, cpu.s.cx)
-        _sub_reg16(cpu, 7, cpu.s.bp)
-        _add_reg16(cpu, 7, 0x0050)
-        cpu.s.cx = cpu.pop()
-        cpu.s.cx = (cpu.s.cx - 1) & 0xFFFF  # LOOP, no flags
-    cpu.s.ip = cpu.pop()
+    run_tandy_linear_rows_to_work_buffer_41da(cpu)
 
 
 @registry.replace(0x1010, 0x477E, "overkill_sprite_blit_9x16_477e")
 def overkill_sprite_blit_9x16_477e(cpu):
     """Replace the fully-unrolled fixed-geometry sprite blit at 1010:477E.
 
-    Evidence: profiling the asset-heavy loading path shows this is the single
-    dominant routine (hundreds of thousands of interpreted MOVSW per load,
-    clustered around 1010:477E..480D and reached from the 5A36/4740 table
-    dispatcher).  The original code is straight-line, not a loop: it copies a
-    fixed 9-byte-wide by 16-row sprite from DS:SI into a packed ES:DI buffer.
-    Disassembly of 477E..480D:
-
-        477E  mov es, cs:[9596]          ; dest segment
-        4783  mov ds, cs:[9598]          ; source segment
-        per row (x16):
-            movsw; movsw; movsw; movsw; movsb   ; copy 9 bytes, SI+=9, DI+=9
-            add si, 002Bh                       ; skip 43 -> source row stride 52
-        4808  mov ds, cs:[9596]          ; restore DS = dest segment
-        480D  ret near
-
-    Side effects preserved exactly (verified against interpreted ASM on
-    artifacts/evidence/snapshot_stop_477e_probe, exit state SI+=0x340, DI+=0x90,
-    DS=ES=cs:[9596], FLAGS=0212):
-      * ES = cs:[9596], DS = cs:[9596] on exit
-      * SI += 16*0x34 = 0x340, DI += 16*0x09 = 0x90
-      * 144 bytes copied (16 rows x 9 bytes), source stride 52, dest packed
-      * FLAGS = result of the final `add si,0x2B` (the only flag-affecting op;
-        MOVS leaves FLAGS untouched)
-      * near RET to the caller
-
-    MOVS honours DF; the unrolled body only ever runs forward (DF=0) in the
-    captured oracle.  DF=1 takes a faithful per-instruction fallback so the hook
-    can never silently diverge from the original word/byte ordering.  Source and
-    destination always live in distinct segments (e.g. 35FF vs 25CC), so the
-    forward slice copy can never alias the destination it is reading from.
+    Thin boundary wrapper; the Tandy sprite-blit body lives in
+    :func:`overkill.rendering.tandy.sprite_blit_9x16_477e`.
     """
-    cs = cpu.s.cs & 0xFFFF
-    mem = cpu.mem
-    es_seg = mem.rw(cs, 0x9596)   # 477E: mov es, cs:[9596]
-    ds_seg = mem.rw(cs, 0x9598)   # 4783: mov ds, cs:[9598]
-    cpu.s.es = es_seg
-    cpu.s.ds = ds_seg
-
-    si = cpu.s.si & 0xFFFF
-    di = cpu.s.di & 0xFFFF
-    data = mem.data
-    mlen = len(data)
-    old_si = si
-
-    if not cpu.get_flag(DF):
-        for _row in range(16):
-            # movsw x4 + movsb == 9 forward byte copies; SI+=9, DI+=9.
-            if si + 9 <= 0x10000 and di + 9 <= 0x10000:
-                src = ((ds_seg << 4) + si) & 0xFFFFF
-                dst = ((es_seg << 4) + di) & 0xFFFFF
-                if src + 9 <= mlen and dst + 9 <= mlen:
-                    data[dst:dst + 9] = data[src:src + 9]
-                    si = (si + 9) & 0xFFFF
-                    di = (di + 9) & 0xFFFF
-                else:  # physical-edge wrap: stay byte-exact
-                    for _ in range(9):
-                        mem.wb(es_seg, di, mem.rb(ds_seg, si))
-                        si = (si + 1) & 0xFFFF
-                        di = (di + 1) & 0xFFFF
-            else:  # 16-bit offset wrap inside the row: stay byte-exact
-                for _ in range(9):
-                    mem.wb(es_seg, di, mem.rb(ds_seg, si))
-                    si = (si + 1) & 0xFFFF
-                    di = (di + 1) & 0xFFFF
-            old_si = si
-            si = (si + 0x2B) & 0xFFFF   # add si,002Bh
-    else:
-        # DF=1 fallback: reproduce the exact MOVSW/MOVSB word/byte ordering.
-        for _row in range(16):
-            for _ in range(4):  # movsw x4
-                mem.ww(es_seg, di, mem.rw(ds_seg, si))
-                si = (si - 2) & 0xFFFF
-                di = (di - 2) & 0xFFFF
-            mem.wb(es_seg, di, mem.rb(ds_seg, si))  # movsb
-            si = (si - 1) & 0xFFFF
-            di = (di - 1) & 0xFFFF
-            old_si = si
-            si = (si + 0x2B) & 0xFFFF   # add si,002Bh (unaffected by DF)
-
-    cpu.set_add_flags(old_si, 0x2B, old_si + 0x2B, 16)
-    cpu.s.si = si
-    cpu.s.di = di
-    cpu.s.ds = es_seg   # 4808: mov ds, cs:[9596]
-    cpu.s.ip = cpu.pop()  # 480D: ret near
+    run_tandy_sprite_blit_9x16_477e(cpu)
 
 
 @registry.replace(0x1010, 0x38B7, "overkill_masked_sprite_composite_38b7")

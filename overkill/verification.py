@@ -347,6 +347,7 @@ DEFAULT_STOPS: dict[Addr, HookStop] = {
     (0x1010, 0x3657): HookStop("near_ret"),
     (0x1010, 0x7524): HookStop("near_ret"),
     (0x1010, 0x7573): HookStop("near_ret"),
+    (0x1010, 0x8209): HookStop("near_ret"),
     (0x1010, 0x7547): HookStop("near_ret_or_fixed_ip", 0x7550),
     (0x1010, 0xA4EA): HookStop("near_ret_or_fixed_ip", 0x7550),
     (0x1010, 0xA4D7): HookStop("near_ret_or_fixed_ip", 0x7550),

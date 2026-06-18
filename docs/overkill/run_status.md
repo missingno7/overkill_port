@@ -1,3 +1,453 @@
+## 2026-06-18 - Phase 1 lift: B73E target-reached 4-way resolution
+
+Lifted the B73E `B7BD/B808` target-reached dispatch (reached once an object is at
+its waypoint and past the optional B800 spawn) into the pure
+`b73e_target_reached_resolution(a47e, game_counter, value_232e)`
+-> `B73ETargetReachedResolution` (`reset_target_check_2324` / `reset_target_direct`
+/ `postmove` / `waypoint_loop`).  `_run_object_behavior_b73e` now classifies once
+and asserts agreement while replaying the original CMP order at each branch.
+
+Verified by the six `b73e` oracle tests (full-state + full-memory vs interpreted
+ASM), a new pure unit test, and the demo-replay equivalence suite (L1/L2/L3 all
+native == VM).  This is the first lift proven by the new whole-game proof spine in
+addition to the per-hook oracles.
+
+## 2026-06-18 - Whole-picture map of the remaining interpreted ASM
+
+Used fresh L2 + L3 coverage dumps (95-96% hook-covered) to map every hot
+interpreted region by disassembly, so we know exactly how the game is wired and
+what is left.  Findings written up in `runtime_findings.md` ("Remaining
+interpreted-ASM wiring map").  Summary: the engine spine is native; the remaining
+gameplay interpreted is a finite queue of structurally-identical object-behavior
+bodies (`8xxx`/`Bxxx`/`Fxxx`, all: animate via XLAT sprite table -> move -> maybe
+spawn 7476 -> jmp BC45), plus a few collision tails (`BFC7`/`BE3C`/`BEA4`/`BB03`),
+plus the frame-loop spine `97C8` (Phase 6, last), plus the sound driver `2032:*`
+(~88% of interpreted - the separate OPL long pole).
+
+Disassembled and classified in `symbols.json` (so coverage stops calling them
+"unknown"):
+- `1010:97C8 main_frame_loop_body_97c8` - the 97B2 per-frame loop body.
+- `1010:BB80 object_behavior_sprite_spawn_bb80` - sprite/animate + 2330==57h
+  formation-spawn behavior (hot in both L2 and L3).
+- (`1010:B2CD` waypoint behavior was classified in the prior note.)
+
+Also confirmed the `9E19` collapse landed: in L3 the `B297` region dropped from a
+hot 9E19 loop to ~9.6k (now classified `gameplay_objects`); the remaining L2
+`B297-B32A` mass is the separate `B2CD` waypoint behavior.
+
+No behavior change this pass (disassembly + classification + docs only).
+
+## 2026-06-18 - Demo corpus expanded to 8; full-weapon showcase verified clean
+
+The corpus is now 8 demos (L1-L5 + the all-weapons attract showcase), all passing
+the bounded native-vs-VM demo-replay equivalence suite.  The
+`demo_play_tandy_showcase_*` attract demo (input-free, cycles every weapon and
+ship upgrade) ran the divergence hunt to 4000 frames with **zero divergence** -
+the strongest equivalence signal so far, independently confirming the ringlas fix
+and that no other weapon has a similar lifecycle/deactivation bug.
+
+```text
+python -m pytest tests/test_demo_replay_equivalence.py -q   # 8 bounded passed, 8 full skipped
+python scripts/find_demo_divergence.py <showcase demo> 4000  # rc=0, no divergence to frame 4000
+```
+
+Open frontier (unchanged): a post-input divergence ~1370 frames past the ringlas
+demo's recorded end (score delta + `logic_id 0x3B` effect slot) - not reproduced
+by the showcase, so it is a narrow post-demo edge case, not a general weapon bug.
+
+## 2026-06-18 - BUGFIX: ringlas (logic_id 9) deactivation cleared the whole list
+
+User-reported: the ringlas (last weapon) misbehaved in heavy L5 play and the game
+crashed (`UnsupportedInstruction` at a mid-instruction address - corrupted control
+flow, not a missing opcode).  Root-caused with the demo-replay divergence hunt on
+the user's short repro demo (`demo_play_tandy_L5_ringlas_divergence_*`):
+
+- First native-vs-VM divergence at frame 70: ~20 `logic_id 9` objects (the ringlas
+  projectile column) that the original deactivates but our hooks kept `active=1`.
+  Those stale slots accumulated, corrupted memory, and ~frames later caused a bad
+  jump -> crash.
+- Traced the original deactivation: object scan -> `EFAE` (logic dispatch) ->
+  `ADEF` (`jmp AD60`) -> out-of-bounds -> `BD17`.  `BD17` dispatches on `logic_id`,
+  and **`logic_id 9` jumps to `BD7A`**, which clears the WHOLE projectile list
+  (the `BD82` loop: walk the FFFF-terminated `DS:A3B4` pointer list, set each
+  listed object's `active=0`, drain `DS:A972`).
+- Our `_run_deactivate_bd17_observed` mis-modeled `logic_id 9` as a single
+  `A972--` decrement (same as its sibling counter ids `7/8/6/5/C`, which really
+  ARE single decrements - confirmed via `BDAC/BDB8/BDC4`).  Only `9` is the
+  clear-loop.
+
+Fix (`overkill/gameplay/object_deactivation.py`): special-case `logic_id 9` to
+replay the `BD7A/BD82` clear loop (deactivate every `DS:A3B4` entry, drain
+`DS:A972`) instead of a single decrement.  L1-L4 never hit it because ringlas is
+the L5 weapon.
+
+Verification:
+
+```text
+python -m pytest tests/test_overkill_hooks.py -q -k "b24d or b86d or aed8 or bd17"   # pass (AD60->BD17 oracle)
+python scripts/find_demo_divergence.py <ringlas demo>   # frame-70 divergence gone; clean through the whole recorded demo
+python -m pytest tests/test_demo_replay_equivalence.py -q -k ringlas   # passed (now a regression guard)
+```
+
+New tooling from the hunt: `scripts/capture_demo_snapshot.py` (capture an oracle
+snapshot at any CS:IP during demo replay) and `scripts/find_demo_divergence.py`
+(replay a demo native-vs-VM and stop at the first diverging frame/field).
+
+Follow-up (separate, lower priority): ~1370 frames PAST the recorded demo's end
+(post-input auto-play) a different divergence appears - a score delta and a
+`logic_id 0x3B` effect-slot state difference.  Not the ringlas bug; logged as a
+frontier.
+
+## 2026-06-18 - Phase 2 collapse: native 9E19 in the B250 contact loop
+
+Acted on a coverage telemetry dump from a full L2 demo run (94.9% hook-covered,
+5.0% interpreted).  Investigated the hottest *gameplay* interpreted region,
+`1010:B297-B32A` (145,662 hits, mislabelled "unknown"), via disassembly and found
+it is two distinct things:
+
+- `B281-B2A0` is the tail of the already-lifted `B250` overlap/contact selector -
+  the `B297` loop that does `PUSH CX/BP; CALL 9E19; LOOP` (up to 5x).  But `9E19`
+  was run as **interpreted** ASM via an injected near-call ("verifier-visible
+  boundary"), even though a verified native helper
+  `run_post_contact_status_helper_9e19` already exists.
+- `B2CD` is a *separate* unhooked behavior (see the next note).
+
+Phase-2 collapse: the selector now calls the native `9E19` helper instead of
+interpreting it.  `run_overlap_contact_selector_b250` takes a
+`post_contact_side_effect(cpu)` callable (was `near_call`); the `_run_b250_overlap_contact_selector`
+shim binds it to `run_post_contact_status_helper_9e19` (with `_no_patch_guard`,
+since 9E19 is static), pushing `B29C` so the helper's near-ret lands back in the
+loop exactly like the original `CALL 9E19`.  The hot `B297` loop is now native.
+
+This was safe to collapse precisely because the demo-replay proof spine exists:
+per-hook 9E19 visibility is traded for whole-frame/state equivalence.
+
+Verification:
+
+```text
+python -m pytest tests/test_overkill_hooks.py -q -k "aed8 or b24d or 9e19"   # 3 passed (vs interpreted ASM)
+python scripts/audit_architecture.py / audit_hook_oracle.py                  # pass
+python -m pytest tests/test_demo_replay_equivalence.py -q                    # 3 passed (L1/L2/L3 native == VM)
+```
+
+Re-run the user's `play.py --demo ... ` coverage command to see the `9E19`
+interpreted hits drop.  (`61DC`/`511F` display children inside 9E19 stay bounded
+for now.)
+
+## 2026-06-18 - Structure: hook_boundary purity + source-port status dashboard
+
+Whole-project structure pass (no behavior change).  Two parts:
+
+1. Added `scripts/source_port_status.py` - a read-only dashboard of the ASM->source
+   migration.  It reuses the enforced `audit_architecture.layer_of` map and reports
+   per-layer line mass + `cpu`/`mem` density, the headline "% of game-logic mass
+   that is pure source" (currently ~10%), the pure-rule count (44), registered hook
+   count (336), and flags oversized hook_boundary files.  Wired into `ARCHITECTURE.md`
+   as the "run this before deciding what to clean next" tool.
+
+2. Started restoring `hook_boundary` purity: the documented rule is that
+   `overkill/hooks.py` is thin `@registry.replace` glue with no render logic, but it
+   held several large inline Tandy blits.  Moved `1010:477E` (9x16 sprite blit) and
+   `1010:41DA` (linear row copy) bodies into `overkill/rendering/tandy.py` behind
+   thin wrappers (the EGA renderer's existing pattern).  All the 8086 helpers those
+   bodies need are already local to `tandy.py`, so the moves needed no new plumbing.
+
+Effect: `hooks.py` 4244 -> 4117 lines; hook_boundary `cpu`/`mem` refs 913 -> 831.
+
+Verification:
+
+```text
+python scripts/lint.py / audit_architecture.py / audit_hook_oracle.py   # all pass
+python -m pytest tests/test_overkill_hooks.py -k "477e or 41da" -q      # 2 passed (byte-exact vs ASM)
+python -m pytest tests/test_demo_replay_equivalence.py -q               # 3 passed (L1/L2/L3 native == VM)
+```
+
+Remaining inline blits in `hooks.py` to move next (same pattern): `497A`, `38B7`,
+`3849`, `41A6`, plus `447B`/presence-stamp/dirty-cell presenter.  `497A` also uses
+the `SF` flag and a couple of helpers - confirm they're available in `tandy.py`
+before moving it.
+
+## 2026-06-18 - State ownership: lift the 1010:8209 object-slot spawn template
+
+First "vertical slice by state ownership" toward live source recreation.  Used the
+world-write tracer over the L1 gameplay demo to find, per object/global field, the
+exact set of routines that write it and which are already native hooks.  Result:
+4 fields are already fully native-owned, and a single un-lifted routine -
+`1010:8209` - was the lone remaining ASM writer for ~11 core object-record fields.
+
+Lifted `1010:8209`, the shared object-slot spawn-stamp template (reached from the
+`81E9`/`81F4` allocate-then-stamp siblings):
+
+- Pure `recovered.systems.objects.object_spawn_seed_8209(source_x, source_y)` ->
+  `ObjectSpawnSeed` (domain record): an active `logic_id=0014h` object at the
+  caller's source X/Y, position+target both set to the source, with the constant
+  fields (direction=4, hazard=4, scan=1, gate=1, counter_20=4, variant=0) and the
+  unnamed `+0x28` field cleared to `FFFFh`.
+- Hook `overkill_object_spawn_seed_8209` (`gameplay/object_spawns.py` +
+  `hook_wrappers/object_runtime_frontiers.py`) owns the DOS slot pointer (BX) and
+  write order, leaves `AX` = source Y, and near-returns; guarded by a byte
+  signature like the other spawn templates.
+
+Verification:
+
+```text
+python -m pytest tests/test_overkill_hooks.py::test_object_spawn_seed_8209_matches_interpreted_asm -q
+# 1 passed (byte-exact vs interpreted ASM, full memory + state)
+
+python scripts/audit_hook_oracle.py   # 336 hooks / 336 metadata
+python scripts/audit_recovered_layers.py / lint.py   # 17 pure files / 145 files
+
+python -m pytest tests/test_demo_replay_equivalence.py -q
+# 3 passed (L1/L2/L3 native == VM with the 8209 hook live)
+```
+
+Confirmed live: the hook fired 16 times during the L1 wave with whole-game
+equivalence holding, so the spawn template is genuinely running native source in
+the live game, not a dead hook.  Those ~11 object fields now have their spawn-path
+writer in native Python - measurable progress toward a native object model.
+
+Method note (reusable): "live source" progress is now tracked by the world-write
+tracer (`scripts/trace_world_writes.py`) - a field becomes recreated source once
+every routine that writes it is a native hook.  Next ownership targets from the
+same map: the `1F8F:038E..03A0` overlay spawn/init cluster (writes target_x/y,
+logic_id, substate, a47e) and `1010:5033` (camera_or_view globals).
+
+## 2026-06-18 - Demo corpus: L1 enemy-wave -> level-start transition
+
+Added `demo_play_tandy_L1_start_20260618_143947` (sound=adlib, 140 events,
+`end_boundary=870`): the level-1 enemy-wave intro playing through into the start
+of the actual level phase.  Auto-discovered by `tests/test_demo_replay_equivalence.py`.
+
+Equivalence holds across the whole transition: native (hooked) == VM oracle on
+framebuffer + RGB + semantic state for all 870 frames (full run ~38s), and the
+bounded CI prefix (150 frames) already covers the wave->level boundary at ~frame 138.
+
+Transition evidence (candidate-runtime DS scan over the demo, step-function words
+= state that changes once and settles): the enemy-wave is a consumed table in
+roughly `DS:2404..24EC` (record stride ~18h, entries `0020h->0001h`/`0004h->0000h`
+draining across frames 74..140); several globals settle at the wave->level
+boundary near frame 138 (`DS:2308 0003h->0002h`, the `DS:2376/2378/2379` spawn
+publish, `DS:240C`), with a later sub-event at frame 316 (`DS:230C/230E 0->1`).
+These are candidate-only; none is yet a proven, named "level phase" global.
+
+Two coverage gaps this demo exposes (the proof is not yet total here):
+- The semantic `GameSnapshot` does **not** model wave/level-phase state, so for
+  this transition the semantic half currently leans on the vram+RGB comparison.
+  Widening it needs RE to interpret the step-words above into a named global.
+- **Audio is not verified at all.**  The "different music" at the transition rides
+  on the AdLib/OPL register stream, which the frame verifier does not compare; a
+  music-only divergence would pass today unless it perturbs snapshot/vram state.
+  This is the plan's known longest pole (exact audio == matching the OPL stream).
+
+## 2026-06-18 - Proof spine: automated demo-replay native-vs-VM equivalence test
+
+Stood up the plan's "deterministic demo-replay equivalence" harness as a standing
+regression test (`tests/test_demo_replay_equivalence.py`).  This is the proof-spine
+keystone: instead of only per-hook oracle checks, it continuously proves the *whole
+live hooked game* still matches the original 8086 ASM over real gameplay.
+
+How it works (reuses existing machinery, no new RE):
+
+- For each recorded demo under `artifacts/demos/`, it loads the demo's start
+  snapshot into two runtimes and replays the same inputs into both via
+  `InputDemoPlayback.apply_to_runtimes`.
+- `overkill.frame_verify.run_frame_verifier` makes the **reference** strip every
+  replacement hook except the timer/retrace environment waits (so it interprets
+  the original ASM) while the **candidate** keeps all native Python hooks.
+- Each frame boundary it asserts the two runtimes are identical on the visible
+  framebuffer, the rendered RGB pixels, *and* the decoded semantic `GameSnapshot`
+  (objects/positions/flags/timers/score).  `source="both"` + `semantic_state_check`.
+
+Scope/cost:
+
+- Default: a bounded 150-frame prefix of each demo (`OVERKILL_DEMO_VERIFY_FRAMES`
+  overrides), ~7s/demo.  L2 + L3 currently pass (`2 passed`).
+- Opt-in full-length replay to each demo's recorded `end_boundary` via
+  `OVERKILL_FULL_DEMO_VERIFY=1` (minutes/demo; use pytest, not the fail-safe runner).
+- One zero-arg test is generated per demo so both pytest and
+  `scripts/run_tests.py` discover and run them individually.
+
+Verified as a real assertion: a negative-control run that injects an artificial
+semantic divergence at frame 25 makes `run_frame_verifier` return non-zero and the
+test fail, with a field-level divergence report.
+
+Why this matters for the source port: this is the verification that must get
+*stronger* as the VM gets weaker.  It lets Phase 2 (collapse understood hook
+chains) proceed safely - we trade per-hook CS:IP granularity for whole-frame/state
+equivalence over the demo corpus.  Next: grow the demo corpus (more levels,
+bosses, spawn types, RNG paths) and, when addresses are known, widen the
+`GameSnapshot` to RNG/lives/level-wave so the semantic half of the proof is total.
+
+Validation:
+
+```text
+python -m pytest tests/test_demo_replay_equivalence.py -q
+# 2 passed, 2 skipped (full-length opt-in)   ~15s
+
+python scripts/run_tests.py tests/test_demo_replay_equivalence.py
+# 4 passed (fail-safe runner; full tests early-return without OVERKILL_FULL_DEMO_VERIFY)
+```
+
+## 2026-06-18 - Phase 1 lift: B86D formation-spawn schedule + outgoing-sprite rules
+
+Continued the DS:2340 formation-counter unification into `1010:B86D`.  Its common
+path (reached past the B8F8 edge-steer and A7A0 guards) held two pure rules inline:
+
+- `b86d_formation_spawn_tick_index(game_counter)` - the exact-tick formation-spawn
+  schedule (`02EFh`/`0159h`/`0079h` -> variant 0/1/2, else no spawn).  This is the
+  same DS:2340 global counter that B73E gates on, now a named source-level rule.
+- `b86d_outgoing_sprite_for_delta(vertical_delta)` - outgoing sprite from the sign
+  of the global vertical delta DS:2342 (`FFFFh` -> rising `0075h`, else falling
+  `0076h`).
+
+`_run_object_behavior_b86d` now calls both pure rules and asserts agreement,
+keeping the chained CMP/JE order, the NEG/CMP, and the 7476 continuation
+addresses (adapter glue) oracle-exact.
+
+The lifted common path is exercised by the existing
+`snapshot_stop_1010_b8b0_behavior` oracle (gc=`00CBh` non-trigger, delta=`0001h`
+falling), so the change is covered by ASM equivalence, not just the pure unit test.
+
+Validation:
+
+```text
+python -m pytest tests/test_overkill_hooks.py -q -k b86d
+# 2 passed (b8b0 snapshot drives the lifted 439-464 path vs interpreted ASM)
+
+python -m pytest tests/test_recovered_semantics.py tests/test_architecture_layers.py -q
+# 37 passed (adds the B86D common-path pure-rule test)
+
+python scripts/audit_recovered_layers.py   # 17 pure files
+python scripts/lint.py                      # 145 files
+python scripts/audit_hook_oracle.py         # 335 hooks / 335 metadata
+```
+
+Pre-existing/unrelated: two `bfc7` oracle tests error on a missing artifact
+(`artifacts/snapshot_play_tandy_20260614_191454`), an environment gap, not a
+behavior regression.
+
+DS:2340 unification status: B73E (band gate) and B86D (exact-tick schedule) now
+both express their formation-counter decisions as pure named rules.  The
+remaining DS:2340 consumer is `B9F0`, still blocked on having no oracle test.
+
+## 2026-06-18 - Phase 1 lift: B73E idle-phase rules become pure systems
+
+Continued the Phase 1 sweep into `1010:B73E`, the substate/idle object behavior.
+Two genuinely-pure gameplay rules were tangled inline among the CPU arithmetic on
+the no-substate (`FFFFh`) idle path; both are now named pure functions while B73E
+keeps its oracle-exact flags.
+
+Implemented:
+
+- `overkill/recovered/systems/objects.py`:
+  - `b73e_idle_sprite_frame(timer, y)` - the DS:2338 timer -> animation-frame
+    formula (high objects above the `0060h` Y line count down from `007Fh`, low
+    objects count up from `007Ah`), with named constants.
+  - `b73e_reaches_b808(game_counter)` - the DS:2340 spawn-window gate: inside the
+    `[02BCh, 02D0h]` band the B800 formation spawn-pointer advance runs, otherwise
+    control reaches B808 and skips it.
+- `overkill/gameplay/object_behaviors.py`: `_run_object_behavior_b73e` now calls
+  both pure rules and asserts agreement, keeping the inline NEG/ADD and the
+  two-step compare order so 8086 flags still match the oracle.
+
+Unification: B73E's `B82D` waypoint loop re-implemented the exact same
+`[02BCh, 02D0h]` spawn-window band check as the non-loop path.  That duplicate is
+now routed through the single shared `b73e_reaches_b808`, so the one gameplay rule
+has one source-of-truth (the existing `b73e` B82D-loop oracle test covers it).
+
+The substate jump table at CS:B74E (the `B754`/`B770`/`B77B` arm dispatch) is
+deliberately left inline; it is CS-data-table-driven and belongs to the Phase 3
+data-decode pass, not a pure-rule lift.
+
+Frontier note: `1010:B9F0` gates formation spawns on the same DS:2340 counter but
+with exact-tick triggers (`02EFh`/`0159h`/`0079h`).  Unifying that into a pure
+formation-spawn-schedule rule is the natural next step, but B9F0 has **no oracle
+test yet**, so its logic must not be refactored until a B9F0 ASM-equivalence
+snapshot/test exists (build that first, then lift).
+
+Validation:
+
+```text
+python -m pytest tests/test_recovered_semantics.py -q
+# 31 passed (adds the B73E idle-phase pure-rule test)
+
+python -m pytest tests/test_overkill_hooks.py -q -k b73e
+# 6 passed (full-state + full-memory equivalence vs interpreted ASM)
+
+python -m pytest tests/test_architecture_layers.py -q
+# 5 passed
+python scripts/audit_recovered_layers.py   # 17 pure files
+python scripts/lint.py                      # 145 files
+python scripts/audit_hook_oracle.py         # 335 hooks / 335 metadata
+```
+
+Note: the original binary lives at `overkill/assets/` in this tree; the tests and
+AGENTS.md expect the repo-root `assets/`.  A copy now exists at `assets/`
+(gitignored) so the oracle suite resolves `assets/OVERKILL`.
+
+## 2026-06-18 - Phase 1 lift: AD60 bounds/tile branch decision becomes a pure system
+
+Continued the Phase 1 live-hook -> (thin adapter + pure recovered rule) sweep on a
+dense gameplay decision.  The shared `1010:AD60` bounds/tile tail
+(`_run_object_bounds_tile_tail_ad60`, used by every object behavior that reaches
+the postmove bounds check via AD5A/ADC9) had its gameplay rule inlined among the
+CPU side effects: the off-screen deactivation predicate and the tile-probe
+eligibility gate.
+
+Implemented:
+
+- `overkill/recovered/domain/object_behaviors.py`: added `ObjectBoundsTileDecision`
+  (`deactivate` / `skip` / `tile_probe`).
+- `overkill/recovered/systems/objects.py`: added the pure
+  `object_bounds_tile_decision_ad60(x, y, draw_layer, logic_id, tile_probe_suppressed)`
+  plus the recovered constants `OBJECT_BOUNDS_MIN_X=0008h`, `OBJECT_BOUNDS_MAX_X=00E0h`,
+  `OBJECT_BOUNDS_MAX_Y=00C8h`, `OBJECT_BOUNDS_TILE_PROBE_DRAW_LAYER=0002h`, and the
+  probing `OBJECT_BOUNDS_TILE_PROBE_LOGIC_IDS` set.
+- `overkill/gameplay/object_bounds.py`: `_run_object_bounds_tile_tail_ad60` now
+  computes the pure decision up front and replays the exact CMP order, asserting
+  the pure decision agrees at every deactivate/skip/tile-probe boundary.  The
+  BD17 deactivate side effect, the 5073/505B tile probe, and the ADC1 sub-deactivate
+  are unchanged.
+
+The branch decision is now native: AD60's "left the play-field box -> deactivate"
+and "in-bounds probing family -> run tile probe" rules live in a pure function
+with no CPU/memory dependency, while the adapter keeps oracle-exact 8086 flags.
+
+Validation:
+
+```text
+python -m pytest tests/test_recovered_semantics.py -q
+# 30 passed (adds the AD60 pure decision + adapter-agreement tests)
+
+python -m pytest tests/test_architecture_layers.py -q
+# 5 passed
+
+python scripts/audit_recovered_layers.py
+# Recovered layer audit passed for 17 pure files
+python scripts/lint.py
+# Lint passed for 145 Python files
+python scripts/audit_hook_oracle.py
+# Hook-oracle audit passed: 335 registered hooks, 335 metadata entries
+```
+
+The AD60-reaching oracle tests confirm zero behavioral change against
+interpreted original ASM:
+
+```text
+python -m pytest tests/test_overkill_hooks.py -q \
+  -k "object_behavior or bounds or ad60 or ad5a or deactivate"
+# 9 passed
+
+python scripts/play.py --snapshot artifacts/evidence/snapshot_stop_1010_aed8_b250_overlap \
+  --video tandy --sound adlib --verify-hook 1010:AED8 --verify-max 1 \
+  --verify-step-budget 200000 --no-coverage-summary
+# OK HOOK VERIFY LIMIT REACHED verified=1   (full-memory + full-state differential)
+```
+
+Next Phase 1 candidate: keep sweeping the inline branch decisions in
+`object_bounds`/`object_behaviors` postmove tails (e.g. the per-`logic_id` motion
+selectors in `_run_object_behavior_b73e`) into pure recovered predicates.
+
 ## 2026-06-17 - High-level action layer extraction and sound-driver unification
 
 Performed a structural cleanup pass after the hook-registry split.  The goal was not to lift a new gameplay routine, but to make the emerging source-like gameplay layer more visible and to remove one confusing coverage convention around sound addresses.

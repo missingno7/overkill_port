@@ -16,8 +16,15 @@ from overkill.asm import (
     _add_mem_word, _add_reg16, _and_mem_word, _cmp_byte, _cmp_word,
     _inc_mem_word_preserve_cf, _sub_mem_word,
 )
-from overkill.gameplay.collision import run_object_slot_scan_guard_ac81, run_tile_collision_probe_ac28
-from overkill.gameplay.contact_overlap import run_overlap_contact_selector_b250
+from overkill.gameplay.collision import (
+    run_object_slot_scan_guard_ac81,
+    run_post_contact_status_helper_9e19,
+    run_tile_collision_probe_ac28,
+)
+from overkill.gameplay.contact_overlap import (
+    CONTACT_SIDE_EFFECT_RETURN_IP,
+    run_overlap_contact_selector_b250,
+)
 from overkill.gameplay.object_bounds import _run_object_bounds_tile_tail_ad60
 from overkill.gameplay.object_movement import (
     _run_aee4_step_for_direction, _run_af22_three_pixel_step_for_direction,
@@ -32,6 +39,20 @@ from overkill.gameplay.object_runtime_common import (
 )
 from overkill.gameplay.object_spawns import _run_formation_spawn_7476_observed
 from overkill.gameplay.objects import run_object_motion_table_ab34, run_object_scroll_sprite_ab4f
+from overkill.recovered.systems.objects import (
+    B73E_IDLE_LOW_Y_THRESHOLD,
+    B73E_SPAWN_WINDOW_MAX,
+    B73E_SPAWN_WINDOW_MIN,
+    B73E_TARGET_POSTMOVE_232E_SENTINEL,
+    B73E_TARGET_RESET_A47E_MAX,
+    B73E_TARGET_RESET_DIRECT_COUNTER_MAX,
+    B86D_FORMATION_SPAWN_TICKS,
+    b73e_idle_sprite_frame,
+    b73e_reaches_b808,
+    b73e_target_reached_resolution,
+    b86d_formation_spawn_tick_index,
+    b86d_outgoing_sprite_for_delta,
+)
 from overkill.recovered.views.object_slots import (
     OFF_DIRECTION_OR_STEP, OFF_DRAW_LAYER, OFF_LOGIC_ID, OFF_SPRITE_OR_STATE,
     OFF_SUBSTATE, OFF_TARGET_X, OFF_TARGET_Y, OFF_TRANSITION_LATCH, OFF_X, OFF_Y,
@@ -163,10 +184,14 @@ def _run_object_behavior_b73e(cpu, *, parent: str, chain: str, cx_value: int) ->
             target_ip=target_ip, bp=bp, cx_value=cx_value,
         )
 
+    # Idle animation-frame selection from the shared DS:2338 timer.  The pure
+    # recovered rule owns the frame formula; the inline NEG/ADD stays so the
+    # 8086 flags at this point still match the oracle.
     timer = cpu.mem.rw(ds, 0x2338)
     y = cpu.mem.rw(ss, (bp + OFF_Y) & 0xFFFF)
-    _cmp_word(cpu, y, 0x0060)
-    if y < 0x0060:
+    sprite_frame = b73e_idle_sprite_frame(timer, y)
+    _cmp_word(cpu, y, B73E_IDLE_LOW_Y_THRESHOLD)
+    if y < B73E_IDLE_LOW_Y_THRESHOLD:
         # NEG AX; ADD AX,007Fh, with AX initially DS:[2338].
         cpu.set_sub_flags(0, timer, -timer, 16)
         cpu.s.ax = (-timer) & 0xFFFF
@@ -177,6 +202,8 @@ def _run_object_behavior_b73e(cpu, *, parent: str, chain: str, cx_value: int) ->
         old_ax = timer
         cpu.s.ax = (timer + 0x007A) & 0xFFFF
         cpu.set_add_flags(old_ax, 0x007A, old_ax + 0x007A, 16)
+    if (cpu.s.ax & 0xFFFF) != sprite_frame:
+        raise AssertionError("pure B73E idle sprite-frame disagrees with ASM-compatible arithmetic")
     cpu.mem.ww(ss, (bp + OFF_SPRITE_OR_STATE) & 0xFFFF, cpu.s.ax)
 
     target_y = cpu.mem.rw(ss, (bp + OFF_TARGET_Y) & 0xFFFF)
@@ -205,13 +232,20 @@ def _run_object_behavior_b73e(cpu, *, parent: str, chain: str, cx_value: int) ->
         cpu.s.ip = cpu.pop()
         return
 
+    # Spawn-window gate: inside the DS:2340 counter band the behavior runs the
+    # B800 formation spawn-pointer advance, otherwise control reaches B808 and
+    # skips it.  The pure rule owns the band decision; the inline compares keep
+    # the original two-step flag order.
     game_counter = cpu.mem.rw(ds, 0x2340)
-    _cmp_word(cpu, game_counter, 0x02BC)
-    if game_counter < 0x02BC:
+    pure_reaches_b808 = b73e_reaches_b808(game_counter)
+    _cmp_word(cpu, game_counter, B73E_SPAWN_WINDOW_MIN)
+    if game_counter < B73E_SPAWN_WINDOW_MIN:
         reaches_b808 = True
     else:
-        _cmp_word(cpu, game_counter, 0x02D0)
-        reaches_b808 = game_counter > 0x02D0
+        _cmp_word(cpu, game_counter, B73E_SPAWN_WINDOW_MAX)
+        reaches_b808 = game_counter > B73E_SPAWN_WINDOW_MAX
+    if reaches_b808 != pure_reaches_b808:
+        raise AssertionError("pure B73E spawn-window gate disagrees with ASM-compatible compares")
     if not reaches_b808:
         old_ptr = cpu.mem.rw(ds, 0x20A6)
         new_ptr = (old_ptr + 0x0002) & 0xFFFF
@@ -231,16 +265,29 @@ def _run_object_behavior_b73e(cpu, *, parent: str, chain: str, cx_value: int) ->
                 cx_value=cx_value,
             )
 
-    _cmp_word(cpu, cpu.mem.rw(ds, 0xA47E), 0x0003)
-    if cpu.mem.rw(ds, 0xA47E) <= 0x0003:
+    # Target-reached resolution: pick how B73E continues from three globals.
+    # The pure rule owns the 4-way classification; the inline compares keep the
+    # original flag order at each branch.
+    a47e = cpu.mem.rw(ds, 0xA47E)
+    value_232e = cpu.mem.rw(ds, 0x232E)
+    resolution = b73e_target_reached_resolution(a47e, game_counter, value_232e)
+
+    _cmp_word(cpu, a47e, B73E_TARGET_RESET_A47E_MAX)
+    if a47e <= B73E_TARGET_RESET_A47E_MAX:
+        if resolution.kind != "reset_target_check_2324":
+            raise AssertionError("pure B73E target-reached resolution disagrees on A47E reset")
         run_b7c7_reset_target(check_2324=True, branch="B808 -> B7C7 -> BC4B")
         return
-    _cmp_word(cpu, game_counter, 0x0005)
-    if game_counter < 0x0005:
+    _cmp_word(cpu, game_counter, B73E_TARGET_RESET_DIRECT_COUNTER_MAX)
+    if game_counter < B73E_TARGET_RESET_DIRECT_COUNTER_MAX:
+        if resolution.kind != "reset_target_direct":
+            raise AssertionError("pure B73E target-reached resolution disagrees on direct reset")
         run_b7c7_reset_target(check_2324=False, branch="B815 -> B7CE -> BC4B")
         return
-    _cmp_word(cpu, cpu.mem.rw(ds, 0x232E), 0x003F)
-    if cpu.mem.rw(ds, 0x232E) != 0x003F:
+    _cmp_word(cpu, value_232e, B73E_TARGET_POSTMOVE_232E_SENTINEL)
+    if value_232e != B73E_TARGET_POSTMOVE_232E_SENTINEL:
+        if resolution.kind != "postmove":
+            raise AssertionError("pure B73E target-reached resolution disagrees on postmove")
         _run_object_postmove_bc4b(
             cpu,
             parent=parent,
@@ -249,6 +296,8 @@ def _run_object_behavior_b73e(cpu, *, parent: str, chain: str, cx_value: int) ->
         )
         cpu.s.ip = cpu.pop()
         return
+    if resolution.kind != "waypoint_loop":
+        raise AssertionError("pure B73E target-reached resolution missed the waypoint loop")
 
     for _ in range(0x20):
         cpu.s.si = cpu.mem.rw(ds, 0xA842)
@@ -289,13 +338,23 @@ def _run_object_behavior_b73e(cpu, *, parent: str, chain: str, cx_value: int) ->
             _run_object_postmove_bc4b(cpu, parent=parent, chain=f"{chain} -> B73E -> B7BD -> B82D -> B7BD", cx_value=cx_value)
             cpu.s.ip = cpu.pop()
             return
+        # Same spawn-window gate as the non-loop path above: outside the
+        # [02BCh, 02D0h] band the loop iterates again, inside the band it would
+        # fall into the still-unverified B800 spawn.  Share the one pure rule.
         game_counter = cpu.mem.rw(ds, 0x2340)
-        _cmp_word(cpu, game_counter, 0x02BC)
-        if game_counter < 0x02BC:
+        loop_pure_reaches_b808 = b73e_reaches_b808(game_counter)
+        _cmp_word(cpu, game_counter, B73E_SPAWN_WINDOW_MIN)
+        if game_counter < B73E_SPAWN_WINDOW_MIN:
+            if not loop_pure_reaches_b808:
+                raise AssertionError("pure B73E spawn-window gate disagrees in B82D loop")
             continue
-        _cmp_word(cpu, game_counter, 0x02D0)
-        if game_counter > 0x02D0:
+        _cmp_word(cpu, game_counter, B73E_SPAWN_WINDOW_MAX)
+        if game_counter > B73E_SPAWN_WINDOW_MAX:
+            if not loop_pure_reaches_b808:
+                raise AssertionError("pure B73E spawn-window gate disagrees in B82D loop")
             continue
+        if loop_pure_reaches_b808:
+            raise AssertionError("pure B73E spawn-window gate disagrees in B82D loop")
         _raise_unverified_path(
             cpu, parent=parent, chain=f"{chain} -> B73E -> B7BD -> B82D loop",
             target_ip=0xB800, bp=bp, cx_value=cx_value,
@@ -310,12 +369,23 @@ def _run_b250_overlap_contact_selector(cpu, *, caller: str) -> int:
     """Run the shared B250 overlap/contact selector.
 
     The selector itself now lives in :mod:`overkill.gameplay.contact_overlap`.
-    This thin shim injects the object-runtime near-call helper so the original
-    ``9E19`` contact side-effect remains a bounded, verifier-visible boundary,
-    and returns the selected original tail IP (AD5A/ADC9) to the caller.
+    This thin shim injects the *native* lifted ``9E19`` post-contact helper as the
+    per-iteration side effect (a Phase-2 chain collapse: the hot ``B297`` loop no
+    longer ping-pongs into interpreted ``9E19`` ASM), and returns the selected
+    original tail IP (AD5A/ADC9) to the caller.
     """
+    def post_contact_side_effect(c) -> None:
+        # 9E19 is a near-ret helper: push its return IP (B29C) so its final RET
+        # lands back in the B297 loop exactly like the original CALL 9E19 did.
+        c.push(CONTACT_SIDE_EFFECT_RETURN_IP)
+        # 9E19 is static code (not runtime-patched), so the no-op patch guard is
+        # correct here, matching the other lifted object-runtime children.
+        run_post_contact_status_helper_9e19(
+            c, _no_patch_guard, _run_interpreted_near_call_observed
+        )
+
     return run_overlap_contact_selector_b250(
-        cpu, caller=caller, near_call=_run_interpreted_near_call_observed
+        cpu, caller=caller, post_contact_side_effect=post_contact_side_effect
     )
 
 
@@ -406,27 +476,44 @@ def _run_object_behavior_b86d(cpu, *, parent: str, chain: str, cx_value: int) ->
         cpu.s.ip = 0xBC4B
         return
 
+    # Formation-spawn schedule: a CALL 7476 fires only on the exact DS:2340
+    # ticks owned by the pure rule.  The chained CMP/JE order is preserved for
+    # oracle-exact flags; the 7476 continuation addresses are adapter glue.
+    formation_spawn_return_ips = (0xB8BB, 0xB8C6, 0xB8D0)
     game_counter = mem.rw(ds, 0x2340)
-    _cmp_word(cpu, game_counter, 0x02EF)
-    if game_counter == 0x02EF:
-        call_7476(0xB8BB)
+    spawn_index = b86d_formation_spawn_tick_index(game_counter)
+    _cmp_word(cpu, game_counter, B86D_FORMATION_SPAWN_TICKS[0])
+    if game_counter == B86D_FORMATION_SPAWN_TICKS[0]:
+        if spawn_index != 0:
+            raise AssertionError("pure B86D formation-spawn schedule disagrees on tick 0")
+        call_7476(formation_spawn_return_ips[0])
     else:
-        _cmp_word(cpu, game_counter, 0x0159)
-        if game_counter == 0x0159:
-            call_7476(0xB8C6)
+        _cmp_word(cpu, game_counter, B86D_FORMATION_SPAWN_TICKS[1])
+        if game_counter == B86D_FORMATION_SPAWN_TICKS[1]:
+            if spawn_index != 1:
+                raise AssertionError("pure B86D formation-spawn schedule disagrees on tick 1")
+            call_7476(formation_spawn_return_ips[1])
         else:
-            _cmp_word(cpu, game_counter, 0x0079)
-            if game_counter == 0x0079:
-                call_7476(0xB8D0)
+            _cmp_word(cpu, game_counter, B86D_FORMATION_SPAWN_TICKS[2])
+            if game_counter == B86D_FORMATION_SPAWN_TICKS[2]:
+                if spawn_index != 2:
+                    raise AssertionError("pure B86D formation-spawn schedule disagrees on tick 2")
+                call_7476(formation_spawn_return_ips[2])
+            elif spawn_index is not None:
+                raise AssertionError("pure B86D formation-spawn schedule fired on a non-tick counter")
 
-    old_ax = mem.rw(ds, 0x2342)
-    cpu.set_sub_flags(0, old_ax, -old_ax, 16)
-    cpu.s.ax = (-old_ax) & 0xFFFF
+    # Outgoing-sprite selection from the sign of the global vertical delta.
+    delta = mem.rw(ds, 0x2342)
+    sprite = b86d_outgoing_sprite_for_delta(delta)
+    cpu.set_sub_flags(0, delta, -delta, 16)
+    cpu.s.ax = (-delta) & 0xFFFF
     _add_mem_word(cpu, ss, (bp + OFF_X) & 0xFFFF, cpu.s.ax)
     cpu.s.ax = 0x0075
-    _cmp_word(cpu, mem.rw(ds, 0x2342), 0xFFFF)
-    if mem.rw(ds, 0x2342) != 0xFFFF:
+    _cmp_word(cpu, delta, 0xFFFF)
+    if delta != 0xFFFF:
         cpu.s.ax = 0x0076
+    if (cpu.s.ax & 0xFFFF) != sprite:
+        raise AssertionError("pure B86D outgoing-sprite rule disagrees with ASM-compatible selection")
     mem.ww(ss, (bp + OFF_SPRITE_OR_STATE) & 0xFFFF, cpu.s.ax)
     _cmp_word(cpu, mem.rw(ds, 0x2328), 0x0007)
     if mem.rw(ds, 0x2328) == 0x0007:

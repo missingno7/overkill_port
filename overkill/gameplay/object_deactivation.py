@@ -11,7 +11,7 @@ Conservative names only; bodies relocated verbatim.
 """
 from __future__ import annotations
 
-from overkill.asm import _add_reg16, _cmp_byte, _cmp_word, _sub_mem_word
+from overkill.asm import _add_reg16, _cmp_byte, _cmp_word, _dec_mem_word_preserve_cf, _sub_mem_word
 from overkill.gameplay.collision import run_object_deactivate_logic_dispatch_c054
 from overkill.gameplay.object_runtime_common import (
     _raise_unverified_path,
@@ -105,6 +105,32 @@ def _run_deactivate_bd17_observed(cpu, *, parent: str, chain: str, cx_value: int
     ):
         _cmp_word(cpu, logic_id, target)
         if logic_id == target:
+            if target == 0x0009:
+                # logic_id 9 is NOT a single-counter decrement like its siblings:
+                # BD17 jumps to BD7A, which clears the WHOLE projectile list.  It
+                # walks the FFFF-terminated DS:A3B4 pointer list, deactivates each
+                # listed object (DS:[slot]=0), and drains DS:A972 to zero.  This
+                # is the ringlas (last weapon) controller leaving bounds: the
+                # original removes its entire projectile column at once, where the
+                # earlier single-decrement model left them active forever (their
+                # stale slots then corrupted state and crashed in heavy L5 play).
+                a972 = mem.rw(ds, 0xA972)
+                _cmp_word(cpu, a972, 0x0000)  # BD7A: CMP DS:[A972],0
+                if a972 != 0:                 # BD7F: JNZ BD82
+                    cpu.s.cx = 0x001A         # BD82: MOV CX,1Ah
+                    cpu.s.si = 0xA3B4         # BD85: MOV SI,A3B4h
+                    for _ in range(0x100):    # FFFF-terminated; bounded for safety
+                        ax = mem.rw(ds, cpu.s.si & 0xFFFF)  # BD88: LODSW
+                        cpu.s.si = (cpu.s.si + 2) & 0xFFFF
+                        cpu.s.ax = ax
+                        _cmp_word(cpu, ax, 0xFFFF)          # BD89
+                        if ax == 0xFFFF:                    # BD8C/BD8E: end of list
+                            break
+                        mem.ww(ds, (cpu.s.si - 2) & 0xFFFF, ax)  # BD8F: MOV [SI-2],AX
+                        cpu.s.bx = ax                       # BD92
+                        mem.ww(ds, ax & 0xFFFF, 0x0000)     # BD94: MOV [BX],0
+                        _dec_mem_word_preserve_cf(cpu, ds, 0xA972)  # BD98: DEC [A972]
+                return
             if mem.rw(ds, counter) != 0:
                 _sub_mem_word(cpu, ds, counter, 0x0001)
             return

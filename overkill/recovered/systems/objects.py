@@ -6,8 +6,144 @@ traces have constrained their object-slot fields.
 """
 from __future__ import annotations
 
-from overkill.recovered.domain.object_behaviors import BossGroupSlotTransition, ObjectDeactivateDispatchDecision
-from overkill.recovered.domain.object_slots import ObjectSlotRecord
+from overkill.recovered.domain.object_behaviors import (
+    B73ETargetReachedResolution,
+    BossGroupSlotTransition,
+    ObjectBoundsTileDecision,
+    ObjectDeactivateDispatchDecision,
+)
+from overkill.recovered.domain.object_slots import ObjectSlotRecord, ObjectSpawnSeed
+
+# 1010:8209 object-slot spawn template.  Stamps a freshly allocated effect slot
+# with a fixed logic-id-14h object at the caller's source position.
+OBJECT_SPAWN_SEED_8209_LOGIC_ID = 0x0014
+OBJECT_SPAWN_SEED_8209_FIELD_28_CLEAR = 0xFFFF
+
+
+def object_spawn_seed_8209(source_x: int, source_y: int) -> ObjectSpawnSeed:
+    """Pure 1010:8209 spawn template recovered from the 8209..8247 stamp.
+
+    A new effect slot is initialised as an active ``logic_id=0014h`` object at the
+    caller's source ``(X, Y)``, with position and target both set to that source,
+    ``direction_or_step=4``, ``hazard_class=4``, ``scan_flag=1``, ``gate=1``,
+    ``counter_20=4``, ``variant=0``, and the unnamed ``0x28`` field cleared to
+    ``FFFFh``.  The hook owns the DOS slot pointer and write order; this owns the
+    field values.
+    """
+    x = source_x & 0xFFFF
+    y = source_y & 0xFFFF
+    return ObjectSpawnSeed(
+        active_word=0x0001,
+        gate_or_layer=0x0001,
+        x_word=x,
+        y_word=y,
+        direction_or_step=0x0004,
+        scan_flag=0x0001,
+        hazard_class=0x0004,
+        logic_id=OBJECT_SPAWN_SEED_8209_LOGIC_ID,
+        counter_20=0x0004,
+        variant=0x0000,
+        target_x_word=x,
+        target_y_word=y,
+        field_28=OBJECT_SPAWN_SEED_8209_FIELD_28_CLEAR,
+    )
+
+
+# 1010:B73E no-substate idle-phase rules.  These are the pure gameplay
+# decisions the B73E behavior makes once it is on the FFFFh-substate path,
+# recovered as source-level formulas rather than inline ASM arithmetic.
+B73E_IDLE_LOW_Y_THRESHOLD = 0x0060
+B73E_IDLE_LOW_Y_FRAME_BASE = 0x007F
+B73E_IDLE_HIGH_Y_FRAME_BASE = 0x007A
+B73E_SPAWN_WINDOW_MIN = 0x02BC
+B73E_SPAWN_WINDOW_MAX = 0x02D0
+
+
+def b73e_idle_sprite_frame(timer: int, y: int) -> int:
+    """Pure B73E idle animation-frame selection from the DS:2338 timer.
+
+    The original picks the sprite/animation frame from the shared DS:2338 timer
+    with a sign flip for objects above the ``0060h`` Y line: high objects count
+    down from ``007Fh`` (``007Fh - timer``), low objects count up from ``007Ah``
+    (``timer + 007Ah``).  Returns the 16-bit frame value written to the object's
+    sprite/state field.  The adapter still replays the NEG/ADD so 8086 flags
+    match the oracle.
+    """
+    t = timer & 0xFFFF
+    if (y & 0xFFFF) < B73E_IDLE_LOW_Y_THRESHOLD:
+        return (B73E_IDLE_LOW_Y_FRAME_BASE - t) & 0xFFFF
+    return (t + B73E_IDLE_HIGH_Y_FRAME_BASE) & 0xFFFF
+
+
+B73E_TARGET_RESET_A47E_MAX = 0x0003
+B73E_TARGET_RESET_DIRECT_COUNTER_MAX = 0x0005
+B73E_TARGET_POSTMOVE_232E_SENTINEL = 0x003F
+
+
+def b73e_target_reached_resolution(a47e: int, game_counter: int, value_232e: int) -> "B73ETargetReachedResolution":
+    """Pure B7BD/B808 dispatch once a B73E object is at its target.
+
+    See :class:`B73ETargetReachedResolution`.  The hook still replays the
+    original CMP order so live 8086 flags match the oracle at each branch; this
+    function owns the stable 4-way classification.
+    """
+    if (a47e & 0xFFFF) <= B73E_TARGET_RESET_A47E_MAX:
+        return B73ETargetReachedResolution("reset_target_check_2324")
+    if (game_counter & 0xFFFF) < B73E_TARGET_RESET_DIRECT_COUNTER_MAX:
+        return B73ETargetReachedResolution("reset_target_direct")
+    if (value_232e & 0xFFFF) != B73E_TARGET_POSTMOVE_232E_SENTINEL:
+        return B73ETargetReachedResolution("postmove")
+    return B73ETargetReachedResolution("waypoint_loop")
+
+
+def b73e_reaches_b808(game_counter: int) -> bool:
+    """Pure B73E spawn-window gate recovered from the DS:2340 counter band.
+
+    When the game counter is inside the ``[02BCh, 02D0h]`` band the behavior runs
+    the formation spawn-pointer advance at B800; otherwise control reaches B808
+    and skips it.  ``True`` means "skip the spawn block" (reaches B808).  The
+    adapter keeps the original two-compare order so live flags match the oracle.
+    """
+    gc = game_counter & 0xFFFF
+    return gc < B73E_SPAWN_WINDOW_MIN or gc > B73E_SPAWN_WINDOW_MAX
+
+
+# 1010:B86D common-path rules.  B86D schedules formation spawns on exact ticks
+# of the shared DS:2340 game counter, and picks its outgoing sprite from the sign
+# of the global vertical delta DS:2342.  Pure source-level rules; the hook keeps
+# the CMP order and owns the 7476 continuation addresses.
+B86D_FORMATION_SPAWN_TICKS = (0x02EF, 0x0159, 0x0079)
+B86D_OUTGOING_SPRITE_RISING = 0x0075
+B86D_OUTGOING_SPRITE_FALLING = 0x0076
+B86D_VERTICAL_DELTA_RISING = 0xFFFF
+
+
+def b86d_formation_spawn_tick_index(game_counter: int) -> int | None:
+    """Pure B86D formation-spawn schedule from the DS:2340 counter.
+
+    A formation spawn (CALL 7476) fires only on the exact counter ticks in
+    ``B86D_FORMATION_SPAWN_TICKS``; returns the matching variant index (0/1/2) or
+    ``None`` when no spawn is scheduled this tick.  The hook still replays the
+    chained CMP/JE order and maps the index to the 7476 return address.
+    """
+    gc = game_counter & 0xFFFF
+    for index, tick in enumerate(B86D_FORMATION_SPAWN_TICKS):
+        if gc == tick:
+            return index
+    return None
+
+
+def b86d_outgoing_sprite_for_delta(vertical_delta: int) -> int:
+    """Pure B86D outgoing-sprite selection from the global vertical delta DS:2342.
+
+    A delta of ``FFFFh`` (one pixel up) keeps the rising sprite ``0075h``; any
+    other delta uses the falling sprite ``0076h``.  The hook keeps the NEG and
+    CMP so 8086 flags match the oracle.
+    """
+    if (vertical_delta & 0xFFFF) == B86D_VERTICAL_DELTA_RISING:
+        return B86D_OUTGOING_SPRITE_RISING
+    return B86D_OUTGOING_SPRITE_FALLING
+
 
 PLAYER_CHASE_EXCLUDED_LOGIC_IDS = frozenset({0x0001, 0x0021, 0x0022, 0x0026})
 PLAYER_CHASE_CANDIDATE_MAX_X = 0x00E0
@@ -40,6 +176,42 @@ def is_player_chase_acquired_target_valid(slot: ObjectSlotRecord) -> bool:
     object-life classification.
     """
     return slot.active_word != 0 and (slot.x_word & 0xFFFF) <= PLAYER_CHASE_ACQUIRED_MAX_X and slot.logic_id != PLAYER_CHASE_INACTIVE_LOGIC_ID
+
+
+# 1010:AD60 bounds/tile tail.  These are the recovered play-field box and the
+# tile-probing object family, source-level values rather than archetype names.
+OBJECT_BOUNDS_MIN_X = 0x0008
+OBJECT_BOUNDS_MAX_X = 0x00E0
+OBJECT_BOUNDS_MAX_Y = 0x00C8
+OBJECT_BOUNDS_TILE_PROBE_DRAW_LAYER = 0x0002
+OBJECT_BOUNDS_TILE_PROBE_LOGIC_IDS = (0x0002, 0x0004, 0x000C, 0x0005, 0x0006, 0x0009, 0x0008)
+
+
+def object_bounds_tile_decision_ad60(
+    x: int,
+    y: int,
+    draw_layer: int,
+    logic_id: int,
+    tile_probe_suppressed: bool,
+) -> ObjectBoundsTileDecision:
+    """Pure AD60 branch classification recovered from 1010:AD60.
+
+    AD60 deactivates an object that left the play-field box, otherwise returns
+    unless the object is a tile-probing family (draw layer ``0002h``, a probing
+    ``logic_id``, and the BDAC probe-suppress flag clear).  The hook/adapter
+    still replays the original CMP order so live 8086 flags match the oracle at
+    each branch; this function owns the stable branch decision.
+    """
+    px = x & 0xFFFF
+    if px < OBJECT_BOUNDS_MIN_X or px > OBJECT_BOUNDS_MAX_X or (y & 0xFFFF) > OBJECT_BOUNDS_MAX_Y:
+        return ObjectBoundsTileDecision("deactivate")
+    if (draw_layer & 0xFFFF) != OBJECT_BOUNDS_TILE_PROBE_DRAW_LAYER:
+        return ObjectBoundsTileDecision("skip")
+    if (logic_id & 0xFFFF) not in OBJECT_BOUNDS_TILE_PROBE_LOGIC_IDS:
+        return ObjectBoundsTileDecision("skip")
+    if tile_probe_suppressed:
+        return ObjectBoundsTileDecision("skip")
+    return ObjectBoundsTileDecision("tile_probe")
 
 
 # 1010:C054 deactivate dispatcher families.  These names are still

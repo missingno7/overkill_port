@@ -64,14 +64,17 @@ def _signed16(value: int) -> int:
     return value - 0x10000 if value & 0x8000 else value
 
 
-def run_overlap_contact_selector_b250(cpu, *, caller: str, near_call: NearCall) -> int:
+def run_overlap_contact_selector_b250(cpu, *, caller: str, post_contact_side_effect: NearCall) -> int:
     """Run the shared ``B250..B2A3`` overlap/contact selector.
 
     ``caller`` is the symbolic name of the behavior that reached B250 (used only
-    for diagnostics).  ``near_call`` invokes the original ``9E19`` contact
-    side-effect helper as a bounded, verifier-visible near call returning to
-    ``B29C``; injecting it keeps this module independent of the object-runtime
-    helper that owns that boundary.
+    for diagnostics).  ``post_contact_side_effect(cpu)`` performs one ``9E19``
+    contact side-effect call, leaving IP at :data:`CONTACT_SIDE_EFFECT_RETURN_IP`
+    (``B29C``); the caller injects it so this module stays independent of the
+    object-runtime helper that owns that boundary.  It is now the *native* lifted
+    ``9E19`` helper rather than an interpreted near call (a Phase-2 chain
+    collapse), so the hot ``B297`` contact loop runs natively; the demo-replay
+    equivalence suite covers the fused flow.
 
     Returns the selected original tail IP (:data:`TAIL_NO_CONTACT` /
     :data:`TAIL_CONTACT`).  All low-level AX/BX/CX/flag side effects of the
@@ -135,7 +138,7 @@ def run_overlap_contact_selector_b250(cpu, *, caller: str, near_call: NearCall) 
     while True:
         cpu.push(cpu.s.cx)
         cpu.push(cpu.s.bp)
-        near_call(cpu, CONTACT_SIDE_EFFECT_IP, CONTACT_SIDE_EFFECT_RETURN_IP, max_steps=12000)
+        post_contact_side_effect(cpu)
         if (cpu.s.ip & 0xFFFF) != CONTACT_SIDE_EFFECT_RETURN_IP:
             raise RuntimeError(
                 f"9E19 returned to unexpected IP {cpu.s.ip:04X} inside {caller}"

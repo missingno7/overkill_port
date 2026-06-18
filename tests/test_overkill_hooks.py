@@ -9153,6 +9153,46 @@ def test_object_behavior_b86d_hook_matches_interpreted_observed_paths():
         assert asm.program.memory.data == hook.program.memory.data
 
 
+def test_object_spawn_seed_8209_matches_interpreted_asm():
+    from pathlib import Path
+    from overkill.hook_wrappers.object_runtime_frontiers import overkill_object_spawn_seed_8209
+
+    blob = Path("artifacts/test_oracles/snapshot_play_tandy_20260611_152751/memory_1mb.bin").read_bytes()
+
+    def make_cpu() -> CPU8086:
+        mem = Memory()
+        mem.data[:] = blob
+        ds = 0x2000
+        ss = 0x3000
+        bp = 0x0100
+        bx = 0x23B4  # EFFECT_OBJECT_TABLE_BASE, a DS-relative slot base
+        mem.ww(ss, bp + 0x02, 0x0050)  # source X at SS:[bp+2]
+        mem.ww(ss, bp + 0x04, 0x00B0)  # source Y at SS:[bp+4]
+        state = CPUState(
+            ax=0x1111, bx=bx, cx=0x2222, dx=0x3333,
+            si=0x4444, di=0x5555, bp=bp, sp=0x9000,
+            cs=0x1010, ds=ds, es=ds, ss=ss,
+            ip=0x8209, flags=0x0202,
+        )
+        cpu = CPU8086(mem, state)
+        cpu.trace_enabled = False
+        cpu.push(0xBEEF)
+        return cpu
+
+    asm = make_cpu()
+    hook = make_cpu()
+    for _ in range(40):
+        if asm.addr() == (0x1010, 0xBEEF):
+            break
+        asm.step()
+
+    overkill_object_spawn_seed_8209(hook)
+
+    assert asm.addr() == hook.addr() == (0x1010, 0xBEEF)
+    assert asm.s.snapshot() == hook.s.snapshot()
+    assert asm.mem.data == hook.mem.data
+
+
 def test_object_behavior_b86d_b8f8_edge_path_matches_interpreted_original():
     from pathlib import Path
 

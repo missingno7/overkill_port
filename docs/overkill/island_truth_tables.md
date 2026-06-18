@@ -130,6 +130,41 @@ postmove tails, behavior dispatch, and runtime object evidence.
   branch; do not promote that side effect semantically until it has its own
   oracle-backed lift.
 
+2026-06-18 state-ownership lift:
+- `1010:8209` (shared object-slot spawn-stamp template, reached from 81E9/81F4)
+  is now the native `overkill_object_spawn_seed_8209` over the pure
+  `object_spawn_seed_8209 -> ObjectSpawnSeed`.  It was the lone remaining ASM
+  writer for ~11 core object fields, which are now native-owned on the spawn
+  path.  Verified byte-exact vs ASM, fired 16x in the L1 demo under whole-game
+  equivalence.  Ownership tracked via `scripts/trace_world_writes.py`.
+
+2026-06-18 Phase 1 lift:
+- `1010:B73E`'s B7BD/B808 target-reached dispatch is now the pure
+  `b73e_target_reached_resolution` (4-way: reset_target_check_2324 /
+  reset_target_direct / postmove / waypoint_loop).  Proven by the six `b73e`
+  oracle tests, a pure unit test, and the L1/L2/L3 demo-replay equivalence suite.
+- `1010:B86D`'s common path is now pure: `b86d_formation_spawn_tick_index`
+  (DS:2340 exact-tick `02EFh`/`0159h`/`0079h` formation schedule) and
+  `b86d_outgoing_sprite_for_delta` (DS:2342 sign -> `0075h`/`0076h`).  Covered by
+  the `snapshot_stop_1010_b8b0_behavior` oracle (non-trigger path) plus a pure
+  unit test.  This unifies the DS:2340 formation counter with B73E's
+  `b73e_reaches_b808`; only `B9F0` (no oracle test) still inlines DS:2340 logic.
+- `1010:B73E`'s idle-phase gameplay rules are now pure
+  `recovered.systems.objects` functions: `b73e_idle_sprite_frame` (DS:2338
+  timer -> animation frame) and `b73e_reaches_b808` (DS:2340 `[02BCh,02D0h]`
+  spawn-window gate).  `_run_object_behavior_b73e` calls them and asserts
+  agreement while keeping the inline NEG/ADD and two-step compares oracle-exact.
+  The CS:B74E substate jump table stays inline (Phase 3 data decode).  Evidence:
+  the six `b73e` oracle tests plus the pure unit test in
+  `test_recovered_semantics.py`.
+- `1010:AD60`'s bounds/tile branch decision is now the pure
+  `recovered.systems.objects.object_bounds_tile_decision_ad60`
+  (`deactivate`/`skip`/`tile_probe`).  `_run_object_bounds_tile_tail_ad60`
+  replays the original CMP order and asserts agreement, so the branch choice is
+  native while BD17 deactivate / 5073-505B probe / ADC1 sub-deactivate stay
+  ASM-exact.  Evidence: pure + adapter tests in `test_recovered_semantics.py`;
+  AD60-reaching oracle tests (`b24d`/`b86d`/`aed8`) remain the live proof.
+
 2026-06-14 collision-system update:
 - `1010:4FF9 overkill_tile_contact_probe_4ff9` is now verified as a raw
   tile/contact probe. It combines the offset table at `DS:214E`, the coordinate

@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "status": "complete",
+  "created_at": "2026-06-18T19:20:04",
+  "stopped_at": "2026-06-18T19:20:56",
+  "snapshot": "snapshot",
+  "metadata": {
+    "program": "overkill",
+    "video": "tandy",
+    "sound": "adlib",
+    "command_tail": "\r\u0002A"
+  },
+  "start_boundary": 0,
+  "end_boundary": 3802,
+  "event_count": 0,
+  "events": []
+}
