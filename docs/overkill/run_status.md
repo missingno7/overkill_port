@@ -1,3 +1,16 @@
+## 2026-06-19 - Loop slice: drain action_spawns.py raw offsets
+
+Byte-exact raw-offset drain: the 6 `bx` slot-stamp accesses in action_spawns.py's
+action-spawn tail -> named OFF_* constants (SCAN_FLAG / HAZARD_CLASS / LOGIC_ID /
+SUBSTATE / SCAN_ENABLE_OR_SOLID / ACQUIRED_TARGET_PTR). Dashboard: record offset
+accesses 63 -> 57 raw (19% -> 17%).
+
+Verified: fresh import, lint (151), recovered-layer audit (17 pure), the
+a067/a515/a584 action-spawn oracles, demo-replay (16 pass). The 2 demo failures
+(menu_interaction, mothership_drag_edge_case) are pre-existing open divergences -
+confirmed by a stash-baseline check that they fail without this change - NOT a
+regression from this byte-exact rename. Both go on the open-divergence list.
+
 ## 2026-06-18 - Name 4 object-record fields, drain raw offsets, fix the 9FAF sidearm-drag bug
 
 Map-driven slices (the dashboard surfaced unnamed-but-used words; a quick trace
