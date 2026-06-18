@@ -31,7 +31,11 @@ artifacts/verify_*/
 artifacts/tmp_*/
 artifacts/play_*/
 artifacts/frame_verify/
+artifacts/evidence/frame_verify/
 artifacts/evidence/snapshot_play_previews/
+# Crash/divergence repro captures (regenerated on demand; promote with -f if a
+# specific one ever becomes a test fixture).
+artifacts/repros/
 # Python/tool caches
 *.pyc
 .pytest_cache/
