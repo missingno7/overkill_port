@@ -89,3 +89,28 @@ correct (demo-replay passes for all three hooks). Fixing them is a *test-harness
 convention* decision (compare at hook-boundary end states, or make each hook stop
 at the exact ASM sub-step the oracle expects), best made by a human -- attempting
 per-hook IP edits regresses the live runtime (proven with the BDD0 attempt).
+
+---
+
+## Remaining playbook backlog -- needs attended judgment (not safe unattended)
+The zero-risk, byte-exact autonomous work (raw-offset drain 138->3, object-record
+field naming, oracle triage) is exhausted. The rest needs human judgment and is
+logged here so the loop neither churns nor risks regressions overnight:
+
+- **Unknown object-record fields `0x10`, `0x26`, `0x36`:** each is written with no
+  lifted reader (`0x26` <- DS:237A in object_spawns, `0x36` <- ax in
+  object_movement; `0x10` is never accessed). Naming needs the reader lifted first
+  -- can't be done honestly now. Map is 25/28, the honest floor.
+- **Hotspot lifts (playbook #5):** the interpreted gameplay regions (97C8 frame
+  body, ADC9, BBB2, BE3C, B2CD waypoint, ...) run as raw ASM today and are already
+  *correct* in both runtimes -- lifting them to Python is pure regression risk with
+  no correctness gain, each a substantial reverse-engineer. Best done attended.
+- **Death/deactivation frontier (playbook #2):** BFC7/BD17/C054 are "partial/
+  observed" lifts; completing their branch tables is the same risk class (see the
+  player-death BC4B entry).
+- **DS-global naming (future):** 141 distinct magic DS addresses (498 uses) in
+  lifted code -- a worthwhile cross-cutting cleanup, but only a handful are clearly
+  evidenced (0x98BE input buttons, 0x2380 camera-Y, + those already named in
+  world_adapter/game_snapshot_adapter); most roles are unclear. Needs a naming
+  convention + per-global evidence -- a design call for the user, like
+  OBJECT_RECORD_FIELDS was.
