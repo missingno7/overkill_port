@@ -10,6 +10,13 @@ byte-exact slice per iteration.** The VM is the oracle; every slice must stay
 provably equivalent to the original. Read this file at the start of each
 iteration and do exactly one slice.
 
+**Default operating mode:** an autonomous `/loop` or `/goal` run is *unattended* —
+follow **Unattended mode** (below) without being told: work only on branch
+`reconstruction-loop`, verify every slice, commit + push each green one there,
+and skip-and-log blockers in `docs/overkill/loop_blockers.md`. Never halt, and
+never push to `reconstruction`. So the only instruction the run needs is:
+"follow `docs/overkill/loop_plan.md`."
+
 ## The loop (do this once per iteration)
 
 1. **Pick ONE target** from the backlog below (top priority first). One slice =
