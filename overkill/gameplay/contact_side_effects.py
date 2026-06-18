@@ -17,7 +17,9 @@ from overkill.gameplay.object_deactivation import (
 from overkill.gameplay.object_runtime_common import _run_interpreted_near_call_observed
 from overkill.recovered.views.object_slots import (
     GAMEPLAY_OBJECT_LAST_SLOT_BASE, GAMEPLAY_OBJECT_TABLE_BASE, OBJECT_SLOT_STRIDE,
-    OFF_DRAW_LAYER, OFF_LOGIC_ID, OFF_OBJECT_TYPE, OFF_X, OFF_Y,
+    OFF_ACQUIRED_TARGET_PTR, OFF_COUNTER_20, OFF_DRAW_LAYER, OFF_GATE_OR_LAYER,
+    OFF_LOGIC_ID, OFF_OBJECT_TYPE, OFF_SCAN_ENABLE_OR_SOLID, OFF_SPRITE_OR_STATE,
+    OFF_SUBSTATE, OFF_VARIANT, OFF_X, OFF_Y,
 )
 
 
@@ -80,35 +82,35 @@ def _run_collision_handler_bec5_observed(cpu, *, collided_bx: int, parent: str, 
         # A8C2-gated variant 5/6 and 7/8/0C continuations.  The usual variant-2
         # sprite path starts at BF2D and therefore skips this first decrement.
         if enter_at_bf25:
-            _sub_mem_word(cpu, ss, (bp + 0x20) & 0xFFFF, 1)
-            if mem.rw(ss, (bp + 0x20) & 0xFFFF) == 0:
+            _sub_mem_word(cpu, ss, (bp + OFF_COUNTER_20) & 0xFFFF, 1)
+            if mem.rw(ss, (bp + OFF_COUNTER_20) & 0xFFFF) == 0:
                 run_bfc7(f"{label} BF25 counter zero")
                 return
 
         # BF2D
-        _sub_mem_word(cpu, ss, (bp + 0x20) & 0xFFFF, 1)
-        if mem.rw(ss, (bp + 0x20) & 0xFFFF) == 0:
+        _sub_mem_word(cpu, ss, (bp + OFF_COUNTER_20) & 0xFFFF, 1)
+        if mem.rw(ss, (bp + OFF_COUNTER_20) & 0xFFFF) == 0:
             run_bfc7(f"{label} BF2D counter zero")
             return
 
         bedc = mem.rw(ds, 0xBEDC)
         _cmp_word(cpu, bedc, 0x0001)
         if bedc == 0x0001:
-            _sub_mem_word(cpu, ss, (bp + 0x20) & 0xFFFF, 1)
-            if mem.rw(ss, (bp + 0x20) & 0xFFFF) == 0:
+            _sub_mem_word(cpu, ss, (bp + OFF_COUNTER_20) & 0xFFFF, 1)
+            if mem.rw(ss, (bp + OFF_COUNTER_20) & 0xFFFF) == 0:
                 run_bfc7(f"{label} BEDC=0001 counter zero")
                 return
         else:
             _cmp_word(cpu, bedc, 0x0000)
             if bedc == 0x0000:
                 for tail in ("BF46", "BF4B", "BF50"):
-                    _sub_mem_word(cpu, ss, (bp + 0x20) & 0xFFFF, 1)
-                    if mem.rw(ss, (bp + 0x20) & 0xFFFF) == 0:
+                    _sub_mem_word(cpu, ss, (bp + OFF_COUNTER_20) & 0xFFFF, 1)
+                    if mem.rw(ss, (bp + OFF_COUNTER_20) & 0xFFFF) == 0:
                         run_bfc7(f"{label} {tail} counter zero")
                         return
             # BEDC values other than 0/1 fall through to BF52 in the original.
 
-        mem.ww(ss, (bp + 0x24) & 0xFFFF, 0x0005)
+        mem.ww(ss, (bp + OFF_VARIANT) & 0xFFFF, 0x0005)
         a8c2 = mem.rw(ds, 0xA8C2)
         _cmp_word(cpu, a8c2, 0x0001)
         if a8c2 == 0x0001:
@@ -116,7 +118,7 @@ def _run_collision_handler_bec5_observed(cpu, *, collided_bx: int, parent: str, 
             return
         cpu.s.ip = cpu.pop()
 
-    variant = mem.rw(ds, (bx + 0x18) & 0xFFFF)
+    variant = mem.rw(ds, (bx + OFF_LOGIC_ID) & 0xFFFF)
 
     for target in (0x0007, 0x0008, 0x000C):
         _cmp_word(cpu, variant, target)
@@ -129,7 +131,7 @@ def _run_collision_handler_bec5_observed(cpu, *, collided_bx: int, parent: str, 
                 call_bd0d(0xBF95, f"variant {variant:04X}")
                 run_bf25_counter_chain(enter_at_bf25=True, label=f"variant {variant:04X}")
                 return
-            mem.ww(ss, (bp + 0x20) & 0xFFFF, 0x0000)
+            mem.ww(ss, (bp + OFF_COUNTER_20) & 0xFFFF, 0x0000)
             run_bfc7(f"variant {variant:04X}")
             return
 
@@ -140,7 +142,7 @@ def _run_collision_handler_bec5_observed(cpu, *, collided_bx: int, parent: str, 
         if mem.rw(ds, 0xA8C2) == 0x0001:
             run_bf25_counter_chain(enter_at_bf25=True, label="variant 0009")
             return
-        mem.ww(ss, (bp + 0x20) & 0xFFFF, 0x0000)
+        mem.ww(ss, (bp + OFF_COUNTER_20) & 0xFFFF, 0x0000)
         run_bfc7("variant 0009")
         return
 
@@ -148,7 +150,7 @@ def _run_collision_handler_bec5_observed(cpu, *, collided_bx: int, parent: str, 
     if variant == 0x0002:
         cpu.s.bx = bx
         mem.ww(ds, bx, 0)
-        sprite = mem.rw(ds, (bx + 0x08) & 0xFFFF)
+        sprite = mem.rw(ds, (bx + OFF_SPRITE_OR_STATE) & 0xFFFF)
         _cmp_word(cpu, sprite, 0x0033)
         run_bf25_counter_chain(enter_at_bf25=(sprite == 0x0033), label="variant 0002")
         return
@@ -165,7 +167,7 @@ def _run_collision_handler_bec5_observed(cpu, *, collided_bx: int, parent: str, 
             if mem.rw(ds, 0xA8C2) == 0x0001:
                 run_bf25_counter_chain(enter_at_bf25=True, label=f"variant {variant:04X}")
                 return
-            mem.ww(ss, (bp + 0x20) & 0xFFFF, 0x0000)
+            mem.ww(ss, (bp + OFF_COUNTER_20) & 0xFFFF, 0x0000)
             run_bfc7(f"variant {variant:04X}")
             return
 
@@ -173,15 +175,15 @@ def _run_collision_handler_bec5_observed(cpu, *, collided_bx: int, parent: str, 
     # back to the moving object through +30h.  Linked contacts run the observed
     # counter/death transition below; non-linked contacts are a deliberate no-op
     # in the original ASM and just RET with the CMP flags live.
-    owner_bp = mem.rw(ds, (bx + 0x30) & 0xFFFF)
+    owner_bp = mem.rw(ds, (bx + OFF_ACQUIRED_TARGET_PTR) & 0xFFFF)
     _cmp_word(cpu, bp, owner_bp)
     if bp == owner_bp:
-        mem.ww(ds, (bx + 0x1C) & 0xFFFF, 0x0000)
+        mem.ww(ds, (bx + OFF_SUBSTATE) & 0xFFFF, 0x0000)
         _cmp_word(cpu, mem.rw(ds, 0xA8C2), 0x0001)
         if mem.rw(ds, 0xA8C2) == 0x0001:
             run_bf25_counter_chain(enter_at_bf25=True, label=f"owner-linked variant {variant:04X}")
             return
-        mem.ww(ss, (bp + 0x20) & 0xFFFF, 0x0000)
+        mem.ww(ss, (bp + OFF_COUNTER_20) & 0xFFFF, 0x0000)
         run_bfc7(f"owner-linked variant {variant:04X}")
         return
 
@@ -312,7 +314,7 @@ def _run_object_overlap_scan_62f6(cpu, *, parent: str, chain: str, cx_value: int
         return
 
     cpu.s.si = mem.rw(ss, (bp + OFF_DRAW_LAYER) & 0xFFFF)
-    cpu.s.di = mem.rw(ss, (bp + 0x0A) & 0xFFFF)
+    cpu.s.di = mem.rw(ss, (bp + OFF_GATE_OR_LAYER) & 0xFFFF)
     cpu.s.dx = mem.rw(ss, (bp + OFF_Y) & 0xFFFF) & 0xFFF8
     cpu.set_logic_flags(cpu.s.dx, 16)
     cpu.s.cx = mem.rw(ss, (bp + OFF_X) & 0xFFFF) & 0xFFF8
@@ -325,9 +327,9 @@ def _run_object_overlap_scan_62f6(cpu, *, parent: str, chain: str, cx_value: int
         cpu.s.bx = bx
         _cmp_word(cpu, mem.rw(ds, bx), 0)
         if mem.rw(ds, bx) != 0:
-            _cmp_word(cpu, mem.rw(ds, (bx + 0x1E) & 0xFFFF), 0)
-            if mem.rw(ds, (bx + 0x1E) & 0xFFFF) != 0:
-                ax = mem.rw(ds, (bx + 0x04) & 0xFFFF)
+            _cmp_word(cpu, mem.rw(ds, (bx + OFF_SCAN_ENABLE_OR_SOLID) & 0xFFFF), 0)
+            if mem.rw(ds, (bx + OFF_SCAN_ENABLE_OR_SOLID) & 0xFFFF) != 0:
+                ax = mem.rw(ds, (bx + OFF_Y) & 0xFFFF)
                 _test_word(cpu, ax, 0x0007)
                 y_candidates = []
                 if ax & 0x0007:
@@ -342,7 +344,7 @@ def _run_object_overlap_scan_62f6(cpu, *, parent: str, chain: str, cx_value: int
                     y_candidates.append((y_candidates[-1] - 8) & 0xFFFF)
                 if cpu.s.dx in y_candidates:
                     used_x_branch = False
-                    ax = mem.rw(ds, (bx + 0x02) & 0xFFFF) & 0xFFF8
+                    ax = mem.rw(ds, (bx + OFF_X) & 0xFFFF) & 0xFFF8
                     x_candidates = [ax, (ax - 8) & 0xFFFF]
                     if obj_type == 2 and logic_id not in (0x78, 0x79):
                         x_candidates.append((x_candidates[-1] - 8) & 0xFFFF)

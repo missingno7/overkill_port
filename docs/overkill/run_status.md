@@ -1,3 +1,23 @@
+## 2026-06-19 - Loop slice: drain contact_side_effects.py raw offsets
+
+Byte-exact raw-offset drain: 22 object-record accesses in contact_side_effects.py
+-> named OFF_* constants. `bp` (current slot): COUNTER_20 (x12 in the contact
+counter-decrement paths), GATE_OR_LAYER, VARIANT. `bx` (scanned/owner slot in the
+contact scan): X / Y / SPRITE_OR_STATE / LOGIC_ID / SUBSTATE / SCAN_ENABLE_OR_SOLID
+/ ACQUIRED_TARGET_PTR. The flag-bound bx-walk loop control is untouched; only the
+field-access offsets are named. Dashboard: record offset accesses 35 -> 13 raw
+(10% -> 4%).
+
+Verified: fresh import, lint (151), audit (17 pure), the bec5/bedc/aa71 contact
+oracles (22 pass), demo-replay (only the 2 logged divergences fail; no regression).
+
+DISCOVERED a pre-existing failing oracle while running the contact suite:
+`test_player_hazard_scan_guard_bdd0_matches_interpreted_asm_hit_path`. The BDD0
+hook returns to the caller (`CAFE`) on the hit path, but the original continues to
+`1010:5059`. Confirmed failing at baseline with this drain stashed, so it is NOT
+caused by this byte-exact rename (a control-flow difference can't come from an
+offset-constant swap). Queued as the next fix slice.
+
 ## 2026-06-19 - Loop slice: drain objects.py raw offsets
 
 Byte-exact raw-offset drain: 22 `bp` (SS:BP object-slot) accesses in objects.py's
