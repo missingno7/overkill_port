@@ -51,7 +51,9 @@ Read this file at the start of each iteration and do exactly one slice.
    If everything is green, `git add` the code/docs/tests (NOT `artifacts/repros` or
    `frame_verify` — they are gitignored), commit with a descriptive message ending
    in the `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>` trailer, and
-   `git push origin reconstruction`.
+   push to the **`reconstruction-loop` review branch** (`git push origin
+   reconstruction-loop`). **Never push autonomous loop commits straight to
+   `reconstruction`** — the user reviews `reconstruction-loop` and merges it.
 
 ## Backlog (work top-down)
 
@@ -102,8 +104,9 @@ the whole window instead of halting on the first hard problem:
   blocked / what you'd need), then move to the NEXT backlog item.
 - **Never re-attempt a logged blocker.** Read `loop_blockers.md` first each
   iteration and pick a target not already listed there.
-- **Commit + push every green slice** so progress is saved incrementally — the
-  user should wake to a chain of small verified commits.
+- **Commit + push every green slice to `reconstruction-loop`** (the review branch,
+  NOT `reconstruction`) so progress is saved incrementally; the user reviews and
+  merges in the morning. Stay on `reconstruction-loop` the whole run.
 - **Favor tractable wins** (9FAF-style missing-guard divergence fixes, field
   naming, raw-offset drain) so the night accumulates many verified improvements;
   if a divergence proves deep after ~2 trace attempts, log it and move on.
