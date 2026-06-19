@@ -264,6 +264,10 @@ class ObjectSlotView:
     def scan_flag(self) -> int:
         return self.u16(OFF_SCAN_FLAG)
 
+    @scan_flag.setter
+    def scan_flag(self, value: int) -> None:
+        self.set_u16(OFF_SCAN_FLAG, value)
+
     @property
     def hazard_class(self) -> int:
         return self.u16(OFF_HAZARD_CLASS)

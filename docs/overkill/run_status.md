@@ -1,3 +1,24 @@
+## 2026-06-19 - Refactor Phase 2: structured (typed-view) access
+
+Following refactor_plan.md Phase 2. Completed ObjectSlotView write support (added
+setters for active_word, hazard_class, scan_flag, linked_counter_index; the view
+now covers read+write uniformly for the object record). Converting raw
+`mem.rw/ww((ss|ds), (bp|bx) + OFF_*)` to `slot.field` reads/writes, byte-exact,
+one or a few modules per gated slice. Done so far: object_postmove, collision,
+object_deactivation (both BD17/BFC7 tails), contact_overlap (B250 overlap box),
+action_spawns (the DS:BX spawn-stamp -- reads cleanly as `slot.logic_id = ...`).
+Flag-affecting helpers (_cmp_word/_add_mem_word/_inc_mem_word_preserve_cf),
+stack-scratch and DS-global accesses left as-is. Each slice: oracle 244/244 +
+demo-replay 18/18 + lint.
+
+NOTE (design call for the user): DS-globals already carry **conflicting names**
+across modules for the same address (e.g. 0x2380 = OVERLAP_REF_BOX_Y /
+POSTMOVE_CONTACT_Y_GUARD / camera_or_view_y_2380; 0xA47C = TILE_COLLISION_GLOBAL_
+GATE / phase_gate_a47c). The DS-global part of Phase 2 is a *reconciliation* into
+one canonical name per address, not just naming raw hex -- to be done
+deliberately. Remaining typed-view files: object_behaviors, object_spawns,
+object_runtime, contact_side_effects, objects, game_state (partial).
+
 ## 2026-06-19 - Refactor Phase 1: retire dead-stack scratch (gameplay)
 
 Following docs/overkill/refactor_plan.md. The relaxed boundary-contract oracle

@@ -27,14 +27,7 @@ from overkill.asm import (
     _sub_mem_word,
     _sub_reg16,
 )
-from overkill.recovered.views.object_slots import (
-    OFF_ACQUIRED_TARGET_PTR,
-    OFF_HAZARD_CLASS,
-    OFF_LOGIC_ID,
-    OFF_SCAN_ENABLE_OR_SOLID,
-    OFF_SCAN_FLAG,
-    OFF_SUBSTATE,
-)
+from overkill.recovered.views.object_slots import ObjectSlotView
 
 RunOriginalNearCall = Callable[[object, int, int], None]
 
@@ -520,13 +513,14 @@ def run_frame_action_linked_anchor_spawn_a515(
         return
 
     bx = s.bx & 0xFFFF
-    mem.ww(ds, (bx + OFF_ACQUIRED_TARGET_PTR) & 0xFFFF, s.ax)
-    mem.ww(ds, bx, 0x0001)
-    mem.ww(ds, (bx + OFF_SCAN_ENABLE_OR_SOLID) & 0xFFFF, 0x0001)
-    mem.ww(ds, (bx + OFF_SCAN_FLAG) & 0xFFFF, 0x0000)
-    mem.ww(ds, (bx + OFF_HAZARD_CLASS) & 0xFFFF, 0x0002)
-    mem.ww(ds, (bx + OFF_LOGIC_ID) & 0xFFFF, 0x000A)
-    mem.ww(ds, (bx + OFF_SUBSTATE) & 0xFFFF, 0x0001)
+    slot = ObjectSlotView(mem, ds, bx)  # the spawned object's record (DS:BX)
+    slot.acquired_target_ptr = s.ax
+    slot.active_word = 0x0001
+    slot.scan_enable_or_solid = 0x0001
+    slot.scan_flag = 0x0000
+    slot.hazard_class = 0x0002
+    slot.logic_id = 0x000A
+    slot.substate = 0x0001
 
     v98c0 = mem.rb(ds, 0x98C0)
     _cmp_byte(cpu, v98c0, 0x00)

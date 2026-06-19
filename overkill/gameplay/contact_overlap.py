@@ -28,10 +28,8 @@ from typing import Callable
 
 from overkill.asm import _add_reg16, _cmp_word, _sub_reg16
 from overkill.recovered.views.object_slots import (
-    OFF_LOGIC_ID,
+    ObjectSlotView,
     OFF_SCAN_ENABLE_OR_SOLID,
-    OFF_X,
-    OFF_Y,
 )
 
 # ---------------------------------------------------------------------------
@@ -95,6 +93,7 @@ def run_overlap_contact_selector_b250(cpu, *, caller: str, post_contact_side_eff
     ss = cpu.s.ss & 0xFFFF
     bp = cpu.s.bp & 0xFFFF
     mem = cpu.mem
+    slot = ObjectSlotView(mem, ss, bp)  # this object's record (SS:BP)
 
     # B250: substate 1 skips the overlap test entirely.
     substate_1e = mem.rw(ss, (bp + OFF_SUBSTATE_1E) & 0xFFFF)
@@ -107,31 +106,31 @@ def run_overlap_contact_selector_b250(cpu, *, caller: str, post_contact_side_eff
     cpu.s.bx = mem.rw(ds, OVERLAP_REF_BOX_Y)
     _sub_reg16(cpu, 0, OVERLAP_BOX_X_INSET)  # B25D: SUB AX,0002h.
 
-    obj_x = mem.rw(ss, (bp + OFF_X) & 0xFFFF)
+    obj_x = slot.x_word
     _cmp_word(cpu, obj_x, cpu.s.ax)
     if _signed16(obj_x) < _signed16(cpu.s.ax):
         return TAIL_NO_CONTACT
 
     _add_reg16(cpu, 0, OVERLAP_BOX_SPAN)  # B265: ADD AX,0014h.
-    obj_x = mem.rw(ss, (bp + OFF_X) & 0xFFFF)
+    obj_x = slot.x_word
     _cmp_word(cpu, obj_x, cpu.s.ax)
     if _signed16(obj_x) > _signed16(cpu.s.ax):
         return TAIL_NO_CONTACT
 
-    obj_y = mem.rw(ss, (bp + OFF_Y) & 0xFFFF)
+    obj_y = slot.y_word
     _cmp_word(cpu, obj_y, cpu.s.bx)
     if obj_y < (cpu.s.bx & 0xFFFF):
         return TAIL_NO_CONTACT
 
     _add_reg16(cpu, 3, OVERLAP_BOX_SPAN)  # B272: ADD BX,0014h.
-    obj_y = mem.rw(ss, (bp + OFF_Y) & 0xFFFF)
+    obj_y = slot.y_word
     _cmp_word(cpu, obj_y, cpu.s.bx)
     if obj_y > (cpu.s.bx & 0xFFFF):
         return TAIL_NO_CONTACT
 
     # B27A..B294: fanout count is 1, or 3/5 for logic_id 3 depending on BEDC.
     cpu.s.cx = 0x0001
-    logic_id = mem.rw(ss, (bp + OFF_LOGIC_ID) & 0xFFFF)
+    logic_id = slot.logic_id
     _cmp_word(cpu, logic_id, 0x0003)
     if logic_id == 0x0003:
         fanout_selector = mem.rw(ds, CONTACT_FANOUT_SELECTOR)
