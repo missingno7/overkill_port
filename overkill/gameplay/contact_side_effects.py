@@ -16,6 +16,7 @@ from overkill.gameplay.object_deactivation import (
 )
 from overkill.gameplay.object_runtime_common import _run_interpreted_near_call_observed
 from overkill.recovered.views.object_slots import (
+    ObjectSlotView,
     GAMEPLAY_OBJECT_LAST_SLOT_BASE, GAMEPLAY_OBJECT_TABLE_BASE, OBJECT_SLOT_STRIDE,
     OFF_ACQUIRED_TARGET_PTR, OFF_COUNTER_20, OFF_DRAW_LAYER, OFF_GATE_OR_LAYER,
     OFF_LOGIC_ID, OFF_OBJECT_TYPE, OFF_SCAN_ENABLE_OR_SOLID, OFF_SPRITE_OR_STATE,
@@ -288,8 +289,9 @@ def _run_object_overlap_scan_62f6(cpu, *, parent: str, chain: str, cx_value: int
         # original's incoming BX / ZF=1.
         return
 
-    _cmp_word(cpu, mem.rw(ss, (bp + OFF_X) & 0xFFFF), 0x0020)
-    if (mem.rw(ss, (bp + OFF_X) & 0xFFFF) if mem.rw(ss, (bp + OFF_X) & 0xFFFF) < 0x8000 else mem.rw(ss, (bp + OFF_X) & 0xFFFF) - 0x10000) < 0x20:
+    slot = ObjectSlotView(mem, ss, bp)  # this object's record (SS:BP)
+    _cmp_word(cpu, slot.x_word, 0x0020)
+    if slot.x < 0x20:
         # The original bails out before the slot scan here, so keep BX and the
         # compare flags from 62FE intact instead of forcing the empty-scan tail.
         return
@@ -302,26 +304,26 @@ def _run_object_overlap_scan_62f6(cpu, *, parent: str, chain: str, cx_value: int
             # 741F, preserving the incoming BX and the zero-compare flags.  Do
             # not force the empty-scan sentinel tail here.
             return
-    _cmp_word(cpu, mem.rw(ss, (bp + OFF_LOGIC_ID) & 0xFFFF), 0x0001)
-    if mem.rw(ss, (bp + OFF_LOGIC_ID) & 0xFFFF) == 0x0001:
+    _cmp_word(cpu, slot.logic_id, 0x0001)
+    if slot.logic_id == 0x0001:
         return
-    _cmp_word(cpu, mem.rw(ss, (bp + OFF_LOGIC_ID) & 0xFFFF), 0x0026)
-    if mem.rw(ss, (bp + OFF_LOGIC_ID) & 0xFFFF) == 0x0026:
+    _cmp_word(cpu, slot.logic_id, 0x0026)
+    if slot.logic_id == 0x0026:
         # 6323/6329: logic-id 26h is another pre-scan exemption.  The ASM
         # falls through into ``JMP 741F`` and returns immediately, so BX remains
         # the caller's BX and the zero flags from ``CMP [BP+18],26h`` stay live.
         # Do not run the empty-scan sentinel tail (741C ADD BX,38h).
         return
 
-    cpu.s.si = mem.rw(ss, (bp + OFF_DRAW_LAYER) & 0xFFFF)
-    cpu.s.di = mem.rw(ss, (bp + OFF_GATE_OR_LAYER) & 0xFFFF)
-    cpu.s.dx = mem.rw(ss, (bp + OFF_Y) & 0xFFFF) & 0xFFF8
+    cpu.s.si = slot.draw_layer
+    cpu.s.di = slot.gate_or_layer
+    cpu.s.dx = slot.y_word & 0xFFF8
     cpu.set_logic_flags(cpu.s.dx, 16)
-    cpu.s.cx = mem.rw(ss, (bp + OFF_X) & 0xFFFF) & 0xFFF8
+    cpu.s.cx = slot.x_word & 0xFFF8
     cpu.set_logic_flags(cpu.s.cx, 16)
 
-    obj_type = mem.rw(ss, (bp + OFF_OBJECT_TYPE) & 0xFFFF)
-    logic_id = mem.rw(ss, (bp + OFF_LOGIC_ID) & 0xFFFF)
+    obj_type = slot.object_type
+    logic_id = slot.logic_id
     bx = GAMEPLAY_OBJECT_TABLE_BASE
     while True:
         cpu.s.bx = bx
