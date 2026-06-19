@@ -24,7 +24,7 @@ from overkill.gameplay.object_runtime_common import (
     _call_verified_child_near,
 )
 from overkill.gameplay.view_window import _run_view_window_check_aa46
-from overkill.recovered.views.object_slots import OFF_LOGIC_ID, OFF_OBJECT_TYPE, OFF_X, OFF_Y
+from overkill.recovered.views.object_slots import ObjectSlotView, OFF_X
 
 
 
@@ -58,24 +58,25 @@ def _run_object_postmove_bc4b(cpu, *, parent: str, chain: str, cx_value: int, cl
     ss = cpu.s.ss & 0xFFFF
     bp = cpu.s.bp & 0xFFFF
     mem = cpu.mem
+    slot = ObjectSlotView(mem, ss, bp)  # this object's record (SS:BP)
 
     if clamp_y:
         # BCB1: clamp Y into the 0..C0h range.  Some callers jump directly to
         # BC4F, after this call; those use clamp_y=False.
-        y = mem.rw(ss, (bp + OFF_Y) & 0xFFFF)
+        y = slot.y_word
         _cmp_word(cpu, y, 0x00C0)
         sy = y if y < 0x8000 else y - 0x10000
         if sy > 0x00C0:
-            mem.ww(ss, (bp + OFF_Y) & 0xFFFF, 0x00C0)
+            slot.y_word = 0x00C0
         else:
             _cmp_word(cpu, y, 0)
             if sy < 0:
-                mem.ww(ss, (bp + OFF_Y) & 0xFFFF, 0)
+                slot.y_word = 0
 
     global_disable = mem.rw(ds, 0xA47C)
     _cmp_word(cpu, global_disable, 0)
-    skip_precise_x = global_disable != 0 or mem.rw(ss, (bp + OFF_LOGIC_ID) & 0xFFFF) in (0, 0x48, 0x26, 0x86, 0x28, 0x29, 0x34)
-    x = mem.rw(ss, (bp + OFF_X) & 0xFFFF)
+    skip_precise_x = global_disable != 0 or slot.logic_id in (0, 0x48, 0x26, 0x86, 0x28, 0x29, 0x34)
+    x = slot.x_word
     sx = x if x < 0x8000 else x - 0x10000
     if not skip_precise_x:
         _cmp_word(cpu, x, 0xFF40)
@@ -107,14 +108,14 @@ def _run_object_postmove_bc4b(cpu, *, parent: str, chain: str, cx_value: int, cl
         try:
             # BCCB early exits for inactive/exempt objects; otherwise it may call
             # the view-window helper and only continues into hit logic if CF is set.
-            _cmp_word(cpu, mem.rw(ss, bp), 0)
-            if mem.rw(ss, bp) != 0:
+            _cmp_word(cpu, slot.active_word, 0)
+            if slot.active_word != 0:
                 for off, bad in ((0x16, 5), (0x18, 0), (0x18, 1)):
                     _cmp_word(cpu, mem.rw(ss, (bp + off) & 0xFFFF), bad)
                     if mem.rw(ss, (bp + off) & 0xFFFF) == bad:
                         break
                 else:
-                    obj_type = mem.rw(ss, (bp + OFF_OBJECT_TYPE) & 0xFFFF)
+                    obj_type = slot.object_type
                     _cmp_word(cpu, obj_type, 1)
                     if obj_type == 1:
                         # BCF4 CALL AA46 leaves BCF7 below BCCB's live frame.

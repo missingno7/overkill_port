@@ -228,8 +228,9 @@ def run_object_slot_scan_guard_ac81(cpu, self_disable_if_patched) -> None:
         return
     s.cx = 0x0023
     s.bx = 0x23B4
-    s.ax = mem.rw(ss, (bp + OFF_Y) & 0xFFFF)
-    s.di = mem.rw(ss, (bp + OFF_X) & 0xFFFF)
+    slot = ObjectSlotView(mem, ss, bp)  # this object's record (SS:BP)
+    s.ax = slot.y_word
+    s.di = slot.x_word
     run_object_slot_scan_ac97(cpu)
 
 
