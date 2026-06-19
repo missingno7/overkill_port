@@ -216,18 +216,6 @@ from overkill.recovered.views.object_slots import (
     GAMEPLAY_OBJECT_TABLE_BASE,
     GAMEPLAY_OBJECT_LAST_SLOT_BASE,
     OBJECT_SLOT_STRIDE,
-    OFF_ACQUIRED_TARGET_PTR,
-    OFF_ACTIVE_WORD,
-    OFF_DIRECTION_OR_STEP,
-    OFF_DRAW_LAYER,
-    OFF_GATE_OR_LAYER,
-    OFF_LOGIC_ID,
-    OFF_OBJECT_TYPE,
-    OFF_SPRITE_OR_STATE,
-    OFF_SUBSTATE,
-    OFF_TARGET_X,
-    OFF_TARGET_Y,
-    OFF_TRANSITION_LATCH,
     OFF_X,
     OFF_Y,
     ObjectSlotView,
@@ -411,7 +399,7 @@ def _present_dispatch_target_5a92(cpu, bp: int) -> int:
     cs = cpu.s.cs & 0xFFFF
     ss = cpu.s.ss & 0xFFFF
     mode = cpu.mem.rw(cs, 0x95BC)
-    obj_type = cpu.mem.rw(ss, (bp + OFF_OBJECT_TYPE) & 0xFFFF)
+    obj_type = ObjectSlotView(cpu.mem, ss, bp).object_type
     index = ((obj_type + mode + mode + mode) << 1) & 0xFFFF
     return cpu.mem.rw(cs, (0x5AB6 + index) & 0xFFFF)
 
@@ -420,7 +408,7 @@ def _draw_dispatch_target_5ac8(cpu, bp: int) -> int:
     cs = cpu.s.cs & 0xFFFF
     ss = cpu.s.ss & 0xFFFF
     mode = cpu.mem.rw(cs, 0x95BC)
-    obj_type = cpu.mem.rw(ss, (bp + OFF_OBJECT_TYPE) & 0xFFFF)
+    obj_type = ObjectSlotView(cpu.mem, ss, bp).object_type
     index = ((obj_type + mode + mode + mode) << 1) & 0xFFFF
     return cpu.mem.rw(cs, (0x5AE2 + index) & 0xFFFF)
 
@@ -428,7 +416,7 @@ def _draw_dispatch_target_5ac8(cpu, bp: int) -> int:
 def _layer_draw_dispatch_target_7596(cpu, bp: int) -> int:
     cs = cpu.s.cs & 0xFFFF
     ss = cpu.s.ss & 0xFFFF
-    obj_type = cpu.mem.rw(ss, (bp + OFF_OBJECT_TYPE) & 0xFFFF)
+    obj_type = ObjectSlotView(cpu.mem, ss, bp).object_type
     index = (obj_type << 1) & 0xFFFF
     return cpu.mem.rw(cs, (0x75A0 + index) & 0xFFFF)
 
@@ -437,7 +425,7 @@ def _object_logic_target_aa2b(cpu, bp: int) -> int:
     """Predict AA2B's object-logic dispatch target from SS:[BP+16]."""
     cs = cpu.s.cs & 0xFFFF
     ss = cpu.s.ss & 0xFFFF
-    draw_layer = cpu.mem.rw(ss, (bp + OFF_DRAW_LAYER) & 0xFFFF)
+    draw_layer = ObjectSlotView(cpu.mem, ss, bp).draw_layer
     index = (draw_layer << 1) & 0xFFFF
     return cpu.mem.rw(cs, (0xAA36 + index) & 0xFFFF)
 

@@ -85,8 +85,9 @@ def _find_free_effect_slot_7524(cpu) -> int:
     cpu.s.bx = mem.rw(ds, 0x95D8)
     while True:
         bx = cpu.s.bx & 0xFFFF
-        _cmp_word(cpu, mem.rw(ds, bx), 0x0000)
-        if mem.rw(ds, bx) == 0:
+        cand = ObjectSlotView(mem, ds, bx)  # candidate slot being scanned
+        _cmp_word(cpu, cand.active_word, 0x0000)
+        if cand.active_word == 0:
             mem.ww(ds, 0x95D8, bx)
             return bx
         _add_reg16(cpu, 3, OBJECT_SLOT_STRIDE)
@@ -116,7 +117,8 @@ def _find_free_object_slot_7573(cpu) -> int:
         _cmp_word(cpu, bx, GAMEPLAY_OBJECT_ALLOCATOR_WRAP_SENTINEL)
         if bx == GAMEPLAY_OBJECT_ALLOCATOR_WRAP_SENTINEL:
             bx = GAMEPLAY_OBJECT_TABLE_BASE
-        value = cpu.mem.rw(ds, bx)
+        cand = ObjectSlotView(cpu.mem, ds, bx)  # candidate slot being scanned
+        value = cand.active_word
         _cmp_word(cpu, value, 0)
         if value == 0:
             cpu.mem.ww(ds, 0x95DA, bx)
