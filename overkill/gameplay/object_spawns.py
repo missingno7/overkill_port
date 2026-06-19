@@ -19,23 +19,7 @@ from overkill.recovered.views.object_slots import (
     GAMEPLAY_OBJECT_ALLOCATOR_WRAP_SENTINEL,
     GAMEPLAY_OBJECT_TABLE_BASE,
     OBJECT_SLOT_STRIDE,
-    OFF_ACTIVE_WORD,
-    OFF_COUNTER_20,
-    OFF_DIRECTION_OR_STEP,
-    OFF_GATE_OR_LAYER,
-    OFF_HAZARD_CLASS,
     OFF_LINKED_COUNTER_INDEX,
-    OFF_LOGIC_ID,
-    OFF_MOVE_DELTA_X,
-    OFF_MOVE_DELTA_Y,
-    OFF_SCAN_ENABLE_OR_SOLID,
-    OFF_SCAN_FLAG,
-    OFF_SPRITE_OR_STATE,
-    OFF_SUBSTATE,
-    OFF_TARGET_X,
-    OFF_TARGET_Y,
-    OFF_TRANSITION_LATCH,
-    OFF_VARIANT,
     OFF_X,
     OFF_Y,
 )
@@ -212,36 +196,37 @@ def _run_formation_spawn_7476_observed(cpu, *, parent: str, chain: str, cx_value
     old_ax = cpu.s.ax
     cpu.s.ax = (cpu.s.ax + cpu.s.cx) & 0xFFFF
     cpu.set_add_flags(old_ax, cpu.s.cx, old_ax + cpu.s.cx, 16)
-    mem.ww(ds, (bx + OFF_Y) & 0xFFFF, cpu.s.ax)
+    dst = ObjectSlotView(mem, ds, bx)  # the spawned/target object's record (DS:BX)
+    dst.y_word = cpu.s.ax
     cpu.s.ax = slot.x_word
     old_ax = cpu.s.ax
     cpu.s.ax = (cpu.s.ax + cpu.s.dx) & 0xFFFF
     cpu.set_add_flags(old_ax, cpu.s.dx, old_ax + cpu.s.dx, 16)
-    mem.ww(ds, (bx + OFF_X) & 0xFFFF, cpu.s.ax)
+    dst.x_word = cpu.s.ax
 
-    mem.ww(ds, bx, 0x0001)
-    mem.ww(ds, (bx + OFF_SCAN_ENABLE_OR_SOLID) & 0xFFFF, 0x0000)
-    mem.ww(ds, (bx + OFF_DIRECTION_OR_STEP) & 0xFFFF, 0x0000)
-    mem.ww(ds, (bx + OFF_SPRITE_OR_STATE) & 0xFFFF, 0x0031)
-    mem.ww(ds, (bx + OFF_GATE_OR_LAYER) & 0xFFFF, 0x0001)
-    mem.ww(ds, (bx + OFF_SCAN_FLAG) & 0xFFFF, 0x0000)
-    mem.ww(ds, (bx + OFF_HAZARD_CLASS) & 0xFFFF, 0x0002)
-    mem.ww(ds, (bx + OFF_LOGIC_ID) & 0xFFFF, 0x000B)
-    mem.ww(ds, (bx + OFF_SUBSTATE) & 0xFFFF, 0xFFFF)
+    dst.active_word = 0x0001
+    dst.scan_enable_or_solid = 0x0000
+    dst.direction_or_step = 0x0000
+    dst.sprite_or_state = 0x0031
+    dst.gate_or_layer = 0x0001
+    dst.scan_flag = 0x0000
+    dst.hazard_class = 0x0002
+    dst.logic_id = 0x000B
+    dst.substate = 0xFFFF
 
-    cpu.s.ax = mem.rw(ds, (bx + OFF_Y) & 0xFFFF)
+    cpu.s.ax = dst.y_word
     cpu.s.cx = (mem.rw(ds, 0x2380) + 0x0009) & 0xFFFF
     cpu.set_add_flags(mem.rw(ds, 0x2380), 0x0009, mem.rw(ds, 0x2380) + 0x0009, 16)
     old_ax = cpu.s.ax
     cpu.s.ax = (cpu.s.ax - cpu.s.cx) & 0xFFFF
     cpu.set_sub_flags(old_ax, cpu.s.cx, old_ax - cpu.s.cx, 16)
-    mem.ww(ds, (bx + OFF_MOVE_DELTA_Y) & 0xFFFF, cpu.s.ax)
-    cpu.s.ax = mem.rw(ds, (bx + OFF_X) & 0xFFFF)
+    dst.move_delta_y = cpu.s.ax
+    cpu.s.ax = dst.x_word
     cpu.s.cx = mem.rw(ds, 0x237E)
     old_ax = cpu.s.ax
     cpu.s.ax = (cpu.s.ax - cpu.s.cx) & 0xFFFF
     cpu.set_sub_flags(old_ax, cpu.s.cx, old_ax - cpu.s.cx, 16)
-    mem.ww(ds, (bx + OFF_MOVE_DELTA_X) & 0xFFFF, cpu.s.ax)
+    dst.move_delta_x = cpu.s.ax
 
 
 def _run_linked_effect_spawn_7420_observed(cpu) -> None:
@@ -258,32 +243,33 @@ def _run_linked_effect_spawn_7420_observed(cpu) -> None:
     if bx == 0xFFFF:
         return
 
-    mem.ww(ds, bx, 0x0001)
+    dst = ObjectSlotView(mem, ds, bx)  # the spawned/target object's record (DS:BX)
+    dst.active_word = 0x0001
     cpu.s.ax = mem.rw(ds, 0x2378)
     old_ax = cpu.s.ax
     addend = mem.rw(ds, 0xA278)
     cpu.s.ax = (cpu.s.ax + addend) & 0xFFFF
     cpu.set_add_flags(old_ax, addend, old_ax + addend, 16)
-    mem.ww(ds, (bx + OFF_X) & 0xFFFF, cpu.s.ax)
+    dst.x_word = cpu.s.ax
 
     cpu.s.ax = mem.rw(ds, 0x2376)
     _cmp_word(cpu, cpu.s.ax, 0x00C0)
     if cpu.s.ax > 0x00C0:
         cpu.s.ax = 0x00C0
-    mem.ww(ds, (bx + OFF_Y) & 0xFFFF, cpu.s.ax)
+    dst.y_word = cpu.s.ax
 
-    mem.ww(ds, (bx + OFF_TRANSITION_LATCH) & 0xFFFF, 0x0000)
-    mem.ww(ds, (bx + OFF_SCAN_FLAG) & 0xFFFF, 0x0001)
-    mem.ww(ds, (bx + OFF_HAZARD_CLASS) & 0xFFFF, 0x0005)
-    mem.ww(ds, (bx + OFF_LOGIC_ID) & 0xFFFF, 0x0000)
-    mem.ww(ds, (bx + OFF_LINKED_COUNTER_INDEX) & 0xFFFF, 0xFFFF)
-    mem.ww(ds, (bx + OFF_VARIANT) & 0xFFFF, 0x0000)
+    dst.transition_latch = 0x0000
+    dst.scan_flag = 0x0001
+    dst.hazard_class = 0x0005
+    dst.logic_id = 0x0000
+    dst.linked_counter_index = 0xFFFF
+    dst.variant = 0x0000
 
     cpu.s.si = mem.rw(ds, 0x237A)
     mem.ww(ds, (bx + 0x26) & 0xFFFF, cpu.s.si)
     _add_reg16(cpu, 6, 0x0046)
-    mem.ww(ds, (bx + OFF_SPRITE_OR_STATE) & 0xFFFF, cpu.s.si)
-    mem.ww(ds, (bx + OFF_GATE_OR_LAYER) & 0xFFFF, 0x0000)
+    dst.sprite_or_state = cpu.s.si
+    dst.gate_or_layer = 0x0000
 
 
 def run_object_slot_allocate_or_reclaim_7547(cpu) -> None:
@@ -324,14 +310,15 @@ def run_object_spawn_anchor_offset_a571(cpu) -> None:
     ax = result & 0xFFFF
     cpu.s.ax = ax
     cpu.set_add_flags((result - 0x000A) & 0xFFFF, 0x000A, result, 16)
-    mem.ww(ds, (bx + OFF_Y) & 0xFFFF, ax)
+    dst = ObjectSlotView(mem, ds, bx)  # the spawned/target object's record (DS:BX)
+    dst.y_word = ax
 
     ax = slot.x_word
     result = ax + 0x000A
     ax = result & 0xFFFF
     cpu.s.ax = ax
     cpu.set_add_flags((result - 0x000A) & 0xFFFF, 0x000A, result, 16)
-    mem.ww(ds, (bx + OFF_X) & 0xFFFF, ax)
+    dst.x_word = ax
     cpu.s.ip = cpu.pop()
 
 
@@ -354,14 +341,15 @@ def run_object_spawn_seed_a4ea(cpu) -> None:
 
     ds = cpu.s.ds & 0xFFFF
     mem = cpu.mem
-    mem.ww(ds, bx, 0x0001)
-    mem.ww(ds, (bx + OFF_SCAN_ENABLE_OR_SOLID) & 0xFFFF, 0x0001)
-    mem.ww(ds, (bx + OFF_DIRECTION_OR_STEP) & 0xFFFF, 0x0000)
-    mem.ww(ds, (bx + OFF_SPRITE_OR_STATE) & 0xFFFF, 0x0032)
-    mem.ww(ds, (bx + OFF_SCAN_FLAG) & 0xFFFF, 0x0000)
-    mem.ww(ds, (bx + OFF_HAZARD_CLASS) & 0xFFFF, 0x0002)
-    mem.ww(ds, (bx + OFF_LOGIC_ID) & 0xFFFF, 0x0002)
-    mem.ww(ds, (bx + OFF_SUBSTATE) & 0xFFFF, 0xFFFF)
+    dst = ObjectSlotView(mem, ds, bx)  # the spawned/target object's record (DS:BX)
+    dst.active_word = 0x0001
+    dst.scan_enable_or_solid = 0x0001
+    dst.direction_or_step = 0x0000
+    dst.sprite_or_state = 0x0032
+    dst.scan_flag = 0x0000
+    dst.hazard_class = 0x0002
+    dst.logic_id = 0x0002
+    dst.substate = 0xFFFF
     cpu.s.ip = cpu.pop()
 
 
@@ -384,21 +372,22 @@ def run_object_spawn_seed_from_source_a4d7(cpu) -> None:
 
     ds = cpu.s.ds & 0xFFFF
     mem = cpu.mem
-    mem.ww(ds, bx, 0x0001)
-    mem.ww(ds, (bx + OFF_SCAN_ENABLE_OR_SOLID) & 0xFFFF, 0x0001)
-    mem.ww(ds, (bx + OFF_DIRECTION_OR_STEP) & 0xFFFF, 0x0000)
-    mem.ww(ds, (bx + OFF_SPRITE_OR_STATE) & 0xFFFF, 0x0032)
-    mem.ww(ds, (bx + OFF_SCAN_FLAG) & 0xFFFF, 0x0000)
-    mem.ww(ds, (bx + OFF_HAZARD_CLASS) & 0xFFFF, 0x0002)
-    mem.ww(ds, (bx + OFF_LOGIC_ID) & 0xFFFF, 0x0002)
-    mem.ww(ds, (bx + OFF_SUBSTATE) & 0xFFFF, 0xFFFF)
+    dst = ObjectSlotView(mem, ds, bx)  # the spawned/target object's record (DS:BX)
+    dst.active_word = 0x0001
+    dst.scan_enable_or_solid = 0x0001
+    dst.direction_or_step = 0x0000
+    dst.sprite_or_state = 0x0032
+    dst.scan_flag = 0x0000
+    dst.hazard_class = 0x0002
+    dst.logic_id = 0x0002
+    dst.substate = 0xFFFF
 
     si = cpu.s.si & 0xFFFF
     cpu.s.ax = mem.rw(ds, (si + OFF_X) & 0xFFFF)
-    mem.ww(ds, (bx + OFF_X) & 0xFFFF, cpu.s.ax)
+    dst.x_word = cpu.s.ax
     cpu.s.ax = mem.rw(ds, (si + OFF_Y) & 0xFFFF)
     old_ax = cpu.s.ax
     cpu.s.ax = (old_ax + 0x0004) & 0xFFFF
     cpu.set_add_flags(old_ax, 0x0004, old_ax + 0x0004, 16)
-    mem.ww(ds, (bx + OFF_Y) & 0xFFFF, cpu.s.ax)
+    dst.y_word = cpu.s.ax
     cpu.s.ip = cpu.pop()
