@@ -85,19 +85,30 @@ aggressively without fear.
 `assert_oracle_equivalent` + harness dead-stack ignore, piloted on the BC4B
 clamp. The contract above is now enforceable.
 
-**Phase 1 — retire dead-state scratch (lowest risk, do first).**
-Delete `_remember_balanced_push_scratch` and its 6 call sites; sweep the ~15
-inline `mem.ww(ss, sp-2, …)` scratch writes (object_movement, object_behaviors,
-object_bounds, object_deactivation, frame_orchestration) and the asset-codec
-dead-stack writes (lz/rle/packed_stream). Switch each affected oracle's exact
-`mem.data ==` to `assert_oracle_equivalent`. Net: a whole helper and a category
-of "why is this here?" code gone, zero behaviour change.
+**Phase 1 — retire dead-state scratch (lowest risk, do first). DONE.**
+Deleted `_remember_balanced_push_scratch` and its call sites; swept the inline
+`mem.ww(ss, sp-2, …)` scratch writes; switched affected oracles to
+`assert_oracle_equivalent`. Kept the live `saved_cx` CX-restore in the asset
+codecs (it reaches the boundary — not dead). Commits `643e602`, `528cdb8`,
+`933e756`.
 
-**Phase 2 — structured access everywhere (pure readability, byte-exact).**
-Raw `mem.rw(ds, reg+off)` → typed views (`ObjectSlotView`, frame-timer/box
-views, …). Finish `OFF_*` / object-record field naming (the living memory map).
-Name the DS-globals (~141 addresses, ~498 uses) by evidenced role — one
-convention, per-global evidence, like `OBJECT_RECORD_FIELDS`.
+**Phase 2 — structured access everywhere (pure readability, byte-exact). DONE.**
+*2a typed-views:* every raw SS:BP / DS:BX object-record access in gameplay now
+goes through `ObjectSlotView` (current-object `slot`, spawned/target `dst`,
+scanned-candidate `cand`); fixed-bx handlers use one view, scan loops a
+per-iteration view. The view is write-complete (setters for every stamped
+field). Only deliberate semantic aliases remain raw (e.g. `OFF_SUBSTATE_1E` in
+contact_overlap, documenting that DS:[bp+1E] is read as a substate there).
+*2b DS-global reconciliation:* `recovered/ds_globals.py` is the single
+definition site for the cells genuinely shared across subsystems (the 7 that had
+2–3 divergent adapter names — VIEW_TARGET_X/Y, VIDEO_MODE_SELECTOR_OFF,
+COLLISION_DEBUG_FLAG/CODE, BOSS_GROUP_LATCH, CONTACT_DISPATCH_GATE); subsystem
+modules keep their local names as thin `LOCAL = CANONICAL` aliases. **Design
+call:** single-subsystem globals stay local to their module (locality aids
+readability), and same-valued-but-distinct subsystem literals (the `0x00xx`
+thresholds/flags/logic-ids) are *not* merged — they are different roles that
+share a number. Commits for 2a across object_movement/contact_side_effects/
+object_runtime/object_spawns + earlier batches; 2b is the ds_globals commit.
 
 **Phase 3 — de-transliterate hook bodies.**
 Per hook: replace register-juggling and goto-IP with named locals and real
