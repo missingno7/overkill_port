@@ -153,14 +153,24 @@ counter and run `tests.test_demo_replay_equivalence._run_demo_equivalence(d,
 max_frames=150, to_end=False)` over `T.DEMOS` (≈3 min; raises on divergence).
 Commit only if count>0 and no failures.
 
-Slices landed: `ae09`, `ab10`, `aba3`, `b9f0`, `b73e`. Reverted as unverifiable:
-`8d4f` (0 demo invocations in the 150-frame window, no oracle).
+Slices landed (object_behaviors): `ae09`, `ab10`, `aba3`, `b9f0`, `b73e` (idle
+NEG/ADD + B800 path), `ad04`, `b86d` (8 sites; its "preserved for flags" comment
+was over-cautious). game_state: `9cd9`, `_advance_coord_ring_ptr`, `9cf1`, `99cd`.
+frame_orchestration: `9b2e` (input-TEST cluster + 2350 CMP), `852b`.
+Reverted as unverifiable: `8d4f` (0 demo invocations, no oracle).
 
-**Next Phase-3 targets (heavily exercised, verified-live, good order):**
-`aed8` (4257×), `ad04` (3639×), `ab77` (2439×), the `aa2b` dispatch (8366×), then
-the remaining `set_*_flags` sites in `game_state` / `frame_orchestration` /
-`object_spawns`. Leave any block already commented "stays so flags match the
-oracle" (e.g. B73E idle-frame NEG/ADD) untouched.
+**Verified already-clean (no dead scaffolding — nothing to remove):** `aed8`,
+`ab77`, and the `aa2b` dispatch each have 0 `set_*_flags`/`old_*`-temp sites; the
+lone `_cmp_word` in `ab77` is a live early-return guard. These top-priority
+targets were authored cleanly from the start, so the sequence is complete through
+them with no edit needed.
+
+**Next Phase-3 targets (remaining dead-flag work):** the rest of the
+`set_*_flags` / dead-`_cmp_word` sites in `game_state` (~12, mix of dead
+arithmetic and genuinely-live input-TEST/XOR — per-site analysis), the remaining
+`frame_orchestration` input-TEST/XOR/NEG sites, and `object_spawns` (10). Leave
+genuinely-live boundary flags (last op before a boundary) and intentional helpers
+(`_add_bl_ah`, `_inc_reg8_preserve_cf`) untouched.
 
 **After Phase 3:** Phase 4 (rename `run_*_<addr>` → role names; regroup modules) —
 cheap and mechanical. Phase 5 (interpreted islands) stays attended-only and last.
