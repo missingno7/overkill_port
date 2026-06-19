@@ -22,18 +22,7 @@ from overkill.gameplay.object_spawns import (
     _run_linked_effect_spawn_7420_observed,
 )
 from overkill.recovered.adapters.collision_adapter import run_postmove_y_clamp_bcb1_body
-from overkill.recovered.views.object_slots import (
-    OFF_ACTIVE_WORD,
-    OFF_DRAW_LAYER,
-    OFF_LINKED_COUNTER_INDEX,
-    OFF_LOGIC_ID,
-    OFF_OBJECT_TYPE,
-    OFF_PREVIOUS_LOGIC_ID,
-    OFF_SPRITE_OR_STATE,
-    OFF_TRANSITION_LATCH,
-    OFF_X,
-    OFF_Y,
-)
+from overkill.recovered.views.object_slots import ObjectSlotView
 
 
 
@@ -51,13 +40,14 @@ def _run_deactivate_bd17_observed(cpu, *, parent: str, chain: str, cx_value: int
     ss = cpu.s.ss & 0xFFFF
     bp = cpu.s.bp & 0xFFFF
     mem = cpu.mem
+    slot = ObjectSlotView(mem, ss, bp)  # this object's record (SS:BP)
 
-    mem.ww(ss, (bp + OFF_ACTIVE_WORD) & 0xFFFF, 0x0000)
+    slot.active_word = 0x0000
 
-    draw_layer = mem.rw(ss, (bp + OFF_DRAW_LAYER) & 0xFFFF)
+    draw_layer = slot.draw_layer
     _cmp_word(cpu, draw_layer, 0x0004)
     if draw_layer == 0x0004:
-        logic_id = mem.rw(ss, (bp + OFF_LOGIC_ID) & 0xFFFF)
+        logic_id = slot.logic_id
         # BD5C is a real CALL C054.  Even after the call returns, the BD5F
         # return word remains in freed stack space and is visible to full-stack
         # verifier comparisons.  Keep the frame live while modelling the C054
@@ -82,11 +72,11 @@ def _run_deactivate_bd17_observed(cpu, *, parent: str, chain: str, cx_value: int
         _cmp_word(cpu, logic_id, 0x0001)
         if logic_id == 0x0001:
             return
-        slot = mem.rw(ss, (bp + OFF_LINKED_COUNTER_INDEX) & 0xFFFF)
-        _cmp_word(cpu, slot, 0xFFFF)
-        if slot == 0xFFFF:
+        link_index = slot.linked_counter_index
+        _cmp_word(cpu, link_index, 0xFFFF)
+        if link_index == 0xFFFF:
             return
-        cpu.s.si = slot
+        cpu.s.si = link_index
         cpu.s.si = cpu.shift(4, cpu.s.si, 1, 16)  # SHL SI,1
         _add_reg16(cpu, 6, 0x2078)                # ADD SI,2078h
         mem.wb(ds, cpu.s.si & 0xFFFF, 0x00)
@@ -94,10 +84,10 @@ def _run_deactivate_bd17_observed(cpu, *, parent: str, chain: str, cx_value: int
 
     _cmp_word(cpu, draw_layer, 0x0001)
     if draw_layer == 0x0001:
-        mem.ww(ss, (bp + OFF_DRAW_LAYER) & 0xFFFF, 0x0002)
+        slot.hazard_class = 0x0002  # OFF_DRAW_LAYER aliases hazard_class; draw layer here
         return
 
-    logic_id = mem.rw(ss, (bp + OFF_LOGIC_ID) & 0xFFFF)
+    logic_id = slot.logic_id
     for target, counter in (
         (0x0007, 0xA970),
         (0x0008, 0xA970),
@@ -169,8 +159,9 @@ def _run_collision_death_tail_bfc7(cpu, *, parent: str, chain: str, cx_value: in
     ss = cpu.s.ss & 0xFFFF
     bp = cpu.s.bp & 0xFFFF
     mem = cpu.mem
+    slot = ObjectSlotView(mem, ss, bp)  # this object's record (SS:BP)
 
-    logic_id = mem.rw(ss, (bp + OFF_LOGIC_ID) & 0xFFFF)
+    logic_id = slot.logic_id
     _cmp_word(cpu, logic_id, 0x0021)
     if logic_id == 0x0021:
         _cmp_word(cpu, mem.rw(ds, 0x2356), 0x0004)
@@ -182,7 +173,7 @@ def _run_collision_death_tail_bfc7(cpu, *, parent: str, chain: str, cx_value: in
         # special body; it merely joins the ordinary BFD7 death/transition
         # path below.
 
-    obj_type = mem.rw(ss, (bp + OFF_OBJECT_TYPE) & 0xFFFF)
+    obj_type = slot.object_type
     _cmp_word(cpu, obj_type, 0x0001)
     score_amount = 0x0030 if obj_type == 0x0001 else 0x0060
     # BFC7 materializes the score value in BX (MOV BX,0030h/0060h) before
@@ -208,7 +199,7 @@ def _run_collision_death_tail_bfc7(cpu, *, parent: str, chain: str, cx_value: in
 
     saved_bp = bp
     cpu.push(saved_bp)
-    linked_slot = mem.rw(ss, (bp + OFF_LINKED_COUNTER_INDEX) & 0xFFFF)
+    linked_slot = slot.linked_counter_index
     _cmp_word(cpu, linked_slot, 0xFFFF)
     if linked_slot != 0xFFFF:
         cpu.s.si = linked_slot
@@ -222,8 +213,8 @@ def _run_collision_death_tail_bfc7(cpu, *, parent: str, chain: str, cx_value: in
             mem.wb(ds, cpu.s.si & 0xFFFF, new_counter)
             cpu.set_sub_flags(old_counter, 1, old_counter - 1, 8)
             if new_counter == 0:
-                mem.ww(ds, 0x2376, mem.rw(ss, (bp + OFF_Y) & 0xFFFF))
-                mem.ww(ds, 0x2378, mem.rw(ss, (bp + OFF_X) & 0xFFFF))
+                mem.ww(ds, 0x2376, slot.y_word)
+                mem.ww(ds, 0x2378, slot.x_word)
                 cpu.s.ax = mem.rb(ds, (cpu.s.si + 1) & 0xFFFF)
                 cpu.set_logic_flags(cpu.s.ax, 16)
                 mem.ww(ds, 0x237A, cpu.s.ax)
@@ -255,21 +246,21 @@ def _run_collision_death_tail_bfc7(cpu, *, parent: str, chain: str, cx_value: in
         mem.wb(ds, 0xBEFF, 0x19)
 
     cpu.s.ax = logic_id
-    mem.ww(ss, (bp + OFF_PREVIOUS_LOGIC_ID) & 0xFFFF, cpu.s.ax)
-    mem.ww(ss, (bp + OFF_LOGIC_ID) & 0xFFFF, 0x0001)
-    mem.ww(ss, (bp + OFF_TRANSITION_LATCH) & 0xFFFF, 0x0000)
+    slot.previous_logic_id = cpu.s.ax
+    slot.logic_id = 0x0001
+    slot.transition_latch = 0x0000
     # C037 dispatches through a tiny table keyed by the object type at +14h.
     # Earlier lifts hard-coded the type-1 C048 tail (BX=0002, +08=0000), but
     # multi-part/final-boss objects use type 2 and the original takes C04E
     # instead (BX=0004, +08=0003).  Keep this as a source-like type dispatch
     # rather than a per-snapshot special case.
-    obj_type = mem.rw(ss, (bp + OFF_OBJECT_TYPE) & 0xFFFF)
+    obj_type = slot.object_type
     cpu.s.bx = obj_type & 0xFFFF
     cpu.s.bx = cpu.shift(4, cpu.s.bx, 1, 16)
     if obj_type == 0x0001:
-        mem.ww(ss, (bp + OFF_SPRITE_OR_STATE) & 0xFFFF, 0x0000)
+        slot.sprite_or_state = 0x0000
     elif obj_type == 0x0002:
-        mem.ww(ss, (bp + OFF_SPRITE_OR_STATE) & 0xFFFF, 0x0003)
+        slot.sprite_or_state = 0x0003
     else:
         _raise_unverified_path(
             cpu,

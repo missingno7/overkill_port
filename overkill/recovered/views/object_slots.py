@@ -207,6 +207,10 @@ class ObjectSlotView:
     def active_word(self) -> int:
         return self.u16(OFF_ACTIVE_WORD)
 
+    @active_word.setter
+    def active_word(self, value: int) -> None:
+        self.set_u16(OFF_ACTIVE_WORD, value)
+
     @property
     def x_word(self) -> int:
         return self.u16(OFF_X)
@@ -263,6 +267,11 @@ class ObjectSlotView:
     @property
     def hazard_class(self) -> int:
         return self.u16(OFF_HAZARD_CLASS)
+
+    @hazard_class.setter
+    def hazard_class(self, value: int) -> None:
+        # OFF_HAZARD_CLASS is the writable base of the draw_layer read alias.
+        self.set_u16(OFF_HAZARD_CLASS, value)
 
     @property
     def logic_id(self) -> int:
@@ -364,6 +373,14 @@ class ObjectSlotView:
     @variant.setter
     def variant(self, value: int) -> None:
         self.set_u16(OFF_VARIANT, value)
+
+    @property
+    def linked_counter_index(self) -> int:
+        return self.u16(OFF_LINKED_COUNTER_INDEX)
+
+    @linked_counter_index.setter
+    def linked_counter_index(self, value: int) -> None:
+        self.set_u16(OFF_LINKED_COUNTER_INDEX, value)
 
     @property
     def move_delta_x(self) -> int:
