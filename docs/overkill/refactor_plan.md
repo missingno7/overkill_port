@@ -157,7 +157,9 @@ Slices landed (object_behaviors): `ae09`, `ab10`, `aba3`, `b9f0`, `b73e` (idle
 NEG/ADD + B800 path), `ad04`, `b86d` (8 sites; its "preserved for flags" comment
 was over-cautious). game_state: `9cd9`, `_advance_coord_ring_ptr`, `9cf1`, `99cd`.
 frame_orchestration: `9b2e` (input-TEST cluster + 2350 CMP), `852b`.
-Reverted as unverifiable: `8d4f` (0 demo invocations, no oracle).
+object_spawns: `7573` (wrap-sentinel CMP), `7420` (x ADD), `a571` (Y ADD).
+Reverted as unverifiable (0 demo invocations in the 150-frame window, no oracle —
+analyzed dead but pending a full-demo verify): `8d4f`, `7476` formation spawn.
 
 **Verified already-clean (no dead scaffolding — nothing to remove):** `aed8`,
 `ab77`, and the `aa2b` dispatch each have 0 `set_*_flags`/`old_*`-temp sites; the
@@ -167,10 +169,12 @@ them with no edit needed.
 
 **Next Phase-3 targets (remaining dead-flag work):** the rest of the
 `set_*_flags` / dead-`_cmp_word` sites in `game_state` (~12, mix of dead
-arithmetic and genuinely-live input-TEST/XOR — per-site analysis), the remaining
-`frame_orchestration` input-TEST/XOR/NEG sites, and `object_spawns` (10). Leave
-genuinely-live boundary flags (last op before a boundary) and intentional helpers
-(`_add_bl_ah`, `_inc_reg8_preserve_cf`) untouched.
+arithmetic and genuinely-live input-TEST/XOR — per-site analysis) and the
+remaining `frame_orchestration` input-TEST/XOR/NEG sites. (`object_spawns`
+done bar the unverifiable `7476`.) Leave genuinely-live boundary flags (last op
+before a boundary) and intentional helpers (`_add_bl_ah`, `_inc_reg8_preserve_cf`)
+untouched. Note: a full-demo (`OVERKILL_FULL_DEMO_VERIFY=1`) pass would unblock
+the analyzed-dead `8d4f`/`7476` sites if it exercises them.
 
 **After Phase 3:** Phase 4 (rename `run_*_<addr>` → role names; regroup modules) —
 cheap and mechanical. Phase 5 (interpreted islands) stays attended-only and last.
