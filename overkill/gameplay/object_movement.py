@@ -35,9 +35,8 @@ from overkill.recovered.systems.movement import (
 )
 from overkill.recovered.views.object_slots import (
     EFFECT_OBJECT_TABLE_BASE, GAMEPLAY_OBJECT_TABLE_BASE, OBJECT_SLOT_STRIDE,
-    OFF_DIRECTION_OR_STEP, OFF_HAZARD_CLASS, OFF_LINKED_COUNTER_INDEX, OFF_LOGIC_ID,
-    OFF_MOVE_DELTA_X, OFF_MOVE_DELTA_Y, OFF_MOVE_STEP_ERROR, OFF_SCAN_FLAG,
-    OFF_SPRITE_OR_STATE, OFF_TARGET_X, OFF_TARGET_Y, OFF_X, OFF_Y, ObjectSlotView,
+    OFF_HAZARD_CLASS, OFF_LINKED_COUNTER_INDEX, OFF_LOGIC_ID, OFF_MOVE_STEP_ERROR,
+    OFF_SCAN_FLAG, OFF_SPRITE_OR_STATE, OFF_X, OFF_Y, ObjectSlotView,
 )
 from overkill.runtime_code import require_runtime_code_variant
 
@@ -198,6 +197,7 @@ def _run_object_delta_helper_5e1b(cpu) -> None:
     ds = cpu.s.ds & 0xFFFF
     ss = cpu.s.ss & 0xFFFF
     bp = cpu.s.bp & 0xFFFF
+    slot = ObjectSlotView(cpu.mem, ss, bp)  # this object's record (SS:BP)
     bx = cpu.s.bx & 0xFFFF
     mem = cpu.mem
 
@@ -206,7 +206,7 @@ def _run_object_delta_helper_5e1b(cpu) -> None:
     if mem.rw(ds, (bx + OFF_SCAN_FLAG) & 0xFFFF) != 0x0001:
         cpu.s.dx = 0x000C
 
-    cpu.s.ax = mem.rw(ss, (bp + OFF_Y) & 0xFFFF)
+    cpu.s.ax = slot.y_word
     cpu.s.cx = mem.rw(ds, (bx + OFF_Y) & 0xFFFF)
     old_cx = cpu.s.cx
     cpu.s.cx = (cpu.s.cx + cpu.s.dx) & 0xFFFF
@@ -214,9 +214,9 @@ def _run_object_delta_helper_5e1b(cpu) -> None:
     old_ax = cpu.s.ax
     cpu.s.ax = (cpu.s.ax - cpu.s.cx) & 0xFFFF
     cpu.set_sub_flags(old_ax, cpu.s.cx, old_ax - cpu.s.cx, 16)
-    mem.ww(ss, (bp + OFF_MOVE_DELTA_Y) & 0xFFFF, cpu.s.ax)
+    slot.move_delta_y = cpu.s.ax
 
-    cpu.s.ax = mem.rw(ss, (bp + OFF_X) & 0xFFFF)
+    cpu.s.ax = slot.x_word
     cpu.s.cx = mem.rw(ds, (bx + OFF_X) & 0xFFFF)
     old_cx = cpu.s.cx
     cpu.s.cx = (cpu.s.cx + cpu.s.dx) & 0xFFFF
@@ -224,7 +224,7 @@ def _run_object_delta_helper_5e1b(cpu) -> None:
     old_ax = cpu.s.ax
     cpu.s.ax = (cpu.s.ax - cpu.s.cx) & 0xFFFF
     cpu.set_sub_flags(old_ax, cpu.s.cx, old_ax - cpu.s.cx, 16)
-    mem.ww(ss, (bp + OFF_MOVE_DELTA_X) & 0xFFFF, cpu.s.ax)
+    slot.move_delta_x = cpu.s.ax
 
 
 def _run_runtime_patched_object_steer_5e42(cpu) -> None:
@@ -239,7 +239,7 @@ def _run_runtime_patched_object_steer_5e42(cpu) -> None:
     ss = cpu.s.ss & 0xFFFF
     bp = cpu.s.bp & 0xFFFF
     mem = cpu.mem
-    slot = ObjectSlotView(mem, ss, bp)  # this object's record (SS:BP)
+    slot = ObjectSlotView(cpu.mem, ss, bp)  # this object's record (SS:BP)
 
     def call_5eb5() -> None:
         _cmp_word(cpu, mem.rw(ds, 0x230C), 0x0001)
@@ -306,7 +306,7 @@ def _run_runtime_patched_object_steer_5e42(cpu) -> None:
         cpu.s.ip = cpu.pop()
         return
 
-    mem.ww(ss, (bp + OFF_DIRECTION_OR_STEP) & 0xFFFF, cpu.s.ax)
+    slot.direction_or_step = cpu.s.ax
     _cmp_word(cpu, mem.rw(ds, 0x2312), 0x0003)
     if mem.rw(ds, 0x2312) == 0x0003:
         _run_af22_three_pixel_step_for_direction(cpu, parent="1010:5E42 -> AF22")
@@ -509,6 +509,7 @@ def run_object_x_step_left_clamp_a5d1(cpu, self_disable_if_patched) -> None:
     ds = cpu.s.ds & 0xFFFF
     ss = cpu.s.ss & 0xFFFF
     bp = cpu.s.bp & 0xFFFF
+    slot = ObjectSlotView(cpu.mem, ss, bp)  # this object's record (SS:BP)
     _cmp_word(cpu, cpu.mem.rw(ds, 0xA47C), 0x0000)
     if cpu.mem.rw(ds, 0xA47C) != 0:
         field_addr = (bp + OFF_X) & 0xFFFF
@@ -615,7 +616,8 @@ def _run_object_top_scroll_edge_response_a648_body(cpu) -> None:
     ds = cpu.s.ds & 0xFFFF
     ss = cpu.s.ss & 0xFFFF
     bp = cpu.s.bp & 0xFFFF
-    y = cpu.mem.rw(ss, (bp + OFF_Y) & 0xFFFF)
+    slot = ObjectSlotView(cpu.mem, ss, bp)  # this object's record (SS:BP)
+    y = slot.y_word
     input_bits = cpu.mem.rb(ds, 0x98BE)
     start_top_bias = cpu.mem.rw(ds, 0xA39A)
     expected_top_bias = top_scroll_edge_response_a648(
@@ -673,12 +675,13 @@ def run_object_vertical_scroll_edge_response_a616(cpu, self_disable_if_patched) 
     ds = cpu.s.ds & 0xFFFF
     ss = cpu.s.ss & 0xFFFF
     bp = cpu.s.bp & 0xFFFF
+    slot = ObjectSlotView(cpu.mem, ss, bp)  # this object's record (SS:BP)
 
     value = cpu.mem.rw(ds, 0x2350)
     expected = vertical_scroll_edge_response_a616(
         VerticalScrollEdgeInput(
             view_y_word=value,
-            object_y_word=cpu.mem.rw(ss, (bp + OFF_Y) & 0xFFFF),
+            object_y_word=slot.y_word,
             input_bits=cpu.mem.rb(ds, 0x98BE),
             top_bias_word=cpu.mem.rw(ds, 0xA39A),
             bottom_bias_word=cpu.mem.rw(ds, 0xA39C),
@@ -700,7 +703,7 @@ def run_object_vertical_scroll_edge_response_a616(cpu, self_disable_if_patched) 
     if (cpu.s.ip & 0xFFFF) != 0xA622:
         raise RuntimeError(f"A616 expected A648 to return to A622, got {cpu.s.ip & 0xFFFF:04X}")
 
-    y = cpu.mem.rw(ss, (bp + OFF_Y) & 0xFFFF)
+    y = slot.y_word
     _cmp_word(cpu, y, 0x00B0)
     if y == 0x00B0:
         _test_word(cpu, cpu.mem.rb(ds, 0x98BE), 0x0001)
@@ -996,7 +999,8 @@ def _run_af22_three_pixel_step_for_direction(cpu, *, parent: str = "1010:AF22") 
     """Mirror 1010:AF22: one 3-pixel diagonal/cardinal step by SS:[BP+06]."""
     ss = cpu.s.ss & 0xFFFF
     bp = cpu.s.bp & 0xFFFF
-    direction = cpu.mem.rw(ss, (bp + OFF_DIRECTION_OR_STEP) & 0xFFFF) & 0xFFFF
+    slot = ObjectSlotView(cpu.mem, ss, bp)  # this object's record (SS:BP)
+    direction = slot.direction_or_step & 0xFFFF
     cpu.s.bx = direction
     cpu.s.bx = cpu.shift(4, cpu.s.bx, 1, 16)
     if direction > 7:
@@ -1034,10 +1038,11 @@ def run_object_target_chase_d281(cpu, self_disable_if_patched) -> None:
     ds = s.ds & 0xFFFF
     ss = s.ss & 0xFFFF
     bp = s.bp & 0xFFFF
+    slot = ObjectSlotView(cpu.mem, ss, bp)  # this object's record (SS:BP)
 
-    s.ax = mem.rw(ss, (bp + OFF_TARGET_Y) & 0xFFFF)
+    s.ax = slot.target_y_word
     mem.ww(ds, 0x2304, s.ax)
-    s.ax = mem.rw(ss, (bp + OFF_TARGET_X) & 0xFFFF)
+    s.ax = slot.target_x_word
     mem.ww(ds, 0x2306, s.ax)
     mem.ww(ds, 0x2308, 0x0001)
 
@@ -1071,7 +1076,8 @@ def _run_af63_step_for_direction(cpu, *, parent: str = "1010:AF63") -> None:
     """
     ss = cpu.s.ss & 0xFFFF
     bp = cpu.s.bp & 0xFFFF
-    direction = cpu.mem.rw(ss, (bp + OFF_DIRECTION_OR_STEP) & 0xFFFF) & 0xFFFF
+    slot = ObjectSlotView(cpu.mem, ss, bp)  # this object's record (SS:BP)
+    direction = slot.direction_or_step & 0xFFFF
     cpu.s.bx = direction
     cpu.s.bx = cpu.shift(4, cpu.s.bx, 1, 16)  # SHL BX,1 before table JMP.
     if direction > 7:
@@ -1173,7 +1179,8 @@ def _run_aee4_step_for_direction(cpu) -> None:
     """Mirror 1010:AEE4: one 8-pixel direction step via the AEEE table."""
     ss = cpu.s.ss & 0xFFFF
     bp = cpu.s.bp & 0xFFFF
-    direction = cpu.mem.rw(ss, (bp + OFF_DIRECTION_OR_STEP) & 0xFFFF) & 0xFFFF
+    slot = ObjectSlotView(cpu.mem, ss, bp)  # this object's record (SS:BP)
+    direction = slot.direction_or_step & 0xFFFF
     cpu.s.bx = direction
     cpu.s.bx = cpu.shift(4, cpu.s.bx, 1, 16)
     if direction > 7:
@@ -1200,6 +1207,7 @@ def _run_movement_direction_5db2(cpu) -> None:
     ds = cpu.s.ds & 0xFFFF
     ss = cpu.s.ss & 0xFFFF
     bp = cpu.s.bp & 0xFFFF
+    slot = ObjectSlotView(cpu.mem, ss, bp)  # this object's record (SS:BP)
 
     slot = ObjectSlotView.from_ss_bp(cpu)
     pure_decision = decide_target_seek_direction_from_dos(cpu, slot)
@@ -1207,7 +1215,7 @@ def _run_movement_direction_5db2(cpu) -> None:
     cpu.mem.ww(ds, MOVEMENT_DIRECTION_BITS, 0)
     cpu.mem.ww(ds, MOVEMENT_BLOCKED_FLAG, 0)
 
-    y = cpu.mem.rw(ss, (bp + OFF_Y) & 0xFFFF)
+    y = slot.y_word
     target_y = cpu.mem.rw(ds, 0x2304)
     _cmp_word(cpu, y, target_y)
     if y < target_y:
@@ -1215,7 +1223,7 @@ def _run_movement_direction_5db2(cpu) -> None:
     elif y > target_y:
         cpu.mem.ww(ds, MOVEMENT_DIRECTION_BITS, 2)
 
-    x = cpu.mem.rw(ss, (bp + OFF_X) & 0xFFFF)
+    x = slot.x_word
     target_x = cpu.mem.rw(ds, 0x2306)
     _cmp_word(cpu, x, target_x)
     # Original uses signed JL/JG for X after CMP AX,DS:[2306].
@@ -1250,7 +1258,7 @@ def _run_movement_direction_5db2(cpu) -> None:
     if pure_decision.blocked:
         raise AssertionError("pure 5DB2 blocked flag disagrees with movement dispatch path")
 
-    cpu.mem.ww(ss, (bp + OFF_DIRECTION_OR_STEP) & 0xFFFF, cpu.s.ax)
+    slot.direction_or_step = cpu.s.ax
     cpu.s.bx = cpu.mem.rw(ds, MOVEMENT_MODE)
     cpu.s.bx = cpu.shift(4, cpu.s.bx, 1, 16)  # SHL BX,1 before 5E0C table JMP.
     mode = cpu.mem.rw(ds, MOVEMENT_MODE)
