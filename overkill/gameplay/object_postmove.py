@@ -22,7 +22,6 @@ from overkill.gameplay.object_deactivation import (
 )
 from overkill.gameplay.object_runtime_common import (
     _call_verified_child_near,
-    _remember_balanced_push_scratch,
 )
 from overkill.gameplay.view_window import _run_view_window_check_aa46
 from overkill.recovered.views.object_slots import OFF_LOGIC_ID, OFF_OBJECT_TYPE, OFF_X, OFF_Y
@@ -72,7 +71,6 @@ def _run_object_postmove_bc4b(cpu, *, parent: str, chain: str, cx_value: int, cl
             _cmp_word(cpu, y, 0)
             if sy < 0:
                 mem.ww(ss, (bp + OFF_Y) & 0xFFFF, 0)
-        _remember_balanced_push_scratch(cpu, 0xBC4E)
 
     global_disable = mem.rw(ds, 0xA47C)
     _cmp_word(cpu, global_disable, 0)

@@ -104,6 +104,12 @@ class GenericHookStop:
         raise ValueError(f"unknown hook stop kind {self.kind!r}")
 
 
+# Bytes just below SS:SP treated as dead stack scratch (popped CALL return
+# words; ABI-undefined memory an interrupt may clobber).  Kept in sync with the
+# unit-oracle helper ``assert_oracle_equivalent`` in test_overkill_hooks.py.
+_DEAD_STACK_BYTES = 0x40
+
+
 @dataclass
 class MemoryRange:
     name: str
@@ -672,9 +678,21 @@ class HookVerifier:
         if dos_lines:
             sections.append("DOS/state differences:\n" + "\n".join(dos_lines))
 
+        # Ignore the dead stack scratch just below SP: a real CALL leaves its
+        # popped return word there, which the calling convention defines as
+        # undefined (an interrupt may overwrite it).  Lifted hooks that compose a
+        # CALL/RET in Python need not reproduce that dead word, so it is not a
+        # divergence.  Everything at or above SP is still compared exactly.
+        ss = asm_cpu.s.ss & 0xFFFF
+        sp = asm_cpu.s.sp & 0xFFFF
+        dead_stack = frozenset(
+            (((ss << 4) + ((sp - k) & 0xFFFF)) & 0xFFFFF)
+            for k in range(1, _DEAD_STACK_BYTES + 1)
+        )
         mem_sections = []
         for rng in self._memory_ranges(hook_rt):
-            diff = self._range_diff(asm_rt.program.memory.data, hook_rt.program.memory.data, rng)
+            diff = self._range_diff(asm_rt.program.memory.data,
+                                    hook_rt.program.memory.data, rng, dead_stack)
             if diff is not None:
                 mem_sections.append(diff)
         if mem_sections:
@@ -784,7 +802,8 @@ class HookVerifier:
         return lines
 
     @staticmethod
-    def _range_diff(asm: bytearray, hook: bytearray, rng: MemoryRange) -> str | None:
+    def _range_diff(asm: bytearray, hook: bytearray, rng: MemoryRange,
+                    ignore: "frozenset[int] | None" = None) -> str | None:
         start = max(0, rng.start)
         end = min(len(asm), len(hook), start + rng.size)
         asm_view = memoryview(asm)[start:end]
@@ -795,6 +814,8 @@ class HookVerifier:
         count = 0
         for rel, (asm_byte, hook_byte) in enumerate(zip(asm_view, hook_view)):
             if asm_byte != hook_byte:
+                if ignore is not None and (start + rel) in ignore:
+                    continue  # dead stack scratch below SP -- ABI-undefined
                 count += 1
                 if first is None:
                     first = start + rel

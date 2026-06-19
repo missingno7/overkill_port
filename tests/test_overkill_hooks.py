@@ -8,6 +8,35 @@ from overkill.hooks import overkill_file_checksum_loop_c916
 from overkill.runtime import create_overkill_runtime
 
 
+def assert_oracle_equivalent(asm, hook, *, dead_stack_bytes: int = 0x40) -> None:
+    """Assert a hook matches the ASM oracle on all *observable* state.
+
+    Registers, flags, IP and every byte of memory at or above SP (and outside
+    the stack) are compared exactly.  The one thing ignored is the dead stack
+    scratch in ``SS:[SP-dead_stack_bytes .. SP)``: a real CALL leaves its popped
+    return word just below SP, and the x86 calling convention defines memory
+    below SP as undefined -- an interrupt may overwrite it at any instant.  So a
+    lifted hook that composes a CALL/RET in Python need not reproduce that dead
+    word, and the oracle should not demand it.  This lets such hooks drop the
+    "write the expected garbage below SP" fidelity code without losing any
+    guarantee that matters: nothing a real CALL/RET leaves live is relaxed.
+
+    ``asm``/``hook`` are CPU-like objects exposing ``.s`` (CPUState) and ``.mem``
+    (Memory); pass ``runtime.cpu`` for snapshot-backed oracles.
+    """
+    assert asm.s.snapshot() == hook.s.snapshot()
+    if asm.mem.data == hook.mem.data:
+        return
+    base = (asm.s.ss & 0xFFFF) << 4
+    sp = asm.s.sp & 0xFFFF
+    a = bytearray(asm.mem.data)
+    h = bytearray(hook.mem.data)
+    for k in range(1, dead_stack_bytes + 1):
+        addr = (base + ((sp - k) & 0xFFFF)) & 0xFFFFF
+        a[addr] = h[addr] = 0
+    assert a == h, "memory differs outside the dead stack scratch below SP"
+
+
 def test_checksum_replacement_matches_original_loop_registers_and_flags():
     payload = bytes([0x10, 0x20, 0xFF, 0x01, 0x7E, 0x80, 0x33])
 
@@ -4666,8 +4695,9 @@ def test_b73e_b7f3_skip_to_bc4f_matches_interpreted_asm():
     _run_object_behavior_b73e(hook, parent="test", chain="test", cx_value=0x0016)
 
     assert asm.addr() == hook.addr() == (0x1010, 0xBEEF)
-    assert asm.s.snapshot() == hook.s.snapshot()
-    assert asm.mem.data == hook.mem.data
+    # Same boundary-level equivalence: the shared BC4B clamp no longer writes the
+    # dead BC4E scratch word below SP (ABI-undefined), so ignore just that.
+    assert_oracle_equivalent(asm, hook)
 
 
 def test_b73e_b82d_equal_waypoint_loop_matches_interpreted_asm():
@@ -6401,8 +6431,10 @@ def test_postmove_y_clamp_bcb1_hook_matches_interpreted_asm_on_captured_snapshot
         hook.cpu.step()
 
     assert asm.cpu.addr() == hook.cpu.addr() == (0x1010, 0xBC4E)
-    assert asm.cpu.s.snapshot() == hook.cpu.s.snapshot()
-    assert asm.program.memory.data == hook.program.memory.data
+    # Boundary-level equivalence: the BC4B clamp hook no longer writes the dead
+    # BC4E return word below SP that the original CALL leaves as scratch.  That
+    # word is ABI-undefined, so compare everything else exactly and ignore it.
+    assert_oracle_equivalent(asm.cpu, hook.cpu)
 
 
 def test_bd17_deactivate_logic_2a_falls_through_without_counter_drop():
