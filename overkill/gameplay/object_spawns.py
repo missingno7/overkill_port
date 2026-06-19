@@ -14,6 +14,7 @@ from __future__ import annotations
 from overkill.asm import _add_reg16, _cmp_word, _dec_mem_word_preserve_cf
 from overkill.recovered.systems.objects import object_spawn_seed_8209
 from overkill.recovered.views.object_slots import (
+    ObjectSlotView,
     EFFECT_OBJECT_TABLE_BASE,
     GAMEPLAY_OBJECT_ALLOCATOR_WRAP_SENTINEL,
     GAMEPLAY_OBJECT_TABLE_BASE,
@@ -68,19 +69,20 @@ def run_object_spawn_seed_8209(cpu) -> None:
 
     # Stamp in the original 8209..8247 order (offsets distinct, so order is only
     # for faithfulness).
-    mem.ww(ds, (bx + OFF_LINKED_COUNTER_INDEX) & 0xFFFF, seed.linked_counter_index)
-    mem.ww(ds, (bx + OFF_ACTIVE_WORD) & 0xFFFF, seed.active_word)
-    mem.ww(ds, (bx + OFF_GATE_OR_LAYER) & 0xFFFF, seed.gate_or_layer)
-    mem.ww(ds, (bx + OFF_X) & 0xFFFF, seed.x_word)
-    mem.ww(ds, (bx + OFF_TARGET_X) & 0xFFFF, seed.target_x_word)
-    mem.ww(ds, (bx + OFF_Y) & 0xFFFF, seed.y_word)
-    mem.ww(ds, (bx + OFF_TARGET_Y) & 0xFFFF, seed.target_y_word)
-    mem.ww(ds, (bx + OFF_DIRECTION_OR_STEP) & 0xFFFF, seed.direction_or_step)
-    mem.ww(ds, (bx + OFF_SCAN_FLAG) & 0xFFFF, seed.scan_flag)
-    mem.ww(ds, (bx + OFF_HAZARD_CLASS) & 0xFFFF, seed.hazard_class)
-    mem.ww(ds, (bx + OFF_LOGIC_ID) & 0xFFFF, seed.logic_id)
-    mem.ww(ds, (bx + OFF_COUNTER_20) & 0xFFFF, seed.counter_20)
-    mem.ww(ds, (bx + OFF_VARIANT) & 0xFFFF, seed.variant)
+    slot = ObjectSlotView(mem, ds, bx)  # the spawned object's record (DS:BX)
+    slot.linked_counter_index = seed.linked_counter_index
+    slot.active_word = seed.active_word
+    slot.gate_or_layer = seed.gate_or_layer
+    slot.x_word = seed.x_word
+    slot.target_x_word = seed.target_x_word
+    slot.y_word = seed.y_word
+    slot.target_y_word = seed.target_y_word
+    slot.direction_or_step = seed.direction_or_step
+    slot.scan_flag = seed.scan_flag
+    slot.hazard_class = seed.hazard_class
+    slot.logic_id = seed.logic_id
+    slot.counter_20 = seed.counter_20
+    slot.variant = seed.variant
     s.ax = source_y & 0xFFFF
     s.ip = cpu.pop()
 

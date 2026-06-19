@@ -399,10 +399,18 @@ class ObjectSlotView:
         """Signed X movement delta (object X - target X); set by the 5E1B helper."""
         return self.u16(OFF_MOVE_DELTA_X)
 
+    @move_delta_x.setter
+    def move_delta_x(self, value: int) -> None:
+        self.set_u16(OFF_MOVE_DELTA_X, value)
+
     @property
     def move_delta_y(self) -> int:
         """Signed Y movement delta (object Y - target Y); set by the 5E1B helper."""
         return self.u16(OFF_MOVE_DELTA_Y)
+
+    @move_delta_y.setter
+    def move_delta_y(self, value: int) -> None:
+        self.set_u16(OFF_MOVE_DELTA_Y, value)
 
     @property
     def move_step_error(self) -> int:
