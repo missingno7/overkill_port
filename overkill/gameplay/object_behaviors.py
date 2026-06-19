@@ -623,7 +623,6 @@ def _run_object_behavior_b9f0(cpu, *, parent: str, chain: str, cx_value: int) ->
                 _cmp_word(cpu, mem.rw(ds, 0xBEDC), 0x0002)
                 if mem.rw(ds, 0xBEDC) == 0x0002:
                     cpu.s.ax &= 0x007F
-                    cpu.set_logic_flags(cpu.s.ax, 16)
                     _cmp_word(cpu, cpu.s.ax, 0x007F)
                     if cpu.s.ax == 0x007F:
                         _inc_mem_word_preserve_cf(cpu, ds, 0x2340)
@@ -631,7 +630,6 @@ def _run_object_behavior_b9f0(cpu, *, parent: str, chain: str, cx_value: int) ->
                         ran_helper = True
                 else:
                     cpu.s.ax &= 0x00FF
-                    cpu.set_logic_flags(cpu.s.ax, 16)
                     _cmp_word(cpu, cpu.s.ax, 0x00FF)
                     if cpu.s.ax == 0x00FF:
                         _inc_mem_word_preserve_cf(cpu, ds, 0x2340)
@@ -663,12 +661,10 @@ def _run_object_behavior_b9f0(cpu, *, parent: str, chain: str, cx_value: int) ->
             # target globals.
             cpu.s.ax = slot.target_y_word
             cpu.s.ax &= 0xFFFE
-            cpu.set_logic_flags(cpu.s.ax, 16)
             _and_mem_word(cpu, ss, (bp + OFF_Y) & 0xFFFF, 0xFFFE)
             mem.ww(ds, 0x2304, cpu.s.ax)
             cpu.s.ax = slot.target_x_word
             cpu.s.ax &= 0xFFFE
-            cpu.set_logic_flags(cpu.s.ax, 16)
             _and_mem_word(cpu, ss, (bp + OFF_X) & 0xFFFF, 0xFFFE)
             mem.ww(ds, 0x2306, cpu.s.ax)
             mem.ww(ds, 0x2308, 0x0001)
@@ -897,7 +893,8 @@ def _run_object_logic_branch_ad04(cpu, *, parent: str, chain: str, cx_value: int
     mem = cpu.mem
 
     bdac = mem.rw(ds, 0xBDAC)
-    _cmp_word(cpu, bdac, 0x0001)
+    # The BDAC==1 test's flags are dead: every path overwrites them (the 2350 CMP
+    # when taken, the sprite CMP when not) before reaching a boundary.
     if bdac != 0x0001:
         v2350 = mem.rw(ds, 0x2350)
         _cmp_word(cpu, v2350, 0x00B6)
