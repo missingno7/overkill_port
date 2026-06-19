@@ -584,17 +584,18 @@ def _finish_ae2c_common(cpu, *, parent: str, chain: str, cx_value: int) -> None:
     ds = cpu.s.ds & 0xFFFF
     bp = cpu.s.bp & 0xFFFF
     mem = cpu.mem
+    slot = ObjectSlotView(mem, ss, bp)  # this object's record (SS:BP)
 
-    mem.ww(ss, (bp + OFF_DIRECTION_OR_STEP) & 0xFFFF, 0x0001)
+    slot.direction_or_step = 0x0001
     _add_mem_word(cpu, ss, (bp + OFF_Y) & 0xFFFF, 4)
     cpu.s.ax = mem.rw(ds, 0x2326)
     cpu.s.ax = cpu.shift(4, cpu.s.ax, 1, 16)
     cpu.s.ax = cpu.shift(4, cpu.s.ax, 1, 16)
     cpu.s.ax &= 0x0008
     cpu.set_logic_flags(cpu.s.ax, 16)
-    _add_reg16(cpu, 0, mem.rw(ss, (bp + OFF_DIRECTION_OR_STEP) & 0xFFFF))
+    _add_reg16(cpu, 0, slot.direction_or_step)
     _add_reg16(cpu, 0, 0x0008)
-    mem.ww(ss, (bp + OFF_SPRITE_OR_STATE) & 0xFFFF, cpu.s.ax)
+    slot.sprite_or_state = cpu.s.ax
     _run_object_bounds_tile_tail_ad60(
         cpu, parent=parent, chain=f"{chain} -> AD5A", cx_value=cx_value, add_a278_to_x=True
     )
@@ -615,14 +616,15 @@ def run_object_drift_downright_ae2c(cpu, self_disable_if_patched) -> None:
 
     ss = cpu.s.ss & 0xFFFF
     bp = cpu.s.bp & 0xFFFF
-    y = cpu.mem.rw(ss, (bp + OFF_Y) & 0xFFFF)
+    slot = ObjectSlotView(cpu.mem, ss, bp)  # this object's record (SS:BP)
+    y = slot.y_word
     _cmp_word(cpu, y, 0x00C8)
     if y == 0x00C8:
         _run_original_tail_to_caller(cpu, 0xADC9)
         return
 
     _sub_mem_word(cpu, ss, (bp + OFF_X) & 0xFFFF, 4)
-    y = cpu.mem.rw(ss, (bp + OFF_Y) & 0xFFFF)
+    y = slot.y_word
     _test_word(cpu, y, 0x0007)
     if y & 0x0007:
         _finish_ae2c_common(cpu, parent="1010:AE2C", chain="AE2C", cx_value=cpu.s.cx & 0xFFFF)
@@ -645,24 +647,25 @@ def run_object_drift_upright_ae7d(cpu, self_disable_if_patched) -> None:
 
     ss = cpu.s.ss & 0xFFFF
     bp = cpu.s.bp & 0xFFFF
-    y = cpu.mem.rw(ss, (bp + OFF_Y) & 0xFFFF)
+    slot = ObjectSlotView(cpu.mem, ss, bp)  # this object's record (SS:BP)
+    y = slot.y_word
     _cmp_word(cpu, y, 0)
     if y == 0:
         _run_original_tail_to_caller(cpu, 0xADC9)
         return
 
     _sub_mem_word(cpu, ss, (bp + OFF_X) & 0xFFFF, 4)
-    y = cpu.mem.rw(ss, (bp + OFF_Y) & 0xFFFF)
+    y = slot.y_word
     _test_word(cpu, y, 0x000F)
     if (y & 0x000F) == 0:
         _run_original_tail_to_caller(cpu, 0xAE91)
         return
 
-    cpu.mem.ww(ss, (bp + OFF_DIRECTION_OR_STEP) & 0xFFFF, 0x0007)
+    slot.direction_or_step = 0x0007
     _sub_mem_word(cpu, ss, (bp + OFF_Y) & 0xFFFF, 4)
-    cpu.s.ax = cpu.mem.rw(ss, (bp + OFF_DIRECTION_OR_STEP) & 0xFFFF)
+    cpu.s.ax = slot.direction_or_step
     _add_reg16(cpu, 0, 0x0008)
-    cpu.mem.ww(ss, (bp + OFF_SPRITE_OR_STATE) & 0xFFFF, cpu.s.ax)
+    slot.sprite_or_state = cpu.s.ax
     _run_object_bounds_tile_tail_ad60(
         cpu, parent="1010:AE7D", chain="AE7D -> AD5A", cx_value=cpu.s.cx & 0xFFFF, add_a278_to_x=True
     )
@@ -1027,11 +1030,12 @@ def run_object_player_chase_b1b0(cpu, self_disable_if_patched) -> None:
             add_a278_to_x=True,
         )
 
+    slot = ObjectSlotView(mem, ss, bp)  # this object's record (SS:BP)
     s.ax = mem.rw(ds, 0x2328)
     _add_reg16(cpu, 0, 0x006D)
-    mem.ww(ss, (bp + OFF_SPRITE_OR_STATE) & 0xFFFF, s.ax)
+    slot.sprite_or_state = s.ax
 
-    acquired = mem.rw(ss, (bp + OFF_SUBSTATE) & 0xFFFF)
+    acquired = slot.substate
     _cmp_word(cpu, acquired, 0x0001)
     if acquired != 0x0001:
         # B1BF: view/player center target -> 5DB2 globals, all aligned to 4px.
@@ -1069,8 +1073,8 @@ def run_object_player_chase_b1b0(cpu, self_disable_if_patched) -> None:
         if (s.bx & 0xFFFF) == 0xFFFF:
             _run_original_tail_to_caller(cpu, 0xADC9)
             return
-        mem.ww(ss, (bp + OFF_ACQUIRED_TARGET_PTR) & 0xFFFF, s.bx & 0xFFFF)
-        mem.ww(ss, (bp + OFF_SUBSTATE) & 0xFFFF, 0x0001)
+        slot.acquired_target_ptr = s.bx & 0xFFFF
+        slot.substate = 0x0001
         _cmp_byte(cpu, mem.rb(ds, 0x98C0), 0x00)
         if mem.rb(ds, 0x98C0) != 0:
             mem.wb(ds, 0xBEFF, 0x11)
@@ -1079,11 +1083,11 @@ def run_object_player_chase_b1b0(cpu, self_disable_if_patched) -> None:
         return
 
     # B227: already acquired; validate stored target slot and steer toward it.
-    s.bx = mem.rw(ss, (bp + OFF_ACQUIRED_TARGET_PTR) & 0xFFFF)
+    s.bx = slot.acquired_target_ptr
     target_bx = s.bx & 0xFFFF
     target_slot = ObjectSlotView.from_ds(cpu, target_bx)
     if not run_player_chase_acquired_target_validity_b1b0(cpu, target_slot):
-        mem.ww(ss, (bp + OFF_SUBSTATE) & 0xFFFF, 0x0000)
+        slot.substate = 0x0000
         jump_ad5a()
         return
 
