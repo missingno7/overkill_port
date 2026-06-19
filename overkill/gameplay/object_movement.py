@@ -35,8 +35,7 @@ from overkill.recovered.systems.movement import (
 )
 from overkill.recovered.views.object_slots import (
     EFFECT_OBJECT_TABLE_BASE, GAMEPLAY_OBJECT_TABLE_BASE, OBJECT_SLOT_STRIDE,
-    OFF_HAZARD_CLASS, OFF_LINKED_COUNTER_INDEX, OFF_LOGIC_ID, OFF_MOVE_STEP_ERROR,
-    OFF_SCAN_FLAG, OFF_SPRITE_OR_STATE, OFF_X, OFF_Y, ObjectSlotView,
+    OFF_MOVE_STEP_ERROR, OFF_SPRITE_OR_STATE, OFF_X, OFF_Y, ObjectSlotView,
 )
 from overkill.runtime_code import require_runtime_code_variant
 
@@ -200,14 +199,15 @@ def _run_object_delta_helper_5e1b(cpu) -> None:
     slot = ObjectSlotView(cpu.mem, ss, bp)  # this object's record (SS:BP)
     bx = cpu.s.bx & 0xFFFF
     mem = cpu.mem
+    dst = ObjectSlotView(mem, ds, bx)  # the target object's record (DS:BX)
 
     cpu.s.dx = 0x0004
-    _cmp_word(cpu, mem.rw(ds, (bx + OFF_SCAN_FLAG) & 0xFFFF), 0x0001)
-    if mem.rw(ds, (bx + OFF_SCAN_FLAG) & 0xFFFF) != 0x0001:
+    _cmp_word(cpu, dst.scan_flag, 0x0001)
+    if dst.scan_flag != 0x0001:
         cpu.s.dx = 0x000C
 
     cpu.s.ax = slot.y_word
-    cpu.s.cx = mem.rw(ds, (bx + OFF_Y) & 0xFFFF)
+    cpu.s.cx = dst.y_word
     old_cx = cpu.s.cx
     cpu.s.cx = (cpu.s.cx + cpu.s.dx) & 0xFFFF
     cpu.set_add_flags(old_cx, cpu.s.dx, old_cx + cpu.s.dx, 16)
@@ -217,7 +217,7 @@ def _run_object_delta_helper_5e1b(cpu) -> None:
     slot.move_delta_y = cpu.s.ax
 
     cpu.s.ax = slot.x_word
-    cpu.s.cx = mem.rw(ds, (bx + OFF_X) & 0xFFFF)
+    cpu.s.cx = dst.x_word
     old_cx = cpu.s.cx
     cpu.s.cx = (cpu.s.cx + cpu.s.dx) & 0xFFFF
     cpu.set_add_flags(old_cx, cpu.s.dx, old_cx + cpu.s.dx, 16)
@@ -364,7 +364,8 @@ def run_object_child_coord_update_9fea(cpu, self_disable_if_patched) -> None:
     ax = (x_delta + mem.rw(ss, (s.bp + OFF_X) & 0xFFFF)) & 0xFFFF
     # ADD flags are overwritten later by the Y clamps/cmp in all observed active paths.
     s.ax = ax
-    mem.ww(ds, (bx + OFF_X) & 0xFFFF, ax)
+    dst = ObjectSlotView(mem, ds, bx)  # the spawned/target object's record (DS:BX)
+    dst.x_word = ax
 
     y_delta = mem.rw(ds, s.si & 0xFFFF)
     s.si = (s.si + 2) & 0xFFFF
@@ -373,12 +374,12 @@ def run_object_child_coord_update_9fea(cpu, self_disable_if_patched) -> None:
     ax_full += mem.rw(ds, 0xA398)
     ax = ax_full & 0xFFFF
     s.ax = ax
-    mem.ww(ds, (bx + OFF_Y) & 0xFFFF, ax)
+    dst.y_word = ax
 
-    y = mem.rw(ds, (bx + OFF_Y) & 0xFFFF)
+    y = dst.y_word
     _cmp_word(cpu, y, 0x0000)
     if y & 0x8000:
-        mem.ww(ds, (bx + OFF_Y) & 0xFFFF, 0x0000)
+        dst.y_word = 0x0000
         mem.wb(ds, 0xA39E, 0x01)
         y = 0
 
@@ -389,7 +390,7 @@ def run_object_child_coord_update_9fea(cpu, self_disable_if_patched) -> None:
         s.ip = cpu.pop()
         return
 
-    mem.ww(ds, (bx + OFF_Y) & 0xFFFF, 0x00C0)
+    dst.y_word = 0x00C0
     mem.wb(ds, 0xA39F, 0x01)
     s.ip = cpu.pop()
 
@@ -811,20 +812,21 @@ def run_object_scroll_world_progress_gate_a66f(cpu, self_disable_if_patched) -> 
         _cmp_word(cpu, s.bx, 0xFFFF)
         if s.bx != 0xFFFF:
             bx = s.bx & 0xFFFF
-            mem.ww(ds, bx, 0x0001)
-            mem.ww(ds, (bx + OFF_SCAN_FLAG) & 0xFFFF, 0x0002)
-            mem.ww(ds, (bx + OFF_HAZARD_CLASS) & 0xFFFF, 0x0004)
-            mem.ww(ds, (bx + OFF_LOGIC_ID) & 0xFFFF, 0x0053)
-            mem.ww(ds, (bx + OFF_LINKED_COUNTER_INDEX) & 0xFFFF, 0xFFFF)
+            dst = ObjectSlotView(mem, ds, bx)  # the spawned/target object's record (DS:BX)
+            dst.active_word = 0x0001
+            dst.scan_flag = 0x0002
+            dst.hazard_class = 0x0004
+            dst.logic_id = 0x0053
+            dst.linked_counter_index = 0xFFFF
             s.ax = mem.rw(ds, s.si)
             s.si = (s.si + 2) & 0xFFFF
-            mem.ww(ds, (bx + OFF_X) & 0xFFFF, s.ax)
+            dst.x_word = s.ax
             s.ax = mem.rw(ds, s.si)
             s.si = (s.si + 2) & 0xFFFF
-            mem.ww(ds, (bx + OFF_Y) & 0xFFFF, s.ax)
+            dst.y_word = s.ax
             s.ax = mem.rw(ds, s.si)
             s.si = (s.si + 2) & 0xFFFF
-            mem.ww(ds, (bx + OFF_SPRITE_OR_STATE) & 0xFFFF, s.ax)
+            dst.sprite_or_state = s.ax
             mem.ww(ds, (bx + 0x36) & 0xFFFF, s.ax)
         s.cx = cpu.pop()
         s.cx = (s.cx - 1) & 0xFFFF

@@ -446,7 +446,7 @@ def _object_family_target_efae(cpu, bp: int) -> int:
     """Predict EFAE's second-level behavior dispatch target from SS:[BP+18]."""
     cs = cpu.s.cs & 0xFFFF
     ss = cpu.s.ss & 0xFFFF
-    logic_id = cpu.mem.rw(ss, (bp + OFF_LOGIC_ID) & 0xFFFF)
+    logic_id = slot.logic_id
     index = (logic_id << 1) & 0xFFFF
     return cpu.mem.rw(cs, (0xEFC4 + index) & 0xFFFF)
 
@@ -512,11 +512,12 @@ def run_object_tile_sweep_probe_afd8(cpu, self_disable_if_patched) -> None:
     ds = s.ds & 0xFFFF
     ss = s.ss & 0xFFFF
     bp = s.bp & 0xFFFF
+    slot = ObjectSlotView(cpu.mem, ss, bp)  # this object's record (SS:BP)
     mem.ww(ds, 0xA430, 0x0000)
-    s.ax = mem.rw(ss, (bp + OFF_X) & 0xFFFF)
+    s.ax = slot.x_word
     mem.ww(ds, 0xA432, s.ax)
     mem.ww(ds, 0xA438, s.ax)
-    s.ax = mem.rw(ss, (bp + OFF_Y) & 0xFFFF)
+    s.ax = slot.y_word
     mem.ww(ds, 0xA434, s.ax)
     mem.ww(ds, 0xA436, s.ax)
     s.ax = mem.rw(ds, 0xA278)
@@ -771,13 +772,14 @@ def _run_b00d_move_right(cpu) -> bool:
     ds = s.ds & 0xFFFF
     ss = s.ss & 0xFFFF
     bp = s.bp & 0xFFFF
+    slot = ObjectSlotView(cpu.mem, ss, bp)  # this object's record (SS:BP)
 
     s.bx = s.dx & 0xFFFF
     _sub_reg16(cpu, 3, 0x000D)  # SUB BX,000Dh
     if _b00d_tile_is_blocking(cpu, 0xB044):
         _jump_object_tile_sweep_blocked_b032(cpu)
         return True
-    _test_word(cpu, mem.rw(ss, (bp + OFF_Y) & 0xFFFF), 0x000F)
+    _test_word(cpu, slot.y_word, 0x000F)
     if not cpu.get_flag(ZF):
         _inc_reg16_preserve_cf(cpu, 3)
         if _b00d_tile_is_blocking(cpu, 0xB051):
@@ -810,6 +812,7 @@ def _run_b00d_move_left(cpu) -> bool:
     ds = s.ds & 0xFFFF
     ss = s.ss & 0xFFFF
     bp = s.bp & 0xFFFF
+    slot = ObjectSlotView(cpu.mem, ss, bp)  # this object's record (SS:BP)
 
     s.bx = s.dx & 0xFFFF
     _test_word(cpu, mem.rw(ds, 0x215A), 0x000F)
@@ -818,7 +821,7 @@ def _run_b00d_move_left(cpu) -> bool:
         if _b00d_tile_is_blocking(cpu, 0xB08D):
             _jump_object_tile_sweep_blocked_b032(cpu)
             return True
-        _test_word(cpu, mem.rw(ss, (bp + OFF_Y) & 0xFFFF), 0x000F)
+        _test_word(cpu, slot.y_word, 0x000F)
         if not cpu.get_flag(ZF):
             _inc_reg16_preserve_cf(cpu, 3)
             if _b00d_tile_is_blocking(cpu, 0xB09A):
@@ -852,6 +855,7 @@ def _run_b00d_move_down(cpu) -> bool:
     ds = s.ds & 0xFFFF
     ss = s.ss & 0xFFFF
     bp = s.bp & 0xFFFF
+    slot = ObjectSlotView(cpu.mem, ss, bp)  # this object's record (SS:BP)
 
     s.bx = s.dx & 0xFFFF
     _inc_reg16_preserve_cf(cpu, 3)
@@ -877,7 +881,7 @@ def _run_b00d_move_down(cpu) -> bool:
         _jump_object_tile_sweep_blocked_b032(cpu)
         return True
 
-    _test_word(cpu, mem.rw(ss, (bp + OFF_Y) & 0xFFFF), 0x000F)
+    _test_word(cpu, slot.y_word, 0x000F)
     if cpu.get_flag(ZF):
         _inc_reg16_preserve_cf(cpu, 2)  # INC DX
     return False
@@ -890,9 +894,10 @@ def _run_b00d_move_up(cpu) -> bool:
     ds = s.ds & 0xFFFF
     ss = s.ss & 0xFFFF
     bp = s.bp & 0xFFFF
+    slot = ObjectSlotView(cpu.mem, ss, bp)  # this object's record (SS:BP)
 
     s.bx = s.dx & 0xFFFF
-    _test_word(cpu, mem.rw(ss, (bp + OFF_Y) & 0xFFFF), 0x000F)
+    _test_word(cpu, slot.y_word, 0x000F)
     if cpu.get_flag(ZF):
         _dec_reg16_preserve_cf(cpu, 3)
         if _b00d_tile_is_blocking(cpu, 0xB11C):
@@ -917,7 +922,7 @@ def _run_b00d_move_up(cpu) -> bool:
         _jump_object_tile_sweep_blocked_b032(cpu)
         return True
 
-    s.ax = mem.rw(ss, (bp + OFF_Y) & 0xFFFF)
+    s.ax = slot.y_word
     s.ax &= 0x000F
     cpu.set_logic_flags(s.ax, 16)  # AND AX,000Fh
     _cmp_word(cpu, s.ax, 0x000F)
@@ -945,6 +950,7 @@ def run_object_tile_sweep_dispatch_b00d(cpu, self_disable_if_patched) -> None:
     mem = cpu.mem
     ss = s.ss & 0xFFFF
     bp = s.bp & 0xFFFF
+    slot = ObjectSlotView(cpu.mem, ss, bp)  # this object's record (SS:BP)
 
     _call_tile_probe_5073(cpu, 0xB010)
     _cmp_word(cpu, s.bx, 0xFFFF)
@@ -953,7 +959,7 @@ def run_object_tile_sweep_dispatch_b00d(cpu, self_disable_if_patched) -> None:
         return
 
     s.dx = s.bx & 0xFFFF
-    direction = mem.rw(ss, (bp + OFF_DIRECTION_OR_STEP) & 0xFFFF) & 0xFFFF
+    direction = slot.direction_or_step & 0xFFFF
     if direction > 7:
         _raise_unverified_path(
             cpu,

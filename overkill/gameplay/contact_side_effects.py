@@ -18,9 +18,7 @@ from overkill.gameplay.object_runtime_common import _run_interpreted_near_call_o
 from overkill.recovered.views.object_slots import (
     ObjectSlotView,
     GAMEPLAY_OBJECT_LAST_SLOT_BASE, GAMEPLAY_OBJECT_TABLE_BASE, OBJECT_SLOT_STRIDE,
-    OFF_ACQUIRED_TARGET_PTR, OFF_COUNTER_20, OFF_DRAW_LAYER, OFF_GATE_OR_LAYER,
-    OFF_LOGIC_ID, OFF_OBJECT_TYPE, OFF_SCAN_ENABLE_OR_SOLID, OFF_SPRITE_OR_STATE,
-    OFF_SUBSTATE, OFF_VARIANT, OFF_X, OFF_Y,
+    OFF_COUNTER_20,
 )
 
 
@@ -56,6 +54,7 @@ def _run_collision_handler_bec5_observed(cpu, *, collided_bx: int, parent: str, 
     slot = ObjectSlotView(cpu.mem, ss, bp)  # this object's record (SS:BP)
     bx = collided_bx & 0xFFFF
     mem = cpu.mem
+    cand = ObjectSlotView(mem, ds, bx)  # the collided candidate slot (DS:BX)
 
     def run_bfc7(label: str) -> None:
         _run_collision_death_tail_bfc7(
@@ -120,7 +119,7 @@ def _run_collision_handler_bec5_observed(cpu, *, collided_bx: int, parent: str, 
             return
         cpu.s.ip = cpu.pop()
 
-    variant = mem.rw(ds, (bx + OFF_LOGIC_ID) & 0xFFFF)
+    variant = cand.logic_id
 
     for target in (0x0007, 0x0008, 0x000C):
         _cmp_word(cpu, variant, target)
@@ -151,8 +150,8 @@ def _run_collision_handler_bec5_observed(cpu, *, collided_bx: int, parent: str, 
     _cmp_word(cpu, variant, 0x0002)
     if variant == 0x0002:
         cpu.s.bx = bx
-        mem.ww(ds, bx, 0)
-        sprite = mem.rw(ds, (bx + OFF_SPRITE_OR_STATE) & 0xFFFF)
+        cand.active_word = 0
+        sprite = cand.sprite_or_state
         _cmp_word(cpu, sprite, 0x0033)
         run_bf25_counter_chain(enter_at_bf25=(sprite == 0x0033), label="variant 0002")
         return
@@ -177,10 +176,10 @@ def _run_collision_handler_bec5_observed(cpu, *, collided_bx: int, parent: str, 
     # back to the moving object through +30h.  Linked contacts run the observed
     # counter/death transition below; non-linked contacts are a deliberate no-op
     # in the original ASM and just RET with the CMP flags live.
-    owner_bp = mem.rw(ds, (bx + OFF_ACQUIRED_TARGET_PTR) & 0xFFFF)
+    owner_bp = cand.acquired_target_ptr
     _cmp_word(cpu, bp, owner_bp)
     if bp == owner_bp:
-        mem.ww(ds, (bx + OFF_SUBSTATE) & 0xFFFF, 0x0000)
+        cand.substate = 0x0000
         _cmp_word(cpu, mem.rw(ds, 0xA8C2), 0x0001)
         if mem.rw(ds, 0xA8C2) == 0x0001:
             run_bf25_counter_chain(enter_at_bf25=True, label=f"owner-linked variant {variant:04X}")
@@ -328,11 +327,12 @@ def _run_object_overlap_scan_62f6(cpu, *, parent: str, chain: str, cx_value: int
     bx = GAMEPLAY_OBJECT_TABLE_BASE
     while True:
         cpu.s.bx = bx
-        _cmp_word(cpu, mem.rw(ds, bx), 0)
-        if mem.rw(ds, bx) != 0:
-            _cmp_word(cpu, mem.rw(ds, (bx + OFF_SCAN_ENABLE_OR_SOLID) & 0xFFFF), 0)
-            if mem.rw(ds, (bx + OFF_SCAN_ENABLE_OR_SOLID) & 0xFFFF) != 0:
-                ax = mem.rw(ds, (bx + OFF_Y) & 0xFFFF)
+        cand = ObjectSlotView(mem, ds, bx)  # the candidate slot being scanned (DS:BX)
+        _cmp_word(cpu, cand.active_word, 0)
+        if cand.active_word != 0:
+            _cmp_word(cpu, cand.scan_enable_or_solid, 0)
+            if cand.scan_enable_or_solid != 0:
+                ax = cand.y_word
                 _test_word(cpu, ax, 0x0007)
                 y_candidates = []
                 if ax & 0x0007:
@@ -347,7 +347,7 @@ def _run_object_overlap_scan_62f6(cpu, *, parent: str, chain: str, cx_value: int
                     y_candidates.append((y_candidates[-1] - 8) & 0xFFFF)
                 if cpu.s.dx in y_candidates:
                     used_x_branch = False
-                    ax = mem.rw(ds, (bx + OFF_X) & 0xFFFF) & 0xFFF8
+                    ax = cand.x_word & 0xFFF8
                     x_candidates = [ax, (ax - 8) & 0xFFFF]
                     if obj_type == 2 and logic_id not in (0x78, 0x79):
                         x_candidates.append((x_candidates[-1] - 8) & 0xFFFF)
