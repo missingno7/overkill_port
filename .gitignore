@@ -60,3 +60,6 @@ nuked_opl3/*.obj
 nuked_opl3/*.o
 nuked_opl3/*.exp
 nuked_opl3/*.lib
+
+# JetBrains IDE config
+.idea/
