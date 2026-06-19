@@ -245,13 +245,13 @@ def _run_object_behavior_b73e(cpu, *, parent: str, chain: str, cx_value: int) ->
         old_ptr = cpu.mem.rw(ds, 0x20A6)
         new_ptr = (old_ptr + 0x0002) & 0xFFFF
         cpu.mem.ww(ds, 0x20A6, new_ptr)
-        _cmp_word(cpu, new_ptr, 0x20C7)
+        # The pointer-wrap CMP and the AND BX,1 flags are dead here (overwritten
+        # by the 7476 call or the target-reached CMPs before any boundary).
         if new_ptr >= 0x20C7:
             cpu.mem.ww(ds, 0x20A6, 0x20A8)
             new_ptr = 0x20A8
         cpu.s.bx = cpu.mem.rw(ds, new_ptr)
         cpu.s.bx &= 0x0001
-        cpu.set_logic_flags(cpu.s.bx, 16)
         if cpu.s.bx == 0:
             _run_formation_spawn_7476_observed(
                 cpu,
