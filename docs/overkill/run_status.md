@@ -10,9 +10,12 @@ object_spawns, hooks) with their dead ss/sp precomputes, the
 remember_internal_call helper + vestigial ret_ip params, and stale comments.
 ~10 oracles switched to assert_oracle_equivalent. Real pushes (live return
 words) kept; frame_orchestration's 606F write kept (lands at SP, live). Every
-slice gated green: oracle 244/244, demo-replay 18/18, lint. Remaining Phase 1:
-the asset-codec (lz/rle/packed_stream) dead-stack writes -- separate loading-
-path subsystem, own gate.
+slice gated green: oracle 244/244, demo-replay 18/18, lint. Asset-codec
+(rle/packed_stream) dead-stack writes also retired (commit 933e756) -- gated by
+the codec oracles + snapshot-loading hooks; the live `saved_cx` CX-restore is
+kept (an over-eager first pass removed it; the oracle suite caught it, a good
+demonstration that the gates protect the relaxation). **Phase 1 complete.** Next:
+Phase 2 (structured access -- typed views, named offsets, named DS-globals).
 
 ## 2026-06-19 - Standing divergence-diagnosis tool (scripts/trace.py)
 
