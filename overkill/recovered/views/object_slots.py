@@ -256,9 +256,17 @@ class ObjectSlotView:
     def gate_or_layer(self) -> int:
         return self.u16(OFF_GATE_OR_LAYER)
 
+    @gate_or_layer.setter
+    def gate_or_layer(self, value: int) -> None:
+        self.set_u16(OFF_GATE_OR_LAYER, value)
+
     @property
     def link_key(self) -> int:
         return self.u16(OFF_LINK_KEY)
+
+    @link_key.setter
+    def link_key(self, value: int) -> None:
+        self.set_u16(OFF_LINK_KEY, value)
 
     @property
     def scan_flag(self) -> int:
@@ -398,9 +406,14 @@ class ObjectSlotView:
 
     @property
     def move_step_error(self) -> int:
-        """Bresenham-style movement step-error accumulator (read-only here; the
-        5E42 steer routine mutates it through flag-affecting add/sub helpers)."""
+        """Bresenham-style movement step-error accumulator.  The 5E42 steer
+        routine mutates it through flag-affecting add/sub helpers; slot resets
+        clear it via the setter."""
         return self.u16(OFF_MOVE_STEP_ERROR)
+
+    @move_step_error.setter
+    def move_step_error(self, value: int) -> None:
+        self.set_u16(OFF_MOVE_STEP_ERROR, value)
 
     @property
     def acquired_target_ptr(self) -> int:
