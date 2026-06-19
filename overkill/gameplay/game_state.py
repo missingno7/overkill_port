@@ -1065,9 +1065,9 @@ def run_frame_tracked_coord_store_9cd9(cpu, self_disable_if_patched) -> None:
     ss = s.ss & 0xFFFF
     s.es = mem.rw(cs, 0x9596)
     s.di = mem.rw(s.ds & 0xFFFF, 0xA33A)
-    old_ax = mem.rw(ss, (s.bp + 0x02) & 0xFFFF)
-    s.ax = (old_ax + 0x0008) & 0xFFFF
-    cpu.set_add_flags(old_ax, 0x0008, old_ax + 0x0008, 16)
+    # +32h/+34h tracked coords.  The first ADD's flags are dead (overwritten by
+    # the second); the second's reach the RET boundary, so it stays.
+    s.ax = (mem.rw(ss, (s.bp + 0x02) & 0xFFFF) + 0x0008) & 0xFFFF
     mem.ww(s.es & 0xFFFF, s.di & 0xFFFF, s.ax)
     s.di = (s.di + 2) & 0xFFFF
     old_ax = mem.rw(ss, (s.bp + 0x04) & 0xFFFF)
@@ -1083,7 +1083,7 @@ def _advance_coord_ring_ptr(cpu, ds: int, off: int) -> None:
     old = mem.rw(ds, off)
     new = (old + 0x0004) & 0xFFFF
     mem.ww(ds, off, new)
-    cpu.set_add_flags(old, 0x0004, old + 0x0004, 16)
+    # ADD flags dead: the CMP below overwrites them before the helper returns.
     _cmp_word(cpu, new, 0xA33A)
     if new == 0xA33A:
         mem.ww(ds, off, 0xA27A)
@@ -1097,7 +1097,7 @@ def run_frame_coord_ring_advance_9cf1(cpu, self_disable_if_patched) -> None:
     ds = s.ds & 0xFFFF
     mem = cpu.mem
     _test = mem.rb(ds, 0x98BE) & 0x0F
-    cpu.set_logic_flags(_test, 8)
+    # TEST flags dead: the CMP / ring-advance CMP below overwrites them first.
     if _test == 0:
         _cmp_word(cpu, mem.rw(ds, 0xA360), 0x0000)
         if mem.rw(ds, 0xA360) == 0x0000:
