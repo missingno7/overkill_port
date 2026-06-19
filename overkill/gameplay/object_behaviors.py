@@ -453,18 +453,18 @@ def _run_object_behavior_b86d(cpu, *, parent: str, chain: str, cx_value: int) ->
         slot.sprite_or_state = 0x0076
         cpu.s.ip = 0xBC4B
 
-    _cmp_word(cpu, mem.rw(ds, 0xA47E), 0x0002)
+    # All three guard CMPs below have dead flags: each branch overwrites them
+    # before its boundary (the B8F8 edge-steer runs 5E42, the A7A0 block runs an
+    # AND-into-memory, and the fall-through reaches the NEG/ADD).
     if mem.rw(ds, 0xA47E) <= 0x0002:
         run_b8f8_edge_steer()
         return
 
     x = slot.x_word
-    _cmp_word(cpu, x, 0x00C0)
     if x > 0x00C0:
         run_b8f8_edge_steer()
         return
 
-    _cmp_word(cpu, mem.rw(ds, 0xA7A0), 0x0028)
     if mem.rw(ds, 0xA7A0) < 0x0028:
         mem.ww(ds, 0x2308, 0x0001)
         slot.sprite_or_state = 0x0075
@@ -478,24 +478,22 @@ def _run_object_behavior_b86d(cpu, *, parent: str, chain: str, cx_value: int) ->
         return
 
     # Formation-spawn schedule: a CALL 7476 fires only on the exact DS:2340
-    # ticks owned by the pure rule.  The chained CMP/JE order is preserved for
-    # oracle-exact flags; the 7476 continuation addresses are adapter glue.
+    # ticks owned by the pure rule.  The tick-match CMP flags are dead -- the
+    # NEG/ADD below always runs after this block and overwrites them before the
+    # BC4B boundary; the 7476 continuation addresses are adapter glue.
     formation_spawn_return_ips = (0xB8BB, 0xB8C6, 0xB8D0)
     game_counter = mem.rw(ds, 0x2340)
     spawn_index = b86d_formation_spawn_tick_index(game_counter)
-    _cmp_word(cpu, game_counter, B86D_FORMATION_SPAWN_TICKS[0])
     if game_counter == B86D_FORMATION_SPAWN_TICKS[0]:
         if spawn_index != 0:
             raise AssertionError("pure B86D formation-spawn schedule disagrees on tick 0")
         call_7476(formation_spawn_return_ips[0])
     else:
-        _cmp_word(cpu, game_counter, B86D_FORMATION_SPAWN_TICKS[1])
         if game_counter == B86D_FORMATION_SPAWN_TICKS[1]:
             if spawn_index != 1:
                 raise AssertionError("pure B86D formation-spawn schedule disagrees on tick 1")
             call_7476(formation_spawn_return_ips[1])
         else:
-            _cmp_word(cpu, game_counter, B86D_FORMATION_SPAWN_TICKS[2])
             if game_counter == B86D_FORMATION_SPAWN_TICKS[2]:
                 if spawn_index != 2:
                     raise AssertionError("pure B86D formation-spawn schedule disagrees on tick 2")
@@ -503,14 +501,14 @@ def _run_object_behavior_b86d(cpu, *, parent: str, chain: str, cx_value: int) ->
             elif spawn_index is not None:
                 raise AssertionError("pure B86D formation-spawn schedule fired on a non-tick counter")
 
-    # Outgoing-sprite selection from the sign of the global vertical delta.
+    # Outgoing-sprite selection from the sign of the global vertical delta.  The
+    # NEG and the delta==FFFF CMP both have dead flags (the ADD-into-X overwrites
+    # the NEG's; the final 2328 CMP overwrites the delta CMP's).
     delta = mem.rw(ds, 0x2342)
     sprite = b86d_outgoing_sprite_for_delta(delta)
-    cpu.set_sub_flags(0, delta, -delta, 16)
     cpu.s.ax = (-delta) & 0xFFFF
     _add_mem_word(cpu, ss, (bp + OFF_X) & 0xFFFF, cpu.s.ax)
     cpu.s.ax = 0x0075
-    _cmp_word(cpu, delta, 0xFFFF)
     if delta != 0xFFFF:
         cpu.s.ax = 0x0076
     if (cpu.s.ax & 0xFFFF) != sprite:
