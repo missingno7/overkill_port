@@ -7811,3 +7811,30 @@ python scripts/play.py --snapshot artifacts/evidence/snapshot_stop_1010_aed8_b25
 # OK HOOK VERIFY LIMIT REACHED verified=1
 ```
 
+
+## 2026-06-19 Refactor plan Phases 1-2 complete; Phase 3 started
+
+Driving `docs/overkill/refactor_plan.md` (readable-yet-verifiable reconstruction).
+
+- **Phase 1 (dead-state scratch): done earlier this cycle** — `_remember_balanced_push_scratch` + inline `sp-2` writes retired; live `saved_cx` kept.
+- **Phase 2a (typed views): done.** Every raw SS:BP / DS:BX object-record access in
+  gameplay now goes through `ObjectSlotView` (`slot`/`dst`/`cand`). Finished
+  object_movement (5e1b/9fea/a66f), contact_side_effects (bec5 + 62F6 scan),
+  object_runtime (5A92/5AC8/7596/AA2B dispatch helpers), object_spawns (95D8/7573
+  free-slot allocators). Only the deliberate `OFF_SUBSTATE_1E` semantic alias
+  remains raw by design.
+- **Phase 2b (DS-global reconciliation): done.** New `overkill/recovered/ds_globals.py`
+  is the single definition site for the 7 cells genuinely shared across subsystems
+  (VIEW_TARGET_X/Y, VIDEO_MODE_SELECTOR_OFF, COLLISION_DEBUG_FLAG/CODE,
+  BOSS_GROUP_LATCH, CONTACT_DISPATCH_GATE); subsystem modules keep local names as
+  `LOCAL = CANONICAL` aliases. Design call: single-subsystem globals stay local;
+  same-valued-but-distinct literals (0x00xx) are not merged.
+- **Phase 3 (de-transliterate hook bodies): started.** Method: per function, the
+  *last* flag-affecting op before each boundary is live; earlier ones overwritten
+  before a boundary are dead. Removed dead `_cmp_word`/`set_*_flags` + collapsed
+  register-juggling temps in `_run_object_behavior_ae09` and `_run_object_logic_ab10`.
+  Each slice verified *exercised* (instrument+count: ae09 951x, ab10 1398x in the
+  150-frame demo window) before commit; `_run_object_behavior_8d4f`'s analogous
+  removal was **reverted** because it had 0 demo invocations and no oracle — unverifiable.
+
+Gates after each slice: oracle 244/244, demo-replay 19/19, lint 147 files.
