@@ -123,10 +123,9 @@ def _run_object_behavior_b73e(cpu, *, parent: str, chain: str, cx_value: int) ->
         else:
             should_reload_y = True
         if should_reload_y:
-            cpu.s.ax = cpu.mem.rw(ds, 0x2380)
-            old_ax = cpu.s.ax
-            cpu.s.ax = (cpu.s.ax + 0x0008) & 0xFFFF
-            cpu.set_add_flags(old_ax, 0x0008, old_ax + 0x0008, 16)
+            # target_y = DS:2380 + 8.  The ADD's flags are dead: the AND below
+            # overwrites them before the BC4B boundary.
+            cpu.s.ax = (cpu.mem.rw(ds, 0x2380) + 0x0008) & 0xFFFF
             slot.target_y_word = cpu.s.ax
         _and_mem_word(cpu, ss, (bp + OFF_TARGET_Y) & 0xFFFF, 0xFFF8)
         cpu.mem.ww(ds, 0x2340, 0x0028)
@@ -310,9 +309,9 @@ def _run_object_behavior_b73e(cpu, *, parent: str, chain: str, cx_value: int) ->
             cpu.s.si = cpu.mem.rw(ds, 0xA842)
         cpu.s.ax = cpu.mem.rw(ds, cpu.s.si)
         cpu.s.si = (cpu.s.si + 2) & 0xFFFF
-        old_ax = cpu.s.ax
+        # target_x = waypoint + 0x20.  The ADD's flags are dead: the CMP below
+        # overwrites them before the BC4B boundary.
         cpu.s.ax = (cpu.s.ax + 0x0020) & 0xFFFF
-        cpu.set_add_flags(old_ax, 0x0020, old_ax + 0x0020, 16)
         slot.target_x_word = cpu.s.ax
         cpu.s.ax = cpu.mem.rw(ds, cpu.s.si)
         cpu.s.si = (cpu.s.si + 2) & 0xFFFF
