@@ -243,31 +243,27 @@ def run_frame_controller_9b2e(
         run_9aff_tail()
         return
 
+    # Each input-bit TEST and the 2350 CMP below have dead flags: the CALL each
+    # gates (or the next TEST/CALL) overwrites them before any hook boundary.
     input_flags = mem.rb(ds, 0x98BE)
-    cpu.set_logic_flags(input_flags & 0x08, 8)
     if input_flags & 0x08:
         call(0xA5D1, 0x9B79)
 
     input_flags = mem.rb(ds, 0x98BE)
-    cpu.set_logic_flags(input_flags & 0x04, 8)
     if input_flags & 0x04:
         call(0xA5EA, 0x9B83)
 
     input_flags = mem.rb(ds, 0x98BE)
-    cpu.set_logic_flags(input_flags & 0x01, 8)
     if input_flags & 0x01:
         call(0xA607, 0x9B8D)
 
     input_flags = mem.rb(ds, 0x98BE)
-    cpu.set_logic_flags(input_flags & 0x02, 8)
     if input_flags & 0x02:
         call(0xA5F9, 0x9B97)
 
     v2350 = mem.rw(ds, 0x2350)
-    _cmp_word(cpu, v2350, 0x00B6)
     if v2350 > 0x00B6:
         input_flags = mem.rb(ds, 0x98BE)
-        cpu.set_logic_flags(input_flags & 0x20, 8)
         if input_flags & 0x20:
             call(0x8546, 0x9BA9, max_steps=60000)
 
@@ -369,15 +365,13 @@ def run_status_cell_seed_852b(
     mem.ww(ss, bp + 0x00, 0x0024)
     mem.ww(ss, bp + 0x02, s.di & 0xFFFF)
     mem.ww(ss, bp + 0x08, 0x0000)
-    old_bp = s.bp & 0xFFFF
-    result_bp = old_bp + 0x000A
-    s.bp = result_bp & 0xFFFF
-    cpu.set_add_flags(old_bp, 0x000A, result_bp, 16)
+    # BP += 0x0A: the ADD's flags are dead (the AH ADD below overwrites them).
+    s.bp = (s.bp + 0x000A) & 0xFFFF
     s.ax = cpu.pop()
     old_ah = (s.ax >> 8) & 0xFF
     result_ah = old_ah + 0x10
     cpu.set_reg8(4, result_ah)
-    cpu.set_add_flags(old_ah, 0x10, result_ah, 8)
+    cpu.set_add_flags(old_ah, 0x10, result_ah, 8)  # live: reaches the RET
     s.ip = cpu.pop()
 
 
