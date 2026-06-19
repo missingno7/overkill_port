@@ -1,3 +1,19 @@
+## 2026-06-19 - Refactor Phase 1: retire dead-stack scratch (gameplay)
+
+Following docs/overkill/refactor_plan.md. The relaxed boundary-contract oracle
+(assert_oracle_equivalent + harness dead-stack ignore, _DEAD_STACK_BYTES=0x40)
+lets hooks drop the "write the dead CALL return word below SP" fidelity code.
+Retired across three commits: the _remember_balanced_push_scratch helper + its 7
+uses; ~13 inline `mem.ww(ss, sp-N, <const>)` writes (object_behaviors,
+object_bounds, object_deactivation, object_movement, object_runtime,
+object_spawns, hooks) with their dead ss/sp precomputes, the
+remember_internal_call helper + vestigial ret_ip params, and stale comments.
+~10 oracles switched to assert_oracle_equivalent. Real pushes (live return
+words) kept; frame_orchestration's 606F write kept (lands at SP, live). Every
+slice gated green: oracle 244/244, demo-replay 18/18, lint. Remaining Phase 1:
+the asset-codec (lz/rle/packed_stream) dead-stack writes -- separate loading-
+path subsystem, own gate.
+
 ## 2026-06-19 - Standing divergence-diagnosis tool (scripts/trace.py)
 
 Replaced the per-bug throwaway watchpoint scripts with one reusable dual-runtime
