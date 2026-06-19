@@ -114,7 +114,8 @@ def _find_free_object_slot_7573(cpu) -> int:
     bx = cpu.mem.rw(ds, 0x95DA)
     cx = 0x0022
     while cx:
-        _cmp_word(cpu, bx, GAMEPLAY_OBJECT_ALLOCATOR_WRAP_SENTINEL)
+        # The wrap-sentinel CMP's flags are dead (the active_word CMP below
+        # overwrites them before any boundary).
         if bx == GAMEPLAY_OBJECT_ALLOCATOR_WRAP_SENTINEL:
             bx = GAMEPLAY_OBJECT_TABLE_BASE
         cand = ObjectSlotView(cpu.mem, ds, bx)  # candidate slot being scanned
@@ -247,11 +248,9 @@ def _run_linked_effect_spawn_7420_observed(cpu) -> None:
 
     dst = ObjectSlotView(mem, ds, bx)  # the spawned/target object's record (DS:BX)
     dst.active_word = 0x0001
-    cpu.s.ax = mem.rw(ds, 0x2378)
-    old_ax = cpu.s.ax
-    addend = mem.rw(ds, 0xA278)
-    cpu.s.ax = (cpu.s.ax + addend) & 0xFFFF
-    cpu.set_add_flags(old_ax, addend, old_ax + addend, 16)
+    # x_word = DS:2378 + DS:A278.  The ADD's flags are dead (the y-clamp CMP
+    # below overwrites them before any boundary).
+    cpu.s.ax = (mem.rw(ds, 0x2378) + mem.rw(ds, 0xA278)) & 0xFFFF
     dst.x_word = cpu.s.ax
 
     cpu.s.ax = mem.rw(ds, 0x2376)
@@ -307,13 +306,11 @@ def run_object_spawn_anchor_offset_a571(cpu) -> None:
     slot = ObjectSlotView(cpu.mem, ss, bp)  # this object's record (SS:BP)
     bx = cpu.s.bx & 0xFFFF
 
-    ax = slot.y_word
-    result = ax + 0x000A
-    ax = result & 0xFFFF
-    cpu.s.ax = ax
-    cpu.set_add_flags((result - 0x000A) & 0xFFFF, 0x000A, result, 16)
+    # Dest Y = source Y + 0x0A.  The ADD's flags are dead (the X ADD below
+    # overwrites them; only that one's flags reach the RET).
+    cpu.s.ax = (slot.y_word + 0x000A) & 0xFFFF
     dst = ObjectSlotView(mem, ds, bx)  # the spawned/target object's record (DS:BX)
-    dst.y_word = ax
+    dst.y_word = cpu.s.ax
 
     ax = slot.x_word
     result = ax + 0x000A
