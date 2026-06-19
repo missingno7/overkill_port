@@ -596,10 +596,10 @@ def _run_object_behavior_b9f0(cpu, *, parent: str, chain: str, cx_value: int) ->
         # BA1F..BA31: if current position plus vertical delta reached target,
         # use the direct sprite-refresh/helper branch; otherwise branch to BA99.
         cpu.s.ax = slot.y_word
-        old_ax = cpu.s.ax
         delta_y = mem.rw(ds, 0x2342)
+        # Y + vertical delta.  The ADD's flags are dead: the CMP below overwrites
+        # them before they reach any boundary.
         cpu.s.ax = (cpu.s.ax + delta_y) & 0xFFFF
-        cpu.set_add_flags(old_ax, delta_y, old_ax + delta_y, 16)
         target_y = slot.target_y_word
         _cmp_word(cpu, cpu.s.ax, target_y)
         reached_target = cpu.s.ax == target_y
@@ -964,11 +964,9 @@ def _run_object_behavior_aba3(cpu, *, parent: str, chain: str, cx_value: int) ->
         cpu.s.ip = 0xABC0
         return
 
-    ax = mem.rw(ds, 0x233C)
-    cpu.s.ax = ax
-    result = ax + 0x0014
-    cpu.s.ax = result & 0xFFFF
-    cpu.set_add_flags(ax, 0x0014, result, 16)
+    # Sprite = scroll frame (DS:233C) + 0x14.  The ADD's flags are dead: the
+    # AC81 call below overwrites them (its CF is what the branches below read).
+    cpu.s.ax = (mem.rw(ds, 0x233C) + 0x0014) & 0xFFFF
     slot.sprite_or_state = cpu.s.ax
 
     _call_ac81(cpu, 0xABBA)
