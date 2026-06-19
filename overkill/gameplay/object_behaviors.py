@@ -185,23 +185,18 @@ def _run_object_behavior_b73e(cpu, *, parent: str, chain: str, cx_value: int) ->
         )
 
     # Idle animation-frame selection from the shared DS:2338 timer.  The pure
-    # recovered rule owns the frame formula; the inline NEG/ADD stays so the
-    # 8086 flags at this point still match the oracle.
+    # recovered rule owns the frame formula.  The y-threshold CMP and the NEG/ADD
+    # arithmetic below all have dead flags: the y-vs-target CMP further down
+    # overwrites them before any boundary.
     timer = cpu.mem.rw(ds, 0x2338)
     y = slot.y_word
     sprite_frame = b73e_idle_sprite_frame(timer, y)
-    _cmp_word(cpu, y, B73E_IDLE_LOW_Y_THRESHOLD)
     if y < B73E_IDLE_LOW_Y_THRESHOLD:
         # NEG AX; ADD AX,007Fh, with AX initially DS:[2338].
-        cpu.set_sub_flags(0, timer, -timer, 16)
         cpu.s.ax = (-timer) & 0xFFFF
-        old_ax = cpu.s.ax
         cpu.s.ax = (cpu.s.ax + 0x007F) & 0xFFFF
-        cpu.set_add_flags(old_ax, 0x007F, old_ax + 0x007F, 16)
     else:
-        old_ax = timer
         cpu.s.ax = (timer + 0x007A) & 0xFFFF
-        cpu.set_add_flags(old_ax, 0x007A, old_ax + 0x007A, 16)
     if (cpu.s.ax & 0xFFFF) != sprite_frame:
         raise AssertionError("pure B73E idle sprite-frame disagrees with ASM-compatible arithmetic")
     slot.sprite_or_state = cpu.s.ax
