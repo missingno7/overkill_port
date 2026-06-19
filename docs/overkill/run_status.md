@@ -7838,3 +7838,26 @@ Driving `docs/overkill/refactor_plan.md` (readable-yet-verifiable reconstruction
   removal was **reverted** because it had 0 demo invocations and no oracle — unverifiable.
 
 Gates after each slice: oracle 244/244, demo-replay 19/19, lint 147 files.
+
+## 2026-06-19 (cont.) Phase 3 de-transliteration sweep — object_behaviors + game_state
+
+Method: per function, only the last flag-affecting op before each boundary is
+live; earlier `_cmp_word`/`set_*_flags` overwritten before a boundary are dead.
+Each slice verified *exercised* via invocation-count instrumentation + 150-frame
+demo-replay before commit (the real gate; most behaviors have no per-hook oracle).
+
+object_behaviors (now thoroughly cleaned):
+- AE09, AB10, ABA3, B9F0, B73E (idle NEG/ADD + B800-spawn path), AD04, B86D (8
+  sites incl. the formation chain whose "preserved for flags" warning was
+  over-cautious). Remaining sites are intentional: AB10's live y-ADD (reaches
+  RET) and 8D4F's removal (reverted earlier — 0 demo invocations, unverifiable).
+
+game_state:
+- 9CD9 tracked-coord store (first +8 ADD dead, second reaches RET), the
+  _advance_coord_ring_ptr +4 ADD, 9CF1's 98BE TEST, and 99CD's first coord +8.
+- Left live/intentional: _add_bl_ah (helper whose ADD flags ARE its result),
+  _inc_reg8_preserve_cf (deliberate preserve-CF), input TEST sites (863/874).
+
+Remaining Phase 3 surface: ~12 more game_state set_*_flags sites (per-site
+analysis; several live), frame_orchestration (16), object_spawns (10), plus a
+dead-`_cmp_word` sweep. Gates green throughout: oracle 244/244, demo-replay 19/19.
