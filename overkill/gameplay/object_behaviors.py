@@ -54,8 +54,8 @@ from overkill.recovered.systems.objects import (
     b86d_outgoing_sprite_for_delta,
 )
 from overkill.recovered.views.object_slots import (
-    OFF_DIRECTION_OR_STEP, OFF_DRAW_LAYER, OFF_LOGIC_ID, OFF_SPRITE_OR_STATE,
-    OFF_SUBSTATE, OFF_TARGET_X, OFF_TARGET_Y, OFF_TRANSITION_LATCH, OFF_X, OFF_Y,
+    ObjectSlotView,
+    OFF_SUBSTATE, OFF_TARGET_X, OFF_TARGET_Y, OFF_X, OFF_Y,
 )
 
 
@@ -87,10 +87,11 @@ def _run_object_behavior_b73e(cpu, *, parent: str, chain: str, cx_value: int) ->
     ds = cpu.s.ds & 0xFFFF
     ss = cpu.s.ss & 0xFFFF
     bp = cpu.s.bp & 0xFFFF
+    slot = ObjectSlotView(cpu.mem, ss, bp)  # this object's record (SS:BP)
 
     def run_b85c_move_to_target() -> None:
-        target_y_local = cpu.mem.rw(ss, (bp + OFF_TARGET_Y) & 0xFFFF)
-        target_x_local = cpu.mem.rw(ss, (bp + OFF_TARGET_X) & 0xFFFF)
+        target_y_local = slot.target_y_word
+        target_x_local = slot.target_x_word
         cpu.mem.ww(ds, 0x2308, 0x0002)
         cpu.mem.ww(ds, 0x2304, target_y_local)
         cpu.s.ax = target_x_local
@@ -106,7 +107,7 @@ def _run_object_behavior_b73e(cpu, *, parent: str, chain: str, cx_value: int) ->
         _run_movement_direction_5db2(cpu)
         cpu.s.sp = saved_sp
         _cmp_word(cpu, cpu.mem.rw(ds, 0x230A), 0)
-        cpu.mem.ww(ss, (bp + OFF_DIRECTION_OR_STEP) & 0xFFFF, 0x0004)
+        slot.direction_or_step = 0x0004
         _run_object_postmove_bc4b(cpu, parent=parent, chain=f"{chain} -> B73E -> B85C -> B729 -> 5DB2", cx_value=cx_value)
         cpu.s.ip = cpu.pop()
 
@@ -126,12 +127,12 @@ def _run_object_behavior_b73e(cpu, *, parent: str, chain: str, cx_value: int) ->
             old_ax = cpu.s.ax
             cpu.s.ax = (cpu.s.ax + 0x0008) & 0xFFFF
             cpu.set_add_flags(old_ax, 0x0008, old_ax + 0x0008, 16)
-            cpu.mem.ww(ss, (bp + OFF_TARGET_Y) & 0xFFFF, cpu.s.ax)
+            slot.target_y_word = cpu.s.ax
         _and_mem_word(cpu, ss, (bp + OFF_TARGET_Y) & 0xFFFF, 0xFFF8)
         cpu.mem.ww(ds, 0x2340, 0x0028)
-        cpu.mem.ww(ss, (bp + OFF_SUBSTATE) & 0xFFFF, 0x0000)
-        cpu.mem.ww(ss, (bp + OFF_SPRITE_OR_STATE) & 0xFFFF, 0x0078)
-        cpu.mem.ww(ss, (bp + OFF_TARGET_X) & 0xFFFF, 0x0020)
+        slot.substate = 0x0000
+        slot.sprite_or_state = 0x0078
+        slot.target_x_word = 0x0020
         _run_object_postmove_bc4b(
             cpu,
             parent=parent,
@@ -140,22 +141,22 @@ def _run_object_behavior_b73e(cpu, *, parent: str, chain: str, cx_value: int) ->
         )
         cpu.s.ip = cpu.pop()
 
-    substate = cpu.mem.rw(ss, (bp + OFF_SUBSTATE) & 0xFFFF)
+    substate = slot.substate
     _cmp_word(cpu, substate, 0xFFFF)
     if substate != 0xFFFF:
         cpu.s.bx = substate
         cpu.s.bx = cpu.shift(4, cpu.s.bx, 1, 16)
         target_ip = cpu.mem.rw(cpu.s.cs & 0xFFFF, (0xB74E + cpu.s.bx) & 0xFFFF)
         if target_ip == 0xB754:
-            y = cpu.mem.rw(ss, (bp + OFF_Y) & 0xFFFF)
-            target_y = cpu.mem.rw(ss, (bp + OFF_TARGET_Y) & 0xFFFF)
+            y = slot.y_word
+            target_y = slot.target_y_word
             cpu.s.ax = y
             _cmp_word(cpu, y, target_y)
             if y != target_y:
                 run_b85c_move_to_target()
                 return
-            x = cpu.mem.rw(ss, (bp + OFF_X) & 0xFFFF)
-            target_x = cpu.mem.rw(ss, (bp + OFF_TARGET_X) & 0xFFFF)
+            x = slot.x_word
+            target_x = slot.target_x_word
             cpu.s.ax = x
             _cmp_word(cpu, x, target_x)
             if x != target_x:
@@ -166,16 +167,16 @@ def _run_object_behavior_b73e(cpu, *, parent: str, chain: str, cx_value: int) ->
             cpu.s.ip = cpu.pop()
             return
         if target_ip == 0xB770:
-            cpu.mem.ww(ss, (bp + OFF_SPRITE_OR_STATE) & 0xFFFF, 0x0079)
+            slot.sprite_or_state = 0x0079
             _add_mem_word(cpu, ss, (bp + OFF_SUBSTATE) & 0xFFFF, 1)
             _run_object_postmove_bc4b(cpu, parent=parent, chain=f"{chain} -> B73E -> B770", cx_value=cx_value)
             cpu.s.ip = cpu.pop()
             return
         if target_ip == 0xB77B:
             _add_mem_word(cpu, ss, (bp + OFF_X) & 0xFFFF, 0x0004)
-            _cmp_word(cpu, cpu.mem.rw(ss, (bp + OFF_X) & 0xFFFF), 0x00A0)
-            if cpu.mem.rw(ss, (bp + OFF_X) & 0xFFFF) >= 0x00A0:
-                cpu.mem.ww(ss, (bp + OFF_SPRITE_OR_STATE) & 0xFFFF, 0x0077)
+            _cmp_word(cpu, slot.x_word, 0x00A0)
+            if slot.x_word >= 0x00A0:
+                slot.sprite_or_state = 0x0077
             _run_object_postmove_bc4b(cpu, parent=parent, chain=f"{chain} -> B73E -> B77B", cx_value=cx_value)
             cpu.s.ip = cpu.pop()
             return
@@ -188,7 +189,7 @@ def _run_object_behavior_b73e(cpu, *, parent: str, chain: str, cx_value: int) ->
     # recovered rule owns the frame formula; the inline NEG/ADD stays so the
     # 8086 flags at this point still match the oracle.
     timer = cpu.mem.rw(ds, 0x2338)
-    y = cpu.mem.rw(ss, (bp + OFF_Y) & 0xFFFF)
+    y = slot.y_word
     sprite_frame = b73e_idle_sprite_frame(timer, y)
     _cmp_word(cpu, y, B73E_IDLE_LOW_Y_THRESHOLD)
     if y < B73E_IDLE_LOW_Y_THRESHOLD:
@@ -204,9 +205,9 @@ def _run_object_behavior_b73e(cpu, *, parent: str, chain: str, cx_value: int) ->
         cpu.set_add_flags(old_ax, 0x007A, old_ax + 0x007A, 16)
     if (cpu.s.ax & 0xFFFF) != sprite_frame:
         raise AssertionError("pure B73E idle sprite-frame disagrees with ASM-compatible arithmetic")
-    cpu.mem.ww(ss, (bp + OFF_SPRITE_OR_STATE) & 0xFFFF, cpu.s.ax)
+    slot.sprite_or_state = cpu.s.ax
 
-    target_y = cpu.mem.rw(ss, (bp + OFF_TARGET_Y) & 0xFFFF)
+    target_y = slot.target_y_word
     cpu.s.ax = y
     _cmp_word(cpu, y, target_y)
     if y != target_y:
@@ -214,8 +215,8 @@ def _run_object_behavior_b73e(cpu, *, parent: str, chain: str, cx_value: int) ->
         run_b85c_move_to_target()
         return
 
-    x = cpu.mem.rw(ss, (bp + OFF_X) & 0xFFFF)
-    target_x = cpu.mem.rw(ss, (bp + OFF_TARGET_X) & 0xFFFF)
+    x = slot.x_word
+    target_x = slot.target_x_word
     cpu.s.ax = x
     _cmp_word(cpu, x, target_x)
     if x != target_x:
@@ -312,23 +313,23 @@ def _run_object_behavior_b73e(cpu, *, parent: str, chain: str, cx_value: int) ->
         old_ax = cpu.s.ax
         cpu.s.ax = (cpu.s.ax + 0x0020) & 0xFFFF
         cpu.set_add_flags(old_ax, 0x0020, old_ax + 0x0020, 16)
-        cpu.mem.ww(ss, (bp + OFF_TARGET_X) & 0xFFFF, cpu.s.ax)
+        slot.target_x_word = cpu.s.ax
         cpu.s.ax = cpu.mem.rw(ds, cpu.s.si)
         cpu.s.si = (cpu.s.si + 2) & 0xFFFF
-        cpu.mem.ww(ss, (bp + OFF_TARGET_Y) & 0xFFFF, cpu.s.ax)
+        slot.target_y_word = cpu.s.ax
         cpu.mem.ww(ds, 0xA842, cpu.s.si)
 
-        x = cpu.mem.rw(ss, (bp + OFF_X) & 0xFFFF)
+        x = slot.x_word
         cpu.s.ax = x
-        _cmp_word(cpu, x, cpu.mem.rw(ss, (bp + OFF_TARGET_X) & 0xFFFF))
-        if x != cpu.mem.rw(ss, (bp + OFF_TARGET_X) & 0xFFFF):
+        _cmp_word(cpu, x, slot.target_x_word)
+        if x != slot.target_x_word:
             _run_object_postmove_bc4b(cpu, parent=parent, chain=f"{chain} -> B73E -> B7BD -> B82D -> BC4B", cx_value=cx_value)
             cpu.s.ip = cpu.pop()
             return
-        y = cpu.mem.rw(ss, (bp + OFF_Y) & 0xFFFF)
+        y = slot.y_word
         cpu.s.ax = y
-        _cmp_word(cpu, y, cpu.mem.rw(ss, (bp + OFF_TARGET_Y) & 0xFFFF))
-        if y != cpu.mem.rw(ss, (bp + OFF_TARGET_Y) & 0xFFFF):
+        _cmp_word(cpu, y, slot.target_y_word)
+        if y != slot.target_y_word:
             _run_object_postmove_bc4b(cpu, parent=parent, chain=f"{chain} -> B73E -> B7BD -> B82D -> BC4B", cx_value=cx_value)
             cpu.s.ip = cpu.pop()
             return
@@ -419,6 +420,7 @@ def _run_object_behavior_b86d(cpu, *, parent: str, chain: str, cx_value: int) ->
     ds = cpu.s.ds & 0xFFFF
     ss = cpu.s.ss & 0xFFFF
     bp = cpu.s.bp & 0xFFFF
+    slot = ObjectSlotView(cpu.mem, ss, bp)  # this object's record (SS:BP)
     mem = cpu.mem
 
     def call_7476(return_ip: int) -> None:
@@ -449,7 +451,7 @@ def _run_object_behavior_b86d(cpu, *, parent: str, chain: str, cx_value: int) ->
         run_runtime_patched_object_steer_5e42(cpu)
         if (cpu.s.ip & 0xFFFF) != 0xB901:
             raise RuntimeError(f"5E42 returned to unexpected IP {cpu.s.ip:04X} inside B86D/B8F8")
-        mem.ww(ss, (bp + OFF_SPRITE_OR_STATE) & 0xFFFF, 0x0076)
+        slot.sprite_or_state = 0x0076
         cpu.s.ip = 0xBC4B
 
     _cmp_word(cpu, mem.rw(ds, 0xA47E), 0x0002)
@@ -457,7 +459,7 @@ def _run_object_behavior_b86d(cpu, *, parent: str, chain: str, cx_value: int) ->
         run_b8f8_edge_steer()
         return
 
-    x = mem.rw(ss, (bp + OFF_X) & 0xFFFF)
+    x = slot.x_word
     _cmp_word(cpu, x, 0x00C0)
     if x > 0x00C0:
         run_b8f8_edge_steer()
@@ -466,13 +468,13 @@ def _run_object_behavior_b86d(cpu, *, parent: str, chain: str, cx_value: int) ->
     _cmp_word(cpu, mem.rw(ds, 0xA7A0), 0x0028)
     if mem.rw(ds, 0xA7A0) < 0x0028:
         mem.ww(ds, 0x2308, 0x0001)
-        mem.ww(ss, (bp + OFF_SPRITE_OR_STATE) & 0xFFFF, 0x0075)
+        slot.sprite_or_state = 0x0075
         _and_mem_word(cpu, ss, (bp + OFF_TARGET_Y) & 0xFFFF, 0xFFFE)
         _and_mem_word(cpu, ss, (bp + OFF_Y) & 0xFFFF, 0xFFFE)
         _and_mem_word(cpu, ss, (bp + OFF_TARGET_X) & 0xFFFF, 0xFFFE)
         _and_mem_word(cpu, ss, (bp + OFF_X) & 0xFFFF, 0xFFFE)
         if not run_b729_target_move(0xB8A3, mode=1):
-            mem.ww(ss, (bp + OFF_DIRECTION_OR_STEP) & 0xFFFF, 0x0004)
+            slot.direction_or_step = 0x0004
         cpu.s.ip = 0xBC4B
         return
 
@@ -514,7 +516,7 @@ def _run_object_behavior_b86d(cpu, *, parent: str, chain: str, cx_value: int) ->
         cpu.s.ax = 0x0076
     if (cpu.s.ax & 0xFFFF) != sprite:
         raise AssertionError("pure B86D outgoing-sprite rule disagrees with ASM-compatible selection")
-    mem.ww(ss, (bp + OFF_SPRITE_OR_STATE) & 0xFFFF, cpu.s.ax)
+    slot.sprite_or_state = cpu.s.ax
     _cmp_word(cpu, mem.rw(ds, 0x2328), 0x0007)
     if mem.rw(ds, 0x2328) == 0x0007:
         _inc_mem_word_preserve_cf(cpu, ss, (bp + OFF_X) & 0xFFFF)
@@ -539,6 +541,7 @@ def _run_object_behavior_b9f0(cpu, *, parent: str, chain: str, cx_value: int) ->
     ds = cpu.s.ds & 0xFFFF
     ss = cpu.s.ss & 0xFFFF
     bp = cpu.s.bp & 0xFFFF
+    slot = ObjectSlotView(cpu.mem, ss, bp)  # this object's record (SS:BP)
     mem = cpu.mem
 
     def call_7476(return_ip: int, why: str) -> None:
@@ -585,24 +588,24 @@ def _run_object_behavior_b9f0(cpu, *, parent: str, chain: str, cx_value: int) ->
         _add_mem_word(cpu, ss, (bp + OFF_TARGET_X) & 0xFFFF, cpu.s.ax)
 
         # BA13..BA1A: wrap target X from >D0h to 20h.
-        target_x = mem.rw(ss, (bp + OFF_TARGET_X) & 0xFFFF)
+        target_x = slot.target_x_word
         _cmp_word(cpu, target_x, 0x00D0)
         if target_x > 0x00D0:
-            mem.ww(ss, (bp + OFF_TARGET_X) & 0xFFFF, 0x0020)
+            slot.target_x_word = 0x0020
 
         # BA1F..BA31: if current position plus vertical delta reached target,
         # use the direct sprite-refresh/helper branch; otherwise branch to BA99.
-        cpu.s.ax = mem.rw(ss, (bp + OFF_Y) & 0xFFFF)
+        cpu.s.ax = slot.y_word
         old_ax = cpu.s.ax
         delta_y = mem.rw(ds, 0x2342)
         cpu.s.ax = (cpu.s.ax + delta_y) & 0xFFFF
         cpu.set_add_flags(old_ax, delta_y, old_ax + delta_y, 16)
-        target_y = mem.rw(ss, (bp + OFF_TARGET_Y) & 0xFFFF)
+        target_y = slot.target_y_word
         _cmp_word(cpu, cpu.s.ax, target_y)
         reached_target = cpu.s.ax == target_y
         if reached_target:
-            cpu.s.ax = mem.rw(ss, (bp + OFF_X) & 0xFFFF)
-            target_x = mem.rw(ss, (bp + OFF_TARGET_X) & 0xFFFF)
+            cpu.s.ax = slot.x_word
+            target_x = slot.target_x_word
             _cmp_word(cpu, cpu.s.ax, target_x)
             reached_target = cpu.s.ax == target_x
 
@@ -639,8 +642,8 @@ def _run_object_behavior_b9f0(cpu, *, parent: str, chain: str, cx_value: int) ->
         else:
             # BA99: decide whether to move toward the target through 5DB2 or use
             # the overshoot helper branch.
-            cpu.s.ax = mem.rw(ss, (bp + OFF_X) & 0xFFFF)
-            target_x = mem.rw(ss, (bp + OFF_TARGET_X) & 0xFFFF)
+            cpu.s.ax = slot.x_word
+            target_x = slot.target_x_word
             _cmp_word(cpu, cpu.s.ax, target_x)
             if cpu.s.ax > target_x:
                 # BAA1..BABA: helper call, optional spawn, then either continue
@@ -651,20 +654,20 @@ def _run_object_behavior_b9f0(cpu, *, parent: str, chain: str, cx_value: int) ->
                     _cmp_word(cpu, mem.rw(ds, 0x232E), 0x003F)
                     if mem.rw(ds, 0x232E) == 0x003F:
                         call_7476(0xBAB5, "BAB2 CALL 7476")
-                _cmp_word(cpu, mem.rw(ss, (bp + OFF_X) & 0xFFFF), 0x00D0)
-                if mem.rw(ss, (bp + OFF_X) & 0xFFFF) > 0x00D0:
-                    mem.ww(ss, (bp + OFF_X) & 0xFFFF, 0x0010)
+                _cmp_word(cpu, slot.x_word, 0x00D0)
+                if slot.x_word > 0x00D0:
+                    slot.x_word = 0x0010
                 cpu.s.ip = 0xBC4B
                 return
 
             # BA73..BA8D: align target/current coordinates and publish movement
             # target globals.
-            cpu.s.ax = mem.rw(ss, (bp + OFF_TARGET_Y) & 0xFFFF)
+            cpu.s.ax = slot.target_y_word
             cpu.s.ax &= 0xFFFE
             cpu.set_logic_flags(cpu.s.ax, 16)
             _and_mem_word(cpu, ss, (bp + OFF_Y) & 0xFFFF, 0xFFFE)
             mem.ww(ds, 0x2304, cpu.s.ax)
-            cpu.s.ax = mem.rw(ss, (bp + OFF_TARGET_X) & 0xFFFF)
+            cpu.s.ax = slot.target_x_word
             cpu.s.ax &= 0xFFFE
             cpu.set_logic_flags(cpu.s.ax, 16)
             _and_mem_word(cpu, ss, (bp + OFF_X) & 0xFFFF, 0xFFFE)
@@ -685,7 +688,7 @@ def _run_object_behavior_b9f0(cpu, *, parent: str, chain: str, cx_value: int) ->
     # jump into the shared post-move helper.
     cpu.s.ax = mem.rw(ds, 0x233C)
     _add_reg16(cpu, 0, 0x001C)  # AX
-    mem.ww(ss, (bp + OFF_SPRITE_OR_STATE) & 0xFFFF, cpu.s.ax)
+    slot.sprite_or_state = cpu.s.ax
     cpu.s.ip = 0xBC4B
 
 
@@ -700,13 +703,14 @@ def _run_object_family_dispatch_efae(cpu, *, parent: str, chain: str, cx_value: 
     ss = cpu.s.ss & 0xFFFF
     ds = cpu.s.ds & 0xFFFF
     bp = cpu.s.bp & 0xFFFF
+    slot = ObjectSlotView(cpu.mem, ss, bp)  # this object's record (SS:BP)
 
-    cpu.s.ax = cpu.mem.rw(ss, (bp + OFF_Y) & 0xFFFF)
+    cpu.s.ax = slot.y_word
     cpu.mem.ww(ds, 0xD1FE, cpu.s.ax)
-    cpu.s.ax = cpu.mem.rw(ss, (bp + OFF_X) & 0xFFFF)
+    cpu.s.ax = slot.x_word
     cpu.mem.ww(ds, 0xD200, cpu.s.ax)
 
-    cpu.s.bx = cpu.mem.rw(ss, (bp + OFF_LOGIC_ID) & 0xFFFF)
+    cpu.s.bx = slot.logic_id
     cpu.s.bx = cpu.shift(4, cpu.s.bx, 1, 16)  # SHL BX,1
     target_ip = cpu.mem.rw(cpu.s.cs & 0xFFFF, (0xEFC4 + cpu.s.bx) & 0xFFFF)
     cpu.s.ip = target_ip
@@ -805,6 +809,7 @@ def _run_object_sprite0f_collision_abca(
                 )
 
         bp = cpu.s.bp & 0xFFFF
+        slot = ObjectSlotView(mem, ss, bp)  # this object's record (SS:BP)
         _cmp_word(cpu, bp, 0xFFFF)
         if bp == 0xFFFF:
             cpu.s.ip = cpu.pop()
@@ -814,10 +819,10 @@ def _run_object_sprite0f_collision_abca(
         if mem.rb(ds, 0x98C0) != 0:
             mem.wb(ds, 0xBEFF, 0x19)
 
-        mem.ww(ss, (bp + OFF_LOGIC_ID) & 0xFFFF, 0x0001)
-        mem.ww(ss, (bp + OFF_DRAW_LAYER) & 0xFFFF, 0x0004)
-        mem.ww(ss, (bp + OFF_TRANSITION_LATCH) & 0xFFFF, 0x0000)
-        mem.ww(ss, (bp + OFF_SPRITE_OR_STATE) & 0xFFFF, 0x0000)
+        slot.logic_id = 0x0001
+        slot.hazard_class = 0x0004  # OFF_DRAW_LAYER aliases hazard_class
+        slot.transition_latch = 0x0000
+        slot.sprite_or_state = 0x0000
 
         cpu.push(bp)
         run_original_near_call(cpu, 0x837A, 0xAC1D)
@@ -889,6 +894,7 @@ def _run_object_logic_branch_ad04(cpu, *, parent: str, chain: str, cx_value: int
     ds = cpu.s.ds & 0xFFFF
     ss = cpu.s.ss & 0xFFFF
     bp = cpu.s.bp & 0xFFFF
+    slot = ObjectSlotView(cpu.mem, ss, bp)  # this object's record (SS:BP)
     mem = cpu.mem
 
     bdac = mem.rw(ds, 0xBDAC)
@@ -900,7 +906,7 @@ def _run_object_logic_branch_ad04(cpu, *, parent: str, chain: str, cx_value: int
             cpu.s.ip = cpu.pop()
             return
 
-    sprite = mem.rw(ss, (bp + OFF_SPRITE_OR_STATE) & 0xFFFF)
+    sprite = slot.sprite_or_state
     _cmp_word(cpu, sprite, 0x000F)
     if sprite == 0x000F:
         cpu.s.ip = 0xABCA
@@ -948,6 +954,7 @@ def _run_object_behavior_aba3(cpu, *, parent: str, chain: str, cx_value: int) ->
     ds = cpu.s.ds & 0xFFFF
     ss = cpu.s.ss & 0xFFFF
     bp = cpu.s.bp & 0xFFFF
+    slot = ObjectSlotView(cpu.mem, ss, bp)  # this object's record (SS:BP)
     mem = cpu.mem
 
     mem.ww(ds, 0xA42E, cpu.s.bx)
@@ -962,7 +969,7 @@ def _run_object_behavior_aba3(cpu, *, parent: str, chain: str, cx_value: int) ->
     result = ax + 0x0014
     cpu.s.ax = result & 0xFFFF
     cpu.set_add_flags(ax, 0x0014, result, 16)
-    mem.ww(ss, (bp + OFF_SPRITE_OR_STATE) & 0xFFFF, cpu.s.ax)
+    slot.sprite_or_state = cpu.s.ax
 
     _call_ac81(cpu, 0xABBA)
     if cpu.s.ip == 0xAA44:
@@ -982,22 +989,23 @@ def _run_object_behavior_ae09(cpu, *, parent: str, chain: str, cx_value: int) ->
     """Observed EFAE logic-id 0Ch behavior: timer, 3-pixel step, then AD60 tail."""
     ss = cpu.s.ss & 0xFFFF
     bp = cpu.s.bp & 0xFFFF
+    slot = ObjectSlotView(cpu.mem, ss, bp)  # this object's record (SS:BP)
     mem = cpu.mem
 
-    timer = mem.rw(ss, (bp + OFF_SUBSTATE) & 0xFFFF)
+    timer = slot.substate
     _cmp_word(cpu, timer, 0x0000)
     if timer != 0:
         _sub_mem_word(cpu, ss, (bp + OFF_SUBSTATE) & 0xFFFF, 1)
-        if mem.rw(ss, (bp + OFF_SUBSTATE) & 0xFFFF) == 0:
-            mem.ww(ss, (bp + OFF_DIRECTION_OR_STEP) & 0xFFFF, 0x0000)
-    if timer == 0 or mem.rw(ss, (bp + OFF_SUBSTATE) & 0xFFFF) == 0:
+        if slot.substate == 0:
+            slot.direction_or_step = 0x0000
+    if timer == 0 or slot.substate == 0:
         _sub_mem_word(cpu, ss, (bp + OFF_X) & 0xFFFF, 2)
 
-    cpu.s.ax = mem.rw(ss, (bp + OFF_DIRECTION_OR_STEP) & 0xFFFF)
+    cpu.s.ax = slot.direction_or_step
     old_ax = cpu.s.ax
     cpu.s.ax = (old_ax + 0x0028) & 0xFFFF
     cpu.set_add_flags(old_ax, 0x0028, old_ax + 0x0028, 16)
-    mem.ww(ss, (bp + OFF_SPRITE_OR_STATE) & 0xFFFF, cpu.s.ax)
+    slot.sprite_or_state = cpu.s.ax
 
     _run_af22_three_pixel_step_for_direction(cpu, parent="1010:AF22")
     _run_object_bounds_tile_tail_ad60(
@@ -1056,10 +1064,11 @@ def _run_object_behavior_aed8(cpu, *, parent: str, chain: str, cx_value: int) ->
     ds = cpu.s.ds & 0xFFFF
     ss = cpu.s.ss & 0xFFFF
     bp = cpu.s.bp & 0xFFFF
+    slot = ObjectSlotView(cpu.mem, ss, bp)  # this object's record (SS:BP)
     mem = cpu.mem
 
     _sub_mem_word(cpu, ss, (bp + OFF_SUBSTATE) & 0xFFFF, 1)
-    if mem.rw(ss, (bp + OFF_SUBSTATE) & 0xFFFF) == 0:
+    if slot.substate == 0:
         _raise_unverified_path(cpu, parent=parent, chain=f"{chain} -> AED8 timer expired", target_ip=0xADC9, bp=bp, cx_value=cx_value)
 
     cpu.s.ax = 0xB250
@@ -1078,7 +1087,7 @@ def _run_object_behavior_aed8(cpu, *, parent: str, chain: str, cx_value: int) ->
     if selected_tail == 0xADC9:
         # ADC9: MOV SS:[BP+02],FFFFh; JMP AD60.  Unlike AD5A, this tail does
         # not first add DS:A278 to X.
-        mem.ww(ss, (bp + OFF_X) & 0xFFFF, 0xFFFF)
+        slot.x_word = 0xFFFF
         _run_object_bounds_tile_tail_ad60(
             cpu,
             parent=parent,
@@ -1101,6 +1110,7 @@ def _run_object_logic_ab10(cpu, *, parent: str, chain: str, cx_value: int) -> No
     ds = cpu.s.ds & 0xFFFF
     ss = cpu.s.ss & 0xFFFF
     bp = cpu.s.bp & 0xFFFF
+    slot = ObjectSlotView(cpu.mem, ss, bp)  # this object's record (SS:BP)
     mem = cpu.mem
 
     v2384 = mem.rw(ds, 0x2384)
@@ -1124,7 +1134,7 @@ def _run_object_logic_ab10(cpu, *, parent: str, chain: str, cx_value: int) -> No
     old_ax = cpu.s.ax & 0xFFFF
     cpu.s.ax = (old_ax + 0x0009) & 0xFFFF
     cpu.set_add_flags(old_ax, 0x0009, old_ax + 0x0009, 16)
-    mem.ww(ss, (bp + OFF_SPRITE_OR_STATE) & 0xFFFF, cpu.s.ax)
+    slot.sprite_or_state = cpu.s.ax
 
     cpu.s.dx = 0xA414
     cpu.s.bx = 0x237C
@@ -1141,7 +1151,7 @@ def _run_object_logic_ab10(cpu, *, parent: str, chain: str, cx_value: int) -> No
     addend = mem.rw(ds, (cpu.s.bx + 0x02) & 0xFFFF)
     cpu.s.ax = (old_ax + addend) & 0xFFFF
     cpu.set_add_flags(old_ax, addend, old_ax + addend, 16)
-    mem.ww(ss, (bp + OFF_X) & 0xFFFF, cpu.s.ax)
+    slot.x_word = cpu.s.ax
 
     cpu.s.ax = mem.rw(ds, cpu.s.si)
     cpu.s.si = (cpu.s.si + (-2 if cpu.get_flag(DF) else 2)) & 0xFFFF
@@ -1149,7 +1159,7 @@ def _run_object_logic_ab10(cpu, *, parent: str, chain: str, cx_value: int) -> No
     addend = mem.rw(ds, (cpu.s.bx + 0x04) & 0xFFFF)
     cpu.s.ax = (old_ax + addend) & 0xFFFF
     cpu.set_add_flags(old_ax, addend, old_ax + addend, 16)
-    mem.ww(ss, (bp + OFF_Y) & 0xFFFF, cpu.s.ax)
+    slot.y_word = cpu.s.ax
     cpu.s.ip = cpu.pop()
 
 
@@ -1162,7 +1172,8 @@ def _run_object_logic_dispatch_aa2b(cpu, *, parent: str, chain: str, cx_value: i
     """
     ss = cpu.s.ss & 0xFFFF
     bp = cpu.s.bp & 0xFFFF
-    cpu.s.bx = cpu.mem.rw(ss, (bp + OFF_DRAW_LAYER) & 0xFFFF)
+    slot = ObjectSlotView(cpu.mem, ss, bp)  # this object's record (SS:BP)
+    cpu.s.bx = slot.draw_layer
     cpu.s.bx = cpu.shift(4, cpu.s.bx, 1, 16)  # SHL BX,1
     target_ip = cpu.mem.rw(cpu.s.cs & 0xFFFF, (0xAA36 + cpu.s.bx) & 0xFFFF)
     cpu.s.ip = target_ip
