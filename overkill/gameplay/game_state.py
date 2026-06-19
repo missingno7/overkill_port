@@ -25,7 +25,7 @@ from dos_re.cpu import CF
 from overkill.recovered.systems.frame_timers import step_first_active_timer
 from overkill.recovered.systems.status_display import status_cursor_stride
 from overkill.recovered.views.frame_timers import FrameTimersView
-from overkill.recovered.views.object_slots import OFF_Y
+from overkill.recovered.views.object_slots import ObjectSlotView, OFF_Y
 
 
 SIG_GAMEPLAY_COUNTER_STRIDE_LOOP_1F8F_0960 = bytes.fromhex(
@@ -805,7 +805,8 @@ SIG_FRAME_AXIS_CONDITION_DISPATCH_9C01 = bytes.fromhex(
 def _run_object_y_step_down_one_pass_a60a(cpu) -> None:
     ss = cpu.s.ss & 0xFFFF
     bp = cpu.s.bp & 0xFFFF
-    value = cpu.mem.rw(ss, (bp + OFF_Y) & 0xFFFF)
+    slot = ObjectSlotView(cpu.mem, ss, bp)  # this object's record (SS:BP)
+    value = slot.y_word
     _cmp_word(cpu, value, 0x00B0)
     if value < 0x00B0:
         _inc_mem_word_preserve_cf(cpu, ss, (bp + OFF_Y) & 0xFFFF)
@@ -815,7 +816,8 @@ def _run_object_y_step_down_one_pass_a60a(cpu) -> None:
 def _run_object_y_step_up_one_pass_a5fc(cpu) -> None:
     ss = cpu.s.ss & 0xFFFF
     bp = cpu.s.bp & 0xFFFF
-    value = cpu.mem.rw(ss, (bp + OFF_Y) & 0xFFFF)
+    slot = ObjectSlotView(cpu.mem, ss, bp)  # this object's record (SS:BP)
+    value = slot.y_word
     _cmp_word(cpu, value, 0x0000)
     if value != 0:
         _dec_mem_word_preserve_cf(cpu, ss, (bp + OFF_Y) & 0xFFFF)

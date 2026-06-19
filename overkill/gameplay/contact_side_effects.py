@@ -53,6 +53,7 @@ def _run_collision_handler_bec5_observed(cpu, *, collided_bx: int, parent: str, 
     ds = cpu.s.ds & 0xFFFF
     ss = cpu.s.ss & 0xFFFF
     bp = cpu.s.bp & 0xFFFF
+    slot = ObjectSlotView(cpu.mem, ss, bp)  # this object's record (SS:BP)
     bx = collided_bx & 0xFFFF
     mem = cpu.mem
 
@@ -84,13 +85,13 @@ def _run_collision_handler_bec5_observed(cpu, *, collided_bx: int, parent: str, 
         # sprite path starts at BF2D and therefore skips this first decrement.
         if enter_at_bf25:
             _sub_mem_word(cpu, ss, (bp + OFF_COUNTER_20) & 0xFFFF, 1)
-            if mem.rw(ss, (bp + OFF_COUNTER_20) & 0xFFFF) == 0:
+            if slot.counter_20 == 0:
                 run_bfc7(f"{label} BF25 counter zero")
                 return
 
         # BF2D
         _sub_mem_word(cpu, ss, (bp + OFF_COUNTER_20) & 0xFFFF, 1)
-        if mem.rw(ss, (bp + OFF_COUNTER_20) & 0xFFFF) == 0:
+        if slot.counter_20 == 0:
             run_bfc7(f"{label} BF2D counter zero")
             return
 
@@ -98,7 +99,7 @@ def _run_collision_handler_bec5_observed(cpu, *, collided_bx: int, parent: str, 
         _cmp_word(cpu, bedc, 0x0001)
         if bedc == 0x0001:
             _sub_mem_word(cpu, ss, (bp + OFF_COUNTER_20) & 0xFFFF, 1)
-            if mem.rw(ss, (bp + OFF_COUNTER_20) & 0xFFFF) == 0:
+            if slot.counter_20 == 0:
                 run_bfc7(f"{label} BEDC=0001 counter zero")
                 return
         else:
@@ -106,12 +107,12 @@ def _run_collision_handler_bec5_observed(cpu, *, collided_bx: int, parent: str, 
             if bedc == 0x0000:
                 for tail in ("BF46", "BF4B", "BF50"):
                     _sub_mem_word(cpu, ss, (bp + OFF_COUNTER_20) & 0xFFFF, 1)
-                    if mem.rw(ss, (bp + OFF_COUNTER_20) & 0xFFFF) == 0:
+                    if slot.counter_20 == 0:
                         run_bfc7(f"{label} {tail} counter zero")
                         return
             # BEDC values other than 0/1 fall through to BF52 in the original.
 
-        mem.ww(ss, (bp + OFF_VARIANT) & 0xFFFF, 0x0005)
+        slot.variant = 0x0005
         a8c2 = mem.rw(ds, 0xA8C2)
         _cmp_word(cpu, a8c2, 0x0001)
         if a8c2 == 0x0001:
@@ -132,7 +133,7 @@ def _run_collision_handler_bec5_observed(cpu, *, collided_bx: int, parent: str, 
                 call_bd0d(0xBF95, f"variant {variant:04X}")
                 run_bf25_counter_chain(enter_at_bf25=True, label=f"variant {variant:04X}")
                 return
-            mem.ww(ss, (bp + OFF_COUNTER_20) & 0xFFFF, 0x0000)
+            slot.counter_20 = 0x0000
             run_bfc7(f"variant {variant:04X}")
             return
 
@@ -143,7 +144,7 @@ def _run_collision_handler_bec5_observed(cpu, *, collided_bx: int, parent: str, 
         if mem.rw(ds, 0xA8C2) == 0x0001:
             run_bf25_counter_chain(enter_at_bf25=True, label="variant 0009")
             return
-        mem.ww(ss, (bp + OFF_COUNTER_20) & 0xFFFF, 0x0000)
+        slot.counter_20 = 0x0000
         run_bfc7("variant 0009")
         return
 
@@ -168,7 +169,7 @@ def _run_collision_handler_bec5_observed(cpu, *, collided_bx: int, parent: str, 
             if mem.rw(ds, 0xA8C2) == 0x0001:
                 run_bf25_counter_chain(enter_at_bf25=True, label=f"variant {variant:04X}")
                 return
-            mem.ww(ss, (bp + OFF_COUNTER_20) & 0xFFFF, 0x0000)
+            slot.counter_20 = 0x0000
             run_bfc7(f"variant {variant:04X}")
             return
 
@@ -184,7 +185,7 @@ def _run_collision_handler_bec5_observed(cpu, *, collided_bx: int, parent: str, 
         if mem.rw(ds, 0xA8C2) == 0x0001:
             run_bf25_counter_chain(enter_at_bf25=True, label=f"owner-linked variant {variant:04X}")
             return
-        mem.ww(ss, (bp + OFF_COUNTER_20) & 0xFFFF, 0x0000)
+        slot.counter_20 = 0x0000
         run_bfc7(f"owner-linked variant {variant:04X}")
         return
 

@@ -161,14 +161,15 @@ def _run_c054_c12d_effect_spawn_tail(cpu, *, object_bp: int, selector_ax: int) -
     ss = cpu.s.ss & 0xFFFF
     mem = cpu.mem
     bp = object_bp & 0xFFFF
+    slot = ObjectSlotView(mem, ss, bp)  # the linked object's record (SS:BP)
 
     mem.ww(ds, 0xA482, selector_ax & 0xFFFF)
     mem.ww(ds, 0xA842, 0xA844)
 
     cpu.push(cpu.s.bx)
     cpu.push(cpu.s.bp)
-    mem.ww(ds, 0x2376, mem.rw(ss, (bp + OFF_Y) & 0xFFFF))
-    mem.ww(ds, 0x2378, mem.rw(ss, (bp + OFF_X) & 0xFFFF))
+    mem.ww(ds, 0x2376, slot.y_word)
+    mem.ww(ds, 0x2378, slot.x_word)
     cpu.s.ax = 0x0002
     mem.ww(ds, 0x237A, cpu.s.ax)
 
@@ -190,6 +191,7 @@ def _run_formation_spawn_7476_observed(cpu, *, parent: str, chain: str, cx_value
     ds = cpu.s.ds & 0xFFFF
     ss = cpu.s.ss & 0xFFFF
     bp = cpu.s.bp & 0xFFFF
+    slot = ObjectSlotView(cpu.mem, ss, bp)  # this object's record (SS:BP)
     mem = cpu.mem
 
     bx = _find_free_object_slot_7573(cpu)
@@ -206,12 +208,12 @@ def _run_formation_spawn_7476_observed(cpu, *, parent: str, chain: str, cx_value
         cpu.s.cx = 0x001C
         cpu.s.dx = 0x0008
 
-    cpu.s.ax = mem.rw(ss, (bp + OFF_Y) & 0xFFFF)
+    cpu.s.ax = slot.y_word
     old_ax = cpu.s.ax
     cpu.s.ax = (cpu.s.ax + cpu.s.cx) & 0xFFFF
     cpu.set_add_flags(old_ax, cpu.s.cx, old_ax + cpu.s.cx, 16)
     mem.ww(ds, (bx + OFF_Y) & 0xFFFF, cpu.s.ax)
-    cpu.s.ax = mem.rw(ss, (bp + OFF_X) & 0xFFFF)
+    cpu.s.ax = slot.x_word
     old_ax = cpu.s.ax
     cpu.s.ax = (cpu.s.ax + cpu.s.dx) & 0xFFFF
     cpu.set_add_flags(old_ax, cpu.s.dx, old_ax + cpu.s.dx, 16)
@@ -314,16 +316,17 @@ def run_object_spawn_anchor_offset_a571(cpu) -> None:
     ss = cpu.s.ss & 0xFFFF
     mem = cpu.mem
     bp = cpu.s.bp & 0xFFFF
+    slot = ObjectSlotView(cpu.mem, ss, bp)  # this object's record (SS:BP)
     bx = cpu.s.bx & 0xFFFF
 
-    ax = mem.rw(ss, (bp + OFF_Y) & 0xFFFF)
+    ax = slot.y_word
     result = ax + 0x000A
     ax = result & 0xFFFF
     cpu.s.ax = ax
     cpu.set_add_flags((result - 0x000A) & 0xFFFF, 0x000A, result, 16)
     mem.ww(ds, (bx + OFF_Y) & 0xFFFF, ax)
 
-    ax = mem.rw(ss, (bp + OFF_X) & 0xFFFF)
+    ax = slot.x_word
     result = ax + 0x000A
     ax = result & 0xFFFF
     cpu.s.ax = ax
