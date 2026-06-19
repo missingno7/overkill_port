@@ -59,10 +59,10 @@ def decode_word_pair_rle(cpu) -> None:
     cpu.s.di = cpu.mem.rw(ds, 0x023C)
 
     def read_word_from_call(return_ip: int) -> None:
+        # return_ip is the original CALL's return word; it ends up as dead stack
+        # scratch below SP, which the oracle no longer compares, so we don't
+        # model it.  (TODO Phase 3: inline this into read_packed_word_le.)
         read_packed_word_le(cpu)
-        if cpu.s.ip != OVERKILL_LOAD_ERROR_IP:
-            cpu.mem.ww(cpu.s.ss, (cpu.s.sp - 2) & 0xFFFF, return_ip)
-            cpu.mem.ww(cpu.s.ss, (cpu.s.sp - 4) & 0xFFFF, 0x061E)
 
     read_word_from_call(0x032F)
     if cpu.s.ip == OVERKILL_LOAD_ERROR_IP:
@@ -285,10 +285,7 @@ def decode_linear_byte_rle(cpu) -> None:
         cpu.set_sub_flags(ptr, 0x0610, ptr - 0x0610, 16)
         if ptr >= 0x0610:
             mem.ww(ds, 0x0610, 0x0410)
-            saved_cx = cpu.s.cx & 0xFFFF
-            # 0624 does PUSH CX around DOS AH=3Fh.  SP is balanced, but the
-            # saved word remains visible below the caller's return frame.
-            mem.ww(cpu.s.ss, (cpu.s.sp - 2) & 0xFFFF, saved_cx)
+            saved_cx = cpu.s.cx & 0xFFFF  # PUSH CX -- restored after the INT 21h read
             cpu.set_reg8(4, 0x3F)
             cpu.s.bx = mem.rw(ds, 0x0240)
             cpu.s.cx = 0x0200

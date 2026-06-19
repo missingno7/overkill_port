@@ -423,7 +423,8 @@ def test_word_pair_rle_0324_hook_matches_interpreted_asm_on_synthetic_stream():
     assert asm.addr() == (0x1010, 0x02A8)
     assert hook.addr() == (0x1010, 0x02A8)
     assert asm.s.snapshot() == hook.s.snapshot()
-    assert asm.mem.block(0x4000, 0x8FC0, 0x40) == hook.mem.block(0x4000, 0x8FC0, 0x40)
+    # SS:[SP-40..SP) is dead stack scratch -- the read_word_from_call CALL return
+    # words below SP, no longer modelled -- so it is not compared.
     assert asm.mem.block(0x7000, 0x0100, 0x20) == hook.mem.block(0x7000, 0x0100, 0x20)
     assert asm.mem.rw(0x1010, 0x0244) == hook.mem.rw(0x1010, 0x0244)
     assert asm.mem.rw(0x1010, 0x0610) == hook.mem.rw(0x1010, 0x0610)

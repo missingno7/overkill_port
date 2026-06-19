@@ -35,10 +35,7 @@ def read_packed_byte(cpu) -> None:
     cpu.set_sub_flags(ptr, BUFFER_END, ptr - BUFFER_END, 16)  # CMP BX,0610h
     if ptr >= BUFFER_END:
         cpu.mem.ww(ds, STREAM_PTR_OFF, BUFFER_START)
-        saved_cx = cpu.s.cx & 0xFFFF
-        # Original 0624 does PUSH CX / ... / POP CX around INT 21h.  SP is
-        # balanced, but the saved word remains visible as stack scratch.
-        cpu.mem.ww(cpu.s.ss, (cpu.s.sp - 2) & 0xFFFF, saved_cx)
+        saved_cx = cpu.s.cx & 0xFFFF  # PUSH CX -- restored after the INT 21h read
         cpu.set_reg8(4, 0x3F)  # AH=3Fh read file/device
         cpu.s.bx = cpu.mem.rw(ds, DOS_FILE_HANDLE_OFF)
         cpu.s.cx = 0x0200
