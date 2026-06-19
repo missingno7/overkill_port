@@ -41,11 +41,23 @@ context. Each has the analysis already done so a human can pick up fast.
   (DS:2350) to `SNAPSHOT_GLOBAL_WORDS` so a future phase/progress divergence is
   caught at its own frame instead of only downstream via the camera anchor.
 
-## `menu_interaction` demo divergence (demo: `demo_play_tandy_menu_interaction`)
-- Fails demo-replay (pre-existing, confirmed at baseline). The menu is ~44%
-  interpreted (`1F8F:0980` loop); the divergence is a lifted hook in the menu/input
-  path, not the interpreted core (both runtimes share that). Not yet bisected — the
-  field/object that diverges still needs to be captured with frame-verify.
+## `menu_interaction` demo divergence — RESOLVED 2026-06-19
+- Symptom: demo-replay TIMEOUT (not a state divergence) -- `side=reference
+  frame=89 at=1010:CBE4`. The reference oracle hung; all decoded state matched.
+- **Root cause:** a frame-verifier oracle limitation, not a port bug. The menu
+  transition runs CB3E, a 5x `CALL CBD5` delay; each CBD5 loads AL=[54] then
+  spins `cmp al,[54]; je` until the INT 1Ch timer ISR (`1010:06E5`, tail
+  `inc [54]; and [54],3`) advances the tick. The frame verifier models time via
+  the `0679`/`50C9` boundaries and never fires that async ISR, so `DS:[54]` is
+  frozen at 0 and the busy-wait spins to the frame budget. Interactive play fires
+  the real ISR, so the live game/menu was never broken (verified: `[54]/[55]/
+  9907/66b` and the loop IP all matched between sides through frame 88).
+- **Fix:** `input_waits.advance_frame_tick_wait` -- the verifier-only per-step
+  wait handler now ticks `DS:[54]` (one `071D`-equivalent step) when a side is
+  parked in the CBD5 busy-wait, so the delay drains in place. Applied to both
+  sides identically (lockstep). Interactive play is untouched (it uses
+  `title_fire_release_wait`, not `frame_verify_input_wait`). Whole demo-replay
+  suite now green: 18/18 (0 failures).
 
 ## BDD0 player-hazard-scan hit-path oracle (`bdd0_..._hit_path`)
 - Pre-existing FAILING oracle (red at loop baseline): on a hazard hit the hook

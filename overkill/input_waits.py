@@ -54,6 +54,43 @@ def title_fire_release_wait(cpu: CPU8086) -> bool:
 _TITLE_FIRE_RELEASE_ADDR: Addr = (0x1010, 0xD35C)
 
 
+# CBDD..CBE5: `mov al,[54]; cmp al,[54]; je $-6` -- the CBD5 frame-tick wait.
+_FRAME_TICK_WAIT_SIG = bytes.fromhex("a0 54 00 3a 06 54 00 74 fa")
+
+
+def advance_frame_tick_wait(cpu: CPU8086) -> bool:
+    """Tick DS:[54] when a runtime is parked in the CBD5 frame-delay busy-wait.
+
+    The menu-transition delay CB3E loops five times over CALL CBD5; each CBD5
+    loads AL=[54] then spins ``cmp al,[54]; je`` until the INT 1Ch timer ISR
+    (1010:06E5, whose tail does ``inc [54]; and [54],3``) advances the tick
+    counter.  The frame verifier models time via the 0679 timer / 50C9 retrace
+    boundaries and never fires that asynchronous ISR, so DS:[54] is frozen at 0
+    and the loop spins until the frame budget -- the same boundary-less busy-wait
+    problem the 0679/50C9 REFERENCE_ENV_HOOKS already solve, just keyed on the
+    tick counter instead of a boundary address.  Interactive play fires the real
+    ISR, so the live game is unaffected; this resolver is verifier-only.
+
+    Advancing [54] one tick (matching 071D) lets the current CBD5 return and the
+    delay drain in place.  Returns True when a tick was injected so the caller
+    treats the step as handled and keeps stepping (no frame boundary is needed --
+    both verifier sides tick identically and stay in lockstep).
+    """
+    cs, ip = cpu.addr()
+    if cs != 0x1010 or ip not in (0xCBE0, 0xCBE4):
+        return False
+    mem = cpu.mem
+    if mem.block(0x1010, 0xCBDD, 9) != _FRAME_TICK_WAIT_SIG:
+        return False
+    ds = cpu.s.ds & 0xFFFF
+    # CBD5 only spins when the delay is armed ([55]!=0) and AL still equals the
+    # frozen tick (otherwise the je falls through and CBD5 has already returned).
+    if mem.rb(ds, 0x55) == 0 or (cpu.s.ax & 0xFF) != mem.rb(ds, 0x54):
+        return False
+    mem.wb(ds, 0x54, (mem.rb(ds, 0x54) + 1) & 0x03)
+    return True
+
+
 def frame_verify_input_wait(cpu: CPU8086) -> tuple[str, Addr] | None:
     """Frame-verifier adapter: return ("wait", canonical_addr) or None.
 
@@ -68,6 +105,11 @@ def frame_verify_input_wait(cpu: CPU8086) -> tuple[str, Addr] | None:
     were allowed to stop at different sub-positions of the loop they would resume
     from different points when input is pumped and diverge spuriously.
     """
+    # Resolve the CBD5 frame-delay timer busy-wait in place (advance DS:[54]).
+    # No frame boundary is produced: the loop simply drains and execution
+    # continues to the next real present/timer/retrace boundary.
+    if advance_frame_tick_wait(cpu):
+        return None
     if (cpu.s.cs & 0xFFFF) != 0x1010 or (cpu.s.ip & 0xFFFF) != 0xD35C:
         return None
     mem = cpu.mem

@@ -1,3 +1,17 @@
+## 2026-06-19 - Fix menu_interaction demo (frame-verifier timer-tick wait)
+
+The standing `menu_interaction` demo-replay failure was a reference-side TIMEOUT
+at `1010:CBE4`, not a state divergence (all decoded state matched between sides
+through frame 88). Root cause: the menu transition's CB3E delay (5x CALL CBD5)
+busy-waits on the timer tick `DS:[54]`, which the frame verifier never advances
+because it models time via the 0679/50C9 boundaries and never fires the async
+INT 1Ch ISR (`06E5`) that does `inc [54]`. So `[54]` stayed 0 and the oracle
+spun. Interactive play fires the ISR, so the live menu was fine. Fix: added
+`input_waits.advance_frame_tick_wait`, a verifier-only per-step resolver that
+ticks `DS:[54]` when a side is parked in the CBD5 busy-wait (signature-guarded,
+only when spinning), letting the delay drain in lockstep on both sides. Whole
+demo-replay suite now green (18/18, 0 failures). See loop_blockers.md (RESOLVED).
+
 ## 2026-06-19 - Fix mothership camera-Y divergence (9C01 [a47c]==0 guard)
 
 Attended bisection of the standing `mothership_drag_edge_case` demo-replay
