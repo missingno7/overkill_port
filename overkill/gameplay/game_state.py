@@ -1156,17 +1156,15 @@ def run_status_coord_list_fill_99cd(cpu, self_disable_if_patched) -> None:
     di = s.di & 0xFFFF
     ax = 0
     for _ in range(count):
-        ax = mem.rw(ss, (s.bp + 0x02) & 0xFFFF)
-        result = ax + 0x0008
-        s.ax = result & 0xFFFF
-        cpu.set_add_flags(ax, 0x0008, result, 16)
+        # First coord +8: ADD flags dead (the +9 ADD below overwrites them).
+        s.ax = (mem.rw(ss, (s.bp + 0x02) & 0xFFFF) + 0x0008) & 0xFFFF
         mem.ww(es, di, s.ax)
         di = (di + 2) & 0xFFFF
 
         ax = mem.rw(ss, (s.bp + 0x04) & 0xFFFF)
         result = ax + 0x0009
         s.ax = result & 0xFFFF
-        cpu.set_add_flags(ax, 0x0009, result, 16)
+        cpu.set_add_flags(ax, 0x0009, result, 16)  # live: last iter reaches 99DD
         mem.ww(es, di, s.ax)
         di = (di + 2) & 0xFFFF
     s.di = di
