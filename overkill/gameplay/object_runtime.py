@@ -1087,7 +1087,6 @@ def run_object_player_chase_b1b0(cpu, self_disable_if_patched) -> None:
         jump_ad5a()
         return
 
-    mem.ww(ss, (s.sp - 2) & 0xFFFF, 0xB23F)
     _run_object_delta_helper_5e1b(cpu)
     cpu.push(0xB242)
     run_runtime_patched_object_steer_5e42(cpu)

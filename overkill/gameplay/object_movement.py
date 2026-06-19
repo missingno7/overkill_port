@@ -238,26 +238,17 @@ def _run_runtime_patched_object_steer_5e42(cpu) -> None:
     ds = cpu.s.ds & 0xFFFF
     ss = cpu.s.ss & 0xFFFF
     bp = cpu.s.bp & 0xFFFF
-    entry_sp = cpu.s.sp & 0xFFFF
     mem = cpu.mem
     slot = ObjectSlotView(mem, ss, bp)  # this object's record (SS:BP)
 
-    def remember_internal_call(ret_ip: int) -> None:
-        # 5E42 uses real CALLs to the 5EB5/5EC8 flag-bit leaves before the final
-        # JMP AF22/AF63.  Those CALLs are balanced, but the last return word
-        # remains below the caller's live return word after AF22/AF63 RETs.
-        mem.ww(ss, (entry_sp - 2) & 0xFFFF, ret_ip & 0xFFFF)
-
-    def call_5eb5(ret_ip: int) -> None:
-        remember_internal_call(ret_ip)
+    def call_5eb5() -> None:
         _cmp_word(cpu, mem.rw(ds, 0x230C), 0x0001)
         if mem.rw(ds, 0x230C) == 0x0001:
             _or_mem_word(cpu, ds, 0x2310, 0x0001)
         else:
             _or_mem_word(cpu, ds, 0x2310, 0x0002)
 
-    def call_5ec8(ret_ip: int) -> None:
-        remember_internal_call(ret_ip)
+    def call_5ec8() -> None:
         _cmp_word(cpu, mem.rw(ds, 0x230E), 0x0001)
         if mem.rw(ds, 0x230E) == 0x0001:
             _or_mem_word(cpu, ds, 0x2310, 0x0004)
@@ -284,28 +275,28 @@ def _run_runtime_patched_object_steer_5e42(cpu) -> None:
     bx = cpu.s.bx & 0xFFFF
     _cmp_word(cpu, ax, bx)
     if ax == bx:
-        call_5eb5(0x5E96)
-        call_5ec8(0x5E99)
+        call_5eb5()
+        call_5ec8()
     elif ax > bx:
         _add_mem_word(cpu, ss, (bp + OFF_MOVE_STEP_ERROR) & 0xFFFF, bx)
         frac = slot.move_step_error
         _cmp_word(cpu, frac, ax)
         if frac <= ax:
-            call_5eb5(0x5E91)
+            call_5eb5()
         else:
             _sub_mem_word(cpu, ss, (bp + OFF_MOVE_STEP_ERROR) & 0xFFFF, ax)
-            call_5eb5(0x5E96)
-            call_5ec8(0x5E99)
+            call_5eb5()
+            call_5ec8()
     else:
         _add_mem_word(cpu, ss, (bp + OFF_MOVE_STEP_ERROR) & 0xFFFF, ax)
         frac = slot.move_step_error
         _cmp_word(cpu, frac, bx)
         if frac <= bx:
-            call_5ec8(0x5E99)
+            call_5ec8()
         else:
             _sub_mem_word(cpu, ss, (bp + OFF_MOVE_STEP_ERROR) & 0xFFFF, bx)
-            call_5eb5(0x5E96)
-            call_5ec8(0x5E99)
+            call_5eb5()
+            call_5ec8()
 
     cpu.s.bx = 0xA348
     cpu.s.ax = mem.rw(ds, 0x2310)
@@ -1102,10 +1093,6 @@ def _run_af60_double_step_for_direction(cpu) -> None:
     the direction movement body runs once, RET returns to AF63, and the same
     body runs a second time before returning to the original caller.
     """
-    ss = cpu.s.ss & 0xFFFF
-    # AF60 begins with CALL AF63.  After the self-call trick completes, SP is
-    # back where it started but the pushed return word remains as stack scratch.
-    cpu.mem.ww(ss, (cpu.s.sp - 2) & 0xFFFF, 0xAF63)
     _run_af63_step_for_direction(cpu, parent="1010:AF60")
     _run_af63_step_for_direction(cpu, parent="1010:AF60")
 

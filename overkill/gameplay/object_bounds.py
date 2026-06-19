@@ -98,7 +98,6 @@ def _run_object_bounds_tile_tail_ad60(cpu, *, parent: str, chain: str, cx_value:
         raise AssertionError("pure AD60 decision missed the tile-probe family")
     _run_tile_probe_5073(cpu)
     _add_reg16(cpu, 3, 0x000D)
-    mem.ww(ss, (cpu.s.sp - 2) & 0xFFFF, 0xADBF)
     _run_tile_lookup_505b(cpu)
     if not cpu.get_flag(ZF):
         old_al = cpu.get_reg8(0)

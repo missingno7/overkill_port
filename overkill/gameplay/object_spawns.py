@@ -294,9 +294,6 @@ def run_object_slot_allocate_or_reclaim_7547(cpu) -> None:
     """
     bx = _find_free_object_slot_7573(cpu)
     _cmp_word(cpu, bx, 0xFFFF)
-    ss = cpu.s.ss & 0xFFFF
-    sp = cpu.s.sp & 0xFFFF
-    cpu.mem.ww(ss, (sp - 2) & 0xFFFF, 0x754A)
     if bx != 0xFFFF:
         cpu.s.ip = cpu.pop()
         return
@@ -343,20 +340,12 @@ def run_object_spawn_seed_a4ea(cpu) -> None:
     bx = _find_free_object_slot_7573(cpu)
     _cmp_word(cpu, bx, 0xFFFF)
     if bx == 0xFFFF:
-        # Original A4EA reached this by CALL 7547 (pushes A4ED) → CALL 7573
-        # (pushes 754A) → 7573 returns → JZ 7550.  Simulate both stack writes so
-        # the stale 754A left by CALL 7573 is present, matching the ASM state.
+        # Original A4EA reached 7550 via CALL 7547, which pushes the live A4ED
+        # return word (the inner CALL 7573's 754A return was dead scratch below
+        # SP, no longer modelled).
         cpu.push(0xA4ED)
-        ss = cpu.s.ss & 0xFFFF
-        sp = cpu.s.sp & 0xFFFF
-        cpu.mem.ww(ss, (sp - 2) & 0xFFFF, 0x754A)
         cpu.s.ip = 0x7550
         return
-
-    ss = cpu.s.ss & 0xFFFF
-    sp = cpu.s.sp & 0xFFFF
-    cpu.mem.ww(ss, (sp - 2) & 0xFFFF, 0xA4ED)
-    cpu.mem.ww(ss, (sp - 4) & 0xFFFF, 0x754A)
 
     ds = cpu.s.ds & 0xFFFF
     mem = cpu.mem
@@ -380,21 +369,13 @@ def run_object_spawn_seed_from_source_a4d7(cpu) -> None:
     bx = _find_free_object_slot_7573(cpu)
     _cmp_word(cpu, bx, 0xFFFF)
     if bx == 0xFFFF:
-        # Original A4D7 CALL A4EA (→ A4DA), A4EA CALL 7547 (→ A4ED),
-        # 7547 CALL 7573 (→ 754A stale).  Mirror all three stack writes.
+        # Original A4D7 reached 7550 via CALL A4EA (pushes A4DA) → CALL 7547
+        # (pushes A4ED); both are live return words.  The inner CALL 7573's 754A
+        # return was dead scratch below SP, no longer modelled.
         cpu.push(0xA4DA)
         cpu.push(0xA4ED)
-        ss = cpu.s.ss & 0xFFFF
-        sp = cpu.s.sp & 0xFFFF
-        cpu.mem.ww(ss, (sp - 2) & 0xFFFF, 0x754A)
         cpu.s.ip = 0x7550
         return
-
-    ss = cpu.s.ss & 0xFFFF
-    sp = cpu.s.sp & 0xFFFF
-    cpu.mem.ww(ss, (sp - 2) & 0xFFFF, 0xA4DA)
-    cpu.mem.ww(ss, (sp - 4) & 0xFFFF, 0xA4ED)
-    cpu.mem.ww(ss, (sp - 6) & 0xFFFF, 0x754A)
 
     ds = cpu.s.ds & 0xFFFF
     mem = cpu.mem

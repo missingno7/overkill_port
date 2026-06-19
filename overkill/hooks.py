@@ -3346,10 +3346,6 @@ def overkill_wait_vga_retrace_50c9(cpu):
     inverted_order = cpu.mem.rb(cs, 0xCA5A) == 0x01
     _wait_vga_status_bit3(cpu, want_set=not inverted_order)
     _wait_vga_status_bit3(cpu, want_set=inverted_order)
-    # Original path is 50C9 -> JMP C9EA; C9EA performs CALL C9F1 and CALL
-    # CA02 before RET.  Those internal near calls leave their last return word
-    # (C9F0) in the scratch stack slot at the original SS:SP-2.
-    cpu.mem.ww(cpu.s.ss, (cpu.s.sp - 2) & 0xFFFF, 0xC9F0)
     cpu.s.ip = cpu.pop()
 
 

@@ -999,8 +999,6 @@ def _run_object_behavior_ae09(cpu, *, parent: str, chain: str, cx_value: int) ->
     cpu.set_add_flags(old_ax, 0x0028, old_ax + 0x0028, 16)
     mem.ww(ss, (bp + OFF_SPRITE_OR_STATE) & 0xFFFF, cpu.s.ax)
 
-    # AE26 CALL AF22 leaves AE29 as balanced-call stack scratch.
-    mem.ww(ss, (cpu.s.sp - 2) & 0xFFFF, 0xAE29)
     _run_af22_three_pixel_step_for_direction(cpu, parent="1010:AF22")
     _run_object_bounds_tile_tail_ad60(
         cpu,
@@ -1065,9 +1063,6 @@ def _run_object_behavior_aed8(cpu, *, parent: str, chain: str, cx_value: int) ->
         _raise_unverified_path(cpu, parent=parent, chain=f"{chain} -> AED8 timer expired", target_ip=0xADC9, bp=bp, cx_value=cx_value)
 
     cpu.s.ax = 0xB250
-    # AED8 pushes B250 and falls into AEE4.  The return word is later replaced
-    # by the nested ADBF call scratch; keep SP unchanged in the lifted form.
-    mem.ww(ss, (cpu.s.sp - 2) & 0xFFFF, 0xB250)
     _run_aee4_step_for_direction(cpu)
 
     selected_tail = _run_b250_overlap_contact_selector(cpu, caller="AED8")

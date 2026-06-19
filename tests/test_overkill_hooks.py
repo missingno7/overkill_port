@@ -2341,8 +2341,7 @@ def test_vga_wait_50c9_hook_matches_interpreted_asm_on_captured_snapshot():
     hook.cpu.step()
 
     assert asm.cpu.addr() == hook.cpu.addr() == (0x1010, ret_ip)
-    assert asm.cpu.s.snapshot() == hook.cpu.s.snapshot()
-    assert asm.program.memory.data == hook.program.memory.data
+    assert_oracle_equivalent(asm.cpu, hook.cpu)  # C9F0 internal-call scratch below SP dropped
     assert asm.dos.vga_status_reads == hook.dos.vga_status_reads
 
 
@@ -6014,8 +6013,7 @@ def test_runtime_patched_object_steer_5e42_hook_matches_interpreted_snapshot():
     hook.cpu.step()
 
     assert asm.cpu.addr() == hook.cpu.addr() == (0x1010, return_ip)
-    assert asm.cpu.s.snapshot() == hook.cpu.s.snapshot()
-    assert asm.program.memory.data == hook.program.memory.data
+    assert_oracle_equivalent(asm.cpu, hook.cpu)  # 5E42 internal-call scratch below SP dropped
 
 
 def test_hook_verifier_verifies_runtime_patched_object_steer_5e42():
@@ -10723,8 +10721,7 @@ def test_object_slot_allocate_or_reclaim_7547_free_path_matches_original():
     overkill_object_slot_allocate_or_reclaim_7547(hook)
 
     assert asm.addr() == hook.addr() == (0x1010, 0xBEEF)
-    assert asm.s.snapshot() == hook.s.snapshot()
-    assert asm.mem.data == hook.mem.data
+    assert_oracle_equivalent(asm, hook)  # dead 754A return scratch below SP dropped
 
 
 def test_object_spawn_seed_a4ea_free_path_matches_original():
@@ -10766,8 +10763,7 @@ def test_object_spawn_seed_a4ea_free_path_matches_original():
     overkill_object_spawn_seed_a4ea(hook)
 
     assert asm.addr() == hook.addr() == (0x1010, 0xBEEF)
-    assert asm.s.snapshot() == hook.s.snapshot()
-    assert asm.mem.data == hook.mem.data
+    assert_oracle_equivalent(asm, hook)  # dead A4ED/754A return scratch below SP dropped
 
 
 def test_object_spawn_seed_from_source_a4d7_free_path_matches_original():
@@ -10816,8 +10812,7 @@ def test_object_spawn_seed_from_source_a4d7_free_path_matches_original():
     overkill_object_spawn_seed_from_source_a4d7(hook)
 
     assert asm.addr() == hook.addr() == (0x1010, 0xBEEF)
-    assert asm.s.snapshot() == hook.s.snapshot()
-    assert asm.mem.data == hook.mem.data
+    assert_oracle_equivalent(asm, hook)  # dead A4DA/A4ED/754A return scratch below SP dropped
 
 
 def test_frame_coord_ring_helpers_match_interpreted_asm():
@@ -12104,7 +12099,7 @@ def test_movement_dir_step_tables_match_interpreted_asm_all_directions():
                 hooked.step()
                 assert asm.addr() == hooked.addr() == (0x1010, 0xBEEF), (hex(entry), direction)
                 assert asm.s.snapshot() == hooked.s.snapshot(), (hex(entry), direction, x0, y0)
-                assert asm.mem.data == hooked.mem.data, (hex(entry), direction, x0, y0)
+                assert_oracle_equivalent(asm, hooked)  # AF22/AF60 self-call scratch below SP dropped
 
 
 def test_ac81_slot_scan_guard_acd9_continuation_preserves_entry_cmp_flags():

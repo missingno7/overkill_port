@@ -227,15 +227,6 @@ def _run_collision_death_tail_bfc7(cpu, *, parent: str, chain: str, cx_value: in
                 cpu.s.ax = mem.rb(ds, (cpu.s.si + 1) & 0xFFFF)
                 cpu.set_logic_flags(cpu.s.ax, 16)
                 mem.ww(ds, 0x237A, cpu.s.ax)
-                # C014 CALL 7420 leaves C017 below the live saved-BP word, and
-                # 7420's own CALL 7524 leaves its 7423 return address one word
-                # further down.  Both calls return, so SP is unchanged here, but
-                # the two return-address words remain as freed-stack scratch that
-                # full-memory verification observes.  Modelling 7524 in Python
-                # (inside the helper) skips the real CALL, so lay down the 7423
-                # scratch explicitly -- matching _run_c054_c12d_effect_spawn_tail.
-                mem.ww(ss, (cpu.s.sp - 2) & 0xFFFF, 0xC017)
-                mem.ww(ss, (cpu.s.sp - 4) & 0xFFFF, 0x7423)
                 _run_linked_effect_spawn_7420_observed(cpu)
     cpu.s.bp = cpu.pop()
 
