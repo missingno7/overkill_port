@@ -23,6 +23,7 @@ from __future__ import annotations
 from dos_re.cpu import CF
 from dos_re.hooks import call_installed_hook_like_near_call, jump_installed_hook_boundary
 from overkill.asm import _cmp_word
+from overkill.recovered.ds_globals import VIDEO_MODE_SELECTOR_OFF
 
 from dataclasses import dataclass
 from typing import Callable, Mapping
@@ -44,7 +45,7 @@ OBJ_VARIANT_FLAGS = 0x24
 OFFSCREEN_DESTINATION = 0xFFFF
 
 # Runtime data tables used by OVERKILL's video-mode-specific setup.
-VIDEO_MODE_SELECTOR_OFF = 0x95BC
+# VIDEO_MODE_SELECTOR_OFF imported from recovered.ds_globals (shared cell).
 LAYER_75A6_PRIMARY_SEGMENT_OFF = 0x95A6
 LAYER_75A6_SECONDARY_SEGMENT_OFF = 0x95AE
 LAYER_768E_PRIMARY_SEGMENT_OFF = 0x95AA

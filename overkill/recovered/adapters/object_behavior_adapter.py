@@ -20,6 +20,11 @@ from overkill.recovered.systems.objects import (
     object_deactivate_dispatch_decision_c054,
 )
 from overkill.recovered.views.object_slots import ObjectSlotView
+from overkill.recovered.ds_globals import (
+    BOSS_GROUP_LATCH,
+    COLLISION_DEBUG_CODE,
+    COLLISION_DEBUG_FLAG,
+)
 
 
 def run_player_chase_candidate_checks_b15a(cpu, slot: ObjectSlotView) -> bool:
@@ -104,9 +109,9 @@ BOSS_GROUP_POINTER_OFFSETS_AND_RETURN_IPS = (
     (0xA8C0, 0xC187),
 )
 BOSS_GROUP_COUNTER_GLOBAL = 0xA47E
-BOSS_GROUP_LATCH_GLOBAL = 0xA8C2
-BOSS_GROUP_DEBUG_FLAG = 0x98C0
-BOSS_GROUP_DEBUG_CODE_ADDR = 0xBEFF
+BOSS_GROUP_LATCH_GLOBAL = BOSS_GROUP_LATCH
+BOSS_GROUP_DEBUG_FLAG = COLLISION_DEBUG_FLAG
+BOSS_GROUP_DEBUG_CODE_ADDR = COLLISION_DEBUG_CODE
 BOSS_GROUP_DEBUG_CODE = 0x19
 OBJECT_DEACTIVATE_DEBUG_BYTE = 0x98A8
 

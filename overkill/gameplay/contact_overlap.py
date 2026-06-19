@@ -27,6 +27,11 @@ from __future__ import annotations
 from typing import Callable
 
 from overkill.asm import _add_reg16, _cmp_word, _sub_reg16
+from overkill.recovered.ds_globals import (
+    CONTACT_DISPATCH_GATE,
+    VIEW_TARGET_X,
+    VIEW_TARGET_Y,
+)
 from overkill.recovered.views.object_slots import (
     ObjectSlotView,
     OFF_SCAN_ENABLE_OR_SOLID,
@@ -38,8 +43,9 @@ from overkill.recovered.views.object_slots import (
 
 # DS-relative reference box the active object slot is tested against.  The box
 # is anchored at (237E, 2380) and is 0x14 wide/high after the -2 inset on X.
-OVERLAP_REF_BOX_X = 0x237E
-OVERLAP_REF_BOX_Y = 0x2380
+# These are the shared camera/view target cells (see recovered.ds_globals).
+OVERLAP_REF_BOX_X = VIEW_TARGET_X
+OVERLAP_REF_BOX_Y = VIEW_TARGET_Y
 OVERLAP_BOX_X_INSET = 0x0002
 OVERLAP_BOX_SPAN = 0x0014
 
@@ -55,7 +61,7 @@ SUBSTATE_SKIP_OVERLAP = 0x0001
 
 # DS global that scales the contact fanout count (1, 3, or 5 side-effect calls)
 # when the slot's logic id is 3.
-CONTACT_FANOUT_SELECTOR = 0xBEDC
+CONTACT_FANOUT_SELECTOR = CONTACT_DISPATCH_GATE
 
 # Original target IPs the selector chooses between, plus the injected side
 # effect helper and the IP execution resumes at after it returns.

@@ -16,6 +16,8 @@ from __future__ import annotations
 
 from dos_re.cpu import CF
 
+from overkill.recovered.ds_globals import VIDEO_MODE_SELECTOR_OFF
+
 MODE_CGA = 0
 MODE_EGA = 1
 MODE_TANDY = 2
@@ -27,7 +29,7 @@ VIDEO_MODE_NAME = {
 }
 
 # Original OVERKILL data tables used by the lifted helpers.
-VIDEO_MODE_SELECTOR_OFF = 0x95BC
+# VIDEO_MODE_SELECTOR_OFF imported from recovered.ds_globals (shared cell).
 OBJECT_ROW_TABLE_OFF = 0x99C8
 OBJECT_FRAME_Y_OFF = 0x02
 OBJECT_FRAME_X_OFF = 0x04

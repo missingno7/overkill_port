@@ -15,6 +15,7 @@ from overkill.recovered.systems.movement import (
     step_operations_for_direction,
 )
 from overkill.recovered.views.object_slots import OFF_TARGET_X, OFF_TARGET_Y, OFF_X, OFF_Y, ObjectSlotView
+from overkill.recovered.ds_globals import VIEW_TARGET_X, VIEW_TARGET_Y
 
 MOVEMENT_TARGET_Y = 0x2304
 MOVEMENT_TARGET_X = 0x2306
@@ -22,8 +23,6 @@ MOVEMENT_MODE = 0x2308
 MOVEMENT_BLOCKED_FLAG = 0x230A
 MOVEMENT_DIRECTION_BITS = 0xA954
 MOVEMENT_DIRECTION_TABLE = 0xA348
-VIEW_TARGET_X = 0x237E
-VIEW_TARGET_Y = 0x2380
 
 
 def read_movement_target_globals(cpu) -> MovementTarget:
