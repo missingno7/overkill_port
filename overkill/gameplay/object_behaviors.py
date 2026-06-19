@@ -1126,30 +1126,28 @@ def _run_object_logic_ab10(cpu, *, parent: str, chain: str, cx_value: int) -> No
         cpu.s.ip = cpu.pop()
         return
 
+    # Sprite = XLAT(DS:A40C, DS:2336) + 9.  The ADD's flags are dead (overwritten
+    # below before the RET), so only the value survives.
     cpu.s.ax = mem.rw(ds, 0x2336)
     cpu.s.bx = 0xA40C
     # XLAT: AL = DS:[BX+AL], AH unchanged.
     cpu.set_reg8(0, mem.rb(ds, (cpu.s.bx + (cpu.s.ax & 0x00FF)) & 0xFFFF))
-    old_ax = cpu.s.ax & 0xFFFF
-    cpu.s.ax = (old_ax + 0x0009) & 0xFFFF
-    cpu.set_add_flags(old_ax, 0x0009, old_ax + 0x0009, 16)
+    cpu.s.ax = (cpu.s.ax + 0x0009) & 0xFFFF
     slot.sprite_or_state = cpu.s.ax
 
+    # Walk the DS:A414 animation pair backward (DF-controlled), adding the DS:237C
+    # reference-box X/Y.  Only the final (y) ADD's flags reach the RET boundary.
     cpu.s.dx = 0xA414
     cpu.s.bx = 0x237C
     cpu.s.si = mem.rw(ds, (cpu.s.bx + 0x08) & 0xFFFF)
     cpu.s.si = cpu.shift(4, cpu.s.si, 1, 16)
     cpu.s.si = cpu.shift(4, cpu.s.si, 1, 16)
-    old_si = cpu.s.si
     cpu.s.si = (cpu.s.si + cpu.s.dx) & 0xFFFF
-    cpu.set_add_flags(old_si, cpu.s.dx, old_si + cpu.s.dx, 16)
 
     cpu.s.ax = mem.rw(ds, cpu.s.si)
     cpu.s.si = (cpu.s.si + (-2 if cpu.get_flag(DF) else 2)) & 0xFFFF
-    old_ax = cpu.s.ax & 0xFFFF
     addend = mem.rw(ds, (cpu.s.bx + 0x02) & 0xFFFF)
-    cpu.s.ax = (old_ax + addend) & 0xFFFF
-    cpu.set_add_flags(old_ax, addend, old_ax + addend, 16)
+    cpu.s.ax = (cpu.s.ax + addend) & 0xFFFF
     slot.x_word = cpu.s.ax
 
     cpu.s.ax = mem.rw(ds, cpu.s.si)
@@ -1157,7 +1155,7 @@ def _run_object_logic_ab10(cpu, *, parent: str, chain: str, cx_value: int) -> No
     old_ax = cpu.s.ax & 0xFFFF
     addend = mem.rw(ds, (cpu.s.bx + 0x04) & 0xFFFF)
     cpu.s.ax = (old_ax + addend) & 0xFFFF
-    cpu.set_add_flags(old_ax, addend, old_ax + addend, 16)
+    cpu.set_add_flags(old_ax, addend, old_ax + addend, 16)  # live: reaches the RET
     slot.y_word = cpu.s.ax
     cpu.s.ip = cpu.pop()
 
