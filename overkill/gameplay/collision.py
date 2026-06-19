@@ -339,7 +339,12 @@ def run_player_hazard_object_scan_bde3(cpu, self_disable_if_patched) -> None:
             s.cx = cx
             s.ax = probe_y
             s.di = probe_x
-            set_carry_and_return(cpu, True)  # JMP 5059 = STC; RET
+            # Original BE32 `JMP 1010:5059` (STC; RET).  Land on the 5059 stub
+            # rather than collapsing it eagerly: SI and the link-key CMP flags are
+            # already set by the candidate check, matching the ASM exactly at the
+            # jump target, and the VM (or the child-call drain in object_runtime)
+            # then runs 5059's STC;RET to set carry and return to the caller.
+            s.ip = 0x5059
             return
 
         old_bx = bx

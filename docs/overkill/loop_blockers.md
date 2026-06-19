@@ -59,9 +59,19 @@ context. Each has the analysis already done so a human can pick up fast.
   `title_fire_release_wait`, not `frame_verify_input_wait`). Whole demo-replay
   suite now green: 18/18 (0 failures).
 
-## BDD0 player-hazard-scan hit-path oracle (`bdd0_..._hit_path`)
-- Pre-existing FAILING oracle (red at loop baseline): on a hazard hit the hook
-  ends at the caller (`CAFE`) but the original is at `1010:5059`.
+## BDD0 player-hazard-scan hit-path oracle — RESOLVED 2026-06-19
+- Fix: the hit-path in `run_player_hazard_object_scan_bde3` (collision.py) now
+  lands IP on the `1010:5059` STC;RET stub (the original `JMP 5059`) instead of
+  collapsing it with `set_carry_and_return` -- SI and the link-key CMP flags were
+  already set by the candidate check, so the snapshot matches the ASM at 5059.
+  The child-call path `_call_player_hazard_scan_bdd0` (object_runtime.py) now
+  drains the 5059 stub after the wrapper returns, so the near-CALL frame is
+  balanced (CF set, popped to return_ip) -- this is what the earlier reverted
+  attempt was missing (it regressed demo-replay 2->3). Both BDD0 oracles pass;
+  demo-replay stays 18/18; collision oracles green.
+
+  (historical) Pre-existing FAILING oracle: on a hazard hit the hook
+  ended at the caller (`CAFE`) but the original is at `1010:5059`.
 - **Root cause (confirmed by disasm):** `BE32: JMP 1010:5059`, and `5059` is
   `STC; RET` (`f9 c3`, already has `SIG_COLLISION_STC_RET_5059`). The lift
   (`collision.py run_player_hazard_object_scan_bde3`) collapses the tail-jump into

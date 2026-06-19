@@ -30,6 +30,7 @@ from overkill.gameplay.collision import (
     run_object_tile_sweep_blocked_b032,
     run_player_hazard_scan_guard_bdd0,
     run_postmove_contact_window_aa71,
+    run_collision_stc_ret_5059,
     run_tile_collision_probe_ac28,
     run_tile_lookup_505b,
     run_tile_probe_5073,
@@ -728,6 +729,12 @@ def _call_tile_probe_5073(cpu, return_ip: int) -> None:
 
 def _call_player_hazard_scan_bdd0(cpu, return_ip: int) -> None:
     _call_verified_child_near(cpu, 0xBDD0, lambda c: run_player_hazard_scan_guard_bdd0(c, _no_patch_guard), return_ip)
+    # On a hazard hit, BDD0 lands on the 1010:5059 STC;RET stub (the original
+    # JMP 5059) instead of collapsing it, so the near-CALL frame this wrapper
+    # pushed is still on the stack.  Run that stub here to set carry and pop back
+    # to return_ip, exactly as the VM would when 5059 is reached at top level.
+    if (cpu.s.cs & 0xFFFF, cpu.s.ip & 0xFFFF) == (0x1010, 0x5059):
+        run_collision_stc_ret_5059(cpu, _no_patch_guard)
 
 
 def _jump_object_tile_sweep_blocked_b032(cpu) -> None:
