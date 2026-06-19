@@ -1,3 +1,20 @@
+## 2026-06-19 - Standing divergence-diagnosis tool (scripts/trace.py)
+
+Replaced the per-bug throwaway watchpoint scripts with one reusable dual-runtime
+tracer.  `scripts/trace.py` replays a demo through reference (ASM oracle) and
+candidate (hooked) in lockstep with a probe on each side:
+- `watch SEG:OFF`  -- log writes to an address/range on both sides, report the
+  first write whose *value* (not IP -- raw-ASM vs lifted-hook IPs differ
+  legitimately) diverges. Re-finds the camera-Y `1010:9C55` extra write.
+- `observe CS:IP --reg .. --mem ..` -- dump registers/memory at a CS:IP on both
+  sides (found the 9C01 `[a47c]` gate divergence).
+- `globals SEG:OFF ..` -- diff arbitrary DS/CS globals each frame, report the
+  first diverging frame (a fast bisector; flagged `a360` at f66, two frames
+  before the verifier's own f68 detection).
+Validated by temporarily reverting the camera-Y fix: the tool pinpointed it.
+Retired the unreferenced one-off `scripts/_debug_5c74_*` / `_debug_ecf2_ah`
+debug scripts (six) it supersedes.
+
 ## 2026-06-19 - Fix menu_interaction demo (frame-verifier timer-tick wait)
 
 The standing `menu_interaction` demo-replay failure was a reference-side TIMEOUT
