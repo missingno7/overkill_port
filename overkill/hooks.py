@@ -261,7 +261,6 @@ from .gameplay.object_runtime import (
     _present_dispatch_target_5a92,
     _push_loop_count_for_interpreted_tail,
     _raise_unverified_path,
-    _remember_balanced_push_scratch,
     _run_object_behavior_aba3,
     _run_aee4_step_for_direction,
     _run_af60_double_step_for_direction,
@@ -1716,7 +1715,6 @@ def overkill_scan_objects_call_5ac8_a849(cpu):
             cpu.s.ip = 0xA858
             return
 
-        _remember_balanced_push_scratch(cpu, cx_value)
         cpu.s.cx = (cx_value - 1) & 0xFFFF
         iterations -= 1
         if cpu.s.cx == 0:
@@ -1747,7 +1745,6 @@ def overkill_scan_objects_call_5ac8_a861(cpu):
             _push_loop_count_for_interpreted_tail(cpu, cx_value)
             cpu.s.ip = 0xA870
             return
-        _remember_balanced_push_scratch(cpu, cx_value)
 
         cpu.s.cx = (cpu.s.cx - 1) & 0xFFFF
         iterations -= 1
@@ -1773,7 +1770,6 @@ def overkill_scan_objects_call_7746_a87c(cpu):
             _push_loop_count_for_interpreted_tail(cpu, cx_value)
             cpu.s.ip = 0xA88B
             return
-        _remember_balanced_push_scratch(cpu, cx_value)
         cpu.s.cx = (cpu.s.cx - 1) & 0xFFFF
         iterations -= 1
         if cpu.s.cx == 0:
@@ -1829,7 +1825,6 @@ def overkill_scan_layer1_draw_a8c7(cpu):
             cpu.s.ip = 0xA8F1
             return
 
-        _remember_balanced_push_scratch(cpu, cx_value)
         cpu.s.cx = (cx_value - 1) & 0xFFFF
         iterations -= 1
         if cpu.s.cx == 0:
@@ -1866,7 +1861,6 @@ def _scan_present_objects_via_5a92(
             cpu.s.ip = call_ip
             return
 
-        _remember_balanced_push_scratch(cpu, cx_value)
         cpu.s.cx = (cx_value - 1) & 0xFFFF
         iterations -= 1
         if cpu.s.cx == 0:

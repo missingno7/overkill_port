@@ -35,7 +35,7 @@ from overkill.gameplay.object_postmove import _run_object_postmove_bc4b
 from overkill.gameplay.object_runtime_common import (
     _call_verified_child_near, _no_patch_guard, _object_ptr_from_scan_index,
     _push_loop_count_for_interpreted_tail, _raise_unverified_path,
-    _remember_balanced_push_scratch, _run_interpreted_near_call_observed,
+    _run_interpreted_near_call_observed,
 )
 from overkill.gameplay.object_spawns import _run_formation_spawn_7476_observed
 from overkill.gameplay.objects import run_object_motion_table_ab34, run_object_scroll_sprite_ab4f
@@ -1222,10 +1222,6 @@ def _scan_object_logic_via_aa2b(
             cpu.s.ip = call_ip & 0xFFFF
             return
 
-        # The original PUSH/POP pair is balanced for inactive objects, but the
-        # transient PUSH still leaves bytes just below SP.  Keep that stack
-        # scratch visible for full-memory oracle comparisons.
-        _remember_balanced_push_scratch(cpu, cx_value)
         cpu.s.cx = (cx_value - 1) & 0xFFFF
         iterations -= 1
         if cpu.s.cx == 0:

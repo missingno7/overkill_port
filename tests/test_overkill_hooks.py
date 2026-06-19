@@ -3926,8 +3926,7 @@ def test_overlay_scan_a849_skips_inactive_entries_like_asm():
         asm.step()
     hook.step()
     assert asm.addr() == hook.addr() == (0x1010, 0xA85E)
-    assert asm.s.snapshot() == hook.s.snapshot()
-    assert asm.mem.data == hook.mem.data
+    assert_oracle_equivalent(asm, hook)  # A849 no longer writes dead push scratch below SP
 
     asm = make_cpu(False, 0x20)
     hook = make_cpu(True, 0x20)
@@ -3937,8 +3936,7 @@ def test_overlay_scan_a849_skips_inactive_entries_like_asm():
         asm.step()
     hook.step()
     assert asm.addr() == hook.addr() == (0x1010, 0xA858)
-    assert asm.s.snapshot() == hook.s.snapshot()
-    assert asm.mem.data == hook.mem.data
+    assert_oracle_equivalent(asm, hook)  # A849 no longer writes dead push scratch below SP
 
 
 def test_tandy_present_scan_a927_composes_known_targets_like_asm():
@@ -4202,8 +4200,7 @@ def test_overlay_scan_a9e0_counter_and_skip_match_asm():
         asm.step()
     hook.step()
     assert asm.addr() == hook.addr() == (0x1010, 0xAA07)
-    assert asm.s.snapshot() == hook.s.snapshot()
-    assert asm.mem.data == hook.mem.data
+    assert_oracle_equivalent(asm, hook)  # A9E0 no longer writes dead push scratch below SP
 
     asm = make_cpu(False, 0x20)
     hook = make_cpu(True, 0x20)
@@ -4213,8 +4210,7 @@ def test_overlay_scan_a9e0_counter_and_skip_match_asm():
         asm.step()
     hook.step()
     assert asm.addr() == hook.addr() == (0x1010, 0xAA01)
-    assert asm.s.snapshot() == hook.s.snapshot()
-    assert asm.mem.data == hook.mem.data
+    assert_oracle_equivalent(asm, hook)  # A9E0 no longer writes dead push scratch below SP
 
 
 def test_bec5_bedc_one_collision_tail_matches_interpreted_asm():

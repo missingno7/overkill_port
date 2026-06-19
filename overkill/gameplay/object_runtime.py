@@ -158,7 +158,6 @@ from overkill.gameplay.object_postmove import (
     run_object_postmove_prelude_bc45,
     _run_object_postmove_bc4b,
 )
-from overkill.gameplay.object_runtime_common import _remember_balanced_push_scratch
 from overkill.gameplay.object_deactivation import (
     _run_deactivate_bd17_observed,
     _run_collision_death_tail_bfc7,
@@ -354,7 +353,6 @@ def _scan_loop_until_callable(cpu, table_base: int, callable_ip: int, done_ip: i
             cpu.s.ip = callable_ip & 0xFFFF
             return
 
-        _remember_balanced_push_scratch(cpu, cx_value)
         cpu.s.cx = (cx_value - 1) & 0xFFFF
         iterations -= 1
         if cpu.s.cx == 0:
