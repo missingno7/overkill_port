@@ -1,3 +1,17 @@
+## 2026-06-19 - Fix mothership camera-Y divergence (9C01 [a47c]==0 guard)
+
+Attended bisection of the standing `mothership_drag_edge_case` demo-replay
+failure (camera anchor `DS:2380` +1 at the mothership). Traced via a `2380`
+write-watchpoint -> the hook ran `9C01` (camera step) on frames the ASM skipped.
+The `9B2E` lift (`frame_orchestration.py`) had dropped the `[a47c]==0` guard on
+the `9C01` call: ASM `9BCF jne 9BDF` gates BOTH `9CB6` and `9C01` on `[a47c]==0`,
+but the lift gated only `9CB6`, leaving `9C01` gated by `[2350]>0xB6` alone. After
+the mothership trigger (`A66F`) sets `[a47c]=1` (scroll lock), the hook kept
+stepping the camera. Fix: nest the `[2350]` gate + `9C01` under `if [a47c]==0`.
+Demo-replay: 2 failures -> 1 (`menu_interaction` remains); 17/18 green. Added
+`phase_gate_a47c`/`level_progress_2350` to the semantic snapshot. Frame-controller
+oracles + recovered-semantics still green. See loop_blockers.md (RESOLVED entry).
+
 ## 2026-06-19 - Loop slice: oracle-suite scan; remove a missing-data test
 
 Ran the full hook oracle suite to find pre-existing failures now that raw-drains

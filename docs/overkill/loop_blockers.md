@@ -24,16 +24,22 @@ context. Each has the analysis already done so a human can pick up fast.
   `artifacts/static_runtime_bundle/memory_1mb.bin` holds the original image
   (`1010:off` → linear `0x10100+off`).
 
-## Mothership camera-Y divergence (demos: `mothership_drag_edge_case`, `..._L6_mothership_end`)
-- Frame-verify: `globals.camera_or_view_y_2380` +1 in the hooked runtime, dragging
-  several effect objects' `y_word` +1. (`mothership_drag_edge_case` fails
-  demo-replay at the mothership point.)
-- `DS:2380` is written only by still-interpreted ASM (no lifted writer), so a
-  lifted hook in the `9B2E` frame-controller subtree is feeding that ASM a
-  slightly-off input in the reduced-sidearm case. The separate `9FAF` trail bug
-  there is already fixed; this camera-Y one is independent.
-- **Next step:** bisect the `9B2E` children on the drag demo to find the first
-  lifted hook whose output perturbs the `2380` input.
+## Mothership camera-Y divergence — RESOLVED 2026-06-19
+- Symptom: `globals.camera_or_view_y_2380` +1 in the hooked runtime at the
+  mothership (frame 68 of `mothership_drag_edge_case`), dragging several effect
+  objects' `y_word` +1. (Was a standing demo-replay failure.)
+- **Root cause:** the `9B2E` lift (`frame_orchestration.py`) dropped the
+  `[a47c]==0` guard on the `9C01` camera-step call. In the ASM, `9BCF jne 9BDF`
+  makes `[a47c]==0` a precondition for BOTH `9CB6` and `9C01`; the lift gated only
+  `9CB6` by `[a47c]==0` and gated `9C01` by `[2350]>0xB6` alone. Once the
+  mothership trigger (`A66F`) sets `[a47c]=1` (vertical scroll lock), the ASM
+  stops calling `9C01` but the hook kept calling it -> one extra `inc [2380]`
+  per camera frame (the half-rate `9C01` ran on f65/f67 in the hook, not the ASM).
+- **Fix:** nest the `[2350]` poll-gate + `9C01` call inside the `if [a47c]==0`
+  block. Demo-replay drag case passes; 17/18 demos green (only `menu_interaction`
+  left). Also added `phase_gate_a47c` (DS:A47C) and `level_progress_2350`
+  (DS:2350) to `SNAPSHOT_GLOBAL_WORDS` so a future phase/progress divergence is
+  caught at its own frame instead of only downstream via the camera anchor.
 
 ## `menu_interaction` demo divergence (demo: `demo_play_tandy_menu_interaction`)
 - Fails demo-replay (pre-existing, confirmed at baseline). The menu is ~44%

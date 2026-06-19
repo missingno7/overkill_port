@@ -290,12 +290,17 @@ def run_frame_controller_9b2e(
     v_a47c = mem.rw(ds, 0xA47C)
     _cmp_word(cpu, v_a47c, 0x0000)
     if v_a47c == 0x0000:
+        # ASM 9BCF `jne 9BDF` skips BOTH the 9CB6 call and the 9C01 camera-step
+        # when [a47c] != 0, so the [2350] poll-gate and 9C01 must be nested under
+        # the [a47c]==0 guard -- not run unconditionally.  Once the mothership
+        # trigger (A66F) sets [a47c]=1 the vertical scroll locks; running 9C01
+        # anyway advanced the camera anchor (DS:2380) one extra step.
         call(0x9CB6, 0x9BD4, max_steps=120000)
 
-    v2350 = mem.rw(ds, 0x2350)
-    _cmp_word(cpu, v2350, 0x00B6)
-    if v2350 > 0x00B6:
-        call(0x9C01, 0x9BDF, max_steps=120000)
+        v2350 = mem.rw(ds, 0x2350)
+        _cmp_word(cpu, v2350, 0x00B6)
+        if v2350 > 0x00B6:
+            call(0x9C01, 0x9BDF, max_steps=120000)
 
     call(0x9CF1, 0x9BE2)
     call(0x9CD9, 0x9BE5)

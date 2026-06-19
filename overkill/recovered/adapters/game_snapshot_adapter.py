@@ -41,6 +41,13 @@ SNAPSHOT_GLOBAL_WORDS: tuple[tuple[str, int], ...] = tuple(RUNTIME_GLOBAL_WORDS)
     ("game_mode_2356", 0x2356),
     ("contact_fanout_bedc", 0xBEDC),
     ("mode_flag_bdac", 0xBDAC),
+    # Frame-controller (9B2E) phase/progress state.  DS:A47C gates the 99F6
+    # round-to-even of the camera anchor (DS:2380); DS:2350 is the level-progress
+    # counter A66F compares to 0xEA0 (mothership trigger) that sets A47C=1.  Both
+    # are guarded here so a divergence in either is caught at its own frame rather
+    # than only downstream once it perturbs the camera anchor.
+    ("phase_gate_a47c", 0xA47C),
+    ("level_progress_2350", 0x2350),
 )
 
 
