@@ -993,7 +993,6 @@ def _run_object_behavior_ae09(cpu, *, parent: str, chain: str, cx_value: int) ->
     mem = cpu.mem
 
     timer = slot.substate
-    _cmp_word(cpu, timer, 0x0000)
     if timer != 0:
         _sub_mem_word(cpu, ss, (bp + OFF_SUBSTATE) & 0xFFFF, 1)
         if slot.substate == 0:
@@ -1001,10 +1000,10 @@ def _run_object_behavior_ae09(cpu, *, parent: str, chain: str, cx_value: int) ->
     if timer == 0 or slot.substate == 0:
         _sub_mem_word(cpu, ss, (bp + OFF_X) & 0xFFFF, 2)
 
-    cpu.s.ax = slot.direction_or_step
-    old_ax = cpu.s.ax
-    cpu.s.ax = (old_ax + 0x0028) & 0xFFFF
-    cpu.set_add_flags(old_ax, 0x0028, old_ax + 0x0028, 16)
+    # Outgoing sprite = direction/step + 0x28.  The ADD's flags are dead here:
+    # AF22 below overwrites them before the AD60 tail boundary, so the flag
+    # modelling and the old-AX temporary the transliteration carried are gone.
+    cpu.s.ax = (slot.direction_or_step + 0x0028) & 0xFFFF
     slot.sprite_or_state = cpu.s.ax
 
     _run_af22_three_pixel_step_for_direction(cpu, parent="1010:AF22")

@@ -1,11 +1,11 @@
 {
   "hooks": {
     "1010:0162": {
-      "avg_asm_equiv": 69.81818181818181,
+      "avg_asm_equiv": 69.0,
       "island": "input_menu",
-      "last_asm_equiv": 72.0,
+      "last_asm_equiv": 69.0,
       "name": "overkill_input_poll_0162",
-      "samples": 11.0
+      "samples": 60.0
     },
     "1010:017E": {
       "avg_asm_equiv": 48.0,
@@ -22,18 +22,18 @@
       "samples": 2.0
     },
     "1010:03A8": {
-      "avg_asm_equiv": 176368.11111111112,
+      "avg_asm_equiv": 186362.5,
       "island": "asset_codecs",
-      "last_asm_equiv": 43927.0,
+      "last_asm_equiv": 77838.0,
       "name": "overkill_vertical_rle_decoder_03a8",
-      "samples": 9.0
+      "samples": 6.0
     },
     "1010:0624": {
       "avg_asm_equiv": 18.0,
       "island": "asset_codecs",
       "last_asm_equiv": 18.0,
       "name": "overkill_packed_read_byte_0624",
-      "samples": 11.0
+      "samples": 8.0
     },
     "1010:0672": {
       "avg_asm_equiv": 2.0,
@@ -50,11 +50,11 @@
       "samples": 10.0
     },
     "1010:06E5": {
-      "avg_asm_equiv": 524.75,
+      "avg_asm_equiv": 487.69953051643193,
       "island": "sound",
-      "last_asm_equiv": 318.0,
+      "last_asm_equiv": 287.0,
       "name": "overkill_fast_timer_isr_06e5",
-      "samples": 20.0
+      "samples": 213.0
     },
     "1010:073C": {
       "avg_asm_equiv": 3.0,
@@ -120,18 +120,18 @@
       "samples": 131.0
     },
     "1010:306F": {
-      "avg_asm_equiv": 82.0,
+      "avg_asm_equiv": 88.04123711340206,
       "island": "tandy_renderer",
-      "last_asm_equiv": 82.0,
+      "last_asm_equiv": 54.0,
       "name": "overkill_tandy_rect_copy_306f",
-      "samples": 24.0
+      "samples": 291.0
     },
     "1010:30BA": {
-      "avg_asm_equiv": 176.0,
+      "avg_asm_equiv": 112.68,
       "island": "tandy_renderer",
       "last_asm_equiv": 55.0,
       "name": "overkill_tandy_patched_row_copy_30ba",
-      "samples": 70.0
+      "samples": 25.0
     },
     "1010:3354": {
       "avg_asm_equiv": 1.0,
@@ -148,18 +148,18 @@
       "samples": 1.0
     },
     "1010:33AF": {
-      "avg_asm_equiv": 16.23177366702938,
+      "avg_asm_equiv": 16.34833091436865,
       "island": "startup_graphics",
-      "last_asm_equiv": 7.0,
+      "last_asm_equiv": 19.0,
       "name": "overkill_expand_tandy_list_33af",
-      "samples": 919.0
+      "samples": 689.0
     },
     "1010:33B2": {
-      "avg_asm_equiv": 14887.038802660754,
+      "avg_asm_equiv": 12938.458702064896,
       "island": "startup_graphics",
       "last_asm_equiv": 1001403.0,
       "name": "overkill_expand_tandy_block_33b2",
-      "samples": 902.0
+      "samples": 678.0
     },
     "1010:34AD": {
       "avg_asm_equiv": 334.0,
@@ -218,18 +218,18 @@
       "samples": 2.0
     },
     "1010:375B": {
-      "avg_asm_equiv": 3164.452784503632,
+      "avg_asm_equiv": 3277.438775510204,
       "island": "tandy_renderer",
       "last_asm_equiv": 3872.0,
       "name": "overkill_tandy_postcopy_scaled_blit_375b",
-      "samples": 413.0
+      "samples": 196.0
     },
     "1010:3824": {
       "avg_asm_equiv": 1653.0,
       "island": "tandy_renderer",
       "last_asm_equiv": 1653.0,
       "name": "overkill_tandy_full_width_panel_copy_3824",
-      "samples": 2.0
+      "samples": 1.0
     },
     "1010:4CED": {
       "avg_asm_equiv": 696.0,
@@ -309,11 +309,11 @@
       "samples": 1.0
     },
     "1010:50C9": {
-      "avg_asm_equiv": 18.003246753246753,
+      "avg_asm_equiv": 18.014492753623188,
       "island": "layer_sprites",
       "last_asm_equiv": 18.0,
       "name": "overkill_wait_vga_retrace_50c9",
-      "samples": 924.0
+      "samples": 207.0
     },
     "1010:511F": {
       "avg_asm_equiv": 3.0,
@@ -344,32 +344,32 @@
       "samples": 3.0
     },
     "1010:558B": {
-      "avg_asm_equiv": 115.90633074935401,
+      "avg_asm_equiv": 116.00970873786407,
       "island": "input_menu",
-      "last_asm_equiv": 43.0,
+      "last_asm_equiv": 117.0,
       "name": "overkill_main_menu_idle_loop_558b",
-      "samples": 1548.0
+      "samples": 103.0
     },
     "1010:5827": {
       "avg_asm_equiv": 2452.0,
       "island": "movement",
       "last_asm_equiv": 2452.0,
       "name": "overkill_ega_planar_to_linear_copy_5827",
-      "samples": 2.0
+      "samples": 1.0
     },
     "1010:5A00": {
       "avg_asm_equiv": 13.0,
       "island": "coordinates",
       "last_asm_equiv": 13.0,
       "name": "overkill_xy_to_di_5a00",
-      "samples": 12.0
+      "samples": 290.0
     },
     "1010:5A24": {
       "avg_asm_equiv": 13.0,
       "island": "coordinates",
       "last_asm_equiv": 13.0,
       "name": "overkill_xy_to_di_5a24",
-      "samples": 4030.0
+      "samples": 685.0
     },
     "1010:5A36": {
       "avg_asm_equiv": 17.0,
@@ -383,7 +383,7 @@
       "island": "layer_sprites",
       "last_asm_equiv": 3.0,
       "name": "overkill_menu_cell_source_blit_dispatch_5a6c",
-      "samples": 44.0
+      "samples": 15.0
     },
     "1010:5A92": {
       "avg_asm_equiv": 9.0,
@@ -407,11 +407,11 @@
       "samples": 11.0
     },
     "1010:5C74": {
-      "avg_asm_equiv": 2899.0,
+      "avg_asm_equiv": 3900.0,
       "island": "tandy_renderer",
-      "last_asm_equiv": 897.0,
+      "last_asm_equiv": 3900.0,
       "name": "overkill_tandy_postcopy_mode_sweep_5c74",
-      "samples": 3.0
+      "samples": 1.0
     },
     "1010:5DB2": {
       "avg_asm_equiv": 30.916666666666668,
@@ -1443,18 +1443,18 @@
       "samples": 111.0
     },
     "1010:CC7F": {
-      "avg_asm_equiv": 846.5612244897959,
+      "avg_asm_equiv": 1386.1470588235295,
       "island": "tandy_renderer",
-      "last_asm_equiv": 525.0,
+      "last_asm_equiv": 1995.0,
       "name": "overkill_dirty_cell_presenter_row_cc7f",
-      "samples": 196.0
+      "samples": 34.0
     },
     "1010:CCC4": {
-      "avg_asm_equiv": 83.06464646464646,
+      "avg_asm_equiv": 79.71818181818182,
       "island": "tandy_renderer",
       "last_asm_equiv": 74.0,
       "name": "overkill_dirty_copy_mode3_ccc4",
-      "samples": 3960.0
+      "samples": 660.0
     },
     "1010:CD68": {
       "avg_asm_equiv": 14.0,
@@ -1468,21 +1468,21 @@
       "island": "tandy_renderer",
       "last_asm_equiv": 75.0,
       "name": "overkill_tandy_changed_dword_present_8rows_cdaa",
-      "samples": 2148.0
+      "samples": 276.0
     },
     "1010:CE40": {
       "avg_asm_equiv": 3.0,
       "island": "input_menu",
       "last_asm_equiv": 3.0,
       "name": "overkill_menu_transition_input_wait_ce40",
-      "samples": 5.0
+      "samples": 2.0
     },
     "1010:CE5C": {
-      "avg_asm_equiv": 1.0772727272727274,
+      "avg_asm_equiv": 1.1333333333333333,
       "island": "input_menu",
       "last_asm_equiv": 2.0,
       "name": "overkill_menu_transition_input_wait_loop_ce5c",
-      "samples": 440.0
+      "samples": 30.0
     },
     "1010:CF78": {
       "avg_asm_equiv": 1100.0,
@@ -1541,11 +1541,11 @@
       "samples": 4995.0
     },
     "1010:ECF2": {
-      "avg_asm_equiv": 501716.875,
+      "avg_asm_equiv": 615345.0,
       "island": "asset_codecs",
-      "last_asm_equiv": 558677.0,
+      "last_asm_equiv": 566492.0,
       "name": "overkill_lz_decoder_ecf2",
-      "samples": 8.0
+      "samples": 4.0
     },
     "1010:EFAE": {
       "avg_asm_equiv": 7.0,
@@ -1626,14 +1626,14 @@
     },
     "2032:04E9": {
       "avg_asm_equiv": 74348.0,
-      "island": "sound",
+      "island": "sound_driver_blob",
       "last_asm_equiv": 74348.0,
       "name": "overkill_adlib_detect_2032_04e9",
       "samples": 1.0
     },
     "2032:0557": {
       "avg_asm_equiv": 64.0,
-      "island": "sound",
+      "island": "sound_driver_blob",
       "last_asm_equiv": 64.0,
       "name": "overkill_adlib_write_2032_0557",
       "samples": 9.0
@@ -1646,11 +1646,11 @@
       "samples": 1.0
     },
     "254A:04D7": {
-      "avg_asm_equiv": 3422.0333333333333,
+      "avg_asm_equiv": 3127.95,
       "island": "file_io",
-      "last_asm_equiv": 6918.0,
+      "last_asm_equiv": 8094.0,
       "name": "overkill_overlay_container_open_entry_254a_04d7",
-      "samples": 30.0
+      "samples": 20.0
     },
     "254A:0582": {
       "avg_asm_equiv": 30.0,
@@ -1667,6 +1667,6 @@
       "samples": 17.0
     }
   },
-  "updated": 1781863251.0069473,
+  "updated": 1781870772.8858027,
   "version": 1
 }
