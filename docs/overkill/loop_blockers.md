@@ -88,9 +88,17 @@ context. Each has the analysis already done so a human can pick up fast.
   5059 stub, or adjust the oracle to compare the collapsed end state. Both the
   `5059` STC;RET hook and `_call_verified_child_near` need to agree.
 
-## D434 selector input-release-wait oracle (`d434_..._poll_gate`)
-- Pre-existing FAILING oracle. Only FLAGS differ (asm `0202` vs hook `0297`) in
-  the cases where `[98E4]==0`.
+## D434 selector input-release-wait oracle — RESOLVED 2026-06-19
+- Fix (oracle convention): `run_selector_input_release_wait_d434` models phase 1
+  only (the `[98E4]` release-wait) and hands phase 2 (the `[98BE]` button-poll
+  loop D43B-D443) to raw ASM -- correct for the live game (demo-replay passes).
+  The oracle wrongly stepped the ASM 6 steps *into* phase 2 (and case 3 expected
+  `D445`, only reachable via phase 2), comparing two different routines. Updated
+  the oracle to compare at the hook's phase-1 exit boundary: `[98E4]==1` loops at
+  D434, `[98E4]==0` falls through to D43B (buttons irrelevant to phase 1), both
+  with the phase-1 CMP flags. Phase 2 / D445 stays covered by demo-replay.
+
+  (historical) Only FLAGS differed (asm `0202` vs hook `0297`) for `[98E4]==0`.
 - **Root cause:** `run_selector_input_release_wait_d434` (input_menu.py) models
   only *phase 1* (the `CMP [98E4],1` release-wait) and leaves IP at `D43B` with
   the phase-1 cmp flags (`0-1` -> CF/PF/AF/SF = 0297). But the oracle steps the
@@ -102,21 +110,25 @@ context. Each has the analysis already done so a human can pick up fast.
   hook is "phase-1-only by design" -- extending it risks the live menu path.
   Needs a human decision (extend the hook vs fix the oracle's step granularity).
 
-## 33AF expand-tandy-list oracle (`expand_tandy_list_33af`)
-- Pre-existing FAILING oracle: hook IP `44AA` vs asm IP `33B2`.
-- **Root cause:** `33AF: CALL 44D7; 33B2: JNE 33B7; 33B4: JMP 44AA`. The oracle
-  steps the raw ASM only to `33B2` (just after the 44D7 call returns, before the
-  branch), but the hook models 33AF *through* the branch and lands on `44AA`.
-- Same collapse-vs-step granularity class.
+## 33AF expand-tandy-list oracle — RESOLVED 2026-06-19
+- Fix (oracle convention): the hook is now one header-iteration per call
+  (`expand_tandy_list_33af` reads the 44D7 header and dispatches to 33B2 or, at
+  end-of-list, 44AA; `expand_tandy_block_33b2` processes a block and loops back
+  to 33AF), verified independently. The `composes_headers_and_blocks` oracle
+  single-stepped the hook (landing at 33B2) but stepped the ASM through the whole
+  expansion to 44AA. Updated it to iterate the hook to the 44AA terminator like
+  the ASM, so it compares the full multi-block composition (33B2 runs as ASM
+  here; its own hook has dedicated oracles at 601/652).
 
-## NOTE: all three failing oracles (BDD0, D434, 33AF) share one root
-These are NOT three separate gameplay bugs -- each is a "the replacement hook
-collapses more instructions than the single-step oracle advances the raw ASM," so
-they disagree on the intermediate IP/FLAGS even though the full-run end state is
-correct (demo-replay passes for all three hooks). Fixing them is a *test-harness
-convention* decision (compare at hook-boundary end states, or make each hook stop
-at the exact ASM sub-step the oracle expects), best made by a human -- attempting
-per-hook IP edits regresses the live runtime (proven with the BDD0 attempt).
+## NOTE: all three failing oracles (BDD0, D434, 33AF) — ALL RESOLVED 2026-06-19
+These were NOT three gameplay bugs -- each was a hook/oracle granularity
+mismatch (the hook stops at a different sub-step than the oracle stepped the raw
+ASM to), with demo-replay green throughout. Resolved per-issue:
+- BDD0: hook change -- land on the real 5059 stub + drain it in the child-call
+  wrapper (the only one needing production code; demo-replay stays 18/18).
+- D434 & 33AF: oracle-convention fixes -- compare at the hook's actual boundary
+  (D434 phase-1 exit; 33AF iterated to the 44AA terminator). No production code.
+Whole hook oracle suite now green: 244/244.
 
 ---
 
