@@ -1,5 +1,15 @@
 # Next Engineering Steps
 
+> **Status (2026-06-19):** the live "what to work on next" objectives now live in
+> **`docs/overkill/refactor_plan.md`** (readability reconstruction — the active
+> driver) and **`docs/overkill/loop_blockers.md`** (the one open byte-exact
+> blocker). This file is now a **durable methodology + island reference**: the
+> observe→classify→boundary→oracle→hook loop, verification modes, mature-island
+> list, and semantic-crystallization discipline below all still hold. The dated
+> "Current next candidates after …" sections near the bottom are a **historical
+> record** of past frontiers, not a live TODO — most of those hooks are long
+> since lifted. Don't pick work from them; use `refactor_plan.md`.
+
 Use the current methodology loop for every item:
 
 ```text

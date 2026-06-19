@@ -1,5 +1,14 @@
 # Source-port advancement playbook
 
+> **Status (2026-06-19):** the byte-exact *frontier* this playbook drove is now
+> effectively closed — divergences fixed, raw-offset drain and field naming
+> largely done (see the backlog markers below). The **primary driver is now
+> `docs/overkill/refactor_plan.md`** (the readability reconstruction: Phases 1–2
+> done, Phase 3 in progress). Keep using THIS file as the **procedure for fixing
+> any new divergence** a demo surfaces (step 2's disassemble-and-compare loop is
+> still exactly right), and as the unattended-mode operating rules. For "what to
+> work on next," read `refactor_plan.md` first.
+
 **Goal:** drive OVERKILL toward clean, complete, *source-like* code that stays
 byte-exact with the original — gradually, one verified slice at a time. Progress
 is measured by `scripts/source_port_status.py` (% pure source up, raw offsets and
@@ -71,24 +80,27 @@ never push to `reconstruction`. So the only instruction the run needs is:
 ## Backlog (work top-down)
 
 1. **Open divergences (highest value)** — native must equal the VM oracle:
-   - Mothership **camera-Y** (`DS:2380` +1, drags object Ys): bisect with
-     `demo_play_tandy_mothership_drag_edge_case` or `..._L6_mothership_end`.
-   - **Player-death `BC4B`/`BFC7`** divergence: `demo_play_tandy_player_death`.
+   - ~~Mothership **camera-Y** (`DS:2380` +1)~~ — **RESOLVED 2026-06-19**
+     (`9B2E` `[a47c]==0` guard; see `loop_blockers.md`).
+   - **Player-death `BC4B`/`BFC7`** divergence: `demo_play_tandy_player_death` —
+     still OPEN, full-demo only (bounded 150f passes). See `loop_blockers.md`.
    - Any **new `*_edge_case` / divergence demo** added under `artifacts/demos/` —
      run it with `--verify-hooks` and fix what it surfaces.
 2. **Complete the death/deactivation frontier.** `BFC7` (death tail), `BD17`
    (deactivate), `C054` (logic dispatch) are still "partial/observed" lifts —
    disassemble their *full* branch tables instead of only the observed paths. Most
-   edge-case divergences cluster here; finishing it clears several at once.
+   edge-case divergences cluster here; finishing it likely clears the player-death
+   blocker too.
 3. **Name remaining object-record unknowns** `0x10`, `0x26`, `0x36` — but only if a
    lifted reader pins the meaning. Otherwise leave them `unknown` (the map's
-   credibility depends on this).
-4. **Drain remaining raw offsets** (`scripts/source_port_status.py` tracks the %):
-   `objects.py`, `contact_side_effects.py`, `action_spawns.py`. Attribute each
-   access *per register* to the right struct first (object slot vs caller frame vs
-   table) — a wrong-but-byte-identical name is worse than a raw offset.
+   credibility depends on this). Map stands at 25/28 — the honest floor.
+4. ~~**Drain remaining raw offsets**~~ — **DONE 2026-06-19** (refactor Phase 2a):
+   `objects.py`, `contact_side_effects.py`, `action_spawns.py` and the rest of
+   gameplay now access records through `ObjectSlotView`; the dashboard shows
+   50 named vs 3 raw (the deliberate `OFF_SUBSTATE_1E` alias).
 5. **Lift interpreted gameplay hotspots** into pure `recovered/systems` rules:
    `97C8` (main frame body frontier), then `ADC9`, `BBB2`, `BE3C`, `B2CD` waypoint.
+   (This is refactor_plan Phase 5 — do it *after* Phases 3–4, attended.)
 
 ## Hard guardrails
 

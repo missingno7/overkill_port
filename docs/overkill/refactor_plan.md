@@ -134,6 +134,44 @@ islands. Update the dashboard / living memory map to report **source-complete**.
 
 ---
 
+## Current status & next concrete steps (2026-06-19)
+
+**Dashboard:** 9.7% of game-logic code mass is pure source-like; object_record
+25/28 words named; record-offset access 50 named / 3 raw (the deliberate
+`OFF_SUBSTATE_1E` alias); oracle 244/244, demo-replay 19/19 (bounded), lint clean.
+
+**Done:** Phase 0, Phase 1, Phase 2 (2a typed-views + 2b ds_globals).
+
+**In progress — Phase 3 (de-transliterate hook bodies).** Method is proven and
+recorded: per function, the *last* flag-affecting op before each boundary is
+live; earlier `_cmp_word`/`set_*_flags` overwritten before a boundary are dead —
+remove them and collapse the `old_ax`-temp juggling. **Most behaviour hooks have
+no per-hook oracle, so demo-replay is the real gate — and only if the function is
+actually exercised.** Before committing a flag-deadness change, prove it: patch
+the function on both `object_behaviors` and `object_runtime` with an invocation
+counter and run `tests.test_demo_replay_equivalence._run_demo_equivalence(d,
+max_frames=150, to_end=False)` over `T.DEMOS` (≈3 min; raises on divergence).
+Commit only if count>0 and no failures.
+
+Slices landed: `ae09`, `ab10`, `aba3`, `b9f0`, `b73e`. Reverted as unverifiable:
+`8d4f` (0 demo invocations in the 150-frame window, no oracle).
+
+**Next Phase-3 targets (heavily exercised, verified-live, good order):**
+`aed8` (4257×), `ad04` (3639×), `ab77` (2439×), the `aa2b` dispatch (8366×), then
+the remaining `set_*_flags` sites in `game_state` / `frame_orchestration` /
+`object_spawns`. Leave any block already commented "stays so flags match the
+oracle" (e.g. B73E idle-frame NEG/ADD) untouched.
+
+**After Phase 3:** Phase 4 (rename `run_*_<addr>` → role names; regroup modules) —
+cheap and mechanical. Phase 5 (interpreted islands) stays attended-only and last.
+
+**Parallel correctness track (not this refactor):** the player-death
+`BC4B`/`BFC7` full-demo divergence in `loop_blockers.md` is the one open
+byte-exact blocker; finishing the `BFC7`/`BD17`/`C054` branch tables likely
+clears it. Independent of the readability phases.
+
+---
+
 ## Per-slice loop (for autonomous or attended runs)
 1. Take the **smallest coherent unit** from the current phase.
 2. Make the change **and remove the now-unnecessary cruft in the same change**
