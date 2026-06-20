@@ -40,7 +40,6 @@ from overkill.gameplay.object_runtime_common import (
 from overkill.gameplay.object_spawns import _run_formation_spawn_7476_observed
 from overkill.gameplay.objects import run_object_motion_table_ab34, run_object_scroll_sprite_ab4f
 from overkill.recovered.systems.objects import (
-    B73E_IDLE_LOW_Y_THRESHOLD,
     B73E_SPAWN_WINDOW_MAX,
     B73E_SPAWN_WINDOW_MIN,
     B73E_TARGET_POSTMOVE_232E_SENTINEL,
@@ -184,21 +183,10 @@ def _run_object_behavior_b73e(cpu, *, parent: str, chain: str, cx_value: int) ->
             target_ip=target_ip, bp=bp, cx_value=cx_value,
         )
 
-    # Idle animation-frame selection from the shared DS:2338 timer.  The pure
-    # recovered rule owns the frame formula.  The y-threshold CMP and the NEG/ADD
-    # arithmetic below all have dead flags: the y-vs-target CMP further down
-    # overwrites them before any boundary.
-    timer = cpu.mem.rw(ds, 0x2338)
+    # Idle animation-frame selection from the shared DS:2338 timer — the pure
+    # recovered rule is the implementation (AX is overwritten immediately below).
     y = slot.y_word
-    sprite_frame = b73e_idle_sprite_frame(timer, y)
-    if y < B73E_IDLE_LOW_Y_THRESHOLD:
-        # NEG AX; ADD AX,007Fh, with AX initially DS:[2338].
-        cpu.s.ax = (-timer) & 0xFFFF
-        cpu.s.ax = (cpu.s.ax + 0x007F) & 0xFFFF
-    else:
-        cpu.s.ax = (timer + 0x007A) & 0xFFFF
-    if (cpu.s.ax & 0xFFFF) != sprite_frame:
-        raise AssertionError("pure B73E idle sprite-frame disagrees with ASM-compatible arithmetic")
+    cpu.s.ax = b73e_idle_sprite_frame(cpu.mem.rw(ds, 0x2338), y)
     slot.sprite_or_state = cpu.s.ax
 
     target_y = slot.target_y_word
@@ -496,18 +484,12 @@ def _run_object_behavior_b86d(cpu, *, parent: str, chain: str, cx_value: int) ->
             elif spawn_index is not None:
                 raise AssertionError("pure B86D formation-spawn schedule fired on a non-tick counter")
 
-    # Outgoing-sprite selection from the sign of the global vertical delta.  The
-    # NEG and the delta==FFFF CMP both have dead flags (the ADD-into-X overwrites
-    # the NEG's; the final 2328 CMP overwrites the delta CMP's).
+    # X += -delta (live), then the pure rule selects the outgoing sprite from the
+    # sign of the global vertical delta.  AX holds the sprite at the BC4B boundary.
     delta = mem.rw(ds, 0x2342)
-    sprite = b86d_outgoing_sprite_for_delta(delta)
     cpu.s.ax = (-delta) & 0xFFFF
     _add_mem_word(cpu, ss, (bp + OFF_X) & 0xFFFF, cpu.s.ax)
-    cpu.s.ax = 0x0075
-    if delta != 0xFFFF:
-        cpu.s.ax = 0x0076
-    if (cpu.s.ax & 0xFFFF) != sprite:
-        raise AssertionError("pure B86D outgoing-sprite rule disagrees with ASM-compatible selection")
+    cpu.s.ax = b86d_outgoing_sprite_for_delta(delta)
     slot.sprite_or_state = cpu.s.ax
     _cmp_word(cpu, mem.rw(ds, 0x2328), 0x0007)
     if mem.rw(ds, 0x2328) == 0x0007:
