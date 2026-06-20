@@ -458,11 +458,13 @@ def run_linked_object_coord_quad_update_9faf(cpu, self_disable_if_patched) -> No
 
 
 def _run_two_pass_word_clamp_step(cpu, *, field_off: int, limit: int, increment: bool, below_condition: bool = False) -> None:
-    """Mirror OVERKILL's odd CALL-next/RET-twice clamp-step idiom.
+    """Thin adapter over the pure two-pass clamp-step (MovementSystem).
 
-    The pure recovered movement system owns the final value and step count.  This
-    lifted adapter still replays the original compare/INC/DEC choreography so the
-    CALL-next stack scratch and live 8086 flags remain oracle-compatible.
+    The recovered :func:`two_pass_axis_clamp_step` is the live implementation:
+    read the field, call it, write the final value, return.  The original
+    CALL-next/RET-twice stack scratch lived in the dead-stack window the boundary
+    contract already frees, and the body's intermediate 8086 flags are not
+    observed at the caller boundary, so neither is reproduced.
     """
     ss = cpu.s.ss & 0xFFFF
     bp = cpu.s.bp & 0xFFFF
@@ -473,28 +475,7 @@ def _run_two_pass_word_clamp_step(cpu, *, field_off: int, limit: int, increment:
         increment=increment,
         below_condition=below_condition,
     )
-
-    # The synthetic CALL-next return word remains visible below SP after both
-    # RETs complete, so full-memory oracle comparisons can see it.
-    cpu.mem.ww(ss, ((cpu.s.sp & 0xFFFF) - 2) & 0xFFFF, cpu.s.ip & 0xFFFF)
-    applied_steps = 0
-    for _ in range(2):
-        value = cpu.mem.rw(ss, field_addr)
-        _cmp_word(cpu, value, limit & 0xFFFF)
-        if below_condition:
-            should_step = value < (limit & 0xFFFF)
-        else:
-            should_step = value != (limit & 0xFFFF)
-        if not should_step:
-            continue
-        if increment:
-            _inc_mem_word_preserve_cf(cpu, ss, field_addr)
-        else:
-            _dec_mem_word_preserve_cf(cpu, ss, field_addr)
-        applied_steps += 1
-
-    if cpu.mem.rw(ss, field_addr) != decision.final_word or applied_steps != decision.step_count:
-        raise AssertionError("pure two-pass axis clamp disagrees with ASM-compatible replay")
+    cpu.mem.ww(ss, field_addr, decision.final_word)
     cpu.s.ip = cpu.pop()
 
 
@@ -507,22 +488,15 @@ def run_object_x_step_left_clamp_a5d1(cpu, self_disable_if_patched) -> None:
         "overkill_object_x_step_left_clamp_a5d1",
     ):
         return
-    ds = cpu.s.ds & 0xFFFF
     ss = cpu.s.ss & 0xFFFF
     bp = cpu.s.bp & 0xFFFF
     slot = ObjectSlotView(cpu.mem, ss, bp)  # this object's record (SS:BP)
-    _cmp_word(cpu, cpu.mem.rw(ds, 0xA47C), 0x0000)
-    if cpu.mem.rw(ds, 0xA47C) != 0:
-        field_addr = (bp + OFF_X) & 0xFFFF
-        decision = one_pixel_axis_step(cpu.mem.rw(ss, field_addr), increment=False)
-        _dec_mem_word_preserve_cf(cpu, ss, field_addr)
-        if cpu.mem.rw(ss, field_addr) != decision.final_word:
-            raise AssertionError("pure A5D1 unclamped one-pixel step disagrees with ASM-compatible replay")
+    if cpu.mem.rw(cpu.s.ds & 0xFFFF, 0xA47C) != 0:
+        # Global no-clamp gate set: one unconditional leftward pixel step.
+        slot.x_word = one_pixel_axis_step(slot.x_word, increment=False).final_word
         cpu.s.ip = cpu.pop()
         return
-    # A5D8 CALL A5DB pushes A5DB and executes the compare/decrement body twice.
-    cpu.s.ip = 0xA5DB
-    _run_two_pass_word_clamp_step(cpu, field_off=0x02, limit=0x0020, increment=False)
+    _run_two_pass_word_clamp_step(cpu, field_off=OFF_X, limit=0x0020, increment=False)
 
 
 def run_object_x_step_right_clamp_a5ea(cpu, self_disable_if_patched) -> None:
@@ -534,8 +508,7 @@ def run_object_x_step_right_clamp_a5ea(cpu, self_disable_if_patched) -> None:
         "overkill_object_x_step_right_clamp_a5ea",
     ):
         return
-    cpu.s.ip = 0xA5ED
-    _run_two_pass_word_clamp_step(cpu, field_off=0x02, limit=0x00C0, increment=True)
+    _run_two_pass_word_clamp_step(cpu, field_off=OFF_X, limit=0x00C0, increment=True)
 
 
 def run_object_y_step_up_clamp_a5f9(cpu, self_disable_if_patched) -> None:
@@ -547,8 +520,7 @@ def run_object_y_step_up_clamp_a5f9(cpu, self_disable_if_patched) -> None:
         "overkill_object_y_step_up_clamp_a5f9",
     ):
         return
-    cpu.s.ip = 0xA5FC
-    _run_two_pass_word_clamp_step(cpu, field_off=0x04, limit=0x0000, increment=False)
+    _run_two_pass_word_clamp_step(cpu, field_off=OFF_Y, limit=0x0000, increment=False)
 
 
 def run_object_y_step_down_clamp_a607(cpu, self_disable_if_patched) -> None:
@@ -560,8 +532,7 @@ def run_object_y_step_down_clamp_a607(cpu, self_disable_if_patched) -> None:
         "overkill_object_y_step_down_clamp_a607",
     ):
         return
-    cpu.s.ip = 0xA60A
-    _run_two_pass_word_clamp_step(cpu, field_off=0x04, limit=0x00B0, increment=True, below_condition=True)
+    _run_two_pass_word_clamp_step(cpu, field_off=OFF_Y, limit=0x00B0, increment=True, below_condition=True)
 
 
 def run_object_bottom_scroll_offset_decay_a63c(cpu, self_disable_if_patched) -> None:
@@ -573,14 +544,10 @@ def run_object_bottom_scroll_offset_decay_a63c(cpu, self_disable_if_patched) -> 
         "overkill_object_bottom_scroll_offset_decay_a63c",
     ):
         return
+    # Thin adapter: the pure decay rule owns the result; the body's CMP/DEC flags
+    # are dead at the caller (demo-replay green).
     ds = cpu.s.ds & 0xFFFF
-    value = cpu.mem.rw(ds, 0xA39C)
-    expected = decay_bottom_scroll_bias_a63c(value)
-    _cmp_word(cpu, value, 0x0000)
-    if value != 0:
-        _dec_mem_word_preserve_cf(cpu, ds, 0xA39C)
-    if cpu.mem.rw(ds, 0xA39C) != expected:
-        raise AssertionError("pure A63C bottom-bias decay disagrees with ASM-compatible replay")
+    cpu.mem.ww(ds, 0xA39C, decay_bottom_scroll_bias_a63c(cpu.mem.rw(ds, 0xA39C)))
     cpu.s.ip = cpu.pop()
 
 
@@ -593,14 +560,10 @@ def run_object_top_scroll_offset_recover_a662(cpu, self_disable_if_patched) -> N
         "overkill_object_top_scroll_offset_recover_a662",
     ):
         return
+    # Thin adapter: the pure recovery rule owns the result; the body's CMP/INC
+    # flags are dead at the caller (demo-replay green).
     ds = cpu.s.ds & 0xFFFF
-    value = cpu.mem.rw(ds, 0xA39A)
-    expected = recover_top_scroll_bias_a662(value)
-    _cmp_word(cpu, value, 0x0000)
-    if value != 0:
-        _inc_mem_word_preserve_cf(cpu, ds, 0xA39A)
-    if cpu.mem.rw(ds, 0xA39A) != expected:
-        raise AssertionError("pure A662 top-bias recovery disagrees with ASM-compatible replay")
+    cpu.mem.ww(ds, 0xA39A, recover_top_scroll_bias_a662(cpu.mem.rw(ds, 0xA39A)))
     cpu.s.ip = cpu.pop()
 
 
