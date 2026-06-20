@@ -19,6 +19,7 @@ from overkill.recovered.domain.movement import (
     VerticalScrollEdgeInput,
 )
 from overkill.recovered.domain.object_slots import ObjectSlotRecord
+from overkill.recovered.islands import recovered_island
 
 TARGET_GRID_MASK_4PX = 0xFFFC
 PLAYER_CENTER_TARGET_X_BIAS = 0x000A
@@ -34,6 +35,12 @@ SCROLL_EDGE_TOP_BIAS_MIN = 0xFFF8
 SCROLL_EDGE_BOTTOM_BIAS_MAX = 0x0008
 
 
+@recovered_island(
+    asm="1010:5DB2",
+    contract="5DB2 direction-bit nibble toward a target (Y unsigned, X signed)",
+    status="VERIFIED",
+    merge_target="MovementSystem",
+)
 def encode_target_seek_bits(slot: ObjectSlotRecord, target: MovementTarget) -> int:
     """Return the raw 5DB2 direction-bit nibble for ``slot`` toward ``target``.
 
@@ -57,6 +64,12 @@ def encode_target_seek_bits(slot: ObjectSlotRecord, target: MovementTarget) -> i
     return bits & 0xFFFF
 
 
+@recovered_island(
+    asm="1010:5DB2",
+    contract="map the 5DB2 direction-bit nibble through the direction table to a step direction",
+    status="VERIFIED",
+    merge_target="MovementSystem",
+)
 def choose_target_seek_direction(
     slot: ObjectSlotRecord,
     target: MovementTarget,
@@ -72,6 +85,12 @@ def choose_target_seek_direction(
     )
 
 
+@recovered_island(
+    asm=("1010:AEE4", "1010:AF22", "1010:AF63"),
+    contract="signed (dx, dy) for one 8-way direction-table step",
+    status="VERIFIED",
+    merge_target="MovementSystem",
+)
 def step_delta_for_direction(direction: int, pixels: int) -> tuple[int, int]:
     """Return the signed ``(dx, dy)`` for one recovered direction-table step."""
     entry = direction8(direction)
@@ -79,6 +98,12 @@ def step_delta_for_direction(direction: int, pixels: int) -> tuple[int, int]:
     return u16(unit_dx * pixels), u16(unit_dy * pixels)
 
 
+@recovered_island(
+    asm=("1010:AEE4", "1010:AF22", "1010:AF63"),
+    contract="ordered x/y mutations for an 8-way movement step (order = 8086 flag order at RET)",
+    status="VERIFIED",
+    merge_target="MovementSystem",
+)
 def step_operations_for_direction(direction: int, pixels: int) -> tuple[MovementStepOperation, ...]:
     """Return the ordered source-like mutations for an 8-way movement step.
 
@@ -104,11 +129,23 @@ def step_operations_for_direction(direction: int, pixels: int) -> tuple[Movement
     return tuple(ops)
 
 
+@recovered_island(
+    asm="1010:B1B0",
+    contract="4-pixel grid alignment of a coordinate word",
+    status="VERIFIED",
+    merge_target="MovementSystem",
+)
 def align_word_to_four(value_word: int) -> int:
     """Return the recovered 4-pixel grid alignment used by B1B0 target chase."""
     return value_word & TARGET_GRID_MASK_4PX
 
 
+@recovered_island(
+    asm="1010:B1B0",
+    contract="player/view-centre chase target (237E+0Ah, 2380+0Ch, 4-pixel aligned)",
+    status="VERIFIED",
+    merge_target="MovementSystem",
+)
 def player_center_target_from_view(view_x_word: int, view_y_word: int) -> MovementTarget:
     """Pure target point used by B1B0 when chasing the current view/player center.
 
@@ -121,6 +158,12 @@ def player_center_target_from_view(view_x_word: int, view_y_word: int) -> Moveme
     )
 
 
+@recovered_island(
+    asm=("1010:A5D1", "1010:A5EA", "1010:A5F9", "1010:A607"),
+    contract="two-pass clamp/step of an axis word toward a boundary",
+    status="VERIFIED",
+    merge_target="MovementSystem",
+)
 def two_pass_axis_clamp_step(
     value_word: int,
     *,
@@ -150,6 +193,12 @@ def two_pass_axis_clamp_step(
     )
 
 
+@recovered_island(
+    asm="1010:A5D1",
+    contract="single-pixel axis step when the no-clamp global gate is set",
+    status="VERIFIED",
+    merge_target="MovementSystem",
+)
 def one_pixel_axis_step(value_word: int, *, increment: bool) -> AxisClampStepDecision:
     """Pure one-pixel step used by A5D1 when the global no-clamp gate is set."""
     start = value_word & 0xFFFF
@@ -160,18 +209,36 @@ def one_pixel_axis_step(value_word: int, *, increment: bool) -> AxisClampStepDec
     )
 
 
+@recovered_island(
+    asm="1010:A662",
+    contract="top scroll-bias recovery toward zero",
+    status="VERIFIED",
+    merge_target="MovementSystem",
+)
 def recover_top_scroll_bias_a662(top_bias_word: int) -> int:
     """Pure A662 top-bias recovery toward zero."""
     top = top_bias_word & 0xFFFF
     return u16(top + 1) if top != 0 else top
 
 
+@recovered_island(
+    asm="1010:A63C",
+    contract="bottom scroll-bias decay toward zero",
+    status="VERIFIED",
+    merge_target="MovementSystem",
+)
 def decay_bottom_scroll_bias_a63c(bottom_bias_word: int) -> int:
     """Pure A63C bottom-bias decay toward zero."""
     bottom = bottom_bias_word & 0xFFFF
     return u16(bottom - 1) if bottom != 0 else bottom
 
 
+@recovered_island(
+    asm=("1010:A648", "1010:A662"),
+    contract="top-edge scroll-bias response to input at the screen top",
+    status="VERIFIED",
+    merge_target="MovementSystem",
+)
 def top_scroll_edge_response_a648(*, object_y_word: int, input_bits: int, top_bias_word: int) -> int:
     """Pure top-edge scroll-bias result recovered from A648/A662."""
     obj_y = object_y_word & 0xFFFF
@@ -182,6 +249,12 @@ def top_scroll_edge_response_a648(*, object_y_word: int, input_bits: int, top_bi
     return recover_top_scroll_bias_a662(top)
 
 
+@recovered_island(
+    asm=("1010:A616", "1010:A63C"),
+    contract="bottom-edge scroll-bias response to input at the screen bottom",
+    status="VERIFIED",
+    merge_target="MovementSystem",
+)
 def bottom_scroll_edge_response_a63c(*, object_y_word: int, input_bits: int, bottom_bias_word: int) -> int:
     """Pure bottom-edge scroll-bias result recovered from A616/A63C."""
     obj_y = object_y_word & 0xFFFF
@@ -192,6 +265,12 @@ def bottom_scroll_edge_response_a63c(*, object_y_word: int, input_bits: int, bot
     return decay_bottom_scroll_bias_a63c(bottom)
 
 
+@recovered_island(
+    asm="1010:A616",
+    contract="view-gated top+bottom scroll-bias state update",
+    status="VERIFIED",
+    merge_target="MovementSystem",
+)
 def vertical_scroll_edge_response_a616(state: VerticalScrollEdgeInput) -> VerticalScrollEdgeDecision:
     """Pure final scroll-bias state recovered from the A616 parent helper.
 

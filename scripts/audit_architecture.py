@@ -52,6 +52,8 @@ def layer_of(rel: str) -> str:
         return "source_pure"
     if rel.startswith("overkill/recovered/adapters/") or rel.startswith("overkill/recovered/views/"):
         return "bridge"
+    if rel == "overkill/recovered/islands.py":
+        return "source_pure"  # pure self-describing metadata (stdlib only); importable by systems/domain
     if rel.startswith("overkill/recovered/"):
         return "bridge"  # top-level recovered/* are compatibility facades
     if rel == "overkill/hooks.py" or rel.startswith("overkill/hook_wrappers/"):
