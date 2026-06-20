@@ -1,5 +1,13 @@
 # OVERKILL source-reconstruction refactor — goal & playbook
 
+> **Superseded as top-level direction by [`rescue_refactor.md`](rescue_refactor.md)
+> (2026-06-19).** The rescue is the active north star: push the VM-coupled `lifted`
+> layer *down* into pure recovered systems (PRE2 architecture), shrink the
+> coastline, and self-describe islands. This plan's Phase 3 (de-transliteration)
+> remains valid and useful — cleaner lifted code is easier to push down — so treat
+> it as a *means* to the rescue, not a competing goal. Read `rescue_refactor.md`
+> first for "what to work on next."
+
 ## North star
 Turn the live VM/hook runtime into a **complete reconstruction of the original
 source code that is readable, yet still live and byte-verifiable**. All three at
