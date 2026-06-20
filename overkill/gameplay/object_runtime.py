@@ -83,8 +83,6 @@ from overkill.gameplay.object_movement import (
     run_object_y_step_down_clamp_a607,
     run_object_bottom_scroll_offset_decay_a63c,
     run_object_top_scroll_offset_recover_a662,
-    _assert_vertical_scroll_biases,
-    _run_object_top_scroll_edge_response_a648_body,
     run_object_top_scroll_edge_response_a648,
     run_object_vertical_scroll_edge_response_a616,
     run_object_scroll_world_progress_gate_a66f,

@@ -15,7 +15,7 @@ from __future__ import annotations
 from dos_re.cpu import ZF
 from overkill.asm import (
     _add_mem_word, _add_reg16, _and_mem_word, _cmp_byte, _cmp_word,
-    _dec_mem_word_preserve_cf, _inc_mem_word_preserve_cf, _sub_mem_word, _test_word,
+    _dec_mem_word_preserve_cf, _inc_mem_word_preserve_cf, _sub_mem_word,
 )
 from overkill.gameplay.collision import run_tile_lookup_505b
 from overkill.gameplay.object_runtime_common import (
@@ -28,7 +28,7 @@ from overkill.recovered.adapters.movement_adapter import (
     publish_object_slot_target_to_movement_globals,
 )
 from overkill.recovered.adapters.object_behavior_adapter import run_player_chase_candidate_checks_b15a
-from overkill.recovered.domain.movement import VerticalScrollEdgeDecision, VerticalScrollEdgeInput
+from overkill.recovered.domain.movement import VerticalScrollEdgeInput
 from overkill.recovered.systems.movement import (
     decay_bottom_scroll_bias_a63c, one_pixel_axis_step, recover_top_scroll_bias_a662,
     top_scroll_edge_response_a648, two_pass_axis_clamp_step, vertical_scroll_edge_response_a616,
@@ -567,51 +567,8 @@ def run_object_top_scroll_offset_recover_a662(cpu, self_disable_if_patched) -> N
     cpu.s.ip = cpu.pop()
 
 
-def _assert_vertical_scroll_biases(cpu, expected: VerticalScrollEdgeDecision) -> None:
-    ds = cpu.s.ds & 0xFFFF
-    if (
-        cpu.mem.rw(ds, 0xA39A) != (expected.top_bias_word & 0xFFFF)
-        or cpu.mem.rw(ds, 0xA39C) != (expected.bottom_bias_word & 0xFFFF)
-    ):
-        raise AssertionError("pure A616 vertical scroll-bias response disagrees with ASM-compatible replay")
-
-
-def _run_object_top_scroll_edge_response_a648_body(cpu) -> None:
-    ds = cpu.s.ds & 0xFFFF
-    ss = cpu.s.ss & 0xFFFF
-    bp = cpu.s.bp & 0xFFFF
-    slot = ObjectSlotView(cpu.mem, ss, bp)  # this object's record (SS:BP)
-    y = slot.y_word
-    input_bits = cpu.mem.rb(ds, 0x98BE)
-    start_top_bias = cpu.mem.rw(ds, 0xA39A)
-    expected_top_bias = top_scroll_edge_response_a648(
-        object_y_word=y,
-        input_bits=input_bits,
-        top_bias_word=start_top_bias,
-    )
-    _cmp_word(cpu, y, 0x0000)
-    if y == 0:
-        _test_word(cpu, input_bits, 0x0002)
-        if (input_bits & 0x02) != 0:
-            value = cpu.mem.rw(ds, 0xA39A)
-            _cmp_word(cpu, value, 0xFFF8)
-            if value == 0xFFF8:
-                if cpu.mem.rw(ds, 0xA39A) != expected_top_bias:
-                    raise AssertionError("pure A648 top-bias response disagrees with ASM-compatible replay")
-                cpu.s.ip = cpu.pop()
-                return
-            _dec_mem_word_preserve_cf(cpu, ds, 0xA39A)
-            if cpu.mem.rw(ds, 0xA39A) != expected_top_bias:
-                raise AssertionError("pure A648 top-bias response disagrees with ASM-compatible replay")
-            cpu.s.ip = cpu.pop()
-            return
-    run_object_top_scroll_offset_recover_a662(cpu, lambda *_args, **_kwargs: False)
-    if cpu.mem.rw(ds, 0xA39A) != expected_top_bias:
-        raise AssertionError("pure A648 top-bias response disagrees with ASM-compatible replay")
-
-
 def run_object_top_scroll_edge_response_a648(cpu, self_disable_if_patched) -> None:
-    """Lift 1010:A648, top-edge input scroll bias / recovery helper."""
+    """Lift 1010:A648 — thin adapter over the pure top-edge scroll-bias rule."""
     if self_disable_if_patched(
         cpu,
         0xA648,
@@ -619,15 +576,28 @@ def run_object_top_scroll_edge_response_a648(cpu, self_disable_if_patched) -> No
         "overkill_object_top_scroll_edge_response_a648",
     ):
         return
-    _run_object_top_scroll_edge_response_a648_body(cpu)
+    ds = cpu.s.ds & 0xFFFF
+    ss = cpu.s.ss & 0xFFFF
+    bp = cpu.s.bp & 0xFFFF
+    slot = ObjectSlotView(cpu.mem, ss, bp)  # this object's record (SS:BP)
+    cpu.mem.ww(ds, 0xA39A, top_scroll_edge_response_a648(
+        object_y_word=slot.y_word,
+        input_bits=cpu.mem.rb(ds, 0x98BE),
+        top_bias_word=cpu.mem.rw(ds, 0xA39A),
+    ))
+    cpu.s.ip = cpu.pop()
 
 
 def run_object_vertical_scroll_edge_response_a616(cpu, self_disable_if_patched) -> None:
-    """Lift 1010:A616, raw vertical edge-scroll response helper.
+    """Lift 1010:A616 — thin adapter over the pure vertical scroll-edge rule.
 
-    This is a frame-controller/object bridge: once the view has advanced past
-    the gameplay threshold, it updates top and bottom scroll-bias globals
-    ``DS:A39A/A39C`` based on the active object's Y coordinate and input bits.
+    Frame-controller/object bridge: once the view advances past the gameplay
+    threshold it updates the top/bottom scroll-bias globals DS:A39A/A39C from the
+    active object's Y and input bits.  The recovered MovementSystem owns the whole
+    decision (view gate + top + bottom); this adapter reads state, calls it, and
+    writes the two bias globals.  The original nested CALL A648, its dead-stack
+    scratch, and the body's intermediate flags are not part of the caller contract
+    (demo-replay green).
     """
     if self_disable_if_patched(
         cpu,
@@ -640,51 +610,18 @@ def run_object_vertical_scroll_edge_response_a616(cpu, self_disable_if_patched) 
     ss = cpu.s.ss & 0xFFFF
     bp = cpu.s.bp & 0xFFFF
     slot = ObjectSlotView(cpu.mem, ss, bp)  # this object's record (SS:BP)
-
-    value = cpu.mem.rw(ds, 0x2350)
-    expected = vertical_scroll_edge_response_a616(
+    decision = vertical_scroll_edge_response_a616(
         VerticalScrollEdgeInput(
-            view_y_word=value,
+            view_y_word=cpu.mem.rw(ds, 0x2350),
             object_y_word=slot.y_word,
             input_bits=cpu.mem.rb(ds, 0x98BE),
             top_bias_word=cpu.mem.rw(ds, 0xA39A),
             bottom_bias_word=cpu.mem.rw(ds, 0xA39C),
         )
     )
-    _cmp_word(cpu, value, 0x00B6)
-    if value <= 0x00B6:
-        if expected.view_gate_open:
-            raise AssertionError("pure A616 view gate disagrees with ASM-compatible replay")
-        _assert_vertical_scroll_biases(cpu, expected)
-        cpu.s.ip = cpu.pop()
-        return
-
-    # A61F CALL A648 leaves A622 below the live caller return word after the
-    # nested helper returns.
-    cpu.mem.ww(ss, ((cpu.s.sp & 0xFFFF) - 2) & 0xFFFF, 0xA622)
-    cpu.push(0xA622)
-    _run_object_top_scroll_edge_response_a648_body(cpu)
-    if (cpu.s.ip & 0xFFFF) != 0xA622:
-        raise RuntimeError(f"A616 expected A648 to return to A622, got {cpu.s.ip & 0xFFFF:04X}")
-
-    y = slot.y_word
-    _cmp_word(cpu, y, 0x00B0)
-    if y == 0x00B0:
-        _test_word(cpu, cpu.mem.rb(ds, 0x98BE), 0x0001)
-        if (cpu.mem.rb(ds, 0x98BE) & 0x01) != 0:
-            value = cpu.mem.rw(ds, 0xA39C)
-            _cmp_word(cpu, value, 0x0008)
-            if value == 0x0008:
-                _assert_vertical_scroll_biases(cpu, expected)
-                cpu.s.ip = cpu.pop()
-                return
-            _inc_mem_word_preserve_cf(cpu, ds, 0xA39C)
-            _assert_vertical_scroll_biases(cpu, expected)
-            cpu.s.ip = cpu.pop()
-            return
-
-    run_object_bottom_scroll_offset_decay_a63c(cpu, lambda *_args, **_kwargs: False)
-    _assert_vertical_scroll_biases(cpu, expected)
+    cpu.mem.ww(ds, 0xA39A, decision.top_bias_word)
+    cpu.mem.ww(ds, 0xA39C, decision.bottom_bias_word)
+    cpu.s.ip = cpu.pop()
 
 
 def run_object_scroll_world_progress_gate_a66f(cpu, self_disable_if_patched) -> None:
