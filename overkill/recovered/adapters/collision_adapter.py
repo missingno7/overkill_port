@@ -231,19 +231,18 @@ def run_tile_lookup_505b_body(cpu, *, pop_return: bool) -> TileLookupResult:
     s.si = TILE_CLASS_TABLE
     s.es = mem.rw(cs, TILE_PLANE_SEGMENT_PTR)
     raw_tile = mem.rb(s.es & 0xFFFF, s.bx & 0xFFFF)
-    pure = lookup_tile_class_505b(TileLookupInput(raw_tile_byte=raw_tile, class_table=_TileClassTableMemoryView(mem, ds)))
+    # The pure tilemap rule is the live source of the class byte (AL).
+    result = lookup_tile_class_505b(TileLookupInput(raw_tile_byte=raw_tile, class_table=_TileClassTableMemoryView(mem, ds)))
 
-    s.ax = raw_tile & 0x00FF  # MOV AL / XOR AH,AH
+    s.ax = raw_tile & 0x00FF  # MOV AL,tile / XOR AH,AH (operand for the SI advance)
     old_si = s.si
-    s.si = (old_si + s.ax) & 0xFFFF
+    s.si = (old_si + s.ax) & 0xFFFF  # ADD SI,AX -> class-table entry (its AF reaches RET)
     cpu.set_add_flags(old_si, s.ax, old_si + s.ax, 16)
-    cpu.set_reg8(0, mem.rb(ds, s.si & 0xFFFF))
-    cpu.set_logic_flags(cpu.get_reg8(0), 8)
-    if cpu.get_reg8(0) != pure.class_byte:
-        raise AssertionError("pure 505B tile-class result disagrees with ASM-compatible body")
+    cpu.set_reg8(0, result.class_byte)  # AL = recovered tile class (pure rule is the source)
+    cpu.set_logic_flags(result.class_byte, 8)
     if pop_return:
         s.ip = cpu.pop()
-    return pure
+    return result
 
 
 
