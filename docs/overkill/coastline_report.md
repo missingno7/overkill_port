@@ -64,6 +64,30 @@ New gameplay logic goes into pure systems; the frame map only composes them.
 4. Thin the per-behaviour hook adapters as their logic lands in pure systems.
 5. Stop the broad frame hooks growing; reclassify as maps (done in docs).
 
+## Cuts landed (2026-06-19)
+
+Measurable coastline reduction — the pure layer became *live*, not just annotated:
+
+- **6 movement hooks thinned** (A5D1, A5EA, A5F9, A607, A63C, A662). The pure
+  `MovementSystem` functions are now the live implementation; the adapters only
+  read state → call pure → write result.
+- **Duplicate logic deleted:** the adapters previously called the pure function as
+  a *checker* and then re-derived the result with a full ASM-shaped replay loop +
+  assert. Removed the replay loop, 4 self-check asserts, the dead CALL-next sp-2
+  stack scratch, and 4 dead intermediate `ip=` assignments.
+  `_run_two_pass_word_clamp_step`: 39 → 19 lines; A63C/A662: 9 → 4 lines each.
+- **2 lockstep oracles relaxed** (clamp + scroll-edge) from full-snapshot equality
+  to the live boundary contract (all registers except dead flags + memory outside
+  the dead-stack window). This removed a straitjacket that forced the ASM-replay to
+  exist; demo-replay (exercising these hooks 248–1107×) proves the dropped flags
+  and stack scratch are dead at the caller.
+- **Self-describing islands:** 13 movement functions annotated VERIFIED; manifest
+  generated; drift test added. (Mechanism only — the *behavioural* win is the
+  thinning above.)
+
+Net: the movement clamp/scroll coastline moved *upward* — fewer ASM-shaped lines,
+the pure recovered functions are now load-bearing.
+
 ## What is NOT coastline (already clean)
 
 - `recovered/systems`, `recovered/domain`, `game_core` — verified pure (0 VM
