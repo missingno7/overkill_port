@@ -87,7 +87,50 @@ call another *verified native* function instead of bouncing back to ASM? can a
 probe be deleted or replaced by a regression test?
 
 **Do not expand the hook forest.** Do not add a gameplay hook just because an ASM
-address is reachable. Clean and consolidate what exists first.
+address is reachable. Clean and consolidate what exists first. **Hook removal is
+progress** — the goal is not to preserve every original ASM boundary forever.
+
+## Hook inventory & classification (turn the forest into islands)
+
+The pilot's core mistake was hooking too many things at too low a level until the
+hooks *became* the architecture. The fix is not another abstraction on top — it
+is to inventory every hook, classify it, and give each one a **lifetime** and a
+**merge target**. *A hook without an intended lifetime is suspicious; a hook
+without a merge target is suspicious.*
+
+`docs/overkill/hook_inventory.md` is generated from the live registry +
+`hook_taxonomy` + the coverage classifier (`python scripts/gen_hook_inventory.py`).
+For every hook it records:
+
+- **role** — `checkpoint` (real frame/object-update/render/input boundary, keep),
+  `env_wait` (hardware wait, keep hooked), `debug_probe` (delete when done), or
+  `glue` (the collapse target — accidental ASM plumbing);
+- **subsystem** — codec / renderer / object-runtime / collision / input / sound /
+  menu / bootstrap / frame / game-state;
+- **verifier** — does it carry continuation metadata / an oracle (all 336 do);
+- **merge target** — the recovered subsystem it should fold into;
+- **shrinking path** — how it gets thinner or deleted.
+
+Current state: **336 hooks = 12 checkpoint + 5 env_wait + 319 glue.** The 319
+glue hooks are the coastline length. The headline metric is **glue-hook count
+trending down** as their logic moves into recovered systems — not hook coverage
+trending up.
+
+## Reconstruct state structures first; move verification upward
+
+Per the PRE2 charter/methodology (`dos_re/AI_PORTING_CHARTER.md`,
+`docs/dos_re/source_port_methodology.md`): the bridge is **reconstructed
+dataclasses**, our best guess at the original C-like structs and runtime state —
+object slots, player state, level state, renderer state, camera state, input
+state — not arbitrary modern abstractions. Build these factual state mirrors
+first; they are the translation layer between ASM memory and recovered code.
+
+Once that layer exists, **verification climbs**: instead of forever diffing tiny
+low-level ASM boundaries, compare **semantic state contracts** — object-slot
+state after an update, player state after movement, renderer output after a draw
+phase, eventually whole-frame state after `update_frame()`. Low-level per-hook
+ASM diffs remain the oracle for un-lifted glue; the proof spine moves up as
+subsystems are reconstructed.
 
 ## Verification posture (modes, no silent fallback)
 
@@ -120,22 +163,42 @@ overkill/evidence/             archived pilot evidence/traces/maps   [to create]
 Pure systems/domain/islands MUST NOT import CPU, VM, registers, segments, raw
 memory, hook dispatchers, or pygame/UI (enforced by `audit_architecture.py`).
 
-## Roadmap (small safe steps)
+## Work subsystem by subsystem (not a big-bang rewrite)
 
-1. **[done]** Inventory + classify (`coastline_report.md`).
-2. **[done]** Self-describing island metadata + manifest + drift test.
-3. **[done]** First proven slice: annotate `MovementSystem` (13 islands).
-4. **[next]** Object/movement slice end-to-end: confirm `ObjectSlotRecord`
-   contract, annotate `recovered/systems/objects.py` predicates, make the lifted
-   adapters thin (read view → call pure → write/check), quarantine any duplicate
-   ASM-shaped helper.
-5. Create `overkill/probes/` and `overkill/evidence/`; move investigation tools
-   and heavy one-off traces out of the live tree.
-6. Continue pushing lifted islands down: collision, object behaviours, frame
-   timers — one verified slice at a time, each shortening the coastline.
-7. Reclassify the broad frame controllers (`9b2e`, `d007`) as **frame maps /
-   oracle-composition scaffolds**, not places to add gameplay logic.
-8. Keep `hooks.py` thin; move fat bodies down; never grow it.
+Never rewrite the whole runtime in one pass. Pick **one subsystem** from the
+inventory, gather all its hooks, and run the per-subsystem cleanup loop:
+
+1. Gather all hooks for the subsystem (from `hook_inventory.md`).
+2. Separate **VM glue** (register/memory/return mechanics) from **real logic**
+   (movement, collision, object behaviour, sprite/animation rules, asset decode).
+3. Extract the real logic into clean recovered functions (`recovered/systems`),
+   no `cpu`/`mem`/`dos_re`.
+4. Introduce memory views + reconstructed dataclasses where the hook pokes raw
+   memory.
+5. Add contract-level verification (move the checkpoint up to a semantic state
+   contract where you can).
+6. Merge duplicated hook tails/helpers into one recovered helper.
+7. **Delete or shrink at least one old hook.** A cleanup step that doesn't move
+   logic out, replace raw memory with a view/dataclass, merge a duplicate, add a
+   verifier, raise a checkpoint, or remove a hook is not a cleanup step.
+
+Subsystem order (by glue density / leverage; backends stay isolated, not merged
+into game logic):
+
+- **[done]** `movement` — clamp/scroll hooks thinned, MovementSystem live.
+- **[in progress]** `collision` — pure rules live; drop the ~49 self-check
+  asserts per-function (each gated with the full oracle for cross-fn flags).
+- `gameplay_objects` (55 glue) — behaviour bodies → pure ObjectSystem rules.
+- `game_state` (45) — frame/state update → pure rules; keep broad controllers
+  (`9b2e`/`d007`) as **frame MAPS / oracle-composition scaffolds**, never grow.
+- Reconstruct the state dataclasses (object slot ✓, then player/level/camera/
+  input) so verification can rise to semantic contracts.
+- Backends (`*_renderer`, `layer_sprites`, `sound`, `asset_codecs`, `file_io`,
+  `overlay`) — keep isolated; thin their hooks but don't merge into game logic.
+- Classify the 4 `unknown` hooks and give each a merge target.
+- Create `overkill/probes/` + `overkill/evidence/`; move investigation tools and
+  heavy one-off traces out of the live tree.
+- Keep `hooks.py` thin; move fat bodies down; never grow it.
 
 ## Definition of done (per slice)
 
