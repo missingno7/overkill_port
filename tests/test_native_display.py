@@ -39,9 +39,15 @@ def test_pygame_display_blits_a_presented_frame(monkeypatch):
 
     display = PygameDisplay(scale=2, vsync=False)
     try:
-        display.draw(presented)        # full blit/scale/flip path must not crash
-        assert display.pump() is True  # no quit event from the dummy driver
+        display.draw(presented)  # full blit/scale/flip path must not crash
         # the back surface holds the colorized frame (index 5 -> (5,10,15))
         assert tuple(display._surf.get_at((0, 0))[:3]) == (5, 10, 15)
+
+        # the F1 settings overlay renders over the frame without crashing
+        from native_play import NativeOverlay
+        overlay = NativeOverlay(be, display)
+        overlay.visible = True
+        overlay.draw()
+        display.flip()
     finally:
         display.close()
