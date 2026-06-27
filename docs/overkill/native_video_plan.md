@@ -55,8 +55,13 @@ original/hybrid runtime
 ## Known gaps to fill (lift to the model as we go)
 - **HUD/border layer.** The present blit covers only the playfield
   (`x∈[0,208), y∈[4,196)`); the surrounding HUD (top strip, right 112 px panel,
-  bottom strip) is page-baked in the visible page / `[9596]`. Capture+lift it as a
-  persisted HUD layer so the native frame is complete without reading B800.
+  bottom strip) is page-baked in the visible page. *Witnessed:* the HUD region is
+  **not** a plain decode of `[9596]`/`[9598]`/`[9592]` at offset 0 (best ~54 %),
+  so it is drawn straight into the visible aperture and persisted — it must be
+  modelled as a **persisted HUD overlay**: capture the HUD region from the grounded
+  pipeline once (it is static / page-baked, changing only on score/lives updates)
+  and composite it over the playfield, then lift its producer (`61DC` status
+  display + right-panel chrome) so it is fully VM-independent. Next concrete step.
 - **Object screen positions for interpolation.** `SpriteDraw.screen_di` →
   `di_to_screen` gives screen-space positions; ground identity continuity across
   source frames before enabling Stage 4.
