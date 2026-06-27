@@ -336,22 +336,10 @@ def main(argv: list[str] | None = None) -> int:
 
     args = p.parse_args(argv)
 
-    if args.backend == "native":
-        # The native backend is a self-contained modern renderer with its own
-        # config + in-game overlay; play.py just selects it and hands off the
-        # source (a demo or a captured snapshot).
-        if args.verify_hooks or args.verify_hook or args.verify_frames:
-            p.error("--backend native is a presentation mode, not a verifier")
-        import native_play
-        native_args = argparse.Namespace(
-            demo=args.demo, snapshot=None if args.demo else args.snapshot,
-            cold=not (args.demo or args.snapshot), scale=args.scale, no_vsync=False,
-        )
-        if args.demo:
-            return native_play.run_demo(native_args)
-        if args.snapshot:
-            return native_play.run_snapshot(native_args)
-        return native_play.run_cold(native_args)  # no source -> cold boot
+    # --backend native keeps play.py's full runtime + emulator loop (timing/IRQ/
+    # pacing/burst) and only swaps the viewer at the run_sdl_ui call site below.
+    if args.backend == "native" and (args.verify_hooks or args.verify_hook or args.verify_frames):
+        p.error("--backend native is a presentation mode, not a verifier")
 
     if args.verify_frames and (args.verify_hooks or args.verify_hook):
         p.error("choose either --verify-frames or --verify-hooks/--verify-hook, not both")
@@ -1555,6 +1543,10 @@ def main(argv: list[str] | None = None) -> int:
     emu = threading.Thread(target=emulator_loop, name="overkill-emu", daemon=True)
     emu.start()
     try:
+        if args.backend == "native":
+            import native_play
+            native_play.run_native_ui(args=args, frame_sync=frame_sync, stop=stop)
+            return 0
         run_sdl_ui(
             args=args,
             frame_sync=frame_sync,
