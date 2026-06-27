@@ -48,10 +48,16 @@ original/hybrid runtime
   + source cursor + semantic `FrameSnapshot`), `PresentedFrame`, `BackendConfig`
   (persisted settings), `BackendDiagnostics`. ✅
 - `config.py` — load/save the settings file (overlay + `--backend native` share it). ✅
-- `backend.py` — `NativeOverkillVideoBackend`: display-independent present logic. ✅
+- `backend.py` — `NativeOverkillVideoBackend`: display-independent, **thread-safe**
+  present logic (game thread produces via `submit_source_frame`; present thread
+  consumes via `present`; keeps the previous frame for interpolation). ✅
+- `loop.py` — `PresentationLoop`: the **independent presentation thread** that
+  drives `present` at the display cadence, decoupled from the game loop (re-holds /
+  later interpolates between source frames). ✅
 - `overlay.py` *(planned)* — the in-game settings overlay (native-only UI; toggles
   `BackendConfig` live and persists via `config.save_config`).
-- `display.py` *(planned)* — the thin pygame/SDL surface-blit adapter + present clock.
+- `display.py` *(planned)* — the thin pygame/SDL surface-blit adapter (the loop's
+  `draw` callback + vsync flip).
 
 ## Stages
 - **Stage 0 — seam.** `NativeSourceFrame` / backend protocol / diagnostics. ✅
