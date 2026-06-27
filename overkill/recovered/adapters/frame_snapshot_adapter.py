@@ -17,16 +17,24 @@ destination to record +0C (the layer scan's `OBJ_DEST_SLOT_0C`), and `0xFFFF`
 means off-screen — so the draw list is active AND `+0C != 0xFFFF`, with `+0C`
 carried as `screen_di`.
 
-The final z-order is set by the A846 draw scan, which makes two passes — A894
-(layer 0) then A8C4 (layer 1) — dispatching by object_type through the CS:75A0
-draw-type table. Each `SpriteDraw` carries its `layer` so a renderer can apply
-that order; the exact per-object layer assignment is not yet pinned statically,
-so the list is left in the grounded present order rather than guessing a sort.
+Live-witness findings (`overkill/probes/witness_draw_order.py`, instrumenting the
+real 5AC8 draw dispatch over a Tandy demo — these are things static snapshots
+could not show):
+  1. **Draw order == scan order.** `draw_layer` (values 4/1/6) is NOT the z-sort;
+     the draws come out in present/scan order. So no per-layer sort is needed —
+     the grounded present order IS the draw order.
+  2. **One object is missing from this extractor.** A `sprite=0001 @layer 3`
+     object is drawn FIRST (back-most, scrolling with the camera) but is not in
+     the effect/gameplay tables this walks — it lives in a separate fixed slot
+     (likely the player/a special object). TODO: recover its source and include it.
+  3. **screen_di has a one-render phase offset.** The +0C dest captured at the
+     present-hook frame boundary is exactly one render step (~104 px scroll) off
+     the value the draw actually used (snap[N].dest == drawn[N+2].dest). The
+     extraction boundary must align with the draw, or `screen_di` lags by a frame.
 
-Remaining for VERIFIED (enhanced_renderer_plan.md R2): the final layer sort and a
-VRAM round-trip (both need the R3 rasterizer). The CameraState source
-(VIEW_TARGET) is OBSERVED — the present pass's `screen_di` is the grounded
-per-frame position; the camera/projection only matters later for interpolation.
+Remaining for VERIFIED (enhanced_renderer_plan.md R2): include the missing fixed
+slot (#2), align the extraction phase (#3), and the VRAM round-trip (needs the R3
+rasterizer). CameraState (VIEW_TARGET) is OBSERVED.
 """
 from __future__ import annotations
 
