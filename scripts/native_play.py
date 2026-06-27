@@ -210,7 +210,7 @@ class NativeOverlay:
         self.display.screen.blit(panel, (0, 0))
 
 
-def _update_title(backend, display, last_title):
+def _update_title(backend, display, last_title, loop_fps=0.0, flip_ms=0.0):
     now = time.monotonic()
     if now - last_title <= 0.5:
         return last_title
@@ -218,6 +218,7 @@ def _update_title(backend, display, last_title):
     total = d.cache_hits + d.cache_misses
     display.set_title(
         f"OVERKILL native - present {d.present_fps:5.1f}Hz  source {d.source_fps:5.1f}Hz  "
+        f"loop {loop_fps:6.0f}Hz  flip {flip_ms:4.1f}ms  "
         f"cache {d.cache_hits}/{total}  render {d.native_render_ms:.2f}ms   [F1 settings]"
     )
     return now
@@ -269,10 +270,19 @@ def run_native_present(channel, *, args) -> None:
     source_id = 0
     last_title = 0.0
     next_present = time.monotonic()
+    loop_n = 0
+    loop_t0 = time.monotonic()
+    loop_fps = 0.0
+    flip_ms = 0.0
     print("native: presenter up - F1 = settings; close window to quit", flush=True)
     try:
         running = True
         while running:
+            loop_n += 1
+            if loop_n >= 120:  # sample the raw loop iteration rate (independent of present)
+                now = time.monotonic()
+                loop_fps = loop_n / (now - loop_t0)
+                loop_n, loop_t0 = 0, now
             for ev in pygame.event.get():
                 if ev.type == pygame.QUIT:
                     running = False
@@ -303,7 +313,9 @@ def run_native_present(channel, *, args) -> None:
                 display.blit_frame(presented.rgb)
                 if overlay.visible:
                     overlay.draw()
+                _t = time.monotonic()
                 display.flip()
+                flip_ms = (time.monotonic() - _t) * 1000.0  # ~16ms => the flip is vsync-blocking
             else:
                 time.sleep(0.003)
 
@@ -315,7 +327,7 @@ def run_native_present(channel, *, args) -> None:
             else:
                 next_present = time.monotonic()
 
-            last_title = _update_title(backend, display, last_title)
+            last_title = _update_title(backend, display, last_title, loop_fps, flip_ms)
     finally:
         display.close()
 
