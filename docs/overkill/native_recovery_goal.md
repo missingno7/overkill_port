@@ -102,41 +102,92 @@ stay productive across the whole window and never stop on the first hard problem
   irreversible / outward-facing action that requires the user. Otherwise keep going. When you
   do stop, leave a one-paragraph summary at the top of `loop_blockers.md`.
 
-## Backlog (work top-down)
+## Backlog — the full roadmap to the endgame (deep enough for a very long run)
 
-1. **`object_behaviors` → `ObjectSystem` (active).** Push each `_run_object_*` body's
-   logic into a pure rule. Order: the self-contained ones first
-   (`aed8`/`ae09`/`aba3`/`ab77`/`ab10`✓ + the `aa2b` dispatch), then the bigger
-   orchestrators (`b73e`/`b9f0`/`b24d`/`b86d`/`ad04`) — those call other lifted routines,
-   so lift the call tree as you go. Each rule dual-mode (takes/returns native object
-   state).
-2. **Native object-state struct.** Make the object rules take/return `ObjectSlotRecord`
-   (exists in `recovered/domain/object_slots`) instead of loose ints, and have adapters
-   read/write it — the dual-mode enabler that makes these systems standalone-usable and
-   raises verification toward an `ObjectPool` contract.
-3. **collision coastline.** Drop the ~49 per-function self-check asserts where the pure
-   rule is already live (the ASM replay is dead weight); oracle-gated, watch the cross-fn
-   flag traps (`4FF9`/`AC28`, AF survives the RET).
-4. **`game_state` → `GameStateSystem`.** Push frame-state fragments to pure rules; keep
-   broad controllers (`9b2e`/`d007`) as frame MAPS, never grow them.
-5. **Reconstruct state dataclasses** (`PlayerState`/`LevelState`/`CameraState`/
-   `RngState`) so verification rises to semantic state mirrors and the standalone runtime
-   has real state to own.
-6. **(later, attended) standalone skeleton + modes.** A `NativeGameState` + an
-   `update_frame()` that calls the recovered systems; wire `--mode standalone` (no VM) and
-   `--mode verify`/`record-oracle`/`replay-test` around the same recovered code.
+Order = leverage × tractability: recover the gameplay systems first (they ARE the native
+game), reconstruct native state as systems mature, recover the render/audio systems as
+game systems, then assemble the standalone runtime. Within a phase, do the smallest
+self-contained routine not in `loop_blockers.md` first. Hygiene slices are valid filler
+whenever a substantive target is blocked. This queue is intentionally large — it will not
+run dry over many nights.
 
-**Breadth (so an overnight run does not run dry):** item 1 alone is ~15+ behaviour
-bodies in `object_behaviors.py` (`_run_object_behavior_*` / `_run_object_logic_*`) plus
-their helper sub-branches; item 2 touches every object rule; item 3 is ~49 per-function
-asserts across `collision.py`; item 4 is the `game_state.py` fragments; and across all
-files there is a long tail of remaining magic numbers → named constants and raw
-`mem.rw/ww(ds, …)` globals → named `ds_globals`/views (each a tiny, safe, byte-exact
-slice). Prefer one substantive dual-mode rule per iteration, but these small hygiene
-slices are valid filler when a substantive target is blocked. Enumerate the live targets
-each iteration with `grep -nE "^def _run_object" overkill/gameplay/object_behaviors.py`
-and `grep -c "assert " overkill/gameplay/collision.py`, minus anything in
-`loop_blockers.md`.
+### Phase 1 — gameplay systems: lifted → pure dual-mode recovered (the bulk)
+Push each VM-coupled body in `overkill/gameplay/*.py` down into a pure `recovered/systems`
+rule (dual-mode, native-state-shaped per the AB10 template), thin the hook to an adapter,
+verify byte-exact vs the demo corpus. One subsystem at a time.
+- **`object_behaviors` → ObjectSystem** *(active)*: the ~14 `_run_object_*` bodies —
+  self-contained `aed8`/`ae09`/`aba3`/`ab77`/`ab10`✓/`aa2b` first, then the orchestrators
+  `b73e`/`b9f0`/`b24d`/`b86d`/`ad04`/`8d4f`/`efae` (lift their call trees as you go).
+- **`collision` → CollisionSystem**: drop the ~49 self-check asserts where the rule is
+  already live (oracle-gated; flag traps `4FF9`/`AC28`, AF survives the RET); lift any
+  remaining inline predicates.
+- **`object_movement` / `object_postmove` / `object_runtime` / `object_runtime_common`**
+  → MovementSystem (clamp/scroll family already live): push the remaining bodies down.
+- **`object_spawns` / `action_spawns`** → SpawnSystem.
+- **`object_deactivation`** → the deactivate family (C054 done; finish the
+  `BD17`/`BFC7`/`9E69` tails — this also clears the player-death blocker in
+  `loop_blockers.md`).
+- **`contact_overlap` / `contact_side_effects`** → ContactSystem.
+- **`object_bounds`** → bounds; **`view_window`** → camera.
+- **`game_state`** → GameStateSystem (frame fragments; keep `9b2e`/`d007` as frame MAPS,
+  never grow them).
+
+### Phase 1b (parallel, very tractable) — thin `hooks.py` (must be registration glue)
+`hooks.py` is ~4100 lines; **~47 of its 225 functions have >20-line INLINE LOGIC bodies**
+that belong in recovered modules, not the hook layer. Move each body out, leaving a thin
+`@registry.replace … def overkill_X(cpu): run_X(cpu, …)` wrapper. They are mostly:
+- **render compositors / blits** (`447b`/`3e12`/`3efb`/`38b7`/`3849`/`41a6`/`497a`/`cc7f`)
+  — the CGA/EGA/scaled siblings of the already-lifted Tandy `2E6E` family → move to
+  `rendering/ega.py` or a new `cga`/`blit` module, mirroring `rendering/tandy.py`. These
+  have **per-hook oracles**, so each verifies fast: `pytest tests/test_overkill_hooks.py -k <addr>`.
+- **presence / scan / clear glue** (`4d15`/`4d6f`/`a8c7`/`a927`/`5c74`/`5a92` scans) → the
+  layer-sprite / object-scan recovered modules (`rendering/layer_sprites.py`).
+- **menu input waits** (`cf78`/`ce40`) → `frame_orchestration` / `input_menu`.
+Each move is byte-exact (the body is unchanged, just relocated to its system module + a
+thin wrapper) — a direct coastline win that drops `hooks.py`'s line count. Enumerate the
+fattest hooks with:
+`python3 -c "import re;s=open('overkill/hooks.py',encoding='utf-8').read().splitlines();d=[i for i,l in enumerate(s) if re.match(r'^def ',l)];[print(((d[k+1] if k+1<len(d) else len(s))-i), s[i].split('(')[0][4:]) for k,i in enumerate(d)]" | sort -rn | head -30`.
+NOTE: the other large files are not anomalies — `gameplay/*` (object_movement/game_state/
+action_spawns/object_runtime) are the Phase-1 lift queue; `rendering/tandy.py`/`ega.py` are
+the backend where render logic belongs (keep isolated); `coverage.py` is tooling.
+
+### Phase 2 — native state structs (enables semantic verify + standalone)
+As each system matures, make its rules take/return native state instead of loose ints:
+`ObjectSlotRecord`✓ → `ObjectPool`, then `PlayerState`, `ProjectileState`, `CombatState`,
+`CameraState`, `LevelState`, `ScoreState`, `RngState`. Add a semantic state-mirror verifier
+per struct (diff the native struct vs the VM view at a checkpoint).
+
+### Phase 3 — render systems as recovered game state (NOT renderer hacks)
+Recover the original render path into systems the native backend consumes (see
+`native_video_plan.md` + `native_background_interpolation_plan.md`): sprite textures✓,
+extraction✓, sprite layer✓; then the **level-scroll renderer** (the bg: tilemap `[9592]`
++ tile cells + scroll), **starfield**, **HUD/chrome**, **palette/fades**, **transitions** —
+each verified vs the live page. Then **object interpolation** over the recovered bg + the
+menu toggle.
+
+### Phase 4 — audio
+Recover the audio command/mixer path (`play_sfx` + the song/MOD path) into a clean native
+audio system the backend can drive; verify against the SoundBlaster-emulated output.
+
+### Phase 5 — standalone assembly (later; the wiring is attended)
+`NativeGameState` + an `update_frame()` that calls the recovered systems; wire
+`--mode standalone` (no VM) and `--mode verify` / `record-oracle` / `replay-test` around the
+same recovered code; prove a gameplay demo runs standalone and matches the oracle traces.
+
+### Hygiene tail (valid filler anytime a substantive target is blocked)
+Magic numbers → named constants; raw `mem.rw/ww(ds, …)` globals → named `ds_globals`/views;
+address-named `run_*_<addr>` → role names (address kept in the docstring). Each a tiny,
+safe, byte-exact slice. Enumerate live targets per iteration with e.g.
+`grep -nE "^def _run_object" overkill/gameplay/object_behaviors.py`,
+`grep -c "assert " overkill/gameplay/collision.py`, minus anything in `loop_blockers.md`.
+
+## Measuring progress (run occasionally, not every slice)
+
+`python scripts/source_port_status.py` — the headline metrics: **% pure-source mass UP**
+and **glue-hook count DOWN** (not hook coverage up). `python scripts/gen_hook_inventory.py`
+and `python scripts/gen_island_manifest.py` regenerate the coastline + island docs (commit
+the regenerated files). The endgame is reached when the gameplay systems run from native
+state, the hooks are thin or gone, and `--mode standalone` runs the game without the VM.
 
 ## Guardrails
 
