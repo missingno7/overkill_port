@@ -17,9 +17,16 @@ destination to record +0C (the layer scan's `OBJ_DEST_SLOT_0C`), and `0xFFFF`
 means off-screen — so the draw list is active AND `+0C != 0xFFFF`, with `+0C`
 carried as `screen_di`.
 
-Remaining for VERIFIED (enhanced_renderer_plan.md R2): the per-`draw_layer` sort
-the A846 layer scan applies, and a VRAM round-trip over the demo corpus. The
-CameraState source (VIEW_TARGET) is still OBSERVED.
+The final z-order is set by the A846 draw scan, which makes two passes — A894
+(layer 0) then A8C4 (layer 1) — dispatching by object_type through the CS:75A0
+draw-type table. Each `SpriteDraw` carries its `layer` so a renderer can apply
+that order; the exact per-object layer assignment is not yet pinned statically,
+so the list is left in the grounded present order rather than guessing a sort.
+
+Remaining for VERIFIED (enhanced_renderer_plan.md R2): the final layer sort and a
+VRAM round-trip (both need the R3 rasterizer). The CameraState source
+(VIEW_TARGET) is OBSERVED — the present pass's `screen_di` is the grounded
+per-frame position; the camera/projection only matters later for interpolation.
 """
 from __future__ import annotations
 
