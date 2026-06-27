@@ -9,8 +9,19 @@ from __future__ import annotations
 from dos_re.memory import Memory
 
 from overkill.recovered.adapters.frame_snapshot_adapter import extract_frame_snapshot
-from overkill.recovered.adapters.frame_snapshot_adapter import BG_COLUMN_INDEX, BG_SCROLL_ROW
-from overkill.recovered.domain.frame_snapshot import BackgroundLayer, CameraState, SpriteDraw
+from overkill.recovered.adapters.frame_snapshot_adapter import (
+    BG_COLUMN_INDEX,
+    BG_SCROLL_ROW,
+    PRESENT_SOURCE_CURSOR,
+    PRESENT_SOURCE_PAGE_PTR,
+    PRESENT_VIDEO_PAGE_PTR,
+)
+from overkill.recovered.domain.frame_snapshot import (
+    BackgroundLayer,
+    CameraState,
+    PresentComposition,
+    SpriteDraw,
+)
 from overkill.recovered.ds_globals import VIEW_TARGET_X, VIEW_TARGET_Y
 from overkill.recovered.views.object_slots import (
     FRAME_TIMER_TABLE_BASE,
@@ -40,10 +51,15 @@ def test_extract_frame_snapshot_reads_active_onscreen_slots():
     mem.ww(ds, 0x2314, 0x0990)
     mem.ww(ds, 0x2316, 0x0003)
 
-    # Background layer: the level-map scroll position + work-plane segment.
+    # Background layer: the level-map scroll position + master-plane segment.
     mem.ww(ds, BG_SCROLL_ROW, 0x0042)
     mem.ww(ds, BG_COLUMN_INDEX, 0x0007)
-    mem.ww(0x1010, 0x9592, 0x35FF)  # CS:[9592] -> plane segment
+    mem.ww(0x1010, 0x9592, 0x245A)  # CS:[9592] -> background master plane
+
+    # Present composition: the composited source page the 3354 presenter blits.
+    mem.ww(0x1010, PRESENT_SOURCE_PAGE_PTR, 0x35FF)  # CS:[9598] -> source page
+    mem.ww(0x1010, PRESENT_VIDEO_PAGE_PTR, 0xB800)   # CS:[95A4] -> visible aperture
+    mem.ww(ds, PRESENT_SOURCE_CURSOR, 0x3810)        # DS:[234C] -> source cursor
 
     s0 = _slot(mem, ds, GAMEPLAY_OBJECT_TABLE_BASE, 0)
     s0.active_word = 1
@@ -79,5 +95,8 @@ def test_extract_frame_snapshot_reads_active_onscreen_slots():
     assert snap.hud.counters == (0x0003, 0x0001, 0, 0, 0, 0)
     assert snap.hud.score_bcd == (0x0990, 0x0003)
     assert snap.background == BackgroundLayer(
-        scroll_row=0x0042, column_index=0x0007, plane_segment=0x35FF
+        scroll_row=0x0042, column_index=0x0007, plane_segment=0x245A
+    )
+    assert snap.present == PresentComposition(
+        source_page=0x35FF, source_cursor=0x3810, video_page=0xB800
     )

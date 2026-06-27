@@ -52,3 +52,7 @@ def test_extractor_is_well_formed_on_corpus_snapshot(snap: Path):
     assert all(sd.screen_di != 0xFFFF for sd in sprites)
     # coordinates are plausible signed words
     assert all(-0x8000 <= sd.x < 0x8000 and -0x8000 <= sd.y < 0x8000 for sd in sprites)
+    # present composition is well-formed: the Tandy demos blit to the B800
+    # aperture from a real (non-zero) composited source page.
+    assert fs.present.video_page == 0xB800
+    assert fs.present.source_page not in (0x0000, 0xFFFF)

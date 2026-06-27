@@ -31,10 +31,16 @@ Frame loops (top-level mode dispatch):
 
 ```
 FrameSnapshot
-├── background : BackgroundLayer   the [9592] pre-rendered plane + scroll (DS:2350/2356)
-├── playfield  : PlayfieldLayer    camera + sprite draw list (5AC8)         VERIFIED
-└── hud        : HudLayer          six status counters (61DC)               grounded
+├── background : BackgroundLayer       the [9592] master plane + scroll (DS:2350/2356)
+├── playfield  : PlayfieldLayer        camera + sprite draw list (5AC8)         VERIFIED
+├── hud        : HudLayer              six status counters (61DC)               grounded
+└── present    : PresentComposition    source page [9598] + cursor → B800 (3354) grounded
 ```
+
+The three content layers all composite into `present.source_page` ([9598]); the
+Tandy presenter (3354) blits its scrolling window to the visible aperture. So
+`present` is the single assemble-to-screen contract — and, because it is the same
+for every scene, the faithful-fallback for non-interpolated scenes.
 
 ## Completeness checklist — everything that goes on screen (Tandy)
 
@@ -51,11 +57,20 @@ output, and **witness it against the live draws** before marking done.
       renderer places sprites at `di_to_screen(screen_di)` and interpolates in
       screen space, so no separate world→camera projection is needed for sprites.
 - [x] **Score** — BCD score (`DS:2314`/`2316`) in `HudLayer.score_bcd`.
-- [ ] **Background plane content** — the `[9592]` plane → RGB (the actual level
-      pixels). The present (`5BDC`/`3354`) copies it scrolled; model the plane
-      identity + scroll now, decode to RGB at R3.
-- [ ] **Present composition** — recover `5BDC`/`3354`: how the background plane,
-      sprites, and HUD compose into the visible page (page flip / dirty regions).
+- [x] **Present composition** — recovered `3354` + witnessed the page map
+      (`probes/witness_present_pages.py`): every layer composites into one source
+      page `CS:[9598]` (witnessed: the 2E6E/2F81 sprite compositors and 34C5 copies
+      all write there, over the scrolled background), and `3354` blits its window
+      (cursor `DS:[234C]`, the scroll) → visible `CS:[95A4]`=B800 via the Tandy
+      bank geometry. Modelled as `PresentComposition` (source_page/source_cursor/
+      video_page); grounded across the whole corpus (B800 aperture, valid source).
+- [x] **Background master plane** — the `[9592]` master plane (the pre-render the
+      game scrolls *from*) is captured as `BackgroundLayer.plane_segment`. The
+      actual on-screen pixels live in `PresentComposition.source_page` (`[9598]`,
+      bg + sprites composited); decode either to RGB at R3.
+- [ ] **Display page `[9596]` role** — 5AC8 emits one direct-to-B800 draw per
+      frame and a display-page (`[9596]`=25CC) scratch exists; classify (likely a
+      HUD/overlay page) with a witness. Not blocking the source-page model.
 - [x] ~~Screen shake~~ — no 4C30 shake global in OverKill (PRE2 pattern, N/A);
       revisit only if a witness reveals one.
 
@@ -83,12 +98,15 @@ completeness, but they do not block the enhanced renderer.
 
 The interpolation-critical layer — the **gameplay frame** — is fully modelled and
 grounded: playfield sprites (VERIFIED witnessed-exact), HUD (counters + score),
-background (scroll + work-plane reference), and the Tandy screen geometry
-(di ↔ x,y). The enhanced renderer can consume this now: place sprites at
-`di_to_screen(screen_di)`, interpolate in screen space per the two-clock model,
-composite the HUD, scroll the background plane. Remaining for *entire-game*
-completeness: the present composition (`5BDC`/`3354`) and the separate scene
-render paths (faithful-fallback above).
+background (scroll + master-plane reference), the Tandy screen geometry
+(di ↔ x,y), **and now the present composition** (`PresentComposition`: the single
+composited source page `[9598]` + scroll cursor → B800, witnessed). The enhanced
+renderer can consume this now: decode `present.source_page` from
+`present.source_cursor` via the bank geometry for the exact frame, or place
+sprites at `di_to_screen(screen_di)` and interpolate in screen space per the
+two-clock model, compositing the HUD. The gameplay frame is closed; remaining for
+*entire-game* completeness is the separate scene render paths (faithful-fallback
+above, which reuses this same present) and the effects/transitions.
 
 ## Method (per item)
 1. Find the original draw routine (frame dispatch → the routine that draws it).

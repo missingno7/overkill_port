@@ -62,22 +62,46 @@ class PlayfieldLayer:
 class BackgroundLayer:
     """The scrolling level background — bottom of the stack.
 
-    OVERKILL **pre-renders** the level into the ``[9592]`` work plane (tiles are
-    materialised into it as the level scrolls); the per-frame present just copies
-    that plane to the framebuffer scrolled by ``scroll_row`` (DS:2350). So the
-    background *content* is the ``[9592]`` plane (already rasterised) — NOT a
-    per-frame tile grid — and the renderer reuses it, interpolating only the
-    scroll. ``scroll_row`` is the scroll offset into the plane (it tracks level
-    progress, slow-changing); ``column_index`` (DS:2356) is the current map
-    column. Note: the background often holds still while the *objects* move (the
-    interpolation then rides on the playfield, not the scroll). ``plane_segment``
-    is the work-plane segment (CS:[9592]) the renderer decodes via the Tandy
-    screen geometry to produce the background pixels.
+    OVERKILL **pre-renders** the level into the ``[9592]`` *master* plane (tiles
+    are materialised into it as the level scrolls). Note this is the master the
+    game scrolls *from*; the page actually blitted to the screen each frame is the
+    composited source page (``PresentComposition.source_page``, CS:[9598]), which
+    holds the background **plus** the sprites — see that record. ``scroll_row`` is
+    the scroll offset (DS:2350, tracks level progress, slow-changing);
+    ``column_index`` (DS:2356) is the current map column. The background often
+    holds still while the *objects* move (the interpolation then rides on the
+    playfield, not the scroll). ``plane_segment`` is the master-plane segment
+    (CS:[9592]).
     """
 
     scroll_row: int
     column_index: int
     plane_segment: int
+
+
+@dataclass(frozen=True, slots=True)
+class PresentComposition:
+    """How the composed frame reaches the visible aperture (1010:3354).
+
+    This is the universal *assemble-to-screen* step. Every layer composites into
+    **one** work/source page ``source_page`` (CS:[9598]) — witnessed: the masked
+    sprite compositors (2E6E/2F81) and the strided object copies (34C5) all write
+    there, on top of the scrolled background — and the Tandy presenter ``3354``
+    blits a window of it to the visible ``video_page`` (CS:[95A4], = B800 on real
+    Tandy) using the four-bank geometry ``di = (y&3)*0x2000 + (y>>2)*0xA0 + x``.
+
+    The blit starts at source offset ``source_cursor`` (DS:[234C]) and copies
+    0x34 words × 0xC0 rows from dest 0x00A0 — so ``source_cursor`` *is* the
+    vertical scroll (it steps by one row, −0x68 bytes, per scrolled frame). The
+    renderer reproduces the exact visible image by decoding ``source_page`` from
+    ``source_cursor`` through that geometry; because this is the same for every
+    scene, it is also the **faithful-fallback** path for non-interpolated scenes
+    (menu/title/tally) that compose text/cells into the same source page.
+    """
+
+    source_page: int     # CS:[9598] segment holding the composited frame
+    source_cursor: int   # DS:[234C] byte offset the present blit reads from (scroll)
+    video_page: int      # CS:[95A4] visible aperture segment (B800 on Tandy)
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,12 +124,16 @@ class FrameSnapshot:
     """One source-frame's render intent, split into clean layers.
 
     The visual stack, bottom to top: ``background`` (scrolling tilemap) →
-    ``playfield`` (action sprites + camera) → ``hud`` (fixed status overlay).
-    Background and playfield are interpolated (they scroll/move); the HUD is
-    composited as-is. Grows toward the full contract (palette, tile grid,
-    screen-shake) as each piece is recovered.
+    ``playfield`` (action sprites + camera) → ``hud`` (fixed status overlay). All
+    of them composite into the single source page described by ``present``, which
+    the Tandy presenter blits to the visible aperture — so ``present`` is the
+    *assemble-to-screen* contract the rasterizer consumes (and the faithful
+    fallback for scenes). Background and playfield are interpolated (they
+    scroll/move); the HUD is composited as-is. Grows toward the full contract
+    (palette, screen-shake) as each piece is recovered.
     """
 
     background: BackgroundLayer
     playfield: PlayfieldLayer
     hud: HudLayer
+    present: PresentComposition

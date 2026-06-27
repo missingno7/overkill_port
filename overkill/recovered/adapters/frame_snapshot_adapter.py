@@ -39,6 +39,23 @@ Status: the draw list (**content + screen positions**) is **VERIFIED witnessed-
 exact** against the live 5AC8 draws when extracted at the draw boundary. Remaining:
 the VRAM round-trip (needs the R3 rasterizer) and CameraState/projection grounding
 (for interpolation — the special slot's x/y already capture the view anchor).
+
+Present composition (`PresentComposition`, the assemble-to-screen step) is grounded
+by `overkill/probes/witness_present_pages.py`, which wraps the 3354 presenter over
+a Tandy demo. Witnessed page map (L5 demo, stable across frames):
+
+    CS:[9592] background master plane   = 245A
+    CS:[9596] display segment            = 25CC
+    CS:[9598] source page (3354 reads)   = 35FF   <- the composited frame
+    CS:[95A4] visible aperture           = B800
+    DS:[234C] source cursor              scrolls −0x68 (one row) per frame
+
+The masked sprite compositors (2E6E/2F81) and the strided object copies (34C5)
+were witnessed writing to ES = 35FF (the source page), confirming the background
+**and** the sprites composite into the single page the presenter blits — so
+`source_page` holds the real on-screen pixels (the [9592] master is the pre-render
+the game scrolls *from*). The display page [9596]=25CC role (likely a HUD/overlay
+scratch; 5AC8 also emits one direct-to-B800 draw per frame) is not yet modelled.
 """
 from __future__ import annotations
 
@@ -49,6 +66,7 @@ from overkill.recovered.domain.frame_snapshot import (
     FrameSnapshot,
     HudLayer,
     PlayfieldLayer,
+    PresentComposition,
     SpriteDraw,
 )
 
@@ -89,7 +107,10 @@ _OBJECT_TABLES = (
 )
 
 
-TILE_PLANE_SEGMENT_PTR = 0x9592  # CS:[9592] -> the background work-plane segment
+TILE_PLANE_SEGMENT_PTR = 0x9592  # CS:[9592] -> the background master-plane segment
+PRESENT_SOURCE_PAGE_PTR = 0x9598  # CS:[9598] -> the composited source page (3354 reads)
+PRESENT_VIDEO_PAGE_PTR = 0x95A4   # CS:[95A4] -> the visible Tandy aperture (B800)
+PRESENT_SOURCE_CURSOR = 0x234C    # DS:[234C] -> present blit start offset (the scroll)
 OVERKILL_CODE_SEGMENT = 0x1010
 
 
@@ -133,10 +154,18 @@ def extract_frame_snapshot(mem, ds: int, cs: int = OVERKILL_CODE_SEGMENT) -> Fra
         ),
         score_bcd=(mem.rw(ds, SCORE_BCD_BASE), mem.rw(ds, (SCORE_BCD_BASE + 2) & 0xFFFF)),
     )
-    # Background: the scrolling level tilemap's camera position + work plane.
+    # Background: the scrolling level tilemap's camera position + master plane.
     background = BackgroundLayer(
         scroll_row=mem.rw(ds, BG_SCROLL_ROW),
         column_index=mem.rw(ds, BG_COLUMN_INDEX),
         plane_segment=mem.rw(cs, TILE_PLANE_SEGMENT_PTR),
     )
-    return FrameSnapshot(background=background, playfield=playfield, hud=hud)
+    # Present: the composited source page the Tandy presenter (3354) blits to the
+    # visible aperture, from the scrolling source cursor. This is the page that
+    # holds the actual on-screen pixels (background + sprites composited together).
+    present = PresentComposition(
+        source_page=mem.rw(cs, PRESENT_SOURCE_PAGE_PTR),
+        source_cursor=mem.rw(ds, PRESENT_SOURCE_CURSOR),
+        video_page=mem.rw(cs, PRESENT_VIDEO_PAGE_PTR),
+    )
+    return FrameSnapshot(background=background, playfield=playfield, hud=hud, present=present)
