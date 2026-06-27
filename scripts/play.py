@@ -1545,7 +1545,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.backend == "native":
             import native_play
-            native_play.run_native_ui(args=args, frame_sync=frame_sync, stop=stop)
+            native_play.run_native_ui(
+                args=args, frame_sync=frame_sync, stop=stop, keyboard=keyboard,
+                live_ds=lambda: rt.cpu.s.ds & 0xFFFF,
+            )
             return 0
         run_sdl_ui(
             args=args,
