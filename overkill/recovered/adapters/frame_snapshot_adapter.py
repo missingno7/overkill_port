@@ -28,14 +28,17 @@ could not show):
      effect table (DS:237C, its x/y == the VIEW_TARGET globals). Added as the
      leading slot. The draw-list **content is now witnessed-exact**: the sprite
      multiset matches the real 5AC8 draws 6/6 render frames on the L5 demo.
-  3. **screen_di has a one-render phase offset (open).** The +0C dest captured at
-     the present-hook frame boundary is one render step (~104 px scroll) off the
-     value the draw used (snap[N].dest == drawn[N+2].dest). This is a snapshotting
-     *timing* choice (extract at the draw boundary), not an extractor error.
+  3. **screen_di phase = a boundary choice (RESOLVED).** Extracted at the present-
+     hook boundary, +0C is one render step (~104 px) ahead of the draw. Extracted
+     at the **draw boundary** (the first 5AC8 of a render burst), the snapshot's
+     `(sprite, screen_di)` matches the witnessed draws EXACTLY (6/6 frames). So the
+     runtime must extract at the draw-scan boundary (A846/A858), not the present
+     hook; the extractor itself is correct.
 
-Status: draw-list **content VERIFIED** against live draws; `screen_di` is correct
-modulo the phase choice (#3); the VRAM round-trip (needs the R3 rasterizer) and
-CameraState grounding remain.
+Status: the draw list (**content + screen positions**) is **VERIFIED witnessed-
+exact** against the live 5AC8 draws when extracted at the draw boundary. Remaining:
+the VRAM round-trip (needs the R3 rasterizer) and CameraState/projection grounding
+(for interpolation — the special slot's x/y already capture the view anchor).
 """
 from __future__ import annotations
 

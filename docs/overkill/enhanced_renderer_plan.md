@@ -119,6 +119,15 @@ frame contract**, then the renderer is lifted off the VM.
     presence-stamp, dispatched per-object via 5A92. R2 must recover those
     presence-list entries (object ptr + screen position) as the draw list. The R1
     object-table extractor is a scaffold/hypothesis to replace, not the contract.
+  - **R2 DONE (draw list).** Grounded via `probes/inspect_draw_list` +
+    `probes/witness_draw_order` (instruments the live 5AC8 draws over a demo): the
+    8D12/32CA lists are pointer arrays into the gameplay/effect tables; the draw
+    list = a special view-anchor slot (DS:237C) + active on-screen slots, in scan
+    order; culling is `+0C != 0xFFFF`; `screen_di` is `+0C`. **Witnessed-exact**
+    (sprite multiset + `(sprite, screen_di)`) 6/6 render frames when extracted at
+    the **draw boundary** (A846/A858), not the present hook. Draw order == scan
+    order (draw_layer is not the z-sort). Still open: camera/projection (for
+    interpolation) and the VRAM round-trip (R3).
 - **R3 — Native Tandy rasterizer.** VM-free `FrameSnapshot` + decoded assets → RGB,
   verified pixel-exact vs the R0 oracle over the demo corpus. Reuse the recovered
   asset codecs; lift the Tandy sprite/tile blit math out of the cpu-coupled
