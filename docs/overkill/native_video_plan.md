@@ -93,10 +93,18 @@ Bridge + display (outside the VM-independent package):
 - `recovered/adapters/render_snapshot_adapter.py` — `extract_render_snapshot(mem,ds)`
   builds a `RenderSnapshot` from VM memory (game-thread extractor). ✅
 - `scripts/native_play.py` — the pygame display adapter (`PygameDisplay`: blit/scale/
-  vsync flip) + session runner (`--snapshot` static, `--demo` game-thread live);
-  `play.py --backend native` delegates here. ✅ (pygame lives here, not in the
-  VM-independent package). Run: `play.py --backend native --demo <dir>` /
-  `--snapshot <dir>`.
+  vsync flip) + session runner: `--snapshot` (static), `--demo` (game-thread live),
+  `--cold` (cold-boot intro→title→menu→attract). `play.py --backend native` delegates
+  here (no source → cold boot). ✅ (pygame lives here, not in the VM-independent
+  package). Snapshots are published throttled (~70 Hz) at any boundary IP (3354/
+  timer/retrace) so **every scene** is captured — the menu/title/tally don't fire the
+  gameplay present, so they advance via the timer/retrace waits.
+
+Scenes & cold start: every scene renders via `composed_indices` (the page-baked
+decode), so the menu/title/game-over already appear faithfully under the native
+backend. A *semantic native menu* (menu items/selection drawn natively, crisp text)
+is a future lift; cold boot is slow (interpreter-speed asset decode) and input is
+not forwarded yet (the game runs autonomously) — both future refinements.
 
 ## Stages
 - **Stage 0 — seam.** `NativeSourceFrame` / backend protocol / diagnostics. ✅

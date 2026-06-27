@@ -122,50 +122,61 @@ def run_snapshot(args) -> int:
     return 0
 
 
-def run_demo(args) -> int:
-    """Replay a demo on a background game thread; present on the main thread."""
-    from dos_re.input_demo import InputDemoPlayback
-    import overkill.hooks  # noqa: F401 - registers hooks
-    from overkill.runtime import load_overkill_snapshot
+# Boundary IPs that mark a stable instruction point to sample the frame at. The
+# menu/scenes don't fire the gameplay present (3354) — they advance via the
+# timer/retrace waits — so sampling on any of these (throttled) captures every
+# scene, not just gameplay.
+_BOUNDARY_IPS = {0x3354, 0x0679, 0x50C9}
+_SOURCE_PUBLISH_HZ = 70.0
+
+
+def _run_game_loop(rt, backend, stop, demo=None) -> None:
+    """Step the runtime; publish a throttled RenderSnapshot per ~game tick.
+
+    With ``demo`` set, also drives the recorded input boundary clock. Publishing is
+    wall-clock throttled (~70 Hz) and sampled at a boundary IP so the read is at a
+    stable instruction point and every scene (menu/gameplay) is captured.
+    """
     from overkill.recovered.adapters.render_snapshot_adapter import extract_render_snapshot
 
-    demo = InputDemoPlayback.load(Path(args.demo))
-    rt = load_overkill_snapshot(ROOT / "assets" / "OVERKILL", demo.snapshot_path(),
-                                game_root=ROOT / "assets")
-    rt.cpu.trace_enabled = False
-    rt.cpu.coverage_telemetry = None
-    backend = NativeOverkillVideoBackend(load_config())
-    stop = threading.Event()
-
-    PRESENT_IP, TIMER_IP, RETRACE_IP = 0x3354, 0x0679, 0x50C9
-    boundary_ips = {PRESENT_IP, TIMER_IP, RETRACE_IP}
-
-    def game_thread() -> None:
-        s = rt.cpu.s
-        step = rt.cpu.step
-        boundary = 0
-        demo_boundary = 0
+    s = rt.cpu.s
+    step = rt.cpu.step
+    boundary = 0
+    demo_boundary = 0
+    if demo is not None:
         demo.apply_to_runtime(0, rt)
-        frame_id = 0
-        while not stop.is_set():
-            if s.cs == 0x1010 and s.ip in boundary_ips:
+    frame_id = 0
+    last_pub = 0.0
+    period = 1.0 / _SOURCE_PUBLISH_HZ
+    while not stop.is_set():
+        if s.cs == 0x1010 and s.ip in _BOUNDARY_IPS:
+            if demo is not None:
                 boundary += 1
                 if boundary > demo_boundary:
                     demo_boundary = boundary
                     if demo.finished(demo_boundary):
                         break
                     demo.apply_to_runtime(demo_boundary, rt)
-                if s.ip == PRESENT_IP:  # one game frame produced -> publish a snapshot
-                    frame_id += 1
-                    backend.submit_source_frame(
-                        extract_render_snapshot(rt.cpu.mem, s.ds & 0xFFFF,
-                                                frame_id=frame_id, timestamp=time.monotonic())
-                    )
-            step()
+            now = time.monotonic()
+            if now - last_pub >= period:
+                last_pub = now
+                frame_id += 1
+                backend.submit_source_frame(
+                    extract_render_snapshot(rt.cpu.mem, s.ds & 0xFFFF, frame_id=frame_id, timestamp=now)
+                )
+        step()
 
-    worker = threading.Thread(target=game_thread, name="overkill-game", daemon=True)
+
+def _run_live(rt, args, *, demo=None, title="OVERKILL — native") -> int:
+    """Run the game on a background thread, present on the main thread."""
+    rt.cpu.trace_enabled = False
+    rt.cpu.coverage_telemetry = None
+    backend = NativeOverkillVideoBackend(load_config())
+    stop = threading.Event()
+    worker = threading.Thread(target=_run_game_loop, args=(rt, backend, stop),
+                              kwargs={"demo": demo}, name="overkill-game", daemon=True)
     worker.start()
-    display = PygameDisplay(scale=args.scale, vsync=not args.no_vsync)
+    display = PygameDisplay(scale=args.scale, vsync=not args.no_vsync, title=title)
     try:
         _present_on_main(backend, display)
     finally:
@@ -174,15 +185,47 @@ def run_demo(args) -> int:
     return 0
 
 
+def run_demo(args) -> int:
+    """Replay a demo live: game on a background thread, present on the main thread."""
+    from dos_re.input_demo import InputDemoPlayback
+    import overkill.hooks  # noqa: F401 - registers hooks
+    from overkill.runtime import load_overkill_snapshot
+
+    demo = InputDemoPlayback.load(Path(args.demo))
+    rt = load_overkill_snapshot(ROOT / "assets" / "OVERKILL", demo.snapshot_path(),
+                                game_root=ROOT / "assets")
+    return _run_live(rt, args, demo=demo)
+
+
+def run_cold(args) -> int:
+    """Cold-boot the game and present it natively (intro -> title -> menu -> attract).
+
+    Boot is slow (asset decode runs at interpreter speed), so expect a blank window
+    until the first frame; input is not forwarded yet, so the game runs autonomously.
+    """
+    import overkill.hooks  # noqa: F401 - registers hooks
+    from overkill.launch import build_command_tail
+    from overkill.runtime import create_overkill_runtime
+
+    rt = create_overkill_runtime(ROOT / "assets" / "OVERKILL", game_root=ROOT / "assets",
+                                 command_tail=build_command_tail("tandy", "pc"))
+    return _run_live(rt, args, demo=None, title="OVERKILL — native (cold boot)")
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(description=__doc__)
-    src = p.add_mutually_exclusive_group(required=True)
+    src = p.add_mutually_exclusive_group()
     src.add_argument("--snapshot", help="present a single captured snapshot directory")
     src.add_argument("--demo", help="replay a demo live on a background game thread")
+    src.add_argument("--cold", action="store_true", help="cold-boot the game and present it natively")
     p.add_argument("--scale", type=int, default=3, help="integer window scale (default 3)")
     p.add_argument("--no-vsync", action="store_true", help="do not request vsync")
     args = p.parse_args(argv)
-    return run_demo(args) if args.demo else run_snapshot(args)
+    if args.demo:
+        return run_demo(args)
+    if args.snapshot:
+        return run_snapshot(args)
+    return run_cold(args)  # default: cold boot
 
 
 if __name__ == "__main__":

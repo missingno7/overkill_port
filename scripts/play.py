@@ -342,14 +342,16 @@ def main(argv: list[str] | None = None) -> int:
         # source (a demo or a captured snapshot).
         if args.verify_hooks or args.verify_hook or args.verify_frames:
             p.error("--backend native is a presentation mode, not a verifier")
-        if not (args.demo or args.snapshot):
-            p.error("--backend native needs --demo <dir> or --snapshot <snapshot-dir>")
         import native_play
         native_args = argparse.Namespace(
             demo=args.demo, snapshot=None if args.demo else args.snapshot,
-            scale=args.scale, no_vsync=False,
+            cold=not (args.demo or args.snapshot), scale=args.scale, no_vsync=False,
         )
-        return native_play.run_demo(native_args) if args.demo else native_play.run_snapshot(native_args)
+        if args.demo:
+            return native_play.run_demo(native_args)
+        if args.snapshot:
+            return native_play.run_snapshot(native_args)
+        return native_play.run_cold(native_args)  # no source -> cold boot
 
     if args.verify_frames and (args.verify_hooks or args.verify_hook):
         p.error("choose either --verify-frames or --verify-hooks/--verify-hook, not both")
