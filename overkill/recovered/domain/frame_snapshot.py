@@ -83,10 +83,13 @@ class HudLayer:
 
     Drawn by the 1010:61DC status display as six status-counter cells
     (DS:2368..2372). It does not scroll and must not be lerped; the renderer
-    composites it over the playfield as a discrete overlay.
+    composites it over the playfield as a discrete overlay. ``score_bcd`` is the
+    packed-decimal score (DS:2314 low word, DS:2316 high word; e.g. 0x0990,0x0003
+    = 30990).
     """
 
     counters: tuple[int, ...]
+    score_bcd: tuple[int, int]
 
 
 @dataclass(frozen=True, slots=True)

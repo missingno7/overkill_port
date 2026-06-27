@@ -62,6 +62,7 @@ from overkill.recovered.views.object_slots import (
     FRAME_TIMER_COUNT,
     FRAME_TIMER_TABLE_BASE,
     GAMEPLAY_OBJECT_TABLE_BASE,
+    SCORE_BCD_BASE,
     GAMEPLAY_OBJECT_TABLE_COUNT,
     OBJECT_SLOT_STRIDE,
     OFF_DRAW_SCRATCH_OR_DI,
@@ -119,10 +120,14 @@ def extract_frame_snapshot(mem, ds: int) -> FrameSnapshot:
     camera = CameraState(x=i16(mem.rw(ds, VIEW_TARGET_X)), y=i16(mem.rw(ds, VIEW_TARGET_Y)))
     playfield = PlayfieldLayer(camera=camera, sprites=tuple(sprites))
 
-    # HUD: the six status-counter cells the 61DC status display draws (DS:2368..2372).
-    hud = HudLayer(counters=tuple(
-        mem.rw(ds, (FRAME_TIMER_TABLE_BASE + 2 * i) & 0xFFFF) for i in range(FRAME_TIMER_COUNT)
-    ))
+    # HUD: the six status-counter cells the 61DC status display draws (DS:2368..2372)
+    # plus the packed-decimal score (DS:2314 low, DS:2316 high).
+    hud = HudLayer(
+        counters=tuple(
+            mem.rw(ds, (FRAME_TIMER_TABLE_BASE + 2 * i) & 0xFFFF) for i in range(FRAME_TIMER_COUNT)
+        ),
+        score_bcd=(mem.rw(ds, SCORE_BCD_BASE), mem.rw(ds, (SCORE_BCD_BASE + 2) & 0xFFFF)),
+    )
     # Background: the scrolling level tilemap's camera position.
     background = BackgroundLayer(
         scroll_row=mem.rw(ds, BG_SCROLL_ROW),

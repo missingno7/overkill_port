@@ -36,6 +36,10 @@ def test_extract_frame_snapshot_reads_active_onscreen_slots():
     mem.ww(ds, FRAME_TIMER_TABLE_BASE, 0x0003)
     mem.ww(ds, FRAME_TIMER_TABLE_BASE + 2, 0x0001)
 
+    # HUD score (BCD: low @2314, high @2316).
+    mem.ww(ds, 0x2314, 0x0990)
+    mem.ww(ds, 0x2316, 0x0003)
+
     # Background layer: the level-map scroll position.
     mem.ww(ds, BG_SCROLL_ROW, 0x0042)
     mem.ww(ds, BG_COLUMN_INDEX, 0x0007)
@@ -72,4 +76,5 @@ def test_extract_frame_snapshot_reads_active_onscreen_slots():
         SpriteDraw(sprite=0x0076, x=-2, y=0x05, layer=0x01, object_type=0x00, screen_di=0x5678),
     )
     assert snap.hud.counters == (0x0003, 0x0001, 0, 0, 0, 0)
+    assert snap.hud.score_bcd == (0x0990, 0x0003)
     assert snap.background == BackgroundLayer(scroll_row=0x0042, column_index=0x0007)
