@@ -65,11 +65,11 @@ def main(argv):
                 img[:, 0::2] = b >> 4
                 img[:, 1::2] = b & 0x0F
                 return img
+            display = cpu.mem.rw(CS, 0x9596)
             st["shots"] = {
-                "master_at_234C": (render_present_page_indices(mem, master, c234c), c234c),
-                "master_raw_A0x400": (raw_linear(master, 0xA0, 400), 0),
-                "master_raw_68x400": (raw_linear(master, 0x68, 400), 0),
-                "source_composed": (render_present_page_indices(mem, source, c234c), c234c),
+                "display_9596_at_234C": (render_present_page_indices(mem, display, c234c), c234c),
+                "display_9596_at_2350": (render_present_page_indices(mem, display, c2350), c2350),
+                "source_9598_at_234C": (render_present_page_indices(mem, source, c234c), c234c),
             }
             print(f"  segments: [9592]={master:04X} [9598]={source:04X}  "
                   f"[234C]={c234c:04X} [2350]={c2350:04X}")
