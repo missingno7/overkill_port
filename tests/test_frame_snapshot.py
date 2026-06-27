@@ -9,7 +9,8 @@ from __future__ import annotations
 from dos_re.memory import Memory
 
 from overkill.recovered.adapters.frame_snapshot_adapter import extract_frame_snapshot
-from overkill.recovered.domain.frame_snapshot import CameraState, SpriteDraw
+from overkill.recovered.adapters.frame_snapshot_adapter import BG_COLUMN_INDEX, BG_SCROLL_ROW
+from overkill.recovered.domain.frame_snapshot import BackgroundLayer, CameraState, SpriteDraw
 from overkill.recovered.ds_globals import VIEW_TARGET_X, VIEW_TARGET_Y
 from overkill.recovered.views.object_slots import (
     FRAME_TIMER_TABLE_BASE,
@@ -34,6 +35,10 @@ def test_extract_frame_snapshot_reads_active_onscreen_slots():
     # HUD layer: the six status-counter cells.
     mem.ww(ds, FRAME_TIMER_TABLE_BASE, 0x0003)
     mem.ww(ds, FRAME_TIMER_TABLE_BASE + 2, 0x0001)
+
+    # Background layer: the level-map scroll position.
+    mem.ww(ds, BG_SCROLL_ROW, 0x0042)
+    mem.ww(ds, BG_COLUMN_INDEX, 0x0007)
 
     s0 = _slot(mem, ds, GAMEPLAY_OBJECT_TABLE_BASE, 0)
     s0.active_word = 1
@@ -67,3 +72,4 @@ def test_extract_frame_snapshot_reads_active_onscreen_slots():
         SpriteDraw(sprite=0x0076, x=-2, y=0x05, layer=0x01, object_type=0x00, screen_di=0x5678),
     )
     assert snap.hud.counters == (0x0003, 0x0001, 0, 0, 0, 0)
+    assert snap.background == BackgroundLayer(scroll_row=0x0042, column_index=0x0007)

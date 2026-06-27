@@ -59,6 +59,22 @@ class PlayfieldLayer:
 
 
 @dataclass(frozen=True, slots=True)
+class BackgroundLayer:
+    """The scrolling level tilemap behind the playfield — bottom of the stack.
+
+    Drawn by the 4E2F tile routine from the [9592] tile plane via the DS:20D6
+    row-pointer table. ``scroll_row`` (DS:2350) is the vertical scroll into the
+    map and ``column_index`` (DS:2356) is the starting map column — together the
+    camera into the level. The renderer scrolls this with the playfield camera
+    (it interpolates smoothly between source frames); the tile *grid* content is
+    a further recovery step.
+    """
+
+    scroll_row: int
+    column_index: int
+
+
+@dataclass(frozen=True, slots=True)
 class HudLayer:
     """The status panel — a separate, fixed render region (NOT interpolated).
 
@@ -74,11 +90,13 @@ class HudLayer:
 class FrameSnapshot:
     """One source-frame's render intent, split into clean layers.
 
-    ``playfield`` (interpolated action) and ``hud`` (fixed status overlay) are
-    separate so the enhanced renderer can treat them differently — interpolate
-    the playfield, composite the HUD as-is. Grows toward the full contract
-    (palette, tilemap/scroll, screen-shake) as each piece is recovered.
+    The visual stack, bottom to top: ``background`` (scrolling tilemap) →
+    ``playfield`` (action sprites + camera) → ``hud`` (fixed status overlay).
+    Background and playfield are interpolated (they scroll/move); the HUD is
+    composited as-is. Grows toward the full contract (palette, tile grid,
+    screen-shake) as each piece is recovered.
     """
 
+    background: BackgroundLayer
     playfield: PlayfieldLayer
     hud: HudLayer

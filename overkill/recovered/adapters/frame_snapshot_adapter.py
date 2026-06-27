@@ -44,12 +44,17 @@ from __future__ import annotations
 
 from overkill.recovered.domain.coords import i16
 from overkill.recovered.domain.frame_snapshot import (
+    BackgroundLayer,
     CameraState,
     FrameSnapshot,
     HudLayer,
     PlayfieldLayer,
     SpriteDraw,
 )
+
+# Background scroll globals (the 4E2F tile draw reads these).
+BG_SCROLL_ROW = 0x2350     # vertical scroll into the level map
+BG_COLUMN_INDEX = 0x2356   # starting map column (index into the DS:20D6 row table)
 from overkill.recovered.ds_globals import VIEW_TARGET_X, VIEW_TARGET_Y
 from overkill.recovered.views.object_slots import (
     EFFECT_OBJECT_TABLE_BASE,
@@ -118,4 +123,9 @@ def extract_frame_snapshot(mem, ds: int) -> FrameSnapshot:
     hud = HudLayer(counters=tuple(
         mem.rw(ds, (FRAME_TIMER_TABLE_BASE + 2 * i) & 0xFFFF) for i in range(FRAME_TIMER_COUNT)
     ))
-    return FrameSnapshot(playfield=playfield, hud=hud)
+    # Background: the scrolling level tilemap's camera position.
+    background = BackgroundLayer(
+        scroll_row=mem.rw(ds, BG_SCROLL_ROW),
+        column_index=mem.rw(ds, BG_COLUMN_INDEX),
+    )
+    return FrameSnapshot(background=background, playfield=playfield, hud=hud)
