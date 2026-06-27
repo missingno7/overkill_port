@@ -89,7 +89,11 @@ _OBJECT_TABLES = (
 )
 
 
-def extract_frame_snapshot(mem, ds: int) -> FrameSnapshot:
+TILE_PLANE_SEGMENT_PTR = 0x9592  # CS:[9592] -> the background work-plane segment
+OVERKILL_CODE_SEGMENT = 0x1010
+
+
+def extract_frame_snapshot(mem, ds: int, cs: int = OVERKILL_CODE_SEGMENT) -> FrameSnapshot:
     """Reconstruct the render-intent snapshot from the object tables + camera.
 
     A slot is on the draw list when it is active (record +00 non-zero) AND
@@ -98,6 +102,7 @@ def extract_frame_snapshot(mem, ds: int) -> FrameSnapshot:
     destination.
     """
     ds &= 0xFFFF
+    cs &= 0xFFFF
     sprites: list[SpriteDraw] = []
     for base, count in _OBJECT_TABLES:
         for index in range(count):
@@ -128,9 +133,10 @@ def extract_frame_snapshot(mem, ds: int) -> FrameSnapshot:
         ),
         score_bcd=(mem.rw(ds, SCORE_BCD_BASE), mem.rw(ds, (SCORE_BCD_BASE + 2) & 0xFFFF)),
     )
-    # Background: the scrolling level tilemap's camera position.
+    # Background: the scrolling level tilemap's camera position + work plane.
     background = BackgroundLayer(
         scroll_row=mem.rw(ds, BG_SCROLL_ROW),
         column_index=mem.rw(ds, BG_COLUMN_INDEX),
+        plane_segment=mem.rw(cs, TILE_PLANE_SEGMENT_PTR),
     )
     return FrameSnapshot(background=background, playfield=playfield, hud=hud)

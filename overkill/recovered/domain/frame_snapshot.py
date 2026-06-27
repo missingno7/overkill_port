@@ -70,11 +70,14 @@ class BackgroundLayer:
     scroll. ``scroll_row`` is the scroll offset into the plane (it tracks level
     progress, slow-changing); ``column_index`` (DS:2356) is the current map
     column. Note: the background often holds still while the *objects* move (the
-    interpolation then rides on the playfield, not the scroll).
+    interpolation then rides on the playfield, not the scroll). ``plane_segment``
+    is the work-plane segment (CS:[9592]) the renderer decodes via the Tandy
+    screen geometry to produce the background pixels.
     """
 
     scroll_row: int
     column_index: int
+    plane_segment: int
 
 
 @dataclass(frozen=True, slots=True)

@@ -40,9 +40,10 @@ def test_extract_frame_snapshot_reads_active_onscreen_slots():
     mem.ww(ds, 0x2314, 0x0990)
     mem.ww(ds, 0x2316, 0x0003)
 
-    # Background layer: the level-map scroll position.
+    # Background layer: the level-map scroll position + work-plane segment.
     mem.ww(ds, BG_SCROLL_ROW, 0x0042)
     mem.ww(ds, BG_COLUMN_INDEX, 0x0007)
+    mem.ww(0x1010, 0x9592, 0x35FF)  # CS:[9592] -> plane segment
 
     s0 = _slot(mem, ds, GAMEPLAY_OBJECT_TABLE_BASE, 0)
     s0.active_word = 1
@@ -77,4 +78,6 @@ def test_extract_frame_snapshot_reads_active_onscreen_slots():
     )
     assert snap.hud.counters == (0x0003, 0x0001, 0, 0, 0, 0)
     assert snap.hud.score_bcd == (0x0990, 0x0003)
-    assert snap.background == BackgroundLayer(scroll_row=0x0042, column_index=0x0007)
+    assert snap.background == BackgroundLayer(
+        scroll_row=0x0042, column_index=0x0007, plane_segment=0x35FF
+    )
