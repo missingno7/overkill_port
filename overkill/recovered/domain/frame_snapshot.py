@@ -39,7 +39,16 @@ class SpriteDraw:
 
 @dataclass(frozen=True, slots=True)
 class CameraState:
-    """The view origin the sprites are projected against (world space)."""
+    """The view origin the sprites are projected against (world space).
+
+    The scroll is **one-dimensional and never reverses**: the level only ever
+    advances (or holds still) along its single scroll axis (user-confirmed; the
+    camera is never seen moving backward). Witnessed on the present cursor
+    `DS:[234C]`, which steps by exactly one row (−0x68 bytes on the L5 demo) or
+    zero per frame, monotonically (see `PresentComposition`). The enhanced renderer
+    can rely on this — interpolation between source frames is always a single
+    forward (or zero) step, so there is no scroll reversal/pop to handle.
+    """
 
     x: int
     y: int
@@ -92,7 +101,9 @@ class PresentComposition:
 
     The blit starts at source offset ``source_cursor`` (DS:[234C]) and copies
     0x34 words × 0xC0 rows from dest 0x00A0 — so ``source_cursor`` *is* the
-    vertical scroll (it steps by one row, −0x68 bytes, per scrolled frame). The
+    vertical scroll. It is **monotonic / one-directional**: it steps by one row
+    (−0x68 bytes on the L5 demo) or zero per frame, never reversing — the level
+    only advances, never scrolls back (see `CameraState`). The
     renderer reproduces the exact visible image by decoding ``source_page`` from
     ``source_cursor`` through that geometry; because this is the same for every
     scene, it is also the **faithful-fallback** path for non-interpolated scenes
