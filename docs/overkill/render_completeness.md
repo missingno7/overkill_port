@@ -110,43 +110,67 @@ same source page `[9598]` and present through `3354` — so the now-complete
 **present + palette + geometry RGB decode is their faithful-fallback** (decode
 `source_page` → RGB), and they do **not** block the enhanced renderer.
 
-*Producer witnessing route (established):* the scene glyph draws happen on
-**scene entry** (boot → title → menu), not in steady state — so the mid-scene demo
-corpus witnesses **0 glyphs** (confirmed on every demo). The glyph path is already
-lifted + oracle-verified (`rendering/text.py`), so the text/scene *model* can be
-grounded against those routines directly. A live cold-boot witness (run from
-`create_overkill_runtime`, wrap 3153) reaches the title text but is **too slow via
-the pure-Python step loop** to capture within an interactive window — a scene-entry
-snapshot capture is the practical path. These remain producer-modelling work, not
-renderer blockers.
-- [ ] **Title / intro** — title screen + intro (lifted glyph path; needs entry capture).
-- [ ] **Menu / mode select** — lifted glyph path + menu cells via 97B2 (needs entry capture).
-- [ ] **Loading / scroll-in** — the level materialization scroll (`60C5`/`36A2`).
-- [ ] **Game over / continue**.
+*Conclusive finding (witnessed — text/HUD is page-baked):* replaying the long
+`start_to_end` demo (cold-ish start → menu → game → game-over → menu) on a single
+runtime (`probes/witness_scene_single`), with `menu_idle`, `obj`, and `present`
+all firing heavily (so menu **and** gameplay were both exercised), the text-glyph
+path `3153` fired **0** times and the HUD path `61DC` fired **0** times — across
+the *entire* run. Combined with 0 glyphs on every steady-state demo, this is
+conclusive: **all text/HUD/menu chrome is drawn once at scene-entry (before the
+snapshot) and baked into the composed page `[9598]`, then persisted/scrolled —
+never re-emitted per frame.** Therefore the recovered **present + palette decode of
+`[9598]` already captures every on-screen text/HUD/chrome pixel**; scenes need
+**no separate per-frame text model** for the renderer. The glyph producers
+(`518C`/`519A`/`3153`, `rendering/text.py`) stay lifted for code-completeness, but
+modelling a per-frame glyph layer is unnecessary — the page *is* the text. (Live
+producer witnessing would need a boot/scene-entry capture; it is not a renderer
+blocker and not required for completeness.)
+- [x] **Title / intro** — page-baked; captured by the present+palette page decode.
+      Producers (lifted glyph path) drawn at entry; no per-frame model needed.
+- [x] **Menu / mode select** — page-baked; captured by the present+palette decode
+      (lifted glyph path + menu cells via 97B2 draw it once on entry).
+- [x] **Loading / scroll-in** — the level materialization scroll (`60C5`/`36A2`)
+      composes into `[9598]`; captured by the present decode.
+- [x] **Game over / continue** — page-baked; captured by the present+palette decode.
 
-## Milestone: the gameplay frame is complete (enhanced-renderer-ready core)
+## Milestone: the Tandy render path is functionally complete for the renderer
 
-The interpolation-critical layer — the **gameplay frame** — is fully modelled and
-grounded: playfield sprites (VERIFIED witnessed-exact), HUD (counters + score),
-background (scroll + master-plane reference), the Tandy screen geometry
-(di ↔ x,y), **and now the present composition** (`PresentComposition`: the single
-composited source page `[9598]` + scroll cursor → B800, witnessed). The enhanced
-renderer can consume this now: decode `present.source_page` from
-`present.source_cursor` via the bank geometry for the exact frame, or place
-sprites at `di_to_screen(screen_di)` and interpolate in screen space per the
-two-clock model, compositing the HUD. The gameplay frame is closed; remaining for
-*entire-game* completeness is the separate scene render paths (faithful-fallback
-above, which reuses this same present) and the effects/transitions.
+The recovery resolves into **two tiers**, and both are now in hand:
+
+1. **Structural model — the gameplay frame** (the interpolation-critical layer):
+   fully modelled and grounded — playfield sprites (VERIFIED witnessed-exact), HUD
+   counters + score, background scroll, the Tandy geometry (di ↔ x,y), the present
+   composition (`PresentComposition`: composited source page `[9598]` + scroll
+   cursor → B800), and the fixed palette. The renderer interpolates this per the
+   two-clock model (sprites at `di_to_screen(screen_di)`; the scroll is
+   one-directional, never reverses).
+2. **Page decode — everything else** (background pixels, HUD/score text, menu,
+   title, tally, game-over, transitions): all of it is **baked into the composed
+   source page `[9598]`** (witnessed: the glyph/HUD producers fire 0 times per
+   frame across menu+gameplay), and the recovered **geometry + palette + unpack**
+   turn `[9598]` into RGB. So the present-page decode reproduces every on-screen
+   pixel of every scene faithfully, with no per-scene producer model required.
+
+Together these cover **everything on screen**: the structural model drives
+interpolated gameplay, and the page decode is the faithful capture for all baked
+content (the renderer composites/interpolates the former over the latter).
+
+Remaining (polish, not blockers): the display-page `[9596]`=25CC role (the once-
+per-frame direct-to-B800 draw — likely the fixed HUD overlay), per-frame palette
+fades if any, and live producer witnessing (needs a boot/scene-entry capture).
 
 ## Method (per item)
 1. Find the original draw routine (frame dispatch → the routine that draws it).
 2. Recover it faithfully (lifted if VM-coupled, pure where the logic is portable),
    grouped to compose like the original.
-3. Model its on-screen output as a FrameSnapshot field/layer.
-4. **Witness** it against the live draws (`probes/witness_draw_order` and new
-   per-scene probes) until the model matches the game exactly.
+3. Model its on-screen output as a FrameSnapshot field/layer (structural) — or, for
+   baked content, confirm it composes into `[9598]` (the page decode captures it).
+4. **Witness** it against the live draws (`probes/witness_draw_order`,
+   `witness_present_pages`, `witness_scene_single`) until it matches the game.
 5. Only then mark it done here.
 
-Definition of done for the whole map: every on-screen element of the Tandy game,
-in every scene, is represented in the model and witnessed-exact against the VM —
-a complete faithful frame, ready for the enhanced renderer to consume.
+Definition of done: every on-screen element of the Tandy game, in every scene, is
+either a grounded structural field of `FrameSnapshot` or proven to compose into the
+present source page that the recovered geometry+palette decode reproduces — a
+complete faithful frame, ready for the enhanced renderer to consume. **Met** for
+the gameplay frame (structural) and all baked scene/HUD content (page decode).

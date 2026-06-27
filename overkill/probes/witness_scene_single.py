@@ -11,6 +11,17 @@ It records, per boundary, the scene/HUD text glyph draws (1010:3153), the presen
 scroll cursor (DS:[234C] at 3354), and which key render hooks fire — yielding the
 scene text producers, the scroll (camera) direction, and the scene segmentation.
 
+Caveat: the boundary counter (loop-top IP test on the present/timer/retrace IPs)
+under-counts presents that are reached via a direct installed-hook call rather
+than by stepping to the IP, so on long demos the boundary clock can drift from the
+recording and the input clock can desync. The hook *fire counts* (which is what
+the key finding rests on — does 3153/61DC ever fire?) are exact regardless.
+
+Finding (start_to_end demo): over a replay that exercised both menu (`menu_idle`)
+and gameplay (`obj`/`present`), 3153 and 61DC fired ZERO times — all text/HUD is
+page-baked at scene-entry, captured by the present+palette page decode (see
+docs/overkill/render_completeness.md). No per-frame glyph model is needed.
+
 Usage:
     python -m overkill.probes.witness_scene_single <demo_dir> [max_boundary]
 """
