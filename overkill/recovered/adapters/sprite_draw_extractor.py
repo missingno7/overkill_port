@@ -154,6 +154,25 @@ class SpriteDrawCollector:
             orig(cpu)
         return hook
 
+    @staticmethod
+    def to_snapshot_sprites(captured: list[CapturedSprite]) -> tuple:
+        """Convert captured sprites to the backend's ``SnapshotSprite`` records.
+
+        The seam from the VM-bound extractor to the VM-independent backend: only
+        the decoded texture (pixels/opaque) + position + identity cross over."""
+        from overkill.native_video.frame import SnapshotSprite, SpriteBlock
+        return tuple(
+            SnapshotSprite(
+                identity=c.identity, sprite_id=c.sprite_id, anim_phase=c.anim_phase,
+                screen_di=c.screen_di,
+                blocks=tuple(
+                    SpriteBlock(di=b.di, pixels=b.texture.pixels, opaque=b.texture.opaque)
+                    for b in c.blocks
+                ),
+            )
+            for c in captured
+        )
+
     def _make_comp_hook(self, ip: int):
         from dos_re.cpu import DF
         wpr, _row_add, fixed_rows = MASKED_COMPOSITORS[ip]

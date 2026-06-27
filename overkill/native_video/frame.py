@@ -39,6 +39,32 @@ class SceneKind(Enum):
 
 
 @dataclass(frozen=True, eq=False)
+class SpriteBlock:
+    """One decoded masked-sprite block: its ``[9598]`` destination offset (``di``)
+    and background-independent indexed pixels + opaque mask. Composited by the
+    native sprite layer at ``di`` (offset from the present cursor)."""
+
+    di: int
+    pixels: "np.ndarray"   # (h, w) uint8 colour indices
+    opaque: "np.ndarray"   # (h, w) bool
+
+
+@dataclass(frozen=True, eq=False)
+class SnapshotSprite:
+    """One on-screen object's drawable sprite: stable identity (so its position
+    interpolates between source ticks), sprite id / animation phase (texture cache
+    key), the reference destination ``screen_di``, and its decoded texture
+    block(s). Produced by the sprite-draw extractor; the native sprite layer draws
+    the blocks, the interpolator shifts them by the object's per-tick motion."""
+
+    identity: int
+    sprite_id: int
+    anim_phase: int
+    screen_di: int
+    blocks: "Tuple[SpriteBlock, ...]"
+
+
+@dataclass(frozen=True, eq=False)
 class RenderSnapshot:
     """One game-tick of semantic render-state the backend renders (and interpolates).
 
@@ -69,6 +95,7 @@ class RenderSnapshot:
     playfield_indices: "Optional[np.ndarray]" = None
     playfield_version: int = 0
     sprites: "Tuple[SpriteDraw, ...]" = ()
+    frame_sprites: "Tuple[SnapshotSprite, ...]" = ()
     snapshot: "Optional[FrameSnapshot]" = None
 
 
