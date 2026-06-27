@@ -112,14 +112,13 @@ class PygameDisplay:
 
     def _open(self) -> None:
         pygame = self.pygame
-        # Fullscreen lets the app present at the true monitor refresh (and bypasses
-        # the windowed compositor, which caps windowed apps near the desktop rate).
+        # SCALED renders at the logical size and scales to the display; in fullscreen
+        # it fills the monitor. (Passing (0,0) with SCALED is invalid.)
         flags = (pygame.FULLSCREEN | pygame.SCALED) if self.fullscreen else 0
-        size = (0, 0) if self.fullscreen else self.size
         try:
-            self.screen = pygame.display.set_mode(size, flags, vsync=1 if self.vsync else 0)
+            self.screen = pygame.display.set_mode(self.size, flags, vsync=1 if self.vsync else 0)
         except TypeError:
-            self.screen = pygame.display.set_mode(size, flags)
+            self.screen = pygame.display.set_mode(self.size, flags)
         pygame.display.set_caption(self.title)
 
     def set_vsync(self, vsync: bool) -> None:
