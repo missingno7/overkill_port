@@ -91,6 +91,18 @@ def _require_pygame():
         raise SystemExit(f"native_play needs pygame: {exc}")
 
 
+def _raise_timer_resolution():
+    """Windows ``time.sleep`` is ~15.6 ms-granular by default (the GetTickCount64
+    period that also made ``time.monotonic`` read ~64 Hz); raise it to ~1 ms so the
+    capped present pacing is accurate. No-op off Windows / on failure."""
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            ctypes.windll.winmm.timeBeginPeriod(1)
+        except Exception:  # pragma: no cover - environment dependent
+            pass
+
+
 class PygameDisplay:
     """An SDL window that blits scaled (200,320,3) RGB frames + overlay text."""
 
@@ -216,7 +228,7 @@ class NativeOverlay:
 
 
 def _update_title(backend, display, last_title, loop_fps=0.0, flip_ms=0.0):
-    now = time.monotonic()
+    now = time.perf_counter()
     if now - last_title <= 0.5:
         return last_title
     d = backend.diagnostics()
@@ -233,7 +245,7 @@ def _composed_snapshot(composed_indices, frame_id):
     from overkill.native_video.frame import RenderSnapshot, SceneKind
     from overkill.recovered.systems.tandy_screen import TANDY_PALETTE_RGB
     return RenderSnapshot(
-        frame_id=frame_id, timestamp=time.monotonic(), scene_kind=SceneKind.GAMEPLAY,
+        frame_id=frame_id, timestamp=time.perf_counter(), scene_kind=SceneKind.GAMEPLAY,
         composed_indices=composed_indices, composed_version=frame_id,
         palette=TANDY_PALETTE_RGB, palette_version=0, scroll_cursor=0,
     )
@@ -267,6 +279,7 @@ def run_publisher(channel_name, *, frame_sync, stop, video="tandy") -> None:
 def run_native_present(channel, *, args) -> None:
     """Parent side: present the child's frames at the monitor refresh (decoupled)."""
     import numpy as np
+    _raise_timer_resolution()
     pygame = _require_pygame()
     backend = NativeOverkillVideoBackend(load_config())
     display = PygameDisplay(scale=args.scale, vsync=backend.config.target_present_hz is None)
@@ -274,20 +287,20 @@ def run_native_present(channel, *, args) -> None:
     last_counter = 0
     source_id = 0
     last_title = 0.0
-    next_present = time.monotonic()
+    next_present = time.perf_counter()
     loop_n = 0
-    loop_t0 = time.monotonic()
+    loop_t0 = time.perf_counter()
     loop_fps = 0.0
     flip_ms = 0.0
     acc = {"chan": 0.0, "present": 0.0, "blit": 0.0, "flip": 0.0, "pace": 0.0, "n": 0}
-    diag_t0 = time.monotonic()
+    diag_t0 = time.perf_counter()
     print("native: presenter up - F1 = settings; close window to quit", flush=True)
     try:
         running = True
         while running:
             loop_n += 1
             if loop_n >= 120:  # sample the raw loop iteration rate (independent of present)
-                now = time.monotonic()
+                now = time.perf_counter()
                 loop_fps = loop_n / (now - loop_t0)
                 loop_n, loop_t0 = 0, now
             for ev in pygame.event.get():
@@ -301,7 +314,7 @@ def run_native_present(channel, *, args) -> None:
                     elif overlay.visible:
                         overlay.handle_key(ev.key, pygame)
 
-            t0 = time.monotonic()
+            t0 = time.perf_counter()
             if channel.peek_counter() > last_counter:  # new VM frame -> decode it
                 counter, frame = channel.read()
                 if counter > last_counter:
@@ -309,37 +322,37 @@ def run_native_present(channel, *, args) -> None:
                     source_id += 1
                     composed = np.frombuffer(frame, dtype=np.uint8).reshape(SCREEN_HEIGHT, SCREEN_WIDTH)
                     backend.submit_source_frame(_composed_snapshot(composed, source_id))
-            t_chan = time.monotonic()
+            t_chan = time.perf_counter()
 
             target = backend.config.target_present_hz
             want_vsync = target is None
             if display.vsync != want_vsync:
                 display.set_vsync(want_vsync)
-                next_present = time.monotonic()
+                next_present = time.perf_counter()
 
             t_pres = t_blit = t_chan
             if backend.ready:
-                presented = backend.present(time.monotonic())
-                t_pres = time.monotonic()
+                presented = backend.present(time.perf_counter())
+                t_pres = time.perf_counter()
                 display.blit_frame(presented.rgb)
                 if overlay.visible:
                     overlay.draw()
-                t_blit = time.monotonic()
+                t_blit = time.perf_counter()
                 display.flip()
-                flip_ms = (time.monotonic() - t_blit) * 1000.0  # ~16ms => the flip is the cap
+                flip_ms = (time.perf_counter() - t_blit) * 1000.0  # ~16ms => the flip is the cap
             else:
                 time.sleep(0.003)
-            t_flip = time.monotonic()
+            t_flip = time.perf_counter()
 
             if target and target > 0:
-                now = time.monotonic()
+                now = time.perf_counter()
                 if now < next_present:
                     time.sleep(next_present - now)
-                next_present = max(next_present + 1.0 / target, time.monotonic())
+                next_present = max(next_present + 1.0 / target, time.perf_counter())
             else:
-                next_present = time.monotonic()
+                next_present = time.perf_counter()
 
-            t_pace = time.monotonic()
+            t_pace = time.perf_counter()
             acc["chan"] += t_chan - t0
             acc["present"] += t_pres - t_chan
             acc["blit"] += t_blit - t_pres
@@ -401,7 +414,7 @@ def run_snapshot(args) -> int:
     ds = int(re.search(r"DS=([0-9A-Fa-f]{4})", cpu).group(1), 16)
 
     backend = NativeOverkillVideoBackend(load_config())
-    backend.submit_source_frame(extract_render_snapshot(mem, ds, frame_id=1, timestamp=time.monotonic()))
+    backend.submit_source_frame(extract_render_snapshot(mem, ds, frame_id=1, timestamp=time.perf_counter()))
     display = PygameDisplay(scale=args.scale)
     pygame = display.pygame
     last_title = 0.0
@@ -412,7 +425,7 @@ def run_snapshot(args) -> int:
                 if ev.type == pygame.QUIT or (ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE):
                     running = False
             if backend.ready:
-                display.draw(backend.present(time.monotonic()))
+                display.draw(backend.present(time.perf_counter()))
             last_title = _update_title(backend, display, last_title)
     finally:
         display.close()
