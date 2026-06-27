@@ -100,7 +100,9 @@ def _present_on_main(backend: NativeOverkillVideoBackend, display: PygameDisplay
     last_title = 0.0
     while display.pump():
         if backend.ready:
-            loop.run_once()  # present + blit + vsync flip
+            loop.run_once()       # present + blit + vsync flip (vsync paces + yields the GIL)
+        else:
+            time.sleep(0.005)     # nothing to show yet — yield to the booting game thread
         now = time.monotonic()
         if now - last_title > 0.5:
             d = backend.diagnostics()
@@ -127,15 +129,20 @@ def run_snapshot(args) -> int:
 # timer/retrace waits — so sampling on any of these (throttled) captures every
 # scene, not just gameplay.
 _BOUNDARY_IPS = {0x3354, 0x0679, 0x50C9}
+_RETRACE_IP = 0x50C9          # the per-frame vsync wait — pace realtime here
 _SOURCE_PUBLISH_HZ = 70.0
+_TARGET_TICK_HZ = 60.0        # pace the VM to ~realtime (and yield the GIL)
 
 
 def _run_game_loop(rt, backend, stop, demo=None) -> None:
-    """Step the runtime; publish a throttled RenderSnapshot per ~game tick.
+    """Step the runtime; pace it to realtime and publish a throttled RenderSnapshot.
 
-    With ``demo`` set, also drives the recorded input boundary clock. Publishing is
-    wall-clock throttled (~70 Hz) and sampled at a boundary IP so the read is at a
-    stable instruction point and every scene (menu/gameplay) is captured.
+    The pure-Python VM can run faster than realtime, so we pace it at the retrace
+    boundary (one per frame) to ``_TARGET_TICK_HZ`` — the sleep both keeps the game
+    at a watchable speed AND yields the GIL so the main present thread runs smoothly.
+    With ``demo`` set, also drives the recorded input boundary clock. Snapshots are
+    published wall-clock throttled (~70 Hz) at a boundary IP (stable read point) so
+    every scene (menu/gameplay) is captured.
     """
     from overkill.recovered.adapters.render_snapshot_adapter import extract_render_snapshot
 
@@ -147,7 +154,9 @@ def _run_game_loop(rt, backend, stop, demo=None) -> None:
         demo.apply_to_runtime(0, rt)
     frame_id = 0
     last_pub = 0.0
-    period = 1.0 / _SOURCE_PUBLISH_HZ
+    pub_period = 1.0 / _SOURCE_PUBLISH_HZ
+    tick_period = 1.0 / _TARGET_TICK_HZ
+    next_tick = time.monotonic()
     while not stop.is_set():
         if s.cs == 0x1010 and s.ip in _BOUNDARY_IPS:
             if demo is not None:
@@ -157,8 +166,14 @@ def _run_game_loop(rt, backend, stop, demo=None) -> None:
                     if demo.finished(demo_boundary):
                         break
                     demo.apply_to_runtime(demo_boundary, rt)
+            if s.ip == _RETRACE_IP:  # one retrace ~ one frame: pace + yield the GIL
+                now = time.monotonic()
+                if now < next_tick:
+                    time.sleep(next_tick - now)
+                    now = time.monotonic()
+                next_tick = max(next_tick + tick_period, now)
             now = time.monotonic()
-            if now - last_pub >= period:
+            if now - last_pub >= pub_period:
                 last_pub = now
                 frame_id += 1
                 backend.submit_source_frame(
@@ -172,15 +187,21 @@ def _run_live(rt, args, *, demo=None, title="OVERKILL — native") -> int:
     rt.cpu.trace_enabled = False
     rt.cpu.coverage_telemetry = None
     backend = NativeOverkillVideoBackend(load_config())
+    # Open the window FIRST so the (slow, pkg_resources-heavy) pygame import runs
+    # unimpeded; only then start the GIL-heavy game thread. Starting the game thread
+    # first starves the import and looks like a hang.
+    print("native: opening window...", flush=True)
+    display = PygameDisplay(scale=args.scale, vsync=not args.no_vsync, title=title)
     stop = threading.Event()
     worker = threading.Thread(target=_run_game_loop, args=(rt, backend, stop),
                               kwargs={"demo": demo}, name="overkill-game", daemon=True)
     worker.start()
-    display = PygameDisplay(scale=args.scale, vsync=not args.no_vsync, title=title)
+    print("native: window up; running game thread (Esc / close window to quit)", flush=True)
     try:
         _present_on_main(backend, display)
     finally:
         stop.set()
+        worker.join(timeout=2.0)
         display.close()
     return 0
 
