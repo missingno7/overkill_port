@@ -1,5 +1,14 @@
 # OVERKILL recovery architecture — the rescue north star
 
+> The ultimate **destination** is [`native_game_endgame.md`](native_game_endgame.md):
+> a standalone native game that runs without the VM, with the VM/ASM kept only as an
+> *optional, detachable oracle* (modes: standalone / hybrid / verify / record-oracle /
+> replay-test). This doc (the rescue) is *how we get there* — pushing lifted code down
+> into pure recovered systems that become the native game; recovered systems are written
+> dual-mode (the same source logic runs in hybrid via adapters AND standalone over native
+> state). The [`native_video_plan.md`](native_video_plan.md) backend is that game's
+> presentation layer, not a renderer over VM state.
+>
 > Modelled on the sibling **PRE2** project (`missingno7/pre2_port`,
 > `D:\Games\DOS\pre2_port`), which is this method done right. This doc is the
 > top-level direction; `refactor_plan.md` (de-transliteration) and `loop_plan.md`

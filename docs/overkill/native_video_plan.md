@@ -28,6 +28,11 @@ page-baked/chrome layers the original game baked — but as cached **render inpu
 never as a live framebuffer fallback.)
 
 ## North star + recovery-first principle (2026-06-27, user-set)
+This backend is the **presentation/runtime layer of the recovered native game** (see
+[`native_game_endgame.md`](native_game_endgame.md)): it consumes recovered `GameState` /
+`RenderState`, and in the endgame runs in `--mode standalone` with no VM. It is **not** a
+clever renderer over VM framebuffer state.
+
 The finished native backend is **not** a faster framebuffer presenter. It consumes a
 **semantic** `RenderSnapshot` (separated layers - background, starfield, HUD/chrome,
 object/sprite list with ids/frames/positions/draw-order, palette, transitions, +
