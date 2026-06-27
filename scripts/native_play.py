@@ -119,6 +119,11 @@ class PygameDisplay:
             self.screen = pygame.display.set_mode(self.size, flags, vsync=1 if self.vsync else 0)
         except TypeError:
             self.screen = pygame.display.set_mode(self.size, flags)
+        except pygame.error:
+            # fullscreen / vsync renderer creation can fail on some drivers; fall back
+            # to a plain window instead of crashing the presenter.
+            self.fullscreen = False
+            self.screen = pygame.display.set_mode(self.size, 0)
         pygame.display.set_caption(self.title)
 
     def set_vsync(self, vsync: bool) -> None:
@@ -274,6 +279,8 @@ def run_native_present(channel, *, args) -> None:
     loop_t0 = time.monotonic()
     loop_fps = 0.0
     flip_ms = 0.0
+    acc = {"chan": 0.0, "present": 0.0, "blit": 0.0, "flip": 0.0, "pace": 0.0, "n": 0}
+    diag_t0 = time.monotonic()
     print("native: presenter up - F1 = settings; close window to quit", flush=True)
     try:
         running = True
@@ -294,6 +301,7 @@ def run_native_present(channel, *, args) -> None:
                     elif overlay.visible:
                         overlay.handle_key(ev.key, pygame)
 
+            t0 = time.monotonic()
             if channel.peek_counter() > last_counter:  # new VM frame -> decode it
                 counter, frame = channel.read()
                 if counter > last_counter:
@@ -301,6 +309,7 @@ def run_native_present(channel, *, args) -> None:
                     source_id += 1
                     composed = np.frombuffer(frame, dtype=np.uint8).reshape(SCREEN_HEIGHT, SCREEN_WIDTH)
                     backend.submit_source_frame(_composed_snapshot(composed, source_id))
+            t_chan = time.monotonic()
 
             target = backend.config.target_present_hz
             want_vsync = target is None
@@ -308,16 +317,19 @@ def run_native_present(channel, *, args) -> None:
                 display.set_vsync(want_vsync)
                 next_present = time.monotonic()
 
+            t_pres = t_blit = t_chan
             if backend.ready:
                 presented = backend.present(time.monotonic())
+                t_pres = time.monotonic()
                 display.blit_frame(presented.rgb)
                 if overlay.visible:
                     overlay.draw()
-                _t = time.monotonic()
+                t_blit = time.monotonic()
                 display.flip()
-                flip_ms = (time.monotonic() - _t) * 1000.0  # ~16ms => the flip is vsync-blocking
+                flip_ms = (time.monotonic() - t_blit) * 1000.0  # ~16ms => the flip is the cap
             else:
                 time.sleep(0.003)
+            t_flip = time.monotonic()
 
             if target and target > 0:
                 now = time.monotonic()
@@ -326,6 +338,24 @@ def run_native_present(channel, *, args) -> None:
                 next_present = max(next_present + 1.0 / target, time.monotonic())
             else:
                 next_present = time.monotonic()
+
+            t_pace = time.monotonic()
+            acc["chan"] += t_chan - t0
+            acc["present"] += t_pres - t_chan
+            acc["blit"] += t_blit - t_pres
+            acc["flip"] += t_flip - t_blit
+            acc["pace"] += t_pace - t_flip
+            acc["n"] += 1
+            if t_pace - diag_t0 >= 2.0:  # per-section breakdown to find any cap
+                n = max(1, acc["n"])
+                d = backend.diagnostics()
+                print(f"native diag: loop={loop_fps:6.0f}Hz present={d.present_fps:6.1f}Hz "
+                      f"source={d.source_fps:5.1f}Hz vsync={display.vsync} target={target} | per-iter ms: "
+                      f"chan={acc['chan']/n*1e3:.2f} present={acc['present']/n*1e3:.2f} "
+                      f"blit={acc['blit']/n*1e3:.2f} flip={acc['flip']/n*1e3:.2f} pace={acc['pace']/n*1e3:.2f}",
+                      flush=True)
+                acc = {"chan": 0.0, "present": 0.0, "blit": 0.0, "flip": 0.0, "pace": 0.0, "n": 0}
+                diag_t0 = t_pace
 
             last_title = _update_title(backend, display, last_title, loop_fps, flip_ms)
     finally:
