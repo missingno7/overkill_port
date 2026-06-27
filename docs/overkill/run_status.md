@@ -1,3 +1,19 @@
+## 2026-06-27 - Source-purity rescue: AB10 object logic pushed to a pure rule
+
+Resumed the rescue (lifted -> pure recovered systems; hooks thin; VM = oracle;
+recovered pieces form the native game). Slice: the 1010:AB10 logic_id=6 per-frame
+update. The gameplay decision (deactivate when DS:2384 or DS:A47C >= 3, else
+sprite = DS:A40C anim byte + 9 and position = DS:A414 anim pair + DS:237C view
+box) moved out of the hook into the pure VM-free rule
+`recovered/systems/objects.object_logic_ab10` (+ `Ab10Update` domain record,
+named `AB10_PHASE_DISABLE_THRESHOLD`/`AB10_SPRITE_BASE_OFFSET`). The lifted
+`_run_object_logic_ab10` is now a thin adapter: DOS reads + XLAT/anim-pair
+addressing + the original CMP/ADD flag and register boundary, delegating the logic
+to the rule. Gated green: lint (181), audit_architecture, the new pure unit test
+`test_recovered_ab10_object_logic_is_pure_and_named`, and demo-replay equivalence
+21/21 (byte-exact, 2:45). Next: continue the object_behaviors list (the
+gameplay_objects -> ObjectSystem coastline).
+
 ## 2026-06-19 - Refactor Phase 2: structured (typed-view) access
 
 Following refactor_plan.md Phase 2. **ObjectSlotView is now fully write-complete**

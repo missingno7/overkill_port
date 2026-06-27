@@ -837,6 +837,33 @@ def test_recovered_ad60_bounds_tile_decision_is_pure_and_named():
     ).kind == "tile_probe"
 
 
+def test_recovered_ab10_object_logic_is_pure_and_named():
+    from overkill.recovered.systems.objects import (
+        AB10_PHASE_DISABLE_THRESHOLD,
+        AB10_SPRITE_BASE_OFFSET,
+        object_logic_ab10,
+    )
+
+    # Deactivates once either the frame phase or the global disable reaches 0003h.
+    assert object_logic_ab10(AB10_PHASE_DISABLE_THRESHOLD, 0, 0, 0, 0, 0, 0).deactivate is True
+    assert object_logic_ab10(0, AB10_PHASE_DISABLE_THRESHOLD, 0, 0, 0, 0, 0).deactivate is True
+    assert object_logic_ab10(0xFFFF, 0, 0, 0, 0, 0, 0).deactivate is True
+
+    # Below the threshold: sprite = table byte + 9, position = anim pair + view box.
+    up = object_logic_ab10(
+        frame_phase=2, global_disable=2, sprite_table_value=0x0030,
+        anim_x=0x0100, anim_y=0x0050, ref_x=0x0008, ref_y=0x0004,
+    )
+    assert up.deactivate is False
+    assert up.sprite == (0x0030 + AB10_SPRITE_BASE_OFFSET)
+    assert up.x == 0x0108
+    assert up.y == 0x0054
+
+    # 16-bit wrap is preserved in every field.
+    w = object_logic_ab10(0, 0, 0xFFFB, 0xFFFF, 0xFFFE, 0x0003, 0x0005)
+    assert w.sprite == 0x0004 and w.x == 0x0002 and w.y == 0x0003
+
+
 def test_recovered_ad60_bounds_tile_tail_adapter_matches_pure_decision():
     from overkill.gameplay import object_bounds
     from overkill.recovered.systems.objects import (

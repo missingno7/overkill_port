@@ -17,6 +17,23 @@ class ObjectDeactivateDispatchDecision:
     kind: str
     ax_script: int | None = None
 
+
+@dataclass(frozen=True, slots=True)
+class Ab10Update:
+    """Pure result of the 1010:AB10 per-frame object update (logic_id=6 path).
+
+    The object deactivates when the level frame phase (DS:2384) or the global
+    disable counter (DS:A47C) has advanced to ``0003h``; otherwise it samples its
+    animation frame and view-relative position. ``deactivate`` true means the slot
+    is cleared (active=0) and the other fields are unused. The adapter owns the DOS
+    reads + the original CMP/ADD flag replay; this owns the gameplay decision."""
+
+    deactivate: bool
+    sprite: int = 0
+    x: int = 0
+    y: int = 0
+
+
 @dataclass(frozen=True, slots=True)
 class B73ETargetReachedResolution:
     """Pure 4-way dispatch for B73E once an object is already at its target.

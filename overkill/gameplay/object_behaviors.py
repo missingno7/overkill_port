@@ -40,6 +40,7 @@ from overkill.gameplay.object_runtime_common import (
 from overkill.gameplay.object_spawns import _run_formation_spawn_7476_observed
 from overkill.gameplay.objects import run_object_motion_table_ab34, run_object_scroll_sprite_ab4f
 from overkill.recovered.systems.objects import (
+    AB10_PHASE_DISABLE_THRESHOLD,
     B73E_SPAWN_WINDOW_MAX,
     B73E_SPAWN_WINDOW_MIN,
     B73E_TARGET_POSTMOVE_232E_SENTINEL,
@@ -51,6 +52,7 @@ from overkill.recovered.systems.objects import (
     b73e_target_reached_resolution,
     b86d_formation_spawn_tick_index,
     b86d_outgoing_sprite_for_delta,
+    object_logic_ab10,
 )
 from overkill.recovered.views.object_slots import (
     ObjectSlotView,
@@ -1070,10 +1072,13 @@ def _run_object_behavior_aed8(cpu, *, parent: str, chain: str, cx_value: int) ->
 def _run_object_logic_ab10(cpu, *, parent: str, chain: str, cx_value: int) -> None:
     """Lift the observed AA2B target AB10 position/sprite update helper.
 
-    AB10 is a first-level object logic target for SS:[BP+16] == 6 in the
-    current island.  The observed branch samples a small animation table at
-    DS:A40C/DS:A414 using DS:2336 and DS:237C, then writes the object's sprite
-    and position before returning to the AA2B caller.
+    AB10 is a first-level object logic target for SS:[BP+16] == 6 in the current
+    island.  The gameplay decision -- deactivate once the level frame phase
+    (DS:2384) or the global disable counter (DS:A47C) reaches 0003h, else the
+    DS:A40C animation-frame sprite and the DS:A414 animation-pair position offset by
+    the DS:237C view reference box -- now lives in the recovered pure rule
+    ``object_logic_ab10``.  This adapter owns the DOS reads, the XLAT/animation-pair
+    addressing, and the original CMP/ADD flags + register state at the RET boundary.
     """
     ds = cpu.s.ds & 0xFFFF
     ss = cpu.s.ss & 0xFFFF
@@ -1082,50 +1087,45 @@ def _run_object_logic_ab10(cpu, *, parent: str, chain: str, cx_value: int) -> No
     mem = cpu.mem
 
     v2384 = mem.rw(ds, 0x2384)
-    _cmp_word(cpu, v2384, 0x0003)
-    if v2384 >= 0x0003:
+    _cmp_word(cpu, v2384, AB10_PHASE_DISABLE_THRESHOLD)
+    if v2384 >= AB10_PHASE_DISABLE_THRESHOLD:
         mem.ww(ss, bp, 0x0000)
         cpu.s.ip = cpu.pop()
         return
 
     global_disable = mem.rw(ds, 0xA47C)
-    _cmp_word(cpu, global_disable, 0x0003)
-    if global_disable >= 0x0003:
+    _cmp_word(cpu, global_disable, AB10_PHASE_DISABLE_THRESHOLD)
+    if global_disable >= AB10_PHASE_DISABLE_THRESHOLD:
         mem.ww(ss, bp, 0x0000)
         cpu.s.ip = cpu.pop()
         return
 
-    # Sprite = XLAT(DS:A40C, DS:2336) + 9.  The ADD's flags are dead (overwritten
-    # below before the RET), so only the value survives.
-    cpu.s.ax = mem.rw(ds, 0x2336)
-    cpu.s.bx = 0xA40C
-    # XLAT: AL = DS:[BX+AL], AH unchanged.
-    cpu.set_reg8(0, mem.rb(ds, (cpu.s.bx + (cpu.s.ax & 0x00FF)) & 0xFFFF))
-    cpu.s.ax = (cpu.s.ax + 0x0009) & 0xFFFF
-    slot.sprite_or_state = cpu.s.ax
+    # Sprite source byte: XLAT(DS:A40C, DS:2336), AH preserved (the rule adds 9).
+    anim_counter = mem.rw(ds, 0x2336)
+    sprite_table_value = (anim_counter & 0xFF00) | mem.rb(ds, (0xA40C + (anim_counter & 0x00FF)) & 0xFFFF)
 
-    # Walk the DS:A414 animation pair backward (DF-controlled), adding the DS:237C
-    # reference-box X/Y.  Only the final (y) ADD's flags reach the RET boundary.
-    cpu.s.dx = 0xA414
+    # Animation pair at DS:A414 indexed by the frame phase, walked DF-controlled.
+    si = (((v2384 << 2) & 0xFFFF) + 0xA414) & 0xFFFF
+    step = -2 if cpu.get_flag(DF) else 2
+    anim_x = mem.rw(ds, si)
+    si = (si + step) & 0xFFFF
+    anim_y = mem.rw(ds, si)
+    si = (si + step) & 0xFFFF
+    ref_x = mem.rw(ds, 0x237E)  # DS:237C + 2
+    ref_y = mem.rw(ds, 0x2380)  # DS:237C + 4
+
+    update = object_logic_ab10(v2384, global_disable, sprite_table_value, anim_x, anim_y, ref_x, ref_y)
+    slot.sprite_or_state = update.sprite
+    slot.x_word = update.x
+    slot.y_word = update.y
+
+    # Register + flag boundary the original leaves at RET (AX=y, BX=237C, DX=A414,
+    # SI past the pair; only the final y-ADD flags are live).
     cpu.s.bx = 0x237C
-    cpu.s.si = mem.rw(ds, (cpu.s.bx + 0x08) & 0xFFFF)
-    cpu.s.si = cpu.shift(4, cpu.s.si, 1, 16)
-    cpu.s.si = cpu.shift(4, cpu.s.si, 1, 16)
-    cpu.s.si = (cpu.s.si + cpu.s.dx) & 0xFFFF
-
-    cpu.s.ax = mem.rw(ds, cpu.s.si)
-    cpu.s.si = (cpu.s.si + (-2 if cpu.get_flag(DF) else 2)) & 0xFFFF
-    addend = mem.rw(ds, (cpu.s.bx + 0x02) & 0xFFFF)
-    cpu.s.ax = (cpu.s.ax + addend) & 0xFFFF
-    slot.x_word = cpu.s.ax
-
-    cpu.s.ax = mem.rw(ds, cpu.s.si)
-    cpu.s.si = (cpu.s.si + (-2 if cpu.get_flag(DF) else 2)) & 0xFFFF
-    old_ax = cpu.s.ax & 0xFFFF
-    addend = mem.rw(ds, (cpu.s.bx + 0x04) & 0xFFFF)
-    cpu.s.ax = (old_ax + addend) & 0xFFFF
-    cpu.set_add_flags(old_ax, addend, old_ax + addend, 16)  # live: reaches the RET
-    slot.y_word = cpu.s.ax
+    cpu.s.dx = 0xA414
+    cpu.s.si = si
+    cpu.s.ax = update.y
+    cpu.set_add_flags(anim_y & 0xFFFF, ref_y & 0xFFFF, (anim_y & 0xFFFF) + (ref_y & 0xFFFF), 16)
     cpu.s.ip = cpu.pop()
 
 

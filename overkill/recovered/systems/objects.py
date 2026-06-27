@@ -7,6 +7,7 @@ traces have constrained their object-slot fields.
 from __future__ import annotations
 
 from overkill.recovered.domain.object_behaviors import (
+    Ab10Update,
     B73ETargetReachedResolution,
     BossGroupSlotTransition,
     ObjectBoundsTileDecision,
@@ -143,6 +144,40 @@ def b86d_outgoing_sprite_for_delta(vertical_delta: int) -> int:
     if (vertical_delta & 0xFFFF) == B86D_VERTICAL_DELTA_RISING:
         return B86D_OUTGOING_SPRITE_RISING
     return B86D_OUTGOING_SPRITE_FALLING
+
+
+# 1010:AB10 logic_id=6 per-frame update.  The object dies once the level frame
+# phase (DS:2384) or the global disable counter (DS:A47C) reaches 0003h; otherwise
+# its sprite is the DS:A40C animation byte + 9 and its position is the DS:A414
+# animation pair offset by the DS:237C view reference box.
+AB10_PHASE_DISABLE_THRESHOLD = 0x0003
+AB10_SPRITE_BASE_OFFSET = 0x0009
+
+
+def object_logic_ab10(
+    frame_phase: int,
+    global_disable: int,
+    sprite_table_value: int,
+    anim_x: int,
+    anim_y: int,
+    ref_x: int,
+    ref_y: int,
+) -> Ab10Update:
+    """Pure 1010:AB10 update recovered from the AA2B logic_id=6 target.
+
+    ``sprite_table_value`` is the ``DS:A40C[DS:2336]`` animation byte; ``anim_x`` /
+    ``anim_y`` are the ``DS:A414`` animation-pair words for the current phase; ``ref_x``
+    / ``ref_y`` are the view reference box ``DS:237E`` / ``DS:2380``.  The adapter still
+    replays the original CMP order (deactivate-path flags) and the live final ADD
+    flags; this owns the deactivate gate and the sprite/position formulas."""
+    if (frame_phase & 0xFFFF) >= AB10_PHASE_DISABLE_THRESHOLD or (global_disable & 0xFFFF) >= AB10_PHASE_DISABLE_THRESHOLD:
+        return Ab10Update(deactivate=True)
+    return Ab10Update(
+        deactivate=False,
+        sprite=(sprite_table_value + AB10_SPRITE_BASE_OFFSET) & 0xFFFF,
+        x=(anim_x + ref_x) & 0xFFFF,
+        y=(anim_y + ref_y) & 0xFFFF,
+    )
 
 
 PLAYER_CHASE_EXCLUDED_LOGIC_IDS = frozenset({0x0001, 0x0021, 0x0022, 0x0026})
