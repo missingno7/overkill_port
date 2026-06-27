@@ -75,7 +75,15 @@ output, and **witness it against the live draws** before marking done.
       revisit only if a witness reveals one.
 
 ### Effects / transitions
-- [ ] **Palette / fades** — Tandy palette + fade transitions.
+- [x] **Palette** — the fixed PCjr/Tandy 16-colour IRGB palette
+      (`systems/tandy_screen.TANDY_PALETTE_RGB` + `unpack_pixel_byte`/`pixel_rgb`).
+      OVERKILL never reprograms it (no palette-register writes in the render
+      island), so it is the whole colour space; the rasterizer maps each 4-bit
+      index straight through. Single source of truth, drift-guarded against the
+      verified framebuffer decoder. With the geometry, this is the full mode-2
+      RGB decode (`source_page` → pixels).
+- [ ] **Fades** — fade-in/out transitions (if any reprogram intensity per-frame;
+      witness a transition to classify).
 - [ ] **Explosions / hit flashes** — are these objects (covered by sprites) or
       separate effects? (witness to classify).
 - [ ] **Level start / transition screens** — the per-level intro/wipe.
