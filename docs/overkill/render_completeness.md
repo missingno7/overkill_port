@@ -48,9 +48,13 @@ output, and **witness it against the live draws** before marking done.
 - [ ] **Background plane content** — the `[9592]` plane → RGB (the actual level
       pixels). The present (`5BDC`/`3354`) copies it scrolled; model the plane +
       scroll as the background content.
-- [ ] **World→screen projection** — derive `screen_di = f(world, camera)` from the
-      witnessed `(world, screen_di)` pairs (needed for interpolation + culling
-      proof). Closes CameraState.
+- [ ] **World→screen projection** — *finding (witnessed):* `screen_di` is a
+      **banked Tandy VRAM offset built from the `0fa3` per-row video-offset
+      table** (`di = row_offset_table[screen_y] + x_byte`), NOT linear
+      `world - camera` (same world_y maps to different banks by x; Δworld_y=40 →
+      Δdi=20). So this needs the recovered `0fa3` offset table to map di ↔ screen
+      (x,y). That table is also what **interpolation** needs (lerp in screen
+      space, then re-encode di) and what closes `CameraState`. Next concrete task.
 - [ ] **Present composition** — recover `5BDC`/`3354`: how the background plane,
       sprites, and HUD compose into the visible page (page flip / dirty regions).
 - [ ] **Score** — the BCD score (`DS:2314`) as a HUD field.
