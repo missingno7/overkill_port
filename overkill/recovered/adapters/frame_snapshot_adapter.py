@@ -12,9 +12,14 @@ walks `8D12` (gameplay) **first**, then `32CA` (effect), checking each slot's
 active flag. So the draw list *is* the active slots of both tables, in
 **gameplay-then-effect** order — matched below.
 
+On-screen culling is grounded too: the present pass writes the projected screen
+destination to record +0C (the layer scan's `OBJ_DEST_SLOT_0C`), and `0xFFFF`
+means off-screen — so the draw list is active AND `+0C != 0xFFFF`, with `+0C`
+carried as `screen_di`.
+
 Remaining for VERIFIED (enhanced_renderer_plan.md R2): the per-`draw_layer` sort
-the A846 layer scan applies, any on-screen culling, and a VRAM round-trip over the
-demo corpus. The CameraState source (VIEW_TARGET) is still OBSERVED.
+the A846 layer scan applies, and a VRAM round-trip over the demo corpus. The
+CameraState source (VIEW_TARGET) is still OBSERVED.
 """
 from __future__ import annotations
 
@@ -27,8 +32,14 @@ from overkill.recovered.views.object_slots import (
     GAMEPLAY_OBJECT_TABLE_BASE,
     GAMEPLAY_OBJECT_TABLE_COUNT,
     OBJECT_SLOT_STRIDE,
+    OFF_DRAW_SCRATCH_OR_DI,
     ObjectSlotView,
 )
+
+# The present pass writes the projected screen destination (a VRAM di) to the
+# object record's +0C dest slot; this sentinel means the object is off-screen and
+# the draw pass skips it (layer_sprites.OFFSCREEN_DESTINATION).
+OFFSCREEN_DESTINATION = 0xFFFF
 
 # The object tables walked for the draw list, in the present-scan order grounded
 # by the probe: A90C scans DS:8D12 (gameplay) first, then DS:32CA (effect).
@@ -41,8 +52,10 @@ _OBJECT_TABLES = (
 def extract_frame_snapshot(mem, ds: int) -> FrameSnapshot:
     """Reconstruct the render-intent snapshot from the object tables + camera.
 
-    A slot is on the draw list when its ``active_word`` (record +00) is non-zero.
-    Coordinates are returned signed (world space).
+    A slot is on the draw list when it is active (record +00 non-zero) AND
+    on-screen (its +0C dest slot != OFFSCREEN_DESTINATION). Coordinates are
+    returned signed (world space); ``screen_di`` is the present pass's projected
+    destination.
     """
     ds &= 0xFFFF
     sprites: list[SpriteDraw] = []
@@ -51,6 +64,9 @@ def extract_frame_snapshot(mem, ds: int) -> FrameSnapshot:
             slot = ObjectSlotView(mem, ds, (base + index * OBJECT_SLOT_STRIDE) & 0xFFFF)
             if slot.active_word == 0:
                 continue
+            screen_di = slot.u16(OFF_DRAW_SCRATCH_OR_DI)
+            if screen_di == OFFSCREEN_DESTINATION:
+                continue
             sprites.append(
                 SpriteDraw(
                     sprite=slot.sprite_or_state,
@@ -58,6 +74,7 @@ def extract_frame_snapshot(mem, ds: int) -> FrameSnapshot:
                     y=i16(slot.y_word),
                     layer=slot.draw_layer,
                     object_type=slot.object_type,
+                    screen_di=screen_di,
                 )
             )
     camera = CameraState(x=i16(mem.rw(ds, VIEW_TARGET_X)), y=i16(mem.rw(ds, VIEW_TARGET_Y)))

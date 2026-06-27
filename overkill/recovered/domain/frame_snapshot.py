@@ -22,7 +22,11 @@ class SpriteDraw:
     Reconstructed from an object slot: ``sprite`` is the object record's
     sprite/state id (offset +08) which maps to a bitmap + animation frame;
     ``x``/``y`` are the signed world coordinates; ``layer`` orders the draw;
-    ``object_type`` is kept for classification/animation lookups.
+    ``object_type`` is kept for classification/animation lookups; ``screen_di``
+    is the projected destination the present pass wrote (object record +0C, the
+    layer scan's ``OBJ_DEST_SLOT_0C``) — a VRAM offset encoding the on-screen
+    position. Off-screen objects (``screen_di == 0xFFFF``) are culled and never
+    appear in the draw list.
     """
 
     sprite: int
@@ -30,6 +34,7 @@ class SpriteDraw:
     y: int
     layer: int
     object_type: int
+    screen_di: int
 
 
 @dataclass(frozen=True, slots=True)
