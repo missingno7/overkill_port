@@ -40,7 +40,12 @@ does the DOS reads + the boundary fidelity. Prefer rules that take/return
 ## One iteration (do exactly one slice)
 
 1. **Pick ONE target** from the backlog (top first); keep it finishable + verifiable
-   this iteration.
+   this iteration. Compute the live `object_behaviors` worklist (which bodies already
+   delegate to a recovered rule = DONE, which are still inline = TODO) with:
+   ```
+   python3 -c "import re;f='overkill/gameplay/object_behaviors.py';t=open(f,encoding='utf-8').read();m=re.search(r'from overkill.recovered.systems.objects import \((.*?)\)',t,re.S);syms=[x.strip().rstrip(',') for x in (m.group(1).split() if m else []) if x.strip().rstrip(',')];s=t.splitlines();d=[(i,l) for i,l in enumerate(s) if re.match(r'^def (run_|_run_|_scan_)',l)];[print(('DONE' if [y for y in syms if not y.isupper() and re.search(r'\\b'+y+r'\\b','\\n'.join(s[i:(d[k+1][0] if k+1<len(d) else len(s))]))] else 'TODO'),l.split('(')[0].split()[1]) for k,(i,l) in enumerate(d)]"
+   ```
+   Today: 3 DONE (`b73e`/`b86d`/`ab10`), 14 TODO. Take the smallest TODO not attended-only.
 2. **Diagnose against the oracle, never guess.** Disassemble the original ASM for the
    routine (capstone; image at `artifacts/static_runtime_bundle/memory_1mb.bin`,
    `1010:off` → linear `0x10100+off`) and read the existing lifted body. Identify the
@@ -89,6 +94,12 @@ stay productive across the whole window and never stop on the first hard problem
   the **smallest / most self-contained** routine not yet recovered and not in
   `loop_blockers.md`; when a subsystem is exhausted, move to the next backlog item. There is
   deliberately plenty of work (see the breadth note) so the queue does not run dry overnight.
+- **SKIP the attended-only targets.** `loop_blockers.md` has a *"Remaining backlog — needs
+  attended judgment (not safe unattended)"* section — do NOT touch those in an unattended
+  run: the **death / deactivation frontier** (`BD17`/`BFC7`/`9E69`/`C054` tails + the
+  player-death `BC4B` divergence) and the formation spawns `8d4f`/`7476` (analyzed-dead but
+  unexercised in the demo window → unverifiable unattended). They need a human trace; leave
+  them for an attended session.
 - **Verify against the FULL demo corpus.** `tests/test_demo_replay_equivalence.py` runs the
   whole `artifacts/demos/*` set (~20 demos) — use it as the gate, not a single demo, so
   divergences anywhere are caught. For a possibly-cold path (a dead-flag/register drop),
@@ -124,9 +135,9 @@ verify byte-exact vs the demo corpus. One subsystem at a time.
 - **`object_movement` / `object_postmove` / `object_runtime` / `object_runtime_common`**
   → MovementSystem (clamp/scroll family already live): push the remaining bodies down.
 - **`object_spawns` / `action_spawns`** → SpawnSystem.
-- **`object_deactivation`** → the deactivate family (C054 done; finish the
-  `BD17`/`BFC7`/`9E69` tails — this also clears the player-death blocker in
-  `loop_blockers.md`).
+- **`object_deactivation`** → the deactivate family. `C054` is done; the `BD17`/`BFC7`/
+  `9E69` death tails + the player-death `BC4B` divergence are **ATTENDED-ONLY** (in
+  `loop_blockers.md`) — **skip them unattended**; they need a human trace.
 - **`contact_overlap` / `contact_side_effects`** → ContactSystem.
 - **`object_bounds`** → bounds; **`view_window`** → camera.
 - **`game_state`** → GameStateSystem (frame fragments; keep `9b2e`/`d007` as frame MAPS,
