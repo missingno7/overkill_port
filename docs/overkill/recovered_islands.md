@@ -4,10 +4,12 @@
      Source of truth = the @recovered_island metadata on each recovered function.
      tests/test_island_registry.py fails if this file drifts from the code. -->
 
-13 recovered islands (13 VERIFIED).
+15 recovered islands (2 ASM_MATCHED, 13 VERIFIED).
 
 | ASM boundary | Function | Status | Merge target | Contract |
 |---|---|---|---|---|
+| `1010:3354` | `systems.tandy_screen.di_to_screen` | ASM_MATCHED | RenderBackend | Tandy mode-2 packed VRAM byte offset (di) -> screen pixel (x,y) (left pixel of the byte) |
+| `1010:3354` | `systems.tandy_screen.screen_to_di` | ASM_MATCHED | RenderBackend | Tandy mode-2 screen pixel (x,y) -> packed VRAM byte offset (di) |
 | `1010:5DB2` | `systems.movement.choose_target_seek_direction` | VERIFIED | MovementSystem | map the 5DB2 direction-bit nibble through the direction table to a step direction |
 | `1010:5DB2` | `systems.movement.encode_target_seek_bits` | VERIFIED | MovementSystem | 5DB2 direction-bit nibble toward a target (Y unsigned, X signed) |
 | `1010:A5D1` | `systems.movement.one_pixel_axis_step` | VERIFIED | MovementSystem | single-pixel axis step when the no-clamp global gate is set |
