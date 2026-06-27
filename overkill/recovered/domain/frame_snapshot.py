@@ -46,13 +46,39 @@ class CameraState:
 
 
 @dataclass(frozen=True, slots=True)
-class FrameSnapshot:
-    """One source-frame's render intent: camera + the sprite draw list.
+class PlayfieldLayer:
+    """The scrolling action area: the camera + the sprite draw list.
 
-    Grows toward the full render contract (palette, tilemap/scroll, screen-shake)
-    as each piece is recovered and grounded. Two consecutive snapshots are what
-    the enhanced renderer interpolates between (`enhanced_renderer_plan.md` R4).
+    This is the layer the enhanced renderer **interpolates** — sprites move and
+    the camera scrolls between source frames (`enhanced_renderer_plan.md` R4).
+    Drawn by the 5AC8 object scan.
     """
 
     camera: CameraState
     sprites: tuple[SpriteDraw, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class HudLayer:
+    """The status panel — a separate, fixed render region (NOT interpolated).
+
+    Drawn by the 1010:61DC status display as six status-counter cells
+    (DS:2368..2372). It does not scroll and must not be lerped; the renderer
+    composites it over the playfield as a discrete overlay.
+    """
+
+    counters: tuple[int, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class FrameSnapshot:
+    """One source-frame's render intent, split into clean layers.
+
+    ``playfield`` (interpolated action) and ``hud`` (fixed status overlay) are
+    separate so the enhanced renderer can treat them differently — interpolate
+    the playfield, composite the HUD as-is. Grows toward the full contract
+    (palette, tilemap/scroll, screen-shake) as each piece is recovered.
+    """
+
+    playfield: PlayfieldLayer
+    hud: HudLayer

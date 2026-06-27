@@ -12,6 +12,7 @@ from overkill.recovered.adapters.frame_snapshot_adapter import extract_frame_sna
 from overkill.recovered.domain.frame_snapshot import CameraState, SpriteDraw
 from overkill.recovered.ds_globals import VIEW_TARGET_X, VIEW_TARGET_Y
 from overkill.recovered.views.object_slots import (
+    FRAME_TIMER_TABLE_BASE,
     GAMEPLAY_OBJECT_TABLE_BASE,
     OBJECT_SLOT_STRIDE,
     OFF_DRAW_SCRATCH_OR_DI,
@@ -29,6 +30,10 @@ def test_extract_frame_snapshot_reads_active_onscreen_slots():
 
     mem.ww(ds, VIEW_TARGET_X, 0x0050)
     mem.ww(ds, VIEW_TARGET_Y, 0xFFF0)  # signed -16
+
+    # HUD layer: the six status-counter cells.
+    mem.ww(ds, FRAME_TIMER_TABLE_BASE, 0x0003)
+    mem.ww(ds, FRAME_TIMER_TABLE_BASE + 2, 0x0001)
 
     s0 = _slot(mem, ds, GAMEPLAY_OBJECT_TABLE_BASE, 0)
     s0.active_word = 1
@@ -56,8 +61,9 @@ def test_extract_frame_snapshot_reads_active_onscreen_slots():
 
     snap = extract_frame_snapshot(mem, ds)
 
-    assert snap.camera == CameraState(x=0x50, y=-16)
-    assert snap.sprites == (
+    assert snap.playfield.camera == CameraState(x=0x50, y=-16)
+    assert snap.playfield.sprites == (
         SpriteDraw(sprite=0x0031, x=0x10, y=0x20, layer=0x04, object_type=0x02, screen_di=0x1234),
         SpriteDraw(sprite=0x0076, x=-2, y=0x05, layer=0x01, object_type=0x00, screen_di=0x5678),
     )
+    assert snap.hud.counters == (0x0003, 0x0001, 0, 0, 0, 0)

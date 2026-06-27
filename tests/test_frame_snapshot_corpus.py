@@ -44,9 +44,11 @@ def test_extractor_is_well_formed_on_corpus_snapshot(snap: Path):
 
     fs = extract_frame_snapshot(mem, ds)
 
-    assert isinstance(fs.camera, CameraState)
-    assert len(fs.sprites) <= _MAX_SPRITES
+    assert isinstance(fs.playfield.camera, CameraState)
+    assert len(fs.hud.counters) == 6
+    sprites = fs.playfield.sprites
+    assert len(sprites) <= _MAX_SPRITES
     # culling held: nothing off-screen survives into the draw list
-    assert all(sd.screen_di != 0xFFFF for sd in fs.sprites)
+    assert all(sd.screen_di != 0xFFFF for sd in sprites)
     # coordinates are plausible signed words
-    assert all(-0x8000 <= sd.x < 0x8000 and -0x8000 <= sd.y < 0x8000 for sd in fs.sprites)
+    assert all(-0x8000 <= sd.x < 0x8000 and -0x8000 <= sd.y < 0x8000 for sd in sprites)

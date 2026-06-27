@@ -80,16 +80,16 @@ def main(argv: list[str]) -> int:
 
     print(f"demo {demo_dir.name}  frames captured={len(records)}")
     for i, (drawn, snap) in enumerate(records):
-        if not drawn and not snap.sprites:
+        if not drawn and not snap.playfield.sprites:
             continue
         drawn_set = sorted((s, d) for s, d, _, _ in drawn)
-        snap_set = sorted((sd.sprite, sd.screen_di) for sd in snap.sprites)
+        snap_set = sorted((sd.sprite, sd.screen_di) for sd in snap.playfield.sprites)
         match = "OK" if drawn_set == snap_set else "DIFF"
-        print(f"\nframe {i}: drawn={len(drawn)} snapshot={len(snap.sprites)}  set-match={match}")
+        print(f"\nframe {i}: drawn={len(drawn)} snapshot={len(snap.playfield.sprites)}  set-match={match}")
         print("  witnessed draw order (sprite,dest,layer):  "
               + " ".join(f"{s:04X}@{d:04X}/L{ly:X}" for s, d, ly, _ in drawn[:14]))
         print("  snapshot order        (sprite,dest,layer):  "
-              + " ".join(f"{sd.sprite:04X}@{sd.screen_di:04X}/L{sd.layer:X}" for sd in snap.sprites[:14]))
+              + " ".join(f"{sd.sprite:04X}@{sd.screen_di:04X}/L{sd.layer:X}" for sd in snap.playfield.sprites[:14]))
         if match == "DIFF":
             print(f"    drawn_set ={drawn_set}")
             print(f"    snap_set  ={snap_set}")

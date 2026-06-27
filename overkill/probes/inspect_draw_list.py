@@ -55,8 +55,8 @@ def main(argv: list[str]) -> int:
     print(f"snapshot {snap.name}  DS={ds:04X} CS={cs:04X}")
 
     fs = extract_frame_snapshot(mem, ds)
-    print(f"\n[extractor] camera={fs.camera}  sprites={len(fs.sprites)}")
-    for sd in fs.sprites[:12]:
+    print(f"\n[extractor] camera={fs.playfield.camera}  sprites={len(fs.playfield.sprites)}")
+    for sd in fs.playfield.sprites[:12]:
         print(f"  sprite={sd.sprite:04X} x={sd.x:5d} y={sd.y:5d} layer={sd.layer:02X} type={sd.object_type:02X}")
 
     # active slot counts per table (the extractor's source)

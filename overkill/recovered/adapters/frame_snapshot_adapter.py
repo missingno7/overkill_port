@@ -43,11 +43,19 @@ the VRAM round-trip (needs the R3 rasterizer) and CameraState/projection groundi
 from __future__ import annotations
 
 from overkill.recovered.domain.coords import i16
-from overkill.recovered.domain.frame_snapshot import CameraState, FrameSnapshot, SpriteDraw
+from overkill.recovered.domain.frame_snapshot import (
+    CameraState,
+    FrameSnapshot,
+    HudLayer,
+    PlayfieldLayer,
+    SpriteDraw,
+)
 from overkill.recovered.ds_globals import VIEW_TARGET_X, VIEW_TARGET_Y
 from overkill.recovered.views.object_slots import (
     EFFECT_OBJECT_TABLE_BASE,
     EFFECT_OBJECT_TABLE_COUNT,
+    FRAME_TIMER_COUNT,
+    FRAME_TIMER_TABLE_BASE,
     GAMEPLAY_OBJECT_TABLE_BASE,
     GAMEPLAY_OBJECT_TABLE_COUNT,
     OBJECT_SLOT_STRIDE,
@@ -104,4 +112,10 @@ def extract_frame_snapshot(mem, ds: int) -> FrameSnapshot:
                 )
             )
     camera = CameraState(x=i16(mem.rw(ds, VIEW_TARGET_X)), y=i16(mem.rw(ds, VIEW_TARGET_Y)))
-    return FrameSnapshot(camera=camera, sprites=tuple(sprites))
+    playfield = PlayfieldLayer(camera=camera, sprites=tuple(sprites))
+
+    # HUD: the six status-counter cells the 61DC status display draws (DS:2368..2372).
+    hud = HudLayer(counters=tuple(
+        mem.rw(ds, (FRAME_TIMER_TABLE_BASE + 2 * i) & 0xFFFF) for i in range(FRAME_TIMER_COUNT)
+    ))
+    return FrameSnapshot(playfield=playfield, hud=hud)
