@@ -60,14 +60,17 @@ class PlayfieldLayer:
 
 @dataclass(frozen=True, slots=True)
 class BackgroundLayer:
-    """The scrolling level tilemap behind the playfield — bottom of the stack.
+    """The scrolling level background — bottom of the stack.
 
-    Drawn by the 4E2F tile routine from the [9592] tile plane via the DS:20D6
-    row-pointer table. ``scroll_row`` (DS:2350) is the vertical scroll into the
-    map and ``column_index`` (DS:2356) is the starting map column — together the
-    camera into the level. The renderer scrolls this with the playfield camera
-    (it interpolates smoothly between source frames); the tile *grid* content is
-    a further recovery step.
+    OVERKILL **pre-renders** the level into the ``[9592]`` work plane (tiles are
+    materialised into it as the level scrolls); the per-frame present just copies
+    that plane to the framebuffer scrolled by ``scroll_row`` (DS:2350). So the
+    background *content* is the ``[9592]`` plane (already rasterised) — NOT a
+    per-frame tile grid — and the renderer reuses it, interpolating only the
+    scroll. ``scroll_row`` is the scroll offset into the plane (it tracks level
+    progress, slow-changing); ``column_index`` (DS:2356) is the current map
+    column. Note: the background often holds still while the *objects* move (the
+    interpolation then rides on the playfield, not the scroll).
     """
 
     scroll_row: int
