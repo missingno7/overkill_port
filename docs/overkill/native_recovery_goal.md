@@ -1,7 +1,9 @@
 # GOAL: grow the standalone native game, one verified dual-mode slice at a time
 
 > Run this with `/goal`. It is the **executable per-iteration playbook** for the
-> recovery. The destination is [`native_game_endgame.md`](native_game_endgame.md)
+> recovery, designed to run **unattended for long stretches (overnight)** — self-sufficient,
+> never-halt, green-at-all-times (see *Unattended / overnight operating mode* below). The
+> destination is [`native_game_endgame.md`](native_game_endgame.md)
 > (a standalone native game; the VM becomes an optional oracle). The method is
 > [`rescue_refactor.md`](rescue_refactor.md) (push lifted → pure recovered). This
 > file is *what to do each iteration*.
@@ -67,6 +69,39 @@ does the DOS reads + the boundary fidelity. Prefer rules that take/return
    Commit (trailer `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`), push to
    `origin/main`. One coherent slice per iteration.
 
+## Unattended / overnight operating mode (self-sufficient — never halt)
+
+This goal is meant to run for **hours unattended** (e.g. overnight). The user is away;
+stay productive across the whole window and never stop on the first hard problem.
+
+- **Keep the tree green at all times.** Start each iteration from a clean `git status`.
+  If a slice can't be finished byte-exact (a gate reds and you can't fix it cleanly),
+  **revert all its changes** (`git restore <files>`) so the next iteration starts clean.
+  Never commit or leave a red/partial slice.
+- **Skip, don't stop.** If a target is blocked (a divergence you can't resolve byte-exact,
+  it would need guessing, or it needs gameplay context), append it to
+  `docs/overkill/loop_blockers.md` (what you tried, the exact divergence, why it's blocked /
+  what you'd need), then move to the NEXT backlog item. **Read `loop_blockers.md` first each
+  iteration and never re-attempt a logged blocker.**
+- **Commit + push every green slice** so progress is saved incrementally and the user can
+  review in the morning.
+- **Pick the next target autonomously.** Top unblocked backlog item; within a subsystem,
+  the **smallest / most self-contained** routine not yet recovered and not in
+  `loop_blockers.md`; when a subsystem is exhausted, move to the next backlog item. There is
+  deliberately plenty of work (see the breadth note) so the queue does not run dry overnight.
+- **Verify against the FULL demo corpus.** `tests/test_demo_replay_equivalence.py` runs the
+  whole `artifacts/demos/*` set (~20 demos) — use it as the gate, not a single demo, so
+  divergences anywhere are caught. For a possibly-cold path (a dead-flag/register drop),
+  prove it is exercised: patch with an invocation counter, run a gameplay demo, commit only
+  if count>0. Pure byte-exact extractions (same writes + same boundary) are safe without this.
+- **Favor tractable wins** (clean dual-mode rule lifts, named-constant pushes, collision
+  assert drops) so the night accumulates many verified slices. If a behaviour proves deep
+  after ~2 diagnosis attempts, log it in `loop_blockers.md` and move on — do not grind.
+- **Only fully stop** if: the repo is broken and you cannot restore it to green; OR every
+  remaining backlog item is already in `loop_blockers.md`; OR a step needs a destructive /
+  irreversible / outward-facing action that requires the user. Otherwise keep going. When you
+  do stop, leave a one-paragraph summary at the top of `loop_blockers.md`.
+
 ## Backlog (work top-down)
 
 1. **`object_behaviors` → `ObjectSystem` (active).** Push each `_run_object_*` body's
@@ -90,6 +125,18 @@ does the DOS reads + the boundary fidelity. Prefer rules that take/return
 6. **(later, attended) standalone skeleton + modes.** A `NativeGameState` + an
    `update_frame()` that calls the recovered systems; wire `--mode standalone` (no VM) and
    `--mode verify`/`record-oracle`/`replay-test` around the same recovered code.
+
+**Breadth (so an overnight run does not run dry):** item 1 alone is ~15+ behaviour
+bodies in `object_behaviors.py` (`_run_object_behavior_*` / `_run_object_logic_*`) plus
+their helper sub-branches; item 2 touches every object rule; item 3 is ~49 per-function
+asserts across `collision.py`; item 4 is the `game_state.py` fragments; and across all
+files there is a long tail of remaining magic numbers → named constants and raw
+`mem.rw/ww(ds, …)` globals → named `ds_globals`/views (each a tiny, safe, byte-exact
+slice). Prefer one substantive dual-mode rule per iteration, but these small hygiene
+slices are valid filler when a substantive target is blocked. Enumerate the live targets
+each iteration with `grep -nE "^def _run_object" overkill/gameplay/object_behaviors.py`
+and `grep -c "assert " overkill/gameplay/collision.py`, minus anything in
+`loop_blockers.md`.
 
 ## Guardrails
 
