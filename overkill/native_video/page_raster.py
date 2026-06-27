@@ -19,6 +19,8 @@ one-present skew between the saved ``[9598]`` and B800). Pure NumPy; no VM.
 """
 from __future__ import annotations
 
+from typing import Optional
+
 import numpy as np
 
 from overkill.recovered.systems.tandy_screen import (
@@ -46,18 +48,33 @@ PLAYFIELD_Y0 = 4
 PLAYFIELD_H = PRESENT_ROWS             # 192 rows
 
 
-def decode_tandy_b800_rgb(buf: np.ndarray, base: int = 0) -> np.ndarray:
-    """Decode a Tandy mode-2 packed aperture to an ``(H, W, 3)`` RGB array.
+def decode_tandy_b800_indices(buf: np.ndarray, base: int = 0) -> np.ndarray:
+    """Decode a Tandy mode-2 packed aperture to **palette-independent** 4-bit colour
+    indices ``(H, W)`` uint8 — the L1 layer the native backend caches and colorizes.
 
     ``buf`` is a flat ``uint8`` view of memory; ``base`` is the byte offset of the
-    aperture. Mirrors the verified framebuffer decode: four 8 KiB banks,
-    ``off = (y&3)*0x2000 + (y>>2)*160 + x_byte``, high nibble = left pixel.
+    aperture. Geometry: four 8 KiB banks, ``off = (y&3)*0x2000 + (y>>2)*160 +
+    x_byte``, high nibble = left pixel.
     """
     y = np.arange(SCREEN_HEIGHT)
     rowbase = base + (y & 3) * TANDY_BANK_STRIDE + (y >> 2) * TANDY_BYTES_PER_ROW
     cols = buf[(rowbase[:, None] + np.arange(TANDY_BYTES_PER_ROW)[None, :])]  # (200,160)
     idx = np.stack([(cols >> 4) & 0x0F, cols & 0x0F], axis=2)                 # (200,160,2)
-    return _PALETTE[idx.reshape(SCREEN_HEIGHT, SCREEN_WIDTH)]
+    return idx.reshape(SCREEN_HEIGHT, SCREEN_WIDTH).astype(np.uint8)
+
+
+def colorize(indices: np.ndarray, palette: Optional[np.ndarray] = None) -> np.ndarray:
+    """Colorize 4-bit ``indices`` through a 16-colour ``palette`` (default = the
+    fixed Tandy palette) into an ``(H, W, 3)`` RGB array — the L2 step the backend
+    caches by ``palette_version``."""
+    pal = _PALETTE if palette is None else palette
+    return pal[indices]
+
+
+def decode_tandy_b800_rgb(buf: np.ndarray, base: int = 0) -> np.ndarray:
+    """Decode a Tandy mode-2 packed aperture straight to ``(H, W, 3)`` RGB (the
+    faithful one-shot decode kept for the oracle / ``debug_compare``)."""
+    return colorize(decode_tandy_b800_indices(buf, base))
 
 
 def replay_present_blit(mem: np.ndarray, source_page: int, source_cursor: int):
@@ -93,13 +110,19 @@ def playfield_pixel_mask(written: np.ndarray) -> np.ndarray:
     return np.repeat(bytemask, 2, axis=1)         # (200,320)
 
 
-def render_present_page_rgb(mem: np.ndarray, source_page: int, source_cursor: int) -> np.ndarray:
-    """Render the playfield to RGB from the semantic page (VM-framebuffer-free).
+def render_present_page_indices(mem: np.ndarray, source_page: int, source_cursor: int) -> np.ndarray:
+    """The palette-independent indexed playfield layer from the semantic page.
 
-    Replays the present blit from ``[source_page:source_cursor]`` and decodes it.
-    The returned ``(H, W, 3)`` array holds the scrolling playfield in
-    ``x in [0, 208), y in [4, 196)``; pixels outside that (the HUD/border) are
-    black here — they come from the persisted HUD layer, modelled separately.
+    Replays the present blit from ``[source_page:source_cursor]`` and decodes to
+    4-bit indices ``(H, W)``. The scrolling playfield occupies
+    ``x in [0, 208), y in [4, 196)``; outside that is index 0 (the HUD/border comes
+    from the persisted HUD layer, modelled separately). This is the L1 layer the
+    native backend caches; colorize it with the current palette to present.
     """
     scratch, _ = replay_present_blit(mem, source_page, source_cursor)
-    return decode_tandy_b800_rgb(scratch, 0)
+    return decode_tandy_b800_indices(scratch, 0)
+
+
+def render_present_page_rgb(mem: np.ndarray, source_page: int, source_cursor: int) -> np.ndarray:
+    """Faithful RGB of the playfield from the semantic page (oracle / debug_compare)."""
+    return colorize(render_present_page_indices(mem, source_page, source_cursor))

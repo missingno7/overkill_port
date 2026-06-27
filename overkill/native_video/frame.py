@@ -1,37 +1,67 @@
 """The seam between the recovered model and the native presentation backend.
 
-A :class:`NativeSourceFrame` is one *source-frame* of presentation input produced
-by the runtime/bridge at the game cadence. The native backend consumes a stream of
-these and presents at the display cadence (holding or interpolating between them).
-Everything here is plain data — no VM, no pygame — so the seam is testable and the
-backend never reaches back into the emulator.
+A :class:`RenderSnapshot` is one *game-tick* of **semantic render-state** produced
+by the runtime/bridge — NOT a pre-rendered RGB frame. The native backend owns the
+actual rendering: it receives indexed (palette-independent) layers + the palette +
+semantic object/scroll state, and colorizes/composes/interpolates itself, with
+caches, presenting at the display cadence. Everything here is plain data — no VM,
+no pygame — so the seam is testable and the backend never reaches into the emulator.
+
+Tailored to OVERKILL: the playfield is the composited source page ``[9598]`` decoded
+to 4-bit indices (the L1, palette-independent layer); the backend colorizes it via
+the palette (L2, keyed by ``palette_version``) and caches the colorized frame by
+``(playfield_version, palette_version)`` so the held presents at high refresh hit
+the cache. Sprites are carried semantically for future object interpolation; the
+HUD/page-baked chrome is a separate persisted layer (added as it is lifted).
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Optional
+from dataclasses import dataclass
+from enum import Enum
+from typing import TYPE_CHECKING, Optional, Tuple
 
 if TYPE_CHECKING:  # avoid importing numpy/domain at module import for the core runner
     import numpy as np
-    from overkill.recovered.domain.frame_snapshot import FrameSnapshot
+    from overkill.recovered.domain.frame_snapshot import FrameSnapshot, SpriteDraw
+
+RGB = Tuple[int, int, int]
+
+
+class SceneKind(Enum):
+    """Which kind of screen a snapshot represents (drives layer composition)."""
+
+    GAMEPLAY = "gameplay"
+    MENU = "menu"
+    TITLE = "title"
+    TALLY = "tally"
+    TRANSITION = "transition"
+    OTHER = "other"
 
 
 @dataclass(frozen=True, eq=False)
-class NativeSourceFrame:
-    """One game-cadence source frame the backend presents (and interpolates).
+class RenderSnapshot:
+    """One game-tick of semantic render-state the backend renders (and interpolates).
 
-    ``frame_id`` is a monotonic source-frame index; ``timestamp`` is the wall-clock
-    time the runtime produced it (seconds). ``playfield_rgb`` is the faithful
-    decoded playfield baseline (``(200, 320, 3)`` uint8, HUD region black — see
-    ``page_raster``). ``snapshot`` is the semantic model (sprite identities/
-    positions, camera, present cursor) the backend uses for optional interpolation;
-    ``source_cursor`` is hoisted out for cheap camera-scroll interpolation.
+    ``playfield_indices`` is the palette-independent ``(200,320)`` uint8 indexed
+    playfield layer (decoded from the source page); ``playfield_version`` is its
+    content id (bump it when the page content changes — drives the colorize cache).
+    ``palette``/``palette_version`` are the current 16-colour palette + its id (for
+    OVERKILL the palette is fixed, so ``palette_version`` is constant — but the model
+    carries it so fades/cache-invalidation work). ``scroll_cursor`` is the present
+    source cursor (the monotonic camera scroll). ``sprites`` is the semantic object
+    list for optional object interpolation; ``snapshot`` keeps the full recovered
+    model for reference/debug.
     """
 
     frame_id: int
     timestamp: float
-    playfield_rgb: "np.ndarray"
-    source_cursor: int
+    scene_kind: SceneKind
+    playfield_indices: "np.ndarray"
+    playfield_version: int
+    palette: Tuple[RGB, ...]
+    palette_version: int
+    scroll_cursor: int
+    sprites: "Tuple[SpriteDraw, ...]" = ()
     snapshot: "Optional[FrameSnapshot]" = None
 
 
@@ -39,15 +69,16 @@ class NativeSourceFrame:
 class PresentedFrame:
     """What the backend hands the display for one present (one monitor refresh).
 
-    ``rgb`` is the ``(200, 320, 3)`` image to blit. ``source_frame_id`` /
-    ``alpha`` describe which source frame(s) it derives from (``alpha`` is the
-    interpolation fraction toward the next source frame, 0.0 when held).
-    """
+    ``rgb`` is the ``(200, 320, 3)`` rendered image. ``source_frame_id`` / ``alpha``
+    describe which source snapshot(s) it derives from (``alpha`` is the interpolation
+    fraction toward the next snapshot, 0.0 when held). ``from_cache`` is true when the
+    colorized result was served from the render cache (a held present)."""
 
     rgb: "np.ndarray"
     source_frame_id: int
     alpha: float = 0.0
     held: bool = True
+    from_cache: bool = False
 
 
 @dataclass(frozen=True)
@@ -57,13 +88,13 @@ class BackendConfig:
 
     These are the toggles the in-game settings overlay flips and saves to the
     config file (``native_video/config.py``). The default is conservative: faithful
-    passthrough, no interpolation, no VM-framebuffer fallback. ``present_vsync`` /
-    ``target_present_hz`` drive the presentation clock (``None`` = follow the
-    monitor refresh)."""
+    passthrough, no interpolation, no VM-framebuffer fallback."""
 
     camera_interpolation: bool = False
     object_interpolation: bool = False
     smooth_palette_fades: bool = False
+    smooth_transitions: bool = False
+    cache_diagnostics: bool = False
     debug_compare: bool = False
     present_vsync: bool = True
     target_present_hz: Optional[int] = None
@@ -71,11 +102,16 @@ class BackendConfig:
 
 @dataclass
 class BackendDiagnostics:
-    """Live presentation diagnostics (rules: every interpolation decision must be
-    visible here, no silent fallback)."""
+    """Live presentation diagnostics (rules: every interpolation/cache decision must
+    be visible here, no silent fallback)."""
 
-    source_fps: float = 0.0
-    present_fps: float = 0.0
+    source_fps: float = 0.0           # source tick rate
+    present_fps: float = 0.0          # present rate
+    native_render_ms: float = 0.0     # total render time for the last present
+    colorize_ms: float = 0.0          # palette colorize cost
+    texture_upload_ms: float = 0.0    # SDL/pygame upload cost (display adapter)
+    cache_hits: int = 0
+    cache_misses: int = 0
     frame_hold_count: int = 0
     interpolation_alpha: float = 0.0
     source_snapshot_age_ms: float = 0.0
@@ -83,5 +119,4 @@ class BackendDiagnostics:
     object_interpolation_active: bool = False
     interpolated_objects: int = 0
     snapped_objects: int = 0
-    native_render_ms: float = 0.0
     compare_diff: Optional[float] = None

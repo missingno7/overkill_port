@@ -7,7 +7,7 @@ import time
 import pytest
 
 from overkill.native_video.backend import NativeOverkillVideoBackend
-from overkill.native_video.frame import NativeSourceFrame
+from overkill.native_video.frame import RenderSnapshot, SceneKind
 from overkill.native_video.loop import PresentationLoop
 
 
@@ -20,9 +20,10 @@ def _np():
 
 
 def _frame(np, frame_id, ts):
-    return NativeSourceFrame(
-        frame_id=frame_id, timestamp=ts,
-        playfield_rgb=np.zeros((200, 320, 3), dtype=np.uint8), source_cursor=0x1000,
+    return RenderSnapshot(
+        frame_id=frame_id, timestamp=ts, scene_kind=SceneKind.GAMEPLAY,
+        playfield_indices=np.zeros((200, 320), dtype=np.uint8), playfield_version=frame_id,
+        palette=tuple((i, i, i) for i in range(16)), palette_version=1, scroll_cursor=0x1000,
     )
 
 
