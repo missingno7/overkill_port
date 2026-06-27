@@ -65,6 +65,7 @@ def layer_of(rel: str) -> str:
         or rel.startswith("overkill/sounds/")
         or rel.startswith("overkill/asset_codecs/")
         or rel.startswith("overkill/file_io/")
+        or rel.startswith("overkill/native_video/")
     ):
         return "backend"
     return "vm"  # overkill top-level orchestration
