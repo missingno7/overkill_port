@@ -102,6 +102,7 @@ class PygameDisplay:
         self.pygame.font.init()
         self.scale = scale
         self.vsync = vsync
+        self.fullscreen = False
         self.title = title
         self.size = (SCREEN_WIDTH * scale, SCREEN_HEIGHT * scale)
         self._open()
@@ -110,16 +111,25 @@ class PygameDisplay:
         self.font_big = self.pygame.font.SysFont("consolas,monospace", 20, bold=True)
 
     def _open(self) -> None:
+        pygame = self.pygame
+        # Fullscreen lets the app present at the true monitor refresh (and bypasses
+        # the windowed compositor, which caps windowed apps near the desktop rate).
+        flags = (pygame.FULLSCREEN | pygame.SCALED) if self.fullscreen else 0
+        size = (0, 0) if self.fullscreen else self.size
         try:
-            self.screen = self.pygame.display.set_mode(self.size, vsync=1 if self.vsync else 0)
+            self.screen = pygame.display.set_mode(size, flags, vsync=1 if self.vsync else 0)
         except TypeError:
-            self.screen = self.pygame.display.set_mode(self.size)
-        self.pygame.display.set_caption(self.title)
+            self.screen = pygame.display.set_mode(size, flags)
+        pygame.display.set_caption(self.title)
 
     def set_vsync(self, vsync: bool) -> None:
         if vsync != self.vsync:
             self.vsync = vsync
             self._open()
+
+    def toggle_fullscreen(self) -> None:
+        self.fullscreen = not self.fullscreen
+        self._open()
 
     def blit_frame(self, rgb) -> None:
         self.pygame.surfarray.blit_array(self._surf, self._np.transpose(rgb, (1, 0, 2)))
@@ -270,6 +280,8 @@ def run_native_present(channel, *, args) -> None:
                 elif ev.type == pygame.KEYDOWN:
                     if ev.key == pygame.K_F1:
                         overlay.toggle()
+                    elif ev.key == pygame.K_F11:
+                        display.toggle_fullscreen()
                     elif overlay.visible:
                         overlay.handle_key(ev.key, pygame)
 
