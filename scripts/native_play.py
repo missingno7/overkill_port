@@ -183,7 +183,17 @@ def _run_game_loop(rt, backend, stop, demo=None) -> None:
 
 
 def _run_live(rt, args, *, demo=None, title="OVERKILL — native") -> int:
-    """Run the game on a background thread, present on the main thread."""
+    """Run the game on a background thread, present on the main thread.
+
+    EXPERIMENTAL / known-incomplete: a bare step loop blocks in the game's frame
+    loop (1010:D318) waiting for a PIT/IRQ0 timer tick that is never delivered — the
+    interactive game needs play.py's timing machinery (AsyncTimerIrqDriver timer-IRQ
+    delivery + TimerPacer + the hook-wrapped burst model). The proper fix is to drive
+    the native present from play.py's interactive loop; until then this may hang.
+    The proven native render path is ``--snapshot`` (a single recovered frame).
+    """
+    print("native: WARNING — live --demo/--cold is experimental and may hang "
+          "(needs play.py timer-IRQ integration); --snapshot is the proven path.", flush=True)
     rt.cpu.trace_enabled = False
     rt.cpu.coverage_telemetry = None
     backend = NativeOverkillVideoBackend(load_config())
