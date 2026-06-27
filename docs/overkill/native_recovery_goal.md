@@ -79,10 +79,12 @@ does the DOS reads + the boundary fidelity. Prefer rules that take/return
 This goal is meant to run for **hours unattended** (e.g. overnight). The user is away;
 stay productive across the whole window and never stop on the first hard problem.
 
-- **Keep the tree green at all times.** Start each iteration from a clean `git status`.
-  If a slice can't be finished byte-exact (a gate reds and you can't fix it cleanly),
-  **revert all its changes** (`git restore <files>`) so the next iteration starts clean.
-  Never commit or leave a red/partial slice.
+- **Keep the tree green at all times.** Commit only **code / docs / tests** — ignore
+  `artifacts/` (regenerated coverage cache + recorded demos; never part of a slice, don't
+  add or revert them). A slice's `git status` should touch only the files it lifts. If a
+  slice can't be finished byte-exact (a gate reds and you can't fix it cleanly), **revert
+  its changes** (`git restore <files>`) so the next iteration starts clean. Never commit or
+  leave a red/partial slice.
 - **Skip, don't stop.** If a target is blocked (a divergence you can't resolve byte-exact,
   it would need guessing, or it needs gameplay context), append it to
   `docs/overkill/loop_blockers.md` (what you tried, the exact divergence, why it's blocked /
