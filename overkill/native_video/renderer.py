@@ -48,10 +48,12 @@ class LayerRenderer:
     def render(self, snapshot: RenderSnapshot) -> Tuple[np.ndarray, bool]:
         """Render ``snapshot`` to ``(H,W,3)`` RGB. Returns ``(rgb, from_cache)``.
 
-        Held presents of the same source snapshot are served from the colorized
-        cache (no re-colorize); a new game tick (new ``playfield_version``) misses.
+        Baseline: colorize the composed page layer. Held presents of the same source
+        snapshot are served from the colorized cache (no re-colorize); a new game
+        tick (new ``composed_version``) misses. Camera/object interpolation will
+        overlay the ``playfield_indices`` sublayer here once enabled (Stage 3+).
         """
-        key = (snapshot.playfield_version, snapshot.palette_version)
+        key = (snapshot.composed_version, snapshot.palette_version)
         if key == self._cache_key and self._cache_rgb is not None:
             self.cache_hits += 1
             return self._cache_rgb, True
@@ -59,9 +61,9 @@ class LayerRenderer:
         self.cache_misses += 1
         t0 = time.perf_counter()
         lut = self.palette_lut(snapshot)
-        rgb = page_raster.colorize(snapshot.playfield_indices, lut)
-        # Future layers compose here (HUD/page-baked chrome, sprites/effects drawn
-        # natively, camera/object interpolation) — added as each is lifted.
+        rgb = page_raster.colorize(snapshot.composed_indices, lut)
+        # Future layers compose here (camera/object interpolation overlay of the
+        # playfield sublayer, native sprites/effects) — added as each is lifted.
         self.last_colorize_ms = (time.perf_counter() - t0) * 1000.0
 
         self._cache_key = key

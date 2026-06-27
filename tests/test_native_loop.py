@@ -22,7 +22,7 @@ def _np():
 def _frame(np, frame_id, ts):
     return RenderSnapshot(
         frame_id=frame_id, timestamp=ts, scene_kind=SceneKind.GAMEPLAY,
-        playfield_indices=np.zeros((200, 320), dtype=np.uint8), playfield_version=frame_id,
+        composed_indices=np.zeros((200, 320), dtype=np.uint8), composed_version=frame_id,
         palette=tuple((i, i, i) for i in range(16)), palette_version=1, scroll_cursor=0x1000,
     )
 

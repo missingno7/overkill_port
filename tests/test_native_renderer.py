@@ -21,7 +21,7 @@ _PAL = tuple((i, 2 * i, 3 * i) for i in range(16))
 def _snap(np, frame_id, *, version, palette_version=1, fill=0):
     return RenderSnapshot(
         frame_id=frame_id, timestamp=0.0, scene_kind=SceneKind.GAMEPLAY,
-        playfield_indices=np.full((200, 320), fill, dtype=np.uint8), playfield_version=version,
+        composed_indices=np.full((200, 320), fill, dtype=np.uint8), composed_version=version,
         palette=_PAL, palette_version=palette_version, scroll_cursor=0,
     )
 

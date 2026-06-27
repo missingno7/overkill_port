@@ -23,7 +23,7 @@ def _frame(np, frame_id: int, ts: float, *, version: int = None, fill: int = 0):
     indices = np.full((200, 320), fill, dtype=np.uint8)
     return RenderSnapshot(
         frame_id=frame_id, timestamp=ts, scene_kind=SceneKind.GAMEPLAY,
-        playfield_indices=indices, playfield_version=frame_id if version is None else version,
+        composed_indices=indices, composed_version=frame_id if version is None else version,
         palette=_PAL, palette_version=1, scroll_cursor=0x1000,
     )
 

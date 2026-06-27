@@ -42,25 +42,32 @@ class SceneKind(Enum):
 class RenderSnapshot:
     """One game-tick of semantic render-state the backend renders (and interpolates).
 
-    ``playfield_indices`` is the palette-independent ``(200,320)`` uint8 indexed
-    playfield layer (decoded from the source page); ``playfield_version`` is its
-    content id (bump it when the page content changes — drives the colorize cache).
+    ``composed_indices`` is the palette-independent ``(200,320)`` uint8 indexed
+    image — the game's composed page (background + HUD/chrome + baked sprites)
+    decoded by the extractor; the backend colorizes it for the faithful baseline.
+    ``composed_version`` is its content id (drives the colorize cache).
     ``palette``/``palette_version`` are the current 16-colour palette + its id (for
     OVERKILL the palette is fixed, so ``palette_version`` is constant — but the model
     carries it so fades/cache-invalidation work). ``scroll_cursor`` is the present
-    source cursor (the monotonic camera scroll). ``sprites`` is the semantic object
-    list for optional object interpolation; ``snapshot`` keeps the full recovered
-    model for reference/debug.
+    source cursor (the monotonic camera scroll).
+
+    ``playfield_indices`` is the optional *scrolling playfield sublayer* (the source
+    page ``[9598]`` alone, ``x∈[0,208), y∈[4,196)``); it is carried for camera/object
+    interpolation (Stage 3+), overlaid on ``composed_indices`` only when interpolation
+    is on. ``sprites`` is the semantic object list (future per-object interpolation);
+    ``snapshot`` keeps the full recovered model for reference/debug.
     """
 
     frame_id: int
     timestamp: float
     scene_kind: SceneKind
-    playfield_indices: "np.ndarray"
-    playfield_version: int
+    composed_indices: "np.ndarray"
+    composed_version: int
     palette: Tuple[RGB, ...]
     palette_version: int
     scroll_cursor: int
+    playfield_indices: "Optional[np.ndarray]" = None
+    playfield_version: int = 0
     sprites: "Tuple[SpriteDraw, ...]" = ()
     snapshot: "Optional[FrameSnapshot]" = None
 
