@@ -294,10 +294,22 @@ class InputDemoPlayback:
             return boundary >= end
         return self.exhausted
 
-    def apply_to_runtime(self, boundary: int, rt: Runtime, *, deliver: Callable[[Runtime, int], None] = deliver_scancode) -> int:
-        return self.apply_to_runtimes(boundary, (rt,), deliver=deliver)
+    def apply_to_runtime(self, boundary: int, rt: Runtime, *, deliver: Callable[[Runtime, int], None] = deliver_scancode, single: bool = False) -> int:
+        return self.apply_to_runtimes(boundary, (rt,), deliver=deliver, single=single)
 
-    def apply_to_runtimes(self, boundary: int, runtimes: Sequence[Runtime], *, deliver: Callable[[Runtime, int], None] = deliver_scancode) -> int:
+    def apply_to_runtimes(self, boundary: int, runtimes: Sequence[Runtime], *, deliver: Callable[[Runtime, int], None] = deliver_scancode, single: bool = False) -> int:
+        """Deliver due demo events (boundary <= ``boundary``) to each runtime.
+
+        With ``single=True`` deliver **at most one** event this call.  Callers pass
+        this when the game is parked in a fine-grained menu keyboard-poll wait, so
+        several events recorded against the *same* boundary (a key release followed
+        by a re-press, or one arrow's release sharing a boundary with the next
+        arrow's press) are spread across successive poll iterations.  Otherwise the
+        game samples the keyboard only once after all of them are applied, never
+        observes the intermediate release, and collapses two taps into one --
+        defeating the original release-debounce loops.  Real frame boundaries
+        (``single=False``) deliver every due event, matching once-per-frame sampling.
+        """
         boundary = max(0, int(boundary))
         applied = 0
         while self._index < len(self.events) and self.events[self._index].boundary <= boundary:
@@ -306,6 +318,8 @@ class InputDemoPlayback:
                 self._apply_event(rt, event, deliver=deliver)
             self._index += 1
             applied += 1
+            if single:
+                break
         return applied
 
     @staticmethod

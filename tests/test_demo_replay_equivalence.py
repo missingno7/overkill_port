@@ -56,6 +56,7 @@ def _run_demo_equivalence(demo_dir: Path, *, max_frames: int, to_end: bool) -> N
 
     from dos_re.input_demo import InputDemoPlayback
     from overkill.frame_verify import FrameVerifyConfig, run_frame_verifier
+    from overkill.input_waits import pump_demo_frame
 
     demo = InputDemoPlayback.load(demo_dir)
     snapshot = demo.snapshot_path()
@@ -65,7 +66,9 @@ def _run_demo_equivalence(demo_dir: Path, *, max_frames: int, to_end: bool) -> N
     boundary = {"n": 0}
 
     def pump_inputs(ref_rt, cand_rt) -> None:
-        demo.apply_to_runtimes(boundary["n"], (ref_rt, cand_rt))
+        # Paced-by-consumption in menu keyboard-waits (the original selector runs as
+        # raw ASM on both sides), scheduled-by-boundary otherwise.
+        boundary["n"], _ = pump_demo_frame(demo, boundary["n"], (ref_rt, cand_rt), ref_rt.cpu)
         boundary["n"] += 1
 
     stop_requested = None

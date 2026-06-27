@@ -14,6 +14,8 @@ lets the same fix apply to interactive play, ``--verify-hooks``, and
 """
 from __future__ import annotations
 
+from typing import Sequence
+
 from dos_re.cpu import CPU8086
 
 Addr = tuple[int, int]
@@ -82,7 +84,7 @@ def _flag_poll_spin(mem, ds: int, head: int) -> bool:
     return zero if b[5] == 0x74 else not zero       # JE takes ZF; JNZ takes !ZF
 
 
-def _selector_idle_head(cpu: CPU8086):
+def _selector_idle_head(cpu: CPU8086, *, coarse: bool = False):
     """Return the level/difficulty selector's idle-loop head (D445), or None.
 
     The selector dispatch loop is longer than the simple press/release family:
@@ -106,6 +108,10 @@ def _selector_idle_head(cpu: CPU8086):
     cands = [ip, (ip - 7) & 0xFFFF]  # head, or parked on the CALL at head+7
     if ip == 0x0162:
         cands.append((mem.rw(cpu.s.ss & 0xFFFF, cpu.s.sp & 0xFFFF) - 0x0A) & 0xFFFF)
+    if coarse:
+        # play.py runs coarse CPU bursts that stop anywhere in the long idle loop
+        # body (head .. JE-back-to-head, ~0x2E bytes); scan back for the head.
+        cands.extend((ip - d) & 0xFFFF for d in range(8, 0x31))
     for head in cands:
         b = mem.block(0x1010, head & 0xFFFF, 10)
         if b[0:5] != b"\x80\x3e\xe4\x98\x01" or b[5] != 0x74 or b[7] != 0xE8:
@@ -144,7 +150,7 @@ def title_fire_release_wait(cpu: CPU8086) -> bool:
         return True
     if _flag_poll_spin(mem, ds, ip) or _flag_poll_spin(mem, ds, (ip - 5) & 0xFFFF):
         return True  # 2-instr flag-poll: head, or coarse-parked on the branch
-    return _selector_idle_head(cpu) is not None
+    return _selector_idle_head(cpu, coarse=True) is not None
 
 
 # CBDD..CBE5: `mov al,[54]; cmp al,[54]; je $-6` -- the CBD5 frame-tick wait.
@@ -222,3 +228,49 @@ def frame_verify_input_wait(cpu: CPU8086) -> tuple[str, Addr] | None:
     if head is not None and head == (cpu.s.ip & 0xFFFF):
         return "wait", (0x1010, head)
     return None
+
+
+def _on_input_select_screen(cpu: CPU8086) -> bool:
+    """True while executing the level/difficulty-select screen handler (D390..D4AF).
+
+    That screen polls the keyboard sub-frame through its selector loop.  A present
+    or timer boundary can leave the CPU anywhere in the handler -- in its render or
+    transition code, not on an input poll -- and demo input must NOT be applied
+    there: the game would not sample it until its next poll, and a release pumped
+    there lets the following press arrive before the debounce loop has consumed the
+    release (eating the press).  Delivery is deferred to the next keyboard wait.
+    Guarded by the selector head signature (D445) so it only fires on the real
+    input-select screen.
+    """
+    cs, ip = cpu.addr()
+    if cs != 0x1010 or not (0xD390 <= ip < 0xD4B0):
+        return False
+    b = cpu.mem.block(0x1010, 0xD445, 7)
+    return b[0:5] == b"\x80\x3e\xe4\x98\x01" and b[5] == 0x74
+
+
+def pump_demo_frame(demo, boundary_n: int, runtimes: Sequence, cpu: CPU8086) -> tuple[int, int]:
+    """Deliver one replay frame of demo input; return ``(boundary_n, applied)``.
+
+    Events are scheduled by their recorded boundary, so replay keeps the original
+    timing.  The refinement is the level-select screen, which samples the keyboard
+    sub-frame through stateful debounce loops:
+
+    * parked at one of its keyboard waits -> deliver **one** due event, so a key
+      release is fully consumed (the game returns to idle) before the next press,
+      and same-boundary release+repress pairs spread across polls instead of
+      collapsing into one tap;
+    * on that screen but between polls (a present/render boundary) -> deliver
+      **nothing**, deferring to the next poll so input is never applied where the
+      game is not sampling it;
+    * anywhere else (once-per-frame gameplay sampling) -> deliver every due event.
+
+    Requires the menu input-wait loops to run as raw ASM on every runtime (the
+    approximate selector replacement hooks are removed) so this sub-frame delivery
+    keeps the verifier's reference and candidate in lockstep.
+    """
+    if title_fire_release_wait(cpu):
+        return boundary_n, demo.apply_to_runtimes(boundary_n, runtimes, single=True)
+    if _on_input_select_screen(cpu):
+        return boundary_n, 0
+    return boundary_n, demo.apply_to_runtimes(boundary_n, runtimes)

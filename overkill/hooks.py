@@ -62,9 +62,6 @@ from .rendering.ega import (
 from dos_re.memory import EGA_CPU_APERTURE, EGA_APERTURE, EGA_PLANE_STRIDE, EGA_PLANE_WINDOW
 from .input_menu import (
     pack_keyboard_poll_bits_017e,
-    run_input_selector_loop_d445,
-    run_menu_fire_release_wait_d390,
-    run_selector_input_release_wait_d434,
     run_main_menu_idle_loop_558b,
     run_input_poll_0162,
     run_input_release_wait_gate_986e,
@@ -3693,34 +3690,13 @@ def overkill_main_menu_idle_loop_558b(cpu):
     run_main_menu_idle_loop_558b(cpu)
 
 
-_SIG_D390 = bytes.fromhex("e8 cf 2d f6 06 be 98 10 75 f6")
-
-
-@registry.replace(0x1010, 0xD390, "overkill_menu_fire_release_wait_d390")
-def overkill_menu_fire_release_wait_d390(cpu):
-    """One poll of the menu FIRE/SPACE release wait before transition setup."""
-    if not _code_matches(cpu, 0xD390, _SIG_D390):
-        _interpret_current_instruction_without_hook(cpu)
-        return
-    run_menu_fire_release_wait_d390(cpu)
-
-
-_SIG_D434 = bytes.fromhex("80 3e e4 98 01 74 f9 e8 24 2d 80 3e be 98 00 75 f6")
-
-
-@registry.replace(0x1010, 0xD434, "overkill_selector_input_release_wait_d434")
-def overkill_selector_input_release_wait_d434(cpu):
-    """One poll of the selector input-release wait before entering D445."""
-    if not _code_matches(cpu, 0xD434, _SIG_D434):
-        _interpret_current_instruction_without_hook(cpu)
-        return
-    run_selector_input_release_wait_d434(cpu)
-
-
-@registry.replace(0x1010, 0xD445, "overkill_input_selector_loop_d445")
-def overkill_input_selector_loop_d445(cpu):
-    """Replace the observed D445 input/selector loop and BEDC counter path."""
-    run_input_selector_loop_d445(cpu)
+# The level-select fire-release (D390), input-release (D434) and selector (D445)
+# loops run as raw ASM on every runtime now.  Their one-iteration replacement
+# hooks were approximations that matched the ASM only at frame granularity; demo
+# replay delivers menu input sub-frame (paced by consumption), under which the
+# approximations drifted from the ASM.  overkill.input_waits resolves the
+# boundary-less spins instead (for both the headless verifier and play.py), so
+# both runtimes execute the identical original selector and stay in lockstep.
 
 
 @registry.replace(0x1010, 0x017E, "overkill_keyboard_poll_bits_017e")

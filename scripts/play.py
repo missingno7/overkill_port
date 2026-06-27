@@ -68,7 +68,7 @@ from overkill.coverage import (
 from overkill.sounds import AsyncTimerIrqDriver, OVERKILL_PIT_HZ
 from overkill.launch import build_command_tail
 from dos_re.input_demo import InputDemoPlayback, InputDemoRecorder, dos_key_value
-from overkill.input_waits import title_fire_release_wait
+from overkill.input_waits import pump_demo_frame, title_fire_release_wait
 from render_frame import CGA_PALETTES
 
 CGA_PRESENT_HOOK = (0x1010, 0x447B)  # mode-0 CGA frame-present blit
@@ -430,7 +430,8 @@ def main(argv: list[str] | None = None) -> int:
 
         def pump_inputs(ref_rt, cand_rt) -> None:
             if demo_playback is not None:
-                demo_playback.apply_to_runtimes(frame_demo_boundary["n"], (ref_rt, cand_rt))
+                frame_demo_boundary["n"], _ = pump_demo_frame(
+                    demo_playback, frame_demo_boundary["n"], (ref_rt, cand_rt), ref_rt.cpu)
                 frame_demo_boundary["n"] += 1
                 return
             keyboard.pump()
@@ -597,7 +598,8 @@ def main(argv: list[str] | None = None) -> int:
         def pump_demo_inputs(ref_rt, cand_rt) -> None:
             if demo_playback is None:
                 return
-            demo_playback.apply_to_runtimes(frame_demo_boundary["n"], (ref_rt, cand_rt))
+            frame_demo_boundary["n"], _ = pump_demo_frame(
+                demo_playback, frame_demo_boundary["n"], (ref_rt, cand_rt), ref_rt.cpu)
             frame_demo_boundary["n"] += 1
 
         def demo_finished() -> bool:
@@ -1321,7 +1323,7 @@ def main(argv: list[str] | None = None) -> int:
                         print(status["text"], flush=True)
                         stop.set()
                         break
-                    applied = demo_playback.apply_to_runtime(boundary["n"], rt)
+                    boundary["n"], applied = pump_demo_frame(demo_playback, boundary["n"], (rt,), rt.cpu)
                     if applied:
                         status["text"] = f"input demo replay boundary={boundary['n']} events={applied}"
                 else:
