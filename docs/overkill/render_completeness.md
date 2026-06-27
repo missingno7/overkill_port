@@ -67,11 +67,28 @@ output, and **witness it against the live draws** before marking done.
 - [ ] **Score tally / level-end** — the end-of-level tally screen.
 
 ### Non-gameplay scenes
+*Finding (witnessed):* the menu fires **none** of the gameplay render hooks
+(5AC8/5A92/5BDC/61DC/3354/A846 all 0 over the menu demo) and has 0 sprites — the
+scenes are a **separate render path** (text/menu-cells, not the object-sprite
+system). They are mostly static, so for the enhanced renderer they can
+**faithful-fallback** (decode the framebuffer/plane to RGB via the recovered
+Tandy geometry) rather than be interpolated. Recover their producers for
+completeness, but they do not block the enhanced renderer.
 - [ ] **Title / intro** — the title screen + intro sequence.
-- [ ] **Menu / mode select** — the menu (uses the same sprite path via 97B2;
-      confirm the menu content is in the object tables).
+- [ ] **Menu / mode select** — separate path (draw_string + menu cells via 97B2).
 - [ ] **Loading / scroll-in** — the level materialization scroll (`60C5`/`36A2`).
 - [ ] **Game over / continue**.
+
+## Milestone: the gameplay frame is complete (enhanced-renderer-ready core)
+
+The interpolation-critical layer — the **gameplay frame** — is fully modelled and
+grounded: playfield sprites (VERIFIED witnessed-exact), HUD (counters + score),
+background (scroll + work-plane reference), and the Tandy screen geometry
+(di ↔ x,y). The enhanced renderer can consume this now: place sprites at
+`di_to_screen(screen_di)`, interpolate in screen space per the two-clock model,
+composite the HUD, scroll the background plane. Remaining for *entire-game*
+completeness: the present composition (`5BDC`/`3354`) and the separate scene
+render paths (faithful-fallback above).
 
 ## Method (per item)
 1. Find the original draw routine (frame dispatch → the routine that draws it).
