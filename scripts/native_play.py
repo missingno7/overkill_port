@@ -124,18 +124,19 @@ class PygameDisplay:
 
     def _open(self) -> None:
         pygame = self.pygame
-        # SCALED renders at the logical size and scales to the display; in fullscreen
-        # it fills the monitor. (Passing (0,0) with SCALED is invalid.)
-        flags = (pygame.FULLSCREEN | pygame.SCALED) if self.fullscreen else 0
+        # SCALED renders at the logical size (self.size) and GPU-scales it to the
+        # actual window preserving aspect ratio (letterboxed); RESIZABLE lets the
+        # window be dragged/maximised. FULLSCREEN+SCALED fills the monitor.
+        flags = (pygame.FULLSCREEN | pygame.SCALED) if self.fullscreen else (pygame.SCALED | pygame.RESIZABLE)
         try:
             self.screen = pygame.display.set_mode(self.size, flags, vsync=1 if self.vsync else 0)
         except TypeError:
             self.screen = pygame.display.set_mode(self.size, flags)
         except pygame.error:
-            # fullscreen / vsync renderer creation can fail on some drivers; fall back
-            # to a plain window instead of crashing the presenter.
+            # fullscreen / SCALED renderer creation can fail on some drivers; fall
+            # back to a plain resizable window instead of crashing the presenter.
             self.fullscreen = False
-            self.screen = pygame.display.set_mode(self.size, 0)
+            self.screen = pygame.display.set_mode(self.size, pygame.RESIZABLE)
         pygame.display.set_caption(self.title)
 
     def set_vsync(self, vsync: bool) -> None:
