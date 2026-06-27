@@ -4,19 +4,17 @@ Reads the original object tables + camera globals through memory views and
 reconstructs the render-intent snapshot the enhanced renderer/interpolator
 consume. This is the one place VM memory meets the render dataclasses.
 
-**Status: OBSERVED hypothesis — known to need correction.** The draw list here is
-"every active object slot" in the effect + gameplay tables. The *faithful* render
-list is NOT that: `run_present_object_scan_pair_a90c` (layer_sprites.py) shows the
-present scan walks two **presence lists** — `DS:8D12` (34 entries, scanned by the
-A90F hook) and `DS:32CA` (36 entries, scanned by A927) — populated by the 4CED
-presence-stamp and dispatched per-object via 5A92. So the grounded draw list must
-read those presence lists (entry format TBD: object pointer + screen position),
-not iterate the object tables.
+**Status: ASM_MATCHED (content + order); not yet VERIFIED.** Grounded against the
+real present scan via `overkill/probes/inspect_draw_list.py`: the present lists
+`DS:8D12` (gameplay) and `DS:32CA` (effect) are **static pointer arrays into the
+two object tables** (2B5C / 23B4 + 0x38 stride), and `run_present_object_scan_pair_a90c`
+walks `8D12` (gameplay) **first**, then `32CA` (effect), checking each slot's
+active flag. So the draw list *is* the active slots of both tables, in
+**gameplay-then-effect** order — matched below.
 
-Grounding step (enhanced_renderer_plan.md R2): recover the 8D12/32CA presence-list
-entry format and the A90F/A927 scan, then prove the snapshot's draw list matches
-the present scan + a VRAM round-trip over the demo corpus. Until then this
-extractor is a scaffold, not the render contract.
+Remaining for VERIFIED (enhanced_renderer_plan.md R2): the per-`draw_layer` sort
+the A846 layer scan applies, any on-screen culling, and a VRAM round-trip over the
+demo corpus. The CameraState source (VIEW_TARGET) is still OBSERVED.
 """
 from __future__ import annotations
 
@@ -32,10 +30,11 @@ from overkill.recovered.views.object_slots import (
     ObjectSlotView,
 )
 
-# The object tables walked for the draw list (effect slots first, then gameplay).
+# The object tables walked for the draw list, in the present-scan order grounded
+# by the probe: A90C scans DS:8D12 (gameplay) first, then DS:32CA (effect).
 _OBJECT_TABLES = (
-    (EFFECT_OBJECT_TABLE_BASE, EFFECT_OBJECT_TABLE_COUNT),
     (GAMEPLAY_OBJECT_TABLE_BASE, GAMEPLAY_OBJECT_TABLE_COUNT),
+    (EFFECT_OBJECT_TABLE_BASE, EFFECT_OBJECT_TABLE_COUNT),
 )
 
 
