@@ -1,25 +1,26 @@
 #!/usr/bin/env python
 """Native video backend viewer (modern pygame presentation of the recovered model).
 
-This is the pygame-coupled half of ``overkill.native_video`` — kept out of the
-VM-independent backend package. It presents the backend's frames at the monitor
-refresh, forwards keyboard input to the game, and hosts the F1 settings overlay.
+The native backend presents at the monitor refresh, decoupled from the VM. Because
+the pure-Python VM and the present loop cannot both have the GIL, the VM runs in a
+*separate process*: ``play.py --backend native`` becomes the **presenter** parent
+(this module's :func:`run_native_present`) and spawns a **VM child**
+(``play.py --backend native --mp-publish <shm>``) whose
+:func:`run_publisher` writes composed frames into a shared-memory channel. The
+presenter free-runs and (later) interpolates between the child's frames.
 
-Live gameplay runs through ``play.py``: ``play.py --backend native [--demo DIR]``
-keeps play.py's proven emulator loop + timing (timer-IRQ, pacing, the burst model)
-and swaps only the viewer — :func:`run_native_ui` consumes the same ``FrameSync``
-the SDL viewer does, forwards keys to the same ``keyboard`` dispatcher, and presents
-via the native backend (decoupled present clock + caching + opt-in interpolation).
-Standalone, ``--snapshot DIR`` presents one captured frame (no game loop).
+Standalone, ``--snapshot DIR`` presents one captured frame (no VM).
 """
 from __future__ import annotations
 
 import argparse
-import dataclasses
 import json
 import re
+import struct
+import subprocess
 import sys
 import time
+from multiprocessing import shared_memory
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -29,9 +30,57 @@ from overkill.native_video.backend import NativeOverkillVideoBackend  # noqa: E4
 from overkill.native_video.config import load_config, save_config  # noqa: E402
 from overkill.recovered.systems.tandy_screen import SCREEN_HEIGHT, SCREEN_WIDTH  # noqa: E402
 
-# Tandy/CGA pack their aperture at the real B800 segment; the present decode is
-# Tandy mode-2 (the native backend's only decode today).
 B800_BASE = 0xB8000
+_FRAME_BYTES = SCREEN_WIDTH * SCREEN_HEIGHT  # 320x200 indexed (uint8)
+_SLOTS = 3                                    # triple buffer (tear-free single-writer/reader)
+_HEADER = 16                                  # counter (8) + reserved
+
+
+class FrameChannel:
+    """Lock-free shared-memory frame hand-off from the VM child to the presenter.
+
+    The child writes the composed indexed frame to slot ``(counter+1) % 3`` then
+    publishes the new counter; the presenter reads ``counter % 3``. With three
+    slots the writer never overwrites the slot the reader is on, so no lock is
+    needed for one writer + one reader.
+    """
+
+    def __init__(self, *, name: str | None = None, create: bool = False) -> None:
+        if create:
+            self.shm = shared_memory.SharedMemory(create=True, size=_HEADER + _SLOTS * _FRAME_BYTES)
+            struct.pack_into("q", self.shm.buf, 0, 0)
+        else:
+            self.shm = shared_memory.SharedMemory(name=name)
+        self.name = self.shm.name
+
+    def write(self, frame_bytes: bytes) -> None:
+        counter = struct.unpack_from("q", self.shm.buf, 0)[0]
+        slot = (counter + 1) % _SLOTS
+        off = _HEADER + slot * _FRAME_BYTES
+        self.shm.buf[off:off + _FRAME_BYTES] = frame_bytes
+        struct.pack_into("q", self.shm.buf, 0, counter + 1)  # publish only after the copy
+
+    def peek_counter(self) -> int:
+        """The current frame counter (cheap; no frame copy) — used to skip the
+        64 KB copy when no new frame has arrived."""
+        return struct.unpack_from("q", self.shm.buf, 0)[0]
+
+    def read(self):
+        counter = self.peek_counter()
+        if counter == 0:
+            return 0, None
+        slot = counter % _SLOTS
+        off = _HEADER + slot * _FRAME_BYTES
+        return counter, bytes(self.shm.buf[off:off + _FRAME_BYTES])
+
+    def close(self) -> None:
+        self.shm.close()
+
+    def unlink(self) -> None:
+        try:
+            self.shm.unlink()
+        except FileNotFoundError:
+            pass
 
 
 def _require_pygame():
@@ -63,7 +112,7 @@ class PygameDisplay:
     def _open(self) -> None:
         try:
             self.screen = self.pygame.display.set_mode(self.size, vsync=1 if self.vsync else 0)
-        except TypeError:  # older SDL/pygame without the vsync kwarg
+        except TypeError:
             self.screen = self.pygame.display.set_mode(self.size)
         self.pygame.display.set_caption(self.title)
 
@@ -73,7 +122,6 @@ class PygameDisplay:
             self._open()
 
     def blit_frame(self, rgb) -> None:
-        """Blit a (200,320,3) frame to the (scaled) back buffer (no flip)."""
         self.pygame.surfarray.blit_array(self._surf, self._np.transpose(rgb, (1, 0, 2)))
         self.pygame.transform.scale(self._surf, self.size, self.screen)
 
@@ -81,7 +129,6 @@ class PygameDisplay:
         self.pygame.display.flip()
 
     def draw(self, presented) -> None:
-        """Blit + flip in one call (used by the standalone --snapshot path)."""
         self.blit_frame(presented.rgb)
         self.flip()
 
@@ -92,16 +139,13 @@ class PygameDisplay:
         self.pygame.quit()
 
 
-# Present-rate cycle: None = vsync (sync to monitor), 0 = uncapped, else a Hz cap.
-_PRESENT_RATES = [None, 60, 120, 144, 240, 0]
+_PRESENT_RATES = [None, 60, 120, 144, 240, 0]  # None = vsync, 0 = uncapped
 
 
 def _rate_label(rate) -> str:
     if rate is None:
         return "VSync (monitor)"
-    if rate == 0:
-        return "Uncapped"
-    return f"{rate} Hz"
+    return "Uncapped" if rate == 0 else f"{rate} Hz"
 
 
 class NativeOverlay:
@@ -124,6 +168,7 @@ class NativeOverlay:
             self._cycle_rate(+1)
 
     def _cycle_rate(self, direction: int) -> None:
+        import dataclasses
         cur = self.backend.config.target_present_hz
         idx = _PRESENT_RATES.index(cur) if cur in _PRESENT_RATES else 0
         new = _PRESENT_RATES[(idx + direction) % len(_PRESENT_RATES)]
@@ -149,58 +194,11 @@ class NativeOverlay:
             f"present {d.present_fps:6.1f} Hz     source {d.source_fps:6.1f} Hz",
             f"render  {d.native_render_ms:5.2f} ms     cache {d.cache_hits}/{total}",
             "",
-            "Object interpolation: WIP - needs the sprite/background",
-            "separation lift (sprites are baked into the page).",
+            "Object interpolation: WIP (needs the sprite lift, in progress)",
         ):
             panel.blit(self.display.font.render(line, True, (180, 200, 255)), (24, y))
             y += 24
         self.display.screen.blit(panel, (0, 0))
-
-
-def _clean_bg_playfield_indices(strip):
-    """Decode the captured pre-sprite [9598] strip (192 x 0x68 bytes) to screen
-    indices via the present blit geometry (the playfield rect; rest 0)."""
-    import numpy as np
-    from overkill.native_video import page_raster as pr
-    s = np.frombuffer(strip, dtype=np.uint8)
-    scratch = np.zeros(0x10000, dtype=np.uint8)
-    di = pr.PRESENT_DEST_START
-    W = pr.PRESENT_ROW_BYTES
-    for r in range(pr.PRESENT_ROWS):
-        scratch[di:di + W] = s[r * W:(r + 1) * W]
-        di = (di + pr.PRESENT_BANK_ADVANCE) & 0xFFFF
-        if di & 0x8000:
-            di = (di + pr.PRESENT_BANK_WRAP) & 0xFFFF
-    return pr.decode_tandy_b800_indices(scratch, 0)
-
-
-def _build_source_frame(snapshot_bytes, frame_id, *, clean_bg=None, show_clean_bg=False):
-    """Build the source RenderSnapshot from the composed page (the faithful frame).
-
-    With ``show_clean_bg`` (the F2 debug view) the playfield rect is replaced by the
-    captured pre-sprite background, so you can confirm the clean-bg capture is correct
-    — the playfield should then show NO moving objects, just the scrolling scenery.
-    This is the foundation for object interpolation (sprites = composed - clean bg).
-    """
-    import numpy as np
-    from overkill.native_video.frame import RenderSnapshot, SceneKind
-    from overkill.native_video.page_raster import (
-        PLAYFIELD_H, PLAYFIELD_W, PLAYFIELD_X0, PLAYFIELD_Y0, decode_tandy_b800_indices,
-    )
-    from overkill.recovered.systems.tandy_screen import TANDY_PALETTE_RGB
-
-    composed = decode_tandy_b800_indices(np.frombuffer(snapshot_bytes, dtype=np.uint8), B800_BASE)
-    if show_clean_bg and clean_bg is not None and clean_bg.get("strip") is not None:
-        clean = _clean_bg_playfield_indices(clean_bg["strip"])
-        composed = composed.copy()
-        y0, y1 = PLAYFIELD_Y0, PLAYFIELD_Y0 + PLAYFIELD_H
-        x0, x1 = PLAYFIELD_X0, PLAYFIELD_X0 + PLAYFIELD_W
-        composed[y0:y1, x0:x1] = clean[y0:y1, x0:x1]
-    return RenderSnapshot(
-        frame_id=frame_id, timestamp=time.monotonic(), scene_kind=SceneKind.GAMEPLAY,
-        composed_indices=composed, composed_version=frame_id,
-        palette=TANDY_PALETTE_RGB, palette_version=0, scroll_cursor=0,
-    )
 
 
 def _update_title(backend, display, last_title):
@@ -216,69 +214,73 @@ def _update_title(backend, display, last_title):
     return now
 
 
-def run_native_ui(*, args, frame_sync, stop, keyboard=None, live_ds=None, live_clean_bg=None, **_ignored) -> None:
-    """Native viewer: consume play.py's frames, forward input, present + overlay.
+def _composed_snapshot(composed_indices, frame_id):
+    from overkill.native_video.frame import RenderSnapshot, SceneKind
+    from overkill.recovered.systems.tandy_screen import TANDY_PALETTE_RGB
+    return RenderSnapshot(
+        frame_id=frame_id, timestamp=time.monotonic(), scene_kind=SceneKind.GAMEPLAY,
+        composed_indices=composed_indices, composed_version=frame_id,
+        palette=TANDY_PALETTE_RGB, palette_version=0, scroll_cursor=0,
+    )
 
-    Runs on the main thread while play.py's emulator_loop publishes frames from a
-    background thread. Keys are posted to play.py's ``keyboard`` dispatcher (the
-    emulator loop pumps them); F1 toggles the settings overlay; F2 toggles the
-    clean-background debug view (object-interpolation foundation).
-    """
-    if getattr(args, "video", "tandy") not in ("tandy", "cga"):
-        print(f"native: --backend native currently decodes Tandy/CGA (B800); "
-              f"--video {args.video} is not supported yet.", flush=True)
-        return
+
+# ----- VM child: publish composed frames into the shared-memory channel ----------
+
+def run_publisher(channel_name, *, frame_sync, stop, video="tandy") -> None:
+    """Child side (inside play.py's VM process): consume play.py's published frames
+    and write the composed indexed page into the shared-memory channel."""
+    import numpy as np
+    from overkill.native_video.page_raster import decode_tandy_b800_indices
+    channel = FrameChannel(name=channel_name)
+    last_shown = 0
+    try:
+        while not stop.is_set():
+            pending = frame_sync.take_pending()
+            if pending is not None and pending[0] > last_shown:
+                last_shown = pending[0]
+                composed = decode_tandy_b800_indices(np.frombuffer(pending[1], dtype=np.uint8), B800_BASE)
+                channel.write(np.ascontiguousarray(composed, dtype=np.uint8).tobytes())
+                frame_sync.mark_displayed(pending[0])  # unblock the emulator (no viewer wait)
+            else:
+                time.sleep(0.001)
+    finally:
+        channel.close()
+
+
+# ----- Presenter parent: free-run the present loop reading the channel -----------
+
+def run_native_present(channel, *, args) -> None:
+    """Parent side: present the child's frames at the monitor refresh (decoupled)."""
+    import numpy as np
     pygame = _require_pygame()
-    from sdl_view import _build_pygame_scan
-    scan = _build_pygame_scan()
-
     backend = NativeOverkillVideoBackend(load_config())
     display = PygameDisplay(scale=args.scale, vsync=backend.config.target_present_hz is None)
     overlay = NativeOverlay(backend, display)
-    last_shown = 0
+    last_counter = 0
     source_id = 0
     last_title = 0.0
     next_present = time.monotonic()
-    debug = {"clean_bg": False}
-    print("native: window up - your usual keys play; F1 = settings; "
-          "F2 = clean-background debug view; close window to quit", flush=True)
+    print("native: presenter up - F1 = settings; close window to quit", flush=True)
     try:
         running = True
-        while running and not stop.is_set():
+        while running:
             for ev in pygame.event.get():
                 if ev.type == pygame.QUIT:
                     running = False
                 elif ev.type == pygame.KEYDOWN:
                     if ev.key == pygame.K_F1:
                         overlay.toggle()
-                    elif ev.key == pygame.K_F2:
-                        debug["clean_bg"] = not debug["clean_bg"]
-                        display.set_title("native: CLEAN-BG DEBUG " + ("ON" if debug["clean_bg"] else "OFF"))
                     elif overlay.visible:
                         overlay.handle_key(ev.key, pygame)
-                    elif keyboard is not None:
-                        sc = scan.get(ev.key)
-                        if sc is not None:
-                            keyboard.post_down(sc)
-                elif ev.type == pygame.KEYUP:
-                    if not overlay.visible and keyboard is not None:
-                        sc = scan.get(ev.key)
-                        if sc is not None:
-                            keyboard.post_up(sc)
 
-            pending = frame_sync.take_pending()
-            if pending is not None and pending[0] > last_shown:
-                last_shown = pending[0]
-                source_id += 1
-                backend.submit_source_frame(_build_source_frame(
-                    pending[1], source_id,
-                    clean_bg=live_clean_bg() if live_clean_bg is not None else None,
-                    show_clean_bg=debug["clean_bg"],
-                ))
-                frame_sync.mark_displayed(pending[0])  # unblock the emulator's publish_and_wait
+            if channel.peek_counter() > last_counter:  # new VM frame -> decode it
+                counter, frame = channel.read()
+                if counter > last_counter:
+                    last_counter = counter
+                    source_id += 1
+                    composed = np.frombuffer(frame, dtype=np.uint8).reshape(SCREEN_HEIGHT, SCREEN_WIDTH)
+                    backend.submit_source_frame(_composed_snapshot(composed, source_id))
 
-            # Present-rate control (decoupled from the source): VSync syncs the flip
-            # to the monitor; a Hz cap paces manually with vsync off; uncapped free-runs.
             target = backend.config.target_present_hz
             want_vsync = target is None
             if display.vsync != want_vsync:
@@ -294,7 +296,7 @@ def run_native_ui(*, args, frame_sync, stop, keyboard=None, live_ds=None, live_c
             else:
                 time.sleep(0.003)
 
-            if target and target > 0:  # explicit Hz cap (vsync off): pace to it
+            if target and target > 0:
                 now = time.monotonic()
                 if now < next_present:
                     time.sleep(next_present - now)
@@ -307,8 +309,35 @@ def run_native_ui(*, args, frame_sync, stop, keyboard=None, live_ds=None, live_c
         display.close()
 
 
+def run_mp(args) -> int:
+    """Parent launcher: spawn the VM child process and present its frames."""
+    channel = FrameChannel(create=True)
+    cmd = [sys.executable, str(ROOT / "scripts" / "play.py"), "--backend", "native",
+           "--mp-publish", channel.name, "--video", getattr(args, "video", "tandy")]
+    if getattr(args, "demo", None):
+        cmd += ["--demo", args.demo]
+    if getattr(args, "sound", None):
+        cmd += ["--sound", args.sound]
+    if getattr(args, "snapshot", None):
+        cmd += ["--snapshot", args.snapshot]
+    print("native: launching VM child (decoupled present): " + " ".join(cmd), flush=True)
+    child = subprocess.Popen(cmd)
+    try:
+        run_native_present(channel, args=args)
+    finally:
+        if child.poll() is None:
+            child.terminate()
+            try:
+                child.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                child.kill()
+        channel.close()
+        channel.unlink()
+    return 0
+
+
 def run_snapshot(args) -> int:
-    """Standalone: present one captured snapshot at the display refresh (no game loop)."""
+    """Standalone: present one captured snapshot at the display refresh (no VM)."""
     from dos_re.memory import Memory
     from overkill.recovered.adapters.render_snapshot_adapter import extract_render_snapshot
 

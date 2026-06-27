@@ -277,6 +277,8 @@ def main(argv: list[str] | None = None) -> int:
     launch.add_argument("--backend", choices=("vm", "native"), default="vm",
                         help="presentation backend: vm = the faithful SDL viewer/oracle (default); "
                              "native = the modern VM-independent renderer (scripts/native_play.py)")
+    launch.add_argument("--mp-publish", default=None,
+                        help=argparse.SUPPRESS)  # internal: this is the VM child; publish frames to this shm name
 
     viewer = p.add_argument_group("interactive viewer")
     viewer.add_argument("--game-hz", type=float, default=36.4,
@@ -340,6 +342,12 @@ def main(argv: list[str] | None = None) -> int:
     # pacing/burst) and only swaps the viewer at the run_sdl_ui call site below.
     if args.backend == "native" and (args.verify_hooks or args.verify_hook or args.verify_frames):
         p.error("--backend native is a presentation mode, not a verifier")
+    if args.backend == "native" and not args.mp_publish:
+        # Presenter parent: spawn the VM in a child process and present its frames
+        # at the monitor refresh, decoupled from the VM's GIL. (The child re-enters
+        # this main with --mp-publish and runs the emulator + frame publisher.)
+        import native_play
+        return native_play.run_mp(args)
 
     if args.verify_frames and (args.verify_hooks or args.verify_hook):
         p.error("choose either --verify-frames or --verify-hooks/--verify-hook, not both")
@@ -1540,34 +1548,14 @@ def main(argv: list[str] | None = None) -> int:
         dashboard.start()
 
     # Start the emulator thread, then run the pygame/SDL viewer on the main thread.
-    # Native backend object-interpolation foundation: capture the playfield page
-    # [9598] at the sprite-scan entry (1010:A846) — i.e. the background *before* the
-    # masked compositors draw sprites into it. The native viewer differences this
-    # clean bg against the composed frame to recover the moving sprites.
-    native_clean_bg: dict = {"strip": None, "cursor": 0}
-    if args.backend == "native":
-        _base_a846 = rt.cpu.replacement_hooks.get((0x1010, 0xA846))
-
-        def _capture_clean_bg(cpu, _base=_base_a846):
-            seg = cpu.mem.rw(0x1010, 0x9598)
-            cur = cpu.mem.rw(cpu.s.ds & 0xFFFF, 0x234C)
-            start = (((seg & 0xFFFF) << 4) + cur) & 0xFFFFF
-            native_clean_bg["strip"] = bytes(cpu.mem.data[start:start + 192 * 0x68])
-            native_clean_bg["cursor"] = cur
-            if _base is not None:
-                _base(cpu)
-        rt.cpu.replacement_hooks[(0x1010, 0xA846)] = _capture_clean_bg
-
     emu = threading.Thread(target=emulator_loop, name="overkill-emu", daemon=True)
     emu.start()
     try:
         if args.backend == "native":
+            # VM child: publish composed frames to the presenter's shared-memory
+            # channel (the presenter parent runs run_mp / run_native_present above).
             import native_play
-            native_play.run_native_ui(
-                args=args, frame_sync=frame_sync, stop=stop, keyboard=keyboard,
-                live_ds=lambda: rt.cpu.s.ds & 0xFFFF,
-                live_clean_bg=lambda: native_clean_bg,
-            )
+            native_play.run_publisher(args.mp_publish, frame_sync=frame_sync, stop=stop, video=args.video)
             return 0
         run_sdl_ui(
             args=args,
