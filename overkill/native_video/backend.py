@@ -27,8 +27,13 @@ from overkill.native_video.frame import (
     BackendDiagnostics,
     PresentedFrame,
     RenderSnapshot,
+    SceneKind,
 )
+from overkill.native_video.page_raster import PRESENT_ROW_BYTES
 from overkill.native_video.renderer import LayerRenderer
+
+# Ignore implausible per-tick scroll deltas (wrap / level change) when interpolating.
+_MAX_INTERP_SCROLL_BYTES = 0x2000
 
 
 class NativeOverkillVideoBackend:
@@ -54,7 +59,6 @@ class NativeOverkillVideoBackend:
         unsupported = [
             name
             for name in (
-                "camera_interpolation",
                 "object_interpolation",
                 "smooth_palette_fades",
                 "smooth_transitions",
@@ -110,24 +114,50 @@ class NativeOverkillVideoBackend:
                 self._diag.frame_hold_count += 1
             self._last_presented_frame_id = snapshot.frame_id
 
+            alpha, camera_shift_rows = self._camera_interpolation(snapshot, now)
+
             t0 = time.perf_counter()
-            rgb, from_cache = self._renderer.render(snapshot)
+            rgb, from_cache = self._renderer.render(snapshot, camera_shift_rows=camera_shift_rows)
             self._diag.native_render_ms = (time.perf_counter() - t0) * 1000.0
             self._diag.colorize_ms = self._renderer.last_colorize_ms
             self._diag.cache_hits = self._renderer.cache_hits
             self._diag.cache_misses = self._renderer.cache_misses
             self._diag.source_snapshot_age_ms = max(0.0, (now - snapshot.timestamp) * 1000.0)
-            self._diag.interpolation_alpha = 0.0
-            self._diag.camera_interpolation_active = False
+            self._diag.interpolation_alpha = alpha
+            self._diag.camera_interpolation_active = camera_shift_rows > 0
             self._diag.object_interpolation_active = False
 
             return PresentedFrame(
                 rgb=rgb,
                 source_frame_id=snapshot.frame_id,
-                alpha=0.0,
+                alpha=alpha,
                 held=held,
                 from_cache=from_cache,
             )
+
+    def _camera_interpolation(self, snapshot: RenderSnapshot, now: float):
+        """Compute ``(alpha, camera_shift_rows)`` for the current present.
+
+        Extrapolates the monotonic-forward scroll past the latest tick: ``alpha`` is
+        how far ``now`` is past the snapshot toward the next (predicted) tick [0,1],
+        and the playfield is shifted by ``round(alpha * per-tick scroll)`` rows.
+        Because the scroll never reverses, forward extrapolation cannot overshoot
+        into a reversal. Disabled (shift 0 → exact faithful parity) when the flag is
+        off, off-gameplay, or no previous tick / scroll is available.
+        """
+        if (
+            not self.config.camera_interpolation
+            or self._prev is None
+            or snapshot.scene_kind != SceneKind.GAMEPLAY
+            or snapshot.playfield_indices is None
+        ):
+            return 0.0, 0
+        period = snapshot.timestamp - self._prev.timestamp
+        alpha = min(max((now - snapshot.timestamp) / period, 0.0), 1.0) if period > 0 else 0.0
+        scroll_delta = self._prev.scroll_cursor - snapshot.scroll_cursor  # >0 = forward
+        if not (0 < scroll_delta <= _MAX_INTERP_SCROLL_BYTES):
+            return alpha, 0
+        return alpha, int(round(alpha * scroll_delta / PRESENT_ROW_BYTES))
 
     def diagnostics(self) -> BackendDiagnostics:
         """A consistent snapshot of the live diagnostics (safe to read from any

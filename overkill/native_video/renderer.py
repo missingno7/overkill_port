@@ -24,6 +24,12 @@ import numpy as np
 
 from overkill.native_video import page_raster
 from overkill.native_video.frame import RenderSnapshot
+from overkill.native_video.page_raster import (
+    PLAYFIELD_H,
+    PLAYFIELD_W,
+    PLAYFIELD_X0,
+    PLAYFIELD_Y0,
+)
 
 
 class LayerRenderer:
@@ -45,14 +51,8 @@ class LayerRenderer:
             self._palette_luts[snapshot.palette_version] = lut
         return lut
 
-    def render(self, snapshot: RenderSnapshot) -> Tuple[np.ndarray, bool]:
-        """Render ``snapshot`` to ``(H,W,3)`` RGB. Returns ``(rgb, from_cache)``.
-
-        Baseline: colorize the composed page layer. Held presents of the same source
-        snapshot are served from the colorized cache (no re-colorize); a new game
-        tick (new ``composed_version``) misses. Camera/object interpolation will
-        overlay the ``playfield_indices`` sublayer here once enabled (Stage 3+).
-        """
+    def _render_composed(self, snapshot: RenderSnapshot) -> Tuple[np.ndarray, bool]:
+        """Colorize the composed baseline (cached by ``(composed_version, palette_version)``)."""
         key = (snapshot.composed_version, snapshot.palette_version)
         if key == self._cache_key and self._cache_rgb is not None:
             self.cache_hits += 1
@@ -62,10 +62,33 @@ class LayerRenderer:
         t0 = time.perf_counter()
         lut = self.palette_lut(snapshot)
         rgb = page_raster.colorize(snapshot.composed_indices, lut)
-        # Future layers compose here (camera/object interpolation overlay of the
-        # playfield sublayer, native sprites/effects) — added as each is lifted.
         self.last_colorize_ms = (time.perf_counter() - t0) * 1000.0
 
         self._cache_key = key
         self._cache_rgb = rgb
         return rgb, False
+
+    def render(self, snapshot: RenderSnapshot, *, camera_shift_rows: int = 0) -> Tuple[np.ndarray, bool]:
+        """Render ``snapshot`` to ``(H,W,3)`` RGB. Returns ``(rgb, from_cache)``.
+
+        ``camera_shift_rows == 0`` (the source-boundary / held case) renders the
+        composed baseline exactly (faithful parity) and may serve from cache.
+        ``camera_shift_rows > 0`` overlays the scrolling playfield sublayer shifted
+        down by that many rows (camera/scroll interpolation between source ticks);
+        the result is a fresh frame (never cached) and leaves the HUD/border intact.
+        """
+        base, from_cache = self._render_composed(snapshot)
+        if camera_shift_rows <= 0 or snapshot.playfield_indices is None:
+            return base, from_cache
+
+        lut = self.palette_lut(snapshot)
+        out = base.copy()
+        y0, y1 = PLAYFIELD_Y0, PLAYFIELD_Y0 + PLAYFIELD_H
+        x0, x1 = PLAYFIELD_X0, PLAYFIELD_X0 + PLAYFIELD_W
+        rect = snapshot.playfield_indices[y0:y1, x0:x1]
+        k = min(int(camera_shift_rows), rect.shape[0])
+        shifted = np.empty_like(rect)
+        shifted[k:] = rect[: rect.shape[0] - k]
+        shifted[:k] = rect[0:1]  # edge-replicate the revealed top strip (≤k rows)
+        out[y0:y1, x0:x1] = lut[shifted]
+        return out, False

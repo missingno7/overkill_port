@@ -31,7 +31,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from overkill.native_video.backend import NativeOverkillVideoBackend  # noqa: E402
-from overkill.native_video.frame import BackendConfig  # noqa: E402
+from overkill.native_video.config import load_config  # noqa: E402
 from overkill.native_video.loop import PresentationLoop  # noqa: E402
 from overkill.recovered.systems.tandy_screen import SCREEN_HEIGHT, SCREEN_WIDTH  # noqa: E402
 
@@ -112,7 +112,7 @@ def _present_on_main(backend: NativeOverkillVideoBackend, display: PygameDisplay
 
 
 def run_snapshot(args) -> int:
-    backend = NativeOverkillVideoBackend(BackendConfig())
+    backend = NativeOverkillVideoBackend(load_config())
     backend.submit_source_frame(_load_snapshot_render(Path(args.snapshot)))
     display = PygameDisplay(scale=args.scale, vsync=not args.no_vsync)
     try:
@@ -134,7 +134,7 @@ def run_demo(args) -> int:
                                 game_root=ROOT / "assets")
     rt.cpu.trace_enabled = False
     rt.cpu.coverage_telemetry = None
-    backend = NativeOverkillVideoBackend(BackendConfig())
+    backend = NativeOverkillVideoBackend(load_config())
     stop = threading.Event()
 
     PRESENT_IP, TIMER_IP, RETRACE_IP = 0x3354, 0x0679, 0x50C9

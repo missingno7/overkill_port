@@ -72,9 +72,42 @@ def test_present_before_submit_is_explicit():
 
 
 def test_unimplemented_interpolation_flags_raise():
-    for flag in ("camera_interpolation", "object_interpolation", "smooth_palette_fades", "smooth_transitions"):
+    for flag in ("object_interpolation", "smooth_palette_fades", "smooth_transitions"):
         with pytest.raises(NotImplementedError):
             NativeOverkillVideoBackend(BackendConfig(**{flag: True}))
+
+
+def _interp_frame(np, frame_id, ts, cursor, *, composed_fill, playfield_fill):
+    return RenderSnapshot(
+        frame_id=frame_id, timestamp=ts, scene_kind=SceneKind.GAMEPLAY,
+        composed_indices=np.full((200, 320), composed_fill, dtype=np.uint8), composed_version=frame_id,
+        palette=_PAL, palette_version=1, scroll_cursor=cursor,
+        playfield_indices=np.full((200, 320), playfield_fill, dtype=np.uint8), playfield_version=frame_id,
+    )
+
+
+def test_camera_interpolation_is_implemented_and_parity_holds_at_boundary():
+    np = _np()
+    be = NativeOverkillVideoBackend(BackendConfig(camera_interpolation=True))  # no longer raises
+    be.submit_source_frame(_interp_frame(np, 1, 0.0, 0x4000, composed_fill=1, playfield_fill=2))
+    be.submit_source_frame(_interp_frame(np, 2, 1 / 70.0, 0x4000 - 4 * 0x68, composed_fill=3, playfield_fill=4))
+    # present exactly at the latest tick's arrival -> alpha 0 -> faithful composed, no shift
+    out = be.present(1 / 70.0)
+    assert out.alpha == 0.0 and be.diagnostics().camera_interpolation_active is False
+    assert tuple(out.rgb[100, 100]) == _PAL[3]  # composed of the latest tick, not the playfield
+
+
+def test_camera_interpolation_shifts_the_playfield_between_ticks():
+    np = _np()
+    be = NativeOverkillVideoBackend(BackendConfig(camera_interpolation=True))
+    be.submit_source_frame(_interp_frame(np, 1, 0.0, 0x4000, composed_fill=1, playfield_fill=2))
+    be.submit_source_frame(_interp_frame(np, 2, 1 / 70.0, 0x4000 - 4 * 0x68, composed_fill=3, playfield_fill=4))
+    # halfway to the next predicted tick: alpha ~0.5, 4-row/tick scroll -> shift 2 rows
+    out = be.present(1 / 70.0 + (1 / 70.0) * 0.5)
+    d = be.diagnostics()
+    assert d.camera_interpolation_active is True and 0.4 < d.interpolation_alpha < 0.6
+    assert tuple(out.rgb[100, 100]) == _PAL[4]   # playfield sublayer overlaid in the rect
+    assert tuple(out.rgb[2, 300]) == _PAL[3]     # HUD (outside rect) stays the composed baseline
 
 
 def test_fps_and_age_diagnostics():

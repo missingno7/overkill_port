@@ -106,9 +106,13 @@ Bridge + display (outside the VM-independent package):
   (display) + wiring into the viewer.
 - **Stage 2 — presentation clock.** `present(now)` is wall-clock driven and fully
   decoupled from the source cadence; re-holds when no new source frame. ✅ (logic).
-- **Stage 3 — camera/scroll interpolation.** Interpolate the present source offset
-  between frames. The cursor `[234C]` is monotonic / never reverses, so this is a
-  simple forward-or-stationary lerp (no scroll pops). Flag `camera_interpolation`.
+- **Stage 3 — camera/scroll interpolation.** ✅ The present cursor is monotonic, so
+  the backend *extrapolates* the scroll forward past the latest tick (alpha ∈ [0,1])
+  and shifts the playfield sublayer by `round(alpha × per-tick scroll)` rows —
+  forward-only, no reversal/pop. Off → exact faithful parity. Flag
+  `camera_interpolation`. NOTE: OVERKILL's witnessed scroll is ~1 row (~1 px) per
+  tick, so the visual gain here is modest; the bigger win is Stage 4 object
+  interpolation (fast sprites) — which needs the sprite-bitmap lift.
 - **Stage 4 — object-wise interpolation.** Lerp sprites between source snapshots by
   semantic identity; snap/fallback per-object on ambiguous identity, report in
   diagnostics. Flag `object_interpolation`.
