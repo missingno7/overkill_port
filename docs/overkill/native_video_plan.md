@@ -27,6 +27,57 @@ deplanarization of VM memory, or a full faithful RGB frame as its normal input.
 page-baked/chrome layers the original game baked — but as cached **render inputs**,
 never as a live framebuffer fallback.)
 
+## North star + recovery-first principle (2026-06-27, user-set)
+The finished native backend is **not** a faster framebuffer presenter. It consumes a
+**semantic** `RenderSnapshot` (separated layers - background, starfield, HUD/chrome,
+object/sprite list with ids/frames/positions/draw-order, palette, transitions, +
+provenance) and **draws the frame itself** at monitor refresh, optionally
+interpolating *presentation* between source ticks. The runtime owns gameplay timing
+and never advances during presentation. Faithful parity holds at source-frame
+boundaries; between ticks output may be smoother but is the same game state.
+
+**Recovery-first (hard rule):** if the hybrid/recovered layer does not yet expose the
+semantic state a feature needs, the next step is to **recover and expose that state in
+the hybrid layer first**. Do NOT compensate inside the renderer with guesses,
+framebuffer hacks, or silent fallbacks. The renderer consumes grounded state only;
+missing state = recovery work, not a renderer workaround. Unsupported = explicit +
+diagnostic-visible (`missing clean background`, `ambiguous object identity`, ...).
+
+**Current `scripts/native_play.py` is dev scaffolding** (it decodes the composed
+B800/Tandy page then presents it - the anti-pattern above). Its IPC/present-clock
+plumbing (FrameChannel, decoupled present, overlay, diagnostics) is reusable; its
+**render input must move** from the composed framebuffer to the semantic layers below.
+
+## Semantic layer recovery roadmap (grounded state, in order)
+Investigation (probes `witness_object_layers` / `witness_sprite_capture`, 2026-06-27)
+established: OVERKILL bakes bg+enemies+starfield+player into one page across a
+pipelined, double-buffered sequence (`A846 -> 5BDC present/blit -> A90C object scan`,
+scan on even frames only); `5AC8` only **projects** (writes `screen_di`/+0C), the
+pixels are composited by `2E6E/2F81/34C5` into `[9598]` during `5BDC`. So there is no
+clean object-free plate - layers must be recovered as **separable drawable state**,
+not diffed out of the composed page.
+
+- **RECOVERED already:** object/sprite list (id, anim phase `+12`, `screen_di`, draw
+  order, slot identity - `frame_snapshot_adapter`, witnessed-exact); the **sprite
+  texture lookup + compositor blit** (`layer_sprites.py`: frame tables `9392/9192/8F92`
+  + segments `95A6/95AE,95AA/95AC,95A8`; lifted Tandy compositors
+  `2E6E/2F81/2FB6/2F40/2ECB`); palette; camera/scroll/present-cursor; present contract.
+- **MISSING -> recover + expose, in order:**
+  1. **Sprite texture decoder** - lift the frame-table + compositor format into a PURE
+     `decode_sprite(id, phase) -> (indexed pixels, mask)` (today it only exists as a VM
+     blit into the page). VERIFY each decoded sprite byte-exact vs the live compositor's
+     blit. *Foundational - enables native object drawing.* <- FIRST.
+  2. **Separated background/tile layer** - the scrolling tilemap as an indexed layer
+     WITHOUT objects baked (so sprites can be drawn over it at interpolated positions).
+  3. **Starfield layer** - recover the star generator/positions (the dense layer drawn
+     in `5BDC`); expose as semantic state, not sampled pixels.
+  4. **HUD/chrome layer** - the status-panel chrome bitmaps as a drawable layer
+     (counters/score already recovered).
+  5. **Effects/explosions + transitions/fades** - as semantic triggers/phase/timing.
+- **Then** the layered `NativeRenderer` (SpriteRenderer first) draws from these with
+  the L1/L2/presentation caches; source-boundary parity vs the faithful frame is the
+  correctness gate; interpolation is an opt-in presentation feature on top.
+
 ## Render ownership & cache model (tailored to OVERKILL)
 - **Playfield** = the composited source page `[9598]` decoded to 4-bit **indices**
   (palette-independent, the L1 layer); the backend colorizes via the palette and
