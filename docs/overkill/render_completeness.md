@@ -45,20 +45,19 @@ output, and **witness it against the live draws** before marking done.
 - [x] **Playfield sprites** — content + positions VERIFIED witnessed-exact.
 - [x] **HUD status counters** — grounded.
 - [x] **Background scroll position** — grounded (scroll_row/column_index).
+- [x] **Tandy screen geometry (di ↔ screen x,y)** — recovered pure
+      (`systems/tandy_screen.py`): `di = (y&3)*0x2000 + (y>>2)*160 + (x>>1)`,
+      verified vs the framebuffer decode. This is the projection foundation — the
+      renderer places sprites at `di_to_screen(screen_di)` and interpolates in
+      screen space, so no separate world→camera projection is needed for sprites.
+- [x] **Score** — BCD score (`DS:2314`/`2316`) in `HudLayer.score_bcd`.
 - [ ] **Background plane content** — the `[9592]` plane → RGB (the actual level
-      pixels). The present (`5BDC`/`3354`) copies it scrolled; model the plane +
-      scroll as the background content.
-- [ ] **World→screen projection** — *finding (witnessed):* `screen_di` is a
-      **banked Tandy VRAM offset built from the `0fa3` per-row video-offset
-      table** (`di = row_offset_table[screen_y] + x_byte`), NOT linear
-      `world - camera` (same world_y maps to different banks by x; Δworld_y=40 →
-      Δdi=20). So this needs the recovered `0fa3` offset table to map di ↔ screen
-      (x,y). That table is also what **interpolation** needs (lerp in screen
-      space, then re-encode di) and what closes `CameraState`. Next concrete task.
+      pixels). The present (`5BDC`/`3354`) copies it scrolled; model the plane
+      identity + scroll now, decode to RGB at R3.
 - [ ] **Present composition** — recover `5BDC`/`3354`: how the background plane,
       sprites, and HUD compose into the visible page (page flip / dirty regions).
-- [ ] **Score** — the BCD score (`DS:2314`) as a HUD field.
-- [ ] **Screen shake** — the camera-shake offset (4C30 controller) as a frame field.
+- [x] ~~Screen shake~~ — no 4C30 shake global in OverKill (PRE2 pattern, N/A);
+      revisit only if a witness reveals one.
 
 ### Effects / transitions
 - [ ] **Palette / fades** — Tandy palette + fade transitions.
