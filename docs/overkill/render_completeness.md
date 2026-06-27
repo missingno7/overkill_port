@@ -104,13 +104,23 @@ output, and **witness it against the live draws** before marking done.
 ### Non-gameplay scenes
 *Finding (witnessed):* the menu fires **none** of the gameplay render hooks
 (5AC8/5A92/5BDC/61DC/3354/A846 all 0 over the menu demo) and has 0 sprites — the
-scenes are a **separate render path** (text/menu-cells, not the object-sprite
-system). They are mostly static, so for the enhanced renderer they can
-**faithful-fallback** (decode the framebuffer/plane to RGB via the recovered
-Tandy geometry) rather than be interpolated. Recover their producers for
-completeness, but they do not block the enhanced renderer.
-- [ ] **Title / intro** — the title screen + intro sequence.
-- [ ] **Menu / mode select** — separate path (draw_string + menu cells via 97B2).
+scenes are a **separate producer** (text via the lifted `518C`/`519A`/`3153` glyph
+path + menu cells, not the object-sprite system). But they still compose into the
+same source page `[9598]` and present through `3354` — so the now-complete
+**present + palette + geometry RGB decode is their faithful-fallback** (decode
+`source_page` → RGB), and they do **not** block the enhanced renderer.
+
+*Producer witnessing route (established):* the scene glyph draws happen on
+**scene entry** (boot → title → menu), not in steady state — so the mid-scene demo
+corpus witnesses **0 glyphs** (confirmed on every demo). The glyph path is already
+lifted + oracle-verified (`rendering/text.py`), so the text/scene *model* can be
+grounded against those routines directly. A live cold-boot witness (run from
+`create_overkill_runtime`, wrap 3153) reaches the title text but is **too slow via
+the pure-Python step loop** to capture within an interactive window — a scene-entry
+snapshot capture is the practical path. These remain producer-modelling work, not
+renderer blockers.
+- [ ] **Title / intro** — title screen + intro (lifted glyph path; needs entry capture).
+- [ ] **Menu / mode select** — lifted glyph path + menu cells via 97B2 (needs entry capture).
 - [ ] **Loading / scroll-in** — the level materialization scroll (`60C5`/`36A2`).
 - [ ] **Game over / continue**.
 
