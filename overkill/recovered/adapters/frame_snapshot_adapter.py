@@ -23,18 +23,19 @@ could not show):
   1. **Draw order == scan order.** `draw_layer` (values 4/1/6) is NOT the z-sort;
      the draws come out in present/scan order. So no per-layer sort is needed —
      the grounded present order IS the draw order.
-  2. **One object is missing from this extractor.** A `sprite=0001 @layer 3`
-     object is drawn FIRST (back-most, scrolling with the camera) but is not in
-     the effect/gameplay tables this walks — it lives in a separate fixed slot
-     (likely the player/a special object). TODO: recover its source and include it.
-  3. **screen_di has a one-render phase offset.** The +0C dest captured at the
-     present-hook frame boundary is exactly one render step (~104 px scroll) off
-     the value the draw actually used (snap[N].dest == drawn[N+2].dest). The
-     extraction boundary must align with the draw, or `screen_di` lags by a frame.
+  2. **The missing object is now included (RESOLVED).** A `sprite=0001 @layer 3`
+     object is drawn FIRST (back-most) from the special slot one stride before the
+     effect table (DS:237C, its x/y == the VIEW_TARGET globals). Added as the
+     leading slot. The draw-list **content is now witnessed-exact**: the sprite
+     multiset matches the real 5AC8 draws 6/6 render frames on the L5 demo.
+  3. **screen_di has a one-render phase offset (open).** The +0C dest captured at
+     the present-hook frame boundary is one render step (~104 px scroll) off the
+     value the draw used (snap[N].dest == drawn[N+2].dest). This is a snapshotting
+     *timing* choice (extract at the draw boundary), not an extractor error.
 
-Remaining for VERIFIED (enhanced_renderer_plan.md R2): include the missing fixed
-slot (#2), align the extraction phase (#3), and the VRAM round-trip (needs the R3
-rasterizer). CameraState (VIEW_TARGET) is OBSERVED.
+Status: draw-list **content VERIFIED** against live draws; `screen_di` is correct
+modulo the phase choice (#3); the VRAM round-trip (needs the R3 rasterizer) and
+CameraState grounding remain.
 """
 from __future__ import annotations
 
@@ -56,9 +57,16 @@ from overkill.recovered.views.object_slots import (
 # the draw pass skips it (layer_sprites.OFFSCREEN_DESTINATION).
 OFFSCREEN_DESTINATION = 0xFFFF
 
-# The object tables walked for the draw list, in the present-scan order grounded
-# by the probe: A90C scans DS:8D12 (gameplay) first, then DS:32CA (effect).
+# A single special object slot sits one stride before the effect table; the live
+# witness (witness_draw_order) shows it drawn FIRST (back-most). Its x/y fields
+# (+02/+04) are the VIEW_TARGET globals (237E/2380), so it is the view/camera
+# anchor object (sprite 1, layer 3).
+SPECIAL_DRAW_SLOT_BASE = (EFFECT_OBJECT_TABLE_BASE - OBJECT_SLOT_STRIDE) & 0xFFFF  # 0x237C
+
+# The object tables walked for the draw list, in the witnessed draw order: the
+# special slot first, then the present-scan order (DS:8D12 gameplay, DS:32CA effect).
 _OBJECT_TABLES = (
+    (SPECIAL_DRAW_SLOT_BASE, 1),
     (GAMEPLAY_OBJECT_TABLE_BASE, GAMEPLAY_OBJECT_TABLE_COUNT),
     (EFFECT_OBJECT_TABLE_BASE, EFFECT_OBJECT_TABLE_COUNT),
 )

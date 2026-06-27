@@ -22,7 +22,7 @@ from overkill.recovered.views.object_slots import (
 )
 
 DEMOS = Path(__file__).resolve().parents[1] / "artifacts" / "demos"
-_MAX_SPRITES = EFFECT_OBJECT_TABLE_COUNT + GAMEPLAY_OBJECT_TABLE_COUNT
+_MAX_SPRITES = EFFECT_OBJECT_TABLE_COUNT + GAMEPLAY_OBJECT_TABLE_COUNT + 1  # +1 special slot
 
 
 def _snapshots() -> list[Path]:
