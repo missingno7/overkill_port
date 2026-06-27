@@ -1540,6 +1540,24 @@ def main(argv: list[str] | None = None) -> int:
         dashboard.start()
 
     # Start the emulator thread, then run the pygame/SDL viewer on the main thread.
+    # Native backend object-interpolation foundation: capture the playfield page
+    # [9598] at the sprite-scan entry (1010:A846) — i.e. the background *before* the
+    # masked compositors draw sprites into it. The native viewer differences this
+    # clean bg against the composed frame to recover the moving sprites.
+    native_clean_bg: dict = {"strip": None, "cursor": 0}
+    if args.backend == "native":
+        _base_a846 = rt.cpu.replacement_hooks.get((0x1010, 0xA846))
+
+        def _capture_clean_bg(cpu, _base=_base_a846):
+            seg = cpu.mem.rw(0x1010, 0x9598)
+            cur = cpu.mem.rw(cpu.s.ds & 0xFFFF, 0x234C)
+            start = (((seg & 0xFFFF) << 4) + cur) & 0xFFFFF
+            native_clean_bg["strip"] = bytes(cpu.mem.data[start:start + 192 * 0x68])
+            native_clean_bg["cursor"] = cur
+            if _base is not None:
+                _base(cpu)
+        rt.cpu.replacement_hooks[(0x1010, 0xA846)] = _capture_clean_bg
+
     emu = threading.Thread(target=emulator_loop, name="overkill-emu", daemon=True)
     emu.start()
     try:
@@ -1548,6 +1566,7 @@ def main(argv: list[str] | None = None) -> int:
             native_play.run_native_ui(
                 args=args, frame_sync=frame_sync, stop=stop, keyboard=keyboard,
                 live_ds=lambda: rt.cpu.s.ds & 0xFFFF,
+                live_clean_bg=lambda: native_clean_bg,
             )
             return 0
         run_sdl_ui(

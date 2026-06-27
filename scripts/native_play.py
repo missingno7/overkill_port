@@ -157,30 +157,50 @@ class NativeOverlay:
         self.display.screen.blit(panel, (0, 0))
 
 
-def _decode_composed_snapshot(snapshot_bytes, frame_id):
-    """Fast path: a RenderSnapshot with only the composed page (no interpolation)."""
+def _clean_bg_playfield_indices(strip):
+    """Decode the captured pre-sprite [9598] strip (192 x 0x68 bytes) to screen
+    indices via the present blit geometry (the playfield rect; rest 0)."""
+    import numpy as np
+    from overkill.native_video import page_raster as pr
+    s = np.frombuffer(strip, dtype=np.uint8)
+    scratch = np.zeros(0x10000, dtype=np.uint8)
+    di = pr.PRESENT_DEST_START
+    W = pr.PRESENT_ROW_BYTES
+    for r in range(pr.PRESENT_ROWS):
+        scratch[di:di + W] = s[r * W:(r + 1) * W]
+        di = (di + pr.PRESENT_BANK_ADVANCE) & 0xFFFF
+        if di & 0x8000:
+            di = (di + pr.PRESENT_BANK_WRAP) & 0xFFFF
+    return pr.decode_tandy_b800_indices(scratch, 0)
+
+
+def _build_source_frame(snapshot_bytes, frame_id, *, clean_bg=None, show_clean_bg=False):
+    """Build the source RenderSnapshot from the composed page (the faithful frame).
+
+    With ``show_clean_bg`` (the F2 debug view) the playfield rect is replaced by the
+    captured pre-sprite background, so you can confirm the clean-bg capture is correct
+    — the playfield should then show NO moving objects, just the scrolling scenery.
+    This is the foundation for object interpolation (sprites = composed - clean bg).
+    """
     import numpy as np
     from overkill.native_video.frame import RenderSnapshot, SceneKind
-    from overkill.native_video.page_raster import decode_tandy_b800_indices
+    from overkill.native_video.page_raster import (
+        PLAYFIELD_H, PLAYFIELD_W, PLAYFIELD_X0, PLAYFIELD_Y0, decode_tandy_b800_indices,
+    )
     from overkill.recovered.systems.tandy_screen import TANDY_PALETTE_RGB
 
     composed = decode_tandy_b800_indices(np.frombuffer(snapshot_bytes, dtype=np.uint8), B800_BASE)
+    if show_clean_bg and clean_bg is not None and clean_bg.get("strip") is not None:
+        clean = _clean_bg_playfield_indices(clean_bg["strip"])
+        composed = composed.copy()
+        y0, y1 = PLAYFIELD_Y0, PLAYFIELD_Y0 + PLAYFIELD_H
+        x0, x1 = PLAYFIELD_X0, PLAYFIELD_X0 + PLAYFIELD_W
+        composed[y0:y1, x0:x1] = clean[y0:y1, x0:x1]
     return RenderSnapshot(
         frame_id=frame_id, timestamp=time.monotonic(), scene_kind=SceneKind.GAMEPLAY,
         composed_indices=composed, composed_version=frame_id,
         palette=TANDY_PALETTE_RGB, palette_version=0, scroll_cursor=0,
     )
-
-
-def _build_source_frame(snapshot_bytes, frame_id, backend, live_ds):
-    """Build the source frame from the composed page (the faithful frame).
-
-    Object interpolation (interpolating sprite positions between frames) needs the
-    sprite/background separation lift — until then the live path presents the
-    faithful composed frame and the present clock only decouples/holds (no
-    in-between motion is invented).
-    """
-    return _decode_composed_snapshot(snapshot_bytes, frame_id)
 
 
 def _update_title(backend, display, last_title):
@@ -196,12 +216,13 @@ def _update_title(backend, display, last_title):
     return now
 
 
-def run_native_ui(*, args, frame_sync, stop, keyboard=None, live_ds=None, **_ignored) -> None:
+def run_native_ui(*, args, frame_sync, stop, keyboard=None, live_ds=None, live_clean_bg=None, **_ignored) -> None:
     """Native viewer: consume play.py's frames, forward input, present + overlay.
 
     Runs on the main thread while play.py's emulator_loop publishes frames from a
     background thread. Keys are posted to play.py's ``keyboard`` dispatcher (the
-    emulator loop pumps them); F1 toggles the settings overlay.
+    emulator loop pumps them); F1 toggles the settings overlay; F2 toggles the
+    clean-background debug view (object-interpolation foundation).
     """
     if getattr(args, "video", "tandy") not in ("tandy", "cga"):
         print(f"native: --backend native currently decodes Tandy/CGA (B800); "
@@ -218,7 +239,9 @@ def run_native_ui(*, args, frame_sync, stop, keyboard=None, live_ds=None, **_ign
     source_id = 0
     last_title = 0.0
     next_present = time.monotonic()
-    print("native: window up - WASD/arrows + Z/Space play; F1 = settings; close window to quit", flush=True)
+    debug = {"clean_bg": False}
+    print("native: window up - your usual keys play; F1 = settings; "
+          "F2 = clean-background debug view; close window to quit", flush=True)
     try:
         running = True
         while running and not stop.is_set():
@@ -228,6 +251,9 @@ def run_native_ui(*, args, frame_sync, stop, keyboard=None, live_ds=None, **_ign
                 elif ev.type == pygame.KEYDOWN:
                     if ev.key == pygame.K_F1:
                         overlay.toggle()
+                    elif ev.key == pygame.K_F2:
+                        debug["clean_bg"] = not debug["clean_bg"]
+                        display.set_title("native: CLEAN-BG DEBUG " + ("ON" if debug["clean_bg"] else "OFF"))
                     elif overlay.visible:
                         overlay.handle_key(ev.key, pygame)
                     elif keyboard is not None:
@@ -244,7 +270,11 @@ def run_native_ui(*, args, frame_sync, stop, keyboard=None, live_ds=None, **_ign
             if pending is not None and pending[0] > last_shown:
                 last_shown = pending[0]
                 source_id += 1
-                backend.submit_source_frame(_build_source_frame(pending[1], source_id, backend, live_ds))
+                backend.submit_source_frame(_build_source_frame(
+                    pending[1], source_id,
+                    clean_bg=live_clean_bg() if live_clean_bg is not None else None,
+                    show_clean_bg=debug["clean_bg"],
+                ))
                 frame_sync.mark_displayed(pending[0])  # unblock the emulator's publish_and_wait
 
             # Present-rate control (decoupled from the source): VSync syncs the flip
