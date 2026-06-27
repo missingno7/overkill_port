@@ -293,7 +293,7 @@ def run_native_present(channel, *, args) -> None:
     loop_t0 = time.perf_counter()
     loop_fps = 0.0
     flip_ms = 0.0
-    acc = {"chan": 0.0, "present": 0.0, "blit": 0.0, "flip": 0.0, "pace": 0.0, "n": 0}
+    acc = {"chan": 0.0, "present": 0.0, "blit": 0.0, "flip": 0.0, "pace": 0.0, "n": 0, "distinct": 0}
     diag_t0 = time.perf_counter()
     print("native: presenter up - F1 = settings; close window to quit", flush=True)
     try:
@@ -334,6 +334,8 @@ def run_native_present(channel, *, args) -> None:
             t_pres = t_blit = t_chan
             if backend.ready:
                 presented = backend.present(time.perf_counter())
+                if not presented.from_cache:   # a newly rendered frame = real content change
+                    acc["distinct"] += 1
                 t_pres = time.perf_counter()
                 display.blit_frame(presented.rgb)
                 if overlay.visible:
@@ -362,13 +364,17 @@ def run_native_present(channel, *, args) -> None:
             acc["n"] += 1
             if t_pace - diag_t0 >= 2.0:  # per-section breakdown to find any cap
                 n = max(1, acc["n"])
+                window = t_pace - diag_t0
                 d = backend.diagnostics()
+                # content = distinct rendered frames/sec; == source until interpolation
+                # adds in-between frames (then it climbs toward present).
                 print(f"native diag: loop={loop_fps:6.0f}Hz present={d.present_fps:6.1f}Hz "
-                      f"source={d.source_fps:5.1f}Hz vsync={display.vsync} target={target} | per-iter ms: "
+                      f"content={acc['distinct']/window:5.1f}Hz source={d.source_fps:5.1f}Hz "
+                      f"vsync={display.vsync} target={target} | per-iter ms: "
                       f"chan={acc['chan']/n*1e3:.2f} present={acc['present']/n*1e3:.2f} "
                       f"blit={acc['blit']/n*1e3:.2f} flip={acc['flip']/n*1e3:.2f} pace={acc['pace']/n*1e3:.2f}",
                       flush=True)
-                acc = {"chan": 0.0, "present": 0.0, "blit": 0.0, "flip": 0.0, "pace": 0.0, "n": 0}
+                acc = {"chan": 0.0, "present": 0.0, "blit": 0.0, "flip": 0.0, "pace": 0.0, "n": 0, "distinct": 0}
                 diag_t0 = t_pace
 
             last_title = _update_title(backend, display, last_title, loop_fps, flip_ms)
