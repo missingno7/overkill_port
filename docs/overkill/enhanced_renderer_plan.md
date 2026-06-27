@@ -113,6 +113,12 @@ frame contract**, then the renderer is lifted off the VM.
   re-rendering the snapshot through the *existing* Tandy path and matching the VM
   framebuffer over the demo corpus. (If a snapshot field is missing, the
   re-render diverges — that's the gap detector.)
+  - *Finding (R1):* the faithful draw list is **not** "every active object slot".
+    `run_present_object_scan_pair_a90c` walks two **presence lists** — `DS:8D12`
+    (34, A90F scan) and `DS:32CA` (36, A927 scan) — populated by the 4CED
+    presence-stamp, dispatched per-object via 5A92. R2 must recover those
+    presence-list entries (object ptr + screen position) as the draw list. The R1
+    object-table extractor is a scaffold/hypothesis to replace, not the contract.
 - **R3 — Native Tandy rasterizer.** VM-free `FrameSnapshot` + decoded assets → RGB,
   verified pixel-exact vs the R0 oracle over the demo corpus. Reuse the recovered
   asset codecs; lift the Tandy sprite/tile blit math out of the cpu-coupled

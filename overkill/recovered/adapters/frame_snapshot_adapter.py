@@ -4,12 +4,19 @@ Reads the original object tables + camera globals through memory views and
 reconstructs the render-intent snapshot the enhanced renderer/interpolator
 consume. This is the one place VM memory meets the render dataclasses.
 
-**Status: OBSERVED, not yet VERIFIED.** The draw list here is "every active
-object slot". The *faithful* render list is the output of the A846/A90C present
-scan (which culls / orders / projects). Grounding step (enhanced_renderer_plan.md
-R2): diff this against the present scan and prove a round-trip (re-render the
-snapshot → match the VM framebuffer) over the demo corpus before trusting it as
-the render contract.
+**Status: OBSERVED hypothesis — known to need correction.** The draw list here is
+"every active object slot" in the effect + gameplay tables. The *faithful* render
+list is NOT that: `run_present_object_scan_pair_a90c` (layer_sprites.py) shows the
+present scan walks two **presence lists** — `DS:8D12` (34 entries, scanned by the
+A90F hook) and `DS:32CA` (36 entries, scanned by A927) — populated by the 4CED
+presence-stamp and dispatched per-object via 5A92. So the grounded draw list must
+read those presence lists (entry format TBD: object pointer + screen position),
+not iterate the object tables.
+
+Grounding step (enhanced_renderer_plan.md R2): recover the 8D12/32CA presence-list
+entry format and the A90F/A927 scan, then prove the snapshot's draw list matches
+the present scan + a VRAM round-trip over the demo corpus. Until then this
+extractor is a scaffold, not the render contract.
 """
 from __future__ import annotations
 
