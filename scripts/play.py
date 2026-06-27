@@ -274,6 +274,9 @@ def main(argv: list[str] | None = None) -> int:
                         help="replay an input demo directory/json; loads its start snapshot unless --snapshot is also given")
     launch.add_argument("--demo-continue", action="store_true",
                         help="keep running/verifying after the input demo ends")
+    launch.add_argument("--backend", choices=("vm", "native"), default="vm",
+                        help="presentation backend: vm = the faithful SDL viewer/oracle (default); "
+                             "native = the modern VM-independent renderer (scripts/native_play.py)")
 
     viewer = p.add_argument_group("interactive viewer")
     viewer.add_argument("--game-hz", type=float, default=36.4,
@@ -332,6 +335,21 @@ def main(argv: list[str] | None = None) -> int:
                              help="do not print the final ASM / Hook Coverage summary on exit")
 
     args = p.parse_args(argv)
+
+    if args.backend == "native":
+        # The native backend is a self-contained modern renderer with its own
+        # config + in-game overlay; play.py just selects it and hands off the
+        # source (a demo or a captured snapshot).
+        if args.verify_hooks or args.verify_hook or args.verify_frames:
+            p.error("--backend native is a presentation mode, not a verifier")
+        if not (args.demo or args.snapshot):
+            p.error("--backend native needs --demo <dir> or --snapshot <snapshot-dir>")
+        import native_play
+        native_args = argparse.Namespace(
+            demo=args.demo, snapshot=None if args.demo else args.snapshot,
+            scale=args.scale, no_vsync=False,
+        )
+        return native_play.run_demo(native_args) if args.demo else native_play.run_snapshot(native_args)
 
     if args.verify_frames and (args.verify_hooks or args.verify_hook):
         p.error("choose either --verify-frames or --verify-hooks/--verify-hook, not both")

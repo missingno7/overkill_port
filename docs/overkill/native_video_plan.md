@@ -88,8 +88,15 @@ never as a live framebuffer fallback.)
   later interpolates between source frames). ✅
 - `overlay.py` *(planned)* — the in-game settings overlay (native-only UI; toggles
   `BackendConfig` live and persists via `config.save_config`).
-- `display.py` *(planned)* — the thin pygame/SDL surface-blit adapter (the loop's
-  `draw` callback + vsync flip).
+
+Bridge + display (outside the VM-independent package):
+- `recovered/adapters/render_snapshot_adapter.py` — `extract_render_snapshot(mem,ds)`
+  builds a `RenderSnapshot` from VM memory (game-thread extractor). ✅
+- `scripts/native_play.py` — the pygame display adapter (`PygameDisplay`: blit/scale/
+  vsync flip) + session runner (`--snapshot` static, `--demo` game-thread live);
+  `play.py --backend native` delegates here. ✅ (pygame lives here, not in the
+  VM-independent package). Run: `play.py --backend native --demo <dir>` /
+  `--snapshot <dir>`.
 
 ## Stages
 - **Stage 0 — seam.** `NativeSourceFrame` / backend protocol / diagnostics. ✅
