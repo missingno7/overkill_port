@@ -14,6 +14,21 @@ original/hybrid runtime
   → pygame/SDL display at monitor refresh
 ```
 
+## Selection & configuration (no flag sprawl)
+- One selector: **`play.py --backend vm|native`** (default `vm`). `vm` = the
+  current faithful SDL/oracle viewer; `native` = this backend. No per-feature
+  ``play.py`` flags.
+- The native backend is a **self-contained presentation app** that owns:
+  - a **config file** — its persisted settings (`native_video/config.py`:
+    `load_config`/`save_config`, default `…/overkill/native_video.json`, override
+    via `OVERKILL_CONFIG_DIR`; unknown keys ignored, missing defaulted);
+  - an **in-game settings overlay** (native-only UI, drawn by the native renderer)
+    that toggles interpolation/options live and **writes changes back to the
+    config file**.
+- **Future:** the native backend also absorbs **audio**, becoming the full modern
+  presentation layer (video + audio + settings) over the VM game-logic/oracle.
+  `BackendConfig` grows audio settings then; the overlay grows an audio section.
+
 ## Hard rules
 - No VM framebuffer in the native hot path; no VM imports in `native_video`
   (enforced: `tests/test_native_video_independence.py`).
@@ -28,11 +43,15 @@ original/hybrid runtime
 ## Module map (`overkill/native_video/`, backend layer)
 - `page_raster.py` — the VM-independent visual source: replays the present blit
   (3354) from the composited source page `[9598]` at cursor `[234C]` and decodes
-  via the recovered geometry + palette. Grounded vs the live framebuffer.
+  via the recovered geometry + palette. Grounded vs the live framebuffer. ✅
 - `frame.py` — the seam: `NativeSourceFrame` (one game-cadence frame: baseline RGB
   + source cursor + semantic `FrameSnapshot`), `PresentedFrame`, `BackendConfig`
-  (opt-in flags), `BackendDiagnostics`.
-- `backend.py` — `NativeOverkillVideoBackend`: display-independent present logic.
+  (persisted settings), `BackendDiagnostics`. ✅
+- `config.py` — load/save the settings file (overlay + `--backend native` share it). ✅
+- `backend.py` — `NativeOverkillVideoBackend`: display-independent present logic. ✅
+- `overlay.py` *(planned)* — the in-game settings overlay (native-only UI; toggles
+  `BackendConfig` live and persists via `config.save_config`).
+- `display.py` *(planned)* — the thin pygame/SDL surface-blit adapter + present clock.
 
 ## Stages
 - **Stage 0 — seam.** `NativeSourceFrame` / backend protocol / diagnostics. ✅
@@ -48,9 +67,13 @@ original/hybrid runtime
 - **Stage 4 — object-wise interpolation.** Lerp sprites between source snapshots by
   semantic identity; snap/fallback per-object on ambiguous identity, report in
   diagnostics. Flag `object_interpolation`.
-- **Stage 5 — optional features + debug compare.** Per-feature flags (default
-  conservative); `debug_compare` diffs native output vs the faithful frame at source
-  boundaries.
+- **Stage 5 — optional features + debug compare.** Settings (default conservative)
+  live in the config file + overlay, not `play.py` flags; `debug_compare` diffs
+  native output vs the faithful frame at source boundaries.
+- **Stage 6 — in-game settings overlay.** Native-only UI to toggle interpolation/
+  options live, persisting to the config file (`overlay.py`).
+- **Stage 7 — audio absorption (future).** Fold sound into the native backend so it
+  is the full modern presentation layer (video + audio + settings).
 
 ## Known gaps to fill (lift to the model as we go)
 - **HUD/border layer.** The present blit covers only the playfield

@@ -52,14 +52,21 @@ class PresentedFrame:
 
 @dataclass(frozen=True)
 class BackendConfig:
-    """Opt-in feature flags. The default is conservative: faithful passthrough,
-    no interpolation, no VM-framebuffer fallback."""
+    """The native backend's persisted settings (whether the native backend is used
+    at all is the ``play.py --backend vm|native`` selector's job, not a field here).
 
-    native_video: bool = True
+    These are the toggles the in-game settings overlay flips and saves to the
+    config file (``native_video/config.py``). The default is conservative: faithful
+    passthrough, no interpolation, no VM-framebuffer fallback. ``present_vsync`` /
+    ``target_present_hz`` drive the presentation clock (``None`` = follow the
+    monitor refresh)."""
+
     camera_interpolation: bool = False
     object_interpolation: bool = False
     smooth_palette_fades: bool = False
     debug_compare: bool = False
+    present_vsync: bool = True
+    target_present_hz: Optional[int] = None
 
 
 @dataclass
