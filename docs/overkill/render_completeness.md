@@ -84,8 +84,12 @@ output, and **witness it against the live draws** before marking done.
       RGB decode (`source_page` → pixels).
 - [ ] **Fades** — fade-in/out transitions (if any reprogram intensity per-frame;
       witness a transition to classify).
-- [ ] **Explosions / hit flashes** — are these objects (covered by sprites) or
-      separate effects? (witness to classify).
+- [x] **Explosions / hit flashes** — **objects, covered**. Witnessed on the
+      `player_death` demo (`probes/witness_draw_order`): the death/explosion visuals
+      are sprites 263–267 drawn through the standard `5AC8` object path and present
+      in both the live draw list and the `FrameSnapshot` playfield — there is no
+      separate effect-draw system. (5AC8 also dispatches some offscreen `+0C==FFFF`
+      objects that render nothing; the model correctly culls them.)
 - [ ] **Level start / transition screens** — the per-level intro/wipe.
 - [ ] **Score tally / level-end** — the end-of-level tally screen.
 
