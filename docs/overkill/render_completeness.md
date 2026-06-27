@@ -90,8 +90,16 @@ output, and **witness it against the live draws** before marking done.
       in both the live draw list and the `FrameSnapshot` playfield — there is no
       separate effect-draw system. (5AC8 also dispatches some offscreen `+0C==FFFF`
       objects that render nothing; the model correctly culls them.)
-- [ ] **Level start / transition screens** — the per-level intro/wipe.
-- [ ] **Score tally / level-end** — the end-of-level tally screen.
+- [x] **Level-end transition (in-gameplay)** — **covered**. Witnessed on the
+      `L5_ending` demo (`witness_draw_order`): the level-end sequence renders through
+      the standard `5AC8` object draws + the `[9598]`→`3354` present (drawn vs model
+      differ only by the offscreen anchor slot) — no separate transition-draw
+      system. The visible frame is the present blit of the composited source page.
+- [ ] **Wipe / tally *screens*** — the dedicated per-level intro wipe and the
+      end-of-level tally screen are **scene-entry producers** (like the menu, they
+      draw once on entry, so steady-state demos can't witness them). They compose
+      into `[9598]` and present identically, so the present+palette model is their
+      **faithful-fallback**; full producer witnessing needs a scene-entry capture.
 
 ### Non-gameplay scenes
 *Finding (witnessed):* the menu fires **none** of the gameplay render hooks
