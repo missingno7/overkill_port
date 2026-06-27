@@ -92,19 +92,25 @@ class PygameDisplay:
         self.pygame.quit()
 
 
+# Present-rate cycle: None = vsync (sync to monitor), 0 = uncapped, else a Hz cap.
+_PRESENT_RATES = [None, 60, 120, 144, 240, 0]
+
+
+def _rate_label(rate) -> str:
+    if rate is None:
+        return "VSync (monitor)"
+    if rate == 0:
+        return "Uncapped"
+    return f"{rate} Hz"
+
+
 class NativeOverlay:
-    """F1 settings overlay drawn over the game (toggles persisted to the config)."""
+    """F1 settings overlay drawn over the game (settings persisted to the config)."""
 
     def __init__(self, backend: NativeOverkillVideoBackend, display: PygameDisplay) -> None:
         self.backend = backend
         self.display = display
         self.visible = False
-        self.sel = 0
-        # (label, BackendConfig bool attribute) — only the implemented toggles.
-        self.items = [
-            ("Camera/scroll interpolation", "camera_interpolation"),
-            ("VSync (sync present to monitor)", "present_vsync"),
-        ]
 
     def toggle(self) -> None:
         self.visible = not self.visible
@@ -112,45 +118,39 @@ class NativeOverlay:
     def handle_key(self, key, pygame) -> None:
         if key in (pygame.K_F1, pygame.K_ESCAPE):
             self.visible = False
-        elif key in (pygame.K_UP, pygame.K_w):
-            self.sel = (self.sel - 1) % len(self.items)
-        elif key in (pygame.K_DOWN, pygame.K_s):
-            self.sel = (self.sel + 1) % len(self.items)
-        elif key in (pygame.K_RETURN, pygame.K_SPACE, pygame.K_LEFT, pygame.K_RIGHT, pygame.K_a, pygame.K_d):
-            self._toggle_selected()
+        elif key in (pygame.K_LEFT, pygame.K_a):
+            self._cycle_rate(-1)
+        elif key in (pygame.K_RIGHT, pygame.K_d, pygame.K_RETURN, pygame.K_SPACE):
+            self._cycle_rate(+1)
 
-    def _toggle_selected(self) -> None:
-        attr = self.items[self.sel][1]
-        cfg = dataclasses.replace(self.backend.config, **{attr: not getattr(self.backend.config, attr)})
+    def _cycle_rate(self, direction: int) -> None:
+        cur = self.backend.config.target_present_hz
+        idx = _PRESENT_RATES.index(cur) if cur in _PRESENT_RATES else 0
+        new = _PRESENT_RATES[(idx + direction) % len(_PRESENT_RATES)]
+        cfg = dataclasses.replace(self.backend.config, target_present_hz=new, present_vsync=(new is None))
         self.backend.config = cfg
         save_config(cfg)
-        if attr == "present_vsync":
-            self.display.set_vsync(cfg.present_vsync)
 
     def draw(self) -> None:
         pygame = self.display.pygame
         w, h = self.display.size
         panel = pygame.Surface((w, h), pygame.SRCALPHA)
-        panel.fill((0, 0, 0, 170))
+        panel.fill((0, 0, 0, 180))
         y = 24
-        panel.blit(self.display.font_big.render("NATIVE BACKEND  -  F1 to close", True, (255, 255, 0)), (24, y))
-        y += 40
-        for i, (label, attr) in enumerate(self.items):
-            on = getattr(self.backend.config, attr)
-            colour = (120, 255, 120) if on else (200, 200, 200)
-            marker = ">" if i == self.sel else " "
-            text = f"{marker} {label:<34} {'ON ' if on else 'OFF'}"
-            panel.blit(self.display.font.render(text, True, colour), (24, y))
-            y += 26
-        y += 14
+        panel.blit(self.display.font_big.render("NATIVE BACKEND   -   F1 to close", True, (255, 255, 0)), (24, y))
+        y += 42
+        panel.blit(self.display.font.render(
+            f"> Present rate:  {_rate_label(self.backend.config.target_present_hz)}   "
+            f"(Left/Right to change)", True, (120, 255, 120)), (24, y))
+        y += 38
         d = self.backend.diagnostics()
         total = d.cache_hits + d.cache_misses
         for line in (
-            f"present {d.present_fps:6.1f} Hz    source {d.source_fps:6.1f} Hz",
-            f"render  {d.native_render_ms:5.2f} ms    cache {d.cache_hits}/{total}",
-            f"interp  alpha {d.interpolation_alpha:.2f}  active {d.camera_interpolation_active}",
+            f"present {d.present_fps:6.1f} Hz     source {d.source_fps:6.1f} Hz",
+            f"render  {d.native_render_ms:5.2f} ms     cache {d.cache_hits}/{total}",
             "",
-            "Up/Down select   Enter/Left/Right toggle",
+            "Object interpolation: WIP - needs the sprite/background",
+            "separation lift (sprites are baked into the page).",
         ):
             panel.blit(self.display.font.render(line, True, (180, 200, 255)), (24, y))
             y += 24
@@ -173,15 +173,13 @@ def _decode_composed_snapshot(snapshot_bytes, frame_id):
 
 
 def _build_source_frame(snapshot_bytes, frame_id, backend, live_ds):
-    """Build the source frame. When interpolation is enabled, do the full extract
-    (composed + scrolling playfield sublayer + scroll cursor); otherwise the fast
-    composed-only path."""
-    if backend.config.camera_interpolation and live_ds is not None:
-        from dos_re.memory import Memory
-        from overkill.recovered.adapters.render_snapshot_adapter import extract_render_snapshot
-        mem = Memory()
-        mem.data[:] = snapshot_bytes
-        return extract_render_snapshot(mem, live_ds() & 0xFFFF, frame_id=frame_id, timestamp=time.monotonic())
+    """Build the source frame from the composed page (the faithful frame).
+
+    Object interpolation (interpolating sprite positions between frames) needs the
+    sprite/background separation lift — until then the live path presents the
+    faithful composed frame and the present clock only decouples/holds (no
+    in-between motion is invented).
+    """
     return _decode_composed_snapshot(snapshot_bytes, frame_id)
 
 
@@ -214,11 +212,12 @@ def run_native_ui(*, args, frame_sync, stop, keyboard=None, live_ds=None, **_ign
     scan = _build_pygame_scan()
 
     backend = NativeOverkillVideoBackend(load_config())
-    display = PygameDisplay(scale=args.scale, vsync=backend.config.present_vsync)
+    display = PygameDisplay(scale=args.scale, vsync=backend.config.target_present_hz is None)
     overlay = NativeOverlay(backend, display)
     last_shown = 0
     source_id = 0
     last_title = 0.0
+    next_present = time.monotonic()
     print("native: window up - WASD/arrows + Z/Space play; F1 = settings; close window to quit", flush=True)
     try:
         running = True
@@ -248,6 +247,14 @@ def run_native_ui(*, args, frame_sync, stop, keyboard=None, live_ds=None, **_ign
                 backend.submit_source_frame(_build_source_frame(pending[1], source_id, backend, live_ds))
                 frame_sync.mark_displayed(pending[0])  # unblock the emulator's publish_and_wait
 
+            # Present-rate control (decoupled from the source): VSync syncs the flip
+            # to the monitor; a Hz cap paces manually with vsync off; uncapped free-runs.
+            target = backend.config.target_present_hz
+            want_vsync = target is None
+            if display.vsync != want_vsync:
+                display.set_vsync(want_vsync)
+                next_present = time.monotonic()
+
             if backend.ready:
                 presented = backend.present(time.monotonic())
                 display.blit_frame(presented.rgb)
@@ -256,6 +263,15 @@ def run_native_ui(*, args, frame_sync, stop, keyboard=None, live_ds=None, **_ign
                 display.flip()
             else:
                 time.sleep(0.003)
+
+            if target and target > 0:  # explicit Hz cap (vsync off): pace to it
+                now = time.monotonic()
+                if now < next_present:
+                    time.sleep(next_present - now)
+                next_present = max(next_present + 1.0 / target, time.monotonic())
+            else:
+                next_present = time.monotonic()
+
             last_title = _update_title(backend, display, last_title)
     finally:
         display.close()
