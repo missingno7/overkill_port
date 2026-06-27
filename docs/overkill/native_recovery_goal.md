@@ -103,10 +103,20 @@ stay productive across the whole window and never stop on the first hard problem
   unexercised in the demo window → unverifiable unattended). They need a human trace; leave
   them for an attended session.
 - **Verify against the FULL demo corpus.** `tests/test_demo_replay_equivalence.py` runs the
-  whole `artifacts/demos/*` set (~20 demos) — use it as the gate, not a single demo, so
+  whole `artifacts/demos/*` set (~23 demos) — use it as the gate, not a single demo, so
   divergences anywhere are caught. For a possibly-cold path (a dead-flag/register drop),
   prove it is exercised: patch with an invocation counter, run a gameplay demo, commit only
   if count>0. Pure byte-exact extractions (same writes + same boundary) are safe without this.
+- **Full-arc demos now replay the menu faithfully** (2026-06-28): demos that start at boot/
+  intro and cross the level/difficulty-select screen (e.g. `demo_play_tandy_20260628_004406`
+  menu-only, and the longer `..._231013` / `..._start_to_end` on local disk) no longer hang
+  or mis-navigate. They now exercise the boot → menu → gameplay → death arc end-to-end, so the
+  gate covers far more than the per-level gameplay-snapshot demos. The long ones still **fail
+  full verify** at genuine gameplay hook divergences they newly reach — these are concrete RE
+  targets, NOT menu bugs: the **view-contact-center fields `[95F2]`/`[95F4]`** diverge (e.g.
+  `231013` ~frame 934, `start_to_end` ~frame 2635), same class as the `BC4B` death frontier
+  (a collision/contact hook computing differently than the ASM). Treat them like that
+  frontier — **needs attended judgment, skip unattended** (see `loop_blockers.md`).
 - **Favor tractable wins** (clean dual-mode rule lifts, named-constant pushes, collision
   assert drops) so the night accumulates many verified slices. If a behaviour proves deep
   after ~2 diagnosis attempts, log it in `loop_blockers.md` and move on — do not grind.

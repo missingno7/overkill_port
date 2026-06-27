@@ -11,8 +11,6 @@ from dos_re.cpu import CF, DF, IF, ZF
 from overkill.asm import (
     _cmp_byte,
     _cmp_word,
-    _dec_mem_byte_preserve_cf,
-    _inc_mem_byte_preserve_cf,
     _inc_mem_word_preserve_cf,
 )
 

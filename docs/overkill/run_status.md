@@ -1,3 +1,32 @@
+## 2026-06-28 - Faithful level-select replay (menu hooks removed + per-poll demo input)
+
+Full-arc demos that cross the level/difficulty-select screen now replay it
+faithfully (previously they deadlocked there, then once unblocked they landed on
+the wrong planet). The screen samples the keyboard sub-frame through stateful
+debounce loops, but demo input was applied at frame granularity, so same-boundary
+release+repress pairs collapsed into one tap. Two coupled changes:
+
+- Removed the approximate level-select replacement hooks (1010:D390 fire-release,
+  D434 input-release, D445 selector loop) so the original selector runs as raw ASM
+  on every runtime; `overkill.input_waits` already resolves the boundary-less spins
+  for both the headless verifier and play.py. Net -431 lines (the hooks + their
+  `input_menu` lift bodies + 5 per-hook oracle tests + 3 `HookStop` entries; also
+  dropped the now-dead `play.py` `is_input_selector_wait`). `hook_inventory.md`
+  333 hooks (was 336).
+- `overkill.input_waits.pump_demo_frame` schedules demo input by recorded boundary
+  (preserving timing) but, on the level-select screen, delivers one event per
+  keyboard poll and defers at present/render boundaries so each release is consumed
+  before the next press. Used by the demo-replay test and all three play.py demo
+  paths; a coarse-burst selector-head scan keeps detection robust under play.py's
+  `cpu.run` chunks.
+
+Verified: menu-only demo `004406` full-verifies byte-exact in the dual-runtime
+verifier; intro-start demo `231013` navigates to the same planet/difficulty it
+recorded; corpus 23/23 bounded; lint/audit/island-drift green. Commits a11a26c +
+this cleanup. (Interactive menu *pacing* runs faster than the recording because the
+older demos were recorded against the previous menu cadence — cosmetic; the
+verifier is frameless so the goal-run gate is unaffected.)
+
 ## 2026-06-27 - Source-purity rescue: AB10 object logic pushed to a pure rule
 
 Resumed the rescue (lifted -> pure recovered systems; hooks thin; VM = oracle;

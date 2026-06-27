@@ -7,7 +7,7 @@ Hooks are **temporary contact points**, not the architecture. The rescue goal
 is to shrink this list: collapse `glue` into recovered systems, keep only true
 checkpoints/env-waits, and delete probes. See `rescue_refactor.md`.
 
-**336 registered hooks.** All carry a continuation/verifier contract (336/336 in DEFAULT_STOPS).
+**333 registered hooks.** All carry a continuation/verifier contract (333/333 in DEFAULT_STOPS).
 
 ## By role (the headline: glue is the coastline to collapse)
 
@@ -15,7 +15,7 @@ checkpoints/env-waits, and delete probes. See `rescue_refactor.md`.
 |---|---:|---|
 | checkpoint | 12 | KEEP — real logical resume boundary (frame/object-update/render/input). |
 | env_wait | 5 | KEEP — hardware/environment wait the interpreter can't satisfy natively. |
-| glue | 319 | COLLAPSE — accidental ASM-boundary plumbing; thin to adapter, move logic to a recovered system, merge duplicates, then shrink/delete. |
+| glue | 316 | COLLAPSE — accidental ASM-boundary plumbing; thin to adapter, move logic to a recovered system, merge duplicates, then shrink/delete. |
 
 ## By subsystem (merge target + shrinking path)
 
@@ -26,7 +26,7 @@ checkpoints/env-waits, and delete probes. See `rescue_refactor.md`.
 | `layer_sprites` | 45 | 42 glue, 3 checkpoint | RenderBackend (rendering/layer_sprites) | backend: keep isolated |
 | `tandy_renderer` | 38 | 37 glue, 1 checkpoint | RenderBackend (rendering/tandy) | backend: keep isolated |
 | `ega_renderer` | 25 | 23 glue, 1 checkpoint, 1 env_wait | RenderBackend (rendering/ega) | backend: keep isolated |
-| `input_menu` | 24 | 23 glue, 1 checkpoint | InputSystem / input checkpoints | keep poll as checkpoint; lift menu logic to pure rules |
+| `input_menu` | 21 | 20 glue, 1 checkpoint | InputSystem / input checkpoints | keep poll as checkpoint; lift menu logic to pure rules |
 | `cga_renderer` | 18 | 17 glue, 1 checkpoint | RenderBackend (rendering/cga) | backend: keep isolated |
 | `collision` | 16 | 16 glue | CollisionSystem (recovered/systems/collision) | adapters reproduce live regs/flags; pure rule = value source, drop self-check asserts |
 | `movement` | 15 | 15 glue | MovementSystem (recovered/systems/movement) | glue -> thin adapter; logic already lifted, keep pushing |
@@ -242,9 +242,6 @@ checkpoints/env-waits, and delete probes. See `rescue_refactor.md`.
 | `1010:CE40` | `overkill_menu_transition_input_wait_ce40` | input_menu | glue |
 | `1010:CE5C` | `overkill_menu_transition_input_wait_loop_ce5c` | input_menu | glue |
 | `1010:CF78` | `overkill_menu_script_input_wait_cf78` | input_menu | glue |
-| `1010:D390` | `overkill_menu_fire_release_wait_d390` | input_menu | glue |
-| `1010:D434` | `overkill_selector_input_release_wait_d434` | input_menu | glue |
-| `1010:D445` | `overkill_input_selector_loop_d445` | input_menu | glue |
 | `1010:511F` | `overkill_video_page_toggle_511f` | layer_sprites | checkpoint |
 | `1010:A846` | `overkill_scan_draw_setup_32ca_a846` | layer_sprites | checkpoint |
 | `1010:A90C` | `overkill_present_object_scan_pair_a90c` | layer_sprites | checkpoint |

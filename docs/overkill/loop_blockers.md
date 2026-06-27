@@ -52,6 +52,15 @@ but diverges deep in the **full** run (`OVERKILL_FULL_DEMO_VERIFY=1`).
 
 ## Remaining backlog — needs attended judgment (not safe unattended)
 
+- **View-contact-center divergence `[95F2]`/`[95F4]`** (surfaced 2026-06-28 by the
+  full-arc menu-crossing demos now that the level-select replays faithfully): in the
+  full (not bounded) demo-replay verify, the decoded globals
+  `view_contact_center_x_95f2` / `_y_95f4` diverge between the ASM oracle and the
+  hooked runtime mid-gameplay — `demo_play_tandy_20260627_231013` ~frame 934 (3
+  frames), `..._start_to_end` ~frame 2635. Same risk class as the player-death
+  `BC4B` frontier above: a collision/contact hook computing the contact point
+  differently than the original. Needs a single-step trace of the first divergent
+  frame to find the writer; not safe to guess unattended.
 - **Unknown object-record fields `0x10`, `0x26`, `0x36`** (map at 25/28, the honest
   floor): each is written with no lifted reader (`0x26` ← DS:237A in object_spawns,
   `0x36` ← ax in object_movement; `0x10` is never accessed). Naming needs the

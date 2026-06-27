@@ -952,19 +952,6 @@ def main(argv: list[str] | None = None) -> int:
         # --verify-hooks, and --verify-frames.
         return title_fire_release_wait(rt.cpu)
 
-    def is_input_selector_wait() -> bool:
-        """Detect the level/difficulty selector's idle poll gate.
-
-        1010:D445 is now a one-iteration hook for the original selector
-        busy-wait.  Treating it as an interactive wait lets the SDL side keep
-        rendering, release keys, and process F12 snapshots while the game waits
-        for the next level-select key.
-        """
-        cs, ip = rt.cpu.addr()
-        if cs != 0x1010 or ip != 0xD445:
-            return False
-        mem = rt.cpu.mem
-        return mem.block(cs, 0xD445, 7) == bytes.fromhex("80 3e e4 98 01 75")
 
     def is_overlay_menu_key_wait() -> bool:
         cs, ip = rt.cpu.addr()
@@ -1382,15 +1369,6 @@ def main(argv: list[str] | None = None) -> int:
                         last_boundary["kind"] = "wait"
                         cs, ip = rt.cpu.addr()
                         status["text"] = f"waiting for title fire release @ {cs:04X}:{ip:04X}"
-                        sleep_with_async_irqs(rt.cpu, 0.01)
-                        break
-                    if is_input_selector_wait():
-                        async_timer_irq.poll(rt.cpu)
-                        publish_video_if_changed(rt.cpu, poll_audio_while_waiting=True)
-                        boundary["n"] += 1
-                        last_boundary["kind"] = "wait"
-                        cs, ip = rt.cpu.addr()
-                        status["text"] = f"waiting for selector input @ {cs:04X}:{ip:04X}"
                         sleep_with_async_irqs(rt.cpu, 0.01)
                         break
                     if is_overlay_menu_key_wait():
