@@ -295,8 +295,11 @@ def layer1_scan_should_draw(
     return (object_layer_flag & 0xFFFF) == LAYER1_LAYER_FOREGROUND
 
 
-B9F0_TARGET_X_WRAP_LIMIT = 0x00D0
+# B9F0's horizontal play-area right edge (D0h), shared by both of its X wraps: the
+# accumulated target X resets to 20h past it, while the live X resets to a tighter 10h.
+B9F0_X_RIGHT_EDGE = 0x00D0
 B9F0_TARGET_X_WRAP_RESET = 0x0020
+B9F0_X_OVERFLOW_RESET = 0x0010
 
 
 def b9f0_wrapped_target_x(target_x: int) -> int:
@@ -304,9 +307,19 @@ def b9f0_wrapped_target_x(target_x: int) -> int:
 
     Once the accumulated target X passes the right edge (``> D0h``) it wraps back to the
     left edge (``20h``); otherwise it is unchanged."""
-    if (target_x & 0xFFFF) > B9F0_TARGET_X_WRAP_LIMIT:
+    if (target_x & 0xFFFF) > B9F0_X_RIGHT_EDGE:
         return B9F0_TARGET_X_WRAP_RESET
     return target_x & 0xFFFF
+
+
+def b9f0_wrapped_x_on_overflow(x: int) -> int:
+    """The B9F0 follower's live X after the overshoot-path right-edge wrap (1010:BAB7).
+
+    Once the object's actual X passes the right edge it wraps to 10h -- a tighter left
+    margin than the target-X wrap's 20h; otherwise it is unchanged."""
+    if (x & 0xFFFF) > B9F0_X_RIGHT_EDGE:
+        return B9F0_X_OVERFLOW_RESET
+    return x & 0xFFFF
 
 
 def b9f0_reached_target(y: int, vertical_delta: int, target_y: int, x: int, target_x: int) -> bool:

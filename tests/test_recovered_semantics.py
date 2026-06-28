@@ -973,16 +973,16 @@ def test_recovered_layer1_scan_should_draw_is_pure_and_named():
 
 def test_recovered_b9f0_wrapped_target_x_is_pure_and_named():
     from overkill.recovered.systems.objects import (
-        B9F0_TARGET_X_WRAP_LIMIT,
+        B9F0_X_RIGHT_EDGE,
         B9F0_TARGET_X_WRAP_RESET,
         b9f0_wrapped_target_x,
     )
 
     # At/below the right edge the target X is unchanged.
     assert b9f0_wrapped_target_x(0x0040) == 0x0040
-    assert b9f0_wrapped_target_x(B9F0_TARGET_X_WRAP_LIMIT) == B9F0_TARGET_X_WRAP_LIMIT
+    assert b9f0_wrapped_target_x(B9F0_X_RIGHT_EDGE) == B9F0_X_RIGHT_EDGE
     # Past the right edge it wraps to the left edge.
-    assert b9f0_wrapped_target_x(B9F0_TARGET_X_WRAP_LIMIT + 1) == B9F0_TARGET_X_WRAP_RESET
+    assert b9f0_wrapped_target_x(B9F0_X_RIGHT_EDGE + 1) == B9F0_TARGET_X_WRAP_RESET
     assert b9f0_wrapped_target_x(0x0140) == B9F0_TARGET_X_WRAP_RESET
     # 16-bit masking on the input.
     assert b9f0_wrapped_target_x(0x10040) == 0x0040
@@ -1034,6 +1034,22 @@ def test_recovered_b9f0_periodic_helper_mask_is_pure_and_named():
     assert b9f0_periodic_helper_mask(3) == B9F0_HELPER_TICK_MASK_SLOW
     # 16-bit masking on the difficulty input.
     assert b9f0_periodic_helper_mask(0x10002) == B9F0_HELPER_TICK_MASK_FAST
+
+
+def test_recovered_b9f0_wrapped_x_on_overflow_is_pure_and_named():
+    from overkill.recovered.systems.objects import (
+        B9F0_X_OVERFLOW_RESET,
+        B9F0_X_RIGHT_EDGE,
+        b9f0_wrapped_x_on_overflow,
+    )
+
+    # At/below the right edge the live X is unchanged.
+    assert b9f0_wrapped_x_on_overflow(0x0040) == 0x0040
+    assert b9f0_wrapped_x_on_overflow(B9F0_X_RIGHT_EDGE) == B9F0_X_RIGHT_EDGE
+    # Past it, the live X wraps to 10h (tighter than the target wrap's 20h).
+    assert b9f0_wrapped_x_on_overflow(B9F0_X_RIGHT_EDGE + 1) == B9F0_X_OVERFLOW_RESET
+    assert b9f0_wrapped_x_on_overflow(0x0140) == B9F0_X_OVERFLOW_RESET
+    assert B9F0_X_OVERFLOW_RESET == 0x0010
 
 
 def test_recovered_b9f0_spawn_counter_ready_is_pure_and_named():

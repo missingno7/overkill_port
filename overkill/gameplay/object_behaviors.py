@@ -45,7 +45,7 @@ from overkill.recovered.systems.objects import (
     B9F0_HELPER_DIFFICULTY_FAST,
     B9F0_SPAWN_COUNTER_TRIGGER,
     B9F0_SPRITE_FRAME_OFFSET,
-    B9F0_TARGET_X_WRAP_LIMIT,
+    B9F0_X_RIGHT_EDGE,
     CAMERA_NEAR_THRESHOLD,
     RENDER_MODE_FULL,
     LEVEL_PHASE_DISABLE_THRESHOLD,
@@ -55,6 +55,7 @@ from overkill.recovered.systems.objects import (
     b9f0_spawn_counter_ready,
     b9f0_sprite_from_frame,
     b9f0_wrapped_target_x,
+    b9f0_wrapped_x_on_overflow,
     B73E_SPAWN_WINDOW_MAX,
     B73E_SPAWN_WINDOW_MIN,
     B73E_TARGET_POSTMOVE_232E_SENTINEL,
@@ -583,7 +584,7 @@ def _run_object_behavior_b9f0(cpu, *, parent: str, chain: str, cx_value: int) ->
         # BA13..BA1A: wrap target X back to the left edge once it passes the right
         # edge.  The CMP flag is replayed for fidelity but is dead by the next boundary.
         target_x = slot.target_x_word
-        _cmp_word(cpu, target_x, B9F0_TARGET_X_WRAP_LIMIT)
+        _cmp_word(cpu, target_x, B9F0_X_RIGHT_EDGE)
         wrapped_x = b9f0_wrapped_target_x(target_x)
         if wrapped_x != target_x:
             slot.target_x_word = wrapped_x
@@ -644,9 +645,11 @@ def _run_object_behavior_b9f0(cpu, *, parent: str, chain: str, cx_value: int) ->
                     _cmp_word(cpu, mem.rw(ds, 0x232E), B9F0_SPAWN_COUNTER_TRIGGER)
                     if b9f0_spawn_counter_ready(mem.rw(ds, 0x232E)):
                         call_7476(0xBAB5, "BAB2 CALL 7476")
-                _cmp_word(cpu, slot.x_word, 0x00D0)
-                if slot.x_word > 0x00D0:
-                    slot.x_word = 0x0010
+                x_now = slot.x_word
+                _cmp_word(cpu, x_now, B9F0_X_RIGHT_EDGE)
+                wrapped_now = b9f0_wrapped_x_on_overflow(x_now)
+                if wrapped_now != x_now:
+                    slot.x_word = wrapped_now
                 cpu.s.ip = 0xBC4B
                 return
 

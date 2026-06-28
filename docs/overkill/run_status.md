@@ -1,3 +1,15 @@
+## 2026-06-28 - Recovery: B9F0 live-X overflow wrap -> recovered rule (+ shared right edge)
+
+The last B9F0 gate: on the overshoot path the live X also wraps once it passes the right
+edge (``> D0h -> 10h``, a tighter left margin than the target-X wrap's 20h).  Extracted as
+`b9f0_wrapped_x_on_overflow`, and consolidated the shared D0h boundary by renaming
+`B9F0_TARGET_X_WRAP_LIMIT -> B9F0_X_RIGHT_EDGE` (now used by both X wraps) with per-wrap
+resets `B9F0_TARGET_X_WRAP_RESET` (20h) / `B9F0_X_OVERFLOW_RESET` (10h).  Byte-preserving;
+lint + the guard + unit tests pass and the bounded demo corpus stays byte-exact.  B9F0's
+decision/computation logic is now fully lifted into seven recovered rules -- what remains
+inside it is the bounded original near-calls (5DB2/5E1B/5E42/7476) deliberately run
+through the interpreter for stack-scratch fidelity (the call-tree-leaf phase).
+
 ## 2026-06-28 - Recovery: B9F0 overshoot spawn gate + BA67 sprite formula -> recovered rules
 
 Two more B9F0 pieces, batched: the overshoot-path formation-spawn trigger
