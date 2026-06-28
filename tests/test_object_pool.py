@@ -16,6 +16,8 @@ from overkill.recovered.views.object_slots import (
     OBJECT_SLOT_STRIDE,
     OFF_ACTIVE_WORD,
     OFF_LOGIC_ID,
+    OFF_TARGET_X,
+    OFF_TARGET_Y,
     OFF_X,
     OFF_Y,
     object_pool_mirror_mismatches,
@@ -83,6 +85,10 @@ def test_object_pool_slot_record_projection():
     assert rec.x_word == pool.word_at(1, OFF_X)
     assert rec.y_word == pool.word_at(1, OFF_Y)
     assert rec.logic_id == pool.word_at(1, OFF_LOGIC_ID)
+    # Enriched target-position fields, with signed convenience properties.
+    assert rec.target_x_word == pool.word_at(1, OFF_TARGET_X)
+    assert rec.target_y_word == pool.word_at(1, OFF_TARGET_Y)
+    assert rec.target_x == rec.target_x_word and rec.target_y == rec.target_y_word
 
 
 def test_object_pool_from_real_image_is_byte_faithful():

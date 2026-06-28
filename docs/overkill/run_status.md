@@ -1,3 +1,14 @@
+## 2026-06-28 - Phase 2: enrich ObjectSlotRecord with the slot target position
+
+Grew the native `ObjectSlotRecord` toward the full slot state: added `target_x_word` /
+`target_y_word` (offsets 34h/32h) with signed `target_x` / `target_y` properties, defaulted
+so the ~20 existing 8-field constructors stay valid.  Both projections now populate them --
+`object_slot_adapter.read_object_slot_record` (from the view) and `object_pool_slot_record`
+(from the pool).  This unblocks migrating the target-position rules (b9f0 reached-target,
+b73e) to native state next.  Byte-exact / pure-additive: the extra reads are pure, so the
+a8c7 oracle + the rules' unit tests + the bounded demo corpus (the live collision/movement
+paths through `read_object_slot_record`) stay green; lint + both audits + the guard pass.
+
 ## 2026-06-28 - Phase 2: migrate layer1_scan_should_draw to take a native ObjectSlotRecord
 
 The goal doc's core Phase-2 move ("rules take native state instead of loose ints"),

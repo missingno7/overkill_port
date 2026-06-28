@@ -24,6 +24,11 @@ class ObjectSlotRecord:
     scan_flag: int
     hazard_class: int
     logic_id: int
+    # Enriched native-state fields (Phase 2): the slot's target position (offsets 34h/32h).
+    # Defaulted so existing 8-field constructors stay valid; the view/pool projections
+    # populate them so rules can take native target state instead of loose ints.
+    target_x_word: int = 0x0000
+    target_y_word: int = 0x0000
 
     @property
     def x(self) -> int:
@@ -32,6 +37,14 @@ class ObjectSlotRecord:
     @property
     def y(self) -> int:
         return i16(self.y_word)
+
+    @property
+    def target_x(self) -> int:
+        return i16(self.target_x_word)
+
+    @property
+    def target_y(self) -> int:
+        return i16(self.target_y_word)
 
 
 @dataclass(frozen=True, slots=True)

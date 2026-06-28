@@ -532,4 +532,6 @@ def object_pool_slot_record(pool: ObjectPool, index: int) -> ObjectSlotRecord:
         scan_flag=pool.word_at(index, OFF_SCAN_FLAG),
         hazard_class=pool.word_at(index, OFF_HAZARD_CLASS),
         logic_id=pool.word_at(index, OFF_LOGIC_ID),
+        target_x_word=pool.word_at(index, OFF_TARGET_X),
+        target_y_word=pool.word_at(index, OFF_TARGET_Y),
     )

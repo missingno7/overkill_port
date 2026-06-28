@@ -16,6 +16,8 @@ def read_object_slot_record(view: ObjectSlotView) -> ObjectSlotRecord:
         scan_flag=view.scan_flag,
         hazard_class=view.hazard_class,
         logic_id=view.logic_id,
+        target_x_word=view.target_x_word,
+        target_y_word=view.target_y_word,
     )
 
 
