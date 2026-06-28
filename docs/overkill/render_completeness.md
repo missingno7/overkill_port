@@ -83,6 +83,21 @@ output, and **witness it against the live draws** before marking done.
 - [x] ~~Screen shake~~ — no 4C30 shake global in OverKill (PRE2 pattern, N/A);
       revisit only if a witness reveals one.
 
+### Native regeneration (toward the self-composing backend)
+*Finding (`probe_source_writers`, L2 frames 380–420):* the present-source page
+`[9598]`=35FF is filled **entirely by leaves already lifted into the rasterizer** —
+the masked compositors `2E6E/2F81/2FB6` (→ `composite_masked_rows`), the strided
+copies `34C5/34D8/3542` (→ `copy_word_rows`), and the `4D6F` clear. So the *leaves*
+of background+sprite composition are done; what's NOT recovered is the **dispatch /
+generation** that drives them: the sprite scan (`5AC8`, recovered) and a separate
+**tile-draw dispatcher** + the **master-plane (`[9592]`) tile/starfield
+generators**. Obstacle: the work segments overlap (`245A` master / `25CC` DS-and-
+work / `35FF` source are 0x172/0x933 apart, pages ~0x4E00 bytes), so naive witnesses
+conflate tile vs object writes — `35FF` (source) is the one clean window. NEXT:
+find the caller of `34C5/34D8` that draws tiles (the tile-draw dispatcher) and the
+`[9592]` generators (starfield appears to live in segment `2032`), then regenerate
+`BackgroundLayer` natively and witness byte-exact.
+
 ### Effects / transitions
 - [x] **Palette** — the fixed PCjr/Tandy 16-colour IRGB palette
       (`systems/tandy_screen.TANDY_PALETTE_RGB` + `unpack_pixel_byte`/`pixel_rgb`).
