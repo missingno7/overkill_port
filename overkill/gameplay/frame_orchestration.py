@@ -11,18 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from overkill.asm import (
-    _add_mem_word,
-    _add_reg16,
-    _and_mem_word,
-    _cmp_byte,
-    _cmp_word,
-    _dec_mem_word_preserve_cf,
-    _inc_mem_word_preserve_cf,
-    _rep_stosw_preserve_flags,
-    _sub_mem_word,
-    _sub_reg16,
-)
+from overkill.asm import _add_reg16, _and_mem_word, _cmp_byte, _cmp_word, _dec_mem_word_preserve_cf, _inc_mem_word_preserve_cf, _sub_mem_word, _sub_reg16
 from dos_re.cpu import ZF
 from overkill.sounds.loaded_driver import OPTIONAL_SOUND_DRIVER_SEGMENT
 

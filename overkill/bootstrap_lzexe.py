@@ -9,7 +9,7 @@ the explicit bootstrap island.
 """
 from __future__ import annotations
 
-from dos_re.cpu import AF, CF, ZF
+from dos_re.cpu import AF
 
 # Entry at stub offset 0069 after the relocation prelude has prepared:
 #   DS:SI = compressed stream, ES:DI = output stream, BP = bit buffer, DX = bits left.

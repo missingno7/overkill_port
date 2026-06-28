@@ -26,14 +26,7 @@ from overkill.recovered.adapters.collision_adapter import (
 )
 from overkill.recovered.adapters.object_behavior_adapter import run_object_deactivate_logic_dispatch_c054_body
 from overkill.recovered.adapters.object_slot_adapter import read_object_slot_record
-from overkill.recovered.views.object_slots import (
-    OBJECT_SLOT_STRIDE,
-    OBJECT_TABLE_BASE,
-    OBJECT_TABLE_COUNT,
-    OFF_X,
-    OFF_Y,
-    ObjectSlotView,
-)
+from overkill.recovered.views.object_slots import OBJECT_SLOT_STRIDE, OBJECT_TABLE_BASE, OBJECT_TABLE_COUNT, ObjectSlotView
 
 SIG_PLAYER_HAZARD_OBJECT_SCAN_BDE3 = bytes.fromhex(
     "83 3f 00 74 4d 83 7f 0a 01 74 47 83 7f 14 01 75 41"

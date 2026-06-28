@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from dos_re.cpu import CF, DF
 from dos_re.hooks import call_installed_hook_like_near_call, jump_installed_hook_boundary
-from overkill.asm import _add_reg16, _cmp_word, _sub_reg16, _test_word
+from overkill.asm import _add_reg16, _cmp_word, _sub_reg16
 from overkill.recovered.ds_globals import VIDEO_MODE_SELECTOR_OFF
 
 from dataclasses import dataclass

@@ -13,16 +13,7 @@ from __future__ import annotations
 
 from overkill.asm import _add_reg16, _cmp_word, _dec_mem_word_preserve_cf
 from overkill.recovered.systems.objects import object_spawn_seed_8209
-from overkill.recovered.views.object_slots import (
-    ObjectSlotView,
-    EFFECT_OBJECT_TABLE_BASE,
-    GAMEPLAY_OBJECT_ALLOCATOR_WRAP_SENTINEL,
-    GAMEPLAY_OBJECT_TABLE_BASE,
-    OBJECT_SLOT_STRIDE,
-    OFF_LINKED_COUNTER_INDEX,
-    OFF_X,
-    OFF_Y,
-)
+from overkill.recovered.views.object_slots import ObjectSlotView, EFFECT_OBJECT_TABLE_BASE, GAMEPLAY_OBJECT_ALLOCATOR_WRAP_SENTINEL, GAMEPLAY_OBJECT_TABLE_BASE, OBJECT_SLOT_STRIDE, OFF_X, OFF_Y
 
 # Source position the 8209 template reads from the caller's BP frame.  The slot's
 # linked-counter index (offset 0x28) uses the canonical OFF_LINKED_COUNTER_INDEX.
