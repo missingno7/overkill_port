@@ -34,6 +34,7 @@ from .rendering.cga import (
     run_masked_cga_composite_3efb,
 )
 from .rendering.ega import (
+    run_ega_blit_scaled_column_block_497a,
     run_ega_compact_byte_masked_composite_2193,
     run_ega_compact_byte_spread_composite_21d6,
     run_ega_compact_byte_spread_composite_2223,
@@ -907,101 +908,7 @@ def overkill_blit_scaled_column_block_497a(cpu):
     high-level renderer.  It preserves the observed register/flag/stack state
     by using the same arithmetic flag helpers as the interpreter.
     """
-    cs = cpu.s.cs & 0xFFFF
-    mem = cpu.mem
-
-    # 497A: mov cs:[5903],0000h
-    mem.ww(cs, 0x5903, 0)
-    # 4981..4995: load local state and double BP (source bytes per row)
-    cpu.s.di = mem.rw(cs, 0x58F9)
-    cpu.s.si = mem.rw(cs, 0x58FB)
-    cpu.s.cx = mem.rw(cs, 0x58FD)
-    cpu.s.bp = mem.rw(cs, 0x58FF)
-    cpu.s.bp = cpu.shift(4, cpu.s.bp, 1, 16)  # SHL BP,1
-
-    # Optional bottom-up source positioning.
-    _cmp_word(cpu, mem.rw(cs, 0x5905), 0)
-    if not cpu.get_flag(ZF):
-        cpu.s.ax = cpu.s.bp & 0xFFFF
-        _dec_reg16_preserve_cf(cpu, 1)  # DEC CX
-        # MUL CX, matching CPU8086 group-F7 behavior: AX*CX -> DX:AX, CF/OF only.
-        result = (cpu.s.ax & 0xFFFF) * (cpu.s.cx & 0xFFFF)
-        cpu.s.ax = result & 0xFFFF
-        cpu.s.dx = (result >> 16) & 0xFFFF
-        carry = cpu.s.dx != 0
-        cpu.set_flag(CF, carry)
-        cpu.set_flag(0x0800, carry)  # OF
-        _inc_reg16_preserve_cf(cpu, 1)  # INC CX
-        _add_reg16(cpu, 6, cpu.s.ax)    # ADD SI,AX
-
-    # Initial clear/skip region before the first copied row.
-    cpu.push(cpu.s.cx)
-    cpu.s.cx = mem.rw(cs, 0x58FD)
-    _sub_reg16(cpu, 1, mem.rw(cs, 0x5901))
-    _test_word(cpu, cpu.s.cx, cpu.s.cx)  # OR CX,CX
-    if not cpu.get_flag(SF):
-        cpu.s.cx = cpu.shift(5, cpu.s.cx, 1, 16)  # SHR CX,1
-        if cpu.s.cx != 0:
-            _dec_reg16_preserve_cf(cpu, 1)
-            if cpu.s.cx != 0:
-                # 49BD..49CB: advance DI by CX-1 planar rows.
-                while cpu.s.cx != 0:
-                    _ega_next_scanline_di(cpu)
-                    cpu.s.cx = (cpu.s.cx - 1) & 0xFFFF  # LOOP, no flags
-            # 49CD..49E3: clear one row and advance to next row.
-            _xor_al_al(cpu)
-            cpu.s.cx = cpu.s.bp & 0xFFFF
-            _rep_stosb(cpu, cpu.s.cx)
-            _sub_reg16(cpu, 7, cpu.s.bp)
-            _ega_next_scanline_di(cpu)
-    cpu.s.cx = cpu.pop()
-
-    # 49E4..4A38: copy/skip rows according to CS:5901 accumulator.
-    while True:
-        cpu.s.ax = mem.rw(cs, 0x5901)
-        _cmp_word(cpu, cpu.s.ax, mem.rw(cs, 0x58FD))
-        if cpu.get_flag(ZF):
-            copy_this_row = True
-        else:
-            _add_mem_word(cpu, cs, 0x5903, cpu.s.ax)
-            cpu.s.ax = mem.rw(cs, 0x58FD)
-            _cmp_word(cpu, cpu.s.ax, mem.rw(cs, 0x5903))
-            # JA 4A11: jump if AX > CS:5903, unsigned.
-            if (not cpu.get_flag(CF)) and (not cpu.get_flag(ZF)):
-                _sub_mem_word(cpu, cs, 0x5903, cpu.s.ax)
-                copy_this_row = True
-            else:
-                _cmp_word(cpu, mem.rw(cs, 0x5905), 0)
-                if cpu.get_flag(ZF):
-                    _add_reg16(cpu, 6, cpu.s.bp)
-                else:
-                    _sub_reg16(cpu, 6, cpu.s.bp)
-                cpu.s.cx = (cpu.s.cx - 1) & 0xFFFF  # LOOP 49E4, no flags
-                if cpu.s.cx != 0:
-                    continue
-                break
-
-        # 4A16..4A38: copy one BP-byte row, advance planar DI, optionally step SI back.
-        cpu.push(cpu.s.cx)
-        cpu.s.cx = cpu.s.bp & 0xFFFF
-        _rep_movsb(cpu, cpu.s.cx)
-        _sub_reg16(cpu, 7, cpu.s.bp)
-        _ega_next_scanline_di(cpu)
-        _cmp_word(cpu, mem.rw(cs, 0x5905), 0)
-        if not cpu.get_flag(ZF):
-            _sub_reg16(cpu, 6, cpu.s.bp)
-            _sub_reg16(cpu, 6, cpu.s.bp)
-        cpu.s.cx = cpu.pop()
-        cpu.s.cx = (cpu.s.cx - 1) & 0xFFFF  # LOOP 49E4, no flags
-        if cpu.s.cx != 0:
-            continue
-        break
-
-    # 4A3A..4A40: final clear row and RET.
-    _xor_al_al(cpu)
-    cpu.s.cx = cpu.s.bp & 0xFFFF
-    _rep_stosb(cpu, cpu.s.cx)
-    cpu.s.ip = cpu.pop()
+    run_ega_blit_scaled_column_block_497a(cpu)
 
 @registry.replace(0x1010, 0x41DA, "overkill_linear_rows_to_work_buffer_41da")
 def overkill_linear_rows_to_work_buffer_41da(cpu):

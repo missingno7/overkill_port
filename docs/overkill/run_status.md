@@ -1,3 +1,15 @@
+## 2026-06-28 - Coastline (Phase 1b): relocate the 497A scaled column blit to ega.py
+
+Moved the renderer-dispatch scaled column blit/clear at 1010:497A -- the largest of the
+compositor family (95-line body; reached from the 58EC dispatcher via the CS:95BC
+function-pointer table, scaling rows DS:SI -> ES:DI planar by the
+CS:58FD/5901/5903/5905 accumulator) -- out of `hooks.py` into
+`rendering/ega.run_ega_blit_scaled_column_block_497a`.  Clean relocation: ega.py
+already imports every asm helper and flag the body uses, so no import churn there.  Body
+moved programmatically (verbatim) rather than hand-transcribed to eliminate transcription
+risk.  Byte-exact: the per-hook oracle `test_blit_scaled_column_block_497a` passes, plus
+lint (182) + audit; `hook_inventory.md` regenerated.
+
 ## 2026-06-28 - Coastline (Phase 1b): relocate the 41A6 variable-width interlaced blit to tandy.py
 
 Moved the hot variable-width interlaced row blit at 1010:41A6 -- the same interlaced-
