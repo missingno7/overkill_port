@@ -68,9 +68,17 @@ output, and **witness it against the live draws** before marking done.
       game scrolls *from*) is captured as `BackgroundLayer.plane_segment`. The
       actual on-screen pixels live in `PresentComposition.source_page` (`[9598]`,
       bg + sprites composited); decode either to RGB at R3.
-- [ ] **Display page `[9596]` role** — 5AC8 emits one direct-to-B800 draw per
-      frame and a display-page (`[9596]`=25CC) scratch exists; classify (likely a
-      HUD/overlay page) with a witness. Not blocking the source-page model.
+- [ ] **Display page `[9596]` role** — witnessed (`witness_master_plane`, L2 frame
+      400): `[9596]`=25CC holds the **bulk of the frame** (7009–12783 non-zero,
+      windowed by the scroll cursor) while the model's source `[9598]`=35FF is
+      near-empty (339) at the `5BDC` present entry — so `[9596]` is **not** a
+      HUD/overlay scratch. The work pages appear **double-buffered** (`[9596]` the
+      just-completed page being shown, `[9598]` the back buffer mid-build), so the
+      single `present.source_page=[9598]` model is incomplete for the work layer.
+      NEXT: pin which selector the present reads each frame (the flip) and point
+      the background model at the active page — a prerequisite for regenerating the
+      background natively (the tile-draw + starfield generators, per
+      `witness_background_boundary`).
 - [x] ~~Screen shake~~ — no 4C30 shake global in OverKill (PRE2 pattern, N/A);
       revisit only if a witness reveals one.
 
