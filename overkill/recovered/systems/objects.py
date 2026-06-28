@@ -319,6 +319,18 @@ def b9f0_reached_target(y: int, vertical_delta: int, target_y: int, x: int, targ
     return ((y + vertical_delta) & 0xFFFF) == (target_y & 0xFFFF) and (x & 0xFFFF) == (target_x & 0xFFFF)
 
 
+B9F0_HELPER_COUNTER_LIMIT = 0x0006
+
+
+def b9f0_low_counter_runs_helper(counter: int) -> bool:
+    """True when the B9F0 follower's level counter DS:A47E is still below 6 (1010:BA33).
+
+    Below this limit B9F0 unconditionally runs its BA5A motion helper; at/above it the
+    helper is gated by the periodic difficulty-tick test instead.  Both the reached-target
+    and the overshoot branch share this gate."""
+    return (counter & 0xFFFF) < B9F0_HELPER_COUNTER_LIMIT
+
+
 PLAYER_CHASE_EXCLUDED_LOGIC_IDS = frozenset({0x0001, 0x0021, 0x0022, 0x0026})
 PLAYER_CHASE_CANDIDATE_MAX_X = 0x00E0
 PLAYER_CHASE_REQUIRED_HAZARD_CLASS = 0x0004

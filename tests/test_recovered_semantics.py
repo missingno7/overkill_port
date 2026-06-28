@@ -1001,6 +1001,23 @@ def test_recovered_b9f0_reached_target_is_pure_and_named():
     assert b9f0_reached_target(0xFFFF, 0x0001, 0x0000, 0x10, 0x10) is True
 
 
+def test_recovered_b9f0_low_counter_runs_helper_is_pure_and_named():
+    from overkill.recovered.systems.objects import (
+        B9F0_HELPER_COUNTER_LIMIT,
+        b9f0_low_counter_runs_helper,
+    )
+
+    assert B9F0_HELPER_COUNTER_LIMIT == 0x0006
+    # Below the limit the helper runs unconditionally.
+    assert b9f0_low_counter_runs_helper(0) is True
+    assert b9f0_low_counter_runs_helper(B9F0_HELPER_COUNTER_LIMIT - 1) is True
+    # At/above the limit it does not (deferred to the periodic-tick gate).
+    assert b9f0_low_counter_runs_helper(B9F0_HELPER_COUNTER_LIMIT) is False
+    assert b9f0_low_counter_runs_helper(0x0100) is False
+    # 16-bit masking on the counter.
+    assert b9f0_low_counter_runs_helper(0x10005) is True
+
+
 def test_recovered_ad60_bounds_tile_tail_adapter_matches_pure_decision():
     from overkill.gameplay import object_bounds
     from overkill.recovered.systems.objects import (

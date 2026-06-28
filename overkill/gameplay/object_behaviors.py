@@ -41,10 +41,12 @@ from overkill.gameplay.object_spawns import _run_formation_spawn_7476_observed
 from overkill.gameplay.objects import run_object_motion_table_ab34, run_object_scroll_sprite_ab4f
 from overkill.recovered.systems.objects import (
     AD04_SPRITE_COLLISION_STATE,
+    B9F0_HELPER_COUNTER_LIMIT,
     B9F0_TARGET_X_WRAP_LIMIT,
     CAMERA_NEAR_THRESHOLD,
     RENDER_MODE_FULL,
     LEVEL_PHASE_DISABLE_THRESHOLD,
+    b9f0_low_counter_runs_helper,
     b9f0_reached_target,
     b9f0_wrapped_target_x,
     B73E_SPAWN_WINDOW_MAX,
@@ -599,9 +601,9 @@ def _run_object_behavior_b9f0(cpu, *, parent: str, chain: str, cx_value: int) ->
             # BA33..BA5A: low level/tick branches call two helper leaves, then
             # advance X by two pixels before BC4B.  The common path falls through
             # to BA67 after failing the counter mask test.
-            _cmp_word(cpu, mem.rw(ds, 0xA47E), 0x0006)
+            _cmp_word(cpu, mem.rw(ds, 0xA47E), B9F0_HELPER_COUNTER_LIMIT)
             ran_helper = False
-            if mem.rw(ds, 0xA47E) < 0x0006:
+            if b9f0_low_counter_runs_helper(mem.rw(ds, 0xA47E)):
                 run_ba5a_helper_branch()
                 ran_helper = True
 
@@ -633,8 +635,8 @@ def _run_object_behavior_b9f0(cpu, *, parent: str, chain: str, cx_value: int) ->
                 # BAA1..BABA: helper call, optional spawn, then either continue
                 # to BC4B or wrap Y to 10h on unsigned overflow.
                 call_5e42(0xBAA4)
-                _cmp_word(cpu, mem.rw(ds, 0xA47E), 0x0006)
-                if mem.rw(ds, 0xA47E) < 0x0006:
+                _cmp_word(cpu, mem.rw(ds, 0xA47E), B9F0_HELPER_COUNTER_LIMIT)
+                if b9f0_low_counter_runs_helper(mem.rw(ds, 0xA47E)):
                     _cmp_word(cpu, mem.rw(ds, 0x232E), 0x003F)
                     if mem.rw(ds, 0x232E) == 0x003F:
                         call_7476(0xBAB5, "BAB2 CALL 7476")

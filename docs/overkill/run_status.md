@@ -1,3 +1,15 @@
+## 2026-06-28 - Recovery: B9F0 low-counter helper gate (shared, 2 sites) -> recovered rule
+
+B9F0 runs its BA5A motion helper unconditionally while the level counter DS:A47E is below
+6 (otherwise the periodic difficulty-tick test decides).  Extracted that shared gate --
+used in both the reached-target and overshoot branches -- as the pure
+`b9f0_low_counter_runs_helper(counter)` rule + `B9F0_HELPER_COUNTER_LIMIT = 6`; both sites
+delegate (keeping the CMP flag replay).  Byte-preserving; lint + the guard + a unit test
+pass and the bounded demo corpus stays byte-exact.  Also corrected the prior goal-doc note
+that prematurely declared the behavior decision vein "exhausted" -- b9f0's periodic-tick /
+232E gates and aed8's timer/tail selection are still extractable (a8c7 pattern) before the
+deep call-tree-leaf phase.
+
 ## 2026-06-28 - Recovery: B9F0 reached-target decision extracted to a recovered rule
 
 Recovered B9F0's central branch (1010:BA1F): the follower has reached its target when its

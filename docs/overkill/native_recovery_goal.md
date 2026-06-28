@@ -46,23 +46,27 @@ does the DOS reads + the boundary fidelity. Prefer rules that take/return
    python3 -c "import re;f='overkill/gameplay/object_behaviors.py';t=open(f,encoding='utf-8').read();m=re.search(r'from overkill.recovered.systems.objects import \((.*?)\)',t,re.S);syms=[x.strip().rstrip(',') for x in (m.group(1).split() if m else []) if x.strip().rstrip(',')];s=t.splitlines();d=[(i,l) for i,l in enumerate(s) if re.match(r'^def (run_|_run_|_scan_)',l)];[print(('DONE' if [y for y in syms if not y.isupper() and re.search(r'\\b'+y+r'\\b','\\n'.join(s[i:(d[k+1][0] if k+1<len(d) else len(s))]))] else 'TODO'),l.split('(')[0].split()[1]) for k,(i,l) in enumerate(d)]"
    ```
    Status (2026-06-28): 8 DONE (`b73e`/`b86d`/`ab77`/`aba3`/`ae09`/`ab10` + now `abca`/`b9f0`),
-   9 TODO.  THE OBJECT-BEHAVIOR DECISION/COMPUTATION VEIN IS EXHAUSTED.  Every behavior
-   that carried a clean pure computation or decision now delegates one:
+   9 TODO.  The *clean whole-behavior* formulas are recovered:
    - `abca`: frame-phase gate -> `level_disable_threshold_reached`.
-   - `b9f0`: target-X wrap -> `b9f0_wrapped_target_x`; reached-target -> `b9f0_reached_target`.
+   - `b9f0`: target-X wrap -> `b9f0_wrapped_target_x`; reached-target -> `b9f0_reached_target`;
+     low-counter helper gate -> `b9f0_low_counter_runs_helper`.
    - (plus the earlier `ab10`/`ae09`/`aba3` position/timer/gate rules and the shared
      `camera_near_outside_full_render` used by `a8c7`/`ad04`).
-   The 9 remaining TODOs (`to_ab77`, `b24d`, `dispatch_aa2b`, `b250_selector`,
-   `efae`-dispatch, `ad04`-router, `aed8`, `8d4f` [attended-only], `aa2b`-scan) are
-   composition / routing / gate-on-side-effect glue with no independent pure computation
-   to lift -- do NOT chase them as rule extractions; they are correctly adapter-side.
-   NEXT PHASE = the deep call-tree leaves these behaviors bound-call into (Phase 1's
+   STILL EXTRACTABLE (the gates inside the bigger behaviors, a8c7 pattern -- extract the
+   pure *condition* even when it guards a side-effectful action; keep the action + flag
+   replay adapter-side): `b9f0`'s periodic difficulty-tick helper trigger
+   (``[BEDC]==2 ? mask 7Fh : FFh; ([2340] & mask)==mask``) and its `232E==3Fh` spawn gate;
+   `aed8`'s timer-expiry + AD5A/ADC9 tail selection.  Mine these before declaring the
+   behavior layer done.  The pure *router/dispatch* TODOs (`to_ab77`, `b24d`,
+   `dispatch_aa2b`, `b250_selector`, `efae`-dispatch, `ad04`-router, `aa2b`-scan; `8d4f`
+   attended-only) carry no liftable condition -- they are correctly adapter-side.
+   AFTER the gates = the deep call-tree leaves these behaviors bound-call into (Phase 1's
    "lift their call trees"): `AB34` motion-table, `AC28` tile probe, `AC81` slot scan,
    `5DB2`/`5E1B`/`5E42` movement/steering, `7476` formation spawn, `837A`/`859E`/`AB99`
-   tails.  Each leaf is its own routine: disassemble it, lift to a verified body, then the
-   behaviors' bounded `run_original_near_call`/`_run_interpreted_near_call_observed`
-   shims collapse into direct verified calls.  These are substantial, demo-replay-gated,
-   and best started with fresh context.
+   tails.  NOTE: the behaviors deliberately run these via
+   `run_original_near_call`/`_run_interpreted_near_call_observed` for byte-for-byte
+   internal stack-scratch fidelity, so a leaf lift must reproduce that scratch exactly
+   before its shim can collapse to a direct call -- substantial, demo-replay-gated work.
 2. **Diagnose against the oracle, never guess.** Disassemble the original ASM for the
    routine (capstone; image at `artifacts/static_runtime_bundle/memory_1mb.bin`,
    `1010:off` → linear `0x10100+off`) and read the existing lifted body. Identify the
