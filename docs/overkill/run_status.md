@@ -1,3 +1,14 @@
+## 2026-06-28 - Phase 2: migrate b9f0_reached_target to take a native ObjectSlotRecord
+
+Closes the enrichment loop: `b9f0_reached_target` now takes the slot's `ObjectSlotRecord`
+plus the global vertical delta and reads `slot.y_word` / `slot.target_y_word` /
+`slot.x_word` / `slot.target_x_word` (the target fields the previous slice added) instead
+of five loose ints.  The B9F0 adapter builds the record via `read_object_slot_record(slot)`
+and replays its AX writes / CMP flags from the record's fields.  Byte-exact: the migrated
+unit test passes and the bounded demo corpus stays byte-exact (B9F0 has no per-hook oracle,
+so the demo corpus is the gate); lint + audit + the guard pass.  Second rule on the native
+path (after layer1) and the first to consume the enriched target fields.
+
 ## 2026-06-28 - Phase 2: enrich ObjectSlotRecord with the slot target position
 
 Grew the native `ObjectSlotRecord` toward the full slot state: added `target_x_word` /

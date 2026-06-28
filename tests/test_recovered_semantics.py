@@ -998,17 +998,24 @@ def test_recovered_b9f0_wrapped_target_x_is_pure_and_named():
     assert b9f0_wrapped_target_x(0x10040) == 0x0040
 
 
-def test_recovered_b9f0_reached_target_is_pure_and_named():
+def test_recovered_b9f0_reached_target_takes_native_slot_record():
+    from overkill.recovered.domain.object_slots import ObjectSlotRecord
     from overkill.recovered.systems.objects import b9f0_reached_target
 
+    def rec(y, target_y, x, target_x):
+        return ObjectSlotRecord(
+            active_word=1, x_word=x, y_word=y, gate_or_layer=0, link_key=0,
+            scan_flag=0, hazard_class=0, logic_id=0, target_x_word=target_x, target_y_word=target_y,
+        )
+
     # Reached: Y + vertical delta hits target Y and X already equals target X.
-    assert b9f0_reached_target(0x30, 0x10, 0x40, 0x80, 0x80) is True
+    assert b9f0_reached_target(rec(0x30, 0x40, 0x80, 0x80), 0x10) is True
     # Y matches but X does not -> not reached.
-    assert b9f0_reached_target(0x30, 0x10, 0x40, 0x80, 0x81) is False
+    assert b9f0_reached_target(rec(0x30, 0x40, 0x80, 0x81), 0x10) is False
     # X matches but Y+delta does not -> not reached.
-    assert b9f0_reached_target(0x30, 0x10, 0x41, 0x80, 0x80) is False
+    assert b9f0_reached_target(rec(0x30, 0x41, 0x80, 0x80), 0x10) is False
     # 16-bit wrap on the Y + delta sum.
-    assert b9f0_reached_target(0xFFFF, 0x0001, 0x0000, 0x10, 0x10) is True
+    assert b9f0_reached_target(rec(0xFFFF, 0x0000, 0x10, 0x10), 0x0001) is True
 
 
 def test_recovered_b9f0_low_counter_runs_helper_is_pure_and_named():

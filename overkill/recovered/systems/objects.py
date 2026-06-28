@@ -317,14 +317,19 @@ def b9f0_wrapped_x_on_overflow(x: int) -> int:
     return x & 0xFFFF
 
 
-def b9f0_reached_target(y: int, vertical_delta: int, target_y: int, x: int, target_x: int) -> bool:
+def b9f0_reached_target(slot: ObjectSlotRecord, vertical_delta: int) -> bool:
     """True when the B9F0 follower has reached its target tile (1010:BA1F).
 
-    Reached when the object's Y plus the current vertical delta DS:2342 equals the target
-    Y *and* its X already equals the target X.  This is the central B9F0 branch: on a hit
-    it refreshes the sprite / runs the movement helper, otherwise it routes to BA99.  The
-    adapter still replays the AX writes and CMP flags around it; this owns the decision."""
-    return ((y + vertical_delta) & 0xFFFF) == (target_y & 0xFFFF) and (x & 0xFFFF) == (target_x & 0xFFFF)
+    Native-state form (Phase 2): takes the slot's :class:`ObjectSlotRecord` plus the global
+    vertical delta DS:2342.  Reached when the object's Y plus the vertical delta equals the
+    target Y *and* its X already equals the target X.  This is the central B9F0 branch: on
+    a hit it refreshes the sprite / runs the movement helper, otherwise it routes to BA99.
+    The adapter still replays the AX writes and CMP flags around it; this owns the
+    decision."""
+    return (
+        ((slot.y_word + vertical_delta) & 0xFFFF) == (slot.target_y_word & 0xFFFF)
+        and (slot.x_word & 0xFFFF) == (slot.target_x_word & 0xFFFF)
+    )
 
 
 B9F0_HELPER_COUNTER_LIMIT = 0x0006

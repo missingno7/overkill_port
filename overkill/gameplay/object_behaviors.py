@@ -72,6 +72,7 @@ from overkill.recovered.systems.objects import (
     object_logic_aba3,
     object_logic_ae09,
 )
+from overkill.recovered.adapters.object_slot_adapter import read_object_slot_record
 from overkill.recovered.views.object_slots import (
     ObjectSlotView,
     OFF_SUBSTATE, OFF_TARGET_X, OFF_TARGET_Y, OFF_X, OFF_Y,
@@ -591,17 +592,19 @@ def _run_object_behavior_b9f0(cpu, *, parent: str, chain: str, cx_value: int) ->
 
         # BA1F..BA31: if current position plus vertical delta reached target, use the
         # direct sprite-refresh/helper branch; otherwise branch to BA99.  The decision is
-        # the recovered rule; the AX writes and CMP flags are replayed for boundary
-        # fidelity (the Y+delta ADD's flags are dead -- the CMP below overwrites them).
+        # the recovered rule, now taking the native slot record (Phase 2); the AX writes
+        # and CMP flags are replayed from its fields for boundary fidelity (the Y+delta
+        # ADD's flags are dead -- the CMP below overwrites them).
         delta_y = mem.rw(ds, 0x2342)
-        reached_target = b9f0_reached_target(slot.y_word, delta_y, slot.target_y_word, slot.x_word, slot.target_x_word)
-        cpu.s.ax = slot.y_word
+        record = read_object_slot_record(slot)
+        reached_target = b9f0_reached_target(record, delta_y)
+        cpu.s.ax = record.y_word
         cpu.s.ax = (cpu.s.ax + delta_y) & 0xFFFF
-        target_y = slot.target_y_word
+        target_y = record.target_y_word
         _cmp_word(cpu, cpu.s.ax, target_y)
         if cpu.s.ax == target_y:
-            cpu.s.ax = slot.x_word
-            target_x = slot.target_x_word
+            cpu.s.ax = record.x_word
+            target_x = record.target_x_word
             _cmp_word(cpu, cpu.s.ax, target_x)
 
         if reached_target:
