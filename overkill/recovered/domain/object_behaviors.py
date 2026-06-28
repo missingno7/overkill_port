@@ -52,6 +52,20 @@ class Ae09Update:
 
 
 @dataclass(frozen=True, slots=True)
+class Aba3Update:
+    """Pure result of the 1010:ABA3 tracked-object follower probe (reached from AD04).
+
+    When the level frame phase (DS:2384) has advanced to ``0003h`` the follower takes
+    the ABC0 branch (the adapter routes control there); otherwise its outgoing sprite
+    is the scroll frame (DS:233C) + ``14h`` and the adapter runs the AC81 collision
+    tail. The adapter owns the A42E tracker-pointer store and the AC81 CF/IP
+    continuations; this owns the phase-gate decision and the sprite formula."""
+
+    branch_abc0: bool
+    sprite: int = 0
+
+
+@dataclass(frozen=True, slots=True)
 class B73ETargetReachedResolution:
     """Pure 4-way dispatch for B73E once an object is already at its target.
 

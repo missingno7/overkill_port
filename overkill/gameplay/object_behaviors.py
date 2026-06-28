@@ -53,6 +53,7 @@ from overkill.recovered.systems.objects import (
     b86d_formation_spawn_tick_index,
     b86d_outgoing_sprite_for_delta,
     object_logic_ab10,
+    object_logic_aba3,
     object_logic_ae09,
 )
 from overkill.recovered.views.object_slots import (
@@ -933,15 +934,16 @@ def _run_object_behavior_aba3(cpu, *, parent: str, chain: str, cx_value: int) ->
 
     mem.ww(ds, 0xA42E, cpu.s.bx)
     v2384 = mem.rw(ds, 0x2384)
-    _cmp_word(cpu, v2384, 0x0003)
-    if v2384 >= 0x0003:
+    update = object_logic_aba3(v2384, mem.rw(ds, 0x233C))
+    _cmp_word(cpu, v2384, 0x0003)  # replay the gate CMP flags (boundary fidelity)
+    if update.branch_abc0:
         cpu.s.ip = 0xABC0
         return
 
     # Sprite = scroll frame (DS:233C) + 0x14.  The ADD's flags are dead: the
     # AC81 call below overwrites them (its CF is what the branches below read).
-    cpu.s.ax = (mem.rw(ds, 0x233C) + 0x0014) & 0xFFFF
-    slot.sprite_or_state = cpu.s.ax
+    cpu.s.ax = update.sprite
+    slot.sprite_or_state = update.sprite
 
     _call_ac81(cpu, 0xABBA)
     if cpu.s.ip == 0xAA44:

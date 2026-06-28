@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from overkill.recovered.domain.object_behaviors import (
     Ab10Update,
+    Aba3Update,
     Ae09Update,
     B73ETargetReachedResolution,
     BossGroupSlotTransition,
@@ -207,6 +208,23 @@ def object_logic_ae09(substate: int, direction_or_step: int) -> Ae09Update:
         decrement_x=(substate == 0 or new_substate == 0),
         sprite=(direction + AE09_SPRITE_OFFSET) & 0xFFFF,
     )
+
+
+ABA3_PHASE_THRESHOLD = 0x0003
+ABA3_SPRITE_OFFSET = 0x0014
+
+
+def object_logic_aba3(frame_phase: int, scroll_frame: int) -> Aba3Update:
+    """Pure 1010:ABA3 decision recovered from the AD04 tracked-object follower.
+
+    ``frame_phase`` is DS:2384; ``scroll_frame`` is DS:233C.  When the level frame
+    phase has advanced to ``0003h`` the follower branches to ABC0; otherwise the
+    outgoing sprite is ``scroll_frame + 14h``.  This owns the gate decision and the
+    sprite formula; the adapter still replays the gate CMP flags for boundary
+    fidelity (the sprite ADD flags are dead -- the AC81 call overwrites them)."""
+    if (frame_phase & 0xFFFF) >= ABA3_PHASE_THRESHOLD:
+        return Aba3Update(branch_abc0=True)
+    return Aba3Update(branch_abc0=False, sprite=(scroll_frame + ABA3_SPRITE_OFFSET) & 0xFFFF)
 
 
 PLAYER_CHASE_EXCLUDED_LOGIC_IDS = frozenset({0x0001, 0x0021, 0x0022, 0x0026})

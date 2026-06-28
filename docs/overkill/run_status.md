@@ -1,3 +1,20 @@
+## 2026-06-28 - Source-purity rescue: ABA3 tracked-object follower gate+formula to a pure rule
+
+Continued the `object_behaviors` coastline. Slice: the 1010:ABA3 tracked-object
+follower probe (reached from AD04 when the slot matches a global tracked-object
+pointer). The two pure pieces -- the phase gate (branch to ABC0 once the level
+frame phase DS:2384 has advanced to `0003h`) and the sprite formula
+(`sprite = scroll frame DS:233C + 14h`) -- moved into
+`recovered/systems/objects.object_logic_aba3` (+ `Aba3Update` domain record, named
+`ABA3_PHASE_THRESHOLD`/`ABA3_SPRITE_OFFSET`).  The adapter keeps the A42E
+tracker-pointer store, the gate CMP flag replay (boundary fidelity) and the AC81
+CF/IP collision continuations unchanged, so the slice changes no VM op -- byte-exact
+by construction.  (ABA3 is a cold path in the corpus -- the gameplay demos do not
+spawn its tracked-object follower -- so it is deliberately a no-op-change refactor,
+not a flag drop.)  Gated green: lint (181), audit_architecture, the new pure unit
+test `test_recovered_aba3_object_logic_is_pure_and_named`, demo-replay 23/23.
+Worklist: 5 DONE (`b73e`/`b86d`/`ab10`/`ae09`/`aba3`), 12 TODO.  Next: `aed8`/`ab77`.
+
 ## 2026-06-28 - Source-purity rescue: AE09 object behavior pushed to a pure rule
 
 Continued the `object_behaviors` -> ObjectSystem coastline. Slice: the 1010:AE09

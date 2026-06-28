@@ -889,6 +889,26 @@ def test_recovered_ae09_object_logic_is_pure_and_named():
     assert object_logic_ae09(0, 0xFFFF).sprite == (0xFFFF + AE09_SPRITE_OFFSET) & 0xFFFF
 
 
+def test_recovered_aba3_object_logic_is_pure_and_named():
+    from overkill.recovered.systems.objects import (
+        ABA3_PHASE_THRESHOLD,
+        ABA3_SPRITE_OFFSET,
+        object_logic_aba3,
+    )
+
+    # Frame phase advanced to 0003h -> the follower branches to ABC0.
+    assert object_logic_aba3(ABA3_PHASE_THRESHOLD, 0x0100).branch_abc0 is True
+    assert object_logic_aba3(0xFFFF, 0x0100).branch_abc0 is True
+
+    # Below the threshold -> sprite = scroll frame + 14h.
+    up = object_logic_aba3(frame_phase=2, scroll_frame=0x0100)
+    assert up.branch_abc0 is False
+    assert up.sprite == (0x0100 + ABA3_SPRITE_OFFSET)
+
+    # 16-bit wrap on the sprite add.
+    assert object_logic_aba3(0, 0xFFFF).sprite == (0xFFFF + ABA3_SPRITE_OFFSET) & 0xFFFF
+
+
 def test_recovered_ad60_bounds_tile_tail_adapter_matches_pure_decision():
     from overkill.gameplay import object_bounds
     from overkill.recovered.systems.objects import (
