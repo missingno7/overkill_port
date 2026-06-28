@@ -81,11 +81,17 @@ but diverges deep in the **full** run (`OVERKILL_FULL_DEMO_VERIFY=1`).
   (logic 0x80, sprite ~354) begin a bounce one frame earlier in the hooked runtime
   than in the ASM oracle (y +2, sprite +1; it momentarily reconverges at the bounce
   turning points, so it is a phase offset, not corruption).  The effects are gated
-  on a per-object countdown (`+0x1C`) decremented by the `1F8F:06C9` timer ISR; the
-  hooked runtime's lower per-frame instruction count shifts the ISR firing relative
-  to frame boundaries, so activation drifts ~1 frame.  Same class as the
-  busy-wait/IRQ-cadence timing work — a timing-model frontier, not a contact/logic
-  bug.  Bounded verify unaffected (green).  Needs attended timing-model work.
+  on a per-object countdown (`+0x1C`) decremented by the `1F8F:06C9` timer ISR.
+  Traced mechanism: the countdown reaches 0 on the SAME frame in both runtimes
+  (f959 for effect:6); the same ISR then transitions the effect idle->moving
+  (`1F8F:06DB` target_y, `072B` y, `07AC` sprite).  The hooked runtime performs
+  that post-zero transition in the frame the countdown zeroed; the ASM oracle
+  lands it one frame later.  So the divergence is the SUB-FRAME position of the
+  ISR transition relative to the present/frame boundary, which differs because the
+  hooked runtime's instruction timing differs.  `1F8F` runs as raw ASM in BOTH
+  runtimes (not a hook), so no hook lift fixes it — same class as the busy-wait/
+  IRQ-cadence timing work, a timing-model frontier.  Bounded verify unaffected
+  (green).  Needs attended timing-model work (frame-align the PIT/ISR cadence).
 - **Unknown object-record fields `0x10`, `0x26`, `0x36`** (map at 25/28, the honest
   floor): each is written with no lifted reader (`0x26` ← DS:237A in object_spawns,
   `0x36` ← ax in object_movement; `0x10` is never accessed). Naming needs the
