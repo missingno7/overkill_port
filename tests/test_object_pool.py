@@ -110,3 +110,59 @@ def test_object_pool_from_real_image_is_byte_faithful():
     # A record projects to plain ints (no VM reference held).
     record = object_pool_slot_record(pool, 0)
     assert isinstance(record.logic_id, int) and isinstance(record.active_word, int)
+
+
+def _pool_from_active(active_list):
+    """An ObjectPool whose slots carry the given active words (other words zero)."""
+    base, stride = GAMEPLAY_OBJECT_TABLE_BASE, OBJECT_SLOT_STRIDE
+    slots = tuple((a & 0xFFFF,) + (0,) * ((stride >> 1) - 1) for a in active_list)
+    return ObjectPool(base=base, stride=stride, slots=slots)
+
+
+def test_object_pool_find_free_is_pure():
+    from overkill.recovered.systems.objects import object_pool_find_free
+
+    base, stride = GAMEPLAY_OBJECT_TABLE_BASE, OBJECT_SLOT_STRIDE
+    # First zero-active slot wins; the cursor parks there.
+    r = object_pool_find_free(_pool_from_active([1, 1, 0, 1]), base)
+    assert r.offset == base + 2 * stride and r.cursor == base + 2 * stride
+    # Every slot occupied -> None, cursor unchanged.
+    r = object_pool_find_free(_pool_from_active([1, 1, 1]), base)
+    assert r.offset is None and r.cursor == base
+    # Cursor mid-table wraps at the table end back to a free slot 0.
+    r = object_pool_find_free(_pool_from_active([0, 1, 1, 1]), base + 2 * stride)
+    assert r.offset == base and r.cursor == base
+
+
+def test_object_pool_find_free_matches_vm_allocator():
+    from dos_re.cpu import CPU8086, CPUState
+    from dos_re.memory import Memory as _Memory
+    from overkill.gameplay.object_spawns import _find_free_object_slot_7573
+    from overkill.recovered.systems.objects import object_pool_find_free
+
+    base, stride, count = GAMEPLAY_OBJECT_TABLE_BASE, OBJECT_SLOT_STRIDE, GAMEPLAY_OBJECT_TABLE_COUNT
+
+    def run(free_indices, cursor):
+        mem = _Memory()
+        cpu = CPU8086(mem, CPUState(cs=0x1010, ds=0x1010, ss=0x3000, bp=0, sp=0x8000, flags=0x0202))
+        for i in range(count):
+            mem.ww(0x1010, (base + i * stride) & 0xFFFF, 0 if i in free_indices else 1)
+        mem.ww(0x1010, 0x95DA, cursor & 0xFFFF)
+        pool = read_object_pool(mem, 0x1010, base, count)
+        vm_offset = _find_free_object_slot_7573(cpu) & 0xFFFF
+        vm_cursor = mem.rw(0x1010, 0x95DA)
+        native = object_pool_find_free(pool, cursor)
+        return vm_offset, vm_cursor, native
+
+    # First slot free.
+    vm_off, vm_cur, nat = run({0}, base)
+    assert vm_off != 0xFFFF and nat.offset == vm_off == base and nat.cursor == vm_cur
+    # First few occupied, slot 3 free.
+    vm_off, vm_cur, nat = run({3}, base)
+    assert nat.offset == vm_off == base + 3 * stride and nat.cursor == vm_cur
+    # Cursor mid-table, only slot 0 free -> the per-iteration wrap reaches it.
+    vm_off, vm_cur, nat = run({0}, base + 5 * stride)
+    assert nat.offset == vm_off == base and nat.cursor == vm_cur
+    # Every slot occupied -> 0xFFFF / None, cursor unchanged.
+    vm_off, vm_cur, nat = run(set(), base)
+    assert vm_off == 0xFFFF and nat.offset is None and nat.cursor == base

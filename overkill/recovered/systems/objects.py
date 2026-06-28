@@ -15,7 +15,12 @@ from overkill.recovered.domain.object_behaviors import (
     ObjectBoundsTileDecision,
     ObjectDeactivateDispatchDecision,
 )
-from overkill.recovered.domain.object_slots import ObjectSlotRecord, ObjectSpawnSeed
+from overkill.recovered.domain.object_slots import (
+    FreeSlotAllocation,
+    ObjectPool,
+    ObjectSlotRecord,
+    ObjectSpawnSeed,
+)
 
 # 1010:8209 object-slot spawn template.  Stamps a freshly allocated effect slot
 # with a fixed logic-id-14h object at the caller's source position.
@@ -514,3 +519,28 @@ def object_deactivate_dispatch_decision_c054(logic_id: int) -> ObjectDeactivateD
     if ax_script is not None:
         return ObjectDeactivateDispatchDecision("script_select", ax_script=ax_script)
     return ObjectDeactivateDispatchDecision("none")
+
+
+def object_pool_find_free(pool: ObjectPool, cursor: int) -> FreeSlotAllocation:
+    """Pure 1010:7573 object-slot allocator over a native ObjectPool.
+
+    Scans up to ``len(pool)`` slots starting at the allocator cursor DS:95DA (``cursor``),
+    wrapping at the table end back to the table base, and returns the first slot whose
+    active word is zero -- the cursor advances to and parks at that slot.  Returns
+    ``offset=None`` (cursor unchanged) when every slot is occupied.  The wrap check is
+    repeated every iteration, exactly as the ASM loop target 757A does, so a cursor that
+    starts at the table-end sentinel still wraps before the first read.
+    """
+    base = pool.base & 0xFFFF
+    stride = pool.stride & 0xFFFF
+    count = len(pool)
+    table_end = (base + count * stride) & 0xFFFF
+    bx = cursor & 0xFFFF
+    for _ in range(count):
+        if bx == table_end:
+            bx = base
+        index = ((bx - base) & 0xFFFF) // stride
+        if pool.active_word(index) == 0:
+            return FreeSlotAllocation(offset=bx, cursor=bx)
+        bx = (bx + stride) & 0xFFFF
+    return FreeSlotAllocation(offset=None, cursor=cursor & 0xFFFF)

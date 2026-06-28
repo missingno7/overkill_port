@@ -1,3 +1,17 @@
+## 2026-06-28 - Phase 2: native ObjectPool allocator (object_pool_find_free) == VM 7573
+
+First native game-logic *system* on ObjectPool (beyond the struct + state-mirror):
+`object_pool_find_free` is the pure 1010:7573 object-slot allocator -- scans up to
+`len(pool)` slots from the cursor DS:95DA, wraps at the table end every iteration (the
+ASM's 757A loop target), and returns the first `active_word == 0` slot plus the parked
+cursor, or `offset=None` when full (new `FreeSlotAllocation` record; `ObjectPool` gained an
+`active_word(index)` accessor).  Verified by an **equivalence test**: across first-free /
+mid-table / wrap / all-occupied scenarios it returns exactly what the VM
+`_find_free_object_slot_7573` returns (offset + the new DS:95DA).  The rule is pure
+(recovered-layer audit clean, no VM) and pure-additive (the VM allocator is untouched, so
+no demo-replay needed); lint + both architecture audits pass.  This is the pattern for
+recovering the allocation/scan systems natively before standalone owns them.
+
 ## 2026-06-28 - Phase 2: migrate b9f0_reached_target to take a native ObjectSlotRecord
 
 Closes the enrichment loop: `b9f0_reached_target` now takes the slot's `ObjectSlotRecord`

@@ -75,12 +75,29 @@ class ObjectPool:
         """The 16-bit word at byte ``offset`` within slot ``index``."""
         return self.slots[index][offset >> 1]
 
+    def active_word(self, index: int) -> int:
+        """Slot ``index``'s active word (the first record word); zero means the slot is free."""
+        return self.slots[index][0]
+
     def with_word(self, index: int, offset: int, value: int) -> "ObjectPool":
         """A new pool with slot ``index``'s word at byte ``offset`` set to ``value``."""
         words = list(self.slots[index])
         words[offset >> 1] = value & 0xFFFF
         slots = self.slots[:index] + (tuple(words),) + self.slots[index + 1:]
         return ObjectPool(base=self.base, stride=self.stride, slots=slots)
+
+
+@dataclass(frozen=True, slots=True)
+class FreeSlotAllocation:
+    """Result of the native ObjectPool allocator (1010:7573).
+
+    ``offset`` is the freed slot's DS offset, or ``None`` when every slot is occupied;
+    ``cursor`` is the new allocator cursor (DS:95DA) -- it parks at the freed slot, or is
+    left unchanged when the pool is full.
+    """
+
+    offset: "int | None"
+    cursor: int
 
 
 @dataclass(frozen=True, slots=True)
