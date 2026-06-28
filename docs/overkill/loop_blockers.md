@@ -18,6 +18,32 @@ context. Each has the analysis already done so a human can pick up fast.
 
 ---
 
+## OPEN (2026-06-29) — the starfield plate blocks the native frame (`--backend native`)
+
+The standalone native frame is `playfield = starfield plate + sprites` (+ HUD). Every native
+leaf is recovered **and proven byte-exact** EXCEPT the **starfield plate** (the sparse
+parallax background): sprites (`composite_sprites` / `verify_sprite_layer`), the playfield
+compose (`compose_playfield_indices` / `verify_playfield_compose`, 30/30), and the HUD glyph
+(`native_video/hud_glyph` / `verify_hud_glyph`, 256/256) are done. So the starfield is THE
+critical-path blocker for a self-composed native frame.
+
+- Eluded ~30 probes: the stars are a parallax PIXEL layer — the static-buffer-scroll model
+  FAILED (0/60 plates reproduced, 0 colour conflicts → stars scroll at their own rate); a
+  traced star byte showed NO writer (not `wb`/`ww`, not the bulk `rep movs/stos` even after the
+  bulk-op watcher fix) → the plot is via a path the watchers miss (off-screen scroll-in
+  suspected) or at level-load.
+- **Next (fresh approach):** a parallax-aware trace at a SCROLL frame (star displacement vs
+  the cursor delta → the star scroll counter), or a level-load capture. User noted it's
+  pixel-plotted. Until then, the native frame must capture the VM plate (hybrid only).
+
+## NOTE (process) — check lifted-status before "recovering" a routine
+
+`519A` / `3153` (HUD text dispatch + Tandy glyph) were ALREADY lifted (`rendering/text.py`,
+hook-registered; see `coverage.py`). Grep the hook registry for an address before
+disassembling it as if un-recovered. `native_video/hud_glyph` is the NATIVE-standalone form
+(index-space, proven byte-exact vs the VM tables), not a re-recovery; future dedup: unify the
+glyph core (glyph+colour → 8x8 block) between the VM hook (B800) and the native form (index).
+
 ## RESOLVED (2026-06-28) — Player-death `BC4B`/`BFC7` divergence (full-demo only)
 **Root cause: the AA46 `si>=3` branch** (same fix as the contact-center item in
 the backlog). `AA54 JAE 0xAA44` returns no-contact for a side-selector of 3+; the
