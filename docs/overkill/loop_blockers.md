@@ -92,6 +92,9 @@ but diverges deep in the **full** run (`OVERKILL_FULL_DEMO_VERIFY=1`).
   runtimes (not a hook), so no hook lift fixes it — same class as the busy-wait/
   IRQ-cadence timing work, a timing-model frontier.  Bounded verify unaffected
   (green).  Needs attended timing-model work (frame-align the PIT/ISR cadence).
+  The same signature recurs in `demo_play_tandy_start_to_end_20260627_145115`
+  at frame 2271 (68 fields, effect:0..16 all y+2 / sprite+1), confirming it is a
+  general timing frontier rather than demo-specific.
 - **Unknown object-record fields `0x10`, `0x26`, `0x36`** (map at 25/28, the honest
   floor): each is written with no lifted reader (`0x26` ← DS:237A in object_spawns,
   `0x36` ← ax in object_movement; `0x10` is never accessed). Naming needs the
