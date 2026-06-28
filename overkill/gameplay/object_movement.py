@@ -30,6 +30,7 @@ from overkill.recovered.adapters.movement_adapter import (
 from overkill.recovered.adapters.object_behavior_adapter import run_player_chase_candidate_checks_b15a
 from overkill.recovered.domain.movement import VerticalScrollEdgeInput
 from overkill.recovered.systems.movement import (
+    OBJECT_CLAMP_X_MAX, OBJECT_CLAMP_X_MIN, OBJECT_CLAMP_Y_MAX, OBJECT_CLAMP_Y_MIN,
     decay_bottom_scroll_bias_a63c, one_pixel_axis_step, recover_top_scroll_bias_a662,
     top_scroll_edge_response_a648, two_pass_axis_clamp_step, vertical_scroll_edge_response_a616,
 )
@@ -496,7 +497,7 @@ def run_object_x_step_left_clamp_a5d1(cpu, self_disable_if_patched) -> None:
         slot.x_word = one_pixel_axis_step(slot.x_word, increment=False).final_word
         cpu.s.ip = cpu.pop()
         return
-    _run_two_pass_word_clamp_step(cpu, field_off=OFF_X, limit=0x0020, increment=False)
+    _run_two_pass_word_clamp_step(cpu, field_off=OFF_X, limit=OBJECT_CLAMP_X_MIN, increment=False)
 
 
 def run_object_x_step_right_clamp_a5ea(cpu, self_disable_if_patched) -> None:
@@ -508,7 +509,7 @@ def run_object_x_step_right_clamp_a5ea(cpu, self_disable_if_patched) -> None:
         "overkill_object_x_step_right_clamp_a5ea",
     ):
         return
-    _run_two_pass_word_clamp_step(cpu, field_off=OFF_X, limit=0x00C0, increment=True)
+    _run_two_pass_word_clamp_step(cpu, field_off=OFF_X, limit=OBJECT_CLAMP_X_MAX, increment=True)
 
 
 def run_object_y_step_up_clamp_a5f9(cpu, self_disable_if_patched) -> None:
@@ -520,7 +521,7 @@ def run_object_y_step_up_clamp_a5f9(cpu, self_disable_if_patched) -> None:
         "overkill_object_y_step_up_clamp_a5f9",
     ):
         return
-    _run_two_pass_word_clamp_step(cpu, field_off=OFF_Y, limit=0x0000, increment=False)
+    _run_two_pass_word_clamp_step(cpu, field_off=OFF_Y, limit=OBJECT_CLAMP_Y_MIN, increment=False)
 
 
 def run_object_y_step_down_clamp_a607(cpu, self_disable_if_patched) -> None:
@@ -532,7 +533,7 @@ def run_object_y_step_down_clamp_a607(cpu, self_disable_if_patched) -> None:
         "overkill_object_y_step_down_clamp_a607",
     ):
         return
-    _run_two_pass_word_clamp_step(cpu, field_off=OFF_Y, limit=0x00B0, increment=True, below_condition=True)
+    _run_two_pass_word_clamp_step(cpu, field_off=OFF_Y, limit=OBJECT_CLAMP_Y_MAX, increment=True, below_condition=True)
 
 
 def run_object_bottom_scroll_offset_decay_a63c(cpu, self_disable_if_patched) -> None:

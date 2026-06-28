@@ -1,3 +1,16 @@
+## 2026-06-28 - Hygiene tail: name the object-movement clamp playfield bounds
+
+The four A5D1/A5EA/A5F9/A607 axis step-clamp helpers passed raw limits to
+`two_pass_axis_clamp_step`; named them in `recovered/systems/movement.py` --
+`OBJECT_CLAMP_X_MIN` (20h) / `_X_MAX` (C0h) / `_Y_MIN` (00h) / `_Y_MAX` (B0h), i.e. objects
+are confined to X in [20h, C0h], Y in [00h, B0h] -- and used them at the four call sites in
+object_movement.py.  Byte-exact (same values); lint (183) + guard + audit pass and the
+bounded demo corpus stays byte-exact.
+
+This is the hygiene-tail filler the goal doc sanctions now that the Phase-1 extraction and
+Phase-1b relocation veins are exhausted (the substantive remainder is the attended-only
+call-tree leaves / death frontier and the Phase 2-5 endgame).
+
 ## 2026-06-28 - Coastline (Phase 1b): relocate the CD8D CGA changed-word presenter to cga.py
 
 Moved the changed-word CGA presenter loop at 1010:CD8D (copies one word from the work

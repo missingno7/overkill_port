@@ -158,6 +158,14 @@ def player_center_target_from_view(view_x_word: int, view_y_word: int) -> Moveme
     )
 
 
+# The object playfield clamp bounds passed to two_pass_axis_clamp_step by the four
+# A5D1/A5EA/A5F9/A607 step helpers: X is confined to [20h, C0h], Y to [00h, B0h].
+OBJECT_CLAMP_X_MIN = 0x0020   # 1010:A5D1 leftward step floor
+OBJECT_CLAMP_X_MAX = 0x00C0   # 1010:A5EA rightward step ceiling
+OBJECT_CLAMP_Y_MIN = 0x0000   # 1010:A5F9 upward step floor
+OBJECT_CLAMP_Y_MAX = 0x00B0   # 1010:A607 downward step ceiling
+
+
 @recovered_island(
     asm=("1010:A5D1", "1010:A5EA", "1010:A5F9", "1010:A607"),
     contract="two-pass clamp/step of an axis word toward a boundary",
