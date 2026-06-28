@@ -96,3 +96,18 @@ def or_inverted_word_rows(mem, *, ds: int, es: int, si: int, di: int, rows: int,
             di = (di + 2) & 0xFFFF
         di = (di + row_stride) & 0xFFFF
     return si, di, ax
+
+
+def tandy_b800_next_row(di: int) -> int:
+    """Advance ``di`` to the next visible row in Tandy's interleaved B800 layout.
+
+    Tandy mode-2 stores four interleaved banks 0x2000 apart; stepping one screen
+    row adds 0x2000, and when that crosses 0x8000 (past the four banks) it wraps
+    forward by 0x80A0 to the next group of four scanlines.  This is the geometry
+    the 1010:306F / CDAA present loops and the 375B scanline step walk -- the core
+    of the Tandy raster path.
+    """
+    di = (di + 0x2000) & 0xFFFF
+    if di & 0x8000:
+        di = (di + 0x80A0) & 0xFFFF
+    return di

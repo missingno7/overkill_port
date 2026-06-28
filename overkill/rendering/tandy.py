@@ -23,7 +23,9 @@ from typing import Callable
 from dos_re.cpu import CF, DF, ZF
 from dos_re.hooks import call_installed_hook_like_near_call
 from ..asm import _add_mem_word, _add_reg16, _and_mem_word, _cmp_word, _dec_reg16_preserve_cf, _inc_mem_word_preserve_cf, _inc_reg16_preserve_cf, _rep_movsb, _rep_movsw, _rep_stosb, _stosw, _sub_mem_word, _sub_reg16, _test_word, _xor_al_al
-from .rasterizer import composite_masked_rows, copy_word_rows, or_inverted_word_rows
+from .rasterizer import (
+    composite_masked_rows, copy_word_rows, or_inverted_word_rows, tandy_b800_next_row,
+)
 
 Cpu = object
 SelfDisableIfPatched = Callable[[Cpu, int, bytes, str], bool]
@@ -480,17 +482,7 @@ def copy_rect_to_tandy_video_306f(cpu, runtime: TandyRenderRuntime) -> None:
         s.di = result & 0xFFFF
         cpu.set_sub_flags(old_di, s.bp & 0xFFFF, result, 16)
 
-        old_di = s.di & 0xFFFF
-        result = old_di + 0x2000
-        s.di = result & 0xFFFF
-        cpu.set_add_flags(old_di, 0x2000, result, 16)
-
-        cpu.set_logic_flags(s.di & 0x8000, 16)
-        if s.di & 0x8000:
-            old_di = s.di & 0xFFFF
-            result = old_di + 0x80A0
-            s.di = result & 0xFFFF
-            cpu.set_add_flags(old_di, 0x80A0, result, 16)
+        s.di = _advance_tandy_present_row(cpu, s.di & 0xFFFF)
 
         rows_left = (rows_left - 1) & 0xFFFF
 
@@ -519,17 +511,7 @@ def changed_dword_present_8rows_cdaa(cpu) -> None:
 
         si = (si + 0x00A0) & 0xFFFF
 
-        old_di = di
-        result = old_di + 0x2000
-        di = result & 0xFFFF
-        cpu.set_add_flags(old_di, 0x2000, result, 16)
-
-        cpu.set_logic_flags(di & 0x8000, 16)
-        if di & 0x8000:
-            old_di = di
-            result = old_di + 0x80A0
-            di = result & 0xFFFF
-            cpu.set_add_flags(old_di, 0x80A0, result, 16)
+        di = _advance_tandy_present_row(cpu, di)
 
         cx -= 1
 
@@ -541,12 +523,27 @@ def changed_dword_present_8rows_cdaa(cpu) -> None:
 
 
 
+def _advance_tandy_present_row(cpu, di: int) -> int:
+    """CPU adapter for :func:`rasterizer.tandy_b800_next_row`: walk DI to the next
+    Tandy B800 row, setting the exact ADD/logic flags the present loops leave."""
+    di_in = di & 0xFFFF
+    old = di_in
+    result = old + 0x2000
+    di = result & 0xFFFF
+    cpu.set_add_flags(old, 0x2000, result, 16)
+    cpu.set_logic_flags(di & 0x8000, 16)
+    if di & 0x8000:
+        old = di
+        result = old + 0x80A0
+        di = result & 0xFFFF
+        cpu.set_add_flags(old, 0x80A0, result, 16)
+    assert di == tandy_b800_next_row(di_in), "present-row advance disagrees with pure geometry"
+    return di
+
+
 def _tandy_next_scanline_di(cpu) -> None:
     """Mirror OVERKILL's packed Tandy/PCjr B800 row advance used by 1010:375B."""
-    _add_reg16(cpu, 7, 0x2000)
-    _test_word(cpu, cpu.s.di, 0x8000)
-    if not cpu.get_flag(ZF):
-        _add_reg16(cpu, 7, 0x80A0)
+    cpu.s.di = _advance_tandy_present_row(cpu, cpu.s.di & 0xFFFF)
 
 def _masked_word_composite_rows(cpu, *, words_per_row: int, row_add: int,
                                 rows: int | None = None) -> None:

@@ -83,3 +83,14 @@ def test_or_inverted_word_rows():
     assert ax == (~0x0F0F) & 0xFFFF
     assert mem.rw(ES, 0) == ((~0x0F0F) & 0xFFFF)   # 0 | ~src
     assert si == 4 and di == 2 + 0x08              # SI+=4, DI+=2, then row stride
+
+
+def test_tandy_b800_next_row_geometry():
+    from overkill.rendering.rasterizer import tandy_b800_next_row
+    # within the four interleaved banks the row step is +0x2000
+    assert tandy_b800_next_row(0x0000) == 0x2000
+    assert tandy_b800_next_row(0x2000) == 0x4000
+    assert tandy_b800_next_row(0x4000) == 0x6000
+    # crossing past the banks (>= 0x8000) wraps to the next 4-scanline group (+0x80A0)
+    assert tandy_b800_next_row(0x6000) == 0x00A0   # 0x8000 -> 0x8000+0x80A0
+    assert tandy_b800_next_row(0x6050) == 0x00F0   # 0x8050 -> 0x8050+0x80A0
