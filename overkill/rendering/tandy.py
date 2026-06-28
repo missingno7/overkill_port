@@ -547,6 +547,23 @@ def _tandy_next_scanline_di(cpu) -> None:
     if not cpu.get_flag(ZF):
         _add_reg16(cpu, 7, 0x80A0)
 
+def _composite_masked_row(mem, ds, es, si, di, *, words_per_row, step):
+    """Composite one row of ``words_per_row`` destination words from source
+    ``[mask, data]`` pairs: ``dest = (mask & dest) | data``.  Advances SI past
+    each pair (LODSW + ADD SI,2) and DI past each written word.  Returns the
+    advanced ``(si, di, ax)`` where ``ax`` is the last word written."""
+    ax = 0
+    for _ in range(words_per_row):
+        ax = mem.rw(ds, si)
+        si = (si + step) & 0xFFFF
+        ax = (ax & mem.rw(es, di)) & 0xFFFF
+        ax = (ax | mem.rw(ds, si)) & 0xFFFF
+        si = (si + 2) & 0xFFFF
+        mem.ww(es, di, ax)
+        di = (di + step) & 0xFFFF
+    return si, di, ax
+
+
 def _masked_word_composite_rows(cpu, *, words_per_row: int, row_add: int,
                                 rows: int | None = None) -> None:
     """Composite Tandy masked words (``dest = (mask & dest) | next-src``) exactly
@@ -569,14 +586,8 @@ def _masked_word_composite_rows(cpu, *, words_per_row: int, row_add: int,
     bx = row_add & 0xFFFF
     ax = s.ax & 0xFFFF
     for _ in range(rows):
-        for _ in range(words_per_row):
-            ax = mem.rw(ds, si)              # LODSW
-            si = (si + step) & 0xFFFF
-            ax = (ax & mem.rw(es, di)) & 0xFFFF
-            ax = (ax | mem.rw(ds, si)) & 0xFFFF
-            si = (si + 2) & 0xFFFF           # ADD SI,2
-            mem.ww(es, di, ax)               # STOSW
-            di = (di + step) & 0xFFFF
+        si, di, ax = _composite_masked_row(mem, ds, es, si, di,
+                                           words_per_row=words_per_row, step=step)
         di_sum = di + bx                     # ADD DI,BX; LOOP preserves flags.
         cpu.set_add_flags(di, bx, di_sum, 16)
         di = di_sum & 0xFFFF
@@ -597,36 +608,25 @@ def run_masked_sprite_composite_immediate(cpu, *, words_per_row: int, row_add: i
     and 3849 (4 columns, +0x2C).  Each row composites ``words_per_row`` destination
     words from source ``[mask, data]`` pairs (``dest = (mask & dest) | data``), then
     advances DI by the immediate ``row_add``.  Because the row add is an immediate
-    (``ADD DI,imm``) rather than ``ADD DI,BX``, BX is left untouched -- which is why
-    these cannot reuse :func:`_masked_word_composite_rows`.  Finally restores DS from
-    ``CS:[9596]`` and returns near.
+    (``ADD DI,imm``) rather than ``ADD DI,BX``, BX is left untouched -- so it cannot
+    share the per-row epilogue of :func:`_masked_word_composite_rows` (only the
+    inner :func:`_composite_masked_row`).  Finally restores DS and returns near.
     """
     s = cpu.s
     mem = cpu.mem
-    rows = s.cx & 0xFFFF
-    if rows == 0:
-        rows = 0x10000
-
+    rows = (s.cx & 0xFFFF) or 0x10000
     ds = s.ds & 0xFFFF
     es = s.es & 0xFFFF
     si = s.si & 0xFFFF
     di = s.di & 0xFFFF
-    sd = -2 if cpu.get_flag(DF) else 2
+    step = -2 if cpu.get_flag(DF) else 2
     ax = s.ax & 0xFFFF
     old_di = di
-
     for _ in range(rows):
-        for _col in range(words_per_row):
-            mask = mem.rw(ds, si)
-            si = (si + sd) & 0xFFFF
-            ax = mask & mem.rw(es, di)
-            ax = ax | mem.rw(ds, si)
-            si = (si + 2) & 0xFFFF
-            mem.ww(es, di, ax)
-            di = (di + sd) & 0xFFFF
+        si, di, ax = _composite_masked_row(mem, ds, es, si, di,
+                                           words_per_row=words_per_row, step=step)
         old_di = di
         di = (di + row_add) & 0xFFFF
-
     cpu.set_add_flags(old_di, row_add, old_di + row_add, 16)
     s.ax = ax
     s.si = si
