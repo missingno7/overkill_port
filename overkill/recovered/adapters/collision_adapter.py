@@ -38,7 +38,6 @@ from overkill.recovered.systems.collision import (
 )
 from overkill.recovered.systems.tilemap import (
     TILE_CONTACT_LOW_NIBBLE_MASK,
-    TILE_CONTACT_OFFSET_PAIR_STRIDE_BYTES,
     TILE_CONTACT_ROW_DELTA,
     TILE_COLLISION_ROW_DELTA,
     TILE_CONTACT_SECOND_COLUMN_THRESHOLD,

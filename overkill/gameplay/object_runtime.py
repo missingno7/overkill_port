@@ -8,8 +8,7 @@ CS:IP hook-registration layer.
 """
 from __future__ import annotations
 
-from dos_re.cpu import CF, DF, ZF
-from dos_re.hooks import call_installed_hook_like_near_call
+from dos_re.cpu import CF, ZF
 from overkill.asm import (
     _add_mem_word,
     _add_reg16,

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable
 
 from dos_re.cpu import CPU8086, CPUState, IF
 from dos_re.runtime import Runtime
@@ -14,7 +13,6 @@ from dos_re.verification import (
     MemoryRange,
     GenericHookStop,
     parse_addr,
-    install_hook_verifier as _install_generic_hook_verifier,
 )
 from overkill.sounds.loaded_driver import OPTIONAL_SOUND_DRIVER_SEGMENT
 

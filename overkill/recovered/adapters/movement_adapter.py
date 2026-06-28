@@ -9,7 +9,6 @@ from overkill.recovered.systems.movement import (
     PLAYER_CENTER_TARGET_X_BIAS,
     PLAYER_CENTER_TARGET_Y_BIAS,
     TARGET_GRID_MASK_4PX,
-    align_word_to_four,
     choose_target_seek_direction,
     player_center_target_from_view,
     step_operations_for_direction,

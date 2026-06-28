@@ -28,8 +28,6 @@ from overkill.recovered.ds_globals import VIDEO_MODE_SELECTOR_OFF
 from dataclasses import dataclass
 from typing import Callable, Mapping
 
-from dos_re.cpu import ZF
-
 Cpu = object
 CompositorHandler = Callable[[Cpu], None]
 SelfDisableIfPatched = Callable[[Cpu, int, bytes, str], bool]
