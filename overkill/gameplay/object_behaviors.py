@@ -53,6 +53,7 @@ from overkill.recovered.systems.objects import (
     b86d_formation_spawn_tick_index,
     b86d_outgoing_sprite_for_delta,
     object_logic_ab10,
+    object_logic_ae09,
 )
 from overkill.recovered.views.object_slots import (
     ObjectSlotView,
@@ -961,21 +962,18 @@ def _run_object_behavior_ae09(cpu, *, parent: str, chain: str, cx_value: int) ->
     ss = cpu.s.ss & 0xFFFF
     bp = cpu.s.bp & 0xFFFF
     slot = ObjectSlotView(cpu.mem, ss, bp)  # this object's record (SS:BP)
-    mem = cpu.mem
 
-    timer = slot.substate
-    if timer != 0:
-        _sub_mem_word(cpu, ss, (bp + OFF_SUBSTATE) & 0xFFFF, 1)
-        if slot.substate == 0:
-            slot.direction_or_step = 0x0000
-    if timer == 0 or slot.substate == 0:
-        _sub_mem_word(cpu, ss, (bp + OFF_X) & 0xFFFF, 2)
+    update = object_logic_ae09(slot.substate, slot.direction_or_step)
+    slot.substate = update.substate
+    slot.direction_or_step = update.direction_or_step
+    if update.decrement_x:
+        slot.x_word = (slot.x_word - 2) & 0xFFFF
 
-    # Outgoing sprite = direction/step + 0x28.  The ADD's flags are dead here:
-    # AF22 below overwrites them before the AD60 tail boundary, so the flag
-    # modelling and the old-AX temporary the transliteration carried are gone.
-    cpu.s.ax = (slot.direction_or_step + 0x0028) & 0xFFFF
-    slot.sprite_or_state = cpu.s.ax
+    # Outgoing sprite = direction/step + 0x28.  Every CMP/DEC/SUB/ADD flag of the
+    # AE09 body is dead at the AF22 tail boundary (AF22's first ops overwrite them),
+    # so no flag replay is needed; the rule owns the timer/step/sprite decision.
+    cpu.s.ax = update.sprite
+    slot.sprite_or_state = update.sprite
 
     _run_af22_three_pixel_step_for_direction(cpu, parent="1010:AF22")
     _run_object_bounds_tile_tail_ad60(

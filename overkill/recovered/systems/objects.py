@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from overkill.recovered.domain.object_behaviors import (
     Ab10Update,
+    Ae09Update,
     B73ETargetReachedResolution,
     BossGroupSlotTransition,
     ObjectBoundsTileDecision,
@@ -177,6 +178,34 @@ def object_logic_ab10(
         sprite=(sprite_table_value + AB10_SPRITE_BASE_OFFSET) & 0xFFFF,
         x=(anim_x + ref_x) & 0xFFFF,
         y=(anim_y + ref_y) & 0xFFFF,
+    )
+
+
+AE09_SPRITE_OFFSET = 0x0028
+
+
+def object_logic_ae09(substate: int, direction_or_step: int) -> Ae09Update:
+    """Pure 1010:AE09 update recovered from the EFAE logic_id 0Ch behavior body.
+
+    ``substate`` is the slot countdown timer (DS:[bp+1Ch]); ``direction_or_step`` is
+    DS:[bp+6].  While the timer is non-zero it decrements, clearing the direction on
+    the frame it reaches zero; the object steps left (``x -= 2``) on the frame the
+    timer is zero or has just expired; the outgoing sprite is
+    ``direction_or_step + 28h``.  The original's CMP/DEC/SUB/ADD flags are all dead
+    at the AF22 tail boundary (AF22's first ops overwrite them), so the adapter needs
+    no flag replay -- this rule owns the timer/step/sprite decision."""
+    substate &= 0xFFFF
+    direction = direction_or_step & 0xFFFF
+    new_substate = substate
+    if substate != 0:
+        new_substate = (substate - 1) & 0xFFFF
+        if new_substate == 0:
+            direction = 0x0000
+    return Ae09Update(
+        substate=new_substate,
+        direction_or_step=direction,
+        decrement_x=(substate == 0 or new_substate == 0),
+        sprite=(direction + AE09_SPRITE_OFFSET) & 0xFFFF,
     )
 
 

@@ -1,3 +1,22 @@
+## 2026-06-28 - Source-purity rescue: AE09 object behavior pushed to a pure rule
+
+Continued the `object_behaviors` -> ObjectSystem coastline. Slice: the 1010:AE09
+EFAE logic_id 0Ch behavior body. The gameplay decision (a countdown timer in slot
+`substate` decrements while non-zero, clearing `direction_or_step` on the frame it
+reaches zero; the object steps left `x -= 2` on the frame the timer is zero or has
+just expired; outgoing sprite = `direction_or_step + 28h`) moved out of the lifted
+adapter into the pure VM-free rule `recovered/systems/objects.object_logic_ae09`
+(+ `Ae09Update` domain record, named `AE09_SPRITE_OFFSET`). The lifted
+`_run_object_behavior_ae09` is now a thin adapter: `ObjectSlotView` reads -> rule
+-> slot writes (substate/direction/x/sprite) -> the already-lifted AF22 + AD60
+tail. Every CMP/DEC/SUB/ADD flag of the body is dead at the AF22 boundary (AF22's
+first ops overwrite them; the disasm and the prior lift that already dropped the
+ADD flags both confirm it), so the adapter needs no flag replay. Gated green: lint
+(181), audit_architecture, the new pure unit test
+`test_recovered_ae09_object_logic_is_pure_and_named`, demo-replay 23/23 bounded,
+and an extended L2_full verify exercising AE09 48x byte-exact. Worklist: 4 DONE
+(`b73e`/`b86d`/`ab10`/`ae09`), 13 TODO. Next: `aed8`/`aba3`/`ab77`.
+
 ## 2026-06-28 - Faithful level-select replay (menu hooks removed + per-poll demo input)
 
 Full-arc demos that cross the level/difficulty-select screen now replay it

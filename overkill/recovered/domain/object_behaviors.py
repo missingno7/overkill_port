@@ -35,6 +35,23 @@ class Ab10Update:
 
 
 @dataclass(frozen=True, slots=True)
+class Ae09Update:
+    """Pure result of the 1010:AE09 per-frame object update (EFAE logic_id 0Ch path).
+
+    A countdown timer (slot ``substate``) decrements while non-zero, clearing the
+    ``direction_or_step`` word on the frame it reaches zero. The object steps left
+    (``decrement_x`` -> ``x -= 2``) on the frame the timer is zero or has just
+    expired, and its outgoing sprite is ``direction_or_step + 28h``. The adapter owns
+    the slot reads/writes and the AF22 + AD60 tail (whose first ops overwrite this
+    routine's now-dead flags); this owns the timer/step/sprite decision."""
+
+    substate: int
+    direction_or_step: int
+    decrement_x: bool
+    sprite: int
+
+
+@dataclass(frozen=True, slots=True)
 class B73ETargetReachedResolution:
     """Pure 4-way dispatch for B73E once an object is already at its target.
 

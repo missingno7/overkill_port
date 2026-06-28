@@ -864,6 +864,31 @@ def test_recovered_ab10_object_logic_is_pure_and_named():
     assert w.sprite == 0x0004 and w.x == 0x0002 and w.y == 0x0003
 
 
+def test_recovered_ae09_object_logic_is_pure_and_named():
+    from overkill.recovered.systems.objects import AE09_SPRITE_OFFSET, object_logic_ae09
+
+    # Timer already zero: no decrement, step left, sprite = direction + 28h.
+    up = object_logic_ae09(substate=0, direction_or_step=0x0006)
+    assert up.substate == 0 and up.direction_or_step == 0x0006
+    assert up.decrement_x is True
+    assert up.sprite == (0x0006 + AE09_SPRITE_OFFSET)
+
+    # Timer counts down but does not reach zero: decrement only, keep dir, no step.
+    up = object_logic_ae09(substate=3, direction_or_step=0x0006)
+    assert up.substate == 2 and up.direction_or_step == 0x0006
+    assert up.decrement_x is False
+    assert up.sprite == (0x0006 + AE09_SPRITE_OFFSET)
+
+    # Timer expires this frame: clear direction, step left, sprite = 28h.
+    up = object_logic_ae09(substate=1, direction_or_step=0x0006)
+    assert up.substate == 0 and up.direction_or_step == 0x0000
+    assert up.decrement_x is True
+    assert up.sprite == AE09_SPRITE_OFFSET
+
+    # 16-bit wrap on the sprite add.
+    assert object_logic_ae09(0, 0xFFFF).sprite == (0xFFFF + AE09_SPRITE_OFFSET) & 0xFFFF
+
+
 def test_recovered_ad60_bounds_tile_tail_adapter_matches_pure_decision():
     from overkill.gameplay import object_bounds
     from overkill.recovered.systems.objects import (
