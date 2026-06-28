@@ -8,7 +8,8 @@ stay in ``hooks.py``.
 """
 from __future__ import annotations
 
-from dos_re.cpu import CF, DF
+from dos_re.cpu import CF, DF, ZF
+from ..asm import _test_word
 
 
 def _rcr_stc_chain_5bytes(bl: int, bh: int, al: int, ah: int, dl: int, passes: int) -> tuple[int, int, int, int, int]:
@@ -235,3 +236,48 @@ def run_masked_cga_composite_38f9(cpu) -> None:
     s.cx = 0
     s.ds = mem.rw(s.cs & 0xFFFF, 0x9596)
     s.ip = cpu.pop()
+
+
+def run_changed_word_present_8rows_cd8d(cpu) -> None:
+    """Present the changed-word CGA presenter loop at 1010:CD8D.
+
+    After the dirty-copy detector marks a block changed, copy one word from the work
+    buffer to the visible CGA aperture across eight interlaced scanlines (+2000h per row,
+    +C050h bank wrap when DI clears bit 14); ends at the CE02 continuation.
+    """
+    s = cpu.s
+    mem = cpu.mem
+    ds = s.ds & 0xFFFF
+    es = s.es & 0xFFFF
+    si = s.si & 0xFFFF
+    di = s.di & 0xFFFF
+    cx = s.cx & 0xFFFF
+    if cx == 0:
+        cx = 0x10000
+
+    ax = s.ax & 0xFFFF
+    while cx:
+        ax = mem.rw(ds, si)
+        mem.ww(es, di, ax)
+
+        old_si = si
+        si = (si + 0x50) & 0xFFFF
+        # ADD SI flags are overwritten before the LOOP unless this is somehow
+        # not followed by the DI/test path, so keep only the architectural result.
+        old_di = di
+        di = (di + 0x2000) & 0xFFFF
+        cpu.set_add_flags(old_di, 0x2000, old_di + 0x2000, 16)
+        cpu.s.di = di
+        _test_word(cpu, di, 0x4000)
+        if not cpu.get_flag(ZF):
+            old_di = di
+            di = (di + 0xC050) & 0xFFFF
+            cpu.set_add_flags(old_di, 0xC050, old_di + 0xC050, 16)
+            cpu.s.di = di
+        cx -= 1
+
+    s.ax = ax
+    s.si = si
+    s.di = di
+    s.cx = 0
+    s.ip = 0xCE02

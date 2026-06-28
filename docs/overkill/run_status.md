@@ -1,3 +1,18 @@
+## 2026-06-28 - Coastline (Phase 1b): relocate the CD8D CGA changed-word presenter to cga.py
+
+Moved the changed-word CGA presenter loop at 1010:CD8D (copies one word from the work
+buffer to the visible CGA aperture across 8 interlaced scanlines: +2000h/row, +C050h bank
+wrap when DI clears bit 14; ends at CE02) out of hooks.py into
+`rendering/cga.run_changed_word_present_8rows_cd8d` (ZF + `_test_word` added to cga.py's
+imports), leaving a thin wrapper.  Programmatic verbatim move; lint (183) + the guard pass
+and the bounded demo corpus stays byte-exact; `hook_inventory.md` regenerated.  Like 38F9,
+CD8D is a CGA path the Tandy demos don't exercise, so the move is faithful by construction
+(demo-replay confirms no Tandy regression).
+
+This exhausts the cleanly-relocatable inline-render vein: the remaining inline `@registry`
+bodies are hook-layer orchestrators (nested `call_X` closures dispatching to other hooks --
+correctly in the hook layer) or the entangled 4D15 presence-stamp dispatcher.
+
 ## 2026-06-28 - Coastline (Phase 1b): relocate the 4D6F presence-list clear to layer_sprites.py
 
 Moved the hot presence/occupancy-list clear at 1010:4D6F (walks CX word entries from DS:SI,

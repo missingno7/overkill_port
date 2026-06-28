@@ -30,6 +30,7 @@ from .hook_wrappers.sounds import *  # noqa: F401,F403 - register/re-export addr
 from .hook_wrappers.gameplay_frontiers import *  # noqa: F401,F403 - register/re-export address wrappers
 from .hook_wrappers.object_runtime_frontiers import *  # noqa: F401,F403 - register/re-export address wrappers
 from .rendering.cga import (
+    run_changed_word_present_8rows_cd8d,
     run_masked_cga_composite_38f9,
     run_masked_cga_composite_3e12,
     run_masked_cga_composite_3efb,
@@ -3041,44 +3042,7 @@ def overkill_changed_word_present_8rows_cd8d(cpu):
     scanlines.  It appears prominently on the planet/difficulty menu because the
     screen is redrawn in many small dirty cells when the selection changes.
     """
-    s = cpu.s
-    mem = cpu.mem
-    ds = s.ds & 0xFFFF
-    es = s.es & 0xFFFF
-    si = s.si & 0xFFFF
-    di = s.di & 0xFFFF
-    cx = s.cx & 0xFFFF
-    if cx == 0:
-        cx = 0x10000
-
-    ax = s.ax & 0xFFFF
-    while cx:
-        ax = mem.rw(ds, si)
-        mem.ww(es, di, ax)
-
-        old_si = si
-        si = (si + 0x50) & 0xFFFF
-        # ADD SI flags are overwritten before the LOOP unless this is somehow
-        # not followed by the DI/test path, so keep only the architectural result.
-        old_di = di
-        di = (di + 0x2000) & 0xFFFF
-        cpu.set_add_flags(old_di, 0x2000, old_di + 0x2000, 16)
-        cpu.s.di = di
-        _test_word(cpu, di, 0x4000)
-        if not cpu.get_flag(ZF):
-            old_di = di
-            di = (di + 0xC050) & 0xFFFF
-            cpu.set_add_flags(old_di, 0xC050, old_di + 0xC050, 16)
-            cpu.s.di = di
-        cx -= 1
-
-    s.ax = ax
-    s.si = si
-    s.di = di
-    s.cx = 0
-    s.ip = 0xCE02
-
-
+    run_changed_word_present_8rows_cd8d(cpu)
 @registry.replace(0x1010, 0xCDAA, "overkill_tandy_changed_dword_present_8rows_cdaa")
 def overkill_tandy_changed_dword_present_8rows_cdaa(cpu):
     """Replace the Tandy changed-cell presenter loop at 1010:CDAA."""
