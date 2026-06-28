@@ -125,3 +125,25 @@ class ObjectSpawnSeed:
     target_x_word: int
     target_y_word: int
     linked_counter_index: int
+
+
+@dataclass(frozen=True, slots=True)
+class ObjectSpawnSeedA4EA:
+    """Pure field values stamped into a freshly allocated slot by 1010:A4EA.
+
+    Recovered from the straight-line MOV sequence A4ED..A50F that initialises a
+    new ``logic_id=2`` object after A4EA's own ``call 7547`` allocates the slot.
+    Every field is a constant (A4EA reads nothing from the caller); position is
+    left as the allocator returned it and the spawn-action caller customises the
+    record afterwards.  Fields are listed in the original stamp order so the seed
+    stays byte-faithful.
+    """
+
+    active_word: int
+    scan_enable_or_solid: int
+    direction_or_step: int
+    sprite_or_state: int
+    scan_flag: int
+    hazard_class: int
+    logic_id: int
+    substate: int

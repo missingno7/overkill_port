@@ -1,3 +1,17 @@
+## 2026-06-29 - Lift the A4EA spawn template into the pure layer (object_spawn_seed_a4ea)
+
+The 1010:A4EA object-spawn seed (allocate a slot via 7573, then stamp a fixed `logic=2`
+template) was already a recovered+hooked routine, but it stamped its 8 constant fields
+*inline*, and the sibling A4D7 lift (A4EA seed + source-coordinate copy) duplicated that same
+inline block.  Lifted the template into the pure layer: new `ObjectSpawnSeedA4EA` (domain) +
+`object_spawn_seed_a4ea()` (systems/objects), matching the 8209 seed pattern, applied through
+a shared `_stamp_object_spawn_seed_a4ea` helper so both the A4EA and A4D7 adapters read the
+values from one pure source instead of 16 inline magic constants.  Byte-exact: the existing
+A4EA + A4D7 oracle tests stay green (`assert_oracle_equivalent`), plus a new pure-layer value
+test (`test_object_spawn_seed_a4ea_template_values`).  Full suite + lint (188) + architecture
+audit pass.  (Process note: A4EA was already hooked -- caught a near-duplicate recovery by
+grepping the hook registry; the net change is the inline->pure refinement, not a new island.)
+
 ## 2026-06-29 - HUD-digit island: native glyph blit byte-exact vs 1010:3153
 
 The HUD char-output leaf recovered native + proven byte-exact. `519A`'s Tandy dispatch

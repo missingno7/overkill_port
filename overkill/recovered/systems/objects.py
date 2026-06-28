@@ -20,6 +20,7 @@ from overkill.recovered.domain.object_slots import (
     ObjectPool,
     ObjectSlotRecord,
     ObjectSpawnSeed,
+    ObjectSpawnSeedA4EA,
 )
 
 # 1010:8209 object-slot spawn template.  Stamps a freshly allocated effect slot
@@ -54,6 +55,32 @@ def object_spawn_seed_8209(source_x: int, source_y: int) -> ObjectSpawnSeed:
         target_x_word=x,
         target_y_word=y,
         linked_counter_index=OBJECT_SPAWN_SEED_8209_LINKED_COUNTER_INDEX_NONE,
+    )
+
+
+# 1010:A4EA object-slot spawn template.  Unlike 8209 this routine allocates its
+# own slot first (its leading ``call 7547``); the stamp itself is all constants.
+OBJECT_SPAWN_SEED_A4EA_LOGIC_ID = 0x0002
+
+
+def object_spawn_seed_a4ea() -> ObjectSpawnSeedA4EA:
+    """Pure 1010:A4EA spawn template recovered from the A4ED..A50F stamp.
+
+    A freshly allocated slot is initialised as an active ``logic_id=2`` object
+    with ``scan_enable_or_solid=1``, ``direction_or_step=0``,
+    ``sprite_or_state=32h``, ``scan_flag=0``, ``hazard_class=2`` and
+    ``substate=FFFFh``.  The adapter owns the leading allocation and the DOS slot
+    pointer; this owns the field values.
+    """
+    return ObjectSpawnSeedA4EA(
+        active_word=0x0001,
+        scan_enable_or_solid=0x0001,
+        direction_or_step=0x0000,
+        sprite_or_state=0x0032,
+        scan_flag=0x0000,
+        hazard_class=0x0002,
+        logic_id=OBJECT_SPAWN_SEED_A4EA_LOGIC_ID,
+        substate=0xFFFF,
     )
 
 

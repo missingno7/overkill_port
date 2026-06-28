@@ -12,7 +12,7 @@ no higher-level gameplay semantics are asserted.
 from __future__ import annotations
 
 from overkill.asm import _add_reg16, _cmp_word, _dec_mem_word_preserve_cf
-from overkill.recovered.systems.objects import object_spawn_seed_8209
+from overkill.recovered.systems.objects import object_spawn_seed_8209, object_spawn_seed_a4ea
 from overkill.recovered.views.object_slots import ObjectSlotView, EFFECT_OBJECT_TABLE_BASE, GAMEPLAY_OBJECT_ALLOCATOR_WRAP_SENTINEL, GAMEPLAY_OBJECT_TABLE_BASE, OBJECT_SLOT_STRIDE, OFF_X, OFF_Y
 
 # Source position the 8209 template reads from the caller's BP frame.  The slot's
@@ -60,7 +60,6 @@ def run_object_spawn_seed_8209(cpu) -> None:
     slot.variant = seed.variant
     s.ax = source_y & 0xFFFF
     s.ip = cpu.pop()
-
 
 
 def _find_free_effect_slot_7524(cpu) -> int:
@@ -312,6 +311,21 @@ def run_object_spawn_anchor_offset_a571(cpu) -> None:
     cpu.s.ip = cpu.pop()
 
 
+def _stamp_object_spawn_seed_a4ea(dst: ObjectSlotView) -> None:
+    """Stamp the pure A4EA spawn template (:func:`object_spawn_seed_a4ea`) into an
+    already-allocated slot view.  Shared by the A4EA and A4D7 lifts, which stamp
+    the identical constant field block before any per-call customisation."""
+    seed = object_spawn_seed_a4ea()
+    dst.active_word = seed.active_word
+    dst.scan_enable_or_solid = seed.scan_enable_or_solid
+    dst.direction_or_step = seed.direction_or_step
+    dst.sprite_or_state = seed.sprite_or_state
+    dst.scan_flag = seed.scan_flag
+    dst.hazard_class = seed.hazard_class
+    dst.logic_id = seed.logic_id
+    dst.substate = seed.substate
+
+
 def run_object_spawn_seed_a4ea(cpu) -> None:
     """Lift the common 1010:A4EA object-spawn seed template.
 
@@ -332,14 +346,7 @@ def run_object_spawn_seed_a4ea(cpu) -> None:
     ds = cpu.s.ds & 0xFFFF
     mem = cpu.mem
     dst = ObjectSlotView(mem, ds, bx)  # the spawned/target object's record (DS:BX)
-    dst.active_word = 0x0001
-    dst.scan_enable_or_solid = 0x0001
-    dst.direction_or_step = 0x0000
-    dst.sprite_or_state = 0x0032
-    dst.scan_flag = 0x0000
-    dst.hazard_class = 0x0002
-    dst.logic_id = 0x0002
-    dst.substate = 0xFFFF
+    _stamp_object_spawn_seed_a4ea(dst)
     cpu.s.ip = cpu.pop()
 
 
@@ -363,14 +370,7 @@ def run_object_spawn_seed_from_source_a4d7(cpu) -> None:
     ds = cpu.s.ds & 0xFFFF
     mem = cpu.mem
     dst = ObjectSlotView(mem, ds, bx)  # the spawned/target object's record (DS:BX)
-    dst.active_word = 0x0001
-    dst.scan_enable_or_solid = 0x0001
-    dst.direction_or_step = 0x0000
-    dst.sprite_or_state = 0x0032
-    dst.scan_flag = 0x0000
-    dst.hazard_class = 0x0002
-    dst.logic_id = 0x0002
-    dst.substate = 0xFFFF
+    _stamp_object_spawn_seed_a4ea(dst)
 
     si = cpu.s.si & 0xFFFF
     cpu.s.ax = mem.rw(ds, (si + OFF_X) & 0xFFFF)

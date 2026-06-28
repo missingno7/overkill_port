@@ -166,3 +166,22 @@ def test_object_pool_find_free_matches_vm_allocator():
     # Every slot occupied -> 0xFFFF / None, cursor unchanged.
     vm_off, vm_cur, nat = run(set(), base)
     assert vm_off == 0xFFFF and nat.offset is None and nat.cursor == base
+
+
+def test_object_spawn_seed_a4ea_template_values():
+    """The pure A4EA spawn template matches the constants the 1010:A4EA stamp
+    writes at A4ED..A50F (offsets in comments).  The byte-exact runtime behaviour
+    is guarded by test_object_spawn_seed_a4ea_free_path_matches_original; this
+    locks the recovered field values in the pure layer, where both the A4EA and
+    A4D7 adapters now read them from."""
+    from overkill.recovered.systems.objects import object_spawn_seed_a4ea
+
+    seed = object_spawn_seed_a4ea()
+    assert seed.active_word == 0x0001           # ds:[bx+00]
+    assert seed.scan_enable_or_solid == 0x0001  # ds:[bx+1E]
+    assert seed.direction_or_step == 0x0000     # ds:[bx+06]
+    assert seed.sprite_or_state == 0x0032       # ds:[bx+08]
+    assert seed.scan_flag == 0x0000             # ds:[bx+14]
+    assert seed.hazard_class == 0x0002          # ds:[bx+16]
+    assert seed.logic_id == 0x0002              # ds:[bx+18]
+    assert seed.substate == 0xFFFF              # ds:[bx+1C]
