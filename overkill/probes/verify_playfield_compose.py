@@ -45,8 +45,8 @@ def main(argv):
     from dos_re.hooks import registry
     from overkill.frame_verify import FrameVerifyConfig, run_frame_verifier
     from overkill.native_video.frame import SnapshotSprite, SpriteBlock
-    from overkill.native_video.sprite_layer import composite_sprites
-    from overkill.native_video.page_raster import render_present_page_indices, SCREEN_HEIGHT, SCREEN_WIDTH
+    from overkill.native_video.playfield import compose_playfield_indices
+    from overkill.native_video.page_raster import render_present_page_indices
     from overkill.recovered.adapters.sprite_draw_extractor import LAYER_DRAW_ROUTINES
     from overkill.recovered.systems.sprite_textures import MASKED_COMPOSITORS, decode_masked_sprite
 
@@ -115,7 +115,7 @@ def main(argv):
         src = cpu.mem.rw(CS, SOURCE_PAGE_PTR) & 0xFFFF
         cur = frame["cursor"]
         spr = SnapshotSprite(0, 0, 0, 0, tuple(frame["blocks"]))
-        native = composite_sprites(frame["plate"].copy(), [spr], cur)
+        native = compose_playfield_indices(frame["plate"], [spr], cur)
         vm = render_present_page_indices(mem_arr, src, cur)
         agg["frames"] += 1
         if np.array_equal(native, vm):
