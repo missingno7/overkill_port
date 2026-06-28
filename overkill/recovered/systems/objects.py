@@ -253,9 +253,23 @@ def object_logic_aba3(frame_phase: int, scroll_frame: int) -> Aba3Update:
     return Aba3Update(branch_abc0=False, sprite=(scroll_frame + ABA3_SPRITE_OFFSET) & 0xFFFF)
 
 
-LAYER1_RENDER_MODE_FULL = 0x0001
-LAYER1_CAMERA_NEAR_THRESHOLD = 0x00B6
+# Global render-state shared by the A8C7 layer-1 scan and the AD04 logic branch: the
+# render mode word DS:BDAC (``1`` = full redraw, no near-camera culling) and the camera
+# position DS:2350 (``<= B6h`` = near the left edge).
+RENDER_MODE_FULL = 0x0001
+CAMERA_NEAR_THRESHOLD = 0x00B6
 LAYER1_LAYER_FOREGROUND = 0x0001
+# AD04 routes a slot whose sprite/state word equals 0Fh to the ABCA collision handler.
+AD04_SPRITE_COLLISION_STATE = 0x000F
+
+
+def camera_near_outside_full_render(render_mode: int, camera_x: int) -> bool:
+    """True when not in full-render mode and the camera sits near the left edge.
+
+    ``render_mode`` is DS:BDAC, ``camera_x`` is DS:2350.  This is the shared near-camera
+    gate behind two routines: the A8C7 layer-1 scan suppresses a near-layer slot under
+    it, and the AD04 logic branch returns early under it."""
+    return (render_mode & 0xFFFF) != RENDER_MODE_FULL and (camera_x & 0xFFFF) <= CAMERA_NEAR_THRESHOLD
 
 
 def layer1_scan_should_draw(
@@ -270,16 +284,14 @@ def layer1_scan_should_draw(
     ``active`` is the slot's active word (SS:[bp]); ``render_mode`` is the global render
     mode DS:BDAC; ``camera_x`` is the camera position DS:2350; ``near_layer_flag`` is the
     slot's near-layer word (SS:[bp+16h]); ``object_layer_flag`` is the slot's layer word
-    (SS:[bp+0Ah]).  An inactive slot never draws.  Outside full-render mode
-    (``render_mode != 1``) a near-camera slot (``camera_x <= B6h``) flagged for the near
-    layer is suppressed.  Otherwise the slot draws iff it is on the foreground layer.
-    The adapter still replays the per-branch CMP flags for boundary fidelity; this owns
-    the draw decision."""
+    (SS:[bp+0Ah]).  An inactive slot never draws.  A near-camera slot
+    (:func:`camera_near_outside_full_render`) flagged for the near layer is suppressed.
+    Otherwise the slot draws iff it is on the foreground layer.  The adapter still replays
+    the per-branch CMP flags for boundary fidelity; this owns the draw decision."""
     if (active & 0xFFFF) == 0:
         return False
-    if (render_mode & 0xFFFF) != LAYER1_RENDER_MODE_FULL:
-        if (camera_x & 0xFFFF) <= LAYER1_CAMERA_NEAR_THRESHOLD and (near_layer_flag & 0xFFFF) == 1:
-            return False
+    if camera_near_outside_full_render(render_mode, camera_x) and (near_layer_flag & 0xFFFF) == 1:
+        return False
     return (object_layer_flag & 0xFFFF) == LAYER1_LAYER_FOREGROUND
 
 

@@ -40,6 +40,9 @@ from overkill.gameplay.object_runtime_common import (
 from overkill.gameplay.object_spawns import _run_formation_spawn_7476_observed
 from overkill.gameplay.objects import run_object_motion_table_ab34, run_object_scroll_sprite_ab4f
 from overkill.recovered.systems.objects import (
+    AD04_SPRITE_COLLISION_STATE,
+    CAMERA_NEAR_THRESHOLD,
+    RENDER_MODE_FULL,
     LEVEL_PHASE_DISABLE_THRESHOLD,
     B73E_SPAWN_WINDOW_MAX,
     B73E_SPAWN_WINDOW_MIN,
@@ -874,17 +877,18 @@ def _run_object_logic_branch_ad04(cpu, *, parent: str, chain: str, cx_value: int
 
     bdac = mem.rw(ds, 0xBDAC)
     # The BDAC==1 test's flags are dead: every path overwrites them (the 2350 CMP
-    # when taken, the sprite CMP when not) before reaching a boundary.
-    if bdac != 0x0001:
+    # when taken, the sprite CMP when not) before reaching a boundary.  The
+    # render-mode / near-camera gate is shared with the A8C7 layer-1 scan.
+    if bdac != RENDER_MODE_FULL:
         v2350 = mem.rw(ds, 0x2350)
-        _cmp_word(cpu, v2350, 0x00B6)
-        if v2350 <= 0x00B6:
+        _cmp_word(cpu, v2350, CAMERA_NEAR_THRESHOLD)
+        if v2350 <= CAMERA_NEAR_THRESHOLD:
             cpu.s.ip = cpu.pop()
             return
 
     sprite = slot.sprite_or_state
-    _cmp_word(cpu, sprite, 0x000F)
-    if sprite == 0x000F:
+    _cmp_word(cpu, sprite, AD04_SPRITE_COLLISION_STATE)
+    if sprite == AD04_SPRITE_COLLISION_STATE:
         cpu.s.ip = 0xABCA
         return
 

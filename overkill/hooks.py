@@ -224,8 +224,8 @@ from .gameplay.objects import (
     run_setup_tracked_status_tail_c51d,
 )
 from .recovered.systems.objects import (
-    LAYER1_CAMERA_NEAR_THRESHOLD,
-    LAYER1_RENDER_MODE_FULL,
+    CAMERA_NEAR_THRESHOLD,
+    RENDER_MODE_FULL,
     layer1_scan_should_draw,
 )
 
@@ -1404,13 +1404,13 @@ def overkill_scan_layer1_draw_a8c7(cpu):
             return False
 
         mode = cpu.mem.rw(ds, 0xBDAC)
-        _cmp_word(cpu, mode, LAYER1_RENDER_MODE_FULL)
+        _cmp_word(cpu, mode, RENDER_MODE_FULL)
         camera = 0
         near_layer = 0
-        if mode != LAYER1_RENDER_MODE_FULL:
+        if mode != RENDER_MODE_FULL:
             camera = cpu.mem.rw(ds, 0x2350)
-            _cmp_word(cpu, camera, LAYER1_CAMERA_NEAR_THRESHOLD)
-            if camera <= LAYER1_CAMERA_NEAR_THRESHOLD:
+            _cmp_word(cpu, camera, CAMERA_NEAR_THRESHOLD)
+            if camera <= CAMERA_NEAR_THRESHOLD:
                 near_layer = cpu.mem.rw(ss, (cpu.s.bp + 0x16) & 0xFFFF)
                 _cmp_word(cpu, near_layer, 1)
                 if near_layer == 1:

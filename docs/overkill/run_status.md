@@ -1,3 +1,16 @@
+## 2026-06-28 - Recovery (consolidation): share the near-camera/render-mode gate across A8C7 + AD04
+
+The A8C7 layer-1 scan and the AD04 logic branch both gate on the same global render state
+-- DS:BDAC (full-render mode) and DS:2350 (camera near the left edge, ``<= B6h``).  Slice
+a8c7 named those ``LAYER1_*``, but they are not layer-1-specific.  Renamed them to the
+global ``RENDER_MODE_FULL`` / ``CAMERA_NEAR_THRESHOLD``, extracted the shared
+`camera_near_outside_full_render(render_mode, camera_x)` pure predicate (now used by
+`layer1_scan_should_draw`), and named AD04's magic numbers in its adapter
+(``AD04_SPRITE_COLLISION_STATE = 0Fh`` plus the shared two).  Byte-preserving -- the named
+constants keep their values.  Verified: the a8c7 per-hook oracle (byte-exact) + a new
+`camera_near_outside_full_render` unit test + the renamed layer1 test + lint (183) + the
+undefined-name guard; AD04 (no fast oracle) exercised via a bounded demo-replay.
+
 ## 2026-06-28 - Hygiene: collapse blank-line cruft across object_runtime.py + 3 others
 
 Extends the earlier hooks.py blank pass to the rest of the package's removal cruft:
