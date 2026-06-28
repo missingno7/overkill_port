@@ -210,9 +210,25 @@ the backend where render logic belongs (keep isolated); `coverage.py` is tooling
 
 ### Phase 2 — native state structs (enables semantic verify + standalone)
 As each system matures, make its rules take/return native state instead of loose ints:
-`ObjectSlotRecord`✓ → `ObjectPool`, then `PlayerState`, `ProjectileState`, `CombatState`,
+`ObjectSlotRecord`✓ → `ObjectPool`✓, then `PlayerState`, `ProjectileState`, `CombatState`,
 `CameraState`, `LevelState`, `ScoreState`, `RngState`. Add a semantic state-mirror verifier
 per struct (diff the native struct vs the VM view at a checkpoint).
+
+> **Started 2026-06-28.** Foundations + patterns in place, all byte-exact:
+> - `domain.ObjectPool`✓ — VM-free native object-table snapshot (28 words/slot, faithful) +
+>   the views state-mirror verifier `object_pool_mirror_mismatches` (validated against the
+>   real gameplay table in `memory_1mb.bin`) + `object_pool_slot_record` projection.
+> - **Rule-migration pattern** (rules take `ObjectSlotRecord`, not loose ints): done for
+>   `layer1_scan_should_draw` (a8c7-oracle-verified) and `b9f0_reached_target` (demo-gated).
+>   The adapter builds the record via `read_object_slot_record(view)` /
+>   `read_current_object_slot_record(cpu)` and replays the live CMP flags from its fields.
+> - **Record-enrichment pattern**: `ObjectSlotRecord` grew `target_x_word`/`target_y_word`
+>   (defaulted, both projections populate them) to feed the target-position rules.
+> NEXT (smallest-first, same patterns): migrate the remaining slot-field rules
+> (`b9f0_wrapped_target_x`/`_x_on_overflow`, the `b73e` target rules) -- enrich
+> `ObjectSlotRecord` with `substate`/`sprite_or_state`/etc. as each needs them; then the
+> global-state structs (`CameraState` from DS:2350/237E/2380, `RngState`, `ScoreState`),
+> each with its own state-mirror verifier like ObjectPool's.
 
 ### Phase 3 — render systems as recovered game state (NOT renderer hacks)
 Recover the original render path into systems the native backend consumes (see
