@@ -42,7 +42,6 @@ from ..sounds import (
 from .common import self_disable_if_patched
 
 
-
 @registry.replace(OPTIONAL_SOUND_DRIVER_SEGMENT, 0x0000, "overkill_adlib_far_entry_2032_0000")
 def overkill_adlib_far_entry_2032_0000(cpu):
     """Loaded AdLib driver far-call entry: CALL 0063; RETF."""
@@ -57,12 +56,6 @@ def overkill_adlib_detect_2032_04e9(cpu):
     if self_disable_if_patched(cpu, 0x04E9, SIG_ADLIB_DETECT_2032_04E9, "overkill_adlib_detect_2032_04e9"):
         return
     run_adlib_detect_2032_04e9(cpu)
-
-
-
-
-
-
 
 
 @registry.replace(OPTIONAL_SOUND_DRIVER_SEGMENT, 0x0063, "overkill_adlib_driver_tick_2032_0063")

@@ -221,22 +221,6 @@ from overkill.recovered.views.object_slots import (
 from overkill.runtime_code import require_runtime_code_variant
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 SIG_OBJECT_DRIFT_DOWNRIGHT_AE2C = bytes.fromhex(
     "81 7e 04 c8 00 74 96 83 6e 02 04 f7 46 04 07 00"
 )
@@ -262,51 +246,6 @@ SIG_OBJECT_PLAYER_CHASE_B1B0 = bytes.fromhex(
     "26 06 23 fc 83 66 04 fc 83 66 02 fc e8 c6 ab "
     "83 3e 0a 23 00 75 03 e9 6a fb"
 )
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 def _scan_loop_until_callable(cpu, table_base: int, callable_ip: int, done_ip: int, should_call) -> None:
@@ -389,10 +328,6 @@ def _scan_layered_object_call(cpu, wanted_layer: int, callable_ip: int, done_ip:
     _scan_loop_until_callable(cpu, 0x32CA, callable_ip, done_ip, should_call)
 
 
-
-
-
-
 SIG_OBJECT_TILE_SWEEP_PROBE_AFD8 = bytes.fromhex(
     "c7 06 30 a4 00 00 8b 46 02 a3 32 a4 a3 38 a4 8b 46 04 "
     "a3 34 a4 a3 36 a4 a1 78 a2 01 46 02 83 6e 02 10"
@@ -439,48 +374,6 @@ def run_object_tile_sweep_probe_afd8(cpu, self_disable_if_patched) -> None:
     _sub_mem_word(cpu, ss, (bp + OFF_X) & 0xFFFF, s.ax)
     _cmp_word(cpu, mem.rw(ds, 0xA430), 0)
     s.ip = cpu.pop()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 def _finish_ae2c_common(cpu, *, parent: str, chain: str, cx_value: int) -> None:
@@ -575,61 +468,8 @@ def run_object_drift_upright_ae7d(cpu, self_disable_if_patched) -> None:
     )
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 def _call_tile_probe_5073(cpu, return_ip: int) -> None:
     _call_verified_child_near(cpu, 0x5073, lambda c: run_tile_probe_5073(c, _no_patch_guard), return_ip)
-
-
 
 
 def _call_player_hazard_scan_bdd0(cpu, return_ip: int) -> None:
@@ -664,8 +504,6 @@ def _jump_object_tile_sweep_blocked_b032(cpu) -> None:
         verifier(cpu, key, handler, name)
     else:
         handler(cpu)
-
-
 
 
 def _run_b00d_move_right(cpu) -> bool:
@@ -834,9 +672,6 @@ def _run_b00d_move_up(cpu) -> bool:
     return False
 
 
-
-
-
 def run_object_tile_sweep_dispatch_b00d(cpu, self_disable_if_patched) -> None:
     """Lift 1010:B00D, the direction-specific object tile sweep dispatcher.
 
@@ -895,12 +730,6 @@ def run_object_tile_sweep_dispatch_b00d(cpu, self_disable_if_patched) -> None:
 
     if not blocked:
         s.ip = cpu.pop()
-
-
-
-
-
-
 
 
 def run_object_player_chase_b1b0(cpu, self_disable_if_patched) -> None:
@@ -1006,5 +835,4 @@ def run_object_player_chase_b1b0(cpu, self_disable_if_patched) -> None:
     if (s.ip & 0xFFFF) != 0xB242:
         raise RuntimeError(f"B1B0 expected 5E42 to return to B242, got {s.ip:04X}")
     jump_ad5a()
-
 

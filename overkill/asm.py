@@ -86,9 +86,6 @@ def _dec_mem_byte_preserve_cf(cpu, seg: int, off: int) -> int:
     return result
 
 
-
-
-
 def _inc_mem_word_preserve_cf(cpu, seg: int, off: int) -> int:
     old = cpu.mem.rw(seg, off)
     old_cf = cpu.get_flag(CF)

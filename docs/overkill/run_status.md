@@ -1,3 +1,12 @@
+## 2026-06-28 - Hygiene: collapse blank-line cruft across object_runtime.py + 3 others
+
+Extends the earlier hooks.py blank pass to the rest of the package's removal cruft:
+`object_runtime.py` carried a 53-line void (among others), plus minor runs in
+`hook_wrappers/sounds.py`, `gameplay/objects.py`, `asm.py`.  Collapsed every run of 3+
+blank lines to 2: -185 blank lines (172 from object_runtime.py).  Pure whitespace -- the
+diff touches no non-blank line; lint (183) + the undefined-name guard + the 280-test
+hooks/semantics suites stay green.
+
 ## 2026-06-28 - Guard: add an import*-aware undefined-name (F821) check to the suite
 
 Promoted the one-off scan that found the 375b NameError into a permanent guard,

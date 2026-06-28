@@ -207,9 +207,6 @@ def run_reset_object_slot_block_c4e5(cpu, self_disable_if_patched) -> None:
     s.ip = 0xC51D
 
 
-
-
-
 SIG_RESET_OBJECT_SLOT_AND_STATUS_SETUP_C4DB = bytes.fromhex(
     "2e c7 06 a2 c3 14 33 b9 24 00"
 )
