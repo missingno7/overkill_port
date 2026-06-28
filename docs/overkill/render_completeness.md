@@ -112,27 +112,37 @@ The grounded model:
   `2E6E/2F81/2FB6`, copies `34C5/34D8/3542`) plus packed object/sprite cells in the
   `~0x2C00` work region (written by the object draws `35CF/356F/358D/365A`). The
   present geometry (35FF→B800) is lifted.
-- **Per-routine attribution** (decoded each routine's 35FF writes in isolation,
-  `scratchpad/attr_*.png`, frames 199/200): the compositors are the sprite layer —
-  **`2F81` = the alien formation, `2E6E` = the player ship, `2FB6` = the projectiles**.
-  On the alternate frame the copies `34C5/34D8/3542` + `4D6F` write **zeros** (clear
-  the sprite cells / occupancy) — i.e. a per-frame **sprite clear→redraw cycle**. The
-  **starfield is a *persistent* background** in 35FF: it survives the clear/redraw
-  cycle and is NOT drawn in steady frames, so its generator runs at **level-start /
-  scroll-in**, not per frame. (This is why steady-frame write-histograms never found a
-  "star routine" — there isn't one per frame.)
+- **Per-routine attribution** (decoded each routine's writes in isolation,
+  `scratchpad/attr_*.png` / `attrb800_*.png`):
+  - 35FF compositors = the **sprite layer**: `2F81` = alien formation + the small
+    left ship + projectiles, `2E6E` = the player ship, `2FB6` = small sprites. **No
+    stars** in any compositor's output (their backgrounds decode black).
+  - The 35FF **clean plate** (page just before the first sprite composite) is
+    **~black** (40 px) — the playfield background is empty, not a starfield.
+  - The **B800-direct writers** `5F05` (+`5EE1/5EEA/5EF0/5EF6`) = the **HUD SCORE
+    DIGITS** (decoded: green `0 0 0 0`), NOT stars.
+  - Per-frame copies `34C5/34D8/3542` + `4D6F` write **zeros** (clear sprite cells /
+    occupancy) — a sprite clear→redraw cycle.
 
-**Self-compose gap (grounded, narrowed):**
-1. The **scrolling star background** — DECISIVE (`probe_nonzero_writers`, 420 frames
-   incl. scroll; cursor `[234C]` steps +0x68/frame `0x1318`→`0x18C8`): the ONLY
-   non-zero 35FF writers are the compositors `2F81/2E6E/2FB6`, so there is **no
-   separate starfield generator**. `2F81` draws the scrolling star background
-   (persistent in 35FF, scrolled by the cursor, new rows added at scroll-in) *as well
-   as* the alien formation; the per-frame copies just clear sprite cells. The
-   compositor leaf is **already lifted** (`composite_masked_rows`) — so this is a
-   **data + dispatch** problem (extract the level background/star data `2F81` reads,
-   reproduce the scroll dispatch), NOT new code recovery.
-2. The **HUD panel** (right-side chrome + score + radar), drawn separately into B800.
+**Self-compose gap (honest state):**
+1. **The starfield origin is UNRESOLVED** — and it bottoms out in an *irreducible
+   measurement contradiction* I could not close this pass: the 35FF clean plate reads
+   ~black (40 px), the frame's 35FF compositors draw only sprites, yet the end-of-frame
+   35FF decode shows stars. Stars cannot appear unwritten, so one measurement is
+   subtly misaligned. **Most likely cause: probe pacing.** `probe_clean_plate2` drove
+   the demo with `demo.apply_to_runtimes`, while the attribution probes used
+   `pump_demo_frame` — these are known to misalign frames (see memory
+   *overkill-trace-reproduction-gotcha*), so "clean plate" and "attribution" may not
+   be the same instant. NEXT: redo the whole 35FF analysis under **one consistent
+   pacing** (a single ordered trace: clear → each write → end, all via `pump_demo_frame`),
+   then re-locate the stars. (NOT a present-wrap bug: `3354` advances `SI` 16-bit,
+   wrapping only at `0x10000`, not reached at these cursors.) Retracted from prior
+   revisions: "2F81 draws the star background" and "persistent level-start fill".
+   *Latent decoder note (separate, real):* `render_present_page_indices` masks source
+   reads at 1 MB, not the 64 KB segment, so for large cursors it would not wrap like
+   the game's 16-bit `SI` — worth fixing, but not the cause here.
+2. The **HUD panel**: chrome (static) + the **score digits = `5F05`** (identified) +
+   radar, drawn directly into B800.
 3. Drive the lifted compositors from **native game state** to draw the sprite layer
    (the per-routine identities above map directly to the semantic sprite list that
    `frame_snapshot_adapter` already extracts; `sprite_layer` composites it natively),
