@@ -28,33 +28,9 @@ from .coordinates import object_row_address_mode1_2580
 
 
 
-def _ega_spread_word_two_bits_mask(word: int) -> tuple[int, int]:
-    """Spread a 16-bit source word through the 409D two-bit mask chain."""
-    al = word & 0xFF
-    ah = (word >> 8) & 0xFF
-    dl = 0xFF
-    for _ in range(2):
-        cf = 1
-        new_al = ((cf << 7) | (al >> 1)) & 0xFF; cf = al & 1; al = new_al
-        new_ah = ((cf << 7) | (ah >> 1)) & 0xFF; cf = ah & 1; ah = new_ah
-        new_dl = ((cf << 7) | (dl >> 1)) & 0xFF; cf = dl & 1; dl = new_dl
-    return ((ah << 8) | al) & 0xFFFF, dl & 0xFF
-
-
-def _ega_spread_word_two_bits_data(word: int) -> tuple[int, int]:
-    """Spread a 16-bit source word through the 409D two-bit data chain."""
-    al = word & 0xFF
-    ah = (word >> 8) & 0xFF
-    dl = 0
-    for _ in range(2):
-        cf = al & 1
-        al = (al >> 1) & 0xFF
-        new_ah = ((cf << 7) | (ah >> 1)) & 0xFF; cf = ah & 1; ah = new_ah
-        new_dl = ((cf << 7) | (dl >> 1)) & 0xFF; cf = dl & 1; dl = new_dl
-    return ((ah << 8) | al) & 0xFFFF, dl & 0xFF
-
-
 def _ega_spread_word_bits_mask(word: int, bits: int) -> tuple[int, int]:
+    """Spread a source word through the EGA mask chain over ``bits`` rotations
+    (the 40D7/412B 1/3-bit leaves and the 409D two-bit leaf)."""
     al = word & 0xFF
     ah = (word >> 8) & 0xFF
     dl = 0xFF
@@ -67,6 +43,7 @@ def _ega_spread_word_bits_mask(word: int, bits: int) -> tuple[int, int]:
 
 
 def _ega_spread_word_bits_data(word: int, bits: int) -> tuple[int, int]:
+    """Spread a source word through the EGA data chain over ``bits`` rotations."""
     al = word & 0xFF
     ah = (word >> 8) & 0xFF
     dl = 0
@@ -271,13 +248,13 @@ def run_ega_compact_spread_composite_409d(cpu):
     for _ in range(rows):
         mask_word = mem.rw(ds, si)            # LODSW
         si = (si + (-2 if cpu.get_flag(DF) else 2)) & 0xFFFF
-        mask_ax, mask_dl = _ega_spread_word_two_bits_mask(mask_word)
+        mask_ax, mask_dl = _ega_spread_word_bits_mask(mask_word, 2)
         mem.ww(es, di, mem.rw(es, di) & mask_ax)
         mem.wb(es, (di + 0x02) & 0xFFFF, mem.rb(es, (di + 0x02) & 0xFFFF) & mask_dl)
 
         data_word = mem.rw(ds, si)            # LODSW
         si = (si + (-2 if cpu.get_flag(DF) else 2)) & 0xFFFF
-        ax, dl = _ega_spread_word_two_bits_data(data_word)
+        ax, dl = _ega_spread_word_bits_data(data_word, 2)
         mem.ww(es, di, mem.rw(es, di) | ax)
         mem.wb(es, (di + 0x02) & 0xFFFF, mem.rb(es, (di + 0x02) & 0xFFFF) | dl)
 

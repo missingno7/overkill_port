@@ -547,42 +547,45 @@ def _tandy_next_scanline_di(cpu) -> None:
     if not cpu.get_flag(ZF):
         _add_reg16(cpu, 7, 0x80A0)
 
-def _masked_word_composite_rows(cpu, *, words_per_row: int, row_add: int) -> None:
-    """Composite Tandy masked words exactly like 1010:2E6E/2F81/2FB6 leaves."""
+def _masked_word_composite_rows(cpu, *, words_per_row: int, row_add: int,
+                                rows: int | None = None) -> None:
+    """Composite Tandy masked words (``dest = (mask & dest) | next-src``) exactly
+    like the 1010:2E6E/2F81 LOOP leaves and the 2FB6 unrolled block.
+
+    ``rows=None`` runs ``CX`` rows (a zero count means the full ``0x10000``) and
+    clears ``CX`` on exit (the LOOP leaves); an explicit ``rows`` count leaves
+    ``CX`` untouched (the unrolled 2FB6 block, which has no ``LOOP``).
+    """
     s = cpu.s
     mem = cpu.mem
     ds = s.ds & 0xFFFF
     es = s.es & 0xFFFF
-    rows = s.cx & 0xFFFF
-    if rows == 0:
-        rows = 0x10000
-
+    count_from_cx = rows is None
+    if count_from_cx:
+        rows = (s.cx & 0xFFFF) or 0x10000
     si = s.si & 0xFFFF
     di = s.di & 0xFFFF
     step = -2 if s.flags & DF else 2
     bx = row_add & 0xFFFF
     ax = s.ax & 0xFFFF
-
     for _ in range(rows):
-        for _col in range(words_per_row):
+        for _ in range(words_per_row):
             ax = mem.rw(ds, si)              # LODSW
             si = (si + step) & 0xFFFF
             ax = (ax & mem.rw(es, di)) & 0xFFFF
             ax = (ax | mem.rw(ds, si)) & 0xFFFF
-            si_sum = si + 2                  # ADD SI,2
-            si = si_sum & 0xFFFF
+            si = (si + 2) & 0xFFFF           # ADD SI,2
             mem.ww(es, di, ax)               # STOSW
             di = (di + step) & 0xFFFF
-
         di_sum = di + bx                     # ADD DI,BX; LOOP preserves flags.
         cpu.set_add_flags(di, bx, di_sum, 16)
         di = di_sum & 0xFFFF
-
     s.ax = ax
     s.bx = bx
-    s.cx = 0
     s.si = si
     s.di = di
+    if count_from_cx:
+        s.cx = 0
 
 
 
@@ -696,46 +699,6 @@ def run_present_frame_blit_447b(cpu) -> None:
     cpu.s.ip = cpu.pop()                   # 44AF RET
 
 
-def _masked_word_composite_fixed_rows(cpu, *, rows: int, words_per_row: int, row_add: int) -> None:
-    """Composite a fixed-height unrolled Tandy masked block.
-
-    Some original leaves, notably 1010:2FB6, are fully unrolled and do not
-    consume CX.  Keep this separate from the LOOP-based row helper so strict
-    hook verification can catch accidental register clobbers instead of hiding
-    them behind a shared abstraction.
-    """
-    s = cpu.s
-    mem = cpu.mem
-    ds = s.ds & 0xFFFF
-    es = s.es & 0xFFFF
-    si = s.si & 0xFFFF
-    di = s.di & 0xFFFF
-    step = -2 if s.flags & DF else 2
-    bx = row_add & 0xFFFF
-    ax = s.ax & 0xFFFF
-
-    for _ in range(rows):
-        for _col in range(words_per_row):
-            ax = mem.rw(ds, si)              # LODSW
-            si = (si + step) & 0xFFFF
-            ax = (ax & mem.rw(es, di)) & 0xFFFF
-            ax = (ax | mem.rw(ds, si)) & 0xFFFF
-            si_sum = si + 2                  # ADD SI,2
-            si = si_sum & 0xFFFF
-            mem.ww(es, di, ax)               # STOSW
-            di = (di + step) & 0xFFFF
-
-        di_sum = di + bx                     # ADD DI,BX
-        cpu.set_add_flags(di, bx, di_sum, 16)
-        di = di_sum & 0xFFFF
-
-    s.ax = ax
-    s.bx = bx
-    # CX intentionally preserved: the original 2FB6 block is unrolled and has
-    # no LOOP instruction.
-    s.si = si
-    s.di = di
-
 def _or_inverted_source_words_rows(cpu, *, words_per_row: int, row_add: int) -> None:
     """OR inverted source-mask words into ES:DI for Tandy layer/object leaves."""
     s = cpu.s
@@ -779,106 +742,46 @@ def _or_inverted_source_words_rows(cpu, *, words_per_row: int, row_add: int) -> 
     s.di = di
 
 
-def _strided_movsw_rows(cpu, *, words_per_row: int, row_add: int) -> None:
+def _strided_word_copy_rows(cpu, *, words_per_row: int, row_add: int,
+                            rows: int | None = None, stride: str = "di") -> None:
+    """Copy ``words_per_row`` 16-bit words per row, then advance the ``stride``
+    cursor (``"di"`` destination or ``"si"`` source) by ``row_add`` before the
+    next row.  Unifies the four 1010 strided-copy leaves (34C5/35AA + the
+    34D8/3657 fixed-row blocks).
+
+    ``rows=None`` runs ``CX`` rows -- a zero count means the full ``0x10000`` and
+    ``CX`` is cleared on exit (the LOOP leaves); an explicit ``rows`` count leaves
+    ``CX`` untouched (the unrolled / ``MOV CX`` leaves).
+    """
     s = cpu.s
     mem = cpu.mem
     ds = s.ds & 0xFFFF
     es = s.es & 0xFFFF
-    rows = s.cx & 0xFFFF
-    if rows == 0:
-        rows = 0x10000
-
+    count_from_cx = rows is None
+    if count_from_cx:
+        rows = (s.cx & 0xFFFF) or 0x10000
     si = s.si & 0xFFFF
     di = s.di & 0xFFFF
     step = -2 if s.flags & DF else 2
     bx = row_add & 0xFFFF
     for _ in range(rows):
-        for _col in range(words_per_row):
+        for _ in range(words_per_row):
             mem.ww(es, di, mem.rw(ds, si))
             si = (si + step) & 0xFFFF
             di = (di + step) & 0xFFFF
-        di_sum = di + bx
-        cpu.set_add_flags(di, bx, di_sum, 16)
-        di = di_sum & 0xFFFF
-    s.bx = bx
-    s.cx = 0
-    s.si = si
-    s.di = di
-
-
-def _source_strided_movsw_rows(cpu, *, words_per_row: int, row_add: int) -> None:
-    s = cpu.s
-    mem = cpu.mem
-    ds = s.ds & 0xFFFF
-    es = s.es & 0xFFFF
-    rows = s.cx & 0xFFFF
-    if rows == 0:
-        rows = 0x10000
-
-    si = s.si & 0xFFFF
-    di = s.di & 0xFFFF
-    step = -2 if s.flags & DF else 2
-    bx = row_add & 0xFFFF
-    for _ in range(rows):
-        for _col in range(words_per_row):
-            mem.ww(es, di, mem.rw(ds, si))
-            si = (si + step) & 0xFFFF
-            di = (di + step) & 0xFFFF
-        si_sum = si + bx
-        cpu.set_add_flags(si, bx, si_sum, 16)
-        si = si_sum & 0xFFFF
-    s.bx = bx
-    s.cx = 0
-    s.si = si
-    s.di = di
-
-
-def _fixed_di_strided_movsw_rows(cpu, *, words_per_row: int, row_add: int, rows: int) -> None:
-    s = cpu.s
-    mem = cpu.mem
-    ds = s.ds & 0xFFFF
-    es = s.es & 0xFFFF
-    si = s.si & 0xFFFF
-    di = s.di & 0xFFFF
-    step = -2 if s.flags & DF else 2
-    bx = row_add & 0xFFFF
-
-    for _row in range(rows):
-        for _col in range(words_per_row):
-            mem.ww(es, di, mem.rw(ds, si))
-            si = (si + step) & 0xFFFF
-            di = (di + step) & 0xFFFF
-        di_sum = di + bx
-        cpu.set_add_flags(di, bx, di_sum, 16)
-        di = di_sum & 0xFFFF
-
+        if stride == "di":
+            total = di + bx
+            cpu.set_add_flags(di, bx, total, 16)
+            di = total & 0xFFFF
+        else:
+            total = si + bx
+            cpu.set_add_flags(si, bx, total, 16)
+            si = total & 0xFFFF
     s.bx = bx
     s.si = si
     s.di = di
-
-
-def _fixed_si_strided_movsw_rows(cpu, *, words_per_row: int, row_add: int, rows: int) -> None:
-    s = cpu.s
-    mem = cpu.mem
-    ds = s.ds & 0xFFFF
-    es = s.es & 0xFFFF
-    si = s.si & 0xFFFF
-    di = s.di & 0xFFFF
-    step = -2 if s.flags & DF else 2
-    bx = row_add & 0xFFFF
-
-    for _row in range(rows):
-        for _col in range(words_per_row):
-            mem.ww(es, di, mem.rw(ds, si))
-            si = (si + step) & 0xFFFF
-            di = (di + step) & 0xFFFF
-        si_sum = si + bx
-        cpu.set_add_flags(si, bx, si_sum, 16)
-        si = si_sum & 0xFFFF
-
-    s.bx = bx
-    s.si = si
-    s.di = di
+    if count_from_cx:
+        s.cx = 0
 
 
 def _restore_tandy_display_ds(cpu) -> None:
@@ -930,7 +833,7 @@ def masked_compact_2fb6(cpu, runtime: TandyRenderRuntime) -> None:
     """
     if runtime.self_disable_if_patched(cpu, 0x2FB6, runtime.signature_2fb6, "overkill_tandy_masked_compact_2fb6"):
         return
-    _masked_word_composite_fixed_rows(cpu, rows=8, words_per_row=2, row_add=0x0064)
+    _masked_word_composite_rows(cpu, words_per_row=2, row_add=0x0064, rows=8)
     _restore_tandy_display_ds(cpu)
     cpu.s.ip = cpu.pop()
 
@@ -944,7 +847,7 @@ def source_strided_copy_35aa(cpu, runtime: TandyRenderRuntime) -> None:
     cpu.s.ds = cpu.mem.rw(cs, TANDY_SOURCE_SEGMENT_OFF)
     cpu.s.bx = 0x0058
     cpu.s.cx = 0x0010
-    _source_strided_movsw_rows(cpu, words_per_row=8, row_add=0x0058)
+    _strided_word_copy_rows(cpu, words_per_row=8, row_add=0x0058, stride="si")
     _restore_tandy_display_ds(cpu)
     cpu.s.ip = cpu.pop()
 
@@ -983,7 +886,7 @@ def strided_copy_34c5(cpu, runtime: TandyRenderRuntime) -> None:
         return
     cpu.s.bx = 0x0058
     cpu.s.cx = 0x0010
-    _strided_movsw_rows(cpu, words_per_row=8, row_add=0x0058)
+    _strided_word_copy_rows(cpu, words_per_row=8, row_add=0x0058)
     _restore_tandy_display_ds(cpu)
     cpu.s.ip = cpu.pop()
 
@@ -997,7 +900,7 @@ def small_strided_copy_34d8(cpu, runtime: TandyRenderRuntime) -> None:
         cpu.s.ip = cpu.pop()
         return
     cpu.s.bx = 0x0060
-    _fixed_di_strided_movsw_rows(cpu, words_per_row=4, row_add=0x0060, rows=16)
+    _strided_word_copy_rows(cpu, words_per_row=4, row_add=0x0060, rows=16)
     cpu.s.ip = cpu.pop()
 
 
@@ -1010,7 +913,7 @@ def tiny_strided_copy_3542(cpu, runtime: TandyRenderRuntime) -> None:
         cpu.s.ip = cpu.pop()
         return
     cpu.s.bx = 0x0064
-    _fixed_di_strided_movsw_rows(cpu, words_per_row=2, row_add=0x0064, rows=8)
+    _strided_word_copy_rows(cpu, words_per_row=2, row_add=0x0064, rows=8)
     cpu.s.ip = cpu.pop()
 
 
@@ -1022,7 +925,7 @@ def _draw_source_copy_body(cpu, *, si: int, di: int) -> None:
     cpu.s.di = di & 0xFFFF
     cpu.s.bx = 0x0058
     cpu.s.cx = 0x0010
-    _source_strided_movsw_rows(cpu, words_per_row=8, row_add=0x0058)
+    _strided_word_copy_rows(cpu, words_per_row=8, row_add=0x0058, stride="si")
     _restore_tandy_display_ds(cpu)
 
 
@@ -1054,7 +957,7 @@ def draw_tiny_object_3657(cpu, runtime: TandyRenderRuntime) -> None:
     cpu.s.si = cpu.s.ax
     cpu.s.di = mem.rw(ss, (bp + 0x0E) & 0xFFFF)
     cpu.s.bx = 0x0064
-    _fixed_si_strided_movsw_rows(cpu, words_per_row=2, row_add=0x0064, rows=8)
+    _strided_word_copy_rows(cpu, words_per_row=2, row_add=0x0064, rows=8, stride="si")
     _restore_tandy_display_ds(cpu)
     cpu.s.ip = cpu.pop()
 
@@ -1139,7 +1042,7 @@ def draw_object_block_35cc(cpu, runtime: TandyRenderRuntime) -> None:
     cpu.s.es = cpu.mem.rw(cs, TANDY_DISPLAY_SEGMENT_OFF)
     cpu.s.ds = cpu.mem.rw(cs, TANDY_SOURCE_SEGMENT_OFF)
     cpu.s.bx = 0x0060
-    _fixed_si_strided_movsw_rows(cpu, words_per_row=4, row_add=0x0060, rows=16)
+    _strided_word_copy_rows(cpu, words_per_row=4, row_add=0x0060, rows=16, stride="si")
     _restore_tandy_display_ds(cpu)
     cpu.s.ip = cpu.pop()
 
