@@ -41,9 +41,11 @@ from overkill.gameplay.object_spawns import _run_formation_spawn_7476_observed
 from overkill.gameplay.objects import run_object_motion_table_ab34, run_object_scroll_sprite_ab4f
 from overkill.recovered.systems.objects import (
     AD04_SPRITE_COLLISION_STATE,
+    B9F0_TARGET_X_WRAP_LIMIT,
     CAMERA_NEAR_THRESHOLD,
     RENDER_MODE_FULL,
     LEVEL_PHASE_DISABLE_THRESHOLD,
+    b9f0_wrapped_target_x,
     B73E_SPAWN_WINDOW_MAX,
     B73E_SPAWN_WINDOW_MIN,
     B73E_TARGET_POSTMOVE_232E_SENTINEL,
@@ -569,11 +571,13 @@ def _run_object_behavior_b9f0(cpu, *, parent: str, chain: str, cx_value: int) ->
         cpu.s.ax = mem.rw(ds, 0x2346)
         _add_mem_word(cpu, ss, (bp + OFF_TARGET_X) & 0xFFFF, cpu.s.ax)
 
-        # BA13..BA1A: wrap target X from >D0h to 20h.
+        # BA13..BA1A: wrap target X back to the left edge once it passes the right
+        # edge.  The CMP flag is replayed for fidelity but is dead by the next boundary.
         target_x = slot.target_x_word
-        _cmp_word(cpu, target_x, 0x00D0)
-        if target_x > 0x00D0:
-            slot.target_x_word = 0x0020
+        _cmp_word(cpu, target_x, B9F0_TARGET_X_WRAP_LIMIT)
+        wrapped_x = b9f0_wrapped_target_x(target_x)
+        if wrapped_x != target_x:
+            slot.target_x_word = wrapped_x
 
         # BA1F..BA31: if current position plus vertical delta reached target,
         # use the direct sprite-refresh/helper branch; otherwise branch to BA99.

@@ -1,3 +1,14 @@
+## 2026-06-28 - Recovery: B9F0 target-X wrap extracted to a recovered rule
+
+B9F0 (the EFAE-selected hot follower) wraps its accumulated target X back to the left
+edge (``20h``) once it passes the right edge (``> D0h``).  Extracted that as the pure
+`b9f0_wrapped_target_x(target_x)` rule + named `B9F0_TARGET_X_WRAP_LIMIT`/`_RESET`; the
+adapter delegates the wrap (keeping the CMP flag replay, dead by the next boundary) with
+the exact original write condition.  Byte-preserving; lint + the guard + a new unit test
+pass, and the bounded demo corpus stays byte-exact.  Worklist: 8/17 object behaviors now
+delegate to a recovered rule.  B9F0's larger reached-target / movement-helper branches
+remain bounded original calls -- their ax/flag side effects keep them adapter-side.
+
 ## 2026-06-28 - Recovery: ABCA frame-phase gate reuses level_disable_threshold_reached
 
 ABCA (the sprite==0Fh collision body, reached from AD04) gated its motion/tile-probe vs

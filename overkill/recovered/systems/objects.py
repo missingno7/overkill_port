@@ -295,6 +295,20 @@ def layer1_scan_should_draw(
     return (object_layer_flag & 0xFFFF) == LAYER1_LAYER_FOREGROUND
 
 
+B9F0_TARGET_X_WRAP_LIMIT = 0x00D0
+B9F0_TARGET_X_WRAP_RESET = 0x0020
+
+
+def b9f0_wrapped_target_x(target_x: int) -> int:
+    """The B9F0 follower's target-X after the right-edge wrap (1010:BA13).
+
+    Once the accumulated target X passes the right edge (``> D0h``) it wraps back to the
+    left edge (``20h``); otherwise it is unchanged."""
+    if (target_x & 0xFFFF) > B9F0_TARGET_X_WRAP_LIMIT:
+        return B9F0_TARGET_X_WRAP_RESET
+    return target_x & 0xFFFF
+
+
 PLAYER_CHASE_EXCLUDED_LOGIC_IDS = frozenset({0x0001, 0x0021, 0x0022, 0x0026})
 PLAYER_CHASE_CANDIDATE_MAX_X = 0x00E0
 PLAYER_CHASE_REQUIRED_HAZARD_CLASS = 0x0004

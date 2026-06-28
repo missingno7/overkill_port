@@ -971,6 +971,23 @@ def test_recovered_layer1_scan_should_draw_is_pure_and_named():
     assert layer1_scan_should_draw(1, 0, CAMERA_NEAR_THRESHOLD + 1, 1, bg) is False
 
 
+def test_recovered_b9f0_wrapped_target_x_is_pure_and_named():
+    from overkill.recovered.systems.objects import (
+        B9F0_TARGET_X_WRAP_LIMIT,
+        B9F0_TARGET_X_WRAP_RESET,
+        b9f0_wrapped_target_x,
+    )
+
+    # At/below the right edge the target X is unchanged.
+    assert b9f0_wrapped_target_x(0x0040) == 0x0040
+    assert b9f0_wrapped_target_x(B9F0_TARGET_X_WRAP_LIMIT) == B9F0_TARGET_X_WRAP_LIMIT
+    # Past the right edge it wraps to the left edge.
+    assert b9f0_wrapped_target_x(B9F0_TARGET_X_WRAP_LIMIT + 1) == B9F0_TARGET_X_WRAP_RESET
+    assert b9f0_wrapped_target_x(0x0140) == B9F0_TARGET_X_WRAP_RESET
+    # 16-bit masking on the input.
+    assert b9f0_wrapped_target_x(0x10040) == 0x0040
+
+
 def test_recovered_ad60_bounds_tile_tail_adapter_matches_pure_decision():
     from overkill.gameplay import object_bounds
     from overkill.recovered.systems.objects import (
