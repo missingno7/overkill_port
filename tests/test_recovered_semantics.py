@@ -839,14 +839,20 @@ def test_recovered_ad60_bounds_tile_decision_is_pure_and_named():
 
 def test_recovered_ab10_object_logic_is_pure_and_named():
     from overkill.recovered.systems.objects import (
-        AB10_PHASE_DISABLE_THRESHOLD,
+        LEVEL_PHASE_DISABLE_THRESHOLD,
         AB10_SPRITE_BASE_OFFSET,
+        level_disable_threshold_reached,
         object_logic_ab10,
     )
 
+    # Shared level-disable gate: True once a disable counter reaches 0003h.
+    assert level_disable_threshold_reached(LEVEL_PHASE_DISABLE_THRESHOLD) is True
+    assert level_disable_threshold_reached(0xFFFF) is True
+    assert level_disable_threshold_reached(2) is False
+
     # Deactivates once either the frame phase or the global disable reaches 0003h.
-    assert object_logic_ab10(AB10_PHASE_DISABLE_THRESHOLD, 0, 0, 0, 0, 0, 0).deactivate is True
-    assert object_logic_ab10(0, AB10_PHASE_DISABLE_THRESHOLD, 0, 0, 0, 0, 0).deactivate is True
+    assert object_logic_ab10(LEVEL_PHASE_DISABLE_THRESHOLD, 0, 0, 0, 0, 0, 0).deactivate is True
+    assert object_logic_ab10(0, LEVEL_PHASE_DISABLE_THRESHOLD, 0, 0, 0, 0, 0).deactivate is True
     assert object_logic_ab10(0xFFFF, 0, 0, 0, 0, 0, 0).deactivate is True
 
     # Below the threshold: sprite = table byte + 9, position = anim pair + view box.
@@ -891,13 +897,13 @@ def test_recovered_ae09_object_logic_is_pure_and_named():
 
 def test_recovered_aba3_object_logic_is_pure_and_named():
     from overkill.recovered.systems.objects import (
-        ABA3_PHASE_THRESHOLD,
+        LEVEL_PHASE_DISABLE_THRESHOLD,
         ABA3_SPRITE_OFFSET,
         object_logic_aba3,
     )
 
     # Frame phase advanced to 0003h -> the follower branches to ABC0.
-    assert object_logic_aba3(ABA3_PHASE_THRESHOLD, 0x0100).branch_abc0 is True
+    assert object_logic_aba3(LEVEL_PHASE_DISABLE_THRESHOLD, 0x0100).branch_abc0 is True
     assert object_logic_aba3(0xFFFF, 0x0100).branch_abc0 is True
 
     # Below the threshold -> sprite = scroll frame + 14h.

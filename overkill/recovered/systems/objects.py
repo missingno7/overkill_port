@@ -152,7 +152,17 @@ def b86d_outgoing_sprite_for_delta(vertical_delta: int) -> int:
 # phase (DS:2384) or the global disable counter (DS:A47C) reaches 0003h; otherwise
 # its sprite is the DS:A40C animation byte + 9 and its position is the DS:A414
 # animation pair offset by the DS:237C view reference box.
-AB10_PHASE_DISABLE_THRESHOLD = 0x0003
+LEVEL_PHASE_DISABLE_THRESHOLD = 0x0003
+
+
+def level_disable_threshold_reached(value: int) -> bool:
+    """True once a level disable counter -- the frame phase ``DS:2384`` or the global
+    disable counter ``DS:A47C`` -- has advanced to ``0003h``.  This is the shared
+    gate behind several object behaviors (AB10 deactivates, ABA3 branches to ABC0,
+    AB77 branches to AB8F): at/after this phase the object stops its normal update."""
+    return (value & 0xFFFF) >= LEVEL_PHASE_DISABLE_THRESHOLD
+
+
 AB10_SPRITE_BASE_OFFSET = 0x0009
 
 
@@ -172,7 +182,7 @@ def object_logic_ab10(
     / ``ref_y`` are the view reference box ``DS:237E`` / ``DS:2380``.  The adapter still
     replays the original CMP order (deactivate-path flags) and the live final ADD
     flags; this owns the deactivate gate and the sprite/position formulas."""
-    if (frame_phase & 0xFFFF) >= AB10_PHASE_DISABLE_THRESHOLD or (global_disable & 0xFFFF) >= AB10_PHASE_DISABLE_THRESHOLD:
+    if level_disable_threshold_reached(frame_phase) or level_disable_threshold_reached(global_disable):
         return Ab10Update(deactivate=True)
     return Ab10Update(
         deactivate=False,
@@ -210,7 +220,6 @@ def object_logic_ae09(substate: int, direction_or_step: int) -> Ae09Update:
     )
 
 
-ABA3_PHASE_THRESHOLD = 0x0003
 ABA3_SPRITE_OFFSET = 0x0014
 
 
@@ -222,7 +231,7 @@ def object_logic_aba3(frame_phase: int, scroll_frame: int) -> Aba3Update:
     outgoing sprite is ``scroll_frame + 14h``.  This owns the gate decision and the
     sprite formula; the adapter still replays the gate CMP flags for boundary
     fidelity (the sprite ADD flags are dead -- the AC81 call overwrites them)."""
-    if (frame_phase & 0xFFFF) >= ABA3_PHASE_THRESHOLD:
+    if level_disable_threshold_reached(frame_phase):
         return Aba3Update(branch_abc0=True)
     return Aba3Update(branch_abc0=False, sprite=(scroll_frame + ABA3_SPRITE_OFFSET) & 0xFFFF)
 

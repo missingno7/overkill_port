@@ -40,7 +40,7 @@ from overkill.gameplay.object_runtime_common import (
 from overkill.gameplay.object_spawns import _run_formation_spawn_7476_observed
 from overkill.gameplay.objects import run_object_motion_table_ab34, run_object_scroll_sprite_ab4f
 from overkill.recovered.systems.objects import (
-    AB10_PHASE_DISABLE_THRESHOLD,
+    LEVEL_PHASE_DISABLE_THRESHOLD,
     B73E_SPAWN_WINDOW_MAX,
     B73E_SPAWN_WINDOW_MIN,
     B73E_TARGET_POSTMOVE_232E_SENTINEL,
@@ -52,6 +52,7 @@ from overkill.recovered.systems.objects import (
     b73e_target_reached_resolution,
     b86d_formation_spawn_tick_index,
     b86d_outgoing_sprite_for_delta,
+    level_disable_threshold_reached,
     object_logic_ab10,
     object_logic_aba3,
     object_logic_ae09,
@@ -704,8 +705,8 @@ def _run_object_behavior_ab77(cpu, *, parent: str, chain: str, cx_value: int) ->
     mem = cpu.mem
 
     v2384 = mem.rw(ds, 0x2384)
-    _cmp_word(cpu, v2384, 0x0003)
-    if v2384 >= 0x0003:
+    _cmp_word(cpu, v2384, LEVEL_PHASE_DISABLE_THRESHOLD)  # replay the gate CMP flags
+    if level_disable_threshold_reached(v2384):
         cpu.s.ip = 0xAB8F
         return
 
@@ -935,7 +936,7 @@ def _run_object_behavior_aba3(cpu, *, parent: str, chain: str, cx_value: int) ->
     mem.ww(ds, 0xA42E, cpu.s.bx)
     v2384 = mem.rw(ds, 0x2384)
     update = object_logic_aba3(v2384, mem.rw(ds, 0x233C))
-    _cmp_word(cpu, v2384, 0x0003)  # replay the gate CMP flags (boundary fidelity)
+    _cmp_word(cpu, v2384, LEVEL_PHASE_DISABLE_THRESHOLD)  # replay the gate CMP flags
     if update.branch_abc0:
         cpu.s.ip = 0xABC0
         return
@@ -1087,15 +1088,15 @@ def _run_object_logic_ab10(cpu, *, parent: str, chain: str, cx_value: int) -> No
     mem = cpu.mem
 
     v2384 = mem.rw(ds, 0x2384)
-    _cmp_word(cpu, v2384, AB10_PHASE_DISABLE_THRESHOLD)
-    if v2384 >= AB10_PHASE_DISABLE_THRESHOLD:
+    _cmp_word(cpu, v2384, LEVEL_PHASE_DISABLE_THRESHOLD)
+    if level_disable_threshold_reached(v2384):
         mem.ww(ss, bp, 0x0000)
         cpu.s.ip = cpu.pop()
         return
 
     global_disable = mem.rw(ds, 0xA47C)
-    _cmp_word(cpu, global_disable, AB10_PHASE_DISABLE_THRESHOLD)
-    if global_disable >= AB10_PHASE_DISABLE_THRESHOLD:
+    _cmp_word(cpu, global_disable, LEVEL_PHASE_DISABLE_THRESHOLD)
+    if level_disable_threshold_reached(global_disable):
         mem.ww(ss, bp, 0x0000)
         cpu.s.ip = cpu.pop()
         return

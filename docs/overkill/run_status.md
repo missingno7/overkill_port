@@ -1,3 +1,19 @@
+## 2026-06-28 - Source-purity rescue: shared level-disable gate (AB10/ABA3/AB77)
+
+Consolidated the `[2384] >= 3` "level frame phase has reached the disable threshold"
+gate that AB10 (deactivate), ABA3 (-> ABC0) and AB77 (-> AB8F) each duplicated into
+one shared pure leaf `recovered/systems/objects.level_disable_threshold_reached(value)`
+(+ `LEVEL_PHASE_DISABLE_THRESHOLD`), replacing the per-behavior
+`AB10_PHASE_DISABLE_THRESHOLD` and `ABA3_PHASE_THRESHOLD` constants.  `object_logic_ab10`
+and `object_logic_aba3` now call it; the AB77 shared-tail driver's gate adopts it too
+(AB77's only behavior-specific logic was this gate -- the rest is AB4F/AC28/AC81
+orchestration with exact IP continuations, so AB77 now counts recovered).  Byte-exact
+by construction (same 0x0003 threshold, same `>=` check, unchanged CMP flag replays).
+AB10 is heavily exercised (1250 calls in L2_full) so demo-replay verifies the shared
+leaf directly; ABA3/AB77 are cold.  This is the "one recovered leaf, many adapters"
+pattern.  Gated green: lint (181), audit_architecture, pure unit tests, demo-replay
+23/23.  Worklist: 6 DONE (`b73e`/`b86d`/`ab10`/`ae09`/`aba3`/`ab77`), 11 TODO.
+
 ## 2026-06-28 - Source-purity rescue: ABA3 tracked-object follower gate+formula to a pure rule
 
 Continued the `object_behaviors` coastline. Slice: the 1010:ABA3 tracked-object
