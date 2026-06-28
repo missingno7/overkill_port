@@ -1,3 +1,15 @@
+## 2026-06-28 - Coastline (Phase 1b): relocate 38B7 + dedup the immediate-add masked compositors
+
+Relocated the 2-column masked sprite compositor at 1010:38B7 out of `hooks.py` and
+folded it together with 3849 into one shared
+`rendering/tandy.run_masked_sprite_composite_immediate(cpu, *, words_per_row, row_add)`.
+Both are the immediate-row-add siblings of the 2E6E/2F81 family (``ADD DI,imm`` leaves
+BX untouched, so they cannot use `_masked_word_composite_rows`): 38B7 = (2, 0x30),
+3849 = (4, 0x2C).  Byte-exact -- both per-hook oracles
+(`test_masked_sprite_composite_38b7`/`_3849`) pass, plus lint + audit;
+`hook_inventory.md` regenerated.  `hooks.py` sheds ~58 more lines; one leaf, two
+adapters.  Next Phase-1b siblings: 3E12 / 3EFB / 447B.
+
 ## 2026-06-28 - Coastline (Phase 1b): relocate the 3849 masked sprite compositor to rendering/tandy.py
 
 Moved the inline 4-column masked sprite composite loop at 1010:3849 out of `hooks.py`

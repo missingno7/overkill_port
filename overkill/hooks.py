@@ -111,7 +111,7 @@ from .rendering.layer_sprites import (
 )
 
 from .rendering.tandy import (
-    run_masked_sprite_composite_3849,
+    run_masked_sprite_composite_immediate,
     build_startup_coordinate_tables_0f0b as run_tandy_startup_coordinate_tables_0f0b,
     build_video_offset_tables_0fa3 as run_tandy_video_offset_tables_0fa3,
     clear_tandy_interlaced_buffer_30b0 as run_tandy_interlaced_clear_30b0,
@@ -1021,69 +1021,19 @@ def overkill_sprite_blit_9x16_477e(cpu):
 def overkill_masked_sprite_composite_38b7(cpu):
     """Replace the masked 2-column sprite-composite loop at 1010:38B7..38CF.
 
-    Profiling after the 477E lift showed this is the hottest remaining
-    interpreted routine during sprite-heavy frames.  It is a tight LOOP that
-    composites a sprite over the destination with the classic AND-mask / OR-data
-    operation, two 16-bit columns per row:
-
-        38B7  lodsw                ; mask = DS:[SI], SI += 2
-        38B8  and ax, es:[di]      ; AX = mask AND dest word (keep background)
-        38BB  or  ax, ds:[si]      ; AX |= data word = DS:[SI] (paint sprite)
-        38BD  add si, 2            ; step past the data word
-        38C0  stosw                ; ES:[DI] = AX, DI += 2
-        38C1..38CA  (identical second column)
-        38CB  add di, 0030h        ; next visible row (net DI stride 0034h)
-        38CE  loop 38B7            ; CX rows (CX==0 -> 65536, 8086 rule)
-        38D0  (fall-through)
-
-    Per row the source is [mask0, data0, mask1, data1] so SI advances 8; the
-    destination advances 0034h (two words written + 30h).  The destination is a
-    read-modify-write (the AND reads ES:[DI] before STOSW overwrites it).  Only
-    the final `add di,0030h` leaves live FLAGS; AX holds the last composited
-    word; CX exits 0; control falls through to 38D0.  LODSW/STOSW honour DF; the
-    immediate `add si,2`/`add di,30h` do not.  Verified bit-identical to the
-    interpreted loop over 2000 randomised states.
+    Per row the source is ``[mask0, data0, mask1, data1]`` (SI advances 8); the
+    destination advances ``0034h`` (two words written + an immediate ``ADD DI,30h``,
+    so BX is left untouched).  Falls into the shared 38D0 tail (MOV DS,CS:[9596];
+    RET); the whole boundary is kept complete so a jump-target parent routes through
+    the hook verifier.
     """
-    s = cpu.s
-    mem = cpu.mem
-    df = cpu.get_flag(DF)
-    rows = s.cx if s.cx != 0 else 0x10000
-    es = s.es & 0xFFFF
-    ds = s.ds & 0xFFFF
-    si = s.si & 0xFFFF
-    di = s.di & 0xFFFF
-    ax = s.ax & 0xFFFF
-    sd = -2 if df else 2
-    old_di = di
-    for _ in range(rows):
-        for _col in range(2):
-            mask = mem.rw(ds, si)            # lodsw
-            si = (si + sd) & 0xFFFF
-            ax = mask & mem.rw(es, di)       # and ax, es:[di]
-            ax = ax | mem.rw(ds, si)         # or  ax, ds:[si]
-            si = (si + 2) & 0xFFFF           # add si, 2
-            mem.ww(es, di, ax)               # stosw
-            di = (di + sd) & 0xFFFF
-        old_di = di
-        di = (di + 0x30) & 0xFFFF            # add di, 0030h
-    cpu.set_add_flags(old_di, 0x30, old_di + 0x30, 16)
-    s.si = si
-    s.di = di
-    s.ax = ax
-    s.cx = 0
-    # The original 38B7 loop falls into the shared 38D0 tail
-    # (MOV DS,CS:[9596]; RET).  Earlier versions stopped at 38D0 and used a
-    # private helper when 38B7 was reached as a compositor jump target; that made
-    # the registered 38B7 boundary partial.  Keep the hook complete so any
-    # parent that jumps here can route through the hook verifier.
-    s.ds = cpu.mem.rw(s.cs & 0xFFFF, 0x9596)
-    s.ip = cpu.pop()
+    run_masked_sprite_composite_immediate(cpu, words_per_row=2, row_add=0x30)
 
 
 @registry.replace(0x1010, 0x3849, "overkill_masked_sprite_composite_3849")
 def overkill_masked_sprite_composite_3849(cpu):
     """Replace the 4-column masked sprite composite loop at 1010:3849."""
-    run_masked_sprite_composite_3849(cpu)
+    run_masked_sprite_composite_immediate(cpu, words_per_row=4, row_add=0x2C)
 
 
 
