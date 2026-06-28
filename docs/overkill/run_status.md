@@ -1,3 +1,13 @@
+## 2026-06-28 - Coastline (Phase 1b): relocate the 4D6F presence-list clear to layer_sprites.py
+
+Moved the hot presence/occupancy-list clear at 1010:4D6F (walks CX word entries from DS:SI,
+stops on FFFF, clears the ES occupancy byte; mode CS:[95BC]==1 also clears the stacked
++1A/+34/+4E cells) out of hooks.py into `rendering/layer_sprites.run_clear_presence_list_4d6f`
+(DF added to its `dos_re.cpu` import; its local `_cmp_word` is byte-identical to asm's).
+Programmatic verbatim move; lint (183) + the guard pass and the bounded demo corpus stays
+byte-exact; `hook_inventory.md` regenerated.  Demo-verified (the occupancy grid is
+stamped/cleared during gameplay).
+
 ## 2026-06-28 - Coastline (Phase 1b): relocate the 469F sprite copy to tandy.py
 
 Moved the hot 9-byte-wide x 16-row plain sprite copy at 1010:469F (DF=0 forward 9 bytes/row

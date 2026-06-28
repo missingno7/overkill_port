@@ -93,6 +93,7 @@ from .rendering.coordinates import (
     object_row_address_mode1_2580,
 )
 from .rendering.layer_sprites import (
+    run_clear_presence_list_4d6f,
     LayerSpriteRuntime,
     call_draw_dispatch_from_scan_a858,
     call_layer0_draw_type_from_scan_a8be,
@@ -2146,45 +2147,7 @@ def overkill_clear_presence_list_4d6f(cpu):
     corresponding occupancy byte(s) in ES.  Mode CS:[95BC] == 1 clears the
     stacked +1A/+34/+4E cells as well.
     """
-    s = cpu.s
-    mem = cpu.mem
-    ds = s.ds & 0xFFFF
-    es = s.es & 0xFFFF
-    cs = s.cs & 0xFFFF
-    si = s.si & 0xFFFF
-    count = s.cx & 0xFFFF
-    if count == 0:
-        count = 0x10000
-    step = -2 if cpu.get_flag(DF) else 2
-
-    while count:
-        ax = mem.rw(ds, si)
-        si = (si + step) & 0xFFFF
-        s.ax = ax
-        _cmp_word(cpu, ax, 0xFFFF)
-        if ax == 0xFFFF:
-            s.si = si
-            s.ip = cpu.pop()
-            return
-
-        s.di = ax & 0xFFFF
-        mode = mem.rw(cs, 0x95BC)
-        _cmp_word(cpu, mode, 1)
-        if mode == 1:
-            mem.wb(es, (s.di + 0x4E) & 0xFFFF, 0)
-            mem.wb(es, (s.di + 0x34) & 0xFFFF, 0)
-            mem.wb(es, (s.di + 0x1A) & 0xFFFF, 0)
-        mem.wb(es, s.di, 0)
-        s.cx = (s.cx - 1) & 0xFFFF
-        count -= 1
-        if s.cx == 0:
-            s.si = si
-            s.ip = cpu.pop()
-            return
-
-    s.si = si
-    s.ip = cpu.pop()
-
+    run_clear_presence_list_4d6f(cpu)
 @registry.replace(0x1010, 0x41A6, "overkill_variable_width_interlaced_blit_41a6")
 def overkill_variable_width_interlaced_blit_41a6(cpu):
     """Replace the hot variable-width interlaced row blit at 1010:41A6.

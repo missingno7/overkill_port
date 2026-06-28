@@ -20,7 +20,7 @@ visible and pass the concrete compositor handlers into this module.
 
 from __future__ import annotations
 
-from dos_re.cpu import CF
+from dos_re.cpu import CF, DF
 from dos_re.hooks import call_installed_hook_like_near_call, jump_installed_hook_boundary
 from overkill.asm import _cmp_word
 from overkill.recovered.ds_globals import VIDEO_MODE_SELECTOR_OFF
@@ -719,3 +719,50 @@ def run_video_page_toggle_511f(cpu, self_disable_if_patched) -> None:
     if value != 0:
         cpu.mem.ww(cs, 0x95A4, 0xA200)
     cpu.s.ip = cpu.pop()
+
+
+def run_clear_presence_list_4d6f(cpu) -> None:
+    """Clear the presence/occupancy list at 1010:4D6F.
+
+    Walks up to CX word entries from DS:SI, stops on FFFF, and clears the corresponding
+    occupancy byte(s) in ES.  Mode CS:[95BC] == 1 also clears the stacked +1A/+34/+4E
+    cells.  The CMP flags are replayed but dead by the LOOP/RET boundary.
+    """
+    s = cpu.s
+    mem = cpu.mem
+    ds = s.ds & 0xFFFF
+    es = s.es & 0xFFFF
+    cs = s.cs & 0xFFFF
+    si = s.si & 0xFFFF
+    count = s.cx & 0xFFFF
+    if count == 0:
+        count = 0x10000
+    step = -2 if cpu.get_flag(DF) else 2
+
+    while count:
+        ax = mem.rw(ds, si)
+        si = (si + step) & 0xFFFF
+        s.ax = ax
+        _cmp_word(cpu, ax, 0xFFFF)
+        if ax == 0xFFFF:
+            s.si = si
+            s.ip = cpu.pop()
+            return
+
+        s.di = ax & 0xFFFF
+        mode = mem.rw(cs, 0x95BC)
+        _cmp_word(cpu, mode, 1)
+        if mode == 1:
+            mem.wb(es, (s.di + 0x4E) & 0xFFFF, 0)
+            mem.wb(es, (s.di + 0x34) & 0xFFFF, 0)
+            mem.wb(es, (s.di + 0x1A) & 0xFFFF, 0)
+        mem.wb(es, s.di, 0)
+        s.cx = (s.cx - 1) & 0xFFFF
+        count -= 1
+        if s.cx == 0:
+            s.si = si
+            s.ip = cpu.pop()
+            return
+
+    s.si = si
+    s.ip = cpu.pop()
