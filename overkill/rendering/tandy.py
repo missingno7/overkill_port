@@ -23,6 +23,7 @@ from typing import Callable
 from dos_re.cpu import CF, DF, ZF
 from dos_re.hooks import call_installed_hook_like_near_call
 from ..asm import _add_mem_word, _add_reg16, _and_mem_word, _cmp_word, _dec_reg16_preserve_cf, _inc_mem_word_preserve_cf, _inc_reg16_preserve_cf, _rep_movsb, _rep_movsw, _rep_stosb, _stosw, _sub_mem_word, _sub_reg16, _test_word, _xor_al_al
+from .rasterizer import composite_masked_rows, copy_word_rows, or_inverted_word_rows
 
 Cpu = object
 SelfDisableIfPatched = Callable[[Cpu, int, bytes, str], bool]
@@ -547,52 +548,27 @@ def _tandy_next_scanline_di(cpu) -> None:
     if not cpu.get_flag(ZF):
         _add_reg16(cpu, 7, 0x80A0)
 
-def _composite_masked_row(mem, ds, es, si, di, *, words_per_row, step):
-    """Composite one row of ``words_per_row`` destination words from source
-    ``[mask, data]`` pairs: ``dest = (mask & dest) | data``.  Advances SI past
-    each pair (LODSW + ADD SI,2) and DI past each written word.  Returns the
-    advanced ``(si, di, ax)`` where ``ax`` is the last word written."""
-    ax = 0
-    for _ in range(words_per_row):
-        ax = mem.rw(ds, si)
-        si = (si + step) & 0xFFFF
-        ax = (ax & mem.rw(es, di)) & 0xFFFF
-        ax = (ax | mem.rw(ds, si)) & 0xFFFF
-        si = (si + 2) & 0xFFFF
-        mem.ww(es, di, ax)
-        di = (di + step) & 0xFFFF
-    return si, di, ax
-
-
 def _masked_word_composite_rows(cpu, *, words_per_row: int, row_add: int,
                                 rows: int | None = None) -> None:
-    """Composite Tandy masked words (``dest = (mask & dest) | next-src``) exactly
-    like the 1010:2E6E/2F81 LOOP leaves and the 2FB6 unrolled block.
+    """Run :func:`rasterizer.composite_masked_rows` and apply the leaf epilogue.
 
+    Adapter for the 2E6E/2F81 LOOP leaves and the 2FB6 unrolled block.
     ``rows=None`` runs ``CX`` rows (a zero count means the full ``0x10000``) and
     clears ``CX`` on exit (the LOOP leaves); an explicit ``rows`` count leaves
-    ``CX`` untouched (the unrolled 2FB6 block, which has no ``LOOP``).
+    ``CX`` untouched (the unrolled 2FB6 block).
     """
     s = cpu.s
-    mem = cpu.mem
-    ds = s.ds & 0xFFFF
-    es = s.es & 0xFFFF
     count_from_cx = rows is None
     if count_from_cx:
         rows = (s.cx & 0xFFFF) or 0x10000
-    si = s.si & 0xFFFF
-    di = s.di & 0xFFFF
     step = -2 if s.flags & DF else 2
-    bx = row_add & 0xFFFF
-    ax = s.ax & 0xFFFF
-    for _ in range(rows):
-        si, di, ax = _composite_masked_row(mem, ds, es, si, di,
-                                           words_per_row=words_per_row, step=step)
-        di_sum = di + bx                     # ADD DI,BX; LOOP preserves flags.
-        cpu.set_add_flags(di, bx, di_sum, 16)
-        di = di_sum & 0xFFFF
+    si, di, ax = composite_masked_rows(
+        cpu.mem, ds=s.ds & 0xFFFF, es=s.es & 0xFFFF, si=s.si & 0xFFFF, di=s.di & 0xFFFF,
+        rows=rows, words_per_row=words_per_row, row_stride=row_add & 0xFFFF, step=step,
+    )
+    _apply_strided_add_flag(cpu, di, row_add)
     s.ax = ax
-    s.bx = bx
+    s.bx = row_add & 0xFFFF
     s.si = si
     s.di = di
     if count_from_cx:
@@ -604,30 +580,20 @@ def _masked_word_composite_rows(cpu, *, words_per_row: int, row_add: int,
 def run_masked_sprite_composite_immediate(cpu, *, words_per_row: int, row_add: int) -> None:
     """Composite a masked sprite block whose row advance is an *immediate* ADD.
 
-    The immediate-add siblings of the 2E6E/2F81 family -- 38B7 (2 columns, +0x30)
-    and 3849 (4 columns, +0x2C).  Each row composites ``words_per_row`` destination
-    words from source ``[mask, data]`` pairs (``dest = (mask & dest) | data``), then
-    advances DI by the immediate ``row_add``.  Because the row add is an immediate
-    (``ADD DI,imm``) rather than ``ADD DI,BX``, BX is left untouched -- so it cannot
-    share the per-row epilogue of :func:`_masked_word_composite_rows` (only the
-    inner :func:`_composite_masked_row`).  Finally restores DS and returns near.
+    The 2E6E/2F81 immediate-add siblings -- 38B7 (2 columns, +0x30) and 3849
+    (4 columns, +0x2C).  Shares :func:`rasterizer.composite_masked_rows`; the
+    only differences are the epilogue (the immediate ``ADD DI,imm`` leaves BX
+    untouched) plus the DS restore and near return this full leaf owns.
     """
     s = cpu.s
     mem = cpu.mem
     rows = (s.cx & 0xFFFF) or 0x10000
-    ds = s.ds & 0xFFFF
-    es = s.es & 0xFFFF
-    si = s.si & 0xFFFF
-    di = s.di & 0xFFFF
     step = -2 if cpu.get_flag(DF) else 2
-    ax = s.ax & 0xFFFF
-    old_di = di
-    for _ in range(rows):
-        si, di, ax = _composite_masked_row(mem, ds, es, si, di,
-                                           words_per_row=words_per_row, step=step)
-        old_di = di
-        di = (di + row_add) & 0xFFFF
-    cpu.set_add_flags(old_di, row_add, old_di + row_add, 16)
+    si, di, ax = composite_masked_rows(
+        mem, ds=s.ds & 0xFFFF, es=s.es & 0xFFFF, si=s.si & 0xFFFF, di=s.di & 0xFFFF,
+        rows=rows, words_per_row=words_per_row, row_stride=row_add & 0xFFFF, step=step,
+    )
+    _apply_strided_add_flag(cpu, di, row_add)
     s.ax = ax
     s.si = si
     s.di = di
@@ -700,84 +666,55 @@ def run_present_frame_blit_447b(cpu) -> None:
 
 
 def _or_inverted_source_words_rows(cpu, *, words_per_row: int, row_add: int) -> None:
-    """OR inverted source-mask words into ES:DI for Tandy layer/object leaves."""
+    """Adapter: :func:`rasterizer.or_inverted_word_rows` + the leaf CPU epilogue
+    (the 2F40/2ECB inverted-mask OR leaves)."""
     s = cpu.s
-    mem = cpu.mem
-    ds = s.ds & 0xFFFF
-    es = s.es & 0xFFFF
-    rows = s.cx & 0xFFFF
-    if rows == 0:
-        rows = 0x10000
-
-    si = s.si & 0xFFFF
-    di = s.di & 0xFFFF
-    bx = row_add & 0xFFFF
-    ax = s.ax & 0xFFFF
-
-    for _ in range(rows):
-        bx = row_add & 0xFFFF
-        for _col in range(words_per_row):
-            ax = mem.rw(ds, si)
-            ax = (~ax) & 0xFFFF              # NOT AX, flags unaffected.
-            value = (mem.rw(es, di) | ax) & 0xFFFF
-            mem.ww(es, di, value)            # OR ES:[DI],AX
-            cpu.set_logic_flags(value, 16)
-
-            si_sum = si + 4
-            si = si_sum & 0xFFFF
-            cpu.set_add_flags((si - 4) & 0xFFFF, 4, si_sum, 16)
-
-            di_sum = di + 2
-            di = di_sum & 0xFFFF
-            cpu.set_add_flags((di - 2) & 0xFFFF, 2, di_sum, 16)
-
-        di_sum = di + bx
-        cpu.set_add_flags(di, bx, di_sum, 16)
-        di = di_sum & 0xFFFF
-
+    rows = (s.cx & 0xFFFF) or 0x10000
+    si, di, ax = or_inverted_word_rows(
+        cpu.mem, ds=s.ds & 0xFFFF, es=s.es & 0xFFFF, si=s.si & 0xFFFF, di=s.di & 0xFFFF,
+        rows=rows, words_per_row=words_per_row, row_stride=row_add & 0xFFFF,
+    )
+    _apply_strided_add_flag(cpu, di, row_add)
     s.ax = ax
-    s.bx = bx
-    s.cx = 0
+    s.bx = row_add & 0xFFFF
     s.si = si
     s.di = di
+    s.cx = 0
+
+
+def _apply_strided_add_flag(cpu, final_cursor: int, imm: int) -> None:
+    """Reconstruct the flags from a leaf's final per-row ``ADD <cursor>,imm``.
+
+    The rasterizer operations return cursors only; each strided leaf ends with a
+    row advance whose flags are the boundary state the verifier checks.
+    ``final_cursor`` is the strided cursor *after* that add.
+    """
+    imm &= 0xFFFF
+    before = (final_cursor - imm) & 0xFFFF
+    cpu.set_add_flags(before, imm, before + imm, 16)
 
 
 def _strided_word_copy_rows(cpu, *, words_per_row: int, row_add: int,
                             rows: int | None = None, stride: str = "di") -> None:
-    """Copy ``words_per_row`` 16-bit words per row, then advance the ``stride``
-    cursor (``"di"`` destination or ``"si"`` source) by ``row_add`` before the
-    next row.  Unifies the four 1010 strided-copy leaves (34C5/35AA + the
-    34D8/3657 fixed-row blocks).
+    """Run :func:`rasterizer.copy_word_rows` and apply the leaf's CPU epilogue.
 
-    ``rows=None`` runs ``CX`` rows -- a zero count means the full ``0x10000`` and
-    ``CX`` is cleared on exit (the LOOP leaves); an explicit ``rows`` count leaves
-    ``CX`` untouched (the unrolled / ``MOV CX`` leaves).
+    Adapter for the four 1010 strided-copy leaves (34C5/35AA + the 34D8/3657
+    fixed-row blocks).  ``rows=None`` runs ``CX`` rows (a zero count means the
+    full ``0x10000``) and clears ``CX`` on exit (the LOOP leaves); an explicit
+    ``rows`` count leaves ``CX`` untouched (the unrolled / ``MOV CX`` leaves).
     """
     s = cpu.s
-    mem = cpu.mem
-    ds = s.ds & 0xFFFF
-    es = s.es & 0xFFFF
     count_from_cx = rows is None
     if count_from_cx:
         rows = (s.cx & 0xFFFF) or 0x10000
-    si = s.si & 0xFFFF
-    di = s.di & 0xFFFF
     step = -2 if s.flags & DF else 2
-    bx = row_add & 0xFFFF
-    for _ in range(rows):
-        for _ in range(words_per_row):
-            mem.ww(es, di, mem.rw(ds, si))
-            si = (si + step) & 0xFFFF
-            di = (di + step) & 0xFFFF
-        if stride == "di":
-            total = di + bx
-            cpu.set_add_flags(di, bx, total, 16)
-            di = total & 0xFFFF
-        else:
-            total = si + bx
-            cpu.set_add_flags(si, bx, total, 16)
-            si = total & 0xFFFF
-    s.bx = bx
+    si, di = copy_word_rows(
+        cpu.mem, ds=s.ds & 0xFFFF, es=s.es & 0xFFFF, si=s.si & 0xFFFF, di=s.di & 0xFFFF,
+        rows=rows, words_per_row=words_per_row, row_stride=row_add & 0xFFFF,
+        stride_on=stride, step=step,
+    )
+    _apply_strided_add_flag(cpu, di if stride == "di" else si, row_add)
+    s.bx = row_add & 0xFFFF
     s.si = si
     s.di = di
     if count_from_cx:
