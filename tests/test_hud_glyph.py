@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from overkill.native_video.hud_glyph import draw_glyph, draw_glyph_string
+from overkill.native_video.hud_glyph import draw_glyph, draw_glyph_string, read_glyph_font
 
 # '0' from the recovered DS:1816 font.
 GLYPH_0 = (0x3C, 0x66, 0x6E, 0x7E, 0x76, 0x66, 0x3C, 0x00)
@@ -41,6 +41,20 @@ def test_glyph_clips_at_edges():
     draw_glyph(idx, 3, 3, (0xFF,) * 8, GREEN)   # would overrun; only the in-bounds 3x3 set
     assert (idx[3:, 3:] == GREEN).all()
     assert (idx[:3, :] == 0).all() and (idx[:, :3] == 0).all()
+
+
+def test_read_glyph_font_dual_mode():
+    ds = 0x25CC  # the recovered game DS
+    mem = np.zeros(0x100000, dtype=np.uint8)
+    base = (ds << 4) + 0x1816
+    mem[base + 0x30 * 8: base + 0x30 * 8 + 8] = np.array(GLYPH_0, dtype=np.uint8)
+    font = read_glyph_font(mem, ds)
+    assert font.shape == (256, 8)
+    assert font[0x30].tolist() == list(GLYPH_0)   # '0' read back from DS:1816
+    # and it composes with the blit:
+    idx = np.zeros((8, 8), dtype=np.uint8)
+    draw_glyph(idx, 0, 0, font[0x30], GREEN)
+    assert np.array_equal(idx, _expected(GLYPH_0, GREEN))
 
 
 def test_glyph_string_advances_per_char():

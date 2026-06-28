@@ -23,6 +23,23 @@ import numpy as np
 GLYPH_H = 8
 GLYPH_W = 8
 
+# The recovered HUD glyph font lives at DS:1816 (8 bytes/char), the colour at DS:215C,
+# and the cursor at DS:215E (+ DS:2160) — the inputs the VM's 1010:3153 reads.
+HUD_FONT_OFF = 0x1816
+HUD_COLOR_OFF = 0x215C
+
+
+def read_glyph_font(mem: np.ndarray, ds: int, off: int = HUD_FONT_OFF, count: int = 256) -> np.ndarray:
+    """Read the ``count`` x 8 glyph font from ``mem`` at ``ds:off`` (the recovered DS:1816
+    HUD font) into a ``(count, 8)`` uint8 array.
+
+    ``mem`` is a flat uint8 image. Dual-mode (the project's key rule): the hybrid path
+    passes live VM memory, the native runtime passes the recovered static game-data image
+    — same reader, same font, no VM dependency baked in.
+    """
+    base = (((ds & 0xFFFF) << 4) + off) & 0xFFFFF
+    return mem[base:base + count * GLYPH_H].reshape(count, GLYPH_H).copy()
+
 
 def draw_glyph(indices: np.ndarray, sy: int, sx: int, glyph_rows, color: int) -> np.ndarray:
     """Blit one 8x8 glyph into ``indices`` (H, W uint8 colour indices) at top-left
