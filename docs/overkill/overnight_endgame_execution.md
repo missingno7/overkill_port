@@ -69,27 +69,66 @@ Until then, keep iterating §2.
 
 ---
 
-## 2. The autonomous loop (run this overnight)
+## 2. The recovery loop (the core discipline — demand-driven, never top-down)
+
+The native backend is **not** a separate rewrite that guesses how the game works. It is a
+**consumer of recovered game state.** Progress is driven by *trying to express a piece of
+the game natively*, letting the gap that attempt exposes pull the next recovery — found at
+the original boundary, built bottom-up, verified, then lifted into the native source layer.
+**Never jump from incomplete knowledge to a native approximation.** If something is missing,
+go down, recover it, verify it, lift it.
+
+Each iteration:
 
 ```
-loop:
-  1. HEALTH GATE. If the suite is red or a verify gate is failing, STOP feature work and
-     fix that first. A red tree halts the loop — never build on red.
-  2. SELECT one slice: walk the work queue (§6) top-to-bottom, skip anything listed in
-     loop_blockers.md, pick the first not-done slice. Prefer the smallest fully-verifiable
-     unit. One slice per iteration.
-  3. RECOVER it using the per-slice recipe (§4).
-  4. VERIFY against the demos (§5). The slice is accepted ONLY if every gate is green.
-  5. On GREEN: commit + push the slice (one focused commit), update metrics + docs (§7).
-  6. On RED: REVERT the attempt completely (leave the tree exactly as before), write a
-     short entry in loop_blockers.md (what, why it diverged, the repro), and continue to
-     the next slice. Do NOT weaken a test/oracle to pass. Do NOT leave broken state.
-  7. Repeat. Stop only on the §1 done-condition, or when the queue is exhausted and §8's
-     "queue refill" yields nothing actionable, or on an infra failure that blocks the suite.
+1. ATTEMPT a piece natively. Try to implement or run one feature on --backend native
+   (a render layer, an object/camera/combat behavior, a state field, a timing).
+
+2. IDENTIFY what is missing to make it correct: missing state / behavior / timing /
+   render data / object-camera-combat-audio logic. The native attempt IS the probe that
+   reveals the gap.
+
+3. GO DOWN to the original boundary: find the ASM routine; find the hook point; map
+   inputs/outputs; identify the memory fields and side effects (scripts/dump_world.py,
+   trace_world_writes.py, summarize_world_writes.py, disassembly, the hook verifier).
+
+4. BUILD a small recovered version: first a SHADOW implementation (run beside the ASM,
+   compare), then a VERIFIED hook replacement, finally a SOURCE-LEVEL system. Reuse
+   existing pure helpers; never duplicate a decision (the dedup rule).
+
+5. VERIFY it (§5): against existing demos when available; against captured snapshots/
+   checkpoints; against per-routine ASM behavior; against full demo-replay where possible.
+
+6. IF NO DEMO COVERS IT (witness-poor): use disassembly to understand the routine; build
+   targeted probes; create synthetic fixtures when appropriate; add a new witness/demo
+   when possible; and **clearly mark what is proven vs still witness-poor** (in the
+   docstring + island_truth_tables.md). Do NOT promote a witness-poor guess into a pure
+   system as if it were proven.
+
+7. LIFT the recovered logic upward: hook wrapper -> adapter/view -> domain/system ->
+   native runtime state. The hook is temporary; the recovered logic is permanent.
+
+8. CLOSE the island: recover all required leaves, verify the composed subsystem, and
+   replace the ASM boundary only when the whole island is understood well enough. Then
+   resume the native attempt (1) with the gap filled.
 ```
 
-The loop is **self-directing**: it re-reads the metrics and the queue each pass; it does
-not need a human to choose the next item.
+**The discipline in one line:** if the native path needs something it doesn't have, recover
+that something at the hybrid/source layer first — never fake it in the renderer or runtime.
+
+Around this sits the unattended operational wrapper:
+
+```
+- HEALTH GATE first: a red suite / failing verify gate halts the loop until fixed (§3).
+- One verified island-step = one focused commit + push. On ANY failure, REVERT the attempt
+  fully (leave the tree exactly as before) and append a short entry to loop_blockers.md
+  (what, why it diverged, the repro), then move to the next attempt. Never weaken a
+  test/oracle to pass; never leave broken state.
+- Self-directing: re-read the metrics + `git log` + the queue (§6) each pass to choose the
+  next native attempt; skip anything in loop_blockers.md. No human picks the next item.
+- Stop only on the §1 done-condition, on §8 "queue refill" yielding nothing actionable, or
+  on an infra failure that blocks the suite.
+```
 
 ---
 
@@ -177,10 +216,13 @@ document, move on.
 
 ---
 
-## 6. The work queue (prioritized; pick top-down, skip blocked)
+## 6. The work queue — native attempts that pull recovery (prioritized; skip blocked)
 
-Ordered for an unattended run: safest/most-verifiable first (each demo-replay-gated),
-building pure mass, before the harder render/standalone integration.
+These are **features to attempt on `--backend native`**, not a top-down checklist. Each
+attempt is the §2 probe: try it, and where it needs missing state/behavior, drop into the
+§2 recovery loop to recover that leaf bottom-up, verify, and lift it — then the attempt
+completes. Ordered for an unattended run: safest/most-verifiable first (each demo-replay-
+gated), building pure mass, before the harder render/standalone integration.
 
 ### Bucket A — gameplay/object collapse (the bulk; hybrid byte-exact gate)
 The object system is already mature (~30 pure predicates in `systems/objects.py`; surface
@@ -257,9 +299,10 @@ If no listed slice is actionable, regenerate the frontier instead of stopping:
 
 ## TL;DR for the loop
 
-> Pick the top non-blocked slice → recover one decision to pure → thin the adapter → prove it
-> byte-exact on the demos + green suite → commit & push → update metrics → repeat. Never
-> commit red, never weaken the oracle, always revert+document a failed slice. Stop when
-> `--backend native` runs every demo standalone and verify-mode shows zero divergence from the
-> VM oracle. At that point the recovered code **is** the game, and `--backend vm` is just the
-> harness that proves it.
+> **Try a piece natively → see what's missing → go down to the ASM and recover that leaf
+> (shadow → verified hook → source system) → verify it against the demos/oracle → lift it
+> into native state → close the island.** Never fake a gap in the renderer/runtime; recover
+> it first. One verified island-step = one commit + push; never commit red, never weaken the
+> oracle, always revert+document a failed attempt. Stop when `--backend native` runs every
+> demo standalone and verify-mode shows zero divergence from the VM oracle. At that point the
+> recovered code **is** the game, and `--backend vm` is just the harness that proves it.
