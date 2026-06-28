@@ -9,10 +9,23 @@ context. Each has the analysis already done so a human can pick up fast.
 > readability refactor (`refactor_plan.md`) has taken over as the primary driver
 > (Phases 1–2 done, Phase 3 in progress). The only genuinely-open correctness
 > blocker is the player-death full-demo divergence below.
+>
+> **Update (2026-06-28):** that player-death divergence — long the only open
+> correctness blocker — and the `[95F2]`/`[95F4]` view-contact-center divergence
+> are both RESOLVED by one fix: the AA46 `si>=3` no-contact branch (`AA54 JAE 0xAA44`).
+> Full suite 537 passed / 23 skipped. Newly surfaced: an effect-activation
+> timing / ISR-cadence phase offset (see backlog).
 
 ---
 
-## OPEN — Player-death `BC4B`/`BFC7` divergence (full-demo only)
+## RESOLVED (2026-06-28) — Player-death `BC4B`/`BFC7` divergence (full-demo only)
+**Root cause: the AA46 `si>=3` branch** (same fix as the contact-center item in
+the backlog). `AA54 JAE 0xAA44` returns no-contact for a side-selector of 3+; the
+lift omitted that branch and indexed the 3-entry DS:214E table out of bounds,
+fabricating an 8331 hit — the `SI asm=0003 hook=...` below was exactly that.
+`demo_play_tandy_player_death` full verify now passes. Original analysis kept
+below for history.
+
 Demo: `demo_play_tandy_player_death`. Passes the **bounded** 150-frame demo-replay,
 but diverges deep in the **full** run (`OVERKILL_FULL_DEMO_VERIFY=1`).
 
@@ -52,15 +65,27 @@ but diverges deep in the **full** run (`OVERKILL_FULL_DEMO_VERIFY=1`).
 
 ## Remaining backlog — needs attended judgment (not safe unattended)
 
-- **View-contact-center divergence `[95F2]`/`[95F4]`** (surfaced 2026-06-28 by the
-  full-arc menu-crossing demos now that the level-select replays faithfully): in the
-  full (not bounded) demo-replay verify, the decoded globals
-  `view_contact_center_x_95f2` / `_y_95f4` diverge between the ASM oracle and the
-  hooked runtime mid-gameplay — `demo_play_tandy_20260627_231013` ~frame 934 (3
-  frames), `..._start_to_end` ~frame 2635. Same risk class as the player-death
-  `BC4B` frontier above: a collision/contact hook computing the contact point
-  differently than the original. Needs a single-step trace of the first divergent
-  frame to find the writer; not safe to guess unattended.
+- **RESOLVED (2026-06-28) — View-contact-center `[95F2]`/`[95F4]` divergence:**
+  root cause was the AA46 `si>=3` branch (`AA54 JAE 0xAA44`).  For a side-selector
+  of 3+ the original returns no-contact without touching the DS:214E offset table;
+  the lift indexed it out of bounds (`DS:[214E + si*4]`, e.g. DS:215A), wrote a
+  bogus DS:95F2/95F4 centre and fabricated an 8331 contact hit — which spuriously
+  killed in-window effect objects (`demo_play_tandy_20260627_231013` effect:20 at
+  frame 936).  Proven by disasm of AA46 + a dual-runtime trace (all AA46 inputs
+  byte-identical on both sides; only the si>=3 output diverged).  Fix in
+  `collision_adapter.run_view_window_check_aa46_body`.  Same fix closed the
+  player-death blocker above.
+- **Effect-activation timing / ISR-cadence phase offset** (surfaced 2026-06-28 once
+  the AA46 fix let `demo_play_tandy_20260627_231013` replay past frame 936): the
+  full verify now diverges at ~frame 960 where a group of idle effect objects
+  (logic 0x80, sprite ~354) begin a bounce one frame earlier in the hooked runtime
+  than in the ASM oracle (y +2, sprite +1; it momentarily reconverges at the bounce
+  turning points, so it is a phase offset, not corruption).  The effects are gated
+  on a per-object countdown (`+0x1C`) decremented by the `1F8F:06C9` timer ISR; the
+  hooked runtime's lower per-frame instruction count shifts the ISR firing relative
+  to frame boundaries, so activation drifts ~1 frame.  Same class as the
+  busy-wait/IRQ-cadence timing work — a timing-model frontier, not a contact/logic
+  bug.  Bounded verify unaffected (green).  Needs attended timing-model work.
 - **Unknown object-record fields `0x10`, `0x26`, `0x36`** (map at 25/28, the honest
   floor): each is written with no lifted reader (`0x26` ← DS:237A in object_spawns,
   `0x36` ← ax in object_movement; `0x10` is never accessed). Naming needs the

@@ -565,9 +565,15 @@ def run_view_window_check_aa46_body(cpu) -> bool:
 
     s.si = mem.rw(ds, VIEW_WINDOW_SIDE_SELECTOR)
     cmp_word(cpu, s.si, TILE_CONTACT_SIDE_COUNT)
-    # The observed path uses SI < 3.  For SI >= 3 the original still reaches the
-    # same 8331-style bounds check through a nearby branch; preserve the table
-    # arithmetic exactly and let future verifier evidence expose unknown tails.
+    # AA54 JAE 0xAA44: a side-selector of 3 or more falls straight through to the
+    # CLC;RET no-contact exit (AA44) -- the original NEVER indexes the 3-entry
+    # DS:214E offset table past its bounds.  Omitting this branch made the port
+    # read garbage at DS:[214E + si*4] for si>=3 (e.g. DS:215A), write a bogus
+    # DS:95F2/95F4 centre and fabricate an 8331 contact hit, which spuriously
+    # killed in-window effect objects once the view side-selector reached 3.
+    if (s.si & 0xFFFF) >= TILE_CONTACT_SIDE_COUNT:
+        cpu.set_flag(CF, False)
+        return False
     old_si = s.si
     s.si = (s.si << 1) & 0xFFFF
     cpu.set_add_flags(old_si, old_si, old_si + old_si, 16)  # SHL-by-1 flag shape approximation.
