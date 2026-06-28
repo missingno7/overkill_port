@@ -23,6 +23,7 @@ from typing import Callable
 from dos_re.cpu import CF, DF, ZF
 from dos_re.hooks import call_installed_hook_like_near_call
 from dos_re.memory import EGA_CPU_APERTURE, EGA_PLANE_WINDOW
+from ..asm import _add_reg16, _dec_reg16_preserve_cf, _rep_movsw, _sub_reg16, _test_word
 
 Cpu = object
 SelfDisableIfPatched = Callable[[Cpu, int, bytes, str], bool]
@@ -800,6 +801,39 @@ def run_masked_sprite_composite_immediate(cpu, *, words_per_row: int, row_add: i
     s.cx = 0
     s.ds = mem.rw(s.cs & 0xFFFF, 0x9596)
     s.ip = cpu.pop()
+
+
+def run_present_frame_blit_447b(cpu) -> None:
+    """The mode-0 frame-present blit at 1010:447B (reached via the 5BDC video table).
+
+    Copies the decoded work buffer ``CS:[9598]`` to video ``CS:[95A4]`` (=B800) in
+    192 interlaced rows of 26 words each, rewinding/banking DI per row with the
+    ``+2000h`` / ``test 4000h`` / ``+C050h`` wrap, then restores DS from ``CS:[9596]``
+    and returns near.  The single hottest present routine once the main loop runs.
+    """
+    cs = cpu.s.cs & 0xFFFF
+    # 447B MOV SI, DS:[234C] (uses the entry DS before it is reloaded below).
+    cpu.s.si = cpu.mem.rw(cpu.s.ds, 0x234C)
+    # 447F/4484 load the destination and source segments from the resident selectors.
+    cpu.s.es = cpu.mem.rw(cs, 0x95A4)
+    cpu.s.ds = cpu.mem.rw(cs, 0x9598)
+    # 4489..448F constants.
+    cpu.s.bx = 0x001A
+    cpu.s.di = 0x00A0
+    cpu.s.bp = 0x00C0
+    while True:
+        cpu.s.cx = cpu.s.bx & 0xFFFF       # 4492 MOV CX,BX
+        _rep_movsw(cpu, cpu.s.cx)          # 4494 REP MOVSW (sets CX=0, advances SI/DI)
+        _sub_reg16(cpu, 7, 0x0034)         # 4496 SUB DI,34h
+        _add_reg16(cpu, 7, 0x2000)         # 4499 ADD DI,2000h
+        _test_word(cpu, cpu.s.di, 0x4000)  # 449D TEST DI,4000h
+        if not cpu.get_flag(ZF):           # 44A1 JZ 44A7
+            _add_reg16(cpu, 7, 0xC050)     # 44A3 ADD DI,C050h
+        _dec_reg16_preserve_cf(cpu, 5)     # 44A7 DEC BP (CF unaffected on 8086)
+        if cpu.get_flag(ZF):               # 44A8 JNZ 4492
+            break
+    cpu.s.ds = cpu.mem.rw(cs, 0x9596)      # 44AA MOV DS,CS:[9596]
+    cpu.s.ip = cpu.pop()                   # 44AF RET
 
 
 def _masked_word_composite_fixed_rows(cpu, *, rows: int, words_per_row: int, row_add: int) -> None:

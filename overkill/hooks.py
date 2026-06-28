@@ -116,6 +116,7 @@ from .rendering.layer_sprites import (
 
 from .rendering.tandy import (
     run_masked_sprite_composite_immediate,
+    run_present_frame_blit_447b,
     build_startup_coordinate_tables_0f0b as run_tandy_startup_coordinate_tables_0f0b,
     build_video_offset_tables_0fa3 as run_tandy_video_offset_tables_0fa3,
     clear_tandy_interlaced_buffer_30b0 as run_tandy_interlaced_clear_30b0,
@@ -3430,29 +3431,7 @@ def overkill_present_frame_blit_447b(cpu):
     so registers, flags and memory match the oracle; it only collapses the Python
     per-iteration overhead of the 192-row interlaced copy.
     """
-    cs = cpu.s.cs & 0xFFFF
-    # 447B MOV SI, DS:[234C] (uses the entry DS before it is reloaded below).
-    cpu.s.si = cpu.mem.rw(cpu.s.ds, 0x234C)
-    # 447F/4484 load the destination and source segments from the resident selectors.
-    cpu.s.es = cpu.mem.rw(cs, 0x95A4)
-    cpu.s.ds = cpu.mem.rw(cs, 0x9598)
-    # 4489..448F constants.
-    cpu.s.bx = 0x001A
-    cpu.s.di = 0x00A0
-    cpu.s.bp = 0x00C0
-    while True:
-        cpu.s.cx = cpu.s.bx & 0xFFFF       # 4492 MOV CX,BX
-        _rep_movsw(cpu, cpu.s.cx)          # 4494 REP MOVSW (sets CX=0, advances SI/DI)
-        _sub_reg16(cpu, 7, 0x0034)         # 4496 SUB DI,34h
-        _add_reg16(cpu, 7, 0x2000)         # 4499 ADD DI,2000h
-        _test_word(cpu, cpu.s.di, 0x4000)  # 449D TEST DI,4000h
-        if not cpu.get_flag(ZF):           # 44A1 JZ 44A7
-            _add_reg16(cpu, 7, 0xC050)     # 44A3 ADD DI,C050h
-        _dec_reg16_preserve_cf(cpu, 5)     # 44A7 DEC BP (CF unaffected on 8086)
-        if cpu.get_flag(ZF):               # 44A8 JNZ 4492
-            break
-    cpu.s.ds = cpu.mem.rw(cs, 0x9596)      # 44AA MOV DS,CS:[9596]
-    cpu.s.ip = cpu.pop()                   # 44AF RET
+    run_present_frame_blit_447b(cpu)
 
 
 

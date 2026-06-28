@@ -1,3 +1,14 @@
+## 2026-06-28 - Coastline (Phase 1b): relocate the 447B frame-present blit to rendering/tandy.py
+
+Moved the mode-0 frame-present blit at 1010:447B -- the single hottest present routine
+once the main loop runs (copies the decoded work buffer CS:[9598] to video
+CS:[95A4]=B800 in 192 interlaced rows, with the per-row +2000h/test-4000h/+C050h bank
+wrap) -- out of `hooks.py` into `rendering/tandy.run_present_frame_blit_447b`, leaving
+a thin `@registry.replace` wrapper.  The shared asm helpers (`_rep_movsw`/`_sub_reg16`/
+`_add_reg16`/`_test_word`/`_dec_reg16_preserve_cf`) are imported into tandy.py.
+Byte-exact: the per-hook oracle `test_present_frame_blit_447b` passes, plus lint (182)
++ audit; `hook_inventory.md` regenerated.
+
 ## 2026-06-28 - Coastline (Phase 1b): new rendering/cga.py -- relocate the 3E12/3EFB CGA compositors
 
 Established `rendering/cga.py` (the CGA byte-level masked-compositor backend, parallel
