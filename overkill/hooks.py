@@ -111,6 +111,7 @@ from .rendering.layer_sprites import (
 )
 
 from .rendering.tandy import (
+    run_masked_sprite_composite_3849,
     build_startup_coordinate_tables_0f0b as run_tandy_startup_coordinate_tables_0f0b,
     build_video_offset_tables_0fa3 as run_tandy_video_offset_tables_0fa3,
     clear_tandy_interlaced_buffer_30b0 as run_tandy_interlaced_clear_30b0,
@@ -1081,46 +1082,8 @@ def overkill_masked_sprite_composite_38b7(cpu):
 
 @registry.replace(0x1010, 0x3849, "overkill_masked_sprite_composite_3849")
 def overkill_masked_sprite_composite_3849(cpu):
-    """Replace the 4-column masked sprite composite loop at 1010:3849.
-
-    This is the wider sibling of the verified 38B7 hook.  Each row composites
-    four destination words using source pairs [mask,data] and then advances the
-    destination by 0x2C, for a net visible stride of 0x34 bytes.  The helper
-    finally restores DS from CS:[9596] and returns near.
-    """
-    s = cpu.s
-    mem = cpu.mem
-    rows = s.cx & 0xFFFF
-    if rows == 0:
-        rows = 0x10000
-
-    ds = s.ds & 0xFFFF
-    es = s.es & 0xFFFF
-    si = s.si & 0xFFFF
-    di = s.di & 0xFFFF
-    sd = -2 if cpu.get_flag(DF) else 2
-    ax = s.ax & 0xFFFF
-    old_di = di
-
-    for _ in range(rows):
-        for _col in range(4):
-            mask = mem.rw(ds, si)
-            si = (si + sd) & 0xFFFF
-            ax = mask & mem.rw(es, di)
-            ax = ax | mem.rw(ds, si)
-            si = (si + 2) & 0xFFFF
-            mem.ww(es, di, ax)
-            di = (di + sd) & 0xFFFF
-        old_di = di
-        di = (di + 0x2C) & 0xFFFF
-
-    cpu.set_add_flags(old_di, 0x2C, old_di + 0x2C, 16)
-    s.ax = ax
-    s.si = si
-    s.di = di
-    s.cx = 0
-    s.ds = mem.rw(s.cs & 0xFFFF, 0x9596)
-    s.ip = cpu.pop()
+    """Replace the 4-column masked sprite composite loop at 1010:3849."""
+    run_masked_sprite_composite_3849(cpu)
 
 
 

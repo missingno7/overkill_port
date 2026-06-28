@@ -1,3 +1,15 @@
+## 2026-06-28 - Coastline (Phase 1b): relocate the 3849 masked sprite compositor to rendering/tandy.py
+
+Moved the inline 4-column masked sprite composite loop at 1010:3849 out of `hooks.py`
+into `rendering/tandy.run_masked_sprite_composite_3849`, leaving a thin
+`@registry.replace` wrapper.  Byte-exact -- the body is unchanged; it uses an
+*immediate* row add `0x2C` (leaving BX untouched), so unlike the 2E6E/2F81 family it
+cannot reuse the `_masked_word_composite_rows` helper and stays standalone.  Verified
+by the deterministic per-hook oracle `test_masked_sprite_composite_3849` (+ lint,
+audit); `hook_inventory.md` regenerated.  A direct coastline win: `hooks.py` sheds
+~38 lines of render logic into the backend module where it belongs.  Next Phase-1b
+siblings: 38B7 / 3E12 / 3EFB / 447B.
+
 ## 2026-06-28 - Source-purity rescue: B250 contact fan-out count to a pure formula
 
 Pushed the B250 overlap/contact selector's difficulty-scaled fan-out count down to

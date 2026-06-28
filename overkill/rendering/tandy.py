@@ -756,6 +756,50 @@ def _masked_word_composite_rows(cpu, *, words_per_row: int, row_add: int) -> Non
 
 
 
+def run_masked_sprite_composite_3849(cpu) -> None:
+    """Composite the 4-column masked sprite loop at 1010:3849.
+
+    The wider sibling of 38B7: each row composites four destination words from
+    source ``[mask, data]`` pairs, then advances the destination by an *immediate*
+    ``0x2C`` (net visible stride ``0x34`` after the four columns).  Unlike the
+    ``_masked_word_composite_rows`` family this uses an immediate row add, so it
+    leaves BX untouched.  Finally restores DS from ``CS:[9596]`` and returns near.
+    """
+    s = cpu.s
+    mem = cpu.mem
+    rows = s.cx & 0xFFFF
+    if rows == 0:
+        rows = 0x10000
+
+    ds = s.ds & 0xFFFF
+    es = s.es & 0xFFFF
+    si = s.si & 0xFFFF
+    di = s.di & 0xFFFF
+    sd = -2 if cpu.get_flag(DF) else 2
+    ax = s.ax & 0xFFFF
+    old_di = di
+
+    for _ in range(rows):
+        for _col in range(4):
+            mask = mem.rw(ds, si)
+            si = (si + sd) & 0xFFFF
+            ax = mask & mem.rw(es, di)
+            ax = ax | mem.rw(ds, si)
+            si = (si + 2) & 0xFFFF
+            mem.ww(es, di, ax)
+            di = (di + sd) & 0xFFFF
+        old_di = di
+        di = (di + 0x2C) & 0xFFFF
+
+    cpu.set_add_flags(old_di, 0x2C, old_di + 0x2C, 16)
+    s.ax = ax
+    s.si = si
+    s.di = di
+    s.cx = 0
+    s.ds = mem.rw(s.cs & 0xFFFF, 0x9596)
+    s.ip = cpu.pop()
+
+
 def _masked_word_composite_fixed_rows(cpu, *, rows: int, words_per_row: int, row_add: int) -> None:
     """Composite a fixed-height unrolled Tandy masked block.
 
