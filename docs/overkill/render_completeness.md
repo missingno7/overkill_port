@@ -84,19 +84,35 @@ output, and **witness it against the live draws** before marking done.
       revisit only if a witness reveals one.
 
 ### Native regeneration (toward the self-composing backend)
-*Finding (`probe_source_writers`, L2 frames 380–420):* the present-source page
-`[9598]`=35FF is filled **entirely by leaves already lifted into the rasterizer** —
-the masked compositors `2E6E/2F81/2FB6` (→ `composite_masked_rows`), the strided
-copies `34C5/34D8/3542` (→ `copy_word_rows`), and the `4D6F` clear. So the *leaves*
-of background+sprite composition are done; what's NOT recovered is the **dispatch /
-generation** that drives them: the sprite scan (`5AC8`, recovered) and a separate
-**tile-draw dispatcher** + the **master-plane (`[9592]`) tile/starfield
-generators**. Obstacle: the work segments overlap (`245A` master / `25CC` DS-and-
-work / `35FF` source are 0x172/0x933 apart, pages ~0x4E00 bytes), so naive witnesses
-conflate tile vs object writes — `35FF` (source) is the one clean window. NEXT:
-find the caller of `34C5/34D8` that draws tiles (the tile-draw dispatcher) and the
-`[9592]` generators (starfield appears to live in segment `2032`), then regenerate
-`BackgroundLayer` natively and witness byte-exact.
+*Model (probes `source_writers` / `compose_order` / `scroll_scan`, L2):* the present
+flow is now mapped and contradiction-free.
+
+- `[9598]`=35FF (source) → present blit at cursor `[234C]` → playfield, **verified
+  vs the on-screen B800** (`page_raster.render_present_page_rgb`). The faithful
+  *decode* is DONE; the backend already produces the playfield from the semantic
+  page without reading the framebuffer.
+- `[9598]` is a **persistent scrolling page**, NOT recomposed from scratch each
+  frame: the present cursor `[234C]` advances by `0x68` (one playfield row, 104 B)
+  and `[2350]` by `0xD` (tile height) per scroll step.
+- Each frame composites only the **active sprites** over the persistent page, via
+  the **already-lifted leaves** — masked compositors `2E6E/2F81/2FB6`
+  (`composite_masked_rows`) and strided copies `34C5/34D8/3542` (`copy_word_rows`),
+  driven by the object scan (`5AC8`). Frames alternate composite-heavy / copy-heavy:
+  a **save-under / restore** sprite scheme — the copies restore the clean background
+  over last frame's sprite cells, the compositors redraw sprites at new positions.
+  The clean background source is the `[9592]` master plane.
+- **There is no separate hidden tile/starfield generator writing `[9598]`** — the
+  earlier "tile-draw dispatcher + `2032` starfield" framing was WRONG. The background
+  reaches `[9598]` through the same lifted leaves + the `[9592]` master plane.
+
+**Self-compose gap (narrowed to two items):**
+1. Drive the lifted leaves from **native game state** (object list + scroll cursor
+   `[234C]`/`[2350]`) instead of capturing the VM's writes — the dispatch (object
+   scan `5AC8`) reproduced natively.
+2. Materialize the `[9592]` master-plane **clean background** — still uncharacterised
+   because the `245A`/`25CC`/`35FF` work segments overlap (0x172/0x933 apart, pages
+   ~0x4E00 B) and defeat a naive witness. This is the one remaining keystone; it needs
+   a witness narrowed to the non-overlapping master head, or a level-start fill trace.
 
 ### Effects / transitions
 - [x] **Palette** — the fixed PCjr/Tandy 16-colour IRGB palette
