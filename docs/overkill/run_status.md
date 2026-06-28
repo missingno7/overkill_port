@@ -1,3 +1,16 @@
+## 2026-06-28 - Recovery (dual-mode): extract the A8C7 layer-1 draw predicate to recovered/
+
+The 1010:A8C7 layer-1 scan's `should_call()` decision -- inactive-slot skip, the
+out-of-full-render-mode near-camera (``<= B6h``) near-layer suppression, and the
+foreground-layer draw test -- is now the pure, named, unit-tested
+`recovered.systems.objects.layer1_scan_should_draw` (constants `LAYER1_RENDER_MODE_FULL`,
+`LAYER1_CAMERA_NEAR_THRESHOLD = B6h`, `LAYER1_LAYER_FOREGROUND`).  The hooks.py adapter
+still reads the slot/global words on the original branches and replays each branch's CMP
+flags (live at the A8F1/A8F7 boundary), then delegates the draw decision to the rule.
+Byte-exact: the `a8c7` per-hook oracle plus the new
+`test_recovered_layer1_scan_should_draw_is_pure_and_named` semantics test pass, with lint
+(182) + audit.
+
 ## 2026-06-28 - Hygiene: collapse blank-line cruft left by the hook relocations
 
 The masked-compositor / blit relocations (plus the earlier menu-hook removals) left ~20

@@ -253,6 +253,36 @@ def object_logic_aba3(frame_phase: int, scroll_frame: int) -> Aba3Update:
     return Aba3Update(branch_abc0=False, sprite=(scroll_frame + ABA3_SPRITE_OFFSET) & 0xFFFF)
 
 
+LAYER1_RENDER_MODE_FULL = 0x0001
+LAYER1_CAMERA_NEAR_THRESHOLD = 0x00B6
+LAYER1_LAYER_FOREGROUND = 0x0001
+
+
+def layer1_scan_should_draw(
+    active: int,
+    render_mode: int,
+    camera_x: int,
+    near_layer_flag: int,
+    object_layer_flag: int,
+) -> bool:
+    """True when the 1010:A8C7 layer-1 scan should issue ``CALL 7596`` for a slot.
+
+    ``active`` is the slot's active word (SS:[bp]); ``render_mode`` is the global render
+    mode DS:BDAC; ``camera_x`` is the camera position DS:2350; ``near_layer_flag`` is the
+    slot's near-layer word (SS:[bp+16h]); ``object_layer_flag`` is the slot's layer word
+    (SS:[bp+0Ah]).  An inactive slot never draws.  Outside full-render mode
+    (``render_mode != 1``) a near-camera slot (``camera_x <= B6h``) flagged for the near
+    layer is suppressed.  Otherwise the slot draws iff it is on the foreground layer.
+    The adapter still replays the per-branch CMP flags for boundary fidelity; this owns
+    the draw decision."""
+    if (active & 0xFFFF) == 0:
+        return False
+    if (render_mode & 0xFFFF) != LAYER1_RENDER_MODE_FULL:
+        if (camera_x & 0xFFFF) <= LAYER1_CAMERA_NEAR_THRESHOLD and (near_layer_flag & 0xFFFF) == 1:
+            return False
+    return (object_layer_flag & 0xFFFF) == LAYER1_LAYER_FOREGROUND
+
+
 PLAYER_CHASE_EXCLUDED_LOGIC_IDS = frozenset({0x0001, 0x0021, 0x0022, 0x0026})
 PLAYER_CHASE_CANDIDATE_MAX_X = 0x00E0
 PLAYER_CHASE_REQUIRED_HAZARD_CLASS = 0x0004

@@ -223,6 +223,11 @@ from .gameplay.objects import (
     run_reset_object_slot_and_status_setup_c4db,
     run_setup_tracked_status_tail_c51d,
 )
+from .recovered.systems.objects import (
+    LAYER1_CAMERA_NEAR_THRESHOLD,
+    LAYER1_RENDER_MODE_FULL,
+    layer1_scan_should_draw,
+)
 
 from .asm import (
     _add_mem_byte,
@@ -1395,25 +1400,30 @@ def overkill_scan_layer1_draw_a8c7(cpu):
     ss = cpu.s.ss & 0xFFFF
 
     def should_call() -> bool:
+        # The pure draw decision lives in recovered.systems.objects; this adapter
+        # still reads the slot/global words on the original branches and replays each
+        # branch's CMP flags, which are live at the A8F1/A8F7 boundary.
         active = cpu.mem.rw(ss, cpu.s.bp & 0xFFFF)
         _cmp_word(cpu, active, 0)
         if active == 0:
             return False
 
         mode = cpu.mem.rw(ds, 0xBDAC)
-        _cmp_word(cpu, mode, 1)
-        if mode != 1:
+        _cmp_word(cpu, mode, LAYER1_RENDER_MODE_FULL)
+        camera = 0
+        near_layer = 0
+        if mode != LAYER1_RENDER_MODE_FULL:
             camera = cpu.mem.rw(ds, 0x2350)
-            _cmp_word(cpu, camera, 0x00B6)
-            if camera <= 0x00B6:
-                layer = cpu.mem.rw(ss, (cpu.s.bp + 0x16) & 0xFFFF)
-                _cmp_word(cpu, layer, 1)
-                if layer == 1:
+            _cmp_word(cpu, camera, LAYER1_CAMERA_NEAR_THRESHOLD)
+            if camera <= LAYER1_CAMERA_NEAR_THRESHOLD:
+                near_layer = cpu.mem.rw(ss, (cpu.s.bp + 0x16) & 0xFFFF)
+                _cmp_word(cpu, near_layer, 1)
+                if near_layer == 1:
                     return False
 
         obj_layer = cpu.mem.rw(ss, (cpu.s.bp + 0x0A) & 0xFFFF)
         _cmp_word(cpu, obj_layer, 1)
-        return obj_layer == 1
+        return layer1_scan_should_draw(active, mode, camera, near_layer, obj_layer)
 
     while iterations:
         cx_value = cpu.s.cx & 0xFFFF

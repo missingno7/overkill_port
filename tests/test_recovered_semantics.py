@@ -928,6 +928,33 @@ def test_recovered_contact_fanout_count_is_pure_and_named():
     assert contact_fanout_count(3, 0xFFFF) == 5
 
 
+def test_recovered_layer1_scan_should_draw_is_pure_and_named():
+    from overkill.recovered.systems.objects import (
+        LAYER1_CAMERA_NEAR_THRESHOLD,
+        LAYER1_LAYER_FOREGROUND,
+        LAYER1_RENDER_MODE_FULL,
+        layer1_scan_should_draw,
+    )
+
+    bg = 1 - LAYER1_LAYER_FOREGROUND
+    # Inactive slots never draw, whatever the other words hold.
+    assert layer1_scan_should_draw(0, LAYER1_RENDER_MODE_FULL, 0, 1, LAYER1_LAYER_FOREGROUND) is False
+    assert layer1_scan_should_draw(0, 7, 0, 0, LAYER1_LAYER_FOREGROUND) is False
+
+    # Full-render mode ignores the camera/near-layer suppression: draw iff foreground.
+    assert layer1_scan_should_draw(1, LAYER1_RENDER_MODE_FULL, 0x00, 1, LAYER1_LAYER_FOREGROUND) is True
+    assert layer1_scan_should_draw(1, LAYER1_RENDER_MODE_FULL, 0x00, 1, bg) is False
+
+    # Outside full mode, a near-camera (<= B6h) slot flagged for the near layer is suppressed.
+    assert layer1_scan_should_draw(1, 0, LAYER1_CAMERA_NEAR_THRESHOLD, 1, LAYER1_LAYER_FOREGROUND) is False
+    # ...but not if it is not flagged for the near layer.
+    assert layer1_scan_should_draw(1, 0, LAYER1_CAMERA_NEAR_THRESHOLD, 0, LAYER1_LAYER_FOREGROUND) is True
+    # ...and the threshold is inclusive: B7h is past it, so no suppression.
+    assert layer1_scan_should_draw(1, 0, LAYER1_CAMERA_NEAR_THRESHOLD + 1, 1, LAYER1_LAYER_FOREGROUND) is True
+    # Past the threshold a background slot still does not draw.
+    assert layer1_scan_should_draw(1, 0, LAYER1_CAMERA_NEAR_THRESHOLD + 1, 1, bg) is False
+
+
 def test_recovered_ad60_bounds_tile_tail_adapter_matches_pure_decision():
     from overkill.gameplay import object_bounds
     from overkill.recovered.systems.objects import (
