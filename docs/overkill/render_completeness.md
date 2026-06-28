@@ -125,19 +125,30 @@ The grounded model:
     occupancy) — a sprite clear→redraw cycle.
 
 **Self-compose gap (honest state):**
-1. **The starfield origin is UNRESOLVED** — and it bottoms out in an *irreducible
-   measurement contradiction* I could not close this pass: the 35FF clean plate reads
-   ~black (40 px), the frame's 35FF compositors draw only sprites, yet the end-of-frame
-   35FF decode shows stars. Stars cannot appear unwritten, so one measurement is
-   subtly misaligned. **Most likely cause: probe pacing.** `probe_clean_plate2` drove
-   the demo with `demo.apply_to_runtimes`, while the attribution probes used
-   `pump_demo_frame` — these are known to misalign frames (see memory
-   *overkill-trace-reproduction-gotcha*), so "clean plate" and "attribution" may not
-   be the same instant. NEXT: redo the whole 35FF analysis under **one consistent
-   pacing** (a single ordered trace: clear → each write → end, all via `pump_demo_frame`),
-   then re-locate the stars. (NOT a present-wrap bug: `3354` advances `SI` 16-bit,
-   wrapping only at `0x10000`, not reached at these cursors.) Retracted from prior
-   revisions: "2F81 draws the star background" and "persistent level-start fill".
+1. **The starfield origin is UNRESOLVED**, and the investigation surfaced a real
+   **tooling bug that invalidated much of this section's probing** (now fixed):
+
+   **FOUND + FIXED — write-watchers were blind to bulk string ops.** `_rep_movsb`,
+   `_rep_stosb`, `_rep_movsw` (`overkill/asm.py`) take a NumPy-slice fast path
+   (`mem.data[dst:dst+n] = …`) that bypasses `mem.write_watchers`. So EVERY
+   write-histogram / per-routine-attribution probe in this session was **incomplete** —
+   it silently missed all `rep movs`/`rep stos` writes. **Fix:** the three fast paths
+   now skip when `cpu.mem.write_watchers` is non-empty, falling through to the watched
+   per-byte loop (zero cost in production; full visibility when probing). **The
+   per-routine attributions above (`2F81`=aliens, the "clean plate is black", etc.) are
+   therefore SUSPECT and must be re-verified with the fix in place.**
+
+   Leads RULED OUT for the stars: probe pacing (clean plate = 40 px black under both
+   pacings); present-wrap (`3354` advances `SI` 16-bit, wraps at `0x10000`, not reached);
+   decode-artifact (the 35FF stars sit at the **same positions** as the real B800 stars
+   → they are real). Even after the bulk-op fix, a traced star byte's history shows only
+   a `4D6F` clear (value 0) and no later writer — so the mechanism is still unaccounted,
+   pointing at remaining **probe-reliability** issues (e.g. the provenance end-read may
+   read a reloaded/stale runtime; the linear 35FF decode may be reading non-pixel data
+   at those offsets). NEXT: (i) re-run the per-routine attribution with the bulk-op fix;
+   (ii) verify the provenance probe reads the *same* runtime it watched; then re-locate
+   the stars. Retracted (WRONG): "2F81 draws the star background", "persistent
+   level-start fill".
    *Latent decoder note (separate, real):* `render_present_page_indices` masks source
    reads at 1 MB, not the 64 KB segment, so for large cursors it would not wrap like
    the game's 16-bit `SI` — worth fixing, but not the cause here.

@@ -168,6 +168,7 @@ def _rep_movsb(cpu, count: int) -> None:
         si = cpu.s.si & 0xFFFF
         di = cpu.s.di & 0xFFFF
         if si + count <= 0x10000 and di + count <= 0x10000 \
+                and not cpu.mem.write_watchers \
                 and not (cpu.mem.ega_planar and (
                     _ega_aperture_overlap(cpu.s.ds, si, count)
                     or _ega_aperture_overlap(cpu.s.es, di, count)
@@ -197,7 +198,7 @@ def _rep_stosb(cpu, count: int) -> None:
     value = cpu.get_reg8(0)
     if not cpu.get_flag(DF):
         di = cpu.s.di & 0xFFFF
-        if di + count <= 0x10000 \
+        if di + count <= 0x10000 and not cpu.mem.write_watchers \
                 and not (cpu.mem.ega_planar and _ega_aperture_overlap(cpu.s.es, di, count)):
             dst = (((cpu.s.es & 0xFFFF) << 4) + di) & 0xFFFFF
             if dst + count <= len(cpu.mem.data):
@@ -255,6 +256,7 @@ def _rep_movsw(cpu, count: int) -> None:
         si = cpu.s.si & 0xFFFF
         di = cpu.s.di & 0xFFFF
         if si + byte_count <= 0x10000 and di + byte_count <= 0x10000 \
+                and not cpu.mem.write_watchers \
                 and not (cpu.mem.ega_planar and (
                     _ega_aperture_overlap(cpu.s.ds, si, byte_count)
                     or _ega_aperture_overlap(cpu.s.es, di, byte_count)
