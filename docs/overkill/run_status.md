@@ -1,3 +1,12 @@
+## 2026-06-28 - Coastline (Phase 1b): relocate the 469F sprite copy to tandy.py
+
+Moved the hot 9-byte-wide x 16-row plain sprite copy at 1010:469F (DF=0 forward 9 bytes/row
+then DI += 2Bh; DF=1 backward as 4 words + 1 byte; clears CX, sets final ADD DI flags) out
+of hooks.py into `rendering/tandy.sprite_copy_9x16_469f`, the sibling of the already-lifted
+`sprite_blit_9x16_477e`.  Programmatic verbatim move; lint (183) + the undefined-name guard
+pass and the bounded demo corpus stays byte-exact; `hook_inventory.md` regenerated.  Unlike
+38F9 this one is exercised by the (Tandy) gameplay demos, so the relocation is demo-verified.
+
 ## 2026-06-28 - Coastline (Phase 1b): relocate the 38F9 CGA compositor to cga.py
 
 Moved the compact 1-column CGA masked compositor at 1010:38F9 (reached from the compact

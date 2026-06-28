@@ -151,6 +151,7 @@ from .rendering.tandy import (
     source_strided_copy_35aa as run_tandy_source_strided_copy_35aa,
     split_present_copy_34ad as run_tandy_split_present_copy_34ad,
     sprite_blit_9x16_477e as run_tandy_sprite_blit_9x16_477e,
+    sprite_copy_9x16_469f as run_tandy_sprite_copy_9x16_469f,
     linear_rows_to_work_buffer_41da as run_tandy_linear_rows_to_work_buffer_41da,
     strided_copy_34c5 as run_tandy_strided_copy_34c5,
     tiny_strided_copy_3542 as run_tandy_tiny_strided_copy_3542,
@@ -982,40 +983,7 @@ def overkill_ega_source_spaced_copy_2ab9(cpu):
 @registry.replace(0x1010, 0x469F, "overkill_sprite_copy_9x16_469f")
 def overkill_sprite_copy_9x16_469f(cpu):
     """Replace the hot 9-byte-wide by 16-row plain sprite copy at 1010:469F."""
-    s = cpu.s
-    mem = cpu.mem
-    ds = s.ds & 0xFFFF
-    es = s.es & 0xFFFF
-    si = s.si & 0xFFFF
-    di = s.di & 0xFFFF
-    old_di = di
-
-    if not cpu.get_flag(DF):
-        data = mem.data
-        src_base = ds << 4
-        dst_base = es << 4
-        for _ in range(16):
-            data[((dst_base + di) & 0xFFFFF):((dst_base + di) & 0xFFFFF) + 9] =                 data[((src_base + si) & 0xFFFFF):((src_base + si) & 0xFFFFF) + 9]
-            si = (si + 9) & 0xFFFF
-            old_di = (di + 9) & 0xFFFF
-            di = (old_di + 0x2B) & 0xFFFF
-    else:
-        for _ in range(16):
-            for _word in range(4):
-                mem.ww(es, di, mem.rw(ds, si))
-                si = (si - 2) & 0xFFFF
-                di = (di - 2) & 0xFFFF
-            mem.wb(es, di, mem.rb(ds, si))
-            si = (si - 1) & 0xFFFF
-            di = (di - 1) & 0xFFFF
-            old_di = di
-            di = (di + 0x2B) & 0xFFFF
-
-    cpu.set_add_flags(old_di, 0x2B, old_di + 0x2B, 16)
-    s.si = si
-    s.di = di
-    s.cx = 0
-    s.ip = cpu.pop()
+    run_tandy_sprite_copy_9x16_469f(cpu)
 
 @registry.replace(0x1010, 0x4D15, "overkill_presence_stamp_list_4d15")
 def overkill_presence_stamp_list_4d15(cpu):

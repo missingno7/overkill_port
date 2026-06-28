@@ -2198,3 +2198,45 @@ def linear_rows_to_work_buffer_41da(cpu) -> None:
         cpu.s.cx = cpu.pop()
         cpu.s.cx = (cpu.s.cx - 1) & 0xFFFF  # LOOP, no flags
     cpu.s.ip = cpu.pop()
+
+
+def sprite_copy_9x16_469f(cpu) -> None:
+    """Replace the hot 9-byte-wide by 16-row plain sprite copy at 1010:469F.
+
+    DF=0 copies forward 9 bytes/row then DI += 2Bh for the 34h row stride; DF=1 copies
+    backward as 4 words + 1 byte.  CX is cleared and the final ADD DI flags are set.
+    """
+    s = cpu.s
+    mem = cpu.mem
+    ds = s.ds & 0xFFFF
+    es = s.es & 0xFFFF
+    si = s.si & 0xFFFF
+    di = s.di & 0xFFFF
+    old_di = di
+
+    if not cpu.get_flag(DF):
+        data = mem.data
+        src_base = ds << 4
+        dst_base = es << 4
+        for _ in range(16):
+            data[((dst_base + di) & 0xFFFFF):((dst_base + di) & 0xFFFFF) + 9] =                 data[((src_base + si) & 0xFFFFF):((src_base + si) & 0xFFFFF) + 9]
+            si = (si + 9) & 0xFFFF
+            old_di = (di + 9) & 0xFFFF
+            di = (old_di + 0x2B) & 0xFFFF
+    else:
+        for _ in range(16):
+            for _word in range(4):
+                mem.ww(es, di, mem.rw(ds, si))
+                si = (si - 2) & 0xFFFF
+                di = (di - 2) & 0xFFFF
+            mem.wb(es, di, mem.rb(ds, si))
+            si = (si - 1) & 0xFFFF
+            di = (di - 1) & 0xFFFF
+            old_di = di
+            di = (di + 0x2B) & 0xFFFF
+
+    cpu.set_add_flags(old_di, 0x2B, old_di + 0x2B, 16)
+    s.si = si
+    s.di = di
+    s.cx = 0
+    s.ip = cpu.pop()
