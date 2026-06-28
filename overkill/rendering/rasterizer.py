@@ -1,19 +1,24 @@
-"""Source-like Tandy/EGA rasterizer operations.
+"""Source-like Tandy rasterizer operations.
 
 This is the recovered, VM-independent reconstruction of OVERKILL's inner blit
 loops.  Each operation reads source words from ``DS:SI`` and writes destination
 words to ``ES:DI`` of a *memory* object (anything exposing the ``rw``/``ww``/
 ``rb``/``wb`` word/byte accessors -- the live VM memory in the game, or a plain
 buffer in tests) and returns the advanced cursors.  They are deliberately free
-of the CPU register file and x86 flags: the address-bound leaves in
-``tandy.py`` / ``ega.py`` are thin adapters that read the registers, call one of
-these operations, store the returned cursors, and reconstruct the single
-``ADD``-flag the original leaf leaves behind (always the strided cursor plus a
-known immediate -- see ``_apply_strided_add_flag``).
+of the CPU register file and x86 flags: the address-bound leaves in ``tandy.py``
+are thin adapters that read the registers, call one of these operations, store
+the returned cursors, and reconstruct the single ``ADD``-flag the original leaf
+leaves behind (always the strided cursor plus a known immediate -- see
+``_apply_strided_add_flag``).
 
 Keeping the blit semantics here -- as ordinary loops over named coordinates --
 is what turns the renderer into readable native code instead of a transliterated
 register dance.
+
+Scope: the high-level reconstruction targets **Tandy only**.  The EGA/CGA leaves
+(``ega.py`` / ``cga.py``) stay as their transliterated VM-mode hooks and are
+intentionally not lifted here; an EGA/CGA-only native codepath should raise
+``NotImplementedError`` rather than be reconstructed.
 """
 from __future__ import annotations
 

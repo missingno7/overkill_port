@@ -5,6 +5,12 @@ The shift-based CGA siblings of the Tandy 2E6E masked-sprite family -- ``1010:3E
 shift-chain helpers they use.  These are pure ``run_*(cpu)`` functions; the
 address-facing ``@registry.replace`` wrappers (and 3EFB's overlay signature guard)
 stay in ``hooks.py``.
+
+Scope note: CGA is OUT OF SCOPE for the Tandy-focused high-level
+reconstruction (``rendering/rasterizer.py``).  These leaves stay as
+transliterated VM-mode hooks -- correct and verified, but intentionally not
+lifted; a CGA-only native codepath should raise ``NotImplementedError``
+rather than be reconstructed.
 """
 from __future__ import annotations
 

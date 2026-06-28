@@ -5,6 +5,12 @@ inline in ``overkill/hooks.py``.  They are pure ``run_*(cpu)`` functions plus
 their private bit-spread helpers; the address-bound ``@registry.replace``
 wrappers stay in ``hooks.py`` and delegate here, matching the
 ``rendering/tandy.py`` pattern.  Bodies were relocated verbatim.
+
+Scope note: EGA is OUT OF SCOPE for the Tandy-focused high-level
+reconstruction (``rendering/rasterizer.py``).  These leaves stay as
+transliterated VM-mode hooks -- correct and verified, but intentionally not
+lifted; an EGA-only native codepath should raise ``NotImplementedError``
+rather than be reconstructed.
 """
 from __future__ import annotations
 
