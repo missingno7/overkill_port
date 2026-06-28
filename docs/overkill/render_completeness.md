@@ -124,34 +124,41 @@ The grounded model:
   - Per-frame copies `34C5/34D8/3542` + `4D6F` write **zeros** (clear sprite cells /
     occupancy) — a sprite clear→redraw cycle.
 
-**Self-compose gap (honest state):**
-1. **The starfield origin is UNRESOLVED**, and the investigation surfaced a real
-   **tooling bug that invalidated much of this section's probing** (now fixed):
+**Self-compose gap — RESOLVED + build proven (`probe_build_test2`):**
+1. **The starfield is the persistent "clean plate" background.** Compositing all of a
+   frame's masked-compositor blocks (24 on L2 f200) on a **black** plate via the
+   verified `composite_sprites` matches the VM playfield at **99.94% (63961/64000)**;
+   the **39 mismatched pixels are exactly the starfield** — scattered single stars
+   (`scratchpad/build_diff.png`). So the playfield = a sparse **persistent starfield
+   plate (~40 stars)** + the sprite blocks composited on top.
 
-   **FOUND + FIXED — write-watchers were blind to bulk string ops.** `_rep_movsb`,
-   `_rep_stosb`, `_rep_movsw` (`overkill/asm.py`) take a NumPy-slice fast path
-   (`mem.data[dst:dst+n] = …`) that bypasses `mem.write_watchers`. So EVERY
-   write-histogram / per-routine-attribution probe in this session was **incomplete** —
-   it silently missed all `rep movs`/`rep stos` writes. **Fix:** the three fast paths
-   now skip when `cpu.mem.write_watchers` is non-empty, falling through to the watched
-   per-byte loop (zero cost in production; full visibility when probing). **The
-   per-routine attributions above (`2F81`=aliens, the "clean plate is black", etc.) are
-   therefore SUSPECT and must be re-verified with the fix in place.**
+   **Root cause of this whole investigation's churn:** the "clean plate" reads
+   *40 nonzero px* — which I repeatedly called "black" (40/64000 ≈ 0%). It is NOT
+   black; it is the 40-pixel sparse starfield. The stars are **not redrawn per frame** —
+   they persist as the plate and scroll with the cursor `[234C]`. That is why every
+   per-frame write-probe found no "star routine" and a traced star byte showed no writer
+   (it was written at level-load, before the probe window). The earliest hypothesis
+   ("persistent starfield background") was right; it was wrongly retracted on the misread.
 
-   Leads RULED OUT for the stars: probe pacing (clean plate = 40 px black under both
-   pacings); present-wrap (`3354` advances `SI` 16-bit, wraps at `0x10000`, not reached);
-   decode-artifact (the 35FF stars sit at the **same positions** as the real B800 stars
-   → they are real). Even after the bulk-op fix, a traced star byte's history shows only
-   a `4D6F` clear (value 0) and no later writer — so the mechanism is still unaccounted,
-   pointing at remaining **probe-reliability** issues (e.g. the provenance end-read may
-   read a reloaded/stale runtime; the linear 35FF decode may be reading non-pixel data
-   at those offsets). NEXT: (i) re-run the per-routine attribution with the bulk-op fix;
-   (ii) verify the provenance probe reads the *same* runtime it watched; then re-locate
-   the stars. Retracted (WRONG): "2F81 draws the star background", "persistent
-   level-start fill".
-   *Latent decoder note (separate, real):* `render_present_page_indices` masks source
-   reads at 1 MB, not the 64 KB segment, so for large cursors it would not wrap like
-   the game's 16-bit `SI` — worth fixing, but not the cause here.
+   **Build status — playfield self-compose PROVEN byte-exact.** `composite_sprites` of
+   the frame's blocks on the captured starfield plate equals the VM's decoded 35FF
+   playfield **exactly (64000/64000)**. Formalized as
+   `overkill/probes/verify_playfield_compose.py` — **30/30 gameplay frames byte-exact**,
+   0 fail. So `playfield = starfield plate + composite_sprites(blocks)` holds per frame
+   with no per-frame VM page read. The only remaining input is the **starfield plate**
+   itself (the static, sparse background): supply it without the VM by capturing it once
+   (legitimate level data) and scrolling by `[234C]`, or by regenerating the star
+   positions. The sprite blocks already come from the verified
+   `CapturedSprite → SnapshotSprite` extraction.
+
+   *Tooling note (real, fixed this session):* `_rep_movsb/_rep_stosb/_rep_movsw`
+   (`overkill/asm.py`) took a NumPy-slice fast path that bypassed `mem.write_watchers`,
+   so write-histogram probes silently missed all `rep movs/stos` writes — a blind spot
+   that fed the churn. Fixed: the fast paths now fall through to the watched per-byte
+   loop when a watcher is active (zero production cost).
+   *Latent decoder note (separate):* `render_present_page_indices` masks source reads at
+   1 MB, not the 64 KB segment, so for large cursors it would not wrap like the game's
+   16-bit `SI` — worth fixing, not exercised here.
 2. The **HUD panel**: chrome (static) + the **score digits = `5F05`** (identified) +
    radar, drawn directly into B800.
 3. Drive the lifted compositors from **native game state** to draw the sprite layer
