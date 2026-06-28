@@ -155,6 +155,19 @@ self-contained routine not in `loop_blockers.md` first. Hygiene slices are valid
 whenever a substantive target is blocked. This queue is intentionally large — it will not
 run dry over many nights.
 
+> **Phase-1/1b slice vein status (2026-06-28):** the *byte-exact dual-mode extraction*
+> and *render-relocation* slice work is exhausted for now (objective: `source_port_status`
+> = 67 pure rules / 13.9% pure-source mass; the object-behavior decision/computation vein
+> is fully lifted; the cleanly-relocatable inline-render hooks are out of `hooks.py`, now
+> 3203 lines; a threshold/magic-number scan finds ~nothing un-named left). What remains is
+> (a) the **attended-only frontier** already in `loop_blockers.md` (call-tree-leaf
+> dispatchers, the `BFC7`/`BD17` death tails, the `[95F2]/[95F4]` contact-center
+> divergence), and (b) **Phase 2** — making the recovered rules take/return native state
+> structs so the lifted adapters (still 9938 lines / 2352 cpu-mem) can thin into pure
+> source. Phase 2 is a different *kind* of work (struct design + a state-mirror verifier
+> per struct, not byte-exact extraction); start it with fresh focus per the smallest-first
+> rule (`ObjectSlotRecord`✓ → `ObjectPool` next).
+
 ### Phase 1 — gameplay systems: lifted → pure dual-mode recovered (the bulk)
 Push each VM-coupled body in `overkill/gameplay/*.py` down into a pure `recovered/systems`
 rule (dual-mode, native-state-shaped per the AB10 template), thin the hook to an adapter,
