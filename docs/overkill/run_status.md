@@ -1,3 +1,16 @@
+## 2026-06-28 - Coastline (Phase 1b): new rendering/cga.py -- relocate the 3E12/3EFB CGA compositors
+
+Established `rendering/cga.py` (the CGA byte-level masked-compositor backend, parallel
+to `ega.py`/`tandy.py`) and relocated the whole 3E12 (two-shift) + 3EFB (six-shift)
+family out of `hooks.py`: both `run_masked_cga_composite_3e12`/`_3efb` bodies plus
+their shared pure `_rcr_stc_chain_5bytes`/`_shr_rcr_chain_5bytes` 5-byte shift-chain
+helpers.  The thin `@registry.replace` wrappers stay in `hooks.py` (3EFB keeps its
+overlay signature guard).  Byte-exact: both per-hook oracles
+(`test_masked_sprite_composite_3e12`/`_3efb`) pass, plus lint (182) + audit;
+`hook_inventory.md` regenerated.  `hooks.py` sheds ~160 lines of render logic into the
+backend module.  Phase-1b masked-compositor family (2E6E/2F81/38B7/3849/3E12/3EFB) now
+fully out of the hook layer.
+
 ## 2026-06-28 - Coastline (Phase 1b): relocate 38B7 + dedup the immediate-add masked compositors
 
 Relocated the 2-column masked sprite compositor at 1010:38B7 out of `hooks.py` and
