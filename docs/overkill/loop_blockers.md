@@ -72,6 +72,20 @@ but diverges deep in the **full** run (`OVERKILL_FULL_DEMO_VERIFY=1`).
   menu core, `BBB2`/`BE3C`/`B2CD`/`ADC9` block loops run as raw ASM today and are
   already *correct* in both runtimes — lifting them is real reverse-engineering
   with no correctness gain, best done attended, and only after Phases 3–4.
+- **Object-behavior call-tree leaves (the bounded `run_original_near_call` /
+  `_run_interpreted_near_call_observed` shims)** — surfaced 2026-06-28 after the
+  whole object-behavior *decision/computation* vein was lifted (ab10/ae09/aba3/abca/
+  b9f0 = 7 b9f0 rules; the behaviors now delegate every clean pure rule). The
+  remaining inline weight in `abca`/`b9f0`/`aed8`/`b24d` is the bounded calls into the
+  leaves `5DB2`✓/`5E1B`/`5E42`/`7476`/`837A`/`859E`/`AB99`, run through the interpreter
+  *on purpose* so their internal near-CALL return words match byte-for-byte. Spot
+  disasm confirms these are NOT simple leaves: `837A` is a dispatcher that does an
+  indirect `call ax` through a runtime handler table inside a 10-iteration loop (its
+  targets can't be statically resolved); `AB99` is just `call BFC7` (the attended-only
+  death frontier above). Lifting them is the same "no correctness gain, attended RE"
+  class — the bounded-original approach is already correct in both runtimes. Do NOT
+  re-attempt unattended. Tractable filler instead: Phase-1b coastline relocations of
+  the remaining genuinely-inline render hooks out of `hooks.py`.
 
 ### Cleared from this backlog (done since the last revision)
 - ~~Raw-offset drain (objects.py / contact_side_effects.py / action_spawns.py)~~ —
