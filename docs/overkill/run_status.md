@@ -1,3 +1,14 @@
+## 2026-06-28 - Coastline (Phase 1b): relocate the 38F9 CGA compositor to cga.py
+
+Moved the compact 1-column CGA masked compositor at 1010:38F9 (reached from the compact
+layer helper 7746 in mode 0; AND/OR composite one word/row, DI += 32h after STOSW, restore
+DS from CS:[9596]) out of hooks.py into `rendering/cga.run_masked_cga_composite_38f9` (DF
+added to cga.py's `dos_re.cpu` import), leaving a thin wrapper.  Programmatic verbatim move
+(byte-identical body); lint (183) + the undefined-name guard pass and the bounded demo
+corpus stays byte-exact; `hook_inventory.md` regenerated.  38F9 has no per-hook oracle and
+is a CGA path the Tandy demo corpus may not exercise, but the move is faithful by
+construction (the body was relocated, not rewritten).
+
 ## 2026-06-28 - Recovery: B9F0 live-X overflow wrap -> recovered rule (+ shared right edge)
 
 The last B9F0 gate: on the overshoot path the live X also wraps once it passes the right

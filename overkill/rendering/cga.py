@@ -8,7 +8,7 @@ stay in ``hooks.py``.
 """
 from __future__ import annotations
 
-from dos_re.cpu import CF
+from dos_re.cpu import CF, DF
 
 
 def _rcr_stc_chain_5bytes(bl: int, bh: int, al: int, ah: int, dl: int, passes: int) -> tuple[int, int, int, int, int]:
@@ -192,4 +192,46 @@ def run_masked_cga_composite_3efb(cpu) -> None:
     s.bx = data_bx
     s.ax = data_ax
     s.ds = mem.rw(cs, 0x9596)            # MOV DS,CS:[9596] before RET.
+    s.ip = cpu.pop()
+
+
+def run_masked_cga_composite_38f9(cpu) -> None:
+    """Composite the compact 1-column CGA masked sprite row loop at 1010:38F9.
+
+    Reached from the compact layer helper 7746 in mode 0.  Each row consumes one source
+    mask/data word pair, AND/OR-composites one destination word, then advances DI by 32h
+    after STOSW for the same net 34h row stride as the wider CGA compositors; restores DS
+    from CS:[9596] and returns near.
+    """
+    s = cpu.s
+    mem = cpu.mem
+    rows = s.cx & 0xFFFF
+    if rows == 0:
+        rows = 0x10000
+
+    ds = s.ds & 0xFFFF
+    es = s.es & 0xFFFF
+    si = s.si & 0xFFFF
+    di = s.di & 0xFFFF
+    sd = -2 if cpu.get_flag(DF) else 2
+    ax = s.ax & 0xFFFF
+    old_di = di
+
+    for _ in range(rows):
+        mask = mem.rw(ds, si)                 # LODSW
+        si = (si + sd) & 0xFFFF
+        ax = mask & mem.rw(es, di)            # AND AX,ES:[DI]
+        ax = ax | mem.rw(ds, si)              # OR AX,DS:[SI]
+        si = (si + 2) & 0xFFFF                # ADD SI,2
+        mem.ww(es, di, ax & 0xFFFF)           # STOSW
+        di = (di + sd) & 0xFFFF
+        old_di = di
+        di = (di + 0x32) & 0xFFFF             # ADD DI,32h
+
+    cpu.set_add_flags(old_di, 0x32, old_di + 0x32, 16)
+    s.ax = ax & 0xFFFF
+    s.si = si
+    s.di = di
+    s.cx = 0
+    s.ds = mem.rw(s.cs & 0xFFFF, 0x9596)
     s.ip = cpu.pop()

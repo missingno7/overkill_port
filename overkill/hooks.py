@@ -30,6 +30,7 @@ from .hook_wrappers.sounds import *  # noqa: F401,F403 - register/re-export addr
 from .hook_wrappers.gameplay_frontiers import *  # noqa: F401,F403 - register/re-export address wrappers
 from .hook_wrappers.object_runtime_frontiers import *  # noqa: F401,F403 - register/re-export address wrappers
 from .rendering.cga import (
+    run_masked_cga_composite_38f9,
     run_masked_cga_composite_3e12,
     run_masked_cga_composite_3efb,
 )
@@ -940,38 +941,7 @@ def overkill_masked_sprite_composite_38f9(cpu):
     by 32h after STOSW for the same net 34h row stride as the wider CGA sprite
     compositors.  The original restores DS from CS:[9596] and returns near.
     """
-    s = cpu.s
-    mem = cpu.mem
-    rows = s.cx & 0xFFFF
-    if rows == 0:
-        rows = 0x10000
-
-    ds = s.ds & 0xFFFF
-    es = s.es & 0xFFFF
-    si = s.si & 0xFFFF
-    di = s.di & 0xFFFF
-    sd = -2 if cpu.get_flag(DF) else 2
-    ax = s.ax & 0xFFFF
-    old_di = di
-
-    for _ in range(rows):
-        mask = mem.rw(ds, si)                 # LODSW
-        si = (si + sd) & 0xFFFF
-        ax = mask & mem.rw(es, di)            # AND AX,ES:[DI]
-        ax = ax | mem.rw(ds, si)              # OR AX,DS:[SI]
-        si = (si + 2) & 0xFFFF                # ADD SI,2
-        mem.ww(es, di, ax & 0xFFFF)           # STOSW
-        di = (di + sd) & 0xFFFF
-        old_di = di
-        di = (di + 0x32) & 0xFFFF             # ADD DI,32h
-
-    cpu.set_add_flags(old_di, 0x32, old_di + 0x32, 16)
-    s.ax = ax & 0xFFFF
-    s.si = si
-    s.di = di
-    s.cx = 0
-    s.ds = mem.rw(s.cs & 0xFFFF, 0x9596)
-    s.ip = cpu.pop()
+    run_masked_cga_composite_38f9(cpu)
 
 
 @registry.replace(0x1010, 0x10B7, "overkill_ega_layer_or_inverted_composite_10b7")
