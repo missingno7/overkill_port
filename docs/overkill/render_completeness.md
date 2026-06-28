@@ -112,14 +112,25 @@ The grounded model:
   `2E6E/2F81/2FB6`, copies `34C5/34D8/3542`) plus packed object/sprite cells in the
   `~0x2C00` work region (written by the object draws `35CF/356F/358D/365A`). The
   present geometry (35FF→B800) is lifted.
+- **Per-routine attribution** (decoded each routine's 35FF writes in isolation,
+  `scratchpad/attr_*.png`, frames 199/200): the compositors are the sprite layer —
+  **`2F81` = the alien formation, `2E6E` = the player ship, `2FB6` = the projectiles**.
+  On the alternate frame the copies `34C5/34D8/3542` + `4D6F` write **zeros** (clear
+  the sprite cells / occupancy) — i.e. a per-frame **sprite clear→redraw cycle**. The
+  **starfield is a *persistent* background** in 35FF: it survives the clear/redraw
+  cycle and is NOT drawn in steady frames, so its generator runs at **level-start /
+  scroll-in**, not per frame. (This is why steady-frame write-histograms never found a
+  "star routine" — there isn't one per frame.)
 
 **Self-compose gap (grounded, narrowed):**
-1. The **starfield generator** — the sparse scrolling dots filling the black playfield
-   (they live in 35FF; the specific routine is not yet isolated).
+1. The **starfield (scrolling background) generator** — runs at level-start / on
+   scroll-in (not per frame); isolate it by attributing 35FF writes on a **scroll
+   frame** (where cursor `[234C]` changes), not a steady frame.
 2. The **HUD panel** (right-side chrome + score + radar), drawn separately into B800.
-3. Drive the lifted leaves from **native game state** to compose the playfield into a
-   35FF-equivalent (sprites are already native + verified in `sprite_layer`), then
-   present + overlay the HUD.
+3. Drive the lifted compositors from **native game state** to draw the sprite layer
+   (the per-routine identities above map directly to the semantic sprite list that
+   `frame_snapshot_adapter` already extracts; `sprite_layer` composites it natively),
+   over the regenerated starfield, then present + overlay the HUD.
 
 So the native backend already produces the faithful frame by *decoding* the VM's
 composed pages; standing on its own (regenerating the playfield + HUD without the VM)
