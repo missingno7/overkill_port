@@ -111,3 +111,19 @@ def tandy_b800_next_row(di: int) -> int:
     if di & 0x8000:
         di = (di + 0x80A0) & 0xFFFF
     return di
+
+
+def tandy_present_frame_next_row(di: int, *, rewind: int = 0x34) -> int:
+    """Advance ``di`` one row in the 447B/41A6 mode-0 frame-present interleave.
+
+    After a row is copied, rewind it (``-rewind``) and bank to the next
+    interleaved row (``+0x2000``), wrapping by ``+0xC050`` when that crosses the
+    ``0x4000`` half-bank boundary.  447B has a fixed 26-word row (``rewind=0x34``);
+    41A6 is the same banking with a variable per-row width.  Distinct from the
+    306F/CDAA path (:func:`tandy_b800_next_row`).
+    """
+    di = (di - rewind) & 0xFFFF
+    di = (di + 0x2000) & 0xFFFF
+    if di & 0x4000:
+        di = (di + 0xC050) & 0xFFFF
+    return di

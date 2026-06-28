@@ -25,6 +25,7 @@ from dos_re.hooks import call_installed_hook_like_near_call
 from ..asm import _add_mem_word, _add_reg16, _and_mem_word, _cmp_word, _dec_reg16_preserve_cf, _inc_mem_word_preserve_cf, _inc_reg16_preserve_cf, _rep_movsb, _rep_movsw, _rep_stosb, _stosw, _sub_mem_word, _sub_reg16, _test_word, _xor_al_al
 from .rasterizer import (
     composite_masked_rows, copy_word_rows, or_inverted_word_rows, tandy_b800_next_row,
+    tandy_present_frame_next_row,
 )
 
 Cpu = object
@@ -541,6 +542,30 @@ def _advance_tandy_present_row(cpu, di: int) -> int:
     return di
 
 
+
+def _advance_tandy_present_frame_row(cpu, di: int, *, rewind: int = 0x34) -> int:
+    """CPU adapter for :func:`rasterizer.tandy_present_frame_next_row`: the
+    447B/41A6 per-row rewind/bank, setting the exact SUB/ADD/logic flags it leaves."""
+    di_in = di & 0xFFFF
+    rewind &= 0xFFFF
+    old = di_in
+    result = old - rewind
+    di = result & 0xFFFF
+    cpu.set_sub_flags(old, rewind, result, 16)
+    old = di
+    result = old + 0x2000
+    di = result & 0xFFFF
+    cpu.set_add_flags(old, 0x2000, result, 16)
+    cpu.set_logic_flags(di & 0x4000, 16)
+    if di & 0x4000:
+        old = di
+        result = old + 0xC050
+        di = result & 0xFFFF
+        cpu.set_add_flags(old, 0xC050, result, 16)
+    assert di == tandy_present_frame_next_row(di_in, rewind=rewind), "frame-present advance disagrees with pure geometry"
+    return di
+
+
 def _tandy_next_scanline_di(cpu) -> None:
     """Mirror OVERKILL's packed Tandy/PCjr B800 row advance used by 1010:375B."""
     cpu.s.di = _advance_tandy_present_row(cpu, cpu.s.di & 0xFFFF)
@@ -618,11 +643,7 @@ def run_variable_width_interlaced_blit_41a6(cpu) -> None:
         cpu.push(cpu.s.cx)
         cpu.s.cx = cpu.s.bp & 0xFFFF
         _rep_movsb(cpu, cpu.s.cx)
-        _sub_reg16(cpu, 7, cpu.s.bp)
-        _add_reg16(cpu, 7, 0x2000)
-        _test_word(cpu, cpu.s.di, 0x4000)
-        if not cpu.get_flag(ZF):
-            _add_reg16(cpu, 7, 0xC050)
+        cpu.s.di = _advance_tandy_present_frame_row(cpu, cpu.s.di & 0xFFFF, rewind=cpu.s.bp & 0xFFFF)
         cpu.s.cx = cpu.pop()
         cpu.s.cx = (cpu.s.cx - 1) & 0xFFFF  # LOOP, flags unaffected.
         rows -= 1
@@ -650,11 +671,7 @@ def run_present_frame_blit_447b(cpu) -> None:
     while True:
         cpu.s.cx = cpu.s.bx & 0xFFFF       # 4492 MOV CX,BX
         _rep_movsw(cpu, cpu.s.cx)          # 4494 REP MOVSW (sets CX=0, advances SI/DI)
-        _sub_reg16(cpu, 7, 0x0034)         # 4496 SUB DI,34h
-        _add_reg16(cpu, 7, 0x2000)         # 4499 ADD DI,2000h
-        _test_word(cpu, cpu.s.di, 0x4000)  # 449D TEST DI,4000h
-        if not cpu.get_flag(ZF):           # 44A1 JZ 44A7
-            _add_reg16(cpu, 7, 0xC050)     # 44A3 ADD DI,C050h
+        cpu.s.di = _advance_tandy_present_frame_row(cpu, cpu.s.di & 0xFFFF)
         _dec_reg16_preserve_cf(cpu, 5)     # 44A7 DEC BP (CF unaffected on 8086)
         if cpu.get_flag(ZF):               # 44A8 JNZ 4492
             break

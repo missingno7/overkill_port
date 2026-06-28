@@ -94,3 +94,18 @@ def test_tandy_b800_next_row_geometry():
     # crossing past the banks (>= 0x8000) wraps to the next 4-scanline group (+0x80A0)
     assert tandy_b800_next_row(0x6000) == 0x00A0   # 0x8000 -> 0x8000+0x80A0
     assert tandy_b800_next_row(0x6050) == 0x00F0   # 0x8050 -> 0x8050+0x80A0
+
+
+def test_tandy_present_frame_next_row_geometry():
+    from overkill.rendering.rasterizer import tandy_present_frame_next_row
+    # 447B's row pitch: -0x34 rewind, +0x2000 bank, no wrap below 0x4000
+    assert tandy_present_frame_next_row(0x00D4) == 0x20A0   # 0xA0 - 0x34 + 0x2000
+    # crossing the 0x4000 half-bank wraps by +0xC050
+    assert tandy_present_frame_next_row(0x2034) == 0x0050   # ->0x4000 -> +0xC050
+
+
+def test_tandy_present_frame_next_row_variable_rewind():
+    from overkill.rendering.rasterizer import tandy_present_frame_next_row
+    # 41A6 uses the same banking with a variable row width (rewind=BP)
+    assert tandy_present_frame_next_row(0x2050, rewind=0x50) == 0x0050  # ->0x4000 ->+0xC050
+    assert tandy_present_frame_next_row(0x00F0, rewind=0x50) == 0x20A0  # no wrap
