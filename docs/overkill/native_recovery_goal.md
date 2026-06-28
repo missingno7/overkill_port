@@ -224,11 +224,22 @@ per struct (diff the native struct vs the VM view at a checkpoint).
 >   `read_current_object_slot_record(cpu)` and replays the live CMP flags from its fields.
 > - **Record-enrichment pattern**: `ObjectSlotRecord` grew `target_x_word`/`target_y_word`
 >   (defaulted, both projections populate them) to feed the target-position rules.
+> - **Native-system + equivalence pattern**: `object_pool_find_free` is the pure 1010:7573
+>   allocator over `ObjectPool` (cursor DS:95DA, per-iteration wrap, first `active_word==0`),
+>   proven by an equivalence test to return exactly what the VM `_find_free_object_slot_7573`
+>   does. This is how to recover a *system* (not just a struct/rule) natively: model it on the
+>   pool, then diff it against the VM routine across scenarios. (NB the effect allocator 7524
+>   is a *different* algorithm -- check-then-wrap, and reads cross-table at the boundary -- so
+>   it needs its own model, not a reuse of find_free.)
 > NEXT (smallest-first, same patterns): migrate the remaining slot-field rules
 > (`b9f0_wrapped_target_x`/`_x_on_overflow`, the `b73e` target rules) -- enrich
-> `ObjectSlotRecord` with `substate`/`sprite_or_state`/etc. as each needs them; then the
-> global-state structs (`CameraState` from DS:2350/237E/2380, `RngState`, `ScoreState`),
-> each with its own state-mirror verifier like ObjectPool's.
+> `ObjectSlotRecord` with `substate`/`sprite_or_state`/etc. as each needs them; recover more
+> native systems by the equivalence pattern (object-scan iteration, the 7524 effect
+> allocator); then the global-state structs (`CameraState` from DS:2350/237E/2380, `RngState`,
+> `ScoreState`), each with its own state-mirror verifier like ObjectPool's. The big leap that
+> realises all of it is the **Phase-5 standalone object-update loop** (iterate the native pool
+> -> apply the native rules -> mutate the pool, verified frame-by-frame vs the VM) -- a
+> substantial, focused undertaking best started fresh.
 
 ### Phase 3 — render systems as recovered game state (NOT renderer hacks)
 Recover the original render path into systems the native backend consumes (see
