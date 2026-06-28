@@ -45,7 +45,18 @@ does the DOS reads + the boundary fidelity. Prefer rules that take/return
    ```
    python3 -c "import re;f='overkill/gameplay/object_behaviors.py';t=open(f,encoding='utf-8').read();m=re.search(r'from overkill.recovered.systems.objects import \((.*?)\)',t,re.S);syms=[x.strip().rstrip(',') for x in (m.group(1).split() if m else []) if x.strip().rstrip(',')];s=t.splitlines();d=[(i,l) for i,l in enumerate(s) if re.match(r'^def (run_|_run_|_scan_)',l)];[print(('DONE' if [y for y in syms if not y.isupper() and re.search(r'\\b'+y+r'\\b','\\n'.join(s[i:(d[k+1][0] if k+1<len(d) else len(s))]))] else 'TODO'),l.split('(')[0].split()[1]) for k,(i,l) in enumerate(d)]"
    ```
-   Today: 3 DONE (`b73e`/`b86d`/`ab10`), 14 TODO. Take the smallest TODO not attended-only.
+   Status (2026-06-28): 6 DONE (`b73e`/`b86d`/`ab77`/`aba3`/`ae09`/`ab10`), 11 TODO.
+   IMPORTANT: the small-rule vein is now exhausted.  The remaining *small* TODOs
+   (`to_ab77`, `b24d`, `dispatch_aa2b`, `b250_selector`, `efae`-dispatch, `ad04`-router,
+   `aed8`) are composition/routing glue that already delegate to recovered helpers -- the
+   checker only flags them because they do not delegate to a `recovered.systems.objects`
+   symbol; they carry no independent computation to lift into a pure rule, so do not
+   chase the "smallest TODO" here.  The genuine remaining recovery is the two big
+   behaviors with real computation: `abca` (105L, the sprite==0Fh collision body) and
+   `b9f0` (165L, the EFAE-selected target-position/branch behavior).  Both are intricate,
+   demo-replay-gated (no fast per-hook oracle), and warrant fresh-context focus: read the
+   ASM, design the dual-mode split (pure rule in `recovered/systems/objects.py` + thin
+   adapter replaying live boundary flags), verify byte-exact via the demo corpus.
 2. **Diagnose against the oracle, never guess.** Disassemble the original ASM for the
    routine (capstone; image at `artifacts/static_runtime_bundle/memory_1mb.bin`,
    `1010:off` → linear `0x10100+off`) and read the existing lifted body. Identify the
