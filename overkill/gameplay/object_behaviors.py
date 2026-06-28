@@ -42,11 +42,13 @@ from overkill.gameplay.objects import run_object_motion_table_ab34, run_object_s
 from overkill.recovered.systems.objects import (
     AD04_SPRITE_COLLISION_STATE,
     B9F0_HELPER_COUNTER_LIMIT,
+    B9F0_HELPER_DIFFICULTY_FAST,
     B9F0_TARGET_X_WRAP_LIMIT,
     CAMERA_NEAR_THRESHOLD,
     RENDER_MODE_FULL,
     LEVEL_PHASE_DISABLE_THRESHOLD,
     b9f0_low_counter_runs_helper,
+    b9f0_periodic_helper_mask,
     b9f0_reached_target,
     b9f0_wrapped_target_x,
     B73E_SPAWN_WINDOW_MAX,
@@ -608,22 +610,20 @@ def _run_object_behavior_b9f0(cpu, *, parent: str, chain: str, cx_value: int) ->
                 ran_helper = True
 
             if not ran_helper:
+                # BA3D..BA5A: the BA5A helper also fires on a periodic tick of DS:2340 --
+                # every 128th tick on the fast difficulty (DS:BEDC == 2, mask 7Fh), else
+                # every 256th (mask FFh).  The recovered rule owns the difficulty->mask
+                # choice; the AND's flags are dead (the CMP below overwrites them).
                 cpu.s.ax = mem.rw(ds, 0x2340)
-                _cmp_word(cpu, mem.rw(ds, 0xBEDC), 0x0002)
-                if mem.rw(ds, 0xBEDC) == 0x0002:
-                    cpu.s.ax &= 0x007F
-                    _cmp_word(cpu, cpu.s.ax, 0x007F)
-                    if cpu.s.ax == 0x007F:
-                        _inc_mem_word_preserve_cf(cpu, ds, 0x2340)
-                        run_ba5a_helper_branch()
-                        ran_helper = True
-                else:
-                    cpu.s.ax &= 0x00FF
-                    _cmp_word(cpu, cpu.s.ax, 0x00FF)
-                    if cpu.s.ax == 0x00FF:
-                        _inc_mem_word_preserve_cf(cpu, ds, 0x2340)
-                        run_ba5a_helper_branch()
-                        ran_helper = True
+                bedc = mem.rw(ds, 0xBEDC)
+                _cmp_word(cpu, bedc, B9F0_HELPER_DIFFICULTY_FAST)
+                tick_mask = b9f0_periodic_helper_mask(bedc)
+                cpu.s.ax &= tick_mask
+                _cmp_word(cpu, cpu.s.ax, tick_mask)
+                if cpu.s.ax == tick_mask:
+                    _inc_mem_word_preserve_cf(cpu, ds, 0x2340)
+                    run_ba5a_helper_branch()
+                    ran_helper = True
             # BA67 path below.
         else:
             # BA99: decide whether to move toward the target through 5DB2 or use

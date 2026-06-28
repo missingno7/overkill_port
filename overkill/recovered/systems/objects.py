@@ -331,6 +331,22 @@ def b9f0_low_counter_runs_helper(counter: int) -> bool:
     return (counter & 0xFFFF) < B9F0_HELPER_COUNTER_LIMIT
 
 
+B9F0_HELPER_DIFFICULTY_FAST = 0x0002
+B9F0_HELPER_TICK_MASK_FAST = 0x007F
+B9F0_HELPER_TICK_MASK_SLOW = 0x00FF
+
+
+def b9f0_periodic_helper_mask(difficulty: int) -> int:
+    """The DS:2340 tick mask gating B9F0's periodic BA5A helper (1010:BA3D).
+
+    On the fast difficulty (DS:BEDC == 2) the helper fires every 128th tick (mask 7Fh);
+    otherwise every 256th (mask FFh).  The helper runs when ``tick & mask == mask`` -- the
+    tick counter is at the top of its period."""
+    if (difficulty & 0xFFFF) == B9F0_HELPER_DIFFICULTY_FAST:
+        return B9F0_HELPER_TICK_MASK_FAST
+    return B9F0_HELPER_TICK_MASK_SLOW
+
+
 PLAYER_CHASE_EXCLUDED_LOGIC_IDS = frozenset({0x0001, 0x0021, 0x0022, 0x0026})
 PLAYER_CHASE_CANDIDATE_MAX_X = 0x00E0
 PLAYER_CHASE_REQUIRED_HAZARD_CLASS = 0x0004

@@ -1,3 +1,14 @@
+## 2026-06-28 - Recovery: B9F0 periodic-tick helper mask -> recovered rule (+ branch unify)
+
+B9F0's BA5A helper also fires on a periodic tick of DS:2340 -- every 128th tick on the
+fast difficulty (DS:BEDC == 2, mask 7Fh), else every 256th (mask FFh).  The original spelt
+this as two byte-identical branches differing only in the mask; unified them via a
+computed mask owned by the new pure `b9f0_periodic_helper_mask(difficulty)` rule (+
+`B9F0_HELPER_DIFFICULTY_FAST`/`_TICK_MASK_FAST`/`_SLOW`).  Byte-exact-by-construction (same
+AX masking, CMP flags, and inc/helper side effects); lint + the guard + a unit test pass
+and the bounded demo corpus stays byte-exact.  Next b9f0 gate: the `232E == 3Fh` spawn
+trigger in the overshoot branch.
+
 ## 2026-06-28 - Recovery: B9F0 low-counter helper gate (shared, 2 sites) -> recovered rule
 
 B9F0 runs its BA5A motion helper unconditionally while the level counter DS:A47E is below

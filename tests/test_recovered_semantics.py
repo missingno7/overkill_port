@@ -1018,6 +1018,24 @@ def test_recovered_b9f0_low_counter_runs_helper_is_pure_and_named():
     assert b9f0_low_counter_runs_helper(0x10005) is True
 
 
+def test_recovered_b9f0_periodic_helper_mask_is_pure_and_named():
+    from overkill.recovered.systems.objects import (
+        B9F0_HELPER_DIFFICULTY_FAST,
+        B9F0_HELPER_TICK_MASK_FAST,
+        B9F0_HELPER_TICK_MASK_SLOW,
+        b9f0_periodic_helper_mask,
+    )
+
+    # Fast difficulty (BEDC == 2) -> 128-tick period (mask 7Fh).
+    assert b9f0_periodic_helper_mask(B9F0_HELPER_DIFFICULTY_FAST) == B9F0_HELPER_TICK_MASK_FAST
+    # Anything else -> 256-tick period (mask FFh).
+    assert b9f0_periodic_helper_mask(0) == B9F0_HELPER_TICK_MASK_SLOW
+    assert b9f0_periodic_helper_mask(1) == B9F0_HELPER_TICK_MASK_SLOW
+    assert b9f0_periodic_helper_mask(3) == B9F0_HELPER_TICK_MASK_SLOW
+    # 16-bit masking on the difficulty input.
+    assert b9f0_periodic_helper_mask(0x10002) == B9F0_HELPER_TICK_MASK_FAST
+
+
 def test_recovered_ad60_bounds_tile_tail_adapter_matches_pure_decision():
     from overkill.gameplay import object_bounds
     from overkill.recovered.systems.objects import (
