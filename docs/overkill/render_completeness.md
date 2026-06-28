@@ -68,17 +68,18 @@ output, and **witness it against the live draws** before marking done.
       game scrolls *from*) is captured as `BackgroundLayer.plane_segment`. The
       actual on-screen pixels live in `PresentComposition.source_page` (`[9598]`,
       bg + sprites composited); decode either to RGB at R3.
-- [ ] **Display page `[9596]` role** — witnessed (`witness_master_plane`, L2 frame
-      400): `[9596]`=25CC holds the **bulk of the frame** (7009–12783 non-zero,
-      windowed by the scroll cursor) while the model's source `[9598]`=35FF is
-      near-empty (339) at the `5BDC` present entry — so `[9596]` is **not** a
-      HUD/overlay scratch. The work pages appear **double-buffered** (`[9596]` the
-      just-completed page being shown, `[9598]` the back buffer mid-build), so the
-      single `present.source_page=[9598]` model is incomplete for the work layer.
-      NEXT: pin which selector the present reads each frame (the flip) and point
-      the background model at the active page — a prerequisite for regenerating the
-      background natively (the tile-draw + starfield generators, per
-      `witness_background_boundary`).
+- [x] **Display page `[9596]` role — RESOLVED: it is the game DS pointer, not a
+      page.** `present_tandy_frame_3354`'s tail does `DS = CS:[9596]` (=25CC, the
+      game data segment — same value `[1010:9596]` resolves to in the snapshot
+      adapter) to restore DS after the present clobbers it with the source segment.
+      Measured (`probe_pageflip`): the page pointers are **fixed across all frames**
+      — `[9592]`=245A (master plane), `[9598]`=35FF (present source), `[95A4]`=B800
+      (visible aperture) — there is **no work-page flip**. (An earlier
+      `witness_master_plane` run decoded `[9596]`=25CC *as a video page* and got
+      7009 "non-zero" — that was game data read as pixels, a probe artifact; the
+      double-buffer reading it suggested was wrong.) So `present.source_page=[9598]`
+      is correct and complete: `[9598]` is the (mostly-black) space playfield,
+      `[95A4]`=B800 the composited visible. No model change needed.
 - [x] ~~Screen shake~~ — no 4C30 shake global in OverKill (PRE2 pattern, N/A);
       revisit only if a witness reveals one.
 
