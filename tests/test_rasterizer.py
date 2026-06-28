@@ -109,3 +109,10 @@ def test_tandy_present_frame_next_row_variable_rewind():
     # 41A6 uses the same banking with a variable row width (rewind=BP)
     assert tandy_present_frame_next_row(0x2050, rewind=0x50) == 0x0050  # ->0x4000 ->+0xC050
     assert tandy_present_frame_next_row(0x00F0, rewind=0x50) == 0x20A0  # no wrap
+
+
+def test_tandy_b800_next_row_with_rewind():
+    from overkill.rendering.rasterizer import tandy_b800_next_row
+    # present loops rewind the copied row before banking
+    assert tandy_b800_next_row(0x0068, rewind=0x68) == 0x2000   # 0x68-0x68+0x2000
+    assert tandy_b800_next_row(0x6068, rewind=0x68) == 0x00A0   # ->0x8000 ->+0x80A0

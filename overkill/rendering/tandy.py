@@ -228,11 +228,7 @@ def _clear_tandy_interlaced_rows_from_current_state(cpu) -> None:
         for _ in range(0x34):
             _stosw(cpu)
         s.cx = 0
-        _sub_reg16(cpu, 7, 0x0068)
-        _add_reg16(cpu, 7, 0x2000)
-        _test_word(cpu, s.di, 0x8000)
-        if not cpu.get_flag(ZF):
-            _add_reg16(cpu, 7, 0x80A0)
+        s.di = _advance_tandy_present_row(cpu, s.di & 0xFFFF, rewind=0x0068)
         _dec_reg16_preserve_cf(cpu, 5)
         if s.bp == 0:
             break
@@ -415,17 +411,13 @@ def build_startup_coordinate_tables_0f0b(cpu, runtime: TandyRenderRuntime) -> No
         # XCHG AX,DI; the original then dispatches on CS:[95BC].
         s.ax, s.di = s.di & 0xFFFF, s.ax & 0xFFFF
         if mode == 0:
-            _add_reg16(cpu, 7, 0x2000)
-            _test_word(cpu, s.di, 0x4000)
-            if not cpu.get_flag(ZF):
-                _add_reg16(cpu, 7, 0xC050)
+            # the 447B/41A6 +0x4000/+0xC050 interleave (no copied row to rewind).
+            s.di = _advance_tandy_present_frame_row(cpu, s.di & 0xFFFF, rewind=0)
         elif mode == 1:
-            _add_reg16(cpu, 7, 0x0028)
+            _add_reg16(cpu, 7, 0x0028)  # CGA linear (+0x28/row); out-of-scope mode.
         elif mode == 2:
-            _add_reg16(cpu, 7, 0x2000)
-            _test_word(cpu, s.di, 0x8000)
-            if not cpu.get_flag(ZF):
-                _add_reg16(cpu, 7, 0x80A0)
+            # the 306F/CDAA B800 +0x8000/+0x80A0 four-bank interleave.
+            s.di = _advance_tandy_present_row(cpu, s.di & 0xFFFF)
         else:
             raise RuntimeError(f"1010:0F0B startup coordinate hook reached unknown video mode index {mode:04X}")
         # XCHG AX,DI; LOOP.
@@ -524,11 +516,19 @@ def changed_dword_present_8rows_cdaa(cpu) -> None:
 
 
 
-def _advance_tandy_present_row(cpu, di: int) -> int:
+def _advance_tandy_present_row(cpu, di: int, *, rewind: int = 0) -> int:
     """CPU adapter for :func:`rasterizer.tandy_b800_next_row`: walk DI to the next
-    Tandy B800 row, setting the exact ADD/logic flags the present loops leave."""
+    Tandy B800 row (optionally rewinding the copied row first), setting the exact
+    SUB/ADD/logic flags the present loops leave."""
     di_in = di & 0xFFFF
-    old = di_in
+    di = di_in
+    if rewind:
+        rewind &= 0xFFFF
+        old = di
+        result = old - rewind
+        di = result & 0xFFFF
+        cpu.set_sub_flags(old, rewind, result, 16)
+    old = di
     result = old + 0x2000
     di = result & 0xFFFF
     cpu.set_add_flags(old, 0x2000, result, 16)
@@ -538,7 +538,7 @@ def _advance_tandy_present_row(cpu, di: int) -> int:
         result = old + 0x80A0
         di = result & 0xFFFF
         cpu.set_add_flags(old, 0x80A0, result, 16)
-    assert di == tandy_b800_next_row(di_in), "present-row advance disagrees with pure geometry"
+    assert di == tandy_b800_next_row(di_in, rewind=rewind), "present-row advance disagrees with pure geometry"
     return di
 
 
@@ -1528,11 +1528,7 @@ def present_tandy_frame_3354(cpu) -> None:
     while True:
         cpu.s.cx = cpu.s.bx & 0xFFFF
         _rep_movsw(cpu, cpu.s.cx)
-        _sub_reg16(cpu, 7, 0x0068)
-        _add_reg16(cpu, 7, 0x2000)
-        _test_word(cpu, cpu.s.di, 0x8000)
-        if not cpu.get_flag(ZF):
-            _add_reg16(cpu, 7, 0x80A0)
+        cpu.s.di = _advance_tandy_present_row(cpu, cpu.s.di & 0xFFFF, rewind=0x0068)
         _dec_reg16_preserve_cf(cpu, 5)
         if cpu.get_flag(ZF):
             break
