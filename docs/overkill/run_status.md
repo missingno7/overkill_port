@@ -1,3 +1,18 @@
+## 2026-06-29 - HUD-digit island: native glyph blit byte-exact vs 1010:3153
+
+The HUD char-output leaf recovered native + proven byte-exact. `519A`'s Tandy dispatch
+(`[95BC]=2`) -> `3153` is an 8x8 glyph blit (font `DS:1816`, bit->4bpp expand `DS:1514`,
+colour `DS:215C`, B800 bank geometry). In the renderer's index space this collapses to a
+plain pixel write, and `DS:1514` is a pure bit->0xF-nibble spread. Recovered as
+`overkill/native_video/hud_glyph.py` (`draw_glyph` + dual-mode `read_glyph_font` over the
+`DS:1816` font). Byte-exact witness `overkill/probes/verify_hud_glyph.py`: the VM's *actual*
+`DS:1514` expand table == the native bit-spread (256/256) AND per-char
+`draw_glyph(font[char], colour)` == the VM cell built from the real tables (256/256) -> the
+native glyph rendering is byte-identical to `3153`. VM-free unit tests (`test_hud_glyph`, 5);
+lint (188) + recovered-layer audit green. The score state (`score_bcd` DS:2314) is already
+recovered. Remaining to close the island: the score-digit placement layer (positions from
+the score-display routine) + composing the digits into the HUD region of the native frame.
+
 ## 2026-06-28 - Phase 2: native ObjectPool allocator (object_pool_find_free) == VM 7573
 
 First native game-logic *system* on ObjectPool (beyond the struct + state-mirror):
