@@ -1,3 +1,20 @@
+## 2026-06-28 - Phase 2: native ObjectPool struct + VM state-mirror verifier
+
+First Phase-2 slice (native state structs).  Added `domain.ObjectPool` -- the VM-free
+native snapshot of an OVERKILL object-slot table: every 0x38-byte record as 28 words
+(including the still-unknown bytes, so it is byte-faithful), frozen with a functional
+`with_word`.  It is the counterpart of the DS:23B4 effect / DS:2B5C gameplay tables a
+standalone runtime will own.  Added the views bridge: `read_object_pool` (snapshot a VM
+table), `object_pool_mirror_mismatches` (the state-mirror verifier the goal doc asks for
+-- returns every ``(slot, byte_offset, native, vm)`` divergence; empty = byte-faithful),
+and `object_pool_slot_record` (project the named fields, leaving unknown bytes in
+`words()`).  Five tests including a real-image checkpoint: the snapshot of the live
+gameplay object table in `memory_1mb.bin` mirrors byte-for-byte, a planted mutation is
+detected, and a record projects.  Pure-additive (no live hook/rule path touched) so no
+demo-replay needed; lint (184) + both architecture audits + the undefined-name guard pass.
+`ObjectPool`✓ -> next: more state structs (PlayerState / CameraState / ...) and migrating
+rules to take native state.
+
 ## 2026-06-28 - Hygiene tail: name the object-movement clamp playfield bounds
 
 The four A5D1/A5EA/A5F9/A607 axis step-clamp helpers passed raw limits to

@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from overkill.recovered.domain.coords import i16
+from overkill.recovered.domain.object_slots import ObjectPool, ObjectSlotRecord
 
 # Evidence-backed object/effect slot tables.
 #
@@ -481,3 +482,54 @@ class ObjectTableView:
     def active(self):
         """Iterate only the slots whose active word is non-zero."""
         return (slot for slot in self if slot.active_word != 0)
+
+
+# --- Native ObjectPool bridge (Phase 2) -----------------------------------
+# Snapshot a VM object table into the VM-free domain.ObjectPool and verify the two
+# stay byte-faithful at a checkpoint.  Keeping the VM reads here (not in domain) lets
+# ObjectPool itself stay pure.
+
+def read_object_pool(mem, seg: int, base: int, count: int, stride: int = OBJECT_SLOT_STRIDE) -> ObjectPool:
+    """Snapshot ``count`` records of the DS:``base`` object table into a native ObjectPool.
+
+    Reads every 16-bit word of each ``stride``-byte record, including the still-unknown
+    bytes, so the pool is a byte-faithful copy of the VM table at this instant.
+    """
+    words_per_slot = stride >> 1
+    slots = tuple(
+        tuple(mem.rw(seg, (base + i * stride + (w << 1)) & 0xFFFF) for w in range(words_per_slot))
+        for i in range(count)
+    )
+    return ObjectPool(base=base, stride=stride, slots=slots)
+
+
+def object_pool_mirror_mismatches(pool: ObjectPool, mem, seg: int) -> tuple[tuple[int, int, int, int], ...]:
+    """State-mirror verifier: every ``(slot_index, byte_offset, native_word, vm_word)``
+    where the native ObjectPool diverges from the live VM table at DS:``pool.base``.
+
+    An empty result means the native snapshot is byte-faithful to the VM at this
+    checkpoint -- the invariant a standalone runtime must preserve as it takes ownership.
+    """
+    words_per_slot = pool.stride >> 1
+    out: list[tuple[int, int, int, int]] = []
+    for i, words in enumerate(pool.slots):
+        for w in range(words_per_slot):
+            vm = mem.rw(seg, (pool.base + i * pool.stride + (w << 1)) & 0xFFFF)
+            if words[w] != vm:
+                out.append((i, w << 1, words[w], vm))
+    return tuple(out)
+
+
+def object_pool_slot_record(pool: ObjectPool, index: int) -> ObjectSlotRecord:
+    """Project pool slot ``index`` to the (named-field) ObjectSlotRecord, the same
+    fields ObjectSlotView exposes -- the unknown bytes stay in ``pool.words(index)``."""
+    return ObjectSlotRecord(
+        active_word=pool.word_at(index, OFF_ACTIVE_WORD),
+        x_word=pool.word_at(index, OFF_X),
+        y_word=pool.word_at(index, OFF_Y),
+        gate_or_layer=pool.word_at(index, OFF_GATE_OR_LAYER),
+        link_key=pool.word_at(index, OFF_LINK_KEY),
+        scan_flag=pool.word_at(index, OFF_SCAN_FLAG),
+        hazard_class=pool.word_at(index, OFF_HAZARD_CLASS),
+        logic_id=pool.word_at(index, OFF_LOGIC_ID),
+    )

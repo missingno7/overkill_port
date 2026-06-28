@@ -35,6 +35,42 @@ class ObjectSlotRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class ObjectPool:
+    """A native snapshot of one OVERKILL object-slot table.
+
+    Holds every slot's full ``stride``-byte record as a tuple of 16-bit words --
+    including the still-unknown bytes -- so the snapshot is byte-faithful to the VM
+    table without referencing DOS memory.  This is the VM-free counterpart of the
+    DS-relative effect table (DS:23B4) or gameplay table (DS:2B5C) that a standalone
+    runtime will own.  ``base`` is the table's DS offset and ``stride`` its record size
+    (kept so the snapshot can be mirrored/round-tripped against the VM); the slot count
+    is ``len(pool)``.  Frozen: a mutation produces a new pool.
+    """
+
+    base: int
+    stride: int
+    slots: tuple[tuple[int, ...], ...]
+
+    def __len__(self) -> int:
+        return len(self.slots)
+
+    def words(self, index: int) -> tuple[int, ...]:
+        """The raw 16-bit words of slot ``index`` (faithful, incl. unknown bytes)."""
+        return self.slots[index]
+
+    def word_at(self, index: int, offset: int) -> int:
+        """The 16-bit word at byte ``offset`` within slot ``index``."""
+        return self.slots[index][offset >> 1]
+
+    def with_word(self, index: int, offset: int, value: int) -> "ObjectPool":
+        """A new pool with slot ``index``'s word at byte ``offset`` set to ``value``."""
+        words = list(self.slots[index])
+        words[offset >> 1] = value & 0xFFFF
+        slots = self.slots[:index] + (tuple(words),) + self.slots[index + 1:]
+        return ObjectPool(base=self.base, stride=self.stride, slots=slots)
+
+
+@dataclass(frozen=True, slots=True)
 class ObjectSpawnSeed:
     """Pure field values stamped into a freshly allocated slot by 1010:8209.
 
