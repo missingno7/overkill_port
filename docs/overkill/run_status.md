@@ -1,3 +1,12 @@
+## 2026-06-28 - Hygiene: collapse blank-line cruft left by the hook relocations
+
+The masked-compositor / blit relocations (plus the earlier menu-hook removals) left ~20
+multi-line blank voids in `hooks.py` (runs up to 61 lines).  Normalized every run of 3+
+consecutive blank lines to 2 (PEP8 spacing between top-level defs): 374 blank lines
+removed, 3706 -> 3332.  Pure whitespace -- the git diff touches no non-blank line, and
+the full 239-test per-hook oracle suite stays byte-exact (33s) so no docstring/string
+content shifted.
+
 ## 2026-06-28 - Coastline (Phase 1b): relocate the 497A scaled column blit to ega.py
 
 Moved the renderer-dispatch scaled column blit/clear at 1010:497A -- the largest of the

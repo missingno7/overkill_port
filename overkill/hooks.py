@@ -352,18 +352,6 @@ def overkill_bootstrap_lzexe_main_loop_23ad_0069(cpu):
     _run_bootstrap_lzexe_loop_0069_if_matching(cpu)
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 @registry.replace(0x1010, 0x33DD, "overkill_expand_tandy_cell_33dd")
 def overkill_expand_tandy_cell_33dd(cpu):
     """Hook wrapper for OVERKILL 1010:33DD Tandy startup cell expander."""
@@ -423,17 +411,6 @@ def overkill_tandy_patched_row_copy_30ba(cpu):
     run_tandy_patched_strided_row_copy_30ba(cpu)
 
 
-
-
-
-
-
-
-
-
-
-
-
 @registry.replace(0x1010, 0x2E6E, "overkill_tandy_masked_sprite_composite_2e6e")
 def overkill_tandy_masked_sprite_composite_2e6e(cpu):
     """Hook wrapper for OVERKILL 1010:2E6E Tandy masked compositor."""
@@ -462,8 +439,6 @@ def overkill_tandy_source_strided_copy_35aa(cpu):
     run_tandy_source_strided_copy_35aa(cpu, _tandy_render_runtime())
 
 
-
-
 @registry.replace(0x1010, 0x34AD, "overkill_tandy_split_present_copy_34ad")
 def overkill_tandy_split_present_copy_34ad(cpu):
     """Hook wrapper for OVERKILL 1010:34AD Tandy split present copy."""
@@ -481,15 +456,10 @@ def overkill_tandy_small_strided_copy_34d8(cpu):
     run_tandy_small_strided_copy_34d8(cpu, _tandy_render_runtime())
 
 
-
-
 @registry.replace(0x1010, 0x3542, "overkill_tandy_tiny_strided_copy_3542")
 def overkill_tandy_tiny_strided_copy_3542(cpu):
     """Hook wrapper for OVERKILL 1010:3542 Tandy tiny strided copy."""
     run_tandy_tiny_strided_copy_3542(cpu, _tandy_render_runtime())
-
-
-
 
 
 @registry.replace(0x1010, 0x3657, "overkill_tandy_draw_tiny_object_3657")
@@ -506,65 +476,6 @@ def overkill_tandy_draw_split_object_356c(cpu):
 def overkill_tandy_draw_object_block_35cc(cpu):
     """Hook wrapper for OVERKILL 1010:35CC Tandy object-block draw."""
     run_tandy_draw_object_block_35cc(cpu, _tandy_render_runtime())
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 @registry.replace(0x1010, 0x7596, "overkill_layer_draw_type_dispatch_7596")
@@ -607,7 +518,6 @@ def overkill_scan_draw_call_5ac8_a858(cpu):
 def overkill_scan_draw_tail_a85b(cpu):
     """Hook wrapper for A849 post-draw POP/LOOP glue."""
     finish_draw_scan_tail_a85b(cpu, _layer_sprite_runtime())
-
 
 
 @registry.replace(0x1010, 0xA846, "overkill_scan_draw_setup_32ca_a846")
@@ -805,12 +715,6 @@ def overkill_tandy_rect_copy_306f(cpu):
     run_tandy_rect_copy_306f(cpu, _tandy_render_runtime())
 
 
-
-
-
-
-
-
 @registry.replace(0x1010, 0x4E0D, "overkill_tandy_loading_scroll_until_4e0d")
 def overkill_tandy_loading_scroll_until_4e0d(cpu):
     """Replace 4E0D parent loop around the A781 loading-scroll step."""
@@ -840,42 +744,6 @@ def overkill_tandy_loading_tile_column_copy_36a2(cpu):
 def overkill_compact_layer_sprite_draw_7746(cpu):
     """Hook wrapper for OVERKILL 1010:7746 shared compact layer draw."""
     draw_compact_layer_sprite_7746(cpu, _layer_sprite_runtime())
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 @registry.replace(0x1010, 0x375B, "overkill_tandy_postcopy_scaled_blit_375b")
@@ -947,16 +815,6 @@ def overkill_masked_sprite_composite_38b7(cpu):
 def overkill_masked_sprite_composite_3849(cpu):
     """Replace the 4-column masked sprite composite loop at 1010:3849."""
     run_masked_sprite_composite_immediate(cpu, words_per_row=4, row_add=0x2C)
-
-
-
-
-
-
-
-
-
-
 
 
 @registry.replace(0x1010, 0x40D7, "overkill_ega_compact_spread_composite_40d7")
@@ -1033,21 +891,9 @@ def overkill_or_inverted_sprite_composite_390e(cpu):
     _cga_or_inverted_composite_rows(cpu, words_per_row=1, row_add=0x0032)
 
 
-
-
-
-
-
-
 @registry.replace(0x1010, 0x2193, "overkill_ega_compact_byte_masked_composite_2193")
 def overkill_ega_compact_byte_masked_composite_2193(cpu):
     run_ega_compact_byte_masked_composite_2193(cpu)
-
-
-
-
-
-
 
 
 @registry.replace(0x1010, 0x238D, "overkill_ega_compact_byte_spread_left_composite_238d")
@@ -1359,30 +1205,6 @@ def overkill_presence_stamp_list_4d15(cpu):
     s.ip = cpu.pop()
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 def _tandy_render_runtime() -> TandyRenderRuntime:
     """Build VM callbacks/signatures for Tandy-specific rendering primitives."""
     return TandyRenderRuntime(
@@ -1460,53 +1282,6 @@ def _layer_sprite_runtime() -> LayerSpriteRuntime:
             0x2FB6: overkill_tandy_masked_compact_2fb6,
         },
     )
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 @registry.replace(0x1010, 0xA849, "overkill_scan_objects_call_5ac8_a849")
@@ -1693,8 +1468,6 @@ def _scan_present_objects_via_5a92(
     cpu.s.ip = done_ip & 0xFFFF
 
 
-
-
 @registry.replace(0x1010, 0x4CED, "overkill_presence_stamp_triplet_4ced")
 def overkill_presence_stamp_triplet_4ced(cpu):
     """Compose the 4CED parent from three existing 4D15 presence-stamp calls."""
@@ -1762,49 +1535,6 @@ def overkill_scan_objects_call_5a92_a927(cpu):
     )
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 @registry.replace(0x1010, 0x61C7, "overkill_decrement_first_active_counter_61c7")
 def overkill_decrement_first_active_counter_61c7(cpu):
     """Replace the small DS:2368..2372 countdown scan at real entry 1010:61C7."""
@@ -1821,60 +1551,6 @@ def overkill_decrement_first_active_counter_loop_61f7(cpu):
 def overkill_decrement_first_active_counter_scan_61ca(cpu):
     """Replace the inner countdown scan body at 1010:61CA."""
     run_decrement_first_active_counter_scan_61ca(cpu, _self_disable_if_patched)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 def _run_installed_tail_hook(cpu, key: tuple[int, int], fallback) -> None:
@@ -1912,8 +1588,6 @@ def overkill_status_counter_cell_blit_6296(cpu):
     run_status_counter_cell_blit_6296(cpu, _self_disable_if_patched, call_menu_cell_source_blit)
 
 
-
-
 @registry.replace(0x1010, 0x613E, "overkill_status_cursor_advance_613e")
 def overkill_status_cursor_advance_613e(cpu):
     """Mode-dependent status/HUD cursor advance helper."""
@@ -1924,10 +1598,6 @@ def overkill_status_cursor_advance_613e(cpu):
 def overkill_status_cursor_retreat_615a(cpu):
     """Mode-dependent status/HUD cursor retreat helper."""
     run_status_cursor_retreat_615a(cpu, _self_disable_if_patched)
-
-
-
-
 
 
 @registry.replace(0x1010, 0xC4DB, "overkill_reset_object_slot_and_status_setup_c4db")
@@ -1965,7 +1635,6 @@ def overkill_transition_status_wait_9908(cpu):
         )
 
     run_transition_status_wait_9908(cpu, _self_disable_if_patched, call_c4db)
-
 
 
 @registry.replace(0x1010, 0x9928, "overkill_transition_input_release_tail_9928")
@@ -2187,9 +1856,6 @@ def overkill_frame_status_counter_update_5f61(cpu):
     )
 
 
-
-
-
 @registry.replace(0x1010, 0x61DC, "overkill_status_display_parent_61dc")
 def overkill_status_display_parent_61dc(cpu):
     """Raw status/counter display parent around 61F7, 5A00, 6296, and 5A6C."""
@@ -2348,8 +2014,6 @@ def overkill_status_coord_list_fill_99cd(cpu):
     run_status_coord_list_fill_99cd(cpu, _self_disable_if_patched)
 
 
-
-
 @registry.replace(0x1010, 0x9B2E, "overkill_frame_controller_9b2e")
 def overkill_frame_controller_9b2e(cpu):
     """Frame-controller child around input, movement, A067, contacts, and coord rings."""
@@ -2404,7 +2068,6 @@ def overkill_frame_axis_count_inc_ah_9bfb(cpu):
 def overkill_frame_axis_count_inc_al_9bfe(cpu):
     """Tiny 9C01 frame-controller leaf: INC AL; RET."""
     run_frame_axis_count_inc_al_9bfe(cpu, _self_disable_if_patched)
-
 
 
 @registry.replace(0x1010, 0x9C01, "overkill_frame_axis_condition_dispatch_9c01")
@@ -2478,10 +2141,6 @@ def overkill_scan_objects_call_aa2b_aa10(cpu):
         call_ip=0xAA1F,
         advance_global_counter=False,
     )
-
-
-
-
 
 
 @registry.replace(0x1010, 0xAA07, "overkill_second_object_scan_setup_aa07")
@@ -2615,13 +2274,6 @@ def overkill_variable_width_interlaced_blit_41a6(cpu):
     run_variable_width_interlaced_blit_41a6(cpu)
 
 
-
-
-
-
-
-
-
 @registry.replace(0x1010, 0x27EB, "overkill_ega_row_driver_27eb")
 def overkill_ega_row_driver_27eb(cpu):
     run_ega_row_driver_27eb(cpu)
@@ -2650,18 +2302,6 @@ def overkill_ega_transparency_mask_2932(cpu):
 @registry.replace(0x1010, 0x5827, "overkill_ega_planar_to_linear_copy_5827")
 def overkill_ega_planar_to_linear_copy_5827(cpu):
     run_ega_planar_to_linear_copy_5827(cpu)
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 def _inc_mem_byte_preserve_cf(cpu, seg: int, off: int) -> None:
@@ -3036,7 +2676,6 @@ def overkill_menu_transition_input_wait_loop_ce5c(cpu):
     _run_menu_transition_input_wait_loop_ce5c(cpu)
 
 
-
 @registry.replace(0x1010, 0xCC7F, "overkill_dirty_cell_presenter_row_cc7f")
 def overkill_dirty_cell_presenter_row_cc7f(cpu):
     """Run CC7F row iterations until the original inner LOOP exits.
@@ -3206,8 +2845,6 @@ def overkill_postcopy_blit_wait_loop_58df(cpu):
             return
 
 
-
-
 @registry.replace(0x1010, 0x511F, "overkill_video_page_toggle_511f")
 def overkill_video_page_toggle_511f(cpu):
     run_video_page_toggle_511f(cpu, _self_disable_if_patched)
@@ -3321,7 +2958,6 @@ def overkill_present_frame_blit_447b(cpu):
     per-iteration overhead of the 192-row interlaced copy.
     """
     run_present_frame_blit_447b(cpu)
-
 
 
 @registry.replace(0x1010, 0x986E, "overkill_input_release_wait_gate_986e")
@@ -3543,10 +3179,6 @@ def overkill_tandy_changed_dword_present_8rows_cdaa(cpu):
     run_tandy_changed_dword_present_cdaa(cpu)
 
 
-
-
-
-
 def _overkill_strided_row_copy(cpu, *, row_advance: int) -> None:
     """Shared replacement for OVERKILL's LODSW/REP-MOVSB strided row copier."""
     s = cpu.s
@@ -3616,9 +3248,6 @@ def overkill_strided_row_copy_3efc(cpu):
     _overkill_strided_row_copy(cpu, row_advance=0x50)
 
 
-
-
-
 _MASKED_SPRITE_COMPOSITE_3EFB_SIG = bytes.fromhex(
     "8b 1c 8b 44 04 b2 ff f9 d0 db d0 df d0 d8 d0 dc d0 da"
 )
@@ -3652,7 +3281,6 @@ def overkill_masked_sprite_composite_3e12(cpu):
     run_masked_cga_composite_3e12(cpu)
 
 
-
 @registry.replace(0x1010, 0x5A36, "overkill_object_row_addr_5a36")
 def overkill_object_row_addr_5a36(cpu):
     """Hook wrapper for OVERKILL 1010:5A36 object-row address dispatch.
@@ -3675,8 +3303,6 @@ def overkill_xy_to_di_5a00(cpu):
 def overkill_xy_to_di_5a24(cpu):
     """Hook wrapper for OVERKILL 1010:5A24 shared coordinate-to-DI helper."""
     coordinate_ax_to_di_5a24(cpu)
-
-
 
 
 @registry.replace(0x1010, 0x5A6C, "overkill_menu_cell_source_blit_dispatch_5a6c")
