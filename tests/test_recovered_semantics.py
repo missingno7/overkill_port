@@ -944,7 +944,8 @@ def test_recovered_camera_near_outside_full_render_is_pure_and_named():
     assert camera_near_outside_full_render(0, 0) is True
 
 
-def test_recovered_layer1_scan_should_draw_is_pure_and_named():
+def test_recovered_layer1_scan_should_draw_takes_native_slot_record():
+    from overkill.recovered.domain.object_slots import ObjectSlotRecord
     from overkill.recovered.systems.objects import (
         CAMERA_NEAR_THRESHOLD,
         LAYER1_LAYER_FOREGROUND,
@@ -952,23 +953,32 @@ def test_recovered_layer1_scan_should_draw_is_pure_and_named():
         layer1_scan_should_draw,
     )
 
-    bg = 1 - LAYER1_LAYER_FOREGROUND
-    # Inactive slots never draw, whatever the other words hold.
-    assert layer1_scan_should_draw(0, RENDER_MODE_FULL, 0, 1, LAYER1_LAYER_FOREGROUND) is False
-    assert layer1_scan_should_draw(0, 7, 0, 0, LAYER1_LAYER_FOREGROUND) is False
+    def slot(active, near_layer, object_layer):
+        # In the layer-1 scan context the near-layer flag is hazard_class (SS:[bp+16h])
+        # and the object layer is gate_or_layer (SS:[bp+0Ah]).
+        return ObjectSlotRecord(
+            active_word=active, x_word=0, y_word=0, gate_or_layer=object_layer,
+            link_key=0, scan_flag=0, hazard_class=near_layer, logic_id=0,
+        )
+
+    fg = LAYER1_LAYER_FOREGROUND
+    bg = 1 - fg
+    # Inactive slots never draw, whatever the other fields hold.
+    assert layer1_scan_should_draw(slot(0, 1, fg), RENDER_MODE_FULL, 0) is False
+    assert layer1_scan_should_draw(slot(0, 0, fg), 7, 0) is False
 
     # Full-render mode ignores the camera/near-layer suppression: draw iff foreground.
-    assert layer1_scan_should_draw(1, RENDER_MODE_FULL, 0x00, 1, LAYER1_LAYER_FOREGROUND) is True
-    assert layer1_scan_should_draw(1, RENDER_MODE_FULL, 0x00, 1, bg) is False
+    assert layer1_scan_should_draw(slot(1, 1, fg), RENDER_MODE_FULL, 0x00) is True
+    assert layer1_scan_should_draw(slot(1, 1, bg), RENDER_MODE_FULL, 0x00) is False
 
-    # Outside full mode, a near-camera (<= B6h) slot flagged for the near layer is suppressed.
-    assert layer1_scan_should_draw(1, 0, CAMERA_NEAR_THRESHOLD, 1, LAYER1_LAYER_FOREGROUND) is False
+    # Outside full mode, a near-camera (<= B6h) near-layer slot is suppressed.
+    assert layer1_scan_should_draw(slot(1, 1, fg), 0, CAMERA_NEAR_THRESHOLD) is False
     # ...but not if it is not flagged for the near layer.
-    assert layer1_scan_should_draw(1, 0, CAMERA_NEAR_THRESHOLD, 0, LAYER1_LAYER_FOREGROUND) is True
+    assert layer1_scan_should_draw(slot(1, 0, fg), 0, CAMERA_NEAR_THRESHOLD) is True
     # ...and the threshold is inclusive: B7h is past it, so no suppression.
-    assert layer1_scan_should_draw(1, 0, CAMERA_NEAR_THRESHOLD + 1, 1, LAYER1_LAYER_FOREGROUND) is True
+    assert layer1_scan_should_draw(slot(1, 1, fg), 0, CAMERA_NEAR_THRESHOLD + 1) is True
     # Past the threshold a background slot still does not draw.
-    assert layer1_scan_should_draw(1, 0, CAMERA_NEAR_THRESHOLD + 1, 1, bg) is False
+    assert layer1_scan_should_draw(slot(1, 1, bg), 0, CAMERA_NEAR_THRESHOLD + 1) is False
 
 
 def test_recovered_b9f0_wrapped_target_x_is_pure_and_named():

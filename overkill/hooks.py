@@ -227,6 +227,7 @@ from .gameplay.objects import (
     run_reset_object_slot_and_status_setup_c4db,
     run_setup_tracked_status_tail_c51d,
 )
+from .recovered.adapters.object_slot_adapter import read_current_object_slot_record
 from .recovered.systems.objects import (
     CAMERA_NEAR_THRESHOLD,
     RENDER_MODE_FULL,
@@ -1335,30 +1336,29 @@ def overkill_scan_layer1_draw_a8c7(cpu):
     ss = cpu.s.ss & 0xFFFF
 
     def should_call() -> bool:
-        # The pure draw decision lives in recovered.systems.objects; this adapter
-        # still reads the slot/global words on the original branches and replays each
-        # branch's CMP flags, which are live at the A8F1/A8F7 boundary.
-        active = cpu.mem.rw(ss, cpu.s.bp & 0xFFFF)
-        _cmp_word(cpu, active, 0)
-        if active == 0:
+        # The pure draw decision lives in recovered.systems.objects, taking the native
+        # slot record (Phase 2).  This adapter builds that record from SS:BP, replays each
+        # branch's CMP flags (live at the A8F1/A8F7 boundary) from its fields -- the
+        # near-layer flag is the hazard_class word (SS:[bp+16h]), the object layer is
+        # gate_or_layer (SS:[bp+0Ah]) -- then delegates the decision.
+        slot = read_current_object_slot_record(cpu)
+        _cmp_word(cpu, slot.active_word, 0)
+        if slot.active_word == 0:
             return False
 
         mode = cpu.mem.rw(ds, 0xBDAC)
         _cmp_word(cpu, mode, RENDER_MODE_FULL)
         camera = 0
-        near_layer = 0
         if mode != RENDER_MODE_FULL:
             camera = cpu.mem.rw(ds, 0x2350)
             _cmp_word(cpu, camera, CAMERA_NEAR_THRESHOLD)
             if camera <= CAMERA_NEAR_THRESHOLD:
-                near_layer = cpu.mem.rw(ss, (cpu.s.bp + 0x16) & 0xFFFF)
-                _cmp_word(cpu, near_layer, 1)
-                if near_layer == 1:
+                _cmp_word(cpu, slot.hazard_class, 1)
+                if slot.hazard_class == 1:
                     return False
 
-        obj_layer = cpu.mem.rw(ss, (cpu.s.bp + 0x0A) & 0xFFFF)
-        _cmp_word(cpu, obj_layer, 1)
-        return layer1_scan_should_draw(active, mode, camera, near_layer, obj_layer)
+        _cmp_word(cpu, slot.gate_or_layer, 1)
+        return layer1_scan_should_draw(slot, mode, camera)
 
     while iterations:
         cx_value = cpu.s.cx & 0xFFFF

@@ -272,27 +272,22 @@ def camera_near_outside_full_render(render_mode: int, camera_x: int) -> bool:
     return (render_mode & 0xFFFF) != RENDER_MODE_FULL and (camera_x & 0xFFFF) <= CAMERA_NEAR_THRESHOLD
 
 
-def layer1_scan_should_draw(
-    active: int,
-    render_mode: int,
-    camera_x: int,
-    near_layer_flag: int,
-    object_layer_flag: int,
-) -> bool:
-    """True when the 1010:A8C7 layer-1 scan should issue ``CALL 7596`` for a slot.
+def layer1_scan_should_draw(slot: ObjectSlotRecord, render_mode: int, camera_x: int) -> bool:
+    """True when the 1010:A8C7 layer-1 scan should issue ``CALL 7596`` for ``slot``.
 
-    ``active`` is the slot's active word (SS:[bp]); ``render_mode`` is the global render
-    mode DS:BDAC; ``camera_x`` is the camera position DS:2350; ``near_layer_flag`` is the
-    slot's near-layer word (SS:[bp+16h]); ``object_layer_flag`` is the slot's layer word
-    (SS:[bp+0Ah]).  An inactive slot never draws.  A near-camera slot
+    Native-state form (Phase 2): takes the slot's :class:`ObjectSlotRecord` plus the two
+    globals ``render_mode`` (DS:BDAC) and ``camera_x`` (DS:2350).  In the layer-1 scan
+    context the slot's near-layer flag is its ``hazard_class`` word (SS:[bp+16h], the
+    ``OFF_DRAW_LAYER`` alias) and its object layer is ``gate_or_layer`` (SS:[bp+0Ah]).  An
+    inactive slot never draws.  A near-camera slot
     (:func:`camera_near_outside_full_render`) flagged for the near layer is suppressed.
     Otherwise the slot draws iff it is on the foreground layer.  The adapter still replays
     the per-branch CMP flags for boundary fidelity; this owns the draw decision."""
-    if (active & 0xFFFF) == 0:
+    if (slot.active_word & 0xFFFF) == 0:
         return False
-    if camera_near_outside_full_render(render_mode, camera_x) and (near_layer_flag & 0xFFFF) == 1:
+    if camera_near_outside_full_render(render_mode, camera_x) and (slot.hazard_class & 0xFFFF) == 1:
         return False
-    return (object_layer_flag & 0xFFFF) == LAYER1_LAYER_FOREGROUND
+    return (slot.gate_or_layer & 0xFFFF) == LAYER1_LAYER_FOREGROUND
 
 
 # B9F0's horizontal play-area right edge (D0h), shared by both of its X wraps: the

@@ -1,3 +1,16 @@
+## 2026-06-28 - Phase 2: migrate layer1_scan_should_draw to take a native ObjectSlotRecord
+
+The goal doc's core Phase-2 move ("rules take native state instead of loose ints"),
+demonstrated on `layer1_scan_should_draw`: it now takes the slot's `ObjectSlotRecord` plus
+the two globals (`render_mode`, `camera_x`) and reads `slot.active_word` /
+`slot.hazard_class` (the near-layer flag, SS:[bp+16h]) / `slot.gate_or_layer` (the object
+layer, SS:[bp+0Ah]) instead of five loose ints.  The A8C7 adapter builds that record via
+`read_current_object_slot_record(cpu)` and replays the per-branch CMP flags from its
+fields.  Byte-exact: the `a8c7` per-hook oracle stays green (the extra faithful reads are
+pure), the migrated unit test passes, and the bounded demo corpus stays byte-exact; lint +
+audit + the guard pass.  This is the pattern the remaining rules follow as the lifted
+adapters thin toward pure source.
+
 ## 2026-06-28 - Phase 2: native ObjectPool struct + VM state-mirror verifier
 
 First Phase-2 slice (native state structs).  Added `domain.ObjectPool` -- the VM-free
