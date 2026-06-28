@@ -123,9 +123,15 @@ The grounded model:
   "star routine" — there isn't one per frame.)
 
 **Self-compose gap (grounded, narrowed):**
-1. The **starfield (scrolling background) generator** — runs at level-start / on
-   scroll-in (not per frame); isolate it by attributing 35FF writes on a **scroll
-   frame** (where cursor `[234C]` changes), not a steady frame.
+1. The **scrolling star background** — DECISIVE (`probe_nonzero_writers`, 420 frames
+   incl. scroll; cursor `[234C]` steps +0x68/frame `0x1318`→`0x18C8`): the ONLY
+   non-zero 35FF writers are the compositors `2F81/2E6E/2FB6`, so there is **no
+   separate starfield generator**. `2F81` draws the scrolling star background
+   (persistent in 35FF, scrolled by the cursor, new rows added at scroll-in) *as well
+   as* the alien formation; the per-frame copies just clear sprite cells. The
+   compositor leaf is **already lifted** (`composite_masked_rows`) — so this is a
+   **data + dispatch** problem (extract the level background/star data `2F81` reads,
+   reproduce the scroll dispatch), NOT new code recovery.
 2. The **HUD panel** (right-side chrome + score + radar), drawn separately into B800.
 3. Drive the lifted compositors from **native game state** to draw the sprite layer
    (the per-routine identities above map directly to the semantic sprite list that
