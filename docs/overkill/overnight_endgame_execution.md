@@ -239,6 +239,25 @@ Concrete next slices (each: trace → pure → thin adapter → demo-replay veri
 - Each promotion that proves a memory layout extends `ObjectSlotView`/`ObjectSlotRecord`
   (only when a verified routine constrains a field — never by guessing).
 
+**Frontier note — disasm groundwork (2026-06-29).** The easy *single-leaf* slices are
+exhausted: every remaining candidate is a multi-part **island**, not a clean leaf
+(confirmed by disassembling each with `scripts/lindis.py`). The ASM boundaries are mapped
+here so a fresh agent recovers the island directly (per §2 step 8: recover the leaves →
+verify the composed subsystem → close the boundary):
+- `AB99` = a `bp`/`bx`-shuffle wrapper around `BFC7` (already lifted as
+  `_run_collision_death_tail_bfc7`). Closing the island = lift the 5-instr wrapper to call
+  the lifted `BFC7`. Marginal value; do it only when closing the deactivate island.
+- `837A` = a table-dispatcher with an indirect `call ax` over a per-object handler table
+  (`ds:[bx+si+2]`, 0..0Ah loop). Needs its whole handler set mapped — a hard island.
+- `859E` = the status-cell quad composite: loops 4 cells (`9682/968C/9696/96A0`) via `85D5`,
+  gated by `[95BC]`/`[BDAC]`, into the big render routine `511F` — a multi-level render island.
+- **HUD score digits** = `5F05` (pop digit → ASCII `+30h` → `jmp 519A`) + `519A` (a
+  MODE-dispatched output routine: `jmp cs:[95BC*2 + table]`, per-mode handlers incl. a Tandy
+  text write and an `int 10h`) + the BCD score state at `SS:2314` (incremented by `5F0D`).
+  Recover as the HUD-digit island; the Tandy-mode `519A` handler is the leaf that matters.
+So the next real work is **island recovery**, not single-leaf collapse — best taken by a
+fresh agent with clean context, using the boundaries mapped above.
+
 ### Bucket B — render self-compose layers (witness byte-exact gate)
 Playfield composition is crystallised (`native_video/playfield.compose_playfield_indices`,
 proven 30/30). Remaining:
