@@ -309,6 +309,16 @@ def b9f0_wrapped_target_x(target_x: int) -> int:
     return target_x & 0xFFFF
 
 
+def b9f0_reached_target(y: int, vertical_delta: int, target_y: int, x: int, target_x: int) -> bool:
+    """True when the B9F0 follower has reached its target tile (1010:BA1F).
+
+    Reached when the object's Y plus the current vertical delta DS:2342 equals the target
+    Y *and* its X already equals the target X.  This is the central B9F0 branch: on a hit
+    it refreshes the sprite / runs the movement helper, otherwise it routes to BA99.  The
+    adapter still replays the AX writes and CMP flags around it; this owns the decision."""
+    return ((y + vertical_delta) & 0xFFFF) == (target_y & 0xFFFF) and (x & 0xFFFF) == (target_x & 0xFFFF)
+
+
 PLAYER_CHASE_EXCLUDED_LOGIC_IDS = frozenset({0x0001, 0x0021, 0x0022, 0x0026})
 PLAYER_CHASE_CANDIDATE_MAX_X = 0x00E0
 PLAYER_CHASE_REQUIRED_HAZARD_CLASS = 0x0004

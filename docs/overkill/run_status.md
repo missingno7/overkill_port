@@ -1,3 +1,14 @@
+## 2026-06-28 - Recovery: B9F0 reached-target decision extracted to a recovered rule
+
+Recovered B9F0's central branch (1010:BA1F): the follower has reached its target when its
+Y plus the vertical delta DS:2342 equals the target Y *and* its X already equals the
+target X -- on a hit it refreshes the sprite / runs the movement helper, otherwise it
+routes to BA99.  Extracted as the pure `b9f0_reached_target(y, vertical_delta, target_y,
+x, target_x)` rule; the adapter keeps the exact AX writes and CMP-flag replays around it
+(a8c7 pattern).  Byte-preserving; lint + the guard + a new unit test pass and the bounded
+demo corpus stays byte-exact.  B9F0 now delegates two rules (target-X wrap + reached
+target); the remaining helper-leaf branches stay bounded original calls.
+
 ## 2026-06-28 - Recovery: B9F0 target-X wrap extracted to a recovered rule
 
 B9F0 (the EFAE-selected hot follower) wraps its accumulated target X back to the left

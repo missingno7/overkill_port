@@ -988,6 +988,19 @@ def test_recovered_b9f0_wrapped_target_x_is_pure_and_named():
     assert b9f0_wrapped_target_x(0x10040) == 0x0040
 
 
+def test_recovered_b9f0_reached_target_is_pure_and_named():
+    from overkill.recovered.systems.objects import b9f0_reached_target
+
+    # Reached: Y + vertical delta hits target Y and X already equals target X.
+    assert b9f0_reached_target(0x30, 0x10, 0x40, 0x80, 0x80) is True
+    # Y matches but X does not -> not reached.
+    assert b9f0_reached_target(0x30, 0x10, 0x40, 0x80, 0x81) is False
+    # X matches but Y+delta does not -> not reached.
+    assert b9f0_reached_target(0x30, 0x10, 0x41, 0x80, 0x80) is False
+    # 16-bit wrap on the Y + delta sum.
+    assert b9f0_reached_target(0xFFFF, 0x0001, 0x0000, 0x10, 0x10) is True
+
+
 def test_recovered_ad60_bounds_tile_tail_adapter_matches_pure_decision():
     from overkill.gameplay import object_bounds
     from overkill.recovered.systems.objects import (

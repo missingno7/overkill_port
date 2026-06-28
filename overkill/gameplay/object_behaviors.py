@@ -45,6 +45,7 @@ from overkill.recovered.systems.objects import (
     CAMERA_NEAR_THRESHOLD,
     RENDER_MODE_FULL,
     LEVEL_PHASE_DISABLE_THRESHOLD,
+    b9f0_reached_target,
     b9f0_wrapped_target_x,
     B73E_SPAWN_WINDOW_MAX,
     B73E_SPAWN_WINDOW_MIN,
@@ -579,21 +580,20 @@ def _run_object_behavior_b9f0(cpu, *, parent: str, chain: str, cx_value: int) ->
         if wrapped_x != target_x:
             slot.target_x_word = wrapped_x
 
-        # BA1F..BA31: if current position plus vertical delta reached target,
-        # use the direct sprite-refresh/helper branch; otherwise branch to BA99.
-        cpu.s.ax = slot.y_word
+        # BA1F..BA31: if current position plus vertical delta reached target, use the
+        # direct sprite-refresh/helper branch; otherwise branch to BA99.  The decision is
+        # the recovered rule; the AX writes and CMP flags are replayed for boundary
+        # fidelity (the Y+delta ADD's flags are dead -- the CMP below overwrites them).
         delta_y = mem.rw(ds, 0x2342)
-        # Y + vertical delta.  The ADD's flags are dead: the CMP below overwrites
-        # them before they reach any boundary.
+        reached_target = b9f0_reached_target(slot.y_word, delta_y, slot.target_y_word, slot.x_word, slot.target_x_word)
+        cpu.s.ax = slot.y_word
         cpu.s.ax = (cpu.s.ax + delta_y) & 0xFFFF
         target_y = slot.target_y_word
         _cmp_word(cpu, cpu.s.ax, target_y)
-        reached_target = cpu.s.ax == target_y
-        if reached_target:
+        if cpu.s.ax == target_y:
             cpu.s.ax = slot.x_word
             target_x = slot.target_x_word
             _cmp_word(cpu, cpu.s.ax, target_x)
-            reached_target = cpu.s.ax == target_x
 
         if reached_target:
             # BA33..BA5A: low level/tick branches call two helper leaves, then
