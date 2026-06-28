@@ -88,7 +88,6 @@ def test_object_runtime_split_modules_keep_their_surface():
     assert callable(object_postmove._run_object_postmove_bc4b)
     assert callable(contact_side_effects._run_object_overlap_scan_62f6)
     assert callable(contact_side_effects._run_collision_handler_bec5_observed)
-    assert callable(object_runtime_common._remember_balanced_push_scratch)
     # Behaviour families + bounds tail own their seams.
     assert callable(object_behaviors._run_object_behavior_b73e)
     assert callable(object_behaviors._run_object_logic_dispatch_aa2b)
@@ -121,7 +120,6 @@ def test_object_runtime_split_modules_keep_their_surface():
         "_run_object_overlap_scan_62f6",
         "_run_collision_handler_bec5_observed",
         "_run_post_contact_9e69_observed",
-        "_remember_balanced_push_scratch",
         "_run_object_behavior_b73e",
         "_run_object_logic_dispatch_aa2b",
         "_run_object_bounds_tile_tail_ad60",

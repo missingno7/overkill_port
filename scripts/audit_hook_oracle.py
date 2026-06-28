@@ -35,7 +35,7 @@ def _int_expr(node: ast.AST) -> int | None:
 def _parse_registered_hooks(paths: list[Path]) -> dict[str, Addr]:
     out: dict[str, Addr] = {}
     for path in paths:
-        tree = ast.parse(path.read_text(), filename=str(path))
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in tree.body:
             if not isinstance(node, ast.FunctionDef):
                 continue
@@ -61,7 +61,7 @@ def _parse_registered_hooks(paths: list[Path]) -> dict[str, Addr]:
 
 
 def _parse_hookstop_metadata(verification_py: Path) -> set[Addr]:
-    tree = ast.parse(verification_py.read_text(), filename=str(verification_py))
+    tree = ast.parse(verification_py.read_text(encoding="utf-8"), filename=str(verification_py))
     out: set[Addr] = set()
     for node in ast.walk(tree):
         if not isinstance(node, ast.Dict):
@@ -117,7 +117,7 @@ def _find_direct_registered_function_calls(path: Path, registered: dict[str, Add
     Complete child routines must be reached via the generic installed-boundary
     helpers instead.
     """
-    text = path.read_text()
+    text = path.read_text(encoding="utf-8")
     tree = ast.parse(text, filename=str(path))
     parents = _iter_parent_map(tree)
     bad: list[str] = []
@@ -146,7 +146,7 @@ def _find_direct_registered_function_calls(path: Path, registered: dict[str, Add
 
 
 def _find_raw_call_hook_like_registered_args(path: Path, registered: dict[str, Addr]) -> list[str]:
-    text = path.read_text()
+    text = path.read_text(encoding="utf-8")
     bad: list[str] = []
     pattern = re.compile(r"_call_hook_like_near_call\(\s*cpu\s*,\s*([A-Za-z_][A-Za-z0-9_]*)\s*,", re.MULTILINE)
     for match in pattern.finditer(text):
@@ -162,7 +162,7 @@ def _find_raw_call_hook_like_registered_args(path: Path, registered: dict[str, A
 
 
 def _find_rendering_tandy_direct_5a36(path: Path) -> list[str]:
-    text = path.read_text()
+    text = path.read_text(encoding="utf-8")
     bad: list[str] = []
     needle = "_call_hook_like_near_call(cpu, runtime.object_row_address_from_mode_dispatch_5a36"
     start = 0
