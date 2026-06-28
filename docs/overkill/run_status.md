@@ -1,3 +1,18 @@
+## 2026-06-28 - Hygiene/correctness: remove the dead dispatch-target predictor cluster
+
+`object_runtime.py` carried five `_*_dispatch_target_*` / `_*_target_*` predictors
+(5a92 present / 5ac8 draw / 7596 layer-draw / aa2b object-logic / efae object-family),
+each meant to predict where a dispatch jump-table lands -- but none were ever called.
+All five were imported-unused in `hooks.py`, and the efae one was outright broken: it
+referenced an undefined name `slot` (instant `NameError` if invoked), ignored its `bp`
+argument, and its docstring (``SS:[BP+18]``) contradicted its body
+(``cs:[EFC4 + logic_id*2]``).  They were dead parallels of the *live* dispatch hooks
+(`_run_object_logic_dispatch_aa2b`, `_run_object_family_dispatch_efae`, ...) that
+actually route.  Removed all five defs plus a 41-line blank gap (83 lines out of
+object_runtime.py) and the five dead imports.  The table math survives in the live
+dispatch hooks and the commit message.  Verified: lint (182) + audit + import + the full
+239-test per-hook oracle suite (the live 5a92/aa2b/efae dispatch hooks stay byte-exact).
+
 ## 2026-06-28 - Recovery (dual-mode): extract the A8C7 layer-1 draw predicate to recovered/
 
 The 1010:A8C7 layer-1 scan's `should_call()` decision -- inactive-slot skip, the

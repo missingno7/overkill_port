@@ -255,7 +255,6 @@ from .asm import (
     _xor_al_al,
 )
 from .gameplay.object_runtime import (
-    _draw_dispatch_target_5ac8,
     _find_free_effect_slot_7524,
     _find_free_object_slot_7573,
     run_object_slot_allocate_or_reclaim_7547,
@@ -264,11 +263,7 @@ from .gameplay.object_runtime import (
     run_object_spawn_seed_from_source_a4d7,
     run_object_spawn_anchor_offset_a571,
     _format_object_context,
-    _layer_draw_dispatch_target_7596,
-    _object_family_target_efae,
-    _object_logic_target_aa2b,
     _object_ptr_from_scan_index,
-    _present_dispatch_target_5a92,
     _push_loop_count_for_interpreted_tail,
     _raise_unverified_path,
     _run_object_behavior_aba3,
