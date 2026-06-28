@@ -819,8 +819,12 @@ def _run_object_sprite0f_collision_abca(
         cpu.s.ip = cpu.pop()
 
     v2384 = mem.rw(ds, 0x2384)
-    _cmp_word(cpu, v2384, 0x0003)
-    if v2384 < 0x0003:
+    # Frame-phase gate DS:2384, shared with AB10/ABA3/AB77: below the disable
+    # threshold the collision body runs its motion/tile-probe path; at/after it the
+    # object deactivates.  The CMP flags are dead (overwritten by AB34/AC28 when the
+    # branch is taken, and by finish_deactivate_tail's own CMP otherwise).
+    _cmp_word(cpu, v2384, LEVEL_PHASE_DISABLE_THRESHOLD)
+    if not level_disable_threshold_reached(v2384):
         cpu.s.dx = 0xA420
         _call_ab34(cpu, 0xABD7)
         if cpu.s.ip != 0xABD7:

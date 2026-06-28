@@ -1,3 +1,16 @@
+## 2026-06-28 - Recovery: ABCA frame-phase gate reuses level_disable_threshold_reached
+
+ABCA (the sprite==0Fh collision body, reached from AD04) gated its motion/tile-probe vs
+deactivate path on ``DS:2384 < 0003h`` -- the exact inverse of the verified
+`level_disable_threshold_reached` rule (``>= 0003h``) that AB10/ABA3/AB77 already use for
+the same frame-phase disable threshold.  Made ABCA's gate delegate to it (keeping the
+``LEVEL_PHASE_DISABLE_THRESHOLD`` CMP for flag fidelity, though those flags are dead).
+Byte-preserving; lint + the undefined-name guard pass and the bounded demo corpus stays
+byte-exact.  Worklist: 7/17 object behaviors now delegate to a recovered rule.  The rest
+of ABCA stays bounded original calls (AB34/AC28/AC81/AB99/837A/859E) + the
+finish_deactivate slot reset -- the next ABCA increment is naming that deactivation-reset
+slot state (logic_id=1, hazard_class=4, latch=0, sprite=0).
+
 ## 2026-06-28 - Recovery (consolidation): share the near-camera/render-mode gate across A8C7 + AD04
 
 The A8C7 layer-1 scan and the AD04 logic branch both gate on the same global render state
