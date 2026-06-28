@@ -347,6 +347,25 @@ def b9f0_periodic_helper_mask(difficulty: int) -> int:
     return B9F0_HELPER_TICK_MASK_SLOW
 
 
+B9F0_SPAWN_COUNTER_TRIGGER = 0x003F
+
+
+def b9f0_spawn_counter_ready(counter: int) -> bool:
+    """True when B9F0's overshoot spawn counter DS:232E is at 3Fh (1010:BAAD).
+
+    On the overshoot path, once the low-counter helper gate is open, the formation spawn
+    (7476) fires only when this counter has reached the top of its 0..3Fh cycle."""
+    return (counter & 0xFFFF) == B9F0_SPAWN_COUNTER_TRIGGER
+
+
+B9F0_SPRITE_FRAME_OFFSET = 0x001C
+
+
+def b9f0_sprite_from_frame(frame: int) -> int:
+    """B9F0's sprite/animation word on the BA67 tail: the global frame DS:233C + 1Ch."""
+    return (frame + B9F0_SPRITE_FRAME_OFFSET) & 0xFFFF
+
+
 PLAYER_CHASE_EXCLUDED_LOGIC_IDS = frozenset({0x0001, 0x0021, 0x0022, 0x0026})
 PLAYER_CHASE_CANDIDATE_MAX_X = 0x00E0
 PLAYER_CHASE_REQUIRED_HAZARD_CLASS = 0x0004

@@ -1036,6 +1036,33 @@ def test_recovered_b9f0_periodic_helper_mask_is_pure_and_named():
     assert b9f0_periodic_helper_mask(0x10002) == B9F0_HELPER_TICK_MASK_FAST
 
 
+def test_recovered_b9f0_spawn_counter_ready_is_pure_and_named():
+    from overkill.recovered.systems.objects import (
+        B9F0_SPAWN_COUNTER_TRIGGER,
+        b9f0_spawn_counter_ready,
+    )
+
+    assert B9F0_SPAWN_COUNTER_TRIGGER == 0x003F
+    assert b9f0_spawn_counter_ready(B9F0_SPAWN_COUNTER_TRIGGER) is True
+    assert b9f0_spawn_counter_ready(0x3E) is False
+    assert b9f0_spawn_counter_ready(0x00) is False
+    # 16-bit masking: only the low word matters.
+    assert b9f0_spawn_counter_ready(0x1003F) is True
+
+
+def test_recovered_b9f0_sprite_from_frame_is_pure_and_named():
+    from overkill.recovered.systems.objects import (
+        B9F0_SPRITE_FRAME_OFFSET,
+        b9f0_sprite_from_frame,
+    )
+
+    assert B9F0_SPRITE_FRAME_OFFSET == 0x001C
+    assert b9f0_sprite_from_frame(0x0100) == 0x011C
+    assert b9f0_sprite_from_frame(0) == 0x001C
+    # 16-bit wrap on the add.
+    assert b9f0_sprite_from_frame(0xFFF0) == ((0xFFF0 + 0x001C) & 0xFFFF)
+
+
 def test_recovered_ad60_bounds_tile_tail_adapter_matches_pure_decision():
     from overkill.gameplay import object_bounds
     from overkill.recovered.systems.objects import (

@@ -43,6 +43,8 @@ from overkill.recovered.systems.objects import (
     AD04_SPRITE_COLLISION_STATE,
     B9F0_HELPER_COUNTER_LIMIT,
     B9F0_HELPER_DIFFICULTY_FAST,
+    B9F0_SPAWN_COUNTER_TRIGGER,
+    B9F0_SPRITE_FRAME_OFFSET,
     B9F0_TARGET_X_WRAP_LIMIT,
     CAMERA_NEAR_THRESHOLD,
     RENDER_MODE_FULL,
@@ -50,6 +52,8 @@ from overkill.recovered.systems.objects import (
     b9f0_low_counter_runs_helper,
     b9f0_periodic_helper_mask,
     b9f0_reached_target,
+    b9f0_spawn_counter_ready,
+    b9f0_sprite_from_frame,
     b9f0_wrapped_target_x,
     B73E_SPAWN_WINDOW_MAX,
     B73E_SPAWN_WINDOW_MIN,
@@ -637,8 +641,8 @@ def _run_object_behavior_b9f0(cpu, *, parent: str, chain: str, cx_value: int) ->
                 call_5e42(0xBAA4)
                 _cmp_word(cpu, mem.rw(ds, 0xA47E), B9F0_HELPER_COUNTER_LIMIT)
                 if b9f0_low_counter_runs_helper(mem.rw(ds, 0xA47E)):
-                    _cmp_word(cpu, mem.rw(ds, 0x232E), 0x003F)
-                    if mem.rw(ds, 0x232E) == 0x003F:
+                    _cmp_word(cpu, mem.rw(ds, 0x232E), B9F0_SPAWN_COUNTER_TRIGGER)
+                    if b9f0_spawn_counter_ready(mem.rw(ds, 0x232E)):
                         call_7476(0xBAB5, "BAB2 CALL 7476")
                 _cmp_word(cpu, slot.x_word, 0x00D0)
                 if slot.x_word > 0x00D0:
@@ -670,9 +674,10 @@ def _run_object_behavior_b9f0(cpu, *, parent: str, chain: str, cx_value: int) ->
 
     # BA67..BA70: update sprite/animation word from current global frame and
     # jump into the shared post-move helper.
-    cpu.s.ax = mem.rw(ds, 0x233C)
-    _add_reg16(cpu, 0, 0x001C)  # AX
-    slot.sprite_or_state = cpu.s.ax
+    frame = mem.rw(ds, 0x233C)
+    cpu.s.ax = frame
+    _add_reg16(cpu, 0, B9F0_SPRITE_FRAME_OFFSET)  # AX = frame + 1Ch
+    slot.sprite_or_state = b9f0_sprite_from_frame(frame)
     cpu.s.ip = 0xBC4B
 
 

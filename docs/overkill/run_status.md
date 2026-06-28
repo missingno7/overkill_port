@@ -1,3 +1,15 @@
+## 2026-06-28 - Recovery: B9F0 overshoot spawn gate + BA67 sprite formula -> recovered rules
+
+Two more B9F0 pieces, batched: the overshoot-path formation-spawn trigger
+(`b9f0_spawn_counter_ready` -- DS:232E == 3Fh, the top of its 0..3Fh cycle, gating the
+7476 spawn) and the BA67 tail sprite/animation word (`b9f0_sprite_from_frame` -- the
+global frame DS:233C + 1Ch), with named constants `B9F0_SPAWN_COUNTER_TRIGGER` /
+`B9F0_SPRITE_FRAME_OFFSET`.  Byte-preserving (the gate keeps its CMP replay; the sprite
+keeps the AX add for fidelity).  Lint + the guard + two unit tests pass and the bounded
+demo corpus stays byte-exact.  B9F0 now delegates six rules; the remaining overshoot
+`x_word > D0h -> 10h` overflow wrap is the last small gate (shares the D0h right edge with
+the target-X wrap -- a future consolidation).
+
 ## 2026-06-28 - Recovery: B9F0 periodic-tick helper mask -> recovered rule (+ branch unify)
 
 B9F0's BA5A helper also fires on a periodic tick of DS:2340 -- every 128th tick on the
