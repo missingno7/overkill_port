@@ -251,10 +251,17 @@ verify the composed subsystem → close the boundary):
   (`ds:[bx+si+2]`, 0..0Ah loop). Needs its whole handler set mapped — a hard island.
 - `859E` = the status-cell quad composite: loops 4 cells (`9682/968C/9696/96A0`) via `85D5`,
   gated by `[95BC]`/`[BDAC]`, into the big render routine `511F` — a multi-level render island.
-- **HUD score digits** = `5F05` (pop digit → ASCII `+30h` → `jmp 519A`) + `519A` (a
-  MODE-dispatched output routine: `jmp cs:[95BC*2 + table]`, per-mode handlers incl. a Tandy
-  text write and an `int 10h`) + the BCD score state at `SS:2314` (incremented by `5F0D`).
-  Recover as the HUD-digit island; the Tandy-mode `519A` handler is the leaf that matters.
+- **HUD score digits** = `5F05` (pop digit → ASCII `+30h` → `jmp 519A`) → `519A` (mode
+  dispatch `jmp cs:[95BC*2 + 0x51B2]`; for Tandy `[95BC]=2` → **`1010:3153`**) → **`3153`
+  is an 8×8 Tandy glyph blit — THE recoverable leaf, in the rasterizer's wheelhouse:**
+  per char, `si = char*8 + DS:1816` (the 8-byte/char font); for each of 8 rows `lodsb` →
+  `DS:1514[byte*4]` (the bit→4bpp pixel-expand table, 2 words) `& DS:215C` (the colour
+  mask) → write to `CS:[95A4]` (the visible page) at cursor `DS:215E + DS:2160`, advancing
+  `di` by the Tandy bank geometry (`+0x2000`, wrap `+0x80A0`) = the rasterizer's
+  `tandy_b800_next_row`. (`al`=0x10/0x11 are cursor-control escapes → `333D`/`3322`.) The
+  BCD `score_bcd` (DS:2314) is **already recovered**. **Clean fresh-session slice:** lift
+  `3153` to a native glyph blit over the rasterizer geometry + extract the `1816`/`1514`
+  tables, witnessed byte-exact vs B800's digit band — then the HUD digits compose natively.
 So the next real work is **island recovery**, not single-leaf collapse — best taken by a
 fresh agent with clean context, using the boundaries mapped above.
 
