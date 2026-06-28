@@ -23,7 +23,7 @@ from typing import Callable
 from dos_re.cpu import CF, DF, ZF
 from dos_re.hooks import call_installed_hook_like_near_call
 from dos_re.memory import EGA_CPU_APERTURE, EGA_PLANE_WINDOW
-from ..asm import _add_reg16, _dec_reg16_preserve_cf, _inc_reg16_preserve_cf, _rep_movsb, _rep_movsw, _sub_reg16, _test_word
+from ..asm import _add_mem_word, _add_reg16, _and_mem_word, _cmp_word, _dec_reg16_preserve_cf, _ega_aperture_overlap, _inc_mem_word_preserve_cf, _inc_reg16_preserve_cf, _rep_movsb, _rep_movsw, _rep_stosb, _sub_mem_word, _sub_reg16, _test_word, _xor_al_al
 
 Cpu = object
 SelfDisableIfPatched = Callable[[Cpu, int, bytes, str], bool]
@@ -92,12 +92,6 @@ def _call_installed_strided_copy_34c5(cpu, runtime: TandyRenderRuntime, return_i
     )
 
 
-def _cmp_word(cpu, a: int, b: int) -> None:
-    cpu.set_sub_flags(a & 0xFFFF, b & 0xFFFF, (a & 0xFFFF) - (b & 0xFFFF), 16)
-
-
-def _test_word(cpu, a: int, b: int) -> None:
-    cpu.set_logic_flags((a & 0xFFFF) & (b & 0xFFFF), 16)
 
 
 def _stosw(cpu) -> None:
@@ -106,133 +100,14 @@ def _stosw(cpu) -> None:
     cpu.s.di = (cpu.s.di + (-2 if cpu.get_flag(DF) else 2)) & 0xFFFF
 
 
-def _add_reg16(cpu, reg_idx: int, value: int) -> None:
-    old = cpu.get_reg16(reg_idx)
-    addend = value & 0xFFFF
-    result = old + addend
-    cpu.set_reg16(reg_idx, result)
-    cpu.set_add_flags(old, addend, result, 16)
-
-
-def _sub_reg16(cpu, reg_idx: int, value: int) -> None:
-    old = cpu.get_reg16(reg_idx)
-    subtrahend = value & 0xFFFF
-    result = old - subtrahend
-    cpu.set_reg16(reg_idx, result)
-    cpu.set_sub_flags(old, subtrahend, result, 16)
-
-
-def _add_mem_word(cpu, seg: int, off: int, value: int) -> None:
-    old = cpu.mem.rw(seg, off)
-    addend = value & 0xFFFF
-    result = old + addend
-    cpu.mem.ww(seg, off, result)
-    cpu.set_add_flags(old, addend, result, 16)
-
-
-def _sub_mem_word(cpu, seg: int, off: int, value: int) -> None:
-    old = cpu.mem.rw(seg, off)
-    subtrahend = value & 0xFFFF
-    result = old - subtrahend
-    cpu.mem.ww(seg, off, result)
-    cpu.set_sub_flags(old, subtrahend, result, 16)
-
-
-def _inc_mem_word_preserve_cf(cpu, seg: int, off: int) -> None:
-    old = cpu.mem.rw(seg, off)
-    old_cf = cpu.get_flag(CF)
-    result = old + 1
-    cpu.mem.ww(seg, off, result)
-    cpu.set_add_flags(old, 1, result, 16)
-    cpu.set_flag(CF, old_cf)
-
-
-def _and_mem_word(cpu, seg: int, off: int, value: int) -> None:
-    result = cpu.mem.rw(seg, off) & (value & 0xFFFF)
-    cpu.mem.ww(seg, off, result)
-    cpu.set_logic_flags(result, 16)
-
-
-def _ega_aperture_overlap(seg: int, off: int, count: int) -> bool:
-    """Return True when a flat transfer touches the emulated EGA aperture.
-
-    The Tandy presenter normally does not hit EGA planar memory, but this helper
-    mirrors the existing replacement fast path so the refactor does not change
-    behavior for synthetic tests or unusual states.
-    """
-    if count <= 0:
-        return False
-    start = (((seg & 0xFFFF) << 4) + (off & 0xFFFF)) & 0xFFFFF
-    end = start + count
-    ega_start = EGA_CPU_APERTURE
-    ega_end = EGA_CPU_APERTURE + EGA_PLANE_WINDOW
-    return start < ega_end and end > ega_start
-
-
-def _rep_movsw(cpu, count: int) -> None:
-    """ASM-compatible REP MOVSW helper used by the 1010:3354 presenter."""
-    count &= 0xFFFF
-    if count == 0:
-        cpu.s.cx = 0
-        return
-
-    byte_count = count * 2
-    if not cpu.get_flag(DF):
-        si = cpu.s.si & 0xFFFF
-        di = cpu.s.di & 0xFFFF
-        if si + byte_count <= 0x10000 and di + byte_count <= 0x10000 \
-                and not (cpu.mem.ega_planar and (
-                    _ega_aperture_overlap(cpu.s.ds, si, byte_count)
-                    or _ega_aperture_overlap(cpu.s.es, di, byte_count)
-                )):
-            src = (((cpu.s.ds & 0xFFFF) << 4) + si) & 0xFFFFF
-            dst = (((cpu.s.es & 0xFFFF) << 4) + di) & 0xFFFFF
-            if src + byte_count <= len(cpu.mem.data) and dst + byte_count <= len(cpu.mem.data):
-                cpu.mem.data[dst:dst + byte_count] = cpu.mem.data[src:src + byte_count]
-                cpu.s.si = (si + byte_count) & 0xFFFF
-                cpu.s.di = (di + byte_count) & 0xFFFF
-                cpu.s.cx = 0
-                return
-
-    delta = -2 if cpu.get_flag(DF) else 2
-    for _ in range(count):
-        cpu.mem.ww(cpu.s.es, cpu.s.di, cpu.mem.rw(cpu.s.ds, cpu.s.si))
-        cpu.s.si = (cpu.s.si + delta) & 0xFFFF
-        cpu.s.di = (cpu.s.di + delta) & 0xFFFF
-    cpu.s.cx = 0
 
 
 
-def _rep_movsb(cpu, count: int) -> None:
-    """ASM-compatible REP MOVSB helper used by the 1010:375B Tandy blitter."""
-    count &= 0xFFFF
-    if count == 0:
-        cpu.s.cx = 0
-        return
 
-    if not cpu.get_flag(DF):
-        si = cpu.s.si & 0xFFFF
-        di = cpu.s.di & 0xFFFF
-        if si + count <= 0x10000 and di + count <= 0x10000 \
-                and not (cpu.mem.ega_planar and (
-                    _ega_aperture_overlap(cpu.s.ds, si, count)
-                    or _ega_aperture_overlap(cpu.s.es, di, count)
-                )):
-            src = (((cpu.s.ds & 0xFFFF) << 4) + si) & 0xFFFFF
-            dst = (((cpu.s.es & 0xFFFF) << 4) + di) & 0xFFFFF
-            if src + count <= len(cpu.mem.data) and dst + count <= len(cpu.mem.data):
-                cpu.mem.data[dst:dst + count] = cpu.mem.data[src:src + count]
-                cpu.s.si = (si + count) & 0xFFFF
-                cpu.s.di = (di + count) & 0xFFFF
-                cpu.s.cx = 0
-                return
 
-    delta = -1 if cpu.get_flag(DF) else 1
-    for _ in range(count):
-        cpu.mem.wb(cpu.s.es, cpu.s.di, cpu.mem.rb(cpu.s.ds, cpu.s.si))
-        cpu.s.si = (cpu.s.si + delta) & 0xFFFF
-        cpu.s.di = (cpu.s.di + delta) & 0xFFFF
-    cpu.s.cx = 0
+
+
+
 
 
 def build_pixel_pair_lookup_table_0fe4(cpu, runtime: TandyRenderRuntime) -> None:
@@ -571,32 +446,6 @@ def build_startup_coordinate_tables_0f0b(cpu, runtime: TandyRenderRuntime) -> No
     build_video_offset_tables_0fa3(cpu, runtime)
 
 
-def _rep_stosb(cpu, count: int) -> None:
-    """ASM-compatible REP STOSB helper used by the 1010:375B Tandy blitter."""
-    count &= 0xFFFF
-    if count == 0:
-        cpu.s.cx = 0
-        return
-
-    value = cpu.s.ax & 0xFF
-    if not cpu.get_flag(DF):
-        di = cpu.s.di & 0xFFFF
-        if di + count <= 0x10000 and not (
-                cpu.mem.ega_planar and _ega_aperture_overlap(cpu.s.es, di, count)
-        ):
-            dst = (((cpu.s.es & 0xFFFF) << 4) + di) & 0xFFFFF
-            if dst + count <= len(cpu.mem.data):
-                cpu.mem.data[dst:dst + count] = bytes([value]) * count
-                cpu.s.di = (di + count) & 0xFFFF
-                cpu.s.cx = 0
-                return
-
-    delta = -1 if cpu.get_flag(DF) else 1
-    for _ in range(count):
-        cpu.mem.wb(cpu.s.es, cpu.s.di, value)
-        cpu.s.di = (cpu.s.di + delta) & 0xFFFF
-    cpu.s.cx = 0
-
 
 def copy_rect_to_tandy_video_306f(cpu, runtime: TandyRenderRuntime) -> None:
     """Copy a raw rectangle to Tandy B800h interlaced video memory.
@@ -696,10 +545,6 @@ def changed_dword_present_8rows_cdaa(cpu) -> None:
     s.cx = 0
     s.ip = 0xCE02
 
-
-def _xor_al_al(cpu) -> None:
-    cpu.set_reg8(0, 0)
-    cpu.set_logic_flags(0, 8)
 
 
 def _tandy_next_scanline_di(cpu) -> None:

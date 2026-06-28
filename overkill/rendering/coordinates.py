@@ -17,6 +17,7 @@ from __future__ import annotations
 from dos_re.cpu import CF
 
 from overkill.recovered.ds_globals import VIDEO_MODE_SELECTOR_OFF
+from overkill.asm import _add_reg16, _cmp_word
 
 MODE_CGA = 0
 MODE_EGA = 1
@@ -39,20 +40,6 @@ SCREEN_HEIGHT_LIMIT = 0x00E0
 OFFSCREEN_ROW = 0xFFFF
 
 
-def _add_reg16(cpu, reg_idx: int, value: int) -> None:
-    """Mirror ``ADD r16,imm/r16`` on the VM register file."""
-    old = cpu.get_reg16(reg_idx)
-    addend = value & 0xFFFF
-    result = old + addend
-    cpu.set_reg16(reg_idx, result)
-    cpu.set_add_flags(old, addend, result, 16)
-
-
-def _cmp_word(cpu, a: int, b: int) -> None:
-    """Mirror ``CMP word,word`` flag side effects."""
-    left = a & 0xFFFF
-    right = b & 0xFFFF
-    cpu.set_sub_flags(left, right, left - right, 16)
 
 
 def _dec_object_countdown_preserve_cf(cpu, ss: int, bp: int) -> None:

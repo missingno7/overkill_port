@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from dos_re.cpu import CF
+from overkill.asm import _add_mem_word, _add_reg16, _cmp_byte, _cmp_word
 
 Cpu = object
 SelfDisableIfPatched = Callable[[Cpu, int, bytes, str], bool]
@@ -48,32 +49,8 @@ class TextRenderRuntime:
     self_disable_if_patched: SelfDisableIfPatched
 
 
-def _cmp_byte(cpu, a: int, b: int) -> None:
-    a &= 0xFF
-    b &= 0xFF
-    cpu.set_sub_flags(a, b, a - b, 8)
 
 
-def _cmp_word(cpu, a: int, b: int) -> None:
-    a &= 0xFFFF
-    b &= 0xFFFF
-    cpu.set_sub_flags(a, b, a - b, 16)
-
-
-def _add_reg16(cpu, reg_idx: int, value: int) -> None:
-    old = cpu.get_reg16(reg_idx)
-    addend = value & 0xFFFF
-    result = old + addend
-    cpu.set_reg16(reg_idx, result)
-    cpu.set_add_flags(old, addend, result, 16)
-
-
-def _add_mem_word(cpu, seg: int, off: int, value: int) -> None:
-    old = cpu.mem.rw(seg, off)
-    addend = value & 0xFFFF
-    result = old + addend
-    cpu.mem.ww(seg, off, result)
-    cpu.set_add_flags(old, addend, result, 16)
 
 
 

@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from dos_re.cpu import CF, DF
 from dos_re.hooks import call_installed_hook_like_near_call, jump_installed_hook_boundary
-from overkill.asm import _cmp_word
+from overkill.asm import _add_reg16, _cmp_word, _sub_reg16, _test_word
 from overkill.recovered.ds_globals import VIDEO_MODE_SELECTOR_OFF
 
 from dataclasses import dataclass
@@ -128,30 +128,8 @@ class LayerSpriteRuntime:
     compositor_handlers: Mapping[int, CompositorHandler]
 
 
-def _cmp_word(cpu, a: int, b: int) -> None:
-    left = a & 0xFFFF
-    right = b & 0xFFFF
-    cpu.set_sub_flags(left, right, left - right, 16)
 
 
-def _test_word(cpu, value: int, mask: int) -> None:
-    cpu.set_logic_flags((value & mask) & 0xFFFF, 16)
-
-
-def _add_reg16(cpu, reg_idx: int, value: int) -> None:
-    old = cpu.get_reg16(reg_idx)
-    addend = value & 0xFFFF
-    result = old + addend
-    cpu.set_reg16(reg_idx, result)
-    cpu.set_add_flags(old, addend, result, 16)
-
-
-def _sub_reg16(cpu, reg_idx: int, value: int) -> None:
-    old = cpu.get_reg16(reg_idx)
-    subtrahend = value & 0xFFFF
-    result = old - subtrahend
-    cpu.set_reg16(reg_idx, result)
-    cpu.set_sub_flags(old, subtrahend, result, 16)
 
 
 def _variant_layer_table(normal_base: int, variant_base: int, variant_flags: int) -> int:
