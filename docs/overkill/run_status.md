@@ -1,3 +1,13 @@
+## 2026-06-28 - Coastline (Phase 1b): relocate the 41A6 variable-width interlaced blit to tandy.py
+
+Moved the hot variable-width interlaced row blit at 1010:41A6 -- the same interlaced-
+addressing family as 447B but with a variable row width (``REP MOVSB`` BP bytes/row,
+then the ``+2000h`` / ``test 4000h`` / ``+C050h`` bank wrap) -- out of `hooks.py` into
+`rendering/tandy.run_variable_width_interlaced_blit_41a6`, leaving a thin wrapper
+(`_rep_movsb` added to tandy.py's asm imports).  Byte-exact: the per-hook oracle
+`test_variable_width_interlaced_blit_41a6` passes, plus lint (182) + audit;
+`hook_inventory.md` regenerated.
+
 ## 2026-06-28 - Coastline (Phase 1b): relocate the 447B frame-present blit to rendering/tandy.py
 
 Moved the mode-0 frame-present blit at 1010:447B -- the single hottest present routine

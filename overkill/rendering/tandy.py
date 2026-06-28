@@ -23,7 +23,7 @@ from typing import Callable
 from dos_re.cpu import CF, DF, ZF
 from dos_re.hooks import call_installed_hook_like_near_call
 from dos_re.memory import EGA_CPU_APERTURE, EGA_PLANE_WINDOW
-from ..asm import _add_reg16, _dec_reg16_preserve_cf, _rep_movsw, _sub_reg16, _test_word
+from ..asm import _add_reg16, _dec_reg16_preserve_cf, _rep_movsb, _rep_movsw, _sub_reg16, _test_word
 
 Cpu = object
 SelfDisableIfPatched = Callable[[Cpu, int, bytes, str], bool]
@@ -801,6 +801,36 @@ def run_masked_sprite_composite_immediate(cpu, *, words_per_row: int, row_add: i
     s.cx = 0
     s.ds = mem.rw(s.cs & 0xFFFF, 0x9596)
     s.ip = cpu.pop()
+
+
+def run_variable_width_interlaced_blit_41a6(cpu) -> None:
+    """The hot variable-width interlaced row blit at 1010:41A6.
+
+    Entry (set up by the caller): ES=CS:[9598], CX=row count, BP=source bytes per
+    row, DS:SI=source, ES:DI=dest.  Per row: ``REP MOVSB`` BP bytes, then rewind DI
+    (``SUB DI,BP``) and bank-advance with the ``+2000h`` / ``test 4000h`` / ``+C050h``
+    interlace wrap; ``LOOP`` over CX rows.  Same interlaced-addressing family as 447B,
+    but with a variable row width.
+    """
+    rows = cpu.s.cx & 0xFFFF
+    if rows == 0:
+        rows = 0x10000
+
+    while rows:
+        # Preserve the PUSH/POP scratch write because some oracle tests compare
+        # the full 1 MiB memory image, including the word below SP.
+        cpu.push(cpu.s.cx)
+        cpu.s.cx = cpu.s.bp & 0xFFFF
+        _rep_movsb(cpu, cpu.s.cx)
+        _sub_reg16(cpu, 7, cpu.s.bp)
+        _add_reg16(cpu, 7, 0x2000)
+        _test_word(cpu, cpu.s.di, 0x4000)
+        if not cpu.get_flag(ZF):
+            _add_reg16(cpu, 7, 0xC050)
+        cpu.s.cx = cpu.pop()
+        cpu.s.cx = (cpu.s.cx - 1) & 0xFFFF  # LOOP, flags unaffected.
+        rows -= 1
+    cpu.s.ip = cpu.pop()
 
 
 def run_present_frame_blit_447b(cpu) -> None:

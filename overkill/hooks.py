@@ -117,6 +117,7 @@ from .rendering.layer_sprites import (
 from .rendering.tandy import (
     run_masked_sprite_composite_immediate,
     run_present_frame_blit_447b,
+    run_variable_width_interlaced_blit_41a6,
     build_startup_coordinate_tables_0f0b as run_tandy_startup_coordinate_tables_0f0b,
     build_video_offset_tables_0fa3 as run_tandy_video_offset_tables_0fa3,
     clear_tandy_interlaced_buffer_30b0 as run_tandy_interlaced_clear_30b0,
@@ -2704,26 +2705,7 @@ def overkill_variable_width_interlaced_blit_41a6(cpu):
     It is the same EGA/CGA interlaced-addressing family as the already lifted
     447B and 41DA routines, but with a variable row width.
     """
-    rows = cpu.s.cx & 0xFFFF
-    if rows == 0:
-        rows = 0x10000
-
-    while rows:
-        # Preserve the PUSH/POP scratch write because some oracle tests compare
-        # the full 1 MiB memory image, including the word below SP.
-        cpu.push(cpu.s.cx)
-        cpu.s.cx = cpu.s.bp & 0xFFFF
-        _rep_movsb(cpu, cpu.s.cx)
-        _sub_reg16(cpu, 7, cpu.s.bp)
-        _add_reg16(cpu, 7, 0x2000)
-        _test_word(cpu, cpu.s.di, 0x4000)
-        if not cpu.get_flag(ZF):
-            _add_reg16(cpu, 7, 0xC050)
-        cpu.s.cx = cpu.pop()
-        cpu.s.cx = (cpu.s.cx - 1) & 0xFFFF  # LOOP, flags unaffected.
-        rows -= 1
-
-    cpu.s.ip = cpu.pop()
+    run_variable_width_interlaced_blit_41a6(cpu)
 
 
 
