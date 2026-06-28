@@ -23,7 +23,7 @@ from typing import Callable
 from dos_re.cpu import CF, DF, ZF
 from dos_re.hooks import call_installed_hook_like_near_call
 from dos_re.memory import EGA_CPU_APERTURE, EGA_PLANE_WINDOW
-from ..asm import _add_reg16, _dec_reg16_preserve_cf, _rep_movsb, _rep_movsw, _sub_reg16, _test_word
+from ..asm import _add_reg16, _dec_reg16_preserve_cf, _inc_reg16_preserve_cf, _rep_movsb, _rep_movsw, _sub_reg16, _test_word
 
 Cpu = object
 SelfDisableIfPatched = Callable[[Cpu, int, bytes, str], bool]
@@ -151,14 +151,6 @@ def _and_mem_word(cpu, seg: int, off: int, value: int) -> None:
     result = cpu.mem.rw(seg, off) & (value & 0xFFFF)
     cpu.mem.ww(seg, off, result)
     cpu.set_logic_flags(result, 16)
-
-
-def _dec_reg16_preserve_cf(cpu, reg_idx: int) -> None:
-    old = cpu.get_reg16(reg_idx)
-    old_cf = cpu.get_flag(CF)
-    cpu.set_reg16(reg_idx, (old - 1) & 0xFFFF)
-    cpu.set_sub_flags(old, 1, old - 1, 16)
-    cpu.set_flag(CF, old_cf)
 
 
 def _ega_aperture_overlap(seg: int, off: int, count: int) -> bool:

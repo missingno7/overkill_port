@@ -1,3 +1,18 @@
+## 2026-06-28 - Correctness: fix a NameError in postcopy_scaled_blit_375b (missing _inc import)
+
+A conservative per-function undefined-name scan -- written because `scripts/lint.py` has
+no F821-style check (which is how the dead efae predictor's undefined `slot` slipped
+through) -- surfaced a *live* bug among 117 wildcard-import false positives:
+`rendering/tandy.postcopy_scaled_blit_375b` calls `_inc_reg16_preserve_cf(cpu, 1)`
+(``INC CX`` around the scale multiply) but tandy.py never imported it, so the
+``cs:[5905] != 0`` scale branch raised `NameError` whenever it executed.  375b has no
+per-hook oracle, so nothing caught it.  Added `_inc_reg16_preserve_cf` to the `..asm`
+import and dropped the now-redundant local `_dec_reg16_preserve_cf` def (byte-identical
+to asm's).  The fix is byte-exact-by-construction -- `_inc_reg16_preserve_cf` *is* the
+interpreter's INC-reg-preserve-CF primitive.  Verified: scanner clear + lint (182) + the
+full 239-test per-hook oracle suite (no regression from dropping the local duplicate).
+375b still lacks a dedicated oracle (pre-existing gap, flagged for future coverage).
+
 ## 2026-06-28 - Hygiene/correctness: remove the dead dispatch-target predictor cluster
 
 `object_runtime.py` carried five `_*_dispatch_target_*` / `_*_target_*` predictors
