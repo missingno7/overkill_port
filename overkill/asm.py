@@ -212,6 +212,12 @@ def _rep_stosb(cpu, count: int) -> None:
     cpu.s.cx = 0
 
 
+def _stosw(cpu) -> None:
+    """Store AX to ES:DI and advance DI exactly like STOSW."""
+    cpu.mem.ww(cpu.s.es, cpu.s.di, cpu.s.ax)
+    cpu.s.di = (cpu.s.di + (-2 if cpu.get_flag(DF) else 2)) & 0xFFFF
+
+
 def _rep_stosw_preserve_flags(cpu, count: int) -> None:
     """Execute REP STOSW without changing FLAGS."""
     count &= 0xFFFF

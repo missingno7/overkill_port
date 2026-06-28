@@ -27,6 +27,7 @@ from __future__ import annotations
 from typing import Callable
 
 from overkill.asm import _add_reg16, _cmp_word, _sub_reg16
+from overkill.recovered.domain.coords import i16
 from overkill.recovered.ds_globals import (
     CONTACT_DISPATCH_GATE,
     VIEW_TARGET_X,
@@ -74,11 +75,6 @@ CONTACT_SIDE_EFFECT_RETURN_IP = 0xB29C
 NearCall = Callable[..., None]
 
 
-def _signed16(value: int) -> int:
-    value &= 0xFFFF
-    return value - 0x10000 if value & 0x8000 else value
-
-
 def run_overlap_contact_selector_b250(cpu, *, caller: str, post_contact_side_effect: NearCall) -> int:
     """Run the shared ``B250..B2A3`` overlap/contact selector.
 
@@ -115,13 +111,13 @@ def run_overlap_contact_selector_b250(cpu, *, caller: str, post_contact_side_eff
 
     obj_x = slot.x_word
     _cmp_word(cpu, obj_x, cpu.s.ax)
-    if _signed16(obj_x) < _signed16(cpu.s.ax):
+    if i16(obj_x) < i16(cpu.s.ax):
         return TAIL_NO_CONTACT
 
     _add_reg16(cpu, 0, OVERLAP_BOX_SPAN)  # B265: ADD AX,0014h.
     obj_x = slot.x_word
     _cmp_word(cpu, obj_x, cpu.s.ax)
-    if _signed16(obj_x) > _signed16(cpu.s.ax):
+    if i16(obj_x) > i16(cpu.s.ax):
         return TAIL_NO_CONTACT
 
     obj_y = slot.y_word

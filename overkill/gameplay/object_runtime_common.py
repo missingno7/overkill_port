@@ -40,11 +40,6 @@ def _neg_reg16(cpu, reg_idx: int) -> None:
     cpu.set_reg16(reg_idx, result)
 
 
-def _signed16(value: int) -> int:
-    value &= 0xFFFF
-    return value - 0x10000 if value & 0x8000 else value
-
-
 def _format_object_context(cpu, bp: int | None = None, cx_value: int | None = None) -> str:
     parts = [
         f"CS:IP={cpu.s.cs & 0xFFFF:04X}:{cpu.s.ip & 0xFFFF:04X}",

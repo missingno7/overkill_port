@@ -23,7 +23,7 @@ from typing import Callable
 from dos_re.cpu import CF, DF, ZF
 from dos_re.hooks import call_installed_hook_like_near_call
 from dos_re.memory import EGA_CPU_APERTURE, EGA_PLANE_WINDOW
-from ..asm import _add_mem_word, _add_reg16, _and_mem_word, _cmp_word, _dec_reg16_preserve_cf, _ega_aperture_overlap, _inc_mem_word_preserve_cf, _inc_reg16_preserve_cf, _rep_movsb, _rep_movsw, _rep_stosb, _sub_mem_word, _sub_reg16, _test_word, _xor_al_al
+from ..asm import _add_mem_word, _add_reg16, _and_mem_word, _cmp_word, _dec_reg16_preserve_cf, _ega_aperture_overlap, _inc_mem_word_preserve_cf, _inc_reg16_preserve_cf, _rep_movsb, _rep_movsw, _rep_stosb, _stosw, _sub_mem_word, _sub_reg16, _test_word, _xor_al_al
 
 Cpu = object
 SelfDisableIfPatched = Callable[[Cpu, int, bytes, str], bool]
@@ -92,12 +92,6 @@ def _call_installed_strided_copy_34c5(cpu, runtime: TandyRenderRuntime, return_i
     )
 
 
-
-
-def _stosw(cpu) -> None:
-    """Store AX to ES:DI and advance DI exactly like STOSW."""
-    cpu.mem.ww(cpu.s.es, cpu.s.di, cpu.s.ax)
-    cpu.s.di = (cpu.s.di + (-2 if cpu.get_flag(DF) else 2)) & 0xFFFF
 
 
 

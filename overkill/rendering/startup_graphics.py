@@ -10,12 +10,7 @@ the hook boundaries.
 from __future__ import annotations
 
 from dos_re.cpu import CF, DF, ZF, SF, PF, _PARITY
-
-
-def _stosw(cpu) -> None:
-    """Store AX to ES:DI and advance DI exactly like STOSW."""
-    cpu.mem.ww(cpu.s.es, cpu.s.di, cpu.s.ax)
-    cpu.s.di = (cpu.s.di + (-2 if cpu.get_flag(DF) else 2)) & 0xFFFF
+from overkill.asm import _stosw
 
 
 def pack_four_pixels_45f6(cpu):

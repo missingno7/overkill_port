@@ -38,7 +38,6 @@ from overkill.gameplay.contact_overlap import run_overlap_contact_selector_b250
 from overkill.gameplay.object_runtime_common import (
     _or_mem_word,
     _neg_reg16,
-    _signed16,
     _format_object_context,
     _raise_unverified_path,
     _run_interpreted_near_call_observed,
