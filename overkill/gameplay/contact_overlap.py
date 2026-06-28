@@ -32,6 +32,7 @@ from overkill.recovered.ds_globals import (
     VIEW_TARGET_X,
     VIEW_TARGET_Y,
 )
+from overkill.recovered.systems.objects import contact_fanout_count
 from overkill.recovered.views.object_slots import (
     ObjectSlotView,
     OFF_SCAN_ENABLE_OR_SOLID,
@@ -134,18 +135,16 @@ def run_overlap_contact_selector_b250(cpu, *, caller: str, post_contact_side_eff
     if obj_y > (cpu.s.bx & 0xFFFF):
         return TAIL_NO_CONTACT
 
-    # B27A..B294: fanout count is 1, or 3/5 for logic_id 3 depending on BEDC.
-    cpu.s.cx = 0x0001
+    # B27A..B294: fan-out count is 1, or 3/5 for logic_id 3 depending on BEDC.
     logic_id = slot.logic_id
+    fanout_selector = mem.rw(ds, CONTACT_FANOUT_SELECTOR) if logic_id == 0x0003 else 0
+    cpu.s.cx = contact_fanout_count(logic_id, fanout_selector)
+    # Replay the original CMP flag side effects (the selector preserves AX/BX/CX/flags).
     _cmp_word(cpu, logic_id, 0x0003)
     if logic_id == 0x0003:
-        fanout_selector = mem.rw(ds, CONTACT_FANOUT_SELECTOR)
         _cmp_word(cpu, fanout_selector, 0x0000)
         if fanout_selector != 0:
-            cpu.s.cx = 0x0003
             _cmp_word(cpu, fanout_selector, 0x0001)
-            if fanout_selector != 0x0001:
-                cpu.s.cx = 0x0005
 
     # B297..B29E: PUSH CX; PUSH BP; CALL 9E19; POP BP; POP CX; LOOP B297.
     # 9E19 owns the raw status/counter side effects; this loop owns only the

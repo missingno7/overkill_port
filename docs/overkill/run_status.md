@@ -1,3 +1,17 @@
+## 2026-06-28 - Source-purity rescue: B250 contact fan-out count to a pure formula
+
+Pushed the B250 overlap/contact selector's difficulty-scaled fan-out count down to
+a pure rule.  The CX loop count (number of 9E19 post-contact iterations) -- 1 for
+most objects, but 1/3/5 for logic_id-3 objects scaling with the contact fan-out
+selector DS:BEDC (the difficulty counter) -- moved from
+`gameplay/contact_overlap.run_overlap_contact_selector_b250` into
+`recovered/systems/objects.contact_fanout_count`.  The adapter now sets CX from the
+rule and replays the original CMP flag side effects unchanged (the selector
+deliberately preserves AX/BX/CX/flags), so the change is byte-exact by construction.
+The contact selector is exercised by the corpus.  Gated green: lint (181), audit,
+the new pure unit test `test_recovered_contact_fanout_count_is_pure_and_named`,
+demo-replay 23/23.  Begins pushing ContactSystem logic toward `recovered/systems`.
+
 ## 2026-06-28 - Source-purity rescue: shared level-disable gate (AB10/ABA3/AB77)
 
 Consolidated the `[2384] >= 3` "level frame phase has reached the disable threshold"

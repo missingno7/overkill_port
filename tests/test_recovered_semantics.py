@@ -915,6 +915,19 @@ def test_recovered_aba3_object_logic_is_pure_and_named():
     assert object_logic_aba3(0, 0xFFFF).sprite == (0xFFFF + ABA3_SPRITE_OFFSET) & 0xFFFF
 
 
+def test_recovered_contact_fanout_count_is_pure_and_named():
+    from overkill.recovered.systems.objects import contact_fanout_count
+
+    # Non-logic-3 objects always fan out once, regardless of the selector.
+    assert contact_fanout_count(0, 0) == 1
+    assert contact_fanout_count(2, 5) == 1
+    # Logic-id-3 scales with the BEDC difficulty selector: 0 -> 1, 1 -> 3, else 5.
+    assert contact_fanout_count(3, 0) == 1
+    assert contact_fanout_count(3, 1) == 3
+    assert contact_fanout_count(3, 2) == 5
+    assert contact_fanout_count(3, 0xFFFF) == 5
+
+
 def test_recovered_ad60_bounds_tile_tail_adapter_matches_pure_decision():
     from overkill.gameplay import object_bounds
     from overkill.recovered.systems.objects import (

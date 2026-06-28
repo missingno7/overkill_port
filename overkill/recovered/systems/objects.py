@@ -223,6 +223,23 @@ def object_logic_ae09(substate: int, direction_or_step: int) -> Ae09Update:
 ABA3_SPRITE_OFFSET = 0x0014
 
 
+def contact_fanout_count(logic_id: int, fanout_selector: int) -> int:
+    """Number of B250 post-contact 9E19 fan-out iterations (the CX loop count).
+
+    ``logic_id`` is the slot's logic id; ``fanout_selector`` is the contact fan-out
+    selector DS:BEDC (the difficulty counter).  Logic-id-3 objects scale the count
+    with difficulty -- ``0 -> 1``, ``1 -> 3``, otherwise ``5`` -- while every other
+    object fans out exactly once."""
+    if (logic_id & 0xFFFF) != 0x0003:
+        return 1
+    selector = fanout_selector & 0xFFFF
+    if selector == 0x0000:
+        return 1
+    if selector == 0x0001:
+        return 3
+    return 5
+
+
 def object_logic_aba3(frame_phase: int, scroll_frame: int) -> Aba3Update:
     """Pure 1010:ABA3 decision recovered from the AD04 tracked-object follower.
 
