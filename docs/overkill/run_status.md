@@ -1,3 +1,16 @@
+## 2026-06-28 - Guard: add an import*-aware undefined-name (F821) check to the suite
+
+Promoted the one-off scan that found the 375b NameError into a permanent guard,
+`scripts/check_undefined_names.py`, enforced by `tests/test_no_undefined_names.py`.  It
+walks every function with full per-scope binding (params, locals,
+for/with/except/comprehension targets, nested-def names, global/nonlocal, enclosing
+closures, module globals, builtins) and resolves ``from X import *`` by importing X for
+its real exports -- several modules build ``__all__`` dynamically (e.g.
+``runtime_signatures`` does ``[n for n in globals() if n.startswith("_SIG_")]``), so a
+static parse won't do.  Zero false positives on the tree; the test also self-proves the
+guard fires on a synthetic undefined name and stays quiet on a bound local.  This closes
+the lint gap that let both efae's undefined ``slot`` and 375b's unimported helper ship.
+
 ## 2026-06-28 - Correctness: fix a NameError in postcopy_scaled_blit_375b (missing _inc import)
 
 A conservative per-function undefined-name scan -- written because `scripts/lint.py` has
