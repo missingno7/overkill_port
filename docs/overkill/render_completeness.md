@@ -84,47 +84,47 @@ output, and **witness it against the live draws** before marking done.
       revisit only if a witness reveals one.
 
 ### Native regeneration (toward the self-composing backend)
-**Ground truth (decoded the actual on-screen B800 at L2 gameplay frame 200).**
-OVERKILL L2 is a **sparse vertical shooter**: black space, a scrolling **starfield**
-(sparse white dots), a formation of alien sprites, the player ship + projectiles, and
-a **static right-side HUD panel** (WEAPON / MISSILES / GADGETS / UPGRADES, score,
-radar). The dump is `scratchpad/dump_b800_visible.png`. This anchors the model that
-the write-histogram probes alone kept getting wrong.
+**Ground truth — DECODED the actual buffers at L2 gameplay (end of frame 200).** Two
+images settle the model (this section was corrected several times because it was
+first built from write-IP histograms; the reliable method is decode + LOOK at the
+buffers *at end-of-compose*):
+- `scratchpad/end200_35ff_cursor.png` — the `[9598]` source via the present path —
+  is the **full playfield**: scrolling starfield + alien formation + player ship +
+  projectiles, **no HUD**.
+- `scratchpad/dump_b800_visible.png` — B800 — is that **same playfield PLUS** the
+  right-side HUD panel (WEAPON / MISSILES / GADGETS / UPGRADES, score, radar).
 
-Established by looking, not inferring:
-- **`[95A4]`=B800 is the persistent composed visible** — it holds the full frame
-  (background + HUD + baked sprites). At a steady gameplay window only ~128
-  incremental word-writes/frame hit it (from `5EE1..5F05`); the bulk persists across
-  frames. The native backend's faithful display already captures this
-  (`composed_indices = decode_tandy_b800_indices(B800)` in
-  `render_snapshot_adapter`). The *decode/display* path is DONE.
-- **`[9592]`=245A is a DATA segment, NOT a video "master plane."** Decoded as pixels
-  it is structured data-noise (entity state / tables / save-unders), and it is
-  written ~115×/frame by scattered entity routines (`5F61`/`AED8`/`B24D`/`AA1x`…).
-  The inherited "`[9592]`=245A master plane / clean background" label is **wrong** —
-  do not treat 245A as a background source.
+The grounded model:
+- **`[9598]`=35FF is the playfield source**, composed each frame — sparse (~2% lit;
+  it's space — black with a starfield + sprites) — and blitted by the present at
+  cursor `[234C]` into the B800 playfield region. `page_raster.render_present_page_*`
+  decodes it correctly and matches the B800 playfield: **the faithful playfield decode
+  is DONE and verified.** *Pitfall that misled earlier revisions:* 35FF is composed on
+  alternating frames, so sampled at the *start* of a frame it reads empty — capture at
+  end-of-compose. (This reinstates `page_raster`'s model; a prior revision wrongly
+  called 35FF "empty / not the Tandy source".)
+- **`[95A4]`=B800 is the display** = the playfield (presented from 35FF) **+** the HUD
+  panel, drawn separately and persisted. The backend captures it as `composed_indices`.
+- **`[9592]`=245A is a DATA segment** (entity state / packed object data / save-unders),
+  NOT a video "master plane" — it decodes to data-noise. The inherited "master plane /
+  clean background" label is wrong. (This retraction stands.)
+- The playfield is composed via the **already-lifted leaves** (compositors
+  `2E6E/2F81/2FB6`, copies `34C5/34D8/3542`) plus packed object/sprite cells in the
+  `~0x2C00` work region (written by the object draws `35CF/356F/358D/365A`). The
+  present geometry (35FF→B800) is lifted.
 
-**RETRACTED (built from write-histograms without viewing the frame, now disproven):**
-the "`[9598]` persistent *scrolling* page → present → playfield, verified vs B800",
-the "save-under / restore over a `[9592]` clean background", and "no separate
-starfield generator" claims from the prior revision of this note. In this Tandy
-level `[9598]`=35FF is **empty** (at base *and* at the present cursor) while B800 is
-full — so 35FF is **not** the Tandy visible source here. `page_raster`'s
-"`[9598]`→present→playfield, verified vs B800" appears grounded on EGA/other-config
-snapshots, not Tandy gameplay; the backend's `playfield_indices` (from 35FF) is an
-auxiliary layer (empty in a non-scrolling-terrain level), not the display.
+**Self-compose gap (grounded, narrowed):**
+1. The **starfield generator** — the sparse scrolling dots filling the black playfield
+   (they live in 35FF; the specific routine is not yet isolated).
+2. The **HUD panel** (right-side chrome + score + radar), drawn separately into B800.
+3. Drive the lifted leaves from **native game state** to compose the playfield into a
+   35FF-equivalent (sprites are already native + verified in `sprite_layer`), then
+   present + overlay the HUD.
 
-**What IS solid:** the composition *leaves* are lifted (compositors `2E6E/2F81/2FB6`,
-copies `34C5/34D8/3542`); the present page roles are partly mapped (`[9596]`=25CC is
-the game DS pointer, no work-page flip); the display = the persistent B800.
-
-**Self-compose gap (honestly, still open):** regenerate the **persistent B800** —
-the starfield generator + the HUD panel + native sprite compositing (sprites are
-already native + verified in `sprite_layer`). The exact Tandy composition pipeline
-(how stars/sprites/HUD reach B800, and what role 35FF plays per level type) needs a
-proper **ordered single-frame write trace anchored on B800** — NOT the spot
-write-histograms used so far, which gave frame-window-dependent, partly-wrong
-pictures.
+So the native backend already produces the faithful frame by *decoding* the VM's
+composed pages; standing on its own (regenerating the playfield + HUD without the VM)
+needs items 1–3. Items are independent and individually witnessable against the
+decoded buffers above.
 
 ### Effects / transitions
 - [x] **Palette** — the fixed PCjr/Tandy 16-colour IRGB palette
