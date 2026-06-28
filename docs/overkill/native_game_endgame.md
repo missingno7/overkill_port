@@ -4,6 +4,11 @@
 > [`rescue_refactor.md`](rescue_refactor.md) (push lifted → pure recovered) and the
 > [`native_video_plan.md`](native_video_plan.md) (the native backend) both serve.
 > It supersedes any framing where the VM is a permanent runtime.
+>
+> **The executable, unattended loop that drives toward this destination is
+> [`overnight_endgame_execution.md`](overnight_endgame_execution.md)** — the overnight
+> brief: one verified slice at a time, tested against the demos, until standalone
+> `--backend native` runs every demo with the VM as an optional oracle only.
 
 ## The destination
 
