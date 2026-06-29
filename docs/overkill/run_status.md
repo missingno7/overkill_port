@@ -1,3 +1,31 @@
+## 2026-06-30 - Collision island-merge: the per-object hit -> death outcome (BF25 + C037)
+
+Resuming the gameplay frame (Bucket A) after the docs reconciliation. Scouted the remaining
+stages and confirmed they're deep native-izations of *already-lifted* stateful systems, not
+clean new native stages: the spawn fan-out (A067/A958 + the 7524 allocator) is heavily lifted
+already (children compose); the collision-death contact path (BC4B -> BCCB + the 62F6
+object-vs-object scan) is a stateful pool interaction, lifted in object_postmove.py /
+contact_side_effects.py. So the clean move here is a **Phase-7 island merge**, not a new stage.
+
+The two per-object collision leaves were recovered but lived in *separate* adapters -- the BF25
+damage chain (`collision_damage_counter_chain_bf25`, used in contact_side_effects.py) and the
+BFC7/C037 death transition (`object_collision_death_transition_c037`, used in
+object_deactivation.py). Merged them into the single per-object outcome a hit produces:
+`collision.resolve_collision_hit(counter_20, bedc, object_type, logic_id, enter_at_bf25)` ->
+`CollisionHitOutcome(new_counter_20, died, death_transition)`. It runs the decrement chain and,
+exactly as BF25 jumps to BFC7 the instant a decrement hits zero, stamps the C037 dying state
+(logic_id -> 1 + death sprite) on death, else None. Survival's hit-react (`bp+36=5`) and the
+A8C2 boss-group fan-out are pool/adapter side effects, explicitly out of this per-object outcome;
+the non-1/2-type death path inherits C037's unverified-type raise.
+
+Verification: both leaves are already demo-replay-verified in their adapters, and the merge
+composes them in the exact BF25 -> (jz) BFC7 -> C037 order read from the disasm; sealed with
+tests/test_collision_hit_outcome.py (10 cases: base/variant-2 decrement counts, the BEDC 0/1/2
+gates, the 16-bit-wrap of a 0 counter, the death-transition fields + sprite-by-type, and that a
+survivor never consults C037). This is the native-side per-object collision outcome the VM-free
+collision pass will use; the hybrid adapters keep their ASM-faithful split. No hook touched, so
+demo-replay is unaffected; lint + both audits + manifest (unchanged) green.
+
 ## 2026-06-30 - Finish-the-gameplay-frame: recover the contact tile-collision probe (4FF9)
 
 User chose "finish the gameplay frame" toward cold boot.  Scouted the remaining 9B2E stages and the

@@ -9,6 +9,7 @@ from __future__ import annotations
 from overkill.recovered.domain.collision import (
     CollisionDamageChainBF25,
     CollisionDeathTransition,
+    CollisionHitOutcome,
     CollisionVariantDispatchBEC5,
     ObjectOverlapScanDecision,
     PostMoveContactWindow,
@@ -469,4 +470,29 @@ def object_collision_death_transition_c037(logic_id: int, object_type: int) -> C
         logic_id=COLLISION_DEATH_STATE_LOGIC_ID,
         transition_latch=0x0000,
         sprite_or_state=sprite,
+    )
+
+
+def resolve_collision_hit(
+    *, counter_20: int, bedc: int, object_type: int, logic_id: int, enter_at_bf25: bool = True
+) -> CollisionHitOutcome:
+    """The per-object outcome of one collision hit -- the BF25 damage chain then the BFC7 death.
+
+    Merges the two recovered collision leaves the way the ASM chains them: run the
+    :func:`collision_damage_counter_chain_bf25` decrements, and -- exactly as BF25 jumps to BFC7
+    the instant a decrement reaches zero -- stamp the :func:`object_collision_death_transition_c037`
+    dying state when the chain reports ``died``.  ``enter_at_bf25`` is False for the variant-2
+    sprite path that enters at BF2D (one fewer decrement).
+
+    Survival's hit-react state (``bp+36 = 5``) and the A8C2 boss-group fan-out are pool/adapter
+    side effects, not part of this per-object outcome; on a non-1/2 ``object_type`` death the
+    C037 leaf raises (the original's unverified-type tail), and that contract is inherited here.
+    """
+    chain = collision_damage_counter_chain_bf25(counter_20, bedc, enter_at_bf25)
+    if not chain.died:
+        return CollisionHitOutcome(new_counter_20=chain.new_counter_20, died=False, death_transition=None)
+    return CollisionHitOutcome(
+        new_counter_20=chain.new_counter_20,
+        died=True,
+        death_transition=object_collision_death_transition_c037(logic_id, object_type),
     )

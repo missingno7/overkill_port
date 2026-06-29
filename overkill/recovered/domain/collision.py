@@ -153,3 +153,19 @@ class CollisionDeathTransition:
     logic_id: int
     transition_latch: int
     sprite_or_state: int
+
+
+@dataclass(frozen=True, slots=True)
+class CollisionHitOutcome:
+    """The per-object outcome of one collision hit: the BF25 damage chain + the BFC7 death.
+
+    Merges the two recovered collision leaves into the single result a hit produces on the
+    struck object: ``new_counter_20`` (post-chain hit counter), ``died`` (a decrement reached
+    zero), and ``death_transition`` -- the BFC7/C037 dying-state stamp (logic_id -> 1 + death
+    sprite) when it died, else ``None``.  Survival's hit-react state (``bp+36 = 5``) and the
+    A8C2 boss-group fan-out are pool/adapter side effects, not part of this per-object outcome.
+    """
+
+    new_counter_20: int
+    died: bool
+    death_transition: "CollisionDeathTransition | None"
