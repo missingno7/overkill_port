@@ -36,6 +36,29 @@ critical-path blocker for a self-composed native frame.
   the cursor delta → the star scroll counter), or a level-load capture. User noted it's
   pixel-plotted. Until then, the native frame must capture the VM plate (hybrid only).
 
+## NOTE (2026-06-29) — §1.2 state-mirror verifiers DILUTE pure %; at the rounding edge
+
+The Bucket C §1.2 native state-mirror verifiers (`read_X` + `X_mismatches`: CameraState DONE
+`5902f25`, HudLayer/Score DONE `fdd4a38`) are **VM-facing adapter code** — they read VM memory
+to compare — so each ADDS to the ASM-like mass without adding `source_pure` mass. Pure %
+DILUTES (Source flat at 2982; ASM-like grows). Committed Camera + Hud brought pure % to the
+rounding edge (raw ~14.45% → displayed 14.5%). A further BackgroundLayer + PresentComposition
+mirror slice pushed ASM-like 17650 → 17701 → **14.4% displayed (FELL)**, so it was REVERTED per
+§5 (a slice failing the metric gate is a blocker, not a shortcut).
+
+**Implication:** done-condition #2 (build the §1.2 mirrors) conflicts SHORT-TERM with #4
+(pure % must not fall) — mirrors are VM-facing infra. They pay off only when the native RUNTIME
+(Bucket C producer) is built and the VM-facing adapters/hooks are DELETED (pure % then jumps).
+Until then, do NOT add more standalone mirror-verifier slices (they fail the metric gate). The
+metric-RAISING vein is inline→pure decision extraction (A4EA-style, `e2bd8d7`), which the
+brief's own Bucket-A frontier note marks exhausted (only multi-part islands remain). Confirmed
+this session by examining the two unblocked Bucket-A behaviors: `B250`'s only un-pure decision
+(the overlap-box test) is flag-coupled at each early return (AX/BX/flags differ per exit), and
+`8d4f` is a waypoint read + a trivial `+0x20` offset + mode stamp then delegations to the
+already-lifted `5DB2`/`bc4b` — neither yields a meaty gate-compliant pure decision. So the
+gate-compliant remaining work is (a) the hard Bucket-A islands (pure-raising but multi-leaf), or
+(b) the native-runtime build itself (which collapses the adapters and repays the dilution).
+
 ## NOTE (process) — check lifted-status before "recovering" a routine
 
 `519A` / `3153` (HUD text dispatch + Tandy glyph) were ALREADY lifted (`rendering/text.py`,
