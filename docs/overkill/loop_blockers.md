@@ -194,7 +194,11 @@ mass is VM-boundary continuation glue, not extractable decisions; (b) the larges
 candidate decision (`game_state` 9C01's `3*ah+al` axis-dispatch index) is single-use + tangled with
 its jump-table control flow = the "single-use over-engineering" cautioned against above; (c)
 `hooks.py` (3203 lines, over its 1500 budget — done-condition #4) has no relocatable inline render
-video-writes — its size needs hook DELETION via the native runtime, not relocation. So pure %, the
+video-writes — its size needs hook DELETION via the native runtime, not relocation; (d) the brief's
+last-named Bucket-A behavior `aed8` (logic_id=2) decomposes to a trivial substate timer-dec + the
+already-recovered AEE4 step + the flag-coupled `B250` contact selector + the `AD60`→`BD17` death tail
+— no clean extractable decision (its only un-pure piece is `B250`'s overlap-box test, flag-coupled at
+each early return per the note above). So pure %, the
 glue/hooks.py budget, AND §1.1/§1.2 all converge on the SAME gate: the native object-update runtime,
 which is coupled to the attended-only BD17/bc4b death frontier. That is the demand-driven loop's
 honest frontier: the next productive step needs the death-frontier recovery (a reproduction trace +
