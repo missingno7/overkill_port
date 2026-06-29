@@ -1,3 +1,34 @@
+## 2026-06-29 - Native frame controller stage: the object pass, verified WHOLE-POOL (not just per-slot)
+
+Added the controller's object-update stage and lifted its verification from per-slot to whole-pass.
+The VM's object scan is at A9E0 (in A940, after 9B2E): two loops -- the effect table (DS:32CA
+pointers) then the gameplay table (DS:8D12 pointers) -- each active slot dispatched via AA2B to the
+behaviour handlers the driver already reproduces per-slot.
+
+`frame_loop.native_object_pass(state, globals)` runs the object-update driver over the gameplay +
+effect pools (not the view-anchor -- that is the player stage's), the controller's counterpart of
+the A9E0 scan.  New `overkill.probes.verify_native_object_pass` proves it at the gameplay-scan
+boundary: at AA0D it projects DS:2B5C + the frozen per-frame globals, runs the driver ONCE, and at
+the scan exit (AA25) compares every slot that was active with a native logic id at entry -- L2_full
+`1203/1203`, L6_boss `6596/6596`, 0 divergence (player_death has no native gameplay slot ->
+NO-EVENTS).  So the driver is now a verified PASS, not just verified handlers.
+
+Why the gameplay loop can be frozen-projected (and the effect loop cannot, yet): the first/effect
+loop increments the tick DS:2340 once per entry, so its globals evolve per slot; but DS:2346 is reset
+at AA07 and the gameplay loop never touches DS:2340, so across the gameplay scan the globals are
+constant.  A whole-pass effect verify needs per-step tick evolution in the driver first -- noted.
+
+Reconnaissance (so the remaining 9B2E stages are not re-scouted): the clean compose-verified-leaves
+wins are done; every other frame stage delegates to a deep subsystem -- **99F6** = the scripted-input
+ENGINE (A47C jump table, object spawn via 7524, per-state scripted DS:98BE + counters; drives
+boss/cutscene auto-movement); **A212** = the linked sidearm/satellite chain coord updater (A3B4
+FFFF-lists); **A067** = the action/fire fan-out (gates already pure; the A958 spawn jump table is the
+frontier); **8546** = secondary-fire spawn; **9CB6** = `call 4FF9` contact; **9C01 + A33A/A33C** =
+sidearm auto-fire axis + the player-position ring buffers.  Each is a multi-part island, not a compose.
+
+No hook touched (pure composition over verified leaves), so demo-replay is unaffected; lint + both
+audits green; unit coverage in tests/test_frame_loop.py.
+
 ## 2026-06-29 - The native frame controller: the recovered systems sequence themselves (pillar 3)
 
 First time the recovered systems run a frame *without the VM sequencing them*.  New module

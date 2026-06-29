@@ -22,10 +22,15 @@ movement-bits verify, which reads the VM's actual button byte.
 """
 from __future__ import annotations
 
+import dataclasses
+
 from overkill.recovered.domain.frame_loop import FrameInput, PlayerFrameStep
+from overkill.recovered.domain.native_game_state import NativeGameState
 from overkill.recovered.domain.object_slots import ObjectPool
+from overkill.recovered.domain.object_update import ObjectUpdateGlobals
 from overkill.recovered.systems.input import decode_keyboard_input_flags
 from overkill.recovered.systems.movement import step_view_anchor_by_input
+from overkill.recovered.systems.object_update import native_object_update_pool
 
 # View-anchor record field offsets the controller writes (cf. recovered.views.object_slots);
 # the pure systems layer names the small set it touches rather than importing the bridge views.
@@ -67,3 +72,25 @@ def native_player_frame_step(
                     .with_word(_VIEW_ANCHOR_SLOT, _OFF_X, move.x_word)
                     .with_word(_VIEW_ANCHOR_SLOT, _OFF_Y, move.y_word))
     return PlayerFrameStep(special_pool=new_pool, input_flags=input_flags, moved=move.stepped)
+
+
+def native_object_pass(state: NativeGameState, update_globals: ObjectUpdateGlobals) -> NativeGameState:
+    """Frame stage (A940 -> A9E0 object scan): advance the gameplay + effect pools VM-free.
+
+    The VM's object scan walks the effect table (DS:32CA pointers) then the gameplay table
+    (DS:8D12 pointers), dispatching each active slot to its behaviour; this is the VM-free
+    counterpart -- run the object-update driver over the two scanned pools.  The view-anchor
+    (``special_pool``) is *not* part of this scan (it is the player stage's, updated in 9B2E),
+    so it is left untouched here.
+
+    Verified against the VM at the gameplay-scan boundary (overkill.probes.verify_native_object_pass):
+    one driver call over DS:2B5C reproduces the VM's whole gameplay pass byte-for-byte (every active
+    native-logic slot).  The effect pool is still only per-slot verified -- its scan increments the
+    DS:2340 tick once per entry, so a frozen-globals whole-pass check needs per-step tick evolution
+    first; the driver leaves non-native slots to the VM in both pools regardless.
+    """
+    return dataclasses.replace(
+        state,
+        object_pool=native_object_update_pool(state.object_pool, update_globals),
+        effect_pool=native_object_update_pool(state.effect_pool, update_globals),
+    )
