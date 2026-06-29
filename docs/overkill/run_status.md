@@ -1,3 +1,16 @@
+## 2026-06-29 - B9F0 (0x14) started incrementally: the sprite-refresh path native (L3 -> 43.7%)
+
+Began B9F0 (L3's #1, ~49%) the B86D way -- incrementally, branch by branch.  First slice: the
+sprite-refresh path (A482 != A4E4 -> the BA67 tail), where the slot's sprite becomes DS:233C frame + 1Ch
+and nothing else changes (`b9f0_sprite_from_frame`, already pure).  Wired as a gate arm (compared at the
+BC4B handoff); the A482 == A4E4 movement paths (5DB2 seek / 5E42 overshoot / BA5A 5E1B+5E42 helper) return
+None (fallback) for now.
+
+Verified on L3_full (800f): B9F0 `native OK 810/1723 fail=0` -- the sprite-refresh path is ~47% of B9F0,
+zero divergence.  L3 NATIVE COVERAGE 20.8% -> **43.7%** with 4 handlers (AE09/B86D/AED8/B9F0-partial).
+lint 218; gate unit test passes.  Next B9F0 slices: the A482==A4E4 movement paths (Path D 5DB2 seek is
+the cleanest, then Path C 5E42 overshoot, then the BA5A helper on the reached-target path).
+
 ## 2026-06-29 - Cross-level backlog map: handlers generalize; B9F0 (0x14) is the next big lifted target
 
 Ran the coverage gate per level to map the cross-level backlog.  Key finding: **the native handlers

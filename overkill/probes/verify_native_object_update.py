@@ -39,6 +39,7 @@ from overkill.recovered.systems.movement import (
     object_target_seek_step_5db2,
 )
 from overkill.recovered.systems.objects import (
+    b9f0_sprite_from_frame,
     object_update_ae09,
     object_update_aed8,
     object_update_b86d_drift,
@@ -76,6 +77,14 @@ AED8_IP = 0xAED8
 AED8_REF_BOX_X = 0x237E           # DS:237E view-target box X (B250 overlap reference)
 AED8_REF_BOX_Y = 0x2380          # DS:2380 view-target box Y
 AD60_A278 = 0xA278               # DS:A278 added to X on the AD5A (no-contact) tail
+
+# B9F0 (logic_id 0x14) tail-jumps to BC4B.  Incremental: only the sprite-refresh path (A482 != A4E4,
+# the BA67 tail) is modelled so far; the A482 == A4E4 movement paths (5DB2 seek / 5E42 overshoot /
+# BA5A helper) are left as fallback (None) and added next.
+B9F0_IP = 0xB9F0
+B9F0_A482 = 0xA482               # DS:A482; == A4E4h enters the movement paths, else sprite-refresh
+B9F0_A482_MOVEMENT_SENTINEL = 0xA4E4
+B9F0_FRAME_233C = 0x233C         # DS:233C global frame -> b9f0_sprite_from_frame on the BA67 tail
 
 # B86D (logic_id 0x1D) fall-through inputs.  B86D tail-jumps to the shared BC4B post-move
 # stage rather than RETurning, so its slot-write boundary is a fixed IP, not a return address.
@@ -263,12 +272,35 @@ def _arm_aed8(cpu, class_table_cache: dict) -> _Pending | None:
     return _Pending(ss=ss, bp=bp, exit_ip=ret_addr, predicted=predicted, read_post=_read_slot_6tuple)
 
 
+def _arm_b9f0(cpu, class_table_cache: dict) -> _Pending | None:
+    """Capture + predict B9F0 (logic_id 0x14): the sprite-refresh path only (A482 != A4E4 -> BA67).
+
+    B9F0 tail-jumps to BC4B (compare at that handoff).  The A482 == A4E4 movement paths (5DB2 seek /
+    5E42 overshoot / BA5A helper) are not modelled yet -> fallback (None).  On the sprite-refresh tail
+    the sprite becomes DS:233C frame + 1Ch and nothing else changes.
+    """
+    ss = cpu.s.ss & 0xFFFF
+    ds = cpu.s.ds & 0xFFFF
+    bp = cpu.s.bp & 0xFFFF
+    if (cpu.mem.rw(ds, B9F0_A482) & 0xFFFF) == B9F0_A482_MOVEMENT_SENTINEL:
+        return None  # the A482==A4E4 movement paths (5DB2/5E42/BA5A) -- added next
+    substate = cpu.mem.rw(ss, (bp + OFF_SUBSTATE) & 0xFFFF)
+    direction = cpu.mem.rw(ss, (bp + OFF_DIRECTION_OR_STEP) & 0xFFFF)
+    x = cpu.mem.rw(ss, (bp + OFF_X) & 0xFFFF)
+    y = cpu.mem.rw(ss, (bp + OFF_Y) & 0xFFFF)
+    active = cpu.mem.rw(ss, (bp + OFF_ACTIVE_WORD) & 0xFFFF)
+    sprite = b9f0_sprite_from_frame(cpu.mem.rw(ds, B9F0_FRAME_233C))
+    predicted = (substate, direction, sprite, x, y, active)
+    return _Pending(ss=ss, bp=bp, exit_ip=BC4B_IP, predicted=predicted, read_post=_read_slot_6tuple)
+
+
 # The registry: one entry per recovered pure whole-slot transform.  Grow this as
 # handlers are promoted; everything not here is counted as a fallback.
 NATIVE_HANDLERS: tuple[NativeHandler, ...] = (
     NativeHandler(logic_id=0x0C, label="AE09", entry_ip=AE09_IP, arm=_arm_ae09),
     NativeHandler(logic_id=0x1D, label="B86D", entry_ip=B86D_IP, arm=_arm_b86d),
     NativeHandler(logic_id=0x02, label="AED8", entry_ip=AED8_IP, arm=_arm_aed8),
+    NativeHandler(logic_id=0x14, label="B9F0", entry_ip=B9F0_IP, arm=_arm_b9f0),
 )
 _HANDLER_BY_IP = {(CS, h.entry_ip): h for h in NATIVE_HANDLERS}
 
