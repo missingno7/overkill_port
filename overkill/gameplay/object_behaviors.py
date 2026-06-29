@@ -565,20 +565,19 @@ def _run_object_behavior_b9f0(cpu, *, parent: str, chain: str, cx_value: int) ->
     mem = cpu.mem
 
     def call_7476(return_ip: int, why: str) -> None:
-        # 7476 is already understood in another object path, but this behavior
-        # compares full stack scratch before BC4B.  Run the original bounded
-        # helper here so its internal near-CALL return words match byte-for-byte.
-        _run_interpreted_near_call_observed(cpu, 0x7476, return_ip & 0xFFFF, max_steps=12000)
-        if (cpu.s.ip & 0xFFFF) != (return_ip & 0xFFFF):
-            raise RuntimeError(f"7476 returned to unexpected IP {cpu.s.ip:04X} inside B9F0")
+        # 7476/5E1B/5E42 are recovered hooks (used natively by B73E/B86D and proven
+        # full-memory-faithful), so call them directly instead of bouncing to the
+        # interpreter, then resume at the near-call return IP.
+        _run_formation_spawn_7476_observed(cpu, parent=parent, chain=chain, cx_value=cx_value)
+        cpu.s.ip = return_ip & 0xFFFF
 
     def call_5e1b(return_ip: int) -> None:
-        _run_interpreted_near_call_observed(cpu, 0x5E1B, return_ip & 0xFFFF, max_steps=3000)
-        if (cpu.s.ip & 0xFFFF) != (return_ip & 0xFFFF):
-            raise RuntimeError(f"5E1B returned to unexpected IP {cpu.s.ip:04X} inside B9F0")
+        _run_object_delta_helper_5e1b(cpu)
+        cpu.s.ip = return_ip & 0xFFFF
 
     def call_5e42(return_ip: int) -> None:
-        _run_interpreted_near_call_observed(cpu, 0x5E42, return_ip & 0xFFFF, max_steps=3000)
+        cpu.push(return_ip & 0xFFFF)
+        run_runtime_patched_object_steer_5e42(cpu)
         if (cpu.s.ip & 0xFFFF) != (return_ip & 0xFFFF):
             raise RuntimeError(f"5E42 returned to unexpected IP {cpu.s.ip:04X} inside B9F0")
 
