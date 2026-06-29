@@ -1,3 +1,20 @@
+## 2026-06-29 - Pillar 2 skeleton: the VM-free native object-update DRIVER
+
+Stood up the first piece of the native runtime that *drives* the recovered systems instead of the gate
+merely checking them: `overkill/recovered/systems/object_update.py` -- `native_object_update(state,
+globals)` / `native_object_update_pool(pool, globals)`.  It walks each `NativeGameState` object pool and,
+for every active slot whose logic_id has a native whole-slot transform, produces the slot's next record
+with NO VM; slots without a native handler are left unchanged (hybrid).  Wired: AE09 (0x0C) + AED8 (0x02)
+-- the handlers with complete pure systems.  Added `domain/object_update.py::ObjectUpdateGlobals` (the
+per-frame DS values handlers need) and named `ObjectPool` accessors (logic_id/substate/direction/
+draw_layer/substate_1e).  Pure (source_pure, imports only domain+systems); 2 unit tests.
+
+This is correct by composition: the per-slot handlers are proven byte-exact vs the VM by the coverage
+gate, and the driver's walk/dispatch/write-back is unit-tested.  Next: project `ObjectUpdateGlobals`
+from the VM + a whole-pool verify (driver output vs VM post-state across a demo); then extract the
+B86D/B9F0 movement halves to pure systems and compose with `object_postmove_bc4b` to add them to the
+driver.  audit_recovered_layers 27 pure files; audit_architecture + lint 220 pass.
+
 ## 2026-06-29 - Pure shared BC4B post-move (y/active half) -- the driver's post-move stage
 
 Recovered the pure shared `object_postmove_bc4b` (+ domain `PostmoveBc4bResult`, 7 unit tests): the

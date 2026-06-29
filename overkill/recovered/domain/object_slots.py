@@ -91,6 +91,26 @@ class ObjectPool:
         """Slot ``index``'s sprite/state word (record byte +08)."""
         return self.slots[index][0x08 >> 1]
 
+    def direction_word(self, index: int) -> int:
+        """Slot ``index``'s direction/step word (record byte +06)."""
+        return self.slots[index][0x06 >> 1]
+
+    def draw_layer(self, index: int) -> int:
+        """Slot ``index``'s draw-layer word (record byte +16; the AA2B/AD60 family selector)."""
+        return self.slots[index][0x16 >> 1]
+
+    def substate(self, index: int) -> int:
+        """Slot ``index``'s substate/timer word (record byte +1C)."""
+        return self.slots[index][0x1C >> 1]
+
+    def substate_1e(self, index: int) -> int:
+        """Slot ``index``'s +1E word (the B250 overlap-skip / solid flag)."""
+        return self.slots[index][0x1E >> 1]
+
+    def logic_id(self, index: int) -> int:
+        """Slot ``index``'s logic-id word (record byte +18; the EFC4 behaviour selector)."""
+        return self.slots[index][0x18 >> 1]
+
     def with_word(self, index: int, offset: int, value: int) -> "ObjectPool":
         """A new pool with slot ``index``'s word at byte ``offset`` set to ``value``."""
         words = list(self.slots[index])
