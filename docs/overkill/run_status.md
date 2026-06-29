@@ -1,3 +1,21 @@
+## 2026-06-29 - Bucket A: native scroll-script interpreter step (level-script island) -- pure % 17.8
+
+Reopened last turn's "gated on 859E" assessment by separating the pure state step from the render side
+effect (the recurring lesson).  `scroll_script_step` (new systems/level_script.py) is the pure 1010:D0D4
+state transition: count down the per-command delay DS:BE08; while running, just decrement; on expiry,
+reload (0x64), advance the script index DS:BE06, read the 6-byte entry at DS:BE1A[index*6] and publish
+its two words to DS:95FA / BE16 (skipped at the FFFFh end marker).  The 859E status render and the
+per-index command dispatch (cs:[D112+index*2]) are side effects the adapter owns -- so the 859E gate
+does NOT block the script-STATE recovery.
+**KEY FINDING:** D0D4 is the level-INTRO / scripted-event interpreter -- it runs at level start (before
+the demo snapshots), so it is NOT demo-reached (the probe `verify_native_scroll_script_step` saw 0 events
+across L2/L6_boss/L3/start_to_end; kept as the harness, NOT added to the cross-demo gate).  So verified
+via an **assembled-ASM oracle** (`test_scroll_script_step_matches_interpreted_asm_d0d4` runs the real
+D0D4 up to D0DA/D104 and compares BE08/BE06/95FA/BE16) -- the §5 "per-routine ASM" gate -- plus synthetic
+unit tests.  Corollary: the gameplay camera-SCROLL writer is STILL elsewhere (separate from this intro
+script), so roadmap #2's gameplay-camera search continues.  18th pure recovery; both audits + lint (215)
+pass; full suite green (628 passed).
+
 ## 2026-06-29 - Recon LOCATED: the camera/level-event "scroll-script" island (roadmap #2 mapped)
 
 Followed last turn's redirect and FOUND the view-target writer: it is the **scroll-script / level-event
