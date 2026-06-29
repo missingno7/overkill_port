@@ -303,8 +303,8 @@ side-effects + the per-logic-id dispatch.
 Applied the attempt-don't-declare rule to `_run_collision_death_tail_bfc7` (object_deactivation.py:156):
 the "clean" final transition (logic_id=1 + C037 sprite + latch) is buried *under* the global death/spawn
 machinery, and the routine CALLs three still-observed sub-leaves that must be recovered first: (a)
-`_run_score_add_5f0d_observed` (the witness-poor single-byte-delta score add — converge onto the verified
-`score.bcd_add_score`, needs the death-tail demo re-verified); (b) `_run_linked_effect_spawn_7420_observed`
+`_run_score_add_5f0d_observed` — **DONE (2026-06-29)**: converged onto the verified `score.bcd_add_score`
+(re-verified byte-exact vs the assembled 5F0D + a full kill-heavy demo, 0 divergence); (b) `_run_linked_effect_spawn_7420_observed`
 (the linked-counter spawn: on the DS:2078+si counter hitting 0 it stages DS:2376/2378/237A from the slot
 x/y and spawns); (c) the **C054** selector (DS:A47E decrement, same compare chain as BD17).  So BFC7 is a
 genuine multi-leaf death/spawn island, NOT a slot transform — recover those three leaves (each its own

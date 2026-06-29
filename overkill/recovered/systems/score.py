@@ -7,9 +7,10 @@ chain, dropping the carry out of the top byte (it writes only those 4 bytes).
 Pure: no ``cpu``/``mem``/segment.  The hook/adapter owns the DOS pointer; this owns
 the arithmetic.  This is the byte-exact faithful add (oracle-verified vs the real
 5F0D), the score producer the native runtime advances ``NativeGameState``'s score
-with.  (The death-tail helper ``object_deactivation._run_score_add_5f0d_observed``
-is a witness-poor single-byte-delta approximation; converging it onto this is a
-follow-up that needs the death-tail demo re-verified.)
+with.  The death-tail helper ``object_deactivation._run_score_add_5f0d_observed``
+now composes this same function (converged 2026-06-29 -- it was a witness-poor
+hand-rolled approximation), re-verified byte-exact against the assembled 5F0D and
+across a full kill-heavy demo, so there is one verified score producer.
 """
 from __future__ import annotations
 

@@ -22,6 +22,7 @@ from overkill.gameplay.object_spawns import (
     _run_linked_effect_spawn_7420_observed,
 )
 from overkill.recovered.adapters.collision_adapter import run_postmove_y_clamp_bcb1_body
+from overkill.recovered.systems.score import bcd_add_score
 from overkill.recovered.views.object_slots import ObjectSlotView
 
 
@@ -299,30 +300,24 @@ def _run_collision_cleanup_bd0d_observed(cpu, *, parent: str, chain: str, cx_val
 
 
 def _run_score_add_5f0d_observed(cpu, amount: int) -> None:
-    """Observed score add helper reached from BFC7.
+    """Death-tail score add (reached from BFC7), routed through the verified pure
+    1010:5F0D add :func:`bcd_add_score`.
 
-    The original is a packed decimal add starting at 1010:5F0D.  The death-tail
-    paths seen so far add 0030h or 0060h into DS:2314..2318 and preserve AX, DX,
-    and BP.  Later code in the tail overwrites flags, so this helper only needs
-    the memory effect for the verified branch.
+    BFC7 calls this with an 8-bit ``amount`` (0030h/0060h) in BX, so BH == 0, and the
+    real 5F0D adds BX into the four score bytes SS:2314..2317 (BL->byte0, BH->byte1)
+    with a DAA carry chain, then merely ``INC BP`` past 2318 *without* writing it.  This
+    now composes the byte-exact ``bcd_add_score`` -- proven == 5F0D across the demos by
+    ``verify_native_score`` (the death-tail's own adds are among those 5F0D calls) -- in
+    place of a separate hand-rolled BCD loop, so there is a single verified score
+    producer.  It also no longer touches the label byte at 2318 (the old loop's spurious
+    5th write), matching the real ASM exactly.
     """
     ss = cpu.s.ss & 0xFFFF
-    carry = amount & 0xFFFF
-    off = 0x2314
-    for _ in range(5):
-        value = cpu.mem.rb(ss, off)
-        addend = carry & 0xFF
-        total = (value & 0x0F) + (addend & 0x0F)
-        high = (value >> 4) + (addend >> 4)
-        if total > 9:
-            total -= 10
-            high += 1
-        carry = 0
-        if high > 9:
-            high -= 10
-            carry = 1
-        cpu.mem.wb(ss, off, ((high << 4) | total) & 0xFF)
-        off = (off + 1) & 0xFFFF
+    rb = cpu.mem.rb
+    score = tuple(rb(ss, (0x2314 + i) & 0xFFFF) for i in range(4))
+    out = bcd_add_score(score, amount & 0xFFFF)
+    for i in range(4):
+        cpu.mem.wb(ss, (0x2314 + i) & 0xFFFF, out[i])
 
 
 def _run_y_clamp_bcb1(cpu) -> None:

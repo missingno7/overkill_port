@@ -1,3 +1,18 @@
+## 2026-06-29 - Convergence: death-tail score add -> the verified pure bcd_add_score (1 of BFC7's 3 sub-leaves)
+
+Coastline-shortening on the attended death/spawn island.  `_run_score_add_5f0d_observed` (the BFC7
+death-tail score add) was a witness-poor hand-rolled 5-byte BCD loop (it added an 8-bit amount and wrote
+a spurious 5th byte at DS:2318, the label byte the real 5F0D only `INC BP`s past).  Converged it onto the
+already-verified pure `score.bcd_add_score`: since BFC7 passes the amount in BX with BH==0, `bcd_add_score`
+is identical to the real 5F0D (proven across the demos by `verify_native_score`, the death-tail's own adds
+among those 5F0D calls), so now there is a single verified score producer and the spurious 2318 write is
+gone.  **Re-verified two ways**: a new assembled-ASM test (`test_run_score_add_5f0d_observed_matches_asm_
+and_leaves_2318` -- the hook == 5F0D for the 0030h/0060h death amounts incl. overflow, 2318 untouched) and
+the hybrid frame-verifier on L2_full (1300 frames, pure-VM vs hooked, semantic state + raw/RGB checks, **0
+divergence**) -- closing score.py's "needs death-tail demo re-verified" note.  This recovers 1 of the 3
+BFC7 sub-leaf prerequisites (the other two -- the 7420 linked-counter spawn and the C054 selector --
+remain).  Both audits + lint (208) pass; full suite green (605 passed).
+
 ## 2026-06-29 - Bucket B: native HUD/status text composer byte-exact vs the VM's B800 digit band
 
 Closed the brief's named "clean fresh-session slice" -- the HUD score digits -- as a real native render

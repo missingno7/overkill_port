@@ -10682,6 +10682,63 @@ def test_bcd_add_score_5f0d_matches_interpreted_asm():
         assert bcd_add_score(score, bx) == run_asm(score, bx), (score, hex(bx))
 
 
+def test_run_score_add_5f0d_observed_matches_asm_and_leaves_2318():
+    """The death-tail score add (BFC7 -> _run_score_add_5f0d_observed) now routes through the
+    verified bcd_add_score: it must match the assembled 5F0D for the death-tail amounts AND
+    leave the label byte at 2318 untouched -- the old hand-rolled 5-byte loop's spurious final
+    write, which the real ASM (an ``INC BP`` past 2318) never performs."""
+    from dos_re.cpu import CPU8086, CPUState
+    from dos_re.memory import Memory
+
+    from overkill.gameplay.object_deactivation import _run_score_add_5f0d_observed
+
+    code_5f0d = bytes.fromhex(
+        "55 50 52 bd 14 23 8a 46 00 02 c3 27 88 46 00 45 8a 46 00 8a f0 12 c7 27 "
+        "88 46 00 8a d0 45 8a 46 00 14 00 27 88 46 00 45 8a 46 00 14 00 27 88 46 00 45 5a 58 5d c3"
+    )
+    SENTINEL = 0x4C  # low nibble > 9: the old 5-byte loop would DAA-corrupt this on carry
+
+    def run_asm(score_bytes, amount):
+        mem = Memory()
+        mem.load(0x1010, 0x5F0D, code_5f0d)
+        cpu = CPU8086(mem, CPUState(cs=0x1010, ds=0x2000, ss=0x2000, sp=0x9000, ip=0x5F0D, flags=0x0202))
+        cpu.trace_enabled = False
+        cpu.s.bx = amount & 0xFFFF
+        for i, b in enumerate(score_bytes):
+            mem.wb(0x2000, (0x2314 + i) & 0xFFFF, b & 0xFF)
+        mem.wb(0x2000, 0x2318, SENTINEL)
+        cpu.push(0xBEEF)
+        for _ in range(80):
+            if cpu.addr() == (0x1010, 0xBEEF):
+                break
+            cpu.step()
+        assert cpu.addr() == (0x1010, 0xBEEF)
+        return tuple(mem.rb(0x2000, (0x2314 + i) & 0xFFFF) for i in range(4)), mem.rb(0x2000, 0x2318)
+
+    def run_hook(score_bytes, amount):
+        mem = Memory()
+        cpu = CPU8086(mem, CPUState(cs=0x1010, ds=0x2000, ss=0x2000, sp=0x9000, ip=0x0000, flags=0x0202))
+        cpu.trace_enabled = False
+        for i, b in enumerate(score_bytes):
+            mem.wb(0x2000, (0x2314 + i) & 0xFFFF, b & 0xFF)
+        mem.wb(0x2000, 0x2318, SENTINEL)
+        _run_score_add_5f0d_observed(cpu, amount)
+        return tuple(mem.rb(0x2000, (0x2314 + i) & 0xFFFF) for i in range(4)), mem.rb(0x2000, 0x2318)
+
+    cases = [
+        ((0x00, 0x00, 0x00, 0x00), 0x0030),   # BFC7 type-1 score
+        ((0x00, 0x00, 0x00, 0x00), 0x0060),   # BFC7 type-2 score
+        ((0x70, 0x00, 0x00, 0x00), 0x0060),   # carry into byte 1
+        ((0x99, 0x99, 0x99, 0x99), 0x0060),   # overflow: top carry dropped, 2318 must stay
+    ]
+    for score, amount in cases:
+        asm_score, asm_2318 = run_asm(score, amount)
+        hook_score, hook_2318 = run_hook(score, amount)
+        assert hook_score == asm_score, (score, hex(amount))
+        assert asm_2318 == SENTINEL, ("real 5F0D must not write 2318", score, hex(amount))
+        assert hook_2318 == SENTINEL, ("converged hook must not write 2318", score, hex(amount))
+
+
 def test_frame_coord_ring_helpers_match_interpreted_asm():
     from dos_re.cpu import CPU8086, CPUState
     from dos_re.memory import Memory
