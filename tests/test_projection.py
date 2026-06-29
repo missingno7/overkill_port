@@ -7,6 +7,7 @@ from __future__ import annotations
 from overkill.native_video.projection import (
     PROJECTION_CULL_ENTRY,
     PROJECTION_X_CULL,
+    build_native_sprite_layer,
     project_object_to_di,
 )
 
@@ -25,3 +26,20 @@ def test_project_object_to_di_culls():
     assert project_object_to_di(0x40, 0x40, PROJECTION_CULL_ENTRY) is None  # column entry FFFFh
     # x just under the cull boundary still projects.
     assert project_object_to_di(0x00DF, 0x40, 0x1000) == ((0x40 >> 1) + 0x1000) & 0xFFFF
+
+
+def test_build_native_sprite_layer_composes_via_projection():
+    # column_table indexed by object X: cols 0x00-0x0F -> 0x1000, 0x10-0x1F -> 0x2000,
+    # 0x20-0x2F -> FFFF (off-screen cull).
+    column_table = [0x1000] * 0x10 + [0x2000] * 0x10 + [PROJECTION_CULL_ENTRY] * 0x10
+    objects = [
+        (0x0041, 0x05, 0x10),   # col 0x1000 -> di (0x10>>1)+0x1000 = 0x1008
+        (0x0042, 0x14, 0x20),   # col 0x2000 -> di (0x20>>1)+0x2000 = 0x2010
+        (0x0099, 0x25, 0x30),   # col FFFF -> culled
+        (0x00AB, 0xF0, 0x40),   # x >= 0xE0 (and past the table) -> culled
+    ]
+    assert build_native_sprite_layer(objects, column_table) == (
+        (0x0041, 0x1008),
+        (0x0042, 0x2010),
+    )
+    assert build_native_sprite_layer([], column_table) == ()

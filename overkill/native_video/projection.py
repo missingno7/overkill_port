@@ -31,3 +31,24 @@ def project_object_to_di(obj_x: int, obj_y: int, column_di: int) -> int | None:
     if (obj_x & 0xFFFF) >= PROJECTION_X_CULL or (column_di & 0xFFFF) == PROJECTION_CULL_ENTRY:
         return None
     return (((obj_y & 0xFFFF) >> 1) + (column_di & 0xFFFF)) & 0xFFFF
+
+
+def build_native_sprite_layer(objects, column_table) -> tuple:
+    """Compose the native sprite draw list from recovered state (Bucket C).
+
+    Projects each active object through the recovered 30D2 projection
+    (:func:`project_object_to_di`) using ``column_table`` (the DS:99C8 per-column base,
+    indexed by object X; the static 0F0B-built table), dropping culled (off-screen)
+    objects.  ``objects`` is an iterable of ``(sprite, x, y)`` from ``NativeGameState``'s
+    pool; returns ``((sprite, di), ...)`` -- the native sprite placement the backend
+    blits via ``composite_sprites``, *computed* from recovered state rather than read
+    from the VM's ``+0C``.
+    """
+    out = []
+    n = len(column_table)
+    for sprite, x, y in objects:
+        col = column_table[x] if 0 <= x < n else PROJECTION_CULL_ENTRY
+        di = project_object_to_di(x, y, col)
+        if di is not None:
+            out.append((sprite, di))
+    return tuple(out)

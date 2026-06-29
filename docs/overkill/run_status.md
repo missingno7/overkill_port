@@ -1,3 +1,14 @@
+## 2026-06-29 - Bucket C: native sprite-layer composition (build_native_sprite_layer)
+
+First FrameSnapshot-composition piece, wiring the recovered render leaves into the brief's "compose
+from recovered state instead of capturing the VM page": `build_native_sprite_layer(objects,
+column_table)` projects each active pool object through the recovered 30D2 projection
+(`project_object_to_di`) into the native sprite draw list `[(sprite, di)]`, dropping culled
+(off-screen) objects -- the native sprite placement **computed** from `NativeGameState`'s pool
+instead of read from the VM's `+0C`.  Pure (`native_video/projection.py`); unit-tested (compose +
+per-cull + empty).  The di's are byte-exact by the 30D2 projection verify (4624/4624); this composes
+them into the layer the backend blits via `composite_sprites`.  Lint (199) + architecture audit pass.
+
 ## 2026-06-29 - Render leaf RECOVERED: native object screen-di projection (30D2) byte-exact vs VM
 
 Recovered the object `screen_di` projection -- the first **render-side** native producer, and the
