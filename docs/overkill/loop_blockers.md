@@ -424,6 +424,18 @@ is a meaty multi-variant island (the per-variant counter/death/mark machinery), 
 the genuine attended object-vs-object collision work.  Full bc4b collision-death = AA46/AA71 (done) +
 the 62F6 grid scan (recoverable) + BEC5 (this multi-variant handler) -> a fresh-session island.
 
+**RESOLVED (2026-06-29) — the ENTIRE object-vs-object collision island is now native source.** The
+"attended frontier" above fell decision-by-decision once the death tails landed: `62F6` grid overlap
+(`object_grid_overlap_62f6`), the BEC5 variant dispatch (`bec5_collision_variant_family`), the BF25
+damage counter chain (`collision_damage_counter_chain_bf25`), and the death/spawn tails (BFC7 +
+`bcd_add_score`/`object_spawn_seed_7420`/`object_deactivate_dispatch_decision_c054`/
+`object_collision_death_transition_c037`) are ALL recovered + verified (synthetic + assembled-ASM
+oracles + the BEC5/62F6 hook cross-checks, with frame-verifier 0-divergence on L6_boss/L2_full).  Do
+NOT re-investigate this as a blocker.  LESSON: an "attended/observed multi-variant island" is not
+permanently blocked -- it unblocks as its leaf dependencies (here the tails) get recovered, then the
+dispatch/decisions extract cleanly.  Remaining collision composition: folding these pure pieces into a
+single native BEC5 transform is a Bucket-C runtime task, not a recovery.
+
 ## NOTE (process) — check lifted-status before "recovering" a routine
 
 `519A` / `3153` (HUD text dispatch + Tandy glyph) were ALREADY lifted (`rendering/text.py`,
