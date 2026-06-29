@@ -100,10 +100,15 @@ building `FrameSnapshot` from `NativeGameState` (no VM) also needs each sprite's
 per-object draw `1010:5AC8` (the present scan `A846` loops the 8D12/32CA tables calling 5AC8 per
 active slot) — **un-recovered raw ASM**.  The sprite *blit* is already recovered
 (`composite_sprites`/`verify_sprite_layer`); the *projection* (object world pos + scroll/camera →
-B800 di, or `FFFF` cull) is the missing leaf.  Recover it from 5AC8 as a pure `project_object_to_di`,
-verify native di == the VM's `+0C` across demos (same probe pattern), then the native sprite layer
-composes from `NativeGameState` instead of the VM page.  This is a render leaf (Bucket B), more
-self-contained than the object-update island — a good first target for the fresh session.
+B800 di, or `FFFF` cull) is the missing piece.  **But 5AC8 is NOT a clean leaf** (corrected after
+disasm): it is a draw DISPATCHER — `mov bx,ss:[bp+0x14]; add bx,cs:[95BC] x3; shl bx,1; jmp
+cs:[bx+0x5AE2]` — indexing a jump table at CS:5AE2 by draw-type + the video mode (`[95BC]`), so the
+projection lives in *multiple per-type/per-mode handlers* (the table targets).  Recovering it = map
+the 5AE2 table, lift the Tandy handler's project-then-`composite_sprites` path to native state,
+verify native di == VM `+0C` across demos.  So the render-projection gap is itself a coupled
+**island** (dispatch + handler set), the same risk class as the object-update island.  **Net: both
+remaining §1 gaps are coupled islands; no clean `verify_native_*` leaf remains** — the work is
+genuine multi-routine recovery, for a fresh, clean-context session.
 
 ## NOTE (process) — check lifted-status before "recovering" a routine
 
