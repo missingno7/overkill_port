@@ -1,3 +1,28 @@
+## 2026-06-29 - Open the VM-free frame-loop pillar: the 9B2E/97B2 stage map + next targets
+
+Mapped the frame loop (the object-update pillar being essentially complete).  The frame is two nested
+controllers, and the VM-free frame loop = decomposing their stages into native systems (the same
+decompose-and-verify pattern the object-update followed):
+
+`1010:97B2` (frame loop) calls, in order: 0672, **511F** video page-toggle (lifted ✓), A846, 981F (cond),
+5BDC, **A90C present/render scan** (native_video composes this ✓), **9B2E** (the game-state controller --
+the bulk), the A344/A342/A346 mode-transition branches, A940, 073C service gate, 60A2 status text.
+
+`1010:9B2E` (game-state controller) stages (per its own contract): **0162 input poll** (first stage) ->
+the current BP object slot + the per-slot object-update (**the native driver ✓**) -> four direct movement
+bits -> the **A067** action/helper fan-out (its trigger/latch gates are pure ✓) -> the optional **9CB6**
+contact probe -> coordinate-ring maintenance -> linked child-coordinate propagation.
+
+Native status across the frame: object-update ✓ (driver), render/present ✓ (native_video), video toggle ✓
+(511F), A067 input gates ✓ (partial).  NOT yet native: **input (0162/017E keyboard decode)**, the 9B2E
+game-state stages (object-slot bookkeeping, movement bits, 9CB6 contact, coordinate rings, linked-child),
+the status text (60A2), and the mode transitions.
+
+Next concrete stage: **the input poll (0162 + the 017E 8-key bit-packer)** -- the frame's first stage and
+a bounded keyboard/joystick decode (DS:213E/2146 tables -> the input flags DS:98BE that the A067 gates
+already consume).  Recover it as a pure decode (keyboard state + table -> flags) + a native input source,
+verified produced-vs-VM like the handlers.  This is a fresh subsystem (input), best started fresh.
+
 ## 2026-06-29 - Tighten the driver-verify: sprite confirmed for non-death; contact path bounded to ~1%
 
 Before recovering the BC4B contact path, measured how much it actually matters.  The contact path's only
