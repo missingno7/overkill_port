@@ -7,6 +7,7 @@ reuse directly.
 from __future__ import annotations
 
 from overkill.recovered.domain.collision import (
+    CollisionDamageChainBF25,
     CollisionDeathTransition,
     ObjectOverlapScanDecision,
     PostMoveContactWindow,
@@ -316,6 +317,37 @@ def overlap_contact_box_contains(obj_x: int, obj_y: int, ref_box_x: int, ref_box
 # the death sprite is chosen from the object type via the small C037 table.
 COLLISION_DEATH_STATE_LOGIC_ID = 0x0001
 COLLISION_DEATH_C037_SPRITE_BY_TYPE = {0x0001: 0x0000, 0x0002: 0x0003}
+
+
+# 1010:BF25 collision-damage counter chain.  Each hit decrements counter_20 a
+# difficulty-gated number of times; a decrement reaching zero kills the object.
+COLLISION_DAMAGE_BEDC_ONE_EXTRA_DECS = 1   # DS:BEDC == 1 -> one extra decrement
+COLLISION_DAMAGE_BEDC_ZERO_EXTRA_DECS = 3  # DS:BEDC == 0 -> three extra decrements
+
+
+def collision_damage_counter_chain_bf25(counter_20: int, bedc: int, enter_at_bf25: bool) -> CollisionDamageChainBF25:
+    """Pure 1010:BF25 collision-damage counter chain.
+
+    Decrements ``counter_20`` once for the BF25 entry (only when ``enter_at_bf25`` --
+    the variant-2 sprite path enters at BF2D and skips it), once at BF2D, then one
+    more decrement if ``bedc == 1`` or three more if ``bedc == 0`` (other ``bedc``
+    values add none).  Each decrement is checked for zero immediately after (matching
+    the ASM ``DEC; JZ BFC7`` per step, including the 16-bit wrap of a 0 counter), and
+    the object dies the first time a decrement lands on zero.  Returns the post-chain
+    counter and whether it died.
+    """
+    c = counter_20 & 0xFFFF
+    decrements = (1 if enter_at_bf25 else 0) + 1
+    b = bedc & 0xFFFF
+    if b == 0x0001:
+        decrements += COLLISION_DAMAGE_BEDC_ONE_EXTRA_DECS
+    elif b == 0x0000:
+        decrements += COLLISION_DAMAGE_BEDC_ZERO_EXTRA_DECS
+    for _ in range(decrements):
+        c = (c - 1) & 0xFFFF
+        if c == 0:
+            return CollisionDamageChainBF25(new_counter_20=0, died=True)
+    return CollisionDamageChainBF25(new_counter_20=c, died=False)
 
 
 def object_collision_death_transition_c037(logic_id: int, object_type: int) -> CollisionDeathTransition:

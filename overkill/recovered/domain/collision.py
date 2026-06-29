@@ -88,6 +88,23 @@ class ObjectOverlapScanDecision:
 
 
 @dataclass(frozen=True, slots=True)
+class CollisionDamageChainBF25:
+    """Pure result of the 1010:BF25 collision-damage counter chain.
+
+    When a counter-variant object is hit, BF25 decrements its ``counter_20`` hit
+    counter a difficulty-gated number of times (one for the BF25 entry, one at BF2D,
+    then one more if DS:BEDC==1 or three more if DS:BEDC==0; other BEDC values add
+    none) and dies the instant a decrement reaches zero (-> the recovered BFC7 death
+    tail).  ``died`` is that zero-crossing; ``new_counter_20`` is the post-chain
+    counter (0 on death, else the survivor's remaining count).  The adapter owns the
+    BFC7 death dispatch and the survivor's variant/A8C2-mark tail.
+    """
+
+    new_counter_20: int
+    died: bool
+
+
+@dataclass(frozen=True, slots=True)
 class CollisionDeathTransition:
     """Pure slot transition stamped by the 1010:BFC7 collision-death tail's C037 end.
 

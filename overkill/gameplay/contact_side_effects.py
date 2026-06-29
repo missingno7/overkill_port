@@ -15,6 +15,7 @@ from overkill.gameplay.object_deactivation import (
     _run_collision_death_tail_bfc7,
 )
 from overkill.gameplay.object_runtime_common import _run_interpreted_near_call_observed
+from overkill.recovered.systems.collision import collision_damage_counter_chain_bf25
 from overkill.recovered.views.object_slots import (
     ObjectSlotView,
     GAMEPLAY_OBJECT_LAST_SLOT_BASE, GAMEPLAY_OBJECT_TABLE_BASE, OBJECT_SLOT_STRIDE,
@@ -82,6 +83,9 @@ def _run_collision_handler_bec5_observed(cpu, *, collided_bx: int, parent: str, 
         # BF25 is reached only by sprite-0033 variant-2 collisions and by the
         # A8C2-gated variant 5/6 and 7/8/0C continuations.  The usual variant-2
         # sprite path starts at BF2D and therefore skips this first decrement.
+        # The pure recovered chain owns the difficulty-gated decrement decision; the
+        # inline steps below keep the per-step DOS writes, cross-checked at survive.
+        chain = collision_damage_counter_chain_bf25(slot.counter_20, mem.rw(ds, 0xBEDC), enter_at_bf25)
         if enter_at_bf25:
             _sub_mem_word(cpu, ss, (bp + OFF_COUNTER_20) & 0xFFFF, 1)
             if slot.counter_20 == 0:
@@ -111,6 +115,11 @@ def _run_collision_handler_bec5_observed(cpu, *, collided_bx: int, parent: str, 
                         return
             # BEDC values other than 0/1 fall through to BF52 in the original.
 
+        # BF52 (survived): the pure chain must agree no decrement reached zero.
+        if chain.died or slot.counter_20 != chain.new_counter_20:
+            raise AssertionError(
+                f"pure BF25 chain disagrees with the inline path at survive ({label})"
+            )
         slot.variant = 0x0005
         a8c2 = mem.rw(ds, 0xA8C2)
         _cmp_word(cpu, a8c2, 0x0001)

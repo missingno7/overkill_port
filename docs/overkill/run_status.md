@@ -1,3 +1,21 @@
+## 2026-06-29 - Bucket A: native BF25 collision-damage counter chain (reopening "attended" BEC5) -- pure % 17.9
+
+Re-attempted the BEC5 object-vs-object collision handler that I handed off early this session as "the
+attended frontier" -- now that ALL its death tails are recovered (BFC7 + score-add/7420/C054/C037 this
+session), its counter chain is a clean pure decision.  `collision_damage_counter_chain_bf25`
+(systems/collision.py) is the difficulty-gated hit-counter decrement: one decrement for the BF25 entry
+(skipped on the variant-2 sprite path that enters at BF2D), one at BF2D, then +1 if DS:BEDC==1 / +3 if
+DS:BEDC==0 / none otherwise, dying the instant a decrement reaches zero (-> the recovered BFC7 death
+tail; survivors continue to the variant=5 / A8C2-mark tail).  Returns the post-chain counter + ``died``.
+The BEC5 hook (`run_bf25_counter_chain`) keeps its per-step DOS writes and cross-checks the pure decision
+at the survive point (the C054 adapter pattern).  **Verified**: VM-free unit tests + an assembled-ASM
+oracle (`test_chain_matches_interpreted_asm_bf25` runs the real BF25..BF52 chain, stopping at BFC7 on
+death / BF52 on survive, for both entries and all BEDC cases) -- the §5 per-routine-ASM gate -- plus the
+hybrid frame-verifier on L6_boss + L2_full (1300 frames each, 0 divergence; the cand-side cross-check held
+on real collisions).  19th pure recovery.  Remaining for BEC5: the variant dispatch (07/08/0C, sprite-0033
+variant-2, 5/6) + the 62F6 overlap scan that feeds it.  Both audits + lint (215) pass; full suite green
+(632 passed).
+
 ## 2026-06-29 - Camera pieces are ALREADY RECOVERED -- roadmap #2 is done; check-registry-first
 
 Followed up the "recover 5010 / the view-anchor movement" plan and found 5010 is the body of 1010:4FF9
