@@ -29,6 +29,7 @@ PROBES = (
     "verify_native_sprite_draws",
     "verify_native_object_update_ae09",
     "verify_native_object_seek_step_5db2",
+    "verify_native_object_steer_5e42",
 )
 _RESULT_LINE = re.compile(r"calls=(\d+) ok=(\d+) fail=(\d+)")
 

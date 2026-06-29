@@ -4,7 +4,7 @@
      Source of truth = the @recovered_island metadata on each recovered function.
      tests/test_island_registry.py fails if this file drifts from the code. -->
 
-16 recovered islands (2 ASM_MATCHED, 14 VERIFIED).
+17 recovered islands (2 ASM_MATCHED, 15 VERIFIED).
 
 | ASM boundary | Function | Status | Merge target | Contract |
 |---|---|---|---|---|
@@ -13,6 +13,7 @@
 | `1010:5DB2` | `systems.movement.choose_target_seek_direction` | VERIFIED | MovementSystem | map the 5DB2 direction-bit nibble through the direction table to a step direction |
 | `1010:5DB2` | `systems.movement.encode_target_seek_bits` | VERIFIED | MovementSystem | 5DB2 direction-bit nibble toward a target (Y unsigned, X signed) |
 | `1010:5DB2` | `systems.movement.object_target_seek_step_5db2` | VERIFIED | MovementSystem | whole per-slot 5DB2 target-seek movement: pick direction toward target, then step x/y by 5E0C mode |
+| `1010:5E42` | `systems.movement.object_delta_steer_5e42` | VERIFIED | MovementSystem | runtime-patched delta-steer: signed deltas -> Bresenham axis pick -> A348 direction -> step |
 | `1010:A5D1` | `systems.movement.one_pixel_axis_step` | VERIFIED | MovementSystem | single-pixel axis step when the no-clamp global gate is set |
 | `1010:A5D1`, `1010:A5EA`, `1010:A5F9`, `1010:A607` | `systems.movement.two_pass_axis_clamp_step` | VERIFIED | MovementSystem | two-pass clamp/step of an axis word toward a boundary |
 | `1010:A616` | `systems.movement.vertical_scroll_edge_response_a616` | VERIFIED | MovementSystem | view-gated top+bottom scroll-bias state update |

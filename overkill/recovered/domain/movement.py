@@ -45,6 +45,24 @@ class TargetSeekStep:
 
 
 @dataclass(frozen=True, slots=True)
+class DeltaSteerStep:
+    """Portable per-slot result of the recovered runtime-patched 1010:5E42 delta-steer.
+
+    5E42 converts the slot's signed Y/X movement deltas (+2C/+2A) into a direction via a Bresenham
+    axis selection against the ``move_step_error`` accumulator (+2E) and the DS:A348 table, then steps
+    the slot's x/y by that direction (AF22 3px when DS:2312==3, else AF63 2px).  On the blocked branch
+    (table -> FFh) it leaves direction + x/y untouched but the accumulator is still advanced.  This
+    records the slot fields 5E42 mutates: ``direction_or_step`` (+06), ``move_step_error`` (+2E), and
+    ``x_word``/``y_word``.  The DS:230C/230E/2310 scratch globals are not slot state."""
+
+    direction_or_step: int
+    move_step_error: int
+    x_word: int
+    y_word: int
+    blocked: bool
+
+
+@dataclass(frozen=True, slots=True)
 class MovementStepOperation:
     """One ordered axis mutation from the recovered 8-way step tables.
 

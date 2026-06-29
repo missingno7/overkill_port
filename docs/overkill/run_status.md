@@ -15,6 +15,24 @@ green.  With AE09 (fixed-step) + 5DB2 (target-seek), the two movement primitives
 behaviors are now native; remaining object-update work is the global side-effects (counters/spawns/
 BD17 death) + composing the per-logic-id dispatch.
 
+## 2026-06-29 - Bucket C: native delta-steer (5E42) byte-exact vs VM -- the 3rd movement primitive
+
+Recovered the runtime-patched 1010:5E42 delta-steer (used by the b24d/b86d behaviors), the 3rd object
+movement primitive after AE09 (fixed step) + 5DB2 (target-seek).  `object_delta_steer_5e42`
+(systems/movement.py) converts the slot's signed Y/X movement deltas (+2C/+2A) into a direction via a
+Bresenham axis pick against the `move_step_error` accumulator (+2E): the larger-magnitude axis always
+steps, the minor axis steps when the accumulator overflows the major magnitude (then the accumulator is
+reduced); the per-axis sign bits index the DS:A348 table to a direction (or FFh = blocked, which leaves
+direction + x/y untouched but still advances the accumulator); then it steps x/y by that direction
+(AF22 3px when DS:2312==3 else AF63 2px, composing the recovered `step_operations_for_direction`).
+**Verified produced-vs-VM byte-exact** by `verify_native_object_steer_5e42.py` (hooks 5E42 entry + its
+return address; checks direction +06 / move_step_error +2E / x +02 / y +04): **L2 64/64, L6_boss
+121/121, 0 divergence** (NO-EVENTS on demos without the steer behaviors).  11th cross-demo producer.
+VM-free unit test locks the Bresenham branches + sign bits + blocked sentinel + step-mode dispatch.
+Lint (205) + both audits pass; manifest regenerated; full suite green.  All THREE object movement
+primitives (fixed-step AE09, target-seek 5DB2, delta-steer 5E42) are now native; remaining
+object-update: the bc4b postmove (collision/death) + the global death/spawn side-effects + the dispatch.
+
 ## 2026-06-29 - Bucket C: COMPLETE native AE09 slot transform (movement + tile-collision death) vs VM
 
 Completed the first WHOLE per-slot object-update transform -- the template for the per-logic-id native

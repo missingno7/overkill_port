@@ -295,6 +295,17 @@ postmove for the seekers (b73e/b9f0/8d4f), composable from recovered pieces but 
 template (movement primitive + bounds/tile -> next slot) extends to both; then the global death/spawn
 side-effects + the per-logic-id dispatch.
 
+**DONE (2026-06-29) — 5E42 delta-steer recovered (the 3rd movement primitive).**
+`object_delta_steer_5e42` (systems/movement.py): signed deltas (+2C/+2A) -> Bresenham axis pick vs the
+`move_step_error` accumulator (+2E) -> A348 sign bits -> direction (FFh=blocked) -> AF22/AF63 step by
+DS:2312.  Verified produced-vs-VM byte-exact L2 64/64 + L6_boss 121/121 (11th producer).  So ALL three
+object movement primitives are native: AE09 fixed-step, 5DB2 target-seek, 5E42 delta-steer.  The ONE
+remaining movement/postmove primitive is **bc4b** (the shared seeker postmove): y-clamp ✅ + x-bounds
+death (BD17 active=0) + the BCCB -> AA46/AA71 (✅ recovered) -> BFC7 collision-death (logic_id=1 + C037
+sprite + latch) -- multi-branch but composable from recovered pieces.  After bc4b: the global
+death/spawn side-effects (BD17/BFC7 counters/spawns/C12D effect scripts) + the per-logic-id native
+dispatch over `NativeGameState`'s pool, then the standalone loop.
+
 ## NOTE (process) — check lifted-status before "recovering" a routine
 
 `519A` / `3153` (HUD text dispatch + Tandy glyph) were ALREADY lifted (`rendering/text.py`,

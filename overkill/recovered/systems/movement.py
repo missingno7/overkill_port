@@ -12,6 +12,7 @@ from overkill.recovered.domain.coords import i16, u16
 from overkill.recovered.domain.directions import direction8
 from overkill.recovered.domain.movement import (
     AxisClampStepDecision,
+    DeltaSteerStep,
     MovementStepOperation,
     MovementTarget,
     TargetSeekDecision,
@@ -184,6 +185,85 @@ def object_target_seek_step_5db2(
             else:
                 y = u16(y + delta)
     return TargetSeekStep(decision.mapped_direction & 0xFFFF, x, y, blocked=False)
+
+
+# 1010:5E42 delta-steer constants.  The DS:A348 direction bits are y-axis (+1 up / +2 down) | x-axis
+# (+4 left / +8 right), set per the delta signs; A348 maps the bit set to a direction or FFh (blocked).
+STEER_BIT_Y_NEG = 0x0001
+STEER_BIT_Y_POS = 0x0002
+STEER_BIT_X_NEG = 0x0004
+STEER_BIT_X_POS = 0x0008
+STEER_BLOCKED_SENTINEL = 0x00FF
+STEER_FAST_STEP_MODE = 0x0003   # DS:2312 == 3 -> AF22 3px step; else AF63 2px
+
+
+@recovered_island(
+    asm="1010:5E42",
+    contract="runtime-patched delta-steer: signed deltas -> Bresenham axis pick -> A348 direction -> step",
+    status="VERIFIED",
+    merge_target="MovementSystem",
+)
+def object_delta_steer_5e42(
+    slot_x: int,
+    slot_y: int,
+    slot_direction: int,
+    move_delta_y: int,
+    move_delta_x: int,
+    move_step_error: int,
+    step_mode: int,
+    direction_table: Sequence[int],
+) -> DeltaSteerStep:
+    """Pure whole-5E42 per-slot delta-steer (the runtime-patched gameplay steering helper).
+
+    Takes the slot's signed Y/X movement deltas (+2C/+2A), the ``move_step_error`` accumulator (+2E),
+    the ``step_mode`` (DS:2312), and the DS:A348 direction table.  Picks which axes advance this frame
+    by a Bresenham comparison of the deltas' magnitudes against the accumulator: the major axis always
+    steps, and the minor axis steps when the accumulator overflows the major magnitude (and the
+    accumulator is then reduced).  The per-axis direction bits (set from the delta signs) index A348 to
+    a direction; on the FFh sentinel the steer is blocked (direction + x/y untouched, but the
+    accumulator is still advanced).  Otherwise it steps x/y by that direction (AF22 3px when
+    ``step_mode==3`` else AF63 2px).  Models only the slot fields 5E42 mutates (+06/+2E/+02/+04)."""
+    dy = move_delta_y & 0xFFFF
+    dx = move_delta_x & 0xFFFF
+    dy_neg = (dy & 0x8000) != 0
+    dx_neg = (dx & 0x8000) != 0
+    ady = u16(-dy) if dy_neg else dy   # 8086 NEG = (-v) & 0xFFFF (abs for a signed word)
+    adx = u16(-dx) if dx_neg else dx
+    y_bit = STEER_BIT_Y_NEG if dy_neg else STEER_BIT_Y_POS
+    x_bit = STEER_BIT_X_NEG if dx_neg else STEER_BIT_X_POS
+
+    err = move_step_error & 0xFFFF
+    if ady == adx:
+        bits = y_bit | x_bit
+    elif ady > adx:                       # y is the major axis
+        err = u16(err + adx)
+        if err <= ady:
+            bits = y_bit
+        else:
+            err = u16(err - ady)
+            bits = y_bit | x_bit
+    else:                                 # x is the major axis
+        err = u16(err + ady)
+        if err <= adx:
+            bits = x_bit
+        else:
+            err = u16(err - adx)
+            bits = y_bit | x_bit
+
+    direction = direction_table[bits & 0x00FF] & 0x00FF
+    x = slot_x & 0xFFFF
+    y = slot_y & 0xFFFF
+    if direction == STEER_BLOCKED_SENTINEL:
+        return DeltaSteerStep(slot_direction & 0xFFFF, err, x, y, blocked=True)
+
+    pixels = 3 if (step_mode & 0xFFFF) == STEER_FAST_STEP_MODE else 2
+    for op in step_operations_for_direction(direction, pixels):
+        delta = i16(op.delta_word)
+        if op.axis == "x":
+            x = u16(x + delta)
+        else:
+            y = u16(y + delta)
+    return DeltaSteerStep(direction & 0xFFFF, err, x, y, blocked=False)
 
 
 @recovered_island(
