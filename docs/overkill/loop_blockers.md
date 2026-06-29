@@ -23,9 +23,13 @@ context. Each has the analysis already done so a human can pick up fast.
 The standalone native frame is `playfield = starfield plate + sprites` (+ HUD). Every native
 leaf is recovered **and proven byte-exact** EXCEPT the **starfield plate** (the sparse
 parallax background): sprites (`composite_sprites` / `verify_sprite_layer`), the playfield
-compose (`compose_playfield_indices` / `verify_playfield_compose`, 30/30), and the HUD glyph
-(`native_video/hud_glyph` / `verify_hud_glyph`, 256/256) are done. So the starfield is THE
-critical-path blocker for a self-composed native frame.
+compose (`compose_playfield_indices` / `verify_playfield_compose`, 30/30), the HUD glyph
+(`native_video/hud_glyph` / `verify_hud_glyph`, 256/256), and now the **full HUD/status text
+line in packed B800** (`native_video/hud_text` / `verify_native_hud_text` — the whole 5EDB
+line incl. score digits, 1800/1800 across L2/L5/L3) are done. So the starfield is THE
+critical-path blocker for a self-composed native frame. **HUD digit band: DONE (2026-06-29)**
+— the brief's "clean fresh-session slice" (3153 glyph + B800 composition) is closed; do not
+re-attempt, only fold `hud_text` into the standalone backend compose (Bucket C).
 
 - Eluded ~30 probes: the stars are a parallax PIXEL layer — the static-buffer-scroll model
   FAILED (0/60 plates reproduced, 0 colour conflicts → stars scroll at their own rate); a

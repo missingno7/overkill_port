@@ -1,3 +1,22 @@
+## 2026-06-29 - Bucket B: native HUD/status text composer byte-exact vs the VM's B800 digit band
+
+Closed the brief's named "clean fresh-session slice" -- the HUD score digits -- as a real native render
+layer.  The glyph *leaf* (1010:3153) and the BCD score (5F0D / DS:2314) were already recovered; the
+missing piece was composing them into the **packed Tandy B800 page** (the gate is "byte-exact vs B800's
+digit band", which the index-space `hud_glyph` could not witness).  New `native_video/hud_text.py`
+composes the whole `1010:5EDB` HUD line natively -- the label string at DS:2318 through the 518C/519A
+char path (with 3153's inline `0x10 colour` / `0x11 row,col` escapes) then the four DS:2314 score bytes
+as eight most-significant-first BCD digits -- writing the four-bank B800 geometry exactly as 3153
+(`expand[glyph] & colour`, di += 0x2000/row wrap +0x80A0, col += 4 wrap 0xA0 -> row += 0x140).  All
+geometry mirrors the already-lifted hybrid hooks in `rendering/text.py`; no VM (dual-mode -- reads the
+recovered font/score/cursor, composes a flat page).  **Verified produced-vs-VM byte-exact** by
+`verify_native_hud_text.py` (hooks 5EDB entry on the pure-VM side, composes natively into a copy of the
+live visible page CS:[95A4], compares the whole page at 5EDB's return): **L2 600/600, L5_ending 600/600,
+L3 600/600 -- 1800 real HUD lines, 0 divergence**.  13th cross-demo producer; the brief's HUD-digit gate
+is now met.  6 new VM-free unit tests (`tests/test_hud_text.py`) pin the geometry/escapes/digit order.
+Both audits pass; full suite green (604 passed).  Remaining Bucket B: the starfield parallax layer
+(blocked) and folding this HUD layer + playfield into the standalone backend compose (Bucket C).
+
 ## 2026-06-29 - Bucket C: SHARED native target-seek movement (5DB2) byte-exact vs VM
 
 The highest-value object-update producer yet: the whole 1010:5DB2 target-seek movement, SHARED by
