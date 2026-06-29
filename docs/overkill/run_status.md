@@ -1,3 +1,27 @@
+## 2026-06-29 - Frontier consolidation: 511F is lifted (3rd disproven "gate"); §1 remaining scoped
+
+Check-registry-first again: the "511F render island" I named last turn as the status-render gate is
+ALREADY lifted -- `run_video_page_toggle_511f` (rendering/layer_sprites.py) is a tiny page-toggle stub
+(a no-op CMP/RET on Tandy mode 2, the page flip only on mode 1), and 61DC is lifted too
+(`run_status_display_parent_61dc`).  So that "gate" doesn't exist.  Surveyed the remaining interpreted
+near-calls: the object-update STATE near-calls (7476/5E1B/5E42) are composed (B86D/B9F0); the rest are
+the RENDER/scroll path (511F/61DC/9Exx/A7EB display-shift + the A6xx scroll subcalls C591/62AA/7524/
+CB1C/D2A4), i.e. §1.1 frame work that is starfield-gated anyway.
+
+**Three "gates" disproven this session -- camera (already an object), stack-fidelity (recovered hooks
+ARE faithful), 511F render (lifted page-toggle).  The accurate §1 remaining:**
+- **§1.2/1.3 (VM-free state runtime):** the gameplay DECISIONS are comprehensively recovered (21 pure
+  leaves + the whole collision island), but the per-logic-id HANDLERS are still LIFTED cpu-hooks, not
+  PURE NativeGameState transforms.  The runtime needs each handler re-expressed as a pure slot transform
+  (composing the already-recovered decisions) + the pool-walk/dispatch + verify mode.  Big multi-slice,
+  but UN-gated (AE09's full pure transform is the template; the pieces exist).
+- **§1.1 (full native frame):** playfield/sprites/HUD compose natively; the **starfield parallax layer
+  is the one true hard blocker** (needs the off-screen parallax trace tooling).
+- **§1.4 (pure % ceiling):** decisions largely harvested (18.2%); coastline collapsing via the near-call
+  compositions.
+So the loop's recovery phase has comprehensively succeeded; what remains is the pure-handler runtime
+build (Bucket C, un-gated) and the blocked starfield.
+
 ## 2026-06-29 - Bucket A: B86D's 7476 composed natively -- the "stack-fidelity gate" was UNFOUNDED
 
 Tested (not reasoned) the handler-composition I'd repeatedly deferred as "stack-fidelity-gated": rewired
