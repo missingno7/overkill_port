@@ -23,6 +23,7 @@ PROBES = (
     "verify_native_allocator",
     "verify_native_spawn_seed",
     "verify_native_spawn_seed_a4ea",
+    "verify_native_frame_timer",
 )
 _RESULT_LINE = re.compile(r"calls=(\d+) ok=(\d+) fail=(\d+)")
 

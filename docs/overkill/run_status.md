@@ -1,3 +1,14 @@
+## 2026-06-29 - §1.2 frame-timer verify: native step_first_active_timer byte-exact vs VM 61C7
+
+Fifth native producer in the cross-demo §1.2 gate -- the first **distinct state** beyond the
+object lifecycle + score: the frame-timer countdown table (DS:2368, 6 counters; 1010:61C7
+decrements the first non-zero).  New probe `overkill/probes/verify_native_frame_timer.py`:
+step-hooks 61C7 on the pure-VM side, predicts the next table via `step_first_active_timer` at
+entry, and asserts it matches at the RET (61D1/61DB).  Result: **L4 24/24 byte-exact**; L2
+NO-EVENTS (61C7 is demo-dependent -- reached when its trigger fires, not every gameplay frame, so
+the gate's NO-EVENTS handling covers demos where it isn't hit).  Added to `PROBES`.  Lint (197)
+green; standalone gate.
+
 ## 2026-06-29 - §1.2 A4EA spawn verify: native object_spawn_seed_a4ea byte-exact vs VM A4EA
 
 Fourth native producer in the cross-demo §1.2 gate, completing the spawn-template coverage (the
