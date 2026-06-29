@@ -1,3 +1,21 @@
+## 2026-06-29 - Bucket C: NativeGameState aggregate + pure verify-mode comparison core
+
+The first VM-free native-runtime step, and the first to **raise** pure % (14.5 -> 14.8) rather
+than dilute it (unlike the per-state mirrors).  Defined `NativeGameState`
+(`domain/native_game_state.py`, source_pure) -- the aggregate state the standalone runtime owns:
+the gameplay `object_pool` + `camera` + `hud`/score (the three states whose native mirrors are
+proven byte-faithful).  Added the PURE `native_game_state_mismatches(native, reference)`
+comparison core: a field-by-field native-vs-native diff (byte-faithful per object-slot word),
+VM-free -- the §1.2 verify gate that compares the standalone runtime's output to a VM-projected
+reference.  The VM projection `read_native_game_state` (`adapters/native_game_state_adapter.py`)
+composes the recovered per-state readers (`read_object_pool`/`read_camera_state`/`read_hud_layer`).
+Tests: the pure comparison (per-substate + pool layout/word diffs) + VM round-trip + drift
+detection.  Full suite green; lint (190) + recovered-layer (21 pure) + architecture audits pass;
+pure % 14.5 -> 14.8 (the pure comparison core + aggregate outweigh the small adapter read).
+**Next:** a native PRODUCER (run a recovered per-frame system on `NativeGameState` with no VM) so
+verify compares produced-vs-VM rather than VM-vs-VM; then grow the aggregate (Projectile/Combat/
+Rng states).
+
 ## 2026-06-29 - Bucket C §1.2: HudLayer / ScoreState native state-mirror
 
 Third §1.2 native state-mirror (after `ObjectPool` + `CameraState`): the status panel + score.
