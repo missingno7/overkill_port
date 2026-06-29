@@ -114,6 +114,36 @@ PRESENT_SOURCE_CURSOR = 0x234C    # DS:[234C] -> present blit start offset (the 
 OVERKILL_CODE_SEGMENT = 0x1010
 
 
+def read_camera_state(mem, ds: int) -> CameraState:
+    """Snapshot the view origin (the VIEW_TARGET globals DS:237E/2380) into a
+    native :class:`CameraState`, signed (world space).
+
+    The one place the camera anchor crosses from VM memory into native state, so
+    the standalone runtime and the verify-mode mirror read it identically (the
+    dual-mode systems rule)."""
+    ds &= 0xFFFF
+    return CameraState(x=i16(mem.rw(ds, VIEW_TARGET_X)), y=i16(mem.rw(ds, VIEW_TARGET_Y)))
+
+
+def camera_state_mismatches(camera: CameraState, mem, ds: int) -> tuple[tuple[str, int, int], ...]:
+    """State-mirror verifier (§1.2): every ``(field, native_value, vm_value)`` where
+    the native :class:`CameraState` diverges from the live VM camera globals at
+    DS:237E/2380.
+
+    An empty result means the native camera is byte-faithful to the VM at this
+    checkpoint -- the invariant a standalone runtime must preserve as it takes
+    ownership.  Compares signed, matching :func:`read_camera_state`."""
+    ds &= 0xFFFF
+    vm_x = i16(mem.rw(ds, VIEW_TARGET_X))
+    vm_y = i16(mem.rw(ds, VIEW_TARGET_Y))
+    out: list[tuple[str, int, int]] = []
+    if camera.x != vm_x:
+        out.append(("x", camera.x, vm_x))
+    if camera.y != vm_y:
+        out.append(("y", camera.y, vm_y))
+    return tuple(out)
+
+
 def extract_frame_snapshot(mem, ds: int, cs: int = OVERKILL_CODE_SEGMENT) -> FrameSnapshot:
     """Reconstruct the render-intent snapshot from the object tables + camera.
 
@@ -143,7 +173,7 @@ def extract_frame_snapshot(mem, ds: int, cs: int = OVERKILL_CODE_SEGMENT) -> Fra
                     screen_di=screen_di,
                 )
             )
-    camera = CameraState(x=i16(mem.rw(ds, VIEW_TARGET_X)), y=i16(mem.rw(ds, VIEW_TARGET_Y)))
+    camera = read_camera_state(mem, ds)
     playfield = PlayfieldLayer(camera=camera, sprites=tuple(sprites))
 
     # HUD: the six status-counter cells the 61DC status display draws (DS:2368..2372)

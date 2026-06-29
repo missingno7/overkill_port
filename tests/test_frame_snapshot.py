@@ -15,6 +15,8 @@ from overkill.recovered.adapters.frame_snapshot_adapter import (
     PRESENT_SOURCE_CURSOR,
     PRESENT_SOURCE_PAGE_PTR,
     PRESENT_VIDEO_PAGE_PTR,
+    camera_state_mismatches,
+    read_camera_state,
 )
 from overkill.recovered.domain.frame_snapshot import (
     BackgroundLayer,
@@ -99,4 +101,49 @@ def test_extract_frame_snapshot_reads_active_onscreen_slots():
     )
     assert snap.present == PresentComposition(
         source_page=0x35FF, source_cursor=0x3810, video_page=0xB800
+    )
+
+
+# --- §1.2 CameraState native state-mirror (verify-mode gate) ---
+
+_CAM_DS = 0x2000
+
+
+def _camera_mem(x: int, y: int) -> Memory:
+    mem = Memory()
+    mem.ww(_CAM_DS, VIEW_TARGET_X, x & 0xFFFF)
+    mem.ww(_CAM_DS, VIEW_TARGET_Y, y & 0xFFFF)
+    return mem
+
+
+def test_read_camera_state_is_signed_and_faithful():
+    mem = _camera_mem(0x0040, 0xFFF8)  # x = 64, y = -8 (signed VIEW_TARGET globals)
+    cam = read_camera_state(mem, _CAM_DS)
+    assert cam == CameraState(x=0x0040, y=-8)
+    # A faithful snapshot has no mirror mismatches.
+    assert camera_state_mismatches(cam, mem, _CAM_DS) == ()
+
+
+def test_camera_state_mismatches_detects_per_field_divergence():
+    mem = _camera_mem(0x0100, 0x0050)
+    cam = read_camera_state(mem, _CAM_DS)
+    assert camera_state_mismatches(cam, mem, _CAM_DS) == ()
+    # A native camera that drifted from the VM is caught, per field.
+    assert camera_state_mismatches(CameraState(x=cam.x + 1, y=cam.y), mem, _CAM_DS) == (
+        ("x", 0x0101, 0x0100),
+    )
+    assert camera_state_mismatches(CameraState(x=0x0200, y=0x0051), mem, _CAM_DS) == (
+        ("x", 0x0200, 0x0100),
+        ("y", 0x0051, 0x0050),
+    )
+
+
+def test_camera_state_mismatches_signed_boundary():
+    # VM holds 0xFFF8 (= -8 signed); the mirror compares signed, so the unsigned
+    # 0xFFF8 is a mismatch while -8 is faithful (guards read_camera_state's i16).
+    mem = _camera_mem(0x0000, 0xFFF8)
+    assert read_camera_state(mem, _CAM_DS).y == -8
+    assert camera_state_mismatches(CameraState(x=0, y=-8), mem, _CAM_DS) == ()
+    assert camera_state_mismatches(CameraState(x=0, y=0xFFF8), mem, _CAM_DS) == (
+        ("y", 0xFFF8, -8),
     )

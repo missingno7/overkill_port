@@ -1,3 +1,18 @@
+## 2026-06-29 - Bucket C §1.2: CameraState native state-mirror (read_camera_state + verifier)
+
+Second §1.2 native state-mirror after `ObjectPool`, extending the verify-mode coverage toward
+the standalone-runtime gate.  The camera view origin (the `VIEW_TARGET` globals DS:237E/2380,
+signed) was read inline in the FrameSnapshot extractor; lifted it to a named
+`read_camera_state(mem, ds) -> CameraState` projection plus a
+`camera_state_mismatches(camera, mem, ds)` verifier modelled on `object_pool_mirror_mismatches`
+-- it returns every `(field, native, vm)` where the native CameraState diverges from the live
+VM globals; empty = byte-faithful at the checkpoint (the invariant a standalone runtime must
+preserve).  The extractor now routes through `read_camera_state` (byte-identical; the
+frame_snapshot corpus stays green).  Fidelity tests (signed read, per-field divergence, i16
+boundary) added to `test_frame_snapshot`.  Full suite green; lint (188) + recovered-layer +
+architecture audits pass; pure % held at 14.5%, glue not raised.  Next §1.2 mirrors to add:
+ScoreState (DS:2314 BCD) and LevelState (DS:2350 scroll / 2356 column).
+
 ## 2026-06-29 - Lift the A4EA spawn template into the pure layer (object_spawn_seed_a4ea)
 
 The 1010:A4EA object-spawn seed (allocate a slot via 7573, then stamp a fixed `logic=2`
