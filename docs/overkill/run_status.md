@@ -1,3 +1,17 @@
+## 2026-06-29 - Bucket A: B24D fully composed (5E42 + B250 + AD60 tail) -- coastline -1 interpreted frontier
+
+Direct follow-on to the B250 recovery: B24D (EFAE logic_id 11) was lifted only up to the B250
+"AD5A/ADC9 frontier" -- it set `cpu.s.ip = tail` and bounced into the interpreted tail.  Now that the
+B250 overlap predicate is pure, B24D composes its tail natively exactly like the already-composed AED8:
+B250 -> AD5A routes to the recovered AD60 bounds/tile tail (add DS:A278 to X), B250 -> ADC9 forces
+X = FFFFh then AD60.  So B24D is now a full native composition -- 5E42 steer + B250 overlap + AD60
+bounds/tile -- with no interpreter bounce (one fewer coastline frontier; pure % flat at 17.2 since this
+is composition, not new pure logic).  **Verified**: the B24D hook-equivalence test was STRENGTHENED from
+"stops at AD5A" to the AED8 pattern (run the ASM through the whole tail to the caller return, assert the
+composed hook matches state + memory byte-exact), and the hybrid frame-verifier on L6_boss + L2_full
+(1300 frames each, semantic + raw/RGB, 0 divergence).  Both audits + lint (211) pass; full suite green
+(620 passed).  The AED8/B24D composition pattern now extends to any remaining B250-using handler.
+
 ## 2026-06-29 - Bucket A: native B250 overlap/contact predicate -- unblocks the b24d/aed8 handlers (pure % 17.2)
 
 Reopened a prior "blocked" assessment by attempting it (the recurring lesson): loop_blockers had B250's

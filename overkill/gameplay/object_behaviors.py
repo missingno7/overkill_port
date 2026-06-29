@@ -404,6 +404,10 @@ def _run_object_behavior_b24d(cpu, *, parent: str, chain: str, cx_value: int) ->
     hook stops at the selected AD5A/ADC9 frontier; larger parents may compose
     those tails when their own verifier boundary requires a near return.
     """
+    ss = cpu.s.ss & 0xFFFF
+    bp = cpu.s.bp & 0xFFFF
+    slot = ObjectSlotView(cpu.mem, ss, bp)  # this object's record (SS:BP)
+
     # B24D: CALL 5E42.  The live 5E42 body is the runtime-patched gameplay
     # steering helper, not the cold executable bytes at the same address.
     cpu.push(0xB250)
@@ -411,7 +415,25 @@ def _run_object_behavior_b24d(cpu, *, parent: str, chain: str, cx_value: int) ->
     if (cpu.s.ip & 0xFFFF) != 0xB250:
         raise RuntimeError(f"5E42 returned to unexpected IP {cpu.s.ip:04X} inside B24D")
 
-    cpu.s.ip = _run_b250_overlap_contact_selector(cpu, caller="B24D")
+    # B250 -> the selected AD5A/ADC9 tail, now COMPOSED natively (the AED8 pattern) instead of
+    # bouncing to the interpreted tail: both route to the recovered AD60 bounds/tile tail -- AD5A
+    # first adds DS:A278 to X, ADC9 forces X = FFFFh.  Now that the B250 overlap predicate is pure,
+    # B24D is a full native composition (5E42 steer + B250 overlap + AD60 bounds/tile).
+    selected_tail = _run_b250_overlap_contact_selector(cpu, caller="B24D")
+    if selected_tail == 0xAD5A:
+        _run_object_bounds_tile_tail_ad60(
+            cpu, parent=parent, chain=f"{chain} -> B24D -> B250 -> AD5A",
+            cx_value=cx_value, add_a278_to_x=True,
+        )
+        return
+    if selected_tail == 0xADC9:
+        slot.x_word = 0xFFFF
+        _run_object_bounds_tile_tail_ad60(
+            cpu, parent=parent, chain=f"{chain} -> B24D -> B250 -> ADC9",
+            cx_value=cx_value, add_a278_to_x=False,
+        )
+        return
+    cpu.s.ip = selected_tail  # defensive: any unexpected tail keeps the original frontier bounce
 
 
 def _run_object_behavior_b86d(cpu, *, parent: str, chain: str, cx_value: int) -> None:

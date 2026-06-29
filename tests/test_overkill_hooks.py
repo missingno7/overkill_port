@@ -8696,13 +8696,16 @@ def test_object_behavior_b24d_hook_matches_interpreted_observed_path():
     asm.cpu.trace_enabled = False
     hook.cpu.trace_enabled = False
 
-    for _ in range(100):
-        if asm.cpu.addr() in ((0x1010, 0xAD5A), (0x1010, 0xADC9)):
+    # B24D now COMPOSES its AD5A/ADC9 -> AD60 tail (no interpreted-frontier bounce), so the
+    # hook runs the whole handler to its caller return (the AED8 pattern), not just to AD5A.
+    continuation = asm.cpu.mem.rw(asm.cpu.s.ss & 0xFFFF, asm.cpu.s.sp & 0xFFFF)
+    for _ in range(400):
+        if asm.cpu.addr() == (0x1010, continuation):
             break
         asm.cpu.step()
     hook.cpu.step()
 
-    assert asm.cpu.addr() == hook.cpu.addr() == (0x1010, 0xAD5A)
+    assert asm.cpu.addr() == hook.cpu.addr() == (0x1010, continuation)
     assert asm.cpu.s.snapshot() == hook.cpu.s.snapshot()
     assert asm.program.memory.data == hook.program.memory.data
 
