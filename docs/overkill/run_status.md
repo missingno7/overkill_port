@@ -1,3 +1,22 @@
+## 2026-06-29 - Render composition RECOVERED: full sprite `+0C` screen-di (35CC) byte-exact vs VM
+
+Closed the render-side Bucket-C composition gap: the native sprite layer now computes each object's
+final slot `+0C` (the `screen_di` the FrameSnapshot uses) from `NativeGameState` with **no VM read**.
+The projection note left the full `+0C` as "core + DS:234C scroll" but the two projection.py
+docstrings disagreed on whether DS:99C8 was already scroll-baked; disasm of the per-object draw
+handler **35CC** settled it exactly: `35CC call 5A36` (→30D2 core di `(obj_y>>1)+DS:99C8[obj_x]`) →
+`35CF mov [bp+0C],ax` → `35D8 add ax,ds:[234C]` → `35DC mov [bp+0C],ax`, i.e.
+**`+0C = (project_object_to_di(x,y,col) + DS:234C) & 0xFFFF`**, or FFFFh when 30D2 culls (→25B2).
+Recovered as pure `native_video/projection.py:project_object_screen_di`; `build_native_sprite_layer`
+now composes the full `+0C` (takes the DS:234C scroll), not the core.  **Verified produced-vs-VM
+byte-exact vs the live slot `+0C`** by new probe `verify_native_screen_di.py` (hooks 35CC's final
+write 35DF + cull return 35D7): L2 **2191/2191**, and L1 2933 / L5 3851 / L6-boss 3417 /
+player-death 3556 / mothership 977 -- **~17k draws, 0 divergence** across every level type.  Added
+to the cross-demo gate's `PROBES` (7th producer).  The earlier note's `+0x68` "phase" is NOT part of
+`+0C` -- it's only the present-hook *extraction* boundary artifact.  Lint (200) + both audits pass;
+full suite green.  Both render gaps (leaves + composition) are now done; the object-update island
+(the pool *producer*) is the one remaining §1 recovery.
+
 ## 2026-06-29 - Bucket C: NativeGameState grows to both object pools (gameplay + effect)
 
 Extended the native aggregate state toward full object coverage: `NativeGameState` now carries the

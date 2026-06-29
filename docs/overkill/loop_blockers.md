@@ -137,6 +137,23 @@ is **integration, not a leaf**: assemble the native FrameSnapshot sprite list fr
 sees) — a Bucket-C composition step.  **So of the two §1 gaps, the render one is now leaf-complete;
 the object-update island (bc4b/target-seek dual-mode) remains the substantial recovery.**
 
+**RESOLVED (2026-06-29, later) — the full sprite `+0C` composition (`project_object_screen_di`):**
+the render-side Bucket-C composition step the projection note left ("reconstruct the full slot
+`+0C` = core + DS:234C scroll") is now done + verified.  Disasm of the per-object draw handler
+**35CC** settled the exact formula (the projection.py docstrings disagreed on whether DS:99C8 was
+already scroll-baked): `35CC call 5A36` (→30D2 core di) → `35CF mov [bp+0C],ax` → `35D8 add
+ax,ds:[234C]` → `35DC mov [bp+0C],ax`, i.e. **`+0C = (project_object_to_di(x,y,col) + DS:234C) &
+0xFFFF`**, or FFFFh when 30D2 culls (→25B2).  Recovered as pure
+`native_video/projection.py:project_object_screen_di` (and `build_native_sprite_layer` now composes
+the full `+0C`, not the core), **verified produced-vs-VM byte-exact vs the live slot `+0C`** by
+`verify_native_screen_di.py` (7th producer in the cross-demo gate): L2 2191/2191, and L1/L5/L6-boss/
+player-death/mothership all 0-divergence (~17k draws).  The `+0x68` "phase" in the earlier note is
+NOT part of `+0C` — it is only the present-hook *extraction* boundary artifact (frame_snapshot_adapter
+extracts at the draw boundary, where `+0C` is core+234C with no phase term).  **So the native sprite
+layer can now place every object's screen di from `NativeGameState` (x/y + column table + DS:234C)
+with no VM read.**  Render leaves AND the render composition are done; the object-update island
+(the pool *producer*) is the one remaining §1 recovery.
+
 ## NOTE (process) — check lifted-status before "recovering" a routine
 
 `519A` / `3153` (HUD text dispatch + Tandy glyph) were ALREADY lifted (`rendering/text.py`,
