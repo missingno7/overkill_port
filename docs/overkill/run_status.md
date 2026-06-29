@@ -1,3 +1,15 @@
+## 2026-06-29 - §1.2 allocator verify: native object_pool_find_free byte-exact vs VM 7573
+
+Second produced-vs-VM verification (after the score), extending the verify-mode from a scalar to
+the **object pool** (the core §1.2 state).  New standalone probe
+`overkill/probes/verify_native_allocator.py`: step-hooks the real 1010:7573 on the pure-VM side,
+snapshots the pool + allocator cursor (DS:95DA), predicts the allocation via `object_pool_find_free`,
+and asserts it matches the VM's result (BX offset, or FFFF when full, + the updated cursor) for
+every real in-game allocation.  Result on `demo_play_tandy_L2_full` (1200 frames): **71
+allocations, 71/71 byte-exact, 0 divergence**.  Confirms the verify-mode pattern generalises from
+a scalar (score) to a table (object pool) on real inputs.  Lint (193) green; standalone gate
+(additive probe; the suite is unaffected, as established by the score-probe run).
+
 ## 2026-06-29 - §1.2 score verify: native advance_hud_score byte-exact vs VM 5F0D across a demo
 
 The first **produced-vs-VM** verification of a native producer (the §1.2 native-state-mirror
