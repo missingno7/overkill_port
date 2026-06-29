@@ -18,7 +18,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-PROBES = ("verify_native_score", "verify_native_allocator")
+PROBES = ("verify_native_score", "verify_native_allocator", "verify_native_spawn_seed")
 _RESULT_LINE = re.compile(r"calls=(\d+) ok=(\d+) fail=(\d+)")
 
 

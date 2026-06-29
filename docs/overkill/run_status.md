@@ -1,3 +1,14 @@
+## 2026-06-29 - §1.2 spawn-stamp verify: native object_spawn_seed_8209 byte-exact vs VM 8209
+
+Third native producer in the cross-demo §1.2 gate (after score + allocator), extending it to object
+**creation**.  New probe `overkill/probes/verify_native_spawn_seed.py`: step-hooks the real
+1010:8209 (effect-spawn template) on the pure-VM side, captures the allocated slot + the caller's
+source position, predicts the stamped record via `object_spawn_seed_8209`, and asserts all 13
+stamped fields match the VM for every real effect spawn.  Result on L2: **17 spawns, 17/17
+byte-exact**.  Added to `scripts/verify_native_producers.py`'s `PROBES`, so the cross-demo gate now
+covers the object lifecycle (score + allocation + creation) produced-vs-VM.  Lint (195) green;
+standalone gate.
+
 ## 2026-06-29 - §1.2 cross-demo gate: native producers byte-exact vs the VM across the corpus
 
 Added `scripts/verify_native_producers.py` -- the §1.2 "across every demo" gate: runs each native
