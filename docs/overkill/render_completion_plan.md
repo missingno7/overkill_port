@@ -1,9 +1,14 @@
 # Plan: complete the Tandy render path (prepare for the enhanced renderer)
 
-**This is the executable playbook.** Run it under `/goal`. The objective: a
-*complete, faithful, witnessed-exact* semantic representation of **everything
-drawn on screen over the entire Tandy game**, following the **original render
-codepath**, so the enhanced renderer can consume it. No enhanced rendering yet.
+> **Scope: the render pillar only (a sub-plan).** The single canonical `/goal` brief is
+> [`overnight_endgame_execution.md`](overnight_endgame_execution.md) — this file is the detail
+> behind its render work (Bucket B). Don't run `/goal` on this; follow the canonical brief and
+> use this for the render specifics.
+
+**This is the render-pillar playbook.** The objective: a *complete, faithful,
+witnessed-exact* semantic representation of **everything drawn on screen over the entire
+Tandy game**, following the **original render codepath**, so the enhanced renderer can
+consume it. No enhanced rendering yet.
 
 Companion docs: `render_completeness.md` (the element checklist),
 `enhanced_renderer_plan.md` (the two-clock model + R3/R4), `rescue_refactor.md`

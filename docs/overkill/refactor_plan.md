@@ -1,12 +1,11 @@
 # OVERKILL source-reconstruction refactor — goal & playbook
 
-> **Superseded as top-level direction by [`rescue_refactor.md`](rescue_refactor.md)
-> (2026-06-19).** The rescue is the active north star: push the VM-coupled `lifted`
-> layer *down* into pure recovered systems (PRE2 architecture), shrink the
-> coastline, and self-describe islands. This plan's Phase 3 (de-transliteration)
-> remains valid and useful — cleaner lifted code is easier to push down — so treat
-> it as a *means* to the rescue, not a competing goal. Read `rescue_refactor.md`
-> first for "what to work on next."
+> **Not the top-level direction (a sub-means).** The goal + what-to-do-next is the single
+> `/goal` brief [`overnight_endgame_execution.md`](overnight_endgame_execution.md) toward the
+> vision [`game_recovery_lifecycle.md`](game_recovery_lifecycle.md); the recovery
+> architecture is [`rescue_refactor.md`](rescue_refactor.md). This plan's Phase 3
+> (de-transliteration — cleaner `lifted` code is easier to push down) remains a valid *means*
+> to that collapse, not a competing goal. For "what to work on next," follow the `/goal` brief.
 
 ## North star
 Turn the live VM/hook runtime into a **complete reconstruction of the original

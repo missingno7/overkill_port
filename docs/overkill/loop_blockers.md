@@ -5,10 +5,10 @@ re-attempt these in the loop; they need a reproduction trace and/or gameplay
 context. Each has the analysis already done so a human can pick up fast.
 
 > Status note (2026-06-19): the byte-exact frontier is effectively closed —
-> oracle suite 244/244 and demo-replay 19/19 (bounded) are green, and the
-> readability refactor (`refactor_plan.md`) has taken over as the primary driver
-> (Phases 1–2 done, Phase 3 in progress). The only genuinely-open correctness
-> blocker is the player-death full-demo divergence below.
+> oracle suite 244/244 and demo-replay 19/19 (bounded) are green. The primary driver is now
+> the cold-boot endgame `/goal` brief ([`overnight_endgame_execution.md`](overnight_endgame_execution.md));
+> the readability refactor (`refactor_plan.md`) is a sub-means to it. The only genuinely-open
+> correctness blocker was the player-death full-demo divergence below.
 >
 > **Update (2026-06-28):** that player-death divergence — long the only open
 > correctness blocker — and the `[95F2]`/`[95F4]` view-contact-center divergence

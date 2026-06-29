@@ -1,6 +1,12 @@
 # Semantic crystallization plan
 
-This document is the durable project brief for the gradual upward refactor from
+> **Role:** this is the durable **target-architecture** brief (the *shape* the upward refactor
+> crystallizes into). It is not the goal or the "what to do next" — those are the single `/goal`
+> brief [`overnight_endgame_execution.md`](overnight_endgame_execution.md) and the vision
+> [`game_recovery_lifecycle.md`](game_recovery_lifecycle.md). Read this to know the layered
+> architecture; read the `/goal` brief to know what to build.
+
+This document is the durable architecture brief for the gradual upward refactor from
 verified ASM-compatible hooks into recovered source-port code.  It exists so a
 new AI agent can understand the target architecture without needing chat
 history.

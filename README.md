@@ -50,10 +50,12 @@ source-port scaffold.
 
 | I want to... | Read / run |
 | --- | --- |
-| Understand the project goal | This README, then `docs/overkill/semantic_crystallization_plan.md` |
+| Understand the project goal / vision | `docs/overkill/game_recovery_lifecycle.md` (the lifecycle + the canonical doc map) |
+| Know what to do next / run the loop | `docs/overkill/overnight_endgame_execution.md` (the one canonical `/goal` brief) |
 | See the latest known state | `docs/overkill/run_status.md` |
 | Work as an AI agent | `AGENTS.md` |
 | Understand the method | `docs/overkill/source_port_methodology.md` |
+| Understand the target architecture | `docs/overkill/semantic_crystallization_plan.md` |
 | See recovered source-layer rules | `docs/overkill/recovered_source_layer.md` |
 | Check current address knowledge | `symbols.json` and `docs/overkill/island_truth_tables.md` |
 | Run fast non-viewer tests | `python scripts/run_tests.py --scope dos-re` |

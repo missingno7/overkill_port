@@ -10,16 +10,22 @@ specific 16-bit DOS game: **OVERKILL: The Six-Planet Mega Blast**.
 
 This project is not a general DOS emulator and should not drift into one. The
 original executable remains the behavioral oracle. The long-term shape is a
-hybrid source port:
+**VM-less faithful source port** — the full game *cold-booted* from its own data
+files (intro → menu → levels → ending), with the VM kept only as an optional
+oracle. The vision is [`docs/overkill/game_recovery_lifecycle.md`](docs/overkill/game_recovery_lifecycle.md)
+and the executable `/goal` plan (what to do next + the cold-boot done-condition) is
+[`docs/overkill/overnight_endgame_execution.md`](docs/overkill/overnight_endgame_execution.md).
+Hybrid is the *staging path* to get there:
 
 1. Run the original DOS code in the custom 8086 runtime.
 2. Trace real control flow, memory, registers, files, ports, and interrupts.
 3. Understand one bounded routine or subsystem at a time.
 4. Replace only proven behavior with Python hooks.
 5. Verify each replacement against interpreted original ASM.
-6. Move stable replacements into readable game-specific modules.
-7. Keep the original binary available as the oracle until the source port is
-   complete enough to stand on its own.
+6. Move stable replacements into readable, **dual-mode** game-specific systems
+   (same source logic runs hybrid-verified today and standalone tomorrow).
+7. Collapse the coastline until the recovered code runs the game with no VM; keep
+   the original binary as the oracle that proves it never drifted.
 
 ## Working Principles
 
@@ -38,13 +44,18 @@ wrong replacement is a regression.
 
 ## Sources of Truth
 
-Use these files for different kinds of truth:
+Use these files for different kinds of truth (the canonical doc map lives in
+[`docs/overkill/game_recovery_lifecycle.md`](docs/overkill/game_recovery_lifecycle.md)):
 
+- **The goal + what to do next:** [`docs/overkill/overnight_endgame_execution.md`](docs/overkill/overnight_endgame_execution.md)
+  — the single canonical `/goal` brief (cold-boot done-condition §1 + the loop + work
+  buckets). The vision/full arc is `docs/overkill/game_recovery_lifecycle.md`. **These are the
+  only "what next" authorities; other plan docs are supporting method/sub-pillar references.**
 - `docs/overkill/run_status.md`: current checkpoint, latest commands, recent decisions, and
   near-term work.
 - `docs/overkill/semantic_crystallization_plan.md`: durable target architecture
-  for promoting verified hooks upward into recovered source-port code. Start here
-  before refactoring gameplay logic across layers.
+  for promoting verified hooks upward into recovered source-port code. Read it
+  before refactoring gameplay logic across layers (architecture reference, not the goal).
 - `docs/overkill/recovered_source_layer.md`: current `views`/`adapters`/`domain`/`systems`
   split and the already crystallized source-like seed.
 - `docs/overkill/runtime_findings.md`: accumulated reverse-engineering findings,

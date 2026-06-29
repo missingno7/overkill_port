@@ -22,12 +22,12 @@ byte-exact slice per iteration.** The VM is the oracle; every slice must stay
 provably equivalent to the original. Read this file at the start of each
 iteration and do exactly one slice.
 
-**Default operating mode:** an autonomous `/loop` or `/goal` run is *unattended* —
-follow **Unattended mode** (below) without being told: work only on branch
-`reconstruction-loop`, verify every slice, commit + push each green one there,
-and skip-and-log blockers in `docs/overkill/loop_blockers.md`. Never halt, and
-never push to `reconstruction`. So the only instruction the run needs is:
-"follow `docs/overkill/loop_plan.md`."
+**Default operating mode:** an autonomous run is *unattended* — follow **Unattended mode**
+(below) without being told: **commit + push each green slice to `main`** (this repo works on
+`main`), verify every slice, and skip-and-log blockers in `docs/overkill/loop_blockers.md`.
+Never halt, never commit red. (The autonomous *driver* is the `/goal` brief
+[`overnight_endgame_execution.md`](overnight_endgame_execution.md); this file is the
+per-divergence fix procedure it uses when a demo surfaces a mismatch.)
 
 ## The loop (do this once per iteration)
 
@@ -76,9 +76,7 @@ never push to `reconstruction`. So the only instruction the run needs is:
    If everything is green, `git add` the code/docs/tests (NOT `artifacts/repros` or
    `frame_verify` — they are gitignored), commit with a descriptive message ending
    in the `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>` trailer, and
-   push to the **`reconstruction-loop` review branch** (`git push origin
-   reconstruction-loop`). **Never push autonomous loop commits straight to
-   `reconstruction`** — the user reviews `reconstruction-loop` and merges it.
+   **push to `main`** (this repo works on `main`; one verified slice = one commit + push).
 
 ## Backlog (work top-down)
 
@@ -132,9 +130,8 @@ the whole window instead of halting on the first hard problem:
   blocked / what you'd need), then move to the NEXT backlog item.
 - **Never re-attempt a logged blocker.** Read `loop_blockers.md` first each
   iteration and pick a target not already listed there.
-- **Commit + push every green slice to `reconstruction-loop`** (the review branch,
-  NOT `reconstruction`) so progress is saved incrementally; the user reviews and
-  merges in the morning. Stay on `reconstruction-loop` the whole run.
+- **Commit + push every green slice to `main`** so progress is saved incrementally
+  (one verified slice = one commit + push).
 - **Favor tractable wins** (9FAF-style missing-guard divergence fixes, field
   naming, raw-offset drain) so the night accumulates many verified improvements;
   if a divergence proves deep after ~2 trace attempts, log it and move on.

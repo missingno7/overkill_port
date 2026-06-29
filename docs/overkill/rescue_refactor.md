@@ -10,10 +10,13 @@
 > presentation layer, not a renderer over VM state.
 >
 > Modelled on the sibling **PRE2** project (`missingno7/pre2_port`,
-> `D:\Games\DOS\pre2_port`), which is this method done right. This doc is the
-> top-level direction; `refactor_plan.md` (de-transliteration) and `loop_plan.md`
-> (divergence-fixing) are *means* to it. Framework method lives in
-> `dos_re/AI_PORTING_CHARTER.md` + `docs/overkill/source_port_methodology.md`.
+> `D:\Games\DOS\pre2_port`), which is this method done right. This doc is the recovery
+> **architecture/method**, not the top-level direction: the goal + what-to-do-next is the
+> single `/goal` brief [`overnight_endgame_execution.md`](overnight_endgame_execution.md)
+> toward the vision [`game_recovery_lifecycle.md`](game_recovery_lifecycle.md);
+> `refactor_plan.md` (de-transliteration) and `loop_plan.md` (divergence-fixing) are *means*
+> to it. Framework method lives in `dos_re/AI_PORTING_CHARTER.md` +
+> `docs/overkill/source_port_methodology.md`.
 
 ## The strongest principle
 

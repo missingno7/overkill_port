@@ -1,9 +1,9 @@
 # Next Engineering Steps
 
-> **Status (2026-06-19):** the live "what to work on next" objectives now live in
-> **`docs/overkill/refactor_plan.md`** (readability reconstruction — the active
-> driver) and **`docs/overkill/loop_blockers.md`** (the one open byte-exact
-> blocker). This file is now a **durable methodology + island reference**: the
+> **Status (updated 2026-06-30):** the live "what to work on next" is the single `/goal` brief
+> **[`docs/overkill/overnight_endgame_execution.md`](overnight_endgame_execution.md)** (the
+> cold-boot endgame), with **`docs/overkill/loop_blockers.md`** for open blockers. This file is
+> now a **durable methodology + island reference**: the
 > observe→classify→boundary→oracle→hook loop, verification modes, mature-island
 > list, and semantic-crystallization discipline below all still hold. The dated
 > "Current next candidates after …" sections near the bottom are a **historical
