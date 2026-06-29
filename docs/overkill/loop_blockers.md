@@ -187,6 +187,19 @@ frontier.  The clean render-producer vein is exhausted (render side fully recove
 update is the substantial coupled §1 recovery, and a full native FRAME additionally needs the
 BLOCKED starfield plate.
 
+**§8 queue refill swept (2026-06-29):** confirmed no clean unattended §1-advancing slice remains
+outside the attended object-update + blocked starfield. Evidence: (a) `source_port_status` pure %
+15.1%, lifted files well-collapsed (94% named record offsets, 71 pure rules) — the remaining lifted
+mass is VM-boundary continuation glue, not extractable decisions; (b) the largest lifted file's
+candidate decision (`game_state` 9C01's `3*ah+al` axis-dispatch index) is single-use + tangled with
+its jump-table control flow = the "single-use over-engineering" cautioned against above; (c)
+`hooks.py` (3203 lines, over its 1500 budget — done-condition #4) has no relocatable inline render
+video-writes — its size needs hook DELETION via the native runtime, not relocation. So pure %, the
+glue/hooks.py budget, AND §1.1/§1.2 all converge on the SAME gate: the native object-update runtime,
+which is coupled to the attended-only BD17/bc4b death frontier. That is the demand-driven loop's
+honest frontier: the next productive step needs the death-frontier recovery (a reproduction trace +
+gameplay context, per §2 "skip loop_blockers items" unattended) or the starfield tooling.
+
 ## NOTE (process) — check lifted-status before "recovering" a routine
 
 `519A` / `3153` (HUD text dispatch + Tandy glyph) were ALREADY lifted (`rendering/text.py`,
