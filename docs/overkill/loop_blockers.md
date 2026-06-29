@@ -176,6 +176,17 @@ the object-update island (the per-frame pool *producer* — b73e→bc4b/AD60 tai
 and, for a full native FRAME, the BLOCKED starfield plate (above).  Next native step: the
 standalone-loop scaffolding consuming the verified producers, and/or the object-update recovery.
 
+**Assessed 2026-06-29 — AD60 (shared bounds/tile tail) is NOT a clean native producer either:**
+its decision (`object_bounds_tile_decision_ad60`) is already pure + hybrid-verified, but its
+*application* funnels into the coupled death frontier — the out-of-bounds + tile-probe-fail paths
+both call `BD17` deactivate (`_run_deactivate_bd17_observed`, the attended-only `BFC7`/`BD17`/`C054`
+frontier above).  Same for the behaviors via `bc4b`.  So there is no clean produced-vs-VM leaf left
+in the object-update island; its native form is the coupled application build (pure ObjectPool→
+ObjectPool transforms for the dispatch + movement + bc4b/AD60→BD17 tails), gated by the death
+frontier.  The clean render-producer vein is exhausted (render side fully recovered); the object-
+update is the substantial coupled §1 recovery, and a full native FRAME additionally needs the
+BLOCKED starfield plate.
+
 ## NOTE (process) — check lifted-status before "recovering" a routine
 
 `519A` / `3153` (HUD text dispatch + Tandy glyph) were ALREADY lifted (`rendering/text.py`,
