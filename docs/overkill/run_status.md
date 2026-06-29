@@ -1,3 +1,19 @@
+## 2026-06-29 - Pure shared BC4B post-move (y/active half) -- the driver's post-move stage
+
+Recovered the pure shared `object_postmove_bc4b` (+ domain `PostmoveBc4bResult`, 7 unit tests): the
+deterministic y/active outcome EVERY object gets after moving, composing the two already-VM-verified
+pieces -- the BCB1 Y clamp (`clamp_postmove_y_bcb1`) + the X-bounds death
+(`object_postmove_x_bounds_deactivates_bc4b`).  Per the verified BC4B invariant the collision/contact
+path that follows sets logic_id/sprite, NOT active/y, so these two fields are COMPLETE here;
+`contact_path_runs` (global gate DS:A47C clear + survived bounds) flags the slots that then enter the
+deferred BCCB/62F6/BFC7 collision tail where the sprite/logic_id may change.
+
+Why this matters: it is the **post-move half a VM-free driver composes after each behaviour's movement
+half** (handler -> BC4B), so the driver can now produce each slot's final y/active VM-free.  Pieces are
+individually VM-verified; the composition mirrors the lifted BC4B and is unit-tested.  Remaining BC4B:
+the contact path (62F6 object-vs-object overlap + BFC7 death -> sprite/logic_id) and a whole-BC4B VM
+probe.  lint 218; audits pass.
+
 ## 2026-06-29 - Inflection: lifted-handler vein exhausted; next = pure BC4B + raw-ASM state machines
 
 Assessed the remaining object-update handlers (disassembled BE3C/8B3B, read 8D4F).  The cheap vein

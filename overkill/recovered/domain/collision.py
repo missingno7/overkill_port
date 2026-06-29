@@ -37,6 +37,22 @@ class PostMoveYClampResult:
 
 
 @dataclass(frozen=True, slots=True)
+class PostmoveBc4bResult:
+    """Pure result of the shared 1010:BC4B post-move stage's deterministic ``y``/``active`` effect.
+
+    Every object passes through BC4B after moving.  Its effect on these two slot fields is fully
+    determined: ``y`` is the BCB1 clamp, and ``active`` becomes 0 exactly when the post-move X leaves
+    the play box (the X-bounds death).  Per the verified BC4B invariant, the collision/contact path
+    that runs afterwards sets ``logic_id`` (and the death sprite), NOT ``active`` or ``y`` -- so those
+    two fields are complete here; ``contact_path_runs`` flags the slots that still enter that
+    (separately-recovered) contact path, where the sprite/logic_id may yet change."""
+
+    y_word: int
+    active_word: int
+    contact_path_runs: bool
+
+
+@dataclass(frozen=True, slots=True)
 class ProbePoint:
     """Pure point/probe words used by object-centered collision scans."""
 

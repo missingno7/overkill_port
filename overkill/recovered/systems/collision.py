@@ -13,6 +13,7 @@ from overkill.recovered.domain.collision import (
     ObjectOverlapScanDecision,
     PostMoveContactWindow,
     PostMoveYClampResult,
+    PostmoveBc4bResult,
     ProbePoint,
     RectContactResult,
     TileSweepPlan,
@@ -89,6 +90,35 @@ def object_postmove_x_bounds_deactivates_bc4b(x_word: int, global_disable: int, 
     lower = POSTMOVE_X_BOUND_LOWER_WIDE if wide else POSTMOVE_X_BOUND_LOWER_PRECISE
     sx = i16(x_word)
     return sx < lower or sx >= POSTMOVE_X_BOUND_UPPER
+
+
+def object_postmove_bc4b(
+    x_word: int,
+    y_word: int,
+    active_word: int,
+    logic_id: int,
+    global_disable: int,
+    clamp_y: bool = True,
+) -> PostmoveBc4bResult:
+    """Pure shared 1010:BC4B post-move stage -- the deterministic ``y``/``active`` outcome.
+
+    Every object passes through BC4B after moving.  This composes the two already-verified pieces:
+    the BCB1 Y clamp (:func:`clamp_postmove_y_bcb1`) and the X-bounds death
+    (:func:`object_postmove_x_bounds_deactivates_bc4b`).  Per the verified BC4B invariant the
+    collision/contact path that follows sets ``logic_id``/sprite, NOT ``active`` or ``y`` -- so these
+    two fields are complete here.  ``contact_path_runs`` reports whether the slot then enters that
+    contact path (the global gate ``DS:A47C`` is clear and the object survived the X-bounds death),
+    where the sprite/logic_id may still change via the separately-recovered BCCB/62F6/BFC7 collision
+    tail.  This is the post-move half a VM-free driver composes after each behaviour's movement half.
+    """
+    ny = clamp_postmove_y_bcb1(y_word).y_word if clamp_y else (y_word & 0xFFFF)
+    if object_postmove_x_bounds_deactivates_bc4b(x_word, global_disable, logic_id):
+        return PostmoveBc4bResult(y_word=ny, active_word=0x0000, contact_path_runs=False)
+    return PostmoveBc4bResult(
+        y_word=ny,
+        active_word=active_word & 0xFFFF,
+        contact_path_runs=(global_disable & 0xFFFF) == 0,
+    )
 
 
 def word_inside_signed_center_window(
