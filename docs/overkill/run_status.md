@@ -1,3 +1,15 @@
+## 2026-06-29 - Bucket C §1.2: HudLayer / ScoreState native state-mirror
+
+Third §1.2 native state-mirror (after `ObjectPool` + `CameraState`): the status panel + score.
+Lifted the inline `HudLayer` read in the FrameSnapshot extractor to `read_hud_layer(mem, ds)`
+plus `hud_layer_mismatches(hud, mem, ds)`, modelled on the ObjectPool/Camera verifiers -- the
+`score_bcd` (DS:2314 low / 2316 high) is the §1.2 ScoreState; the `FRAME_TIMER_COUNT` status
+counters (DS:2368..) round it out.  Returns every `(field, native, vm)` divergence; empty =
+byte-faithful at the checkpoint.  The extractor routes through `read_hud_layer` (byte-identical;
+the frame_snapshot corpus stays green).  Fidelity + per-field drift tests added to
+`test_frame_snapshot`.  Full suite green; lint (188) + recovered-layer + architecture audits
+pass; pure % held at 14.5%, glue not raised.
+
 ## 2026-06-29 - Bucket C §1.2: CameraState native state-mirror (read_camera_state + verifier)
 
 Second §1.2 native state-mirror after `ObjectPool`, extending the verify-mode coverage toward

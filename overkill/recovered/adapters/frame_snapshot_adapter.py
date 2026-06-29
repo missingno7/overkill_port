@@ -144,6 +144,41 @@ def camera_state_mismatches(camera: CameraState, mem, ds: int) -> tuple[tuple[st
     return tuple(out)
 
 
+def read_hud_layer(mem, ds: int) -> HudLayer:
+    """Snapshot the status panel into a native :class:`HudLayer`: the
+    ``FRAME_TIMER_COUNT`` status-counter cells (DS:2368..) and the packed-decimal
+    score (DS:2314 low / 2316 high).  The one place the HUD state crosses from VM
+    memory into native state, shared by the standalone runtime and the mirror."""
+    ds &= 0xFFFF
+    return HudLayer(
+        counters=tuple(
+            mem.rw(ds, (FRAME_TIMER_TABLE_BASE + 2 * i) & 0xFFFF) for i in range(FRAME_TIMER_COUNT)
+        ),
+        score_bcd=(mem.rw(ds, SCORE_BCD_BASE), mem.rw(ds, (SCORE_BCD_BASE + 2) & 0xFFFF)),
+    )
+
+
+def hud_layer_mismatches(hud: HudLayer, mem, ds: int) -> tuple[tuple[str, object, int], ...]:
+    """State-mirror verifier (§1.2): every ``(field, native, vm)`` where the native
+    :class:`HudLayer` diverges from the live VM status counters / score globals.
+
+    An empty result means the native HUD (the score is the §1.2 ScoreState) is
+    byte-faithful to the VM at this checkpoint."""
+    ds &= 0xFFFF
+    out: list[tuple[str, object, int]] = []
+    for i in range(FRAME_TIMER_COUNT):
+        vm = mem.rw(ds, (FRAME_TIMER_TABLE_BASE + 2 * i) & 0xFFFF)
+        native = hud.counters[i] if i < len(hud.counters) else None
+        if native != vm:
+            out.append((f"counter[{i}]", native, vm))
+    for j, off in enumerate((SCORE_BCD_BASE, (SCORE_BCD_BASE + 2) & 0xFFFF)):
+        vm = mem.rw(ds, off)
+        native = hud.score_bcd[j] if j < len(hud.score_bcd) else None
+        if native != vm:
+            out.append((f"score_bcd[{j}]", native, vm))
+    return tuple(out)
+
+
 def extract_frame_snapshot(mem, ds: int, cs: int = OVERKILL_CODE_SEGMENT) -> FrameSnapshot:
     """Reconstruct the render-intent snapshot from the object tables + camera.
 
@@ -178,12 +213,7 @@ def extract_frame_snapshot(mem, ds: int, cs: int = OVERKILL_CODE_SEGMENT) -> Fra
 
     # HUD: the six status-counter cells the 61DC status display draws (DS:2368..2372)
     # plus the packed-decimal score (DS:2314 low, DS:2316 high).
-    hud = HudLayer(
-        counters=tuple(
-            mem.rw(ds, (FRAME_TIMER_TABLE_BASE + 2 * i) & 0xFFFF) for i in range(FRAME_TIMER_COUNT)
-        ),
-        score_bcd=(mem.rw(ds, SCORE_BCD_BASE), mem.rw(ds, (SCORE_BCD_BASE + 2) & 0xFFFF)),
-    )
+    hud = read_hud_layer(mem, ds)
     # Background: the scrolling level tilemap's camera position + master plane.
     background = BackgroundLayer(
         scroll_row=mem.rw(ds, BG_SCROLL_ROW),

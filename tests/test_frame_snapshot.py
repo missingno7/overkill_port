@@ -16,20 +16,25 @@ from overkill.recovered.adapters.frame_snapshot_adapter import (
     PRESENT_SOURCE_PAGE_PTR,
     PRESENT_VIDEO_PAGE_PTR,
     camera_state_mismatches,
+    hud_layer_mismatches,
     read_camera_state,
+    read_hud_layer,
 )
 from overkill.recovered.domain.frame_snapshot import (
     BackgroundLayer,
     CameraState,
+    HudLayer,
     PresentComposition,
     SpriteDraw,
 )
 from overkill.recovered.ds_globals import VIEW_TARGET_X, VIEW_TARGET_Y
 from overkill.recovered.views.object_slots import (
+    FRAME_TIMER_COUNT,
     FRAME_TIMER_TABLE_BASE,
     GAMEPLAY_OBJECT_TABLE_BASE,
     OBJECT_SLOT_STRIDE,
     OFF_DRAW_SCRATCH_OR_DI,
+    SCORE_BCD_BASE,
     ObjectSlotView,
 )
 
@@ -146,4 +151,37 @@ def test_camera_state_mismatches_signed_boundary():
     assert camera_state_mismatches(CameraState(x=0, y=-8), mem, _CAM_DS) == ()
     assert camera_state_mismatches(CameraState(x=0, y=0xFFF8), mem, _CAM_DS) == (
         ("y", 0xFFF8, -8),
+    )
+
+
+# --- §1.2 HudLayer native state-mirror (score = ScoreState) ---
+
+
+def test_read_hud_layer_and_mirror_faithful():
+    mem = Memory()
+    ds = _CAM_DS
+    for i in range(FRAME_TIMER_COUNT):
+        mem.ww(ds, FRAME_TIMER_TABLE_BASE + 2 * i, 0x0010 + i)
+    mem.ww(ds, SCORE_BCD_BASE, 0x0990)
+    mem.ww(ds, SCORE_BCD_BASE + 2, 0x0003)  # packed-decimal score 30990
+    hud = read_hud_layer(mem, ds)
+    assert hud.score_bcd == (0x0990, 0x0003)
+    assert hud.counters == tuple(0x0010 + i for i in range(FRAME_TIMER_COUNT))
+    assert hud_layer_mismatches(hud, mem, ds) == ()
+
+
+def test_hud_layer_mismatches_detects_score_and_counter_drift():
+    mem = Memory()
+    ds = _CAM_DS
+    for i in range(FRAME_TIMER_COUNT):
+        mem.ww(ds, FRAME_TIMER_TABLE_BASE + 2 * i, 0x0000)
+    mem.ww(ds, SCORE_BCD_BASE, 0x1234)
+    mem.ww(ds, SCORE_BCD_BASE + 2, 0x0005)
+    hud = read_hud_layer(mem, ds)
+    assert hud_layer_mismatches(hud, mem, ds) == ()
+    # A native HUD that drifted on counter 0 + the score high word is caught.
+    drifted = HudLayer(counters=(0x0099,) + hud.counters[1:], score_bcd=(hud.score_bcd[0], 0x0006))
+    assert hud_layer_mismatches(drifted, mem, ds) == (
+        ("counter[0]", 0x0099, 0x0000),
+        ("score_bcd[1]", 0x0006, 0x0005),
     )
