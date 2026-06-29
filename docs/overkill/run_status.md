@@ -1,3 +1,21 @@
+## 2026-06-29 - Bucket A: native B250 overlap/contact predicate -- unblocks the b24d/aed8 handlers (pure % 17.2)
+
+Reopened a prior "blocked" assessment by attempting it (the recurring lesson): loop_blockers had B250's
+overlap test marked "flag-coupled at each early return, no meaty pure decision."  But the *decision* is
+cleanly separable from the flag mechanics.  Recovered `overlap_contact_box_contains` (systems/collision.py):
+the slot's (X, Y) is inside the reference box (anchored at the view target DS:237E/2380) when X is in the
+signed window [ref_x-2, ref_x-2+0x14] and Y in the unsigned window [ref_y, ref_y+0x14] -- the 1010:B256..B278
+predicate, native-forward.  The B250 hook keeps its staged SUB/ADD/CMP arithmetic for the exact AX/BX/flag
+side effects (the AD5A/ADC9 tails run from the selected IP with that register state) and cross-checks the
+pure predicate against the staged path (the C054 adapter pattern).  **Verified**: a VM-free synthetic oracle
+(`tests/test_overlap_contact_box_contains.py` -- signed-X / unsigned-Y windows + edges) + the produced-vs-VM
+probe `verify_native_overlap_contact_box_b250` (predicts the selector's tail from the slot/box/substate,
+compares to the AD5A/ADC9 the ASM reaches) -- **10,767 B250 calls across L2/L6_boss/L3, 0 divergence** (the
+cand-side cross-check assertion also held throughout).  16th cross-demo producer.  This is the shared
+overlap coupling that blocked the b24d/aed8 EFAE handlers -- their native slot-transforms can now compose
+this pure predicate instead of bouncing to B250's ASM.  Both audits + lint (211) pass; full suite green
+(620 passed).
+
 ## 2026-06-29 - Integration-phase recon: small dispatch slices exhausted -> handler-by-handler + runtime
 
 Three concrete investigations this turn confirm the demand-driven loop's small clean slices are

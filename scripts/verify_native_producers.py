@@ -34,6 +34,7 @@ PROBES = (
     "verify_native_hud_text",
     "verify_native_object_spawn_seed_7420",
     "verify_native_object_logic_dispatch_aa2b",
+    "verify_native_overlap_contact_box_b250",
 )
 _RESULT_LINE = re.compile(r"calls=(\d+) ok=(\d+) fail=(\d+)")
 

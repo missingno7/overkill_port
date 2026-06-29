@@ -281,6 +281,37 @@ def tile_sweep_plan_for_direction(direction: int) -> TileSweepPlan:
     return TileSweepPlan(direction8(direction).components)
 
 
+# 1010:B256..B278 overlap/contact box test (the B250 selector's predicate).  The active
+# object slot overlaps the reference box anchored at (ref_x, ref_y) when its X lies in the
+# signed window [ref_x - 2, ref_x - 2 + 0x14] and its Y in the unsigned window
+# [ref_y, ref_y + 0x14].  X uses signed compares, Y unsigned -- exactly as the ASM.
+OVERLAP_CONTACT_BOX_X_INSET = 0x0002
+OVERLAP_CONTACT_BOX_SPAN = 0x0014
+
+
+def overlap_contact_box_contains(obj_x: int, obj_y: int, ref_box_x: int, ref_box_y: int) -> bool:
+    """Pure B250 overlap predicate: is ``(obj_x, obj_y)`` inside the reference box?
+
+    Recovered from 1010:B256..B278: X is tested with signed bounds in
+    ``[ref_box_x - 2, ref_box_x - 2 + 0x14]`` and Y with unsigned bounds in
+    ``[ref_box_y, ref_box_y + 0x14]`` (the box is anchored at the view target
+    DS:237E/2380, 0x14 wide/high after the -2 X inset).  ``True`` means the slot is
+    in the box -- the selector continues to the contact fanout; ``False`` routes to
+    the no-contact tail.  The adapter owns the original SUB/ADD/CMP register and flag
+    side effects; this owns the portable geometric decision."""
+    lo_x = u16(ref_box_x - OVERLAP_CONTACT_BOX_X_INSET)
+    if i16(obj_x) < i16(lo_x):
+        return False
+    hi_x = u16(lo_x + OVERLAP_CONTACT_BOX_SPAN)
+    if i16(obj_x) > i16(hi_x):
+        return False
+    if u16(obj_y) < u16(ref_box_y):
+        return False
+    if u16(obj_y) > u16(ref_box_y + OVERLAP_CONTACT_BOX_SPAN):
+        return False
+    return True
+
+
 # 1010:BFC7 -> C037 collision-death transition.  The dying state is logic id 1, and
 # the death sprite is chosen from the object type via the small C037 table.
 COLLISION_DEATH_STATE_LOGIC_ID = 0x0001

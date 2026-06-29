@@ -56,10 +56,14 @@ mirror slice pushed ASM-like 17650 → 17701 → **14.4% displayed (FELL)**, so 
 Until then, do NOT add more standalone mirror-verifier slices (they fail the metric gate). The
 metric-RAISING vein is inline→pure decision extraction (A4EA-style, `e2bd8d7`), which the
 brief's own Bucket-A frontier note marks exhausted (only multi-part islands remain). Confirmed
-this session by examining the two unblocked Bucket-A behaviors: `B250`'s only un-pure decision
-(the overlap-box test) is flag-coupled at each early return (AX/BX/flags differ per exit), and
-`8d4f` is a waypoint read + a trivial `+0x20` offset + mode stamp then delegations to the
-already-lifted `5DB2`/`bc4b` — neither yields a meaty gate-compliant pure decision. So the
+this session by examining the two unblocked Bucket-A behaviors: `B250`'s overlap-box test is
+flag-coupled at each early return (AX/BX/flags differ per exit), and `8d4f` is a waypoint read +
+a trivial `+0x20` offset + mode stamp then delegations to the already-lifted `5DB2`/`bc4b`.
+**CORRECTION (2026-06-29, later): `B250`'s box DECISION was recovered after all** -- the
+flag-coupling is only in the staged arithmetic; the predicate `overlap_contact_box_contains`
+(systems/collision.py) is pure + verified produced-vs-VM (10,767 calls, 0 div), with the hook
+keeping the staged arithmetic for AX/BX/flags + cross-checking.  (The lesson again: attempt the
+leaf, separate the decision from the flag mechanics.)  `8d4f` remains mostly delegation glue.  So the
 gate-compliant remaining work is (a) the hard Bucket-A islands (pure-raising but multi-leaf), or
 (b) the native-runtime build itself (which collapses the adapters and repays the dilution).
 
@@ -68,8 +72,10 @@ gate-compliant remaining work is (a) the hard Bucket-A islands (pure-raising but
 - faithful recovery of witness-poor `_observed` lifts: 5F0D was the one clean one (`bcd_add_score`
   `332b58d`); the others (`bec5`/`9e69`/`9e98`/`bd17`/`bd0d`/`7476`/`7420`) are the hard
   death/contact/spawn frontier (attended-only — that is *why* they are observed/partial).
-- Bucket-A unblocked behaviors (`B250`, `8d4f`): VM-coupled, no meaty pure decision.
-The one vein that BOTH raises pure % AND is non-blocked is the **native-runtime build (Bucket C)**.
+- Bucket-A unblocked behaviors: `B250`'s box predicate is now RECOVERED (`overlap_contact_box_contains`,
+  16th producer) -- it unblocks the b24d/aed8 EFAE handlers; `8d4f` remains delegation glue.
+The one vein that BOTH raises pure % AND is non-blocked is the **native-runtime build (Bucket C)**;
+per-handler native slot-transforms (now that B250 is pure, b24d/aed8 are the nearest) feed it.
 **Done this session (`9899c12`..`afaadf6`):** `NativeGameState` + the pure verify-mode comparison
 core; and the **produced-vs-VM verify-mode** grown to **5 byte-exact producers** across the demo
 corpus (`scripts/verify_native_producers.py`, the cross-demo gate): `bcd_add_score`/`advance_hud_score`

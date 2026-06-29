@@ -33,6 +33,7 @@ from overkill.recovered.ds_globals import (
     VIEW_TARGET_X,
     VIEW_TARGET_Y,
 )
+from overkill.recovered.systems.collision import overlap_contact_box_contains
 from overkill.recovered.systems.objects import contact_fanout_count
 from overkill.recovered.views.object_slots import (
     ObjectSlotView,
@@ -104,6 +105,13 @@ def run_overlap_contact_selector_b250(cpu, *, caller: str, post_contact_side_eff
     if substate_1e == SUBSTATE_SKIP_OVERLAP:
         return TAIL_NO_CONTACT
 
+    # The recovered pure predicate owns the box decision (native-forward); the staged
+    # B256..B278 arithmetic below stays for its exact AX/BX/flag side effects (the tails
+    # run from the selected IP with that register state), and we cross-check the two agree.
+    pure_contains = overlap_contact_box_contains(
+        slot.x_word, slot.y_word, mem.rw(ds, OVERLAP_REF_BOX_X), mem.rw(ds, OVERLAP_REF_BOX_Y)
+    )
+
     # B256..B278: reject unless the slot's (X, Y) falls inside the reference box.
     cpu.s.ax = mem.rw(ds, OVERLAP_REF_BOX_X)
     cpu.s.bx = mem.rw(ds, OVERLAP_REF_BOX_Y)
@@ -130,6 +138,12 @@ def run_overlap_contact_selector_b250(cpu, *, caller: str, post_contact_side_eff
     _cmp_word(cpu, obj_y, cpu.s.bx)
     if obj_y > (cpu.s.bx & 0xFFFF):
         return TAIL_NO_CONTACT
+
+    # Passed all four box checks -> the pure predicate must agree the slot is in-box.
+    if not pure_contains:
+        raise AssertionError(
+            f"pure overlap_contact_box_contains disagrees with the B250 box test in {caller}"
+        )
 
     # B27A..B294: fan-out count is 1, or 3/5 for logic_id 3 depending on BEDC.
     logic_id = slot.logic_id
