@@ -20,6 +20,7 @@ from overkill.recovered.domain.object_behaviors import (
 )
 from overkill.recovered.domain.object_slots import (
     FreeSlotAllocation,
+    LinkedEffectSpawnSeed7420,
     ObjectPool,
     ObjectSlotRecord,
     ObjectSpawnSeed,
@@ -91,6 +92,48 @@ def object_spawn_seed_a4ea() -> ObjectSpawnSeedA4EA:
         hazard_class=0x0002,
         logic_id=OBJECT_SPAWN_SEED_A4EA_LOGIC_ID,
         substate=0xFFFF,
+    )
+
+
+# 1010:7420 linked-effect spawn template.  BFC7 runs this when a linked-counter
+# group's last member dies; it stamps a freshly allocated effect slot with a
+# short-lived visual at the source's staged position (DS:2376 Y / 2378 X / 237A
+# type) plus the scroll offset DS:A278.
+OBJECT_SPAWN_SEED_7420_HAZARD_CLASS = 0x0005
+OBJECT_SPAWN_SEED_7420_SPRITE_BIAS = 0x0046
+OBJECT_SPAWN_SEED_7420_Y_FLOOR = 0x00C0
+OBJECT_SPAWN_SEED_7420_LINKED_COUNTER_INDEX_NONE = 0xFFFF
+
+
+def object_spawn_seed_7420(source_x: int, source_y: int, source_type: int,
+                           x_offset: int) -> LinkedEffectSpawnSeed7420:
+    """Pure 1010:7420 linked-effect spawn template recovered from the 7420 stamp.
+
+    A freshly allocated effect slot is initialised as an active, scan-enabled
+    ``hazard_class=5`` / ``logic_id=0`` object at ``X = source_x + x_offset`` (the
+    staged DS:2378 plus the scroll offset DS:A278) and ``Y = min(source_y, 00C0h)``
+    (the staged DS:2376 clamped to the floor), with ``sprite_or_state = source_type
+    + 46h`` and the raw ``source_type`` (DS:237A) also stamped into the record's
+    ``+26h`` word; ``transition_latch`` / ``variant`` / ``gate_or_layer`` cleared and
+    the linked-counter index set to ``FFFFh`` (the spawned effect is itself
+    unlinked).  The adapter owns the leading 7524 allocation and the DOS write
+    order; this owns the field values.
+    """
+    return LinkedEffectSpawnSeed7420(
+        active_word=0x0001,
+        x_word=(source_x + x_offset) & 0xFFFF,
+        y_word=(OBJECT_SPAWN_SEED_7420_Y_FLOOR
+                if (source_y & 0xFFFF) > OBJECT_SPAWN_SEED_7420_Y_FLOOR
+                else (source_y & 0xFFFF)),
+        transition_latch=0x0000,
+        scan_flag=0x0001,
+        hazard_class=OBJECT_SPAWN_SEED_7420_HAZARD_CLASS,
+        logic_id=0x0000,
+        linked_counter_index=OBJECT_SPAWN_SEED_7420_LINKED_COUNTER_INDEX_NONE,
+        variant=0x0000,
+        slot_field_26=source_type & 0xFFFF,
+        sprite_or_state=(source_type + OBJECT_SPAWN_SEED_7420_SPRITE_BIAS) & 0xFFFF,
+        gate_or_layer=0x0000,
     )
 
 

@@ -1,3 +1,24 @@
+## 2026-06-29 - Bucket A: native 7420 linked-effect spawn template (BFC7 sub-leaf 2/3) -- raises pure % to 16.8%
+
+Recovered the 2nd of BFC7's 3 death/spawn sub-leaves as a pure source-level template, the first pure-%
+gain in a while (16.5 -> 16.8%; source_pure +74 lines, 78 pure fns).  `object_spawn_seed_7420`
+(systems/objects.py) returns the new `LinkedEffectSpawnSeed7420` field values 7420 stamps into a freshly
+allocated effect slot when a linked-counter group's last member dies: `x = source_x + DS:A278` (scroll
+offset), `y = min(source_y, 00C0h)` (floor clamp), `sprite_or_state = source_type + 46h`, the raw source
+type also at the record's +26h word, and the constants (active=1/scan=1/hazard=5/logic=0/latch=0/
+linked=FFFF/variant=0/layer=0).  Follows the existing 8209/A4EA spawn-template precedent exactly; the
+hook `_run_linked_effect_spawn_7420_observed` is now a thin adapter (7524 allocation + DOS write order +
+the register/flag choreography), sourcing every field value from the pure seed.  **Verified two ways**: a
+VM-free synthetic oracle (`tests/test_object_spawn_seed_7420.py` -- the X offset, the strict `>00C0h` Y
+clamp, the sprite bias, 16-bit wrap) and the produced-vs-VM probe `verify_native_object_spawn_seed_7420`
+(hooks 7420 on the pure-VM side, predicts the seed from the staged DS globals, compares the allocated
+slot's fields at the routine's return).  The linked-counter->0 event is rare (as predicted), but across
+the corpus it fired **34 times -- L5_continue 20 / L3 10 / L2 2 / start_to_end 1 / L4 1 -- 0 divergence**
+(L6 boss/mothership/showcase have 0, confirming those bosses aren't linked-counter groups).  14th
+cross-demo producer (added to `verify_native_producers`; rare-event probes report NO-EVENTS, not failure,
+on demos that don't reach them).  Both audits + lint (209) pass; full suite green (608 passed).  BFC7's
+last sub-leaf is the C054 deactivate selector; then the BFC7 death/spawn island composes.
+
 ## 2026-06-29 - Convergence: death-tail score add -> the verified pure bcd_add_score (1 of BFC7's 3 sub-leaves)
 
 Coastline-shortening on the attended death/spawn island.  `_run_score_add_5f0d_observed` (the BFC7

@@ -32,6 +32,7 @@ PROBES = (
     "verify_native_object_steer_5e42",
     "verify_native_object_postmove_bounds_bc4b",
     "verify_native_hud_text",
+    "verify_native_object_spawn_seed_7420",
 )
 _RESULT_LINE = re.compile(r"calls=(\d+) ok=(\d+) fail=(\d+)")
 

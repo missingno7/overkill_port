@@ -147,3 +147,33 @@ class ObjectSpawnSeedA4EA:
     hazard_class: int
     logic_id: int
     substate: int
+
+
+@dataclass(frozen=True, slots=True)
+class LinkedEffectSpawnSeed7420:
+    """Pure field values stamped into a freshly allocated effect slot by 1010:7420.
+
+    Recovered from the 7420 stamp BFC7 runs when a linked-counter group's last
+    member dies: it spawns a short-lived visual effect at the source's staged
+    position.  ``x_word`` is the staged source X (DS:2378) plus the scroll/camera
+    offset DS:A278; ``y_word`` is the staged source Y (DS:2376) clamped to the
+    ``00C0h`` floor; ``sprite_or_state`` is the staged source type (DS:237A) biased
+    by ``+46h``; ``slot_field_26`` is that same raw source type written to the
+    object record's still-unnamed ``+26h`` word.  The rest are constants, and the
+    spawned effect is itself unlinked (``linked_counter_index = FFFFh``).  Fields are
+    listed in the original stamp order so the seed stays byte-faithful; the adapter
+    owns the leading 7524 allocation and the DOS write order.
+    """
+
+    active_word: int
+    x_word: int
+    y_word: int
+    transition_latch: int
+    scan_flag: int
+    hazard_class: int
+    logic_id: int
+    linked_counter_index: int
+    variant: int
+    slot_field_26: int
+    sprite_or_state: int
+    gate_or_layer: int

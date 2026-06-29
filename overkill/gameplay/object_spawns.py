@@ -12,7 +12,11 @@ no higher-level gameplay semantics are asserted.
 from __future__ import annotations
 
 from overkill.asm import _add_reg16, _cmp_word, _dec_mem_word_preserve_cf
-from overkill.recovered.systems.objects import object_spawn_seed_8209, object_spawn_seed_a4ea
+from overkill.recovered.systems.objects import (
+    object_spawn_seed_7420,
+    object_spawn_seed_8209,
+    object_spawn_seed_a4ea,
+)
 from overkill.recovered.views.object_slots import ObjectSlotView, EFFECT_OBJECT_TABLE_BASE, GAMEPLAY_OBJECT_ALLOCATOR_WRAP_SENTINEL, GAMEPLAY_OBJECT_TABLE_BASE, OBJECT_SLOT_STRIDE, OFF_X, OFF_Y
 
 # Source position the 8209 template reads from the caller's BP frame.  The slot's
@@ -223,10 +227,16 @@ def _run_formation_spawn_7476_observed(cpu, *, parent: str, chain: str, cx_value
 
 
 def _run_linked_effect_spawn_7420_observed(cpu) -> None:
-    """Run the observed 1010:7420 spawn helper used by BFC7/BFEE.
+    """Run the 1010:7420 linked-effect spawn used by BFC7/BFEE.
 
-    The helper publishes source Y/X/type in DS:2376/2378/237A, allocates a
-    compact effect slot via 7524, and seeds a short-lived visual object.
+    When a linked-counter group's last member dies, 7420 allocates a compact effect
+    slot via 7524 and seeds a short-lived visual object at the staged source position
+    (DS:2376 Y / 2378 X / 237A type) plus the scroll offset DS:A278.  The pure
+    :func:`object_spawn_seed_7420` owns the field values (X = 2378 + A278, Y = 2376
+    clamped to 00C0h, sprite = 237A + 46h, the raw type also at +26h); this adapter
+    owns the 7524 allocation, the DOS write order, and the register/flag
+    choreography -- the y-clamp ``CMP`` and the ``si += 46h`` ``ADD`` (the x-add flags
+    are dead, overwritten by the clamp), leaving AX = Y and SI = sprite as 7420 does.
     """
     ds = cpu.s.ds & 0xFFFF
     mem = cpu.mem
@@ -236,31 +246,36 @@ def _run_linked_effect_spawn_7420_observed(cpu) -> None:
     if bx == 0xFFFF:
         return
 
-    dst = ObjectSlotView(mem, ds, bx)  # the spawned/target object's record (DS:BX)
-    dst.active_word = 0x0001
-    # x_word = DS:2378 + DS:A278.  The ADD's flags are dead (the y-clamp CMP
-    # below overwrites them before any boundary).
-    cpu.s.ax = (mem.rw(ds, 0x2378) + mem.rw(ds, 0xA278)) & 0xFFFF
+    seed = object_spawn_seed_7420(
+        source_x=mem.rw(ds, 0x2378),
+        source_y=mem.rw(ds, 0x2376),
+        source_type=mem.rw(ds, 0x237A),
+        x_offset=mem.rw(ds, 0xA278),
+    )
+
+    dst = ObjectSlotView(mem, ds, bx)  # the spawned effect's record (DS:BX)
+    dst.active_word = seed.active_word
+    cpu.s.ax = seed.x_word
     dst.x_word = cpu.s.ax
 
+    # Re-run the y-clamp CMP for its (live-shaped) flags; the result is seed.y_word.
     cpu.s.ax = mem.rw(ds, 0x2376)
     _cmp_word(cpu, cpu.s.ax, 0x00C0)
-    if cpu.s.ax > 0x00C0:
-        cpu.s.ax = 0x00C0
+    cpu.s.ax = seed.y_word
     dst.y_word = cpu.s.ax
 
-    dst.transition_latch = 0x0000
-    dst.scan_flag = 0x0001
-    dst.hazard_class = 0x0005
-    dst.logic_id = 0x0000
-    dst.linked_counter_index = 0xFFFF
-    dst.variant = 0x0000
+    dst.transition_latch = seed.transition_latch
+    dst.scan_flag = seed.scan_flag
+    dst.hazard_class = seed.hazard_class
+    dst.logic_id = seed.logic_id
+    dst.linked_counter_index = seed.linked_counter_index
+    dst.variant = seed.variant
 
     cpu.s.si = mem.rw(ds, 0x237A)
-    mem.ww(ds, (bx + 0x26) & 0xFFFF, cpu.s.si)
-    _add_reg16(cpu, 6, 0x0046)
-    dst.sprite_or_state = cpu.s.si
-    dst.gate_or_layer = 0x0000
+    mem.ww(ds, (bx + 0x26) & 0xFFFF, seed.slot_field_26)
+    _add_reg16(cpu, 6, 0x0046)  # SI += 46h -> SI = seed.sprite_or_state (register-faithful)
+    dst.sprite_or_state = seed.sprite_or_state
+    dst.gate_or_layer = seed.gate_or_layer
 
 
 def run_object_slot_allocate_or_reclaim_7547(cpu) -> None:
