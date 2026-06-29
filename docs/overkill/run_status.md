@@ -1,3 +1,28 @@
+## 2026-06-30 - Collision pass: the 62F6 object-vs-object overlap scan (which candidate is hit)
+
+Continuing the collision pass toward a VM-free collision stage. After merging the per-object
+hit->death outcome, the next piece is the SCAN that decides *which* candidate is hit. 62F6 is the
+object-vs-object overlap scan: a moving object (the scanner at SS:BP, reached via BC4B) walks the
+gameplay pool (DS:2B5C) and, on the first overlapping candidate, jumps to BEC5 with BX at that
+slot; none -> returns without BEC5. The overlap *predicate* (object_grid_overlap_62f6) was already
+recovered; this composes it into the whole scan.
+
+`collision.object_overlap_scan_62f6(scanner fields, candidates) -> int | None`: the pre-scan gates
+(inactive scanner / X < 20h signed / zero draw-layer or logic-id / dying-1 / exempt-26h all -> None),
+then walk the pool and return the first active + solid (scan_enable_or_solid +1Eh != 0) candidate
+whose 8px cell the scanner overlaps -- the slot the original routes to BEC5.
+
+VERIFIED produced-vs-VM by `overkill.probes.verify_native_overlap_scan_62f6` (project the scanner +
+the whole gameplay pool at 62F6 entry, scan, then compare: predicted hit index i -> the VM reaches
+BEC5 with BX == 2B5C + i*38h; predicted None -> the VM returns without BEC5): L2 3076/3076 (26 hits),
+L6_boss 3369/3369 (259 hits), player_death 6996/6996 (0 hits) -- 13441 scans, 285 real collisions,
+0 divergence (both the hit and empty paths). Unit coverage in tests/test_overlap_scan_62f6.py.
+
+So the native collision pass now has: the SCAN (62F6, which candidate) + the per-object hit OUTCOME
+(resolve_collision_hit, BF25+C037). Remaining for a VM-free collision stage: the BEC5 reaction
+DISPATCH that connects them (variant family -> BD0D/A8C2/damage), then wiring it over the pool. No
+hook touched (pure add over the verified overlap predicate); lint + both audits + manifest green.
+
 ## 2026-06-30 - Collision island-merge: the per-object hit -> death outcome (BF25 + C037)
 
 Resuming the gameplay frame (Bucket A) after the docs reconciliation. Scouted the remaining

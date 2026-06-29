@@ -22,7 +22,7 @@ from overkill.recovered.domain.collision import (
 )
 from overkill.recovered.domain.directions import direction8
 from overkill.recovered.domain.coords import i16, u16
-from overkill.recovered.domain.object_slots import ObjectSlotRecord
+from overkill.recovered.domain.object_slots import ObjectPool, ObjectSlotRecord
 
 CONTACT_HALF_EXTENT = 0x10
 PLAYER_HAZARD_SCAN_REQUIRED_GATE = 0x0001
@@ -392,6 +392,55 @@ def object_grid_overlap_62f6(self_x_cell: int, self_y_cell: int, cand_x: int, ca
         x_cells.append((x_cells[-1] - OBJECT_GRID_CELL_PIXELS) & 0xFFFF)
         x_cells.append((x_cells[-1] - OBJECT_GRID_CELL_PIXELS) & 0xFFFF)
     return (self_x_cell & 0xFFFF) in x_cells
+
+
+# 1010:62F6 scan pre-gates on the scanning object before it walks the candidate pool.
+OBJECT_SCAN_MIN_X = 0x0020                              # scanner X must be >= 20h (signed) to scan
+OBJECT_SCAN_EXEMPT_LOGIC_IDS = frozenset((0x0001, 0x0026))  # dying(1) / 26h skip the scan
+
+
+def object_overlap_scan_62f6(
+    *,
+    scanner_active_word: int,
+    scanner_x_word: int,
+    scanner_y_word: int,
+    scanner_draw_layer: int,
+    scanner_logic_id: int,
+    scanner_object_type: int,
+    candidates: ObjectPool,
+) -> "int | None":
+    """The 1010:62F6 object-vs-object overlap scan -> the index of the first gameplay candidate
+    the scanning object's cell overlaps, or ``None`` (gated out, or no candidate hit).
+
+    The scanner is a moving object reached via BC4B; ``candidates`` is the gameplay object pool
+    (DS:2B5C).  Pre-scan gates (any -> ``None``): an inactive scanner, scanner X < ``20h`` (signed),
+    a zero draw-layer or logic-id, or a dying (``1``) / exempt (``26h``) logic id.  Then it walks
+    the pool in order and returns the first **active**, **solid** (``scan_enable_or_solid`` at +1Eh
+    non-zero) candidate whose cell the scanner overlaps per :func:`object_grid_overlap_62f6` -- the
+    candidate the original routes to the BEC5 handler.  The BEC5 reaction itself (variant dispatch,
+    damage, death, owner-link) is separate (:func:`bec5_collision_variant_family` /
+    :func:`resolve_collision_hit`).
+    """
+    if (scanner_active_word & 0xFFFF) == 0:
+        return None
+    if i16(scanner_x_word) < OBJECT_SCAN_MIN_X:
+        return None
+    if (scanner_draw_layer & 0xFFFF) == 0 or (scanner_logic_id & 0xFFFF) == 0:
+        return None
+    if (scanner_logic_id & 0xFFFF) in OBJECT_SCAN_EXEMPT_LOGIC_IDS:
+        return None
+
+    self_x_cell = scanner_x_word & OBJECT_GRID_CELL_MASK
+    self_y_cell = scanner_y_word & OBJECT_GRID_CELL_MASK
+    for i in range(len(candidates)):
+        if candidates.active_word(i) == 0:
+            continue
+        if candidates.substate_1e(i) == 0:  # scan_enable_or_solid (+1Eh)
+            continue
+        if object_grid_overlap_62f6(self_x_cell, self_y_cell, candidates.x_word(i),
+                                    candidates.y_word(i), scanner_object_type, scanner_logic_id):
+            return i
+    return None
 
 
 # 1010:BEC5 object-vs-object collision variant dispatch (by the collided slot's logic id).

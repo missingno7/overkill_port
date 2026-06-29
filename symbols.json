@@ -458,7 +458,7 @@
   "1010:62F6": {
     "kind": "helper",
     "name": "object_overlap_scan_observed",
-    "notes": "Object overlap scan used from BC4B. The lifted helper covers observed no-collision and BEC5 variant-2 collision paths. Important post-death detail: when current object logic_id is 0001, the original returns immediately with incoming BX preserved rather than advancing to the empty-scan sentinel. The signed SS:[BP+2] < 0020h early exit also preserves BX and the compare flags instead of forcing the empty-scan tail.",
+    "notes": "Object overlap scan used from BC4B. The lifted helper covers observed no-collision and BEC5 variant-2 collision paths. Important post-death detail: when current object logic_id is 0001, the original returns immediately with incoming BX preserved rather than advancing to the empty-scan sentinel. The signed SS:[BP+2] < 0020h early exit also preserves BX and the compare flags instead of forcing the empty-scan tail. The WHICH-candidate decision is now the pure overkill.recovered.systems.collision.object_overlap_scan_62f6 (pre-scan gates + walk the gameplay pool DS:2B5C -> first active+solid candidate whose cell overlaps via object_grid_overlap_62f6); proven byte-equal to the VM by overkill.probes.verify_native_overlap_scan_62f6 (L2 3076/3076 incl. 26 hits, L6_boss 3369/3369 incl. 259 hits, player_death 6996/6996, 0 divergence). The BEC5 reaction is separate (bec5_collision_variant_family + resolve_collision_hit).",
     "status": "partial helper"
   },
   "1010:7524": {
