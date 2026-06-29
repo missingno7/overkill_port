@@ -321,6 +321,17 @@ fresh-session slice IF 9E69/62F6 are confirmed slot-neutral; the gate (produced-
 will catch it either way.  This is the LAST movement/postmove primitive before the global
 death/spawn side-effects + the dispatch.
 
+**DONE (2026-06-29) — the BC4B bounds half (y + active); 9E69/62F6 CONFIRMED slot-neutral.**
+Shipped `object_postmove_x_bounds_deactivates_bc4b` (the X-bounds death: precise box [-C0h, F0h)
+unless DS:A47C set / wide-exempt logic id -> [-14h, F0h)) composed with the recovered
+`clamp_postmove_y_bcb1` -> the BC4B slot fields y + active.  **Verified produced-vs-VM byte-exact**
+L2 1498/1498, L6_boss 2257/2257, player_death 2181/2181 (5936 calls, 0-div) -- which PROVES (a) the
+collision death (BFC7) sets logic_id, not active; (b) 9E69/62F6 are slot-neutral for y/active.  So the
+remaining BC4B work is just the **collision-death logic_id/sprite half** (BCCB -> AA46/AA71 (recovered)
+-> BFC7 transition: logic_id=1 + previous_logic_id + transition_latch=0 + C037 sprite for obj_type 1/2)
+-- verify those slot fields at BC4B RET on the collision-hit objects.  After that: the global
+death/spawn side-effects (counters/spawns) + the per-logic-id native dispatch.
+
 ## NOTE (process) — check lifted-status before "recovering" a routine
 
 `519A` / `3153` (HUD text dispatch + Tandy glyph) were ALREADY lifted (`rendering/text.py`,

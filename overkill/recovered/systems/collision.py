@@ -64,6 +64,30 @@ def clamp_postmove_y_bcb1(y_word: int) -> PostMoveYClampResult:
     return PostMoveYClampResult(y_word=u16(y_word), changed=False)
 
 
+# 1010:BC4B post-move X-bounds death.  After the Y clamp, BC4B deactivates the object (-> BD17,
+# active=0) when its post-move X leaves the play box.  The precise lower bound -C0h applies unless the
+# global gate DS:A47C is set or the logic id is a wide-box exempt family, which use the tighter -14h;
+# the upper bound F0h is shared.  (The collision path that BC4B runs afterwards sets logic_id, not
+# active, so ``active == 0`` at BC4B's return is exactly this X-bounds death.)
+POSTMOVE_X_BOUND_UPPER = 0x00F0
+POSTMOVE_X_BOUND_LOWER_PRECISE = -0x00C0
+POSTMOVE_X_BOUND_LOWER_WIDE = -0x0014
+POSTMOVE_X_BOUND_WIDE_LOGIC_IDS = frozenset((0x0000, 0x0048, 0x0026, 0x0086, 0x0028, 0x0029, 0x0034))
+
+
+def object_postmove_x_bounds_deactivates_bc4b(x_word: int, global_disable: int, logic_id: int) -> bool:
+    """True iff 1010:BC4B deactivates the object for leaving the X play box (BC52..BC9x -> BD17).
+
+    ``x_word`` is the signed post-move X.  The precise lower bound (-C0h) applies unless the global
+    gate ``global_disable`` (DS:A47C) is non-zero or ``logic_id`` is a wide-box exempt family (which
+    use -14h); the upper bound (F0h) is shared.  This is the BC4B slot effect on ``active``; the
+    collision path that follows it sets ``logic_id`` instead, so it does not affect ``active``."""
+    wide = (global_disable & 0xFFFF) != 0 or (logic_id & 0xFFFF) in POSTMOVE_X_BOUND_WIDE_LOGIC_IDS
+    lower = POSTMOVE_X_BOUND_LOWER_WIDE if wide else POSTMOVE_X_BOUND_LOWER_PRECISE
+    sx = i16(x_word)
+    return sx < lower or sx >= POSTMOVE_X_BOUND_UPPER
+
+
 def word_inside_signed_center_window(
     value_word: int,
     center_word: int,

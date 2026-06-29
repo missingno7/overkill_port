@@ -15,6 +15,22 @@ green.  With AE09 (fixed-step) + 5DB2 (target-seek), the two movement primitives
 behaviors are now native; remaining object-update work is the global side-effects (counters/spawns/
 BD17 death) + composing the per-logic-id dispatch.
 
+## 2026-06-29 - Bucket C: native BC4B post-move bounds (y-clamp + X-bounds death) byte-exact vs VM
+
+Recovered the bounds/clamp half of the shared BC4B post-move (the tail every seeker + several behaviors
+run after moving).  `object_postmove_x_bounds_deactivates_bc4b` (systems/collision.py) is the X-bounds
+death: the object deactivates (-> BD17, active=0) when its post-move X leaves the play box -- the
+precise box [-C0h, F0h) unless DS:A47C is set or the logic id is a wide-box exempt family (then
+[-14h, F0h)).  Composed with the recovered `clamp_postmove_y_bcb1` (Y into [0, C0h]), this gives the
+BC4B slot fields **y + active**.  **Verified produced-vs-VM byte-exact** by
+`verify_native_object_postmove_bounds_bc4b.py`: **L2 1498/1498, L6_boss 2257/2257, player_death
+2181/2181 -- 5936 calls, 0 divergence**.  12th cross-demo producer.  The pass also CONFIRMS three
+hypotheses: (a) the collision death (BFC7) sets logic_id, not active (else collision objects would
+diverge on active); (b) BC4B's observed sub-routines 9E69/62F6 are slot-neutral for y/active (else
+divergence); (c) y is always the clamp regardless of collision.  Scope: the y/active half; the
+collision-death logic_id/sprite half (BCCB -> AA46/AA71 -> BFC7 transition) is the next fresh-session
+producer.  Lint (206) + both audits pass; full suite green.
+
 ## 2026-06-29 - Bucket C: native delta-steer (5E42) byte-exact vs VM -- the 3rd movement primitive
 
 Recovered the runtime-patched 1010:5E42 delta-steer (used by the b24d/b86d behaviors), the 3rd object
