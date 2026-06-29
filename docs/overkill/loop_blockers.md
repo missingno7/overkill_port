@@ -110,6 +110,15 @@ verify native di == VM `+0C` across demos.  So the render-projection gap is itse
 remaining §1 gaps are coupled islands; no clean `verify_native_*` leaf remains** — the work is
 genuine multi-routine recovery, for a fresh, clean-context session.
 
+**Projection observe→derive head-start (2026-06-29):** captured active-sprite `(obj_x, obj_y,
+screen_di)` + camera/scroll from the L2 snapshot (`scratchpad/derive_projection.py`).  Decoding
+`screen_di` via the B800 bank geometry, the **X** offset is consistent (`screen_x ≈ obj_x − ~136`),
+but the **Y** is not (near-equal `obj_y` map to very different `di`) — so `+0C` is almost certainly
+in the **source-page (35FF) geometry, not B800's**, and/or factors a per-object Y the snapshot's 2
+on-screen sprites don't reveal.  Next: capture many samples over a *demo run* (not one snapshot) and
+also read the chosen 5AE2 Tandy handler to fix the page + the Y term; then implement
+`project_object_to_di` and verify native di == VM `+0C` across demos.  Partial, not yet derived.
+
 ## NOTE (process) — check lifted-status before "recovering" a routine
 
 `519A` / `3153` (HUD text dispatch + Tandy glyph) were ALREADY lifted (`rendering/text.py`,
