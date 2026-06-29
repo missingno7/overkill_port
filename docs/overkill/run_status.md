@@ -1,3 +1,43 @@
+## 2026-06-29 - Phase transition: per-routine producer leaves harvested -> Bucket-C integration roadmap
+
+This session harvested the demand-driven loop's per-routine producer leaves: pure % 15.1 -> 17.0 (14
+cross-demo producers; the full B800 HUD text render layer; the BFC7 death/spawn island's 5 computational
+leaves -- score add, y-clamp, 7420 spawn, C054 classifier, C037 transition -- all now pure).  Examining
+the §6 queue + the dispatch/runtime this turn shows the clean ISOLATED producer slices are now exhausted:
+every remaining piece is INTEGRATION (its value gated on the VM-free runtime + native handlers), plus two
+hard blockers.  The path to §1, scoped:
+
+RECOVERED native building blocks:
+- Render: playfield compose (30/30), sprite layer, HUD glyph + the full B800 HUD text line, projection.
+- State producers: score (5F0D), 3 movement primitives (AE09/5DB2/5E42), bc4b bounds, the death/spawn
+  leaves, frame timers, allocator + spawn seeds (8209/A4EA/7420).
+- §1.2 mirror: NativeGameState (special/object/effect pools + camera + hud) + native_game_state_mismatches
+  + the VM-projection adapter.
+
+REMAINING to §1 (integration, recommended order):
+1. Native object handlers.  AA2B is the 1st-level dispatch by draw_layer (0-7) through CS:AA36 -> 8 handlers
+   (BC45 postmove / AD04 tracked / EFAE family-dispatch[layers 2,4] / 44AF / AAC2 / AB10 / C3F8), mostly
+   recovered but VM-coupled.  The native object-update needs each handler's FULL slot-transform native
+   (movement halves done; the animation/state/interpreted halves remain) then a pure dispatch over them.
+2. Camera/scroll island.  The view target (DS:237E/2380 -> NativeGameState.camera) is currently only READ
+   in the lifted layer (object_behaviors/object_spawns) + the snapshot adapter; its WRITER is not lifted
+   yet (the scroll/view-update island, alongside the recovered scroll hubs a5d1/a63c/a662/a66f/a74e/a6fe/
+   a616/...).  So this slice first LOCATES + recovers the 237E/2380 advance, then composes a pure
+   advance_camera producer gated produced-vs-VM on camera x/y -- a real NativeGameState producer.
+3. Grow NativeGameState with the globals the runtime advances (BFC7/spawn/counter globals: DS:2078 linked
+   counters, A47E/A482, 98C0, the spawn-stage 2376/2378/237A).
+4. The VM-free loop: frame -> recovered systems advance NativeGameState -> render/audio state -> --backend
+   native, NO VM; then --mode verify (compare to the VM-projected NativeGameState at every checkpoint),
+   extending coverage slice by slice, toward --mode standalone (every demo, VM never started).
+Residual producer-style work: walking the big lifted files (object_movement/game_state/action_spawns/
+object_behaviors/object_runtime) for any leftover inline decision -- prior assessment found the remainder
+are multi-part islands, but re-checkable per the attempt-don't-declare rule.
+
+HARD BLOCKERS (skip per loop_blockers):
+- BEC5 collision-overlap decision (62F6 -> BEC5): the attended multi-variant handler that DECIDES which
+  object dies (its death TAILS are now pure; the variant/counter-chain dispatch is the frontier).
+- Starfield parallax layer: needs the off-screen parallax trace (tooling); blocks the full native frame.
+
 ## 2026-06-29 - Bucket A: native BFC7/C037 collision-death transition -- pure % 16.8 -> 17.0; BFC7's 5 leaves all pure
 
 Recovered the long-cited "logic_id=1 + C037 sprite + latch" collision-death transition as a pure leaf, and
