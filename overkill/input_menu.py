@@ -13,6 +13,28 @@ from overkill.asm import (
     _cmp_word,
     _inc_mem_word_preserve_cf,
 )
+from overkill.recovered.systems.input import (
+    CONTROL_MAP_KEYS,
+    FIXED_DIRECTION_KEYS,
+    decode_keyboard_input_flags,
+)
+
+
+class _DsKeyStateView:
+    """Lazy ``DS:base + scancode`` accessor over VM memory for the pure input decode.
+
+    Lets the lifted poller feed ``decode_keyboard_input_flags`` the live INT 9 key-state
+    table (DS:98C4) without snapshotting all 256 bytes -- only the scancodes the decode
+    actually indexes are read.
+    """
+
+    __slots__ = ("_mem", "_seg", "_base")
+
+    def __init__(self, mem, seg: int, base: int) -> None:
+        self._mem, self._seg, self._base = mem, seg & 0xFFFF, base & 0xFFFF
+
+    def __getitem__(self, scancode: int) -> int:
+        return self._mem.rb(self._seg, (self._base + scancode) & 0xFFFF)
 
 
 def _or_mem_byte(cpu, seg: int, off: int, value: int) -> int:
@@ -168,7 +190,12 @@ def run_input_poll_0162(cpu) -> None:
         s.ip = cpu.pop()
         return
 
-    # 0169 keyboard branch.
+    # 0169 keyboard branch -- a thin adapter over the canonical decode in
+    # overkill.recovered.systems.input.  The original register/SI/flag mechanics are
+    # replayed (017E for the pack epilogue, a CMP+OR per fixed key) so the VM stays
+    # byte-reproducible, but the resulting DS:98BE button byte is then stamped from the
+    # one recovered rule the native runtime also uses -- proven equal frame-for-frame by
+    # overkill.probes.verify_native_input_poll, so the two hosts cannot drift apart.
     s.cx = 0x0008
     s.bx = 0
     cpu.set_logic_flags(0, 16)  # XOR BX,BX
@@ -177,19 +204,17 @@ def run_input_poll_0162(cpu) -> None:
     if cpu.get_flag(ZF):
         s.si = 0x2146
     s.di = 0x98C4
+    # Snapshot the decode inputs before 017E advances SI.
+    control_map = tuple(cpu.mem.rb(ds, (s.si + k) & 0xFFFF) for k in range(CONTROL_MAP_KEYS))
+    key_state = _DsKeyStateView(cpu.mem, ds, 0x98C4)
     pack_keyboard_poll_bits_017e(cpu)
 
-    for off, mask in (
-        (0x000F, 0x20),
-        (0x0039, 0x10),
-        (0x0048, 0x08),
-        (0x0050, 0x04),
-        (0x004B, 0x02),
-        (0x004D, 0x01),
-    ):
-        _cmp_byte(cpu, cpu.mem.rb(ds, (s.di + off) & 0xFFFF), 0)
+    for scancode, mask in FIXED_DIRECTION_KEYS:
+        _cmp_byte(cpu, cpu.mem.rb(ds, (s.di + scancode) & 0xFFFF), 0)
         if not cpu.get_flag(ZF):
             _or_mem_byte(cpu, ds, 0x98BE, mask)
+
+    cpu.mem.wb(ds, 0x98BE, decode_keyboard_input_flags(control_map, key_state))
     s.ip = cpu.pop()
 
 

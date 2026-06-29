@@ -1,12 +1,12 @@
 {
   "1010:0162": {
     "name": "overkill_input_poll_0162",
-    "notes": "Full keyboard/joystick input poller. Selects default keyboard table DS:213E, alternate table DS:2146 for DS:[0010]==2, or joystick path for DS:[0010]==1; packs buttons into DS:98BE. Uses the shared 017E bit-packer helper.",
+    "notes": "Full keyboard/joystick input poller. Selects default keyboard table DS:213E, alternate table DS:2146 for DS:[0010]==2, or joystick path for DS:[0010]==1; packs buttons into DS:98BE. Uses the shared 017E bit-packer helper. The keyboard path is now the canonical pure rule overkill.recovered.systems.input.decode_keyboard_input_flags (control-map pack OR the six fixed arrow/Space/Tab keys); the lifted hook replays the original register/flag mechanics for verifier-compat but stamps DS:98BE from that one rule, which the native runtime also uses. Proven byte-equal to the VM frame-for-frame by overkill.probes.verify_native_input_poll (L2/L6-boss/player-death). DS:98BE bits: 01 right, 02 left, 04 down, 08 up, 10 fire (A067 trigger), 20 secondary.",
     "status": "replaced"
   },
   "1010:017E": {
     "name": "overkill_keyboard_poll_bits_017e",
-    "notes": "Reads 8 scancodes from the control-map table at DS:213E (or DS:2146 when DS:[0010]==2), indexes the INT 9 key-state table at DS:98C4, shifts each key's pressed bit, and rcl-packs them into the button bitfield at DS:98BE. Active map DS:213E = [00,00,Z(2C),Space(39),Q(10),A(1E),O(18),P(19)]: OVERKILL uses Q/A/O/P to move + Z/Space to fire, not the arrow keys. Now owned by input_menu and shared with the full 0162 poller.",
+    "notes": "Reads 8 scancodes from the control-map table at DS:213E (or DS:2146 when DS:[0010]==2), indexes the INT 9 key-state table at DS:98C4, shifts each key's pressed bit, and rcl-packs them into the button bitfield at DS:98BE. Active map DS:213E = [00,00,Z(2C),Space(39),Q(10),A(1E),O(18),P(19)]: OVERKILL uses Q/A/O/P to move + Z/Space to fire, not the arrow keys. Now owned by input_menu and shared with the full 0162 poller. The pack rule (MSB-first, first map entry -> bit 7) is the pure overkill.recovered.systems.input.pack_control_map_bits; the hook keeps the RCL loop for its register/flag epilogue.",
     "status": "replaced"
   },
   "1010:0324": {

@@ -1,3 +1,32 @@
+## 2026-06-29 - Recover the input poll (0162/017E) as the canonical pure decode + native source
+
+The frame loop's first stage is now native.  The 0162 keyboard path is a pure decode of two inputs --
+the eight-scancode control map (DS:213E, or DS:2146 when DS:[0010]==2) and the 256-byte INT 9 key-state
+table (DS:98C4) -- so it became one canonical rule in `overkill.recovered.systems.input`:
+
+* `pack_control_map_bits` -- the 017E core (MSB-first pack: first map entry -> bit 7).
+* `decode_keyboard_input_flags` -- the full 0162 keyboard decode (control-map pack OR the six hardwired
+  arrow/Space/Tab keys) -> the DS:98BE button byte (01 right, 02 left, 04 down, 08 up, 10 fire, 20 secondary).
+* `key_state_from_pressed` -- the native input source: a host pressed-scancode set -> the key-state table
+  the decode consumes, replacing the INT 9 ISR.  No VM, one rule, shared by both hosts.
+
+The lifted hook (`input_menu.run_input_poll_0162` keyboard branch) is now a thin adapter: it replays the
+original register/SI/flag mechanics (017E pack + a CMP+OR per fixed key) for verifier-compat, then **stamps
+DS:98BE from `decode_keyboard_input_flags`** so the VM path and the native path cannot drift.  The fixed-key
+table is now imported from the one definition (dedup).
+
+VERIFIED produced-vs-VM by the new `overkill.probes.verify_native_input_poll`: at every 0162 keyboard entry
+on the oracle side it projects the control map + key state, runs the pure decode, and compares DS:98BE at the
+return -- L2_full `600/600`, L6_boss `750/750`, player_death `751/751`, 0 divergence (joystick path is a host
+port concern, skipped).  Byte-exactness of the rewired hook itself is held by test_demo_replay_equivalence
+(23 passed) + unit tests (tests/test_input_decode.py).  Lint + both layer/arch audits green.
+
+(Also fixed a pre-existing red: regenerated docs/overkill/recovered_islands.md, stale since 9dcd0b7 added
+@recovered_island to object_delta_5e1b without rerunning gen_island_manifest.py.)
+
+Next concrete stage: continue decomposing 9B2E -- the object-slot bookkeeping and the four direct movement
+bits after the input poll -> toward a native frame loop that drives the (already native) object-update pass.
+
 ## 2026-06-29 - Open the VM-free frame-loop pillar: the 9B2E/97B2 stage map + next targets
 
 Mapped the frame loop (the object-update pillar being essentially complete).  The frame is two nested
