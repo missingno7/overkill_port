@@ -13,6 +13,8 @@ follow-up that needs the death-tail demo re-verified.)
 """
 from __future__ import annotations
 
+from overkill.recovered.domain.frame_snapshot import HudLayer
+
 SCORE_BCD_BYTES = 4  # 1010:5F0D writes the four bytes 2314..2317
 
 
@@ -42,3 +44,20 @@ def bcd_add_score(score_bytes: tuple[int, ...], delta: int) -> tuple[int, ...]:
             carry = 1
         out[i] = ((hi << 4) | lo) & 0xFF
     return tuple(out)
+
+
+def advance_hud_score(hud: HudLayer, delta: int) -> HudLayer:
+    """Native score producer: return the :class:`HudLayer` with its packed-decimal
+    score advanced by the BCD ``delta`` (via the 5F0D add :func:`bcd_add_score`),
+    counters unchanged.
+
+    ``HudLayer.score_bcd`` is two words (DS:2314 low / 2316 high) = the four 5F0D
+    bytes; this packs/unpacks them around the byte-level add.  Pure: the standalone
+    runtime advances ``NativeGameState``'s score through this with no VM (the
+    dual-mode rule), and verify mode checks the result against the VM-projected HUD.
+    """
+    low, high = hud.score_bcd
+    b0, b1, b2, b3 = bcd_add_score(
+        (low & 0xFF, (low >> 8) & 0xFF, high & 0xFF, (high >> 8) & 0xFF), delta
+    )
+    return HudLayer(counters=hud.counters, score_bcd=(b0 | (b1 << 8), b2 | (b3 << 8)))

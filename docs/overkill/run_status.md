@@ -1,3 +1,13 @@
+## 2026-06-29 - Bucket C: native score producer advance_hud_score (wires bcd_add_score)
+
+The first native state **producer**: `advance_hud_score(hud, delta) -> HudLayer` advances the
+packed-decimal score (`HudLayer.score_bcd`, the two words = 5F0D's four bytes) via the faithful
+`bcd_add_score`, counters unchanged.  Pure -- the standalone runtime advances `NativeGameState`'s
+score through this with no VM (the dual-mode rule), and verify mode checks the result against the
+VM-projected HUD.  Unit-tested (incl. carry across the word boundary, 9990+10=10000).  Full suite
+green; lint (191) + recovered-layer + architecture audits pass; pure % 15.0 -> 15.1.  This closes
+the `bcd_add_score` leaf into a wired producer (no longer test-only).
+
 ## 2026-06-29 - Recover the faithful 5F0D score BCD-add as a pure system (bcd_add_score)
 
 Recovered the byte-exact packed-decimal score add at 1010:5F0D as a pure system

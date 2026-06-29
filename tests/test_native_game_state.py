@@ -16,6 +16,7 @@ from overkill.recovered.domain.native_game_state import (
 )
 from overkill.recovered.domain.object_slots import ObjectPool
 from overkill.recovered.ds_globals import VIEW_TARGET_X, VIEW_TARGET_Y
+from overkill.recovered.systems.score import advance_hud_score
 from overkill.recovered.views.object_slots import (
     FRAME_TIMER_COUNT,
     FRAME_TIMER_TABLE_BASE,
@@ -100,3 +101,14 @@ def test_read_native_game_state_detects_vm_drift_after_capture():
     assert native_game_state_mismatches(captured, read_native_game_state(mem, DS)) == (
         ("camera", "x", 0x50, 0x58),
     )
+
+
+def test_advance_hud_score_is_the_native_score_producer():
+    hud = HudLayer(counters=(1, 2, 3, 4, 5, 6), score_bcd=(0x0990, 0x0003))  # 30990
+    advanced = advance_hud_score(hud, 0x0010)  # + 10 (BCD)
+    assert advanced.score_bcd == (0x1000, 0x0003)  # 31000
+    assert advanced.counters == (1, 2, 3, 4, 5, 6)  # counters untouched
+    # Carry across the word boundary (byte1 -> byte2): 9990 + 10 = 10000.
+    rolled = advance_hud_score(HudLayer(counters=(), score_bcd=(0x9990, 0x0000)), 0x0010)
+    assert rolled.score_bcd == (0x0000, 0x0001)
+
