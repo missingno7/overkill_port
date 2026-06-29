@@ -332,6 +332,21 @@ remaining BC4B work is just the **collision-death logic_id/sprite half** (BCCB -
 -- verify those slot fields at BC4B RET on the collision-hit objects.  After that: the global
 death/spawn side-effects (counters/spawns) + the per-logic-id native dispatch.
 
+**Collision-death half recipe (assessed 2026-06-29 — the recovered pieces are all pure; compose +
+verify).** The BC4B collision-death transition fires when (read object_postmove.py 100-155):
+global_disable(DS:A47C)==0 AND active AND hazard_class(+16)!=5 AND logic_id(+18) not in {0,1} AND
+obj_type(+14) in {1,2} AND the contact test hits AND DS:A8C2 != 1.  The contact test: obj_type 1 ->
+AA46 = `view_contact_center_from_offsets_aa46`(view center + the DS:214E[DS:2384*4] dx/dy offset, with
+the si>=3 -> no-contact guard) then `view_contact_rect_test`(slot, center, half-extent 0x10); obj_type
+2 -> `postmove_contact_window_test_aa71`(slot, window from DS:237E/2380 + the spans, narrowed by the
+DS:A8C2 boss flag).  On a hit, BFC7's slot transition = previous_logic_id := old logic_id; logic_id :=
+1; transition_latch := 0; sprite_or_state := C037[obj_type] (type 1 -> 0, type 2 -> 3).  All those
+helpers are recovered pure (systems/collision.py).  OPEN to confirm when building: the exact AA46
+view-center source (DS:237E/2380 vs DS:95F2/95F4) + the AA71 X-window bounds -- read
+`collision_adapter.run_view_window_check_aa46` + the AA71 adapter.  Probe: at BC4B RET, verify
+logic_id/previous_logic_id/transition_latch/sprite for the collision-hit objects (the gate catches any
+mismatch).  This is a clean fresh-session slice; it just composes more pieces than the bounds half.
+
 ## NOTE (process) — check lifted-status before "recovering" a routine
 
 `519A` / `3153` (HUD text dispatch + Tandy glyph) were ALREADY lifted (`rendering/text.py`,
