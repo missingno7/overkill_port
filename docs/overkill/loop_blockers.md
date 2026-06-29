@@ -94,6 +94,17 @@ collision/postmove tail; that's the substantial recovery, not a clean leaf.  The
 `bc4b` postmove + the target-seek/step into native-state functions, then a per-logic-id native
 dispatch over `NativeGameState`'s pool, each verified produced-vs-VM with a `verify_native_*` probe.
 
+**Second gap — the render-side `screen_di` projection (for the native FrameSnapshot sprites):**
+building `FrameSnapshot` from `NativeGameState` (no VM) also needs each sprite's `+0C` dest
+(`screen_di`), which `frame_snapshot_adapter` currently *reads* from the VM.  It is computed in the
+per-object draw `1010:5AC8` (the present scan `A846` loops the 8D12/32CA tables calling 5AC8 per
+active slot) — **un-recovered raw ASM**.  The sprite *blit* is already recovered
+(`composite_sprites`/`verify_sprite_layer`); the *projection* (object world pos + scroll/camera →
+B800 di, or `FFFF` cull) is the missing leaf.  Recover it from 5AC8 as a pure `project_object_to_di`,
+verify native di == the VM's `+0C` across demos (same probe pattern), then the native sprite layer
+composes from `NativeGameState` instead of the VM page.  This is a render leaf (Bucket B), more
+self-contained than the object-update island — a good first target for the fresh session.
+
 ## NOTE (process) — check lifted-status before "recovering" a routine
 
 `519A` / `3153` (HUD text dispatch + Tandy glyph) were ALREADY lifted (`rendering/text.py`,
