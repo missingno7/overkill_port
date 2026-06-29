@@ -1,3 +1,24 @@
+## 2026-06-29 - Cross-level backlog map: handlers generalize; B9F0 (0x14) is the next big lifted target
+
+Ran the coverage gate per level to map the cross-level backlog.  Key finding: **the native handlers
+generalize across levels** -- AED8 (recovered for L2) is also L3's #2, native OK 735/735, ~21% of L3
+already with zero extra work.  So each handler recovery compounds across every level it appears on.
+
+L3 backlog (800f): logic_id 0x14 -> B9F0 (1723 slots, ~49% of L3) is #1 and is LIFTED (its near-calls
+were composed earlier this session); then 0x01->BE3C (558), 0x89->B2A6 (227), 0x59->F225 (131),
+0x13->8D4F (65), 0x0B->B24D (55).
+
+The remaining hot handlers split two ways:
+- **Lifted (compose existing pure primitives, the proven cheap path):** B9F0 (0x14), 8D4F (target-patrol),
+  B24D -- B9F0 is by far the biggest (~49% of L3).
+- **Raw ASM (need disassembly + new helpers/tables, a heavier recovery):** L2 0x40->8B3B (916; pulls in
+  the unrecovered 4D95 helper + DS:96D2/96EC tables), 0x01->BE3C, 0x8A->8C1F; L3 B2A6, F225.
+
+Next: recover **B9F0** as a pure whole-slot transform -- bigger/multi-branch (target-delta tracking +
+X-wrap [`b9f0_wrapped_target_x` already pure] + reached-target decision + 5E1B/5E42/5DB2/7476 sub-paths,
+all available), so best done incrementally (branch-by-branch) like B86D was.  No code changed this turn
+(read-only gate runs); the value is the cross-level map.
+
 ## 2026-06-29 - AED8 FULLY NATIVE -> L2 object-update is now MAJORITY native (53%, 3 handlers)
 
 Recovered AED8 (EFAE logic_id 0x02, the #2 L2 handler) as the pure `object_update_aed8` -- again pure
