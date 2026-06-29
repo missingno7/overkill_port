@@ -19,6 +19,21 @@ class ObjectDeactivateDispatchDecision:
 
 
 @dataclass(frozen=True, slots=True)
+class ObjectLogicDispatchAA2B:
+    """Pure first-level object-logic dispatch recovered from 1010:AA2B.
+
+    AA2B selects the per-frame object handler from the slot's ``draw_layer``
+    (SS:[BP+16]) through the CS:AA36 jump table.  ``kind`` is the address-rooted
+    handler name for the eight draw layers (0-7); draw layers 2 and 4 share the
+    EFAE second-level family dispatcher.  Like the C054 classifier this names the
+    routing without claiming a complete handler model; the adapter owns the CS:AA36
+    table read, the ``BX = layer*2`` index, and the IP jump.
+    """
+
+    kind: str
+
+
+@dataclass(frozen=True, slots=True)
 class Ab10Update:
     """Pure result of the 1010:AB10 per-frame object update (logic_id=6 path).
 

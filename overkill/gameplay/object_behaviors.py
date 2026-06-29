@@ -71,6 +71,8 @@ from overkill.recovered.systems.objects import (
     object_logic_ab10,
     object_logic_aba3,
     object_logic_ae09,
+    object_logic_dispatch_aa2b,
+    OBJECT_LOGIC_DISPATCH_AA2B_BY_LAYER,
 )
 from overkill.recovered.adapters.object_slot_adapter import read_object_slot_record
 from overkill.recovered.views.object_slots import (
@@ -1155,19 +1157,44 @@ def _run_object_logic_ab10(cpu, *, parent: str, chain: str, cx_value: int) -> No
     cpu.s.ip = cpu.pop()
 
 
+# CS:AA36 dispatch target IP for each recovered AA2B handler kind.  This adapter-side
+# map + the pure object_logic_dispatch_aa2b routing together reconstruct the CS:AA36
+# table; the hook cross-checks them against the live read (the C054 adapter pattern).
+_AA2B_HANDLER_IP_BY_KIND = {
+    "postmove_prelude_bc45": 0xBC45,
+    "tracked_logic_ad04": 0xAD04,
+    "family_dispatch_efae": 0xEFAE,
+    "action_44af": 0x44AF,
+    "collision_tail_aac2": 0xAAC2,
+    "logic_ab10": 0xAB10,
+    "handler_c3f8": 0xC3F8,
+}
+
+
 def _run_object_logic_dispatch_aa2b(cpu, *, parent: str, chain: str, cx_value: int) -> None:
     """Run AA2B's first-level dispatch and leave IP at the selected target.
 
-    AA2B dispatches through CS:AA36 using SS:[BP+16].  It is a jump-table stub,
-    not a stable gameplay body, so keep the hook at this exact boundary instead
-    of executing the selected behavior inline.
+    AA2B dispatches through CS:AA36 using the slot's draw_layer (SS:[BP+16]).  It is a
+    jump-table stub, not a stable gameplay body, so keep the hook at this exact
+    boundary instead of executing the selected behavior inline.  The recovered pure
+    ``object_logic_dispatch_aa2b`` owns the draw-layer -> handler routing; this adapter
+    keeps the live CS:AA36 read authoritative and cross-checks the pure decision against
+    it (so it stays robust for any future draw layer outside the recovered 0-7 set).
     """
     ss = cpu.s.ss & 0xFFFF
     bp = cpu.s.bp & 0xFFFF
     slot = ObjectSlotView(cpu.mem, ss, bp)  # this object's record (SS:BP)
+    draw_layer = slot.draw_layer & 0xFFFF
     cpu.s.bx = slot.draw_layer
     cpu.s.bx = cpu.shift(4, cpu.s.bx, 1, 16)  # SHL BX,1
     target_ip = cpu.mem.rw(cpu.s.cs & 0xFFFF, (0xAA36 + cpu.s.bx) & 0xFFFF)
+    if draw_layer < len(OBJECT_LOGIC_DISPATCH_AA2B_BY_LAYER):
+        expected_ip = _AA2B_HANDLER_IP_BY_KIND[object_logic_dispatch_aa2b(draw_layer).kind]
+        if expected_ip != target_ip:
+            raise AssertionError(
+                f"pure AA2B dispatch disagrees with CS:AA36 (draw layer {draw_layer:#x}): "
+                f"{expected_ip:#06x} != live {target_ip:#06x}"
+            )
     cpu.s.ip = target_ip
 
 

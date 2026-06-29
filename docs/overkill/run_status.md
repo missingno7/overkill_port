@@ -1,3 +1,21 @@
+## 2026-06-29 - Bucket C: native AA2B first-level object-logic dispatch routing (integration slice #1) -- pure % 17.1
+
+The first integration slice from the roadmap below: the object-update dispatch skeleton.  AA2B selects
+the per-frame object handler from the slot's draw_layer (0-7) through the CS:AA36 jump table; recovered
+the draw-layer -> handler routing as the pure `object_logic_dispatch_aa2b` (systems/objects.py) returning
+`ObjectLogicDispatchAA2B(kind)` -- the 8 address-rooted handler kinds (postmove_prelude_bc45 / tracked_
+logic_ad04 / family_dispatch_efae[layers 2,4] / action_44af / collision_tail_aac2 / logic_ab10 /
+handler_c3f8), mirroring the existing C054 dispatch-classifier pattern.  The hook keeps the live CS:AA36
+read authoritative and cross-checks the pure decision against it (the C054 adapter pattern), so it stays
+robust for any draw layer outside the recovered set; the adapter owns the kind -> IP map.  **Verified**:
+a VM-free synthetic oracle (`tests/test_object_logic_dispatch_aa2b.py`) + the produced-vs-VM probe
+`verify_native_object_logic_dispatch_aa2b` (reads each dispatch's draw_layer, asserts the recovered
+routing's IP == the live CS:AA36 entry) -- **29,970 dispatches across L2/L6_boss/L3/start_to_end, 0
+divergence, 0 out-of-range** (draw_layers 1/2/4/5/6 observed; the range stays <=7, confirming the 8-entry
+table).  15th cross-demo producer.  This is the routing skeleton the native object-update will dispatch
+through; the per-handler native slot-transforms (roadmap #1) remain.  Both audits + lint (210) pass; full
+suite green (616 passed).
+
 ## 2026-06-29 - Phase transition: per-routine producer leaves harvested -> Bucket-C integration roadmap
 
 This session harvested the demand-driven loop's per-routine producer leaves: pure % 15.1 -> 17.0 (14
@@ -16,9 +34,11 @@ RECOVERED native building blocks:
 
 REMAINING to §1 (integration, recommended order):
 1. Native object handlers.  AA2B is the 1st-level dispatch by draw_layer (0-7) through CS:AA36 -> 8 handlers
-   (BC45 postmove / AD04 tracked / EFAE family-dispatch[layers 2,4] / 44AF / AAC2 / AB10 / C3F8), mostly
-   recovered but VM-coupled.  The native object-update needs each handler's FULL slot-transform native
-   (movement halves done; the animation/state/interpreted halves remain) then a pure dispatch over them.
+   (BC45 postmove / AD04 tracked / EFAE family-dispatch[layers 2,4] / 44AF / AAC2 / AB10 / C3F8).  The
+   **routing is now recovered + verified** (`object_logic_dispatch_aa2b`, integration slice #1, 29,970
+   dispatches 0 div).  What REMAINS: each handler's FULL slot-transform native (movement halves done; the
+   animation/state/interpreted halves remain) + the EFAE second-level dispatch, then a pure object-update
+   that walks the pool and dispatches through the recovered routing to the native handlers.
 2. Camera/scroll island.  The view target (DS:237E/2380 -> NativeGameState.camera) is currently only READ
    in the lifted layer (object_behaviors/object_spawns) + the snapshot adapter; its WRITER is not lifted
    yet (the scroll/view-update island, alongside the recovered scroll hubs a5d1/a63c/a662/a66f/a74e/a6fe/

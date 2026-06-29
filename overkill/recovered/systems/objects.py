@@ -17,6 +17,7 @@ from overkill.recovered.domain.object_behaviors import (
     BossGroupSlotTransition,
     ObjectBoundsTileDecision,
     ObjectDeactivateDispatchDecision,
+    ObjectLogicDispatchAA2B,
 )
 from overkill.recovered.domain.object_slots import (
     FreeSlotAllocation,
@@ -692,6 +693,39 @@ def object_deactivate_dispatch_decision_c054(logic_id: int) -> ObjectDeactivateD
     if ax_script is not None:
         return ObjectDeactivateDispatchDecision("script_select", ax_script=ax_script)
     return ObjectDeactivateDispatchDecision("none")
+
+
+# 1010:AA2B first-level object-logic dispatch: the per-frame object handler chosen
+# from the slot's draw_layer (0-7) through the CS:AA36 jump table.  Address-rooted
+# handler names (draw layers 2 and 4 share the EFAE second-level family dispatcher);
+# the adapter owns the CS:AA36 table -> IP mapping.
+OBJECT_LOGIC_DISPATCH_AA2B_BY_LAYER = (
+    "postmove_prelude_bc45",   # 0 -> 1010:BC45 (run_object_postmove_prelude_bc45)
+    "tracked_logic_ad04",      # 1 -> 1010:AD04
+    "family_dispatch_efae",    # 2 -> 1010:EFAE (second-level family dispatch)
+    "action_44af",             # 3 -> 1010:44AF
+    "family_dispatch_efae",    # 4 -> 1010:EFAE (shares the EFAE dispatcher)
+    "collision_tail_aac2",     # 5 -> 1010:AAC2
+    "logic_ab10",              # 6 -> 1010:AB10 (object_logic_ab10)
+    "handler_c3f8",            # 7 -> 1010:C3F8
+)
+
+
+def object_logic_dispatch_aa2b(draw_layer: int) -> ObjectLogicDispatchAA2B:
+    """Pure source-like first-level object-logic routing recovered from 1010:AA2B.
+
+    AA2B doubles the slot's ``draw_layer`` and indexes the CS:AA36 jump table to pick
+    the per-frame object handler.  This owns the recovered draw-layer -> handler
+    routing for the eight defined layers (0-7); the adapter replays the original
+    ``BX = layer*2`` index, the table read, and the IP jump, and cross-checks this
+    decision.  Raises ``ValueError`` for an out-of-range draw layer -- the original
+    table has no entry there, so the adapter must fall back to the live read rather
+    than this guessing.
+    """
+    dl = draw_layer & 0xFFFF
+    if dl >= len(OBJECT_LOGIC_DISPATCH_AA2B_BY_LAYER):
+        raise ValueError(f"no AA2B object-logic handler for draw layer {dl:#06x}")
+    return ObjectLogicDispatchAA2B(OBJECT_LOGIC_DISPATCH_AA2B_BY_LAYER[dl])
 
 
 def object_pool_find_free(pool: ObjectPool, cursor: int) -> FreeSlotAllocation:
