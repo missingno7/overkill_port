@@ -16,6 +16,7 @@ from overkill.gameplay.object_deactivation import (
 )
 from overkill.gameplay.object_runtime_common import _run_interpreted_near_call_observed
 from overkill.recovered.systems.collision import (
+    bec5_collision_variant_family,
     collision_damage_counter_chain_bf25,
     object_grid_overlap_62f6,
 )
@@ -132,6 +133,10 @@ def _run_collision_handler_bec5_observed(cpu, *, collided_bx: int, parent: str, 
         cpu.s.ip = cpu.pop()
 
     variant = cand.logic_id
+    # The pure recovered classifier owns the variant -> reaction-family routing; the
+    # adapter keeps the per-variant BD0D returns + the runtime owner-link test, and
+    # cross-checks the pure family at the fallback (the C054 adapter pattern).
+    dispatch_family = bec5_collision_variant_family(variant)
 
     for target in (0x0007, 0x0008, 0x000C):
         _cmp_word(cpu, variant, target)
@@ -188,6 +193,11 @@ def _run_collision_handler_bec5_observed(cpu, *, collided_bx: int, parent: str, 
     # back to the moving object through +30h.  Linked contacts run the observed
     # counter/death transition below; non-linked contacts are a deliberate no-op
     # in the original ASM and just RET with the CMP flags live.
+    if dispatch_family.kind != "owner_linked_or_noop":
+        raise AssertionError(
+            f"pure BEC5 variant family disagrees: reached the owner-link fallback for "
+            f"variant {variant:04X} classified as {dispatch_family.kind}"
+        )
     owner_bp = cand.acquired_target_ptr
     _cmp_word(cpu, bp, owner_bp)
     if bp == owner_bp:

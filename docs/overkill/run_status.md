@@ -1,3 +1,20 @@
+## 2026-06-29 - Bucket A: native BEC5 variant dispatch -- the collision island is COMPLETE (pure % 18.2)
+
+Recovered the last BEC5 piece: the variant-dispatch family classifier.  `bec5_collision_variant_family`
+(systems/collision.py) classifies the collided candidate's logic id into the reaction family BEC5 routes
+to -- `bd0d_then_a8c2` (05/06/07/08/0C), `a8c2_no_bd0d` (09), `sprite_variant_2` (02), or
+`owner_linked_or_noop` (any other id, the runtime owner-link fallback).  The BEC5 hook keeps its
+per-variant BD0D returns + the runtime owner test and cross-checks the pure family at the fallback (the
+C054 adapter pattern).  **Verified**: VM-free unit tests (all families) + the hybrid frame-verifier on
+L6_boss + L2_full (1300 frames each, 0 divergence; the cand-side fallback cross-check held on every real
+collision).  21st pure recovery; pure % 18.2.
+
+**MILESTONE -- the object-vs-object collision island is now COMPLETE in native source:** detection
+(62F6 grid overlap) + variant dispatch (BEC5) + damage (BF25 counter chain) + the death/spawn tails
+(BFC7 + score-add/7420/C054/C037 transition) are all recovered + verified.  This was the early-session
+"attended frontier" (the bc4b collision-death I handed off); re-attempting it after the tails landed
+yielded the whole island, decision by decision.  Both audits + lint (215) pass; full suite green (639).
+
 ## 2026-06-29 - Bucket A: native 62F6 object-vs-object grid overlap predicate -- pure % 18.1 (20th recovery)
 
 Continued reopening the "attended" collision island: recovered the 1010:62F6 overlap DETECTION (the

@@ -9,6 +9,7 @@ from __future__ import annotations
 from overkill.recovered.domain.collision import (
     CollisionDamageChainBF25,
     CollisionDeathTransition,
+    CollisionVariantDispatchBEC5,
     ObjectOverlapScanDecision,
     PostMoveContactWindow,
     PostMoveYClampResult,
@@ -360,6 +361,30 @@ def object_grid_overlap_62f6(self_x_cell: int, self_y_cell: int, cand_x: int, ca
         x_cells.append((x_cells[-1] - OBJECT_GRID_CELL_PIXELS) & 0xFFFF)
         x_cells.append((x_cells[-1] - OBJECT_GRID_CELL_PIXELS) & 0xFFFF)
     return (self_x_cell & 0xFFFF) in x_cells
+
+
+# 1010:BEC5 object-vs-object collision variant dispatch (by the collided slot's logic id).
+COLLISION_VARIANT_BD0D_A8C2 = frozenset((0x0005, 0x0006, 0x0007, 0x0008, 0x000C))
+COLLISION_VARIANT_A8C2_NO_BD0D = 0x0009
+COLLISION_VARIANT_SPRITE_2 = 0x0002
+
+
+def bec5_collision_variant_family(variant: int) -> CollisionVariantDispatchBEC5:
+    """Pure source-like 1010:BEC5 collision-reaction family classification.
+
+    Classifies the collided candidate's logic id (``variant``) into the reaction family
+    BEC5 routes to -- BD0D-then-A8C2 (05/06/07/08/0C), A8C2 without BD0D (09), the
+    sprite-0033 variant-2 path (02), or the owner-linked/no-op fallback (any other id).
+    The adapter replays the per-variant BD0D return address and the runtime owner-link
+    test; this owns the stable family routing."""
+    v = variant & 0xFFFF
+    if v in COLLISION_VARIANT_BD0D_A8C2:
+        return CollisionVariantDispatchBEC5("bd0d_then_a8c2")
+    if v == COLLISION_VARIANT_A8C2_NO_BD0D:
+        return CollisionVariantDispatchBEC5("a8c2_no_bd0d")
+    if v == COLLISION_VARIANT_SPRITE_2:
+        return CollisionVariantDispatchBEC5("sprite_variant_2")
+    return CollisionVariantDispatchBEC5("owner_linked_or_noop")
 
 
 # 1010:BF25 collision-damage counter chain.  Each hit decrements counter_20 a

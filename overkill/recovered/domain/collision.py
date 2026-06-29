@@ -88,6 +88,23 @@ class ObjectOverlapScanDecision:
 
 
 @dataclass(frozen=True, slots=True)
+class CollisionVariantDispatchBEC5:
+    """Pure family classification for the 1010:BEC5 object-vs-object collision handler.
+
+    BEC5 routes by the collided candidate's logic id (``variant``) to a reaction family,
+    address-rooted like the C054 classifier: ``bd0d_then_a8c2`` (variants 05/06/07/08/0C
+    -- deactivate the collided slot via BD0D, then A8C2 gates the BF25 counter chain vs
+    the BFC7 death), ``a8c2_no_bd0d`` (variant 09 -- the same A8C2 gate without the BD0D
+    prep), ``sprite_variant_2`` (variant 02 -- clear the collided slot and run BF25 with
+    the entry chosen by its sprite==0033h), or ``owner_linked_or_noop`` (any other variant
+    -- a runtime check of whether the collided slot is linked back to the mover).  The
+    adapter owns the per-variant BD0D return address and the runtime owner-link test.
+    """
+
+    kind: str
+
+
+@dataclass(frozen=True, slots=True)
 class CollisionDamageChainBF25:
     """Pure result of the 1010:BF25 collision-damage counter chain.
 
