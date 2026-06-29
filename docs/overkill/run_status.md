@@ -1,3 +1,16 @@
+## 2026-06-29 - B9F0 Path D (5DB2 seek) -> B9F0 92% native, L3 -> 65.9%
+
+Second B9F0 slice: the A482==A4E4 pre-step (target deltas +32/+34 += DS:2342/2346, X-wrap via
+`b9f0_wrapped_target_x`, the `b9f0_reached_target` decision) + **Path D, the 5DB2 seek** (not reached,
+x <= target: align to even pixels, seek toward the updated target via the pure `object_target_seek_step_5db2`,
+mode 1) + Path B-no-helper (reached, BA5A doesn't fire -> the BA67 sprite-refresh).  The two 5E42 paths
+(Path C overshoot, the BA5A motion helper) still return None.
+
+Verified on L3_full (800f): B9F0 `native OK 1592/1723 fail=0` (up from 810 -> ~92% of B9F0), zero
+divergence.  L3 NATIVE COVERAGE 43.7% -> **65.9%** (4 handlers).  lint 218; audits + gate unit test pass.
+Remaining: the 131 5E42-path B9F0 slots (Path C + BA5A) -- the final B9F0 slice (5E1B/5E42 compose, like
+B86D's B8F8).
+
 ## 2026-06-29 - B9F0 (0x14) started incrementally: the sprite-refresh path native (L3 -> 43.7%)
 
 Began B9F0 (L3's #1, ~49%) the B86D way -- incrementally, branch by branch.  First slice: the

@@ -39,7 +39,10 @@ from overkill.recovered.systems.movement import (
     object_target_seek_step_5db2,
 )
 from overkill.recovered.systems.objects import (
+    b9f0_low_counter_runs_helper,
+    b9f0_periodic_helper_mask,
     b9f0_sprite_from_frame,
+    b9f0_wrapped_target_x,
     object_update_ae09,
     object_update_aed8,
     object_update_b86d_drift,
@@ -85,6 +88,12 @@ B9F0_IP = 0xB9F0
 B9F0_A482 = 0xA482               # DS:A482; == A4E4h enters the movement paths, else sprite-refresh
 B9F0_A482_MOVEMENT_SENTINEL = 0xA4E4
 B9F0_FRAME_233C = 0x233C         # DS:233C global frame -> b9f0_sprite_from_frame on the BA67 tail
+B9F0_DELTA_Y_2342 = 0x2342       # DS:2342 global Y delta added to target_y (+32)
+B9F0_DELTA_X_2346 = 0x2346       # DS:2346 global X delta added to target_x (+34)
+B9F0_COUNTER_A47E = 0xA47E       # DS:A47E level counter (< 6 -> BA5A helper fires)
+B9F0_DIFFICULTY_BEDC = 0xBEDC    # DS:BEDC difficulty -> periodic-helper tick mask
+B9F0_TICK_2340 = 0x2340          # DS:2340 tick counter for the periodic BA5A helper
+B9F0_SEEK_MODE = 0x0001          # DS:2308 mode the Path-D seek sets before 5DB2 (mode 1)
 
 # B86D (logic_id 0x1D) fall-through inputs.  B86D tail-jumps to the shared BC4B post-move
 # stage rather than RETurning, so its slot-write boundary is a fixed IP, not a return address.
@@ -273,24 +282,56 @@ def _arm_aed8(cpu, class_table_cache: dict) -> _Pending | None:
 
 
 def _arm_b9f0(cpu, class_table_cache: dict) -> _Pending | None:
-    """Capture + predict B9F0 (logic_id 0x14): the sprite-refresh path only (A482 != A4E4 -> BA67).
+    """Capture + predict B9F0 (logic_id 0x14), compared at the BC4B handoff.
 
-    B9F0 tail-jumps to BC4B (compare at that handoff).  The A482 == A4E4 movement paths (5DB2 seek /
-    5E42 overshoot / BA5A helper) are not modelled yet -> fallback (None).  On the sprite-refresh tail
-    the sprite becomes DS:233C frame + 1Ch and nothing else changes.
+    Models three of the four paths: the sprite-refresh tail (A482 != A4E4, or the reached-target path
+    when its BA5A helper does not fire) and Path D, the 5DB2 seek (A482 == A4E4, not reached, x <= target).
+    The two 5E42 paths -- the overshoot branch and the BA5A motion helper -- return None (fallback) for now.
     """
     ss = cpu.s.ss & 0xFFFF
     ds = cpu.s.ds & 0xFFFF
     bp = cpu.s.bp & 0xFFFF
-    if (cpu.mem.rw(ds, B9F0_A482) & 0xFFFF) == B9F0_A482_MOVEMENT_SENTINEL:
-        return None  # the A482==A4E4 movement paths (5DB2/5E42/BA5A) -- added next
     substate = cpu.mem.rw(ss, (bp + OFF_SUBSTATE) & 0xFFFF)
     direction = cpu.mem.rw(ss, (bp + OFF_DIRECTION_OR_STEP) & 0xFFFF)
     x = cpu.mem.rw(ss, (bp + OFF_X) & 0xFFFF)
     y = cpu.mem.rw(ss, (bp + OFF_Y) & 0xFFFF)
     active = cpu.mem.rw(ss, (bp + OFF_ACTIVE_WORD) & 0xFFFF)
-    sprite = b9f0_sprite_from_frame(cpu.mem.rw(ds, B9F0_FRAME_233C))
-    predicted = (substate, direction, sprite, x, y, active)
+    sprite = cpu.mem.rw(ss, (bp + OFF_SPRITE_OR_STATE) & 0xFFFF)
+
+    def sprite_refresh() -> _Pending:
+        # BA67 tail: sprite = DS:233C frame + 1Ch; nothing else changes.
+        refreshed = b9f0_sprite_from_frame(cpu.mem.rw(ds, B9F0_FRAME_233C))
+        return _Pending(ss=ss, bp=bp, exit_ip=BC4B_IP,
+                        predicted=(substate, direction, refreshed, x, y, active), read_post=_read_slot_6tuple)
+
+    if (cpu.mem.rw(ds, B9F0_A482) & 0xFFFF) != B9F0_A482_MOVEMENT_SENTINEL:
+        return sprite_refresh()  # Path A
+
+    # A482 == A4E4: apply the global target deltas into +32/+34, wrap target X (BA07..BA1A).
+    delta_y = cpu.mem.rw(ds, B9F0_DELTA_Y_2342)
+    target_y = (cpu.mem.rw(ss, (bp + OFF_TARGET_Y) & 0xFFFF) + delta_y) & 0xFFFF
+    target_x = b9f0_wrapped_target_x(
+        (cpu.mem.rw(ss, (bp + OFF_TARGET_X) & 0xFFFF) + cpu.mem.rw(ds, B9F0_DELTA_X_2346)) & 0xFFFF
+    )
+    # reached-target (mirrors b9f0_reached_target on the updated targets; avoids building a record here).
+    reached = ((y + delta_y) & 0xFFFF) == target_y and (x & 0xFFFF) == target_x
+    if reached:
+        # Path B: the BA5A motion helper fires on a low level counter or a periodic tick -> defer (5E42).
+        if b9f0_low_counter_runs_helper(cpu.mem.rw(ds, B9F0_COUNTER_A47E)):
+            return None
+        mask = b9f0_periodic_helper_mask(cpu.mem.rw(ds, B9F0_DIFFICULTY_BEDC))
+        if (cpu.mem.rw(ds, B9F0_TICK_2340) & mask) == mask:
+            return None
+        return sprite_refresh()  # reached, no helper -> the BA67 sprite-refresh tail
+
+    if (x & 0xFFFF) > target_x:
+        return None  # Path C overshoot (5E42) -- deferred
+
+    # Path D: align to even pixels and seek toward the updated target via the pure 5DB2 (mode 1).
+    table = tuple(cpu.mem.rb(ds, (DIRECTION_TABLE_A348 + i) & 0xFFFF) for i in range(16))
+    target = MovementTarget(y_word=target_y & 0xFFFE, x_word=target_x & 0xFFFE)
+    seek = object_target_seek_step_5db2(x & 0xFFFE, y & 0xFFFE, direction, target, B9F0_SEEK_MODE, table)
+    predicted = (substate, seek.direction_or_step, sprite, seek.x_word, seek.y_word, active)
     return _Pending(ss=ss, bp=bp, exit_ip=BC4B_IP, predicted=predicted, read_post=_read_slot_6tuple)
 
 
