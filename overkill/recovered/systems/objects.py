@@ -20,6 +20,7 @@ from overkill.recovered.domain.object_behaviors import (
     ObjectLogicDispatchAA2B,
 )
 from overkill.recovered.domain.object_slots import (
+    FormationSpawnSeed7476,
     FreeSlotAllocation,
     LinkedEffectSpawnSeed7420,
     ObjectPool,
@@ -135,6 +136,50 @@ def object_spawn_seed_7420(source_x: int, source_y: int, source_type: int,
         slot_field_26=source_type & 0xFFFF,
         sprite_or_state=(source_type + OBJECT_SPAWN_SEED_7420_SPRITE_BIAS) & 0xFFFF,
         gate_or_layer=0x0000,
+    )
+
+
+# 1010:7476 formation child spawn template.  B800 stamps a freshly allocated slot with a
+# logic_id=0Bh child offset from the parent slot; the final-boss mode (DS:A8C2 == 1) uses
+# the wider Y / narrower X offsets.  The view globals DS:2380/237E set the movement deltas.
+FORMATION_SPAWN_SEED_7476_Y_OFFSET = 0x000C
+FORMATION_SPAWN_SEED_7476_X_OFFSET = 0x000C
+FORMATION_SPAWN_SEED_7476_BOSS_Y_OFFSET = 0x001C
+FORMATION_SPAWN_SEED_7476_BOSS_X_OFFSET = 0x0008
+FORMATION_SPAWN_SEED_7476_VIEW_Y_BIAS = 0x0009
+
+
+def formation_spawn_seed_7476(slot_x: int, slot_y: int, boss_mode: bool,
+                              view_y_2380: int, view_x_237e: int) -> FormationSpawnSeed7476:
+    """Pure 1010:7476 formation child spawn template recovered from the B800 -> 7476 stamp.
+
+    The child is placed relative to the parent: ``y = slot_y + 1Ch``/``0Ch`` and
+    ``x = slot_x + 08h``/``0Ch`` (the boss-mode pair when ``boss_mode``), stamped as an
+    active ``logic_id=0Bh`` / ``hazard_class=2`` / ``sprite_or_state=31h`` child with
+    ``scan_enable_or_solid=0`` / ``direction_or_step=0`` / ``gate_or_layer=1`` /
+    ``scan_flag=0`` / ``substate=FFFFh``, and given view-relative deltas
+    ``move_delta_y = y - (view_y_2380 + 9)`` and ``move_delta_x = x - view_x_237e``.  The
+    adapter owns the 7573 allocation, the DS:98C0 -> DS:BEFF side effect, and the write
+    order; this owns the field values.
+    """
+    y_off = FORMATION_SPAWN_SEED_7476_BOSS_Y_OFFSET if boss_mode else FORMATION_SPAWN_SEED_7476_Y_OFFSET
+    x_off = FORMATION_SPAWN_SEED_7476_BOSS_X_OFFSET if boss_mode else FORMATION_SPAWN_SEED_7476_X_OFFSET
+    y = (slot_y + y_off) & 0xFFFF
+    x = (slot_x + x_off) & 0xFFFF
+    return FormationSpawnSeed7476(
+        y_word=y,
+        x_word=x,
+        active_word=0x0001,
+        scan_enable_or_solid=0x0000,
+        direction_or_step=0x0000,
+        sprite_or_state=0x0031,
+        gate_or_layer=0x0001,
+        scan_flag=0x0000,
+        hazard_class=0x0002,
+        logic_id=0x000B,
+        substate=0xFFFF,
+        move_delta_y=(y - ((view_y_2380 + FORMATION_SPAWN_SEED_7476_VIEW_Y_BIAS) & 0xFFFF)) & 0xFFFF,
+        move_delta_x=(x - view_x_237e) & 0xFFFF,
     )
 
 

@@ -177,3 +177,32 @@ class LinkedEffectSpawnSeed7420:
     slot_field_26: int
     sprite_or_state: int
     gate_or_layer: int
+
+
+@dataclass(frozen=True, slots=True)
+class FormationSpawnSeed7476:
+    """Pure field values stamped into a freshly allocated slot by 1010:7476.
+
+    Recovered from the B800 -> 7476 formation child spawn stamp: a new object is placed
+    relative to the parent slot's position (``y = slot_y + 1Ch``/``0Ch`` and
+    ``x = slot_x + 08h``/``0Ch`` -- the larger Y / smaller X offsets apply in final-boss
+    mode, DS:A8C2 == 1), stamped as an active ``logic_id=0Bh`` / ``hazard_class=2`` /
+    ``sprite_or_state=31h`` object, and given view-relative movement deltas
+    (``move_delta_y = y - (DS:2380 + 9)``, ``move_delta_x = x - DS:237E``).  Fields are in
+    the original stamp order so the seed stays byte-faithful; the adapter owns the 7573
+    allocation, the DS:98C0 -> DS:BEFF side effect, and the DOS write order.
+    """
+
+    y_word: int
+    x_word: int
+    active_word: int
+    scan_enable_or_solid: int
+    direction_or_step: int
+    sprite_or_state: int
+    gate_or_layer: int
+    scan_flag: int
+    hazard_class: int
+    logic_id: int
+    substate: int
+    move_delta_y: int
+    move_delta_x: int

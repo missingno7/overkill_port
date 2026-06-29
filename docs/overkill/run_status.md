@@ -1,3 +1,21 @@
+## 2026-06-29 - Bucket A: native 7476 formation child spawn template -- pure % 17.5
+
+Recovered the shared 7476 formation child spawn (reached from B800/B73E) as a pure source-level
+template, the 7420 pattern again.  `formation_spawn_seed_7476` (systems/objects.py) returns the new
+`FormationSpawnSeed7476`: the child is placed relative to the parent (`y = slot_y + 1Ch`/`0Ch`,
+`x = slot_x + 08h`/`0Ch` -- the wider-Y/narrower-X pair in final-boss mode DS:A8C2==1), stamped as an
+active `logic_id=0Bh` / `hazard_class=2` / `sprite_or_state=31h` child, and given view-relative move
+deltas (`move_delta_y = y - (DS:2380 + 9)`, `move_delta_x = x - DS:237E`).  The hook
+`_run_formation_spawn_7476_observed` now sources every child field from the seed, keeping the 7573
+allocation, the DS:98C0 -> BEFF side effect, and the original AX/CX/DX register + flag choreography.
+**Verified**: a VM-free synthetic oracle (`tests/test_formation_spawn_seed_7476.py` -- normal + boss
+offsets + 16-bit delta wrap) + the produced-vs-VM probe `verify_native_formation_spawn_seed_7476`
+(predicts the seed from parent slot + A8C2 + view globals, compares the allocated child slot) -- **33
+formation spawns across L2/L6_boss/L3/start_to_end, 0 divergence** (L6_boss's 29 exercise the boss-mode
+offsets).  17th cross-demo producer; the B73E formation path now uses it.  (b86d/b9f0 still reach 7476
+through the interpreter; rewiring them to this now-pure helper is a follow-on, gated by demo-replay.)
+Both audits + lint (212) pass; full suite green (623 passed).
+
 ## 2026-06-29 - Bucket A: B24D fully composed (5E42 + B250 + AD60 tail) -- coastline -1 interpreted frontier
 
 Direct follow-on to the B250 recovery: B24D (EFAE logic_id 11) was lifted only up to the B250

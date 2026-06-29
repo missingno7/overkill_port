@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from overkill.asm import _add_reg16, _cmp_word, _dec_mem_word_preserve_cf
 from overkill.recovered.systems.objects import (
+    formation_spawn_seed_7476,
     object_spawn_seed_7420,
     object_spawn_seed_8209,
     object_spawn_seed_a4ea,
@@ -168,7 +169,13 @@ def _run_c054_c12d_effect_spawn_tail(cpu, *, object_bp: int, selector_ax: int) -
 
 
 def _run_formation_spawn_7476_observed(cpu, *, parent: str, chain: str, cx_value: int) -> None:
-    """Run observed B800 -> 7476 helper that spawns a formation child object."""
+    """Run the B800/B73E -> 7476 helper that spawns a formation child object.
+
+    The pure :func:`formation_spawn_seed_7476` owns the child field values (the parent-
+    relative Y/X with the final-boss offset pair, the fixed logic_id=0Bh stamp, and the
+    view-relative move deltas); this adapter owns the 7573 allocation, the DS:98C0 -> BEFF
+    side effect, the DOS write order, and the original AX/CX/DX register + flag choreography.
+    """
     ds = cpu.s.ds & 0xFFFF
     ss = cpu.s.ss & 0xFFFF
     bp = cpu.s.bp & 0xFFFF
@@ -182,6 +189,11 @@ def _run_formation_spawn_7476_observed(cpu, *, parent: str, chain: str, cx_value
     if mem.rb(ds, 0x98C0) != 0:
         mem.wb(ds, 0xBEFF, 0x1A)
 
+    seed = formation_spawn_seed_7476(
+        slot.x_word, slot.y_word, mem.rw(ds, 0xA8C2) == 0x0001,
+        mem.rw(ds, 0x2380), mem.rw(ds, 0x237E),
+    )
+
     cpu.s.cx = 0x000C
     cpu.s.dx = 0x000C
     _cmp_word(cpu, mem.rw(ds, 0xA8C2), 0x0001)
@@ -193,23 +205,23 @@ def _run_formation_spawn_7476_observed(cpu, *, parent: str, chain: str, cx_value
     old_ax = cpu.s.ax
     cpu.s.ax = (cpu.s.ax + cpu.s.cx) & 0xFFFF
     cpu.set_add_flags(old_ax, cpu.s.cx, old_ax + cpu.s.cx, 16)
-    dst = ObjectSlotView(mem, ds, bx)  # the spawned/target object's record (DS:BX)
-    dst.y_word = cpu.s.ax
+    dst = ObjectSlotView(mem, ds, bx)  # the spawned child's record (DS:BX)
+    dst.y_word = seed.y_word
     cpu.s.ax = slot.x_word
     old_ax = cpu.s.ax
     cpu.s.ax = (cpu.s.ax + cpu.s.dx) & 0xFFFF
     cpu.set_add_flags(old_ax, cpu.s.dx, old_ax + cpu.s.dx, 16)
-    dst.x_word = cpu.s.ax
+    dst.x_word = seed.x_word
 
-    dst.active_word = 0x0001
-    dst.scan_enable_or_solid = 0x0000
-    dst.direction_or_step = 0x0000
-    dst.sprite_or_state = 0x0031
-    dst.gate_or_layer = 0x0001
-    dst.scan_flag = 0x0000
-    dst.hazard_class = 0x0002
-    dst.logic_id = 0x000B
-    dst.substate = 0xFFFF
+    dst.active_word = seed.active_word
+    dst.scan_enable_or_solid = seed.scan_enable_or_solid
+    dst.direction_or_step = seed.direction_or_step
+    dst.sprite_or_state = seed.sprite_or_state
+    dst.gate_or_layer = seed.gate_or_layer
+    dst.scan_flag = seed.scan_flag
+    dst.hazard_class = seed.hazard_class
+    dst.logic_id = seed.logic_id
+    dst.substate = seed.substate
 
     cpu.s.ax = dst.y_word
     cpu.s.cx = (mem.rw(ds, 0x2380) + 0x0009) & 0xFFFF
@@ -217,13 +229,13 @@ def _run_formation_spawn_7476_observed(cpu, *, parent: str, chain: str, cx_value
     old_ax = cpu.s.ax
     cpu.s.ax = (cpu.s.ax - cpu.s.cx) & 0xFFFF
     cpu.set_sub_flags(old_ax, cpu.s.cx, old_ax - cpu.s.cx, 16)
-    dst.move_delta_y = cpu.s.ax
+    dst.move_delta_y = seed.move_delta_y
     cpu.s.ax = dst.x_word
     cpu.s.cx = mem.rw(ds, 0x237E)
     old_ax = cpu.s.ax
     cpu.s.ax = (cpu.s.ax - cpu.s.cx) & 0xFFFF
     cpu.set_sub_flags(old_ax, cpu.s.cx, old_ax - cpu.s.cx, 16)
-    dst.move_delta_x = cpu.s.ax
+    dst.move_delta_x = seed.move_delta_x
 
 
 def _run_linked_effect_spawn_7420_observed(cpu) -> None:
