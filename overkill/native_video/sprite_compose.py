@@ -1,0 +1,50 @@
+"""Compose the native sprite draw list from a NativeGameState's object pools (Bucket C).
+
+This is the brief's "compose the FrameSnapshot sprites from recovered state instead of
+capturing the VM page" step.  It walks ``NativeGameState``'s two object pools in the present
+scan's order (gameplay table DS:8D12 first, then effect table DS:32CA -- the order proven
+witnessed-exact by ``frame_snapshot_adapter``/``witness_draw_order``), takes the active slots,
+and projects each through the recovered draw placement (:func:`project_object_screen_di`, the
+35CC ``+0C`` composition, verified byte-exact vs the VM at ~17k draws), dropping culled
+objects.  The result is the ``(sprite, screen_di)`` draw list the backend blits via
+``composite_sprites`` -- computed from recovered state with no VM read of ``+0C``.
+
+Backend layer: composes the pure projection (``native_video``) over the object-pool records
+(``recovered/{domain,views}``); both edges are permitted (backend -> source_pure / bridge).
+
+Scope: the gameplay + effect pools.  The single leading view-anchor "special" slot (DS:237C,
+drawn first by the present scan) is NOT yet carried by ``NativeGameState`` -- adding it is a
+follow-up state-shape slice; until then this reproduces the gameplay+effect portion of the
+witnessed-exact draw list.
+"""
+from __future__ import annotations
+
+from overkill.native_video.projection import build_native_sprite_layer
+from overkill.recovered.views.object_slots import (
+    OFF_ACTIVE_WORD,
+    OFF_SPRITE_OR_STATE,
+    OFF_X,
+    OFF_Y,
+)
+
+
+def native_sprite_draws(game_state, column_table, scroll) -> tuple:
+    """Build the native sprite draw list from ``game_state`` (a NativeGameState).
+
+    ``column_table`` is the DS:99C8 per-column base (indexed by object X; the static
+    0F0B-built table); ``scroll`` is the present cursor DS:234C.  Walks ``object_pool`` then
+    ``effect_pool``, takes each active slot (``+00 != 0``), and composes its
+    ``(sprite_or_state, x, y)`` through :func:`build_native_sprite_layer` (which projects via
+    the recovered 35CC ``+0C`` formula and drops off-screen culls).  Returns
+    ``((sprite, screen_di), ...)`` in draw order -- the native draw list, no VM read.
+    """
+    objects = []
+    for pool in (game_state.object_pool, game_state.effect_pool):
+        for i in range(len(pool.slots)):
+            if pool.word_at(i, OFF_ACTIVE_WORD) != 0:
+                objects.append((
+                    pool.word_at(i, OFF_SPRITE_OR_STATE),
+                    pool.word_at(i, OFF_X),
+                    pool.word_at(i, OFF_Y),
+                ))
+    return build_native_sprite_layer(objects, column_table, scroll)

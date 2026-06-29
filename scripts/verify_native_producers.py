@@ -26,6 +26,7 @@ PROBES = (
     "verify_native_frame_timer",
     "verify_native_projection",
     "verify_native_screen_di",
+    "verify_native_sprite_draws",
 )
 _RESULT_LINE = re.compile(r"calls=(\d+) ok=(\d+) fail=(\d+)")
 

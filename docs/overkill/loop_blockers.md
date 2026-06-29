@@ -154,6 +154,19 @@ layer can now place every object's screen di from `NativeGameState` (x/y + colum
 with no VM read.**  Render leaves AND the render composition are done; the object-update island
 (the pool *producer*) is the one remaining §1 recovery.
 
+**DONE (2026-06-29, later still) — the native draw-list producer (`native_sprite_draws`):** the
+Bucket-C "compose the FrameSnapshot sprites from recovered state" step is built + verified.
+`native_video/sprite_compose.py:native_sprite_draws(game_state, column_table, scroll)` walks
+`NativeGameState`'s gameplay then effect pools (witnessed-exact present order), takes active slots,
+composes each via `project_object_screen_di`, drops culls → the `(sprite, screen_di)` draw list, no
+VM read.  **Verified produced-vs-VM** by `verify_native_sprite_draws.py` at the A90C present-scan
+return (where `+0C` is fresh): native list == the VM's gameplay+effect slot draws (`+08`/`+0C`,
+active + on-screen), **L2/L5/L6-boss/player-death 200/200 0-div** (8th cross-demo producer).  NEXT
+render-composition slice: carry the leading view-anchor "special" slot (DS:237C, drawn first) in
+`NativeGameState` so the native list is the COMPLETE draw list (special + gameplay + effect), then
+the native FrameSnapshot + the standalone loop.  The object-update island (pool producer) remains
+the substantial §1 recovery.
+
 ## NOTE (process) — check lifted-status before "recovering" a routine
 
 `519A` / `3153` (HUD text dispatch + Tandy glyph) were ALREADY lifted (`rendering/text.py`,

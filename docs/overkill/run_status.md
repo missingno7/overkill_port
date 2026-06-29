@@ -1,3 +1,19 @@
+## 2026-06-29 - Bucket C: native draw-list producer (native_sprite_draws) byte-exact vs VM
+
+The first **composed native render producer**: `native_sprite_draws(game_state, column_table,
+scroll)` builds the FrameSnapshot sprite list straight from `NativeGameState` -- walks the gameplay
+then effect pools (the witnessed-exact present order), takes the active slots, and composes each
+through the verified `project_object_screen_di` (35CC `+0C`), dropping culls -- returning the
+`(sprite, screen_di)` draw list the backend blits, with **no VM read of `+0C`** (reuses
+`build_native_sprite_layer`; pure, `native_video/sprite_compose.py`).  **Verified produced-vs-VM
+byte-exact** by new probe `verify_native_sprite_draws.py`: at the A90C present-scan return (where
+`+0C` is fresh) it compares the native list against the VM's gameplay+effect draw list read from the
+slots (`+08`/`+0C`, active + on-screen) -- L2/L5/L6-boss/player-death all **200/200, 0 divergence**.
+8th producer in the cross-demo gate; the first to mirror RenderState's composed *draw list* (not
+just one field).  VM-free unit test covers the walk/active-filter/order/cull.  Lint (202) + both
+audits pass; full suite green.  Scope: gameplay+effect pools; the single leading view-anchor
+"special" slot (DS:237C) needs `NativeGameState` to carry it -- the next render-composition slice.
+
 ## 2026-06-29 - Render composition RECOVERED: full sprite `+0C` screen-di (35CC) byte-exact vs VM
 
 Closed the render-side Bucket-C composition gap: the native sprite layer now computes each object's
