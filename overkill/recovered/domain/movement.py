@@ -28,6 +28,23 @@ class TargetSeekDecision:
 
 
 @dataclass(frozen=True, slots=True)
+class TargetSeekStep:
+    """Portable per-slot result of the whole recovered 1010:5DB2 target-seek movement.
+
+    5DB2 picks a direction toward the target (the :class:`TargetSeekDecision`), writes it to
+    the slot's ``direction_or_step`` (+06), and steps the slot's ``x``/``y`` by that direction
+    via the 5E0C-dispatched step (mode 1 -> AF63 one 2px step, mode 2 -> AF60 two 2px steps,
+    mode 3 -> AEE4 one 8px step).  On the blocked branch (direction table -> FFh) it touches
+    nothing.  This records only the slot fields 5DB2 mutates -- the DS:A954 direction-bit and
+    DS:230A blocked globals are out of scope (separate state)."""
+
+    direction_or_step: int
+    x_word: int
+    y_word: int
+    blocked: bool
+
+
+@dataclass(frozen=True, slots=True)
 class MovementStepOperation:
     """One ordered axis mutation from the recovered 8-way step tables.
 

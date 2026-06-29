@@ -234,6 +234,17 @@ ab77/8d4f/b24d/aed8 movement halves, each a `verify_native_object_update_*` prob
 side-effects (counters/spawns/`BD17` death) — the harder attended island. Only (b) is death-frontier;
 (a) is open for the unattended loop.
 
+**Progress (2026-06-29) — 2 movement primitives now native (the bulk of (a)):** AE09's fixed-step
+(`object_movement_step_ae09`) AND the SHARED target-seek (`object_target_seek_step_5db2`, the whole
+5DB2 — used by b73e/b9f0/8d4f/D281/B729/B1B0). The latter recovered the CS:5E0C mode table (1->AF63
+2px, 2->AF60 2px×2, 3->AEE4 8px) and composes `choose_target_seek_direction` + `step_operations_for_
+direction`; **verified produced-vs-VM byte-exact** (L2 1257/1257, L6_boss 1957/1957, player_death
+1721/1721, L5 240/240; 5175 calls 0-div). So target-seek movement is done for ALL seeker behaviors at
+once. Remaining (a): the non-seek behaviors' slot transforms (animation/state for the non-moving
+b86d/ab77/aba3/b24d; aed8's AEE4+B250 which is coupled to ADC9 x=FFFF). Remaining (b): the global
+death/spawn side-effects (the attended island). Next: compose the per-logic-id native dispatch over
+`NativeGameState`'s pool from these movement producers + the existing decisions.
+
 ## NOTE (process) — check lifted-status before "recovering" a routine
 
 `519A` / `3153` (HUD text dispatch + Tandy glyph) were ALREADY lifted (`rendering/text.py`,

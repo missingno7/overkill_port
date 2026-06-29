@@ -1,3 +1,20 @@
+## 2026-06-29 - Bucket C: SHARED native target-seek movement (5DB2) byte-exact vs VM
+
+The highest-value object-update producer yet: the whole 1010:5DB2 target-seek movement, SHARED by
+every seeker (B729/D281/B1B0 + the b73e/b9f0/8d4f behaviors).  `object_target_seek_step_5db2`
+(systems/movement.py) composes the two already-VERIFIED recovered systems -- the 5DB2 direction
+decision (`choose_target_seek_direction`) and the 8-way step (`step_operations_for_direction`) -- with
+the recovered CS:5E0C mode table (dumped from the image: mode 1 -> AF63 one 2px step, 2 -> AF60 two 2px
+steps, 3 -> AEE4 one 8px step; mode 0/AFA2 + >=4 fail loud, matching the lift).  Returns the slot's
+post fields `TargetSeekStep` (direction_or_step +06, x +02, y +04); the blocked branch (table -> FFh)
+leaves them untouched.  The AD60/BD17 tail (run by callers) + the DS:A954/230A globals are out of
+scope.  **Verified produced-vs-VM byte-exact** by `verify_native_object_seek_step_5db2.py` (hooks 5DB2
+entry + its return address): **L2 1257/1257, L6_boss 1957/1957, player_death 1721/1721, L5 240/240 --
+5175 calls, 0 divergence**.  10th cross-demo producer.  Lint (204) + both audits pass; full suite
+green.  With AE09 (fixed-step) + 5DB2 (target-seek), the two movement primitives behind the object
+behaviors are now native; remaining object-update work is the global side-effects (counters/spawns/
+BD17 death) + composing the per-logic-id dispatch.
+
 ## 2026-06-29 - Bucket C: FIRST native object-update producer (AE09 movement) byte-exact vs VM
 
 Breakthrough on the object-update island: the earlier "fully coupled to the attended-only death

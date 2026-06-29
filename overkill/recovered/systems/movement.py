@@ -15,6 +15,7 @@ from overkill.recovered.domain.movement import (
     MovementStepOperation,
     MovementTarget,
     TargetSeekDecision,
+    TargetSeekStep,
     VerticalScrollEdgeDecision,
     VerticalScrollEdgeInput,
 )
@@ -127,6 +128,62 @@ def step_operations_for_direction(direction: int, pixels: int) -> tuple[Movement
         else:  # pragma: no cover - Literal exhaustiveness guard for future edits.
             raise AssertionError(f"unsupported direction component {component!r}")
     return tuple(ops)
+
+
+# 1010:5E0C movement-mode dispatch (indexed by DS:2308): mode -> (pixels, repeat) for the step
+# routine the table selects.  Recovered from the image: mode 1 -> AF63 (one 2px step), mode 2 ->
+# AF60 (two 2px steps), mode 3 -> AEE4 (one 8px step).  Mode 0 (AFA2) and modes >=4 are outside
+# the verified set (the 5DB2 lift fails loud on them, so we do too).
+MOVEMENT_MODE_STEP_5E0C = {1: (2, 1), 2: (2, 2), 3: (8, 1)}
+
+
+@recovered_island(
+    asm="1010:5DB2",
+    contract="whole per-slot 5DB2 target-seek movement: pick direction toward target, then step x/y by 5E0C mode",
+    status="VERIFIED",
+    merge_target="MovementSystem",
+)
+def object_target_seek_step_5db2(
+    slot_x: int,
+    slot_y: int,
+    slot_direction: int,
+    target: MovementTarget,
+    mode: int,
+    direction_table: Sequence[int],
+) -> TargetSeekStep:
+    """Pure whole-5DB2 per-slot movement: the seek direction + the 5E0C mode-dispatched step.
+
+    Picks the direction toward ``target`` (:func:`choose_target_seek_direction`); on the blocked
+    branch (mapped FFh) the slot is untouched.  Otherwise writes the mapped direction and steps
+    ``x``/``y`` by it, the step distance chosen from the recovered 5E0C table by ``mode``
+    (:data:`MOVEMENT_MODE_STEP_5E0C`; AF60's double step is ``repeat=2``).  ``slot_x``/``slot_y``
+    are the slot's current position (and the seek inputs); ``slot_direction`` is the slot's current
+    ``direction_or_step`` (returned unchanged when blocked).  Models only the slot fields 5DB2
+    mutates (+06/+02/+04) -- the DS:A954 direction-bit and DS:230A blocked globals are separate
+    state.  Shared by every 5DB2 caller (B729/D281/B1B0 and the b73e/b9f0/8d4f behaviors)."""
+    x = slot_x & 0xFFFF
+    y = slot_y & 0xFFFF
+    decision = choose_target_seek_direction(
+        ObjectSlotRecord(
+            active_word=0, x_word=x, y_word=y, gate_or_layer=0, link_key=0,
+            scan_flag=0, hazard_class=0, logic_id=0, target_x_word=0, target_y_word=0,
+        ),
+        target,
+        direction_table,
+    )
+    if decision.blocked:
+        return TargetSeekStep(slot_direction & 0xFFFF, x, y, blocked=True)
+    if mode not in MOVEMENT_MODE_STEP_5E0C:
+        raise ValueError(f"unverified 5DB2 movement mode {mode & 0xFFFF:#06x} (5E0C dispatch)")
+    pixels, repeat = MOVEMENT_MODE_STEP_5E0C[mode]
+    for _ in range(repeat):
+        for op in step_operations_for_direction(decision.mapped_direction, pixels):
+            delta = i16(op.delta_word)
+            if op.axis == "x":
+                x = u16(x + delta)
+            else:
+                y = u16(y + delta)
+    return TargetSeekStep(decision.mapped_direction & 0xFFFF, x, y, blocked=False)
 
 
 @recovered_island(
