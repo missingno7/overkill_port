@@ -204,6 +204,23 @@ which is coupled to the attended-only BD17/bc4b death frontier. That is the dema
 honest frontier: the next productive step needs the death-frontier recovery (a reproduction trace +
 gameplay context, per §2 "skip loop_blockers items" unattended) or the starfield tooling.
 
+**Death-tail native-build roadmap (read the code 2026-06-29 — the exact leaves a fresh session needs):**
+`object_deactivation.py` shows the object-update's death tail (`BD17`/`BFC7`) is recoverable to native
+ONLY by recovering this leaf set first (each gated produced-vs-VM, the proven pattern):
+- `C054` (`run_object_deactivate_logic_dispatch_c054`, in collision.py) — the logic-id→selector
+  dispatch; its pure classification is ALREADY extracted (checked: delegates to the pure object
+  system + an adapter), so only its native *application* is needed, not a new decision.
+- `C12D` + `7420` (effect-spawn tails) — pure ObjectPool spawns; the spawn *templates* are already
+  recovered (`object_spawn_seed_*`), so these are the application over a free slot.
+- `BD17` branches: draw_layer 4 (C054+C12D+linked-counter clear), logic_id 9 (BD7A whole-projectile-
+  list clear — already lifted), the small counter decrements (lifted), and **logic_id 0xA → BD9E/AC19
+  which is INTERPRETED original ASM** (the attract/transition chain — the one genuinely un-lifted
+  branch; if the gameplay demos never hit logic_id 0xA, a pure BD17 can fail-loud there and still pass).
+- `BFC7`: score-add (`5F0D`/`bcd_add_score` — recovered), Y-clamp (`BCB1` — recovered), `7420` linked
+  effect, `C054`+`C12D`, and the `C037` obj_type dispatch (types 1/2 recovered; others fail-loud).
+Then a per-logic-id native dispatch over `NativeGameState`'s pool composes them into the object-update
+producer → the standalone loop. Substantial but mapped; a fresh clean-context session can execute it.
+
 ## NOTE (process) — check lifted-status before "recovering" a routine
 
 `519A` / `3153` (HUD text dispatch + Tandy glyph) were ALREADY lifted (`rendering/text.py`,
