@@ -312,11 +312,21 @@ logic=0/latch=0/linked=FFFF/variant=0/layer=0), with the hook a thin adapter (75
 register/flag choreography).  Verified: a VM-free synthetic oracle (`test_object_spawn_seed_7420`) + the
 produced-vs-VM probe `verify_native_object_spawn_seed_7420` (rare event, as predicted) — **34 spawns across
 L5_continue 20 / L3 10 / L2 2 / start_to_end 1 / L4 1, 0 divergence** (L6_boss/mothership/showcase have 0,
-confirming they aren't linked-counter groups).  (c) the **C054** selector (DS:A47E decrement, same compare
-chain as BD17) is the **last** of BFC7's 3 sub-leaves.  So BFC7 is a
-genuine multi-leaf death/spawn island, NOT a slot transform — recover the remaining C054 leaf (its own
-produced-vs-VM probe) before composing BFC7.  Re-validates the convergence below: the non-blocked
-pure-%-raising vein is the **Bucket-C native runtime** (a multi-slice integration, best started fresh).
+confirming they aren't linked-counter groups).  (c) the **C054** selector — **already pure** (the classifier
+`object_deactivate_dispatch_decision_c054`, systems/objects.py, with a self-verifying adapter); I mis-stated
+it as pending in the 7420 note above.
+
+**BFC7 island status corrected (2026-06-29): all 5 COMPUTATIONAL leaves are now pure.** Reading the whole
+BFC7 body (object_deactivation.py:156-274) shows it is: the 0021h/DS:2356 gate; the score add (✓
+`bcd_add_score`); the y-clamp (✓ `clamp_postmove_y_bcb1`); the linked-counter chain -> 7420 spawn (✓
+`object_spawn_seed_7420`); the C054 selector (✓ classifier) + its C12D effect tail; and the final C037
+death transition (✓ NEW `object_collision_death_transition_c037`: prev_logic_id=old, logic_id=1, latch=0,
+sprite by type 1->0/2->3).  What REMAINS is pure GLUE, not transforms: **C12D** (`_run_c054_c12d_effect_
+spawn_tail` — stages 7420's inputs from the slot + writes DS:A482/A842 + decrements DS:A47E around the now-
+pure 7420; no extractable computation) and the **BFC7 orchestration** itself (the gate, the counter-chain
+decrement, the DS:98C0->BEFF gate, the stack-scratch).  So BFC7's coastline is now shortened to its leaves;
+fully composing BFC7 as one pure transform = a multi-output orchestration over the 5 pure leaves (a Bucket-C
+integration).  The non-blocked pure-%-raising vein remains the **Bucket-C native runtime**.
 
 **DONE (2026-06-29) — 5E42 delta-steer recovered (the 3rd movement primitive).**
 `object_delta_steer_5e42` (systems/movement.py): signed deltas (+2C/+2A) -> Bresenham axis pick vs the

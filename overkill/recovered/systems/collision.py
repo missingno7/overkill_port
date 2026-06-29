@@ -7,6 +7,7 @@ reuse directly.
 from __future__ import annotations
 
 from overkill.recovered.domain.collision import (
+    CollisionDeathTransition,
     ObjectOverlapScanDecision,
     PostMoveContactWindow,
     PostMoveYClampResult,
@@ -278,3 +279,33 @@ def object_overlap_scan_decision(
 def tile_sweep_plan_for_direction(direction: int) -> TileSweepPlan:
     """Return the pure component order for B00D's eight direction entries."""
     return TileSweepPlan(direction8(direction).components)
+
+
+# 1010:BFC7 -> C037 collision-death transition.  The dying state is logic id 1, and
+# the death sprite is chosen from the object type via the small C037 table.
+COLLISION_DEATH_STATE_LOGIC_ID = 0x0001
+COLLISION_DEATH_C037_SPRITE_BY_TYPE = {0x0001: 0x0000, 0x0002: 0x0003}
+
+
+def object_collision_death_transition_c037(logic_id: int, object_type: int) -> CollisionDeathTransition:
+    """Pure BFC7/C037 collision-death slot transition for a type-1/2 object.
+
+    Records the old ``logic_id`` as ``previous_logic_id``, forces ``logic_id`` to the
+    dying-state ``1``, clears the ``transition_latch``, and selects the death
+    ``sprite_or_state`` from the object type via the C037 table (type 1 -> 0, type
+    2 -> 3).  Raises ``ValueError`` for any other type -- the original dispatches such
+    types through a different C037 table entry, which the adapter still handles as an
+    unverified path rather than guessing here.
+    """
+    try:
+        sprite = COLLISION_DEATH_C037_SPRITE_BY_TYPE[object_type & 0xFFFF]
+    except KeyError:
+        raise ValueError(
+            f"no C037 collision-death sprite for object type {object_type & 0xFFFF:#06x}"
+        ) from None
+    return CollisionDeathTransition(
+        previous_logic_id=logic_id & 0xFFFF,
+        logic_id=COLLISION_DEATH_STATE_LOGIC_ID,
+        transition_latch=0x0000,
+        sprite_or_state=sprite,
+    )

@@ -22,6 +22,7 @@ from overkill.gameplay.object_spawns import (
     _run_linked_effect_spawn_7420_observed,
 )
 from overkill.recovered.adapters.collision_adapter import run_postmove_y_clamp_bcb1_body
+from overkill.recovered.systems.collision import object_collision_death_transition_c037
 from overkill.recovered.systems.score import bcd_add_score
 from overkill.recovered.views.object_slots import ObjectSlotView
 
@@ -246,22 +247,21 @@ def _run_collision_death_tail_bfc7(cpu, *, parent: str, chain: str, cx_value: in
     if mem.rb(ds, 0x98C0) != 0:
         mem.wb(ds, 0xBEFF, 0x19)
 
+    # The BFC7 collision-death transition: record the old logic id, force the
+    # dying state (logic_id=1), clear the latch (unconditional, in the original
+    # order), then select the death sprite from the object type via C037.  The
+    # pure object_collision_death_transition_c037 owns the transition (incl. the
+    # type 1 -> 0 / type 2 -> 3 sprite table); the adapter keeps the original write
+    # order, the BX = type*2 C037 index, and the unverified-type tail.
     cpu.s.ax = logic_id
     slot.previous_logic_id = cpu.s.ax
     slot.logic_id = 0x0001
     slot.transition_latch = 0x0000
-    # C037 dispatches through a tiny table keyed by the object type at +14h.
-    # Earlier lifts hard-coded the type-1 C048 tail (BX=0002, +08=0000), but
-    # multi-part/final-boss objects use type 2 and the original takes C04E
-    # instead (BX=0004, +08=0003).  Keep this as a source-like type dispatch
-    # rather than a per-snapshot special case.
     obj_type = slot.object_type
     cpu.s.bx = obj_type & 0xFFFF
     cpu.s.bx = cpu.shift(4, cpu.s.bx, 1, 16)
-    if obj_type == 0x0001:
-        slot.sprite_or_state = 0x0000
-    elif obj_type == 0x0002:
-        slot.sprite_or_state = 0x0003
+    if obj_type in (0x0001, 0x0002):
+        slot.sprite_or_state = object_collision_death_transition_c037(logic_id, obj_type).sprite_or_state
     else:
         _raise_unverified_path(
             cpu,

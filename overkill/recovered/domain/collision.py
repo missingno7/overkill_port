@@ -85,3 +85,21 @@ class ObjectOverlapScanDecision:
 
     overlaps: bool
     actionable: bool
+
+
+@dataclass(frozen=True, slots=True)
+class CollisionDeathTransition:
+    """Pure slot transition stamped by the 1010:BFC7 collision-death tail's C037 end.
+
+    When a type-1/2 object dies by collision, BFC7 finishes by recording the old
+    ``logic_id`` as ``previous_logic_id``, forcing ``logic_id`` to the dying-state
+    ``1``, clearing the ``transition_latch``, and selecting the death
+    ``sprite_or_state`` from the object type via the C037 table (type 1 -> 0, type
+    2 -> 3).  The adapter owns the BFC7 orchestration and the unverified-type tail;
+    this owns the four transition field values.
+    """
+
+    previous_logic_id: int
+    logic_id: int
+    transition_latch: int
+    sprite_or_state: int

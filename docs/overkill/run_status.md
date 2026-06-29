@@ -1,3 +1,21 @@
+## 2026-06-29 - Bucket A: native BFC7/C037 collision-death transition -- pure % 16.8 -> 17.0; BFC7's 5 leaves all pure
+
+Recovered the long-cited "logic_id=1 + C037 sprite + latch" collision-death transition as a pure leaf, and
+in doing so confirmed BFC7's third sub-leaf (C054) was ALREADY pure (the classifier
+`object_deactivate_dispatch_decision_c054`) -- so all FIVE of BFC7's computational leaves are now pure
+(score add, y-clamp, 7420 spawn, C054 classifier, C037 transition).  `object_collision_death_transition_c037`
+(systems/collision.py) returns the new `CollisionDeathTransition`: previous_logic_id = the old logic id,
+logic_id = 1 (the dying state), transition_latch = 0, and the death sprite from the object type via the C037
+table (type 1 -> 0, type 2 -> 3; other types fail loud -- the original's other C037 entries stay an adapter
+unverified-path tail).  The BFC7 hook now sources the death sprite from this pure fn, keeping the original
+unconditional prev/logic/latch order + the BX = type*2 C037 index.  **Verified**: a VM-free synthetic oracle
+(`tests/test_collision_death_transition_c037.py`) + the hybrid frame-verifier on L3_full (1600 frames, pure-VM
+vs hooked, semantic state + raw/RGB, **0 divergence** -- a combat level exercises the transition on every
+type-1/2 kill).  Unlike 7420 this fires constantly, so the frame-verifier is the strong demo gate.  What
+remains of BFC7 is pure GLUE, not transforms: C12D (stages 7420 + DS:A482/A842/A47E) and the orchestration
+(the 0021h gate, counter chain, DS:98C0 gate) -- so composing BFC7 as one transform is a Bucket-C
+integration over its 5 now-pure leaves.  Both audits + lint (209) pass; full suite green (612 passed).
+
 ## 2026-06-29 - Bucket A: native 7420 linked-effect spawn template (BFC7 sub-leaf 2/3) -- raises pure % to 16.8%
 
 Recovered the 2nd of BFC7's 3 death/spawn sub-leaves as a pure source-level template, the first pure-%
