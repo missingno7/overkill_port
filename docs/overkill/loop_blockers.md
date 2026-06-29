@@ -120,8 +120,22 @@ simple camera-relative projection in any standard page geometry — it factors s
 different reference origin, per-object scaling/anchor, or a non-standard stride/page).  Observation
 alone cannot crack it; the recovery requires **disassembling the chosen 5AE2 Tandy draw handler**
 (map the table, follow the dispatched handler's `+0C` computation), then implement
-`project_object_to_di` and verify native di == VM `+0C` across demos.  Confirms the render gap is a
-real island, not a derivable leaf.
+`project_object_to_di` and verify native di == VM `+0C` across demos.
+
+**RESOLVED (2026-06-29, `f8cae7a`) — the projection IS a clean leaf after all (go-to-the-ASM won):**
+followed the dispatch (5AC8 draw-type → 5A36 video-mode → **30D2** Tandy projection) and the
+projection is `di = (obj_y >> 1) + DS:99C8[obj_x]`, cull on `obj_x >= 0xE0` / column entry `FFFFh`.
+The reason observe→derive failed: the **X is a table lookup** (`DS:99C8`), not arithmetic.  Recovered
+as pure `native_video/projection.py:project_object_to_di`, **verified 4624/4624 byte-exact** vs the
+real 30D2 (`verify_native_projection.py`), added to the cross-demo gate (6th producer, first
+render-side).  The column table `DS:99C8` is already recovered — the static 0F0B startup builder
+(`rendering/tandy.py`: FFFF guard band + X/window table by stride CS:[959E]).  So the render
+**leaves are done** (projection + column table + `composite_sprites` blit).  Remaining render work
+is **integration, not a leaf**: assemble the native FrameSnapshot sprite list from
+`NativeGameState`'s pool via `project_object_to_di`, reconstructing the full slot `+0C`
+(= core `+ DS:234C` scroll `+` the one-row present phase `0x68` that the present-hook extraction
+sees) — a Bucket-C composition step.  **So of the two §1 gaps, the render one is now leaf-complete;
+the object-update island (bc4b/target-seek dual-mode) remains the substantial recovery.**
 
 ## NOTE (process) — check lifted-status before "recovering" a routine
 
