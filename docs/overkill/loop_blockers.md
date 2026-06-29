@@ -65,12 +65,24 @@ gate-compliant remaining work is (a) the hard Bucket-A islands (pure-raising but
   `332b58d`); the others (`bec5`/`9e69`/`9e98`/`bd17`/`bd0d`/`7476`/`7420`) are the hard
   death/contact/spawn frontier (attended-only — that is *why* they are observed/partial).
 - Bucket-A unblocked behaviors (`B250`, `8d4f`): VM-coupled, no meaty pure decision.
-The one vein that BOTH raises pure % AND is non-blocked is the **native-runtime build (Bucket C)**:
-done so far = `NativeGameState` + the pure verify-mode comparison core (`9899c12`) + the score
-leaf/producer (`bcd_add_score`/`advance_hud_score`, `332b58d`/`bf5ad35`). It raises pure % (the
-runtime is VM-free source) and repays the mirror dilution when the VM-facing adapters are deleted.
-**Next (substantial, fresh-focus):** the verify-mode demo harness (produced-vs-VM); more producers
-(camera/objects — each needs its per-frame update logic recovered first); then the standalone loop.
+The one vein that BOTH raises pure % AND is non-blocked is the **native-runtime build (Bucket C)**.
+**Done this session (`9899c12`..`afaadf6`):** `NativeGameState` + the pure verify-mode comparison
+core; and the **produced-vs-VM verify-mode** grown to **5 byte-exact producers** across the demo
+corpus (`scripts/verify_native_producers.py`, the cross-demo gate): `bcd_add_score`/`advance_hud_score`
+(5F0D score), `object_pool_find_free` (7573 alloc), `object_spawn_seed_8209`/`_a4ea` (8209/A4EA
+spawn templates), `step_first_active_timer` (61C7 frame timers).  Each probe step-hooks the routine
+on the pure-VM side and asserts the native producer matches, for every real event (hundreds/demo,
+0 divergence).
+
+**The remaining §1 gap (demand-driven):** rendering a frame standalone needs `FrameSnapshot` built
+from `NativeGameState` with **no VM**, which needs the **object pool updated natively** — i.e. the
+**standalone per-frame object update**: the scan/dispatch over `NativeGameState`'s pool + each
+object's behavior *applied* to native state (the decisions in `systems/objects.py` are already pure;
+the per-object read→decide→write **application** + the **scan/dispatch orchestration** + movement/
+collision/clamps + side effects are the lifted-only parts that need standalone versions).  This is
+the big coupled system (no clean single leaf) — the multi-session build, and once it produces the
+pool, the standalone loop (§1.1) and full-state verify (§1.2) follow.  **Pattern to reuse:** each
+new producer gets a `verify_native_*` probe added to `verify_native_producers.py`'s `PROBES`.
 
 ## NOTE (process) — check lifted-status before "recovering" a routine
 
