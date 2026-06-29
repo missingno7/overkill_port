@@ -79,6 +79,18 @@ class ObjectPool:
         """Slot ``index``'s active word (the first record word); zero means the slot is free."""
         return self.slots[index][0]
 
+    def x_word(self, index: int) -> int:
+        """Slot ``index``'s X position word (record byte +02)."""
+        return self.slots[index][0x02 >> 1]
+
+    def y_word(self, index: int) -> int:
+        """Slot ``index``'s Y position word (record byte +04)."""
+        return self.slots[index][0x04 >> 1]
+
+    def sprite_word(self, index: int) -> int:
+        """Slot ``index``'s sprite/state word (record byte +08)."""
+        return self.slots[index][0x08 >> 1]
+
     def with_word(self, index: int, offset: int, value: int) -> "ObjectPool":
         """A new pool with slot ``index``'s word at byte ``offset`` set to ``value``."""
         words = list(self.slots[index])

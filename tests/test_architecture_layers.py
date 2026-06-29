@@ -33,6 +33,7 @@ def test_layer_assignment_matches_intended_boundaries():
         "overkill/hooks.py": "hook_boundary",
         "overkill/hook_wrappers/sounds.py": "hook_boundary",
         "overkill/gameplay/object_runtime.py": "lifted",
+        "overkill/native_video/sprite_compose.py": "native_render",
         "overkill/rendering/ega.py": "backend",
         "overkill/sounds/pc_speaker.py": "backend",
         "overkill/runtime.py": "vm",
@@ -59,6 +60,9 @@ def test_forbidden_rules_would_catch_a_core_layer_importing_the_vm():
     assert "backend" in audit.FORBIDDEN["source_pure"]
     # A backend reaching up into gameplay is forbidden.
     assert "lifted" in audit.FORBIDDEN["backend"]
+    # The native render host must not reach into the VM world (hooks/lifted/VM-adapters).
+    for forbidden in ("bridge", "hook_boundary", "lifted", "vm_external"):
+        assert forbidden in audit.FORBIDDEN["native_render"], forbidden
 
 
 def test_real_codebase_passes_the_architecture_audit():

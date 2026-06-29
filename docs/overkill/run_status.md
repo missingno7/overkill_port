@@ -1,3 +1,101 @@
+## 2026-06-29 - Architecture cleanup: decouple the native render host + lock it + the staged plan
+
+Major-cleanup pass toward "one game core, two hosts".  Grounded finding: the architecture is already
+~70-80% at the target (dependency audits green, pure systems canonical, adapters cross-check not
+duplicate, native path proven to run recovered code).  Concrete slice + guardrail this pass:
+
+- Decoupled the native render host: `native_video/sprite_compose.py` was the ONE native-runtime
+  module importing a VM-facing `recovered.views` (for field offsets).  Added named accessors
+  (`x_word/y_word/sprite_word`) to the domain `ObjectPool` and repointed the renderer to them, so
+  `native_video` now imports only `recovered.{domain,systems}` (+self) and `game_core` imports
+  nothing external -- the native runtime depends solely on recovered code.
+- Locked it: new `native_render` layer in `audit_architecture.py` forbids `native_video/*` from
+  importing vm/hooks/lifted/bridge (the brief's "second host, not second implementation").  Fixed a
+  latent package-name classification edge (`overkill.native_video` -> was mis-tagged `vm`).
+  Non-vacuous test cases added to `tests/test_architecture_layers.py`.
+- Wrote `docs/overkill/architecture_cleanup_plan.md`: the honest scorecard, the staged per-rule
+  migration recipe, the measured priority order (B86D 46% first, via the coverage gate), the enforced
+  guardrails + gaps, and the VM-bound/missing-systems list (deliverable #8).
+
+Verification: audit_architecture + audit_recovered_layers pass; lint 218; architecture/native/sprite
+tests 11 passed.
+
+## 2026-06-29 - Unify the produced-vs-VM probe harness (absorb copy-pasted scaffolding)
+
+Survey of "is the code unified enough": the gameplay pure/lifted/adapter layers are actually
+well-unified (decisions route through shared pure systems; the audit found minimal duplication).
+The real duplication was in the VERIFY TOOLING: 19 `overkill/probes/verify_native_*.py` each
+copy-pasted the same ~45 lines of frame-verifier scaffolding (the `fv._load_runtime` side-tagging
+patch, the `sides` iterator, `pump_inputs` wiring, the ref-side `CPU8086.step` hook) + a private
+`_Bytes` lazy view.
+
+Extracted `overkill/probes/_harness.py` (`run_ref_step_probe(demo, max_frames, on_ref_step)` +
+`LazyBytes` + `load_demo`) -- the single verify framework the native runtime's coverage gate and
+per-routine probes share.  Migrated 2 probes as proof: the coverage driver
+(`verify_native_object_update`) and the canonical `verify_native_object_update_ae09`.  Each now is
+just its capture/predict/compare callback.  **Proven byte-identical**: both on L5_continue 500f give
+AE09 610/610 fail=0 (driver 12.8% coverage) -- unchanged from pre-migration, and the two 610 counts
+cross-validate.  lint 218, gate test 4, both layer audits pass.
+
+Remaining (mechanical follow-up, each needs a demo re-run to confirm identical): migrate the other
+17 probes to the harness (drop ~45 lines each).  Minor dead code to absorb later: the near-dead
+`recovered/{coords,object_slots,collision_primitives}.py` root facades (~68 lines, tests-only).
+
+## 2026-06-29 - Native object-update coverage gate (the VM-free state-runtime scaffold, step 1)
+
+Built `overkill/probes/verify_native_object_update.py` -- the seed of the VM-free state producer
+(§1.2/§1.3).  It walks a real demo and, at the per-slot behaviour dispatch (EFAE -> `CS:[0xEFC4 +
+logic_id*2]`), classifies **every** per-slot object update as native (a wired pure whole-slot
+transform, checked byte-exact vs the VM at the handler's return -- the AE09 produced-vs-VM mechanism,
+generalised) or fallback (no transform yet, counted).  One run yields three things: a zero-divergence
+**gate**, a **coverage %**, and a prioritised **backlog**.  Wire a new transform = one `NATIVE_HANDLERS`
+entry.  Gate semantics PASS / NO-EVENTS / FAIL (divergence-only failure -- the rare-event convention,
+safe in a cross-demo sweep).  Test: `tests/test_native_object_update_gate.py` (4).
+
+Proven end-to-end: L5_continue logic_id 0x0C (AE09) `native OK 777/777` (1200f) byte-exact = 13.2%
+coverage from a single handler; PASS.  AE09 is L5-only (NO-EVENTS on L2/L3/L4/L6) -- so it is a proof
+of the mechanism, not a high-value handler.
+
+**Prioritised backlog (L2_full, 800f, IP-resolved -- the next pure whole-slot transforms to recover):**
+```
+logic_id 0x1D -> B86D  1170 slots (46%)   <- #1; near-calls already composed this session
+logic_id 0x02 -> AED8   662               <- #2; _run_object_behavior_aed8 already lifted
+logic_id 0x01 -> BE3C   296
+logic_id 0x8A -> 8C1F   112
+logic_id 0x1C -> 8D4F    91  (target-patrol, lifted)
+logic_id 0x39 -> 8A23    76
+logic_id 0x0B -> B24D    61  (delta-steer, lifted)
+logic_id 0x1E -> B909    51
+```
+Next steps: (1) recover B86D (0x1D) as a pure whole-slot transform (AE09 pattern) -- biggest single
+coverage win; (2) AED8 (0x02); (3) recover the EFC4 dispatch as a pure routing fn; (4) aggregate the
+histogram across all demos for the authoritative ranking; (5) optionally fold the driver into
+`scripts/verify_native_producers.py` as a standing gate.  Verification: gate test 4 passed; lint 217;
+both layer audits pass.
+
+## 2026-06-29 - High-level refactor audit + A067 action-gate promotion + stronger pure-layer audit
+
+Architecture-refactor pass (toward VM-independent recovered source).  Findings (full audit in
+`docs/overkill/high_level_refactor_audit.md`, machine form `artifacts/high_level_refactor_gaps.json`):
+the lifted/adapter/pure split is already healthy -- pure layers clean of layout constants, 49 adapter
+`...disagrees...` cross-check asserts (the sanctioned guarded duplication), and an AST scan found only
+the two A067 action gates stranded-pure in the lifted layer.
+
+Shipped (one proven slice + tooling, behaviour-preserving):
+- Promoted `action_trigger_is_pressed` + `action_latch_allows_repeat` from `gameplay/action_spawns.py`
+  to the new pure system `overkill/recovered/systems/action_spawns.py` (evidence root 1010:A067; the
+  lifted hook now only projects DS state + replays the TEST/CMP flags).  New `tests/test_action_spawn_gates.py`.
+- Strengthened `scripts/audit_recovered_layers.py`: now also bans capitalised VM/CPU *types*
+  (CPU/CPUState/Memory/Mem/Registers/...) and memory-layout/segment constants (0x1010/0x23B4/0x2B5C/
+  0x32CA/0x8D12/0x95D8) in pure layers, with a `# layout-justified` escape hatch.  Negative tests in
+  `tests/test_audit_recovered_layers.py` prove it is not vacuous.
+
+Verification run: `audit_recovered_layers.py` (25 pure files) + `audit_architecture.py` pass;
+`lint.py` 216 files; `pytest tests/test_action_spawn_gates.py tests/test_audit_recovered_layers.py` 9
+passed; A067 hook tests 5 passed; `tests/test_demo_replay_equivalence.py` 23 passed / 23 skipped
+(0 divergence).  Frontier unchanged: object_behaviors (17) + object_movement (12) bounded-original
+seams remain the promotion frontier; `overkill/hooks.py` (3203 lines) is the next structural thinning.
+
 ## 2026-06-29 - Frontier consolidation: 511F is lifted (3rd disproven "gate"); §1 remaining scoped
 
 Check-registry-first again: the "511F render island" I named last turn as the status-render gate is

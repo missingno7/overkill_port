@@ -60,12 +60,16 @@ def layer_of(rel: str) -> str:
         return "hook_boundary"
     if rel.startswith("overkill/gameplay/"):
         return "lifted"
+    if rel.startswith("overkill/native_video/") or rel == "overkill/native_video.py":
+        # the native render host: a second host for recovered systems.  (The ``.py``
+        # form is the package dotted name ``overkill.native_video`` as mapped by
+        # ``module_layer``, so intra-package imports classify correctly.)
+        return "native_render"
     if (
         rel.startswith("overkill/rendering/")
         or rel.startswith("overkill/sounds/")
         or rel.startswith("overkill/asset_codecs/")
         or rel.startswith("overkill/file_io/")
-        or rel.startswith("overkill/native_video/")
     ):
         return "backend"
     return "vm"  # overkill top-level orchestration
@@ -82,8 +86,12 @@ def module_layer(dotted: str) -> str | None:
 
 # Forbidden target layers per source layer (hard failures).
 FORBIDDEN: dict[str, set[str]] = {
-    "source_pure": {"vm_external", "hook_boundary", "lifted", "backend", "bridge"},
-    "game_core": {"vm_external", "hook_boundary", "lifted", "backend", "bridge", "vm"},
+    "source_pure": {"vm_external", "hook_boundary", "lifted", "backend", "bridge", "native_render"},
+    "game_core": {"vm_external", "hook_boundary", "lifted", "backend", "bridge", "vm", "native_render"},
+    # The native render host drives recovered systems; it must not reach into the VM
+    # world (hooks, lifted gameplay, or VM-facing adapters/views) -- brief: "native
+    # runtime is a second host for recovered systems, not a second implementation".
+    "native_render": {"vm", "vm_external", "hook_boundary", "lifted", "bridge"},
     "backend": {"lifted"},
 }
 
@@ -138,7 +146,7 @@ def main() -> int:
                 )
 
     print("Architecture layer inventory:")
-    for layer in ("vm", "hook_boundary", "lifted", "backend", "bridge", "source_pure", "game_core"):
+    for layer in ("vm", "hook_boundary", "lifted", "backend", "native_render", "bridge", "source_pure", "game_core"):
         print(f"  {layer:14} {counts.get(layer, 0):3d} modules")
 
     if violations:

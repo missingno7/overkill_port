@@ -10,18 +10,13 @@ composition, verified byte-exact vs the VM at ~17k draws), dropping culled objec
 is the ``(sprite, screen_di)`` draw list the backend blits via ``composite_sprites`` -- computed
 from recovered state with no VM read of ``+0C``.
 
-Backend layer: composes the pure projection (``native_video``) over the object-pool records
-(``recovered/{domain,views}``); both edges are permitted (backend -> source_pure / bridge).
+Native render host: composes the pure projection (``native_video``) over the object-pool records
+(``recovered.domain``), reading fields through the pool's named accessors -- no VM-facing
+``views``/``adapters`` import, so the native runtime depends only on recovered domain/systems.
 """
 from __future__ import annotations
 
 from overkill.native_video.projection import build_native_sprite_layer
-from overkill.recovered.views.object_slots import (
-    OFF_ACTIVE_WORD,
-    OFF_SPRITE_OR_STATE,
-    OFF_X,
-    OFF_Y,
-)
 
 
 def native_sprite_draws(game_state, column_table, scroll) -> tuple:
@@ -38,10 +33,10 @@ def native_sprite_draws(game_state, column_table, scroll) -> tuple:
     objects = []
     for pool in (game_state.special_pool, game_state.object_pool, game_state.effect_pool):
         for i in range(len(pool.slots)):
-            if pool.word_at(i, OFF_ACTIVE_WORD) != 0:
+            if pool.active_word(i) != 0:
                 objects.append((
-                    pool.word_at(i, OFF_SPRITE_OR_STATE),
-                    pool.word_at(i, OFF_X),
-                    pool.word_at(i, OFF_Y),
+                    pool.sprite_word(i),
+                    pool.x_word(i),
+                    pool.y_word(i),
                 ))
     return build_native_sprite_layer(objects, column_table, scroll)
