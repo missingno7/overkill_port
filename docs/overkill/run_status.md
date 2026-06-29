@@ -1,3 +1,16 @@
+## 2026-06-29 - §1.2 score verify: native advance_hud_score byte-exact vs VM 5F0D across a demo
+
+The first **produced-vs-VM** verification of a native producer (the §1.2 native-state-mirror
+check, end-to-end -- beyond the synthetic per-routine oracle).  New standalone probe
+`overkill/probes/verify_native_score.py`: step-hooks the real 1010:5F0D on the pure-VM side and,
+for every in-game score event, predicts the next score natively via `advance_hud_score` (through
+`HudLayer.score_bcd`, the representation `NativeGameState` carries) and asserts it equals the VM's
+actual score after the add.  Result on `demo_play_tandy_L2_full` (1200 frames): **26 score
+events, 26/26 byte-exact, 0 divergence**.  This is the pattern the full verify-mode extends as
+more producers land (a producer proven against the VM on real demo inputs, not just synthetic
+fixtures).  Lint (192) green; standalone gate like `verify_playfield_compose` (not in the fast
+suite).
+
 ## 2026-06-29 - Bucket C: native score producer advance_hud_score (wires bcd_add_score)
 
 The first native state **producer**: `advance_hud_score(hud, delta) -> HudLayer` advances the
