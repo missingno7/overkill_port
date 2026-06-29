@@ -1,3 +1,23 @@
+## 2026-06-29 - Recon: camera view-target writer redirect + the clean pure-leaf veins are scarce
+
+A recon turn (no clean single-leaf slice found; the easy producers are harvested) that sharpens two
+frontiers with concrete findings:
+- **Camera view target (DS:237E/2380) writer is NOT direct-MOV and NOT via a 237C-base load.**  All
+  four `mov bx,237C` sites (8A72, AB34, B8F8, BA5A) READ the view target as the steer/motion reference
+  (5E42 steers objects TOWARD it; AB34 positions an object as view + a motion-table delta), none writes
+  it.  So roadmap #2 must trace the writer through a different addressing mode (a DI/SI `stosw`/store, or
+  the player/scroll init computing it into a register first), not the operand scans already tried.
+- **Composable movement-handler targets found:** 8A72 (`bx=237C; 5E1B; 5E42; jmp BC45`) and BA5A
+  (`bx=237C; 5E1B; 5E42; x+=2; sprite=233C+1Ch; jmp BC4B`) are UNHOOKED movement handlers built entirely
+  from recovered pieces (5E1B `_run_object_delta_helper_5e1b`, 5E42 `run_runtime_patched_object_steer_5e42`,
+  the BC45/BC4B postmove) -- candidate from-scratch native handler hooks (verify they are demo-reached
+  first; they are not direct EFC4 entries).  AB4F is a trivial one-liner (`sprite = DS:233C + 18h`) -- not
+  worth a single-use extraction.
+- **State:** the clean pure-leaf veins (shared selectors/spawn templates/decisions) are largely harvested
+  over this session (17 producers); the remaining is the harder tail -- from-scratch handler hooks (with
+  near-call/stack-scratch fidelity), the elusive camera writer, the VM-free runtime loop, and the two hard
+  blockers (starfield, BEC5).
+
 ## 2026-06-29 - Bucket A: native 7476 formation child spawn template -- pure % 17.5
 
 Recovered the shared 7476 formation child spawn (reached from B800/B73E) as a pure source-level
