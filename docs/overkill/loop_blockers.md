@@ -161,11 +161,20 @@ Bucket-C "compose the FrameSnapshot sprites from recovered state" step is built 
 composes each via `project_object_screen_di`, drops culls → the `(sprite, screen_di)` draw list, no
 VM read.  **Verified produced-vs-VM** by `verify_native_sprite_draws.py` at the A90C present-scan
 return (where `+0C` is fresh): native list == the VM's gameplay+effect slot draws (`+08`/`+0C`,
-active + on-screen), **L2/L5/L6-boss/player-death 200/200 0-div** (8th cross-demo producer).  NEXT
-render-composition slice: carry the leading view-anchor "special" slot (DS:237C, drawn first) in
-`NativeGameState` so the native list is the COMPLETE draw list (special + gameplay + effect), then
-the native FrameSnapshot + the standalone loop.  The object-update island (pool producer) remains
-the substantial §1 recovery.
+active + on-screen), **L2/L5/L6-boss/player-death 200/200 0-div** (8th cross-demo producer).
+
+**DONE (2026-06-29, later) — the COMPLETE native draw list (special view-anchor slot):**
+`NativeGameState` now carries the leading `special_pool` (DS:237C, drawn first), so
+`native_sprite_draws` walks (special, gameplay, effect) → the COMPLETE draw list, no VM read.
+Verified the special slot follows the same `project_object_screen_di` (a normal 5AC8 draw) then
+wired it through `NativeGameState.special_pool` / `read_native_game_state` / the probe's VM ref:
+**L2 300/300, L5/L6-boss/player-death/mothership 250/250 0-div**.  Aliasing fact locked: the
+special slot's X/Y (237E/2380) ARE the VIEW_TARGET/camera globals (a camera move drifts both
+`camera` and `special_pool`).  `SPECIAL_DRAW_SLOT_BASE/_COUNT` moved to `views/object_slots.py`.
+**The render side is now FULLY recovered (leaves + complete composed draw list).**  Remaining §1:
+the object-update island (the per-frame pool *producer* — b73e→bc4b/AD60 tails + 5DB2 target-seek)
+and, for a full native FRAME, the BLOCKED starfield plate (above).  Next native step: the
+standalone-loop scaffolding consuming the verified producers, and/or the object-update recovery.
 
 ## NOTE (process) — check lifted-status before "recovering" a routine
 

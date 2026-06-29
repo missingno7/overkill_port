@@ -1,3 +1,21 @@
+## 2026-06-29 - Bucket C: COMPLETE native draw list (special view-anchor slot) byte-exact vs VM
+
+Completed the native draw list: `NativeGameState` now carries the leading view-anchor `special_pool`
+(DS:237C, the slot the present scan draws FIRST/back-most), so `native_sprite_draws` composes the
+COMPLETE draw list (special, then gameplay, then effect -- the witnessed-exact present order) from
+recovered state with no VM read.  Verified the special slot follows the same `project_object_screen_di`
+projection (it is a normal 5AC8 draw) by a probe experiment first, then wired it in:
+`NativeGameState.special_pool` (+ its `_pool_mismatches` comparison), `read_native_game_state` reads
+DS:237C (1-slot table), `native_sprite_draws` walks it first, and `verify_native_sprite_draws.py`'s
+VM reference prepends it.  **Verified produced-vs-VM byte-exact**: L2 300/300, L5/L6-boss/
+player-death/mothership 250/250 -- 0 divergence, the COMPLETE draw list.  Surfaced + locked a real
+aliasing fact: the special slot's X/Y (237E/2380) ARE the VIEW_TARGET/camera globals, so a camera
+move drifts both `camera` and `special_pool` (same memory) -- the byte-faithful mirror reports both
+(test updated).  `SPECIAL_DRAW_SLOT_BASE/_COUNT` now live in `views/object_slots.py` (canonical
+layout source).  Lint (202) + both audits pass; full suite green.  The render side is now fully
+recovered (leaves + complete composed draw list); the object-update island (pool producer) is the
+one remaining §1 recovery.
+
 ## 2026-06-29 - Bucket C: native draw-list producer (native_sprite_draws) byte-exact vs VM
 
 The first **composed native render producer**: `native_sprite_draws(game_state, column_table,

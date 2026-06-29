@@ -23,13 +23,19 @@ from overkill.recovered.views.object_slots import (
     FRAME_TIMER_TABLE_BASE,
     GAMEPLAY_OBJECT_TABLE_BASE,
     SCORE_BCD_BASE,
+    SPECIAL_DRAW_SLOT_BASE,
 )
 
 DS = 0x1A0F
 
 
 def _state(camera_xy=(0x10, 0x20), score=(0x0990, 0x0003), pool_slot0_word0=0x0001,
-           effect_slot0_word0=0x0010) -> NativeGameState:
+           effect_slot0_word0=0x0010, special_slot0_word0=0x0020) -> NativeGameState:
+    special = ObjectPool(
+        base=SPECIAL_DRAW_SLOT_BASE,
+        stride=4,
+        slots=((special_slot0_word0, 0x0000),),
+    )
     pool = ObjectPool(
         base=GAMEPLAY_OBJECT_TABLE_BASE,
         stride=4,
@@ -41,6 +47,7 @@ def _state(camera_xy=(0x10, 0x20), score=(0x0990, 0x0003), pool_slot0_word0=0x00
         slots=((effect_slot0_word0, 0x0000),),
     )
     return NativeGameState(
+        special_pool=special,
         object_pool=pool,
         effect_pool=effect,
         camera=CameraState(x=camera_xy[0], y=camera_xy[1]),
@@ -70,11 +77,16 @@ def test_native_game_state_mismatches_reports_each_substate():
     assert native_game_state_mismatches(_state(effect_slot0_word0=0x0011), base) == (
         ("effect_pool", "slot[0].word[0x0]", 0x0011, 0x0010),
     )
+    # special-pool slot drift (the leading view-anchor slot)
+    assert native_game_state_mismatches(_state(special_slot0_word0=0x0021), base) == (
+        ("special_pool", "slot[0].word[0x0]", 0x0021, 0x0020),
+    )
 
 
 def test_native_game_state_mismatches_reports_pool_layout_change():
     a = _state()
     b = NativeGameState(
+        special_pool=a.special_pool,
         object_pool=ObjectPool(base=a.object_pool.base, stride=8, slots=a.object_pool.slots),
         effect_pool=a.effect_pool,
         camera=a.camera,
@@ -110,9 +122,12 @@ def test_read_native_game_state_detects_vm_drift_after_capture():
     mem = _planted_vm()
     captured = read_native_game_state(mem, DS)
     # The VM then advances (camera moves); the captured native state no longer mirrors it.
+    # VIEW_TARGET_X (DS:237E) is BOTH the camera X and the special view-anchor slot's X word
+    # (0x237C + 0x02) -- they alias the same memory -- so both substates report the drift.
     mem.ww(DS, VIEW_TARGET_X, 0x0058)
     assert native_game_state_mismatches(captured, read_native_game_state(mem, DS)) == (
         ("camera", "x", 0x50, 0x58),
+        ("special_pool", "slot[0].word[0x2]", 0x50, 0x58),
     )
 
 

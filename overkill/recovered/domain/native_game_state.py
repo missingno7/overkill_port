@@ -26,13 +26,15 @@ class NativeGameState:
     """The aggregate native game state, grown as more §1.2 states are recovered.
 
     Today it carries the states whose native mirrors are proven byte-faithful: the
-    gameplay ``object_pool`` + the ``effect_pool`` (the two 0x38-stride object tables
-    the present scan walks), the ``camera`` view origin, and the ``hud`` (status
-    counters + ``score_bcd`` = the §1.2 ScoreState).  The standalone runtime produces
-    this with no VM; verify mode compares it against the VM-projected state via
-    :func:`native_game_state_mismatches`.
+    ``special_pool`` (the leading view-anchor slot) + the gameplay ``object_pool`` +
+    the ``effect_pool`` (the 0x38-stride object tables the present scan walks, in the
+    witnessed-exact special-then-gameplay-then-effect draw order), the ``camera`` view
+    origin, and the ``hud`` (status counters + ``score_bcd`` = the §1.2 ScoreState).
+    The standalone runtime produces this with no VM; verify mode compares it against
+    the VM-projected state via :func:`native_game_state_mismatches`.
     """
 
+    special_pool: ObjectPool
     object_pool: ObjectPool
     effect_pool: ObjectPool
     camera: CameraState
@@ -90,7 +92,9 @@ def native_game_state_mismatches(
         if nv != rv:
             out.append(("hud", f"score_bcd[{j}]", nv, rv))
 
-    # The two object pools: layout first, then byte-faithful per-slot/per-word.
+    # The object pools (special view-anchor, then gameplay, then effect -- draw order):
+    # layout first, then byte-faithful per-slot/per-word.
+    _pool_mismatches("special_pool", native.special_pool, reference.special_pool, out)
     _pool_mismatches("object_pool", native.object_pool, reference.object_pool, out)
     _pool_mismatches("effect_pool", native.effect_pool, reference.effect_pool, out)
     return tuple(out)

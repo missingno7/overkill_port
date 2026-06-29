@@ -1,19 +1,18 @@
 """Verify the native sprite draw list (native_sprite_draws, from NativeGameState) reproduces the
-VM's gameplay+effect draw list byte-exact across a gameplay demo -- the §1.2 RenderState-mirror
-gate for the composed draw list (sprite identity + draw order + on-screen set + screen di).
+VM's complete draw list byte-exact across a gameplay demo -- the §1.2 RenderState-mirror gate for
+the composed draw list (sprite identity + draw order + on-screen set + screen di).
 
-The present scan 1010:A90C walks the gameplay (DS:8D12 -> 2B5C) then effect (DS:32CA -> 23B4)
-tables, drawing each active slot and writing its screen di to ``+0C`` (FFFFh = off-screen).  At
-A90C's return every drawn slot's ``+0C`` is fresh and the slots' X/Y are still the draw-time
-values, so this samples there: it builds the native draw list from a NativeGameState read out of
-the same VM memory (``native_sprite_draws`` over the live DS:99C8 column table + DS:234C scroll)
-and the VM reference list directly from the slots (sprite ``+08``, di ``+0C``, active ``+00``,
-on-screen ``+0C != FFFF``), in the same gameplay-then-effect order, and asserts they are equal.
+The present scan 1010:A90C walks the special view-anchor slot (DS:237C), then the gameplay
+(DS:8D12 -> 2B5C), then the effect (DS:32CA -> 23B4) slots, drawing each active one and writing its
+screen di to ``+0C`` (FFFFh = off-screen).  At A90C's return every drawn slot's ``+0C`` is fresh and
+the slots' X/Y are still the draw-time values, so this samples there: it builds the native draw list
+from a NativeGameState read out of the same VM memory (``native_sprite_draws`` over the live DS:99C8
+column table + DS:234C scroll) and the VM reference list directly from the slots (sprite ``+08``, di
+``+0C``, active ``+00``, on-screen ``+0C != FFFF``), in the same special-then-gameplay-then-effect
+order, and asserts they are equal.
 
-An all-match run means the native composition produces exactly the VM's gameplay+effect draws from
-recovered state -- so the backend can build the FrameSnapshot sprite list with no VM read.  (The
-single leading view-anchor "special" slot at DS:237C is not yet carried by NativeGameState; the VM
-reference here is the gameplay+effect portion to match native_sprite_draws' current scope.)
+An all-match run means the native composition produces exactly the VM's draws from recovered state
+-- so the backend can build the FrameSnapshot sprite list with no VM read.
 
 Usage:
     python -m overkill.probes.verify_native_sprite_draws [demo_name] [max_frames]
@@ -42,6 +41,8 @@ from overkill.recovered.views.object_slots import (  # noqa: E402
     OFF_ACTIVE_WORD,
     OFF_DRAW_SCRATCH_OR_DI,
     OFF_SPRITE_OR_STATE,
+    SPECIAL_DRAW_SLOT_BASE,
+    SPECIAL_DRAW_SLOT_COUNT,
 )
 
 CS = 0x1010
@@ -52,10 +53,12 @@ OFFSCREEN = 0xFFFF
 
 
 def _vm_draw_list(mem, ds: int) -> tuple:
-    """The VM's gameplay-then-effect draw list straight from the slots: active and on-screen
-    (``+0C != FFFF``), each as ``(sprite +08, di +0C)`` -- the witnessed-exact present order."""
+    """The VM's draw list straight from the slots: special, then gameplay, then effect (the
+    witnessed-exact present order); active and on-screen (``+0C != FFFF``), each as
+    ``(sprite +08, di +0C)``."""
     out = []
     for base, count in (
+        (SPECIAL_DRAW_SLOT_BASE, SPECIAL_DRAW_SLOT_COUNT),
         (GAMEPLAY_OBJECT_TABLE_BASE, GAMEPLAY_OBJECT_TABLE_COUNT),
         (EFFECT_OBJECT_TABLE_BASE, EFFECT_OBJECT_TABLE_COUNT),
     ):

@@ -37,6 +37,13 @@ GAMEPLAY_OBJECT_ALLOCATOR_WRAP_SENTINEL = GAMEPLAY_OBJECT_TABLE_END
 OBJECT_TABLE_BASE = EFFECT_OBJECT_TABLE_BASE
 OBJECT_TABLE_COUNT = EFFECT_OBJECT_TABLE_COUNT
 
+# The single leading view-anchor "special" object slot, one 0x38-stride record before the
+# effect table (DS:237C). The present scan draws it FIRST (back-most); its x/y are the
+# VIEW_TARGET globals (the view/camera anchor). Carried as a 1-entry table so the draw-list
+# composition walks (special, gameplay, effect) in the witnessed-exact present order.
+SPECIAL_DRAW_SLOT_BASE = (EFFECT_OBJECT_TABLE_BASE - OBJECT_SLOT_STRIDE) & 0xFFFF  # 0x237C
+SPECIAL_DRAW_SLOT_COUNT = 1
+
 # Field offsets that are already repeatedly observed in movement/collision/
 # rendering/object-dispatch hooks.  These are layout facts, not a claim that
 # every table uses the same semantic name at that byte.  Some offsets have

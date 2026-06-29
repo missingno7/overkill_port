@@ -1,8 +1,8 @@
 """Bucket C: native_sprite_draws composes the FrameSnapshot sprite list from a NativeGameState's
 object pools, VM-free.  The per-object screen_di is separately gated byte-exact vs the VM by
-overkill/probes/verify_native_screen_di.py (35CC +0C, ~17k draws) and the present scan ORDER
-(gameplay then effect) is the witnessed-exact order proven in frame_snapshot_adapter; this locks
-the walk/active-filter/order/cull composition in a VM-free unit test."""
+overkill/probes/verify_native_screen_di.py (35CC +0C, ~17k draws) and the whole composed list +
+present ORDER (special, gameplay, effect) by verify_native_sprite_draws.py (A90C, 200/200); this
+locks the walk/active-filter/order/cull composition in a VM-free unit test."""
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -14,6 +14,7 @@ from overkill.recovered.views.object_slots import (
     EFFECT_OBJECT_TABLE_BASE,
     GAMEPLAY_OBJECT_TABLE_BASE,
     OBJECT_SLOT_STRIDE,
+    SPECIAL_DRAW_SLOT_BASE,
 )
 
 
@@ -28,10 +29,17 @@ def _pool(base: int, slots: tuple) -> ObjectPool:
     return ObjectPool(base=base, stride=OBJECT_SLOT_STRIDE, slots=slots)
 
 
-def test_native_sprite_draws_walks_both_pools_in_present_order():
+def _state(special: ObjectPool, gameplay: ObjectPool, effect: ObjectPool) -> SimpleNamespace:
+    return SimpleNamespace(special_pool=special, object_pool=gameplay, effect_pool=effect)
+
+
+def test_native_sprite_draws_walks_all_pools_in_present_order():
     # cols 0x00-0x0F -> 0x1000 (on screen), 0x10-0x1F -> FFFF (cull).  scroll adds to every di.
     column_table = [0x1000] * 0x10 + [PROJECTION_CULL_ENTRY] * 0x10
     scroll = 0x0100
+    special = _pool(SPECIAL_DRAW_SLOT_BASE, (
+        _slot(1, 0x02, 0x08, 0x0001),   # active view-anchor -> (0x08>>1)+0x1000+scroll = 0x1104
+    ))
     gameplay = _pool(GAMEPLAY_OBJECT_TABLE_BASE, (
         _slot(1, 0x05, 0x10, 0x0041),   # active -> (0x10>>1)+0x1000+scroll = 0x1108
         _slot(0, 0x06, 0x20, 0x0099),   # inactive -> skipped
@@ -40,9 +48,9 @@ def test_native_sprite_draws_walks_both_pools_in_present_order():
     effect = _pool(EFFECT_OBJECT_TABLE_BASE, (
         _slot(1, 0x07, 0x40, 0x0042),   # active effect -> (0x40>>1)+0x1000+scroll = 0x1120
     ))
-    state = SimpleNamespace(object_pool=gameplay, effect_pool=effect)
-    # Gameplay slots first (witnessed present order), then effect; inactive + culled dropped.
-    assert native_sprite_draws(state, column_table, scroll) == (
+    # special first (back-most), then gameplay, then effect; inactive + culled dropped.
+    assert native_sprite_draws(_state(special, gameplay, effect), column_table, scroll) == (
+        (0x0001, 0x1104),
         (0x0041, 0x1108),
         (0x0042, 0x1120),
     )
@@ -50,7 +58,7 @@ def test_native_sprite_draws_walks_both_pools_in_present_order():
 
 def test_native_sprite_draws_empty_when_no_active_slots():
     column_table = [0x1000] * 0x20
+    special = _pool(SPECIAL_DRAW_SLOT_BASE, (_slot(0, 0x01, 0x02, 0x03),))
     gameplay = _pool(GAMEPLAY_OBJECT_TABLE_BASE, (_slot(0, 0x01, 0x02, 0x03),))
     effect = _pool(EFFECT_OBJECT_TABLE_BASE, ())
-    state = SimpleNamespace(object_pool=gameplay, effect_pool=effect)
-    assert native_sprite_draws(state, column_table, 0x0000) == ()
+    assert native_sprite_draws(_state(special, gameplay, effect), column_table, 0x0000) == ()
