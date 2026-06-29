@@ -362,6 +362,19 @@ attended part; the AA46/AA71 view-contact half is correct (1483) but insufficien
 fact: the BC4B collision death = AA46/AA71 view-contact OR the 62F6 overlap scan; both -> BFC7-style
 transition.
 
+**62F6 internals assessed (2026-06-29) — a grid overlap scan (recoverable) -> BEC5 (observed handler).**
+Read `contact_side_effects.py:_run_object_overlap_scan_62f6`: after pre-scan exemptions (inactive,
+x<20h, draw_layer +16 ==0, logic_id +18 in {0,1,26h}), it scans the gameplay object table for an
+active + solid (`scan_enable_or_solid` +1E) candidate sharing the current object's 8px grid cell --
+`dx = y & FFF8`, `cx = x & FFF8`, with obj_type-dependent extra y/x candidate cells (type 2 adds
+two more rows, and X cells unless logic_id in {78h,79h}).  On a grid match it jumps to **`BEC5`**
+(`_run_collision_handler_bec5_observed`), the collision handler that performs the transition -- and
+**BEC5 is observed/unlifted** (the genuinely-attended part).  So the 62F6 path = a recoverable pure
+grid-overlap scan over `NativeGameState`'s pool (the cell-match decision) + the UNRECOVERED BEC5
+transition handler.  Fresh-session plan: recover BEC5 (the handler), then the 62F6 scan composes the
+recovered AA46/AA71 + BEC5 + the grid test into the full BC4B collision death.  This is the genuine
+object-vs-object collision island -- a cross-object scan + an observed handler, the attended frontier.
+
 ## NOTE (process) — check lifted-status before "recovering" a routine
 
 `519A` / `3153` (HUD text dispatch + Tandy glyph) were ALREADY lifted (`rendering/text.py`,
