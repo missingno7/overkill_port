@@ -1,3 +1,28 @@
+## 2026-06-29 - Inflection: lifted-handler vein exhausted; next = pure BC4B + raw-ASM state machines
+
+Assessed the remaining object-update handlers (disassembled BE3C/8B3B, read 8D4F).  The cheap vein
+the session mined -- LIFTED handlers that tail-jump to BC4B, so the native transform is verifiable AT
+the BC4B handoff (B86D/AED8/B9F0) -- is now exhausted for the big handlers.  What remains is harder:
+
+- **BE3C (0x01, L2 521 + L3 558)**: a jump-table STATE MACHINE (dispatch on +14 through CS:BE54, many
+  sub-states, mixed BC45/BD17/ret tails).  A multi-state recovery, not a single transform.
+- **8B3B (0x40, L2 916)**: raw ASM pulling in the unrecovered 4D95 helper + DS:96D2/96EC tables.
+- **8D4F (target-patrol, lifted, multi-level)**: INTERNALIZES BC4B (calls it then RETs), so its final
+  slot can't be predicted without a fully-pure BC4B.
+- **BC4B itself** (the shared post-move stage EVERY object passes through) is only PARTIALLY pure
+  (`clamp_postmove_y_bcb1` + `object_postmove_x_bounds_deactivates_bc4b`); its collision path is lifted.
+
+Highest-leverage next recoveries (fresh focused efforts -- raw-ASM/state-machine work is error-prone
+to attempt at the tail of a long run): (1) **the full pure BC4B post-move** -- shared by every handler,
+unblocks 8D4F, and is a prerequisite for a VM-free driver that composes handler -> BC4B; (2) the
+raw-ASM state machines (BE3C is highest-value, multi-level); (3) the non-object pillars (frame loop,
+audio, modes, starfield).
+
+Session result (the "continue" run): AE09 + **B86D + AED8 + B9F0 fully native** (3 complex multi-branch
+handlers) + 5E1B recovered; **L2 object-update 53% native, L3 ~60%**; every slice byte-exact vs the VM
+(0 divergence), all pushed; the incremental compose-and-gate method proven and handlers shown to
+generalize across levels.  No code changed this turn (terrain assessment only).
+
 ## 2026-06-29 - B9F0 FULLY NATIVE (all 4 paths) -- 3rd complete complex handler; L3 ~60%
 
 Final B9F0 slice: the two 5E42 paths.  Path C overshoot (not reached, x > target): 5E42 with the slot's
