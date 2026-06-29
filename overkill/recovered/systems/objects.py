@@ -11,6 +11,7 @@ from overkill.recovered.domain.object_behaviors import (
     Ab10Update,
     Aba3Update,
     Ae09MovementStep,
+    Ae09SlotUpdate,
     Ae09Update,
     B73ETargetReachedResolution,
     BossGroupSlotTransition,
@@ -24,7 +25,13 @@ from overkill.recovered.domain.object_slots import (
     ObjectSpawnSeed,
     ObjectSpawnSeedA4EA,
 )
+from overkill.recovered.domain.tilemap import LevelTileContext, TileProbeInput
 from overkill.recovered.systems.movement import step_operations_for_direction
+from overkill.recovered.systems.tilemap import (
+    TILE_PROBE_COLUMN_STRIDE,
+    compute_tile_probe_5073,
+    lookup_tile_class_byte,
+)
 
 # 1010:8209 object-slot spawn template.  Stamps a freshly allocated effect slot
 # with a fixed logic-id-14h object at the caller's source position.
@@ -285,6 +292,66 @@ def object_movement_step_ae09(
         sprite_or_state=upd.sprite,
         x_word=x,
         y_word=y,
+    )
+
+
+def object_tile_probe_deactivates_ad60(obj_x: int, obj_y: int, tiles: LevelTileContext) -> bool:
+    """AD60's tile-probe deactivation trigger (the 1010:AD60 tile path: 5073 +13 -> 505B -> class==1).
+
+    Returns True iff the tile one map row below the moved object -- the recovered 5073 tile offset plus
+    the 13-column row stride -- has class 1, the condition under which AD60 routes the object to the
+    BD17 deactivate tail.  Composes the recovered 5073 probe (:func:`compute_tile_probe_5073`) and 505B
+    class lookup (:func:`lookup_tile_class_byte`) over the level tile data (:class:`LevelTileContext`)."""
+    probe = compute_tile_probe_5073(
+        TileProbeInput(
+            origin_x_word=tiles.origin_x_word,
+            row_base_word=tiles.row_base_word,
+            object_x_word=obj_x,
+            object_y_word=obj_y,
+        )
+    )
+    offset = (probe.tile_offset_word + TILE_PROBE_COLUMN_STRIDE) & 0xFFFF
+    raw = tiles.tile_plane[offset] & 0x00FF
+    return lookup_tile_class_byte(raw, tiles.class_table) == 1
+
+
+def object_update_ae09(
+    substate: int,
+    direction_or_step: int,
+    x_word: int,
+    y_word: int,
+    active_word: int,
+    draw_layer: int,
+    logic_id: int,
+    tile_probe_suppressed: bool,
+    tiles: LevelTileContext,
+) -> Ae09SlotUpdate:
+    """Pure WHOLE per-slot AE09 update (logic_id 0Ch): the movement step + the AD60 bounds/tile -> active.
+
+    Composes :func:`object_movement_step_ae09` (timer/step + AF22 move) with
+    :func:`object_bounds_tile_decision_ad60` on the *post-move* position: AD60 ``deactivate`` (out of
+    play bounds) clears ``active``; ``skip`` leaves it; ``tile_probe`` samples the tile one row below
+    (:func:`object_tile_probe_deactivates_ad60`) and clears ``active`` when that tile has class 1.  The
+    BD17 global counter/spawn writes are separate state (not slot fields), out of this transform.  This
+    is the complete native slot transform for an AE09 object -- the template for the per-logic-id native
+    dispatch (movement primitive + bounds/tile -> the next slot)."""
+    move = object_movement_step_ae09(substate, direction_or_step, x_word, y_word)
+    decision = object_bounds_tile_decision_ad60(
+        move.x_word, move.y_word, draw_layer, logic_id, tile_probe_suppressed=tile_probe_suppressed
+    )
+    if decision.kind == "deactivate":
+        new_active = 0x0000
+    elif decision.kind == "skip":
+        new_active = active_word & 0xFFFF
+    else:  # "tile_probe": deactivate iff the tile one map row below has class 1.
+        new_active = 0x0000 if object_tile_probe_deactivates_ad60(move.x_word, move.y_word, tiles) else (active_word & 0xFFFF)
+    return Ae09SlotUpdate(
+        substate=move.substate,
+        direction_or_step=move.direction_or_step,
+        sprite_or_state=move.sprite_or_state,
+        x_word=move.x_word,
+        y_word=move.y_word,
+        active_word=new_active,
     )
 
 

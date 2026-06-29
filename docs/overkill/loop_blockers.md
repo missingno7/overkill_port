@@ -269,6 +269,18 @@ lookup** — that unblocks the per-slot active/death for AE09 and the whole tile
 §1.2 ``LevelState`` mirror besides.  (The movement halves are done; this is the death/bounds half's
 dependency.)
 
+**DONE (2026-06-29, later) — the full AE09 slot transform IS complete; the revert's premise was wrong.**
+The tile probe/lookup (5073/505B) were ALREADY pure-recovered (`systems/tilemap.py`); only the tile-map
+INPUTS were missing.  Modeled them as `LevelTileContext` (DS:234E origin, DS:2350 row base, CS:[9592]
+tile plane, DS:C3AA class table -- a LevelState seed), recovered the AD60 tile-collision composition
+`object_tile_probe_deactivates_ad60` (5073 +13 row -> 505B -> class==1 -> deactivate), and shipped
+`object_update_ae09` (movement + AD60 bounds/tile -> active).  **Verified produced-vs-VM byte-exact**
+L5_continue 353/353, L5_short 342/342, 0-div, NO skips (tile-probe included).  So the COMPLETE AE09
+slot transform is native (everything but the BD17 global counter/spawn side-effects).  **Pattern proven:
+movement primitive + AD60 bounds/tile -> the next slot.**  Remaining object-update: apply this template
+to the other behaviors (the seekers via 5DB2 + bc4b; the 5E42-steer b86d), and the global death/spawn
+side-effects (BD17/BFC7), then the per-logic-id dispatch.
+
 ## NOTE (process) — check lifted-status before "recovering" a routine
 
 `519A` / `3153` (HUD text dispatch + Tandy glyph) were ALREADY lifted (`rendering/text.py`,

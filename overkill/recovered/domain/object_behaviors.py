@@ -71,6 +71,25 @@ class Ae09MovementStep:
 
 
 @dataclass(frozen=True, slots=True)
+class Ae09SlotUpdate:
+    """Pure WHOLE per-slot result of the 1010:AE09 behavior (logic_id 0Ch): movement + active.
+
+    Extends :class:`Ae09MovementStep` (timer/step + AF22 move) with the slot's ``active_word`` after
+    the AD60 bounds/tile tail: AD60 deactivates the slot (BD17 -> ``active = 0``) when the moved object
+    leaves the play bounds, OR -- for the tile-probe family -- when the tile one map row below has
+    class 1; otherwise it survives (``active`` unchanged).  This is the complete native slot transform
+    for an AE09 object EXCEPT the BD17 global counter/spawn writes (separate state, not slot fields).
+    The template for the per-logic-id native dispatch: movement primitive + bounds/tile -> next slot."""
+
+    substate: int
+    direction_or_step: int
+    sprite_or_state: int
+    x_word: int
+    y_word: int
+    active_word: int
+
+
+@dataclass(frozen=True, slots=True)
 class Aba3Update:
     """Pure result of the 1010:ABA3 tracked-object follower probe (reached from AD04).
 

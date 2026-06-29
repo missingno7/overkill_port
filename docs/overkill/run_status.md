@@ -15,6 +15,24 @@ green.  With AE09 (fixed-step) + 5DB2 (target-seek), the two movement primitives
 behaviors are now native; remaining object-update work is the global side-effects (counters/spawns/
 BD17 death) + composing the per-logic-id dispatch.
 
+## 2026-06-29 - Bucket C: COMPLETE native AE09 slot transform (movement + tile-collision death) vs VM
+
+Completed the first WHOLE per-slot object-update transform -- the template for the per-logic-id native
+dispatch.  `object_update_ae09` (systems/objects.py) composes the AE09 movement
+(`object_movement_step_ae09`) with the AD60 bounds/tile decision -> the slot's `active`: out of play
+bounds -> deactivate; the tile-probe family (draw_layer 2) -> deactivate when the tile one map row
+below has class 1; else survive.  This required the **tile-collision composition**
+`object_tile_probe_deactivates_ad60` (5073 offset + the 13-col row stride -> 505B class == 1), which
+revealed the earlier "needs LevelState from scratch" revert was wrong: the tile probe/lookup were
+**already pure-recovered** (`systems/tilemap.py`); only the tile-map INPUTS were missing, now modeled
+as `LevelTileContext` (DS:234E origin, DS:2350 row base, the CS:[9592] tile plane, the DS:C3AA class
+table) -- a seed of the native LevelState.  **Verified produced-vs-VM byte-exact** by the extended
+`verify_native_object_update_ae09.py` (now movement+active, tile-probe included, no skips):
+**L5_continue 353/353, L5_short 342/342, 0 divergence**.  (Probe perf: snapshot the static class table
+once -- avoids 256 reads/call.)  Lint (204) + both audits pass; full suite green.  This is the complete
+AE09 object-update except the BD17 global counter/spawn writes (separate state); it proves the per-slot
+transform pattern (movement primitive + bounds/tile -> next slot) end-to-end.
+
 ## 2026-06-29 - Bucket C: FIRST native object-update producer (AE09 movement) byte-exact vs VM
 
 Breakthrough on the object-update island: the earlier "fully coupled to the attended-only death

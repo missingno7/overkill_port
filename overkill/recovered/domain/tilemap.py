@@ -46,6 +46,21 @@ class TileLookupResult:
 
 
 @dataclass(frozen=True, slots=True)
+class LevelTileContext:
+    """The level tile-map inputs the AD60 tile-probe samples (a seed of the native LevelState).
+
+    ``origin_x_word`` (DS:234E) + ``row_base_word`` (DS:2350) are the 5073 probe globals; ``tile_plane``
+    is the raw tile-byte grid (the CS:[9592] segment, indexed by the 5073 tile offset); ``class_table``
+    is the 256-entry DS:C3AA raw-tile -> class map.  The hybrid path reads these from VM memory; the
+    standalone path owns them as part of LevelState."""
+
+    origin_x_word: int
+    row_base_word: int
+    tile_plane: Sequence[int]
+    class_table: Sequence[int]
+
+
+@dataclass(frozen=True, slots=True)
 class TileContactProbePlan:
     """Pure plan for the recovered 1010:4FF9 tile/contact probe.
 
