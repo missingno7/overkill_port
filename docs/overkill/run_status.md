@@ -1,3 +1,21 @@
+## 2026-06-29 - Camera pieces are ALREADY RECOVERED -- roadmap #2 is done; check-registry-first
+
+Followed up the "recover 5010 / the view-anchor movement" plan and found 5010 is the body of 1010:4FF9
+-- which is ALREADY FULLY RECOVERED: `run_tile_contact_probe_4ff9_body` (collision_adapter.py) composes
+`is_tile_contact_side_valid_4ff9` + `tile_contact_probe_plan_4ff9` + `tile_contact_offset_table_byte_offset`
++ 5073/505B and cross-checks them against the ASM-compatible body.  4FF9 is a directional tile-contact
+PROBE (move by the DS:214E delta, scan the plan, ALWAYS restore x/y, return carry = blocked) -- not a
+committed move.  Its caller 9CB9 is a lifted frame-controller.  So ALL the camera-object's pieces are
+already recovered/lifted: the 4FF9 contact probe, the a5d1/a5ea/a5f9/a607 clamp-STEP moves
+(`_run_two_pass_word_clamp_step`, the committed view moves), the 5073/505B tile probe, and the 9CB9
+controller.  **roadmap #2 ("camera") is effectively done** -- the camera is the 237C special_pool object,
+advanced by these recovered routines; what remains for it is the same lifted->native composition frontier
+as every other object handler (make 9CB9 + its pieces a native pure update), NOT a separate island.
+**Process note (check-registry-first):** I nearly re-recovered 4FF9 and spent three turns recon-ing a
+camera system that was already recovered.  The [[overkill-check-hook-registry-first]] rule applies: grep
+the recovered/ + gameplay/ layers for a CS:IP (and its neighbors) BEFORE disassembling it as if
+un-recovered.  No code was written (investigation only); nothing to revert.
+
 ## 2026-06-29 - Recon RESOLVED: the "camera" is an OBJECT -- roadmap #2 folds into the object-update
 
 Resolved the multi-turn camera mystery by instrumenting the demo to find what writes the view target
