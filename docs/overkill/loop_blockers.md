@@ -281,6 +281,20 @@ movement primitive + AD60 bounds/tile -> the next slot.**  Remaining object-upda
 to the other behaviors (the seekers via 5DB2 + bc4b; the 5E42-steer b86d), and the global death/spawn
 side-effects (BD17/BFC7), then the per-logic-id dispatch.
 
+**Clean low-risk producers exhausted (2026-06-29) — remaining object-update = 2 complex primitives.**
+Checked the last short behaviors: `b24d` = `5E42` steer + `B250` selector (coupled); `aba3` = a 1-field
+sprite (`object_logic_aba3` ALREADY recovered + the AC81 collision tail) = marginal/re-verification.
+So after AE09 (fixed-step + full transform incl. tile-collision) + 5DB2 (target-seek), the two
+remaining MOVEMENT/postmove primitives are both complex multi-part recoveries, best done with fresh
+context: (1) **`5E42` delta-steer** -- delta_x/y (+2A/+2C) -> direction via the `5EB5`/`5EC8` sign bits
++ the `move_step_error` (+2E) Bresenham accumulator + `A348` table -> `AF22`(DS:2312==3)/`AF63` step;
+the 3rd movement primitive (covers b24d/b86d steering).  (2) **`bc4b` postmove slot transform** --
+y-clamp (`clamp_postmove_y_bcb1` ✅) + x-bounds death (`BD17` -> active=0) + the collision path
+(BCCB -> `AA46`/`AA71` view-window ✅ -> `BFC7` death: logic_id=1 + C037 sprite + latch); the shared
+postmove for the seekers (b73e/b9f0/8d4f), composable from recovered pieces but multi-branch.  The
+template (movement primitive + bounds/tile -> next slot) extends to both; then the global death/spawn
+side-effects + the per-logic-id dispatch.
+
 ## NOTE (process) — check lifted-status before "recovering" a routine
 
 `519A` / `3153` (HUD text dispatch + Tandy glyph) were ALREADY lifted (`rendering/text.py`,
