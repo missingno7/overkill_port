@@ -110,14 +110,18 @@ verify native di == VM `+0C` across demos.  So the render-projection gap is itse
 remaining §1 gaps are coupled islands; no clean `verify_native_*` leaf remains** — the work is
 genuine multi-routine recovery, for a fresh, clean-context session.
 
-**Projection observe→derive head-start (2026-06-29):** captured active-sprite `(obj_x, obj_y,
-screen_di)` + camera/scroll from the L2 snapshot (`scratchpad/derive_projection.py`).  Decoding
-`screen_di` via the B800 bank geometry, the **X** offset is consistent (`screen_x ≈ obj_x − ~136`),
-but the **Y** is not (near-equal `obj_y` map to very different `di`) — so `+0C` is almost certainly
-in the **source-page (35FF) geometry, not B800's**, and/or factors a per-object Y the snapshot's 2
-on-screen sprites don't reveal.  Next: capture many samples over a *demo run* (not one snapshot) and
-also read the chosen 5AE2 Tandy handler to fix the page + the Y term; then implement
-`project_object_to_di` and verify native di == VM `+0C` across demos.  Partial, not yet derived.
+**Projection observe→derive — ATTEMPTED, needs the handler ASM (2026-06-29):** captured **410**
+active-sprite `(obj_x, obj_y, screen_di, camera_x, camera_y)` samples over an L2 demo run
+(`scratchpad/capture_projection.py`) and tested whether `decoded_screen − (obj − camera)` is
+constant under four page geometries (B800 bank; linear width 0xA0/0x68/0x150).  **None fits** — X
+has 49–95 distinct offsets and Y 37–73 across the 410 samples, for every geometry.  (The earlier
+2-sample snapshot "X ≈ obj_x − 136" hint was a coincidence, not a real fit.)  So `+0C` is **not** a
+simple camera-relative projection in any standard page geometry — it factors something else (a
+different reference origin, per-object scaling/anchor, or a non-standard stride/page).  Observation
+alone cannot crack it; the recovery requires **disassembling the chosen 5AE2 Tandy draw handler**
+(map the table, follow the dispatched handler's `+0C` computation), then implement
+`project_object_to_di` and verify native di == VM `+0C` across demos.  Confirms the render gap is a
+real island, not a derivable leaf.
 
 ## NOTE (process) — check lifted-status before "recovering" a routine
 
