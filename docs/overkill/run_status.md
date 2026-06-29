@@ -1,3 +1,32 @@
+## 2026-06-29 - The native frame controller: the recovered systems sequence themselves (pillar 3)
+
+First time the recovered systems run a frame *without the VM sequencing them*.  New module
+`overkill.recovered.systems.frame_loop` is the VM-free counterpart of 9B2E: it sequences the
+recovered systems over the native state, the same order, no VM.  `native_player_frame_step`
+composes the two native stages that share a data flow -- decode the input from the raw key
+state itself (not the VM's DS:98BE), then apply the movement bits to the view-anchor pool
+(DS:237C = NativeGameState.special_pool slot 0, confirmed via the adapter).  Returns the updated
+pool + the decoded flags the later fire/action stages will consume.  (`native_play.py` is the
+render presenter; this is the missing game-logic seam.)
+
+VERIFIED produced-vs-VM by `overkill.probes.verify_native_frame_loop` -- and this one verifies
+the *composition*, not just the stages separately: at 9B6F it builds the native FrameInput from
+the raw DS:98C4 key table + the control map, runs the controller, and asserts BOTH the decoded
+flags == the VM's DS:98BE AND the stepped anchor == the VM at 9B97.  L2_full `750/750`,
+player_death `583/583`, L6_boss `641/641` -- 0 divergence.
+
+The gate earned its keep: the first L6_boss run FAILED 109/750 where the separate input and
+movement probes each passed.  Root cause (a real find): when DS:A47C != 0 (boss/cutscene mode)
+9B2E first runs **1010:99F6**, a SCRIPTED-INPUT OVERRIDE -- `mov [98BE],0` then a jump table on
+A47C that writes scripted values (e.g. `mov [98BE],08h` auto-up).  So in those frames the input
+is a script, not the keyboard.  The composition probe now scopes to the normal path (A47C == 0)
+and reports the scripted frames (L6_boss: exactly the 109).  The no-clamp movement path is still
+covered by the standalone movement-bits probe (which reads the VM's real DS:98BE).
+
+Next: **99F6 is the next 9B2E stage** -- the scripted-input state machine (A47C jump table,
+9DB9/9DEA, the A47C advance) that drives boss/cutscene auto-movement.  Recover it and the
+controller's input stage covers boss mode too; then the 8546 secondary fire and the A067 fan-out.
+
 ## 2026-06-29 - Native frame loop stage 2: the 9B2E movement-bits stage (compose, don't re-recover)
 
 With the input poll native, the next 9B2E stage fell out of already-recovered pieces.  Frames
