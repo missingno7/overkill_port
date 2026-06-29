@@ -1,3 +1,28 @@
+## 2026-06-30 - Finish-the-gameplay-frame: recover the contact tile-collision probe (4FF9)
+
+User chose "finish the gameplay frame" toward cold boot.  Scouted the remaining 9B2E stages and the
+cleanest was the contact probe -- another compose-verified-leaves win: 1010:4FF9 (the 9CB6 contact
+stage's worker) is a non-destructive tile-collision probe whose leaves were ALREADY recovered in
+tilemap.py (compute_tile_probe_5073, lookup_tile_class_505b, the side gate + sampling plan).  It just
+needed the composition.
+
+`tilemap.probe_tile_contact_4ff9(object_x, object_y, side_index, offset_table, tiles) -> bool`: gate
+side >= 3 -> contact; apply the side's DS:214E dx/dy offset; map through 5073; sample one or two tile
+columns (each optionally with its neighbouring Y tile when Y isn't 16-aligned) through the C3AA class
+table; return CF (set = a non-zero tile class was hit).  Non-destructive (the original saves/restores
+the slot coords), so only the boolean is observable.
+
+VERIFIED produced-vs-VM by `overkill.probes.verify_native_tile_contact` (project slot + DS:214E + the
+tile context at 4FF9 entry, probe, compare the VM's CF at the return): L2 600/600, mothership 32/32,
+**L5_ringlas 553/553 including 81 actual contacts** -- 0 divergence, so BOTH the clear and the blocked
+paths are byte-exact.  Unit coverage in tests/test_tile_contact_probe.py (side gate, clear/blocked,
+single vs second column, adjacent-Y, the offset table).  No hook touched (pure add over existing
+leaves); lint + both audits + the manifest (unchanged -- tilemap.py opts out of @recovered_island) green.
+
+Note: the 9CB6 stage itself discards 4FF9's CF (both branches RET), so the value of this recovery is as
+the shared tile-collision PRIMITIVE the native movement/collision paths need -- not a state mutation in
+9CB6.  Remaining frame stages are still the deep spawn/script islands (A067 A958 table, 99F6, A212, rings).
+
 ## 2026-06-29 - Native frame controller stage: the object pass, verified WHOLE-POOL (not just per-slot)
 
 Added the controller's object-update stage and lifted its verification from per-slot to whole-pass.

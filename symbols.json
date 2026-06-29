@@ -292,7 +292,7 @@
   "1010:4FF9": {
     "island": "collision",
     "name": "overkill_tile_contact_probe_4ff9",
-    "notes": "Shared mid-level tile/contact probe. Applies one of three DS:214E probe offsets to SS:[BP+2]/[BP+4], calls 5073 coordinate-to-tile and 505B tile lookup, restores the original probe coordinates, and returns CF clear for empty space or CF set for blocking/contact tiles. Raw collision primitive only; no semantic object role inferred.",
+    "notes": "Shared mid-level tile/contact probe. Applies one of three DS:214E probe offsets to SS:[BP+2]/[BP+4], calls 5073 coordinate-to-tile and 505B tile lookup, restores the original probe coordinates, and returns CF clear for empty space or CF set for blocking/contact tiles. Raw collision primitive only; no semantic object role inferred. Now recovered as the pure overkill.recovered.systems.tilemap.probe_tile_contact_4ff9 (composes the side gate + DS:214E offset + compute_tile_probe_5073 + the one/two-column class sampling); proven byte-equal to the VM's CF by overkill.probes.verify_native_tile_contact (L2 600/600, L5_ringlas 553/553 incl. 81 actual contacts, 0 divergence).",
     "status": "replaced"
   },
   "1010:50AB": {

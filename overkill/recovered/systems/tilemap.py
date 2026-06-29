@@ -8,8 +8,9 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from overkill.recovered.domain.coords import u16
+from overkill.recovered.domain.coords import i16, u16
 from overkill.recovered.domain.tilemap import (
+    LevelTileContext,
     TileContactProbePlan,
     TileCollisionProbePlan,
     TileLookupInput,
@@ -119,6 +120,56 @@ def tile_contact_probe_plan_4ff9(
 def tile_contact_offset_table_byte_offset(side_index_word: int) -> int:
     """Return the DS:214E byte offset selected by 4FF9's side index."""
     return (side_index_word & 0xFFFF) * TILE_CONTACT_OFFSET_PAIR_STRIDE_BYTES
+
+
+def probe_tile_contact_4ff9(
+    *,
+    object_x_word: int,
+    object_y_word: int,
+    side_index_word: int,
+    offset_table: Sequence[int],
+    tiles: LevelTileContext,
+) -> bool:
+    """Recovered 1010:4FF9 tile/contact probe -> True when the slot contacts a solid tile.
+
+    The contact-probe composition over the already-recovered leaves (the 9B2E 9CB6 contact
+    stage's worker).  It gates the side selector (``[BP+8] >= 3`` -> contact), applies the
+    side's DS:214E dx/dy offset to the slot point, maps it through ``compute_tile_probe_5073``,
+    then samples one or two tile columns -- each optionally with its neighbouring Y tile when
+    the probed Y is not 16-pixel aligned -- through the C3AA class table, returning the original
+    CF (set = a non-zero tile class was hit).  Non-destructive: the original saves/restores the
+    slot coordinates around the probe, so only the boolean contact result is observable.
+
+    ``offset_table`` is the DS:214E dx/dy byte table (>= 12 bytes, three signed-word pairs);
+    ``tiles`` carries the 5073 globals + the raw tile plane and class table.
+    """
+    side = side_index_word & 0xFFFF
+    if side >= TILE_CONTACT_SIDE_COUNT:
+        return True  # [BP+8] >= 3 -> JNB to the STC (contact) exit
+
+    boff = side * TILE_CONTACT_OFFSET_PAIR_STRIDE_BYTES
+    dx = i16((offset_table[boff] & 0xFF) | ((offset_table[boff + 1] & 0xFF) << 8))
+    dy = i16((offset_table[boff + 2] & 0xFF) | ((offset_table[boff + 3] & 0xFF) << 8))
+    probe_x = u16(object_x_word + dx)
+    probe_y = u16(object_y_word + dy)
+
+    probe = compute_tile_probe_5073(TileProbeInput(
+        origin_x_word=tiles.origin_x_word, row_base_word=tiles.row_base_word,
+        object_x_word=probe_x, object_y_word=probe_y))
+
+    column_count = (1 if (probe.adjusted_x_word & TILE_CONTACT_LOW_NIBBLE_MASK)
+                    <= TILE_CONTACT_SECOND_COLUMN_THRESHOLD else 2)
+    probe_adjacent_y = (probe_y & TILE_CONTACT_LOW_NIBBLE_MASK) != 0
+
+    bx = u16(probe.tile_offset_word + TILE_CONTACT_ROW_DELTA)
+    for _ in range(column_count):
+        if lookup_tile_class_byte(tiles.tile_plane[bx], tiles.class_table) != 0:
+            return True
+        if probe_adjacent_y and \
+                lookup_tile_class_byte(tiles.tile_plane[u16(bx + 1)], tiles.class_table) != 0:
+            return True
+        bx = u16(bx - TILE_CONTACT_ROW_DELTA)
+    return False
 
 
 def tile_collision_probe_plan_ac28(*, y_word: int) -> TileCollisionProbePlan:
