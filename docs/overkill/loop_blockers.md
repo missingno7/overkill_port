@@ -256,6 +256,19 @@ move_step_error Bresenham accumulator; covers b86d's steering), (3) the **global
 side-effects** (`BD17`/`BFC7` -> counters/spawns -- the attended island), then (4) the per-logic-id
 native dispatch composing them.  The two highest-frequency movement primitives are already native.
 
+**Attempted + reverted (2026-06-29) — the full AE09 slot transform (movement + active) needs the
+tile-collision path / LevelState.** Tried extending the AE09 producer with the `active` field via the
+AD60 bounds decision (`object_update_ae09` = movement + AD60 -> active).  It VERIFIED for the non-tile-
+probe cases (L5_continue 22/22, L5_short 21/21) but **SKIPPED the majority** (755 + 617): most AE09
+objects hit AD60's **tile-probe** branch (the draw_layer-2 family), whose deactivation depends on the
+under-object tile sample (`5073` offset -> `505B` class -> ADC1 check).  So a slot's `active`/death for
+the tile-probe behaviors is gated on the **level tile map** — i.e. it needs a recovered **LevelState**
+(the tile grid) + pure `5073`/`505B`.  Reverted the partial (skip-heavy) producer per §3; the clean
+movement producer stands.  **Next substantial recovery: LevelState's tile map + the pure tile probe/
+lookup** — that unblocks the per-slot active/death for AE09 and the whole tile-probe family, and is the
+§1.2 ``LevelState`` mirror besides.  (The movement halves are done; this is the death/bounds half's
+dependency.)
+
 ## NOTE (process) — check lifted-status before "recovering" a routine
 
 `519A` / `3153` (HUD text dispatch + Tandy glyph) were ALREADY lifted (`rendering/text.py`,
