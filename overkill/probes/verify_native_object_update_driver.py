@@ -25,6 +25,7 @@ from overkill.recovered.systems.object_update import native_object_update_pool
 from overkill.recovered.views.object_slots import (
     OFF_ACTIVE_WORD,
     OFF_DIRECTION_OR_STEP,
+    OFF_LOGIC_ID,
     OFF_SPRITE_OR_STATE,
     OFF_SUBSTATE,
     OFF_X,
@@ -36,6 +37,7 @@ STRIDE = 0x38
 STRIDE_WORDS = STRIDE >> 1
 HANDLER_ENTRY_IPS = (0xAE09, 0xAED8, 0xB86D, 0xB9F0)  # AE09/AED8 RET; B86D/B9F0 tail-jump to BC4B, chains RET here
 SKIP_SPRITE_LOGIC_IDS = frozenset((0x001D, 0x0014))  # B86D, B9F0: the deferred contact path may override sprite
+COLLISION_DEATH_LOGIC_ID = 0x0001  # BFC7 -> C037 sets logic_id 1; the only contact-path sprite change
 LOGIC_ID_WORD = 0x18 >> 1
 REF_BOX_X, REF_BOX_Y, A278, BDAC = 0x237E, 0x2380, 0xA278, 0xBDAC
 REF_BOX_SCAN, A47E, A7A0, A47C = 0x2390, 0xA47E, 0xA7A0, 0xA47C  # B86D/B9F0 + BC4B globals
@@ -66,7 +68,7 @@ def main(argv) -> int:
     max_frames = int(argv[1]) if len(argv) > 1 else 1200
     demo = load_demo(demo_name, default_demo)
 
-    res = {"calls": 0, "ok": 0, "skip": 0, "fail": []}
+    res = {"calls": 0, "ok": 0, "skip": 0, "sprite_deferred": 0, "fail": []}
     pending: dict[int, tuple] = {}
     class_cache: dict[int, tuple] = {}
 
@@ -121,9 +123,12 @@ def main(argv) -> int:
                     return
                 predicted = _six_from_pool(out)
                 actual = _six_from_cpu(cpu, ss, bp)
-                if logic_id in SKIP_SPRITE_LOGIC_IDS:
-                    # B86D/B9F0's deferred contact path may override the sprite (+ logic_id); compare the
-                    # five fields the movement + BC4B driver owns (skip sprite at index 2).
+                if logic_id in SKIP_SPRITE_LOGIC_IDS and \
+                        cpu.mem.rw(ss, (bp + OFF_LOGIC_ID) & 0xFFFF) == COLLISION_DEATH_LOGIC_ID:
+                    # Only a contact-path collision death (BFC7 -> logic_id 1) overrides the sprite, and
+                    # that path is deferred -- compare the five fields the driver owns.  Every non-death
+                    # slot compares all six (the movement sprite is the final sprite).
+                    res["sprite_deferred"] += 1
                     predicted = predicted[:2] + predicted[3:]
                     actual = actual[:2] + actual[3:]
                 res["calls"] += 1
@@ -135,7 +140,8 @@ def main(argv) -> int:
     run_ref_step_probe(demo, max_frames, on_ref_step)
 
     print(f"demo {demo_name} ({max_frames} frames): native object-update DRIVER vs VM (project -> drive "
-          f"-> compare): calls={res['calls']} ok={res['ok']} skip={res['skip']} fail={len(res['fail'])}")
+          f"-> compare): calls={res['calls']} ok={res['ok']} skip={res['skip']} "
+          f"sprite_deferred={res['sprite_deferred']} fail={len(res['fail'])}")
     for predicted, actual in res["fail"][:8]:
         print(f"  FAIL predicted={tuple(hex(v) for v in predicted)} actual={tuple(hex(v) for v in actual)}")
     ok = res["calls"] > 0 and not res["fail"]

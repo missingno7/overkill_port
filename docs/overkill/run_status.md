@@ -1,3 +1,20 @@
+## 2026-06-29 - Tighten the driver-verify: sprite confirmed for non-death; contact path bounded to ~1%
+
+Before recovering the BC4B contact path, measured how much it actually matters.  The contact path's only
+slot-field effect is the collision death (BFC7 -> C037 sets logic_id 1 + the death sprite), so the
+driver-verify now compares the sprite for B86D/B9F0 on EVERY slot and defers it only when the VM's post
+logic_id == 1 (an actual death), instead of skipping sprite blanket.
+
+Result, PASS 0 divergence: L2_full 700f `1440/1440 ok, sprite_deferred=7`; L3_full 800f `1651/1651 ok,
+sprite_deferred=19`.  So the driver's movement sprite is now VERIFIED correct for every non-death slot
+(~99% of B86D/B9F0), and the remaining BC4B contact-path work is precisely bounded + quantified: just the
+collision-death sprite/logic_id on ~1% of slots.  lint 221.
+
+Implication for priorities: the contact path (62F6/BFC7 -- a stateful object-vs-object scan, the hardest
+remaining object-update piece) affects only ~1% of slots, so it is lower-value than the next pillar.  The
+VM-free **frame loop** around the now-substantially-complete driver is the higher-value next step; the
+contact path's pieces (the recovered collision island) are ready to compose when we do tackle it.
+
 ## 2026-06-29 - B9F0 added to the VM-free driver -> it now runs all 4 handlers across L2/L3/L5
 
 Wired B9F0 into the native object-update driver (the B86D recipe): `_advance_b9f0` composes
