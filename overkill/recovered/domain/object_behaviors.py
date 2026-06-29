@@ -105,6 +105,23 @@ class Ae09SlotUpdate:
 
 
 @dataclass(frozen=True, slots=True)
+class B9f0MovementResult:
+    """Pure result of the 1010:B9F0 movement half -- the slot at the BC4B handoff (logic_id 0x14).
+
+    B9F0's four paths (Path A sprite-refresh; the reached-target BA5A helper or plain sprite-refresh;
+    the overshoot 5E42 step; the 5DB2 target seek) all tail-jump to BC4B.  Records the six handoff
+    fields; ``substate``/``active`` are unchanged by the movement half (BC4B owns the post-move
+    y/active).  Compose with ``object_postmove_bc4b`` for the slot's post-move y/active."""
+
+    substate: int
+    direction_or_step: int
+    sprite_or_state: int
+    x_word: int
+    y_word: int
+    active_word: int
+
+
+@dataclass(frozen=True, slots=True)
 class B86dMovementResult:
     """Pure result of the 1010:B86D movement half -- the slot at the BC4B handoff (logic_id 0x1D).
 

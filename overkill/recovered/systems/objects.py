@@ -17,6 +17,7 @@ from overkill.recovered.domain.object_behaviors import (
     B73ETargetReachedResolution,
     B86dDriftUpdate,
     B86dMovementResult,
+    B9f0MovementResult,
     BossGroupSlotTransition,
     ObjectBoundsTileDecision,
     ObjectDeactivateDispatchDecision,
@@ -365,6 +366,80 @@ def object_update_b86d(
         return B86dMovementResult(substate, new_dir, B86D_A7A0_SPRITE, seek.x_word, seek.y_word, active_word)
     drift = object_update_b86d_drift(x_word, vertical_delta, phase_2328)
     return B86dMovementResult(substate, direction, drift.sprite_or_state, drift.x_word, y_word, active_word)
+
+
+B9F0_A482_MOVEMENT_SENTINEL = 0xA4E4  # DS:A482 == A4E4h -> the movement paths, else sprite-refresh
+B9F0_SEEK_MODE = 0x0001               # DS:2308 mode the Path-D 5DB2 seek uses (mode 1)
+B9F0_BA5A_X_NUDGE = 0x0002            # the BA5A helper's post-steer X += 2
+
+
+def object_update_b9f0(
+    x_word: int,
+    y_word: int,
+    substate: int,
+    direction: int,
+    active_word: int,
+    sprite: int,
+    target_x: int,
+    target_y: int,
+    move_step_error: int,
+    move_delta_x: int,
+    move_delta_y: int,
+    a482: int,
+    frame: int,
+    vertical_delta: int,
+    horizontal_delta: int,
+    a47e: int,
+    difficulty: int,
+    tick: int,
+    ref_box_x: int,
+    ref_box_y: int,
+    ref_box_scan: int,
+    step_mode: int,
+    direction_table,
+) -> B9f0MovementResult:
+    """Pure WHOLE 1010:B9F0 movement half (logic_id 0x14) -- the slot at the BC4B handoff.
+
+    Four paths.  Path A (``a482`` != A4E4h): refresh the sprite from the global ``frame``.  Else apply
+    the global target deltas to +32/+34 and wrap target X, then: reached-target -> the BA5A motion helper
+    (5E1B->5E42, X += 2, sprite refresh) when its low-counter / periodic-tick gate fires, else a plain
+    sprite refresh; not reached + x > target -> the overshoot 5E42 step + right-edge X wrap; not reached
+    + x <= target -> the 5DB2 seek toward the even-aligned target.  ``substate``/``active`` are unchanged
+    here -- BC4B owns the post-move y/active.  The optional 7476 formation spawns are global side effects,
+    out of this slot transform.  The canonical handler the gate verifies at the BC4B handoff and the
+    native driver composes with object_postmove_bc4b."""
+    refreshed = b9f0_sprite_from_frame(frame)
+    if (a482 & 0xFFFF) != B9F0_A482_MOVEMENT_SENTINEL:
+        return B9f0MovementResult(substate, direction, refreshed, x_word, y_word, active_word)  # Path A
+
+    new_target_y = (target_y + vertical_delta) & 0xFFFF
+    new_target_x = b9f0_wrapped_target_x((target_x + horizontal_delta) & 0xFFFF)
+    reached = ((y_word + vertical_delta) & 0xFFFF) == new_target_y and (x_word & 0xFFFF) == new_target_x
+    if reached:
+        helper_fires = b9f0_low_counter_runs_helper(a47e)
+        if not helper_fires:
+            mask = b9f0_periodic_helper_mask(difficulty)
+            helper_fires = (tick & mask) == mask
+        if not helper_fires:
+            return B9f0MovementResult(substate, direction, refreshed, x_word, y_word, active_word)  # Path B
+        deltas = object_delta_5e1b(x_word, y_word, ref_box_x, ref_box_y, ref_box_scan)
+        s = object_delta_steer_5e42(
+            x_word, y_word, direction, deltas.move_delta_y, deltas.move_delta_x,
+            move_step_error, step_mode, direction_table,
+        )
+        return B9f0MovementResult(substate, s.direction_or_step, refreshed,
+                                  (s.x_word + B9F0_BA5A_X_NUDGE) & 0xFFFF, s.y_word, active_word)  # BA5A
+
+    if (x_word & 0xFFFF) > new_target_x:
+        s = object_delta_steer_5e42(
+            x_word, y_word, direction, move_delta_y, move_delta_x, move_step_error, step_mode, direction_table,
+        )
+        return B9f0MovementResult(substate, s.direction_or_step, sprite,
+                                  b9f0_wrapped_x_on_overflow(s.x_word), s.y_word, active_word)  # Path C
+
+    target = MovementTarget(y_word=new_target_y & 0xFFFE, x_word=new_target_x & 0xFFFE)
+    seek = object_target_seek_step_5db2(x_word & 0xFFFE, y_word & 0xFFFE, direction, target, B9F0_SEEK_MODE, direction_table)
+    return B9f0MovementResult(substate, seek.direction_or_step, sprite, seek.x_word, seek.y_word, active_word)  # Path D
 
 
 # 1010:AB10 logic_id=6 per-frame update.  The object dies once the level frame

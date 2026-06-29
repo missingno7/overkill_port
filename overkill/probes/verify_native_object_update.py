@@ -32,21 +32,11 @@ from typing import Callable
 
 from overkill.probes._harness import LazyBytes, load_demo, run_ref_step_probe
 from overkill.recovered.domain.tilemap import LevelTileContext
-from overkill.recovered.domain.movement import MovementTarget
-from overkill.recovered.systems.movement import (
-    object_delta_5e1b,
-    object_delta_steer_5e42,
-    object_target_seek_step_5db2,
-)
 from overkill.recovered.systems.objects import (
-    b9f0_low_counter_runs_helper,
-    b9f0_periodic_helper_mask,
-    b9f0_sprite_from_frame,
-    b9f0_wrapped_target_x,
-    b9f0_wrapped_x_on_overflow,
     object_update_ae09,
     object_update_aed8,
     object_update_b86d,
+    object_update_b9f0,
 )
 from overkill.recovered.views.object_slots import (
     OFF_ACTIVE_WORD,
@@ -84,19 +74,16 @@ AED8_REF_BOX_X = 0x237E           # DS:237E view-target box X (B250 overlap refe
 AED8_REF_BOX_Y = 0x2380          # DS:2380 view-target box Y
 AD60_A278 = 0xA278               # DS:A278 added to X on the AD5A (no-contact) tail
 
-# B9F0 (logic_id 0x14) tail-jumps to BC4B.  Incremental: only the sprite-refresh path (A482 != A4E4,
-# the BA67 tail) is modelled so far; the A482 == A4E4 movement paths (5DB2 seek / 5E42 overshoot /
-# BA5A helper) are left as fallback (None) and added next.
+# B9F0 (logic_id 0x14) DS-global read offsets (the movement logic + its constants live in the pure
+# object_update_b9f0; this adapter only projects these inputs from the VM).  B9F0 tail-jumps to BC4B.
 B9F0_IP = 0xB9F0
 B9F0_A482 = 0xA482               # DS:A482; == A4E4h enters the movement paths, else sprite-refresh
-B9F0_A482_MOVEMENT_SENTINEL = 0xA4E4
-B9F0_FRAME_233C = 0x233C         # DS:233C global frame -> b9f0_sprite_from_frame on the BA67 tail
+B9F0_FRAME_233C = 0x233C         # DS:233C global frame -> the BA67 sprite refresh
 B9F0_DELTA_Y_2342 = 0x2342       # DS:2342 global Y delta added to target_y (+32)
 B9F0_DELTA_X_2346 = 0x2346       # DS:2346 global X delta added to target_x (+34)
 B9F0_COUNTER_A47E = 0xA47E       # DS:A47E level counter (< 6 -> BA5A helper fires)
 B9F0_DIFFICULTY_BEDC = 0xBEDC    # DS:BEDC difficulty -> periodic-helper tick mask
 B9F0_TICK_2340 = 0x2340          # DS:2340 tick counter for the periodic BA5A helper
-B9F0_SEEK_MODE = 0x0001          # DS:2308 mode the Path-D seek sets before 5DB2 (mode 1)
 
 # B86D (logic_id 0x1D) fall-through inputs.  B86D tail-jumps to the shared BC4B post-move
 # stage rather than RETurning, so its slot-write boundary is a fixed IP, not a return address.
@@ -256,77 +243,42 @@ def _arm_aed8(cpu, class_table_cache: dict) -> _Pending | None:
 
 
 def _arm_b9f0(cpu, class_table_cache: dict) -> _Pending | None:
-    """Capture + predict B9F0 (logic_id 0x14) -- ALL four paths, compared at the BC4B handoff.
+    """Capture + predict B9F0 (logic_id 0x14) -- all four paths via the pure object_update_b9f0.
 
-    A482 != A4E4 -> sprite-refresh (BA67).  Else apply the global target deltas to +32/+34 + wrap X, then:
-    reached-target -> the BA5A motion helper (5E1B->5E42, X+=2, sprite-refresh) when it fires, else a plain
-    sprite-refresh; not reached + x > target -> the overshoot 5E42 step + right-edge X wrap; not reached +
-    x <= target -> the 5DB2 seek toward the (even-aligned) target.  The optional 7476 formation spawns are
-    global side effects (new slots), not this slot's fields, so they are out of the 6-field prediction.
+    B9F0 tail-jumps to BC4B; compare the movement half at the handoff.  This adapter only projects the
+    slot fields + the B9F0 DS globals and calls the canonical pure system (the Path A sprite-refresh /
+    reached-target BA5A helper or plain refresh / overshoot 5E42 / 5DB2 seek branches all live there).
     """
     ss = cpu.s.ss & 0xFFFF
     ds = cpu.s.ds & 0xFFFF
     bp = cpu.s.bp & 0xFFFF
-    substate = cpu.mem.rw(ss, (bp + OFF_SUBSTATE) & 0xFFFF)
-    direction = cpu.mem.rw(ss, (bp + OFF_DIRECTION_OR_STEP) & 0xFFFF)
-    x = cpu.mem.rw(ss, (bp + OFF_X) & 0xFFFF)
-    y = cpu.mem.rw(ss, (bp + OFF_Y) & 0xFFFF)
-    active = cpu.mem.rw(ss, (bp + OFF_ACTIVE_WORD) & 0xFFFF)
-    sprite = cpu.mem.rw(ss, (bp + OFF_SPRITE_OR_STATE) & 0xFFFF)
-
-    def pending(predicted) -> _Pending:
-        return _Pending(ss=ss, bp=bp, exit_ip=BC4B_IP, predicted=predicted, read_post=_read_slot_6tuple)
-
-    def sprite_refresh() -> _Pending:
-        # BA67 tail: sprite = DS:233C frame + 1Ch; nothing else changes.
-        return pending((substate, direction, b9f0_sprite_from_frame(cpu.mem.rw(ds, B9F0_FRAME_233C)), x, y, active))
-
-    def steer(move_delta_y: int, move_delta_x: int):
-        err = cpu.mem.rw(ss, (bp + OFF_MOVE_STEP_ERROR) & 0xFFFF)
-        step_mode = cpu.mem.rw(ds, STEP_MODE_2312)
-        table = tuple(cpu.mem.rb(ds, (DIRECTION_TABLE_A348 + i) & 0xFFFF) for i in range(16))
-        return object_delta_steer_5e42(x, y, direction, move_delta_y, move_delta_x, err, step_mode, table)
-
-    if (cpu.mem.rw(ds, B9F0_A482) & 0xFFFF) != B9F0_A482_MOVEMENT_SENTINEL:
-        return sprite_refresh()  # Path A
-
-    # A482 == A4E4: apply the global target deltas into +32/+34, wrap target X (BA07..BA1A).
-    delta_y = cpu.mem.rw(ds, B9F0_DELTA_Y_2342)
-    target_y = (cpu.mem.rw(ss, (bp + OFF_TARGET_Y) & 0xFFFF) + delta_y) & 0xFFFF
-    target_x = b9f0_wrapped_target_x(
-        (cpu.mem.rw(ss, (bp + OFF_TARGET_X) & 0xFFFF) + cpu.mem.rw(ds, B9F0_DELTA_X_2346)) & 0xFFFF
+    r = object_update_b9f0(
+        x_word=cpu.mem.rw(ss, (bp + OFF_X) & 0xFFFF),
+        y_word=cpu.mem.rw(ss, (bp + OFF_Y) & 0xFFFF),
+        substate=cpu.mem.rw(ss, (bp + OFF_SUBSTATE) & 0xFFFF),
+        direction=cpu.mem.rw(ss, (bp + OFF_DIRECTION_OR_STEP) & 0xFFFF),
+        active_word=cpu.mem.rw(ss, (bp + OFF_ACTIVE_WORD) & 0xFFFF),
+        sprite=cpu.mem.rw(ss, (bp + OFF_SPRITE_OR_STATE) & 0xFFFF),
+        target_x=cpu.mem.rw(ss, (bp + OFF_TARGET_X) & 0xFFFF),
+        target_y=cpu.mem.rw(ss, (bp + OFF_TARGET_Y) & 0xFFFF),
+        move_step_error=cpu.mem.rw(ss, (bp + OFF_MOVE_STEP_ERROR) & 0xFFFF),
+        move_delta_x=cpu.mem.rw(ss, (bp + OFF_MOVE_DELTA_X) & 0xFFFF),
+        move_delta_y=cpu.mem.rw(ss, (bp + OFF_MOVE_DELTA_Y) & 0xFFFF),
+        a482=cpu.mem.rw(ds, B9F0_A482),
+        frame=cpu.mem.rw(ds, B9F0_FRAME_233C),
+        vertical_delta=cpu.mem.rw(ds, B9F0_DELTA_Y_2342),
+        horizontal_delta=cpu.mem.rw(ds, B9F0_DELTA_X_2346),
+        a47e=cpu.mem.rw(ds, B9F0_COUNTER_A47E),
+        difficulty=cpu.mem.rw(ds, B9F0_DIFFICULTY_BEDC),
+        tick=cpu.mem.rw(ds, B9F0_TICK_2340),
+        ref_box_x=cpu.mem.rw(ds, (B86D_REF_BOX + OFF_X) & 0xFFFF),
+        ref_box_y=cpu.mem.rw(ds, (B86D_REF_BOX + OFF_Y) & 0xFFFF),
+        ref_box_scan=cpu.mem.rw(ds, (B86D_REF_BOX + OFF_SCAN_FLAG) & 0xFFFF),
+        step_mode=cpu.mem.rw(ds, STEP_MODE_2312),
+        direction_table=tuple(cpu.mem.rb(ds, (DIRECTION_TABLE_A348 + i) & 0xFFFF) for i in range(16)),
     )
-    # reached-target (mirrors b9f0_reached_target on the updated targets; avoids building a record here).
-    reached = ((y + delta_y) & 0xFFFF) == target_y and (x & 0xFFFF) == target_x
-    if reached:
-        # Path B: the BA5A motion helper fires on a low level counter or a periodic tick.
-        helper_fires = b9f0_low_counter_runs_helper(cpu.mem.rw(ds, B9F0_COUNTER_A47E))
-        if not helper_fires:
-            mask = b9f0_periodic_helper_mask(cpu.mem.rw(ds, B9F0_DIFFICULTY_BEDC))
-            helper_fires = (cpu.mem.rw(ds, B9F0_TICK_2340) & mask) == mask
-        if not helper_fires:
-            return sprite_refresh()  # reached, no helper -> the BA67 sprite-refresh tail
-        # BA5A: 5E1B deltas toward the DS:237C box, 5E42 steer, X += 2, then the BA67 sprite-refresh.
-        deltas = object_delta_5e1b(
-            x, y,
-            cpu.mem.rw(ds, (B86D_REF_BOX + OFF_X) & 0xFFFF),
-            cpu.mem.rw(ds, (B86D_REF_BOX + OFF_Y) & 0xFFFF),
-            cpu.mem.rw(ds, (B86D_REF_BOX + OFF_SCAN_FLAG) & 0xFFFF),
-        )
-        s = steer(deltas.move_delta_y, deltas.move_delta_x)
-        refreshed = b9f0_sprite_from_frame(cpu.mem.rw(ds, B9F0_FRAME_233C))
-        return pending((substate, s.direction_or_step, refreshed, (s.x_word + 2) & 0xFFFF, s.y_word, active))
-
-    if (x & 0xFFFF) > target_x:
-        # Path C overshoot: 5E42 with the slot's existing deltas, then wrap X on right-edge overflow.
-        s = steer(cpu.mem.rw(ss, (bp + OFF_MOVE_DELTA_Y) & 0xFFFF), cpu.mem.rw(ss, (bp + OFF_MOVE_DELTA_X) & 0xFFFF))
-        return pending((substate, s.direction_or_step, sprite, b9f0_wrapped_x_on_overflow(s.x_word), s.y_word, active))
-
-    # Path D: align to even pixels and seek toward the updated target via the pure 5DB2 (mode 1).
-    table = tuple(cpu.mem.rb(ds, (DIRECTION_TABLE_A348 + i) & 0xFFFF) for i in range(16))
-    target = MovementTarget(y_word=target_y & 0xFFFE, x_word=target_x & 0xFFFE)
-    seek = object_target_seek_step_5db2(x & 0xFFFE, y & 0xFFFE, direction, target, B9F0_SEEK_MODE, table)
-    return pending((substate, seek.direction_or_step, sprite, seek.x_word, seek.y_word, active))
+    predicted = (r.substate, r.direction_or_step, r.sprite_or_state, r.x_word, r.y_word, r.active_word)
+    return _Pending(ss=ss, bp=bp, exit_ip=BC4B_IP, predicted=predicted, read_post=_read_slot_6tuple)
 
 
 # The registry: one entry per recovered pure whole-slot transform.  Grow this as

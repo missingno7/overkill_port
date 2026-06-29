@@ -1,3 +1,18 @@
+## 2026-06-29 - Decouple B9F0's movement half into a canonical pure system (driver-ready)
+
+Same decouple-and-reuse as B86D: moved B9F0's branch logic out of the coverage-gate probe arm into the
+canonical pure system `object_update_b9f0` (+ domain `B9f0MovementResult`) -- all four paths (Path A
+sprite-refresh / the reached-target BA5A helper or plain refresh / the overshoot 5E42 step / the 5DB2
+target seek), producing the slot at the BC4B handoff.  The gate's `_arm_b9f0` is now a thin adapter that
+projects the slot fields + B9F0 DS globals and calls it; removed the now-unused movement imports
+(`object_delta_5e1b`/`5e42`/`5db2`/`MovementTarget`) and the duplicated constants from the probe.
+
+This is the reuse opportunity made concrete: the gate arms were correct logic only VM-coupled at the
+input edges, so a small refactor turns them into pure systems both the gate and the driver use.  Both
+B86D and B9F0 movement halves now live in `systems`; the probe arms are pure projection.  Gate-verified
+byte-exact: B9F0 `1723/1723`, AED8 `735/735` on L3 (behaviour preserved).  lint 221; audits pass (27 pure
+files).  Next: add B9F0 to the driver (the B86D recipe -- `_advance_b9f0` = object_update_b9f0 + object_postmove_bc4b).
+
 ## 2026-06-29 - B86D added to the VM-free driver (movement + BC4B), driver-verified on L2
 
 Wired B86D into the native object-update driver: `_advance_b86d` composes `object_update_b86d` (the
