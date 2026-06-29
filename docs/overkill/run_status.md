@@ -1,3 +1,14 @@
+## 2026-06-29 - §1.2 A4EA spawn verify: native object_spawn_seed_a4ea byte-exact vs VM A4EA
+
+Fourth native producer in the cross-demo §1.2 gate, completing the spawn-template coverage (the
+logic=2 A4EA template, distinct from 8209's logic=14h effect).  New probe
+`overkill/probes/verify_native_spawn_seed_a4ea.py`: step-hooks A4EA's terminal RET (A514) on the
+pure-VM side -- BX = the allocated+stamped slot -- and asserts its 8 stamped fields equal the
+constant `object_spawn_seed_a4ea()`, for every real A4EA spawn.  Result: **L2 67/67, L4 78/78
+byte-exact** (frequent -- 145 spawns across 2 demos, 0 divergence).  Added to `PROBES`; the
+cross-demo gate now covers score + allocation + both spawn templates.  Lint (196) green;
+standalone gate.
+
 ## 2026-06-29 - §1.2 spawn-stamp verify: native object_spawn_seed_8209 byte-exact vs VM 8209
 
 Third native producer in the cross-demo §1.2 gate (after score + allocator), extending it to object
