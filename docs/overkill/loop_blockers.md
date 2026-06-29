@@ -347,6 +347,21 @@ view-center source (DS:237E/2380 vs DS:95F2/95F4) + the AA71 X-window bounds -- 
 logic_id/previous_logic_id/transition_latch/sprite for the collision-hit objects (the gate catches any
 mismatch).  This is a clean fresh-session slice; it just composes more pieces than the bounds half.
 
+**ATTEMPTED + REVERTED (2026-06-29) — the collision-death has a SECOND source: the 62F6 overlap scan
+(NOT just AA46/AA71).** Built `object_postmove_collision_death_bc4b` = the AA46/AA71 view-contact ->
+BFC7 transition (logic_id=1 + previous_logic_id + latch=0 + C037 sprite), composing the recovered pure
+contact tests, and probed it.  Result: **1483/1498 byte-exact, 15 fails** -- all one obj_type-1 object
+(logic_id 0x1d).  Diagnostic proved the AA46/AA71 model is structurally INCOMPLETE: the failing object
+(slot x=0x6c, y=0x8c) transitioned (logic_id 0x1d->1, sprite->0) but its X is 0x4B from the AA46 center
+(0xb7) -- WAY outside the +/-0x10 rectangle, so AA46 correctly does not hit.  The transition came from
+`62F6` (the BC4B object-OVERLAP scan, object-vs-object collision -- run after BCCB), which is
+observed/interpreted, NOT a clean recovered leaf, and CANNOT be scoped out (it depends on the scan over
+*other* objects).  Reverted per §3 (15-fail = red).  So the FULL BC4B collision-death needs `62F6`
+recovered too (an object-vs-object overlap scan + its transition) -- that is the genuinely-hard,
+attended part; the AA46/AA71 view-contact half is correct (1483) but insufficient alone.  Corrected
+fact: the BC4B collision death = AA46/AA71 view-contact OR the 62F6 overlap scan; both -> BFC7-style
+transition.
+
 ## NOTE (process) — check lifted-status before "recovering" a routine
 
 `519A` / `3153` (HUD text dispatch + Tandy glyph) were ALREADY lifted (`rendering/text.py`,
