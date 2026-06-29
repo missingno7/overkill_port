@@ -1,3 +1,23 @@
+## 2026-06-29 - Recon LOCATED: the camera/level-event "scroll-script" island (roadmap #2 mapped)
+
+Followed last turn's redirect and FOUND the view-target writer: it is the **scroll-script / level-event
+system**, now fully mapped.  The view target (DS:237E/2380) is moved by a scroll-script COMMAND, not a
+standalone camera routine:
+- **Interpreter @ 1010:D0D4**: counts down the per-command delay DS:BE08; on expiry resets it (0x64) and
+  advances the script index DS:BE06; reads the 6-byte script entry at DS:BE1A[index*6] (word0 -> DS:95FA,
+  word1 -> DS:BE16; FFFFh = end); calls **859E** (the status-cell render); then dispatches the command via
+  `jmp cs:[D112 + index*2]`.
+- **Command table @ CS:D112**; **command handlers @ 1010:D14D..D2xx** -- tiny routines that set level
+  flags (D14D `inc [A958]`, D152/D159), step the view (**D160**: `dec [237E]` toward 0x60 = the camera
+  scroll step), reset the delay (D17C), and spawn objects (D199/D1AB via 7524/8209, D1DC/D1F8 via 9F1A).
+- **The script data is at DS:BE1A** (6 bytes/entry); the interpreter walks it per frame.
+
+So roadmap #2 "camera" = recover the scroll-script interpreter (D0D4) + its command handlers (D14D..D2xx)
++ the BE1A script format.  **GATE**: the interpreter calls **859E** (the status-cell quad render island,
+per the §6 frontier note) every step, so a native interpreter needs 859E native first (or keeps it as a
+near-call with the stack-scratch fidelity the full-memory tests require).  This is a bounded but
+multi-slice island, no longer an "unlocated writer".  (Two camera-recon turns -> located + mapped.)
+
 ## 2026-06-29 - Recon: camera view-target writer redirect + the clean pure-leaf veins are scarce
 
 A recon turn (no clean single-leaf slice found; the easy producers are harvested) that sharpens two
