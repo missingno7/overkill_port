@@ -1,3 +1,21 @@
+## 2026-06-29 - B9F0 added to the VM-free driver -> it now runs all 4 handlers across L2/L3/L5
+
+Wired B9F0 into the native object-update driver (the B86D recipe): `_advance_b9f0` composes
+`object_update_b9f0` (movement half) + `object_postmove_bc4b` (post-move y/active).  Extended
+`ObjectUpdateGlobals` with B9F0's DS globals (default-safe) and added `ObjectPool` accessors
+(move_delta_x/y).  Extended the driver-verify probe to B9F0 (its chain RETs to the walk like B86D; the
+skip-sprite set is now {B86D, B9F0} since both defer the contact-path sprite).
+
+Driver-verified PASS, zero divergence:
+- L2_full 700f: 1440/1440 (B86D + AED8)
+- L3_full 800f: 1651/1651 (B9F0 + AED8)
+- L5_continue 400f: 2226/2226 (AE09 + AED8)
+
+So the VM-free object-update driver now runs **all four wired handlers (AE09 / AED8 / B86D / B9F0)**
+across all three levels, reproducing the VM byte-for-byte on the fields it owns.  unit tests 2; lint 221;
+audits pass (27 pure files).  Next: the BC4B contact path (62F6/BFC7 -> removes the deferred-sprite
+caveat), the VM-free frame loop around the driver, then the raw-ASM handlers.
+
 ## 2026-06-29 - Decouple B9F0's movement half into a canonical pure system (driver-ready)
 
 Same decouple-and-reuse as B86D: moved B9F0's branch logic out of the coverage-gate probe arm into the

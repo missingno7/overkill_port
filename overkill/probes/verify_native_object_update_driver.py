@@ -34,12 +34,13 @@ from overkill.recovered.views.object_slots import (
 CS = 0x1010
 STRIDE = 0x38
 STRIDE_WORDS = STRIDE >> 1
-HANDLER_ENTRY_IPS = (0xAE09, 0xAED8, 0xB86D)  # AE09/AED8 RET; B86D tail-jumps to BC4B but its chain RETs here
-B86D_LOGIC_ID = 0x001D
+HANDLER_ENTRY_IPS = (0xAE09, 0xAED8, 0xB86D, 0xB9F0)  # AE09/AED8 RET; B86D/B9F0 tail-jump to BC4B, chains RET here
+SKIP_SPRITE_LOGIC_IDS = frozenset((0x001D, 0x0014))  # B86D, B9F0: the deferred contact path may override sprite
 LOGIC_ID_WORD = 0x18 >> 1
 REF_BOX_X, REF_BOX_Y, A278, BDAC = 0x237E, 0x2380, 0xA278, 0xBDAC
-REF_BOX_SCAN, A47E, A7A0, A47C = 0x2390, 0xA47E, 0xA7A0, 0xA47C  # B86D + BC4B globals
+REF_BOX_SCAN, A47E, A7A0, A47C = 0x2390, 0xA47E, 0xA7A0, 0xA47C  # B86D/B9F0 + BC4B globals
 DELTA_2342, PHASE_2328, STEP_MODE, DIR_TABLE = 0x2342, 0x2328, 0x2312, 0xA348
+A482, FRAME_233C, DELTA_X_2346, BEDC, TICK_2340 = 0xA482, 0x233C, 0x2346, 0xBEDC, 0x2340  # B9F0
 TILE_ORIGIN, TILE_ROW, TILE_CLASS, TILE_PLANE_PTR = 0x234E, 0x2350, 0xC3AA, 0x9592
 
 
@@ -101,6 +102,11 @@ def main(argv) -> int:
                 step_mode=cpu.mem.rw(ds, STEP_MODE),
                 direction_table=tuple(cpu.mem.rb(ds, (DIR_TABLE + k) & 0xFFFF) for k in range(16)),
                 global_disable=cpu.mem.rw(ds, A47C),
+                a482=cpu.mem.rw(ds, A482),
+                frame_233c=cpu.mem.rw(ds, FRAME_233C),
+                horizontal_delta=cpu.mem.rw(ds, DELTA_X_2346),
+                difficulty=cpu.mem.rw(ds, BEDC),
+                tick=cpu.mem.rw(ds, TICK_2340),
             )
             out = native_object_update_pool(ObjectPool(base=0, stride=STRIDE, slots=(words,)), g)
             advanced = out.slots[0] != words
@@ -115,9 +121,9 @@ def main(argv) -> int:
                     return
                 predicted = _six_from_pool(out)
                 actual = _six_from_cpu(cpu, ss, bp)
-                if logic_id == B86D_LOGIC_ID:
-                    # B86D's deferred contact path may override the sprite (+ logic_id); compare the five
-                    # fields the movement + BC4B driver owns (skip sprite at index 2).
+                if logic_id in SKIP_SPRITE_LOGIC_IDS:
+                    # B86D/B9F0's deferred contact path may override the sprite (+ logic_id); compare the
+                    # five fields the movement + BC4B driver owns (skip sprite at index 2).
                     predicted = predicted[:2] + predicted[3:]
                     actual = actual[:2] + actual[3:]
                 res["calls"] += 1

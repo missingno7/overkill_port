@@ -23,6 +23,7 @@ from overkill.recovered.systems.objects import (
     object_update_ae09,
     object_update_aed8,
     object_update_b86d,
+    object_update_b9f0,
 )
 
 # Record field offsets the driver writes back.  These are intrinsic record-field positions (cf.
@@ -72,8 +73,33 @@ def _advance_b86d(pool: ObjectPool, i: int, g: ObjectUpdateGlobals) -> dict | No
             _OFF_X: mv.x_word, _OFF_Y: pm.y_word, _OFF_ACTIVE: pm.active_word}
 
 
+def _advance_b9f0(pool: ObjectPool, i: int, g: ObjectUpdateGlobals) -> dict | None:
+    # B9F0, like B86D, tail-jumps to BC4B: final slot = movement half (object_update_b9f0) + the BC4B
+    # post-move (object_postmove_bc4b owns y/active).  The contact path may override the sprite on a
+    # collision death (deferred), so the sprite written here is the movement sprite.
+    mv = object_update_b9f0(
+        x_word=pool.x_word(i), y_word=pool.y_word(i), substate=pool.substate(i),
+        direction=pool.direction_word(i), active_word=pool.active_word(i), sprite=pool.sprite_word(i),
+        target_x=pool.target_x_word(i), target_y=pool.target_y_word(i),
+        move_step_error=pool.move_step_error(i), move_delta_x=pool.move_delta_x(i),
+        move_delta_y=pool.move_delta_y(i),
+        a482=g.a482, frame=g.frame_233c, vertical_delta=g.vertical_delta,
+        horizontal_delta=g.horizontal_delta, a47e=g.a47e, difficulty=g.difficulty, tick=g.tick,
+        ref_box_x=g.ref_box_x, ref_box_y=g.ref_box_y, ref_box_scan=g.ref_box_scan,
+        step_mode=g.step_mode, direction_table=g.direction_table,
+    )
+    pm = object_postmove_bc4b(mv.x_word, mv.y_word, mv.active_word, pool.logic_id(i), g.global_disable)
+    return {_OFF_DIRECTION: mv.direction_or_step, _OFF_SPRITE: mv.sprite_or_state,
+            _OFF_X: mv.x_word, _OFF_Y: pm.y_word, _OFF_ACTIVE: pm.active_word}
+
+
 # logic_id -> per-slot advance.  Grow as handlers gain complete pure systems.
-NATIVE_OBJECT_HANDLERS = {0x0C: _advance_ae09, 0x02: _advance_aed8, 0x1D: _advance_b86d}
+NATIVE_OBJECT_HANDLERS = {
+    0x0C: _advance_ae09,
+    0x02: _advance_aed8,
+    0x1D: _advance_b86d,
+    0x14: _advance_b9f0,
+}
 
 
 def native_object_update_pool(

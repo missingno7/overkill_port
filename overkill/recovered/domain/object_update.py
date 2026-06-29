@@ -35,3 +35,9 @@ class ObjectUpdateGlobals:
     step_mode: int = 0             # DS:2312 5E42 step mode
     direction_table: tuple = ()    # DS:A348 16-byte direction-bits -> direction map
     global_disable: int = 0        # DS:A47C BC4B X-bounds gate / contact-path gate
+    # B9F0 movement extras (default-safe: AE09/AED8/B86D do not consume them).
+    a482: int = 0                  # DS:A482 (== A4E4h -> the movement paths, else sprite-refresh)
+    frame_233c: int = 0            # DS:233C global frame -> the BA67 sprite refresh
+    horizontal_delta: int = 0      # DS:2346 global X delta added to target_x (+34)
+    difficulty: int = 0            # DS:BEDC difficulty -> periodic-helper tick mask
+    tick: int = 0                  # DS:2340 tick counter for the periodic BA5A helper

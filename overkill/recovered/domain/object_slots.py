@@ -111,6 +111,14 @@ class ObjectPool:
         """Slot ``index``'s logic-id word (record byte +18; the EFC4 behaviour selector)."""
         return self.slots[index][0x18 >> 1]
 
+    def move_delta_x(self, index: int) -> int:
+        """Slot ``index``'s signed X movement delta (record byte +2A)."""
+        return self.slots[index][0x2A >> 1]
+
+    def move_delta_y(self, index: int) -> int:
+        """Slot ``index``'s signed Y movement delta (record byte +2C)."""
+        return self.slots[index][0x2C >> 1]
+
     def move_step_error(self, index: int) -> int:
         """Slot ``index``'s 5E42 Bresenham step-error accumulator (record byte +2E)."""
         return self.slots[index][0x2E >> 1]
