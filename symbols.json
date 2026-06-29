@@ -631,7 +631,7 @@
     "island": "game_state",
     "kind": "hook",
     "name": "overkill_frame_controller_9b2e",
-    "notes": "Frame-controller child of 97B2. Composes input poll, current BP object slot movement bits, the now-lifted A067 action/object-spawn fanout, optional contact probe 9CB6, coordinate-ring updates, and linked child-coordinate propagation.",
+    "notes": "Frame-controller child of 97B2. Composes input poll, current BP object slot movement bits, the now-lifted A067 action/object-spawn fanout, optional contact probe 9CB6, coordinate-ring updates, and linked child-coordinate propagation. Stage map for the native frame loop: 9B3A input poll (native, overkill.recovered.systems.input) -> 9B6F..9B94 the four movement bits (native, overkill.recovered.systems.movement.step_view_anchor_by_input: bit 0x08->A5D1 X-, 0x04->A5EA X+, 0x01->A607 Y+, 0x02->A5F9 Y-, on the view-anchor slot DS:237C/SS:BP, exit 9B97) -> 9BA6 secondary fire 8546 -> 9BAC A067 action fanout -> coordinate rings. Movement-bits stage proven byte-equal to the VM by overkill.probes.verify_native_movement_bits (L2/L6-boss/player-death).",
     "status": "replaced"
   },
   "1010:9BFB": {

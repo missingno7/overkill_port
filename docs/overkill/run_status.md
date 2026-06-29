@@ -1,3 +1,31 @@
+## 2026-06-29 - Native frame loop stage 2: the 9B2E movement-bits stage (compose, don't re-recover)
+
+With the input poll native, the next 9B2E stage fell out of already-recovered pieces.  Frames
+9B6F..9B94 test the four DS:98BE direction bits and step the player-controlled view-anchor slot
+(DS:237C, SS:BP) via A5D1/A5EA/A5F9/A607 -- which were already VERIFIED pure systems
+(two_pass_axis_clamp_step / one_pixel_axis_step).  So this stage is a *composition*, not a new
+recovery: `overkill.recovered.systems.movement.step_view_anchor_by_input(x, y, input_flags, *,
+no_clamp)` applies the four bits in the original order onto the slot's X/Y.
+
+Pinned the mapping from the 9B2E dispatch + the A5xx disasm (the screen axes are transposed vs the
+controls): up(0x08)->X toward 0x20 (or one unclamped pixel when DS:A47C set), down(0x04)->X toward
+0xC0, right(0x01)->Y toward 0xB0 (unsigned below test), left(0x02)->Y toward 0x00.  Only A5D1
+consults the no-clamp gate.  (The "x_step_left" handler names are screen-oriented misnomers; the
+field/limit/direction contract is what's verified.)
+
+VERIFIED produced-vs-VM by the new `overkill.probes.verify_native_movement_bits` (project slot+input
+at 9B6F, step, compare SS:BP X/Y at the stage exit 9B97): L2_full `600/600` (396 moved), L6_boss
+`700/700` (510 moved), player_death `583/583` (130 moved) -- 0 divergence (showcase is an attract
+path that never reaches the stage -> NO-EVENTS).  Unit coverage in tests/test_movement_bits_stage.py
+(clamps, opposed-bit ordering, the below-condition, diagonals).  No hook touched, so demo-replay is
+unaffected; lint + both audits + the island manifest green.  merge_target=FrameLoop (the first stage
+tagged for the native frame controller rather than a per-object system).
+
+Next: the remaining 9B2E stages after the movement bits -- the secondary-fire branch (8546, gated on
+[2350]>B6 + bit 0x20), then A66F, the A067 action fan-out (gates already pure), and the coordinate-ring
+maintenance (A616/9D4D) -> toward a native frame controller that sequences input -> object-update ->
+movement -> action.
+
 ## 2026-06-29 - Recover the input poll (0162/017E) as the canonical pure decode + native source
 
 The frame loop's first stage is now native.  The 0162 keyboard path is a pure decode of two inputs --

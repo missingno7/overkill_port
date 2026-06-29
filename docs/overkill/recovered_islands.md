@@ -4,7 +4,7 @@
      Source of truth = the @recovered_island metadata on each recovered function.
      tests/test_island_registry.py fails if this file drifts from the code. -->
 
-18 recovered islands (2 ASM_MATCHED, 16 VERIFIED).
+19 recovered islands (2 ASM_MATCHED, 17 VERIFIED).
 
 | ASM boundary | Function | Status | Merge target | Contract |
 |---|---|---|---|---|
@@ -15,6 +15,7 @@
 | `1010:5DB2` | `systems.movement.object_target_seek_step_5db2` | VERIFIED | MovementSystem | whole per-slot 5DB2 target-seek movement: pick direction toward target, then step x/y by 5E0C mode |
 | `1010:5E1B` | `systems.movement.object_delta_5e1b` | VERIFIED | MovementSystem | object-delta helper: signed per-axis deltas = slot - (target + pad), pad 4px solid else 12px |
 | `1010:5E42` | `systems.movement.object_delta_steer_5e42` | VERIFIED | MovementSystem | runtime-patched delta-steer: signed deltas -> Bresenham axis pick -> A348 direction -> step |
+| `1010:9B6F`, `1010:9B79`, `1010:9B83`, `1010:9B8D` | `systems.movement.step_view_anchor_by_input` | VERIFIED | FrameLoop | 9B2E movement-bits stage: apply held direction input to the view-anchor position via the four A5D1/A5EA/A5F9/A607 axis clamp-steps |
 | `1010:A5D1` | `systems.movement.one_pixel_axis_step` | VERIFIED | MovementSystem | single-pixel axis step when the no-clamp global gate is set |
 | `1010:A5D1`, `1010:A5EA`, `1010:A5F9`, `1010:A607` | `systems.movement.two_pass_axis_clamp_step` | VERIFIED | MovementSystem | two-pass clamp/step of an axis word toward a boundary |
 | `1010:A616` | `systems.movement.vertical_scroll_edge_response_a616` | VERIFIED | MovementSystem | view-gated top+bottom scroll-bias state update |

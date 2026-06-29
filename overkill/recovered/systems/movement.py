@@ -20,9 +20,16 @@ from overkill.recovered.domain.movement import (
     TargetSeekStep,
     VerticalScrollEdgeDecision,
     VerticalScrollEdgeInput,
+    ViewAnchorMoveStep,
 )
 from overkill.recovered.domain.object_slots import ObjectSlotRecord
 from overkill.recovered.islands import recovered_island
+from overkill.recovered.systems.input import (
+    INPUT_DOWN,
+    INPUT_LEFT,
+    INPUT_RIGHT,
+    INPUT_UP,
+)
 
 TARGET_GRID_MASK_4PX = 0xFFFC
 PLAYER_CENTER_TARGET_X_BIAS = 0x000A
@@ -382,6 +389,55 @@ def one_pixel_axis_step(value_word: int, *, increment: bool) -> AxisClampStepDec
         final_word=u16(start + (1 if increment else -1)),
         step_count=1,
     )
+
+
+@recovered_island(
+    asm=("1010:9B6F", "1010:9B79", "1010:9B83", "1010:9B8D"),
+    contract="9B2E movement-bits stage: apply held direction input to the view-anchor "
+             "position via the four A5D1/A5EA/A5F9/A607 axis clamp-steps",
+    status="VERIFIED",
+    merge_target="FrameLoop",
+)
+def step_view_anchor_by_input(
+    x_word: int, y_word: int, input_flags: int, *, no_clamp: bool
+) -> ViewAnchorMoveStep:
+    """The 9B2E movement-bits stage, composed from the verified axis clamp-steps.
+
+    Frames 9B6F..9B94 of the game-state controller test the four direction bits of
+    DS:98BE and, for each held bit, step the player-controlled view-anchor slot
+    (DS:237C) one of four ways.  The screen axes are transposed relative to the
+    controls (the up/down controls move the slot's X word, left/right its Y):
+
+      * up    (``INPUT_UP``    0x08, A5D1): X toward 0x20 -- or one unclamped pixel
+        when the global no-clamp gate DS:A47C is set;
+      * down  (``INPUT_DOWN``  0x04, A5EA): X toward 0xC0;
+      * right (``INPUT_RIGHT`` 0x01, A607): Y toward 0xB0 (unsigned ``below`` test);
+      * left  (``INPUT_LEFT``  0x02, A5F9): Y toward 0x00.
+
+    The bits are applied in the original 9B2E order (up, down, right, left) so two
+    opposed directions in one frame resolve exactly as the VM resolves them.  Only
+    A5D1 consults the no-clamp gate; the other three always two-pass clamp.
+    """
+    x = x_word & 0xFFFF
+    y = y_word & 0xFFFF
+    stepped = False
+    if input_flags & INPUT_UP:        # A5D1
+        if no_clamp:
+            x = one_pixel_axis_step(x, increment=False).final_word
+        else:
+            x = two_pass_axis_clamp_step(x, limit_word=OBJECT_CLAMP_X_MIN, increment=False).final_word
+        stepped = True
+    if input_flags & INPUT_DOWN:      # A5EA
+        x = two_pass_axis_clamp_step(x, limit_word=OBJECT_CLAMP_X_MAX, increment=True).final_word
+        stepped = True
+    if input_flags & INPUT_RIGHT:     # A607
+        y = two_pass_axis_clamp_step(y, limit_word=OBJECT_CLAMP_Y_MAX, increment=True,
+                                     below_condition=True).final_word
+        stepped = True
+    if input_flags & INPUT_LEFT:      # A5F9
+        y = two_pass_axis_clamp_step(y, limit_word=OBJECT_CLAMP_Y_MIN, increment=False).final_word
+        stepped = True
+    return ViewAnchorMoveStep(x_word=x, y_word=y, stepped=stepped)
 
 
 @recovered_island(

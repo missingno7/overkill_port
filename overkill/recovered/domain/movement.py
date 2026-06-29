@@ -6,6 +6,21 @@ from typing import Literal
 
 
 @dataclass(frozen=True, slots=True)
+class ViewAnchorMoveStep:
+    """Post-frame position of the player-controlled view-anchor slot (DS:237C).
+
+    The result of applying one frame's direction input to the view anchor's screen
+    position via the four A5D1/A5EA/A5F9/A607 clamp-steps (the 9B2E movement-bits
+    stage).  ``stepped`` is whether any direction bit moved it (false when no
+    direction was held), kept so a native frame loop can skip a redundant write.
+    """
+
+    x_word: int
+    y_word: int
+    stepped: bool
+
+
+@dataclass(frozen=True, slots=True)
 class MovementTarget:
     """Copied target point used by the recovered 1010:5DB2 seeker.
 
