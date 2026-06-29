@@ -1,3 +1,15 @@
+## 2026-06-29 - Recover the faithful 5F0D score BCD-add as a pure system (bcd_add_score)
+
+Recovered the byte-exact packed-decimal score add at 1010:5F0D as a pure system
+(`systems/score.py`): adds the 16-bit BCD delta in BX (BL->byte0, BH->byte1) into the 4-byte
+score (2314..2317) with a DAA carry chain, dropping the top carry like the ASM.  Oracle-verified
+**byte-exact vs the real 5F0D** over 7 cases (basic add, carry, BH!=0, mixed, overflow).  This is
+the faithful score producer the native runtime will advance `NativeGameState`'s score with; the
+death-tail `_run_score_add_5f0d_observed` remains a witness-poor single-byte approximation
+(converging it onto `bcd_add_score`, resolving its 5-byte vs the ASM's 4-byte write, is a
+follow-up that needs the death-tail demo re-verified).  Full suite green; lint (191) +
+recovered-layer (22 pure) + architecture audits pass; pure % 14.8 -> 15.0.
+
 ## 2026-06-29 - Bucket C: NativeGameState aggregate + pure verify-mode comparison core
 
 The first VM-free native-runtime step, and the first to **raise** pure % (14.5 -> 14.8) rather

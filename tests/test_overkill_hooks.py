@@ -10640,6 +10640,48 @@ def test_object_spawn_seed_from_source_a4d7_free_path_matches_original():
     assert_oracle_equivalent(asm, hook)  # dead A4DA/A4ED/754A return scratch below SP dropped
 
 
+def test_bcd_add_score_5f0d_matches_interpreted_asm():
+    from dos_re.cpu import CPU8086, CPUState
+    from dos_re.memory import Memory
+
+    from overkill.recovered.systems.score import bcd_add_score
+
+    # 1010:5F0D..5F42 — the packed-decimal score add: score[0..3] (SS:2314) += BX
+    # (BL->byte0, BH->byte1) with a DAA carry chain; the top carry is dropped.
+    code_5f0d = bytes.fromhex(
+        "55 50 52 bd 14 23 8a 46 00 02 c3 27 88 46 00 45 8a 46 00 8a f0 12 c7 27 "
+        "88 46 00 8a d0 45 8a 46 00 14 00 27 88 46 00 45 8a 46 00 14 00 27 88 46 00 45 5a 58 5d c3"
+    )
+
+    def run_asm(score_bytes, bx):
+        mem = Memory()
+        mem.load(0x1010, 0x5F0D, code_5f0d)
+        cpu = CPU8086(mem, CPUState(cs=0x1010, ds=0x2000, ss=0x2000, sp=0x9000, ip=0x5F0D, flags=0x0202))
+        cpu.trace_enabled = False
+        cpu.s.bx = bx & 0xFFFF
+        for i, b in enumerate(score_bytes):
+            mem.wb(0x2000, (0x2314 + i) & 0xFFFF, b & 0xFF)
+        cpu.push(0xBEEF)
+        for _ in range(80):
+            if cpu.addr() == (0x1010, 0xBEEF):
+                break
+            cpu.step()
+        assert cpu.addr() == (0x1010, 0xBEEF)
+        return tuple(mem.rb(0x2000, (0x2314 + i) & 0xFFFF) for i in range(4))
+
+    cases = [
+        ((0x00, 0x00, 0x00, 0x00), 0x0030),
+        ((0x00, 0x00, 0x00, 0x00), 0x0060),
+        ((0x70, 0x00, 0x00, 0x00), 0x0060),  # carry into byte 1
+        ((0x00, 0x00, 0x00, 0x00), 0x0250),  # BH != 0 (the faithful add the approximation drops)
+        ((0x55, 0x12, 0x00, 0x00), 0x0167),  # mixed carry + BH
+        ((0x99, 0x99, 0x99, 0x99), 0x0001),  # overflow: the top carry is dropped
+        ((0x45, 0x23, 0x01, 0x00), 0x0099),
+    ]
+    for score, bx in cases:
+        assert bcd_add_score(score, bx) == run_asm(score, bx), (score, hex(bx))
+
+
 def test_frame_coord_ring_helpers_match_interpreted_asm():
     from dos_re.cpu import CPU8086, CPUState
     from dos_re.memory import Memory
