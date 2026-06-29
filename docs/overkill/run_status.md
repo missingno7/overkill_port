@@ -1,3 +1,14 @@
+## 2026-06-29 - §1.2 cross-demo gate: native producers byte-exact vs the VM across the corpus
+
+Added `scripts/verify_native_producers.py` -- the §1.2 "across every demo" gate: runs each native
+producer verify (score, allocator) across the gameplay demo corpus and reports PASS / NO-EVENTS /
+DIVERGENCE per (demo, producer), failing only on a real divergence.  Confirmed the two producers
+byte-exact across five demos (L1_start, L1_hard_start, L2_full, L3_full, L4_full): **113 score
+events + 367 allocations, all produced-vs-VM byte-exact, 0 divergence**.  This is the §1.2
+"matches at every checkpoint across every demo" requirement for the producers recovered so far;
+the gate grows as more producers land (add their probe to `PROBES`).  Lint (194) green; standalone
+gate (slow; not the fast suite).
+
 ## 2026-06-29 - §1.2 allocator verify: native object_pool_find_free byte-exact vs VM 7573
 
 Second produced-vs-VM verification (after the score), extending the verify-mode from a scalar to
