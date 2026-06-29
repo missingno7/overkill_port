@@ -1,3 +1,27 @@
+## 2026-06-29 - Recon RESOLVED: the "camera" is an OBJECT -- roadmap #2 folds into the object-update
+
+Resolved the multi-turn camera mystery by instrumenting the demo to find what writes the view target
+(DS:237E/2380): the writers are 3586/3590, 5010/5014, and the scroll-edge clamps A5E2/A603/A612.  But
+they all write **`ss:[bp+2]` / `ss:[bp+4]`** (an object slot's X/Y at OFF_X/OFF_Y) -- they only touch
+237E/2380 because **the view target is itself an object record**: the struct at DS:237C is a slot, and
+SS:BP points to it when the object-update processes it (237E = [237C+2] = its X, 2380 = [237C+4] = its Y).
+So there is NO separate camera system:
+- The camera is an OBJECT, advanced by the generic per-frame object-update -- `5010` is a path-follow
+  movement step (`lodsw; add [bp+2],dx; lodsw; add [bp+4],dy; call 5073 tile-probe; loop`), `3586/3590`
+  is a transient +/-10h collision probe (net no-op on position), and the level-edge clamps (a5d1/a5ea/
+  a5f9/a607) are ALREADY recovered hooks (the `_run_two_pass_word_clamp_step` family).
+- The view target IS dynamic in gameplay (16-18 distinct X, 84-88 distinct Y over 600 frames) -- so the
+  camera-object moves; it is not the static intro-script value.
+**The 237C slot is the special_pool object already in NativeGameState** (the leading "view-anchor slot"
+at SPECIAL_DRAW_SLOT_BASE=0x237C, modelled since the sprite-compose work).  So CameraState (DS:237E/2380)
+is literally that slot's X/Y ([237C+2]/[+4]) -- the camera and the special-pool object are the SAME thing,
+already mirrored in NativeGameState; no separate CameraState producer is needed.
+**Consequence:** roadmap #2 ("camera/scroll island") is NOT a separate island -- it collapses into the
+object-update (Bucket A): recover the special/view-anchor object's behavior (its movement helper `5010`
+path-follow + tile, demo-reached x30/60 frames) like the other object handlers, and the camera position
+follows for free.  Next slice: recover `5010` (the path-follow movement+tile helper) as a producer.
+(Three camera-recon turns -> the "camera" is the object system itself, on the already-modelled 237C slot.)
+
 ## 2026-06-29 - Bucket A: native scroll-script interpreter step (level-script island) -- pure % 17.8
 
 Reopened last turn's "gated on 859E" assessment by separating the pure state step from the render side
