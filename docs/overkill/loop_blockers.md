@@ -59,6 +59,19 @@ already-lifted `5DB2`/`bc4b` — neither yields a meaty gate-compliant pure deci
 gate-compliant remaining work is (a) the hard Bucket-A islands (pure-raising but multi-leaf), or
 (b) the native-runtime build itself (which collapses the adapters and repays the dilution).
 
+**Update (2026-06-29, later) — clean low-risk pure-raising veins now EXHAUSTED; do NOT re-grind:**
+- inline→pure spawn templates: done (A4EA `e2bd8d7`); the rest are single-use (over-engineering).
+- faithful recovery of witness-poor `_observed` lifts: 5F0D was the one clean one (`bcd_add_score`
+  `332b58d`); the others (`bec5`/`9e69`/`9e98`/`bd17`/`bd0d`/`7476`/`7420`) are the hard
+  death/contact/spawn frontier (attended-only — that is *why* they are observed/partial).
+- Bucket-A unblocked behaviors (`B250`, `8d4f`): VM-coupled, no meaty pure decision.
+The one vein that BOTH raises pure % AND is non-blocked is the **native-runtime build (Bucket C)**:
+done so far = `NativeGameState` + the pure verify-mode comparison core (`9899c12`) + the score
+leaf/producer (`bcd_add_score`/`advance_hud_score`, `332b58d`/`bf5ad35`). It raises pure % (the
+runtime is VM-free source) and repays the mirror dilution when the VM-facing adapters are deleted.
+**Next (substantial, fresh-focus):** the verify-mode demo harness (produced-vs-VM); more producers
+(camera/objects — each needs its per-frame update logic recovered first); then the standalone loop.
+
 ## NOTE (process) — check lifted-status before "recovering" a routine
 
 `519A` / `3153` (HUD text dispatch + Tandy glyph) were ALREADY lifted (`rendering/text.py`,
