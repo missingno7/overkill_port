@@ -1,3 +1,14 @@
+## 2026-06-29 - Bucket C: NativeGameState grows to both object pools (gameplay + effect)
+
+Extended the native aggregate state toward full object coverage: `NativeGameState` now carries the
+`effect_pool` (the 2nd 0x38-stride object table the present scan walks) alongside the gameplay
+`object_pool`.  `read_native_game_state` snapshots both (`read_object_pool` for the GAMEPLAY +
+EFFECT tables); `native_game_state_mismatches` compares both via a shared `_pool_mismatches` helper
+(byte-faithful per slot/word).  Tests cover the effect-pool round-trip + per-slot drift.  Full suite
+green; lint (199) + recovered-layer + architecture audits pass.  Grows the §1.2 verify-mode state
+coverage (both object tables) toward the native sprite composition (which projects both pools'
+active objects).
+
 ## 2026-06-29 - Bucket C: native sprite-layer composition (build_native_sprite_layer)
 
 First FrameSnapshot-composition piece, wiring the recovered render leaves into the brief's "compose

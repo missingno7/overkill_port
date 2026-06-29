@@ -18,6 +18,7 @@ from overkill.recovered.domain.object_slots import ObjectPool
 from overkill.recovered.ds_globals import VIEW_TARGET_X, VIEW_TARGET_Y
 from overkill.recovered.systems.score import advance_hud_score
 from overkill.recovered.views.object_slots import (
+    EFFECT_OBJECT_TABLE_BASE,
     FRAME_TIMER_COUNT,
     FRAME_TIMER_TABLE_BASE,
     GAMEPLAY_OBJECT_TABLE_BASE,
@@ -27,14 +28,21 @@ from overkill.recovered.views.object_slots import (
 DS = 0x1A0F
 
 
-def _state(camera_xy=(0x10, 0x20), score=(0x0990, 0x0003), pool_slot0_word0=0x0001) -> NativeGameState:
+def _state(camera_xy=(0x10, 0x20), score=(0x0990, 0x0003), pool_slot0_word0=0x0001,
+           effect_slot0_word0=0x0010) -> NativeGameState:
     pool = ObjectPool(
         base=GAMEPLAY_OBJECT_TABLE_BASE,
         stride=4,
         slots=((pool_slot0_word0, 0x0000), (0x0000, 0x0000)),
     )
+    effect = ObjectPool(
+        base=EFFECT_OBJECT_TABLE_BASE,
+        stride=4,
+        slots=((effect_slot0_word0, 0x0000),),
+    )
     return NativeGameState(
         object_pool=pool,
+        effect_pool=effect,
         camera=CameraState(x=camera_xy[0], y=camera_xy[1]),
         hud=HudLayer(counters=(0, 0, 0, 0, 0, 0), score_bcd=score),
     )
@@ -58,12 +66,17 @@ def test_native_game_state_mismatches_reports_each_substate():
     assert native_game_state_mismatches(_state(pool_slot0_word0=0x0002), base) == (
         ("object_pool", "slot[0].word[0x0]", 0x0002, 0x0001),
     )
+    # effect-pool slot drift (the second object table)
+    assert native_game_state_mismatches(_state(effect_slot0_word0=0x0011), base) == (
+        ("effect_pool", "slot[0].word[0x0]", 0x0011, 0x0010),
+    )
 
 
 def test_native_game_state_mismatches_reports_pool_layout_change():
     a = _state()
     b = NativeGameState(
         object_pool=ObjectPool(base=a.object_pool.base, stride=8, slots=a.object_pool.slots),
+        effect_pool=a.effect_pool,
         camera=a.camera,
         hud=a.hud,
     )

@@ -25,16 +25,36 @@ from overkill.recovered.domain.object_slots import ObjectPool
 class NativeGameState:
     """The aggregate native game state, grown as more §1.2 states are recovered.
 
-    Today it carries the three states whose native mirrors are proven byte-faithful:
-    the gameplay ``object_pool`` (1010:7573 table), the ``camera`` view origin, and
-    the ``hud`` (status counters + ``score_bcd`` = the §1.2 ScoreState).  The
-    standalone runtime produces this with no VM; verify mode compares it against the
-    VM-projected state via :func:`native_game_state_mismatches`.
+    Today it carries the states whose native mirrors are proven byte-faithful: the
+    gameplay ``object_pool`` + the ``effect_pool`` (the two 0x38-stride object tables
+    the present scan walks), the ``camera`` view origin, and the ``hud`` (status
+    counters + ``score_bcd`` = the §1.2 ScoreState).  The standalone runtime produces
+    this with no VM; verify mode compares it against the VM-projected state via
+    :func:`native_game_state_mismatches`.
     """
 
     object_pool: ObjectPool
+    effect_pool: ObjectPool
     camera: CameraState
     hud: HudLayer
+
+
+def _pool_mismatches(
+    label: str, n_pool: ObjectPool, r_pool: ObjectPool, out: list
+) -> None:
+    """Append every ``(label, field, native, reference)`` where two native ObjectPools
+    diverge -- layout first, then byte-faithful per-slot/per-word."""
+    if (n_pool.base, n_pool.stride) != (r_pool.base, r_pool.stride):
+        out.append((label, "layout", (n_pool.base, n_pool.stride), (r_pool.base, r_pool.stride)))
+        return
+    for i in range(max(len(n_pool.slots), len(r_pool.slots))):
+        ns = n_pool.slots[i] if i < len(n_pool.slots) else ()
+        rs = r_pool.slots[i] if i < len(r_pool.slots) else ()
+        for w in range(max(len(ns), len(rs))):
+            nv = ns[w] if w < len(ns) else None
+            rv = rs[w] if w < len(rs) else None
+            if nv != rv:
+                out.append((label, f"slot[{i}].word[{w << 1:#x}]", nv, rv))
 
 
 def native_game_state_mismatches(
@@ -70,19 +90,7 @@ def native_game_state_mismatches(
         if nv != rv:
             out.append(("hud", f"score_bcd[{j}]", nv, rv))
 
-    # ObjectPool: layout first, then byte-faithful per-slot/per-word.
-    n_pool, r_pool = native.object_pool, reference.object_pool
-    if (n_pool.base, n_pool.stride) != (r_pool.base, r_pool.stride):
-        out.append(
-            ("object_pool", "layout", (n_pool.base, n_pool.stride), (r_pool.base, r_pool.stride))
-        )
-    else:
-        for i in range(max(len(n_pool.slots), len(r_pool.slots))):
-            ns = n_pool.slots[i] if i < len(n_pool.slots) else ()
-            rs = r_pool.slots[i] if i < len(r_pool.slots) else ()
-            for w in range(max(len(ns), len(rs))):
-                nv = ns[w] if w < len(ns) else None
-                rv = rs[w] if w < len(rs) else None
-                if nv != rv:
-                    out.append(("object_pool", f"slot[{i}].word[{w << 1:#x}]", nv, rv))
+    # The two object pools: layout first, then byte-faithful per-slot/per-word.
+    _pool_mismatches("object_pool", native.object_pool, reference.object_pool, out)
+    _pool_mismatches("effect_pool", native.effect_pool, reference.effect_pool, out)
     return tuple(out)

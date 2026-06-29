@@ -16,6 +16,8 @@ from overkill.recovered.adapters.frame_snapshot_adapter import (
 )
 from overkill.recovered.domain.native_game_state import NativeGameState
 from overkill.recovered.views.object_slots import (
+    EFFECT_OBJECT_TABLE_BASE,
+    EFFECT_OBJECT_TABLE_COUNT,
     GAMEPLAY_OBJECT_TABLE_BASE,
     GAMEPLAY_OBJECT_TABLE_COUNT,
     read_object_pool,
@@ -25,15 +27,19 @@ from overkill.recovered.views.object_slots import (
 def read_native_game_state(mem, ds: int, cs: int = OVERKILL_CODE_SEGMENT) -> NativeGameState:
     """Build the verify-mode reference :class:`NativeGameState` from live VM memory.
 
-    Snapshots the gameplay object pool (DS:``GAMEPLAY_OBJECT_TABLE_BASE``), the
-    camera view origin, and the HUD/score, each through its recovered byte-faithful
-    reader.  ``cs`` is accepted for symmetry with the other native projections /
-    future render state; the three states read here are all DS-relative.
+    Snapshots the gameplay + effect object pools (DS:``GAMEPLAY_OBJECT_TABLE_BASE`` /
+    ``EFFECT_OBJECT_TABLE_BASE``), the camera view origin, and the HUD/score, each
+    through its recovered byte-faithful reader.  ``cs`` is accepted for symmetry with
+    the other native projections / future render state; the states read here are all
+    DS-relative.
     """
     ds &= 0xFFFF
     return NativeGameState(
         object_pool=read_object_pool(
             mem, ds, GAMEPLAY_OBJECT_TABLE_BASE, GAMEPLAY_OBJECT_TABLE_COUNT
+        ),
+        effect_pool=read_object_pool(
+            mem, ds, EFFECT_OBJECT_TABLE_BASE, EFFECT_OBJECT_TABLE_COUNT
         ),
         camera=read_camera_state(mem, ds),
         hud=read_hud_layer(mem, ds),
