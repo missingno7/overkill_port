@@ -15,7 +15,10 @@ from overkill.gameplay.object_deactivation import (
     _run_collision_death_tail_bfc7,
 )
 from overkill.gameplay.object_runtime_common import _run_interpreted_near_call_observed
-from overkill.recovered.systems.collision import collision_damage_counter_chain_bf25
+from overkill.recovered.systems.collision import (
+    collision_damage_counter_chain_bf25,
+    object_grid_overlap_62f6,
+)
 from overkill.recovered.views.object_slots import (
     ObjectSlotView,
     GAMEPLAY_OBJECT_LAST_SLOT_BASE, GAMEPLAY_OBJECT_TABLE_BASE, OBJECT_SLOT_STRIDE,
@@ -363,6 +366,10 @@ def _run_object_overlap_scan_62f6(cpu, *, parent: str, chain: str, cx_value: int
                         x_candidates.append((x_candidates[-1] - 8) & 0xFFFF)
                     used_x_branch = True
                     if cpu.s.cx in x_candidates:
+                        # The pure grid-overlap predicate must agree this is a hit.
+                        if not object_grid_overlap_62f6(cpu.s.cx, cpu.s.dx, cand.x_word,
+                                                        cand.y_word, obj_type, logic_id):
+                            raise AssertionError("pure 62F6 grid overlap disagrees with the inline scan")
                         # The original arrives at BEC5 with AX holding the
                         # matched tile X and BX pointing at the collided slot.
                         cpu.s.ax = cpu.s.cx & 0xFFFF

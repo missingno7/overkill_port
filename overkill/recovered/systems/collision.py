@@ -319,6 +319,49 @@ COLLISION_DEATH_STATE_LOGIC_ID = 0x0001
 COLLISION_DEATH_C037_SPRITE_BY_TYPE = {0x0001: 0x0000, 0x0002: 0x0003}
 
 
+# 1010:62F6 object-vs-object grid overlap test.  The scanning object's 8px-aligned
+# cell (x&FFF8, y&FFF8) is tested against a candidate's occupied cell footprint, which
+# is widened by the scanning object's size (object_type 2) and Y pixel alignment.
+OBJECT_GRID_CELL_MASK = 0xFFF8
+OBJECT_GRID_CELL_PIXELS = 0x0008
+OBJECT_GRID_WIDE_OBJECT_TYPE = 0x0002
+OBJECT_GRID_X_NARROW_LOGIC_IDS = frozenset((0x0078, 0x0079))
+
+
+def object_grid_overlap_62f6(self_x_cell: int, self_y_cell: int, cand_x: int, cand_y: int,
+                             self_object_type: int, self_logic_id: int) -> bool:
+    """Pure 1010:62F6 grid overlap predicate: does the scanning object's cell hit the candidate?
+
+    ``self_x_cell``/``self_y_cell`` are the scanning object's 8px-aligned cell
+    (``x & FFF8`` / ``y & FFF8``).  The candidate at ``(cand_x, cand_y)`` occupies a
+    vertical cell run -- two cells (``aligned+8``, ``aligned``) when ``cand_y`` is not
+    8px-aligned, else one (``cand_y``) -- always plus the cell 8px above, and two more
+    above that for a wide (object_type 2) scanner.  Its horizontal run is ``cand_x &
+    FFF8`` and the cell 8px left, plus two more left for a wide scanner unless its logic
+    id is 78h/79h.  Returns whether the scanning cell is inside that footprint (Y first,
+    then X) -- the match that the original routes to the BEC5 collision handler."""
+    cand_y &= 0xFFFF
+    if cand_y & (OBJECT_GRID_CELL_PIXELS - 1):
+        aligned = cand_y & OBJECT_GRID_CELL_MASK
+        y_cells = [(aligned + OBJECT_GRID_CELL_PIXELS) & 0xFFFF, aligned]
+    else:
+        y_cells = [cand_y]
+    y_cells.append((y_cells[-1] - OBJECT_GRID_CELL_PIXELS) & 0xFFFF)
+    if (self_object_type & 0xFFFF) == OBJECT_GRID_WIDE_OBJECT_TYPE:
+        y_cells.append((y_cells[-1] - OBJECT_GRID_CELL_PIXELS) & 0xFFFF)
+        y_cells.append((y_cells[-1] - OBJECT_GRID_CELL_PIXELS) & 0xFFFF)
+    if (self_y_cell & 0xFFFF) not in y_cells:
+        return False
+
+    base_x = cand_x & OBJECT_GRID_CELL_MASK
+    x_cells = [base_x, (base_x - OBJECT_GRID_CELL_PIXELS) & 0xFFFF]
+    if (self_object_type & 0xFFFF) == OBJECT_GRID_WIDE_OBJECT_TYPE and \
+            (self_logic_id & 0xFFFF) not in OBJECT_GRID_X_NARROW_LOGIC_IDS:
+        x_cells.append((x_cells[-1] - OBJECT_GRID_CELL_PIXELS) & 0xFFFF)
+        x_cells.append((x_cells[-1] - OBJECT_GRID_CELL_PIXELS) & 0xFFFF)
+    return (self_x_cell & 0xFFFF) in x_cells
+
+
 # 1010:BF25 collision-damage counter chain.  Each hit decrements counter_20 a
 # difficulty-gated number of times; a decrement reaching zero kills the object.
 COLLISION_DAMAGE_BEDC_ONE_EXTRA_DECS = 1   # DS:BEDC == 1 -> one extra decrement

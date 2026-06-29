@@ -1,3 +1,19 @@
+## 2026-06-29 - Bucket A: native 62F6 object-vs-object grid overlap predicate -- pure % 18.1 (20th recovery)
+
+Continued reopening the "attended" collision island: recovered the 1010:62F6 overlap DETECTION (the
+object-vs-object scan that feeds BEC5).  `object_grid_overlap_62f6` (systems/collision.py) is the pure
+grid-cell match: the scanning object's 8px-aligned cell (x&FFF8, y&FFF8) hits a candidate when its cell
+falls in the candidate's occupied footprint -- a vertical cell run (two cells when the candidate Y is not
+8px-aligned, else one, always plus the cell above; two more above for a wide object_type-2 scanner) and a
+horizontal run (cell + one left; two more left for a wide scanner unless logic id 78h/79h).  The 62F6
+scan hook keeps its unrolled per-candidate loop + register side effects and cross-checks the pure
+predicate at the BEC5-dispatch match point (the C054 adapter pattern).  **Verified**: VM-free unit tests
+(the cell runs + the wide/narrow widening) + the hybrid frame-verifier on L6_boss + L2_full (1300 frames
+each, 0 divergence; the cand-side cross-check held on every real collision).  20th pure recovery; pure %
+crosses 18%.  The collision island is now mostly native -- detection (62F6) + damage (BF25) + death tails
+(BFC7/score/7420/C054/C037) all recovered; the last BEC5 piece is the variant dispatch (07/08/0C,
+sprite-0033 variant-2, 5/6).  Both audits + lint (215) pass; full suite green (636 passed).
+
 ## 2026-06-29 - Bucket A: native BF25 collision-damage counter chain (reopening "attended" BEC5) -- pure % 17.9
 
 Re-attempted the BEC5 object-vs-object collision handler that I handed off early this session as "the
