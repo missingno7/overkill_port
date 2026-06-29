@@ -1,13 +1,16 @@
 # Source-port advancement playbook
 
+> **Role (so there's no confusion):** this file is the **per-divergence FIX procedure** (the
+> disassemble-and-compare loop in step 2) + the unattended-mode operating rules. It is **not**
+> the goal brief. The canonical `/goal` brief (what to build next + the cold-boot done-condition)
+> is [`overnight_endgame_execution.md`](overnight_endgame_execution.md); the vision is
+> [`game_recovery_lifecycle.md`](game_recovery_lifecycle.md).
+>
 > **Status (2026-06-19):** the byte-exact *frontier* this playbook drove is now
 > effectively closed — divergences fixed, raw-offset drain and field naming
-> largely done (see the backlog markers below). The **primary driver is now
-> `docs/overkill/refactor_plan.md`** (the readability reconstruction: Phases 1–2
-> done, Phase 3 in progress). Keep using THIS file as the **procedure for fixing
-> any new divergence** a demo surfaces (step 2's disassemble-and-compare loop is
-> still exactly right), and as the unattended-mode operating rules. For "what to
-> work on next," read `refactor_plan.md` first.
+> largely done (see the backlog markers below). Keep using THIS file as the **procedure for
+> fixing any new divergence** a demo surfaces (step 2's disassemble-and-compare loop is
+> still exactly right), and as the unattended-mode operating rules.
 
 **Goal:** drive OVERKILL toward clean, complete, *source-like* code that stays
 byte-exact with the original — gradually, one verified slice at a time. Progress

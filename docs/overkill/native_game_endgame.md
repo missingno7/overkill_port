@@ -1,14 +1,17 @@
 # The endgame: a standalone native game, with the VM as an optional oracle
 
-> User-set, 2026-06-27. This is the top-level destination that
+> User-set, 2026-06-27 (cold-boot scope added 2026-06-30). This is the OVERKILL restatement of
+> the game-agnostic [`game_recovery_lifecycle.md`](game_recovery_lifecycle.md) (the canonical
+> vision + the full arc + the equivalence boundaries). It is the destination that
 > [`rescue_refactor.md`](rescue_refactor.md) (push lifted → pure recovered) and the
-> [`native_video_plan.md`](native_video_plan.md) (the native backend) both serve.
-> It supersedes any framing where the VM is a permanent runtime.
+> [`native_video_plan.md`](native_video_plan.md) (the native backend) both serve, and it
+> supersedes any framing where the VM is a permanent runtime.
 >
-> **The executable, unattended loop that drives toward this destination is
-> [`overnight_endgame_execution.md`](overnight_endgame_execution.md)** — the overnight
-> brief: one verified slice at a time, tested against the demos, until standalone
-> `--backend native` runs every demo with the VM as an optional oracle only.
+> **The executable, unattended `/goal` loop that drives toward this destination is
+> [`overnight_endgame_execution.md`](overnight_endgame_execution.md)** — one verified slice at a
+> time, tested against the demos, until the **full game cold-boots and plays through with no VM**
+> (intro → menu → levels → ending, from the data files), with the VM kept only as an optional
+> oracle. (Running the demos standalone is the gameplay-core milestone on the way, not the end.)
 
 ## The destination
 

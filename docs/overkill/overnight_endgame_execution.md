@@ -1,18 +1,23 @@
-# Overnight endgame execution — make `--backend native` the complete recovered port
+# Overnight endgame execution — the cold-boot VM-less full game (the `/goal` brief)
 
-> **This is an executable, unattended brief.** It is meant to be run by an autonomous
-> agent for many hours overnight, one verified slice at a time, tested against the
-> demos, committing as it goes, until the done-condition in §1 is met.
+> **THIS IS THE CANONICAL `/goal` BRIEF. Run `/goal` on this file.** It is an executable,
+> unattended brief: an autonomous agent runs it for many hours, one verified slice at a time,
+> tested against the demos, committing as it goes, until the cold-boot done-condition in §1 is
+> met (and prints `COLD-BOOT ENDGAME REACHED`).
 >
-> The **destination** (the *why*) is [`native_game_endgame.md`](native_game_endgame.md).
+> The **lifecycle & vision** (the *why* + the full arc + the equivalence boundaries) is
+> [`game_recovery_lifecycle.md`](game_recovery_lifecycle.md); the OVERKILL restatement is
+> [`native_game_endgame.md`](native_game_endgame.md).
 > The **method** (the *how*, per slice) is
-> [`semantic_crystallization_plan.md`](semantic_crystallization_plan.md) and
-> [`source_port_methodology.md`](source_port_methodology.md). The **map** of what is
-> still ASM vs pure is [`coastline_report.md`](coastline_report.md)
-> (regenerate live with `python scripts/source_port_status.py`).
+> [`semantic_crystallization_plan.md`](semantic_crystallization_plan.md),
+> [`source_port_methodology.md`](source_port_methodology.md), and
+> [`native_recovery_goal.md`](native_recovery_goal.md) (the dual-mode slice shape). The **map**
+> of what is still ASM vs pure is [`coastline_report.md`](coastline_report.md)
+> (regenerate live with `python scripts/source_port_status.py`); live status is
+> [`run_status.md`](run_status.md).
 >
-> This document is the loop that drives all of them. Do not duplicate their content;
-> follow them.
+> This document is the loop that drives all of them. Do not duplicate their content; follow them.
+> There is exactly one `/goal` target — this file.
 
 ---
 
@@ -37,6 +42,14 @@ The long-term goal is **not** "a VM with a nicer renderer." It is for `--backend
 to become the complete recovered native game, while `--backend vm` remains available for
 verification and historical correctness.
 
+**Scope: the full game, cold-booted.** The destination is not only the gameplay demos
+running standalone — it is the *whole game from a cold start*: a native entry that loads
+the game's own data files (the EXE as an asset container, no VM), runs the
+intro → title → menu → map front-end, loads each level, runs the native gameplay frame with
+native render and audio, handles level transitions, and reaches the ending — all with the VM
+available only as the optional oracle. The demos-standalone gate (§1.1–1.4) proves the
+gameplay core; the cold-boot gate (§1.5–1.8) proves the whole game.
+
 **The one design rule that makes both possible (the dual-mode systems rule):** a recovered
 system is written against **source-level state structures the native side owns**, never
 against `cpu`/segment:offset. The hybrid path reads VM memory into those structures and
@@ -48,8 +61,10 @@ recovered systems are permanent.
 
 ## 1. Definition of DONE (the stop condition)
 
-Stop when **all** hold (re-derive from metrics + demos each pass; do not guess):
+The destination is the **full game, cold-booted, with no VM** — not only the gameplay demos
+standalone. Re-derive from metrics + demos each pass; do not guess. Two tiers:
 
+### Gameplay core (the demos run standalone)
 1. **Standalone runs the demos with no VM.** `--backend native` in standalone mode
    (the VM is never started) replays every demo in `artifacts/demos/` to completion.
 2. **The native state mirrors the oracle.** In verify mode (native + VM oracle side by
@@ -61,11 +76,30 @@ Stop when **all** hold (re-derive from metrics + demos each pass; do not guess):
 3. **The runtime path is VM-free.** Standalone needs none of: VM memory, interpreted ASM,
    original framebuffer, hook dispatch, CPU registers, segment addresses, live oracle calls.
 4. **The coastline is collapsed.** `scripts/source_port_status.py` shows gameplay logic
-   essentially all in `source_pure`/`game_core` (pure %  → its ceiling; today 14.3%), the
-   `glue` hook count near zero, and `hooks.py` back under its size budget. Remaining hooks
-   are thin adapters used only by `--backend vm`.
+   essentially all in `source_pure`/`game_core` (pure % → its ceiling; **22.0% as of
+   2026-06-30**, up from 14.3%), the `glue` hook count near zero, and `hooks.py` back under
+   its size budget. Remaining hooks are thin adapters used only by `--backend vm`.
 
-Until then, keep iterating §2.
+### Full cold boot (the whole game, from a cold start)
+5. **Cold boot, no VM.** A native entry (e.g. `scripts/native_boot.py`) starts the game from
+   nothing but its own data files (the EXE as an asset container): it loads + decompresses
+   assets, runs the intro → title → menu → map front-end, loads a level, runs the native
+   gameplay frame + native render + native audio, handles level transitions, and reaches the
+   ending — with no `dos_re` on the runtime path.
+6. **Asset/level load is native.** The asset codecs (`0324` RLE / `0615` stream + the loader)
+   and the level loader are recovered pure systems that build `NativeGameState`/`LevelState`
+   from the data files, byte-exact vs the VM's load.
+7. **Audio is native.** Music (the AdLib/OPL driver → the existing Nuked-OPL3 synth) and SFX
+   (the PC-speaker driver → PIT square wave) play from recovered drivers feeding the synths
+   already present, with no VM mixer.
+8. **Playable end-to-end.** A recorded native session boots cold and plays through to the
+   ending (not only unit-verified) — the proof that the whole chain composes.
+
+**Print `COLD-BOOT ENDGAME REACHED` on its own line ONLY when every clause 1–8 is literally
+true and freshly verified this pass.** Otherwise never print it — keep iterating §2.
+
+**Milestone gate on the way:** a **VM-less single LEVEL** (1–4 + native level load, clause 6)
+is the first cold-boot milestone; the full front-end/audio/boot (5, 7, 8) layer on after.
 
 ---
 
@@ -280,7 +314,14 @@ proven 30/30). Remaining:
   HUD band.
 
 ### Bucket C — the standalone `NativeGameState` runtime + verify mode (native gate)
-Once enough systems are pure, build the VM-free runtime and its oracle harness:
+The native **frame controller** now exists: `overkill/recovered/systems/frame_loop.py` is the
+VM-free counterpart of `9B2E`, sequencing recovered systems over `NativeGameState`. Verified
+stages so far: input decode, the movement bits (`native_player_frame_step`), and the object
+pass (`native_object_pass`, whole-pool). Grow it stage by stage and build the loop around it:
+- **Finish the gameplay frame** before the loop can run a real level: the spawn machinery
+  (`A067`/`A958` fire patterns + the `7524` allocator), collision-death (the `BC4B` contact
+  path, `BFC7`→`C037`), scripted-input (`99F6`), and the sidearm/coordinate rings
+  (`A212`/`9C01`/`A33A`). These are the remaining 9B2E stages (all multi-part islands).
 - Define/grow `NativeGameState` (the source-level state the recovered systems already use as
   their structures) and a standalone loop that runs frame → recovered systems → render/audio
   state → `--backend native`, with NO VM.
@@ -292,10 +333,50 @@ Once enough systems are pure, build the VM-free runtime and its oracle harness:
   extends its coverage.
 - Drive toward `--mode standalone` replaying every demo with the VM never started (§1).
 
-### Bucket D — audio (later)
-Recover the audio command/state into source systems consumed by the native backend
-(`play_sfx`/song state), so standalone has sound without the VM mixer. Lower priority than
-A–C; do after the gameplay+render state mirrors are solid.
+### Bucket D — audio (de-risked: the synths already exist)
+OVERKILL audio is **OPL/AdLib FM music + PC-speaker SFX** — not PRE2's DMA-PCM streaming, and
+the *synthesis* pieces are already present, so this is bounded driver recovery, not research:
+- **The synths exist.** `dos_re/dos.py` already captures AdLib register writes
+  (`set_adlib_callback`/`_notify_adlib`, ports `0x388`/`0x389`) and routes them to **Nuked-OPL3**
+  in the interactive frontend; it also models the PC-speaker path (port `0x61` + PIT `0x42`/`0x43`).
+- **What's left = recover the drivers that feed them**, VM-free: the optional AdLib music driver
+  (loaded at `2032:0000`, sequenced by the `06E5` timer ISR at ~72.8 Hz) → register-write stream
+  → Nuked-OPL3; and the PC-speaker SFX driver (the `06E5`/`2032` path, `DS:BEFE` = sound-active)
+  → PIT square wave. Recover each as a pure system that emits the same writes/tones per tick,
+  verified produced-vs-VM (capture the VM's `0x388`/`0x389` and speaker-port writes, compare).
+Lower priority than A–C/E/F for *playability*, but no longer an unknown.
+
+### Bucket E — the front-end flow (cold-boot §1.5: intro → title → menu → map)
+The non-gameplay flow the game shows before/around levels. Like the PRE2 "front-end flow"
+recovery, the scenes largely *render over state* already — the work is the native **flow
+driver** that sequences them with their input/wait/transition behaviour, VM-free:
+- The intro/title/loader scenes, the main menu (the `558B` idle/poll loop), the difficulty/
+  planet selectors (`D390`/`D434`/`D445`), and the map. Recover each scene's render + its
+  per-scene wait (timer-paced via the `0679`/`06E5` tick) + input + transition as native.
+- Build a native scene-flow controller (the front-end counterpart of `frame_loop.py`) that
+  runs boot → intro → title → menu → map → level-start → (gameplay) → tally → next, over
+  native scene state. Gate: produced-vs-VM at each scene boundary; then a native session that
+  reaches the menu, then a level, with no VM.
+
+### Bucket F — native level + asset load (cold-boot §1.6)
+So the native game can load its own data instead of inheriting a VM-loaded image:
+- **Asset codecs** — promote the already-lifted decoders to pure systems: the `0324` word-pair
+  RLE and the `0615` packed-stream reader (and the `02A8` loader dispatcher). Gate: byte-exact
+  vs the VM decode on the real asset blobs.
+- **Level loader** — recover the routine that turns the decoded level data into game state, as
+  a pure system building `NativeGameState`/`LevelState` (tile map, object table seed, palette,
+  scroll bounds). Gate: the built state is byte-exact vs the VM's post-load memory.
+- Milestone: with Bucket C's frame + this, a **VM-less single LEVEL** loads and plays.
+
+### Bucket G — the native boot backbone (cold-boot §1.5/§1.8: the native `main`)
+The cold-start wiring, added once A–F provide the pieces:
+- A native entry (`scripts/native_boot.py`) that owns the cold start: set up the host
+  (video/timer/audio/input), then run the front-end flow controller (E) → level load (F) →
+  the frame loop (C) + native render (native_video) + native audio (D) → transitions →
+  ending. No `dos_re` on the path.
+- The timer/tick model the whole game is paced by (`064A` installs the `06E5` IRQ0 at ~72.8 Hz)
+  becomes a native clock driving both the frame loop and the audio drivers.
+- Gate: a recorded native session boots cold and plays through to the ending (§1.8).
 
 ---
 
@@ -319,7 +400,8 @@ If no listed slice is actionable, regenerate the frontier instead of stopping:
   as `unknown`/`glue` in coverage are the next candidates.
 - Re-run `scripts/source_port_status.py`; target the largest remaining `lifted` file's next
   inline decision.
-- Only after Buckets A–D are genuinely exhausted and §1 holds is the run complete.
+- Only after Buckets A–G are genuinely exhausted and **all of §1 (1–8) holds** is the run
+  complete — i.e. the full game cold-boots and plays through with no VM.
 
 ---
 
@@ -329,6 +411,8 @@ If no listed slice is actionable, regenerate the frontier instead of stopping:
 > (shadow → verified hook → source system) → verify it against the demos/oracle → lift it
 > into native state → close the island.** Never fake a gap in the renderer/runtime; recover
 > it first. One verified island-step = one commit + push; never commit red, never weaken the
-> oracle, always revert+document a failed attempt. Stop when `--backend native` runs every
-> demo standalone and verify-mode shows zero divergence from the VM oracle. At that point the
-> recovered code **is** the game, and `--backend vm` is just the harness that proves it.
+> oracle, always revert+document a failed attempt. Stop (print `COLD-BOOT ENDGAME REACHED`)
+> only when the **full game cold-boots and plays through with no VM** — demos standalone +
+> verify-mode zero divergence (§1.1–1.4) **and** boot → front-end → level load → gameplay →
+> audio → ending all native (§1.5–1.8). At that point the recovered code **is** the game, and
+> `--backend vm` is just the harness that proves it.

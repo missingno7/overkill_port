@@ -1,12 +1,12 @@
 # GOAL: grow the standalone native game, one verified dual-mode slice at a time
 
-> Run this with `/goal`. It is the **executable per-iteration playbook** for the
-> recovery, designed to run **unattended for long stretches (overnight)** — self-sufficient,
-> never-halt, green-at-all-times (see *Unattended / overnight operating mode* below). The
-> destination is [`native_game_endgame.md`](native_game_endgame.md)
-> (a standalone native game; the VM becomes an optional oracle). The method is
-> [`rescue_refactor.md`](rescue_refactor.md) (push lifted → pure recovered). This
-> file is *what to do each iteration*.
+> **The canonical `/goal` brief is [`overnight_endgame_execution.md`](overnight_endgame_execution.md)**
+> (the cold-boot done-condition §1 + the loop + the work buckets). **Run `/goal` on that, not this.**
+> This file is the **per-iteration dual-mode SLICE method** that brief's loop uses each pass —
+> *how one verified slice is shaped*. The full lifecycle/vision is
+> [`game_recovery_lifecycle.md`](game_recovery_lifecycle.md); the OVERKILL destination is
+> [`native_game_endgame.md`](native_game_endgame.md); the lift method is
+> [`rescue_refactor.md`](rescue_refactor.md).
 
 ## The goal
 
@@ -270,8 +270,9 @@ safe, byte-exact slice. Enumerate live targets per iteration with e.g.
 `python scripts/source_port_status.py` — the headline metrics: **% pure-source mass UP**
 and **glue-hook count DOWN** (not hook coverage up). `python scripts/gen_hook_inventory.py`
 and `python scripts/gen_island_manifest.py` regenerate the coastline + island docs (commit
-the regenerated files). The endgame is reached when the gameplay systems run from native
-state, the hooks are thin or gone, and `--mode standalone` runs the game without the VM.
+the regenerated files). Per-slice progress = pure mass up / glue down; the **authoritative
+done-condition is the cold-boot §1 in [`overnight_endgame_execution.md`](overnight_endgame_execution.md)**
+(the full game cold-boots and plays through with no VM), not just `--mode standalone` on the demos.
 
 ## Guardrails
 
