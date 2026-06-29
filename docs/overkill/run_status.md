@@ -1,3 +1,22 @@
+## 2026-06-29 - Whole-driver VM-verify: the VM-free driver reproduces the VM end-to-end
+
+Upgraded the pillar-2 driver from unit-tested wiring to a VM-VERIFIED runtime piece.  New probe
+`overkill/probes/verify_native_object_update_driver.py`: at each AE09/AED8 handler entry on the oracle
+side it projects the slot's full record (SS:BP) into a 1-slot `ObjectPool` + the per-frame
+`ObjectUpdateGlobals` (DS), runs the driver (`native_object_update_pool`), and asserts the driven slot's
+post-frame fields equal the VM's at the handler RET -- grounding the cpu->ObjectPool projection, the pool
+field accessors, the dispatch, and the write-back against the VM (the handler arithmetic is already
+gate-proven; both AE09 and AED8 produce the complete slot at their RET).
+
+Verified PASS, zero divergence: L3_full 800f `735/735`, L5_continue 400f `2226/2226` (AE09 + AED8) --
+the VM-free driver reproduces the VM for every native slot.  lint 221.  So the "native runtime is a
+second host for recovered systems" thesis is now demonstrated AND verified as running code: project VM
+state -> drive natively -> matches the oracle.
+
+Next: project `ObjectUpdateGlobals` for a whole-frame driver run (drive all native slots in one pass,
+compare the pool); add B86D/B9F0 (extract movement halves + compose `object_postmove_bc4b`); then the
+VM-free frame loop around the driver.
+
 ## 2026-06-29 - Pillar 2 skeleton: the VM-free native object-update DRIVER
 
 Stood up the first piece of the native runtime that *drives* the recovered systems instead of the gate
