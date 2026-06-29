@@ -1,3 +1,21 @@
+## 2026-06-29 - B86D FULLY NATIVE (all 3 branches) -- first complete complex handler, ~46% of L2
+
+Composed B86D's dominant A7A0 phase branch in the coverage gate, completing the handler.  Key
+finding: B729 (the A7A0 target move) is a thin wrapper over the ALREADY-pure
+`object_target_seek_step_5db2` -- publish the slot's +32/+34 target to the 5DB2 globals then seek --
+so **no new pure system was needed**; the gate arm builds a `MovementTarget` from the slot's (low-bit-
+masked) target and calls 5DB2 (mode 1), forcing sprite 0x75 and direction 4 when the seek is blocked.
+
+**B86D (logic_id 0x1D) is now FULLY native** -- all three branches: fall-through (object_update_b86d_drift)
++ B8F8 edge-steer (5E1B -> 5E42) + A7A0 phase block (5DB2).  Verified `native OK 1170/1170 fail=0`
+across the FULL L2_full demo (1400 frames, FRAME VERIFY OK, zero divergence).  It is pure composition
+of recovered primitives -- the "native runtime is a second host for recovered systems" thesis proven on
+a complex handler.  Coverage: B86D alone is ~24-46% of L2 per-slot updates (density-dependent).
+
+B86D is L2-specific (NO-EVENTS on L3/L6 -- their hot handlers differ).  Next levers: AED8 (0x02, the #2
+on L2) and the L3/L6 hot handlers (re-run the gate per level for the backlog).  Only the gate changed
+this turn (probe); lint 218; gate unit test + audits pass.
+
 ## 2026-06-29 - 5E1B recovered pure + B86D B8F8 edge-steer composed (and the A7A0/B729 finding)
 
 Recovered the 1010:5E1B object-delta helper as the pure `object_delta_5e1b` (+ domain `ObjectDelta5e1b`,

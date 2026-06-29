@@ -32,7 +32,12 @@ from typing import Callable
 
 from overkill.probes._harness import LazyBytes, load_demo, run_ref_step_probe
 from overkill.recovered.domain.tilemap import LevelTileContext
-from overkill.recovered.systems.movement import object_delta_5e1b, object_delta_steer_5e42
+from overkill.recovered.domain.movement import MovementTarget
+from overkill.recovered.systems.movement import (
+    object_delta_5e1b,
+    object_delta_steer_5e42,
+    object_target_seek_step_5db2,
+)
 from overkill.recovered.systems.objects import object_update_ae09, object_update_b86d_drift
 from overkill.recovered.views.object_slots import (
     OFF_ACTIVE_WORD,
@@ -43,6 +48,8 @@ from overkill.recovered.views.object_slots import (
     OFF_SCAN_FLAG,
     OFF_SPRITE_OR_STATE,
     OFF_SUBSTATE,
+    OFF_TARGET_X,
+    OFF_TARGET_Y,
     OFF_X,
     OFF_Y,
 )
@@ -70,7 +77,11 @@ B86D_X_EDGE = 0x00C0              # x > C0h -> B8F8 edge-steer
 B86D_REF_BOX = 0x237C            # DS:237C view-anchor box (BX for 5E1B in the B8F8 branch)
 B86D_EDGE_STEER_SPRITE = 0x0076  # sprite B86D forces after the B8F8 steer
 STEP_MODE_2312 = 0x2312          # DS:2312 5E42 step mode (==3 -> 3px else 2px)
-DIRECTION_TABLE_A348 = 0xA348    # DS:A348 16-byte 5E42 direction-bits -> direction map
+DIRECTION_TABLE_A348 = 0xA348    # DS:A348 16-byte direction-bits -> direction map (5E42 + 5DB2)
+B86D_A7A0_SPRITE = 0x0075        # sprite B86D forces in the A7A0 phase block
+B86D_A7A0_BLOCKED_DIR = 0x0004   # direction B86D sets when the A7A0 B729/5DB2 seek is blocked
+B86D_A7A0_MODE = 0x0001          # DS:2308 mode the A7A0 block sets before B729 (5DB2 mode 1)
+LOW_BIT_CLEAR_MASK = 0xFFFE      # the A7A0 block clears the low bit of x/y/target before the seek
 
 
 @dataclass
@@ -181,7 +192,20 @@ def _arm_b86d(cpu, class_table_cache: dict) -> _Pending | None:
         return _Pending(ss=ss, bp=bp, exit_ip=BC4B_IP, predicted=predicted, read_post=_read_slot_6tuple)
 
     if cpu.mem.rw(ds, B86D_PHASE_A7A0) < 0x0028:
-        return None  # A7A0 mask + B729 target-move path (needs pure B729)
+        # A7A0 phase block: clear the low bit of x/y/target, then B729 = publish the slot's target
+        # to the 5DB2 globals + run the pure 5DB2 target-seek (mode 1), force sprite 0x75, and set
+        # direction 4 when the seek reports blocked.  Compared at the BC4B handoff.
+        masked_x = x & LOW_BIT_CLEAR_MASK
+        masked_y = y & LOW_BIT_CLEAR_MASK
+        target = MovementTarget(
+            y_word=cpu.mem.rw(ss, (bp + OFF_TARGET_Y) & 0xFFFF) & LOW_BIT_CLEAR_MASK,
+            x_word=cpu.mem.rw(ss, (bp + OFF_TARGET_X) & 0xFFFF) & LOW_BIT_CLEAR_MASK,
+        )
+        table = tuple(cpu.mem.rb(ds, (DIRECTION_TABLE_A348 + i) & 0xFFFF) for i in range(16))
+        seek = object_target_seek_step_5db2(masked_x, masked_y, direction, target, B86D_A7A0_MODE, table)
+        new_dir = B86D_A7A0_BLOCKED_DIR if seek.blocked else seek.direction_or_step
+        predicted = (substate, new_dir, B86D_A7A0_SPRITE, seek.x_word, seek.y_word, active)
+        return _Pending(ss=ss, bp=bp, exit_ip=BC4B_IP, predicted=predicted, read_post=_read_slot_6tuple)
 
     # Fall-through (formation drift): changes only sprite and X; the other four are unchanged.
     delta = cpu.mem.rw(ds, B86D_VERTICAL_DELTA_2342)
