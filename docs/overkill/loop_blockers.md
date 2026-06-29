@@ -306,7 +306,7 @@ machinery, and the routine CALLs three still-observed sub-leaves that must be re
 `_run_score_add_5f0d_observed` — **DONE (2026-06-29)**: converged onto the verified `score.bcd_add_score`
 (re-verified byte-exact vs the assembled 5F0D + a full kill-heavy demo, 0 divergence); (b) `_run_linked_effect_spawn_7420_observed`
 (the linked-counter spawn: on the DS:2078+si counter hitting 0 it stages DS:2376/2378/237A from the slot
-x/y and spawns); (c) the **C054** selector (DS:A47E decrement, same compare chain as BD17).  So BFC7 is a
+x/y and spawns) — **READ 2026-06-29: a clean spawn-FIELD transform, the recommended next sub-leaf** (object_spawns.py:225): alloc a free effect slot (7524), then init ~11 fields from the staged coords (x = DS:2378 + DS:A278; y = min(DS:2376, 0xC0); sprite = DS:237A + 0x46; [bx+26h] = DS:237A; plus constants active=1/scan=1/hazard=5/logic=0/latch=0/linked=FFFF/variant=0/layer=0).  Recover the field-init as a pure `linked_effect_spawn_fields(...)` (7524 alloc stays adapter).  GATE caveat: the linked-counter->0 event is RARE -> gate with a linked-spawn-heavy demo (e.g. L6_boss) or an assembled-7420 synthetic oracle (a generic demo sees ~0 events).  (c) the **C054** selector (DS:A47E decrement, same compare chain as BD17).  So BFC7 is a
 genuine multi-leaf death/spawn island, NOT a slot transform — recover those three leaves (each its own
 produced-vs-VM probe) before composing BFC7.  Re-validates the convergence below: the non-blocked
 pure-%-raising vein is the **Bucket-C native runtime** (a multi-slice integration, best started fresh).
