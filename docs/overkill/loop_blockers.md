@@ -375,6 +375,16 @@ transition handler.  Fresh-session plan: recover BEC5 (the handler), then the 62
 recovered AA46/AA71 + BEC5 + the grid test into the full BC4B collision death.  This is the genuine
 object-vs-object collision island -- a cross-object scan + an observed handler, the attended frontier.
 
+**BEC5 internals assessed (2026-06-29) — a deeply multi-variant handler, NOT a quick leaf.** Read
+`contact_side_effects.py:_run_collision_handler_bec5_observed`: it dispatches on the COLLIDED
+candidate's logic_id (variants 07h/08h/0Ch, the sprite-0033 variant-2, the 5/6 and 7/8/0C
+continuations), runs `counter_20` (+20) decrement chains gated by `BEDC` (difficulty) and `A8C2`
+(boss), and branches into `BFC7` (death transition), `BD0D` (cleanup -> BD17), and `BF5F` (the A8C2
+mark tail) -- and it is itself "observed"/partial ("currently verified branches").  So recovering it
+is a meaty multi-variant island (the per-variant counter/death/mark machinery), not a single leaf --
+the genuine attended object-vs-object collision work.  Full bc4b collision-death = AA46/AA71 (done) +
+the 62F6 grid scan (recoverable) + BEC5 (this multi-variant handler) -> a fresh-session island.
+
 ## NOTE (process) — check lifted-status before "recovering" a routine
 
 `519A` / `3153` (HUD text dispatch + Tandy glyph) were ALREADY lifted (`rendering/text.py`,
