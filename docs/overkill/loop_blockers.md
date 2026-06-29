@@ -221,6 +221,19 @@ ONLY by recovering this leaf set first (each gated produced-vs-VM, the proven pa
 Then a per-logic-id native dispatch over `NativeGameState`'s pool composes them into the object-update
 producer → the standalone loop. Substantial but mapped; a fresh clean-context session can execute it.
 
+**CORRECTION (2026-06-29, later) — the object-update is NOT fully death-frontier-blocked; its MOVEMENT
+half is a clean recoverable leaf.** Disproved the "no clean object-update leaf" conclusion above by
+building one: the per-slot movement transform is *separable* from the global death-tail side-effects.
+AD60/BD17 only set the slot's `active` word + global counters — they never touch the five movement
+fields (substate +1C, direction +06, sprite +08, x +02, y +04). So each behavior's movement half is a
+pure composition of already-verified systems. Shipped `object_movement_step_ae09` (object_logic_ae09 +
+the AF22 step), **verified produced-vs-VM byte-exact** (L5_continue 777/777, L5_short 638/638) — 9th
+producer, first object-update one. **Revised frontier:** the object-update splits into (a) per-behavior
+MOVEMENT producers — clean, demo-demanded, pure-% raising, the next vein to grind (b73e/b86d/b9f0/aba3/
+ab77/8d4f/b24d/aed8 movement halves, each a `verify_native_object_update_*` probe); and (b) the global
+side-effects (counters/spawns/`BD17` death) — the harder attended island. Only (b) is death-frontier;
+(a) is open for the unattended loop.
+
 ## NOTE (process) — check lifted-status before "recovering" a routine
 
 `519A` / `3153` (HUD text dispatch + Tandy glyph) were ALREADY lifted (`rendering/text.py`,

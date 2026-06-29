@@ -6,9 +6,11 @@ traces have constrained their object-slot fields.
 """
 from __future__ import annotations
 
+from overkill.recovered.domain.coords import i16, u16
 from overkill.recovered.domain.object_behaviors import (
     Ab10Update,
     Aba3Update,
+    Ae09MovementStep,
     Ae09Update,
     B73ETargetReachedResolution,
     BossGroupSlotTransition,
@@ -22,6 +24,7 @@ from overkill.recovered.domain.object_slots import (
     ObjectSpawnSeed,
     ObjectSpawnSeedA4EA,
 )
+from overkill.recovered.systems.movement import step_operations_for_direction
 
 # 1010:8209 object-slot spawn template.  Stamps a freshly allocated effect slot
 # with a fixed logic-id-14h object at the caller's source position.
@@ -249,6 +252,39 @@ def object_logic_ae09(substate: int, direction_or_step: int) -> Ae09Update:
         direction_or_step=direction,
         decrement_x=(substate == 0 or new_substate == 0),
         sprite=(direction + AE09_SPRITE_OFFSET) & 0xFFFF,
+    )
+
+
+def object_movement_step_ae09(
+    substate: int, direction_or_step: int, x_word: int, y_word: int
+) -> Ae09MovementStep:
+    """Pure per-slot movement transform for the whole 1010:AE09 behavior (logic_id 0Ch).
+
+    Composes the AE09 timer/step decision (:func:`object_logic_ae09`) with the AF22 3-pixel
+    direction step that AE09 tails into: apply the optional ``x -= 2`` (``decrement_x``), then
+    the 8-way direction step (:func:`step_operations_for_direction`) for the
+    (possibly-cleared) ``direction_or_step``.  Returns the slot's post-frame movement fields.
+
+    The AD60 bounds tail + the BD17 deactivation / global side-effects do NOT touch these five
+    fields (AD60 only sets the slot ``active`` word and global counters; AE09 passes
+    ``add_a278_to_x=False``), so this is the clean native producer for AE09's movement half --
+    verifiable produced-vs-VM at AE09's return.  Direction is AF22's verified 0..7 range
+    (``object_logic_ae09`` yields the original direction or 0)."""
+    upd = object_logic_ae09(substate, direction_or_step)
+    x = u16(x_word - 2) if upd.decrement_x else (x_word & 0xFFFF)
+    y = y_word & 0xFFFF
+    for op in step_operations_for_direction(upd.direction_or_step, 3):
+        delta = i16(op.delta_word)
+        if op.axis == "x":
+            x = u16(x + delta)
+        else:
+            y = u16(y + delta)
+    return Ae09MovementStep(
+        substate=upd.substate,
+        direction_or_step=upd.direction_or_step,
+        sprite_or_state=upd.sprite,
+        x_word=x,
+        y_word=y,
     )
 
 

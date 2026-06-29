@@ -1,3 +1,21 @@
+## 2026-06-29 - Bucket C: FIRST native object-update producer (AE09 movement) byte-exact vs VM
+
+Breakthrough on the object-update island: the earlier "fully coupled to the attended-only death
+frontier" conclusion was WRONG.  The per-slot MOVEMENT transform is *separable* from the global
+death-tail side-effects -- AD60/BD17 only set the slot's `active` word + global counters, they never
+touch the five movement fields (substate +1C, direction +06, sprite +08, x +02, y +04).  So a slot's
+post-frame movement is a pure composition of already-VERIFIED recovered systems.
+`object_movement_step_ae09` (systems/objects.py) composes `object_logic_ae09` (the AE09 timer/step
+decision) + `step_operations_for_direction` (the AF22 3px step) in the lifted order, returning the
+new `Ae09MovementStep` (substate, direction_or_step, sprite_or_state, x, y).  **Verified
+produced-vs-VM byte-exact** by `verify_native_object_update_ae09.py` (hooks AE09 entry + the return
+address; reads the slot's five post-frame fields at AE09's RET): **L5_continue 777/777, L5_short
+638/638, 0 divergence** (NO-EVENTS on demos without logic_id 0xC).  9th cross-demo producer, the
+FIRST object-update one.  VM-free unit test locks the composition (timer/direction/sprite + the
+optional x-=2 + step order).  Lint (203) + both audits pass; full suite green.  This opens the
+object-update recovery: each behavior's movement half is a clean per-slot producer (decision + step),
+leaving only the global counter/spawn/death side-effects (the bc4b/BD17 tail) as the harder island.
+
 ## 2026-06-29 - Bucket C: COMPLETE native draw list (special view-anchor slot) byte-exact vs VM
 
 Completed the native draw list: `NativeGameState` now carries the leading view-anchor `special_pool`

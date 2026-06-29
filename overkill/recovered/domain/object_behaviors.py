@@ -52,6 +52,25 @@ class Ae09Update:
 
 
 @dataclass(frozen=True, slots=True)
+class Ae09MovementStep:
+    """Pure per-slot movement result of the whole 1010:AE09 behavior (logic_id 0Ch).
+
+    Composes the :class:`Ae09Update` timer/step decision with the AF22 3-pixel direction
+    step that AE09 tails into, giving the slot's post-frame movement fields: the decremented
+    ``substate`` timer, the ``direction_or_step`` (cleared on expiry), the outgoing
+    ``sprite_or_state``, and the stepped ``x_word`` / ``y_word``.  The AD60 bounds tail and
+    the BD17 deactivation / global side-effects do NOT touch these five fields (AD60 only
+    sets the slot ``active`` word and global counters), so this is a clean native producer
+    for the movement half of the object update, verifiable produced-vs-VM at AE09's return."""
+
+    substate: int
+    direction_or_step: int
+    sprite_or_state: int
+    x_word: int
+    y_word: int
+
+
+@dataclass(frozen=True, slots=True)
 class Aba3Update:
     """Pure result of the 1010:ABA3 tracked-object follower probe (reached from AD04).
 
