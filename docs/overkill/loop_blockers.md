@@ -306,6 +306,21 @@ sprite + latch) -- multi-branch but composable from recovered pieces.  After bc4
 death/spawn side-effects (BD17/BFC7 counters/spawns/C12D effect scripts) + the per-logic-id native
 dispatch over `NativeGameState`'s pool, then the standalone loop.
 
+**bc4b assessed (2026-06-29) — the most intricate piece; the SLOT transform is composable but its
+collision path has observed sub-routines (global effects to scope out).** Read the full bc4b lift
+(`object_postmove.py`): the slot-affecting parts are y-clamp ✅ + the x-bounds death + the BCCB
+collision (`AA46` type1 / `AA71` type2, both ✅ -> CF, gated by global_disable/+0x16/+0x18/obj_type/
+DS:A8C2) -> `BFC7` death (the SLOT side = logic_id=1 + previous_logic_id + transition_latch=0 + C037
+sprite for obj_type 1/2; recoverable).  BUT the collision path ALSO runs `9E69` (post-contact ->
+9E98/61DC DISPLAY tail) and `62F6` (object overlap scan) -- both "observed"/interpreted, NOT pure;
+they appear to be GLOBAL/other-slot effects (display, cross-object scan), so a SLOT-scoped bc4b
+transform can likely scope them out (as AE09 scoped out BD17's globals) -- but that must be VERIFIED
+(confirm 9E69/62F6 don't write the current slot's y/active/logic_id/sprite).  Collision inputs: the
+view-contact center (DS:95F2/95F4, from the view target) + the contact window.  So bc4b is a clean
+fresh-session slice IF 9E69/62F6 are confirmed slot-neutral; the gate (produced-vs-VM at bc4b RET)
+will catch it either way.  This is the LAST movement/postmove primitive before the global
+death/spawn side-effects + the dispatch.
+
 ## NOTE (process) — check lifted-status before "recovering" a routine
 
 `519A` / `3153` (HUD text dispatch + Tandy glyph) were ALREADY lifted (`rendering/text.py`,
