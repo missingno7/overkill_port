@@ -105,6 +105,24 @@ class Ae09SlotUpdate:
 
 
 @dataclass(frozen=True, slots=True)
+class B86dMovementResult:
+    """Pure result of the 1010:B86D movement half -- the slot at the BC4B handoff (logic_id 0x1D).
+
+    B86D's three branches (B8F8 edge-steer via 5E1B->5E42; the A7A0 phase block via the 5DB2 target
+    seek; the fall-through formation drift) all tail-jump to the shared BC4B post-move stage.  This
+    records the six fields the movement half leaves at that handoff; ``substate`` and ``active`` are
+    unchanged by the movement half (BC4B then owns the y clamp / X-bounds death).  Compose with
+    ``object_postmove_bc4b`` for the slot's post-move y/active."""
+
+    substate: int
+    direction_or_step: int
+    sprite_or_state: int
+    x_word: int
+    y_word: int
+    active_word: int
+
+
+@dataclass(frozen=True, slots=True)
 class Aed8SlotUpdate:
     """Pure WHOLE per-slot result of the 1010:AED8 behavior (EFAE logic_id 2): step + contact + active.
 

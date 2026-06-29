@@ -46,7 +46,7 @@ from overkill.recovered.systems.objects import (
     b9f0_wrapped_x_on_overflow,
     object_update_ae09,
     object_update_aed8,
-    object_update_b86d_drift,
+    object_update_b86d,
 )
 from overkill.recovered.views.object_slots import (
     OFF_ACTIVE_WORD,
@@ -106,15 +106,9 @@ B86D_PHASE_A47E = 0xA47E          # DS:A47E early-global guard (<=2 -> B8F8 edge
 B86D_PHASE_A7A0 = 0xA7A0          # DS:A7A0 phase gate (<0x28 -> A7A0 mask/B729 block)
 B86D_VERTICAL_DELTA_2342 = 0x2342  # DS:2342 global vertical delta (X += -delta)
 B86D_PHASE_2328 = 0x2328          # DS:2328 phase word (==7 -> +1 X nudge)
-B86D_X_EDGE = 0x00C0              # x > C0h -> B8F8 edge-steer
-B86D_REF_BOX = 0x237C            # DS:237C view-anchor box (BX for 5E1B in the B8F8 branch)
-B86D_EDGE_STEER_SPRITE = 0x0076  # sprite B86D forces after the B8F8 steer
+B86D_REF_BOX = 0x237C            # DS:237C view-anchor box (5E1B target: B86D B8F8 + B9F0 BA5A)
 STEP_MODE_2312 = 0x2312          # DS:2312 5E42 step mode (==3 -> 3px else 2px)
 DIRECTION_TABLE_A348 = 0xA348    # DS:A348 16-byte direction-bits -> direction map (5E42 + 5DB2)
-B86D_A7A0_SPRITE = 0x0075        # sprite B86D forces in the A7A0 phase block
-B86D_A7A0_BLOCKED_DIR = 0x0004   # direction B86D sets when the A7A0 B729/5DB2 seek is blocked
-B86D_A7A0_MODE = 0x0001          # DS:2308 mode the A7A0 block sets before B729 (5DB2 mode 1)
-LOW_BIT_CLEAR_MASK = 0xFFFE      # the A7A0 block clears the low bit of x/y/target before the seek
 
 
 @dataclass
@@ -196,59 +190,36 @@ def _arm_ae09(cpu, class_table_cache: dict) -> _Pending | None:
 
 
 def _arm_b86d(cpu, class_table_cache: dict) -> _Pending | None:
-    """Capture + predict B86D (logic_id 0x1D): the B8F8 edge-steer and the fall-through paths.
+    """Capture + predict B86D (logic_id 0x1D) -- all three branches via the pure object_update_b86d.
 
-    B86D tail-jumps to the shared BC4B post-move stage, so compare at the BC4B handoff.  Two of the
-    three branches are pure-composable today: the B8F8 edge-steer (A47E<=2 or x>C0h) computes deltas
-    toward the DS:237C box via 5E1B, steers via 5E42, then forces sprite 0x76; the fall-through
-    (formation drift) is object_update_b86d_drift.  The A7A0 phase block still needs the cpu-bound
-    B729 target move -> fallback (``None``).
+    B86D tail-jumps to BC4B, so compare the movement half at the BC4B handoff.  This adapter only
+    projects the slot fields + the B86D DS globals from the VM and calls the canonical pure system; the
+    branch logic (B8F8 edge-steer / A7A0 5DB2 seek / fall-through drift) lives in object_update_b86d.
     """
     ss = cpu.s.ss & 0xFFFF
     ds = cpu.s.ds & 0xFFFF
     bp = cpu.s.bp & 0xFFFF
-    x = cpu.mem.rw(ss, (bp + OFF_X) & 0xFFFF)
-    y = cpu.mem.rw(ss, (bp + OFF_Y) & 0xFFFF)
-    substate = cpu.mem.rw(ss, (bp + OFF_SUBSTATE) & 0xFFFF)
-    direction = cpu.mem.rw(ss, (bp + OFF_DIRECTION_OR_STEP) & 0xFFFF)
-    active = cpu.mem.rw(ss, (bp + OFF_ACTIVE_WORD) & 0xFFFF)
-
-    if cpu.mem.rw(ds, B86D_PHASE_A47E) <= 0x0002 or x > B86D_X_EDGE:
-        # B8F8 edge-steer: 5E1B deltas toward the DS:237C box, then 5E42 steer, then sprite 0x76.
-        ref_x = cpu.mem.rw(ds, (B86D_REF_BOX + OFF_X) & 0xFFFF)
-        ref_y = cpu.mem.rw(ds, (B86D_REF_BOX + OFF_Y) & 0xFFFF)
-        ref_scan = cpu.mem.rw(ds, (B86D_REF_BOX + OFF_SCAN_FLAG) & 0xFFFF)
-        deltas = object_delta_5e1b(x, y, ref_x, ref_y, ref_scan)
-        err = cpu.mem.rw(ss, (bp + OFF_MOVE_STEP_ERROR) & 0xFFFF)
-        step_mode = cpu.mem.rw(ds, STEP_MODE_2312)
-        table = tuple(cpu.mem.rb(ds, (DIRECTION_TABLE_A348 + i) & 0xFFFF) for i in range(16))
-        steer = object_delta_steer_5e42(
-            x, y, direction, deltas.move_delta_y, deltas.move_delta_x, err, step_mode, table
-        )
-        predicted = (substate, steer.direction_or_step, B86D_EDGE_STEER_SPRITE,
-                     steer.x_word, steer.y_word, active)
-        return _Pending(ss=ss, bp=bp, exit_ip=BC4B_IP, predicted=predicted, read_post=_read_slot_6tuple)
-
-    if cpu.mem.rw(ds, B86D_PHASE_A7A0) < 0x0028:
-        # A7A0 phase block: clear the low bit of x/y/target, then B729 = publish the slot's target
-        # to the 5DB2 globals + run the pure 5DB2 target-seek (mode 1), force sprite 0x75, and set
-        # direction 4 when the seek reports blocked.  Compared at the BC4B handoff.
-        masked_x = x & LOW_BIT_CLEAR_MASK
-        masked_y = y & LOW_BIT_CLEAR_MASK
-        target = MovementTarget(
-            y_word=cpu.mem.rw(ss, (bp + OFF_TARGET_Y) & 0xFFFF) & LOW_BIT_CLEAR_MASK,
-            x_word=cpu.mem.rw(ss, (bp + OFF_TARGET_X) & 0xFFFF) & LOW_BIT_CLEAR_MASK,
-        )
-        table = tuple(cpu.mem.rb(ds, (DIRECTION_TABLE_A348 + i) & 0xFFFF) for i in range(16))
-        seek = object_target_seek_step_5db2(masked_x, masked_y, direction, target, B86D_A7A0_MODE, table)
-        new_dir = B86D_A7A0_BLOCKED_DIR if seek.blocked else seek.direction_or_step
-        predicted = (substate, new_dir, B86D_A7A0_SPRITE, seek.x_word, seek.y_word, active)
-        return _Pending(ss=ss, bp=bp, exit_ip=BC4B_IP, predicted=predicted, read_post=_read_slot_6tuple)
-
-    # Fall-through (formation drift): changes only sprite and X; the other four are unchanged.
-    delta = cpu.mem.rw(ds, B86D_VERTICAL_DELTA_2342)
-    pred = object_update_b86d_drift(x, delta, cpu.mem.rw(ds, B86D_PHASE_2328))
-    predicted = (substate, direction, pred.sprite_or_state, pred.x_word, y, active)
+    table = tuple(cpu.mem.rb(ds, (DIRECTION_TABLE_A348 + i) & 0xFFFF) for i in range(16))
+    r = object_update_b86d(
+        cpu.mem.rw(ss, (bp + OFF_X) & 0xFFFF),
+        cpu.mem.rw(ss, (bp + OFF_Y) & 0xFFFF),
+        cpu.mem.rw(ss, (bp + OFF_SUBSTATE) & 0xFFFF),
+        cpu.mem.rw(ss, (bp + OFF_DIRECTION_OR_STEP) & 0xFFFF),
+        cpu.mem.rw(ss, (bp + OFF_ACTIVE_WORD) & 0xFFFF),
+        cpu.mem.rw(ss, (bp + OFF_TARGET_X) & 0xFFFF),
+        cpu.mem.rw(ss, (bp + OFF_TARGET_Y) & 0xFFFF),
+        cpu.mem.rw(ss, (bp + OFF_MOVE_STEP_ERROR) & 0xFFFF),
+        cpu.mem.rw(ds, B86D_PHASE_A47E),
+        cpu.mem.rw(ds, B86D_PHASE_A7A0),
+        cpu.mem.rw(ds, (B86D_REF_BOX + OFF_X) & 0xFFFF),
+        cpu.mem.rw(ds, (B86D_REF_BOX + OFF_Y) & 0xFFFF),
+        cpu.mem.rw(ds, (B86D_REF_BOX + OFF_SCAN_FLAG) & 0xFFFF),
+        cpu.mem.rw(ds, B86D_VERTICAL_DELTA_2342),
+        cpu.mem.rw(ds, B86D_PHASE_2328),
+        cpu.mem.rw(ds, STEP_MODE_2312),
+        table,
+    )
+    predicted = (r.substate, r.direction_or_step, r.sprite_or_state, r.x_word, r.y_word, r.active_word)
     return _Pending(ss=ss, bp=bp, exit_ip=BC4B_IP, predicted=predicted, read_post=_read_slot_6tuple)
 
 

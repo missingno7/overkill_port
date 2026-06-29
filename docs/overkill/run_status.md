@@ -1,3 +1,18 @@
+## 2026-06-29 - Extract B86D's movement half to a canonical pure system (driver-ready)
+
+Moved B86D's branch logic out of the coverage-gate probe arm into the canonical pure system
+`object_update_b86d` (+ domain `B86dMovementResult`): the whole movement half producing the slot at the
+BC4B handoff -- B8F8 edge-steer (5E1B->5E42), the A7A0 5DB2 phase seek, and the fall-through drift.  The
+gate's `_arm_b86d` is now a thin adapter that projects the slot fields + B86D DS globals and calls it
+(removed the duplicated logic constants from the probe).  Brief-aligned: canonical gameplay logic lives
+in `systems`, the probe is just projection.
+
+Gate-verified the extraction is byte-exact: B86D `1170/1170 fail=0`, AED8 `662/662` on L2 (behaviour
+preserved).  lint 221; audits pass (27 pure files).  This makes B86D driver-ready: the native driver can
+now compose `object_update_b86d` (movement) + `object_postmove_bc4b` (post-move y/active) for B86D's
+final slot.  Next: add B86D to the driver (extend ObjectUpdateGlobals + pool accessors for target/
+step-error); its whole-slot driver-verify needs a post-BC4B boundary (B86D tail-jumps, doesn't RET).
+
 ## 2026-06-29 - Whole-driver VM-verify: the VM-free driver reproduces the VM end-to-end
 
 Upgraded the pillar-2 driver from unit-tested wiring to a VM-VERIFIED runtime piece.  New probe

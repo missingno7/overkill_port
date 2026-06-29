@@ -16,6 +16,7 @@ from overkill.recovered.domain.object_behaviors import (
     Aed8SlotUpdate,
     B73ETargetReachedResolution,
     B86dDriftUpdate,
+    B86dMovementResult,
     BossGroupSlotTransition,
     ObjectBoundsTileDecision,
     ObjectDeactivateDispatchDecision,
@@ -31,8 +32,14 @@ from overkill.recovered.domain.object_slots import (
     ObjectSpawnSeedA4EA,
 )
 from overkill.recovered.domain.tilemap import LevelTileContext, TileProbeInput
+from overkill.recovered.domain.movement import MovementTarget
 from overkill.recovered.systems.collision import overlap_contact_box_contains
-from overkill.recovered.systems.movement import step_operations_for_direction
+from overkill.recovered.systems.movement import (
+    object_delta_5e1b,
+    object_delta_steer_5e42,
+    object_target_seek_step_5db2,
+    step_operations_for_direction,
+)
 from overkill.recovered.systems.tilemap import (
     TILE_PROBE_COLUMN_STRIDE,
     compute_tile_probe_5073,
@@ -299,6 +306,65 @@ def object_update_b86d_drift(x_word: int, vertical_delta: int, phase_word_2328: 
     if (phase_word_2328 & 0xFFFF) == 0x0007:
         new_x = (new_x + 1) & 0xFFFF
     return B86dDriftUpdate(x_word=new_x, sprite_or_state=b86d_outgoing_sprite_for_delta(vertical_delta))
+
+
+B86D_EDGE_GUARD = 0x0002              # DS:A47E <= 2 -> B8F8 edge-steer
+B86D_X_EDGE = 0x00C0                  # x > C0h -> B8F8 edge-steer
+B86D_EDGE_STEER_SPRITE = 0x0076       # the B8F8 edge-steer forces this sprite
+B86D_A7A0_THRESHOLD = 0x0028          # DS:A7A0 < 28h -> the A7A0 phase block
+B86D_A7A0_SPRITE = 0x0075             # the A7A0 block forces this sprite
+B86D_A7A0_BLOCKED_DIRECTION = 0x0004  # direction when the A7A0 5DB2 seek is blocked
+B86D_A7A0_SEEK_MODE = 0x0001          # DS:2308 mode the A7A0 block sets before 5DB2 (mode 1)
+B86D_LOW_BIT_CLEAR = 0xFFFE           # the A7A0 block clears the low bit of x/y/target before the seek
+
+
+def object_update_b86d(
+    x_word: int,
+    y_word: int,
+    substate: int,
+    direction: int,
+    active_word: int,
+    target_x: int,
+    target_y: int,
+    move_step_error: int,
+    a47e: int,
+    a7a0: int,
+    ref_box_x: int,
+    ref_box_y: int,
+    ref_box_scan: int,
+    vertical_delta: int,
+    phase_2328: int,
+    step_mode: int,
+    direction_table,
+) -> B86dMovementResult:
+    """Pure WHOLE 1010:B86D movement half (logic_id 0x1D) -- the slot at the BC4B handoff.
+
+    Three branches: the B8F8 edge-steer (``a47e`` <= 2 or x > C0h) computes deltas toward the DS:237C
+    view box (:func:`object_delta_5e1b`) and steers (:func:`object_delta_steer_5e42`), forcing sprite
+    0x76; the A7A0 phase block (``a7a0`` < 28h) clears the low bit of x/y/target and seeks via
+    :func:`object_target_seek_step_5db2` (mode 1), forcing sprite 0x75 and direction 4 when blocked;
+    else the fall-through formation drift (:func:`object_update_b86d_drift`).  ``substate``/``active`` are
+    unchanged here -- BC4B (:func:`object_postmove_bc4b`) owns the post-move y clamp / X-bounds death.
+    This is the canonical handler the gate verifies at the BC4B handoff and the native driver composes
+    with BC4B; the optional 7476 formation spawn is a global side effect, out of this slot transform."""
+    if (a47e & 0xFFFF) <= B86D_EDGE_GUARD or (x_word & 0xFFFF) > B86D_X_EDGE:
+        deltas = object_delta_5e1b(x_word, y_word, ref_box_x, ref_box_y, ref_box_scan)
+        steer = object_delta_steer_5e42(
+            x_word, y_word, direction, deltas.move_delta_y, deltas.move_delta_x,
+            move_step_error, step_mode, direction_table,
+        )
+        return B86dMovementResult(substate, steer.direction_or_step, B86D_EDGE_STEER_SPRITE,
+                                  steer.x_word, steer.y_word, active_word)
+    if (a7a0 & 0xFFFF) < B86D_A7A0_THRESHOLD:
+        target = MovementTarget(y_word=target_y & B86D_LOW_BIT_CLEAR, x_word=target_x & B86D_LOW_BIT_CLEAR)
+        seek = object_target_seek_step_5db2(
+            x_word & B86D_LOW_BIT_CLEAR, y_word & B86D_LOW_BIT_CLEAR, direction, target,
+            B86D_A7A0_SEEK_MODE, direction_table,
+        )
+        new_dir = B86D_A7A0_BLOCKED_DIRECTION if seek.blocked else seek.direction_or_step
+        return B86dMovementResult(substate, new_dir, B86D_A7A0_SPRITE, seek.x_word, seek.y_word, active_word)
+    drift = object_update_b86d_drift(x_word, vertical_delta, phase_2328)
+    return B86dMovementResult(substate, direction, drift.sprite_or_state, drift.x_word, y_word, active_word)
 
 
 # 1010:AB10 logic_id=6 per-frame update.  The object dies once the level frame
