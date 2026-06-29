@@ -1,0 +1,89 @@
+{
+  "generated_by": "high-level refactor audit pass (2026-06-29)",
+  "summary": "Lifted/adapter/pure split is healthy: pure layers clean, 49 adapter cross-check asserts, only the 2 A067 action gates were stranded-pure (now promoted). Opportunity is mechanical-audit hardening + recording the bounded-original frontier, not a large cleanup.",
+  "promotion_candidates": [
+    {
+      "symbol": "action_trigger_is_pressed",
+      "from": "overkill/gameplay/action_spawns.py",
+      "to": "overkill/recovered/systems/action_spawns.py",
+      "evidence_root": "1010:A067 SIG_FRAME_ACTION_SPAWN_FANOUT_A067 (f6 06 be 98 10 = TEST [98BE],10h)",
+      "pure_now": true,
+      "status": "promoted",
+      "verified_by": "tests/test_action_spawn_gates.py; 5 existing A067 tests; demo-replay equivalence (0 divergence)",
+      "risk": "low"
+    },
+    {
+      "symbol": "action_latch_allows_repeat",
+      "from": "overkill/gameplay/action_spawns.py",
+      "to": "overkill/recovered/systems/action_spawns.py",
+      "evidence_root": "1010:A067 (CMP [A980],0 / CMP [9790],1 / CMP [232A],0Fh repeat chain)",
+      "pure_now": true,
+      "status": "promoted",
+      "verified_by": "tests/test_action_spawn_gates.py; demo-replay equivalence (0 divergence)",
+      "risk": "low"
+    }
+  ],
+  "vm_coupled_functions": [
+    {
+      "note": "overkill/gameplay/* is the lifted layer and is EXPECTED to take cpu/mem; this is not a violation. AST scan confirms no cpu/mem leakage into recovered/{domain,systems}.",
+      "structural_smell": {
+        "file": "overkill/hooks.py",
+        "lines": 3203,
+        "flagged_by": "scripts/source_port_status.py (oversized hook_boundary)",
+        "action": "thin/split into registration-only glue; move nested runtime factories out",
+        "is_promotion": false
+      }
+    }
+  ],
+  "duplicate_decisions": [
+    {
+      "note": "No UNGUARDED duplicate gameplay decisions found.",
+      "guarded_duplication_is_intentional": true,
+      "cross_check_assert_counts": {
+        "overkill/recovered/adapters/collision_adapter.py": 37,
+        "overkill/recovered/adapters/object_behavior_adapter.py": 11,
+        "overkill/recovered/adapters/movement_adapter.py": 1
+      },
+      "rule": "instruction-shaped replays sit behind '... disagrees ...' asserts that validate the pure system; do not delete the replay (it keeps the VM an exact oracle)."
+    }
+  ],
+  "adapter_leakage": [
+    {
+      "file": "overkill/recovered/adapters/world_adapter.py",
+      "functions": ["object_slot_ref_for_offset", "object_slot_index_for_offset", "object_slot_field_for_offset", "describe_world_write_target"],
+      "assessment": "correctly bridge-layer: map raw memory offsets to field meaning (layout-aware). Not portable domain; leave in place."
+    },
+    {
+      "file": "overkill/gameplay/object_spawns.py",
+      "function": "_stamp_object_spawn_seed_a4ea",
+      "assessment": "writes an ObjectSlotView (DOS memory) and already delegates values to the pure object_spawn_seed_a4ea(); correct adapter shape, leave in place."
+    }
+  ],
+  "pure_layer_violations": [],
+  "missing_evidence": [
+    {"file": "overkill/gameplay/object_behaviors.py", "bounded_or_interpreted_seams": 17, "frontier": "per-logic-id handler family; still cpu-hooks, not pure slot transforms. Each behaviour's movement half is separable but needs a produced-vs-VM probe before promotion."},
+    {"file": "overkill/gameplay/object_movement.py", "bounded_or_interpreted_seams": 12, "frontier": "A7EB display copy and D2A4+ tail remain bounded-original children; need traces before promotion."},
+    {"file": "overkill/gameplay/contact_side_effects.py", "bounded_or_interpreted_seams": 5, "frontier": "secondary contact side-effect tails."},
+    {"file": "overkill/gameplay/object_runtime_common.py", "bounded_or_interpreted_seams": 5, "frontier": "shared interpreted near-call shim used by the handler frontier."},
+    {"file": "overkill/gameplay/object_deactivation.py", "bounded_or_interpreted_seams": 3, "frontier": "BD9E/AC19 death-tail."},
+    {"file": "overkill/gameplay/object_runtime.py", "bounded_or_interpreted_seams": 3, "frontier": "drift handler rare branches (AE45/AE91)."},
+    {"file": "overkill/gameplay/action_spawns.py", "bounded_or_interpreted_seams": 2, "frontier": "A958 out-of-range target 44AF: the main action-spawn dispatch frontier."}
+  ],
+  "tooling_changes": {
+    "closed_this_pass": [
+      "audit_recovered_layers.py: forbid capitalised VM/CPU types (CPU/CPUState/Memory/Mem/Registers/Register/DosRuntime) in pure layers",
+      "audit_recovered_layers.py: forbid memory-layout/segment constants (0x1010/0x23B4/0x2B5C/0x32CA/0x8D12/0x95D8) with a '# layout-justified' escape hatch",
+      "tests/test_audit_recovered_layers.py: negative tests proving the audit is not vacuous"
+    ],
+    "still_open_advisory": [
+      "source_port_status.py: report pure-shaped functions stranded in lifted/adapter layers",
+      "heuristic: hook wrapper too large / adapter does more than projection (kept advisory to avoid brittleness)"
+    ]
+  },
+  "recommended_next_hooks_or_traces": [
+    "Advisory stranded-pure-function report in source_port_status.py",
+    "Trace A7EB (display copy) and D2A4+ tail in object_movement.py toward pure promotion",
+    "Per-logic produced-vs-VM probes for object_behaviors.py movement halves",
+    "Trace A958 target 44AF (action-spawn dispatch frontier)"
+  ]
+}

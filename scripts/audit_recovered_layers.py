@@ -26,6 +26,22 @@ FORBIDDEN_IMPORTS = (
     "overkill.recovered.views",
 )
 FORBIDDEN_NAMES = {"cpu", "mem", "memory"}
+# Capitalised VM/CPU *types* must not be referenced (annotations or bare names)
+# in the pure layers either: the future native core never sees these.
+FORBIDDEN_TYPE_NAMES = {"CPU", "CPUState", "Memory", "Mem", "Registers", "Register", "DosRuntime"}
+# Original memory-layout / segment execution constants.  These are addresses, not
+# gameplay values, so they must not appear as bare literals in the pure layers.
+# Documented in docs/overkill/recovered_source_layer.md (table bases + code seg).
+# A genuinely-justified single value may carry a ``# layout-justified`` line comment.
+LAYOUT_CONSTANTS = {
+    0x1010,  # OVERKILL code segment
+    0x23B4,  # DS:23B4 effect/contact slot table base
+    0x2B5C,  # DS:2B5C gameplay object slot table base
+    0x32CA,  # DS:32CA update/draw/present pointer table base
+    0x8D12,  # DS:8D12 compact/effect pointer table base
+    0x95D8,  # DS:95D8 effect allocator cursor
+}
+LAYOUT_JUSTIFIED_MARKER = "layout-justified"
 
 
 @dataclass(frozen=True)
@@ -60,8 +76,9 @@ def _is_forbidden_import(target: str) -> bool:
 
 
 class PureLayerVisitor(ast.NodeVisitor):
-    def __init__(self, path: pathlib.Path) -> None:
+    def __init__(self, path: pathlib.Path, source_lines: list[str]) -> None:
         self.path = path
+        self.source_lines = source_lines
         self.issues: list[Issue] = []
 
     def visit_Import(self, node: ast.Import) -> None:
@@ -77,16 +94,39 @@ class PureLayerVisitor(ast.NodeVisitor):
     def visit_arg(self, node: ast.arg) -> None:
         if node.arg in FORBIDDEN_NAMES:
             self.issues.append(Issue(self.path, node.lineno, f"pure recovered layer argument {node.arg!r} looks VM-bound"))
+        # Recurse so type annotations on the argument (e.g. ``x: CPU``) are visited.
+        self.generic_visit(node)
 
     def visit_Name(self, node: ast.Name) -> None:
         if node.id in FORBIDDEN_NAMES:
             self.issues.append(Issue(self.path, node.lineno, f"pure recovered layer name {node.id!r} looks VM-bound"))
+        elif node.id in FORBIDDEN_TYPE_NAMES:
+            self.issues.append(
+                Issue(self.path, node.lineno, f"pure recovered layer references VM/CPU type {node.id!r}")
+            )
+
+    def _line_is_layout_justified(self, lineno: int) -> bool:
+        if 1 <= lineno <= len(self.source_lines):
+            return LAYOUT_JUSTIFIED_MARKER in self.source_lines[lineno - 1]
+        return False
+
+    def visit_Constant(self, node: ast.Constant) -> None:
+        if isinstance(node.value, int) and not isinstance(node.value, bool) and node.value in LAYOUT_CONSTANTS:
+            if not self._line_is_layout_justified(node.lineno):
+                self.issues.append(
+                    Issue(
+                        self.path,
+                        node.lineno,
+                        f"pure recovered layer uses memory-layout constant {node.value:#06x} "
+                        f"(add a '# {LAYOUT_JUSTIFIED_MARKER}' comment if this is a real domain value)",
+                    )
+                )
 
 
 def audit_file(path: pathlib.Path) -> list[Issue]:
     source = path.read_text(encoding="utf-8")
     tree = ast.parse(source, filename=str(path))
-    visitor = PureLayerVisitor(path)
+    visitor = PureLayerVisitor(path, source.splitlines())
     visitor.visit(tree)
     return visitor.issues
 
