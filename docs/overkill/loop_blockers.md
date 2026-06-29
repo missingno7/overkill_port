@@ -299,6 +299,18 @@ postmove for the seekers (b73e/b9f0/8d4f), composable from recovered pieces but 
 template (movement primitive + bounds/tile -> next slot) extends to both; then the global death/spawn
 side-effects + the per-logic-id dispatch.
 
+**BFC7 death tail RE-READ (2026-06-29) — confirmed attended, with 3 observed sub-leaf prerequisites.**
+Applied the attempt-don't-declare rule to `_run_collision_death_tail_bfc7` (object_deactivation.py:156):
+the "clean" final transition (logic_id=1 + C037 sprite + latch) is buried *under* the global death/spawn
+machinery, and the routine CALLs three still-observed sub-leaves that must be recovered first: (a)
+`_run_score_add_5f0d_observed` (the witness-poor single-byte-delta score add — converge onto the verified
+`score.bcd_add_score`, needs the death-tail demo re-verified); (b) `_run_linked_effect_spawn_7420_observed`
+(the linked-counter spawn: on the DS:2078+si counter hitting 0 it stages DS:2376/2378/237A from the slot
+x/y and spawns); (c) the **C054** selector (DS:A47E decrement, same compare chain as BD17).  So BFC7 is a
+genuine multi-leaf death/spawn island, NOT a slot transform — recover those three leaves (each its own
+produced-vs-VM probe) before composing BFC7.  Re-validates the convergence below: the non-blocked
+pure-%-raising vein is the **Bucket-C native runtime** (a multi-slice integration, best started fresh).
+
 **DONE (2026-06-29) — 5E42 delta-steer recovered (the 3rd movement primitive).**
 `object_delta_steer_5e42` (systems/movement.py): signed deltas (+2C/+2A) -> Bresenham axis pick vs the
 `move_step_error` accumulator (+2E) -> A348 sign bits -> direction (FFh=blocked) -> AF22/AF63 step by
