@@ -1,3 +1,19 @@
+## 2026-06-29 - Render leaf RECOVERED: native object screen-di projection (30D2) byte-exact vs VM
+
+Recovered the object `screen_di` projection -- the first **render-side** native producer, and the
+§1.2 gap that blocked building `FrameSnapshot` sprites from `NativeGameState` (the `+0C` dest the
+adapter had only *read* from the VM).  Found by going to the ASM (5AC8 draw dispatch → 5A36
+video-mode dispatch → **30D2** Tandy projection): `di = (obj_y >> 1) + DS:99C8[obj_x]` -- a
+per-column, scroll-dependent **word table** (the X is a TABLE LOOKUP, which is exactly why the
+earlier observe→derive failed), with a cull when `obj_x >= 0xE0` or the column entry is `FFFFh`.
+Pure `overkill/native_video/projection.py` (`project_object_to_di`).  Verified **byte-exact vs the
+real 30D2**: probe `verify_native_projection.py` on `demo_play_tandy_L2_full` -> **4624 projections,
+4624/4624, 0 divergence** (+ a VM-free unit test).  Added to the cross-demo gate's `PROBES` (6th
+producer, first render-side).  Lint (199) + architecture audit pass.  This unblocks the native
+sprite layer (place objects from `NativeGameState`'s pool via `project_object_to_di` rather than
+reading the VM `+0C`); remaining for a native FrameSnapshot: the native column table (DS:99C8) +
+the per-handler `+234C`/present phase.
+
 ## 2026-06-29 - §1.2 frame-timer verify: native step_first_active_timer byte-exact vs VM 61C7
 
 Fifth native producer in the cross-demo §1.2 gate -- the first **distinct state** beyond the
