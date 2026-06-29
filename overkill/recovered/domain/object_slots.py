@@ -111,6 +111,18 @@ class ObjectPool:
         """Slot ``index``'s logic-id word (record byte +18; the EFC4 behaviour selector)."""
         return self.slots[index][0x18 >> 1]
 
+    def move_step_error(self, index: int) -> int:
+        """Slot ``index``'s 5E42 Bresenham step-error accumulator (record byte +2E)."""
+        return self.slots[index][0x2E >> 1]
+
+    def target_y_word(self, index: int) -> int:
+        """Slot ``index``'s target Y word (record byte +32)."""
+        return self.slots[index][0x32 >> 1]
+
+    def target_x_word(self, index: int) -> int:
+        """Slot ``index``'s target X word (record byte +34)."""
+        return self.slots[index][0x34 >> 1]
+
     def with_word(self, index: int, offset: int, value: int) -> "ObjectPool":
         """A new pool with slot ``index``'s word at byte ``offset`` set to ``value``."""
         words = list(self.slots[index])

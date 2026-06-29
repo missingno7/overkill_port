@@ -18,7 +18,12 @@ import dataclasses
 from overkill.recovered.domain.native_game_state import NativeGameState
 from overkill.recovered.domain.object_slots import ObjectPool
 from overkill.recovered.domain.object_update import ObjectUpdateGlobals
-from overkill.recovered.systems.objects import object_update_ae09, object_update_aed8
+from overkill.recovered.systems.collision import object_postmove_bc4b
+from overkill.recovered.systems.objects import (
+    object_update_ae09,
+    object_update_aed8,
+    object_update_b86d,
+)
 
 # Record field offsets the driver writes back.  These are intrinsic record-field positions (cf.
 # overkill.recovered.views.object_slots); the pure systems layer cannot import the bridge ``views``,
@@ -51,8 +56,24 @@ def _advance_aed8(pool: ObjectPool, i: int, g: ObjectUpdateGlobals) -> dict | No
     return {_OFF_SUBSTATE: u.substate, _OFF_X: u.x_word, _OFF_Y: u.y_word, _OFF_ACTIVE: u.active_word}
 
 
+def _advance_b86d(pool: ObjectPool, i: int, g: ObjectUpdateGlobals) -> dict | None:
+    # B86D tail-jumps to BC4B, so its final slot = the movement half (object_update_b86d) composed with
+    # the BC4B post-move (object_postmove_bc4b owns y/active).  The contact path may still override the
+    # sprite (+ logic_id) on a collision death -- that is the deferred post-move work, so the sprite the
+    # driver writes here is the movement sprite (correct unless a contact death fires).
+    mv = object_update_b86d(
+        pool.x_word(i), pool.y_word(i), pool.substate(i), pool.direction_word(i), pool.active_word(i),
+        pool.target_x_word(i), pool.target_y_word(i), pool.move_step_error(i),
+        g.a47e, g.a7a0, g.ref_box_x, g.ref_box_y, g.ref_box_scan,
+        g.vertical_delta, g.phase_2328, g.step_mode, g.direction_table,
+    )
+    pm = object_postmove_bc4b(mv.x_word, mv.y_word, mv.active_word, pool.logic_id(i), g.global_disable)
+    return {_OFF_DIRECTION: mv.direction_or_step, _OFF_SPRITE: mv.sprite_or_state,
+            _OFF_X: mv.x_word, _OFF_Y: pm.y_word, _OFF_ACTIVE: pm.active_word}
+
+
 # logic_id -> per-slot advance.  Grow as handlers gain complete pure systems.
-NATIVE_OBJECT_HANDLERS = {0x0C: _advance_ae09, 0x02: _advance_aed8}
+NATIVE_OBJECT_HANDLERS = {0x0C: _advance_ae09, 0x02: _advance_aed8, 0x1D: _advance_b86d}
 
 
 def native_object_update_pool(

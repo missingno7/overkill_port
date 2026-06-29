@@ -34,8 +34,12 @@ from overkill.recovered.views.object_slots import (
 CS = 0x1010
 STRIDE = 0x38
 STRIDE_WORDS = STRIDE >> 1
-HANDLER_ENTRY_IPS = (0xAE09, 0xAED8)  # both produce the complete slot at their RET
+HANDLER_ENTRY_IPS = (0xAE09, 0xAED8, 0xB86D)  # AE09/AED8 RET; B86D tail-jumps to BC4B but its chain RETs here
+B86D_LOGIC_ID = 0x001D
+LOGIC_ID_WORD = 0x18 >> 1
 REF_BOX_X, REF_BOX_Y, A278, BDAC = 0x237E, 0x2380, 0xA278, 0xBDAC
+REF_BOX_SCAN, A47E, A7A0, A47C = 0x2390, 0xA47E, 0xA7A0, 0xA47C  # B86D + BC4B globals
+DELTA_2342, PHASE_2328, STEP_MODE, DIR_TABLE = 0x2342, 0x2328, 0x2312, 0xA348
 TILE_ORIGIN, TILE_ROW, TILE_CLASS, TILE_PLANE_PTR = 0x234E, 0x2350, 0xC3AA, 0x9592
 
 
@@ -89,20 +93,33 @@ def main(argv) -> int:
                     tile_plane=LazyBytes(cpu.mem, cpu.mem.rw(cs, TILE_PLANE_PTR), 0, 0x10000),
                     class_table=class_table,
                 ),
+                ref_box_scan=cpu.mem.rw(ds, REF_BOX_SCAN),
+                a47e=cpu.mem.rw(ds, A47E),
+                a7a0=cpu.mem.rw(ds, A7A0),
+                vertical_delta=cpu.mem.rw(ds, DELTA_2342),
+                phase_2328=cpu.mem.rw(ds, PHASE_2328),
+                step_mode=cpu.mem.rw(ds, STEP_MODE),
+                direction_table=tuple(cpu.mem.rb(ds, (DIR_TABLE + k) & 0xFFFF) for k in range(16)),
+                global_disable=cpu.mem.rw(ds, A47C),
             )
             out = native_object_update_pool(ObjectPool(base=0, stride=STRIDE, slots=(words,)), g)
             advanced = out.slots[0] != words
             ret_addr = cpu.mem.rw(ss, cpu.s.sp & 0xFFFF)
-            pending[key] = (ss, bp, ret_addr, out, advanced)
+            pending[key] = (ss, bp, ret_addr, out, advanced, words[LOGIC_ID_WORD])
         else:
             p = pending.get(key)
             if p is not None and cs == CS and ip == p[2]:
-                ss, bp, _ret, out, advanced = pending.pop(key)
+                ss, bp, _ret, out, advanced, logic_id = pending.pop(key)
                 if not advanced:
                     res["skip"] += 1  # handler returned None (death/oob) -> driver leaves it to the VM
                     return
                 predicted = _six_from_pool(out)
                 actual = _six_from_cpu(cpu, ss, bp)
+                if logic_id == B86D_LOGIC_ID:
+                    # B86D's deferred contact path may override the sprite (+ logic_id); compare the five
+                    # fields the movement + BC4B driver owns (skip sprite at index 2).
+                    predicted = predicted[:2] + predicted[3:]
+                    actual = actual[:2] + actual[3:]
                 res["calls"] += 1
                 if predicted == actual:
                     res["ok"] += 1

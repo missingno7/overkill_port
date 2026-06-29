@@ -1,3 +1,19 @@
+## 2026-06-29 - B86D added to the VM-free driver (movement + BC4B), driver-verified on L2
+
+Wired B86D into the native object-update driver: `_advance_b86d` composes `object_update_b86d` (the
+movement half -> BC4B handoff) with `object_postmove_bc4b` (the post-move y/active).  Extended
+`ObjectUpdateGlobals` with B86D's DS globals (default-safe: AE09/AED8 ignore them) and added `ObjectPool`
+accessors (target_x/y, move_step_error).  Extended the driver-verify probe to B86D: its final slot is
+captured at the chain return (B86D -> BC4B -> RET to the walk, the same return-address boundary AE09 uses);
+per the verified BC4B invariant the deferred contact path only touches sprite/logic_id, so the compare
+checks the five fields the driver owns (substate/dir/x/y/active) and skips sprite (the gate still verifies
+sprite at the handoff).
+
+Verified PASS, 0 divergence: L2_full 800f `1440/1440 ok, 392 skip` (the skips are AED8's deferred
+death/oob).  So the VM-free driver now runs the two biggest L2 handlers (B86D + AED8), reproducing the
+VM.  unit tests 9; lint 221; audits pass (27 pure files).  Next: B9F0 into the driver (extract its
+movement half the same way), the BC4B contact path, then the frame loop.
+
 ## 2026-06-29 - Extract B86D's movement half to a canonical pure system (driver-ready)
 
 Moved B86D's branch logic out of the coverage-gate probe arm into the canonical pure system

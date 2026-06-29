@@ -26,3 +26,12 @@ class ObjectUpdateGlobals:
     a278: int
     tile_probe_suppressed: bool
     tiles: LevelTileContext
+    # B86D movement + BC4B post-move extras (default-safe: AE09/AED8 do not consume them).
+    ref_box_scan: int = 0          # DS:237C+14 view-anchor scan flag (5E1B pad selector)
+    a47e: int = 0                  # DS:A47E early-global guard (<=2 -> B8F8 edge-steer)
+    a7a0: int = 0                  # DS:A7A0 phase gate (<0x28 -> the A7A0 5DB2 seek)
+    vertical_delta: int = 0        # DS:2342 global vertical delta (fall-through drift)
+    phase_2328: int = 0            # DS:2328 phase word (==7 -> +1 X nudge)
+    step_mode: int = 0             # DS:2312 5E42 step mode
+    direction_table: tuple = ()    # DS:A348 16-byte direction-bits -> direction map
+    global_disable: int = 0        # DS:A47C BC4B X-bounds gate / contact-path gate
