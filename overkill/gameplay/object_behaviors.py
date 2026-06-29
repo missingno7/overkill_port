@@ -451,9 +451,10 @@ def _run_object_behavior_b86d(cpu, *, parent: str, chain: str, cx_value: int) ->
     mem = cpu.mem
 
     def call_7476(return_ip: int) -> None:
-        _run_interpreted_near_call_observed(cpu, 0x7476, return_ip & 0xFFFF, max_steps=12000)
-        if (cpu.s.ip & 0xFFFF) != (return_ip & 0xFFFF):
-            raise RuntimeError(f"7476 returned to unexpected IP {cpu.s.ip:04X} inside B86D")
+        # B86D's 7476 is the recovered formation spawn (used directly by B73E); call it
+        # natively instead of bouncing to the interpreter, then resume at the return IP.
+        _run_formation_spawn_7476_observed(cpu, parent=parent, chain=chain, cx_value=cx_value)
+        cpu.s.ip = return_ip & 0xFFFF
 
     def run_b729_target_move(return_ip: int, *, mode: int) -> bool:
         mem.ww(ds, 0x2308, mode & 0xFFFF)

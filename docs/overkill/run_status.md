@@ -1,3 +1,18 @@
+## 2026-06-29 - Bucket A: B86D's 7476 composed natively -- the "stack-fidelity gate" was UNFOUNDED
+
+Tested (not reasoned) the handler-composition I'd repeatedly deferred as "stack-fidelity-gated": rewired
+B86D's `call_7476` from the interpreted near-call to the recovered `_run_formation_spawn_7476_observed`
+(the same hook B73E already calls directly), resuming at the return IP.  I had REASONED this would fail
+the full-memory test on 7476's internal 7573 CALL scratch -- but the B86D hook-equivalence test (full
+CPU state + memory) PASSES, and the hybrid frame-verifier on L2_full + L3_full (1400 frames each) shows
+0 divergence.  So the recovered hooks ARE faithful drop-in replacements for the interpreted near-calls;
+the "stack-fidelity gate" does not exist.  Coastline -1 (one interpreted-near-call bounce -> native);
+pure % flat at 18.2 (composition, not new pure logic).  **This opens the handler-composition path** --
+the other interpreted near-calls (B9F0's 7476/5E1B/5E42, B86D's B729, ...) can be rewired to their
+recovered hooks the same way, collapsing the object-update toward a native dispatch.  LESSON (again):
+do not declare a slice gated from REASONING about stack scratch -- attempt it and let the full-memory
+test decide; my reasoning was wrong.  Both audits + lint pass; full suite green (639 passed).
+
 ## 2026-06-29 - Bucket A: native BEC5 variant dispatch -- the collision island is COMPLETE (pure % 18.2)
 
 Recovered the last BEC5 piece: the variant-dispatch family classifier.  `bec5_collision_variant_family`
