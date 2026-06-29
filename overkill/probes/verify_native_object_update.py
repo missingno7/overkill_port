@@ -32,7 +32,7 @@ from typing import Callable
 
 from overkill.probes._harness import LazyBytes, load_demo, run_ref_step_probe
 from overkill.recovered.domain.tilemap import LevelTileContext
-from overkill.recovered.systems.objects import object_update_ae09
+from overkill.recovered.systems.objects import object_update_ae09, object_update_b86d_drift
 from overkill.recovered.views.object_slots import (
     OFF_ACTIVE_WORD,
     OFF_DIRECTION_OR_STEP,
@@ -55,17 +55,44 @@ TILE_PROBE_ROW_BASE = 0x2350
 TILE_CLASS_TABLE = 0xC3AA
 TILE_PLANE_SEGMENT_PTR = 0x9592
 
+# B86D (logic_id 0x1D) fall-through inputs.  B86D tail-jumps to the shared BC4B post-move
+# stage rather than RETurning, so its slot-write boundary is a fixed IP, not a return address.
+B86D_IP = 0xB86D
+BC4B_IP = 0xBC4B
+B86D_PHASE_A47E = 0xA47E          # DS:A47E early-global guard (<=2 -> B8F8 edge-steer)
+B86D_PHASE_A7A0 = 0xA7A0          # DS:A7A0 phase gate (<0x28 -> A7A0 mask/B729 block)
+B86D_VERTICAL_DELTA_2342 = 0x2342  # DS:2342 global vertical delta (X += -delta)
+B86D_PHASE_2328 = 0x2328          # DS:2328 phase word (==7 -> +1 X nudge)
+B86D_X_EDGE = 0x00C0              # x > C0h -> B8F8 edge-steer
+
 
 @dataclass
 class _Pending:
-    """An armed native prediction awaiting the handler's return."""
+    """An armed native prediction awaiting the handler's slot-write boundary.
+
+    ``exit_ip`` is the IP at which the slot is compared: a dynamic return address for a
+    RETurning handler (AE09), or a fixed tail-jump target for a handler that hands off to a
+    shared post-move stage (B86D -> BC4B).
+    """
 
     ss: int
     bp: int
-    ret_addr: int
+    exit_ip: int
     predicted: tuple
     read_post: Callable  # (cpu, ss, bp) -> tuple of post-frame fields
     logic_id: int = -1   # filled in at arm time for clean attribution
+
+
+def _read_slot_6tuple(cpu, ss: int, bp: int) -> tuple:
+    """The six post-frame slot fields the gate compares: substate, direction, sprite, x, y, active."""
+    return (
+        cpu.mem.rw(ss, (bp + OFF_SUBSTATE) & 0xFFFF),
+        cpu.mem.rw(ss, (bp + OFF_DIRECTION_OR_STEP) & 0xFFFF),
+        cpu.mem.rw(ss, (bp + OFF_SPRITE_OR_STATE) & 0xFFFF),
+        cpu.mem.rw(ss, (bp + OFF_X) & 0xFFFF),
+        cpu.mem.rw(ss, (bp + OFF_Y) & 0xFFFF),
+        cpu.mem.rw(ss, (bp + OFF_ACTIVE_WORD) & 0xFFFF),
+    )
 
 
 @dataclass(frozen=True)
@@ -108,25 +135,42 @@ def _arm_ae09(cpu, class_table_cache: dict) -> _Pending | None:
     )
     p = object_update_ae09(substate, direction, x, y, active, draw_layer, logic_id, bdac == 0x0001, tiles)
     predicted = (p.substate, p.direction_or_step, p.sprite_or_state, p.x_word, p.y_word, p.active_word)
-    ret_addr = cpu.mem.rw(ss, cpu.s.sp & 0xFFFF)
+    ret_addr = cpu.mem.rw(ss, cpu.s.sp & 0xFFFF)  # AE09 RETs to its caller
+    return _Pending(ss=ss, bp=bp, exit_ip=ret_addr, predicted=predicted, read_post=_read_slot_6tuple)
 
-    def read_post(c, ss_, bp_):
-        return (
-            c.mem.rw(ss_, (bp_ + OFF_SUBSTATE) & 0xFFFF),
-            c.mem.rw(ss_, (bp_ + OFF_DIRECTION_OR_STEP) & 0xFFFF),
-            c.mem.rw(ss_, (bp_ + OFF_SPRITE_OR_STATE) & 0xFFFF),
-            c.mem.rw(ss_, (bp_ + OFF_X) & 0xFFFF),
-            c.mem.rw(ss_, (bp_ + OFF_Y) & 0xFFFF),
-            c.mem.rw(ss_, (bp_ + OFF_ACTIVE_WORD) & 0xFFFF),
-        )
 
-    return _Pending(ss=ss, bp=bp, ret_addr=ret_addr, predicted=predicted, read_post=read_post)
+def _arm_b86d(cpu, class_table_cache: dict) -> _Pending | None:
+    """Capture + predict B86D (logic_id 0x1D) -- the FALL-THROUGH (formation-drift) path only.
+
+    The B8F8 edge-steer (A47E<=2 or x>C0h) and the A7A0 phase block need the still-cpu-bound
+    5E1B/B729 primitives, so they are left as fallback (``None``).  The fall-through path's slot
+    writes (X += -delta, +1 when DS:2328==7, outgoing sprite) are pure; compare at the BC4B handoff.
+    """
+    ss = cpu.s.ss & 0xFFFF
+    ds = cpu.s.ds & 0xFFFF
+    bp = cpu.s.bp & 0xFFFF
+    x = cpu.mem.rw(ss, (bp + OFF_X) & 0xFFFF)
+    if cpu.mem.rw(ds, B86D_PHASE_A47E) <= 0x0002 or x > B86D_X_EDGE:
+        return None  # B8F8 edge-steer path (needs pure 5E1B/5E42 composition)
+    if cpu.mem.rw(ds, B86D_PHASE_A7A0) < 0x0028:
+        return None  # A7A0 mask + B729 target-move path (needs pure B729)
+    delta = cpu.mem.rw(ds, B86D_VERTICAL_DELTA_2342)
+    phase_2328 = cpu.mem.rw(ds, B86D_PHASE_2328)
+    pred = object_update_b86d_drift(x, delta, phase_2328)
+    substate = cpu.mem.rw(ss, (bp + OFF_SUBSTATE) & 0xFFFF)
+    direction = cpu.mem.rw(ss, (bp + OFF_DIRECTION_OR_STEP) & 0xFFFF)
+    y = cpu.mem.rw(ss, (bp + OFF_Y) & 0xFFFF)
+    active = cpu.mem.rw(ss, (bp + OFF_ACTIVE_WORD) & 0xFFFF)
+    # Fall-through changes only sprite and X; the other four are unchanged at the BC4B handoff.
+    predicted = (substate, direction, pred.sprite_or_state, pred.x_word, y, active)
+    return _Pending(ss=ss, bp=bp, exit_ip=BC4B_IP, predicted=predicted, read_post=_read_slot_6tuple)
 
 
 # The registry: one entry per recovered pure whole-slot transform.  Grow this as
 # handlers are promoted; everything not here is counted as a fallback.
 NATIVE_HANDLERS: tuple[NativeHandler, ...] = (
     NativeHandler(logic_id=0x0C, label="AE09", entry_ip=AE09_IP, arm=_arm_ae09),
+    NativeHandler(logic_id=0x1D, label="B86D", entry_ip=B86D_IP, arm=_arm_b86d),
 )
 _HANDLER_BY_IP = {(CS, h.entry_ip): h for h in NATIVE_HANDLERS}
 
@@ -164,7 +208,7 @@ def main(argv) -> int:
                     pending[key] = armed
             else:
                 armed = pending.get(key)
-                if armed is not None and cs == CS and ip == armed.ret_addr:
+                if armed is not None and cs == CS and ip == armed.exit_ip:
                     pending.pop(key)
                     actual = armed.read_post(cpu, armed.ss, armed.bp)
                     if actual == armed.predicted:

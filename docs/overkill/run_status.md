@@ -1,3 +1,21 @@
+## 2026-06-29 - B86D fall-through native + the coverage-gate exit_ip generalization
+
+Attempted B86D (logic_id 0x1D, the 46%-of-dispatches target) as a pure whole-slot transform.
+Honest result: B86D has 3 branches and **tail-jumps to the shared BC4B post-move stage** rather than
+RETurning like AE09.  Only the FALL-THROUGH (formation-drift) path is pure-composable today (X += -delta
+DS:2342, +1 when DS:2328==7, outgoing sprite) -- recovered as `object_update_b86d_drift`
+(+ domain `B86dDriftUpdate`, unit test).  The B8F8 edge-steer and A7A0 branches need the still-cpu-bound
+5E1B (delta helper) and B729 (target move) as pure first.
+
+Generalized the coverage gate: a handler's compare boundary is now `exit_ip` (a fixed tail-jump target
+like BC4B) OR a return address (AE09).  **This is the real unlock** -- most handlers tail-jump to BC4B,
+so they could not be gated under the RET-only model; now they can.  Also de-duped the 6-field slot read
+(`_read_slot_6tuple`).
+
+Verified: gate run on L2_full -- B86D fall-through `native OK 12/12 fail=0` (the fall-through is rare here,
+~1% of B86D's 1170 slots; the bulk is edge-steer/phase).  Units 8 passed; lint 218; audits pass.  **Next
+for the B86D bulk: recover 5E1B + B729 as pure primitives** (5E42 already is), then the B8F8/A7A0 arms.
+
 ## 2026-06-29 - Architecture cleanup: decouple the native render host + lock it + the staged plan
 
 Major-cleanup pass toward "one game core, two hosts".  Grounded finding: the architecture is already

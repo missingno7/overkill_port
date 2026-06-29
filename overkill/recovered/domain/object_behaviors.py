@@ -105,6 +105,21 @@ class Ae09SlotUpdate:
 
 
 @dataclass(frozen=True, slots=True)
+class B86dDriftUpdate:
+    """Pure result of the 1010:B86D *fall-through* (formation-drift) path's slot writes.
+
+    The common B86D path (not the B8F8 edge-steer, not the A7A0 phase block) moves the slot
+    horizontally by the negated global vertical delta (DS:2342), nudges +1 when the DS:2328
+    phase word is ``0007h``, and sets the outgoing sprite from the delta's sign.  Only these two
+    slot fields change; the formation-spawn (CALL 7476) is a separate global side effect, and the
+    shared BC4B post-move tail is the next stage (verified separately).  ``x_word`` is the slot's
+    X after the drift; ``sprite_or_state`` the outgoing sprite."""
+
+    x_word: int
+    sprite_or_state: int
+
+
+@dataclass(frozen=True, slots=True)
 class Aba3Update:
     """Pure result of the 1010:ABA3 tracked-object follower probe (reached from AD04).
 

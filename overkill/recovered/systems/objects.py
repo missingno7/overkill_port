@@ -14,6 +14,7 @@ from overkill.recovered.domain.object_behaviors import (
     Ae09SlotUpdate,
     Ae09Update,
     B73ETargetReachedResolution,
+    B86dDriftUpdate,
     BossGroupSlotTransition,
     ObjectBoundsTileDecision,
     ObjectDeactivateDispatchDecision,
@@ -277,6 +278,25 @@ def b86d_outgoing_sprite_for_delta(vertical_delta: int) -> int:
     if (vertical_delta & 0xFFFF) == B86D_VERTICAL_DELTA_RISING:
         return B86D_OUTGOING_SPRITE_RISING
     return B86D_OUTGOING_SPRITE_FALLING
+
+
+def object_update_b86d_drift(x_word: int, vertical_delta: int, phase_word_2328: int) -> B86dDriftUpdate:
+    """Pure 1010:B86D fall-through (formation-drift) slot transform.
+
+    The common B86D path (after the B8F8 edge-steer guard and the A7A0 phase block are both
+    skipped): move X by the negated global vertical delta (DS:2342), add one more pixel when the
+    DS:2328 phase word is ``0007h``, and select the outgoing sprite from the delta's sign
+    (:func:`b86d_outgoing_sprite_for_delta`).  Only X and the sprite change; the formation-spawn
+    (CALL 7476) is a separate global side effect and the shared BC4B post-move tail is the next
+    stage -- both out of scope for this slot transform.
+
+    Evidence root: 1010:B86D B8BB..B8E9 -- ``ADD [bp+02], -delta`` / ``CMP [2328], 7`` /
+    ``INC [bp+02]`` then the b86d_outgoing_sprite NEG+CMP.
+    """
+    new_x = (x_word - vertical_delta) & 0xFFFF
+    if (phase_word_2328 & 0xFFFF) == 0x0007:
+        new_x = (new_x + 1) & 0xFFFF
+    return B86dDriftUpdate(x_word=new_x, sprite_or_state=b86d_outgoing_sprite_for_delta(vertical_delta))
 
 
 # 1010:AB10 logic_id=6 per-frame update.  The object dies once the level frame
