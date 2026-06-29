@@ -84,6 +84,16 @@ the big coupled system (no clean single leaf) — the multi-session build, and o
 pool, the standalone loop (§1.1) and full-state verify (§1.2) follow.  **Pattern to reuse:** each
 new producer gets a `verify_native_*` probe added to `verify_native_producers.py`'s `PROBES`.
 
+**Confirmed coupled by inspection (2026-06-29, why no 6th clean producer):** the behaviors are not
+slot→slot — `_run_object_behavior_b73e` (and siblings) end every path in `_run_object_postmove_bc4b`
+(the collision/contact tail), and the movement helper `_run_movement_direction_5db2` is a compound
+target-seek (reads object Y/X vs DS:2304/2306, maps a direction nibble through DS:A348/A954 into the
+slot, then dispatches a step through CS:5E0C by DS:2308 — and is verified only for the 2308==2 AF60
+double-2px step).  So the object-update producer must bundle target-seek + step + the bc4b
+collision/postmove tail; that's the substantial recovery, not a clean leaf.  The path in: lift the
+`bc4b` postmove + the target-seek/step into native-state functions, then a per-logic-id native
+dispatch over `NativeGameState`'s pool, each verified produced-vs-VM with a `verify_native_*` probe.
+
 ## NOTE (process) — check lifted-status before "recovering" a routine
 
 `519A` / `3153` (HUD text dispatch + Tandy glyph) were ALREADY lifted (`rendering/text.py`,
