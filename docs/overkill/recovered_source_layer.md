@@ -309,3 +309,39 @@ Do not promote these unknown offsets directly to semantic names yet.  The trace
 summary is evidence pressure: repeated writes from one subsystem suggest the next
 field candidates, while writes from renderer interiors warn us not to mistake
 render scratch for source-port gameplay state.
+
+## Action-spawn fan-out gates promoted to pure systems
+
+The per-frame action/spawn fan-out `1010:A067` had two pure boolean decisions
+living in the lifted layer (`overkill/gameplay/action_spawns.py`).  They are now
+canonical pure systems:
+
+```text
+overkill.recovered.systems.action_spawns.action_trigger_is_pressed
+overkill.recovered.systems.action_spawns.action_latch_allows_repeat
+```
+
+Evidence root: `1010:A067` `SIG_FRAME_ACTION_SPAWN_FANOUT_A067`
+(`TEST [98BE],10h` trigger bit; `CMP [A980],0` / `CMP [9790],1` / `CMP [232A],0Fh`
+held-repeat chain).  The lifted A067 hook now only projects DS state and replays
+the `TEST`/`CMP` flag effects, calling these predicates as the decision.  Verified
+by `tests/test_action_spawn_gates.py`, the existing A067 hook tests, and the
+demo-replay equivalence suite (0 divergence).  Names stay conservative (`action`,
+not weapon/projectile/player) — the A958 dispatch target `44AF` is still the
+unresolved action-spawn frontier.
+
+## Strengthened pure-layer audit
+
+`scripts/audit_recovered_layers.py` now also fails on, in `recovered/{domain,
+systems}`:
+
+- capitalised VM/CPU **types** (`CPU`, `CPUState`, `Memory`, `Mem`, `Registers`,
+  `Register`, `DosRuntime`) in annotations or bare names;
+- original **memory-layout / segment constants** (`0x1010`, `0x23B4`, `0x2B5C`,
+  `0x32CA`, `0x8D12`, `0x95D8`) as bare literals — with a `# layout-justified`
+  line-comment escape hatch so genuine domain values are never blocked.
+
+Negative tests in `tests/test_audit_recovered_layers.py` prove these are not
+vacuous.  See `high_level_refactor_audit.md` and
+`artifacts/high_level_refactor_gaps.json` for the full coupling/duplication/
+promotion audit.

@@ -701,7 +701,7 @@
     "island": "game_state",
     "kind": "hook",
     "name": "overkill_frame_action_spawn_fanout_a067",
-    "notes": "Input-bit gated frame action/object-spawn fanout reached from 9B2E and D04D. Gates on DS:98BE bit 10h, latches DS:A980, copies A970/A972/A974/A976 into A3A0..A3A6, dispatches the A958 jump table, and composes A4EA plus now-lifted A515/A584/A3FF/A3CA/A2A0/A2F6/A337 children. The real out-of-range A958 target 44AF remains the main action-spawn frontier. Still raw frame action glue, not named weapon/player semantics.",
+    "notes": "Input-bit gated frame action/object-spawn fanout reached from 9B2E and D04D. Gates on DS:98BE bit 10h, latches DS:A980, copies A970/A972/A974/A976 into A3A0..A3A6, dispatches the A958 jump table, and composes A4EA plus now-lifted A515/A584/A3FF/A3CA/A2A0/A2F6/A337 children. The trigger gate (98BE bit 10h) and held-repeat gate (A980==0 | 9790==1 | 232A==0Fh) are now pure systems overkill.recovered.systems.action_spawns.action_trigger_is_pressed / action_latch_allows_repeat; the lifted hook only projects DS state and replays the TEST/CMP flag effects. The real out-of-range A958 target 44AF remains the main action-spawn frontier. Still raw frame action glue, not named weapon/player semantics.",
     "status": "replaced"
   },
   "1010:A2A0": {

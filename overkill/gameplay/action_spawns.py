@@ -27,6 +27,10 @@ from overkill.asm import (
     _sub_mem_word,
     _sub_reg16,
 )
+from overkill.recovered.systems.action_spawns import (
+    action_latch_allows_repeat,
+    action_trigger_is_pressed,
+)
 from overkill.recovered.views.object_slots import ObjectSlotView
 
 RunOriginalNearCall = Callable[[object, int, int], None]
@@ -92,16 +96,9 @@ ACTION_COUNTER_SOURCE_TO_SCRATCH: tuple[tuple[int, int], ...] = (
 )
 
 
-def action_trigger_is_pressed(input_flags: int) -> bool:
-    """Pure A067 trigger gate: bit 4 of DS:98BE is the action latch input."""
-
-    return bool(input_flags & 0x10)
-
-
-def action_latch_allows_repeat(*, latch_word: int, repeat_byte_9790: int, state_word_232a: int) -> bool:
-    """Pure A067 repeat gate after the initial trigger bit is pressed."""
-
-    return latch_word == 0 or repeat_byte_9790 == 0x01 or state_word_232a == 0x000F
+# action_trigger_is_pressed / action_latch_allows_repeat were promoted to the
+# pure layer (overkill.recovered.systems.action_spawns) and are imported above;
+# this adapter only projects DS state and replays the ASM-visible flag effects.
 
 
 def read_action_counter_snapshot(cpu, ds: int) -> ActionCounterSnapshot:
