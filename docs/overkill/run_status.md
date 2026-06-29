@@ -1,3 +1,20 @@
+## 2026-06-29 - B9F0 FULLY NATIVE (all 4 paths) -- 3rd complete complex handler; L3 ~60%
+
+Final B9F0 slice: the two 5E42 paths.  Path C overshoot (not reached, x > target): 5E42 with the slot's
+existing +2A/+2C deltas, then `b9f0_wrapped_x_on_overflow`.  BA5A motion helper (reached + low counter
+or periodic tick): 5E1B deltas toward the DS:237C box -> 5E42 -> X += 2 -> the BA67 sprite-refresh.  The
+optional 7476 formation spawns are global side effects (new slots), out of the 6-field prediction.
+
+**B9F0 (logic_id 0x14) is now FULLY native** -- all four paths (sprite-refresh / 5DB2 seek / 5E42
+overshoot / BA5A helper), pure composition of the recovered primitives (5DB2/5E1B/5E42 + the b9f0_*
+decision helpers).  Verified on the FULL L3_full demo (1400 frames, FRAME VERIFY OK, zero divergence):
+B9F0 `1723/1723 fail=0`, AED8 `1323/1323 fail=0` -> L3 object-update **~60% native** (4 handlers).
+B9F0 is the 3rd fully-native complex handler (after B86D, AED8) and the hardest (4 paths + target-state).
+Gate-only change; lint 218; audits + gate unit test pass.
+
+Next: the remaining L3 handlers (0x01->BE3C raw-ASM, 0x89->B2A6, 0x59->F225) and pushing other levels;
+or stand up pillar 2 (the VM-free frame loop) to start *driving* these verified producers.
+
 ## 2026-06-29 - B9F0 Path D (5DB2 seek) -> B9F0 92% native, L3 -> 65.9%
 
 Second B9F0 slice: the A482==A4E4 pre-step (target deltas +32/+34 += DS:2342/2346, X-wrap via
