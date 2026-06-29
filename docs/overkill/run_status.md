@@ -1,3 +1,22 @@
+## 2026-06-29 - AED8 FULLY NATIVE -> L2 object-update is now MAJORITY native (53%, 3 handlers)
+
+Recovered AED8 (EFAE logic_id 0x02, the #2 L2 handler) as the pure `object_update_aed8` -- again pure
+composition of EXISTING recovered systems, no new primitive: substate timer + AEE4 8px step
+(`step_operations_for_direction(dir, 8)`) + the B250 overlap-contact selection
+(`overlap_contact_box_contains` + the +1E skip rule) + the AD60 bounds tail (AD5A adds DS:A278, ADC9
+sets X=FFFFh).  Key realisation: the B250 selector's slot-relevant output (AD5A vs ADC9) is purely the
+box predicate (the lifted code already cross-checks it); the 9E19 fan-out is global side-effect only.
+Domain `Aed8SlotUpdate` + unit test (5).  Also factored `_read_level_tile_context` (de-dup AE09/AED8).
+
+Verified on the full L2_full demo (1400 frames, FRAME VERIFY OK, zero divergence): AED8 `1423/1423
+fail=0`, B86D `1170/1170 fail=0` -> **NATIVE COVERAGE 53% of all L2 per-slot object updates** with 3
+handlers wired (72.7% over the denser first 800 frames).  AE09 regression 353/353 on L5 (the tile-context
+refactor is behaviour-preserving).  lint 218; audits + gate unit test pass.
+
+Next levers: L2's remaining handlers (0x40->? , 0x8A->8C1F, 0x01->BE3C) and the L3/L6 per-level
+backlogs (run the gate per level).  The pattern holds: each handler = compose recovered primitives,
+gated byte-exact via exit_ip.
+
 ## 2026-06-29 - B86D FULLY NATIVE (all 3 branches) -- first complete complex handler, ~46% of L2
 
 Composed B86D's dominant A7A0 phase branch in the coverage gate, completing the handler.  Key

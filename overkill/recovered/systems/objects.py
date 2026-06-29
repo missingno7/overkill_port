@@ -13,6 +13,7 @@ from overkill.recovered.domain.object_behaviors import (
     Ae09MovementStep,
     Ae09SlotUpdate,
     Ae09Update,
+    Aed8SlotUpdate,
     B73ETargetReachedResolution,
     B86dDriftUpdate,
     BossGroupSlotTransition,
@@ -30,6 +31,7 @@ from overkill.recovered.domain.object_slots import (
     ObjectSpawnSeedA4EA,
 )
 from overkill.recovered.domain.tilemap import LevelTileContext, TileProbeInput
+from overkill.recovered.systems.collision import overlap_contact_box_contains
 from overkill.recovered.systems.movement import step_operations_for_direction
 from overkill.recovered.systems.tilemap import (
     TILE_PROBE_COLUMN_STRIDE,
@@ -462,6 +464,72 @@ def object_update_ae09(
         y_word=move.y_word,
         active_word=new_active,
     )
+
+
+AED8_AEE4_STEP_PIXELS = 8            # AEE4 steps the slot 8px in its direction
+AED8_VERIFIED_DIRECTION_MAX = 7      # AEE4's AEEE table covers directions 0..7
+AED8_SUBSTATE_SKIP_OVERLAP = 0x0001  # slot +1E == 1 skips the B250 overlap test (always no-contact)
+AED8_CONTACT_DEATH_X = 0xFFFF        # the ADC9 contact tail sets X to FFFFh before AD60
+
+
+def object_update_aed8(
+    substate: int,
+    direction_or_step: int,
+    x_word: int,
+    y_word: int,
+    active_word: int,
+    substate_1e: int,
+    draw_layer: int,
+    logic_id: int,
+    ref_box_x: int,
+    ref_box_y: int,
+    a278: int,
+    tile_probe_suppressed: bool,
+    tiles: LevelTileContext,
+) -> Aed8SlotUpdate | None:
+    """Pure WHOLE per-slot AED8 update (EFAE logic_id 2): AEE4 step + B250 contact + AD60 -> active.
+
+    Returns ``None`` for the two sub-paths the gate leaves as fallback: the timer-expired death
+    (substate decrements to 0) and an AEE4 direction outside the AEEE table's 0..7 range.
+
+    Otherwise: decrement the substate timer, step 8px in the direction (AEE4), pick the B250 tail --
+    contact iff ``+1E != 1`` AND the stepped position is inside the DS:237E/2380 view box
+    (:func:`overlap_contact_box_contains`) -- then join AD60: no contact -> AD5A adds DS:A278 to X;
+    contact -> ADC9 sets X = FFFFh; AD60 (:func:`object_bounds_tile_decision_ad60`) then clears
+    ``active`` out of play bounds or (tile-probe family) when the tile one row below has class 1.  AEE4
+    and AD60 leave the sprite and direction untouched, so only the four changed fields are returned.
+    The B250 fan-out 9E19 status side effects are separate global state, out of this transform."""
+    new_substate = (substate - 1) & 0xFFFF
+    if new_substate == 0:
+        return None  # timer-expired -> the unverified ADC9 death path
+    direction = direction_or_step & 0xFFFF
+    if direction > AED8_VERIFIED_DIRECTION_MAX:
+        return None  # AEE4 direction outside the verified 0..7 table
+
+    x = x_word & 0xFFFF
+    y = y_word & 0xFFFF
+    for op in step_operations_for_direction(direction, AED8_AEE4_STEP_PIXELS):
+        delta = i16(op.delta_word)
+        if op.axis == "x":
+            x = u16(x + delta)
+        else:
+            y = u16(y + delta)
+
+    contact = (substate_1e & 0xFFFF) != AED8_SUBSTATE_SKIP_OVERLAP and overlap_contact_box_contains(
+        x, y, ref_box_x, ref_box_y
+    )
+    final_x = AED8_CONTACT_DEATH_X if contact else u16(x + a278)
+
+    decision = object_bounds_tile_decision_ad60(
+        final_x, y, draw_layer, logic_id, tile_probe_suppressed=tile_probe_suppressed
+    )
+    if decision.kind == "deactivate":
+        new_active = 0x0000
+    elif decision.kind == "skip":
+        new_active = active_word & 0xFFFF
+    else:  # tile_probe: deactivate iff the tile one map row below has class 1.
+        new_active = 0x0000 if object_tile_probe_deactivates_ad60(final_x, y, tiles) else (active_word & 0xFFFF)
+    return Aed8SlotUpdate(substate=new_substate, x_word=final_x, y_word=y, active_word=new_active)
 
 
 ABA3_SPRITE_OFFSET = 0x0014

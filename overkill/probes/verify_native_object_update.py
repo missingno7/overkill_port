@@ -38,13 +38,18 @@ from overkill.recovered.systems.movement import (
     object_delta_steer_5e42,
     object_target_seek_step_5db2,
 )
-from overkill.recovered.systems.objects import object_update_ae09, object_update_b86d_drift
+from overkill.recovered.systems.objects import (
+    object_update_ae09,
+    object_update_aed8,
+    object_update_b86d_drift,
+)
 from overkill.recovered.views.object_slots import (
     OFF_ACTIVE_WORD,
     OFF_DIRECTION_OR_STEP,
     OFF_HAZARD_CLASS,
     OFF_LOGIC_ID,
     OFF_MOVE_STEP_ERROR,
+    OFF_SCAN_ENABLE_OR_SOLID,
     OFF_SCAN_FLAG,
     OFF_SPRITE_OR_STATE,
     OFF_SUBSTATE,
@@ -64,6 +69,13 @@ TILE_PROBE_ORIGIN_X = 0x234E
 TILE_PROBE_ROW_BASE = 0x2350
 TILE_CLASS_TABLE = 0xC3AA
 TILE_PLANE_SEGMENT_PTR = 0x9592
+
+# AED8 (logic_id 0x02) inputs.  AED8 RETs via the AD60 tail (like AE09), so its boundary is the
+# return address.  Its B250 contact test uses the same DS:237E/2380 view box as B86D's B8F8.
+AED8_IP = 0xAED8
+AED8_REF_BOX_X = 0x237E           # DS:237E view-target box X (B250 overlap reference)
+AED8_REF_BOX_Y = 0x2380          # DS:2380 view-target box Y
+AD60_A278 = 0xA278               # DS:A278 added to X on the AD5A (no-contact) tail
 
 # B86D (logic_id 0x1D) fall-through inputs.  B86D tail-jumps to the shared BC4B post-move
 # stage rather than RETurning, so its slot-write boundary is a fixed IP, not a return address.
@@ -128,6 +140,20 @@ class NativeHandler:
     arm: Callable  # (cpu, class_table_cache) -> _Pending | None
 
 
+def _read_level_tile_context(cpu, ds: int, class_table_cache: dict) -> LevelTileContext:
+    """Project the DS tile-probe inputs into a LevelTileContext (shared by AE09 + AED8)."""
+    class_table = class_table_cache.get(ds)
+    if class_table is None:
+        class_table = tuple(cpu.mem.rb(ds, (TILE_CLASS_TABLE + i) & 0xFFFF) for i in range(0x100))
+        class_table_cache[ds] = class_table
+    return LevelTileContext(
+        origin_x_word=cpu.mem.rw(ds, TILE_PROBE_ORIGIN_X),
+        row_base_word=cpu.mem.rw(ds, TILE_PROBE_ROW_BASE),
+        tile_plane=LazyBytes(cpu.mem, cpu.mem.rw(cpu.s.cs & 0xFFFF, TILE_PLANE_SEGMENT_PTR), 0, 0x10000),
+        class_table=class_table,
+    )
+
+
 def _arm_ae09(cpu, class_table_cache: dict) -> _Pending | None:
     """Capture + predict AE09 (logic_id 0Ch) -- identical to the AE09 probe."""
     ss = cpu.s.ss & 0xFFFF
@@ -141,16 +167,7 @@ def _arm_ae09(cpu, class_table_cache: dict) -> _Pending | None:
     draw_layer = cpu.mem.rw(ss, (bp + OFF_HAZARD_CLASS) & 0xFFFF)
     logic_id = cpu.mem.rw(ss, (bp + OFF_LOGIC_ID) & 0xFFFF)
     bdac = cpu.mem.rw(ds, RENDER_MODE_BDAC)
-    class_table = class_table_cache.get(ds)
-    if class_table is None:
-        class_table = tuple(cpu.mem.rb(ds, (TILE_CLASS_TABLE + i) & 0xFFFF) for i in range(0x100))
-        class_table_cache[ds] = class_table
-    tiles = LevelTileContext(
-        origin_x_word=cpu.mem.rw(ds, TILE_PROBE_ORIGIN_X),
-        row_base_word=cpu.mem.rw(ds, TILE_PROBE_ROW_BASE),
-        tile_plane=LazyBytes(cpu.mem, cpu.mem.rw(cpu.s.cs & 0xFFFF, TILE_PLANE_SEGMENT_PTR), 0, 0x10000),
-        class_table=class_table,
-    )
+    tiles = _read_level_tile_context(cpu, ds, class_table_cache)
     p = object_update_ae09(substate, direction, x, y, active, draw_layer, logic_id, bdac == 0x0001, tiles)
     predicted = (p.substate, p.direction_or_step, p.sprite_or_state, p.x_word, p.y_word, p.active_word)
     ret_addr = cpu.mem.rw(ss, cpu.s.sp & 0xFFFF)  # AE09 RETs to its caller
@@ -214,11 +231,44 @@ def _arm_b86d(cpu, class_table_cache: dict) -> _Pending | None:
     return _Pending(ss=ss, bp=bp, exit_ip=BC4B_IP, predicted=predicted, read_post=_read_slot_6tuple)
 
 
+def _arm_aed8(cpu, class_table_cache: dict) -> _Pending | None:
+    """Capture + predict AED8 (logic_id 0x02): AEE4 step + B250 contact + AD60, compared at AED8's RET.
+
+    AED8 RETs through the AD60 tail (like AE09), so the boundary is the return address.  Returns None
+    for the timer-expired death and out-of-range-direction sub-paths object_update_aed8 leaves unmodelled.
+    """
+    ss = cpu.s.ss & 0xFFFF
+    ds = cpu.s.ds & 0xFFFF
+    bp = cpu.s.bp & 0xFFFF
+    substate = cpu.mem.rw(ss, (bp + OFF_SUBSTATE) & 0xFFFF)
+    direction = cpu.mem.rw(ss, (bp + OFF_DIRECTION_OR_STEP) & 0xFFFF)
+    x = cpu.mem.rw(ss, (bp + OFF_X) & 0xFFFF)
+    y = cpu.mem.rw(ss, (bp + OFF_Y) & 0xFFFF)
+    active = cpu.mem.rw(ss, (bp + OFF_ACTIVE_WORD) & 0xFFFF)
+    sprite = cpu.mem.rw(ss, (bp + OFF_SPRITE_OR_STATE) & 0xFFFF)
+    substate_1e = cpu.mem.rw(ss, (bp + OFF_SCAN_ENABLE_OR_SOLID) & 0xFFFF)
+    draw_layer = cpu.mem.rw(ss, (bp + OFF_HAZARD_CLASS) & 0xFFFF)
+    logic_id = cpu.mem.rw(ss, (bp + OFF_LOGIC_ID) & 0xFFFF)
+    bdac = cpu.mem.rw(ds, RENDER_MODE_BDAC)
+    upd = object_update_aed8(
+        substate, direction, x, y, active, substate_1e, draw_layer, logic_id,
+        cpu.mem.rw(ds, AED8_REF_BOX_X), cpu.mem.rw(ds, AED8_REF_BOX_Y), cpu.mem.rw(ds, AD60_A278),
+        bdac == 0x0001, _read_level_tile_context(cpu, ds, class_table_cache),
+    )
+    if upd is None:
+        return None
+    # AED8 leaves sprite + direction untouched.
+    predicted = (upd.substate, direction, sprite, upd.x_word, upd.y_word, upd.active_word)
+    ret_addr = cpu.mem.rw(ss, cpu.s.sp & 0xFFFF)
+    return _Pending(ss=ss, bp=bp, exit_ip=ret_addr, predicted=predicted, read_post=_read_slot_6tuple)
+
+
 # The registry: one entry per recovered pure whole-slot transform.  Grow this as
 # handlers are promoted; everything not here is counted as a fallback.
 NATIVE_HANDLERS: tuple[NativeHandler, ...] = (
     NativeHandler(logic_id=0x0C, label="AE09", entry_ip=AE09_IP, arm=_arm_ae09),
     NativeHandler(logic_id=0x1D, label="B86D", entry_ip=B86D_IP, arm=_arm_b86d),
+    NativeHandler(logic_id=0x02, label="AED8", entry_ip=AED8_IP, arm=_arm_aed8),
 )
 _HANDLER_BY_IP = {(CS, h.entry_ip): h for h in NATIVE_HANDLERS}
 

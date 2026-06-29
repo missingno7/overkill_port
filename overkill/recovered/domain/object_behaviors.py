@@ -105,6 +105,23 @@ class Ae09SlotUpdate:
 
 
 @dataclass(frozen=True, slots=True)
+class Aed8SlotUpdate:
+    """Pure WHOLE per-slot result of the 1010:AED8 behavior (EFAE logic_id 2): step + contact + active.
+
+    AED8 decrements the slot's substate timer, steps it 8px in its direction (AEE4), runs the B250
+    overlap-contact selector against the DS:237E/2380 view box, then joins the AD60 bounds/tile tail:
+    no contact -> AD5A (x += DS:A278) then AD60; contact -> ADC9 (x = FFFFh) then AD60.  AD60 sets the
+    slot ``active`` word (out-of-bounds, or the tile one row below has class 1).  AEE4/AD60 do not touch
+    the sprite or direction, so this records only the four fields AED8 changes.  The B250 fan-out 9E19
+    status side effects and the timer-expired (substate->0) death are out of this transform's scope."""
+
+    substate: int
+    x_word: int
+    y_word: int
+    active_word: int
+
+
+@dataclass(frozen=True, slots=True)
 class B86dDriftUpdate:
     """Pure result of the 1010:B86D *fall-through* (formation-drift) path's slot writes.
 
