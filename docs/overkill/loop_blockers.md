@@ -245,6 +245,17 @@ b86d/ab77/aba3/b24d; aed8's AEE4+B250 which is coupled to ADC9 x=FFFF). Remainin
 death/spawn side-effects (the attended island). Next: compose the per-logic-id native dispatch over
 `NativeGameState`'s pool from these movement producers + the existing decisions.
 
+**Behavior survey (2026-06-29) — the clean MOVEMENT producers (AE09 + 5DB2) are the harvest of this
+vein; the rest need harder pieces.** Read each behavior's body: AE09 = clean fixed-step (done); the
+seekers b73e/b9f0/8d4f = 5DB2 (done) + bc4b; b86d = interpreted `7476` near-call + the `5E42`
+delta-steer (Bresenham) + bc4b (coupled); aed8 = AEE4 + `B250`->ADC9 (x=FFFF coupling); b9f0 = the
+follower (5DB2 + its own ~7 decisions + bc4b). So the next object-update producers, in rough order of
+tractability: (1) **bc4b Y-clamp** (clean, always-runs; completes the post-move Y of every behavior),
+(2) **`5E42` delta-steer** (delta->direction->AF22/AF63 step; composable but has the 5EB5/5EC8 + the
+move_step_error Bresenham accumulator; covers b86d's steering), (3) the **global death/spawn
+side-effects** (`BD17`/`BFC7` -> counters/spawns -- the attended island), then (4) the per-logic-id
+native dispatch composing them.  The two highest-frequency movement primitives are already native.
+
 ## NOTE (process) — check lifted-status before "recovering" a routine
 
 `519A` / `3153` (HUD text dispatch + Tandy glyph) were ALREADY lifted (`rendering/text.py`,
