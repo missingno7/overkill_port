@@ -1,3 +1,24 @@
+## 2026-06-29 - Integration-phase recon: small dispatch slices exhausted -> handler-by-handler + runtime
+
+Three concrete investigations this turn confirm the demand-driven loop's small clean slices are
+exhausted; the remaining §1 work is the larger integration, with sharper findings recorded so the next
+phase is well-guided:
+- **EFAE 2nd-level per-logic-id dispatch (CS:EFC4) is a LARGE jump table** -- coherent through logic_id
+  0x53+ (84+ entries, ~40 distinct handlers: AED8/B1B0/B24D/B9F0/B73E/B86D/8D4F/B556/B3DF/...).  NOT a
+  clean hand-transcribable slice like AA2B (8 entries).  Its native form must be built HANDLER-BY-HANDLER
+  (logic_id -> native handler, as each behavior becomes native), not wholesale -- a wholesale IP table is
+  faithful-to-VM but not native-forward.  The SMALL dispatch tables (AA2B draw_layer/8, B00D direction/8,
+  C054, 5E0C) are all recovered; EFC4 is the big one, tied to the handlers.
+- **The camera view target (DS:237E/2380) has no direct-MOV writer** in the code; it is written via
+  indexed addressing through the DS:237C struct ([237C+2]/[+4]).  So roadmap #2 must start with a
+  base-register (237C/SI/DI) trace to locate the scroll/view-update writer, not a direct-operand scan.
+- **The remaining EFAE handlers have recovered movement halves but coupled animation/state/interpreted
+  halves** (per loop_blockers); completing one to a FULL native slot-transform is the real per-handler
+  work (AE09 / logic_id 12 is the one already done end-to-end).
+Next work: (a) complete a coupled handler's native slot-transform (per-handler), or (b) start the VM-free
+object-update composition over the already-native pieces (AE09 + bc4b postmove) with a per-slot verify
+harness -- the first runtime slice.  Both are larger than the per-routine producers harvested this session.
+
 ## 2026-06-29 - Bucket C: native AA2B first-level object-logic dispatch routing (integration slice #1) -- pure % 17.1
 
 The first integration slice from the roadmap below: the object-update dispatch skeleton.  AA2B selects
