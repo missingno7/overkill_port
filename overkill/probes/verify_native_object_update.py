@@ -32,12 +32,15 @@ from typing import Callable
 
 from overkill.probes._harness import LazyBytes, load_demo, run_ref_step_probe
 from overkill.recovered.domain.tilemap import LevelTileContext
+from overkill.recovered.systems.movement import object_delta_5e1b, object_delta_steer_5e42
 from overkill.recovered.systems.objects import object_update_ae09, object_update_b86d_drift
 from overkill.recovered.views.object_slots import (
     OFF_ACTIVE_WORD,
     OFF_DIRECTION_OR_STEP,
     OFF_HAZARD_CLASS,
     OFF_LOGIC_ID,
+    OFF_MOVE_STEP_ERROR,
+    OFF_SCAN_FLAG,
     OFF_SPRITE_OR_STATE,
     OFF_SUBSTATE,
     OFF_X,
@@ -64,6 +67,10 @@ B86D_PHASE_A7A0 = 0xA7A0          # DS:A7A0 phase gate (<0x28 -> A7A0 mask/B729 
 B86D_VERTICAL_DELTA_2342 = 0x2342  # DS:2342 global vertical delta (X += -delta)
 B86D_PHASE_2328 = 0x2328          # DS:2328 phase word (==7 -> +1 X nudge)
 B86D_X_EDGE = 0x00C0              # x > C0h -> B8F8 edge-steer
+B86D_REF_BOX = 0x237C            # DS:237C view-anchor box (BX for 5E1B in the B8F8 branch)
+B86D_EDGE_STEER_SPRITE = 0x0076  # sprite B86D forces after the B8F8 steer
+STEP_MODE_2312 = 0x2312          # DS:2312 5E42 step mode (==3 -> 3px else 2px)
+DIRECTION_TABLE_A348 = 0xA348    # DS:A348 16-byte 5E42 direction-bits -> direction map
 
 
 @dataclass
@@ -140,28 +147,45 @@ def _arm_ae09(cpu, class_table_cache: dict) -> _Pending | None:
 
 
 def _arm_b86d(cpu, class_table_cache: dict) -> _Pending | None:
-    """Capture + predict B86D (logic_id 0x1D) -- the FALL-THROUGH (formation-drift) path only.
+    """Capture + predict B86D (logic_id 0x1D): the B8F8 edge-steer and the fall-through paths.
 
-    The B8F8 edge-steer (A47E<=2 or x>C0h) and the A7A0 phase block need the still-cpu-bound
-    5E1B/B729 primitives, so they are left as fallback (``None``).  The fall-through path's slot
-    writes (X += -delta, +1 when DS:2328==7, outgoing sprite) are pure; compare at the BC4B handoff.
+    B86D tail-jumps to the shared BC4B post-move stage, so compare at the BC4B handoff.  Two of the
+    three branches are pure-composable today: the B8F8 edge-steer (A47E<=2 or x>C0h) computes deltas
+    toward the DS:237C box via 5E1B, steers via 5E42, then forces sprite 0x76; the fall-through
+    (formation drift) is object_update_b86d_drift.  The A7A0 phase block still needs the cpu-bound
+    B729 target move -> fallback (``None``).
     """
     ss = cpu.s.ss & 0xFFFF
     ds = cpu.s.ds & 0xFFFF
     bp = cpu.s.bp & 0xFFFF
     x = cpu.mem.rw(ss, (bp + OFF_X) & 0xFFFF)
-    if cpu.mem.rw(ds, B86D_PHASE_A47E) <= 0x0002 or x > B86D_X_EDGE:
-        return None  # B8F8 edge-steer path (needs pure 5E1B/5E42 composition)
-    if cpu.mem.rw(ds, B86D_PHASE_A7A0) < 0x0028:
-        return None  # A7A0 mask + B729 target-move path (needs pure B729)
-    delta = cpu.mem.rw(ds, B86D_VERTICAL_DELTA_2342)
-    phase_2328 = cpu.mem.rw(ds, B86D_PHASE_2328)
-    pred = object_update_b86d_drift(x, delta, phase_2328)
+    y = cpu.mem.rw(ss, (bp + OFF_Y) & 0xFFFF)
     substate = cpu.mem.rw(ss, (bp + OFF_SUBSTATE) & 0xFFFF)
     direction = cpu.mem.rw(ss, (bp + OFF_DIRECTION_OR_STEP) & 0xFFFF)
-    y = cpu.mem.rw(ss, (bp + OFF_Y) & 0xFFFF)
     active = cpu.mem.rw(ss, (bp + OFF_ACTIVE_WORD) & 0xFFFF)
-    # Fall-through changes only sprite and X; the other four are unchanged at the BC4B handoff.
+
+    if cpu.mem.rw(ds, B86D_PHASE_A47E) <= 0x0002 or x > B86D_X_EDGE:
+        # B8F8 edge-steer: 5E1B deltas toward the DS:237C box, then 5E42 steer, then sprite 0x76.
+        ref_x = cpu.mem.rw(ds, (B86D_REF_BOX + OFF_X) & 0xFFFF)
+        ref_y = cpu.mem.rw(ds, (B86D_REF_BOX + OFF_Y) & 0xFFFF)
+        ref_scan = cpu.mem.rw(ds, (B86D_REF_BOX + OFF_SCAN_FLAG) & 0xFFFF)
+        deltas = object_delta_5e1b(x, y, ref_x, ref_y, ref_scan)
+        err = cpu.mem.rw(ss, (bp + OFF_MOVE_STEP_ERROR) & 0xFFFF)
+        step_mode = cpu.mem.rw(ds, STEP_MODE_2312)
+        table = tuple(cpu.mem.rb(ds, (DIRECTION_TABLE_A348 + i) & 0xFFFF) for i in range(16))
+        steer = object_delta_steer_5e42(
+            x, y, direction, deltas.move_delta_y, deltas.move_delta_x, err, step_mode, table
+        )
+        predicted = (substate, steer.direction_or_step, B86D_EDGE_STEER_SPRITE,
+                     steer.x_word, steer.y_word, active)
+        return _Pending(ss=ss, bp=bp, exit_ip=BC4B_IP, predicted=predicted, read_post=_read_slot_6tuple)
+
+    if cpu.mem.rw(ds, B86D_PHASE_A7A0) < 0x0028:
+        return None  # A7A0 mask + B729 target-move path (needs pure B729)
+
+    # Fall-through (formation drift): changes only sprite and X; the other four are unchanged.
+    delta = cpu.mem.rw(ds, B86D_VERTICAL_DELTA_2342)
+    pred = object_update_b86d_drift(x, delta, cpu.mem.rw(ds, B86D_PHASE_2328))
     predicted = (substate, direction, pred.sprite_or_state, pred.x_word, y, active)
     return _Pending(ss=ss, bp=bp, exit_ip=BC4B_IP, predicted=predicted, read_post=_read_slot_6tuple)
 

@@ -15,6 +15,7 @@ from overkill.recovered.domain.movement import (
     DeltaSteerStep,
     MovementStepOperation,
     MovementTarget,
+    ObjectDelta5e1b,
     TargetSeekDecision,
     TargetSeekStep,
     VerticalScrollEdgeDecision,
@@ -195,6 +196,35 @@ STEER_BIT_X_NEG = 0x0004
 STEER_BIT_X_POS = 0x0008
 STEER_BLOCKED_SENTINEL = 0x00FF
 STEER_FAST_STEP_MODE = 0x0003   # DS:2312 == 3 -> AF22 3px step; else AF63 2px
+
+
+@recovered_island(
+    asm="1010:5E1B",
+    contract="object-delta helper: signed per-axis deltas = slot - (target + pad), pad 4px solid else 12px",
+    status="VERIFIED",
+    merge_target="MovementSystem",
+)
+def object_delta_5e1b(
+    slot_x: int,
+    slot_y: int,
+    target_x: int,
+    target_y: int,
+    target_scan_flag: int,
+) -> ObjectDelta5e1b:
+    """Pure whole-5E1B object-delta helper (the input :func:`object_delta_steer_5e42` consumes).
+
+    Fills the slot's signed Y/X movement deltas (+2C/+2A) relative to a target/reference record:
+    ``delta = slot - (target + pad)`` per axis, where ``pad`` is 4px when the target is solid (its
+    scan flag +14 == 1) else 12px (the same pad for both axes).  Matches the original's
+    ``ADD CX,DX`` / ``SUB AX,CX`` order with 16-bit wrap.
+
+    Inputs: the slot's X/Y and the target record's X (+02), Y (+04), and scan flag (+14).
+    Output: the two signed delta words.  No CPU/memory -- the adapter owns SS:BP / DS:BX.
+    """
+    pad = 0x0004 if (target_scan_flag & 0xFFFF) == 0x0001 else 0x000C
+    move_delta_y = u16(slot_y - u16(target_y + pad))
+    move_delta_x = u16(slot_x - u16(target_x + pad))
+    return ObjectDelta5e1b(move_delta_x=move_delta_x, move_delta_y=move_delta_y)
 
 
 @recovered_island(

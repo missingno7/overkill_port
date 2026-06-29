@@ -63,6 +63,19 @@ class DeltaSteerStep:
 
 
 @dataclass(frozen=True, slots=True)
+class ObjectDelta5e1b:
+    """Portable result of the recovered 1010:5E1B object-delta helper.
+
+    5E1B fills a slot's signed Y/X movement deltas (+2C/+2A) as ``slot - (target + pad)`` toward a
+    target/reference record, where ``pad`` is 4px when the target is solid (its scan flag +14 == 1)
+    else 12px.  These deltas are exactly the input :class:`DeltaSteerStep` (5E42) consumes, so the two
+    compose into a full edge/target steer.  Records only the two delta words 5E1B writes."""
+
+    move_delta_x: int
+    move_delta_y: int
+
+
+@dataclass(frozen=True, slots=True)
 class MovementStepOperation:
     """One ordered axis mutation from the recovered 8-way step tables.
 

@@ -1,3 +1,20 @@
+## 2026-06-29 - 5E1B recovered pure + B86D B8F8 edge-steer composed (and the A7A0/B729 finding)
+
+Recovered the 1010:5E1B object-delta helper as the pure `object_delta_5e1b` (+ domain `ObjectDelta5e1b`,
+unit test): per-axis `delta = slot - (target + pad)`, pad 4px when the target is solid (scan +14==1)
+else 12px -- the input `object_delta_steer_5e42` consumes.  Then composed B86D's **B8F8 edge-steer**
+branch in the coverage gate: 5E1B deltas toward the DS:237C box -> 5E42 steer -> force sprite 0x76,
+compared at the BC4B handoff.
+
+Verified on L2_full: B86D `native OK 55/1170 fail=0` (up from 12; B8F8 added ~43), zero divergence.
+**Honest finding: B86D's dominant branch is the A7A0 phase block (~95% of its 1170 slots), which needs
+the cpu-bound B729 target-move as pure.**  So B729 -- not 5E1B -- is the key that lights up the B86D
+bulk (~44% of ALL per-slot updates).  5E1B is still a clean win (a shared steering primitive: B8F8 +
+other edge/target branches).
+
+Next: recover B729 (1010:B729 target move) as a pure system, then drop the A7A0 branch into the
+exit_ip-capable gate.  Units (5E1B 4 + b86d-drift 4 + gate 4) pass; lint 218; audits pass.
+
 ## 2026-06-29 - B86D fall-through native + the coverage-gate exit_ip generalization
 
 Attempted B86D (logic_id 0x1D, the 46%-of-dispatches target) as a pure whole-slot transform.
