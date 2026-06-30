@@ -7,6 +7,7 @@ from .container import (
     parse_overkill_container,
     read_container_asset,
 )
+from .level_assets import LEVEL_COUNT, LevelAsset, overkill_level_assets
 from .loader import decode_asset
 from .lz import copy_lz_back_reference, decode_lz_asset, decode_lz_bytes, input_lz_byte, output_lz_byte
 from .overlay import (
@@ -36,6 +37,9 @@ __all__ = [
     "parse_overkill_container",
     "read_container_asset",
     "load_container_asset",
+    "LEVEL_COUNT",
+    "LevelAsset",
+    "overkill_level_assets",
     "decode_asset",
     "decode_byte_single_marker_rle",
     "decode_linear_byte_rle",

@@ -112,9 +112,35 @@ the format is derived from its disasm and the all-58 abut+decode is conclusive s
 So the **complete cold-boot asset path is VM-free end to end**: `assets/OVERKILL` -> container directory
 -> raw blob by name -> decoded bytes, every step pure and verified.  Assets discovered: level tiles/maps
 (LEV0..5 BLX/MAP.BIC), sprite/graphic banks (*.BIC), intro/menu/score screens (*PAGE*/OKMENU/HISCORE/
-... .ENC), and the music banks **ADLIB.ENC / ROLAND.ENC**.  Next: the **level loader** -- which assets a
-level pulls and where the decoded blobs land in NativeGameState/LevelState (e.g. LEV{n}MAP/BLX -> the
-tile map; the BIC graphic banks -> sprite memory), wiring this data path into the native boot.
+... .ENC), and the music banks **ADLIB.ENC / ROLAND.ENC**.
+
+## 2026-06-30 - Level loader scouted; per-level asset mapping landed (verified vs container)
+
+Traced the level-load chain from the loader up.  The reusable per-asset load wrapper is **1010:C6DC**:
+it reads a request block -- name ptr `DS:[21AA]` -> `[023E]`, dest seg `DS:[21A4]` -> `[023A]`, dest off
+`DS:[21A6]` -> `[023C]` -- closes the previous handle, calls the container loader **0248**, and stores
+the decoded length `[0244]` -> `[21A8]`; with a resident-asset cache check (`C710`/`C713` scanning the
+`DS:14D0` word list, the recovered `search_decoded_asset_table_c713`).
+
+The **per-level loader is 1010:0E9C** (called from level-init `976D`).  It indexes data tables by the
+level number `DS:[2356]`:
+- MAP-pointer table **`DS:14C0`** = `LEV0MAP.BIC`..`LEV7MAP.BIC` (8 words).
+- `{graphics, blocks}` list **`DS:14E8`** (4 bytes/level): word0 -> `G{n}.BIC`, word1 -> `LEV{n}BLX.BIC`.
+- dest segments: blocks -> `CS:[959A]`=8502, graphics -> `CS:[95AE]`=5FE6, a 3rd slot -> `CS:[95B6]`=7886
+  (its name table `DS:5384` is empty in this snapshot).
+- (DS=25CC, CS=1010 in the runtime image; the name-string table itself is at `DS:1176`.)
+
+So for the six real levels the per-level set is `LEV{n}MAP.BIC` (tile map) + `LEV{n}BLX.BIC` (blocks) +
+`G{n}.BIC` (graphics); slots 6/7 alias earlier levels.  **Landed** `asset_codecs.overkill_level_assets
+(level) -> [LevelAsset(name, role)]` encoding exactly this, verified against the real container: every
+per-level name for all 6 levels resolves to an asset that decodes (tests/test_level_assets.py: 3).
+lint 236 + both audits green.
+
+Level-init `974F`/`976D` is a ~20-call sequence (0E9C asset load is one step; player/object/state init
+are the others: 5145/5BCA/6176/0B3E/60AC/C3A6/77C5/99BF/9BE2/A940/...); the MAP comes from the 14C0 table
+via one of those sub-calls.  **Next** (the bigger build): the full pure level loader -- run the per-level
+list through load_container_asset and place the decoded blobs where the dest segments point, mapping
+those to NativeGameState/LevelState buffers (tile map / block defs / graphics bank).
 
 ## 2026-06-30 - Whole-scan attempt 2 (shared store): real blocker is a variant-2 candidate kill (logged)
 
