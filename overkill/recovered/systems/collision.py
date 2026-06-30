@@ -7,6 +7,7 @@ reuse directly.
 from __future__ import annotations
 
 from overkill.recovered.domain.collision import (
+    Bec5MovingObjectOutcome,
     CollisionDamageChainBF25,
     CollisionDeathTransition,
     CollisionHitOutcome,
@@ -447,6 +448,42 @@ def object_overlap_scan_62f6(
 COLLISION_VARIANT_BD0D_A8C2 = frozenset((0x0005, 0x0006, 0x0007, 0x0008, 0x000C))
 COLLISION_VARIANT_A8C2_NO_BD0D = 0x0009
 COLLISION_VARIANT_SPRITE_2 = 0x0002
+
+
+# 1010:BEC5 moving-object reaction: which collided-candidate logic ids damage/kill the scanner.
+BEC5_DAMAGE_OR_DEATH_VARIANTS = frozenset((0x0005, 0x0006, 0x0007, 0x0008, 0x0009, 0x000C))
+BEC5_SPRITE_VARIANT2 = 0x0002
+BEC5_VARIANT2_ENTER_AT_BF25_SPRITE = 0x0033
+
+
+def bec5_moving_object_outcome(
+    *, candidate_logic_id: int, a8c2_boss_mode: bool, candidate_sprite: int = 0
+) -> Bec5MovingObjectOutcome:
+    """The scanning object's fate when its 62F6 scan hits a candidate (the BEC5 reaction).
+
+    The bridge from :func:`object_overlap_scan_62f6` (which candidate) to
+    :func:`resolve_collision_hit` (the damage/death) for the moving object at SS:BP:
+
+    * candidate logic id in {5,6,7,8,9,Ch} -> the BF25 damage chain in final-boss mode
+      (``a8c2_boss_mode``, DS:A8C2==1), otherwise instant death (counter_20:=0 -> BFC7);
+    * candidate logic id 2 (the sprite-variant-2 candidate) -> always damage, entering the chain
+      at BF25 (two decrements) when its sprite is 33h, else at BF2D (one);
+    * any other candidate logic id -> the owner-link / no-op fallback this does not classify.
+
+    The candidate-side effects (BD0D family-counter maintenance for 5/6/7/8/Ch, the variant-2
+    active clear, the A8C2 boss-group mark) are separate; this owns only the scanner's
+    damage-vs-instant-death outcome.
+    """
+    lid = candidate_logic_id & 0xFFFF
+    if lid in BEC5_DAMAGE_OR_DEATH_VARIANTS:
+        if a8c2_boss_mode:
+            return Bec5MovingObjectOutcome(kind="damage", enter_at_bf25=True)
+        return Bec5MovingObjectOutcome(kind="instant_death", enter_at_bf25=False)
+    if lid == BEC5_SPRITE_VARIANT2:
+        return Bec5MovingObjectOutcome(
+            kind="damage", enter_at_bf25=(candidate_sprite & 0xFFFF) == BEC5_VARIANT2_ENTER_AT_BF25_SPRITE
+        )
+    return Bec5MovingObjectOutcome(kind="owner_or_unclassified", enter_at_bf25=False)
 
 
 def bec5_collision_variant_family(variant: int) -> CollisionVariantDispatchBEC5:

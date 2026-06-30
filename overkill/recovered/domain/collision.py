@@ -169,3 +169,19 @@ class CollisionHitOutcome:
     new_counter_20: int
     died: bool
     death_transition: "CollisionDeathTransition | None"
+
+
+@dataclass(frozen=True, slots=True)
+class Bec5MovingObjectOutcome:
+    """The moving object's fate when its 62F6 scan hits a candidate -- the BEC5 reaction outcome.
+
+    This is the bridge from object_overlap_scan_62f6 (which candidate) to resolve_collision_hit
+    (the damage/death) for the scanning object at SS:BP.  ``kind`` is ``"damage"`` (the BF25 hit
+    chain runs on the moving object), ``"instant_death"`` (its counter_20 is zeroed and it goes
+    straight to the BFC7 death), or ``"owner_or_unclassified"`` (the owner-link / no-op fallback
+    this classifier does not own).  ``enter_at_bf25`` is meaningful only for ``"damage"``: the
+    chain enters at BF25 (two base decrements) vs BF2D (one) -- the variant-2 sprite path.
+    """
+
+    kind: str
+    enter_at_bf25: bool

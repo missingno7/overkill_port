@@ -1,3 +1,30 @@
+## 2026-06-30 - Collision pass: the BEC5 reaction outcome -> the moving object's fate is now native
+
+The bridge between the 62F6 scan and the per-object hit outcome. When the scan finds an overlap it
+enters BEC5, which decides the SCANNING object's fate by the collided candidate's logic id. Recovered
+that decision as `collision.bec5_moving_object_outcome(candidate_logic_id, a8c2_boss_mode,
+candidate_sprite) -> Bec5MovingObjectOutcome`:
+- candidate logic id {5,6,7,8,9,Ch}: BF25 damage in final-boss mode (DS:A8C2==1), else instant death
+  (counter_20:=0 -> BFC7);
+- candidate logic id 2: always damage, entering at BF25 (two decs) when its sprite is 33h else BF2D;
+- any other logic id: the owner-link / no-op fallback (left unclassified -- the moving object's
+  fate there depends on the +30h owner pointer, a separate path).
+
+VERIFIED produced-vs-VM by `overkill.probes.verify_native_bec5_outcome` (project the candidate +
+A8C2 at BEC5 entry, classify, then watch the VM: predicted damage -> reaches BF25/BF2D with the
+matching entry; instant_death -> reaches BFC7 without the chain): L2 31/31 (all damage), L6_boss
+158/158 (152 damage + 6 instant_death), with 101 owner-link cases correctly reported unclassified --
+189 classified reactions, 0 divergence (both paths + the enter_at_bf25 flag). Unit coverage in
+tests/test_bec5_outcome.py.
+
+**Milestone: the moving object's whole collision fate is now native + verified** -- the three pieces
+compose end to end: `object_overlap_scan_62f6` (which candidate) -> `bec5_moving_object_outcome`
+(damage vs instant-death) -> `resolve_collision_hit` (the damage chain -> C037 death). What remains
+for the full object-vs-object system is the CANDIDATE side (BD0D family counters, the variant-2
+active clear, the A8C2 boss-group mark) + the owner-link path; those feed retiring the object pass's
+death-sprite deferral. No hook touched (pure adds over verified leaves); lint + both audits + manifest
+green.
+
 ## 2026-06-30 - Collision pass: the 62F6 object-vs-object overlap scan (which candidate is hit)
 
 Continuing the collision pass toward a VM-free collision stage. After merging the per-object
