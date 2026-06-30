@@ -84,11 +84,37 @@ boundary, back-reference copy, terminator, the rare ax==0/extra!=0 resync, and m
 
 So the **entire asset decode layer is now VM-free and airtight**: six codecs (five 0283-dispatch RLE
 codecs + decode_asset over them, plus the standalone LZ), every one verified against the real ASM (hook
-body or image-stepped).  Next: the **container/level loader** -- assets live in assets/OVERKILL (518 KB,
-an MZ-overlay-style pack opened by 254A:04D7: a directory of XOR-encoded 12-byte-header entries by name).
-The file open/read is plain Python I/O; the RE work is the pure container directory parse (lift the
-recovered overlay codecs decode_overlay_xor / 0582 / 05A1 / 05D9) -> raw blob by name -> decode_asset /
-decode_lz_bytes, then which assets a level pulls and where the decoded blobs land in NativeGameState.
+body or image-stepped).
+
+## 2026-06-30 - Container reader: the WHOLE cold-boot asset path is now VM-free end to end
+
+Disassembled the container open 254A:04D7 and built `overkill/asset_codecs/container.py` -- the pure
+reader for assets/OVERKILL (518 KB, an MZ exe + appended overlay pack).  Format (from the disasm):
+
+    overlay base = (e_cp-1)*512 + e_cblp for an MZ file, else 0   (CS:07AA/07AC @ 254A:053C)
+    overlay header @base: count u16 @0, XOR seed u16 @2, b"SHADOW" @4..10, entry-size u16 @10
+    directory @base+12: count entries of entry-size bytes, XOR-decrypted with a key that ROLLS across
+        the whole directory (al ^= byte; al += ah, ah=seed>>8 constant; the 05BF/05A1 stream cipher)
+    entry (decrypted): payload offset u32 @+5 (relative to base), length u32 @+9, name @+0x0D (NUL-term)
+
+API: `parse_overkill_container(data) -> [OverkillContainerEntry(name, offset, length)]`,
+`read_container_asset(data, name) -> raw blob`, `load_container_asset(data, name) -> decoded bytes`
+(codec by extension, the observed convention: `.ENC` -> LZ decode_lz_bytes, else `.BIC` -> decode_asset).
+
+**Verified against the real file (the strong proof):** all **58** entries parse; every payload abuts
+the next and fits the file (a wrong seed/entry-size/field-offset would scramble the offsets -> abut
+fails); signature is `SHADOW`; and **every one of the 58 assets decodes** (27 `.BIC` via the type
+dispatch -- types 0/3/4; 31 `.ENC` via LZ -- 0 failures).  Plus synthetic round-trip unit tests for the
+parser logic (MZ base, rolling XOR, field layout).  tests/test_asset_container.py: 6 tests; lint 235 +
+both audits green.  (Not ASM-cross-checked against 254A:04D7 -- that needs DOS file-I/O emulation -- but
+the format is derived from its disasm and the all-58 abut+decode is conclusive structural proof.)
+
+So the **complete cold-boot asset path is VM-free end to end**: `assets/OVERKILL` -> container directory
+-> raw blob by name -> decoded bytes, every step pure and verified.  Assets discovered: level tiles/maps
+(LEV0..5 BLX/MAP.BIC), sprite/graphic banks (*.BIC), intro/menu/score screens (*PAGE*/OKMENU/HISCORE/
+... .ENC), and the music banks **ADLIB.ENC / ROLAND.ENC**.  Next: the **level loader** -- which assets a
+level pulls and where the decoded blobs land in NativeGameState/LevelState (e.g. LEV{n}MAP/BLX -> the
+tile map; the BIC graphic banks -> sprite memory), wiring this data path into the native boot.
 
 ## 2026-06-30 - Whole-scan attempt 2 (shared store): real blocker is a variant-2 candidate kill (logged)
 
