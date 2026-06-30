@@ -78,6 +78,54 @@ def decode_word_pair_rle_words(words) -> list[int]:
             out.append(pair1)
 
 
+def decode_byte_single_marker_rle(stream) -> bytes:
+    """Pure 1010:02C3 byte marker-RLE decode (loader asset type 0): byte stream -> decoded bytes.
+
+    The pure form of the inline codec the loader dispatcher (1010:0283) selects for asset type 0.  The
+    first byte is the sentinel ``marker``; then each byte is either a literal (emitted as-is) or, if it
+    equals the marker, a run introducer: the next byte is the run ``count`` (0 terminates) and the byte
+    after is emitted ``count`` times.  Mirrors the ASM at 1010:02C3 (read 0624 marker; CMP AL,BL; STOSB
+    literal; on match read count via 0624, JCXZ-to-dispatch on 0, read fill, REP STOSB).
+    """
+    it = iter(stream)
+    marker = next(it) & 0xFF
+    out = bytearray()
+    while True:
+        value = next(it) & 0xFF
+        if value != marker:
+            out.append(value)
+            continue
+        count = next(it) & 0xFF  # CL, with CH=0 -> a 0..255 run length
+        if count == 0:
+            return bytes(out)
+        fill = next(it) & 0xFF
+        out.extend(fill for _ in range(count))
+
+
+def decode_word_single_marker_rle_words(words) -> list[int]:
+    """Pure 1010:02F2 word marker-RLE decode (loader asset type 1): word stream -> decoded words.
+
+    The pure form of the inline codec the loader dispatcher selects for asset type 1 -- the single-word
+    sibling of :func:`decode_word_pair_rle_words` (type 2, which repeats two-word pairs).  The first word
+    is the sentinel ``marker``; each later word is a literal, or -- if it equals the marker -- a run
+    introducer whose next word is the ``count`` (0 terminates) and whose following word is emitted
+    ``count`` times.  Mirrors the ASM at 1010:02F2 (0615 word reads, CMP AX,BX, STOSW, JCXZ-to-dispatch).
+    """
+    it = iter(words)
+    marker = next(it) & 0xFFFF
+    out: list[int] = []
+    while True:
+        word = next(it) & 0xFFFF
+        if word != marker:
+            out.append(word)
+            continue
+        count = next(it) & 0xFFFF
+        if count == 0:
+            return out
+        fill = next(it) & 0xFFFF
+        out.extend(fill for _ in range(count))
+
+
 def decode_word_pair_rle(cpu) -> None:
     """Hook body for 1010:0324 word-pair RLE decoder.
 

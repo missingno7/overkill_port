@@ -38,8 +38,30 @@ loader codecs.  All pass byte-for-byte (incl. DI-advance counts), so the pure fo
 VM-verified, not merely unit-tested against my reading of the hooks.  28 codec tests total, green;
 lint 233 + both audits green; no hook touched.
 
-Next: the level loader that drives these into NativeGameState/LevelState -- the data path for a
-cold-boot level (which codec decodes which asset region, and where the decoded blobs land).
+**Loader dispatcher mapped + the last 2 codecs done -- ALL 5 loader codecs now pure:** disassembled
+the per-asset loader (entry 1010:0248: DS=CS, clear byte-counter [0244], set stream-ptr empty so the
+first read refills from the file, filename from [023E], dest ES:DI from [023A]/[023C]).  At 1010:0283 it
+reads a one-byte asset *type* and dispatches to one of five codecs, each decoding into the destination
+until its terminator then jumping to the shared dispatch continuation (1010:02A8):
+
+    type 0 -> 02C3  byte marker-RLE   (inline)   decode_byte_single_marker_rle
+    type 1 -> 02F2  word marker-RLE   (inline)   decode_word_single_marker_rle_words
+    type 2 -> 0324  word-pair RLE                decode_word_pair_rle_words
+    type 3 -> 0367  linear byte RLE              decode_linear_byte_rle_bytes
+    type 4 -> 03A8  vertical RLE                 decode_vertical_rle_columns_writes
+    type >=5        -> AX=FFFF error (02B2)
+
+Added pure forms for the two inline codecs (types 0/1): a sentinel marker byte/word, then literals, or
+on a marker match a run (next byte/word = count, 0 terminates; following byte/word repeated count times)
+-- type 1 is the single-word sibling of the type-2 word-pair codec.  The inline codecs have no
+standalone hook, so they are verified by stepping the **real game ASM out of the 1MB runtime image**
+from 02C3/02F2 to the 02A8 dispatch and comparing ES:DI output + DI-advance to the pure form (the gold
+standard, image-sourced).  tests/test_asset_codec_marker_rle.py: 12 (10 unit + 2 real-ASM), green.
+
+So all five loader codecs now have pure VM-free forms, every one airtight-verified (three vs their
+oracle hook bodies, two vs the real image ASM).  Next: the pure dispatcher (read the type byte ->
+select codec) = the per-asset decode entry, then the level loader mapping level -> filenames -> assets
+-> NativeGameState/LevelState.
 
 ## 2026-06-30 - Whole-scan attempt 2 (shared store): real blocker is a variant-2 candidate kill (logged)
 

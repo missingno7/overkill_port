@@ -11,20 +11,24 @@ from .overlay import (
 )
 from .packed_stream import read_packed_byte, read_packed_byte_hook, read_packed_word_le, read_packed_word_le_hook
 from .rle import (
+    decode_byte_single_marker_rle,
     decode_linear_byte_rle,
     decode_linear_byte_rle_bytes,
     decode_vertical_rle_columns,
     decode_vertical_rle_columns_writes,
     decode_word_pair_rle,
     decode_word_pair_rle_words,
+    decode_word_single_marker_rle_words,
 )
 
 __all__ = [
     "compute_overkill_file_checksum",
     "search_decoded_asset_table_c713",
     "copy_lz_back_reference",
+    "decode_byte_single_marker_rle",
     "decode_linear_byte_rle",
     "decode_linear_byte_rle_bytes",
+    "decode_word_single_marker_rle_words",
     "decode_lz_asset",
     "decode_word_pair_rle",
     "decode_word_pair_rle_words",
