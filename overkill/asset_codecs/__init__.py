@@ -1,6 +1,7 @@
 """Game-specific OVERKILL asset decoding/loading codecs."""
 from .asset_table import search_decoded_asset_table_c713
 from .checksum import compute_overkill_file_checksum
+from .loader import decode_asset
 from .lz import copy_lz_back_reference, decode_lz_asset, input_lz_byte, output_lz_byte
 from .overlay import (
     compare_overlay_entry_name_05d9,
@@ -25,6 +26,7 @@ __all__ = [
     "compute_overkill_file_checksum",
     "search_decoded_asset_table_c713",
     "copy_lz_back_reference",
+    "decode_asset",
     "decode_byte_single_marker_rle",
     "decode_linear_byte_rle",
     "decode_linear_byte_rle_bytes",

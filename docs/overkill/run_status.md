@@ -59,9 +59,22 @@ from 02C3/02F2 to the 02A8 dispatch and comparing ES:DI output + DI-advance to t
 standard, image-sourced).  tests/test_asset_codec_marker_rle.py: 12 (10 unit + 2 real-ASM), green.
 
 So all five loader codecs now have pure VM-free forms, every one airtight-verified (three vs their
-oracle hook bodies, two vs the real image ASM).  Next: the pure dispatcher (read the type byte ->
-select codec) = the per-asset decode entry, then the level loader mapping level -> filenames -> assets
--> NativeGameState/LevelState.
+oracle hook bodies, two vs the real image ASM).
+
+**Pure dispatcher done -- the per-asset decode entry:** added `asset_codecs.decode_asset(stream) ->
+bytes` (overkill/asset_codecs/loader.py), the VM-free twin of the loader dispatcher at 1010:0283: read
+the leading asset-type byte, run the matching pure codec over the rest, return the decoded bytes as the
+VM loader would leave them in a freshly-zeroed ES:DI destination (word codecs -> LE bytes; vertical ->
+strided writes applied to a zero buffer); unknown type raises (the AX=FFFF error path).  Verified
+end-to-end against the **real dispatcher ASM** stepped from 0283 to the 02A8 continuation for the
+byte/word codecs (types 0-3, DS=25CC); type 4 (vertical, needs DS==CS) is checked at dispatch level
+(routes to the already-airtight vertical codec) + the error path.  tests/test_asset_loader_dispatch.py:
+8 tests; full codec suite 48 green; lint 234 + both audits green.
+
+The asset *decode* path is now complete and VM-free: a raw asset blob (type byte first) -> decoded
+bytes, every codec airtight-verified.  Next: the **level loader** -- which files a level pulls, which
+get decode_asset'd, and where the decoded blobs land in NativeGameState/LevelState (the file open/read
+half is plain Python I/O; the mapping level -> filenames -> destinations is the RE work).
 
 ## 2026-06-30 - Whole-scan attempt 2 (shared store): real blocker is a variant-2 candidate kill (logged)
 
