@@ -1134,6 +1134,55 @@ def is_player_chase_acquired_target_valid(slot: ObjectSlotRecord) -> bool:
     return slot.active_word != 0 and (slot.x_word & 0xFFFF) <= PLAYER_CHASE_ACQUIRED_MAX_X and slot.logic_id != PLAYER_CHASE_INACTIVE_LOGIC_ID
 
 
+# 1010:B15A rotating target-candidate scan.  DS:A43A is a cursor that rotates through the effect/contact
+# table (DS:23B4, 0x23 slots); the scan wraps back to the base when it reaches the adjacent gameplay table
+# (DS:2B5C = the effect table's end).  Shared by the B1B0 chase behaviour and the A515 link spawn.  The
+# geometry (base, the wrap limit, and the 0x23-step budget = one full rotation) is taken from the pool the
+# caller snapshots, so no memory-layout constant is hard-coded here.
+
+
+def native_b15a_scan(effect_pool: ObjectPool, cursor: int) -> tuple[int | None, int]:
+    """Pure WHOLE 1010:B15A rotating target-candidate scan over the effect/contact pool.
+
+    Scans up to one full table rotation (``len(effect_pool)`` slots) from the rotating cursor ``DS:A43A``
+    for the first :func:`is_player_chase_target_candidate` slot.  A cursor at/over the table end (the
+    adjacent gameplay base) wraps to the effect base WITHOUT consuming a budget step (matching the ASM's
+    top-of-loop ``cmp/continue``).  Returns ``(found_offset | None, new_cursor)``: on a hit the cursor parks
+    at ``found + stride`` and the offset is the found slot's DS offset; on a miss (budget exhausted) the
+    offset is None and the cursor is unchanged unless the scan wrapped (then it is left at the effect base).
+    ``effect_pool`` must be the whole DS:23B4 table snapshot (its ``base``/``stride``/length give the
+    geometry)."""
+    base = effect_pool.base & 0xFFFF
+    stride = effect_pool.stride & 0xFFFF
+    wrap_limit = (base + len(effect_pool) * stride) & 0xFFFF   # the table end = the adjacent gameplay base
+    cx = len(effect_pool)
+    bx = cursor & 0xFFFF
+    a43a = cursor & 0xFFFF
+    while True:
+        if bx >= wrap_limit:
+            a43a = base
+            bx = base
+            continue
+        index = ((bx - base) & 0xFFFF) // stride
+        record = ObjectSlotRecord(
+            active_word=effect_pool.active_word(index),
+            x_word=effect_pool.x_word(index),
+            y_word=effect_pool.y_word(index),
+            gate_or_layer=effect_pool.word_at(index, 0x0A),
+            link_key=effect_pool.word_at(index, 0x0E),
+            scan_flag=effect_pool.word_at(index, 0x14),
+            hazard_class=effect_pool.word_at(index, 0x16),
+            logic_id=effect_pool.logic_id(index),
+        )
+        if is_player_chase_target_candidate(record):
+            a43a = (bx + stride) & 0xFFFF
+            return (bx, a43a)
+        bx = (bx + stride) & 0xFFFF
+        cx -= 1
+        if cx == 0:
+            return (None, a43a)
+
+
 # 1010:AD60 bounds/tile tail.  These are the recovered play-field box and the
 # tile-probing object family, source-level values rather than archetype names.
 OBJECT_BOUNDS_MIN_X = 0x0008
