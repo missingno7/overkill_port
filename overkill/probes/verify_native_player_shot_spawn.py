@@ -25,14 +25,20 @@ from dos_re.input_demo import InputDemoPlayback  # noqa: E402
 from overkill.frame_verify import FrameVerifyConfig, run_frame_verifier  # noqa: E402
 from overkill.input_waits import pump_demo_frame  # noqa: E402
 from overkill.recovered.domain.object_slots import ObjectPool  # noqa: E402
-from overkill.recovered.systems.objects import native_a41a_pair, native_a41a_shot  # noqa: E402
+from overkill.gameplay.player_shot_spawn_gap import set_raise_on_encounter  # noqa: E402
+from overkill.recovered.systems.objects import (  # noqa: E402
+    native_a378_followup, native_a41a_pair, native_a41a_shot,
+)
 from overkill.recovered.views.object_slots import ObjectSlotView  # noqa: E402
 
 CS = 0x1010
 A41A_ENTRY = 0xA41A
+A378_ENTRY = 0xA378
 A958_STATE = 0xA958
 A3EC_DIR = 0xA3EC
 A3A0_GATE = 0xA3A0
+A95E_GATE = 0xA95E
+A3A4_GATE = 0xA3A4
 ALLOC_CURSOR_95DA = 0x95DA
 SINGLE_SLOT_STATES = (0x0000, 0x0001, 0x0002)
 PAIR_STATES = (0x0003, 0x0004)
@@ -47,6 +53,9 @@ _FIELDS = (
 
 
 def main(argv) -> int:
+    # This probe IS the A378 verification, so let the lifted hook replay a captured witness without
+    # tripping the fail-loud gap (the cand side runs the lifted A378 on a witness snapshot).
+    set_raise_on_encounter(False)
     demo_name = argv[0] if argv else "demo_play_tandy_L2_full_20260617_180221"
     max_frames = int(argv[1]) if len(argv) > 1 else 1200
     demo = InputDemoPlayback.load(ROOT / "artifacts" / "demos" / demo_name)
@@ -68,10 +77,13 @@ def main(argv) -> int:
             ds = self.s.ds & 0xFFFF
             ss = self.s.ss & 0xFFFF
             key = id(self)
-            if ip == A41A_ENTRY and key not in pending:
+            if ip == A378_ENTRY:
+                res["a378_seen"] = res.get("a378_seen", 0) + 1
+                if key in pending:
+                    res["a378_blocked"] = res.get("a378_blocked", 0) + 1
+            if ip in (A41A_ENTRY, A378_ENTRY) and key not in pending:
                 si = self.s.si & 0xFFFF
-                state = mem.rw(ds, A958_STATE)
-                if si != 0xFFFF and state in (SINGLE_SLOT_STATES + PAIR_STATES):
+                if si != 0xFFFF:
                     pool = ObjectPool(base=GAMEPLAY_BASE, stride=STRIDE, slots=tuple(
                         tuple(mem.rw(ds, (GAMEPLAY_BASE + i * STRIDE + 2 * j) & 0xFFFF)
                               for j in range(STRIDE_WORDS))
@@ -79,10 +91,18 @@ def main(argv) -> int:
                     cursor = mem.rw(ds, ALLOC_CURSOR_95DA)
                     src_x = mem.rw(ds, (si + OFF_X) & 0xFFFF)
                     src_y = mem.rw(ds, (si + OFF_Y) & 0xFFFF)
-                    if state in SINGLE_SLOT_STATES:
-                        pred = native_a41a_shot(pool, cursor, state, src_x, src_y, mem.rw(ds, A3EC_DIR))
+                    pred = None
+                    if ip == A378_ENTRY:
+                        pred = native_a378_followup(pool, cursor, src_x, src_y,
+                                                    mem.rw(ds, A95E_GATE), mem.rw(ds, A3A4_GATE))
+                        if pred is not None:
+                            res["a378_armed"] = res.get("a378_armed", 0) + 1
                     else:
-                        pred = native_a41a_pair(pool, cursor, state, src_x, src_y, mem.rw(ds, A3A0_GATE))
+                        state = mem.rw(ds, A958_STATE)
+                        if state in SINGLE_SLOT_STATES:
+                            pred = native_a41a_shot(pool, cursor, state, src_x, src_y, mem.rw(ds, A3EC_DIR))
+                        elif state in PAIR_STATES:
+                            pred = native_a41a_pair(pool, cursor, state, src_x, src_y, mem.rw(ds, A3A0_GATE))
                     if pred is not None:
                         ret_addr = mem.rw(ss, self.s.sp & 0xFFFF)
                         pending[key] = (ret_addr, (self.s.sp + 2) & 0xFFFF, pred)
@@ -135,8 +155,9 @@ def main(argv) -> int:
         fv._load_runtime = orig_load
         CPU8086.step = orig_step
 
-    print(f"demo {demo_name} ({max_frames} frames): native native_a41a_shot/pair vs VM A41A spawn: "
-          f"calls={res['calls']} ok={res['ok']} pairs={res['pairs']} fail={len(res['fail'])}")
+    print(f"demo {demo_name} ({max_frames} frames): native player-shot spawn vs VM A41A/A378: "
+          f"calls={res['calls']} ok={res['ok']} pairs={res['pairs']} fail={len(res['fail'])} "
+          f"[a378 seen={res.get('a378_seen', 0)} blocked={res.get('a378_blocked', 0)} armed={res.get('a378_armed', 0)}]")
     for mismatches in res["fail"][:5]:
         print(f"  FAIL {mismatches}")
     ok = res["calls"] > 0 and not res["fail"]

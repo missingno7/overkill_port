@@ -1351,9 +1351,9 @@ A41A_PAIR_STATES = {0x0003: (0x0007, 0x0037), 0x0004: (0x0008, 0x0035)}  # state
 A41A_PAIR_X_OFFSET = 0x0008                            # the second shot's X = the first's + 8 (A438 tail)
 
 
-def _a41a_pair_slot(seed: ObjectSpawnSeedA4EA, alloc: FreeSlotAllocation,
-                    x: int, y: int, logic_id: int, sprite: int) -> PlayerShotSpawn:
-    """One A41A-pair slot: the A4EA seed with X/Y and the per-state logic_id/sprite overrides applied."""
+def _player_shot_slot(seed: ObjectSpawnSeedA4EA, alloc: FreeSlotAllocation,
+                      x: int, y: int, logic_id: int, sprite: int) -> PlayerShotSpawn:
+    """One A41A-family player-shot slot: the A4EA seed with X/Y + logic_id/sprite overrides applied."""
     return PlayerShotSpawn(
         slot_offset=alloc.offset, new_cursor=alloc.cursor,
         active_word=seed.active_word, scan_enable_or_solid=seed.scan_enable_or_solid,
@@ -1386,12 +1386,49 @@ def native_a41a_pair(pool: ObjectPool, cursor: int, state: int,
     alloc1 = object_pool_find_free(pool, cursor)
     if alloc1.offset is None:
         return None  # pool full -> the 7550 recycle path (not modelled)
-    slot1 = _a41a_pair_slot(seed, alloc1, source_x, y, stamp_logic, stamp_sprite)
+    slot1 = _player_shot_slot(seed, alloc1, source_x, y, stamp_logic, stamp_sprite)
     index1 = (((alloc1.offset - pool.base) & 0xFFFF) // (pool.stride & 0xFFFF))
     pool1 = pool.with_word(index1, 0x00, seed.active_word)  # the seed marks slot1 active before alloc 2
     alloc2 = object_pool_find_free(pool1, alloc1.cursor)
     if alloc2.offset is None:
         return None
-    slot2 = _a41a_pair_slot(seed, alloc2, (source_x + A41A_PAIR_X_OFFSET) & 0xFFFF, y,
-                            stamp_logic, stamp_sprite)
+    slot2 = _player_shot_slot(seed, alloc2, (source_x + A41A_PAIR_X_OFFSET) & 0xFFFF, y,
+                              stamp_logic, stamp_sprite)
+    return (slot1, slot2)
+
+
+# A378 SI-follow-up: A3FF runs it after each A41A dispatch to spawn two more shots from the same schedule
+# entry (the run_a396_body body, called twice with the first slot's logic_id overridden to 6 at A391).
+A378_X_BIAS = 0x0004                                    # A378: X = [si+2] + 4
+A378_Y_ALIGN = 0xFFFC                                   # A378: Y = ([si+4] + 4) & ~3 (align to 4)
+A378_SPRITE = 0x0008                                    # A378: sprite (+8) for both shots
+A378_SLOT1_LOGIC = 0x0006                              # first shot logic_id (+18), overridden from 5 at A391
+A378_SLOT2_LOGIC = 0x0005                              # second shot logic_id (+18)
+
+
+def native_a378_followup(pool: ObjectPool, cursor: int, source_x: int, source_y: int,
+                         a95e: int, a3a4: int) -> tuple[PlayerShotSpawn, PlayerShotSpawn] | None:
+    """Pure WHOLE A378 SI-follow-up player-shot pair (the A3FF post-A41A two-shot spawn).
+
+    Gated by ``DS:A95E != 0`` and ``DS:A3A4 == 0`` (no spawn otherwise; the caller also gates SI != FFFF).
+    Allocates two gameplay slots (threading the cursor + the first's active word, like the A41A pair), each
+    stamped with the A4EA seed + ``{X = source_x + 4, Y = (source_y + 4) & ~3, sprite 8}``; the first
+    shot's ``logic_id`` (+18) is 6, the second's 5.  Returns ``(slot1, slot2)`` or None (gated, or a full
+    pool -- the 7550 recycle is unmodelled).  The A976 += 1-per-slot counter and the BEFF stamp are the
+    fanout caller's, not part of the per-shot stamp."""
+    if (a95e & 0xFFFF) == 0x0000 or (a3a4 & 0xFFFF) != 0x0000:
+        return None  # the A95E / A3A4 gates are closed -> no spawn
+    seed = object_spawn_seed_a4ea()
+    x = (source_x + A378_X_BIAS) & 0xFFFF
+    y = ((source_y + A41A_SHOT_Y_BIAS) & A378_Y_ALIGN) & 0xFFFF
+    alloc1 = object_pool_find_free(pool, cursor)
+    if alloc1.offset is None:
+        return None  # pool full -> the 7550 recycle path (not modelled)
+    slot1 = _player_shot_slot(seed, alloc1, x, y, A378_SLOT1_LOGIC, A378_SPRITE)
+    index1 = (((alloc1.offset - pool.base) & 0xFFFF) // (pool.stride & 0xFFFF))
+    pool1 = pool.with_word(index1, 0x00, seed.active_word)  # the seed marks slot1 active before alloc 2
+    alloc2 = object_pool_find_free(pool1, alloc1.cursor)
+    if alloc2.offset is None:
+        return None
+    slot2 = _player_shot_slot(seed, alloc2, x, y, A378_SLOT2_LOGIC, A378_SPRITE)
     return (slot1, slot2)

@@ -6,7 +6,12 @@ None paths (multi-slot states, full pool).  Byte-exact confirmation vs the VM is
 from __future__ import annotations
 
 from overkill.recovered.domain.object_slots import ObjectPool
-from overkill.recovered.systems.objects import native_a41a_pair, native_a41a_shot, object_spawn_seed_a4ea
+from overkill.recovered.systems.objects import (
+    native_a378_followup,
+    native_a41a_pair,
+    native_a41a_shot,
+    object_spawn_seed_a4ea,
+)
 
 BASE, STRIDE = 0x2B5C, 0x38
 _FREE = (0x0000,) + (0x0000,) * 0x1B   # active_word 0 -> free
@@ -100,3 +105,27 @@ def test_pair_rejects_single_and_tail_states():
     pool = _pool_free_slots01()
     assert native_a41a_pair(pool, BASE, 0, 0x50, 0x60, 0x0000) is None   # single state
     assert native_a41a_pair(pool, BASE, 5, 0x50, 0x60, 0x0000) is None   # 44AF tail
+
+
+def test_a378_followup_two_slots_same_position():
+    seed = object_spawn_seed_a4ea()
+    pair = native_a378_followup(_pool_free_slots01(), BASE, 0x0050, 0x0061, 0x0001, 0x0000)
+    assert pair is not None
+    s1, s2 = pair
+    assert (s1.slot_offset, s2.slot_offset) == (BASE, BASE + STRIDE)
+    assert s1.x_word == 0x0054 and s2.x_word == 0x0054      # both X = source_x + 4 (no +8, unlike the pair)
+    assert s1.y_word == 0x0064 and s2.y_word == 0x0064      # (0x61 + 4) & ~3 = 0x64 (aligned)
+    assert s1.logic_id == 0x0006 and s2.logic_id == 0x0005  # first overridden to 6, second 5
+    assert s1.sprite_or_state == 0x0008 and s2.sprite_or_state == 0x0008
+    assert s1.active_word == seed.active_word
+
+
+def test_a378_gated_by_a95e_and_a3a4():
+    pool = _pool_free_slots01()
+    assert native_a378_followup(pool, BASE, 0x50, 0x60, 0x0000, 0x0000) is None   # A95E == 0 -> no spawn
+    assert native_a378_followup(pool, BASE, 0x50, 0x60, 0x0001, 0x0001) is None   # A3A4 != 0 -> no spawn
+
+
+def test_a378_needs_two_free_slots():
+    pool = ObjectPool(base=BASE, stride=STRIDE, slots=(_FREE, _OCC, _OCC, _OCC))
+    assert native_a378_followup(pool, BASE, 0x50, 0x60, 0x0001, 0x0000) is None   # second alloc fails
