@@ -63,6 +63,44 @@ def decode_level_tile_map(container_data, level: int) -> bytes:
     return load_container_asset(container_data, f"LEV{level}MAP.BIC")
 
 
+#: Tile-map border (1010:0BB9-0BD2): the head fill length, the footer span, and the footer source size.
+TILE_PLANE_HEAD_FILL = 26      # tile_map[0:26] = 0x01
+TILE_PLANE_FOOTER_OFFSET = 0x0E5F  # tile_map[0E5F:0EA0] = the 65-byte footer table (from DS:D1BC)
+TILE_PLANE_FOOTER_SIZE = 65
+
+
+def finalize_level_tile_plane(tile_map, footer) -> bytes:
+    """Apply the MAP post-load border to a decoded tile map -> the byte-exact live tile plane.
+
+    Mirrors 1010:0BB9-0BD2: after `LEV{n}MAP.BIC` is decoded flat into `CS:[9592]`, the loader overwrites
+    the first ``TILE_PLANE_HEAD_FILL`` bytes with ``0x01`` and copies a ``TILE_PLANE_FOOTER_SIZE``-byte
+    footer (the ``DS:D1BC`` constant, passed in) over ``[TILE_PLANE_FOOTER_OFFSET:]``.  With this the
+    plane matches the live `CS:[9592]` buffer byte-for-byte (the body was already exact; this fixes the
+    head row and footer).  ``footer`` is a game data-segment constant (the caller supplies it).
+    """
+    plane = bytearray(tile_map)
+    plane[0:TILE_PLANE_HEAD_FILL] = b"\x01" * TILE_PLANE_HEAD_FILL
+    end = TILE_PLANE_FOOTER_OFFSET + TILE_PLANE_FOOTER_SIZE
+    plane[TILE_PLANE_FOOTER_OFFSET:end] = bytes(footer)[:TILE_PLANE_FOOTER_SIZE]
+    return bytes(plane)
+
+
+def build_level_class_table(override_pairs) -> bytes:
+    """Build the 256-entry raw-tile -> class table the tile probe samples (the live `DS:C3AA` map).
+
+    Mirrors 1010:0B8E-0BB7: every entry defaults to ``0x01``, then a per-level override list of
+    ``{index, class}`` byte pairs (terminated by an ``0xFF`` index -- the ``C4AA[level]`` list, supplied
+    here) sets specific classes.  Verified byte-for-byte against the live `DS:C3AA` for all six levels.
+    """
+    table = bytearray(b"\x01" * 256)
+    iterator = iter(override_pairs)
+    for index in iterator:
+        if index == 0xFF:
+            break
+        table[index & 0xFF] = next(iterator) & 0xFF
+    return bytes(table)
+
+
 def decode_level_blocks(container_data, level: int) -> bytes:
     """Decode + de-planarize level ``level``'s block/tile graphics (``LEV{n}BLX.BIC``).
 

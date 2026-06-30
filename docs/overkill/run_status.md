@@ -227,6 +227,29 @@ the real game.  The cold-boot data path is essentially complete (assets -> Level
 cold-boot level: the SHARED (non-per-level) assets (1X1/2X2/sprites/screens loaded once at startup) and
 wiring `LevelData` into the native gameplay/render state (the dest segments -> NativeGameState fields).
 
+## 2026-06-30 - MAP post-processing recovered: tile plane now byte-PERFECT + the class table
+
+Wiring step toward `LevelTileContext` (the recovered tile-probe seam, whose fields are exactly a
+tile_plane + class_table + scroll).  Recovered the MAP loader's post-decode processing (1010:0B8E-0BD2),
+which is what produced the tile-map head/footer "border" the earlier body-only check had to exclude:
+
+- `finalize_level_tile_plane(tile_map, footer)` (0BB9-0BD2): overwrite `[0:26]` with `0x01` and copy a
+  65-byte footer (the `DS:D1BC` constant) over `[0x0E5F:0x0EA0]`.  With this the decoded map matches the
+  live `CS:[9592]` buffer **byte-for-byte over the full 3744** (head + body + footer), all six levels.
+- `build_level_class_table(override_pairs)` (0B8E-0BB7): 256 entries default `0x01`, then a per-level
+  `{index,class}` override list (the `C4AA[level]` table, `0xFF`-terminated) -- matches the live
+  `DS:C3AA` raw-tile->class map byte-for-byte, all six levels.
+
+tests/test_level_tile_init.py (3); lint 237 + both audits green.  The footer (`DS:D1BC`) and the override
+list (`DS:C4AA[level]`) are game data-segment constants -- passed in as params (the functions stay pure);
+the test reads them from the snapshot image.
+
+So the static level tile state (byte-perfect tile_plane + class_table) is now recovered + verified.
+**Next toward wiring:** assemble a `LevelTileContext` (tile_plane + class_table + the dynamic scroll
+`DS:234E/2350`) from this in an adapter, driving the recovered 5073/505B/AD60 tile probe on cold-loaded
+data; and (foundational, recurring) extract the level-init data-segment constants (footer, overrides,
+dest segments) from `OVERKILL.EXE` so the path is EXE-pure rather than image-read.
+
 ## 2026-06-30 - Whole-scan attempt 2 (shared store): real blocker is a variant-2 candidate kill (logged)
 
 Built the corrected shared-store whole scan (one contiguous 0x45-slot store, both pointer-table loops
