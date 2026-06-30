@@ -40,6 +40,7 @@ from overkill.recovered.systems.objects import (
     object_update_b24d,
     object_update_b86d,
     object_update_b9f0,
+    object_update_be3c,
 )
 from overkill.recovered.views.object_slots import (
     OFF_ACTIVE_WORD,
@@ -328,6 +329,40 @@ def _arm_b9f0(cpu, class_table_cache: dict) -> _Pending | None:
 B24D_IP = 0xB24D  # logic_id 0x0B: 5E42 delta-steer + B250 contact + AD60 (movement half)
 B909_IP = 0xB909  # logic_id 0x1E: sets mode 2, B729 (5DB2 seek) -> BC4B; blocked -> 7476 spawn
 B909_MOVEMENT_MODE = 0x0002  # B909 stamps DS:2308 = 2 before B729's 5DB2
+BE3C_IP = 0xBE3C  # logic_id 0x01: animation state machine -> BC45 post-move
+BC45_IP = 0xBC45  # BE3C's post-move handoff (the sibling of BC4B)
+BE3C_GATE_2324 = 0x2324
+BE3C_STATE_OFF = 0x14
+BE3C_COUNTER_OFF = 0x22
+
+
+def _arm_be3c(cpu, class_table_cache: dict) -> _Pending | None:
+    """Capture + predict BE3C (logic_id 0x01): the animation, compared at the BC45 handoff.
+
+    BE3C only changes the slot sprite (+08) on its modelled paths (gate-off / state 0 -> unchanged;
+    state 1 -> sprite = the inc'd frame counter), all of which join the BC45 post-move; the morph (counter
+    9) and states 2/3 return None (skipped).  substate/direction/x/y/active are untouched here."""
+    ss = cpu.s.ss & 0xFFFF
+    ds = cpu.s.ds & 0xFFFF
+    bp = cpu.s.bp & 0xFFFF
+    sprite = cpu.mem.rw(ss, (bp + OFF_SPRITE_OR_STATE) & 0xFFFF)
+    new_sprite = object_update_be3c(
+        cpu.mem.rw(ds, BE3C_GATE_2324),
+        cpu.mem.rw(ss, (bp + BE3C_STATE_OFF) & 0xFFFF),
+        cpu.mem.rw(ss, (bp + BE3C_COUNTER_OFF) & 0xFFFF),
+        sprite,
+    )
+    if new_sprite is None:
+        return None
+    predicted = (
+        cpu.mem.rw(ss, (bp + OFF_SUBSTATE) & 0xFFFF),
+        cpu.mem.rw(ss, (bp + OFF_DIRECTION_OR_STEP) & 0xFFFF),
+        new_sprite,
+        cpu.mem.rw(ss, (bp + OFF_X) & 0xFFFF),
+        cpu.mem.rw(ss, (bp + OFF_Y) & 0xFFFF),
+        cpu.mem.rw(ss, (bp + OFF_ACTIVE_WORD) & 0xFFFF),
+    )
+    return _Pending(ss=ss, bp=bp, exit_ip=BC45_IP, predicted=predicted, read_post=_read_slot_6tuple)
 
 
 def _arm_b909(cpu, class_table_cache: dict) -> _Pending | None:
@@ -369,6 +404,7 @@ NATIVE_HANDLERS: tuple[NativeHandler, ...] = (
     NativeHandler(logic_id=0x14, label="B9F0", entry_ip=B9F0_IP, arm=_arm_b9f0),
     NativeHandler(logic_id=0x0B, label="B24D", entry_ip=B24D_IP, arm=_arm_b24d),
     NativeHandler(logic_id=0x1E, label="B909", entry_ip=B909_IP, arm=_arm_b909),
+    NativeHandler(logic_id=0x01, label="BE3C", entry_ip=BE3C_IP, arm=_arm_be3c),
 )
 _HANDLER_BY_IP = {(CS, h.entry_ip): h for h in NATIVE_HANDLERS}
 

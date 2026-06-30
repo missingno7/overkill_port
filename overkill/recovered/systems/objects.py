@@ -674,6 +674,30 @@ def object_update_aed8(
     return Aed8SlotUpdate(substate=new_substate, x_word=final_x, y_word=y, active_word=new_active)
 
 
+BE3C_ANIMATE_GATE_ON = 0x0001       # DS:2324 == 1 enables the BE3C animation state machine
+BE3C_ANIM_MORPH_COUNT = 0x0009      # BE5A: when the inc'd frame counter hits 9 the object morphs
+
+
+def object_update_be3c(animate_gate: int, state: int, anim_counter: int, sprite_or_state: int) -> int | None:
+    """Pure BE3C (EFAE logic_id 0x01) animation -> the new ``sprite_or_state`` (+08), or None to skip.
+
+    BE3C gates on DS:2324 (``!= 1`` -> straight to the BC45 post-move, slot unchanged), else increments
+    the frame counter (+22) and dispatches by the slot state (+14) through the CS:BE54 jump table.  State
+    0 -> BC45 (unchanged).  State 1 (BE5A) is a frame-counter sprite animation: while the inc'd counter
+    is not 9 the sprite is set to that counter (BEA4) and it joins BC45; at 9 it morphs to a new logic id
+    (returned as None -- the rare transition, not modelled here).  States 2/3 (BEB0/7E83) are other
+    animation sub-behaviours absent from the verified demos (None).  Only the sprite field changes here;
+    substate/direction/x/y/active are untouched (the caller composes them + the BC45 post-move)."""
+    if (animate_gate & 0xFFFF) != BE3C_ANIMATE_GATE_ON or (state & 0xFFFF) == 0:
+        return sprite_or_state & 0xFFFF          # gate off or state 0 -> BC45, slot unchanged
+    if (state & 0xFFFF) == 0x0001:
+        counter = (anim_counter + 1) & 0xFFFF    # BE46: inc [bp+22]
+        if counter == BE3C_ANIM_MORPH_COUNT:
+            return None                          # BE60: the morph transition (logic id change)
+        return counter                           # BEA4: sprite = the frame counter
+    return None                                  # states 2/3: unmodelled animation sub-behaviours
+
+
 def object_update_b24d(
     x_word: int,
     y_word: int,
