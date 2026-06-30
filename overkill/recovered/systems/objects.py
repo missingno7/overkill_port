@@ -1514,3 +1514,31 @@ def native_a3ff(pool: ObjectPool, cursor: int, fire_state: int, mirror_schedule:
             spawns.extend(follow)
             pool, cursor = _thread_player_shots(pool, cursor, follow)
     return PlayerFanoutResult(spawns=tuple(spawns), final_cursor=cursor & 0xFFFF)
+
+
+# --- A067 EARLY-path fire tails (A1C8 / A19F) -- the early-level fire (DS:2350 <= B6h) -------------------
+A1AE_OFFSET_TABLE = 0xA3A8     # the A1AE muzzle-offset table, indexed by the source object's +8 field x 4
+
+
+def a1ae_project(read_ds_word, source_index: int, source_x: int, source_y: int) -> tuple[int, int]:
+    """Pure 1010:A1AE muzzle-coordinate projection: the spawned shot's {X, Y} is the A3A8 offset-table
+    entry (indexed by the firing object's +8 field) added to the firing object's position {[bp+2],[bp+4]}.
+    ``read_ds_word(off)`` reads the DS word at ``off`` (the A3A8 table lives in the data segment)."""
+    off = (A1AE_OFFSET_TABLE + ((source_index & 0xFFFF) << 2)) & 0xFFFF
+    return ((read_ds_word(off) + source_x) & 0xFFFF,
+            (read_ds_word((off + 2) & 0xFFFF) + source_y) & 0xFFFF)
+
+
+def native_a19f_tail(pool: ObjectPool, cursor: int, source_index: int, source_x: int, source_y: int,
+                     read_ds_word) -> PlayerShotSpawn | None:
+    """Pure 1010:A19F early-default fire tail: one A4EA-seed shot at the A1AE-projected muzzle position.
+
+    The A067 EARLY path (DS:2350 <= B6h AND BDAC == 0) reaches A19F when the fire state DS:A958 != 2.  It
+    allocates one gameplay slot, stamps the A4EA seed (logic_id 2, sprite 32h, direction 0), and sets the
+    shot's {X, Y} from :func:`a1ae_project`.  Returns None on a full pool (the 7550 recycle is unmodelled)."""
+    alloc = object_pool_find_free(pool, cursor)
+    if alloc.offset is None:
+        return None
+    seed = object_spawn_seed_a4ea()
+    x, y = a1ae_project(read_ds_word, source_index, source_x, source_y)
+    return _player_shot_slot(seed, alloc, x, y, seed.logic_id, seed.sprite_or_state)
