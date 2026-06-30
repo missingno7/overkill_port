@@ -89,7 +89,8 @@ def main(argv) -> int:
                 direction_table=tuple(cpu.mem.rb(ds, (DIR_TABLE + k) & 0xFFFF) for k in range(16)),
                 global_disable=cpu.mem.rw(ds, A47C), a482=cpu.mem.rw(ds, A482),
                 frame_233c=cpu.mem.rw(ds, FRAME_233C), horizontal_delta=cpu.mem.rw(ds, DELTA_X_2346),
-                difficulty=cpu.mem.rw(ds, BEDC), tick=cpu.mem.rw(ds, TICK_2340))
+                difficulty=cpu.mem.rw(ds, BEDC), tick=cpu.mem.rw(ds, TICK_2340),
+                anim_2326=cpu.mem.rw(ds, 0x2326))
             slots = tuple(
                 tuple(cpu.mem.rw(ds, (GAMEPLAY_BASE + i * STRIDE + 2 * j) & 0xFFFF) for j in range(STRIDE_WORDS))
                 for i in range(GAMEPLAY_COUNT))

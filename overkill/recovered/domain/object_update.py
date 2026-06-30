@@ -42,6 +42,7 @@ class ObjectUpdateGlobals:
     horizontal_delta: int = 0      # DS:2346 global X delta added to target_x (+34)
     difficulty: int = 0            # DS:BEDC difficulty -> periodic-helper tick mask
     tick: int = 0                  # DS:2340 tick counter for the periodic BA5A helper
+    anim_2326: int = 0             # DS:2326 animation counter (AE2C folds bit 1 into its sprite)
     # BC4B contact-scan inputs (default-safe: only B86D/B9F0 consume them, and only when provided).
     # When ``candidate_pool`` is None the driver leaves the collision death to the VM (the current
     # snapshot behaviour); when given, B86D/B9F0 fold the moving-object collision death/damage in.

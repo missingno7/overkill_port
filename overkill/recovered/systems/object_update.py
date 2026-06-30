@@ -22,9 +22,12 @@ import dataclasses
 from overkill.recovered.domain.native_game_state import NativeGameState
 from overkill.recovered.domain.object_slots import ObjectPool
 from overkill.recovered.domain.object_update import ObjectUpdateGlobals
+from overkill.recovered.domain.movement import MovementTarget
 from overkill.recovered.systems.collision import object_postmove_bc4b, resolve_moving_object_collision
+from overkill.recovered.systems.movement import object_target_seek_step_5db2
 from overkill.recovered.systems.objects import (
     object_update_ae09,
+    object_update_ae2c,
     object_update_ae7d,
     object_update_aed8,
     object_update_b24d,
@@ -155,6 +158,18 @@ def _advance_ae7d(pool: ObjectPool, i: int, g: ObjectUpdateGlobals) -> dict | No
             _OFF_X: u.x_word, _OFF_Y: u.y_word, _OFF_ACTIVE: u.active_word}
 
 
+def _advance_ae2c(pool: ObjectPool, i: int, g: ObjectUpdateGlobals) -> dict | None:
+    u = object_update_ae2c(
+        pool.x_word(i), pool.y_word(i), pool.active_word(i), pool.draw_layer(i),
+        g.a278, g.anim_2326, g.tile_probe_suppressed, g.tiles,
+    )
+    if u is None:
+        # y==0xC8 -> ADC9 (x=FFFF) -> AD60 deactivate; direction/sprite/y untouched on this path.
+        return {_OFF_X: 0xFFFF, _OFF_ACTIVE: 0}
+    return {_OFF_DIRECTION: u.direction_or_step, _OFF_SPRITE: u.sprite_or_state,
+            _OFF_X: u.x_word, _OFF_Y: u.y_word, _OFF_ACTIVE: u.active_word}
+
+
 def _advance_b24d(pool: ObjectPool, i: int, g: ObjectUpdateGlobals) -> dict | None:
     # B24D: 5E42 delta-steer + B250 contact + AD5A/AD60 (the handler owns active); the in-box contact
     # death returns None (left to the VM, like AED8's death sub-paths).  No sprite change.
@@ -169,12 +184,27 @@ def _advance_b24d(pool: ObjectPool, i: int, g: ObjectUpdateGlobals) -> dict | No
     return {_OFF_DIRECTION: u.direction_or_step, _OFF_X: u.x_word, _OFF_Y: u.y_word, _OFF_ACTIVE: u.active_word}
 
 
+def _advance_b909(pool: ObjectPool, i: int, g: ObjectUpdateGlobals) -> dict | None:
+    # B909 stamps mode 2 and seeks toward the slot waypoint (+32/+34) with 5DB2, then joins BC4B; on the
+    # reached/blocked branch the seek is a no-op and it triggers a (global, out-of-scope) 7476 spawn.
+    # Only direction/x/y change from the seek; the BC4B post-move owns y/active.  No sprite change.
+    seek = object_target_seek_step_5db2(
+        pool.x_word(i), pool.y_word(i), pool.direction_word(i),
+        MovementTarget(y_word=pool.target_y_word(i), x_word=pool.target_x_word(i)),
+        0x0002, g.direction_table,
+    )
+    pm = object_postmove_bc4b(seek.x_word, seek.y_word, pool.active_word(i), pool.logic_id(i), g.global_disable)
+    return {_OFF_DIRECTION: seek.direction_or_step, _OFF_X: seek.x_word, _OFF_Y: pm.y_word, _OFF_ACTIVE: pm.active_word}
+
+
 # logic_id -> per-slot advance.  Grow as handlers gain complete pure systems.
 NATIVE_OBJECT_HANDLERS = {
     0x0C: _advance_ae09,
     0x02: _advance_aed8,
     0x05: _advance_ae7d,
+    0x06: _advance_ae2c,
     0x0B: _advance_b24d,
+    0x1E: _advance_b909,
     0x1D: _advance_b86d,
     0x14: _advance_b9f0,
 }

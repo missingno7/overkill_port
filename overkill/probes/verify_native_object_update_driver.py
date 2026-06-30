@@ -112,6 +112,7 @@ def main(argv) -> int:
                 horizontal_delta=cpu.mem.rw(ds, DELTA_X_2346),
                 difficulty=cpu.mem.rw(ds, BEDC),
                 tick=cpu.mem.rw(ds, TICK_2340),
+                anim_2326=cpu.mem.rw(ds, 0x2326),
                 candidate_pool=(
                     ObjectPool(base=GAMEPLAY_BASE, stride=STRIDE, slots=tuple(
                         tuple(cpu.mem.rw(ds, (GAMEPLAY_BASE + s * STRIDE + 2 * j) & 0xFFFF)

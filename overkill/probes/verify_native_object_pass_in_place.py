@@ -65,7 +65,8 @@ def _globals(cpu, ds, cs_seg, class_cache):
         direction_table=tuple(cpu.mem.rb(ds, (DIR_TABLE + k) & 0xFFFF) for k in range(16)),
         global_disable=cpu.mem.rw(ds, A47C), a482=cpu.mem.rw(ds, A482), frame_233c=cpu.mem.rw(ds, FRAME_233C),
         horizontal_delta=cpu.mem.rw(ds, DELTA_X_2346), difficulty=cpu.mem.rw(ds, BEDC),
-        a8c2_boss_mode=cpu.mem.rw(ds, A8C2_ADDR) == 0x0001, bedc=cpu.mem.rw(ds, BEDC))
+        a8c2_boss_mode=cpu.mem.rw(ds, A8C2_ADDR) == 0x0001, bedc=cpu.mem.rw(ds, BEDC),
+        anim_2326=cpu.mem.rw(ds, 0x2326))
 
 
 def main(argv) -> int:
