@@ -165,6 +165,28 @@ different path -- `1010:0E9C` calls `0CC8`/`0CD8` reading `[0BDC]`(dest seg)/`[0
 transform/relayout on load (likely de-planarize / block-table expansion).  **Next:** RE `0CC8`/`0CD8`
 to recover the blocks + graphics placement, the remaining two per-level destinations.
 
+## 2026-06-30 - Blocks/graphics placement fully scouted: it's a planar->chunky de-planarize transform
+
+Traced `0CC8`/`0CD8` to the bottom.  They are mode-setters for two flags `CS:[0BD6]`/`CS:[0BD8]` (BLX =
+0/0, G = 1/0, the 3rd-slot 0CB8 = 0/1), then fall into common code at `0CF6`:
+1. load the asset to the **temp buffer** `CS:[9598]:0` (=seg 35FF) via the same `C679` -> `0248`
+   container loader (so the decode is unchanged -- already airtight), then
+2. `jmp 5BAC` -- the placement **transform** copying temp -> final dest `CS:[0BDC]` (BLX 8502 / G 5FE6).
+
+`5BAC` is **video-mode dispatched**: `bx = CS:[95BC]*2; jmp CS:[bx+5BC4]` (the demos run Tandy, mode 2;
+table `5BC4` = {450C, 27D9, **33AF**, 8B2E}).  The Tandy handler **`33AF`** is a **4-plane de-planarize**:
+a nested loop (`CS:[5B9E]` outer, `CS:[5B9C]` inner = plane stride) whose core `33DD` reads four plane
+bytes -- `[si]`, `[bx+si]`, `[2*bx+si]`, `[3*bx+si]` with `bx = CS:[5B9C]` -- and calls **`344B`**, a
+bit-interleaver that ROLs the 4 plane bytes (dh/dl/ah/al) into `cl`/`ch` 2 pixels at a time = classic
+4-plane planar -> 4bpp chunky packing (with a mode-flag tail at `3473` gated on `CS:[0BD6]`).
+
+So: blocks + graphics are stored 4-plane and **de-planarized into Tandy chunky on load** (that is why the
+final dest only ~10-17% matched a flat decode -- the bytes are bit-reorganized).  The transform is
+well-defined; recovering it is a focused multi-routine slice (the `33AF` loop geometry + `344B`
+interleave + the `CS:[5B9C]/5B9E` stride/count + output addressing + the `[0BD6]/[0BD8]` mode tail),
+with the clean verification `tandy_deplanarize(decode(G{n})) == image[CS:[95AE]]` against a gameplay
+snapshot.  **Next slice:** recover that pure planar->chunky transform and verify it.
+
 ## 2026-06-30 - Whole-scan attempt 2 (shared store): real blocker is a variant-2 candidate kill (logged)
 
 Built the corrected shared-store whole scan (one contiguous 0x45-slot store, both pointer-table loops
