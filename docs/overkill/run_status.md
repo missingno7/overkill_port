@@ -293,6 +293,27 @@ extend the same wiring to the whole per-frame object pass / player step / render
 `NativeLevel` (game_core), plus the scroll/camera init; then the SHARED startup assets and the EXE
 unpack.
 
+## 2026-06-30 - Shared startup graphics banks cold-loaded + verified
+
+(Re-extending the cold load to the non-per-level data; note the recovered systems already provably
+consume cold level data, and the cold buffers are byte-identical to the VM, so re-running each recovered
+system on cold data is tautological -- the remaining real progress is cold-loading NEW data.)  Found the
+startup shared-asset loader at 1010:0D42-0DA3: six loads, each setting a name ptr + dest seg and calling
+0CD8/0CB8.  The four 0CD8 loads are the shared graphics banks -- **`1X1.BIC`, `2X2.BIC`, `2X2C.BIC`,
+`MANEXPL.BIC`** -- decoded then sprite-de-planarized (the same transform as per-level `G{n}`) into
+`CS:[95A8/95AA/95AC/95A6]`.
+
+`asset_codecs.load_shared_sprite_banks(container)` decodes + de-planarizes all four; **each matches its
+live VM buffer byte-for-byte** in the menu-state bundle (tests/test_shared_assets.py: 2; lint 240 +
+audits green).  Interesting: the last two startup loads are `THEND.BIC` and `PANEL.ENC` (an `.ENC` ->
+LZ-decoded then de-planarized) via the 0CB8 `bd8` mode, which additionally emits a per-item dimension
+directory (`CS:[0BE0]` table) -- that variant is the next transform to recover.
+
+So the shared graphics banks now also load cold + verified.  Remaining shared/data: the `bd8`
+directory-mode transform (THEND/PANEL + the per-level 3rd slot), the menu/intro/score screens (the other
+`.ENC` loads), then the gameplay-state init (object spawns) for a from-scratch cold level, and the EXE
+unpack.
+
 ## 2026-06-30 - Whole-scan attempt 2 (shared store): real blocker is a variant-2 candidate kill (logged)
 
 Built the corrected shared-store whole scan (one contiguous 0x45-slot store, both pointer-table loops

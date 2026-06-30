@@ -24,6 +24,7 @@ from .loader import decode_asset
 from .lz import copy_lz_back_reference, decode_lz_asset, decode_lz_bytes, input_lz_byte, output_lz_byte
 from .native_level import NativeLevel, load_native_level
 from .planar import deplanarize_tandy, pack_planes_344b
+from .shared_assets import SHARED_SPRITE_BANKS, load_shared_sprite_bank, load_shared_sprite_banks
 from .overlay import (
     compare_overlay_entry_name_05d9,
     compare_overlay_signature_0582,
@@ -64,6 +65,9 @@ __all__ = [
     "load_level_data",
     "NativeLevel",
     "load_native_level",
+    "SHARED_SPRITE_BANKS",
+    "load_shared_sprite_bank",
+    "load_shared_sprite_banks",
     "decode_asset",
     "decode_byte_single_marker_rle",
     "decode_linear_byte_rle",
