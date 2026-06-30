@@ -1,3 +1,28 @@
+## 2026-06-30 - Whole-scan attempt: the 32CA/8D12 walks SHARE slots (model correction, reverted)
+
+Attempted to compose the whole object scan (`native_object_scan` = the effect in-place pass + the
+gameplay snapshot pass) and verify it end-to-end at AA25.  The gate caught a real model error, so it
+was reverted (not committed red) -- but the finding corrects the mental model for the next attempt:
+
+The effect loop (32CA pointer table) and the gameplay loop (8D12) are **NOT disjoint** -- some DS:2B5C
+gameplay slots are visited by the 32CA effect walk too.  In the VM those shared slots are processed in
+the effect loop (moved / deactivated by a collision) and so are inactive by the gameplay loop, which
+skips them.  My `native_object_scan` captured the effect walk and the gameplay pool as SEPARATE pools,
+so the effect loop's update/deactivation of a shared slot did not propagate to the gameplay pool -- the
+gameplay loop then re-processed a slot the VM had already handled in the effect loop.  Symptom: effect
+1170/1170 (perfect) but ~2 gameplay slots/frame off by exactly one move (x +8, substate +1, active 1 vs
+0) on L2 and L3 -- the tell-tale "processed in the wrong loop" signature.
+
+(Why verify_native_object_pass still passes: it captures the gameplay pool at AA0D = the VM's *actual*
+post-effect state, where those shared slots are already inactive, so its snapshot correctly skips them.
+The bug is only in re-deriving that post-effect state from separate pools.)
+
+**Corrected design for the whole scan:** a single offset-keyed slot store both loops mutate in place --
+the effect loop walks 32CA, the gameplay loop walks 8D12, both reading/writing the SAME slots by
+offset, so a shared slot's effect-loop result is what the gameplay loop sees (and skips if dead).  The
+per-loop pieces are unchanged and still verified (native_object_pass_in_place effect scan; the gameplay
+snapshot); only the composition needs the shared store.  That is the next focused build.
+
 ## 2026-06-30 - The VM-free ORDER-DEPENDENT object pass (effect scan, verified incl. collision)
 
 Built the order-dependent in-place object pass -- the integration the per-slot driver could not be:
