@@ -1440,6 +1440,42 @@ def native_a378_followup(pool: ObjectPool, cursor: int, source_x: int, source_y:
     return (slot1, slot2)
 
 
+# A584 dual-anchor spawn: two A571-anchored crawler slots (the A378 projectile's FULL-fanout sibling).
+A584_ANCHOR_BIAS = 0x000A                              # A571: X = [bp+2] + 0xA, Y = [bp+4] + 0xA
+A584_Y_ALIGN = 0xFFFC                                  # then Y &= ~3 (align down to a 4-pixel boundary)
+A584_SPRITE = 0x0008                                   # both slots: sprite (+8) = 8
+A584_SLOT1_LOGIC = 0x0005                              # first slot logic_id (+18)
+A584_SLOT2_LOGIC = 0x0006                              # second slot logic_id (+18)
+
+
+def native_a584(pool: ObjectPool, cursor: int, source_x: int, source_y: int,
+                a95e: int, a3a4: int) -> tuple[PlayerShotSpawn, PlayerShotSpawn] | None:
+    """Pure WHOLE A584 dual-anchor player-spawn pair (the A067 FULL-fanout terrain-crawler spawner).
+
+    Gated by ``DS:A95E != 0`` and ``DS:A3A4 == 0`` (A3A4 counts live logic_id 5/6 crawlers, so this only
+    re-seeds the pair when none are alive).  Allocates two gameplay slots (threading the cursor + the
+    first's active word, like the A41A pair), each A571-anchored at ``{X = source_x + 0xA, Y = (source_y +
+    0xA) & ~3}`` with the A4EA seed + sprite 8; the first slot's ``logic_id`` (+18) is 5, the second's 6.
+    Returns ``(slot1, slot2)`` or None (gated, or a full pool -- the 7550 recycle is unmodelled).  The
+    A976 += 1-per-slot counter and the BEFF stamp are the caller's, not part of the per-slot stamp."""
+    if (a95e & 0xFFFF) == 0x0000 or (a3a4 & 0xFFFF) != 0x0000:
+        return None  # the A95E / A3A4 gates are closed -> no spawn
+    seed = object_spawn_seed_a4ea()
+    x = (source_x + A584_ANCHOR_BIAS) & 0xFFFF
+    y = ((source_y + A584_ANCHOR_BIAS) & 0xFFFF) & A584_Y_ALIGN
+    alloc1 = object_pool_find_free(pool, cursor)
+    if alloc1.offset is None:
+        return None  # pool full -> the 7550 recycle path (not modelled)
+    slot1 = _player_shot_slot(seed, alloc1, x, y, A584_SLOT1_LOGIC, A584_SPRITE)
+    index1 = (((alloc1.offset - pool.base) & 0xFFFF) // (pool.stride & 0xFFFF))
+    pool1 = pool.with_word(index1, 0x00, seed.active_word)  # the seed marks slot1 active before alloc 2
+    alloc2 = object_pool_find_free(pool1, alloc1.cursor)
+    if alloc2.offset is None:
+        return None
+    slot2 = _player_shot_slot(seed, alloc2, x, y, A584_SLOT2_LOGIC, A584_SPRITE)
+    return (slot1, slot2)
+
+
 # --- A067 child schedule walks (A3FF / A3CA) ------------------------------------------------------------
 # These drive the A41A per-shot variants over the equipped weapon's shot schedules, threading the
 # allocator across spawns, and compose the verified native_a41a_shot/pair (+ native_a378_followup) leaves.

@@ -41,6 +41,7 @@ PROBES = (
     "verify_native_a067_fire_path",
     "verify_native_player_fanout_walk",
     "verify_native_early_tail_spawn",
+    "verify_native_a584_spawn",
 )
 _RESULT_LINE = re.compile(r"calls=(\d+) ok=(\d+) fail=(\d+)")
 
