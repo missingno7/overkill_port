@@ -12,6 +12,7 @@ from overkill.recovered.domain.collision import (
     CollisionDeathTransition,
     CollisionHitOutcome,
     CollisionVariantDispatchBEC5,
+    MovingObjectCollisionResult,
     ObjectOverlapScanDecision,
     PostMoveContactWindow,
     PostMoveYClampResult,
@@ -556,6 +557,64 @@ def object_collision_death_transition_c037(logic_id: int, object_type: int) -> C
         logic_id=COLLISION_DEATH_STATE_LOGIC_ID,
         transition_latch=0x0000,
         sprite_or_state=sprite,
+    )
+
+
+def resolve_moving_object_collision(
+    *,
+    scanner_active_word: int,
+    scanner_x_word: int,
+    scanner_y_word: int,
+    scanner_draw_layer: int,
+    scanner_logic_id: int,
+    scanner_object_type: int,
+    scanner_counter_20: int,
+    candidates: ObjectPool,
+    a8c2_boss_mode: bool,
+    bedc: int,
+) -> MovingObjectCollisionResult:
+    """The moving object's complete BC4B contact-scan result -- the collision-island capstone.
+
+    Chains the three recovered collision systems for the scanning object (SS:BP) the way BC4B does:
+    :func:`object_overlap_scan_62f6` (which gameplay candidate it overlaps) ->
+    :func:`bec5_moving_object_outcome` (the reaction for that candidate's logic id) ->
+    :func:`resolve_collision_hit` (the BF25 damage chain into the C037 death) for the ``damage`` case,
+    or a direct ``counter_20:=0`` + C037 death for the ``instant_death`` case.
+
+    Returns the scanner's post-collision counter / death.  ``collided`` is False with the counter
+    unchanged when nothing overlaps; ``unclassified`` is True for the owner-link / no-op BEC5
+    fallback (the moving object's fate there depends on the +30h owner pointer -- left to the VM).
+    """
+    hit = object_overlap_scan_62f6(
+        scanner_active_word=scanner_active_word, scanner_x_word=scanner_x_word,
+        scanner_y_word=scanner_y_word, scanner_draw_layer=scanner_draw_layer,
+        scanner_logic_id=scanner_logic_id, scanner_object_type=scanner_object_type,
+        candidates=candidates,
+    )
+    if hit is None:
+        return MovingObjectCollisionResult(collided=False, unclassified=False,
+                                           new_counter_20=scanner_counter_20 & 0xFFFF,
+                                           died=False, death_transition=None)
+    outcome = bec5_moving_object_outcome(
+        candidate_logic_id=candidates.logic_id(hit), a8c2_boss_mode=a8c2_boss_mode,
+        candidate_sprite=candidates.sprite_word(hit),
+    )
+    if outcome.kind == "owner_or_unclassified":
+        return MovingObjectCollisionResult(collided=True, unclassified=True,
+                                           new_counter_20=scanner_counter_20 & 0xFFFF,
+                                           died=False, death_transition=None)
+    if outcome.kind == "instant_death":
+        return MovingObjectCollisionResult(
+            collided=True, unclassified=False, new_counter_20=0, died=True,
+            death_transition=object_collision_death_transition_c037(scanner_logic_id, scanner_object_type),
+        )
+    hit_outcome = resolve_collision_hit(
+        counter_20=scanner_counter_20, bedc=bedc, object_type=scanner_object_type,
+        logic_id=scanner_logic_id, enter_at_bf25=outcome.enter_at_bf25,
+    )
+    return MovingObjectCollisionResult(
+        collided=True, unclassified=False, new_counter_20=hit_outcome.new_counter_20,
+        died=hit_outcome.died, death_transition=hit_outcome.death_transition,
     )
 
 

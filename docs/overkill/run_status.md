@@ -1,3 +1,30 @@
+## 2026-06-30 - Collision island CAPSTONE: the whole moving-object collision, verified end-to-end
+
+Merged the three recovered collision systems into the moving object's complete BC4B contact result.
+`collision.resolve_moving_object_collision(scanner fields, candidates, a8c2_boss_mode, bedc) ->
+MovingObjectCollisionResult` chains them the way BC4B does: object_overlap_scan_62f6 (which gameplay
+candidate) -> bec5_moving_object_outcome (damage vs instant death) -> resolve_collision_hit (the
+BF25 chain -> C037 death) or a direct counter_20:=0 + C037 for the instant-death case. Returns the
+scanner's post-collision counter / died / death-transition; ``unclassified`` flags the owner-link
+fallback (left to the VM).
+
+VERIFIED produced-vs-VM END-TO-END by `overkill.probes.verify_native_moving_object_collision`: at
+each 62F6 scan it projects the scanner (SS:BP) + the whole gameplay pool + globals, runs the composed
+system, and compares the scanner's actual post-state (counter_20, logic_id, sprite) at the scan's
+return -- L2 3394/3394 (30 died, 1 survived, 3363 no-collision), L6_boss 3268/3268 (23 died, 135
+survived, 3110 no-collision, 101 owner-link unclassified) -- 6662 collisions, 53 deaths + 136
+survives, 0 divergence, and bad_type=0 (the projectile object types are 1/2, so C037 covers every
+death). Unit coverage in tests/test_moving_object_collision.py.
+
+This is the collision-island capstone: a moving object's WHOLE object-vs-object collision -- which
+enemy it hits, the reaction, and its resulting counter/death/sprite -- is now one pure system proven
+against the VM's real slot mutations. It is exactly the death sprite the object pass currently defers,
+so the next slice wires `resolve_moving_object_collision` into the B86D/B9F0 driver advance (after
+object_postmove_bc4b) to retire `verify_native_object_update_driver`'s sprite_deferred. Remaining for
+the full system (the CANDIDATE/enemy side): the BD0D wrapper (-> the already-lifted BD17 deactivation),
+the variant-2 active clear, the A8C2 boss-group mark, and the owner-link path. No hook touched; lint +
+both audits + manifest green.
+
 ## 2026-06-30 - Collision pass: the BEC5 reaction outcome -> the moving object's fate is now native
 
 The bridge between the 62F6 scan and the per-object hit outcome. When the scan finds an overlap it

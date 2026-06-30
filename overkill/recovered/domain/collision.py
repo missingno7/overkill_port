@@ -185,3 +185,22 @@ class Bec5MovingObjectOutcome:
 
     kind: str
     enter_at_bf25: bool
+
+
+@dataclass(frozen=True, slots=True)
+class MovingObjectCollisionResult:
+    """The complete post-collision state of a moving object after its BC4B contact scan.
+
+    Composes the three collision systems for the scanner (SS:BP): the 62F6 overlap scan (which
+    candidate, if any), the BEC5 reaction outcome (damage vs instant death), and the BF25/C037 hit
+    chain.  ``collided`` is whether the scan hit a candidate at all; ``unclassified`` flags the
+    owner-link / no-op BEC5 fallback (left to the VM).  ``new_counter_20`` is the scanner's hit
+    counter after the reaction (unchanged when it did not collide), ``died`` whether it died, and
+    ``death_transition`` the C037 dying-state stamp (logic_id -> 1 + death sprite) when it died.
+    """
+
+    collided: bool
+    unclassified: bool
+    new_counter_20: int
+    died: bool
+    death_transition: "CollisionDeathTransition | None"
