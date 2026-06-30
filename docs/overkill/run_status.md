@@ -142,6 +142,29 @@ via one of those sub-calls.  **Next** (the bigger build): the full pure level lo
 list through load_container_asset and place the decoded blobs where the dest segments point, mapping
 those to NativeGameState/LevelState buffers (tile map / block defs / graphics bank).
 
+## 2026-06-30 - First destination wired end to end: the level TILE MAP (byte-for-byte vs snapshots)
+
+Took one destination all the way through and proved it.  The **MAP loader is 1010:0B3E**: it reads the
+name from the `DS:14C0` table (`LEV{n}MAP.BIC`) and decodes it via `C679` -> `0248` straight into the
+tile-map buffer **`CS:[9592]:0`** (dest off 0, a flat copy of the decode output).
+
+Landed `asset_codecs.decode_level_tile_map(container, level) -> bytes` (= the decoded `LEV{n}MAP.BIC`,
+a fixed `TILE_MAP_SIZE` = 3744 = 96x39 grid).  **Verified byte-for-byte against the runtime:** across
+fresh level-load snapshots for all six levels, the decoded map *body* `[12:3682]` is byte-exact at
+`CS:[9592]` (tests/test_level_map_placement.py).  Findings that pin it:
+- Every cell is written (no codec gaps); the loader copies decode output to dest:0 by construction, so
+  decode (already airtight) + placement is correct.  The body matches across L0..L5.
+- The map's first row (`[0:12]`) and a trailing footer (`[3682:3744]`) are rewritten by post-load init
+  (a border -- the footer is identical across levels), so they are excluded from the body check.
+- Mid-gameplay snapshots mutate the body too (destructible terrain) -- the proof uses fresh-load
+  snapshots (`*_start`/`*_full`/`*_begin`).
+
+**BLOCKS/GRAPHICS are NOT a flat copy** (only ~10-17% match at their dest segs): they load via a
+different path -- `1010:0E9C` calls `0CC8`/`0CD8` reading `[0BDC]`(dest seg)/`[0BDE]`(name), not the
+`[023A]/[023C]` flat-decode the MAP uses.  So `LEV{n}BLX.BIC` (blocks) + `G{n}.BIC` (graphics) get a
+transform/relayout on load (likely de-planarize / block-table expansion).  **Next:** RE `0CC8`/`0CD8`
+to recover the blocks + graphics placement, the remaining two per-level destinations.
+
 ## 2026-06-30 - Whole-scan attempt 2 (shared store): real blocker is a variant-2 candidate kill (logged)
 
 Built the corrected shared-store whole scan (one contiguous 0x45-slot store, both pointer-table loops

@@ -15,6 +15,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .container import load_container_asset
+
 #: The number of real, distinct OVERKILL levels.
 LEVEL_COUNT = 6
 
@@ -41,3 +43,20 @@ def overkill_level_assets(level: int) -> list[LevelAsset]:
         LevelAsset(f"LEV{level}BLX.BIC", ROLE_BLOCKS),
         LevelAsset(f"G{level}.BIC", ROLE_GRAPHICS),
     ]
+
+
+#: Decoded level tile-map size, in bytes (a fixed 96 x 39 grid for every level).
+TILE_MAP_SIZE = 3744
+
+
+def decode_level_tile_map(container_data, level: int) -> bytes:
+    """Decode level ``level``'s tile map (``LEV{n}MAP.BIC``) -- the level layout grid.
+
+    This is the first per-level destination wired up end to end: the MAP loader at 1010:0B3E reads the
+    name from the `DS:14C0` table and decodes it (via `C679` -> `0248`) straight into the tile-map buffer
+    at `CS:[9592]:0`.  Verified byte-for-byte: the decoded body matches that live buffer across fresh
+    level-load snapshots for all six levels (see tests/test_level_map_placement.py).  The buffer's first
+    row and a trailing footer are rewritten by post-load init (a border) and so are not part of the
+    decoded map; mid-gameplay the body also mutates (destructible terrain).
+    """
+    return load_container_asset(container_data, f"LEV{level}MAP.BIC")
