@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from overkill.recovered.systems.collision import bec5_moving_object_outcome
+from overkill.recovered.systems.collision import bec5_candidate_deactivated, bec5_moving_object_outcome
 
 
 def _out(logic_id, *, boss=False, sprite=0):
@@ -41,3 +41,14 @@ def test_variant2_is_damage_regardless_of_boss_mode():
 @pytest.mark.parametrize("logic_id", [0x0000, 0x0001, 0x0003, 0x0004, 0x000A, 0x0042, 0x0078])
 def test_other_logic_ids_are_unclassified(logic_id):
     assert _out(logic_id, boss=True).kind == "owner_or_unclassified"
+
+
+@pytest.mark.parametrize("logic_id", [0x0002, 0x0005, 0x0006, 0x0007, 0x0008, 0x000C])
+def test_candidate_deactivated_variants(logic_id):
+    assert bec5_candidate_deactivated(logic_id) is True
+
+
+@pytest.mark.parametrize("logic_id", [0x0009, 0x0000, 0x0001, 0x0042])
+def test_candidate_not_deactivated_variants(logic_id):
+    # Variant 9 hurts the scanner but leaves the candidate alive; other ids are owner-link/no-op.
+    assert bec5_candidate_deactivated(logic_id) is False

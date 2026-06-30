@@ -1,3 +1,27 @@
+## 2026-06-30 - Collision candidate side: which enemy dies (the in-place-pass prerequisite)
+
+The whole-pool VM-free object pass needs the CANDIDATE (enemy) side: when a scanner kills an enemy,
+that enemy must deactivate so later scanners in the same pass see it gone. Recovered that: the BEC5
+reaction deactivates the struck candidate for logic ids 5/6/7/8/Ch (BD0D -> BD17 active:=0) and 2 (the
+active-clear), but NOT 9 (the scanner is hurt, the candidate survives).
+
+`collision.bec5_candidate_deactivated(candidate_logic_id) -> bool` names that set, and
+resolve_moving_object_collision now also reports `hit_index` (which gameplay candidate was struck) and
+`candidate_deactivated` -- so both objects' fates are characterized: the scanner's counter/death/sprite
+AND the candidate's deactivation.
+
+VERIFIED produced-vs-VM by extending `verify_native_moving_object_collision` to also compare the struck
+candidate's active word at the scan return (0 when deactivated, unchanged otherwise): L2 cand 31/31
+(deact 31), L6_boss cand 158/158 (deact 158), 0 fail -- alongside the scanner checks (3394/3394,
+3268/3268). Unit coverage in tests/test_bec5_outcome.py + tests/test_moving_object_collision.py (48
+collision tests green). No hook touched; lint + both audits + manifest green.
+
+So the object-vs-object collision is now fully characterized for BOTH objects. This is the last piece
+the order-dependent whole-pool object pass needs: walk the gameplay pool in place, and when a scanner
+kills a candidate, clear `hit_index`'s active so later scanners skip it. That in-place walk (+ the
+effect-loop per-entry tick + the candidate's full BD17 cleanup) is the remaining integration for a
+VM-free object PASS; the per-slot driver + both-object collision semantics are done.
+
 ## 2026-06-30 - DEFERRAL RETIRED: the object-update driver now folds the collision death (native)
 
 Wired resolve_moving_object_collision into the object-update driver -- the integration the

@@ -40,7 +40,7 @@ def main(argv) -> int:
     demo = load_demo(demo_name, default_demo)
 
     res = {"calls": 0, "ok": 0, "died": 0, "survived": 0, "no_collision": 0,
-           "unclassified": 0, "bad_type": 0, "fail": []}
+           "unclassified": 0, "bad_type": 0, "cand_calls": 0, "cand_ok": 0, "cand_deact": 0, "fail": []}
     pending: dict[int, dict] = {}
 
     def on_ref_step(cpu):
@@ -74,8 +74,9 @@ def main(argv) -> int:
                 res["bad_type"] += 1  # C037 unverified object-type death path
                 pending[key] = {"ret": cpu.mem.rw(ss, cpu.s.sp & 0xFFFF), "skip": True}
                 return
+            cand_pre_active = slots[predicted.hit_index][0] if predicted.hit_index is not None else None
             pending[key] = {"ret": cpu.mem.rw(ss, cpu.s.sp & 0xFFFF), "skip": False,
-                            "bp": bp, "pre": pre, "predicted": predicted}
+                            "bp": bp, "pre": pre, "predicted": predicted, "cand_pre_active": cand_pre_active}
         elif p is not None and cs == CS and ip == p["ret"]:
             pending.pop(key)
             if p["skip"]:
@@ -102,13 +103,26 @@ def main(argv) -> int:
                 res["ok"] += 1
             else:
                 res["fail"].append((expected, post))
+            # Also verify the struck candidate's active word: deactivated -> 0, else unchanged.
+            if predicted.hit_index is not None:
+                res["cand_calls"] += 1
+                cand_active = cpu.mem.rw(cpu.s.ds & 0xFFFF,
+                                         (GAMEPLAY_BASE + predicted.hit_index * STRIDE) & 0xFFFF)
+                expected_cand = 0 if predicted.candidate_deactivated else p["cand_pre_active"]
+                if predicted.candidate_deactivated:
+                    res["cand_deact"] += 1
+                if cand_active == expected_cand:
+                    res["cand_ok"] += 1
+                else:
+                    res["fail"].append(((expected_cand,), (cand_active,)))  # candidate active mismatch
 
     run_ref_step_probe(demo, max_frames, on_ref_step)
 
     print(f"demo {demo_name} ({max_frames} frames): native moving-object collision vs VM "
           f"(scan+BEC5+hit -> compare scanner post-state): calls={res['calls']} ok={res['ok']} "
           f"died={res['died']} survived={res['survived']} no_collision={res['no_collision']} "
-          f"unclassified={res['unclassified']} bad_type={res['bad_type']} fail={len(res['fail'])}")
+          f"unclassified={res['unclassified']} bad_type={res['bad_type']} "
+          f"cand={res['cand_ok']}/{res['cand_calls']}(deact={res['cand_deact']}) fail={len(res['fail'])}")
     for exp, act in res["fail"][:8]:
         print(f"  FAIL expected(counter,logic,sprite)={tuple(hex(v) for v in exp)} "
               f"actual={tuple(hex(v) for v in act)}")

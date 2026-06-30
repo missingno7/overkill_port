@@ -455,6 +455,18 @@ COLLISION_VARIANT_SPRITE_2 = 0x0002
 BEC5_DAMAGE_OR_DEATH_VARIANTS = frozenset((0x0005, 0x0006, 0x0007, 0x0008, 0x0009, 0x000C))
 BEC5_SPRITE_VARIANT2 = 0x0002
 BEC5_VARIANT2_ENTER_AT_BF25_SPRITE = 0x0033
+# Candidate logic ids whose BEC5 reaction deactivates the struck candidate: 5/6/7/8/Ch run BD0D
+# (-> BD17, active:=0), variant 2 clears its active word directly.  Variant 9 leaves it alive.
+BEC5_CANDIDATE_DEACTIVATED_VARIANTS = frozenset((0x0002, 0x0005, 0x0006, 0x0007, 0x0008, 0x000C))
+
+
+def bec5_candidate_deactivated(candidate_logic_id: int) -> bool:
+    """Whether the BEC5 reaction deactivates the struck candidate (sets its active word to 0).
+
+    True for the candidate logic ids that run BD0D (5/6/7/8/Ch) or the variant-2 active-clear (2);
+    False for variant 9 (the scanner is hurt but the candidate survives) and any other id.
+    """
+    return (candidate_logic_id & 0xFFFF) in BEC5_CANDIDATE_DEACTIVATED_VARIANTS
 
 
 def bec5_moving_object_outcome(
@@ -595,18 +607,21 @@ def resolve_moving_object_collision(
         return MovingObjectCollisionResult(collided=False, unclassified=False,
                                            new_counter_20=scanner_counter_20 & 0xFFFF,
                                            died=False, death_transition=None)
+    candidate_logic_id = candidates.logic_id(hit)
     outcome = bec5_moving_object_outcome(
-        candidate_logic_id=candidates.logic_id(hit), a8c2_boss_mode=a8c2_boss_mode,
+        candidate_logic_id=candidate_logic_id, a8c2_boss_mode=a8c2_boss_mode,
         candidate_sprite=candidates.sprite_word(hit),
     )
     if outcome.kind == "owner_or_unclassified":
         return MovingObjectCollisionResult(collided=True, unclassified=True,
                                            new_counter_20=scanner_counter_20 & 0xFFFF,
-                                           died=False, death_transition=None)
+                                           died=False, death_transition=None, hit_index=hit)
+    deactivated = bec5_candidate_deactivated(candidate_logic_id)
     if outcome.kind == "instant_death":
         return MovingObjectCollisionResult(
             collided=True, unclassified=False, new_counter_20=0, died=True,
             death_transition=object_collision_death_transition_c037(scanner_logic_id, scanner_object_type),
+            hit_index=hit, candidate_deactivated=deactivated,
         )
     hit_outcome = resolve_collision_hit(
         counter_20=scanner_counter_20, bedc=bedc, object_type=scanner_object_type,
@@ -615,6 +630,7 @@ def resolve_moving_object_collision(
     return MovingObjectCollisionResult(
         collided=True, unclassified=False, new_counter_20=hit_outcome.new_counter_20,
         died=hit_outcome.died, death_transition=hit_outcome.death_transition,
+        hit_index=hit, candidate_deactivated=deactivated,
     )
 
 

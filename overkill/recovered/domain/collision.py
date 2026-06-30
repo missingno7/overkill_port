@@ -204,3 +204,10 @@ class MovingObjectCollisionResult:
     new_counter_20: int
     died: bool
     death_transition: "CollisionDeathTransition | None"
+    # The struck candidate (the enemy the scanner hit): its pool index, and whether the reaction
+    # deactivates it (BD0D->BD17 for variants 5/6/7/8/Ch, the active-clear for variant 2; variant 9
+    # leaves it alive).  ``hit_index`` is None when nothing was struck.  The candidate's full BD17
+    # cleanup (score / effect spawn) is separate; this names which slot dies so an in-place pass can
+    # clear it for later scanners.
+    hit_index: "int | None" = None
+    candidate_deactivated: bool = False

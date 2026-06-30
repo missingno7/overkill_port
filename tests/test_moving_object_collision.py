@@ -65,3 +65,20 @@ def test_first_overlapping_candidate_decides():
     # A non-overlapping enemy then an overlapping instant-death enemy -> the hit is the latter.
     r = _collide(_pool(_cand(5, x=0x200, y=0x200), _cand(5)), boss=False)
     assert r.died and r.new_counter_20 == 0
+    assert r.hit_index == 1
+
+
+def test_reports_struck_candidate_and_deactivation():
+    r = _collide(_pool(_cand(5)), boss=False)
+    assert r.hit_index == 0 and r.candidate_deactivated is True
+
+
+def test_variant9_candidate_survives():
+    # Variant 9: the scanner is hurt/killed but the candidate is NOT deactivated.
+    r = _collide(_pool(_cand(9)), boss=False)
+    assert r.collided and r.hit_index == 0 and r.candidate_deactivated is False
+
+
+def test_no_collision_has_no_hit_index():
+    r = _collide(_pool(_cand(5, x=0x200, y=0x200)))
+    assert r.hit_index is None and r.candidate_deactivated is False
