@@ -152,6 +152,33 @@ def decode_word_pair_rle(cpu) -> None:
         cpu.s.cx = 0
 
 
+def decode_linear_byte_rle_bytes(stream) -> bytes:
+    """Pure 1010:0367 linear byte-RLE decode: an input byte stream -> the decoded bytes.
+
+    The dual-mode form of :func:`decode_linear_byte_rle` (the cpu/VM hook), VM mechanics stripped
+    (ES:DI STOSB, the DOS refill, the NEG/XCHG register dance, error-IP).  The control byte selects:
+
+    * ``< 0x80`` -- a literal run of ``control + 1`` bytes (each read from the stream);
+    * ``== 0x80`` -- terminator;
+    * ``> 0x80`` -- a repeat run of ``((-control) & 0xFF) + 1`` copies of the next byte.
+
+    Algorithm is the hook's, verified against the ASM.
+    """
+    it = iter(stream)
+    out = bytearray()
+    while True:
+        control = next(it) & 0xFF
+        if control == 0x80:
+            return bytes(out)
+        if control > 0x80:
+            count = ((-control) & 0xFF) + 1
+            value = next(it) & 0xFF
+            out.extend(value for _ in range(count))
+        else:  # control < 0x80 -- literal run of control + 1 bytes
+            for _ in range(control + 1):
+                out.append(next(it) & 0xFF)
+
+
 def decode_vertical_rle_columns(cpu) -> None:
     """Hook body for 1010:03A8 vertical byte-RLE decoder.
 

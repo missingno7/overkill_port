@@ -12,6 +12,7 @@ from .overlay import (
 from .packed_stream import read_packed_byte, read_packed_byte_hook, read_packed_word_le, read_packed_word_le_hook
 from .rle import (
     decode_linear_byte_rle,
+    decode_linear_byte_rle_bytes,
     decode_vertical_rle_columns,
     decode_word_pair_rle,
     decode_word_pair_rle_words,
@@ -22,6 +23,7 @@ __all__ = [
     "search_decoded_asset_table_c713",
     "copy_lz_back_reference",
     "decode_linear_byte_rle",
+    "decode_linear_byte_rle_bytes",
     "decode_lz_asset",
     "decode_word_pair_rle",
     "decode_word_pair_rle_words",

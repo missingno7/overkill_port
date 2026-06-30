@@ -18,6 +18,12 @@ This is the first of the loader codecs promoted to a pure VM-free form (Bucket F
 byte RLE (0367) and vertical RLE (03A8) pure forms, then the level loader that drives them into
 NativeGameState/LevelState -- the data path for a cold-boot level.
 
+**Byte RLE done too:** added `asset_codecs.decode_linear_byte_rle_bytes(stream) -> bytes`, the pure
+form of the 1010:0367 hook (control < 0x80 -> literal run of control+1; == 0x80 -> terminate; > 0x80 ->
+repeat ((-control)&0xFF)+1 copies of the next byte).  9 unit tests (tests/test_asset_codec_byte_rle.py),
+green.  So 2 of the 3 loader RLE codecs now have pure VM-free forms; the vertical RLE (03A8, column/
+stride geometry) is the remaining one, then the level loader.
+
 ## 2026-06-30 - Whole-scan attempt 2 (shared store): real blocker is a variant-2 candidate kill (logged)
 
 Built the corrected shared-store whole scan (one contiguous 0x45-slot store, both pointer-table loops
