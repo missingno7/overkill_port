@@ -32,6 +32,8 @@ from typing import Callable
 
 from overkill.probes._harness import LazyBytes, load_demo, run_ref_step_probe
 from overkill.recovered.domain.tilemap import LevelTileContext
+from overkill.recovered.domain.movement import MovementTarget
+from overkill.recovered.systems.movement import object_target_seek_step_5db2
 from overkill.recovered.systems.objects import (
     object_update_ae09,
     object_update_aed8,
@@ -324,6 +326,41 @@ def _arm_b9f0(cpu, class_table_cache: dict) -> _Pending | None:
 # The registry: one entry per recovered pure whole-slot transform.  Grow this as
 # handlers are promoted; everything not here is counted as a fallback.
 B24D_IP = 0xB24D  # logic_id 0x0B: 5E42 delta-steer + B250 contact + AD60 (movement half)
+B909_IP = 0xB909  # logic_id 0x1E: sets mode 2, B729 (5DB2 seek) -> BC4B; blocked -> 7476 spawn
+B909_MOVEMENT_MODE = 0x0002  # B909 stamps DS:2308 = 2 before B729's 5DB2
+
+
+def _arm_b909(cpu, class_table_cache: dict) -> _Pending | None:
+    """Capture + predict B909 (logic_id 0x1E): the B729 5DB2 seek, compared at the BC4B handoff.
+
+    B909 stamps mode 2 (DS:2308) and calls B729, which copies the slot target (+32/+34) into the DS:2304/
+    2306 seek globals and runs 5DB2.  Both the moved path and the reached/blocked path (which adds the
+    7476 formation spawn + a +32 write -- global/off-tuple side effects) fall into the shared BC4B tail,
+    so the slot's 6-tuple at the handoff is exactly the 5DB2 result (substate/sprite/active untouched).
+    Compared at BC4B like B86D/B9F0; the BC4B post-move + 7476 spawn are verified/handled separately."""
+    ss = cpu.s.ss & 0xFFFF
+    ds = cpu.s.ds & 0xFFFF
+    bp = cpu.s.bp & 0xFFFF
+    substate = cpu.mem.rw(ss, (bp + OFF_SUBSTATE) & 0xFFFF)
+    sprite = cpu.mem.rw(ss, (bp + OFF_SPRITE_OR_STATE) & 0xFFFF)
+    active = cpu.mem.rw(ss, (bp + OFF_ACTIVE_WORD) & 0xFFFF)
+    target = MovementTarget(
+        y_word=cpu.mem.rw(ss, (bp + OFF_TARGET_Y) & 0xFFFF),
+        x_word=cpu.mem.rw(ss, (bp + OFF_TARGET_X) & 0xFFFF),
+    )
+    table = tuple(cpu.mem.rb(ds, (DIRECTION_TABLE_A348 + i) & 0xFFFF) for i in range(16))
+    try:
+        seek = object_target_seek_step_5db2(
+            cpu.mem.rw(ss, (bp + OFF_X) & 0xFFFF),
+            cpu.mem.rw(ss, (bp + OFF_Y) & 0xFFFF),
+            cpu.mem.rw(ss, (bp + OFF_DIRECTION_OR_STEP) & 0xFFFF),
+            target, B909_MOVEMENT_MODE, table,
+        )
+    except ValueError:
+        return None  # unverified 5E0C mode (absent from the green demos)
+    predicted = (substate, seek.direction_or_step, sprite, seek.x_word, seek.y_word, active)
+    return _Pending(ss=ss, bp=bp, exit_ip=BC4B_IP, predicted=predicted, read_post=_read_slot_6tuple)
+
 
 NATIVE_HANDLERS: tuple[NativeHandler, ...] = (
     NativeHandler(logic_id=0x0C, label="AE09", entry_ip=AE09_IP, arm=_arm_ae09),
@@ -331,6 +368,7 @@ NATIVE_HANDLERS: tuple[NativeHandler, ...] = (
     NativeHandler(logic_id=0x02, label="AED8", entry_ip=AED8_IP, arm=_arm_aed8),
     NativeHandler(logic_id=0x14, label="B9F0", entry_ip=B9F0_IP, arm=_arm_b9f0),
     NativeHandler(logic_id=0x0B, label="B24D", entry_ip=B24D_IP, arm=_arm_b24d),
+    NativeHandler(logic_id=0x1E, label="B909", entry_ip=B909_IP, arm=_arm_b909),
 )
 _HANDLER_BY_IP = {(CS, h.entry_ip): h for h in NATIVE_HANDLERS}
 
