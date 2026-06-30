@@ -1353,12 +1353,17 @@ A41A_PAIR_X_OFFSET = 0x0008                            # the second shot's X = t
 
 
 def _player_shot_slot(seed: ObjectSpawnSeedA4EA, alloc: FreeSlotAllocation,
-                      x: int, y: int, logic_id: int, sprite: int) -> PlayerShotSpawn:
-    """One A41A-family player-shot slot: the A4EA seed with X/Y + logic_id/sprite overrides applied."""
+                      x: int, y: int, logic_id: int, sprite: int,
+                      direction: int | None = None) -> PlayerShotSpawn:
+    """One A41A-family player-shot slot: the A4EA seed with X/Y + logic_id/sprite overrides applied.
+
+    ``direction`` overrides the seed's ``direction_or_step`` when given (A1C8's second shot picks its
+    direction from the input bits); the A41A/A378 callers leave it None to keep the seed's direction."""
     return PlayerShotSpawn(
         slot_offset=alloc.offset, new_cursor=alloc.cursor,
         active_word=seed.active_word, scan_enable_or_solid=seed.scan_enable_or_solid,
-        direction_or_step=seed.direction_or_step, sprite_or_state=sprite & 0xFFFF,
+        direction_or_step=(seed.direction_or_step if direction is None else direction & 0xFFFF),
+        sprite_or_state=sprite & 0xFFFF,
         scan_flag=seed.scan_flag, hazard_class=seed.hazard_class,
         logic_id=logic_id & 0xFFFF, substate=seed.substate, x_word=x & 0xFFFF, y_word=y & 0xFFFF,
     )
@@ -1542,3 +1547,42 @@ def native_a19f_tail(pool: ObjectPool, cursor: int, source_index: int, source_x:
     seed = object_spawn_seed_a4ea()
     x, y = a1ae_project(read_ds_word, source_index, source_x, source_y)
     return _player_shot_slot(seed, alloc, x, y, seed.logic_id, seed.sprite_or_state)
+
+
+# A1C8 (the A958 == 2 early tail) second-shot direction/sprite, picked from the input DS:98BE.
+A1C8_SLOT1_SPRITE = 0x0018
+A1C8_INPUT_BIT1, A1C8_INPUT_BIT0 = 0x02, 0x01
+A1C8_SECOND_SHOT = {  # input bit -> (direction, sprite)
+    A1C8_INPUT_BIT1: (0x0007, 0x001F),
+    A1C8_INPUT_BIT0: (0x0001, 0x0019),
+    0x00: (0x0000, 0x0018),
+}
+
+
+def native_a1c8_tail(pool: ObjectPool, cursor: int, source_index: int, source_x: int, source_y: int,
+                     input_98be: int, read_ds_word) -> tuple[PlayerShotSpawn, PlayerShotSpawn] | None:
+    """Pure 1010:A1C8 early fire tail (fire state DS:A958 == 2): two A4EA-seed shots at the same A1AE-
+    projected muzzle.  The first shot keeps the seed direction and sprite 18h; the second's direction and
+    sprite come from the input DS:98BE -- bit 1 set -> 7/1Fh, else bit 0 set -> 1/19h, else 0/18h.  The
+    second slot threads off the first (its active word is set before the second allocation).  Returns None
+    on a full pool (the 7550 recycle is unmodelled)."""
+    alloc1 = object_pool_find_free(pool, cursor)
+    if alloc1.offset is None:
+        return None
+    seed = object_spawn_seed_a4ea()
+    x, y = a1ae_project(read_ds_word, source_index, source_x, source_y)
+    slot1 = _player_shot_slot(seed, alloc1, x, y, seed.logic_id, A1C8_SLOT1_SPRITE)
+    index1 = (((alloc1.offset - pool.base) & 0xFFFF) // (pool.stride & 0xFFFF))
+    pool1 = pool.with_word(index1, 0x00, seed.active_word)
+    alloc2 = object_pool_find_free(pool1, alloc1.cursor)
+    if alloc2.offset is None:
+        return None
+    flags = input_98be & 0x00FF
+    if flags & A1C8_INPUT_BIT1:
+        direction, sprite = A1C8_SECOND_SHOT[A1C8_INPUT_BIT1]
+    elif flags & A1C8_INPUT_BIT0:
+        direction, sprite = A1C8_SECOND_SHOT[A1C8_INPUT_BIT0]
+    else:
+        direction, sprite = A1C8_SECOND_SHOT[0x00]
+    slot2 = _player_shot_slot(seed, alloc2, x, y, seed.logic_id, sprite, direction=direction)
+    return (slot1, slot2)

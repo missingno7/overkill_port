@@ -1,10 +1,12 @@
-"""Verify the native A19F early-default fire tail (``native_a19f_tail``) vs the VM.
+"""Verify the native A067 EARLY fire tails (``native_a19f_tail`` / ``native_a1c8_tail``) vs the VM.
 
-The A067 EARLY path (DS:2350 <= B6h, BDAC == 0, fire state DS:A958 != 2) reaches A19F, which spawns one
-A4EA-seed shot at the A1AE-projected muzzle position (the A3A8 offset table indexed by the firing object's
-+8 field, plus the firing object's {X,Y}).  Step-hook A19F on the oracle side, project the gameplay pool
-(DS:2B5C) + cursor (DS:95DA) + the firing object (SS:BP +8/+2/+4), run ``native_a19f_tail``, and at A19F's
-return assert the freshly spawned slot's fields + the cursor equal the prediction.
+The A067 EARLY path (DS:2350 <= B6h, BDAC == 0) reaches one of two tails by the fire state DS:A958:
+A19F (A958 != 2) spawns ONE A4EA-seed shot; A1C8 (A958 == 2) spawns TWO (slot1 sprite 18h; slot2's
+direction/sprite picked from the input DS:98BE -- bit1 -> 7/1Fh, elif bit0 -> 1/19h, else 0/18h).  Both
+place each shot at the A1AE-projected muzzle (the A3A8 offset table indexed by the firing object's +8
+field, plus the firing object's {X,Y}).  Step-hook the tail on the oracle side, project the gameplay pool
+(DS:2B5C) + cursor (DS:95DA) + the firing object (SS:BP +8/+2/+4) + the input (DS:98BE), run the native
+tail, and at the return assert every freshly spawned slot's fields + the final cursor equal the prediction.
 
 Usage:
     python -m overkill.probes.verify_native_early_tail_spawn [demo_name] [max_frames]
@@ -24,12 +26,13 @@ from overkill.frame_verify import FrameVerifyConfig, run_frame_verifier  # noqa:
 from overkill.gameplay.player_shot_spawn_gap import set_raise_on_encounter  # noqa: E402
 from overkill.input_waits import pump_demo_frame  # noqa: E402
 from overkill.recovered.domain.object_slots import ObjectPool  # noqa: E402
-from overkill.recovered.systems.objects import native_a19f_tail  # noqa: E402
+from overkill.recovered.systems.objects import native_a19f_tail, native_a1c8_tail  # noqa: E402
 from overkill.recovered.views.object_slots import ObjectSlotView  # noqa: E402
 
 CS = 0x1010
-A19F_ENTRY = 0xA19F
+A19F_ENTRY, A1C8_ENTRY = 0xA19F, 0xA1C8
 CURSOR_95DA = 0x95DA
+INPUT_98BE = 0x98BE
 SRC_INDEX_BP, SRC_X_BP, SRC_Y_BP = 0x08, 0x02, 0x04   # the firing object's +8 / +2 / +4 (SS:BP)
 GAMEPLAY_BASE, GAMEPLAY_COUNT, STRIDE = 0x2B5C, 0x22, 0x38
 STRIDE_WORDS = STRIDE >> 1
@@ -48,7 +51,7 @@ def main(argv) -> int:
     snapshot = demo.snapshot_path()
     video = str(demo.manifest.get("metadata", {}).get("video", "tandy"))
 
-    res = {"calls": 0, "ok": 0, "fail": []}
+    res = {"calls": 0, "ok": 0, "fail": [], "a19f": 0, "a1c8": 0}
     pending: dict[int, tuple] = {}
     orig_step = CPU8086.step
 
@@ -60,31 +63,41 @@ def main(argv) -> int:
             ss = self.s.ss & 0xFFFF
             bp = self.s.bp & 0xFFFF
             key = id(self)
-            if ip == A19F_ENTRY and key not in pending:
+            if ip in (A19F_ENTRY, A1C8_ENTRY) and key not in pending:
                 pool = ObjectPool(base=GAMEPLAY_BASE, stride=STRIDE, slots=tuple(
                     tuple(mem.rw(ds, (GAMEPLAY_BASE + i * STRIDE + 2 * j) & 0xFFFF)
                           for j in range(STRIDE_WORDS))
                     for i in range(GAMEPLAY_COUNT)))
-                pred = native_a19f_tail(
-                    pool, mem.rw(ds, CURSOR_95DA),
-                    mem.rw(ss, (bp + SRC_INDEX_BP) & 0xFFFF),
-                    mem.rw(ss, (bp + SRC_X_BP) & 0xFFFF), mem.rw(ss, (bp + SRC_Y_BP) & 0xFFFF),
-                    lambda off, _m=mem, _d=ds: _m.rw(_d, off & 0xFFFF))
+                cursor = mem.rw(ds, CURSOR_95DA)
+                idx = mem.rw(ss, (bp + SRC_INDEX_BP) & 0xFFFF)
+                src_x = mem.rw(ss, (bp + SRC_X_BP) & 0xFFFF)
+                src_y = mem.rw(ss, (bp + SRC_Y_BP) & 0xFFFF)
+
+                def read_ds_word(off, _m=mem, _d=ds):
+                    return _m.rw(_d, off & 0xFFFF)
+                if ip == A19F_ENTRY:
+                    pred = native_a19f_tail(pool, cursor, idx, src_x, src_y, read_ds_word)
+                else:
+                    pred = native_a1c8_tail(pool, cursor, idx, src_x, src_y, mem.rb(ds, INPUT_98BE), read_ds_word)
                 if pred is not None:
                     ret_addr = mem.rw(ss, self.s.sp & 0xFFFF)
-                    pending[key] = (ret_addr, (self.s.sp + 2) & 0xFFFF, pred)
+                    pending[key] = (ret_addr, (self.s.sp + 2) & 0xFFFF, pred, ip)
             else:
                 p = pending.get(key)
                 if p is not None and ip == p[0] and (self.s.sp & 0xFFFF) == p[1]:
-                    _ret, _sp, pred = pending.pop(key)
-                    bx = self.s.bx & 0xFFFF
-                    slot = ObjectSlotView(mem, ds, bx)
-                    mismatches = [(f, getattr(slot, f), getattr(pred, f))
-                                  for f in _FIELDS if getattr(slot, f) != getattr(pred, f)]
-                    if bx != pred.slot_offset:
-                        mismatches.append(("slot_offset", bx, pred.slot_offset))
-                    if mem.rw(ds, CURSOR_95DA) != pred.new_cursor:
-                        mismatches.append(("new_cursor", mem.rw(ds, CURSOR_95DA), pred.new_cursor))
+                    _ret, _sp, pred, entry_ip = pending.pop(key)
+                    res["a1c8" if entry_ip == A1C8_ENTRY else "a19f"] += 1
+                    shots = pred if isinstance(pred, tuple) else (pred,)
+                    mismatches: list = []
+                    for shot in shots:
+                        slot = ObjectSlotView(mem, ds, shot.slot_offset & 0xFFFF)
+                        mismatches += [(f, getattr(slot, f), getattr(shot, f))
+                                       for f in _FIELDS if getattr(slot, f) != getattr(shot, f)]
+                    bx = self.s.bx & 0xFFFF   # BX is the LAST allocated slot; the cursor parks there too
+                    if bx != shots[-1].slot_offset:
+                        mismatches.append(("slot_offset", bx, shots[-1].slot_offset))
+                    if mem.rw(ds, CURSOR_95DA) != shots[-1].new_cursor:
+                        mismatches.append(("new_cursor", mem.rw(ds, CURSOR_95DA), shots[-1].new_cursor))
                     res["calls"] += 1
                     if not mismatches:
                         res["ok"] += 1
@@ -117,13 +130,14 @@ def main(argv) -> int:
         fv._load_runtime = orig_load
         CPU8086.step = orig_step
 
-    print(f"demo {demo_name} ({max_frames} frames): native native_a19f_tail vs VM A19F spawn: "
-          f"calls={res['calls']} ok={res['ok']} fail={len(res['fail'])}")
+    print(f"demo {demo_name} ({max_frames} frames): native A19F/A1C8 early tails vs VM: "
+          f"calls={res['calls']} ok={res['ok']} fail={len(res['fail'])} "
+          f"(A19F={res['a19f']} A1C8={res['a1c8']})")
     for mism in res["fail"][:5]:
         print(f"  FAIL {mism}")
     ok = res["calls"] > 0 and not res["fail"]
-    print("RESULT:", "PASS -- native A19F early-tail shot byte-exact vs the VM across the demo"
-          if ok else "CHECK -- no A19F dispatches reached, or a divergence")
+    print("RESULT:", "PASS -- native A19F/A1C8 early-tail shots byte-exact vs the VM across the demo"
+          if ok else "CHECK -- no early-tail dispatches reached, or a divergence")
     return 0 if ok else 1
 
 
