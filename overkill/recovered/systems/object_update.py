@@ -7,9 +7,13 @@ has a native whole-slot transform, produces the slot's next record -- with no VM
 behaviour is not yet native are left unchanged (the hybrid VM still owns them), so this composes
 cleanly with the existing per-slot coverage gate that proves each wired handler byte-exact.
 
-Wired today: the handlers with complete pure systems -- AE09 (0x0C) and AED8 (0x02).  Handlers that
-tail-jump to BC4B (B86D/B9F0) join once their movement half is extracted to a pure system and composed
-with ``object_postmove_bc4b``; the BC4B contact path (sprite/logic_id) is the remaining post-move work.
+Wired today (6): AE09 (0x0C), AED8 (0x02), AE7D (0x05), B24D (0x0B), and the BC4B tail-jumpers B86D
+(0x1D) / B9F0 (0x14).  Each is verified byte-exact by the per-slot coverage gate; the in-place pass
+(``native_object_pass_in_place``) running them is checked whole vs the VM by ``verify_native_object_pass``
+(L2/L3/L6).  Death/contact tails that the per-slot gate leaves as ``None`` (which never RETs there) must
+produce the actual death record here (e.g. AE7D y==0 -> x=FFFF/active=0), since the runtime applies them.
+The remaining backlog (B909/BE3C/B2CD: extra globals + BC4B post-move) and the spawn state machine join
+next.
 """
 from __future__ import annotations
 
@@ -21,7 +25,9 @@ from overkill.recovered.domain.object_update import ObjectUpdateGlobals
 from overkill.recovered.systems.collision import object_postmove_bc4b, resolve_moving_object_collision
 from overkill.recovered.systems.objects import (
     object_update_ae09,
+    object_update_ae7d,
     object_update_aed8,
+    object_update_b24d,
     object_update_b86d,
     object_update_b9f0,
 )
@@ -137,10 +143,38 @@ def _advance_b9f0(pool: ObjectPool, i: int, g: ObjectUpdateGlobals) -> dict | No
     return _fold_bc4b_collision(pool, i, g, updates)
 
 
+def _advance_ae7d(pool: ObjectPool, i: int, g: ObjectUpdateGlobals) -> dict | None:
+    u = object_update_ae7d(
+        pool.x_word(i), pool.y_word(i), pool.active_word(i), pool.draw_layer(i),
+        g.a278, g.tile_probe_suppressed, g.tiles,
+    )
+    if u is None:
+        # y==0 -> ADC9 (x=FFFF) -> AD60 deactivate; direction/sprite/y are untouched on this path.
+        return {_OFF_X: 0xFFFF, _OFF_ACTIVE: 0}
+    return {_OFF_DIRECTION: u.direction_or_step, _OFF_SPRITE: u.sprite_or_state,
+            _OFF_X: u.x_word, _OFF_Y: u.y_word, _OFF_ACTIVE: u.active_word}
+
+
+def _advance_b24d(pool: ObjectPool, i: int, g: ObjectUpdateGlobals) -> dict | None:
+    # B24D: 5E42 delta-steer + B250 contact + AD5A/AD60 (the handler owns active); the in-box contact
+    # death returns None (left to the VM, like AED8's death sub-paths).  No sprite change.
+    u = object_update_b24d(
+        pool.x_word(i), pool.y_word(i), pool.direction_word(i), pool.active_word(i),
+        pool.substate_1e(i), pool.move_delta_x(i), pool.move_delta_y(i), pool.move_step_error(i),
+        g.step_mode, g.direction_table, pool.draw_layer(i), pool.logic_id(i),
+        g.ref_box_x, g.ref_box_y, g.a278, g.tile_probe_suppressed, g.tiles,
+    )
+    if u is None:
+        return None
+    return {_OFF_DIRECTION: u.direction_or_step, _OFF_X: u.x_word, _OFF_Y: u.y_word, _OFF_ACTIVE: u.active_word}
+
+
 # logic_id -> per-slot advance.  Grow as handlers gain complete pure systems.
 NATIVE_OBJECT_HANDLERS = {
     0x0C: _advance_ae09,
     0x02: _advance_aed8,
+    0x05: _advance_ae7d,
+    0x0B: _advance_b24d,
     0x1D: _advance_b86d,
     0x14: _advance_b9f0,
 }
