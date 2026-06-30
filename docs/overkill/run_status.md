@@ -272,6 +272,27 @@ Remaining toward a running native level: the dynamic scroll/camera init + handin
 recovered frame loop + renderer (game_core), the SHARED startup assets, and -- to drop the image
 dependency -- unpacking `OVERKILL.EXE` (self-extracting) to produce `exe_image`.
 
+## 2026-06-30 - Wiring proven: cold NativeLevel drives the recovered tile probe == the VM
+
+First demonstration of the cold-loaded data driving a recovered gameplay system end to end.  Added the
+adapter `recovered/adapters/cold_level_adapter.py::level_tile_context_from_native(native_level, origin_x,
+row_base)` -> the recovered `LevelTileContext` (tile_plane + class_table straight from the cold
+`NativeLevel`; scroll `DS:234E/2350` passed in as the dynamic half).  Adapters are outside the pure-layer
+audit, so this can bridge `asset_codecs` -> `recovered.domain`.
+
+`tests/test_cold_level_wiring.py`: builds the context from `load_native_level` and runs the recovered
+AD60 tile probe (`object_tile_probe_deactivates_ad60`, the 5073 offset + 505B class lookup) over a grid
+of object positions, asserting it matches the same probe over the **live VM tile segment** read from the
+snapshot -- 500+ in-map positions, deactivations firing, all equal.  Since the cold buffers are
+byte-identical to the VM (proven separately) and the recovered probe is itself VM-verified, this closes
+the chain: **cold (exe_image, container, level) -> NativeLevel -> LevelTileContext -> recovered AD60
+== the real game.**  lint 239 + both audits green.
+
+So cold-loaded level data now provably feeds the recovered logic.  Next toward a *running* native level:
+extend the same wiring to the whole per-frame object pass / player step / renderer over a cold
+`NativeLevel` (game_core), plus the scroll/camera init; then the SHARED startup assets and the EXE
+unpack.
+
 ## 2026-06-30 - Whole-scan attempt 2 (shared store): real blocker is a variant-2 candidate kill (logged)
 
 Built the corrected shared-store whole scan (one contiguous 0x45-slot store, both pointer-table loops
