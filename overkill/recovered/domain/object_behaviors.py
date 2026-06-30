@@ -192,6 +192,22 @@ class B2cdSlotUpdate:
 
 
 @dataclass(frozen=True, slots=True)
+class Ae7dSlotUpdate:
+    """Pure WHOLE per-slot result of the 1010:AE7D behavior (EFAE logic_id 0x05): a scroll-left mover.
+
+    AE7D dies at y==0 (ADC9); else moves X left 4px and, unless the slot is 16px-aligned in Y with a
+    clear render mode (BDAC) and the tile one probe-row below has class 1, also steers up (direction 7,
+    Y -= 4).  The sprite is direction + 8; then AD5A (X += DS:A278) and the AD60 bounds/tile tail set
+    ``active`` (0x05 is a tile-probe family).  substate is untouched."""
+
+    direction_or_step: int
+    sprite_or_state: int
+    x_word: int
+    y_word: int
+    active_word: int
+
+
+@dataclass(frozen=True, slots=True)
 class B86dDriftUpdate:
     """Pure result of the 1010:B86D *fall-through* (formation-drift) path's slot writes.
 
