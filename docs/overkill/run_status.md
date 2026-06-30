@@ -71,10 +71,24 @@ byte/word codecs (types 0-3, DS=25CC); type 4 (vertical, needs DS==CS) is checke
 (routes to the already-airtight vertical codec) + the error path.  tests/test_asset_loader_dispatch.py:
 8 tests; full codec suite 48 green; lint 234 + both audits green.
 
-The asset *decode* path is now complete and VM-free: a raw asset blob (type byte first) -> decoded
-bytes, every codec airtight-verified.  Next: the **level loader** -- which files a level pulls, which
-get decode_asset'd, and where the decoded blobs land in NativeGameState/LevelState (the file open/read
-half is plain Python I/O; the mapping level -> filenames -> destinations is the RE work).
+**LZ codec done -- ALL SIX asset codecs now pure + airtight:** added `asset_codecs.decode_lz_bytes
+(stream) -> bytes` (overkill/asset_codecs/lz.py), the VM-free twin of the 1010:ECF2 LZ decoder -- the
+4 KiB-window LZSS used for the bulk of OVERKILL's compressed assets (the big one, separate from the
+0283 type-dispatch).  Machine mechanics stripped (1 KiB DS:D8B8 input ring + DOS refill, ES:DI segment
+wrap, CS-relative counters, stack scratch); what's left is the codec: an 8-bit flag word fed LSB-first
+(refilled every 8 items, 0xFF00 marker), 1-bit = literal, 0-bit = back-reference (two bytes -> 12-bit
+offset + length (n>>12)+3), ax==0 then a byte (0 terminates, else resync), window write cursor starting
+0x0FEE.  Verified against the ECF2 hook body on a blank Memory across literal runs, the flag-refill
+boundary, back-reference copy, terminator, the rare ax==0/extra!=0 resync, and multi-flag-group streams
+(tests/test_asset_codec_lz.py: 5 tests).  Full codec+loader suite 53 green; lint 234 + both audits green.
+
+So the **entire asset decode layer is now VM-free and airtight**: six codecs (five 0283-dispatch RLE
+codecs + decode_asset over them, plus the standalone LZ), every one verified against the real ASM (hook
+body or image-stepped).  Next: the **container/level loader** -- assets live in assets/OVERKILL (518 KB,
+an MZ-overlay-style pack opened by 254A:04D7: a directory of XOR-encoded 12-byte-header entries by name).
+The file open/read is plain Python I/O; the RE work is the pure container directory parse (lift the
+recovered overlay codecs decode_overlay_xor / 0582 / 05A1 / 05D9) -> raw blob by name -> decode_asset /
+decode_lz_bytes, then which assets a level pulls and where the decoded blobs land in NativeGameState.
 
 ## 2026-06-30 - Whole-scan attempt 2 (shared store): real blocker is a variant-2 candidate kill (logged)
 

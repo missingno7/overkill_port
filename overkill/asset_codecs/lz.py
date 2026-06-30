@@ -138,6 +138,60 @@ def copy_lz_back_reference(cpu) -> None:
     cpu.s.ip = 0xED26
 
 
+def decode_lz_bytes(stream) -> bytes:
+    """Pure 1010:ECF2 LZ decode: a compressed byte stream -> the decompressed bytes.
+
+    The VM-free twin of :func:`decode_lz_asset`, with the machine mechanics stripped (the 1 KiB DS:D8B8
+    input ring + DOS refill, the ES:DI segment wrap, the CS-relative counters, and the stack scratch).
+    What remains is the codec: a 4 KiB sliding-window LZSS.  An 8-bit flag word feeds one control bit per
+    item LSB-first (refilled from the stream every 8 items, ``0xFF00`` high marker); a 1 bit is a literal
+    byte (emitted and pushed into the window), a 0 bit is a back-reference -- two bytes ``ax`` give a
+    12-bit window offset and a length of ``(ax>>12)+3``.  ``ax==0`` reads one more byte: ``0`` terminates,
+    otherwise it is pushed back and a 3-byte copy from window offset 0 runs (the ASM resync path).  The
+    window starts zeroed with the write cursor at ``0x0FEE``.  Algorithm is the hook's, ASM-verified.
+    """
+    iterator = iter(stream)
+    pushback: list[int] = []
+
+    def read() -> int:
+        return pushback.pop() if pushback else (next(iterator) & 0xFF)
+
+    out = bytearray()
+    window = bytearray(0x1000)
+    write_pos = 0x0FEE
+    flags = 0
+
+    while True:
+        flags >>= 1
+        if (flags & 0x0100) == 0:  # high marker exhausted -> refill 8 control bits
+            flags = 0xFF00 | read()
+        if flags & 1:  # literal
+            byte = read()
+            out.append(byte)
+            window[write_pos] = byte
+            write_pos = (write_pos + 1) & 0x0FFF
+            continue
+        # back-reference
+        low = read()
+        high = read()
+        word = ((high & 0xFF) << 8) | (low & 0xFF)
+        if word == 0:
+            extra = read()
+            if extra == 0:
+                return bytes(out)
+            pushback.append(extra)  # ASM resync: push the byte back, copy 3 from offset 0
+            word = 0
+        length = ((word >> 8) & 0x0F) + 3
+        offset = ((((word >> 8) >> 4) << 8) | (word & 0xFF)) & 0x0FFF
+        read_pos = offset
+        for _ in range(length):
+            byte = window[read_pos]
+            out.append(byte)
+            window[write_pos] = byte
+            read_pos = (read_pos + 1) & 0x0FFF
+            write_pos = (write_pos + 1) & 0x0FFF
+
+
 def decode_lz_asset(cpu) -> None:
     """Full verified replacement for OVERKILL's 1010:ECF2 LZ asset decoder.
 
