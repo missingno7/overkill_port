@@ -572,14 +572,24 @@ nor the shared store fixed them**. Confirmed not a tables-overlap bug and not AE
   (active→0, substate untouched), then the gameplay loop skips it; my effect-loop collision
   does **not** kill it, so my gameplay loop AED8-processes it. (Slots: L2 0x2ce4/0x3064,
   L3 0x2c3c/0x2c74.)
-- **Why my pass misses the kill (hypothesis, needs a trace):** an order-dependent candidate
-  interaction — some earlier scanner's kill/clear changes which candidate a later scanner's
-  62F6 returns, OR these variant-2 candidates are deactivated via a reaction path not yet
-  modelled (owner-link, or a candidate-side effect of BD0D/BD17 on a *neighbour* slot).
+- **ROOT CAUSE (traced 2026-06-30, RESOLVED the mystery):** NOT an order/path bug. A trace of the
+  effect-loop kills (`scratchpad/trace_effect_loop_kills.py`) shows all 17 effect-loop deactivations on
+  L2 are variant-2 candidates cleared at `BF1B` -- and the SCANNER logic_ids that trigger them are
+  `0x1d` (B86D, native: 15) and **`0x1c` (1) + `0x1e` (1) -- NOT native handlers**.  My driver only
+  dispatches `0x0C/0x02/0x1D/0x14`, so it skips the `0x1c`/`0x1e` scanners entirely, never runs their
+  BC4B/62F6 collision, and so never kills the 2 candidates -> the gameplay loop re-processes them.
+- **The whole-scan is therefore blocked on recovering the `0x1c` and `0x1e` object behaviors** as
+  native whole-slot handlers (they are scanners reaching BC4B, adjacent to B86D=`0x1d`; rare ~1
+  each/400 frames).  Find their routines via the EFAE/EFC4 behaviour dispatch, recover movement+BC4B
+  like B86D/B9F0, verify per-slot with `verify_native_object_update_driver`, then the whole-scan
+  composes.  (Until both are native, the whole scan cannot be byte-exact -- every collision scanner
+  must run.)
 - **What IS verified + committed (do NOT re-derive):** the per-slot driver incl. collision
   death (`verify_native_object_update_driver`, sprite_deferred 0); the effect-loop in-place
   pass (`verify_native_object_pass_in_place`, L2/L3 0-div); the gameplay snapshot
   (`verify_native_object_pass`). Only the *combined whole-scan* is open.
-- **Next:** trace one failing slot (e.g. L2 0x2ce4) through the VM's effect loop — find the
-  scanner + the BEC5 path that deactivates it — then extend the candidate-deactivation
-  modelling (owner-link / BD17 neighbour effects) so the in-place scan kills it too.
+- **Next (now precise):** recover the `0x1c` and `0x1e` object behaviors as native whole-slot
+  handlers (movement + BC4B contact, like B86D/B9F0), via the EFAE/EFC4 behaviour dispatch; verify
+  each per-slot with `verify_native_object_update_driver`; then rebuild the shared-store
+  `native_object_scan` + `verify_native_object_scan` (the design is correct, only the missing
+  scanners blocked it) and it should go byte-exact.
