@@ -400,6 +400,31 @@ it is ~95% and parked -- the verified asset/data loading stands and does not dep
 
 The verified data work stands: all per-level + all 8 startup shared assets cold-load byte-exact.
 
+## 2026-06-30 - Native game runner: the two halves meet (cold level -> recovered frames, VM-free)
+
+Built `overkill/native_game.py::NativeGame` -- the standalone backbone where the cold-loaded level data
+meets the recovered per-frame systems.  A `NativeGame` pairs a cold-loaded `NativeLevel`
+(load_native_level: tile_plane/class_table/blocks/graphics, all byte-verified) with the evolving
+`NativeGameState`, and advances it with the recovered 9B2E stages and NO VM:
+
+- `NativeGame.load_level(exe_image, container, level_num, state)` -- cold-load a level + a starting state.
+- `.tile_context` -- the recovered LevelTileContext over the level's cold tile plane + class table
+  (via the cold_level_adapter; byte-identical to the VM's, proven by test_cold_level_wiring).
+- `.step_player(frame_input)` -- the player stage (input decode + view-anchor movement bits, 9B2E).
+- `.step_objects(globals)` -- the object-update pass over both pools, sampling the cold tile context.
+
+tests/test_native_game.py: loads level 0 entirely from the original files (EXE image + container), steps
+a player frame (move right -> view anchor Y advances, the recovered movement bits) and an object frame
+(over the cold tile context).  2 tests; 14 across native_game+frame_loop+native_level+cold_level_wiring;
+lint 241 + both audits green.  (Distinct from `overkill/game_core/`, the backend-protocol seam.)
+
+So a level now **loads cold and runs recovered gameplay frames over it, VM-free** -- the standalone
+half of the hybrid->native model is wired for the stages that are recovered.  Toward the full running
+game, the remaining stages join `NativeGame` as each becomes a pure system (scripted input 99F6, action
+fan-out A067, contact 9CB6, the coordinate rings, the scrolling spawn), plus the render path (compose
+the playfield from the cold blocks/graphics + objects -> the verified colorize/present) and the front-end
+/ audio.  The cold data + recovered-systems foundation under all of it is now in place and verified.
+
 ## 2026-06-30 - Whole-scan attempt 2 (shared store): real blocker is a variant-2 candidate kill (logged)
 
 Built the corrected shared-store whole scan (one contiguous 0x45-slot store, both pointer-table loops
