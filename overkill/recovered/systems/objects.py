@@ -1343,3 +1343,55 @@ def native_a41a_shot(pool: ObjectPool, cursor: int, state: int,
         logic_id=seed.logic_id, substate=seed.substate,
         x_word=source_x & 0xFFFF, y_word=(source_y + A41A_SHOT_Y_BIAS) & 0xFFFF,
     )
+
+
+# A41A two-slot pair variants (A958 state 3/4 -> A464/A438 -> run_a438_pair).  Each state overrides the
+# spawned slots' logic_id (+18) and sprite (+8); the second shot's X is the first's + 8.
+A41A_PAIR_STATES = {0x0003: (0x0007, 0x0037), 0x0004: (0x0008, 0x0035)}  # state -> (logic_id +18, sprite +8)
+A41A_PAIR_X_OFFSET = 0x0008                            # the second shot's X = the first's + 8 (A438 tail)
+
+
+def _a41a_pair_slot(seed: ObjectSpawnSeedA4EA, alloc: FreeSlotAllocation,
+                    x: int, y: int, logic_id: int, sprite: int) -> PlayerShotSpawn:
+    """One A41A-pair slot: the A4EA seed with X/Y and the per-state logic_id/sprite overrides applied."""
+    return PlayerShotSpawn(
+        slot_offset=alloc.offset, new_cursor=alloc.cursor,
+        active_word=seed.active_word, scan_enable_or_solid=seed.scan_enable_or_solid,
+        direction_or_step=seed.direction_or_step, sprite_or_state=sprite & 0xFFFF,
+        scan_flag=seed.scan_flag, hazard_class=seed.hazard_class,
+        logic_id=logic_id & 0xFFFF, substate=seed.substate, x_word=x & 0xFFFF, y_word=y & 0xFFFF,
+    )
+
+
+def native_a41a_pair(pool: ObjectPool, cursor: int, state: int,
+                     source_x: int, source_y: int, a3a0: int
+                     ) -> tuple[PlayerShotSpawn, PlayerShotSpawn] | None:
+    """Pure WHOLE A41A two-slot player-shot pair (the A958 state 3/4 cs:A42C targets A464/A438).
+
+    Gated by ``DS:A3A0 == 0`` (no spawn otherwise).  Allocates two gameplay slots -- the first is marked
+    active so :func:`object_pool_find_free` skips it for the second (the VM stamps the A4EA seed, which
+    sets ``active``, before the second allocation) -- each stamped with the A4EA seed + ``{X, Y =
+    source_y + 4}`` and the per-state ``logic_id`` (+18) / sprite (+8) overrides (state 3 -> 7/37h, state
+    4 -> 8/35h); the second shot's X is the first's + 8.  Returns ``(slot1, slot2)`` or None (gate closed,
+    or a full pool -- the 7550 recycle is unmodelled).  The A970 += 2 counter is the fanout caller's, not
+    part of the per-shot stamp."""
+    st = state & 0xFFFF
+    if st not in A41A_PAIR_STATES:
+        return None
+    if (a3a0 & 0xFFFF) != 0x0000:
+        return None  # the A3A0 gate is closed -> no spawn this dispatch
+    stamp_logic, stamp_sprite = A41A_PAIR_STATES[st]
+    seed = object_spawn_seed_a4ea()
+    y = (source_y + A41A_SHOT_Y_BIAS) & 0xFFFF
+    alloc1 = object_pool_find_free(pool, cursor)
+    if alloc1.offset is None:
+        return None  # pool full -> the 7550 recycle path (not modelled)
+    slot1 = _a41a_pair_slot(seed, alloc1, source_x, y, stamp_logic, stamp_sprite)
+    index1 = (((alloc1.offset - pool.base) & 0xFFFF) // (pool.stride & 0xFFFF))
+    pool1 = pool.with_word(index1, 0x00, seed.active_word)  # the seed marks slot1 active before alloc 2
+    alloc2 = object_pool_find_free(pool1, alloc1.cursor)
+    if alloc2.offset is None:
+        return None
+    slot2 = _a41a_pair_slot(seed, alloc2, (source_x + A41A_PAIR_X_OFFSET) & 0xFFFF, y,
+                            stamp_logic, stamp_sprite)
+    return (slot1, slot2)

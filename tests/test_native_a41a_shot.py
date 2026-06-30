@@ -6,7 +6,7 @@ None paths (multi-slot states, full pool).  Byte-exact confirmation vs the VM is
 from __future__ import annotations
 
 from overkill.recovered.domain.object_slots import ObjectPool
-from overkill.recovered.systems.objects import native_a41a_shot, object_spawn_seed_a4ea
+from overkill.recovered.systems.objects import native_a41a_pair, native_a41a_shot, object_spawn_seed_a4ea
 
 BASE, STRIDE = 0x2B5C, 0x38
 _FREE = (0x0000,) + (0x0000,) * 0x1B   # active_word 0 -> free
@@ -15,6 +15,10 @@ _OCC = (0x0001,) + (0x0000,) * 0x1B    # active_word 1 -> occupied
 
 def _pool_free_slot0() -> ObjectPool:
     return ObjectPool(base=BASE, stride=STRIDE, slots=(_FREE, _OCC, _OCC, _OCC))
+
+
+def _pool_free_slots01() -> ObjectPool:
+    return ObjectPool(base=BASE, stride=STRIDE, slots=(_FREE, _FREE, _OCC, _OCC))
 
 
 def test_state0_a4d7_is_seed_plus_coords():
@@ -62,3 +66,37 @@ def test_multislot_and_tail_states_return_none():
 def test_full_pool_returns_none():
     pool = ObjectPool(base=BASE, stride=STRIDE, slots=(_OCC, _OCC, _OCC, _OCC))
     assert native_a41a_shot(pool, BASE, 0, 0x50, 0x60, 0xFFFF) is None   # 7550 recycle not modelled
+
+
+def test_state3_a464_pair_two_slots():
+    seed = object_spawn_seed_a4ea()
+    pair = native_a41a_pair(_pool_free_slots01(), BASE, 3, 0x0050, 0x0060, 0x0000)
+    assert pair is not None
+    s1, s2 = pair
+    assert (s1.slot_offset, s2.slot_offset) == (BASE, BASE + STRIDE)   # second skips the first (now active)
+    assert (s1.x_word, s2.x_word) == (0x0050, 0x0058)                  # second X = first + 8
+    assert s1.y_word == 0x0064 and s2.y_word == 0x0064
+    assert s1.logic_id == 0x0007 and s2.logic_id == 0x0007            # +18 override (A464)
+    assert s1.sprite_or_state == 0x0037 and s2.sprite_or_state == 0x0037
+    assert s1.active_word == seed.active_word and s1.hazard_class == seed.hazard_class
+
+
+def test_state4_a438_pair_overrides():
+    s1, s2 = native_a41a_pair(_pool_free_slots01(), BASE, 4, 0x0050, 0x0060, 0x0000)
+    assert s1.logic_id == 0x0008 and s2.logic_id == 0x0008            # A438
+    assert s1.sprite_or_state == 0x0035 and s2.sprite_or_state == 0x0035
+
+
+def test_pair_gated_by_a3a0():
+    assert native_a41a_pair(_pool_free_slots01(), BASE, 3, 0x50, 0x60, 0x0001) is None   # gate closed
+
+
+def test_pair_needs_two_free_slots():
+    pool = ObjectPool(base=BASE, stride=STRIDE, slots=(_FREE, _OCC, _OCC, _OCC))
+    assert native_a41a_pair(pool, BASE, 3, 0x50, 0x60, 0x0000) is None   # second alloc fails -> None
+
+
+def test_pair_rejects_single_and_tail_states():
+    pool = _pool_free_slots01()
+    assert native_a41a_pair(pool, BASE, 0, 0x50, 0x60, 0x0000) is None   # single state
+    assert native_a41a_pair(pool, BASE, 5, 0x50, 0x60, 0x0000) is None   # 44AF tail

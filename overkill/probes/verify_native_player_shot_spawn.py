@@ -25,14 +25,17 @@ from dos_re.input_demo import InputDemoPlayback  # noqa: E402
 from overkill.frame_verify import FrameVerifyConfig, run_frame_verifier  # noqa: E402
 from overkill.input_waits import pump_demo_frame  # noqa: E402
 from overkill.recovered.domain.object_slots import ObjectPool  # noqa: E402
-from overkill.recovered.systems.objects import native_a41a_shot  # noqa: E402
+from overkill.recovered.systems.objects import native_a41a_pair, native_a41a_shot  # noqa: E402
 from overkill.recovered.views.object_slots import ObjectSlotView  # noqa: E402
 
 CS = 0x1010
 A41A_ENTRY = 0xA41A
 A958_STATE = 0xA958
 A3EC_DIR = 0xA3EC
+A3A0_GATE = 0xA3A0
 ALLOC_CURSOR_95DA = 0x95DA
+SINGLE_SLOT_STATES = (0x0000, 0x0001, 0x0002)
+PAIR_STATES = (0x0003, 0x0004)
 GAMEPLAY_BASE, GAMEPLAY_COUNT, STRIDE = 0x2B5C, 0x22, 0x38
 STRIDE_WORDS = STRIDE >> 1
 OFF_X, OFF_Y = 0x02, 0x04
@@ -50,9 +53,13 @@ def main(argv) -> int:
     snapshot = demo.snapshot_path()
     video = str(demo.manifest.get("metadata", {}).get("video", "tandy"))
 
-    res = {"calls": 0, "ok": 0, "skip": 0, "fail": []}
+    res = {"calls": 0, "ok": 0, "skip": 0, "pairs": 0, "fail": []}
     pending: dict[int, tuple] = {}
     orig_step = CPU8086.step
+
+    def _shot_field_mismatches(mem, ds, shot) -> list:
+        slot = ObjectSlotView(mem, ds, shot.slot_offset & 0xFFFF)
+        return [(f, getattr(slot, f), getattr(shot, f)) for f in _FIELDS if getattr(slot, f) != getattr(shot, f)]
 
     def step(self):
         if getattr(self, "_side", "") == "ref" and (self.s.cs & 0xFFFF) == CS:
@@ -63,16 +70,19 @@ def main(argv) -> int:
             key = id(self)
             if ip == A41A_ENTRY and key not in pending:
                 si = self.s.si & 0xFFFF
-                if si != 0xFFFF:
+                state = mem.rw(ds, A958_STATE)
+                if si != 0xFFFF and state in (SINGLE_SLOT_STATES + PAIR_STATES):
                     pool = ObjectPool(base=GAMEPLAY_BASE, stride=STRIDE, slots=tuple(
                         tuple(mem.rw(ds, (GAMEPLAY_BASE + i * STRIDE + 2 * j) & 0xFFFF)
                               for j in range(STRIDE_WORDS))
                         for i in range(GAMEPLAY_COUNT)))
-                    pred = native_a41a_shot(
-                        pool, mem.rw(ds, ALLOC_CURSOR_95DA), mem.rw(ds, A958_STATE),
-                        mem.rw(ds, (si + OFF_X) & 0xFFFF), mem.rw(ds, (si + OFF_Y) & 0xFFFF),
-                        mem.rw(ds, A3EC_DIR),
-                    )
+                    cursor = mem.rw(ds, ALLOC_CURSOR_95DA)
+                    src_x = mem.rw(ds, (si + OFF_X) & 0xFFFF)
+                    src_y = mem.rw(ds, (si + OFF_Y) & 0xFFFF)
+                    if state in SINGLE_SLOT_STATES:
+                        pred = native_a41a_shot(pool, cursor, state, src_x, src_y, mem.rw(ds, A3EC_DIR))
+                    else:
+                        pred = native_a41a_pair(pool, cursor, state, src_x, src_y, mem.rw(ds, A3A0_GATE))
                     if pred is not None:
                         ret_addr = mem.rw(ss, self.s.sp & 0xFFFF)
                         pending[key] = (ret_addr, (self.s.sp + 2) & 0xFFFF, pred)
@@ -81,15 +91,19 @@ def main(argv) -> int:
                 if p is not None and ip == p[0] and (self.s.sp & 0xFFFF) == p[1]:
                     _ret, _sp, pred = pending.pop(key)
                     bx = self.s.bx & 0xFFFF
-                    slot = ObjectSlotView(mem, ds, bx)
                     cursor = mem.rw(ds, ALLOC_CURSOR_95DA)
-                    mismatches = [(f, getattr(slot, f), getattr(pred, f))
-                                  for f in _FIELDS if getattr(slot, f) != getattr(pred, f)]
-                    if bx != pred.slot_offset:
-                        mismatches.append(("slot_offset", bx, pred.slot_offset))
-                    if cursor != pred.new_cursor:
-                        mismatches.append(("new_cursor", cursor, pred.new_cursor))
+                    shots = pred if isinstance(pred, tuple) else (pred,)
+                    mismatches: list = []
+                    for shot in shots:
+                        mismatches += _shot_field_mismatches(mem, ds, shot)
+                    # BX is the LAST allocated slot; the final cursor parks there too.
+                    if bx != shots[-1].slot_offset:
+                        mismatches.append(("slot_offset", bx, shots[-1].slot_offset))
+                    if cursor != shots[-1].new_cursor:
+                        mismatches.append(("new_cursor", cursor, shots[-1].new_cursor))
                     res["calls"] += 1
+                    if isinstance(pred, tuple):
+                        res["pairs"] += 1
                     if not mismatches:
                         res["ok"] += 1
                     else:
@@ -121,8 +135,8 @@ def main(argv) -> int:
         fv._load_runtime = orig_load
         CPU8086.step = orig_step
 
-    print(f"demo {demo_name} ({max_frames} frames): native native_a41a_shot vs VM A41A single-slot spawn: "
-          f"calls={res['calls']} ok={res['ok']} fail={len(res['fail'])}")
+    print(f"demo {demo_name} ({max_frames} frames): native native_a41a_shot/pair vs VM A41A spawn: "
+          f"calls={res['calls']} ok={res['ok']} pairs={res['pairs']} fail={len(res['fail'])}")
     for mismatches in res["fail"][:5]:
         print(f"  FAIL {mismatches}")
     ok = res["calls"] > 0 and not res["fail"]
