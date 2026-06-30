@@ -1,3 +1,33 @@
+## 2026-06-30 - Convergence point: gameplay-frame leaves are recovered; the order-dependent pass is next
+
+After the collision capstone, surveyed what's left of the gameplay frame and found a clear
+convergence. **Both major stateful subsystems now have their leaves recovered AND verified
+produced-vs-VM:**
+- **Collision** (this session): the whole moving-object fate -- object_overlap_scan_62f6 (which
+  candidate) + bec5_moving_object_outcome (reaction) + resolve_collision_hit (damage->C037 death),
+  merged into resolve_moving_object_collision, verified end-to-end (6662 collisions, 0 divergence).
+- **Spawn** (already done): the allocator object_pool_find_free (7573) + all four spawn seeds
+  (8209/a4ea/7420/7476) each have produced-vs-VM probes (verify_native_allocator / _spawn_seed*).
+
+So the remaining gameplay-frame work is **not more leaves -- it is one integration**: an
+**order-dependent native object pass**. The current native_object_pass is snapshot-based (it projects
+the pool once, advances each slot independently with frozen globals), which is exactly right for
+movement (verified whole-pass) but **cannot** carry collision or spawn, because:
+1. the collision scan (62F6) reads the *evolving* pool -- a later slot sees earlier slots' new
+   positions/deaths; a frozen snapshot is stale;
+2. spawns mutate the pool mid-walk (new slots appear for later iterations);
+3. the per-slot driver gate predicts from the slot's *handler-entry* state, but 62F6 runs *after*
+   that slot's movement -- so even per-slot, the candidate pool must be the post-move-time one.
+
+The faithful native object pass must therefore walk the pool **in order, mutating it in place**, so
+each slot's collision/spawn sees the prior slots' updates -- matching the VM's A9E0 walk. That is the
+next major integration (and what finally retires the object pass's death-sprite deferral). Open
+questions to resolve when building it: whether the moving-object scanner self-overlaps (depends on the
+projectile's +1Eh scan_enable_or_solid -- the boss demo's 101 "unclassified" reactions are either
+self-hits or owner-linked), and the effect-loop's per-entry DS:2340 tick evolution (the gameplay loop
+froze cleanly because only the effect loop increments it). No code this entry -- it records the
+convergence so the integration is built deliberately rather than bolted onto the snapshot pass.
+
 ## 2026-06-30 - Collision island CAPSTONE: the whole moving-object collision, verified end-to-end
 
 Merged the three recovered collision systems into the moving object's complete BC4B contact result.
