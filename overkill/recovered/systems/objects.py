@@ -37,6 +37,7 @@ from overkill.recovered.domain.object_slots import (
     ObjectSlotRecord,
     ObjectSpawnSeed,
     ObjectSpawnSeedA4EA,
+    PlayerFanoutResult,
     PlayerShotSpawn,
 )
 from overkill.recovered.domain.tilemap import LevelTileContext, TileProbeInput
@@ -1432,3 +1433,84 @@ def native_a378_followup(pool: ObjectPool, cursor: int, source_x: int, source_y:
         return None
     slot2 = _player_shot_slot(seed, alloc2, x, y, A378_SLOT2_LOGIC, A378_SPRITE)
     return (slot1, slot2)
+
+
+# --- A067 child schedule walks (A3FF / A3CA) ------------------------------------------------------------
+# These drive the A41A per-shot variants over the equipped weapon's shot schedules, threading the
+# allocator across spawns, and compose the verified native_a41a_shot/pair (+ native_a378_followup) leaves.
+A3CA_SIDE_ANCHOR_A3EC = (0x0007, 0x0001, 0x0007, 0x0001)  # A3CA sets DS:A3EC per source (A966/8/A/C)
+A3FF_MIRROR_A3EC = 0xFFFF                                 # A3FF sets DS:A3EC = FFFFh for both sources (A962/A964)
+_A41A_SINGLE_STATES = (0x0000, 0x0001, 0x0002)
+_A41A_PAIR_STATES = (0x0003, 0x0004)
+
+
+def _a41a_dispatch(pool: ObjectPool, cursor: int, fire_state: int,
+                   source_x: int, source_y: int, a3ec: int, a3a0: int) -> tuple[PlayerShotSpawn, ...]:
+    """One A41A jump-table dispatch (by the fire state DS:A958): the 0/1/2 single variant or the 3/4 pair.
+
+    Returns the tuple of shots A41A produced (0 for a full pool / state 5 / the gated pair, 1 single, 2
+    pair)."""
+    st = fire_state & 0xFFFF
+    if st in _A41A_SINGLE_STATES:
+        shot = native_a41a_shot(pool, cursor, st, source_x, source_y, a3ec)
+        return (shot,) if shot is not None else ()
+    if st in _A41A_PAIR_STATES:
+        pair = native_a41a_pair(pool, cursor, st, source_x, source_y, a3a0)
+        return pair if pair is not None else ()
+    return ()  # state 5 (44AF) or an out-of-range table target -> no native shot
+
+
+def _thread_player_shots(pool: ObjectPool, cursor: int,
+                         shots: tuple[PlayerShotSpawn, ...]) -> tuple[ObjectPool, int]:
+    """Mark each freshly spawned slot active (so the next object_pool_find_free skips it) and advance the
+    allocator cursor, exactly as the VM's per-A4EA seed + DS:95DA park do."""
+    stride = pool.stride & 0xFFFF
+    base = pool.base & 0xFFFF
+    for shot in shots:
+        index = (((shot.slot_offset - base) & 0xFFFF) // stride)
+        pool = pool.with_word(index, 0x00, shot.active_word)
+        cursor = shot.new_cursor
+    return pool, cursor
+
+
+def native_a3ca(pool: ObjectPool, cursor: int, fire_state: int,
+                side_schedule: tuple, a3a0: int, read_ds_word) -> PlayerFanoutResult:
+    """Pure 1010:A3CA side-anchor walk: four A41A dispatches over the side schedules (DS:A966/A968/A96A/
+    A96C), with DS:A3EC alternating 7/1/7/1.  Each present schedule entry (SI != FFFFh) reads its shot
+    coordinate {[si+2], [si+4]} and dispatches through :func:`_a41a_dispatch`; the cursor + the spawned
+    slots are threaded across the four sources.  ``side_schedule`` is the four SI pointer values; absent
+    sources (FFFFh) spawn nothing (the VM's A41A returns early)."""
+    spawns: list[PlayerShotSpawn] = []
+    for si, a3ec in zip(side_schedule, A3CA_SIDE_ANCHOR_A3EC):
+        if (si & 0xFFFF) == 0xFFFF:
+            continue
+        shots = _a41a_dispatch(pool, cursor, fire_state,
+                               read_ds_word((si + 0x02) & 0xFFFF), read_ds_word((si + 0x04) & 0xFFFF),
+                               a3ec, a3a0)
+        if shots:
+            spawns.extend(shots)
+            pool, cursor = _thread_player_shots(pool, cursor, shots)
+    return PlayerFanoutResult(spawns=tuple(spawns), final_cursor=cursor & 0xFFFF)
+
+
+def native_a3ff(pool: ObjectPool, cursor: int, fire_state: int, mirror_schedule: tuple,
+                a3a0: int, a95e: int, a3a4: int, read_ds_word) -> PlayerFanoutResult:
+    """Pure 1010:A3FF mirrored-anchor walk: per source (DS:A962/A964, DS:A3EC = FFFFh) an A41A dispatch
+    followed by the A378 SI follow-up.  Each present source (SI != FFFFh) reads {[si+2], [si+4]}, runs
+    :func:`_a41a_dispatch` then :func:`native_a378_followup` (which spawns only when its A95E/A3A4 gates
+    are open -- usually a no-op in the corpus); the cursor + spawned slots thread across both sources and
+    both stages."""
+    spawns: list[PlayerShotSpawn] = []
+    for si in mirror_schedule:
+        if (si & 0xFFFF) == 0xFFFF:
+            continue
+        src_x, src_y = read_ds_word((si + 0x02) & 0xFFFF), read_ds_word((si + 0x04) & 0xFFFF)
+        shots = _a41a_dispatch(pool, cursor, fire_state, src_x, src_y, A3FF_MIRROR_A3EC, a3a0)
+        if shots:
+            spawns.extend(shots)
+            pool, cursor = _thread_player_shots(pool, cursor, shots)
+        follow = native_a378_followup(pool, cursor, src_x, src_y, a95e, a3a4)
+        if follow is not None:
+            spawns.extend(follow)
+            pool, cursor = _thread_player_shots(pool, cursor, follow)
+    return PlayerFanoutResult(spawns=tuple(spawns), final_cursor=cursor & 0xFFFF)

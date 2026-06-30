@@ -228,6 +228,21 @@ class PlayerShotSpawn:
 
 
 @dataclass(frozen=True, slots=True)
+class PlayerFanoutResult:
+    """Pure result of one A067 child schedule walk (A3FF / A3CA): the player shots it spawned + the
+    advanced allocator cursor.
+
+    ``spawns`` is the ordered tuple of :class:`PlayerShotSpawn` the walk produced (each schedule entry
+    dispatches 0/1/2 shots through A41A by the fire state); ``final_cursor`` is DS:95DA after the last
+    allocation (the next child resumes from it).  The walk threads the cursor + the freshly allocated
+    slots' active words across spawns so each ``object_pool_find_free`` skips the ones already taken.
+    """
+
+    spawns: tuple
+    final_cursor: int
+
+
+@dataclass(frozen=True, slots=True)
 class LinkedEffectSpawnSeed7420:
     """Pure field values stamped into a freshly allocated effect slot by 1010:7420.
 
