@@ -21,8 +21,25 @@ NativeGameState/LevelState -- the data path for a cold-boot level.
 **Byte RLE done too:** added `asset_codecs.decode_linear_byte_rle_bytes(stream) -> bytes`, the pure
 form of the 1010:0367 hook (control < 0x80 -> literal run of control+1; == 0x80 -> terminate; > 0x80 ->
 repeat ((-control)&0xFF)+1 copies of the next byte).  9 unit tests (tests/test_asset_codec_byte_rle.py),
-green.  So 2 of the 3 loader RLE codecs now have pure VM-free forms; the vertical RLE (03A8, column/
-stride geometry) is the remaining one, then the level loader.
+green.
+
+**Vertical RLE done -- RLE family complete:** added `asset_codecs.decode_vertical_rle_columns_writes
+(stream) -> [(offset, byte)]`, the pure form of the 1010:03A8 hook: a 3-word header (word1 = vertical
+stride AND column count) then per-column control bytes, filling each column *down* (row r at offset
+c + r*stride) with the byte-RLE control scheme, 0x80 ending a column.  Returns the strided writes
+relative to di=0.  8 unit tests (tests/test_asset_codec_vertical_rle.py).  So all 3 loader RLE codecs
+now have pure VM-free forms.
+
+**Verification upgraded to airtight (all 3 codecs):** added tests/test_asset_codec_hook_crosscheck.py,
+which drives the *actual oracle-verified hook bodies* (decode_word_pair_rle / decode_linear_byte_rle /
+decode_vertical_rle_columns) on a synthetic 512-byte packed buffer and compares ES:DI output to the
+pure form -- the same "predicted vs interpreted-ASM" gate the BF25 collision chain uses, lifted to the
+loader codecs.  All pass byte-for-byte (incl. DI-advance counts), so the pure forms are now transitively
+VM-verified, not merely unit-tested against my reading of the hooks.  28 codec tests total, green;
+lint 233 + both audits green; no hook touched.
+
+Next: the level loader that drives these into NativeGameState/LevelState -- the data path for a
+cold-boot level (which codec decodes which asset region, and where the decoded blobs land).
 
 ## 2026-06-30 - Whole-scan attempt 2 (shared store): real blocker is a variant-2 candidate kill (logged)
 

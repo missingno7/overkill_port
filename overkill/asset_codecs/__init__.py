@@ -14,6 +14,7 @@ from .rle import (
     decode_linear_byte_rle,
     decode_linear_byte_rle_bytes,
     decode_vertical_rle_columns,
+    decode_vertical_rle_columns_writes,
     decode_word_pair_rle,
     decode_word_pair_rle_words,
 )
@@ -32,6 +33,7 @@ __all__ = [
     "decode_overlay_xor",
     "find_overlay_directory_entry_05a1",
     "decode_vertical_rle_columns",
+    "decode_vertical_rle_columns_writes",
     "input_lz_byte",
     "strip_overlay_path_components_0701",
     "output_lz_byte",

@@ -179,6 +179,53 @@ def decode_linear_byte_rle_bytes(stream) -> bytes:
                 out.append(next(it) & 0xFF)
 
 
+def decode_vertical_rle_columns_writes(stream) -> list[tuple[int, int]]:
+    """Pure 1010:03A8 vertical byte-RLE decode: an input byte stream -> ``(offset, byte)`` writes.
+
+    The dual-mode form of :func:`decode_vertical_rle_columns` (the cpu/VM hook), VM mechanics stripped
+    (ES:DI STOSB at a vertical stride, the DOS refill, the NEG/XCHG dance, error-IP).  The stream is a
+    3-word header (read little-endian) followed by per-column control bytes; the second header word is
+    the vertical ``stride`` and also the column count.  For each column ``c`` (0..stride-1) the decoder
+    fills *down* the column -- byte row ``r`` lands at ``di`` offset ``c + r*stride`` -- via the same RLE
+    as the linear byte codec (``< 0x80`` literal run of ``control+1``; ``== 0x80`` ends the column;
+    ``> 0x80`` repeat ``((-control) & 0xFF) + 1`` copies of the next byte), then moves to column ``c+1``.
+
+    Returns the writes relative to ``di = 0`` (the caller adds its ES:DI base).  Algorithm is the hook's,
+    verified against the ASM.
+    """
+    it = iter(stream)
+
+    def rb() -> int:
+        return next(it) & 0xFF
+
+    def rw() -> int:
+        lo = rb()
+        return lo | (rb() << 8)
+
+    rw()                 # header word 0 (CS:03A2) -- not used by the decode geometry
+    stride = rw()        # header word 1 (DS:03A4) -- vertical stride AND column count
+    rw()                 # header word 2 (DS:03A6) -- not used by the decode geometry
+
+    writes: list[tuple[int, int]] = []
+    for c in range(stride):
+        r = 0
+        while True:
+            control = rb()
+            if control == 0x80:
+                break
+            if control > 0x80:
+                count = ((-control) & 0xFF) + 1
+                value = rb()
+                for _ in range(count):
+                    writes.append((c + r * stride, value))
+                    r += 1
+            else:
+                for _ in range(control + 1):
+                    writes.append((c + r * stride, rb()))
+                    r += 1
+    return writes
+
+
 def decode_vertical_rle_columns(cpu) -> None:
     """Hook body for 1010:03A8 vertical byte-RLE decoder.
 
