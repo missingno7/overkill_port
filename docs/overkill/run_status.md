@@ -382,6 +382,22 @@ misalignment in the decode, not an output-model issue.  **Definitive next step:*
 the VM (load the EXE, run from `0A3F:000E`, trace its LODSB/STOSB) and diff token-by-token against the
 pure decode to find the divergence -- then `exe_image = unlzexe(OVERKILL.EXE)`.
 
+**Stub-stepping done -- two more bugs found, one residual.**  Ran the real decompressor in a CPU8086
+(stub code at CODESEG:0, blob at INSEG, output at OUTSEG, entry 0x5A) and diffed per output byte:
+1. **Eager flag-word reload (FIXED):** the stub reloads the 16-bit flag word *the moment* the bit counter
+   hits 0 (inside that get-bit), i.e. BEFORE the subsequent literal byte -- my lazy reload read the literal
+   one position early.  Confirmed at out[14]: stub si jumps +3 (reload+byte) -> `blob[0x10]=0xE3`, mine
+   gave `blob[0x0E]=0xFF`.  Fix: init `bits=word0` + reload eagerly after each decrement.
+2. **Segment-change re-base (0CB8/cx==1, MAPPED):** the `L==1` token is NOT a no-op -- it re-bases es:di
+   and ds:si (`es += (di>>4)-0x200; di = (di&0xF)+0x2000`, same for ds:si), linearly identity but keeping
+   `di>=~0x2000` so back-ref offsets never underflow.  Fires often (first at di=0xC1C, ~3 KiB), not at 64
+   KiB.  Modelled as a flat-buffer base shift.
+With (1)+(2) the unpacker reaches di=0x9BFB but still hits a **premature END at ~0x9AA0** (then reads the
+trailing info-block + stub as literals), so the segment-change re-base is still not byte-exact.  Residual
+work: validate the re-base formula against a full stub trace (capture across the stub's own seg-changes)
+to kill the last misalignment.  This LZEXE unpacker is genuinely intricate (3 compounding decode details);
+it is ~95% and parked -- the verified asset/data loading stands and does not depend on it.
+
 The verified data work stands: all per-level + all 8 startup shared assets cold-load byte-exact.
 
 ## 2026-06-30 - Whole-scan attempt 2 (shared store): real blocker is a variant-2 candidate kill (logged)
