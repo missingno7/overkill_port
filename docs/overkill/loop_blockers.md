@@ -40,6 +40,21 @@ re-attempt, only fold `hud_text` into the standalone backend compose (Bucket C).
   the cursor delta → the star scroll counter), or a level-load capture. User noted it's
   pixel-plotted. Until then, the native frame must capture the VM plate (hybrid only).
 
+**RESOLVED (mechanism) 2026-06-30 — the starfield is deterministic + recoverable.** Found with
+`dos_re` `mem.write_watchers` (fires on ALL write paths). Over one frame, 7 sites write the present
+source page (`CS:[9598]`); six are sprite blocks, and **`1010:4D6F` writes 40 scattered single bytes =
+the ~40-px starfield**. The prior "NO writer" was a probe gap: the plotter **skips already-occupied page
+pixels** (`4D2C jne`), so a fixed watched byte is usually never written. Routines (CS=1010): **erase
+`4D64`** (zeroes the 40-entry working list `DS:0xC7B1`; Tandy single-byte `es:[di]`), **plot `4D15`** (set
+up by `4CED`: stream `DS:0xC6C1`, list `DS:0xC7B1`, `bp=0x4D4D`), **move `4C76`** (advances the stream
+per a video-mode jump table `cs:[0x4C8A+[95BC]*2]`, Tandy=shr1, parallax tables `DS:0xC803/C807/C80F` +
+wrap counter `DS:0xC818`). A star is 3 words `{row, dx, color}`; page offset = `row*0x68 +
+DS:[0x234C](cursor) + dx` (base table `DS:0x9A08 = row*0x68`; page row stride `0x68`=208px; present 3354
+does the Tandy bank interleave). New-star ring `DS:0x20A8..0x20C7` via ptr `DS:0x20A6` (`4D95`);
+level→initial-stream `DS:0xC601[level]`. Tables are DS-relative (DS=0x25CC). **Next: recover
+erase/move/plot as pure systems; verify produced-vs-VM byte-exact (step-hook `4D64/4D15/4C76`); per-level
+initial stream from a level-start snapshot.** Full detail in the `overkill-starfield-render` memory.
+
 ## NOTE (2026-06-29) — §1.2 state-mirror verifiers DILUTE pure %; at the rounding edge
 
 The Bucket C §1.2 native state-mirror verifiers (`read_X` + `X_mismatches`: CameraState DONE

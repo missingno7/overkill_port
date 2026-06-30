@@ -1,3 +1,28 @@
+## 2026-06-30 - CORRECTION + the starfield blocker CRACKED
+
+**Correction (supersedes the "Native terrain compositor" + "Controllable cold level" entries below):**
+OVERKILL is a vertical **space shooter** (black space, sparse parallax starfield, ship at the bottom,
+enemies above).  Those two entries' `native_video/terrain.py` rendered the level data as a dense "biomech
+terrain" -- a **mis-decode** (wrong orientation + it skipped the cs:8D92 cell-offset indirection, and the
+game's background is the starfield, not that).  Empirically refuted: of the 426 lit background pixels in
+a live L1 frame, **0** come from the tilemap expansion.  Removed `native_video/terrain.py`,
+`tests/test_terrain.py`, and the staged `scripts/native_play_cold.py` / `native_demo.py` (the "staged
+testing thing").  The native render itself is faithful GIVEN the VM page (decode/colorize/sprites/HUD/
+compose/present all byte-exact); the only render gap is generating the **starfield bg** standalone.
+
+**Breakthrough:** that starfield bg is the documented #1 native-render blocker (loop_blockers: "eluded
+~30 probes, no writer found").  It is now **cracked -- deterministic + recoverable, no RNG.**  Found with
+`dos_re` `mem.write_watchers` (catches ALL write paths): over one frame, 7 sites write the present source
+page; six are sprite blocks, and `1010:4D6F` writes **40 scattered single bytes = the ~40-px starfield**.
+Routines (CS=1010): **erase 4D64** (clears the 40-entry working list `DS:0xC7B1`), **plot 4D15** (set up
+by 4CED: stream `DS:0xC6C1`, list `DS:0xC7B1`), **move 4C76** (advances the stream per a video-mode jump
+table, Tandy = shr1, parallax tables `DS:0xC803/C807/C80F` + counter `DS:0xC818`).  A star is 3 words
+`{row, dx, color}`; page offset = `row*0x68 + cursor[DS:0x234C] + dx` (base table `DS:0x9A08 = row*0x68`,
+the 0x68=208px page row stride); the plotter **skips already-occupied pixels** -- which is exactly why a
+fixed watched byte was usually never written and prior probes found "no writer."  Next: recover
+erase/move/plot as pure systems + verify produced-vs-VM byte-exact (probe step-hooking 4D64/4D15/4C76).
+See `loop_blockers.md` and the `overkill-starfield-render` memory.
+
 ## 2026-06-30 - Pivot to Bucket F (cold-boot asset load): pure word-pair RLE codec
 
 With the object-pass whole-scan parked on the deep 0x1c/0x1e behaviors (logged), pivoted to a clean
