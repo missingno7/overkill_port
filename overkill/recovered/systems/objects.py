@@ -37,6 +37,7 @@ from overkill.recovered.domain.object_slots import (
     ObjectSlotRecord,
     ObjectSpawnSeed,
     ObjectSpawnSeedA4EA,
+    PlayerShotSpawn,
 )
 from overkill.recovered.domain.tilemap import LevelTileContext, TileProbeInput
 from overkill.recovered.domain.movement import MovementTarget
@@ -1292,3 +1293,53 @@ def object_pool_find_free(pool: ObjectPool, cursor: int) -> FreeSlotAllocation:
             return FreeSlotAllocation(offset=bx, cursor=bx)
         bx = (bx + stride) & 0xFFFF
     return FreeSlotAllocation(offset=None, cursor=cursor & 0xFFFF)
+
+
+# A41A single-slot player-shot variants -- the A958-state cs:A42C jump-table targets the A067 weapon-fire
+# fanout dispatches per shot (the A4D7/A490/A499 bodies in gameplay/action_spawns.py, made VM-free here).
+A41A_SHOT_Y_BIAS = 0x0004                              # A4D7/A490/A499: Y = schedule [si+4] + 4
+A41A_SHOT_SINGLE_SLOT_STATES = (0x0000, 0x0001, 0x0002)  # A4D7 / A490 / A499 (3/4 are pairs, 5 -> 44AF)
+A490_SHOT_SPRITE = 0x0033                              # A490 (state 1): A4D7 + this sprite override
+A499_SHOT_DIR_DEFAULT = 0x0007                         # A499 (state 2): direction when A3EC == FFFFh
+A499_SHOT_DIR_HIGH_Y = 0x0001                          # A499: direction when A3EC == FFFFh and src Y > 58h
+A499_SHOT_Y_THRESHOLD = 0x0058
+A499_SHOT_SPRITE_DIR1 = 0x0019                         # A499 sprite when direction == 1
+A499_SHOT_SPRITE_OTHER = 0x001F                        # A499 sprite otherwise
+
+
+def native_a41a_shot(pool: ObjectPool, cursor: int, state: int,
+                     source_x: int, source_y: int, a3ec: int) -> PlayerShotSpawn | None:
+    """Pure WHOLE A41A single-slot player-shot spawn (the A958 state 0/1/2 cs:A42C targets).
+
+    Allocates a gameplay slot (:func:`object_pool_find_free` over DS:95DA), stamps the A4EA seed
+    (:func:`object_spawn_seed_a4ea`), then the shot position (``X = source_x``, ``Y = source_y + 4`` from
+    the weapon-schedule entry ``[si+2]``/``[si+4]``) and the per-state overrides: state 1 (A490) sets
+    sprite 33h; state 2 (A499) sets direction from ``a3ec`` (or 7, or 1 when ``a3ec == FFFFh`` and
+    ``source_y`` > 58h) and sprite 19h when that direction is 1 else 1Fh.  Returns None for the multi-slot
+    states (3/4 -> A438/A464), state 5 (44AF), and a full pool (the 7550 recycle fallback is unmodelled)."""
+    if (state & 0xFFFF) not in A41A_SHOT_SINGLE_SLOT_STATES:
+        return None
+    alloc = object_pool_find_free(pool, cursor)
+    if alloc.offset is None:
+        return None  # pool full -> the 7550 recycle path (not modelled)
+    seed = object_spawn_seed_a4ea()
+    direction = seed.direction_or_step
+    sprite = seed.sprite_or_state
+    st = state & 0xFFFF
+    if st == 0x0001:        # A490
+        sprite = A490_SHOT_SPRITE
+    elif st == 0x0002:      # A499
+        direction = a3ec & 0xFFFF
+        if direction == 0xFFFF:
+            direction = A499_SHOT_DIR_DEFAULT
+            if (source_y & 0xFFFF) > A499_SHOT_Y_THRESHOLD:
+                direction = A499_SHOT_DIR_HIGH_Y
+        sprite = A499_SHOT_SPRITE_DIR1 if direction == A499_SHOT_DIR_HIGH_Y else A499_SHOT_SPRITE_OTHER
+    return PlayerShotSpawn(
+        slot_offset=alloc.offset, new_cursor=alloc.cursor,
+        active_word=seed.active_word, scan_enable_or_solid=seed.scan_enable_or_solid,
+        direction_or_step=direction, sprite_or_state=sprite,
+        scan_flag=seed.scan_flag, hazard_class=seed.hazard_class,
+        logic_id=seed.logic_id, substate=seed.substate,
+        x_word=source_x & 0xFFFF, y_word=(source_y + A41A_SHOT_Y_BIAS) & 0xFFFF,
+    )

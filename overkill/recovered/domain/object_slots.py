@@ -202,6 +202,32 @@ class ObjectSpawnSeedA4EA:
 
 
 @dataclass(frozen=True, slots=True)
+class PlayerShotSpawn:
+    """Pure result of one A41A single-slot player-shot spawn (A958 state 0/1/2 -> A4D7/A490/A499).
+
+    The A067 weapon-fire fanout walks the equipped weapon's shot-coordinate schedules and, per shot,
+    allocates a gameplay slot (7573), stamps the A4EA seed, then the shot's position and per-state
+    sprite/direction.  ``slot_offset``/``new_cursor`` are the 7573 allocation (DS:95DA) result; the field
+    block is the A4EA seed (:func:`object_spawn_seed_a4ea`) with ``x_word``/``y_word`` (from the schedule
+    entry ``[si+2]``/``[si+4]+4``) and the variant's ``direction_or_step``/``sprite_or_state`` overrides
+    applied.  The adapter owns the DOS slot pointer + write order; this owns the field values.
+    """
+
+    slot_offset: int
+    new_cursor: int
+    active_word: int
+    scan_enable_or_solid: int
+    direction_or_step: int
+    sprite_or_state: int
+    scan_flag: int
+    hazard_class: int
+    logic_id: int
+    substate: int
+    x_word: int
+    y_word: int
+
+
+@dataclass(frozen=True, slots=True)
 class LinkedEffectSpawnSeed7420:
     """Pure field values stamped into a freshly allocated effect slot by 1010:7420.
 
