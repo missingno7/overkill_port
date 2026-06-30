@@ -43,16 +43,14 @@ def _starting_state() -> NativeGameState:
                            CameraState(x=0, y=0), HudLayer(counters=(0, 0, 0), score_bcd=(0, 0)))
 
 
-def _render_map_png(tile_plane: bytes, out_path: pathlib.Path) -> None:
-    grid = np.frombuffer(tile_plane, dtype=np.uint8).reshape(MAP_H, MAP_W)
-    # per-tile pseudo-colour palette (index 0/background stays dark); distinct, recognisable structure
-    idx = np.arange(256, dtype=np.uint32)
-    pal = np.stack([(idx * 53) % 256, (idx * 101) % 256, (idx * 151) % 256], axis=1).astype(np.uint8)
-    pal[grid.flat[np.argmax(np.bincount(grid.flat))]] = (16, 16, 24)  # mute the most common (open) tile
-    rgb = pal[grid]                                  # (288, 13, 3)
-    rgb = np.repeat(np.repeat(rgb, 10, axis=0), 10, axis=1)  # scale 10x -> 130 x 2880
+def _render_terrain_png(tile_plane: bytes, blocks: bytes, out_path: pathlib.Path) -> None:
+    """Render the actual level terrain (tile map x block bank) through the native compositor + palette."""
+    from overkill.native_video.page_raster import colorize
+    from overkill.native_video.terrain import render_terrain_indices
+    idx = render_terrain_indices(tile_plane, blocks)  # (288*16, 13*16) 4-bit indices
+    rgb = colorize(idx)                                # via the recovered Tandy palette
     from PIL import Image
-    Image.fromarray(rgb, "RGB").save(out_path)
+    Image.fromarray(rgb, "RGB").resize((rgb.shape[1] * 2, rgb.shape[0] * 2), Image.NEAREST).save(out_path)
 
 
 def main() -> int:
@@ -85,8 +83,8 @@ def main() -> int:
         print("  verify: (gameplay snapshot for level %d not present; decode is byte-verified by tests)" % level)
 
     out_png = ROOT / ("overkill_level%d_map.png" % level)
-    _render_map_png(lvl.tile_plane, out_png)
-    print("  rendered level map -> %s" % out_png.name)
+    _render_terrain_png(lvl.tile_plane, lvl.blocks, out_png)
+    print("  rendered level terrain (tile map x block bank, native palette) -> %s" % out_png.name)
 
     # Run the recovered gameplay frame systems over the cold-loaded level (no VM).
     print("  running native frames over the cold level (player holds RIGHT then UP):")

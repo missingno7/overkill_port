@@ -425,6 +425,24 @@ fan-out A067, contact 9CB6, the coordinate rings, the scrolling spawn), plus the
 the playfield from the cold blocks/graphics + objects -> the verified colorize/present) and the front-end
 / audio.  The cold data + recovered-systems foundation under all of it is now in place and verified.
 
+## 2026-06-30 - Native terrain compositor: the cold level renders natively (no VM)
+
+First piece of the native compositor (the render-from-cold-data the standalone game needs instead of
+decoding the VM-baked page).  `overkill/native_video/terrain.py::render_terrain_indices(tile_plane,
+blocks)` composes a level's terrain VM-free: the cold tile map (13-col block-index grid) indexes the cold
+block bank (16x16 4bpp tiles -- geometry confirmed from the BLX item header `{width=16, stride=2}` = a
+128-byte block; 224 blocks in L0) -> an `(rows*16, 13*16)` 4-bit index image, colorized via the recovered
+Tandy palette.  `scripts/native_demo.py` now renders the **actual level terrain** (was the tile-id map);
+the result is recognisably OVERKILL's level-1 biomech terrain (wall texture, structures, a wall-creature,
+open lanes).  tests/test_terrain.py (3: nibble order, out-of-range, placement); lint 243 + audits green.
+
+So the cold level's **terrain** now draws natively.  Remaining for the standalone render: the **sprite
+compositor** (player + objects -> the page, from the cold graphics bank), the **starfield**, the **HUD**
+(from PANEL.ENC), and **scroll** -- composed into the page the verified present/decode already consumes;
+then wire keyboard input + a loop so `NativeGame` drives it.  Built on verified pieces (blocks +
+tile map byte-exact, block geometry from the header); a full byte-exact-vs-VM terrain check is confounded
+by the VM baking starfield+sprites into its page, so that is a later cross-check at a fixed scroll.
+
 ## 2026-06-30 - Whole-scan attempt 2 (shared store): real blocker is a variant-2 candidate kill (logged)
 
 Built the corrected shared-store whole scan (one contiguous 0x45-slot store, both pointer-table loops

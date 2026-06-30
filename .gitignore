@@ -65,3 +65,6 @@ nuked_opl3/*.lib
 .idea/
 
 overkill_level*_map.png
+overkill_terrain_*.png
+overkill_frame_*.png
+overkill_native_montage.png
