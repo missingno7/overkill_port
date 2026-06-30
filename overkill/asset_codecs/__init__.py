@@ -11,12 +11,16 @@ from .level_assets import (
     LEVEL_COUNT,
     TILE_MAP_SIZE,
     LevelAsset,
+    LevelData,
+    decode_level_blocks,
+    decode_level_graphics,
     decode_level_tile_map,
+    load_level_data,
     overkill_level_assets,
 )
 from .loader import decode_asset
 from .lz import copy_lz_back_reference, decode_lz_asset, decode_lz_bytes, input_lz_byte, output_lz_byte
-from .planar import pack_planes_344b
+from .planar import deplanarize_tandy, pack_planes_344b
 from .overlay import (
     compare_overlay_entry_name_05d9,
     compare_overlay_signature_0582,
@@ -47,14 +51,21 @@ __all__ = [
     "LEVEL_COUNT",
     "TILE_MAP_SIZE",
     "LevelAsset",
+    "LevelData",
     "overkill_level_assets",
     "decode_level_tile_map",
+    "decode_level_blocks",
+    "decode_level_graphics",
+    "load_level_data",
     "decode_asset",
     "decode_byte_single_marker_rle",
     "decode_linear_byte_rle",
     "decode_linear_byte_rle_bytes",
     "decode_lz_bytes",
     "pack_planes_344b",
+    "deplanarize_tandy",
+    "decode_level_blocks",
+    "decode_level_graphics",
     "decode_word_single_marker_rle_words",
     "decode_lz_asset",
     "decode_word_pair_rle",

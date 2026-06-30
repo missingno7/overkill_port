@@ -16,6 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .container import load_container_asset
+from .planar import deplanarize_tandy
 
 #: The number of real, distinct OVERKILL levels.
 LEVEL_COUNT = 6
@@ -60,3 +61,44 @@ def decode_level_tile_map(container_data, level: int) -> bytes:
     decoded map; mid-gameplay the body also mutates (destructible terrain).
     """
     return load_container_asset(container_data, f"LEV{level}MAP.BIC")
+
+
+def decode_level_blocks(container_data, level: int) -> bytes:
+    """Decode + de-planarize level ``level``'s block/tile graphics (``LEV{n}BLX.BIC``).
+
+    Loaded to a temp buffer then run through the Tandy de-planarize (block mode -> opaque chunky); the VM
+    lands the result at `CS:[959A]:0`.  Verified byte-for-byte vs that buffer for all six levels
+    (see tests/test_level_graphics_placement.py).
+    """
+    return deplanarize_tandy(load_container_asset(container_data, f"LEV{level}BLX.BIC"), sprite_mode=False)
+
+
+def decode_level_graphics(container_data, level: int) -> bytes:
+    """Decode + de-planarize level ``level``'s sprite/graphics bank (``G{n}.BIC``).
+
+    Like :func:`decode_level_blocks` but sprite mode -- the de-planarize interleaves a per-pixel
+    transparency mask with the chunky pixels.  The VM lands the result at `CS:[95AE]:0`.
+    """
+    return deplanarize_tandy(load_container_asset(container_data, f"G{level}.BIC"), sprite_mode=True)
+
+
+@dataclass(frozen=True)
+class LevelData:
+    """A level's fully-loaded data: the three per-level buffers, decoded + placed VM-free."""
+
+    tile_map: bytes   # LEV{n}MAP.BIC  -> the layout grid (VM dest CS:[9592])
+    blocks: bytes     # LEV{n}BLX.BIC  -> de-planarized block/tile graphics (VM dest CS:[959A])
+    graphics: bytes   # G{n}.BIC       -> de-planarized sprite bank + mask (VM dest CS:[95AE])
+
+
+def load_level_data(container_data, level: int) -> LevelData:
+    """Load + decode + place all three of a level's data buffers from the container, fully VM-free.
+
+    Every byte of this is verified against the live VM buffers (tile-map body, and the whole blocks +
+    graphics buffers) across all six levels -- the complete per-level data load for a cold boot.
+    """
+    return LevelData(
+        tile_map=decode_level_tile_map(container_data, level),
+        blocks=decode_level_blocks(container_data, level),
+        graphics=decode_level_graphics(container_data, level),
+    )

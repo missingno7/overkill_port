@@ -203,11 +203,29 @@ sprites emit cl+ch, blocks emit cl only).  Verified byte-for-byte against the in
 out of the image: **500/500** random cases across both modes / transparency / passed-in mask, plus unit
 cases (tests/test_asset_planar.py).  lint 237 + both audits green.
 
-So the trickiest piece of the transform is now recovered + airtight.  **Remaining for the full
-de-planarize:** the 33AF/33DD loop geometry that drives the packer -- the item walk via `44D7`, the
-plane stride `CS:[5B9C]` and count `CS:[5B9E]`, the `si` advance (`+3*stride` per group) and the ES:DI
-output addressing with its mode-gated byte order ([5B94..5B9B] -> stosw set).  Then the clean end check
-`deplanarize(decode(G{n})) == image[CS:[95AE]]` / `decode(LEV{n}BLX) == image[CS:[959A]]`.
+So the trickiest piece of the transform is now recovered + airtight.
+
+## 2026-06-30 - Full de-planarize DONE: all THREE per-level destinations placed + verified
+
+Recovered the rest of the transform on top of the verified packer: `asset_codecs.deplanarize_tandy`
+(the full 1010:33AF Tandy handler).  `44D7` parses a per-item `{width, stride}` 2-word header
+(terminator `{0,0}`); for each of `width` rows the inner loop runs `stride` columns, each reading one
+byte from four planes (`si`, `+stride`, `+2*stride`, `+3*stride`), de-planarizing the 8 pixels via the
+344B packer four times (planes rotated by two per call), advancing `si` by 1 and then `+3*stride` after
+the row; emitted in the mode-gated byte order (block: `cl4,cl3,cl2,cl1`; sprite: `ch4,ch3,cl4,cl3,
+ch2,ch1,cl2,cl1`).  The `{width,stride}` headers come straight out of the decoded asset.
+
+**Verified byte-for-byte against the live VM buffers for ALL SIX levels x BOTH assets** (12/12 exact):
+`decode_level_blocks(n)` == `image[CS:[959A]]` (LEV{n}BLX, 28k buffers) and `decode_level_graphics(n)`
+== `image[CS:[95AE]]` (G{n}, sprite bank + mask).  Added `decode_level_blocks` / `decode_level_graphics`
++ the capstone `load_level_data(container, level) -> LevelData(tile_map, blocks, graphics)`.
+tests/test_level_graphics_placement.py + test_asset_planar.py; 72 asset/level tests; lint 237 + audits.
+
+So the **whole per-level data load is now VM-free and verified end to end**: container -> decode ->
+(map flat-copy | blocks/graphics de-planarize) -> the three native buffers, every byte checked against
+the real game.  The cold-boot data path is essentially complete (assets -> LevelData).  Remaining for a
+cold-boot level: the SHARED (non-per-level) assets (1X1/2X2/sprites/screens loaded once at startup) and
+wiring `LevelData` into the native gameplay/render state (the dest segments -> NativeGameState fields).
 
 ## 2026-06-30 - Whole-scan attempt 2 (shared store): real blocker is a variant-2 candidate kill (logged)
 
