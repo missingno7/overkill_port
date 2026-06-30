@@ -63,3 +63,5 @@ nuked_opl3/*.lib
 
 # JetBrains IDE config
 .idea/
+
+overkill_level*_map.png
