@@ -443,6 +443,23 @@ then wire keyboard input + a loop so `NativeGame` drives it.  Built on verified 
 tile map byte-exact, block geometry from the header); a full byte-exact-vs-VM terrain check is confounded
 by the VM baking starfield+sprites into its page, so that is a later cross-check at a fixed scroll.
 
+## 2026-06-30 - Controllable cold level: fly through the real terrain (VM-free)
+
+First *playable* cold-start build: `scripts/native_play_cold.py [level]` flies a ship through a level
+loaded + composited entirely from the original files -- no VM.  It cold-loads the level
+(load_native_level), composites the terrain (render_terrain_indices), and runs a real-time pygame loop:
+arrow keys move the ship, the level auto-scrolls, the visible 208x192 playfield window is colorized with
+the recovered palette each frame.  A headless `--gif out.gif` mode renders a scrolling clip without a
+display (used to verify the render here).  `playfield_frame(terrain, scroll, ship) -> RGB` is the testable
+core (tests/test_native_play_cold.py: shape, window, ship marker, scroll clamp).  lint 244 + audits green.
+
+So you can now **run a level from cold start and steer through the real terrain** -- the data, terrain
+compositing, and movement are all VM-free.  The player is a placeholder marker; remaining for full
+gameplay: the **sprite compositor** (the real ship + enemies from the cold graphics bank / SHIP.BIC),
+the **scrolling spawn** (enemies entering), the **HUD** (PANEL.ENC), and wiring `NativeGame`'s recovered
+step into the loop (it currently auto-scrolls + moves the marker; the recovered movement/object stages
+plug in next).  Then the front-end + audio for a complete standalone game.
+
 ## 2026-06-30 - Whole-scan attempt 2 (shared store): real blocker is a variant-2 candidate kill (logged)
 
 Built the corrected shared-store whole scan (one contiguous 0x45-slot store, both pointer-table loops
