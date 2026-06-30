@@ -13,6 +13,7 @@ from overkill.recovered.domain.object_behaviors import (
     Ae09MovementStep,
     Ae09SlotUpdate,
     Ae09Update,
+    Ae2cSlotUpdate,
     Ae7dSlotUpdate,
     Aed8SlotUpdate,
     B24dSlotUpdate,
@@ -738,6 +739,58 @@ def object_update_b2cd(
         sprite_or_state=sprite,
         x_word=seek.x_word,
         y_word=seek.y_word,
+    )
+
+
+AE2C_DEATH_Y = 0x00C8               # AE2C: dies at y == 0xC8
+AE2C_PROBE_TILE_DELTA = 0x000E      # AE4F: tile probe samples 5073-offset + 0xE
+
+
+def object_update_ae2c(
+    x_word: int,
+    y_word: int,
+    active_word: int,
+    draw_layer: int,
+    a278: int,
+    anim_2326: int,
+    tile_probe_suppressed: bool,
+    tiles: LevelTileContext,
+) -> Ae2cSlotUpdate | None:
+    """Pure WHOLE per-slot AE2C update (EFAE logic_id 0x06): scroll-left mover with a tile-gated down-step.
+
+    Sibling of AE7D.  Returns None at y==0xC8 (the ADC9 death).  Else X -= 4; unless Y mod 16 == 8, the
+    render mode (BDAC) is clear, and the tile at the 5073 probe + 0xE has class 1 (-> direction 0, no Y
+    move), it steers down (direction 1, Y += 4).  The sprite is ``((anim_2326 << 2) & 8) + direction + 8``
+    (anim_2326 = DS:2326); then AD5A adds DS:A278 to X and the AD60 tail (0x06 tile-probe family) sets
+    ``active``.  substate untouched."""
+    y = y_word & 0xFFFF
+    if y == AE2C_DEATH_Y:
+        return None  # AE31 -> ADC9 death
+    x = (x_word - AE7D_X_STEP) & 0xFFFF
+    direction = 1
+    if (y & 0x0007) == 0 and (y & 0x0008) != 0 and not tile_probe_suppressed:
+        probe = compute_tile_probe_5073(TileProbeInput(
+            origin_x_word=tiles.origin_x_word, row_base_word=tiles.row_base_word,
+            object_x_word=x, object_y_word=y))
+        raw = tiles.tile_plane[(probe.tile_offset_word + AE2C_PROBE_TILE_DELTA) & 0xFFFF]
+        if lookup_tile_class_byte(raw, tiles.class_table) == 1:
+            direction = 0
+    if direction == 1:
+        y = (y + 4) & 0xFFFF
+    sprite = (((anim_2326 << 2) & 0x0008) + direction + 8) & 0xFFFF
+
+    final_x = (x + a278) & 0xFFFF  # AD5A
+    decision = object_bounds_tile_decision_ad60(
+        final_x, y, draw_layer, 0x0006, tile_probe_suppressed=tile_probe_suppressed)
+    if decision.kind == "deactivate":
+        new_active = 0x0000
+    elif decision.kind == "skip":
+        new_active = active_word & 0xFFFF
+    else:
+        new_active = 0x0000 if object_tile_probe_deactivates_ad60(final_x, y, tiles) else (active_word & 0xFFFF)
+    return Ae2cSlotUpdate(
+        direction_or_step=direction, sprite_or_state=sprite,
+        x_word=final_x, y_word=y, active_word=new_active,
     )
 
 

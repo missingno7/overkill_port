@@ -36,6 +36,7 @@ from overkill.recovered.domain.movement import MovementTarget
 from overkill.recovered.systems.movement import object_target_seek_step_5db2
 from overkill.recovered.systems.objects import (
     object_update_ae09,
+    object_update_ae2c,
     object_update_ae7d,
     object_update_aed8,
     object_update_b24d,
@@ -331,6 +332,34 @@ def _arm_b9f0(cpu, class_table_cache: dict) -> _Pending | None:
 B24D_IP = 0xB24D  # logic_id 0x0B: 5E42 delta-steer + B250 contact + AD60 (movement half)
 B909_IP = 0xB909  # logic_id 0x1E: sets mode 2, B729 (5DB2 seek) -> BC4B; blocked -> 7476 spawn
 B909_MOVEMENT_MODE = 0x0002  # B909 stamps DS:2308 = 2 before B729's 5DB2
+AE2C_IP = 0xAE2C  # logic_id 0x06: scroll-left mover, tile-gated down-step, RETs through AD60
+ANIM_2326 = 0x2326
+
+
+def _arm_ae2c(cpu, class_table_cache: dict) -> _Pending | None:
+    """Capture + predict AE2C (logic_id 0x06): scroll-left mover, compared at AE2C's RET (AD60 tail)."""
+    ss = cpu.s.ss & 0xFFFF
+    ds = cpu.s.ds & 0xFFFF
+    bp = cpu.s.bp & 0xFFFF
+    substate = cpu.mem.rw(ss, (bp + OFF_SUBSTATE) & 0xFFFF)
+    bdac = cpu.mem.rw(ds, RENDER_MODE_BDAC)
+    upd = object_update_ae2c(
+        x_word=cpu.mem.rw(ss, (bp + OFF_X) & 0xFFFF),
+        y_word=cpu.mem.rw(ss, (bp + OFF_Y) & 0xFFFF),
+        active_word=cpu.mem.rw(ss, (bp + OFF_ACTIVE_WORD) & 0xFFFF),
+        draw_layer=cpu.mem.rw(ss, (bp + OFF_HAZARD_CLASS) & 0xFFFF),
+        a278=cpu.mem.rw(ds, AD60_A278),
+        anim_2326=cpu.mem.rw(ds, ANIM_2326),
+        tile_probe_suppressed=bdac == 0x0001,
+        tiles=_read_level_tile_context(cpu, ds, class_table_cache),
+    )
+    if upd is None:
+        return None
+    predicted = (substate, upd.direction_or_step, upd.sprite_or_state, upd.x_word, upd.y_word, upd.active_word)
+    ret_addr = cpu.mem.rw(ss, cpu.s.sp & 0xFFFF)
+    return _Pending(ss=ss, bp=bp, exit_ip=ret_addr, predicted=predicted, read_post=_read_slot_6tuple)
+
+
 AE7D_IP = 0xAE7D  # logic_id 0x05: scroll-left mover, tile-gated up-step, RETs through AD60
 
 
@@ -471,6 +500,7 @@ NATIVE_HANDLERS: tuple[NativeHandler, ...] = (
     NativeHandler(logic_id=0x01, label="BE3C", entry_ip=BE3C_IP, arm=_arm_be3c),
     NativeHandler(logic_id=0x12, label="B2CD", entry_ip=B2CD_IP, arm=_arm_b2cd),
     NativeHandler(logic_id=0x05, label="AE7D", entry_ip=AE7D_IP, arm=_arm_ae7d),
+    NativeHandler(logic_id=0x06, label="AE2C", entry_ip=AE2C_IP, arm=_arm_ae2c),
 )
 _HANDLER_BY_IP = {(CS, h.entry_ip): h for h in NATIVE_HANDLERS}
 
