@@ -13,6 +13,7 @@ from collections.abc import Callable
 
 from overkill.asm import _add_reg16, _and_mem_word, _cmp_byte, _cmp_word, _dec_mem_word_preserve_cf, _inc_mem_word_preserve_cf, _sub_mem_word, _sub_reg16
 from dos_re.cpu import ZF
+from overkill.gameplay.starfield_bridge import advance_starfield_in_memory
 from overkill.sounds.loaded_driver import OPTIONAL_SOUND_DRIVER_SEGMENT
 
 
@@ -505,12 +506,10 @@ def run_interstitial_timed_input_loop_d318(
 
     call(0xD367, 0xD32F)
     call(0x4D64, 0xD332)
-    run_original_far_call(cpu, 0x1F8F, 0x0922, 0xD337)
-    if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (cs, 0xD337):
-        raise RuntimeError(
-            f"D318 expected 1F8F:0922 to return to 1010:D337, "
-            f"got {s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X}"
-        )
+    # 1F8F:0922 = the per-frame parallax starfield move (row=(row+1)%192, 3 layers at 2/4/8 cadence);
+    # recovered VM-free via advance_starfield (was run-original).  See recovered/systems/starfield.py.
+    advance_starfield_in_memory(cpu)
+    s.cs, s.ip = cs, 0xD337
     call(0x073C, 0xD33A)
     call(0x60A2, 0xD33D)
     call(0x5160, 0xD340)

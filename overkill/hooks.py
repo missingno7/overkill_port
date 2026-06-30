@@ -992,6 +992,10 @@ def overkill_sprite_copy_9x16_469f(cpu):
 def overkill_presence_stamp_list_4d15(cpu):
     """Replace the hot 1010:4D15 presence/stamp list helper.
 
+    Semantically this is the parallax STARFIELD plot (the "presence list" is the per-frame star
+    working list at DS:0xC7B1); see overkill.recovered.systems.starfield for the recovered VM-free
+    model + provenance (move 1F8F:0922, erase 1010:4D64).
+
     The caller feeds a compact list of triples.  Each iteration maps the first
     word through DS:[9A08 + word*2], adds DS:[234C] and the second word to get
     an ES-relative cell address, then uses the low byte of the third word as a
