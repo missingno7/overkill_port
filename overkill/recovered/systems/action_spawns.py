@@ -32,6 +32,8 @@ proven to be a specific weapon/projectile/player semantic, so the names stay at
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 # Bit 4 of the DS:98BE input word is the action-trigger latch input (TEST ...,10h).
 ACTION_TRIGGER_INPUT_MASK = 0x10
 # Once armed, the action may repeat while held when any of these hold:
@@ -66,3 +68,33 @@ def action_latch_allows_repeat(*, latch_word: int, repeat_byte_9790: int, state_
         or repeat_byte_9790 == ACTION_LATCH_REPEAT_BYTE
         or state_word_232a == ACTION_LATCH_REPEAT_STATE
     )
+
+
+@dataclass(frozen=True, slots=True)
+class ActionFanoutGate:
+    """The 1010:A067 entry decision: whether the action/spawn fan-out runs this frame + DS:A980's latch.
+
+    ``runs`` gates everything downstream (the v2350/BDAC path branch and the A515/A584/A3FF/A3CA children);
+    ``new_latch_word`` is DS:A980 after A067 -- the only state the entry gate itself writes.
+    """
+
+    runs: bool
+    new_latch_word: int
+
+
+def action_fanout_gate(input_flags: int, latch_a980: int, repeat_9790: int, state_232a: int) -> ActionFanoutGate:
+    """Pure 1010:A067 entry gate: does the action/spawn fan-out run this frame, and DS:A980's write-back.
+
+    Composes :func:`action_trigger_is_pressed` (DS:98BE bit 4) with :func:`action_latch_allows_repeat`
+    (DS:A980/9790/232A): NOT pressed -> the latch clears (A980 = 0) and the fan-out is skipped; pressed and
+    repeatable (fresh press / repeat byte / state sentinel) -> the latch arms (A980 = 1) and the fan-out
+    runs; pressed but held-non-repeatable -> A980 is left unchanged and the fan-out is skipped.  The
+    downstream spawn children own every other write, so DS:A980 after A067 is exactly ``new_latch_word``.
+    """
+    if not action_trigger_is_pressed(input_flags):
+        return ActionFanoutGate(runs=False, new_latch_word=0x0000)
+    if action_latch_allows_repeat(latch_word=latch_a980 & 0xFFFF,
+                                  repeat_byte_9790=repeat_9790 & 0x00FF,
+                                  state_word_232a=state_232a & 0xFFFF):
+        return ActionFanoutGate(runs=True, new_latch_word=0x0001)
+    return ActionFanoutGate(runs=False, new_latch_word=latch_a980 & 0xFFFF)
