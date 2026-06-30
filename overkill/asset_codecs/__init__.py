@@ -10,7 +10,12 @@ from .overlay import (
     strip_overlay_path_components_0701,
 )
 from .packed_stream import read_packed_byte, read_packed_byte_hook, read_packed_word_le, read_packed_word_le_hook
-from .rle import decode_linear_byte_rle, decode_vertical_rle_columns, decode_word_pair_rle
+from .rle import (
+    decode_linear_byte_rle,
+    decode_vertical_rle_columns,
+    decode_word_pair_rle,
+    decode_word_pair_rle_words,
+)
 
 __all__ = [
     "compute_overkill_file_checksum",
@@ -19,6 +24,7 @@ __all__ = [
     "decode_linear_byte_rle",
     "decode_lz_asset",
     "decode_word_pair_rle",
+    "decode_word_pair_rle_words",
     "compare_overlay_entry_name_05d9",
     "compare_overlay_signature_0582",
     "decode_overlay_xor",

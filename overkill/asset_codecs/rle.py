@@ -46,6 +46,38 @@ def _add_mem_word_repeated(cpu, seg: int, off: int, value: int, count: int) -> N
     cpu.set_add_flags(final_old, value, final_result, 16)
 
 
+def decode_word_pair_rle_words(words) -> list[int]:
+    """Pure 1010:0324 word-pair RLE decode: an input word stream -> the decoded word list.
+
+    The dual-mode form of :func:`decode_word_pair_rle` (the cpu/VM hook), with the VM mechanics
+    stripped: it takes the already-unpacked input words (the hook's ``read_packed_word_le`` source) and
+    returns the output words (the hook's ``STOSW`` sequence), so the standalone loader can decode an
+    asset blob with no VM.  The algorithm is the hook's, verified against the ASM:
+
+    * the first word is the sentinel ``marker``;
+    * a word != marker is a literal pair: it and the following word are emitted;
+    * the marker introduces a repeat count -- count 0 terminates, else the following two words are the
+      pair emitted ``count`` times.
+    """
+    it = iter(words)
+    marker = next(it) & 0xFFFF
+    out: list[int] = []
+    while True:
+        word0 = next(it) & 0xFFFF
+        if word0 != marker:
+            out.append(word0)
+            out.append(next(it) & 0xFFFF)
+            continue
+        count = next(it) & 0xFFFF
+        if count == 0:
+            return out
+        pair0 = next(it) & 0xFFFF
+        pair1 = next(it) & 0xFFFF
+        for _ in range(count):
+            out.append(pair0)
+            out.append(pair1)
+
+
 def decode_word_pair_rle(cpu) -> None:
     """Hook body for 1010:0324 word-pair RLE decoder.
 

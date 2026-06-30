@@ -1,3 +1,23 @@
+## 2026-06-30 - Pivot to Bucket F (cold-boot asset load): pure word-pair RLE codec
+
+With the object-pass whole-scan parked on the deep 0x1c/0x1e behaviors (logged), pivoted to a clean
+cold-boot-critical-path win: the asset codecs the standalone loader needs.  The codecs live in
+`overkill/asset_codecs/` but are cpu/VM hook bodies (e.g. `decode_word_pair_rle(cpu)`), not usable by a
+VM-free loader.
+
+Added `asset_codecs.decode_word_pair_rle_words(words) -> list[int]` -- the pure (VM-free) dual-mode form
+of the 1010:0324 hook: input word stream -> decoded word list, with the VM mechanics (ES:DI STOSW, the
+packed-stream/DOS refill, error-IP) stripped.  Algorithm is the hook's (sentinel marker; non-marker =
+literal pair; marker = repeat count, 0 terminates).  Unit coverage in tests/test_asset_codec_rle.py (8
+cases: empty/literal/repeat/mixed/masking/count-1).  Verification: the hook it mirrors is verified
+against the ASM (the load-time hook-verifier); the load codecs don't run in the snapshot demos, so the
+pure form is unit-tested against that verified algorithm rather than produced-vs-VM.  No hook touched;
+lint + both audits green.
+
+This is the first of the loader codecs promoted to a pure VM-free form (Bucket F).  Next: the linear
+byte RLE (0367) and vertical RLE (03A8) pure forms, then the level loader that drives them into
+NativeGameState/LevelState -- the data path for a cold-boot level.
+
 ## 2026-06-30 - Whole-scan attempt 2 (shared store): real blocker is a variant-2 candidate kill (logged)
 
 Built the corrected shared-store whole scan (one contiguous 0x45-slot store, both pointer-table loops
