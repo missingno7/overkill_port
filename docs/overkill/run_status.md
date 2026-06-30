@@ -334,6 +334,23 @@ state to cold-load; the remaining gameplay-state init is the player + the scroll
 gameplay-logic thread).  Remaining toward the running game: the spawn system, the menu/intro/score
 screens, the full frame-loop integration over a cold `NativeLevel`, front-end flow, audio, EXE unpack.
 
+## 2026-06-30 - All EIGHT startup shared assets cold-loaded (unified model)
+
+Finished the startup shared-asset cluster (1010:0D42-0E0E).  Found the last two loads after the sprite
+banks: `SHIP.BIC` (0CC8 block mode -> `CS:[959C]`) and `BLUEBITS.BIC` (0CB8 directory mode -> `CS:[95B8]`).
+Refactored `asset_codecs/shared_assets.py` to one model -- `SHARED_STARTUP_ASSETS` (the 8 loads in order,
+each tagged sprite/directory/block) + `load_shared_asset(container, name, mode)` +
+`load_shared_startup_assets(container)` (replacing the earlier per-category helpers, per the converge
+rule).  All **eight** match their live buffers byte-for-byte (tests/test_shared_assets.py): sprite
+`1X1/2X2/2X2C/MANEXPL` (`CS:[95A6..AC]`), directory `THEND/PANEL/BLUEBITS` (`CS:[95B2/B4/B8]`), block
+`SHIP` (`CS:[959C]`).  lint 240 + both audits green.
+
+So every per-level asset and every startup shared asset now cold-loads + byte-verified.  The remaining
+container assets (`LOGO`, `WINDOW`, the `*PAGE*`/menu/score `.ENC` screens, and the `ADLIB`/`ROLAND`
+music banks) are loaded by the **front-end / audio** code paths, not the startup cluster -- the screens
+de-planarize to banked display VRAM (renderer-bound), and the music banks feed the audio driver.  Those
+are the next loading sites to trace (front-end + audio pillars).
+
 ## 2026-06-30 - Whole-scan attempt 2 (shared store): real blocker is a variant-2 candidate kill (logged)
 
 Built the corrected shared-store whole scan (one contiguous 0x45-slot store, both pointer-table loops

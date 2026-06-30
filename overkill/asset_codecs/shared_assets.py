@@ -1,35 +1,50 @@
-"""Shared (non-per-level) startup assets -- loaded once, not part of a level's `LEV{n}` set.
+"""Shared (non-per-level) startup assets -- the graphics loaded once at boot, not part of a `LEV{n}` set.
 
-The startup sequence at 1010:0D42-0D87 loads the shared graphics banks via 0CD8 (sprite-mode
-de-planarize, the same transform as the per-level `G{n}` graphics): the small/large tile banks and the
-man-explosion sprite sheet.  Each decodes from the container and de-planarizes to its runtime buffer
-(`CS:[95A6..95AC]`).  This loads them VM-free, byte-for-byte identical to those live buffers.
+The startup sequence at 1010:0D42-0E0E loads eight shared graphics assets, each decoded from the
+container and de-planarized to its runtime buffer (`CS:[959C..95B8]`).  The de-planarize *mode* depends
+on the load entry used (the 0CC8/0CD8/0CB8 mode flags):
 
-The two further startup loads at 0D8A/0DA3 -- `THEND.BIC` and `PANEL.ENC` -- use the 0CB8 ``bd8``
-directory mode (block-mode de-planarize with each item's ``{width, stride}`` written ahead of its data).
+* **sprite**    (0CD8, bd6=1): mask-interleaved -- `1X1`, `2X2`, `2X2C`, `MANEXPL`;
+* **directory** (0CB8, bd8=1): block pixels with per-item `{width,stride}` headers -- `THEND`,
+  `PANEL` (an `.ENC`), `BLUEBITS`;
+* **block**     (0CC8, bd6=0): opaque pixels -- `SHIP`.
+
+Each loads VM-free, byte-for-byte identical to its live buffer (tests/test_shared_assets.py).
 """
 from __future__ import annotations
 
 from .container import load_container_asset
 from .planar import deplanarize_tandy
 
-#: The shared graphics banks loaded at startup via the sprite-mode de-planarize (1010:0D42-0D87).
-SHARED_SPRITE_BANKS = ("1X1.BIC", "2X2.BIC", "2X2C.BIC", "MANEXPL.BIC")
+SHARED_MODE_SPRITE = "sprite"
+SHARED_MODE_BLOCK = "block"
+SHARED_MODE_DIRECTORY = "directory"
 
-#: The shared directory-mode assets loaded at startup via the 0CB8 bd8 path (1010:0D8A-0DA3).
-SHARED_DIRECTORY_ASSETS = ("THEND.BIC", "PANEL.ENC")
+#: The startup shared-asset loads (1010:0D42-0E0E), in order, each with its de-planarize mode.
+SHARED_STARTUP_ASSETS = (
+    ("1X1.BIC", SHARED_MODE_SPRITE),
+    ("2X2.BIC", SHARED_MODE_SPRITE),
+    ("2X2C.BIC", SHARED_MODE_SPRITE),
+    ("MANEXPL.BIC", SHARED_MODE_SPRITE),
+    ("THEND.BIC", SHARED_MODE_DIRECTORY),
+    ("PANEL.ENC", SHARED_MODE_DIRECTORY),
+    ("BLUEBITS.BIC", SHARED_MODE_DIRECTORY),
+    ("SHIP.BIC", SHARED_MODE_BLOCK),
+)
 
 
-def load_shared_sprite_bank(container_data, name: str) -> bytes:
-    """Decode + sprite-de-planarize one shared graphics bank (``name`` from :data:`SHARED_SPRITE_BANKS``)."""
-    return deplanarize_tandy(load_container_asset(container_data, name), sprite_mode=True)
+def load_shared_asset(container_data, name: str, mode: str) -> bytes:
+    """Decode + de-planarize one shared startup asset in the given ``mode`` (sprite/block/directory)."""
+    decoded = load_container_asset(container_data, name)
+    if mode == SHARED_MODE_SPRITE:
+        return deplanarize_tandy(decoded, sprite_mode=True)
+    if mode == SHARED_MODE_DIRECTORY:
+        return deplanarize_tandy(decoded, sprite_mode=False, emit_item_headers=True)
+    if mode == SHARED_MODE_BLOCK:
+        return deplanarize_tandy(decoded, sprite_mode=False)
+    raise ValueError(f"unknown shared-asset mode {mode!r}")
 
 
-def load_shared_sprite_banks(container_data) -> dict[str, bytes]:
-    """Load every shared startup graphics bank, decoded + de-planarized, keyed by asset name."""
-    return {name: load_shared_sprite_bank(container_data, name) for name in SHARED_SPRITE_BANKS}
-
-
-def load_shared_directory_asset(container_data, name: str) -> bytes:
-    """Decode + de-planarize one directory-mode startup asset (block mode, item headers emitted)."""
-    return deplanarize_tandy(load_container_asset(container_data, name), sprite_mode=False, emit_item_headers=True)
+def load_shared_startup_assets(container_data) -> dict[str, bytes]:
+    """Load every startup shared graphics asset, decoded + de-planarized, keyed by asset name."""
+    return {name: load_shared_asset(container_data, name, mode) for name, mode in SHARED_STARTUP_ASSETS}
