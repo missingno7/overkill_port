@@ -40,21 +40,20 @@ _OFF_SUBSTATE = 0x1C
 _OFF_COUNTER_20 = 0x20
 
 
-def _fold_bc4b_collision(pool: ObjectPool, i: int, g: ObjectUpdateGlobals, updates: dict) -> dict:
-    """Fold the BC4B contact-scan collision into a B86D/B9F0 slot's post-move ``updates``.
+def _collide_post_move(pool: ObjectPool, i: int, g: ObjectUpdateGlobals, updates: dict):
+    """Run the BC4B contact scan over a B86D/B9F0 slot's post-move ``updates``.
 
-    The original BC4B runs the 62F6 object-vs-object scan only when DS:A47C (``global_disable``) is
-    zero; when the per-frame ``candidate_pool`` is provided this composes
-    ``resolve_moving_object_collision`` over the slot's *post-move* position (62F6 runs after the
-    slot's movement) and folds a collision death (sprite + logic_id 1 + counter_20) or the damage
-    chain's new counter into ``updates``.  With no candidate pool, or A47C != 0, or a dead slot, the
-    contact death is left to the VM (the snapshot driver's prior behaviour); the owner-link / no-op
-    reaction is also left untouched.
+    Returns ``(updates, collision_result_or_None)``: the original BC4B runs the 62F6 object-vs-object
+    scan only when DS:A47C (``global_disable``) is zero, so with no ``candidate_pool``, A47C != 0, or a
+    dead slot the contact death is left to the VM and the result is ``None``.  Otherwise it composes
+    ``resolve_moving_object_collision`` over the slot's *post-move* position (62F6 runs after movement)
+    and folds the scanner's collision death (sprite + logic_id 1 + counter_20) or damage (counter) into
+    ``updates`` -- and returns the full result so a caller can also apply the candidate's deactivation.
     """
     if g.candidate_pool is None or g.global_disable != 0:
-        return updates
+        return updates, None
     if updates.get(_OFF_ACTIVE, pool.active_word(i)) == 0:
-        return updates
+        return updates, None
     result = resolve_moving_object_collision(
         scanner_active_word=updates.get(_OFF_ACTIVE, pool.active_word(i)),
         scanner_x_word=updates.get(_OFF_X, pool.x_word(i)),
@@ -66,11 +65,18 @@ def _fold_bc4b_collision(pool: ObjectPool, i: int, g: ObjectUpdateGlobals, updat
         candidates=g.candidate_pool, a8c2_boss_mode=g.a8c2_boss_mode, bedc=g.bedc,
     )
     if not result.collided or result.unclassified:
-        return updates
+        return updates, result
     if result.died:
-        return {**updates, _OFF_SPRITE: result.death_transition.sprite_or_state,
-                _OFF_LOGIC_ID: result.death_transition.logic_id, _OFF_COUNTER_20: result.new_counter_20}
-    return {**updates, _OFF_COUNTER_20: result.new_counter_20}
+        return ({**updates, _OFF_SPRITE: result.death_transition.sprite_or_state,
+                 _OFF_LOGIC_ID: result.death_transition.logic_id,
+                 _OFF_COUNTER_20: result.new_counter_20}, result)
+    return ({**updates, _OFF_COUNTER_20: result.new_counter_20}, result)
+
+
+def _fold_bc4b_collision(pool: ObjectPool, i: int, g: ObjectUpdateGlobals, updates: dict) -> dict:
+    """The per-slot driver's collision fold: the scanner's BC4B contact outcome only (the candidate's
+    deactivation is the order-dependent pass's concern -- see ``native_object_pass_in_place``)."""
+    return _collide_post_move(pool, i, g, updates)[0]
 
 
 def _advance_ae09(pool: ObjectPool, i: int, g: ObjectUpdateGlobals) -> dict | None:
@@ -175,3 +181,53 @@ def native_object_update(
         object_pool=native_object_update_pool(state.object_pool, update_globals, handlers),
         effect_pool=native_object_update_pool(state.effect_pool, update_globals, handlers),
     )
+
+
+_COLLISION_LOGIC_IDS = frozenset((0x001D, 0x0014))  # B86D / B9F0: the BC4B contact-scan handlers
+
+
+def native_object_pass_in_place(
+    walk_pool: ObjectPool,
+    candidate_pool: ObjectPool,
+    update_globals: ObjectUpdateGlobals,
+    *,
+    entry_tick: int,
+    tick_period: int = 0x05DC,
+):
+    """The VM's A9E0 object scan as an ORDER-DEPENDENT in-place pass (the runnable native pass).
+
+    Unlike ``native_object_update_pool`` (snapshot, order-independent -- right for movement only), this
+    mirrors the VM's loop faithfully for collision: it walks ``walk_pool`` in iteration order (the slots
+    the DS:32CA/8D12 pointer table visits), advances each active native slot, and -- because the 62F6
+    contact scan reads the live candidate pool -- runs the collision against the *current*
+    ``candidate_pool`` and clears a killed candidate's active word so later scanners skip it.  Every walk
+    entry consumes one tick (DS:2340 ``inc`` happens before the active check), so the tick is advanced
+    per entry and wrapped at ``tick_period`` and fed to each slot's transform.
+
+    Returns ``(walk_pool_out, candidate_pool_out)``.  ``update_globals.tick`` / ``.candidate_pool`` are
+    set per slot from ``entry_tick`` and the live pool, so the caller passes the per-frame base globals.
+    """
+    out = walk_pool
+    cands = candidate_pool
+    tick = entry_tick & 0xFFFF
+    for j in range(len(walk_pool)):
+        tick = (tick + 1) % tick_period
+        if out.active_word(j) == 0:
+            continue
+        logic_id = out.logic_id(j)
+        handler = NATIVE_OBJECT_HANDLERS.get(logic_id)
+        if handler is None:
+            continue
+        # Movement + post-move only (no fold): the in-place collision is applied below so the candidate
+        # deactivation can be threaded back into the live pool.
+        updates = handler(out, j, dataclasses.replace(update_globals, tick=tick, candidate_pool=None))
+        if updates is None:
+            continue
+        if logic_id in _COLLISION_LOGIC_IDS:
+            g = dataclasses.replace(update_globals, tick=tick, candidate_pool=cands)
+            updates, result = _collide_post_move(out, j, g, updates)
+            if result is not None and result.candidate_deactivated and result.hit_index is not None:
+                cands = cands.with_word(result.hit_index, _OFF_ACTIVE, 0)
+        for offset, value in updates.items():
+            out = out.with_word(j, offset, value)
+    return out, cands

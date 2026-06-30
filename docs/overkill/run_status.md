@@ -1,3 +1,28 @@
+## 2026-06-30 - The VM-free ORDER-DEPENDENT object pass (effect scan, verified incl. collision)
+
+Built the order-dependent in-place object pass -- the integration the per-slot driver could not be:
+the runnable VM-free object scan. `object_update.native_object_pass_in_place(walk_pool, candidate_pool,
+globals, entry_tick)` mirrors the VM's A9E0 loop faithfully for collision -- it walks the slots in the
+DS:32CA pointer-table order, advances each active native slot with its per-entry tick (DS:2340 inc +
+wrap at 5DCh, one per walk entry), runs the 62F6 collision against the LIVE candidate pool, and clears
+a killed candidate's active word in place so later scanners skip it. Refactored the driver's collision
+fold into `_collide_post_move` (returns the scanner updates + the full result) so the candidate
+deactivation flows out to the pass; the per-slot `_fold_bc4b_collision` is now a thin wrapper.
+
+VERIFIED produced-vs-VM by `overkill.probes.verify_native_object_pass_in_place` (capture the 32CA walk
+order + entry tick + the live DS:2B5C candidates at the first A9E0, run the pass, compare every visited
+active native slot's 6-tuple + logic_id at the scan exit AA07): L2_full 1170/1170, L3_full 1723/1723,
+0 divergence -- 2893 effect-scan slots incl. the order-dependent collisions/deaths (L6_boss is
+NO-EVENTS: its effect loop has no native slots). The per-slot driver + the snapshot pass are unaffected
+(refactor verified: driver L3 1365/1365 sprite_deferred 0); 8 collision-fold unit tests + lint + audits
+green. No hook touched.
+
+So the THREE forms of the native object update are now all proven: per-slot driver (handler boundary),
+snapshot pass (movement whole-pool), and now the order-dependent in-place pass (the VM's actual A9E0
+loop incl. collision). The remaining wiring is to make frame_loop.native_object_pass run the in-place
+pass over both pointer-table loops (effect 32CA then gameplay 8D12) so the standalone runtime's object
+update is a single VM-free call. The hard semantics + the order-dependence are done.
+
 ## 2026-06-30 - Collision candidate side: which enemy dies (the in-place-pass prerequisite)
 
 The whole-pool VM-free object pass needs the CANDIDATE (enemy) side: when a scanner kills an enemy,

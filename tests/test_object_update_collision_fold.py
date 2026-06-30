@@ -11,6 +11,7 @@ from overkill.recovered.systems.object_update import (
     _OFF_SPRITE,
     _OFF_X,
     _OFF_Y,
+    _collide_post_move,
     _fold_bc4b_collision,
 )
 
@@ -82,3 +83,17 @@ def test_damage_survive_folds_only_the_counter():
 def test_dead_post_move_slot_is_not_scanned():
     dead = {**_POST_MOVE, _OFF_ACTIVE: 0}
     assert _fold_bc4b_collision(_scanner_pool(), 0, _globals(_enemy_pool(5)), dead) == dead
+
+
+def test_collide_post_move_returns_the_candidate_effect():
+    # _collide_post_move (the in-place pass's entry) returns the full result so the pass can clear
+    # the killed candidate, while folding the scanner death into the updates.
+    g = _globals(_enemy_pool(5), boss=False)  # variant 5, non-boss -> scanner instant death
+    updates, result = _collide_post_move(_scanner_pool(object_type=1), 0, g, dict(_POST_MOVE))
+    assert result is not None and result.died and result.candidate_deactivated and result.hit_index == 0
+    assert updates[_OFF_LOGIC_ID] == 1 and updates[_OFF_SPRITE] == 0
+
+
+def test_collide_post_move_none_without_candidates():
+    updates, result = _collide_post_move(_scanner_pool(), 0, _globals(None), dict(_POST_MOVE))
+    assert result is None and updates == _POST_MOVE
