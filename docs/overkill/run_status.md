@@ -367,6 +367,21 @@ detail) is still off.  Parked as a focused next slice: fix the unpacker to repro
 byte-for-byte, then `exe_image = unlzexe(OVERKILL.EXE)` makes the whole cold boot run from the two
 original files (`OVERKILL.EXE` + `OVERKILL`) with no snapshot dependency.  (Notes/disasm in scratch.)
 
+**Load layout cracked (info block at stub cs:0 = file 42480):** the restored original-EXE header is
+`e_ip=000E, e_cs=09AA, e_sp=0080, e_ss=0B10`; move params `[08]=0A3F` (compressed paras), `[0A]=001F`,
+`[0C]=015B`.  So with runtime `CS=1010` the unpacked **load segment = 1010 - 09AA = 0x666**: the
+decompressed load module byte 0 maps to `img[0x6660]`, and the code segment (`CS:1010`) is at byte offset
+`09AA*16 = 0x9AA0` into the decompressed output.  **Verification target:** the decompressed output at
+`0x9AA0` must equal `img[0x10100]` (the static code; `img[0x6660]` is runtime-zeroed BSS/PSP-adjacent
+data, so unverifiable early).  Progress: modelling the output as a zeroed 64 KiB segment with 16-bit
+offset wrap (out-of-range back-refs read 0) **fixed the byte-25 crash** -- it now decompresses cleanly to
+`di=0x3ED4` (~16 KiB) and stops at an END marker.  But that is BEFORE the code at `0x9AA0`, so the stream
+still misaligns to a **premature END** somewhere in the first 16 KiB.  Since the stream position is
+content-independent (si advances by flag bits + literal/offset bytes only), this is a genuine bit/byte
+misalignment in the decode, not an output-model issue.  **Definitive next step:** step the real stub in
+the VM (load the EXE, run from `0A3F:000E`, trace its LODSB/STOSB) and diff token-by-token against the
+pure decode to find the divergence -- then `exe_image = unlzexe(OVERKILL.EXE)`.
+
 The verified data work stands: all per-level + all 8 startup shared assets cold-load byte-exact.
 
 ## 2026-06-30 - Whole-scan attempt 2 (shared store): real blocker is a variant-2 candidate kill (logged)
