@@ -38,6 +38,7 @@ from overkill.recovered.systems.objects import (
     object_update_ae09,
     object_update_aed8,
     object_update_b24d,
+    object_update_b2cd,
     object_update_b86d,
     object_update_b9f0,
     object_update_be3c,
@@ -329,6 +330,42 @@ def _arm_b9f0(cpu, class_table_cache: dict) -> _Pending | None:
 B24D_IP = 0xB24D  # logic_id 0x0B: 5E42 delta-steer + B250 contact + AD60 (movement half)
 B909_IP = 0xB909  # logic_id 0x1E: sets mode 2, B729 (5DB2 seek) -> BC4B; blocked -> 7476 spawn
 B909_MOVEMENT_MODE = 0x0002  # B909 stamps DS:2308 = 2 before B729's 5DB2
+B2CD_IP = 0xB2CD  # logic_id 0x12: waypoint 5DB2 seek + level sprite -> BC4B (the dominant L6 object)
+B2CD_WAYPOINT_PTR_OFF = 0x36
+LEVEL_2356 = 0x2356
+SCROLL_2350 = 0x2350
+
+
+def _arm_b2cd(cpu, class_table_cache: dict) -> _Pending | None:
+    """Capture + predict B2CD (logic_id 0x12): the waypoint 5DB2 seek + sprite, at the BC4B handoff.
+
+    Reads the slot's current waypoint via the +36 DS pointer ({X, Y}), seeks toward it (object_update_b2cd
+    composes the 5DB2 seek + the level/BDAC/scroll sprite table); returns None when 5DB2 is blocked (the
+    reached-waypoint advance loop) or for the unmodelled sprite fall-throughs.  substate/active untouched."""
+    ss = cpu.s.ss & 0xFFFF
+    ds = cpu.s.ds & 0xFFFF
+    bp = cpu.s.bp & 0xFFFF
+    substate = cpu.mem.rw(ss, (bp + OFF_SUBSTATE) & 0xFFFF)
+    active = cpu.mem.rw(ss, (bp + OFF_ACTIVE_WORD) & 0xFFFF)
+    wp = cpu.mem.rw(ss, (bp + B2CD_WAYPOINT_PTR_OFF) & 0xFFFF)  # DS offset of the current waypoint
+    table = tuple(cpu.mem.rb(ds, (DIRECTION_TABLE_A348 + i) & 0xFFFF) for i in range(16))
+    upd = object_update_b2cd(
+        slot_x=cpu.mem.rw(ss, (bp + OFF_X) & 0xFFFF),
+        slot_y=cpu.mem.rw(ss, (bp + OFF_Y) & 0xFFFF),
+        slot_direction=cpu.mem.rw(ss, (bp + OFF_DIRECTION_OR_STEP) & 0xFFFF),
+        waypoint_x=cpu.mem.rw(ds, wp & 0xFFFF),
+        waypoint_y=cpu.mem.rw(ds, (wp + 2) & 0xFFFF),
+        direction_table=table,
+        bdac=cpu.mem.rw(ds, RENDER_MODE_BDAC),
+        level=cpu.mem.rw(ds, LEVEL_2356),
+        scroll=cpu.mem.rw(ds, SCROLL_2350),
+    )
+    if upd is None:
+        return None
+    predicted = (substate, upd.direction_or_step, upd.sprite_or_state, upd.x_word, upd.y_word, active)
+    return _Pending(ss=ss, bp=bp, exit_ip=BC4B_IP, predicted=predicted, read_post=_read_slot_6tuple)
+
+
 BE3C_IP = 0xBE3C  # logic_id 0x01: animation state machine -> BC45 post-move
 BC45_IP = 0xBC45  # BE3C's post-move handoff (the sibling of BC4B)
 BE3C_GATE_2324 = 0x2324
@@ -405,6 +442,7 @@ NATIVE_HANDLERS: tuple[NativeHandler, ...] = (
     NativeHandler(logic_id=0x0B, label="B24D", entry_ip=B24D_IP, arm=_arm_b24d),
     NativeHandler(logic_id=0x1E, label="B909", entry_ip=B909_IP, arm=_arm_b909),
     NativeHandler(logic_id=0x01, label="BE3C", entry_ip=BE3C_IP, arm=_arm_be3c),
+    NativeHandler(logic_id=0x12, label="B2CD", entry_ip=B2CD_IP, arm=_arm_b2cd),
 )
 _HANDLER_BY_IP = {(CS, h.entry_ip): h for h in NATIVE_HANDLERS}
 

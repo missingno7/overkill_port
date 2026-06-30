@@ -15,6 +15,7 @@ from overkill.recovered.domain.object_behaviors import (
     Ae09Update,
     Aed8SlotUpdate,
     B24dSlotUpdate,
+    B2cdSlotUpdate,
     B73ETargetReachedResolution,
     B86dDriftUpdate,
     B86dMovementResult,
@@ -672,6 +673,71 @@ def object_update_aed8(
     else:  # tile_probe: deactivate iff the tile one map row below has class 1.
         new_active = 0x0000 if object_tile_probe_deactivates_ad60(final_x, y, tiles) else (active_word & 0xFFFF)
     return Aed8SlotUpdate(substate=new_substate, x_word=final_x, y_word=y, active_word=new_active)
+
+
+B2CD_WAYPOINT_TARGET_X_BIAS = 0x0020   # B2D1: target X = waypoint[0] + 0x20
+B2CD_SCROLL_SPECIAL = 0x0E52           # B335: DS:2350 == 0xE52 picks the +0x105 sprite branch
+
+
+def b2cd_sprite_offset(direction: int, bdac: int, level: int, scroll: int) -> int | None:
+    """B2CD sprite = ``direction`` + a level/BDAC/scroll-dependent constant (recovered B304..B3B0).
+
+    BDAC==1 -> +0x3B; else by level (DS:2356): {1: +0x2A, 2: +0xD2, 3/4/7: +0xEC, 0/5/6: +0x115, but
+    scroll==0xE52 picks +0x105 for levels 0/6}.  Returns None for the messy fall-throughs the handler
+    leaves unmodelled (level 5 with scroll==0xE52, and any other/unknown level)."""
+    d = direction & 0xFFFF
+    if (bdac & 0xFFFF) == 0x0001:
+        return (d + 0x3B) & 0xFFFF
+    lvl = level & 0xFFFF
+    if lvl in (0x0000, 0x0005, 0x0006):
+        if (scroll & 0xFFFF) == B2CD_SCROLL_SPECIAL:
+            if lvl in (0x0000, 0x0006):
+                return (d + 0x105) & 0xFFFF
+            return None  # level 5 + scroll 0xE52 -> the unmapped fall-through
+        return (d + 0x115) & 0xFFFF
+    if lvl == 0x0001:
+        return (d + 0x2A) & 0xFFFF
+    if lvl == 0x0002:
+        return (d + 0xD2) & 0xFFFF
+    if lvl in (0x0003, 0x0004, 0x0007):
+        return (d + 0xEC) & 0xFFFF
+    return None
+
+
+def object_update_b2cd(
+    slot_x: int,
+    slot_y: int,
+    slot_direction: int,
+    waypoint_x: int,
+    waypoint_y: int,
+    direction_table,
+    bdac: int,
+    level: int,
+    scroll: int,
+) -> B2cdSlotUpdate | None:
+    """Pure WHOLE per-slot B2CD update (EFAE logic_id 0x12): waypoint 5DB2 seek + sprite, at BC4B.
+
+    Seeks toward the current waypoint ({X+0x20, Y} from the +36 pointer) with 5DB2 (mode 2 when level 0
+    or BDAC==1, else 1).  When 5DB2 moves, the sprite is ``b2cd_sprite_offset`` of the new direction and
+    the slot joins BC4B; returns None when 5DB2 is blocked (the reached-waypoint advance loop) or when the
+    sprite branch is one of the unmodelled fall-throughs.  Only direction/sprite/x/y change here."""
+    mode = 0x0002 if ((level & 0xFFFF) == 0 or (bdac & 0xFFFF) == 0x0001) else 0x0001
+    target = MovementTarget(
+        y_word=waypoint_y & 0xFFFF,
+        x_word=(waypoint_x + B2CD_WAYPOINT_TARGET_X_BIAS) & 0xFFFF,
+    )
+    seek = object_target_seek_step_5db2(slot_x, slot_y, slot_direction, target, mode, direction_table)
+    if seek.blocked:
+        return None  # reached -> the waypoint-advance loop (jmp B2CD), not modelled
+    sprite = b2cd_sprite_offset(seek.direction_or_step, bdac, level, scroll)
+    if sprite is None:
+        return None
+    return B2cdSlotUpdate(
+        direction_or_step=seek.direction_or_step,
+        sprite_or_state=sprite,
+        x_word=seek.x_word,
+        y_word=seek.y_word,
+    )
 
 
 BE3C_ANIMATE_GATE_ON = 0x0001       # DS:2324 == 1 enables the BE3C animation state machine

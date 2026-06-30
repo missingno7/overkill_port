@@ -175,6 +175,23 @@ class B24dSlotUpdate:
 
 
 @dataclass(frozen=True, slots=True)
+class B2cdSlotUpdate:
+    """Pure WHOLE per-slot result of the 1010:B2CD behavior (EFAE logic_id 0x12): waypoint seek + sprite.
+
+    B2CD reads the slot's current waypoint (the +36 pointer -> {X, Y} in DS), seeks toward it with 5DB2
+    (target X offset by +0x20, mode 2 when level 0 / BDAC==1 else 1), then sets the sprite from the seek
+    direction plus a level/BDAC/scroll-dependent constant (B304..B3B0), and joins the BC4B post-move.
+    Only direction/sprite/x/y change here; substate/active are untouched (BC4B owns the post-move).  The
+    reached-waypoint advance loop (5DB2 blocked) and the messy scroll==0xE52/unknown-level sprite
+    fall-throughs are out of scope (the handler returns None for them)."""
+
+    direction_or_step: int
+    sprite_or_state: int
+    x_word: int
+    y_word: int
+
+
+@dataclass(frozen=True, slots=True)
 class B86dDriftUpdate:
     """Pure result of the 1010:B86D *fall-through* (formation-drift) path's slot writes.
 
