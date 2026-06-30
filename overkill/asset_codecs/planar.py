@@ -74,7 +74,13 @@ def pack_planes_344b(
     return chunky, mask
 
 
-def deplanarize_tandy(planar, *, sprite_mode: bool, transparent_color: int = GRAPHICS_TRANSPARENT_COLOR) -> bytes:
+def deplanarize_tandy(
+    planar,
+    *,
+    sprite_mode: bool,
+    emit_item_headers: bool = False,
+    transparent_color: int = GRAPHICS_TRANSPARENT_COLOR,
+) -> bytes:
     """Full 1010:33AF Tandy graphics load transform: 4-plane planar image(s) -> 4bpp chunky bytes.
 
     The VM-free form of the mode-2 (Tandy) handler reached from 5BAC.  The input is a sequence of items,
@@ -88,8 +94,14 @@ def deplanarize_tandy(planar, *, sprite_mode: bool, transparent_color: int = GRA
     * **sprite mode** (``sprite_mode`` True, the 0CD8/G path): eight bytes interleaving the per-call
       transparency mask and pixels ``ch4,ch3,cl4,cl3,ch2,ch1,cl2,cl1``.
 
-    Verified byte-for-byte against the live dest buffers (CS:[959A] blocks / CS:[95AE] graphics) for all
-    six levels (tests/test_level_graphics_placement.py).
+    ``emit_item_headers`` selects the third (``bd8``) variant -- the 0CB8 path used for multi-item
+    directory assets (e.g. THEND/PANEL): each item's ``{width, stride}`` (little-endian words) is written
+    into the output ahead of its de-planarized data, so the result is self-describing.  (The original also
+    records each item's output offset in a separate CS:[0BE0] directory; that index is derivable from the
+    emitted headers and is not produced here.)
+
+    Verified byte-for-byte against the live dest buffers: CS:[959A] blocks / CS:[95AE] graphics for all
+    six levels (block + sprite), and the directory-mode CS:[95B2]/[95B4] (THEND/PANEL).
     """
     src = bytes(planar)
     out = bytearray()
@@ -105,6 +117,8 @@ def deplanarize_tandy(planar, *, sprite_mode: bool, transparent_color: int = GRA
         si += 2
         stride = u16(si)
         si += 2
+        if emit_item_headers:  # bd8 directory mode: prefix each item with its dimensions
+            out += bytes((width & 0xFF, width >> 8, stride & 0xFF, stride >> 8))
         for _row in range(width):
             for _col in range(stride):
                 p0, p1, p2, p3 = src[si], src[si + stride], src[si + 2 * stride], src[si + 3 * stride]

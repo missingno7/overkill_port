@@ -314,6 +314,26 @@ directory-mode transform (THEND/PANEL + the per-level 3rd slot), the menu/intro/
 `.ENC` loads), then the gameplay-state init (object spawns) for a from-scratch cold level, and the EXE
 unpack.
 
+## 2026-06-30 - bd8 directory-mode de-planarize: THEND/PANEL cold-loaded; transform family complete
+
+Recovered the third de-planarize variant -- the 0CB8 `bd8` directory mode.  It is the block-mode
+de-planarize with each item's `{width, stride}` (LE words) written into the output ahead of its data, so
+the buffer is self-describing (the original also records each item's offset in a separate `CS:[0BE0]`
+directory, derivable from the headers and not produced).  Added `emit_item_headers` to
+`deplanarize_tandy` and `asset_codecs.load_shared_directory_asset`; `THEND.BIC` (7044 B) and `PANEL.ENC`
+(51636 B, an `.ENC` -> LZ then de-planarize) match their live buffers `CS:[95B2]/[95B4]` byte-for-byte
+(tests/test_shared_assets.py; existing block/sprite tests unaffected -- the new flag defaults off).  lint
+240 + audits green.
+
+So the **Tandy graphics load transform is fully recovered (all three modes: block / sprite / directory)**
+and all six startup graphics loads (0D42-0DA3) now cold-load byte-exact.  The cold-boot **data** pillar is
+essentially complete: per-level (map/blocks/graphics/class) + shared (sprite banks + directory assets),
+every buffer byte-verified vs the VM.  Pivot note: object pools are **empty at level start** (verified in
+the L*_start snapshots) -- enemies spawn dynamically via a scrolling spawner, so there is no bulk object
+state to cold-load; the remaining gameplay-state init is the player + the scrolling spawn list (a deeper
+gameplay-logic thread).  Remaining toward the running game: the spawn system, the menu/intro/score
+screens, the full frame-loop integration over a cold `NativeLevel`, front-end flow, audio, EXE unpack.
+
 ## 2026-06-30 - Whole-scan attempt 2 (shared store): real blocker is a variant-2 candidate kill (logged)
 
 Built the corrected shared-store whole scan (one contiguous 0x45-slot store, both pointer-table loops
