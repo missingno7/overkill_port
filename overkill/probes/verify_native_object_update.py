@@ -35,6 +35,7 @@ from overkill.recovered.domain.tilemap import LevelTileContext
 from overkill.recovered.systems.objects import (
     object_update_ae09,
     object_update_aed8,
+    object_update_b24d,
     object_update_b86d,
     object_update_b9f0,
 )
@@ -242,6 +243,45 @@ def _arm_aed8(cpu, class_table_cache: dict) -> _Pending | None:
     return _Pending(ss=ss, bp=bp, exit_ip=ret_addr, predicted=predicted, read_post=_read_slot_6tuple)
 
 
+def _arm_b24d(cpu, class_table_cache: dict) -> _Pending | None:
+    """Capture + predict B24D (logic_id 0x0B): 5E42 steer + B250 contact + AD60, compared at B24D's RET.
+
+    B24D is reached via the EFC4 jump and RETs through the shared AD60 tail (like AED8), so the boundary
+    is the return address.  Only the four movement fields change (direction, x, y, active); substate and
+    sprite are passed through.  This adapter projects the slot fields + B24D's DS globals and calls the
+    canonical pure object_update_b24d.  The contact/out-of-bounds death paths route to BD17 (no RET), so
+    the gate naturally only compares the survive path."""
+    ss = cpu.s.ss & 0xFFFF
+    ds = cpu.s.ds & 0xFFFF
+    bp = cpu.s.bp & 0xFFFF
+    substate = cpu.mem.rw(ss, (bp + OFF_SUBSTATE) & 0xFFFF)
+    sprite = cpu.mem.rw(ss, (bp + OFF_SPRITE_OR_STATE) & 0xFFFF)
+    bdac = cpu.mem.rw(ds, RENDER_MODE_BDAC)
+    table = tuple(cpu.mem.rb(ds, (DIRECTION_TABLE_A348 + i) & 0xFFFF) for i in range(16))
+    upd = object_update_b24d(
+        x_word=cpu.mem.rw(ss, (bp + OFF_X) & 0xFFFF),
+        y_word=cpu.mem.rw(ss, (bp + OFF_Y) & 0xFFFF),
+        direction_or_step=cpu.mem.rw(ss, (bp + OFF_DIRECTION_OR_STEP) & 0xFFFF),
+        active_word=cpu.mem.rw(ss, (bp + OFF_ACTIVE_WORD) & 0xFFFF),
+        substate_1e=cpu.mem.rw(ss, (bp + OFF_SCAN_ENABLE_OR_SOLID) & 0xFFFF),
+        move_delta_x=cpu.mem.rw(ss, (bp + OFF_MOVE_DELTA_X) & 0xFFFF),
+        move_delta_y=cpu.mem.rw(ss, (bp + OFF_MOVE_DELTA_Y) & 0xFFFF),
+        move_step_error=cpu.mem.rw(ss, (bp + OFF_MOVE_STEP_ERROR) & 0xFFFF),
+        step_mode=cpu.mem.rw(ds, STEP_MODE_2312),
+        direction_table=table,
+        draw_layer=cpu.mem.rw(ss, (bp + OFF_HAZARD_CLASS) & 0xFFFF),
+        logic_id=cpu.mem.rw(ss, (bp + OFF_LOGIC_ID) & 0xFFFF),
+        ref_box_x=cpu.mem.rw(ds, AED8_REF_BOX_X),
+        ref_box_y=cpu.mem.rw(ds, AED8_REF_BOX_Y),
+        a278=cpu.mem.rw(ds, AD60_A278),
+        tile_probe_suppressed=bdac == 0x0001,
+        tiles=_read_level_tile_context(cpu, ds, class_table_cache),
+    )
+    predicted = (substate, upd.direction_or_step, sprite, upd.x_word, upd.y_word, upd.active_word)
+    ret_addr = cpu.mem.rw(ss, cpu.s.sp & 0xFFFF)
+    return _Pending(ss=ss, bp=bp, exit_ip=ret_addr, predicted=predicted, read_post=_read_slot_6tuple)
+
+
 def _arm_b9f0(cpu, class_table_cache: dict) -> _Pending | None:
     """Capture + predict B9F0 (logic_id 0x14) -- all four paths via the pure object_update_b9f0.
 
@@ -283,11 +323,14 @@ def _arm_b9f0(cpu, class_table_cache: dict) -> _Pending | None:
 
 # The registry: one entry per recovered pure whole-slot transform.  Grow this as
 # handlers are promoted; everything not here is counted as a fallback.
+B24D_IP = 0xB24D  # logic_id 0x0B: 5E42 delta-steer + B250 contact + AD60 (movement half)
+
 NATIVE_HANDLERS: tuple[NativeHandler, ...] = (
     NativeHandler(logic_id=0x0C, label="AE09", entry_ip=AE09_IP, arm=_arm_ae09),
     NativeHandler(logic_id=0x1D, label="B86D", entry_ip=B86D_IP, arm=_arm_b86d),
     NativeHandler(logic_id=0x02, label="AED8", entry_ip=AED8_IP, arm=_arm_aed8),
     NativeHandler(logic_id=0x14, label="B9F0", entry_ip=B9F0_IP, arm=_arm_b9f0),
+    NativeHandler(logic_id=0x0B, label="B24D", entry_ip=B24D_IP, arm=_arm_b24d),
 )
 _HANDLER_BY_IP = {(CS, h.entry_ip): h for h in NATIVE_HANDLERS}
 

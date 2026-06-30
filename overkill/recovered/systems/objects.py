@@ -14,6 +14,7 @@ from overkill.recovered.domain.object_behaviors import (
     Ae09SlotUpdate,
     Ae09Update,
     Aed8SlotUpdate,
+    B24dSlotUpdate,
     B73ETargetReachedResolution,
     B86dDriftUpdate,
     B86dMovementResult,
@@ -671,6 +672,61 @@ def object_update_aed8(
     else:  # tile_probe: deactivate iff the tile one map row below has class 1.
         new_active = 0x0000 if object_tile_probe_deactivates_ad60(final_x, y, tiles) else (active_word & 0xFFFF)
     return Aed8SlotUpdate(substate=new_substate, x_word=final_x, y_word=y, active_word=new_active)
+
+
+def object_update_b24d(
+    x_word: int,
+    y_word: int,
+    direction_or_step: int,
+    active_word: int,
+    substate_1e: int,
+    move_delta_x: int,
+    move_delta_y: int,
+    move_step_error: int,
+    step_mode: int,
+    direction_table,
+    draw_layer: int,
+    logic_id: int,
+    ref_box_x: int,
+    ref_box_y: int,
+    a278: int,
+    tile_probe_suppressed: bool,
+    tiles: LevelTileContext,
+) -> B24dSlotUpdate:
+    """Pure WHOLE per-slot B24D update (EFAE logic_id 0x0B): 5E42 steer + B250 contact + AD60 -> active.
+
+    B24D calls the 5E42 delta-steer (``object_delta_steer_5e42``), then the same B250 selector + AD5A/
+    ADC9 -> AD60 tail as AED8: contact iff ``+1E != 1`` AND the steered point is inside the DS:237E/2380
+    box (``overlap_contact_box_contains``); no contact -> AD5A adds DS:A278 to X, contact -> ADC9 sets
+    X = FFFFh; then AD60 (``object_bounds_tile_decision_ad60``) clears ``active`` out of play bounds (for
+    logic_id 0x0B, not a tile-probe family, so only the bounds branch applies).  Substate + sprite are
+    untouched.  The in-box contact's 9E19 fan-out is a separate global side effect, out of scope here.
+    """
+    steer = object_delta_steer_5e42(
+        x_word, y_word, direction_or_step, move_delta_y, move_delta_x, move_step_error,
+        step_mode, direction_table,
+    )
+    contact = (substate_1e & 0xFFFF) != AED8_SUBSTATE_SKIP_OVERLAP and overlap_contact_box_contains(
+        steer.x_word, steer.y_word, ref_box_x, ref_box_y
+    )
+    final_x = AED8_CONTACT_DEATH_X if contact else u16(steer.x_word + a278)
+
+    decision = object_bounds_tile_decision_ad60(
+        final_x, steer.y_word, draw_layer, logic_id, tile_probe_suppressed=tile_probe_suppressed
+    )
+    if decision.kind == "deactivate":
+        new_active = 0x0000
+    elif decision.kind == "skip":
+        new_active = active_word & 0xFFFF
+    else:  # tile_probe: deactivate iff the tile one map row below has class 1.
+        new_active = 0x0000 if object_tile_probe_deactivates_ad60(final_x, steer.y_word, tiles) else (active_word & 0xFFFF)
+    return B24dSlotUpdate(
+        direction_or_step=steer.direction_or_step,
+        x_word=final_x,
+        y_word=steer.y_word,
+        active_word=new_active,
+        move_step_error=steer.move_step_error,
+    )
 
 
 ABA3_SPRITE_OFFSET = 0x0014

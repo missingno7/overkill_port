@@ -157,6 +157,24 @@ class Aed8SlotUpdate:
 
 
 @dataclass(frozen=True, slots=True)
+class B24dSlotUpdate:
+    """Pure WHOLE per-slot result of the 1010:B24D behavior (EFAE logic_id 0x0B): steer + contact + active.
+
+    B24D calls the 5E42 delta-steer (updates direction +06, move_step_error +2E, x +02, y +04), then runs
+    the same B250 overlap-contact selector against the DS:237E/2380 view box and joins the shared AD5A/
+    ADC9 -> AD60 tail: no contact -> AD5A (x += DS:A278) then AD60; contact -> ADC9 (x = FFFFh) then AD60.
+    AD60 sets the slot ``active`` word (out of bounds; logic_id 0x0B is not a tile-probe family).  The
+    substate and sprite are untouched.  The in-box contact's 9E19 fan-out (x1/3/5 by difficulty) is a
+    separate global side effect, out of this slot transform's scope."""
+
+    direction_or_step: int
+    x_word: int
+    y_word: int
+    active_word: int
+    move_step_error: int
+
+
+@dataclass(frozen=True, slots=True)
 class B86dDriftUpdate:
     """Pure result of the 1010:B86D *fall-through* (formation-drift) path's slot writes.
 
