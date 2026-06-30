@@ -351,6 +351,24 @@ music banks) are loaded by the **front-end / audio** code paths, not the startup
 de-planarize to banked display VRAM (renderer-bound), and the music banks feed the audio driver.  Those
 are the next loading sites to trace (front-end + audio pillars).
 
+## 2026-06-30 - EXE bootstrap scouted: OVERKILL.EXE is LZEXE 0.91 (unpacker WIP)
+
+To drop the `memory_1mb.bin` dependency (so `exe_image` comes from the real `OVERKILL.EXE`), looked at
+the EXE itself.  It is a **self-extracting LZEXE 0.91** EXE (MZ, e_crlc=0, no standard signature, a
+decompressor stub at e_cs:e_ip = 0A3F:000E = file offset 42494).  Traced the full decompressor (byte-flag
+stream, `bp`/`dx` bit buffer): bit=1 -> literal `movsb`; bit=0 -> match, then a sub-bit: 0 = short
+(2-bit length+2, 1-byte offset `0xFF00|b`), 1 = long (2 bytes -> 13-bit signed offset `((b1>>3)|0xE0)<<8|b0`,
+length `(b1&7)+2`; if `b1&7==0`, read a byte L: 0=END, 1=segment-continue, else length L+1).  Found via
+capstone (the project's recovered systems run on the already-unpacked image, so there was no unpacker).
+
+Scratch unpacker over `exe[512:]` decompresses plausible code but diverges from the live image by ~25
+bytes and the output isn't found in `memory_1mb.bin` -- so the compressed-data start offset (or a stream
+detail) is still off.  Parked as a focused next slice: fix the unpacker to reproduce the `CS:[1010]` image
+byte-for-byte, then `exe_image = unlzexe(OVERKILL.EXE)` makes the whole cold boot run from the two
+original files (`OVERKILL.EXE` + `OVERKILL`) with no snapshot dependency.  (Notes/disasm in scratch.)
+
+The verified data work stands: all per-level + all 8 startup shared assets cold-load byte-exact.
+
 ## 2026-06-30 - Whole-scan attempt 2 (shared store): real blocker is a variant-2 candidate kill (logged)
 
 Built the corrected shared-store whole scan (one contiguous 0x45-slot store, both pointer-table loops
