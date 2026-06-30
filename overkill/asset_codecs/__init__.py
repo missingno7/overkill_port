@@ -16,6 +16,7 @@ from .level_assets import (
 )
 from .loader import decode_asset
 from .lz import copy_lz_back_reference, decode_lz_asset, decode_lz_bytes, input_lz_byte, output_lz_byte
+from .planar import pack_planes_344b
 from .overlay import (
     compare_overlay_entry_name_05d9,
     compare_overlay_signature_0582,
@@ -53,6 +54,7 @@ __all__ = [
     "decode_linear_byte_rle",
     "decode_linear_byte_rle_bytes",
     "decode_lz_bytes",
+    "pack_planes_344b",
     "decode_word_single_marker_rle_words",
     "decode_lz_asset",
     "decode_word_pair_rle",

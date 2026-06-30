@@ -187,6 +187,28 @@ interleave + the `CS:[5B9C]/5B9E` stride/count + output addressing + the `[0BD6]
 with the clean verification `tandy_deplanarize(decode(G{n})) == image[CS:[95AE]]` against a gameplay
 snapshot.  **Next slice:** recover that pure planar->chunky transform and verify it.
 
+## 2026-06-30 - Planar->chunky packer (344B) recovered + verified vs real ASM
+
+Recovered the bit-interleave core of the graphics load transform: `asset_codecs.pack_planes_344b`
+(overkill/asset_codecs/planar.py), the pure form of 1010:344B.  It takes four plane bytes (LSB..MSB
+order) and packs **bit 0 and bit 1** of each into two 4bpp chunky pixels -- the 33AF loop rotates the
+planes by two between calls to walk the columns.  Output: the two pixels packed (pixel1 high nibble,
+pixel0 low, per the closing `ROR cl,4`); in **block mode** (`CS:[0BD6]==0`, the 347B early return,
+opaque) the mask passes through, in **sprite mode** (`!=0`, the 347C..34AC tail) each nibble equal to
+the transparent colour is zeroed and flagged in a per-nibble mask.
+
+Caught the mode polarity from the ASM: `75 01` at 3479 targets `347C` (sprite tail), not 347B -- so
+`CS:[0BD6]!=0` is the masked/sprite path and `==0` is opaque/block (matching the 33DD output gating:
+sprites emit cl+ch, blocks emit cl only).  Verified byte-for-byte against the interpreted ASM stepped
+out of the image: **500/500** random cases across both modes / transparency / passed-in mask, plus unit
+cases (tests/test_asset_planar.py).  lint 237 + both audits green.
+
+So the trickiest piece of the transform is now recovered + airtight.  **Remaining for the full
+de-planarize:** the 33AF/33DD loop geometry that drives the packer -- the item walk via `44D7`, the
+plane stride `CS:[5B9C]` and count `CS:[5B9E]`, the `si` advance (`+3*stride` per group) and the ES:DI
+output addressing with its mode-gated byte order ([5B94..5B9B] -> stosw set).  Then the clean end check
+`deplanarize(decode(G{n})) == image[CS:[95AE]]` / `decode(LEV{n}BLX) == image[CS:[959A]]`.
+
 ## 2026-06-30 - Whole-scan attempt 2 (shared store): real blocker is a variant-2 candidate kill (logged)
 
 Built the corrected shared-store whole scan (one contiguous 0x45-slot store, both pointer-table loops
