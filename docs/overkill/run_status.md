@@ -250,6 +250,28 @@ So the static level tile state (byte-perfect tile_plane + class_table) is now re
 data; and (foundational, recurring) extract the level-init data-segment constants (footer, overrides,
 dest segments) from `OVERKILL.EXE` so the path is EXE-pure rather than image-read.
 
+## 2026-06-30 - Cold-boot level loader capstone: `load_native_level` (a whole level, VM-verified)
+
+Tied the per-level data load together into one call: `asset_codecs.load_native_level(exe_image,
+container, level) -> NativeLevel(tile_plane, class_table, blocks, graphics)` (overkill/asset_codecs/
+native_level.py).  `exe_image` is the unpacked OVERKILL EXE image (the level-init data-segment constants
+-- the footer `DS:D1BC`, the per-level class overrides `DS:C4AA[level]`; the same bytes a real boot has
+once the self-extracting EXE unpacks, i.e. memory_1mb.bin / unpack(OVERKILL.EXE)); `container` is
+assets/OVERKILL.  It composes the verified pieces: decode + border the map, build the class table, decode
++ de-planarize blocks and graphics.
+
+**Verified byte-for-byte against the live VM for all six levels** (tests/test_native_level.py): every one
+of the four buffers equals its live VM buffer (`CS:[9592]` tile plane, `DS:C3AA` class table, `CS:[959A]`
+blocks, `CS:[95AE]` graphics) -- the same image supplies both the EXE constants and the live buffers, so
+the test proves the assembly composes correctly.  lint 238 + both audits green.
+
+So a level's **entire static data is now cold-loadable into native buffers, VM-free and byte-exact**:
+`(exe_image, container, level) -> NativeLevel`.  The recovered tile probe consumes a `LevelTileContext`
+built from `tile_plane` + `class_table` + the per-frame scroll -- this loader owns the static half.
+Remaining toward a running native level: the dynamic scroll/camera init + handing `NativeLevel` to the
+recovered frame loop + renderer (game_core), the SHARED startup assets, and -- to drop the image
+dependency -- unpacking `OVERKILL.EXE` (self-extracting) to produce `exe_image`.
+
 ## 2026-06-30 - Whole-scan attempt 2 (shared store): real blocker is a variant-2 candidate kill (logged)
 
 Built the corrected shared-store whole scan (one contiguous 0x45-slot store, both pointer-table loops
