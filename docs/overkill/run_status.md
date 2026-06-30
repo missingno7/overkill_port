@@ -1,3 +1,30 @@
+## 2026-06-30 - DEFERRAL RETIRED: the object-update driver now folds the collision death (native)
+
+Wired resolve_moving_object_collision into the object-update driver -- the integration the
+convergence-point entry teed up -- and it landed cleanly. The key insight that made it tractable: the
+collision deaths that the per-slot driver gate was deferring (`sprite_deferred` 7 on L2, 19 on L3) are
+**effect-loop** scanners, and an effect scanner's 62F6 candidates are the **gameplay pool**, which is
+*stable* during the effect loop (the gameplay loop runs after). So those deaths have stable candidates
+and no self-overlap -- exactly the case the snapshot driver could not see but the per-slot path can.
+
+`object_update._fold_bc4b_collision` folds resolve_moving_object_collision into a B86D/B9F0 slot's
+post-move updates: when the per-frame `candidate_pool` is provided (and DS:A47C==0, the BC4B contact
+gate), a classified collision death overrides the slot's sprite + logic_id (1) + counter_20, and a
+damage-survive folds the new counter. It is OPT-IN (candidate_pool defaults None) so the snapshot
+native_object_pass and the hybrid runtime are untouched; no hook uses the driver with a candidate pool.
+
+VERIFIED by tightening `verify_native_object_update_driver` (capture the DS:2B5C pool + DS:A8C2 + BEDC
+at each B86D/B9F0 entry, fold the collision, and compare the FULL slot incl. the death sprite + the
+contact-set logic_id -- no more sprite deferral): **L2 1449/1449 sprite_deferred 7->0, L3 1655/1655
+19->0, L6_boss 6596/6596 0**, all fail=0. The snapshot pass is unaffected (verify_native_object_pass
+still 662/662), 29 unit tests green incl. the new tests/test_object_update_collision_fold.py. The
+remaining deferral is only the owner-link / unclassified contact death (0 in these demos).
+
+**So the per-slot native object-update driver is now complete incl. object-vs-object contact death** --
+movement + tile + bounds + collision, byte-exact vs the VM. The collision island is fully integrated
+into the object driver. Remaining for a VM-free object PASS (whole-pool): the order-dependent gameplay
+loop (collision candidates evolve there) + the effect-loop per-entry tick; the per-slot path is done.
+
 ## 2026-06-30 - Convergence point: gameplay-frame leaves are recovered; the order-dependent pass is next
 
 After the collision capstone, surveyed what's left of the gameplay frame and found a clear

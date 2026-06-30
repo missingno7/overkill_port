@@ -18,7 +18,7 @@ import dataclasses
 from overkill.recovered.domain.native_game_state import NativeGameState
 from overkill.recovered.domain.object_slots import ObjectPool
 from overkill.recovered.domain.object_update import ObjectUpdateGlobals
-from overkill.recovered.systems.collision import object_postmove_bc4b
+from overkill.recovered.systems.collision import object_postmove_bc4b, resolve_moving_object_collision
 from overkill.recovered.systems.objects import (
     object_update_ae09,
     object_update_aed8,
@@ -34,7 +34,43 @@ _OFF_X = 0x02
 _OFF_Y = 0x04
 _OFF_DIRECTION = 0x06
 _OFF_SPRITE = 0x08
+_OFF_OBJECT_TYPE = 0x14
+_OFF_LOGIC_ID = 0x18
 _OFF_SUBSTATE = 0x1C
+_OFF_COUNTER_20 = 0x20
+
+
+def _fold_bc4b_collision(pool: ObjectPool, i: int, g: ObjectUpdateGlobals, updates: dict) -> dict:
+    """Fold the BC4B contact-scan collision into a B86D/B9F0 slot's post-move ``updates``.
+
+    The original BC4B runs the 62F6 object-vs-object scan only when DS:A47C (``global_disable``) is
+    zero; when the per-frame ``candidate_pool`` is provided this composes
+    ``resolve_moving_object_collision`` over the slot's *post-move* position (62F6 runs after the
+    slot's movement) and folds a collision death (sprite + logic_id 1 + counter_20) or the damage
+    chain's new counter into ``updates``.  With no candidate pool, or A47C != 0, or a dead slot, the
+    contact death is left to the VM (the snapshot driver's prior behaviour); the owner-link / no-op
+    reaction is also left untouched.
+    """
+    if g.candidate_pool is None or g.global_disable != 0:
+        return updates
+    if updates.get(_OFF_ACTIVE, pool.active_word(i)) == 0:
+        return updates
+    result = resolve_moving_object_collision(
+        scanner_active_word=updates.get(_OFF_ACTIVE, pool.active_word(i)),
+        scanner_x_word=updates.get(_OFF_X, pool.x_word(i)),
+        scanner_y_word=updates.get(_OFF_Y, pool.y_word(i)),
+        scanner_draw_layer=pool.draw_layer(i),
+        scanner_logic_id=pool.logic_id(i),
+        scanner_object_type=pool.word_at(i, _OFF_OBJECT_TYPE),
+        scanner_counter_20=pool.word_at(i, _OFF_COUNTER_20),
+        candidates=g.candidate_pool, a8c2_boss_mode=g.a8c2_boss_mode, bedc=g.bedc,
+    )
+    if not result.collided or result.unclassified:
+        return updates
+    if result.died:
+        return {**updates, _OFF_SPRITE: result.death_transition.sprite_or_state,
+                _OFF_LOGIC_ID: result.death_transition.logic_id, _OFF_COUNTER_20: result.new_counter_20}
+    return {**updates, _OFF_COUNTER_20: result.new_counter_20}
 
 
 def _advance_ae09(pool: ObjectPool, i: int, g: ObjectUpdateGlobals) -> dict | None:
@@ -69,8 +105,9 @@ def _advance_b86d(pool: ObjectPool, i: int, g: ObjectUpdateGlobals) -> dict | No
         g.vertical_delta, g.phase_2328, g.step_mode, g.direction_table,
     )
     pm = object_postmove_bc4b(mv.x_word, mv.y_word, mv.active_word, pool.logic_id(i), g.global_disable)
-    return {_OFF_DIRECTION: mv.direction_or_step, _OFF_SPRITE: mv.sprite_or_state,
-            _OFF_X: mv.x_word, _OFF_Y: pm.y_word, _OFF_ACTIVE: pm.active_word}
+    updates = {_OFF_DIRECTION: mv.direction_or_step, _OFF_SPRITE: mv.sprite_or_state,
+               _OFF_X: mv.x_word, _OFF_Y: pm.y_word, _OFF_ACTIVE: pm.active_word}
+    return _fold_bc4b_collision(pool, i, g, updates)
 
 
 def _advance_b9f0(pool: ObjectPool, i: int, g: ObjectUpdateGlobals) -> dict | None:
@@ -89,8 +126,9 @@ def _advance_b9f0(pool: ObjectPool, i: int, g: ObjectUpdateGlobals) -> dict | No
         step_mode=g.step_mode, direction_table=g.direction_table,
     )
     pm = object_postmove_bc4b(mv.x_word, mv.y_word, mv.active_word, pool.logic_id(i), g.global_disable)
-    return {_OFF_DIRECTION: mv.direction_or_step, _OFF_SPRITE: mv.sprite_or_state,
-            _OFF_X: mv.x_word, _OFF_Y: pm.y_word, _OFF_ACTIVE: pm.active_word}
+    updates = {_OFF_DIRECTION: mv.direction_or_step, _OFF_SPRITE: mv.sprite_or_state,
+               _OFF_X: mv.x_word, _OFF_Y: pm.y_word, _OFF_ACTIVE: pm.active_word}
+    return _fold_bc4b_collision(pool, i, g, updates)
 
 
 # logic_id -> per-slot advance.  Grow as handlers gain complete pure systems.

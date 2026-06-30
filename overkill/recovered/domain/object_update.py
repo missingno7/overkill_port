@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from overkill.recovered.domain.object_slots import ObjectPool
 from overkill.recovered.domain.tilemap import LevelTileContext
 
 
@@ -41,3 +42,9 @@ class ObjectUpdateGlobals:
     horizontal_delta: int = 0      # DS:2346 global X delta added to target_x (+34)
     difficulty: int = 0            # DS:BEDC difficulty -> periodic-helper tick mask
     tick: int = 0                  # DS:2340 tick counter for the periodic BA5A helper
+    # BC4B contact-scan inputs (default-safe: only B86D/B9F0 consume them, and only when provided).
+    # When ``candidate_pool`` is None the driver leaves the collision death to the VM (the current
+    # snapshot behaviour); when given, B86D/B9F0 fold the moving-object collision death/damage in.
+    candidate_pool: "ObjectPool | None" = None  # the gameplay pool (DS:2B5C) the 62F6 scan walks
+    a8c2_boss_mode: bool = False    # DS:A8C2 == 1 (final-boss gate in the BEC5 reaction)
+    bedc: int = 0                   # DS:BEDC difficulty (the BF25 damage-chain extra decrements)

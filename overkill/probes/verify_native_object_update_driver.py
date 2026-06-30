@@ -44,6 +44,9 @@ REF_BOX_SCAN, A47E, A7A0, A47C = 0x2390, 0xA47E, 0xA7A0, 0xA47C  # B86D/B9F0 + B
 DELTA_2342, PHASE_2328, STEP_MODE, DIR_TABLE = 0x2342, 0x2328, 0x2312, 0xA348
 A482, FRAME_233C, DELTA_X_2346, BEDC, TICK_2340 = 0xA482, 0x233C, 0x2346, 0xBEDC, 0x2340  # B9F0
 TILE_ORIGIN, TILE_ROW, TILE_CLASS, TILE_PLANE_PTR = 0x234E, 0x2350, 0xC3AA, 0x9592
+A8C2_ADDR = 0xA8C2                       # final-boss-group gate for the BEC5 reaction
+GAMEPLAY_BASE, GAMEPLAY_COUNT = 0x2B5C, 0x22  # the 62F6 contact-scan candidate pool
+COLLISION_HANDLER_IPS = (0xB86D, 0xB9F0)      # the handlers that run the BC4B contact scan
 
 
 def _six_from_cpu(cpu, ss: int, bp: int) -> tuple:
@@ -109,6 +112,14 @@ def main(argv) -> int:
                 horizontal_delta=cpu.mem.rw(ds, DELTA_X_2346),
                 difficulty=cpu.mem.rw(ds, BEDC),
                 tick=cpu.mem.rw(ds, TICK_2340),
+                candidate_pool=(
+                    ObjectPool(base=GAMEPLAY_BASE, stride=STRIDE, slots=tuple(
+                        tuple(cpu.mem.rw(ds, (GAMEPLAY_BASE + s * STRIDE + 2 * j) & 0xFFFF)
+                              for j in range(STRIDE_WORDS))
+                        for s in range(GAMEPLAY_COUNT)))
+                    if ip in COLLISION_HANDLER_IPS else None),
+                a8c2_boss_mode=cpu.mem.rw(ds, A8C2_ADDR) == 0x0001,
+                bedc=cpu.mem.rw(ds, BEDC),
             )
             out = native_object_update_pool(ObjectPool(base=0, stride=STRIDE, slots=(words,)), g)
             advanced = out.slots[0] != words
@@ -123,19 +134,23 @@ def main(argv) -> int:
                     return
                 predicted = _six_from_pool(out)
                 actual = _six_from_cpu(cpu, ss, bp)
-                if logic_id in SKIP_SPRITE_LOGIC_IDS and \
-                        cpu.mem.rw(ss, (bp + OFF_LOGIC_ID) & 0xFFFF) == COLLISION_DEATH_LOGIC_ID:
-                    # Only a contact-path collision death (BFC7 -> logic_id 1) overrides the sprite, and
-                    # that path is deferred -- compare the five fields the driver owns.  Every non-death
-                    # slot compares all six (the movement sprite is the final sprite).
-                    res["sprite_deferred"] += 1
-                    predicted = predicted[:2] + predicted[3:]
-                    actual = actual[:2] + actual[3:]
+                driver_logic = out.logic_id(0)
+                vm_logic = cpu.mem.rw(ss, (bp + OFF_LOGIC_ID) & 0xFFFF)
                 res["calls"] += 1
-                if predicted == actual:
+                if logic_id in SKIP_SPRITE_LOGIC_IDS and vm_logic == COLLISION_DEATH_LOGIC_ID \
+                        and driver_logic != COLLISION_DEATH_LOGIC_ID:
+                    # An owner-link / unclassified contact death the driver leaves to the VM
+                    # (resolve_moving_object_collision returned unclassified) -- the only deferral left.
+                    res["sprite_deferred"] += 1
+                    ok = (predicted[:2] + predicted[3:]) == (actual[:2] + actual[3:])
+                else:
+                    # The driver now folds classified collision deaths, so compare the full slot
+                    # (incl. the death sprite) AND the logic_id the contact path sets.
+                    ok = predicted == actual and driver_logic == vm_logic
+                if ok:
                     res["ok"] += 1
                 else:
-                    res["fail"].append((predicted, actual))
+                    res["fail"].append((predicted + (driver_logic,), actual + (vm_logic,)))
 
     run_ref_step_probe(demo, max_frames, on_ref_step)
 
