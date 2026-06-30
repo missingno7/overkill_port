@@ -31,6 +31,7 @@ from overkill.recovered.systems.objects import (
     object_update_ae7d,
     object_update_aed8,
     object_update_b24d,
+    object_update_b2cd,
     object_update_b86d,
     object_update_b9f0,
 )
@@ -197,6 +198,28 @@ def _advance_b909(pool: ObjectPool, i: int, g: ObjectUpdateGlobals) -> dict | No
     return {_OFF_DIRECTION: seek.direction_or_step, _OFF_X: seek.x_word, _OFF_Y: pm.y_word, _OFF_ACTIVE: pm.active_word}
 
 
+def _advance_b2cd(pool: ObjectPool, i: int, g: ObjectUpdateGlobals) -> dict | None:
+    # B2CD (logic_id 0x12): walk the +0x36 DS waypoint list ({X+0x20,Y}, advancing past reached ones) with
+    # 5DB2, then the level/BDAC/scroll sprite, joining BC4B.  Only direction/sprite/x/y change; the advanced
+    # +0x36 pointer is written back (B2FF).  None on the messy sprite fall-throughs / no resolver -> VM.
+    if g.waypoint_word_reader is None:
+        return None
+    u = object_update_b2cd(
+        pool.x_word(i), pool.y_word(i), pool.direction_word(i),
+        pool.word_at(i, 0x36), g.waypoint_word_reader, g.direction_table,
+        0x0001 if g.tile_probe_suppressed else 0x0000,  # bdac: B2CD only checks == 1 (== tile_probe_suppressed)
+        g.level, g.tiles.row_base_word,                 # scroll == DS:2350 == tiles.row_base_word
+    )
+    if u is None:
+        return None
+    # B2CD joins the shared BC4B post-move (bounds X-death + Y-clamp), then the 62F6 contact scan may
+    # override sprite/logic_id on a collision death -- same tail as B86D/B9F0.
+    pm = object_postmove_bc4b(u.x_word, u.y_word, pool.active_word(i), pool.logic_id(i), g.global_disable)
+    updates = {_OFF_DIRECTION: u.direction_or_step, _OFF_SPRITE: u.sprite_or_state,
+               _OFF_X: u.x_word, _OFF_Y: pm.y_word, _OFF_ACTIVE: pm.active_word, 0x36: u.waypoint_ptr}
+    return _fold_bc4b_collision(pool, i, g, updates)
+
+
 # logic_id -> per-slot advance.  Grow as handlers gain complete pure systems.
 NATIVE_OBJECT_HANDLERS = {
     0x0C: _advance_ae09,
@@ -204,6 +227,7 @@ NATIVE_OBJECT_HANDLERS = {
     0x05: _advance_ae7d,
     0x06: _advance_ae2c,
     0x0B: _advance_b24d,
+    0x12: _advance_b2cd,
     0x1E: _advance_b909,
     0x1D: _advance_b86d,
     0x14: _advance_b9f0,
@@ -247,7 +271,7 @@ def native_object_update(
     )
 
 
-_COLLISION_LOGIC_IDS = frozenset((0x001D, 0x0014))  # B86D / B9F0: the BC4B contact-scan handlers
+_COLLISION_LOGIC_IDS = frozenset((0x001D, 0x0014, 0x0012))  # B86D / B9F0 / B2CD: the BC4B contact-scan handlers
 
 
 def native_object_pass_in_place(

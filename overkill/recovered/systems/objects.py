@@ -6,6 +6,8 @@ traces have constrained their object-slot fields.
 """
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from overkill.recovered.domain.coords import i16, u16
 from overkill.recovered.domain.object_behaviors import (
     Ab10Update,
@@ -679,6 +681,8 @@ def object_update_aed8(
 
 B2CD_WAYPOINT_TARGET_X_BIAS = 0x0020   # B2D1: target X = waypoint[0] + 0x20
 B2CD_SCROLL_SPECIAL = 0x0E52           # B335: DS:2350 == 0xE52 picks the +0x105 sprite branch
+B2CD_WAYPOINT_STRIDE = 0x0004          # B2FF: each reached waypoint advances the +36 pointer by 4 ({X,Y})
+B2CD_WAYPOINT_LOOP_CAP = 0x0040        # safety bound on the advance loop (the VM relies on an unreached one)
 
 
 def b2cd_sprite_offset(direction: int, bdac: int, level: int, scroll: int) -> int | None:
@@ -710,8 +714,8 @@ def object_update_b2cd(
     slot_x: int,
     slot_y: int,
     slot_direction: int,
-    waypoint_x: int,
-    waypoint_y: int,
+    waypoint_ptr: int,
+    read_waypoint_word: Callable[[int], int],
     direction_table,
     bdac: int,
     level: int,
@@ -719,18 +723,28 @@ def object_update_b2cd(
 ) -> B2cdSlotUpdate | None:
     """Pure WHOLE per-slot B2CD update (EFAE logic_id 0x12): waypoint 5DB2 seek + sprite, at BC4B.
 
-    Seeks toward the current waypoint ({X+0x20, Y} from the +36 pointer) with 5DB2 (mode 2 when level 0
-    or BDAC==1, else 1).  When 5DB2 moves, the sprite is ``b2cd_sprite_offset`` of the new direction and
-    the slot joins BC4B; returns None when 5DB2 is blocked (the reached-waypoint advance loop) or when the
-    sprite branch is one of the unmodelled fall-throughs.  Only direction/sprite/x/y change here."""
+    Walks the waypoint list from the +36 pointer: reads the current waypoint ({X, Y} via
+    ``read_waypoint_word`` at ``waypoint_ptr``/``+2``), seeks toward {X+0x20, Y} with 5DB2 (mode 2 when
+    level 0 or BDAC==1, else 1); while 5DB2 is blocked (the slot has REACHED that waypoint) it advances
+    the pointer by 4 and re-seeks toward the next one (the B2FF/jmp-B2CD loop).  When a seek finally moves,
+    the sprite is ``b2cd_sprite_offset`` of the new direction and the slot joins BC4B.  Returns None on the
+    unmodelled sprite fall-throughs (scroll==0xE52/unknown level) and on the safety cap.  Only
+    direction/sprite/x/y change; ``waypoint_ptr`` carries the advanced +36 pointer to write back."""
     mode = 0x0002 if ((level & 0xFFFF) == 0 or (bdac & 0xFFFF) == 0x0001) else 0x0001
-    target = MovementTarget(
-        y_word=waypoint_y & 0xFFFF,
-        x_word=(waypoint_x + B2CD_WAYPOINT_TARGET_X_BIAS) & 0xFFFF,
-    )
-    seek = object_target_seek_step_5db2(slot_x, slot_y, slot_direction, target, mode, direction_table)
-    if seek.blocked:
-        return None  # reached -> the waypoint-advance loop (jmp B2CD), not modelled
+    wp = waypoint_ptr & 0xFFFF
+    for _ in range(B2CD_WAYPOINT_LOOP_CAP):
+        waypoint_x = read_waypoint_word(wp)
+        waypoint_y = read_waypoint_word((wp + 2) & 0xFFFF)
+        target = MovementTarget(
+            y_word=waypoint_y & 0xFFFF,
+            x_word=(waypoint_x + B2CD_WAYPOINT_TARGET_X_BIAS) & 0xFFFF,
+        )
+        seek = object_target_seek_step_5db2(slot_x, slot_y, slot_direction, target, mode, direction_table)
+        if not seek.blocked:
+            break
+        wp = (wp + B2CD_WAYPOINT_STRIDE) & 0xFFFF  # B2FF: reached -> next waypoint, re-seek
+    else:
+        return None  # safety cap: no unreached waypoint within the bound
     sprite = b2cd_sprite_offset(seek.direction_or_step, bdac, level, scroll)
     if sprite is None:
         return None
@@ -739,6 +753,7 @@ def object_update_b2cd(
         sprite_or_state=sprite,
         x_word=seek.x_word,
         y_word=seek.y_word,
+        waypoint_ptr=wp,
     )
 
 

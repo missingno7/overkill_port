@@ -121,6 +121,8 @@ def main(argv) -> int:
                     if ip in COLLISION_HANDLER_IPS else None),
                 a8c2_boss_mode=cpu.mem.rw(ds, A8C2_ADDR) == 0x0001,
                 bedc=cpu.mem.rw(ds, BEDC),
+                level=cpu.mem.rw(ds, 0x2356),
+                waypoint_word_reader=lambda off, _m=cpu.mem, _d=ds: _m.rw(_d, off & 0xFFFF),
             )
             out = native_object_update_pool(ObjectPool(base=0, stride=STRIDE, slots=(words,)), g)
             advanced = out.slots[0] != words

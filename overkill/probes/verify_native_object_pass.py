@@ -90,7 +90,8 @@ def main(argv) -> int:
                 global_disable=cpu.mem.rw(ds, A47C), a482=cpu.mem.rw(ds, A482),
                 frame_233c=cpu.mem.rw(ds, FRAME_233C), horizontal_delta=cpu.mem.rw(ds, DELTA_X_2346),
                 difficulty=cpu.mem.rw(ds, BEDC), tick=cpu.mem.rw(ds, TICK_2340),
-                anim_2326=cpu.mem.rw(ds, 0x2326))
+                anim_2326=cpu.mem.rw(ds, 0x2326), level=cpu.mem.rw(ds, 0x2356),
+                waypoint_word_reader=lambda off, _m=cpu.mem, _d=ds: _m.rw(_d, off & 0xFFFF))
             slots = tuple(
                 tuple(cpu.mem.rw(ds, (GAMEPLAY_BASE + i * STRIDE + 2 * j) & 0xFFFF) for j in range(STRIDE_WORDS))
                 for i in range(GAMEPLAY_COUNT))

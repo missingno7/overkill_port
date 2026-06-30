@@ -182,13 +182,15 @@ class B2cdSlotUpdate:
     (target X offset by +0x20, mode 2 when level 0 / BDAC==1 else 1), then sets the sprite from the seek
     direction plus a level/BDAC/scroll-dependent constant (B304..B3B0), and joins the BC4B post-move.
     Only direction/sprite/x/y change here; substate/active are untouched (BC4B owns the post-move).  The
-    reached-waypoint advance loop (5DB2 blocked) and the messy scroll==0xE52/unknown-level sprite
-    fall-throughs are out of scope (the handler returns None for them)."""
+    reached-waypoint advance loop (B2FF: 5DB2 blocked -> advance the +36 pointer by 4 and re-seek toward
+    the next waypoint) IS modelled -- ``waypoint_ptr`` is the (possibly advanced) +36 pointer to write
+    back.  Only the messy scroll==0xE52/unknown-level sprite fall-throughs stay out of scope (-> None)."""
 
     direction_or_step: int
     sprite_or_state: int
     x_word: int
     y_word: int
+    waypoint_ptr: int       # the +0x36 waypoint pointer after the advance loop (B2FF write-back)
 
 
 @dataclass(frozen=True, slots=True)

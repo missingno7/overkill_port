@@ -6,6 +6,7 @@ record carries those globals into the driver so it can advance the pool without 
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from overkill.recovered.domain.object_slots import ObjectPool
@@ -49,3 +50,8 @@ class ObjectUpdateGlobals:
     candidate_pool: "ObjectPool | None" = None  # the gameplay pool (DS:2B5C) the 62F6 scan walks
     a8c2_boss_mode: bool = False    # DS:A8C2 == 1 (final-boss gate in the BEC5 reaction)
     bedc: int = 0                   # DS:BEDC difficulty (the BF25 damage-chain extra decrements)
+    # B2CD waypoint-seek extras (default-safe: only B2CD consumes them).  ``scroll`` aliases DS:2350 =
+    # ``tiles.row_base_word`` and ``bdac`` is ``1 if tile_probe_suppressed`` -- both reused, not re-added.
+    level: int = 0                 # DS:2356 current level (B2CD sprite-table selector + seek mode)
+    # (ds_off)->word: reads a DS word for B2CD's +0x36 waypoint walk; None -> leave B2CD to the VM.
+    waypoint_word_reader: Callable[[int], int] | None = None
