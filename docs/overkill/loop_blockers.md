@@ -556,3 +556,30 @@ but diverges deep in the **full** run (`OVERKILL_FULL_DEMO_VERIFY=1`).
   genuinely *shared* across subsystems are reconciled in
   `overkill/recovered/ds_globals.py`; single-subsystem globals are intentionally
   kept local (locality aids readability), so this is closed for the shared set.
+
+---
+
+## OPEN (2026-06-30) — the whole object scan diverges on ~2 variant-2 gameplay slots/frame
+
+`native_object_scan` (the VM-free A9E0 object pass over one contiguous 0x45-slot store, both
+pointer-table loops in place) was attempted and reverted (red). The effect loop is byte-exact
+(1170/1170 L2, 1723/1723 L3), but ~2 gameplay slots/frame diverge and **neither separate pools
+nor the shared store fixed them**. Confirmed not a tables-overlap bug and not AED8 timer-death.
+
+- **Symptom (stable across L2/L3):** a `logic_id=2` (AED8) gameplay slot — VM has it
+  `active=0`, substate UNCHANGED (e.g. 0xfff9); my pass has it `active=1`, AED8-processed
+  (substate−1, x−8). So the VM **deactivates it in the EFFECT loop as a collision candidate**
+  (active→0, substate untouched), then the gameplay loop skips it; my effect-loop collision
+  does **not** kill it, so my gameplay loop AED8-processes it. (Slots: L2 0x2ce4/0x3064,
+  L3 0x2c3c/0x2c74.)
+- **Why my pass misses the kill (hypothesis, needs a trace):** an order-dependent candidate
+  interaction — some earlier scanner's kill/clear changes which candidate a later scanner's
+  62F6 returns, OR these variant-2 candidates are deactivated via a reaction path not yet
+  modelled (owner-link, or a candidate-side effect of BD0D/BD17 on a *neighbour* slot).
+- **What IS verified + committed (do NOT re-derive):** the per-slot driver incl. collision
+  death (`verify_native_object_update_driver`, sprite_deferred 0); the effect-loop in-place
+  pass (`verify_native_object_pass_in_place`, L2/L3 0-div); the gameplay snapshot
+  (`verify_native_object_pass`). Only the *combined whole-scan* is open.
+- **Next:** trace one failing slot (e.g. L2 0x2ce4) through the VM's effect loop — find the
+  scanner + the BEC5 path that deactivates it — then extend the candidate-deactivation
+  modelling (owner-link / BD17 neighbour effects) so the in-place scan kills it too.

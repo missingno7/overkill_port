@@ -1,3 +1,23 @@
+## 2026-06-30 - Whole-scan attempt 2 (shared store): real blocker is a variant-2 candidate kill (logged)
+
+Built the corrected shared-store whole scan (one contiguous 0x45-slot store, both pointer-table loops
+in place -- the design from the previous entry) and verified at AA25.  The shared store was the right
+model (the effect loop now feeds the gameplay loop), but a **separate** ~2-slot/frame divergence
+remained that neither separate-pools nor the shared store fixed -- so it was reverted (red) and logged
+in loop_blockers.md (OPEN 2026-06-30).
+
+Root cause (pinned, not yet fixed): a `logic_id=2` (AED8) gameplay slot the VM **deactivates in the
+effect loop as a collision candidate** (active->0, substate untouched) but my effect-loop collision
+does not kill, so my gameplay loop AED8-processes it (active=1, moved).  Confirmed NOT AED8 timer-death
+(substate far from 0) and NOT a tables-overlap bug.  Needs a VM trace of one failing slot (L2 0x2ce4)
+to find the scanner + BEC5 path that kills it -- likely an order-dependent candidate interaction or a
+candidate-deactivation path not yet modelled (owner-link, or a BD0D/BD17 neighbour effect).
+
+Per discipline: reverted, logged, moving on.  Everything else stays verified + committed -- the
+per-slot driver (incl. collision death), the effect-loop in-place pass, the gameplay snapshot, and all
+the collision systems.  Only the *combined* whole-scan is open; it is the last assembly step for a
+fully VM-free object pass and is now precisely scoped in loop_blockers.
+
 ## 2026-06-30 - Whole-scan attempt: the 32CA/8D12 walks SHARE slots (model correction, reverted)
 
 Attempted to compose the whole object scan (`native_object_scan` = the effect in-place pass + the
