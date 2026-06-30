@@ -578,12 +578,18 @@ nor the shared store fixed them**. Confirmed not a tables-overlap bug and not AE
   `0x1d` (B86D, native: 15) and **`0x1c` (1) + `0x1e` (1) -- NOT native handlers**.  My driver only
   dispatches `0x0C/0x02/0x1D/0x14`, so it skips the `0x1c`/`0x1e` scanners entirely, never runs their
   BC4B/62F6 collision, and so never kills the 2 candidates -> the gameplay loop re-processes them.
-- **The whole-scan is therefore blocked on recovering the `0x1c` and `0x1e` object behaviors** as
-  native whole-slot handlers (they are scanners reaching BC4B, adjacent to B86D=`0x1d`; rare ~1
-  each/400 frames).  Find their routines via the EFAE/EFC4 behaviour dispatch, recover movement+BC4B
-  like B86D/B9F0, verify per-slot with `verify_native_object_update_driver`, then the whole-scan
-  composes.  (Until both are native, the whole scan cannot be byte-exact -- every collision scanner
-  must run.)
+- **The whole-scan is blocked on the `0x1c` and `0x1e` behaviors** (via the EFAE table at CS:EFC4,
+  indexed by logic_id*2: `[0x1c]=8D4F`, `[0x1d]=B86D`, `[0x1e]=B909`).  Both are NON-trivial (deeper
+  than B86D/B9F0), so this is not a quick handler slice:
+  - `8D4F` (0x1c) is a **far-segment dispatch** -- `call far 1F8F:027A` (the movement is in the 1F8F
+    overlay, outside the 1010 code) then `jmp BC4B`; 8D4F is itself a multi-entry table of
+    `call far 1F8F:0xxx; jmp BC4B` sub-behaviors.  Recovering it means reversing the 1F8F routine(s).
+  - `B909` (0x1e) is a **spawning** behavior -- sets DS:2308, calls the `B729` seek, conditionally
+    calls `7476` (the formation spawn) and stamps `bp+50`, then `jmp BC4B`.
+  Each needs its post-movement position for the BC4B/62F6 collision, so the movement half can't be
+  skipped.  Recover each (1F8F:027A for 8D4F; B729+7476 compose for B909), verify per-slot with
+  `verify_native_object_update_driver`, then rebuild the shared-store `native_object_scan`.  Lower
+  priority than a fresh clean pillar (these are rare behaviors; the whole-scan's last ~2 slots/frame).
 - **What IS verified + committed (do NOT re-derive):** the per-slot driver incl. collision
   death (`verify_native_object_update_driver`, sprite_deferred 0); the effect-loop in-place
   pass (`verify_native_object_pass_in_place`, L2/L3 0-div); the gameplay snapshot
