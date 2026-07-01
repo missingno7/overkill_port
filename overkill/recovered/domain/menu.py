@@ -81,3 +81,16 @@ class MenuTransitionWaitOutcome:
     cx: int
     latched_key: int  # DS:98C3 after this iteration
     result: str  # "loop" | "exit_latched" | "exit_timeout"
+
+
+# 1010:989E -- the Y/N confirmation choice gate (e.g. a "restart level?"/"quit?"-style prompt).
+YES_NO_CHOICE_N_CHAR = 0x4E  # 'N'
+YES_NO_CHOICE_Y_CHAR = 0x59  # 'Y'
+
+
+@dataclass(frozen=True, slots=True)
+class YesNoChoiceOutcome:
+    """Result of one ``1010:989E`` yes/no choice iteration."""
+
+    display_char: int  # DS:22B4 after this iteration -- YES_NO_CHOICE_N_CHAR or _Y_CHAR
+    result: str  # "loop" | "exit_no" | "exit_yes"

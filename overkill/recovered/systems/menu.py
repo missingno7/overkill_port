@@ -8,11 +8,14 @@ from overkill.recovered.domain.menu import (
     LEVEL_SELECT_CELL_COUNT,
     MENU_ATTRACT_TIMEOUT,
     MENU_TRANSITION_LATCH_SPACE_SCANCODE,
+    YES_NO_CHOICE_N_CHAR,
+    YES_NO_CHOICE_Y_CHAR,
     InterstitialTickOutcome,
     LevelSelectFireResult,
     LevelSelectStep,
     MenuIdleOutcome,
     MenuTransitionWaitOutcome,
+    YesNoChoiceOutcome,
 )
 
 
@@ -131,3 +134,19 @@ def step_menu_transition_wait_ce40(cx: int, latched_key: int, *, fire_pressed: b
     if new_cx != 0:
         return MenuTransitionWaitOutcome(cx=new_cx, latched_key=new_latch, result="loop")
     return MenuTransitionWaitOutcome(cx=new_cx, latched_key=new_latch, result="exit_timeout")
+
+
+def step_yes_no_choice_989e(*, n_pressed: bool, y_pressed: bool) -> YesNoChoiceOutcome:
+    """Pure model of one ``1010:989E`` yes/no choice iteration.
+
+    Checks N FIRST, matching the ASM's own order: if pressed, exits immediately (``DS:22B4``
+    stays ``'N'``, ``Y`` is never even written or checked this iteration).  Otherwise writes
+    ``'Y'`` and checks Y; exits if pressed, else loops (``DS:22B4`` is left showing ``'Y'`` in
+    the loop case too, since that write already happened before the idle re-check).  Both exits
+    return to the same caller address in the real ASM -- the caller distinguishes them via
+    ``result`` (or, in the real ASM, by re-reading ``DS:22B4``/the flag bytes itself)."""
+    if n_pressed:
+        return YesNoChoiceOutcome(display_char=YES_NO_CHOICE_N_CHAR, result="exit_no")
+    if y_pressed:
+        return YesNoChoiceOutcome(display_char=YES_NO_CHOICE_Y_CHAR, result="exit_yes")
+    return YesNoChoiceOutcome(display_char=YES_NO_CHOICE_Y_CHAR, result="loop")
