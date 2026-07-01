@@ -692,13 +692,12 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.snapshot:
         rt = load_overkill_snapshot(exe, args.snapshot, game_root=assets)
-        if args.no_replacements:      # pure-ASM oracle: drop the recovered hooks the loader installed
-            rt.cpu.replacement_hooks.clear()
-            rt.cpu.hook_names.clear()
     else:
-        rt = create_overkill_runtime(exe, game_root=assets, command_tail=command_tail,
-                                     install_replacements=not args.no_replacements)
+        rt = create_overkill_runtime(exe, game_root=assets, command_tail=command_tail)
         rt.dos.text_mode_active = False
+    # --no-replacements handled below, after the viewer's pacing/present hooks are captured + reinstalled:
+    # the interactive viewer needs the timer-wait (0679), frame-present, retrace, and LZEXE-boot hooks to
+    # run and detect frames, so they are kept while every recovered GAME-LOGIC hook is dropped (pure ASM).
     rt.dos.console_input_fallback = None
     rt.cpu.trace_enabled = False
     coverage = CoverageTelemetry(
@@ -1171,6 +1170,22 @@ def main(argv: list[str] | None = None) -> int:
     rt.cpu.hook_verifier_live_passthrough_overrides[TIMER_WAIT_HOOK] = timer_frame_hook_verify_live
     if base_retrace_wait is not None:
         rt.cpu.hook_verifier_live_passthrough_overrides[RETRACE_WAIT_HOOK] = retrace_frame_hook_verify_live
+
+    if args.no_replacements:
+        # ORACLE / cold-start-recording mode: drop every recovered GAME-LOGIC hook so the game runs the
+        # pure original ASM (sprite drawing + all gameplay = ASM), keeping only the viewer's pacing/present
+        # wrappers installed just above + the LZEXE boot hook (so boot skips the slow real self-unpack).
+        # The kept present wrapper still blits + publishes the pure-ASM-drawn frame and the 0679 timer
+        # wrapper still paces one game tick, so the session is watchable/recordable yet the recorded input
+        # is ground truth -- no errors from our recovered hooks.  These are pacing/present infra (the frame
+        # verifier's reference keeps the same env hooks), not game logic.
+        LZEXE_BOOT_HOOK = (0x1B65, 0x0069)
+        keep = {present_hook_addr, TIMER_WAIT_HOOK, RETRACE_WAIT_HOOK, LZEXE_BOOT_HOOK}
+        for key in [k for k in rt.cpu.replacement_hooks if k not in keep]:
+            rt.cpu.replacement_hooks.pop(key, None)
+            rt.cpu.hook_names.pop(key, None)
+        print(f"--no-replacements: pure-ASM game logic "
+              f"(kept {len(rt.cpu.replacement_hooks)} pacing/present/boot hooks)", flush=True)
 
     demo_recorder = InputDemoRecorder(
         root=Path(args.save_demo_root),
