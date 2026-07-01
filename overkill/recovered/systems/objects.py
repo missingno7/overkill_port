@@ -30,6 +30,7 @@ from overkill.recovered.domain.object_behaviors import (
     ObjectLogicDispatchAA2B,
 )
 from overkill.recovered.domain.object_slots import (
+    A067FanoutResult,
     A2A0ListedSpawn,
     A515LinkSpawn,
     FormationSpawnSeed7476,
@@ -1916,3 +1917,59 @@ def native_a0e8_subroutine(pool: ObjectPool, cursor: int, *, a958: int, a96e: in
         spawns.extend(tail)
         p, c = _thread_player_shots(p, c, tail)
     return PlayerFanoutResult(spawns=tuple(spawns), final_cursor=c & 0xFFFF)
+
+
+# --- A067 FULL fan-out capstone: the whole native A515 -> A584 -> A3FF -> A3CA -> A0E8 sequence -----------
+def native_a067_full_fanout(gameplay_pool: ObjectPool, effect_pool: ObjectPool, cursor_95da: int,
+                            cursor_a43a: int, *, a970: int, a972: int, a976: int, a974: int, a95e: int,
+                            a960: int, a97e: int, a958: int, a96e: int, input_98be: int, source_index: int,
+                            source_x: int, source_y: int, mirror_schedule: tuple, side_schedule: tuple,
+                            read_ds_word) -> A067FanoutResult | None:
+    """Pure WHOLE A067 FULL fan-out -- the capstone that assembles every verified child into one fire.
+
+    The FULL path first copies the held-action counters into the scratch quartet
+    (``a3a0<-a970, a3a2<-a972, a3a4<-a976, a3a6<-a974`` -- note the crossed last pair), then runs, in order,
+    :func:`native_a515` -> :func:`native_a584` -> :func:`native_a3ff` -> :func:`native_a3ca` ->
+    :func:`native_a0e8_subroutine`, threading ONE ``(pool, cursor)`` across them via
+    :func:`_thread_player_shots` (A515's slot is a raw ``slot_words`` record, so it is marked active by
+    hand).  Each child reads its copied gate (A584 ``a3a4``; A3FF ``a3a0``+``a3a4``; A3CA ``a3a0``; A0E8
+    ``a3a6``+``a3a0``).  Returns an :class:`A067FanoutResult` (every shot in order + the final cursor + the
+    copied counters + the A515 link-scan state), or None when the A0E8 tail is the dead a958 >= 5 path
+    (the whole frame stays VM-owned then)."""
+    a3a0, a3a2, a3a4, a3a6 = a970 & 0xFFFF, a972 & 0xFFFF, a976 & 0xFFFF, a974 & 0xFFFF
+    spawns: list[PlayerShotSpawn] = []
+    p, c = gameplay_pool, cursor_95da & 0xFFFF
+    a43a, cur_a960, cur_a97e = cursor_a43a & 0xFFFF, a960 & 0xFFFF, a97e & 0xFFFF
+
+    a515 = native_a515(p, c, effect_pool, a43a, source_x, source_y, cur_a960, cur_a97e)
+    if a515 is not None:  # None = gate closed / full pool (no side effects); else both cursors advanced
+        if a515.slot_offset is not None:
+            idx = (((a515.slot_offset - p.base) & 0xFFFF) // (p.stride & 0xFFFF))
+            p = p.with_word(idx, 0x00, a515.slot_words[0])   # activate the A515 slot for the next find_free
+        c = a515.cursor_95da & 0xFFFF
+        a43a, cur_a960, cur_a97e = a515.cursor_a43a, a515.a960, a515.a97e
+
+    a584 = native_a584(p, c, source_x, source_y, a95e, a3a4)
+    if a584 is not None:
+        spawns.extend(a584)
+        p, c = _thread_player_shots(p, c, a584)
+
+    a3ff = native_a3ff(p, c, a958, mirror_schedule, a3a0, a95e, a3a4, read_ds_word)
+    spawns.extend(a3ff.spawns)
+    p, c = _thread_player_shots(p, c, a3ff.spawns)
+
+    a3ca = native_a3ca(p, c, a958, side_schedule, a3a0, read_ds_word)
+    spawns.extend(a3ca.spawns)
+    p, c = _thread_player_shots(p, c, a3ca.spawns)
+
+    a0e8 = native_a0e8_subroutine(p, c, a958=a958, a96e=a96e, a3a6=a3a6, a3a0=a3a0,
+                                  source_index=source_index, source_x=source_x, source_y=source_y,
+                                  input_98be=input_98be, read_ds_word=read_ds_word)
+    if a0e8 is None:
+        return None  # a958 >= 5 -> the dead A2A0/44AF tail; leave the whole frame to the VM
+    spawns.extend(a0e8.spawns)
+    p, c = _thread_player_shots(p, c, a0e8.spawns)
+
+    return A067FanoutResult(spawns=tuple(spawns), final_cursor=c & 0xFFFF,
+                            a3a0=a3a0, a3a2=a3a2, a3a4=a3a4, a3a6=a3a6,
+                            cursor_a43a=a43a & 0xFFFF, a960=cur_a960 & 0xFFFF, a97e=cur_a97e & 0xFFFF)

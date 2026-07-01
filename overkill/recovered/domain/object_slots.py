@@ -280,6 +280,29 @@ class A067Result:
 
 
 @dataclass(frozen=True, slots=True)
+class A067FanoutResult:
+    """Pure result of the A067 FULL fan-out sequence (the counter copy + A515/A584/A3FF/A3CA/A0E8).
+
+    The FULL path first copies the held-action counters ``A970/A972/A976/A974`` into the scratch quartet
+    ``A3A0/A3A2/A3A4/A3A6`` (note the crossed last pair: ``a3a4 <- a976``, ``a3a6 <- a974``), then runs the
+    five spawn children threading one ``(pool, cursor)`` across them.  ``spawns`` is every player shot the
+    whole sequence produced (in order); ``final_cursor`` is DS:95DA after; ``a3a0..a3a6`` are the copied
+    scratch values; ``cursor_a43a``/``a960``/``a97e`` are the A515 link-scan state after (advanced even when
+    A515 does not spawn).  This is the whole native counterpart of one FULL-path A067 fire.
+    """
+
+    spawns: tuple
+    final_cursor: int
+    a3a0: int
+    a3a2: int
+    a3a4: int
+    a3a6: int
+    cursor_a43a: int
+    a960: int
+    a97e: int
+
+
+@dataclass(frozen=True, slots=True)
 class A515LinkSpawn:
     """Pure result of one 1010:A515 linked-anchor spawn attempt (the counter-driven link weapon).
 
