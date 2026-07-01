@@ -27,7 +27,6 @@ from overkill.asm import (
     _sub_mem_word,
     _sub_reg16,
 )
-from overkill.gameplay.player_shot_spawn_gap import witness_a378_spawn_gap
 from overkill.recovered.systems.action_spawns import (
     action_latch_allows_repeat,
     action_trigger_is_pressed,
@@ -801,10 +800,8 @@ def _run_frame_action_si_followup_a378(
         ret()
         return
 
-    # FAIL-LOUD TRIPWIRE: all three gates passed, so A378 is about to spawn its two follow-up shots --
-    # but no corpus demo reaches this path, so the native model (native_a378_followup) is un-produced-vs-
-    # VM-verified.  Capture a replayable witness on encounter instead of shipping it silently.
-    witness_a378_spawn_gap(mem.rw(ds, (si + 0x02) & 0xFFFF), mem.rw(ds, (si + 0x04) & 0xFFFF))
+    # (The A378 fail-loud tripwire was retired once demo_play_tandy_L6_defeated_by_boss exercised this
+    #  path and verify_native_player_shot_spawn confirmed native_a378_followup byte-exact vs the VM there.)
 
     def run_a396_body() -> None:
         _inc_mem_word_preserve_cf(cpu, ds, 0xA976)

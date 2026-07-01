@@ -23,7 +23,6 @@ import overkill.frame_verify as fv  # noqa: E402
 from dos_re.cpu import CPU8086  # noqa: E402
 from dos_re.input_demo import InputDemoPlayback  # noqa: E402
 from overkill.frame_verify import FrameVerifyConfig, run_frame_verifier  # noqa: E402
-from overkill.gameplay.player_shot_spawn_gap import set_raise_on_encounter  # noqa: E402
 from overkill.input_waits import pump_demo_frame  # noqa: E402
 from overkill.recovered.domain.object_slots import ObjectPool  # noqa: E402
 from overkill.recovered.systems.objects import (  # noqa: E402
@@ -48,7 +47,6 @@ _FIELDS = (
 
 
 def main(argv) -> int:
-    set_raise_on_encounter(False)
     demo_name = argv[0] if argv else "demo_play_tandy_L2_full_20260617_180221"
     max_frames = int(argv[1]) if len(argv) > 1 else 1200
     demo = InputDemoPlayback.load(ROOT / "artifacts" / "demos" / demo_name)

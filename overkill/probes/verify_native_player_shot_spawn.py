@@ -25,7 +25,6 @@ from dos_re.input_demo import InputDemoPlayback  # noqa: E402
 from overkill.frame_verify import FrameVerifyConfig, run_frame_verifier  # noqa: E402
 from overkill.input_waits import pump_demo_frame  # noqa: E402
 from overkill.recovered.domain.object_slots import ObjectPool  # noqa: E402
-from overkill.gameplay.player_shot_spawn_gap import set_raise_on_encounter  # noqa: E402
 from overkill.recovered.systems.objects import (  # noqa: E402
     native_a378_followup, native_a41a_pair, native_a41a_shot,
 )
@@ -53,9 +52,6 @@ _FIELDS = (
 
 
 def main(argv) -> int:
-    # This probe IS the A378 verification, so let the lifted hook replay a captured witness without
-    # tripping the fail-loud gap (the cand side runs the lifted A378 on a witness snapshot).
-    set_raise_on_encounter(False)
     demo_name = argv[0] if argv else "demo_play_tandy_L2_full_20260617_180221"
     max_frames = int(argv[1]) if len(argv) > 1 else 1200
     demo = InputDemoPlayback.load(ROOT / "artifacts" / "demos" / demo_name)
