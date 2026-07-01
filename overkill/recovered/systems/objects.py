@@ -1873,3 +1873,46 @@ def native_a1c8_tail(pool: ObjectPool, cursor: int, source_index: int, source_x:
         direction, sprite = A1C8_SECOND_SHOT[0x00]
     slot2 = _player_shot_slot(seed, alloc2, x, y, seed.logic_id, sprite, direction=direction)
     return (slot1, slot2)
+
+
+# --- A0E8 subroutine: the FULL fan-out's early-table dispatch (composes the verified a958 tails) ---------
+A0E8_A114_SCHEDULE_PRESENT = 0xFFFF     # DS:A96E != FFFFh -> run the A114 pre-call
+A0E8_DEAD_STATE = 0x0005                # A958 >= 5 fires the A2A0 pre-call + the dead 44AF/3E83 tails
+
+
+def native_a0e8_subroutine(pool: ObjectPool, cursor: int, *, a958: int, a96e: int, a3a6: int, a3a0: int,
+                           source_index: int, source_x: int, source_y: int, input_98be: int,
+                           read_ds_word) -> PlayerFanoutResult | None:
+    """Pure WHOLE 1010:A0E8 subroutine -- the FULL fan-out's early-table dispatch, composed from the
+    verified tails.  It runs the A114 pre-call when the schedule is present (DS:A96E != FFFFh), then jumps to
+    the A958 tail via the recovered a958 table (0 -> A19F, 1 -> A18A, 2 -> A1C8, 3 -> A337, 4 -> A2F6),
+    threading the cursor + each spawned slot's active word (:func:`_thread_player_shots`) so later
+    allocations skip the earlier ones.  Returns the combined shots + the final cursor, or None for A958 >= 5
+    (the a958==5 A2A0 pre-call and the 44AF/3E83 tails are dead in practice -- a958 only ever runs 0-4 -- so
+    those frames stay VM-owned)."""
+    st = a958 & 0xFFFF
+    if st >= A0E8_DEAD_STATE:
+        return None  # a958 >= 5 -> the A2A0 pre-call + 44AF/3E83 tails, unmodelled (dead in the corpus)
+    spawns: list[PlayerShotSpawn] = []
+    p, c = pool, cursor
+    if (a96e & 0xFFFF) != A0E8_A114_SCHEDULE_PRESENT:
+        burst = native_a114(p, c, a3a6, read_ds_word)
+        if burst is not None:
+            spawns.extend(burst)
+            p, c = _thread_player_shots(p, c, burst)
+    if st == 0x0000:
+        shot = native_a19f_tail(p, c, source_index, source_x, source_y, read_ds_word)
+        tail: tuple[PlayerShotSpawn, ...] = (shot,) if shot is not None else ()
+    elif st == 0x0001:
+        shot = native_a18a(p, c, source_index, source_x, source_y, read_ds_word)
+        tail = (shot,) if shot is not None else ()
+    elif st == 0x0002:
+        pair = native_a1c8_tail(p, c, source_index, source_x, source_y, input_98be, read_ds_word)
+        tail = pair if pair is not None else ()
+    else:  # st in (3, 4) -> the A337 / A2F6 muzzle pairs
+        pair = native_a0e8_pair(p, c, st, source_index, source_x, source_y, a3a0, read_ds_word)
+        tail = pair if pair is not None else ()
+    if tail:
+        spawns.extend(tail)
+        p, c = _thread_player_shots(p, c, tail)
+    return PlayerFanoutResult(spawns=tuple(spawns), final_cursor=c & 0xFFFF)
