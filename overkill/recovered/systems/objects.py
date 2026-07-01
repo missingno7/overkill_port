@@ -1261,6 +1261,40 @@ def object_update_8c1f(frame_233c: int) -> int:
     return (frame_233c + OBJECT_8C1F_SPRITE_BIAS) & 0xFFFF
 
 
+# 1010:8A23 (logic_id 0x39): sprite 6Eh; if X < 80h it is a still sprite, else it steps direction 2 by the
+# AF60 mode-2 move (2px x 2) and dies (BFC7) when the stepped Y passes C0h.  Only sprite/direction/x/y
+# change; the X==80h BEFF=0Bh sound is a side effect, and the Y>C0h death is left to the VM (returns None).
+OBJECT_8A23_SPRITE = 0x006E
+OBJECT_8A23_X_STILL_MAX = 0x0080     # X < 80h -> still (sprite only); >= 80h -> the moving path
+OBJECT_8A23_STEP_DIRECTION = 0x0002  # DS:[bp+6] = 2 before the AF60 step
+OBJECT_8A23_STEP_PIXELS = 0x0002     # AF60 = 2px ...
+OBJECT_8A23_STEP_REPEAT = 2          # ... x 2
+OBJECT_8A23_Y_DEATH_OVER = 0x00C0    # stepped Y > C0h -> the BFC7 death
+
+
+def object_update_8a23(slot_x: int, slot_y: int, slot_direction: int) -> tuple[int, int, int, int] | None:
+    """Pure 1010:8A23 movement half (logic_id 0x39) -> ``(sprite, direction, x, y)`` or None.
+
+    Sprite is always 6Eh.  When ``slot_x < 80h`` the object is still: direction/x/y are unchanged.  Else it
+    faces direction 2 and steps the AF60 mode-2 move (2px x 2 via :func:`step_operations_for_direction`);
+    if the stepped Y passes C0h it routes to the BFC7 death (returns None, left to the VM), otherwise it
+    joins the shared BC45 post-move with the stepped position."""
+    sprite = OBJECT_8A23_SPRITE
+    if i16(slot_x) < OBJECT_8A23_X_STILL_MAX:   # 8A28 uses JL (signed): a negative (off-left) X is still
+        return (sprite, slot_direction & 0xFFFF, slot_x & 0xFFFF, slot_y & 0xFFFF)
+    x, y = slot_x & 0xFFFF, slot_y & 0xFFFF
+    for _ in range(OBJECT_8A23_STEP_REPEAT):
+        for op in step_operations_for_direction(OBJECT_8A23_STEP_DIRECTION, OBJECT_8A23_STEP_PIXELS):
+            delta = i16(op.delta_word)
+            if op.axis == "x":
+                x = u16(x + delta)
+            else:
+                y = u16(y + delta)
+    if y > OBJECT_8A23_Y_DEATH_OVER:
+        return None  # Y > C0h -> BFC7 death, left to the VM
+    return (sprite, OBJECT_8A23_STEP_DIRECTION, x, y)
+
+
 # 1010:AD60 bounds/tile tail.  These are the recovered play-field box and the
 # tile-probing object family, source-level values rather than archetype names.
 OBJECT_BOUNDS_MIN_X = 0x0008

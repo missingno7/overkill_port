@@ -38,6 +38,7 @@ from overkill.recovered.systems.movement import object_target_seek_step_5db2
 from overkill.recovered.systems.objects import (
     object_update_ae09,
     object_update_ae2c,
+    object_update_8a23,
     object_update_8c1f,
     object_update_ae7d,
     object_update_aed8,
@@ -582,6 +583,31 @@ def _arm_8c1f(cpu, class_table_cache: dict) -> _Pending | None:
     return _Pending(ss=ss, bp=bp, exit_ip=BB03_IP, predicted=predicted, read_post=_read_slot_6tuple)
 
 
+OBJECT_8A23_IP = 0x8A23  # logic_id 0x39: sprite 6Eh + (X>=80h) AF60 mode-2 step dir 2 -> BC45 (Y>C0h death)
+
+
+def _arm_8a23(cpu, class_table_cache: dict) -> _Pending | None:
+    """Capture + predict 8A23 (logic_id 0x39): still/stepping sprite, compared at the BC45 handoff.
+
+    object_update_8a23 owns the branch (still when X<80h; else AF60 mode-2 step in direction 2); the
+    Y>C0h death (BFC7) returns None (left to the VM).  substate/active are untouched."""
+    ss = cpu.s.ss & 0xFFFF
+    bp = cpu.s.bp & 0xFFFF
+    upd = object_update_8a23(
+        cpu.mem.rw(ss, (bp + OFF_X) & 0xFFFF),
+        cpu.mem.rw(ss, (bp + OFF_Y) & 0xFFFF),
+        cpu.mem.rw(ss, (bp + OFF_DIRECTION_OR_STEP) & 0xFFFF),
+    )
+    if upd is None:
+        return None
+    sprite, direction, x, y = upd
+    predicted = (
+        cpu.mem.rw(ss, (bp + OFF_SUBSTATE) & 0xFFFF), direction, sprite, x, y,
+        cpu.mem.rw(ss, (bp + OFF_ACTIVE_WORD) & 0xFFFF),
+    )
+    return _Pending(ss=ss, bp=bp, exit_ip=BC45_IP, predicted=predicted, read_post=_read_slot_6tuple)
+
+
 NATIVE_HANDLERS: tuple[NativeHandler, ...] = (
     NativeHandler(logic_id=0x0C, label="AE09", entry_ip=AE09_IP, arm=_arm_ae09),
     NativeHandler(logic_id=0x1D, label="B86D", entry_ip=B86D_IP, arm=_arm_b86d),
@@ -595,6 +621,7 @@ NATIVE_HANDLERS: tuple[NativeHandler, ...] = (
     NativeHandler(logic_id=0x06, label="AE2C", entry_ip=AE2C_IP, arm=_arm_ae2c),
     NativeHandler(logic_id=0x0A, label="B1B0", entry_ip=B1B0_IP, arm=_arm_b1b0),
     NativeHandler(logic_id=0x8A, label="8C1F", entry_ip=OBJECT_8C1F_IP, arm=_arm_8c1f),
+    NativeHandler(logic_id=0x39, label="8A23", entry_ip=OBJECT_8A23_IP, arm=_arm_8a23),
 )
 _HANDLER_BY_IP = {(CS, h.entry_ip): h for h in NATIVE_HANDLERS}
 
