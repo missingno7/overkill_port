@@ -35,6 +35,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
+from overkill.recovered.domain.object_slots import A067Result, ObjectPool
+from overkill.recovered.systems.objects import native_a1c8_tail, native_a19f_tail
+
 # Bit 4 of the DS:98BE input word is the action-trigger latch input (TEST ...,10h).
 ACTION_TRIGGER_INPUT_MASK = 0x10
 # Once armed, the action may repeat while held when any of these hold:
@@ -149,3 +152,36 @@ def a067_path_copies_counters(path: A067FirePath) -> bool:
     That counter copy -- a DS:A3A0 write -- is the clean produced-vs-VM witness separating EARLY from FULL.
     """
     return path in _A067_FULL_PATHS
+
+
+def native_a067(pool: ObjectPool, cursor: int, *, input_98be: int, latch_a980: int, repeat_9790: int,
+                state_232a: int, scroll_2350: int, bdac: int, a958: int, be06: int,
+                source_index: int, source_x: int, source_y: int, read_ds_word) -> A067Result | None:
+    """Pure WHOLE 1010:A067 entry gate + EARLY spawn dispatch -- the composed first layer of the fan-out.
+
+    Chains the verified pieces end-to-end: the entry gate (:func:`action_fanout_gate`) decides whether the
+    fire runs this frame and writes DS:A980; when armed, the path branch (:func:`a067_fire_path`) selects the
+    spawn.  This composes the EARLY tails (scroll DS:2350 <= B6h & BDAC == 0): A958 == 2 -> the A1C8 pair,
+    else the A19F single, each at the A1AE muzzle from the firing object ``{source_index, source_x,
+    source_y}``.  Returns an :class:`A067Result` (the DS:A980 write-back + the ordered shots + the final
+    DS:95DA cursor) for the gate-only and EARLY frames; returns None for the FULL fan-out
+    (A515/A584/A3FF/A3CA/A0E8 -- a separate, larger composition) or a full pool (the 7550 recycle is
+    unmodelled), so the caller/probe leaves those frames to the VM."""
+    gate = action_fanout_gate(input_98be, latch_a980, repeat_9790, state_232a)
+    if not gate.runs:
+        # not firing / held-non-repeatable: only DS:A980 is written, nothing spawns, the cursor is untouched
+        return A067Result(new_a980=gate.new_latch_word, spawns=(), final_cursor=cursor & 0xFFFF,
+                          ran_fanout=False)
+    path = a067_fire_path(scroll_2350, bdac, a958, be06)
+    if path is A067FirePath.EARLY_STATE2:
+        shots = native_a1c8_tail(pool, cursor, source_index, source_x, source_y, input_98be, read_ds_word)
+    elif path is A067FirePath.EARLY_DEFAULT:
+        shot = native_a19f_tail(pool, cursor, source_index, source_x, source_y, read_ds_word)
+        shots = (shot,) if shot is not None else None
+    else:
+        return None  # the FULL fan-out is not composed here -> the VM owns this frame
+    if shots is None:
+        return None  # full pool (the 7550 recycle path) is unmodelled -> the VM owns this frame
+    shots = tuple(shots)
+    return A067Result(new_a980=gate.new_latch_word, spawns=shots,
+                      final_cursor=shots[-1].new_cursor, ran_fanout=True)

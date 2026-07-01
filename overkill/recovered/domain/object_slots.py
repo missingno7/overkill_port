@@ -261,6 +261,25 @@ class A2A0ListedSpawn:
 
 
 @dataclass(frozen=True, slots=True)
+class A067Result:
+    """Pure result of the whole 1010:A067 per-frame action/fire fan-out entry (gate + EARLY dispatch).
+
+    A067 first runs the entry gate (the DS:98BE trigger bit + the DS:A980/9790/232A latch): not firing ->
+    ``new_a980`` = 0, no spawn; held-non-repeatable -> ``new_a980`` unchanged, no spawn; armed ->
+    ``new_a980`` = 1.  When armed it takes a spawn path; the EARLY path (scroll DS:2350 <= B6h & BDAC == 0)
+    dispatches the A1C8 (A958==2) or A19F tail.  ``spawns`` is the ordered player shots produced (empty when
+    the frame does not fire or is held); ``final_cursor`` is DS:95DA after (unchanged when nothing spawned);
+    ``ran_fanout`` is True only when a spawn path actually ran.  The FULL fan-out (the A515/A584/A3FF/A3CA/
+    A0E8 sequence) is a separate, larger composition -- ``native_a067`` returns None for those frames.
+    """
+
+    new_a980: int
+    spawns: tuple
+    final_cursor: int
+    ran_fanout: bool
+
+
+@dataclass(frozen=True, slots=True)
 class A515LinkSpawn:
     """Pure result of one 1010:A515 linked-anchor spawn attempt (the counter-driven link weapon).
 

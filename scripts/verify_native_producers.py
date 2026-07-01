@@ -47,6 +47,7 @@ PROBES = (
     "verify_native_a515_spawn",
     "verify_native_a114_spawn",
     "verify_native_a2a0_spawn",
+    "verify_native_a067",
 )
 _RESULT_LINE = re.compile(r"calls=(\d+) ok=(\d+) fail=(\d+)")
 
