@@ -18,6 +18,7 @@ from overkill.recovered.domain.object_behaviors import (
     Ae2cSlotUpdate,
     Ae7dSlotUpdate,
     Aed8SlotUpdate,
+    B1b0Update,
     B24dSlotUpdate,
     B2cdSlotUpdate,
     B73ETargetReachedResolution,
@@ -47,9 +48,11 @@ from overkill.recovered.domain.tilemap import LevelTileContext, TileProbeInput
 from overkill.recovered.domain.movement import MovementTarget
 from overkill.recovered.systems.collision import overlap_contact_box_contains
 from overkill.recovered.systems.movement import (
+    align_word_to_four,
     object_delta_5e1b,
     object_delta_steer_5e42,
     object_target_seek_step_5db2,
+    player_center_target_from_view,
     step_operations_for_direction,
 )
 from overkill.recovered.systems.tilemap import (
@@ -1184,6 +1187,66 @@ def native_b15a_scan(effect_pool: ObjectPool, cursor: int) -> tuple[int | None, 
         cx -= 1
         if cx == 0:
             return (None, a43a)
+
+
+# 1010:B1B0 two-state seeker (logic_id 0x0A).  Sprite is always DS:2328 + 6Dh.  The three post-move tails
+# are named as codes (not VM addresses) so the pure layer stays layout-free; the adapter maps them to
+# AD60 (bounds) / AD5A (compact) / ADC9 (deactivate).
+B1B0_SPRITE_BIAS = 0x006D
+B1B0_ACQUIRE_SEEK_MODE = 0x0002     # DS:2308 = 2 before the state-0 5DB2 seek
+B1B0_TAIL_BOUNDS = "bounds"         # AD60: state-0 moved, or target found
+B1B0_TAIL_COMPACT = "compact"       # AD5A: state-1 (valid steer or invalid re-acquire)
+B1B0_TAIL_DEACTIVATE = "deactivate"  # ADC9: state-0 reached, B15A found no target
+
+
+def object_update_b1b0(state: int, x_word: int, y_word: int, direction: int, active_word: int,
+                       acquired_target_ptr: int, move_step_error: int, phase_2328: int, view_x: int,
+                       view_y: int, a97e: int, cursor_a43a: int, step_mode: int, direction_table,
+                       effect_pool: ObjectPool) -> B1b0Update:
+    """Pure WHOLE 1010:B1B0 two-state seeker slot transform (logic_id 0x0A), composed from native pieces.
+
+    Sprite is always ``DS:2328 + 6Dh``.  STATE 1 (follow): validate the acquired target slot (the +30
+    pointer, looked up in ``effect_pool``) via :func:`is_player_chase_acquired_target_valid`; if valid,
+    :func:`object_delta_5e1b` (target as reference) + :func:`object_delta_steer_5e42` steer toward it
+    (tail AD5A); if invalid, drop to state 0 with no movement (tail AD5A).  STATE 0 (acquire): 4px-align
+    X/Y and :func:`object_target_seek_step_5db2` toward the view centre
+    (:func:`player_center_target_from_view`, mode 2); if it moved, tail AD60; if it reached (5DB2 blocked),
+    DS:A97E -= 1 then :func:`native_b15a_scan` -- no candidate -> tail ADC9; found -> store the target,
+    flip to state 1, DS:A97E += 1, tail AD60.  ``a97e``/``cursor_a43a`` carry the global side effects
+    (unchanged in state 1 and on the state-0 moved path)."""
+    sprite = (phase_2328 + B1B0_SPRITE_BIAS) & 0xFFFF
+    if (state & 0xFFFF) == 0x0001:
+        idx = (((acquired_target_ptr - effect_pool.base) & 0xFFFF) // (effect_pool.stride & 0xFFFF))
+        valid = is_player_chase_acquired_target_valid(ObjectSlotRecord(
+            active_word=effect_pool.active_word(idx), x_word=effect_pool.x_word(idx), y_word=0,
+            gate_or_layer=0, link_key=0, scan_flag=0, hazard_class=0, logic_id=effect_pool.logic_id(idx)))
+        if not valid:
+            return B1b0Update(0x0000, direction & 0xFFFF, sprite, x_word & 0xFFFF, y_word & 0xFFFF,
+                              active_word & 0xFFFF, acquired_target_ptr & 0xFFFF, a97e & 0xFFFF,
+                              cursor_a43a & 0xFFFF, B1B0_TAIL_COMPACT)
+        deltas = object_delta_5e1b(x_word, y_word, effect_pool.x_word(idx), effect_pool.y_word(idx),
+                                   effect_pool.word_at(idx, 0x14))
+        steer = object_delta_steer_5e42(x_word, y_word, direction, deltas.move_delta_y,
+                                        deltas.move_delta_x, move_step_error, step_mode, direction_table)
+        return B1b0Update(0x0001, steer.direction_or_step, sprite, steer.x_word, steer.y_word,
+                          active_word & 0xFFFF, acquired_target_ptr & 0xFFFF, a97e & 0xFFFF,
+                          cursor_a43a & 0xFFFF, B1B0_TAIL_COMPACT)
+    target = player_center_target_from_view(view_x, view_y)
+    seek = object_target_seek_step_5db2(align_word_to_four(x_word), align_word_to_four(y_word),
+                                        direction, target, B1B0_ACQUIRE_SEEK_MODE, direction_table)
+    if not seek.blocked:
+        return B1b0Update(0x0000, seek.direction_or_step, sprite, seek.x_word, seek.y_word,
+                          active_word & 0xFFFF, acquired_target_ptr & 0xFFFF, a97e & 0xFFFF,
+                          cursor_a43a & 0xFFFF, B1B0_TAIL_BOUNDS)
+    a97e_after = (a97e - 1) & 0xFFFF if (a97e & 0xFFFF) != 0 else (a97e & 0xFFFF)
+    found, new_a43a = native_b15a_scan(effect_pool, cursor_a43a)
+    if found is None:
+        return B1b0Update(0x0000, seek.direction_or_step, sprite, seek.x_word, seek.y_word,
+                          active_word & 0xFFFF, acquired_target_ptr & 0xFFFF, a97e_after,
+                          new_a43a & 0xFFFF, B1B0_TAIL_DEACTIVATE)
+    return B1b0Update(0x0001, seek.direction_or_step, sprite, seek.x_word, seek.y_word,
+                      active_word & 0xFFFF, found & 0xFFFF, (a97e_after + 1) & 0xFFFF,
+                      new_a43a & 0xFFFF, B1B0_TAIL_BOUNDS)
 
 
 # 1010:AD60 bounds/tile tail.  These are the recovered play-field box and the

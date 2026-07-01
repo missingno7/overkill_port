@@ -31,6 +31,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from overkill.probes._harness import LazyBytes, load_demo, run_ref_step_probe
+from overkill.recovered.domain.object_slots import ObjectPool
 from overkill.recovered.domain.tilemap import LevelTileContext
 from overkill.recovered.domain.movement import MovementTarget
 from overkill.recovered.systems.movement import object_target_seek_step_5db2
@@ -39,6 +40,7 @@ from overkill.recovered.systems.objects import (
     object_update_ae2c,
     object_update_ae7d,
     object_update_aed8,
+    object_update_b1b0,
     object_update_b24d,
     object_update_b2cd,
     object_update_b86d,
@@ -46,6 +48,7 @@ from overkill.recovered.systems.objects import (
     object_update_be3c,
 )
 from overkill.recovered.views.object_slots import (
+    OFF_ACQUIRED_TARGET_PTR,
     OFF_ACTIVE_WORD,
     OFF_DIRECTION_OR_STEP,
     OFF_HAZARD_CLASS,
@@ -490,6 +493,65 @@ def _arm_b909(cpu, class_table_cache: dict) -> _Pending | None:
     return _Pending(ss=ss, bp=bp, exit_ip=BC4B_IP, predicted=predicted, read_post=_read_slot_6tuple)
 
 
+B1B0_IP = 0xB1B0  # logic_id 0x0A: two-state seeker (acquire 5DB2+B15A / follow 5E1B+5E42)
+B1B0_PHASE_2328 = 0x2328          # DS:2328 -> sprite = +6Dh
+B1B0_VIEW_X_237E = 0x237E         # DS:237E view-centre X (chase target base)
+B1B0_VIEW_Y_2380 = 0x2380         # DS:2380 view-centre Y
+B1B0_A97E = 0xA97E               # DS:A97E acquire counter (global side effect)
+B1B0_A43A = 0xA43A               # DS:A43A B15A rotating scan cursor (global side effect)
+B1B0_EFFECT_BASE, B1B0_EFFECT_COUNT, B1B0_STRIDE = 0x23B4, 0x23, 0x38
+# B1B0 jmps to one of three post-move tails; map the pure tail code to the VM IP the gate compares at.
+B1B0_TAIL_IP = {"bounds": 0xAD60, "compact": 0xAD5A, "deactivate": 0xADC9}
+
+
+def _read_slot_b1b0(cpu, ss: int, bp: int) -> tuple:
+    """B1B0's compare tuple: the 6 slot fields + the acquired-target pointer (+30) + the DS:A97E/A43A globals."""
+    ds = cpu.s.ds & 0xFFFF
+    return _read_slot_6tuple(cpu, ss, bp) + (
+        cpu.mem.rw(ss, (bp + OFF_ACQUIRED_TARGET_PTR) & 0xFFFF),
+        cpu.mem.rw(ds, B1B0_A97E),
+        cpu.mem.rw(ds, B1B0_A43A),
+    )
+
+
+def _arm_b1b0(cpu, class_table_cache: dict) -> _Pending | None:
+    """Capture + predict B1B0 (logic_id 0x0A): the two-state seeker, compared at its post-move tail.
+
+    Projects the slot fields + the DS globals (view centre, A97E/A43A, step mode, direction table) + a live
+    snapshot of the effect pool (DS:23B4, for the B15A scan + the acquired-target lookup) and calls the
+    canonical pure object_update_b1b0.  The exit IP is the tail the state machine reaches (AD60 bounds /
+    AD5A compact / ADC9 deactivate).  Compares the 6-tuple plus the +30 target pointer and the A97E/A43A
+    globals (B1B0's distinguishing state) via _read_slot_b1b0."""
+    ss = cpu.s.ss & 0xFFFF
+    ds = cpu.s.ds & 0xFFFF
+    bp = cpu.s.bp & 0xFFFF
+    effect_pool = ObjectPool(base=B1B0_EFFECT_BASE, stride=B1B0_STRIDE, slots=tuple(
+        tuple(cpu.mem.rw(ds, (B1B0_EFFECT_BASE + i * B1B0_STRIDE + 2 * j) & 0xFFFF)
+              for j in range(B1B0_STRIDE >> 1))
+        for i in range(B1B0_EFFECT_COUNT)))
+    table = tuple(cpu.mem.rb(ds, (DIRECTION_TABLE_A348 + i) & 0xFFFF) for i in range(16))
+    u = object_update_b1b0(
+        state=cpu.mem.rw(ss, (bp + OFF_SUBSTATE) & 0xFFFF),
+        x_word=cpu.mem.rw(ss, (bp + OFF_X) & 0xFFFF),
+        y_word=cpu.mem.rw(ss, (bp + OFF_Y) & 0xFFFF),
+        direction=cpu.mem.rw(ss, (bp + OFF_DIRECTION_OR_STEP) & 0xFFFF),
+        active_word=cpu.mem.rw(ss, (bp + OFF_ACTIVE_WORD) & 0xFFFF),
+        acquired_target_ptr=cpu.mem.rw(ss, (bp + OFF_ACQUIRED_TARGET_PTR) & 0xFFFF),
+        move_step_error=cpu.mem.rw(ss, (bp + OFF_MOVE_STEP_ERROR) & 0xFFFF),
+        phase_2328=cpu.mem.rw(ds, B1B0_PHASE_2328),
+        view_x=cpu.mem.rw(ds, B1B0_VIEW_X_237E),
+        view_y=cpu.mem.rw(ds, B1B0_VIEW_Y_2380),
+        a97e=cpu.mem.rw(ds, B1B0_A97E),
+        cursor_a43a=cpu.mem.rw(ds, B1B0_A43A),
+        step_mode=cpu.mem.rw(ds, STEP_MODE_2312),
+        direction_table=table,
+        effect_pool=effect_pool,
+    )
+    predicted = (u.state, u.direction_or_step, u.sprite_or_state, u.x_word, u.y_word, u.active_word,
+                 u.acquired_target_ptr, u.a97e, u.cursor_a43a)
+    return _Pending(ss=ss, bp=bp, exit_ip=B1B0_TAIL_IP[u.tail], predicted=predicted, read_post=_read_slot_b1b0)
+
+
 NATIVE_HANDLERS: tuple[NativeHandler, ...] = (
     NativeHandler(logic_id=0x0C, label="AE09", entry_ip=AE09_IP, arm=_arm_ae09),
     NativeHandler(logic_id=0x1D, label="B86D", entry_ip=B86D_IP, arm=_arm_b86d),
@@ -501,6 +563,7 @@ NATIVE_HANDLERS: tuple[NativeHandler, ...] = (
     NativeHandler(logic_id=0x12, label="B2CD", entry_ip=B2CD_IP, arm=_arm_b2cd),
     NativeHandler(logic_id=0x05, label="AE7D", entry_ip=AE7D_IP, arm=_arm_ae7d),
     NativeHandler(logic_id=0x06, label="AE2C", entry_ip=AE2C_IP, arm=_arm_ae2c),
+    NativeHandler(logic_id=0x0A, label="B1B0", entry_ip=B1B0_IP, arm=_arm_b1b0),
 )
 _HANDLER_BY_IP = {(CS, h.entry_ip): h for h in NATIVE_HANDLERS}
 

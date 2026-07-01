@@ -194,6 +194,33 @@ class B2cdSlotUpdate:
 
 
 @dataclass(frozen=True, slots=True)
+class B1b0Update:
+    """Pure WHOLE per-slot result of the 1010:B1B0 behavior (EFAE logic_id 0x0A): the two-state seeker.
+
+    B1B0 always sets the slot sprite to ``DS:2328 + 6Dh``, then branches on the slot state (+1C):
+    STATE 0 (acquire) 4px-aligns X/Y and seeks the view-centre (5DB2 mode 2); if it moved it joins the
+    AD60 bounds tail, else (reached) it decrements DS:A97E and runs the B15A target scan -- no candidate
+    -> ADC9 deactivate; found -> stores the target pointer (+30), flips to state 1, DS:A97E += 1, AD60.
+    STATE 1 (follow) validates the acquired target (active, X <= DCh, logic != 1); valid -> 5E1B delta +
+    5E42 steer toward it (AD5A compact); invalid -> back to state 0 (no move, AD5A).  ``state`` is the
+    slot +1C word (the coverage 6-tuple's ``substate``); ``acquired_target_ptr`` is the +30 word;
+    ``a97e``/``cursor_a43a`` are the DS:A97E counter + DS:A43A scan cursor after (the global side effects,
+    unchanged in state 1 and on the moved path); ``tail`` names which post-move tail B1B0 jmps to (a code,
+    not a VM address).  move_step_error (+2E, updated by 5E42) is out of scope, like B24D/B86D."""
+
+    state: int
+    direction_or_step: int
+    sprite_or_state: int
+    x_word: int
+    y_word: int
+    active_word: int
+    acquired_target_ptr: int
+    a97e: int
+    cursor_a43a: int
+    tail: str
+
+
+@dataclass(frozen=True, slots=True)
 class Ae7dSlotUpdate:
     """Pure WHOLE per-slot result of the 1010:AE7D behavior (EFAE logic_id 0x05): a scroll-left mover.
 
