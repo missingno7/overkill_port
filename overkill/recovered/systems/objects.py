@@ -30,6 +30,7 @@ from overkill.recovered.domain.object_behaviors import (
     ObjectLogicDispatchAA2B,
 )
 from overkill.recovered.domain.object_slots import (
+    A2A0ListedSpawn,
     A515LinkSpawn,
     FormationSpawnSeed7476,
     FreeSlotAllocation,
@@ -1661,6 +1662,53 @@ def native_a515(gameplay_pool: ObjectPool, cursor_95da: int, effect_pool: Object
     words[0x30 >> 1] = found & 0xFFFF                           # acquired_target_ptr
     return A515LinkSpawn(slot_offset=alloc.offset, slot_words=tuple(words), cursor_95da=alloc.cursor,
                          cursor_a43a=new_a43a, a97e=(a97e + 1) & 0xFFFF, a960=(a960 - 1) & 0xFFFF)
+
+
+# A2A0 listed two-slot spawn (the A958==5 sibling of the A2F6/A337 muzzle pairs): both slots are A4EA-seed
+# logic-9 shots at the A1AE muzzle with Y snapped to an 8px boundary; slot1 is post-stamped (sprite 6Ah,
+# Y-=8) and slot2 keeps the A2D6 body's (sprite 6Ch, Y = (y & ~7) + 8), so slot2.Y = slot1.Y + 8.  Each new
+# slot's DS offset is appended to the cleared 26-word anchor list.
+A2A0_LOGIC = 0x0009
+A2A0_SLOT1_SPRITE = 0x006A
+A2A0_SLOT2_SPRITE = 0x006C
+A2A0_Y_ALIGN = 0xFFF8            # A2D6 snaps Y down to an 8-pixel boundary
+A2A0_Y_BIAS = 0x0008            # ...then +8 (slot2 keeps this; slot1's post -=8 undoes it)
+A2A0_LIST_LEN = 26              # words the list is cleared to FFFFh (rep stosw cx=1Ah)
+A2A0_LIST_SENTINEL = 0xFFFF
+
+
+def native_a2a0(pool: ObjectPool, cursor: int, source_index: int, source_x: int, source_y: int,
+                a3a2: int, read_ds_word) -> A2A0ListedSpawn | None:
+    """Pure WHOLE 1010:A2A0 listed two-slot spawn (the A958==5 fanout child).
+
+    Gated by ``DS:A3A2 == 0``.  Clears the anchor list (26 words -> FFFFh) and resets its pointer, then
+    runs the A2D6 body twice: each spawns an A4EA-seed ``logic_id`` 9 slot at the A1AE muzzle
+    (:func:`a1ae_project`) with ``Y = (a1ae_y & ~7) + 8`` and sprite 6Ch, appending the new slot's DS offset
+    to the list.  Slot 1 is then post-stamped to sprite 6Ah and ``Y -= 8`` (so ``Y = a1ae_y & ~7``); slot 2
+    keeps the body's values, so ``slot2.Y = slot1.Y + 8``.  Both share the same A1AE X.  Returns an
+    :class:`A2A0ListedSpawn` (the two slots, the whole 26-word list, the pointer advance, the final cursor)
+    or None (gate closed / full pool -- the 7550 recycle is unmodelled).  The A972 += 1-per-slot counter and
+    the BEFF stamp are the caller's, not part of the per-slot stamp."""
+    if (a3a2 & 0xFFFF) != 0x0000:
+        return None  # the A3A2 gate is closed -> no spawn
+    a1ae_x, a1ae_y = a1ae_project(read_ds_word, source_index, source_x, source_y)
+    y_base = a1ae_y & A2A0_Y_ALIGN                          # A2D6's (y & ~7); slot1 lands here after its -=8
+    seed = object_spawn_seed_a4ea()
+    alloc1 = object_pool_find_free(pool, cursor)
+    if alloc1.offset is None:
+        return None  # pool full -> the 7550 recycle path (not modelled)
+    slot1 = _player_shot_slot(seed, alloc1, a1ae_x, y_base, A2A0_LOGIC, A2A0_SLOT1_SPRITE)
+    index1 = (((alloc1.offset - pool.base) & 0xFFFF) // (pool.stride & 0xFFFF))
+    pool1 = pool.with_word(index1, 0x00, seed.active_word)  # the seed marks slot1 active before alloc 2
+    alloc2 = object_pool_find_free(pool1, alloc1.cursor)
+    if alloc2.offset is None:
+        return None
+    slot2 = _player_shot_slot(seed, alloc2, a1ae_x, (y_base + A2A0_Y_BIAS) & 0xFFFF,
+                              A2A0_LOGIC, A2A0_SLOT2_SPRITE)
+    list_words = ((slot1.slot_offset & 0xFFFF, slot2.slot_offset & 0xFFFF)
+                  + (A2A0_LIST_SENTINEL,) * (A2A0_LIST_LEN - 2))
+    return A2A0ListedSpawn(spawns=(slot1, slot2), list_words=list_words,
+                           list_advance=0x0004, final_cursor=slot2.new_cursor)
 
 
 # --- A067 child schedule walks (A3FF / A3CA) ------------------------------------------------------------

@@ -243,6 +243,24 @@ class PlayerFanoutResult:
 
 
 @dataclass(frozen=True, slots=True)
+class A2A0ListedSpawn:
+    """Pure result of the A067 child A2A0 (the A958==5 listed two-slot spawn).
+
+    A2A0 clears a fixed anchor-index list (DS:A3B4, 26 words) to the ``FFFFh`` sentinel, resets the list
+    pointer (DS:A3EA), then runs the A2D6 spawn body twice -- each appends its new slot's DS offset to the
+    list and advances the pointer.  ``spawns`` is ``(slot1, slot2)``; ``list_words`` is the whole cleared+
+    filled 26-word list (word 0 = slot1's offset, word 1 = slot2's, the rest ``FFFFh``); ``list_advance``
+    is the bytes the pointer moved (``2 x spawn count``); ``final_cursor`` is DS:95DA after.  The absolute
+    list base/pointer offsets are the adapter's, so this pure record carries no DS-layout constant.
+    """
+
+    spawns: tuple
+    list_words: tuple
+    list_advance: int
+    final_cursor: int
+
+
+@dataclass(frozen=True, slots=True)
 class A515LinkSpawn:
     """Pure result of one 1010:A515 linked-anchor spawn attempt (the counter-driven link weapon).
 
