@@ -21,11 +21,15 @@ from dataclasses import dataclass
 
 from overkill.asset_codecs.native_level import NativeLevel, load_native_level
 from overkill.recovered.adapters.cold_level_adapter import level_tile_context_from_native
-from overkill.recovered.domain.frame_loop import FrameInput, PlayerFrameStep
+from overkill.recovered.domain.frame_loop import FireControlState, FrameInput, PlayerFrameStep
 from overkill.recovered.domain.native_game_state import NativeGameState
 from overkill.recovered.domain.object_update import ObjectUpdateGlobals
 from overkill.recovered.domain.tilemap import LevelTileContext
-from overkill.recovered.systems.frame_loop import native_object_pass, native_player_frame_step
+from overkill.recovered.systems.frame_loop import (
+    native_action_fanout_step,
+    native_object_pass,
+    native_player_frame_step,
+)
 
 
 @dataclass(frozen=True)
@@ -36,6 +40,7 @@ class NativeGame:
     state: NativeGameState
     origin_x: int = 0  # DS:234E scroll (the tile-probe origin)
     row_base: int = 0  # DS:2350 scroll (the tile-probe row base)
+    fire: FireControlState = dataclasses.field(default_factory=FireControlState)
 
     @classmethod
     def load_level(
@@ -63,6 +68,37 @@ class NativeGame:
         """Run the player stage (input decode + view-anchor movement) over the current state."""
         step = native_player_frame_step(self.state.special_pool, frame_input, no_clamp=no_clamp)
         return self.with_state(dataclasses.replace(self.state, special_pool=step.special_pool)), step
+
+    def step_action_fanout(
+        self,
+        *,
+        input_flags: int,
+        repeat_9790: int,
+        state_232a: int,
+        scroll_2350: int,
+        bdac: int,
+        a958: int,
+        be06: int,
+        source_index: int,
+        source_x: int,
+        source_y: int,
+        read_ds_word,
+    ) -> "NativeGame":
+        """Run the action/fire fan-out's EARLY-only slice over the current state + carried fire control.
+
+        ``input_flags`` is normally the player stage's decoded button byte
+        (:attr:`~overkill.recovered.domain.frame_loop.PlayerFrameStep.input_flags`); the rest are the
+        still-VM-owned per-frame inputs :class:`~overkill.recovered.domain.frame_loop.FireControlState`
+        documents, until A66F (scroll) and the weapon-equip subsystem are native too.  See
+        :func:`~overkill.recovered.systems.frame_loop.native_action_fanout_step` for which frames this
+        declines (leaves VM-owned).
+        """
+        new_state, new_fire = native_action_fanout_step(
+            self.state, self.fire, input_flags=input_flags, repeat_9790=repeat_9790, state_232a=state_232a,
+            scroll_2350=scroll_2350, bdac=bdac, a958=a958, be06=be06, source_index=source_index,
+            source_x=source_x, source_y=source_y, read_ds_word=read_ds_word,
+        )
+        return dataclasses.replace(self, state=new_state, fire=new_fire)
 
     def step_objects(self, update_globals: ObjectUpdateGlobals) -> "NativeGame":
         """Run the object-update pass over both pools, using this level's cold tile context.

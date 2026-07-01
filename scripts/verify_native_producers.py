@@ -50,6 +50,7 @@ PROBES = (
     "verify_native_a0e8_subroutine",
     "verify_native_a067",
     "verify_native_a067_full_fanout",
+    "verify_native_action_fanout_step",
 )
 _RESULT_LINE = re.compile(r"calls=(\d+) ok=(\d+) fail=(\d+)")
 

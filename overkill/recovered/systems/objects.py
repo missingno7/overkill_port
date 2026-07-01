@@ -1888,6 +1888,29 @@ def _thread_player_shots(pool: ObjectPool, cursor: int,
     return pool, cursor
 
 
+# Byte offsets of the 10 fields A067's spawns stamp -- shared by apply_player_shot_to_pool below.
+_PLAYER_SHOT_FIELD_OFFSETS = (
+    ("active_word", 0x00), ("x_word", 0x02), ("y_word", 0x04), ("direction_or_step", 0x06),
+    ("sprite_or_state", 0x08), ("scan_flag", 0x14), ("hazard_class", 0x16), ("logic_id", 0x18),
+    ("substate", 0x1C), ("scan_enable_or_solid", 0x1E),
+)
+
+
+def apply_player_shot_to_pool(pool: ObjectPool, shot: PlayerShotSpawn) -> ObjectPool:
+    """Fold one committed :class:`PlayerShotSpawn` into ``pool`` at its slot -- the write side of a spawn.
+
+    ``_thread_player_shots`` only sets ``active_word`` (the minimum an in-progress fan-out composition
+    needs so its own later :func:`object_pool_find_free` calls skip the slot); a frame stage that carries
+    the pool forward as real state needs the FULL A4EA stamp applied, so the slot is byte-correct for
+    rendering and the next frame's object-update pass.  Writes the 10 stamped words; every other word in
+    the slot (the still-unknown bytes) keeps its prior contents, exactly as A4EA's partial stamp leaves
+    them in the VM."""
+    index = (((shot.slot_offset - pool.base) & 0xFFFF) // (pool.stride & 0xFFFF))
+    for field, offset in _PLAYER_SHOT_FIELD_OFFSETS:
+        pool = pool.with_word(index, offset, getattr(shot, field))
+    return pool
+
+
 def native_a3ca(pool: ObjectPool, cursor: int, fire_state: int,
                 side_schedule: tuple, a3a0: int, read_ds_word) -> PlayerFanoutResult:
     """Pure 1010:A3CA side-anchor walk: four A41A dispatches over the side schedules (DS:A966/A968/A96A/

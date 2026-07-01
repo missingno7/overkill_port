@@ -28,6 +28,25 @@ class FrameInput:
 
 
 @dataclass(frozen=True, slots=True)
+class FireControlState:
+    """The action/fire fan-out's own carried scratch: ``DS:A980`` latch + ``DS:95DA`` allocator cursor.
+
+    Threaded frame to frame by the native controller, the way the VM keeps these between ``9B2E`` calls
+    (``latch_a980`` is written by the entry gate itself; ``cursor_95da`` is the gameplay-pool allocator
+    cursor 7573 parks after each spawn).  Everything else ``native_action_fanout_step`` reads -- DS:9790/
+    232A/2350/BDAC/A958/BE06, the firing object's position, the weapon schedules -- is still VM-owned
+    state, supplied as explicit per-frame inputs until those subsystems are native too (the same "explicit
+    external globals" shape as :class:`~overkill.recovered.domain.object_update.ObjectUpdateGlobals`).
+    ``cursor_95da`` defaults to the gameplay table base (``0x2B5C``): a safe start for a fresh game state,
+    since :func:`~overkill.recovered.systems.objects.object_pool_find_free` scans the whole table and
+    wraps, so any starting position within it still finds the first free slot correctly.
+    """
+
+    latch_a980: int = 0x0000
+    cursor_95da: int = 0x2B5C  # layout-justified: the gameplay table base -- see the class docstring
+
+
+@dataclass(frozen=True, slots=True)
 class PlayerFrameStep:
     """Result of the native player sub-step: input decode -> the 9B2E movement bits.
 

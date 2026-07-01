@@ -1,14 +1,15 @@
 """Unit tests for the native frame controller (overkill.recovered.systems.frame_loop)."""
 from __future__ import annotations
 
-from overkill.recovered.domain.frame_loop import FrameInput
+from overkill.recovered.domain.frame_loop import FireControlState, FrameInput
 from overkill.recovered.domain.frame_snapshot import CameraState, HudLayer
 from overkill.recovered.domain.native_game_state import NativeGameState
-from overkill.recovered.domain.object_slots import ObjectPool
+from overkill.recovered.domain.object_slots import ObjectPool, PlayerShotSpawn
 from overkill.recovered.domain.object_update import ObjectUpdateGlobals
 from overkill.recovered.domain.tilemap import LevelTileContext
 from overkill.recovered.systems.frame_loop import (
     decode_frame_input,
+    native_action_fanout_step,
     native_object_pass,
     native_player_frame_step,
 )
@@ -20,6 +21,7 @@ from overkill.recovered.systems.input import (
     key_state_from_pressed,
 )
 from overkill.recovered.systems.object_update import native_object_update_pool
+from overkill.recovered.systems.objects import apply_player_shot_to_pool
 
 STRIDE = 0x38
 UP_ARROW, DOWN_ARROW, LEFT_ARROW, RIGHT_ARROW, SPACE = 0x48, 0x50, 0x4B, 0x4D, 0x39
@@ -120,3 +122,127 @@ def test_object_pass_delegates_both_pools_to_the_driver():
     out = native_object_pass(_state(_anchor_pool(0, 0), obj, eff), _EMPTY_GLOBALS)
     assert out.object_pool == native_object_update_pool(obj, _EMPTY_GLOBALS)
     assert out.effect_pool == native_object_update_pool(eff, _EMPTY_GLOBALS)
+
+
+# --- apply_player_shot_to_pool (the spawn write side native_action_fanout_step folds in) -------
+
+GAMEPLAY_BASE = 0x2B5C
+_FREE_WORDS = tuple([0] * (STRIDE >> 1))
+
+
+def _gameplay_pool(free_slots: int) -> ObjectPool:
+    return ObjectPool(base=GAMEPLAY_BASE, stride=STRIDE, slots=(_FREE_WORDS,) * free_slots)
+
+
+def _shot(offset: int, *, x=0x50, y=0x60, logic=0x0C, sprite=0x32) -> PlayerShotSpawn:
+    return PlayerShotSpawn(
+        slot_offset=offset, new_cursor=offset, active_word=1, scan_enable_or_solid=1,
+        direction_or_step=0, sprite_or_state=sprite, scan_flag=0, hazard_class=2,
+        logic_id=logic, substate=0xFFFF, x_word=x, y_word=y,
+    )
+
+
+def test_apply_player_shot_writes_all_ten_stamped_fields():
+    out = apply_player_shot_to_pool(_gameplay_pool(1), _shot(GAMEPLAY_BASE, x=0x99, y=0x77, logic=0x0B, sprite=0x40))
+    assert (out.active_word(0), out.x_word(0), out.y_word(0)) == (1, 0x99, 0x77)
+    assert (out.logic_id(0), out.sprite_word(0)) == (0x0B, 0x40)
+
+
+def test_apply_player_shot_preserves_unrelated_words():
+    words = list(_FREE_WORDS)
+    words[0x10 >> 1] = 0xBEEF
+    pool = ObjectPool(base=GAMEPLAY_BASE, stride=STRIDE, slots=(tuple(words),))
+    out = apply_player_shot_to_pool(pool, _shot(GAMEPLAY_BASE))
+    assert out.word_at(0, 0x10) == 0xBEEF
+
+
+def test_apply_player_shot_targets_slot_by_offset():
+    out = apply_player_shot_to_pool(_gameplay_pool(2), _shot(GAMEPLAY_BASE + STRIDE, x=0x77))
+    assert out.x_word(0) == 0 and out.x_word(1) == 0x77
+
+
+# --- native_action_fanout_step (the A067 EARLY-only frame stage) -------------------------------
+
+def _no_muzzle_table(off):
+    return 0  # a1ae_project falls back to the firing object's own position
+
+
+def _fanout_state(pool: ObjectPool) -> NativeGameState:
+    return _state(_anchor_pool(0, 0), pool, _pool(base=0x23B4))
+
+
+def test_fanout_not_pressed_clears_latch_leaves_pool_untouched():
+    pool = _gameplay_pool(8)
+    out_state, out_fire = native_action_fanout_step(
+        _fanout_state(pool), FireControlState(latch_a980=1, cursor_95da=GAMEPLAY_BASE),
+        input_flags=0, repeat_9790=0, state_232a=0, scroll_2350=0, bdac=0, a958=0, be06=0,
+        source_index=0, source_x=0x50, source_y=0x60, read_ds_word=_no_muzzle_table,
+    )
+    assert out_state.object_pool is pool  # untouched -> same object
+    assert out_fire.latch_a980 == 0  # not pressed -> the latch clears
+
+
+def test_fanout_fresh_press_early_default_spawns_one_shot():
+    pool = _gameplay_pool(8)
+    out_state, out_fire = native_action_fanout_step(
+        _fanout_state(pool), FireControlState(),  # latch 0 (fresh press), cursor at the pool base
+        input_flags=INPUT_FIRE, repeat_9790=0, state_232a=0, scroll_2350=0, bdac=0,
+        a958=0, be06=0,  # a958 != 2 -> EARLY_DEFAULT (the A19F single tail)
+        source_index=0, source_x=0x50, source_y=0x60, read_ds_word=_no_muzzle_table,
+    )
+    assert out_fire.latch_a980 == 1
+    assert out_fire.cursor_95da == GAMEPLAY_BASE  # A19F allocates exactly the first slot
+    assert out_state.object_pool.active_word(0) == 1
+    assert (out_state.object_pool.x_word(0), out_state.object_pool.y_word(0)) == (0x50, 0x60)
+
+
+def test_fanout_a958_2_early_state2_spawns_pair():
+    pool = _gameplay_pool(8)
+    out_state, out_fire = native_action_fanout_step(
+        _fanout_state(pool), FireControlState(), input_flags=INPUT_FIRE, repeat_9790=0, state_232a=0,
+        scroll_2350=0, bdac=0, a958=2, be06=0,  # a958 == 2 -> EARLY_STATE2 (the A1C8 pair)
+        source_index=0, source_x=0x50, source_y=0x60, read_ds_word=_no_muzzle_table,
+    )
+    assert out_fire.latch_a980 == 1
+    assert out_fire.cursor_95da == GAMEPLAY_BASE + STRIDE  # A1C8 allocates 2 slots, parks on the 2nd
+    assert out_state.object_pool.active_word(0) == 1 and out_state.object_pool.active_word(1) == 1
+
+
+def test_fanout_held_non_repeatable_no_spawn_latch_unchanged():
+    pool = _gameplay_pool(8)
+    out_state, out_fire = native_action_fanout_step(
+        _fanout_state(pool), FireControlState(latch_a980=1, cursor_95da=GAMEPLAY_BASE),
+        input_flags=INPUT_FIRE, repeat_9790=0, state_232a=0,  # held (latch!=0), not repeat-enabled, not sentinel
+        scroll_2350=0, bdac=0, a958=0, be06=0,
+        source_index=0, source_x=0x50, source_y=0x60, read_ds_word=_no_muzzle_table,
+    )
+    assert out_state.object_pool is pool  # untouched
+    assert (out_fire.latch_a980, out_fire.cursor_95da) == (1, GAMEPLAY_BASE)  # unchanged
+
+
+def test_fanout_full_path_declines_pool_but_still_arms_latch():
+    state = _fanout_state(_gameplay_pool(8))
+    fire = FireControlState()  # latch 0 -> a fresh press, so the entry gate arms (new_a980 = 1)
+    out_state, out_fire = native_action_fanout_step(
+        state, fire, input_flags=INPUT_FIRE, repeat_9790=0, state_232a=0,
+        scroll_2350=0x00B7, bdac=0,  # scroll > B6h -> the FULL path -> FULL_FANOUT -> native_a067 declines
+        a958=0, be06=0, source_index=0, source_x=0x50, source_y=0x60, read_ds_word=_no_muzzle_table,
+    )
+    # The spawn is declined (pool untouched -- the same object), but the A980 latch write happens
+    # unconditionally BEFORE the path branch, so it still applies even though the spawn does not.
+    assert out_state.object_pool is state.object_pool
+    assert out_fire.latch_a980 == 1
+    assert out_fire.cursor_95da == fire.cursor_95da  # the allocator cursor stays VM-owned on a decline
+
+
+def test_fanout_full_pool_at_first_shot_declines_pool_but_still_arms_latch():
+    occupied = (1,) + (0,) * ((STRIDE >> 1) - 1)
+    state = _fanout_state(ObjectPool(base=GAMEPLAY_BASE, stride=STRIDE, slots=(occupied,)))
+    fire = FireControlState()  # latch 0 -> a fresh press, so the entry gate arms (new_a980 = 1)
+    out_state, out_fire = native_action_fanout_step(
+        state, fire, input_flags=INPUT_FIRE, repeat_9790=0, state_232a=0, scroll_2350=0, bdac=0,
+        a958=0, be06=0, source_index=0, source_x=0x50, source_y=0x60, read_ds_word=_no_muzzle_table,
+    )
+    assert out_state.object_pool is state.object_pool  # the full pool blocked the spawn -> untouched
+    assert out_fire.latch_a980 == 1
+    assert out_fire.cursor_95da == fire.cursor_95da

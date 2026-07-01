@@ -12,13 +12,13 @@ import pathlib
 import pytest
 
 from overkill.native_game import NativeGame
-from overkill.recovered.domain.frame_loop import FrameInput
+from overkill.recovered.domain.frame_loop import FireControlState, FrameInput
 from overkill.recovered.domain.frame_snapshot import CameraState, HudLayer
 from overkill.recovered.domain.native_game_state import NativeGameState
 from overkill.recovered.domain.object_slots import ObjectPool
 from overkill.recovered.domain.object_update import ObjectUpdateGlobals
 from overkill.recovered.domain.tilemap import LevelTileContext
-from overkill.recovered.systems.input import DEFAULT_CONTROL_MAP, INPUT_RIGHT, key_state_from_pressed
+from overkill.recovered.systems.input import DEFAULT_CONTROL_MAP, INPUT_FIRE, INPUT_RIGHT, key_state_from_pressed
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 OVERKILL = ROOT / "assets" / "OVERKILL"
@@ -88,3 +88,29 @@ def test_native_game_with_state_is_functional():
     other = game.with_state(_starting_state())
     assert other.level is game.level and other.origin_x == 0x10 and other.row_base == 0x20
     assert game.tile_context.origin_x_word == 0x10 and game.tile_context.row_base_word == 0x20
+
+
+def test_native_game_step_action_fanout_composes_and_wires_fire_state():
+    # step_action_fanout wires native_action_fanout_step: folds a spawn into state.object_pool and
+    # advances the carried FireControlState -- no game data needed (a hand-built pool with free slots).
+    from overkill.asset_codecs.native_level import NativeLevel
+
+    lvl = NativeLevel(level=0, tile_plane=b"\x00" * 3744, class_table=b"\x01" * 256, blocks=b"", graphics=b"")
+    free_slot = tuple([0] * (STRIDE >> 1))
+    state = NativeGameState(
+        special_pool=_anchor_pool(0x50, 0x60),
+        object_pool=ObjectPool(base=0x2B5C, stride=STRIDE, slots=(free_slot,) * 4),
+        effect_pool=_empty_pool(0x23B4),
+        camera=CameraState(x=0, y=0), hud=HudLayer(counters=(0, 0, 0), score_bcd=(0, 0)),
+    )
+    game = NativeGame(lvl, state)
+    assert game.fire == FireControlState()  # default: latch 0, cursor parked at the gameplay base
+
+    out = game.step_action_fanout(
+        input_flags=INPUT_FIRE, repeat_9790=0, state_232a=0, scroll_2350=0, bdac=0, a958=0, be06=0,
+        source_index=0, source_x=0x50, source_y=0x60, read_ds_word=lambda off: 0,
+    )
+    assert out is not game  # a new NativeGame, not mutated in place
+    assert out.fire.latch_a980 == 1
+    assert out.state.object_pool.active_word(0) == 1
+    assert (out.state.object_pool.x_word(0), out.state.object_pool.y_word(0)) == (0x50, 0x60)

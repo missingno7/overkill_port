@@ -24,13 +24,15 @@ from __future__ import annotations
 
 import dataclasses
 
-from overkill.recovered.domain.frame_loop import FrameInput, PlayerFrameStep
+from overkill.recovered.domain.frame_loop import FireControlState, FrameInput, PlayerFrameStep
 from overkill.recovered.domain.native_game_state import NativeGameState
 from overkill.recovered.domain.object_slots import ObjectPool
 from overkill.recovered.domain.object_update import ObjectUpdateGlobals
+from overkill.recovered.systems.action_spawns import native_a067
 from overkill.recovered.systems.input import decode_keyboard_input_flags
 from overkill.recovered.systems.movement import step_view_anchor_by_input
 from overkill.recovered.systems.object_update import native_object_update_pool
+from overkill.recovered.systems.objects import apply_player_shot_to_pool
 
 # View-anchor record field offsets the controller writes (cf. recovered.views.object_slots);
 # the pure systems layer names the small set it touches rather than importing the bridge views.
@@ -93,4 +95,70 @@ def native_object_pass(state: NativeGameState, update_globals: ObjectUpdateGloba
         state,
         object_pool=native_object_update_pool(state.object_pool, update_globals),
         effect_pool=native_object_update_pool(state.effect_pool, update_globals),
+    )
+
+
+def native_action_fanout_step(
+    state: NativeGameState,
+    fire: FireControlState,
+    *,
+    input_flags: int,
+    repeat_9790: int,
+    state_232a: int,
+    scroll_2350: int,
+    bdac: int,
+    a958: int,
+    be06: int,
+    source_index: int,
+    source_x: int,
+    source_y: int,
+    read_ds_word,
+) -> tuple[NativeGameState, FireControlState]:
+    """Frame stage (9B2E's A067 child, EARLY-only slice): the action-trigger gate + early-level fire tails.
+
+    Composes the WHOLE-native ``native_a067`` (the entry gate + the A19F/A1C8 early tails) over the
+    current gameplay pool + the carried :class:`FireControlState`, folding any spawned shots into
+    ``state.object_pool`` (:func:`~overkill.recovered.systems.objects.apply_player_shot_to_pool`) and
+    advancing the cursor/latch.  ``input_flags`` is the decoded DS:98BE button byte (the player stage's
+    output, :attr:`~overkill.recovered.domain.frame_loop.PlayerFrameStep.input_flags`); the rest are the
+    still-VM-owned per-frame inputs :class:`FireControlState` documents.
+
+    Declines the SPAWN (``state.object_pool``/``fire.cursor_95da`` unchanged) for frames ``native_a067``
+    itself declines: the FULL fan-out paths -- ``FULL_FANOUT`` needs the still-unrecovered A970-family
+    held-action counters kept correct frame to frame (their per-child increment amount is not modelled;
+    see the "the caller's, not part of the per-shot stamp" notes throughout ``systems/objects.py``),
+    ``FULL_BDAC_A114``/``FULL_BDAC_A515`` have no native composition at all yet -- and a full pool at the
+    very first shot.  Those frames leave the pool VM-owned, the same stance :func:`native_object_pass`
+    takes for non-native logic ids: leave what is not yet recovered to the VM rather than guess.  The
+    ``DS:A980`` latch write is NOT part of that decline -- it happens unconditionally before the path
+    branch, so ``fire.latch_a980`` still advances correctly even on a declined-spawn frame.
+
+    Verified against the VM at A067's own boundary (overkill.probes.verify_native_action_fanout_step):
+    the special/effect pools + camera + hud (never touched by A067, in any path) and the latch always
+    match a fresh VM projection; the gameplay pool + cursor are checked only on frames that actually ran
+    a spawn, since a decline is a deliberate "not modelled yet", not a claim to reproduce the VM's FULL
+    fan-out spawns without running them.
+    """
+    result = native_a067(
+        state.object_pool, fire.cursor_95da,
+        input_98be=input_flags, latch_a980=fire.latch_a980, repeat_9790=repeat_9790, state_232a=state_232a,
+        scroll_2350=scroll_2350, bdac=bdac, a958=a958, be06=be06,
+        source_index=source_index, source_x=source_x, source_y=source_y, read_ds_word=read_ds_word,
+    )
+    if result is None:
+        # native_a067 only returns None PAST its "if not gate.runs: return A067Result(...)" early exit --
+        # i.e. the entry gate DID arm (action_fanout_gate's only runs=True branch always writes
+        # new_latch_word = 1) but the spawn path is FULL (not composed) or a full pool blocked the first
+        # shot.  The gameplay pool + cursor stay VM-owned (we don't know what it spawned), but the A980
+        # latch write happens unconditionally BEFORE the path branch, so it is still knowable -- applying
+        # it here is not a guess, it's the one part of this frame native_a067's contract already proves.
+        return state, dataclasses.replace(fire, latch_a980=0x0001)
+    if not result.ran_fanout:
+        return state, dataclasses.replace(fire, latch_a980=result.new_a980)  # only the latch changed
+    new_pool = state.object_pool
+    for shot in result.spawns:
+        new_pool = apply_player_shot_to_pool(new_pool, shot)
+    return (
+        dataclasses.replace(state, object_pool=new_pool),
+        FireControlState(latch_a980=result.new_a980, cursor_95da=result.final_cursor),
     )
