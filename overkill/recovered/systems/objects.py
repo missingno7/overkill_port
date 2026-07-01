@@ -1249,6 +1249,18 @@ def object_update_b1b0(state: int, x_word: int, y_word: int, direction: int, act
                       new_a43a & 0xFFFF, B1B0_TAIL_BOUNDS)
 
 
+# 1010:8C1F (logic_id 0x8A): a stateless animated-sprite object -- its only slot change is the sprite,
+# cycled from the global frame counter DS:233C.  The B2AC BAE1 side effect (gated DS:232C == 1Fh) and the
+# BB03 post-move are separate; this owns just the sprite field.
+OBJECT_8C1F_SPRITE_BIAS = 0x009D
+
+
+def object_update_8c1f(frame_233c: int) -> int:
+    """Pure 1010:8C1F sprite (logic_id 0x8A): ``sprite = DS:233C + 9Dh``.  The slot's substate/direction/
+    x/y/active are untouched (8C1F only writes +08 before the shared BB03 post-move)."""
+    return (frame_233c + OBJECT_8C1F_SPRITE_BIAS) & 0xFFFF
+
+
 # 1010:AD60 bounds/tile tail.  These are the recovered play-field box and the
 # tile-probing object family, source-level values rather than archetype names.
 OBJECT_BOUNDS_MIN_X = 0x0008

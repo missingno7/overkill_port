@@ -38,6 +38,7 @@ from overkill.recovered.systems.movement import object_target_seek_step_5db2
 from overkill.recovered.systems.objects import (
     object_update_ae09,
     object_update_ae2c,
+    object_update_8c1f,
     object_update_ae7d,
     object_update_aed8,
     object_update_b1b0,
@@ -552,6 +553,35 @@ def _arm_b1b0(cpu, class_table_cache: dict) -> _Pending | None:
     return _Pending(ss=ss, bp=bp, exit_ip=B1B0_TAIL_IP[u.tail], predicted=predicted, read_post=_read_slot_b1b0)
 
 
+OBJECT_8C1F_IP = 0x8C1F  # logic_id 0x8A: stateless animated sprite (DS:233C + 9Dh) -> B2AC -> BB03
+BB03_IP = 0xBB03         # 8C1F's post-move handoff (via B2AC)
+FRAME_233C = 0x233C      # the global frame counter 8C1F animates from
+BAE1_GATE_232C = 0x232C  # B2AC calls the BAE1 side effect when DS:232C == 1Fh (that path is skipped)
+
+
+def _arm_8c1f(cpu, class_table_cache: dict) -> _Pending | None:
+    """Capture + predict 8C1F (logic_id 0x8A): the animated sprite, compared at the BB03 handoff.
+
+    8C1F sets ``sprite = DS:233C + 9Dh`` (via B2AC) and joins the BB03 post-move; substate/direction/x/y/
+    active are untouched.  Skips the DS:232C == 1Fh frames where B2AC also fires the BAE1 side effect
+    (unmodelled) -- the rest is a pure one-field animation."""
+    ss = cpu.s.ss & 0xFFFF
+    ds = cpu.s.ds & 0xFFFF
+    bp = cpu.s.bp & 0xFFFF
+    if cpu.mem.rw(ds, BAE1_GATE_232C) == 0x001F:
+        return None
+    new_sprite = object_update_8c1f(cpu.mem.rw(ds, FRAME_233C))
+    predicted = (
+        cpu.mem.rw(ss, (bp + OFF_SUBSTATE) & 0xFFFF),
+        cpu.mem.rw(ss, (bp + OFF_DIRECTION_OR_STEP) & 0xFFFF),
+        new_sprite,
+        cpu.mem.rw(ss, (bp + OFF_X) & 0xFFFF),
+        cpu.mem.rw(ss, (bp + OFF_Y) & 0xFFFF),
+        cpu.mem.rw(ss, (bp + OFF_ACTIVE_WORD) & 0xFFFF),
+    )
+    return _Pending(ss=ss, bp=bp, exit_ip=BB03_IP, predicted=predicted, read_post=_read_slot_6tuple)
+
+
 NATIVE_HANDLERS: tuple[NativeHandler, ...] = (
     NativeHandler(logic_id=0x0C, label="AE09", entry_ip=AE09_IP, arm=_arm_ae09),
     NativeHandler(logic_id=0x1D, label="B86D", entry_ip=B86D_IP, arm=_arm_b86d),
@@ -564,6 +594,7 @@ NATIVE_HANDLERS: tuple[NativeHandler, ...] = (
     NativeHandler(logic_id=0x05, label="AE7D", entry_ip=AE7D_IP, arm=_arm_ae7d),
     NativeHandler(logic_id=0x06, label="AE2C", entry_ip=AE2C_IP, arm=_arm_ae2c),
     NativeHandler(logic_id=0x0A, label="B1B0", entry_ip=B1B0_IP, arm=_arm_b1b0),
+    NativeHandler(logic_id=0x8A, label="8C1F", entry_ip=OBJECT_8C1F_IP, arm=_arm_8c1f),
 )
 _HANDLER_BY_IP = {(CS, h.entry_ip): h for h in NATIVE_HANDLERS}
 
