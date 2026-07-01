@@ -30,6 +30,7 @@ from overkill.recovered.domain.object_behaviors import (
     ObjectLogicDispatchAA2B,
 )
 from overkill.recovered.domain.object_slots import (
+    A515LinkSpawn,
     FormationSpawnSeed7476,
     FreeSlotAllocation,
     LinkedEffectSpawnSeed7420,
@@ -1563,6 +1564,57 @@ def native_a0e8_pair(pool: ObjectPool, cursor: int, state: int, source_index: in
         return None
     slot2 = _player_shot_slot(seed, alloc2, (x + A0E8_PAIR_X_OFFSET) & 0xFFFF, y, stamp_logic, stamp_sprite)
     return (slot1, slot2)
+
+
+# A515 linked-anchor spawn (the counter-driven link weapon): partial-stamps a 7547-found free slot, so the
+# un-listed words keep the slot's stale prior contents (no A4EA seed).  Gated by A960 != 0 && A97E != 1.
+A515_GATE_A97E_BLOCK = 0x0001    # A515 runs only when DS:A97E != 1 (and DS:A960 != 0)
+A515_ANCHOR_BIAS = 0x000A        # A571: X/Y = source + 0xA (no Y-align, unlike A584)
+A515_ACTIVE = 0x0001             # [bx+00] active_word
+A515_SCAN_FLAG = 0x0000          # [bx+14] scan_flag
+A515_HAZARD_CLASS = 0x0002       # [bx+16] hazard_class
+A515_LOGIC_ID = 0x000A           # [bx+18] logic_id
+A515_SUBSTATE = 0x0001           # [bx+1C] substate
+A515_SCAN_ENABLE = 0x0001        # [bx+1E] scan_enable_or_solid
+# [bx+30] = the B15A-found target offset (acquired_target_ptr)
+
+
+def native_a515(gameplay_pool: ObjectPool, cursor_95da: int, effect_pool: ObjectPool, cursor_a43a: int,
+                source_x: int, source_y: int, a960: int, a97e: int) -> A515LinkSpawn | None:
+    """Pure WHOLE 1010:A515 linked-anchor spawn (the counter-driven link weapon).
+
+    Gated by ``DS:A960 != 0`` and ``DS:A97E != 1``.  Allocates a free gameplay slot with the raw 7547
+    finder (advancing DS:95DA), anchors it at ``{X = source_x + 0xA, Y = source_y + 0xA}`` (A571, no
+    align), then runs the :func:`native_b15a_scan` link scan over the effect pool (advancing DS:A43A).  If
+    the scan finds a target the slot is ACTIVATED with A515's 9 word overrides (active 1, scan_flag 0,
+    hazard 2, logic_id 0Ah, substate 1, scan_enable 1, the anchored X/Y, and acquired_target_ptr = the
+    found offset) over its stale prior contents, and A97E += 1 / A960 -= 1; if it finds nothing the slot
+    stays inactive (no spawn) and the counters are unchanged -- but both cursors still advanced.  Returns
+    an :class:`A515LinkSpawn`, or None when a gate is closed (immediate ret, no side effects) or the pool
+    is full (the 7550 recycle is unmodelled).  The BEFF=11h sound is the caller's, not modelled here."""
+    if (a960 & 0xFFFF) == 0x0000 or (a97e & 0xFFFF) == A515_GATE_A97E_BLOCK:
+        return None  # gate closed -> A515 rets immediately, no side effects
+    alloc = object_pool_find_free(gameplay_pool, cursor_95da)
+    if alloc.offset is None:
+        return None  # 7547 full-pool recycle (the 7550 path) is unmodelled
+    found, new_a43a = native_b15a_scan(effect_pool, cursor_a43a)
+    if found is None:
+        # B15A found no link target: the 7547 slot stays inactive (no spawn), counters unchanged.
+        return A515LinkSpawn(slot_offset=None, slot_words=None, cursor_95da=alloc.cursor,
+                             cursor_a43a=new_a43a, a97e=a97e & 0xFFFF, a960=a960 & 0xFFFF)
+    index = (((alloc.offset - gameplay_pool.base) & 0xFFFF) // (gameplay_pool.stride & 0xFFFF))
+    words = list(gameplay_pool.words(index))   # the slot's stale prior contents (7547 does not seed)
+    words[0x00 >> 1] = A515_ACTIVE
+    words[0x02 >> 1] = (source_x + A515_ANCHOR_BIAS) & 0xFFFF   # A571 anchor X
+    words[0x04 >> 1] = (source_y + A515_ANCHOR_BIAS) & 0xFFFF   # A571 anchor Y
+    words[0x14 >> 1] = A515_SCAN_FLAG
+    words[0x16 >> 1] = A515_HAZARD_CLASS
+    words[0x18 >> 1] = A515_LOGIC_ID
+    words[0x1C >> 1] = A515_SUBSTATE
+    words[0x1E >> 1] = A515_SCAN_ENABLE
+    words[0x30 >> 1] = found & 0xFFFF                           # acquired_target_ptr
+    return A515LinkSpawn(slot_offset=alloc.offset, slot_words=tuple(words), cursor_95da=alloc.cursor,
+                         cursor_a43a=new_a43a, a97e=(a97e + 1) & 0xFFFF, a960=(a960 - 1) & 0xFFFF)
 
 
 # --- A067 child schedule walks (A3FF / A3CA) ------------------------------------------------------------

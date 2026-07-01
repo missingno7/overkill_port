@@ -243,6 +243,28 @@ class PlayerFanoutResult:
 
 
 @dataclass(frozen=True, slots=True)
+class A515LinkSpawn:
+    """Pure result of one 1010:A515 linked-anchor spawn attempt (the counter-driven link weapon).
+
+    Unlike the A4EA-seed spawns, A515 allocates a free slot with the raw 7547 finder (no seed stamp) and
+    then PARTIALLY overwrites it, so the un-set fields keep the slot's stale prior contents.  This carries
+    the whole resulting record so the partial stamp stays byte-faithful.
+
+    ``slot_offset``/``slot_words`` describe the activated slot (the prior record with A515's 9 word
+    overrides applied), or are both None when the B15A scan found no link target -- A515 then leaves the
+    7547-found slot inactive (no real spawn) but the cursors still advanced.  ``cursor_95da`` is the
+    gameplay allocator cursor after 7547; ``cursor_a43a`` is the B15A effect-scan cursor after the scan;
+    ``a97e``/``a960`` are the link counters afterwards (A97E += 1 / A960 -= 1 only on a found spawn)."""
+
+    slot_offset: "int | None"
+    slot_words: "tuple[int, ...] | None"
+    cursor_95da: int
+    cursor_a43a: int
+    a97e: int
+    a960: int
+
+
+@dataclass(frozen=True, slots=True)
 class LinkedEffectSpawnSeed7420:
     """Pure field values stamped into a freshly allocated effect slot by 1010:7420.
 
