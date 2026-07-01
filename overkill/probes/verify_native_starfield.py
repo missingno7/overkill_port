@@ -44,7 +44,11 @@ def main(argv) -> int:
     if not argv:
         print(__doc__)
         return 2
+    # Accept either a full demo path or a bare demo name (resolved under artifacts/demos, like the
+    # other producer probes + the verify_native_producers gate, which pass a bare name).
     demo_dir = Path(argv[0])
+    if not demo_dir.is_dir():
+        demo_dir = ROOT / "artifacts" / "demos" / argv[0]
     frames = int(argv[1]) if len(argv) > 1 else 400
 
     from dos_re.input_demo import InputDemoPlayback
