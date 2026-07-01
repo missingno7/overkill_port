@@ -7,10 +7,12 @@ from overkill.recovered.domain.menu import (
     INTERSTITIAL_TIMEOUT,
     LEVEL_SELECT_CELL_COUNT,
     MENU_ATTRACT_TIMEOUT,
+    MENU_TRANSITION_LATCH_SPACE_SCANCODE,
     InterstitialTickOutcome,
     LevelSelectFireResult,
     LevelSelectStep,
     MenuIdleOutcome,
+    MenuTransitionWaitOutcome,
 )
 
 
@@ -107,3 +109,25 @@ def step_interstitial_tick_d318(counter: int, *, fire_pressed: bool) -> Intersti
     if fire_pressed:
         return InterstitialTickOutcome(counter=new_counter, result="exit_fire")
     return InterstitialTickOutcome(counter=new_counter, result="loop")
+
+
+def step_menu_transition_wait_ce40(cx: int, latched_key: int, *, fire_pressed: bool) -> MenuTransitionWaitOutcome:
+    """Pure model of one ``1010:CE40`` menu-transition-wait iteration.
+
+    Checked FIRST, matching the ASM's own order: if ``latched_key`` (``DS:98C3``) is already
+    non-zero at entry -- set by THIS ROUTINE on an earlier iteration, or by an unrelated screen
+    sharing the same global -- exits immediately with no poll/wait this iteration.  Otherwise
+    polls, latches ``MENU_TRANSITION_LATCH_SPACE_SCANCODE`` into the (still-zero) ``latched_key``
+    when FIRE is pressed this iteration (the exit via that new latch happens on the NEXT call,
+    not this one -- the real ASM still runs its retrace wait + LOOP decrement before returning),
+    decrements ``cx`` (wraps mod 0x10000 like the real ``LOOP``), and exits once it reaches 0,
+    else loops.  The VGA-retrace wait (``50C9``) and the keyboard poll (``0162``) are pure
+    timing/input plumbing -- ``fire_pressed`` is this function's only input from the poll.
+    """
+    if latched_key != 0:
+        return MenuTransitionWaitOutcome(cx=cx, latched_key=latched_key, result="exit_latched")
+    new_latch = MENU_TRANSITION_LATCH_SPACE_SCANCODE if fire_pressed else latched_key
+    new_cx = (cx - 1) & 0xFFFF
+    if new_cx != 0:
+        return MenuTransitionWaitOutcome(cx=new_cx, latched_key=new_latch, result="loop")
+    return MenuTransitionWaitOutcome(cx=new_cx, latched_key=new_latch, result="exit_timeout")

@@ -65,3 +65,19 @@ class InterstitialTickOutcome:
 
     counter: int
     result: str  # "loop" | "exit_timeout" | "exit_fire"
+
+
+# 1010:CE40/CE5C -- the menu-transition input wait, reached after a dirty-cell panel finishes
+# presenting.  DS:98C3 is a SHARED "transition triggered" latch used across several unrelated
+# front-end screens (also polled directly by the boss-key any-key gate at 1010:07D0), not owned
+# exclusively by CE40 -- CE40 only sets it (to the Space scancode 0x39) when FIRE is pressed.
+MENU_TRANSITION_LATCH_SPACE_SCANCODE = 0x39
+
+
+@dataclass(frozen=True, slots=True)
+class MenuTransitionWaitOutcome:
+    """Result of one ``1010:CE40`` menu-transition-wait iteration."""
+
+    cx: int
+    latched_key: int  # DS:98C3 after this iteration
+    result: str  # "loop" | "exit_latched" | "exit_timeout"
