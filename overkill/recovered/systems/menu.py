@@ -3,7 +3,13 @@ shown before/around a level, sequenced the way ``systems/frame_loop.py`` sequenc
 """
 from __future__ import annotations
 
-from overkill.recovered.domain.menu import MENU_ATTRACT_TIMEOUT, MenuIdleOutcome
+from overkill.recovered.domain.menu import (
+    LEVEL_SELECT_CELL_COUNT,
+    MENU_ATTRACT_TIMEOUT,
+    LevelSelectFireResult,
+    LevelSelectStep,
+    MenuIdleOutcome,
+)
 
 
 def step_menu_idle_558b(attract_counter: int, *, shortcut_active: bool, fire_pressed: bool) -> MenuIdleOutcome | None:
@@ -33,3 +39,48 @@ def step_menu_idle_558b(attract_counter: int, *, shortcut_active: bool, fire_pre
     if fire_pressed:
         return MenuIdleOutcome(attract_counter=new_counter, result="exit")
     return MenuIdleOutcome(attract_counter=new_counter, result="loop")
+
+
+def step_level_select_page_down_d476(beda: int) -> LevelSelectStep:
+    """``1010:D476`` (the level-select screen's bit-0x01 direction handler): ``BEDA += 3``
+    (jump to the grid's other row/half), rejected (unchanged) when ``BEDA`` is already >= 3."""
+    b = beda & 0xFF
+    if b >= 3:
+        return LevelSelectStep(beda=beda, accepted=False)
+    return LevelSelectStep(beda=(b + 3) & 0xFF, accepted=True)
+
+
+def step_level_select_page_up_d480(beda: int) -> LevelSelectStep:
+    """``1010:D480`` (bit-0x02 direction handler): ``BEDA -= 3``, rejected when ``BEDA`` <= 2."""
+    b = beda & 0xFF
+    if b <= 2:
+        return LevelSelectStep(beda=beda, accepted=False)
+    return LevelSelectStep(beda=(b - 3) & 0xFF, accepted=True)
+
+
+def step_level_select_decrement_d488(beda: int) -> LevelSelectStep:
+    """``1010:D488`` (bit-0x08 direction handler): ``BEDA -= 1``, rejected when ``BEDA`` == 0."""
+    b = beda & 0xFF
+    if b == 0:
+        return LevelSelectStep(beda=beda, accepted=False)
+    return LevelSelectStep(beda=(b - 1) & 0xFF, accepted=True)
+
+
+def step_level_select_increment_d490(beda: int) -> LevelSelectStep:
+    """``1010:D490`` (bit-0x04 direction handler): ``BEDA += 1``, rejected when ``BEDA`` == 5
+    (:data:`~overkill.recovered.domain.menu.LEVEL_SELECT_UNPLAYABLE_CELL`, the grid's max index)."""
+    b = beda & 0xFF
+    if b == 5:
+        return LevelSelectStep(beda=beda, accepted=False)
+    return LevelSelectStep(beda=(b + 1) & 0xFF, accepted=True)
+
+
+def resolve_level_select_fire_d424(beda: int) -> LevelSelectFireResult:
+    """``1010:D424``: map the confirmed grid cell (``DS:BEDA``, 0-5) to ``DS:2356`` (the level
+    global) -- unchanged for cells 0-4, the ``0xFFFF`` sentinel for cell 5.  The ASM computes
+    this as ``ax = BEDA+1; if ax==6: ax=0; ax -= 1`` rather than a plain copy, which is what
+    produces the sentinel for BEDA==5 specifically (``6 -> wraps to 0 -> dec -> 0xFFFF``)."""
+    ax = ((beda & 0xFF) + 1) & 0xFFFF
+    if ax == LEVEL_SELECT_CELL_COUNT:
+        ax = 0
+    return LevelSelectFireResult(level=(ax - 1) & 0xFFFF)
