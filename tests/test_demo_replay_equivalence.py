@@ -25,6 +25,7 @@ both pytest and the pytest-free ``scripts/run_tests.py`` fail-safe runner.
 """
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -39,10 +40,22 @@ DEFAULT_BOUNDED_FRAMES = int(os.environ.get("OVERKILL_DEMO_VERIFY_FRAMES", "150"
 RUN_FULL = os.environ.get("OVERKILL_FULL_DEMO_VERIFY") == "1"
 
 
+def _is_cold_start(manifest_path: Path) -> bool:
+    """A cold-start demo has a null ``snapshot`` -- it replays from a fresh boot, not a start
+    snapshot, so it is verified by ``scripts/verify_cold_start_demo.py`` (which boots two fresh
+    runtimes), NOT this snapshot-based equivalence test.  Treat an unreadable manifest as non-cold-start
+    so the normal ``snapshot_path()`` assertion still surfaces the problem."""
+    try:
+        return json.loads(manifest_path.read_text(encoding="utf-8")).get("snapshot") is None
+    except (ValueError, OSError):
+        return False
+
+
 def _discover_demos() -> list[Path]:
     if not DEMOS_ROOT.is_dir():
         return []
-    return sorted(d for d in DEMOS_ROOT.glob("demo_*") if (d / "input_demo.json").is_file())
+    return sorted(d for d in DEMOS_ROOT.glob("demo_*")
+                  if (d / "input_demo.json").is_file() and not _is_cold_start(d / "input_demo.json"))
 
 
 DEMOS = _discover_demos()
