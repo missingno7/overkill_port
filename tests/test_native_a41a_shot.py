@@ -96,9 +96,13 @@ def test_pair_gated_by_a3a0():
     assert native_a41a_pair(_pool_free_slots01(), BASE, 3, 0x50, 0x60, 0x0001) is None   # gate closed
 
 
-def test_pair_needs_two_free_slots():
+def test_pair_one_free_slot_emits_committed_shot1():
+    # one free slot: shot1 takes it (cursor parks there); the second overflows to the 7550 recycle
+    # (unmodelled) without moving DS:95DA, so native emits the committed (slot1,) -- not None.
     pool = ObjectPool(base=BASE, stride=STRIDE, slots=(_FREE, _OCC, _OCC, _OCC))
-    assert native_a41a_pair(pool, BASE, 3, 0x50, 0x60, 0x0000) is None   # second alloc fails -> None
+    result = native_a41a_pair(pool, BASE, 3, 0x50, 0x60, 0x0000)
+    assert result is not None and len(result) == 1
+    assert result[0].slot_offset == BASE and result[0].new_cursor == BASE
 
 
 def test_pair_rejects_single_and_tail_states():
@@ -126,6 +130,10 @@ def test_a378_gated_by_a95e_and_a3a4():
     assert native_a378_followup(pool, BASE, 0x50, 0x60, 0x0001, 0x0001) is None   # A3A4 != 0 -> no spawn
 
 
-def test_a378_needs_two_free_slots():
+def test_a378_one_free_slot_emits_committed_shot1():
+    # one free slot: shot1 takes it (cursor parks there); the second overflows to the 7550 recycle
+    # (unmodelled) without moving DS:95DA, so native emits the committed (slot1,) -- not None.
     pool = ObjectPool(base=BASE, stride=STRIDE, slots=(_FREE, _OCC, _OCC, _OCC))
-    assert native_a378_followup(pool, BASE, 0x50, 0x60, 0x0001, 0x0000) is None   # second alloc fails
+    result = native_a378_followup(pool, BASE, 0x50, 0x60, 0x0001, 0x0000)
+    assert result is not None and len(result) == 1
+    assert result[0].slot_offset == BASE and result[0].new_cursor == BASE

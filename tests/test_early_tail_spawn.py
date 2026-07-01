@@ -121,6 +121,12 @@ def test_native_a1c8_full_pool_returns_none():
     assert native_a1c8_tail(pool, BASE, 0, 0x0050, 0x0060, 0x00, _read) is None
 
 
-def test_native_a1c8_one_free_slot_returns_none():
-    # only one free slot -> the first shot takes it, the second allocation fails -> None
-    assert native_a1c8_tail(_pool(1), BASE, 0, 0x0050, 0x0060, 0x00, _read) is None
+def test_native_a1c8_one_free_slot_emits_committed_shot1():
+    # only one free slot: the first shot takes it (cursor parks there); the second overflows to the 7550
+    # recycle (unmodelled) without moving DS:95DA, so native emits the committed (slot1,) -- not None.
+    result = native_a1c8_tail(_pool(1), BASE, 0, 0x0050, 0x0060, 0x00, _read)
+    assert result is not None and len(result) == 1
+    (slot1,) = result
+    assert slot1.slot_offset == BASE and slot1.new_cursor == BASE
+    assert (slot1.x_word, slot1.y_word) == (0x0058, 0x0064)
+    assert slot1.sprite_or_state == A1C8_SLOT1_SPRITE

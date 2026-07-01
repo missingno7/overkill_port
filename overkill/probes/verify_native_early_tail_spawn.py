@@ -97,11 +97,17 @@ def main(argv) -> int:
                         slot = ObjectSlotView(mem, ds, shot.slot_offset & 0xFFFF)
                         mismatches += [(f, getattr(slot, f), getattr(shot, f))
                                        for f in _FIELDS if getattr(slot, f) != getattr(shot, f)]
-                    bx = self.s.bx & 0xFFFF   # BX is the LAST allocated slot; the cursor parks there too
-                    if bx != shots[-1].slot_offset:
+                    bx = self.s.bx & 0xFFFF   # BX is the VM's LAST A4EA slot
+                    cursor = mem.rw(ds, CURSOR_95DA)
+                    # Normally BX is the last find_free slot -- where DS:95DA parks and which native predicts
+                    # (shots[-1]).  On a full pool the last A4EA RECYCLES (7550, unmodelled) into a slot that
+                    # does NOT move the cursor (bx != cursor); native returns only the committed find_free
+                    # shots (a partial, e.g. the A1C8 pair's first shot) and does not predict that recycle
+                    # slot, so cross-check BX only when no recycle happened.  DS:95DA is the authoritative check.
+                    if bx == cursor and bx != shots[-1].slot_offset:
                         mismatches.append(("slot_offset", bx, shots[-1].slot_offset))
-                    if mem.rw(ds, CURSOR_95DA) != shots[-1].new_cursor:
-                        mismatches.append(("new_cursor", mem.rw(ds, CURSOR_95DA), shots[-1].new_cursor))
+                    if cursor != shots[-1].new_cursor:
+                        mismatches.append(("new_cursor", cursor, shots[-1].new_cursor))
                     res["calls"] += 1
                     if not mismatches:
                         res["ok"] += 1

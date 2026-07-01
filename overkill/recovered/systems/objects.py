@@ -1535,16 +1535,18 @@ def _player_shot_slot(seed: ObjectSpawnSeedA4EA, alloc: FreeSlotAllocation,
 
 def native_a41a_pair(pool: ObjectPool, cursor: int, state: int,
                      source_x: int, source_y: int, a3a0: int
-                     ) -> tuple[PlayerShotSpawn, PlayerShotSpawn] | None:
+                     ) -> tuple[PlayerShotSpawn, ...] | None:
     """Pure WHOLE A41A two-slot player-shot pair (the A958 state 3/4 cs:A42C targets A464/A438).
 
     Gated by ``DS:A3A0 == 0`` (no spawn otherwise).  Allocates two gameplay slots -- the first is marked
     active so :func:`object_pool_find_free` skips it for the second (the VM stamps the A4EA seed, which
     sets ``active``, before the second allocation) -- each stamped with the A4EA seed + ``{X, Y =
     source_y + 4}`` and the per-state ``logic_id`` (+18) / sprite (+8) overrides (state 3 -> 7/37h, state
-    4 -> 8/35h); the second shot's X is the first's + 8.  Returns ``(slot1, slot2)`` or None (gate closed,
-    or a full pool -- the 7550 recycle is unmodelled).  The A970 += 2 counter is the fanout caller's, not
-    part of the per-shot stamp."""
+    4 -> 8/35h); the second shot's X is the first's + 8.  Returns the committed shots -- ``(slot1, slot2)``,
+    or ``(slot1,)`` when the pool fills after the first (the VM parks DS:95DA at slot1 and recycles the
+    overflow via 7550 without moving the cursor -- that recycle target is unmodelled) -- or None (gate
+    closed, or a full pool at the first shot).  The A970 += 2 counter is the fanout caller's, not part of
+    the per-shot stamp."""
     st = state & 0xFFFF
     if st not in A41A_PAIR_STATES:
         return None
@@ -1561,7 +1563,11 @@ def native_a41a_pair(pool: ObjectPool, cursor: int, state: int,
     pool1 = pool.with_word(index1, 0x00, seed.active_word)  # the seed marks slot1 active before alloc 2
     alloc2 = object_pool_find_free(pool1, alloc1.cursor)
     if alloc2.offset is None:
-        return None
+        # Full pool for the SECOND shot: the VM has already written slot1 via the first A4EA and
+        # parked DS:95DA at its slot; the second A4EA recycles an existing slot (7550) WITHOUT moving
+        # the cursor.  Emit the committed shot1 with the cursor parked at its slot; only the overflow
+        # shot's 7550 recycle target is the unmodelled frontier (witnessed on A2F6, L6_defeated_by_boss).
+        return (slot1,)
     slot2 = _player_shot_slot(seed, alloc2, (source_x + A41A_PAIR_X_OFFSET) & 0xFFFF, y,
                               stamp_logic, stamp_sprite)
     return (slot1, slot2)
@@ -1577,15 +1583,16 @@ A378_SLOT2_LOGIC = 0x0005                              # second shot logic_id (+
 
 
 def native_a378_followup(pool: ObjectPool, cursor: int, source_x: int, source_y: int,
-                         a95e: int, a3a4: int) -> tuple[PlayerShotSpawn, PlayerShotSpawn] | None:
+                         a95e: int, a3a4: int) -> tuple[PlayerShotSpawn, ...] | None:
     """Pure WHOLE A378 SI-follow-up player-shot pair (the A3FF post-A41A two-shot spawn).
 
     Gated by ``DS:A95E != 0`` and ``DS:A3A4 == 0`` (no spawn otherwise; the caller also gates SI != FFFF).
     Allocates two gameplay slots (threading the cursor + the first's active word, like the A41A pair), each
     stamped with the A4EA seed + ``{X = source_x + 4, Y = (source_y + 4) & ~3, sprite 8}``; the first
-    shot's ``logic_id`` (+18) is 6, the second's 5.  Returns ``(slot1, slot2)`` or None (gated, or a full
-    pool -- the 7550 recycle is unmodelled).  The A976 += 1-per-slot counter and the BEFF stamp are the
-    fanout caller's, not part of the per-shot stamp."""
+    shot's ``logic_id`` (+18) is 6, the second's 5.  Returns the committed shots (``(slot1, slot2)``, or
+    ``(slot1,)`` when the pool fills after the first -- the overflow shot's 7550 recycle stays unmodelled)
+    or None (gated, or a full pool at the first shot).  The A976 += 1-per-slot counter and the BEFF stamp
+    are the fanout caller's, not part of the per-shot stamp."""
     if (a95e & 0xFFFF) == 0x0000 or (a3a4 & 0xFFFF) != 0x0000:
         return None  # the A95E / A3A4 gates are closed -> no spawn
     seed = object_spawn_seed_a4ea()
@@ -1599,7 +1606,11 @@ def native_a378_followup(pool: ObjectPool, cursor: int, source_x: int, source_y:
     pool1 = pool.with_word(index1, 0x00, seed.active_word)  # the seed marks slot1 active before alloc 2
     alloc2 = object_pool_find_free(pool1, alloc1.cursor)
     if alloc2.offset is None:
-        return None
+        # Full pool for the SECOND shot: the VM has already written slot1 via the first A4EA and
+        # parked DS:95DA at its slot; the second A4EA recycles an existing slot (7550) WITHOUT moving
+        # the cursor.  Emit the committed shot1 with the cursor parked at its slot; only the overflow
+        # shot's 7550 recycle target is the unmodelled frontier (witnessed on A2F6, L6_defeated_by_boss).
+        return (slot1,)
     slot2 = _player_shot_slot(seed, alloc2, x, y, A378_SLOT2_LOGIC, A378_SPRITE)
     return (slot1, slot2)
 
@@ -1613,15 +1624,16 @@ A584_SLOT2_LOGIC = 0x0006                              # second slot logic_id (+
 
 
 def native_a584(pool: ObjectPool, cursor: int, source_x: int, source_y: int,
-                a95e: int, a3a4: int) -> tuple[PlayerShotSpawn, PlayerShotSpawn] | None:
+                a95e: int, a3a4: int) -> tuple[PlayerShotSpawn, ...] | None:
     """Pure WHOLE A584 dual-anchor player-spawn pair (the A067 FULL-fanout terrain-crawler spawner).
 
     Gated by ``DS:A95E != 0`` and ``DS:A3A4 == 0`` (A3A4 counts live logic_id 5/6 crawlers, so this only
     re-seeds the pair when none are alive).  Allocates two gameplay slots (threading the cursor + the
     first's active word, like the A41A pair), each A571-anchored at ``{X = source_x + 0xA, Y = (source_y +
     0xA) & ~3}`` with the A4EA seed + sprite 8; the first slot's ``logic_id`` (+18) is 5, the second's 6.
-    Returns ``(slot1, slot2)`` or None (gated, or a full pool -- the 7550 recycle is unmodelled).  The
-    A976 += 1-per-slot counter and the BEFF stamp are the caller's, not part of the per-slot stamp."""
+    Returns the committed shots (``(slot1, slot2)``, or ``(slot1,)`` when the pool fills after the first --
+    the overflow shot's 7550 recycle stays unmodelled) or None (gated, or a full pool at the first shot).
+    The A976 += 1-per-slot counter and the BEFF stamp are the caller's, not part of the per-slot stamp."""
     if (a95e & 0xFFFF) == 0x0000 or (a3a4 & 0xFFFF) != 0x0000:
         return None  # the A95E / A3A4 gates are closed -> no spawn
     seed = object_spawn_seed_a4ea()
@@ -1635,7 +1647,11 @@ def native_a584(pool: ObjectPool, cursor: int, source_x: int, source_y: int,
     pool1 = pool.with_word(index1, 0x00, seed.active_word)  # the seed marks slot1 active before alloc 2
     alloc2 = object_pool_find_free(pool1, alloc1.cursor)
     if alloc2.offset is None:
-        return None
+        # Full pool for the SECOND shot: the VM has already written slot1 via the first A4EA and
+        # parked DS:95DA at its slot; the second A4EA recycles an existing slot (7550) WITHOUT moving
+        # the cursor.  Emit the committed shot1 with the cursor parked at its slot; only the overflow
+        # shot's 7550 recycle target is the unmodelled frontier (witnessed on A2F6, L6_defeated_by_boss).
+        return (slot1,)
     slot2 = _player_shot_slot(seed, alloc2, x, y, A584_SLOT2_LOGIC, A584_SPRITE)
     return (slot1, slot2)
 
@@ -1660,7 +1676,8 @@ def native_a114(pool: ObjectPool, cursor: int, a3a6: int, read_ds_word) -> tuple
     ``{X0 = [ptr+2], Y0 = [ptr+4]}``, then spawns three A4EA-seed slots (sprite 32h kept, ``logic_id`` 0Ch,
     ``substate`` 7) at the per-shot ``{X0+dx, Y0+dy}`` with the per-shot direction (shot 1 keeps the seed's
     0), threading the cursor + each slot's active word so the next :func:`object_pool_find_free` skips it.
-    Returns the three shots or None (gate closed, or a full pool -- the 7550 recycle is unmodelled).  The
+    Returns the committed shots (up to three; a mid-burst overflow keeps the shots already placed, only
+    its 7550 recycle target being unmodelled) or None (gate closed, or a full pool at the first shot).  The
     A974 += 1-per-shot counter and the BEFF stamp are the caller's, not part of the per-shot stamp."""
     if (a3a6 & 0xFFFF) != 0x0000:
         return None  # the A3A6 gate is closed -> no spawn
@@ -1673,14 +1690,17 @@ def native_a114(pool: ObjectPool, cursor: int, a3a6: int, read_ds_word) -> tuple
     for dx, dy, direction in A114_SHOTS:
         alloc = object_pool_find_free(p, cur)
         if alloc.offset is None:
-            return None  # pool full -> the 7550 recycle path (not modelled)
+            # Full pool mid-burst: shots already placed keep their slots + parked cursor; the VM's next
+            # A4EA recycles (7550) without moving DS:95DA.  Stop at the committed shots (return None only
+            # if the pool was full for the very first shot, i.e. nothing was find_free-allocated).
+            break
         shots.append(_player_shot_slot(
             seed, alloc, (x0 + dx) & 0xFFFF, (y0 + dy) & 0xFFFF,
             A114_LOGIC, seed.sprite_or_state, direction=direction, substate=A114_SUBSTATE))
         index = (((alloc.offset - p.base) & 0xFFFF) // (p.stride & 0xFFFF))
         p = p.with_word(index, 0x00, seed.active_word)          # seed marks the slot active before the next alloc
         cur = alloc.cursor
-    return tuple(shots)
+    return tuple(shots) if shots else None
 
 
 # A0E8 early-level muzzle-projected pair tails (the early-scroll versions of the A41A 3/4 pair):
@@ -1694,14 +1714,16 @@ A0E8_PAIR_X_OFFSET = 0x0008     # the second slot's X is the first's + 8 (the A3
 
 def native_a0e8_pair(pool: ObjectPool, cursor: int, state: int, source_index: int,
                      source_x: int, source_y: int, a3a0: int, read_ds_word
-                     ) -> tuple[PlayerShotSpawn, PlayerShotSpawn] | None:
+                     ) -> tuple[PlayerShotSpawn, ...] | None:
     """Pure WHOLE A2F6 (A958==4) / A337 (A958==3) early-level two-slot muzzle pair.
 
     These are the A0E8 (early-scroll) counterparts of the A41A 3/4 pair: gated by ``DS:A3A0 == 0``, they
     spawn two A4EA-seed slots at the A1AE-projected muzzle (:func:`a1ae_project`), each stamped with the
     state's ``logic_id`` (+18) / sprite (+08) override (state 4 -> 8/35h, state 3 -> 7/37h); the second
-    slot's X is the first's + 8.  Returns ``(slot1, slot2)`` or None (not a pair state, gate closed, or a
-    full pool -- the 7550 recycle is unmodelled).  The A970 += 2 counter is the caller's, not the stamp."""
+    slot's X is the first's + 8.  Returns the committed shots (``(slot1, slot2)``, or ``(slot1,)`` when the
+    pool fills after the first -- the overflow shot's 7550 recycle stays unmodelled) or None (not a pair
+    state, gate closed, or a full pool at the first shot).  The A970 += 2 counter is the caller's, not the
+    stamp."""
     st = state & 0xFFFF
     if st not in A0E8_PAIR_TARGETS:
         return None
@@ -1718,7 +1740,11 @@ def native_a0e8_pair(pool: ObjectPool, cursor: int, state: int, source_index: in
     pool1 = pool.with_word(index1, 0x00, seed.active_word)  # the seed marks slot1 active before alloc 2
     alloc2 = object_pool_find_free(pool1, alloc1.cursor)
     if alloc2.offset is None:
-        return None
+        # Full pool for the SECOND shot: the VM has already written slot1 via the first A4EA and
+        # parked DS:95DA at its slot; the second A4EA recycles an existing slot (7550) WITHOUT moving
+        # the cursor.  Emit the committed shot1 with the cursor parked at its slot; only the overflow
+        # shot's 7550 recycle target is the unmodelled frontier (witnessed on A2F6, L6_defeated_by_boss).
+        return (slot1,)
     slot2 = _player_shot_slot(seed, alloc2, (x + A0E8_PAIR_X_OFFSET) & 0xFFFF, y, stamp_logic, stamp_sprite)
     return (slot1, slot2)
 
@@ -1812,7 +1838,10 @@ def native_a2a0(pool: ObjectPool, cursor: int, source_index: int, source_x: int,
     pool1 = pool.with_word(index1, 0x00, seed.active_word)  # the seed marks slot1 active before alloc 2
     alloc2 = object_pool_find_free(pool1, alloc1.cursor)
     if alloc2.offset is None:
-        return None
+        # Full pool for the second shot.  A2A0 is the a958==5 child, DEAD in the corpus (never
+        # dispatched), and its overflow appends the recycled slot to the 26-word anchor list, so the
+        # partial result is not a plain (slot1,) tuple -- leave that recycle-with-list case unmodelled.
+        return None  # dead path (a958>=5): partial-list 7550 recycle semantics unmodelled
     slot2 = _player_shot_slot(seed, alloc2, a1ae_x, (y_base + A2A0_Y_BIAS) & 0xFFFF,
                               A2A0_LOGIC, A2A0_SLOT2_SPRITE)
     list_words = ((slot1.slot_offset & 0xFFFF, slot2.slot_offset & 0xFFFF)
@@ -1834,8 +1863,8 @@ def _a41a_dispatch(pool: ObjectPool, cursor: int, fire_state: int,
                    source_x: int, source_y: int, a3ec: int, a3a0: int) -> tuple[PlayerShotSpawn, ...]:
     """One A41A jump-table dispatch (by the fire state DS:A958): the 0/1/2 single variant or the 3/4 pair.
 
-    Returns the tuple of shots A41A produced (0 for a full pool / state 5 / the gated pair, 1 single, 2
-    pair)."""
+    Returns the tuple of shots A41A produced (0 for a full pool at the first shot / state 5 / the gated
+    pair, 1 single, 2 pair -- or 1 for a pair whose second shot overflows to the unmodelled 7550 recycle)."""
     st = fire_state & 0xFFFF
     if st in _A41A_SINGLE_STATES:
         shot = native_a41a_shot(pool, cursor, st, source_x, source_y, a3ec)
@@ -1957,12 +1986,13 @@ A1C8_SECOND_SHOT = {  # input bit -> (direction, sprite)
 
 
 def native_a1c8_tail(pool: ObjectPool, cursor: int, source_index: int, source_x: int, source_y: int,
-                     input_98be: int, read_ds_word) -> tuple[PlayerShotSpawn, PlayerShotSpawn] | None:
+                     input_98be: int, read_ds_word) -> tuple[PlayerShotSpawn, ...] | None:
     """Pure 1010:A1C8 early fire tail (fire state DS:A958 == 2): two A4EA-seed shots at the same A1AE-
     projected muzzle.  The first shot keeps the seed direction and sprite 18h; the second's direction and
     sprite come from the input DS:98BE -- bit 1 set -> 7/1Fh, else bit 0 set -> 1/19h, else 0/18h.  The
-    second slot threads off the first (its active word is set before the second allocation).  Returns None
-    on a full pool (the 7550 recycle is unmodelled)."""
+    second slot threads off the first (its active word is set before the second allocation).  Returns the
+    committed shots (``(slot1, slot2)``, or ``(slot1,)`` when the pool fills after the first -- the overflow
+    shot's 7550 recycle stays unmodelled) or None on a full pool at the first shot."""
     alloc1 = object_pool_find_free(pool, cursor)
     if alloc1.offset is None:
         return None
@@ -1973,7 +2003,11 @@ def native_a1c8_tail(pool: ObjectPool, cursor: int, source_index: int, source_x:
     pool1 = pool.with_word(index1, 0x00, seed.active_word)
     alloc2 = object_pool_find_free(pool1, alloc1.cursor)
     if alloc2.offset is None:
-        return None
+        # Full pool for the SECOND shot: the VM has already written slot1 via the first A4EA and
+        # parked DS:95DA at its slot; the second A4EA recycles an existing slot (7550) WITHOUT moving
+        # the cursor.  Emit the committed shot1 with the cursor parked at its slot; only the overflow
+        # shot's 7550 recycle target is the unmodelled frontier (witnessed on A2F6, L6_defeated_by_boss).
+        return (slot1,)
     flags = input_98be & 0x00FF
     if flags & A1C8_INPUT_BIT1:
         direction, sprite = A1C8_SECOND_SHOT[A1C8_INPUT_BIT1]
@@ -2078,6 +2112,16 @@ def native_a067_full_fanout(gameplay_pool: ObjectPool, effect_pool: ObjectPool, 
         return None  # a958 >= 5 -> the dead A2A0/44AF tail; leave the whole frame to the VM
     spawns.extend(a0e8.spawns)
     p, c = _thread_player_shots(p, c, a0e8.spawns)
+
+    # Overflow guard: once the fan-out saturates the gameplay pool, every further shot the VM fires goes
+    # through the 7550 recycle (unmodelled), which reuses an EXISTING slot without moving DS:95DA and can
+    # overwrite a slot this fan-out already predicted (witnessed: the A2F6 pair's second shot recycling
+    # into slot 0, over an A41A-pair shot the mirror/side walk placed there).  A saturated pool means the
+    # final pool is no longer predictable slot-for-slot, so decline and leave the frame VM-owned -- the
+    # same stance as the a958 >= 5 dead tail.  ``a0e8_subroutine`` never predicts the recycled slot in its
+    # narrow window, so it stays byte-exact there; only this whole-pool capstone must bail.
+    if spawns and all(p.active_word(i) != 0 for i in range(len(p))):
+        return None
 
     return A067FanoutResult(spawns=tuple(spawns), final_cursor=c & 0xFFFF,
                             a3a0=a3a0, a3a2=a3a2, a3a4=a3a4, a3a6=a3a6,

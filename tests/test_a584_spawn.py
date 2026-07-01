@@ -56,6 +56,12 @@ def test_native_a584_full_pool_returns_none():
     assert native_a584(pool, BASE, 0x0050, 0x0060, a95e=1, a3a4=0) is None
 
 
-def test_native_a584_one_free_slot_returns_none():
-    # the first shot takes the only slot; the second allocation fails -> None
-    assert native_a584(_pool(1), BASE, 0x0050, 0x0060, a95e=1, a3a4=0) is None
+def test_native_a584_one_free_slot_emits_committed_shot1():
+    # the first shot takes the only slot (cursor parks there); the second overflows to the 7550 recycle
+    # (unmodelled) without moving DS:95DA, so native emits the committed (slot1,) -- not None.
+    result = native_a584(_pool(1), BASE, 0x0050, 0x0060, a95e=1, a3a4=0)
+    assert result is not None and len(result) == 1
+    (slot1,) = result
+    assert slot1.slot_offset == BASE and slot1.new_cursor == BASE
+    assert (slot1.x_word, slot1.y_word) == (0x005A, 0x0068)
+    assert slot1.logic_id == A584_SLOT1_LOGIC and slot1.sprite_or_state == A584_SPRITE

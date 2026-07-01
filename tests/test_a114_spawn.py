@@ -54,6 +54,11 @@ def test_native_a114_full_pool_returns_none():
     assert native_a114(pool, BASE, 0, _read) is None
 
 
-def test_native_a114_two_free_slots_returns_none():
-    # only two free slots -> the third allocation fails -> None (no partial burst)
-    assert native_a114(_pool(2), BASE, 0, _read) is None
+def test_native_a114_two_free_slots_emits_committed_two():
+    # only two free slots: shots 1-2 are find_free-allocated (cursor parks on shot 2); the third overflows
+    # to the 7550 recycle (unmodelled) without moving DS:95DA, so native emits the committed two -- not None.
+    shots = native_a114(_pool(2), BASE, 0, _read)
+    assert shots is not None and len(shots) == 2
+    assert [s.slot_offset for s in shots] == [BASE, BASE + STRIDE]
+    assert shots[-1].new_cursor == BASE + STRIDE
+    assert all(s.logic_id == A114_LOGIC for s in shots)

@@ -164,9 +164,11 @@ def native_a067(pool: ObjectPool, cursor: int, *, input_98be: int, latch_a980: i
     spawn.  This composes the EARLY tails (scroll DS:2350 <= B6h & BDAC == 0): A958 == 2 -> the A1C8 pair,
     else the A19F single, each at the A1AE muzzle from the firing object ``{source_index, source_x,
     source_y}``.  Returns an :class:`A067Result` (the DS:A980 write-back + the ordered shots + the final
-    DS:95DA cursor) for the gate-only and EARLY frames; returns None for the FULL fan-out
-    (A515/A584/A3FF/A3CA/A0E8 -- a separate, larger composition) or a full pool (the 7550 recycle is
-    unmodelled), so the caller/probe leaves those frames to the VM."""
+    DS:95DA cursor) for the gate-only and EARLY frames -- including the committed partial when the A1C8
+    pair fills the pool after its first shot (the second shot's 7550 recycle stays unmodelled but the
+    cursor is byte-exact); returns None for the FULL fan-out (A515/A584/A3FF/A3CA/A0E8 -- a separate,
+    larger composition) or a full pool at the first shot (nothing find_free-allocated, the 7550 recycle
+    is unmodelled), so the caller/probe leaves those frames to the VM."""
     gate = action_fanout_gate(input_98be, latch_a980, repeat_9790, state_232a)
     if not gate.runs:
         # not firing / held-non-repeatable: only DS:A980 is written, nothing spawns, the cursor is untouched
