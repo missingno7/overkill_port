@@ -1404,18 +1404,21 @@ A41A_PAIR_X_OFFSET = 0x0008                            # the second shot's X = t
 
 def _player_shot_slot(seed: ObjectSpawnSeedA4EA, alloc: FreeSlotAllocation,
                       x: int, y: int, logic_id: int, sprite: int,
-                      direction: int | None = None) -> PlayerShotSpawn:
+                      direction: int | None = None, substate: int | None = None) -> PlayerShotSpawn:
     """One A41A-family player-shot slot: the A4EA seed with X/Y + logic_id/sprite overrides applied.
 
     ``direction`` overrides the seed's ``direction_or_step`` when given (A1C8's second shot picks its
-    direction from the input bits); the A41A/A378 callers leave it None to keep the seed's direction."""
+    direction from the input bits); ``substate`` overrides the seed's ``substate`` (A114's burst stamps 7);
+    the A41A/A378 callers leave both None to keep the seed's values."""
     return PlayerShotSpawn(
         slot_offset=alloc.offset, new_cursor=alloc.cursor,
         active_word=seed.active_word, scan_enable_or_solid=seed.scan_enable_or_solid,
         direction_or_step=(seed.direction_or_step if direction is None else direction & 0xFFFF),
         sprite_or_state=sprite & 0xFFFF,
         scan_flag=seed.scan_flag, hazard_class=seed.hazard_class,
-        logic_id=logic_id & 0xFFFF, substate=seed.substate, x_word=x & 0xFFFF, y_word=y & 0xFFFF,
+        logic_id=logic_id & 0xFFFF,
+        substate=(seed.substate if substate is None else substate & 0xFFFF),
+        x_word=x & 0xFFFF, y_word=y & 0xFFFF,
     )
 
 
@@ -1524,6 +1527,49 @@ def native_a584(pool: ObjectPool, cursor: int, source_x: int, source_y: int,
         return None
     slot2 = _player_shot_slot(seed, alloc2, x, y, A584_SLOT2_LOGIC, A584_SPRITE)
     return (slot1, slot2)
+
+
+# A114 three-shot burst (the a96e-schedule weapon; the FULL-fanout be06==8 child).  All three shots share
+# the A4EA seed (sprite 32h kept) + logic_id 0Ch + substate 7; each reads the schedule entry [A96E] for
+# its X0=[ptr+2]/Y0=[ptr+4] base, then applies a per-shot {dx, dy, direction} (shot 1 keeps the seed dir).
+A114_LOGIC = 0x000C
+A114_SUBSTATE = 0x0007
+A114_SCHEDULE_PTR = 0xA96E
+A114_SHOTS = (
+    (-0x0006, +0x0004, None),      # shot 1: X0-6, Y0+4, seed direction
+    (-0x0002, -0x0004, 0x0007),    # shot 2: X0-2, Y0-4, direction 7
+    (-0x0002, +0x000C, 0x0001),    # shot 3: X0-2, Y0+0Ch, direction 1
+)
+
+
+def native_a114(pool: ObjectPool, cursor: int, a3a6: int, read_ds_word) -> tuple[PlayerShotSpawn, ...] | None:
+    """Pure WHOLE 1010:A114 three-shot burst (the a96e-schedule / be06==8 fanout child).
+
+    Gated by ``DS:A3A6 == 0``.  Reads the schedule entry pointer ``DS:A96E`` once for the shot base
+    ``{X0 = [ptr+2], Y0 = [ptr+4]}``, then spawns three A4EA-seed slots (sprite 32h kept, ``logic_id`` 0Ch,
+    ``substate`` 7) at the per-shot ``{X0+dx, Y0+dy}`` with the per-shot direction (shot 1 keeps the seed's
+    0), threading the cursor + each slot's active word so the next :func:`object_pool_find_free` skips it.
+    Returns the three shots or None (gate closed, or a full pool -- the 7550 recycle is unmodelled).  The
+    A974 += 1-per-shot counter and the BEFF stamp are the caller's, not part of the per-shot stamp."""
+    if (a3a6 & 0xFFFF) != 0x0000:
+        return None  # the A3A6 gate is closed -> no spawn
+    schedule = read_ds_word(A114_SCHEDULE_PTR) & 0xFFFF          # si = [A96E]
+    x0 = read_ds_word((schedule + 0x02) & 0xFFFF)               # [si+2]
+    y0 = read_ds_word((schedule + 0x04) & 0xFFFF)               # [si+4]
+    seed = object_spawn_seed_a4ea()
+    shots: list[PlayerShotSpawn] = []
+    p, cur = pool, cursor
+    for dx, dy, direction in A114_SHOTS:
+        alloc = object_pool_find_free(p, cur)
+        if alloc.offset is None:
+            return None  # pool full -> the 7550 recycle path (not modelled)
+        shots.append(_player_shot_slot(
+            seed, alloc, (x0 + dx) & 0xFFFF, (y0 + dy) & 0xFFFF,
+            A114_LOGIC, seed.sprite_or_state, direction=direction, substate=A114_SUBSTATE))
+        index = (((alloc.offset - p.base) & 0xFFFF) // (p.stride & 0xFFFF))
+        p = p.with_word(index, 0x00, seed.active_word)          # seed marks the slot active before the next alloc
+        cur = alloc.cursor
+    return tuple(shots)
 
 
 # A0E8 early-level muzzle-projected pair tails (the early-scroll versions of the A41A 3/4 pair):
