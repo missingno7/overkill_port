@@ -4,9 +4,11 @@ from __future__ import annotations
 from overkill.recovered.domain.object_slots import ObjectPool
 from overkill.recovered.systems.objects import (
     A1AE_OFFSET_TABLE,
+    A18A_SPRITE,
     A1C8_SECOND_SHOT,
     A1C8_SLOT1_SPRITE,
     a1ae_project,
+    native_a18a,
     native_a19f_tail,
     native_a1c8_tail,
     object_spawn_seed_a4ea,
@@ -50,6 +52,23 @@ def test_native_a19f_seed_plus_projected_coords():
 def test_native_a19f_full_pool_returns_none():
     pool = ObjectPool(base=BASE, stride=STRIDE, slots=((0x0001,) + (0x0000,) * 0x1B,))   # occupied
     assert native_a19f_tail(pool, BASE, 0, 0x0050, 0x0060, lambda o: 0) is None
+
+
+# --- A18A (the a958==1 A0E8-table tail): A19F with sprite 33h ---
+
+def test_native_a18a_seed_shot_with_sprite_33():
+    seed = object_spawn_seed_a4ea()
+    shot = native_a18a(_pool(1), BASE, 0, 0x0050, 0x0060, _read)   # index 0 -> +8/+4 offsets
+    assert shot is not None
+    assert (shot.x_word, shot.y_word) == (0x0058, 0x0064)          # same A1AE muzzle as A19F
+    assert shot.sprite_or_state == A18A_SPRITE == 0x0033           # the only difference from A19F
+    assert (shot.logic_id, shot.direction_or_step) == (seed.logic_id, seed.direction_or_step)
+    assert shot.slot_offset == BASE and shot.new_cursor == BASE
+
+
+def test_native_a18a_full_pool_returns_none():
+    pool = ObjectPool(base=BASE, stride=STRIDE, slots=((0x0001,) + (0x0000,) * 0x1B,))   # occupied
+    assert native_a18a(pool, BASE, 0, 0x0050, 0x0060, _read) is None
 
 
 # --- A1C8 (the A958 == 2 early tail): two threaded shots at the same A1AE muzzle ---

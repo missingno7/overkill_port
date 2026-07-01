@@ -1820,6 +1820,22 @@ def native_a19f_tail(pool: ObjectPool, cursor: int, source_index: int, source_x:
     return _player_shot_slot(seed, alloc, x, y, seed.logic_id, seed.sprite_or_state)
 
 
+A18A_SPRITE = 0x0033  # the a958==1 A0E8-table tail: like A19F but sprite 33h
+
+
+def native_a18a(pool: ObjectPool, cursor: int, source_index: int, source_x: int, source_y: int,
+                read_ds_word) -> PlayerShotSpawn | None:
+    """Pure 1010:A18A fire tail (the A958==1 A0E8-table target): one A4EA-seed shot at the A1AE muzzle,
+    sprite 33h.  Identical to :func:`native_a19f_tail` but for the sprite override (A18A stamps 33h where
+    A19F keeps the seed's 32h).  Returns None on a full pool (the 7550 recycle is unmodelled)."""
+    alloc = object_pool_find_free(pool, cursor)
+    if alloc.offset is None:
+        return None
+    seed = object_spawn_seed_a4ea()
+    x, y = a1ae_project(read_ds_word, source_index, source_x, source_y)
+    return _player_shot_slot(seed, alloc, x, y, seed.logic_id, A18A_SPRITE)
+
+
 # A1C8 (the A958 == 2 early tail) second-shot direction/sprite, picked from the input DS:98BE.
 A1C8_SLOT1_SPRITE = 0x0018
 A1C8_INPUT_BIT1, A1C8_INPUT_BIT0 = 0x02, 0x01

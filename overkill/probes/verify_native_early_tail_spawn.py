@@ -26,11 +26,15 @@ from overkill.frame_verify import FrameVerifyConfig, run_frame_verifier  # noqa:
 from overkill.gameplay.player_shot_spawn_gap import set_raise_on_encounter  # noqa: E402
 from overkill.input_waits import pump_demo_frame  # noqa: E402
 from overkill.recovered.domain.object_slots import ObjectPool  # noqa: E402
-from overkill.recovered.systems.objects import native_a19f_tail, native_a1c8_tail  # noqa: E402
+from overkill.recovered.systems.objects import (  # noqa: E402
+    native_a18a,
+    native_a19f_tail,
+    native_a1c8_tail,
+)
 from overkill.recovered.views.object_slots import ObjectSlotView  # noqa: E402
 
 CS = 0x1010
-A19F_ENTRY, A1C8_ENTRY = 0xA19F, 0xA1C8
+A19F_ENTRY, A1C8_ENTRY, A18A_ENTRY = 0xA19F, 0xA1C8, 0xA18A
 CURSOR_95DA = 0x95DA
 INPUT_98BE = 0x98BE
 SRC_INDEX_BP, SRC_X_BP, SRC_Y_BP = 0x08, 0x02, 0x04   # the firing object's +8 / +2 / +4 (SS:BP)
@@ -51,7 +55,7 @@ def main(argv) -> int:
     snapshot = demo.snapshot_path()
     video = str(demo.manifest.get("metadata", {}).get("video", "tandy"))
 
-    res = {"calls": 0, "ok": 0, "fail": [], "a19f": 0, "a1c8": 0}
+    res = {"calls": 0, "ok": 0, "fail": [], "a19f": 0, "a1c8": 0, "a18a": 0}
     pending: dict[int, tuple] = {}
     orig_step = CPU8086.step
 
@@ -63,7 +67,7 @@ def main(argv) -> int:
             ss = self.s.ss & 0xFFFF
             bp = self.s.bp & 0xFFFF
             key = id(self)
-            if ip in (A19F_ENTRY, A1C8_ENTRY) and key not in pending:
+            if ip in (A19F_ENTRY, A1C8_ENTRY, A18A_ENTRY) and key not in pending:
                 pool = ObjectPool(base=GAMEPLAY_BASE, stride=STRIDE, slots=tuple(
                     tuple(mem.rw(ds, (GAMEPLAY_BASE + i * STRIDE + 2 * j) & 0xFFFF)
                           for j in range(STRIDE_WORDS))
@@ -77,6 +81,8 @@ def main(argv) -> int:
                     return _m.rw(_d, off & 0xFFFF)
                 if ip == A19F_ENTRY:
                     pred = native_a19f_tail(pool, cursor, idx, src_x, src_y, read_ds_word)
+                elif ip == A18A_ENTRY:
+                    pred = native_a18a(pool, cursor, idx, src_x, src_y, read_ds_word)
                 else:
                     pred = native_a1c8_tail(pool, cursor, idx, src_x, src_y, mem.rb(ds, INPUT_98BE), read_ds_word)
                 if pred is not None:
@@ -86,7 +92,7 @@ def main(argv) -> int:
                 p = pending.get(key)
                 if p is not None and ip == p[0] and (self.s.sp & 0xFFFF) == p[1]:
                     _ret, _sp, pred, entry_ip = pending.pop(key)
-                    res["a1c8" if entry_ip == A1C8_ENTRY else "a19f"] += 1
+                    res[{A1C8_ENTRY: "a1c8", A18A_ENTRY: "a18a"}.get(entry_ip, "a19f")] += 1
                     shots = pred if isinstance(pred, tuple) else (pred,)
                     mismatches: list = []
                     for shot in shots:
@@ -130,14 +136,14 @@ def main(argv) -> int:
         fv._load_runtime = orig_load
         CPU8086.step = orig_step
 
-    print(f"demo {demo_name} ({max_frames} frames): native A19F/A1C8 early tails vs VM: "
+    print(f"demo {demo_name} ({max_frames} frames): native A19F/A1C8/A18A tails vs VM: "
           f"calls={res['calls']} ok={res['ok']} fail={len(res['fail'])} "
-          f"(A19F={res['a19f']} A1C8={res['a1c8']})")
+          f"(A19F={res['a19f']} A1C8={res['a1c8']} A18A={res['a18a']})")
     for mism in res["fail"][:5]:
         print(f"  FAIL {mism}")
     ok = res["calls"] > 0 and not res["fail"]
-    print("RESULT:", "PASS -- native A19F/A1C8 early-tail shots byte-exact vs the VM across the demo"
-          if ok else "CHECK -- no early-tail dispatches reached, or a divergence")
+    print("RESULT:", "PASS -- native A19F/A1C8/A18A tail shots byte-exact vs the VM across the demo"
+          if ok else "CHECK -- no tail dispatches reached, or a divergence")
     return 0 if ok else 1
 
 
