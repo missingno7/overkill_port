@@ -4,8 +4,10 @@ shown before/around a level, sequenced the way ``systems/frame_loop.py`` sequenc
 from __future__ import annotations
 
 from overkill.recovered.domain.menu import (
+    INTERSTITIAL_TIMEOUT,
     LEVEL_SELECT_CELL_COUNT,
     MENU_ATTRACT_TIMEOUT,
+    InterstitialTickOutcome,
     LevelSelectFireResult,
     LevelSelectStep,
     MenuIdleOutcome,
@@ -84,3 +86,24 @@ def resolve_level_select_fire_d424(beda: int) -> LevelSelectFireResult:
     if ax == LEVEL_SELECT_CELL_COUNT:
         ax = 0
     return LevelSelectFireResult(level=(ax - 1) & 0xFFFF)
+
+
+def step_interstitial_tick_d318(counter: int, *, fire_pressed: bool) -> InterstitialTickOutcome:
+    """Pure model of one ``1010:D318`` interstitial-loop iteration's decision.
+
+    Bumps the loop counter (``DS:BED8``, wraps mod 0x10000 like the real ``INC``) and reports
+    which of three continuations fires: the counter exceeding ``INTERSTITIAL_TIMEOUT`` (200,
+    checked FIRST, strictly-greater matching the ASM's own ``JA``) exits regardless of input,
+    else FIRE (the caller's decoded ``DS:98BE == 0x10``) also exits, else the loop continues.
+    Both exits wait for FIRE to be released before the real routine actually returns to its
+    caller (``call_input_until_release`` in ``overkill.gameplay.frame_orchestration.run_
+    interstitial_timed_input_loop_d318``) -- a timing gate with no further decision content, not
+    modelled here.  The chain of graphics/sound/starfield child calls that redraw this screen
+    every real iteration are pure presentation glue, also not modelled.
+    """
+    new_counter = (counter + 1) & 0xFFFF
+    if new_counter > INTERSTITIAL_TIMEOUT:
+        return InterstitialTickOutcome(counter=new_counter, result="exit_timeout")
+    if fire_pressed:
+        return InterstitialTickOutcome(counter=new_counter, result="exit_fire")
+    return InterstitialTickOutcome(counter=new_counter, result="loop")

@@ -47,3 +47,21 @@ class LevelSelectFireResult:
     0-4, or the ``0xFFFF`` sentinel for cell 5 (:data:`LEVEL_SELECT_UNPLAYABLE_CELL`)."""
 
     level: int
+
+
+# 1010:D318 -- the interstitial timed-input loop (a Tandy-only frame-script screen reached
+# after the 97B2 path).  Each real call redraws/ticks a chain of graphics/sound children (not
+# modelled -- pure timing/presentation glue with no decision content of its own), then makes
+# ONE small decision: bump DS:BED8, and exit (waiting for FIRE release first) once either the
+# timeout is reached or FIRE is pressed, else loop.  Already correctly implemented as a hook
+# (overkill.gameplay.frame_orchestration.run_interstitial_timed_input_loop_d318); this only
+# extracts that one decision into the pure layer -- same shape as MenuIdleOutcome/558B.
+INTERSTITIAL_TIMEOUT = 0x00C8  # DS:BED8 exceeding this (200) forces the timeout exit
+
+
+@dataclass(frozen=True, slots=True)
+class InterstitialTickOutcome:
+    """Result of one ``1010:D318`` interstitial-loop iteration's counter/exit decision."""
+
+    counter: int
+    result: str  # "loop" | "exit_timeout" | "exit_fire"
