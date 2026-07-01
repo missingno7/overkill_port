@@ -88,19 +88,28 @@ class InputDemoRecorder:
     def event_count(self) -> int:
         return len(self._events)
 
-    def start(self, rt: Runtime, *, boundary: int) -> Path:
+    def start(self, rt: Runtime, *, boundary: int, write_start_snapshot: bool = True) -> Path:
+        """Begin recording.  ``write_start_snapshot=False`` records a COLD-START demo: no start snapshot is
+        written and the manifest's ``snapshot`` is null, so playback boots a fresh runtime (from the boot
+        params in ``metadata``) and replays from ``boundary`` 0 -- the input-only capture of a whole session
+        from power-on.  Record such a demo at boundary 0 of a fresh boot so replay stays frame-aligned."""
         if self.active:
             raise RuntimeError("input demo recording is already active")
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.demo_dir = self.root / f"demo_{self.name}_{stamp}"
-        self.snapshot_dir = self.demo_dir / self.snapshot_name
         self.demo_dir.mkdir(parents=True, exist_ok=True)
         self.start_boundary = max(0, int(boundary))
         self._seq = 0
         self._events.clear()
         self._started_at = datetime.now().isoformat(timespec="seconds")
         self._stopped_at = ""
-        write_snapshot(rt, self.snapshot_dir, status="input demo start snapshot", steps=rt.cpu.instruction_count, trace_tail=())
+        if write_start_snapshot:
+            self.snapshot_dir = self.demo_dir / self.snapshot_name
+            write_snapshot(rt, self.snapshot_dir, status="input demo start snapshot",
+                           steps=rt.cpu.instruction_count, trace_tail=())
+        else:
+            self.snapshot_name = None   # cold start: replay boots a fresh runtime, no snapshot
+            self.snapshot_dir = None
         self._write_manifest(final=False)
         return self.demo_dir
 
@@ -180,8 +189,19 @@ class InputDemoPlayback:
             raise ValueError(f"unsupported input demo version: {manifest.get('version')!r}")
         return cls(demo_dir=demo_dir, manifest=manifest)
 
+    @property
+    def is_cold_start(self) -> bool:
+        """A cold-start demo has no start snapshot (manifest ``snapshot`` is null): playback boots a fresh
+        runtime from the recorded boot params and replays from boundary 0 -- a whole session from power-on."""
+        return self.manifest.get("snapshot") is None
+
     def snapshot_path(self) -> Path:
-        path = Path(str(self.manifest.get("snapshot", "snapshot")))
+        snap = self.manifest.get("snapshot")
+        if snap is None:
+            raise ValueError(
+                "cold-start demo has no start snapshot; boot a fresh runtime and replay "
+                "(check .is_cold_start first)")
+        path = Path(str(snap))
         if not path.is_absolute():
             path = self.demo_dir / path
         return path

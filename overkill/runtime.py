@@ -26,11 +26,15 @@ def create_overkill_runtime(
     *,
     game_root: str | Path | None = None,
     command_tail: bytes | str = b"",
+    install_replacements: bool = True,
 ) -> Runtime:
+    """Boot a fresh OVERKILL runtime.  ``install_replacements=False`` = the pure-ASM oracle
+    (``--no-replacements``): no recovered hooks, the CPU runs the original code verbatim."""
     return create_dos_runtime(
         resolve_overkill_exe_path(exe_path),
         game_root=game_root,
         command_tail=command_tail,
+        install_replacements=install_replacements,
     )
 
 

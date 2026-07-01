@@ -279,6 +279,13 @@ def main(argv: list[str] | None = None) -> int:
                              "native = the modern VM-independent renderer (scripts/native_play.py)")
     launch.add_argument("--mp-publish", default=None,
                         help=argparse.SUPPRESS)  # internal: this is the VM child; publish frames to this shm name
+    launch.add_argument("--no-replacements", action="store_true",
+                        help="ORACLE mode: run the pure original ASM with no recovered hooks (record "
+                             "ground-truth cold-start demos; the reference side of the cold-start verifier)")
+    launch.add_argument("--record-demo", default=None, metavar="NAME",
+                        help="start recording an input demo at launch (boundary 0).  With a fresh boot "
+                             "(no --snapshot) this records a COLD-START demo (no start snapshot) -- press "
+                             "F11 or quit to stop; combine with --no-replacements for a pure-ASM oracle demo")
 
     viewer = p.add_argument_group("interactive viewer")
     viewer.add_argument("--game-hz", type=float, default=36.4,
@@ -685,8 +692,12 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.snapshot:
         rt = load_overkill_snapshot(exe, args.snapshot, game_root=assets)
+        if args.no_replacements:      # pure-ASM oracle: drop the recovered hooks the loader installed
+            rt.cpu.replacement_hooks.clear()
+            rt.cpu.hook_names.clear()
     else:
-        rt = create_overkill_runtime(exe, game_root=assets, command_tail=command_tail)
+        rt = create_overkill_runtime(exe, game_root=assets, command_tail=command_tail,
+                                     install_replacements=not args.no_replacements)
         rt.dos.text_mode_active = False
     rt.dos.console_input_fallback = None
     rt.cpu.trace_enabled = False
@@ -1163,14 +1174,21 @@ def main(argv: list[str] | None = None) -> int:
 
     demo_recorder = InputDemoRecorder(
         root=Path(args.save_demo_root),
-        name=f"play_{args.video}",
+        name=args.record_demo or f"play_{args.video}",
         metadata={
             "program": "overkill",
             "video": args.video,
             "sound": args.sound,
             "command_tail": command_tail.decode("latin1") if isinstance(command_tail, bytes) else str(command_tail),
+            "no_replacements": bool(args.no_replacements),
         },
     )
+    if args.record_demo:
+        # Auto-start at launch (boundary 0).  A fresh boot (no --snapshot) records a COLD-START demo: no
+        # start snapshot, so playback boots a fresh runtime from the metadata and replays from power-on.
+        cold_start = args.snapshot is None
+        started_dir = demo_recorder.start(rt, boundary=boundary["n"], write_start_snapshot=not cold_start)
+        print(f"recording {'cold-start ' if cold_start else ''}input demo -> {started_dir}", flush=True)
 
     def deliver_live_scancode(sc: int) -> None:
         deliver_scancode(rt, sc)

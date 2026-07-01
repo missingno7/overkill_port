@@ -21,7 +21,14 @@ def create_runtime(
     *,
     game_root: str | Path | None = None,
     command_tail: bytes | str = b"",
+    install_replacements: bool = True,
 ) -> Runtime:
+    """Boot a fresh DOS runtime from ``exe_path``.
+
+    ``install_replacements=False`` is the pure-ASM ORACLE mode (``--no-replacements``): the recovered
+    Python hooks are not installed, so the CPU interprets the original code with no substitutions.  Used to
+    record ground-truth cold-start demos and as the reference side of the cold-start frame verifier.
+    """
     if isinstance(command_tail, str):
         command_tail = command_tail.encode("ascii")
     exe_path = Path(exe_path)
@@ -48,5 +55,6 @@ def create_runtime(
     cpu.interrupt_handler = dos.interrupt
     cpu.port_reader = dos.port_read
     cpu.port_writer = dos.port_write
-    registry.install(cpu)
+    if install_replacements:
+        registry.install(cpu)
     return Runtime(program, cpu, dos)
