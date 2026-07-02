@@ -1,3 +1,10 @@
+> **SESSION HANDOFF (2026-07-03).** A fresh repo-rooted session picks up here. Everything you need is
+> **in this repo** (no external memory required): read `CLAUDE.md` → `AGENTS.md` →
+> `overnight_endgame_execution.md` (the `/goal` brief), then continue from its §6 queue. State: suite
+> **green (1057 passed / 23 skipped)**, tree clean, all work pushed to `main`, pure% ≈ 30.2%. Launch the
+> autonomous loop with `/loop /goal`. The docs were freshly de-staled this session — trust them, but
+> still verify a target against the code before recovering it (some `loop_blockers.md` entries are dated).
+
 ## 2026-07-03 - B73E logic_id 0x20 recovered + world-scroll subsystem native
 
 **Bucket A (object collapse) — the dominant remaining wall fell.** `B73E` (logic_id `0x20`, the
