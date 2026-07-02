@@ -150,3 +150,21 @@ def step_yes_no_choice_989e(*, n_pressed: bool, y_pressed: bool) -> YesNoChoiceO
     if y_pressed:
         return YesNoChoiceOutcome(display_char=YES_NO_CHOICE_Y_CHAR, result="exit_yes")
     return YesNoChoiceOutcome(display_char=YES_NO_CHOICE_Y_CHAR, result="loop")
+
+
+TANDY_MODE_FLAG = 0x0001  # CS:95BC == 1 -- the same Tandy-mode convention D318 checks
+
+
+def tandy_status_cache_reset_5145(mode: int) -> bool:
+    """Pure ``1010:5145`` GATE ONLY: does the routine skip its whole body via an immediate ``ret``?
+
+    Part of the post-level-confirm new-game HUD/status-bar setup (``971A`` -> ``5C9A`` ->
+    ``5BEE`` -> ``5145``). ``False`` (``mode != 1``, the real cold-start session's own observed
+    value) means the real ASM takes an immediate ``ret`` -- a true no-op, verified against the
+    VM. ``True`` (``mode == 1``, matching D318's own Tandy-mode convention) means the routine
+    falls through into MORE than a first read suggested: not just a single status-cache zero,
+    but a second write (``CS:95A4 = 0xA000``, likely a VGA segment constant) followed by a
+    non-standard jump exit (NOT a plain ``ret`` back to the caller) -- that tail is genuinely
+    unverified (no demo observed taking it yet) and is deliberately NOT modelled by any hook or
+    further pure function here. Don't compose past this gate until a demo exercises ``True``."""
+    return (mode & 0xFFFF) == TANDY_MODE_FLAG
