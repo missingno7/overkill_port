@@ -1,3 +1,26 @@
+## 2026-07-03 - B73E logic_id 0x20 recovered + world-scroll subsystem native
+
+**Bucket A (object collapse) — the dominant remaining wall fell.** `B73E` (logic_id `0x20`, the
+waypoint-follower) is recovered: its `B800` formation-spawn gap + a follow-up double-spawn bug in the
+`B82D` waypoint loop (a redundant per-iteration spawn-check; real ASM's loop-back `B857: jz -> B826`
+skips it). Root-caught via the write-watcher playbook (whole-corpus `DS:20A6` BP-tagged sweep + a
+redirect-into-real-bytes trace off the 3153 snapshot). The `test_tandy_text_glyph_3153` xfail is removed
+(passes for real). Forward-carry endurance on L1 jumped 3188 -> 8540 ticks. Commits `2747255`, `b4c30ae`.
+
+**Bucket C (native frame loop) — the world-scroll subsystem is now native + self-sustaining.** Ported
+`A66F` (world-progress gate) + `A6FE`/`A74E`/`A746` (forward scroll tick) to pure systems
+(`recovered/systems/scroll.py` + `domain/scroll.py`), byte-exact vs VM across L2/L4/L6 (two probes:
+`verify_native_scroll_forward_a6fe`, `verify_native_scroll_gate_a66f`; 0 failures). Wired into
+`NativeGame.step_scroll()` and threaded into the composed `NativeGame.step()` (real 9B2E -> A66F -> A067
+-> AA0D order). `verify_native_forward_frames` now carries scroll as a first-class quantity: endurance
+baselines UNCHANGED (L2 114, L3 70, L6_begin 40, L6_mothership_end 60) with zero scroll-caused
+divergence, and boss-milestone declines gracefully shadow-defer to the VM. Commits `ebc3373`, `eefdbb1`,
+`804127e`. Declined (own tasks): backward-scroll chain (A781/A7D0/A7E3), A7EB/CB1C (render/audio).
+
+**Metrics:** pure % of game-logic mass = **30.2%** (up from 22.0% on 2026-06-30). Suite green: 1057
+passed / 23 skipped. Next forward-carry walls are unrelated: effect-pool timing skew (L4/L5) + harness
+step budget (L1/L5).
+
 ## 2026-06-30 - CORRECTION + the starfield blocker CRACKED
 
 **Correction (supersedes the "Native terrain compositor" + "Controllable cold level" entries below):**
