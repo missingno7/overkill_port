@@ -114,3 +114,40 @@ def test_native_game_step_action_fanout_composes_and_wires_fire_state():
     assert out.fire.latch_a980 == 1
     assert out.state.object_pool.active_word(0) == 1
     assert (out.state.object_pool.x_word(0), out.state.object_pool.y_word(0)) == (0x50, 0x60)
+
+
+def test_native_game_step_composes_all_three_stages_in_order():
+    # step() is pure glue: it must produce EXACTLY what hand-chaining step_player ->
+    # step_action_fanout -> step_objects (threading input_flags by hand) produces.
+    from overkill.asset_codecs.native_level import NativeLevel
+
+    lvl = NativeLevel(level=0, tile_plane=b"\x00" * 3744, class_table=b"\x01" * 256, blocks=b"", graphics=b"")
+    free_slot = tuple([0] * (STRIDE >> 1))
+    state = NativeGameState(
+        special_pool=_anchor_pool(0x50, 0x60),
+        object_pool=ObjectPool(base=0x2B5C, stride=STRIDE, slots=(free_slot,) * 4),
+        effect_pool=_empty_pool(0x23B4),
+        camera=CameraState(x=0, y=0), hud=HudLayer(counters=(0, 0, 0), score_bcd=(0, 0)),
+    )
+    game = NativeGame(lvl, state)
+    globals_ = ObjectUpdateGlobals(
+        ref_box_x=0, ref_box_y=0, a278=0, tile_probe_suppressed=False,
+        tiles=LevelTileContext(origin_x_word=0, row_base_word=0, tile_plane=(), class_table=()),
+    )
+    fanout_kwargs = dict(
+        repeat_9790=0, state_232a=0, scroll_2350=0, bdac=0, a958=0, be06=0,
+        source_index=0, source_x=0x50, source_y=0x60, read_ds_word=lambda off: 0,
+    )
+    frame_input = _input(RIGHT_ARROW)
+
+    chained, player_step = game.step_player(frame_input)
+    chained = chained.step_action_fanout(input_flags=player_step.input_flags, **fanout_kwargs)
+    chained = chained.step_objects(globals_)
+
+    composed, composed_step = game.step(
+        frame_input, update_globals=globals_, **fanout_kwargs,
+    )
+
+    assert composed_step == player_step
+    assert composed.state == chained.state
+    assert composed.fire == chained.fire

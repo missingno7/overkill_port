@@ -108,3 +108,39 @@ class NativeGame:
         """
         g = dataclasses.replace(update_globals, tiles=self.tile_context)
         return self.with_state(native_object_pass(self.state, g))
+
+    def step(
+        self,
+        frame_input: FrameInput,
+        *,
+        no_clamp: bool = False,
+        repeat_9790: int,
+        state_232a: int,
+        scroll_2350: int,
+        bdac: int,
+        a958: int,
+        be06: int,
+        source_index: int,
+        source_x: int,
+        source_y: int,
+        read_ds_word,
+        update_globals: ObjectUpdateGlobals,
+    ) -> tuple["NativeGame", PlayerFrameStep]:
+        """Run one whole native game tick: player -> action fan-out -> object scan, in the real
+        9B2E -> A067 -> AA0D order (confirmed 1:1:1:1, always in that order -- see
+        ``overkill.probes.verify_native_forward_frames``), threading the player stage's own decoded
+        ``input_flags`` into the fan-out automatically instead of making the caller chain the three
+        stages and thread that value by hand.
+
+        The keyword arguments past ``frame_input``/``no_clamp`` are exactly ``step_action_fanout``'s and
+        ``step_objects``' own still-VM-owned inputs (see their docstrings) -- this method is pure
+        composition, not new coverage; it does not decide what those values are for a given tick.
+        """
+        game, player_step = self.step_player(frame_input, no_clamp=no_clamp)
+        game = game.step_action_fanout(
+            input_flags=player_step.input_flags, repeat_9790=repeat_9790, state_232a=state_232a,
+            scroll_2350=scroll_2350, bdac=bdac, a958=a958, be06=be06,
+            source_index=source_index, source_x=source_x, source_y=source_y, read_ds_word=read_ds_word,
+        )
+        game = game.step_objects(update_globals)
+        return game, player_step
