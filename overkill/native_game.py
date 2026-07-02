@@ -163,21 +163,33 @@ class NativeGame:
         source_y: int,
         read_ds_word,
         update_globals: ObjectUpdateGlobals,
+        scroll_gate: tuple[int, int, int] = (0, 0, 0),
     ) -> tuple["NativeGame", PlayerFrameStep]:
-        """Run one whole native game tick: player -> action fan-out -> object scan, in the real
-        9B2E -> A067 -> AA0D order (confirmed 1:1:1:1, always in that order -- see
+        """Run one whole native game tick: player -> scroll -> action fan-out -> object scan, in the
+        real 9B2E -> A66F -> A067 -> AA0D order (confirmed always in that order -- see
         ``overkill.probes.verify_native_forward_frames``), threading the player stage's own decoded
-        ``input_flags`` into the fan-out automatically instead of making the caller chain the three
-        stages and thread that value by hand.
+        ``input_flags`` into the fan-out automatically instead of making the caller chain the stages
+        and thread that value by hand.
 
-        The keyword arguments past ``frame_input``/``no_clamp`` are exactly ``step_action_fanout``'s and
-        ``step_objects``' own still-VM-owned inputs (see their docstrings) -- this method is pure
-        composition, not new coverage; it does not decide what those values are for a given tick.
+        Scroll (A66F) is run NATIVELY: ``scroll_gate`` is (DS:A47C, A47E, A480), and the native
+        row_base it produces becomes the DS:2350 fed to the fan-out + the object scan's tile context
+        (which reads this game's own origin_x/row_base).  ``scroll_2350`` is now only a FALLBACK, used
+        for the one tick A66F declines (a rare boss/milestone branch -- see
+        :meth:`step_scroll`); on a normal tick the native row_base overrides it.
+
+        The remaining keyword arguments are ``step_action_fanout``'s / ``step_objects``' own
+        still-VM-owned inputs (see their docstrings) -- this method is composition, not new coverage;
+        it does not decide what those values are for a given tick.
         """
         game, player_step = self.step_player(frame_input, no_clamp=no_clamp)
+        a47c, a47e, a480 = scroll_gate
+        game, scroll_outcome = game.step_scroll(a47c=a47c, a47e=a47e, a480=a480)
+        # Normal tick: the native row_base is the DS:2350 downstream reads.  Declined tick (outcome
+        # None, scroll left VM-owned): fall back to the caller-supplied VM scroll_2350.
+        fanout_scroll = scroll_2350 if scroll_outcome is None else game.row_base
         game = game.step_action_fanout(
             input_flags=player_step.input_flags, repeat_9790=repeat_9790, state_232a=state_232a,
-            scroll_2350=scroll_2350, bdac=bdac, a958=a958, be06=be06,
+            scroll_2350=fanout_scroll, bdac=bdac, a958=a958, be06=be06,
             source_index=source_index, source_x=source_x, source_y=source_y, read_ds_word=read_ds_word,
         )
         game = game.step_objects(update_globals)

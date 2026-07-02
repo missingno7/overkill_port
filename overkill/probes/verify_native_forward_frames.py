@@ -7,15 +7,19 @@ stage is correct in isolation.  It does NOT prove that chaining a stage's own pr
 next tick (rather than a freshly re-projected VM state) stays correct -- a small threading bug could be
 invisible in per-call isolation and only show up under multi-tick carry.  This is that test.
 
-Per real game tick (the 9B2E -> A067 -> AA0D -> AA25 sequence, confirmed 1:1:1:1 and always in that order):
+Per real game tick (the 9B2E -> A66F -> A067 -> AA0D -> AA25 sequence, confirmed in that order):
   1. At 9B2E entry: bail (stop the run) on a joystick device or scripted-input (DS:A47C != 0) tick -- the
      native controller does not model either.  Otherwise decode this tick's FrameInput and run
      native_player_frame_step over the CARRIED special_pool.
-  2. At A067 entry: run native_action_fanout_step over the (carried, just-stepped) state + FireControlState.
-  3. At AA0D (gameplay-loop setup): run native_object_pass over the resulting state.
-  4. At AA25 (scan exit): compare special_pool + object_pool + the fire latch/cursor against a FRESH VM
-     projection.  A clean match extends the run; carry the PREDICTED state (not a VM re-read) into the
-     next tick.  A mismatch stops the run and reports the first diverging tick + field.
+  2. At A66F entry: advance the CARRIED scroll natively (the pure A66F gate -> A6FE tick), producing the
+     DS:234E/2350 the next two stages read.  Bail on a decline (rare boss/milestone branch, VM-owned).
+  3. At A067 entry: run native_action_fanout_step over the (carried, just-stepped) state + FireControlState,
+     feeding the CARRIED native row_base as scroll_2350 (not a VM re-read).
+  4. At AA0D (gameplay-loop setup): run native_object_pass over the resulting state, with the CARRIED
+     native scroll as the object scan's tile-probe origin/row.
+  5. At AA25 (scan exit): compare special_pool + object_pool + fire latch/cursor + scroll origin/row against
+     a FRESH VM projection.  A clean match extends the run; carry the PREDICTED state (not a VM re-read)
+     into the next tick.  A mismatch stops the run and reports the first diverging tick + field.
 
 Only special_pool/object_pool/fire are carried -- effect_pool/camera/hud are not modelled by any composed
 stage yet (native_object_pass's own docstring: the effect pool is only per-slot verified, not a whole
@@ -40,15 +44,17 @@ from overkill.recovered.adapters.native_game_state_adapter import read_native_ga
 from overkill.recovered.domain.frame_loop import FireControlState, FrameInput  # noqa: E402
 from overkill.recovered.domain.object_update import ObjectUpdateGlobals  # noqa: E402
 from overkill.recovered.domain.tilemap import LevelTileContext  # noqa: E402
+from overkill.recovered.domain.scroll import ScrollState  # noqa: E402
 from overkill.recovered.systems.frame_loop import (  # noqa: E402
     native_action_fanout_step,
     native_object_pass,
     native_player_frame_step,
 )
 from overkill.recovered.systems.object_update import NATIVE_OBJECT_HANDLERS  # noqa: E402
+from overkill.recovered.systems.scroll import step_scroll_world_progress_gate_a66f  # noqa: E402
 
 CS = 0x1010
-IP_9B2E, IP_A067, IP_AA0D, IP_AA25 = 0x9B2E, 0xA067, 0xAA0D, 0xAA25
+IP_9B2E, IP_A66F, IP_A067, IP_AA0D, IP_AA25 = 0x9B2E, 0xA66F, 0xA067, 0xAA0D, 0xAA25
 DEVICE_WORD, JOYSTICK_DEVICE, ALT_KEYBOARD_DEVICE = 0x0010, 0x0001, 0x0002
 CONTROL_MAP_DEFAULT, CONTROL_MAP_ALT = 0x213E, 0x2146
 KEY_STATE_BASE = 0x98C4
@@ -62,6 +68,10 @@ DELTA_2342, PHASE_2328, STEP_MODE, DIR_TABLE = 0x2342, 0x2328, 0x2312, 0xA348
 A482, FRAME_233C, DELTA_X_2346, BEDC, TICK_2340 = 0xA482, 0x233C, 0x2346, 0xBEDC, 0x2340
 A8C2_ADDR = 0xA8C2
 TILE_ORIGIN, TILE_ROW, TILE_CLASS, TILE_PLANE_PTR = 0x234E, 0x2350, 0xC3AA, 0x9592
+# The A66F/A6FE scroll fields (see overkill.recovered.systems.scroll): the two gameplay-consumed
+# (234E/2350, == TILE_ORIGIN/TILE_ROW above) plus its own bookkeeping (234C/A978/2354) and the
+# gate globals A47C/A47E/A480 (A47C == NO_CLAMP_GATE, always 0 here since the harness bails otherwise).
+SCROLL_ROW_SOURCE_234C, SCROLL_ROWS_A978, SCROLL_FWD_2354, SCROLL_A480 = 0x234C, 0xA978, 0x2354, 0xA480
 OFF_ACTIVE, OFF_X, OFF_Y, OFF_DIR, OFF_SPRITE, OFF_LOGIC, OFF_SUBSTATE = 0x00, 0x02, 0x04, 0x06, 0x08, 0x18, 0x1C
 # Same scope + exception as verify_native_object_pass.py -- this harness's object_pool check must match
 # exactly what THAT dedicated, already-verified probe claims (no more): only NATIVE_OBJECT_HANDLERS logic
@@ -70,7 +80,15 @@ SKIP_SPRITE_LOGIC_IDS = frozenset((0x001D, 0x0014))
 COLLISION_DEATH_LOGIC_ID = 0x0001
 
 
-def _object_update_globals(mem, ds, cs_seg, class_cache) -> ObjectUpdateGlobals:
+def _read_scroll_from_vm(mem, ds) -> ScrollState:
+    """Seed a ScrollState from the live VM (the first tick, and after any decline resync)."""
+    return ScrollState(
+        origin_x=mem.rw(ds, TILE_ORIGIN), row_base=mem.rw(ds, TILE_ROW),
+        row_source=mem.rw(ds, SCROLL_ROW_SOURCE_234C), rows_to_milestone=mem.rw(ds, SCROLL_ROWS_A978),
+        forward_last=mem.rw(ds, SCROLL_FWD_2354) == 0)
+
+
+def _object_update_globals(mem, ds, cs_seg, class_cache, scroll: ScrollState) -> ObjectUpdateGlobals:
     class_table = class_cache.get(ds)
     if class_table is None:
         class_table = tuple(mem.rb(ds, (TILE_CLASS + k) & 0xFFFF) for k in range(0x100))
@@ -79,7 +97,7 @@ def _object_update_globals(mem, ds, cs_seg, class_cache) -> ObjectUpdateGlobals:
         ref_box_x=mem.rw(ds, REF_BOX_X), ref_box_y=mem.rw(ds, REF_BOX_Y),
         a278=mem.rw(ds, A278), tile_probe_suppressed=mem.rw(ds, BDAC) == 0x0001,
         tiles=LevelTileContext(
-            origin_x_word=mem.rw(ds, TILE_ORIGIN), row_base_word=mem.rw(ds, TILE_ROW),
+            origin_x_word=scroll.origin_x, row_base_word=scroll.row_base,
             tile_plane=LazyBytes(mem, mem.rw(cs_seg, TILE_PLANE_PTR), 0, 0x10000), class_table=class_table),
         ref_box_scan=mem.rw(ds, REF_BOX_SCAN), a47e=mem.rw(ds, A47E), a7a0=mem.rw(ds, A7A0),
         vertical_delta=mem.rw(ds, DELTA_2342), phase_2328=mem.rw(ds, PHASE_2328), step_mode=mem.rw(ds, STEP_MODE),
@@ -125,7 +143,8 @@ def main(argv) -> int:
     max_frames = int(argv[1]) if len(argv) > 1 else 400
     demo = load_demo(demo_name, "demo_play_tandy_L2_full_20260617_180221")
 
-    run = {"state": None, "fire": None, "ticks": 0, "stopped": False, "stop_reason": "", "fail": None}
+    run = {"state": None, "fire": None, "scroll": None, "ticks": 0, "stopped": False,
+           "stop_reason": "", "fail": None}
     stage: dict[int, dict] = {}
     class_cache: dict[int, tuple] = {}
 
@@ -171,17 +190,45 @@ def main(argv) -> int:
             stage[key] = {"phase": "player_done", "state": new_state, "fire": run["fire"],
                           "input_flags": player_step.input_flags}
 
+        elif ip == IP_A66F:
+            # A66F runs here, between 9B2E and A067, and produces the DS:234E/2350 the fan-out +
+            # object stages then read.  Carry OUR own scroll prediction forward (seed from the VM only
+            # on the first tick), advancing it natively via the pure gate.  A decline (rare boss/
+            # milestone branch) is left VM-owned for that one tick -- shadow mode, the same stance the
+            # harness already takes for effect_pool/camera/hud: s["scroll"]=None marks the tick, the
+            # downstream stages read VM scroll (post-A66F, since A067 runs after A66F returns), and the
+            # carried scroll is re-seeded from the VM at AA25 so the next native tick starts aligned.
+            s = stage.get(key)
+            if s is None or s["phase"] != "player_done":
+                return  # A66F seen outside a normal gameplay tick; the 9B2E/A067 guards handle ordering
+            if run["scroll"] is None:
+                run["scroll"] = _read_scroll_from_vm(mem, ds)
+            outcome = step_scroll_world_progress_gate_a66f(
+                run["scroll"], a47c=mem.rw(ds, NO_CLAMP_GATE), a47e=mem.rw(ds, A47E), a480=mem.rw(ds, SCROLL_A480))
+            if outcome is None:
+                run["scroll"] = None  # decline: this tick is VM-owned; re-seed at AA25 for the next tick
+                s["scroll"] = None
+            else:
+                run["scroll"] = outcome.state
+                s["scroll"] = outcome.state
+
         elif ip == IP_A067:
             s = stage.get(key)
             if s is None or s["phase"] != "player_done":
                 stop(f"A067 reached without a preceding 9B2E player step at tick {run['ticks']}")
                 return
+            if "scroll" not in s:
+                stop(f"A067 reached without a preceding A66F scroll step at tick {run['ticks']}")
+                return
+            # On a declined (VM-owned) tick s["scroll"] is None -> read VM DS:2350 (post-A66F, since
+            # A067 runs after A66F returns); otherwise feed the carried native row_base.
+            scroll_2350 = mem.rw(ds, SCROLL_2350) if s["scroll"] is None else s["scroll"].row_base
             ss, bp = cpu.s.ss & 0xFFFF, cpu.s.bp & 0xFFFF
             pre_fanout_pool = s["state"].object_pool
             new_state, new_fire = native_action_fanout_step(
                 s["state"], s["fire"], input_flags=s["input_flags"],
                 repeat_9790=mem.rb(ds, REPEAT_9790), state_232a=mem.rw(ds, STATE_232A),
-                scroll_2350=mem.rw(ds, SCROLL_2350), bdac=mem.rw(ds, BDAC),
+                scroll_2350=scroll_2350, bdac=mem.rw(ds, BDAC),
                 a958=mem.rw(ds, FIRE_STATE_A958), be06=mem.rw(ds, BE06),
                 source_index=mem.rw(ss, (bp + SRC_INDEX_BP) & 0xFFFF),
                 source_x=mem.rw(ss, (bp + SRC_X_BP) & 0xFFFF), source_y=mem.rw(ss, (bp + SRC_Y_BP) & 0xFFFF),
@@ -191,7 +238,8 @@ def main(argv) -> int:
             # unchanged).  A decline (FULL path / a full pool) leaves the cursor VM-owned, so only
             # check it on a tick that actually spawned -- else this false-fires on every decline.
             spawned = new_state.object_pool is not pre_fanout_pool
-            stage[key] = {"phase": "fanout_done", "state": new_state, "fire": new_fire, "spawned": spawned}
+            stage[key] = {"phase": "fanout_done", "state": new_state, "fire": new_fire,
+                          "spawned": spawned, "scroll": s["scroll"]}
 
         elif ip == IP_AA0D:
             s = stage.get(key)
@@ -199,10 +247,11 @@ def main(argv) -> int:
                 stop(f"AA0D reached without a preceding A067 fan-out step at tick {run['ticks']}")
                 return
             entry_object_pool = s["state"].object_pool  # pre-object-update snapshot: the compare's gate
-            g = _object_update_globals(mem, ds, cs, class_cache)
+            obj_scroll = _read_scroll_from_vm(mem, ds) if s["scroll"] is None else s["scroll"]
+            g = _object_update_globals(mem, ds, cs, class_cache, obj_scroll)
             new_state = native_object_pass(s["state"], g)
             stage[key] = {"phase": "objects_done", "state": new_state, "fire": s["fire"],
-                          "entry_pool": entry_object_pool, "spawned": s["spawned"]}
+                          "entry_pool": entry_object_pool, "spawned": s["spawned"], "scroll": s["scroll"]}
 
         elif ip == IP_AA25:
             s = stage.get(key)
@@ -228,6 +277,17 @@ def main(argv) -> int:
                 mismatches.append(("fire", "latch_a980", pred_fire.latch_a980, mem.rw(ds, LATCH_A980)))
             if s["spawned"] and mem.rw(ds, CURSOR_95DA) != pred_fire.cursor_95da:
                 mismatches.append(("fire", "cursor_95da", pred_fire.cursor_95da, mem.rw(ds, CURSOR_95DA)))
+            # Scroll is carried natively (A66F -> A6FE), so check the two gameplay-consumed fields
+            # (DS:234E/2350) against the VM directly -- a first-class carried quantity, like the pools.
+            # A declined tick (s["scroll"] is None) was VM-owned: don't check it, and re-seed the carried
+            # scroll from the VM (now post-A66F) so the next native tick starts aligned.
+            if s["scroll"] is None:
+                run["scroll"] = _read_scroll_from_vm(mem, ds)
+            else:
+                pred_scroll = (s["scroll"].origin_x, s["scroll"].row_base)
+                actual_scroll = (mem.rw(ds, TILE_ORIGIN), mem.rw(ds, TILE_ROW))
+                if pred_scroll != actual_scroll:
+                    mismatches.append(("scroll", "origin/row", pred_scroll, actual_scroll))
             if mismatches:
                 run["fail"] = (run["ticks"], mismatches[:8])
                 stop(f"state mismatch at tick {run['ticks']}")

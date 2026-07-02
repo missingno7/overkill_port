@@ -152,9 +152,10 @@ def test_native_game_step_scroll_declines_on_milestone_and_leaves_game_unchanged
     assert out is game  # unchanged
 
 
-def test_native_game_step_composes_all_three_stages_in_order():
-    # step() is pure glue: it must produce EXACTLY what hand-chaining step_player ->
-    # step_action_fanout -> step_objects (threading input_flags by hand) produces.
+def test_native_game_step_composes_all_stages_in_order_incl_native_scroll():
+    # step() is composition glue: it must produce EXACTLY what hand-chaining step_player ->
+    # step_scroll -> step_action_fanout -> step_objects (threading input_flags + the native row_base
+    # by hand) produces, in the real 9B2E -> A66F -> A067 -> AA0D order.
     from overkill.asset_codecs.native_level import NativeLevel
 
     lvl = NativeLevel(level=0, tile_plane=b"\x00" * 3744, class_table=b"\x01" * 256, blocks=b"", graphics=b"")
@@ -165,7 +166,9 @@ def test_native_game_step_composes_all_three_stages_in_order():
         effect_pool=_empty_pool(0x23B4),
         camera=CameraState(x=0, y=0), hud=HudLayer(counters=(0, 0, 0), score_bcd=(0, 0)),
     )
-    game = NativeGame(lvl, state)
+    # origin_x=5 so this tick does NOT pull a row (keeps the compare simple); scroll still advances
+    # origin_x, proving step() runs the scroll stage.
+    game = NativeGame(lvl, state, origin_x=5, row_base=0x40)
     globals_ = ObjectUpdateGlobals(
         ref_box_x=0, ref_box_y=0, a278=0, tile_probe_suppressed=False,
         tiles=LevelTileContext(origin_x_word=0, row_base_word=0, tile_plane=(), class_table=()),
@@ -177,13 +180,17 @@ def test_native_game_step_composes_all_three_stages_in_order():
     frame_input = _input(RIGHT_ARROW)
 
     chained, player_step = game.step_player(frame_input)
-    chained = chained.step_action_fanout(input_flags=player_step.input_flags, **fanout_kwargs)
+    chained, scroll_outcome = chained.step_scroll(a47c=0, a47e=0, a480=0)
+    chained = chained.step_action_fanout(
+        input_flags=player_step.input_flags, **{**fanout_kwargs, "scroll_2350": chained.row_base})
     chained = chained.step_objects(globals_)
 
     composed, composed_step = game.step(
-        frame_input, update_globals=globals_, **fanout_kwargs,
+        frame_input, update_globals=globals_, scroll_gate=(0, 0, 0), **fanout_kwargs,
     )
 
     assert composed_step == player_step
+    assert scroll_outcome is not None and composed.origin_x == 4  # scroll ran (origin_x 5 -> 4)
     assert composed.state == chained.state
     assert composed.fire == chained.fire
+    assert (composed.origin_x, composed.row_base) == (chained.origin_x, chained.row_base)
