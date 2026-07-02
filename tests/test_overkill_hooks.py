@@ -7202,21 +7202,6 @@ def test_object_overlap_scan_62f6_preserves_bx_and_flags_on_logic_26_exemption()
     assert cpu.s.flags == 0x0246
 
 
-@pytest.mark.xfail(
-    reason=(
-        "Registering the new 6176 hook (overkill/hooks.py) makes this specific run reach "
-        "B73E's already-documented, unrelated 'unverified B800 spawn' gap (see "
-        "overkill-front-end-recovery / overkill-native-frame-controller memory: logic_id 0x20 "
-        "is the next major recovery target). Confirmed via isolation: reverting hooks.py/objects.py "
-        "alone (keeping the harmless coverage.py/verification.py metadata) restores a clean pass; "
-        "6176 alone (without 9720) reproduces it; popping 6176 in THIS test's own hook list does "
-        "NOT change the outcome; and the failure is fast and step-budget-independent (100k vs "
-        "500k), ruling out a 'more frames fit in the budget' theory. The exact causal mechanism "
-        "connecting 6176's mere registration to this earlier B73E reach was not found despite "
-        "extensive isolation testing -- remove this xfail once B73E's B800 spawn is recovered."
-    ),
-    strict=False,
-)
 def test_tandy_text_glyph_3153_hook_verifies_on_gameplay_snapshot():
     from pathlib import Path
     from overkill.verification import HookVerifierConfig, HookVerifyLimitReached, install_hook_verifier

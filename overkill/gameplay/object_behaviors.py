@@ -133,6 +133,27 @@ def _run_object_behavior_b73e(cpu, *, parent: str, chain: str, cx_value: int) ->
         _run_object_postmove_bc4b(cpu, parent=parent, chain=f"{chain} -> B73E -> B85C -> B729 -> 5DB2", cx_value=cx_value)
         cpu.s.ip = cpu.pop()
 
+    def run_b800_spawn_pointer_advance(*, branch: str) -> None:
+        # B800: advance the DS:20A6 formation-spawn list pointer (wrapping at
+        # 20C7h back to 20A8h), then gate the 7476 formation spawn on the
+        # fetched entry's low bit.  Shared verbatim by the direct B7BD path and
+        # the B82D waypoint loop -- confirmed identical via live ASM trace
+        # (both land on the same 4D95 advance-and-fetch, then AND BX,1/JNZ).
+        old_ptr = cpu.mem.rw(ds, 0x20A6)
+        new_ptr = (old_ptr + 0x0002) & 0xFFFF
+        cpu.mem.ww(ds, 0x20A6, new_ptr)
+        # The pointer-wrap CMP and the AND BX,1 flags are dead here (overwritten
+        # by the 7476 call or the target-reached CMPs before any boundary).
+        if new_ptr >= 0x20C7:
+            cpu.mem.ww(ds, 0x20A6, 0x20A8)
+            new_ptr = 0x20A8
+        cpu.s.bx = cpu.mem.rw(ds, new_ptr)
+        cpu.s.bx &= 0x0001
+        if cpu.s.bx == 0:
+            _run_formation_spawn_7476_observed(
+                cpu, parent=parent, chain=f"{chain} -> B73E -> {branch}", cx_value=cx_value,
+            )
+
     def run_b7c7_reset_target(*, check_2324: bool, branch: str) -> None:
         # B7C7/B7CE: choose a new target row, align it to 8 pixels, reset the
         # behavior substate, and tail-jump into the common BC4B post-move path.
@@ -253,23 +274,7 @@ def _run_object_behavior_b73e(cpu, *, parent: str, chain: str, cx_value: int) ->
     if reaches_b808 != pure_reaches_b808:
         raise AssertionError("pure B73E spawn-window gate disagrees with ASM-compatible compares")
     if not reaches_b808:
-        old_ptr = cpu.mem.rw(ds, 0x20A6)
-        new_ptr = (old_ptr + 0x0002) & 0xFFFF
-        cpu.mem.ww(ds, 0x20A6, new_ptr)
-        # The pointer-wrap CMP and the AND BX,1 flags are dead here (overwritten
-        # by the 7476 call or the target-reached CMPs before any boundary).
-        if new_ptr >= 0x20C7:
-            cpu.mem.ww(ds, 0x20A6, 0x20A8)
-            new_ptr = 0x20A8
-        cpu.s.bx = cpu.mem.rw(ds, new_ptr)
-        cpu.s.bx &= 0x0001
-        if cpu.s.bx == 0:
-            _run_formation_spawn_7476_observed(
-                cpu,
-                parent=parent,
-                chain=f"{chain} -> B73E -> B7BD -> B800",
-                cx_value=cx_value,
-            )
+        run_b800_spawn_pointer_advance(branch="B7BD -> B800")
 
     # Target-reached resolution: pick how B73E continues from three globals.
     # The pure rule owns the 4-way classification; the inline compares keep the
@@ -344,9 +349,11 @@ def _run_object_behavior_b73e(cpu, *, parent: str, chain: str, cx_value: int) ->
             _run_object_postmove_bc4b(cpu, parent=parent, chain=f"{chain} -> B73E -> B7BD -> B82D -> B7BD", cx_value=cx_value)
             cpu.s.ip = cpu.pop()
             return
-        # Same spawn-window gate as the non-loop path above: outside the
-        # [02BCh, 02D0h] band the loop iterates again, inside the band it would
-        # fall into the still-unverified B800 spawn.  Share the one pure rule.
+        # Same spawn-window gate as the non-loop path above.  Confirmed via live
+        # ASM trace: inside the [02BCh, 02D0h] band, B800's pointer-advance and
+        # conditional 7476 spawn fall straight through into this same waypoint
+        # read/compare block (B826) -- i.e. it is also just another loop
+        # iteration, after the spawn side-effect runs first.
         game_counter = cpu.mem.rw(ds, 0x2340)
         loop_pure_reaches_b808 = b73e_reaches_b808(game_counter)
         _cmp_word(cpu, game_counter, B73E_SPAWN_WINDOW_MIN)
@@ -361,10 +368,8 @@ def _run_object_behavior_b73e(cpu, *, parent: str, chain: str, cx_value: int) ->
             continue
         if loop_pure_reaches_b808:
             raise AssertionError("pure B73E spawn-window gate disagrees in B82D loop")
-        _raise_unverified_path(
-            cpu, parent=parent, chain=f"{chain} -> B73E -> B7BD -> B82D loop",
-            target_ip=0xB800, bp=bp, cx_value=cx_value,
-        )
+        run_b800_spawn_pointer_advance(branch="B7BD -> B82D loop -> B800")
+        continue
     _raise_unverified_path(
         cpu, parent=parent, chain=f"{chain} -> B73E -> B7BD -> B82D loop",
         target_ip=0xB7BD, bp=bp, cx_value=cx_value,
