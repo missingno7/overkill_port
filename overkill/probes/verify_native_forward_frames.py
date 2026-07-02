@@ -60,6 +60,7 @@ REF_BOX_X, REF_BOX_Y, A278 = 0x237E, 0x2380, 0xA278
 REF_BOX_SCAN, A47E, A7A0 = 0x2390, 0xA47E, 0xA7A0
 DELTA_2342, PHASE_2328, STEP_MODE, DIR_TABLE = 0x2342, 0x2328, 0x2312, 0xA348
 A482, FRAME_233C, DELTA_X_2346, BEDC, TICK_2340 = 0xA482, 0x233C, 0x2346, 0xBEDC, 0x2340
+A8C2_ADDR = 0xA8C2
 TILE_ORIGIN, TILE_ROW, TILE_CLASS, TILE_PLANE_PTR = 0x234E, 0x2350, 0xC3AA, 0x9592
 OFF_ACTIVE, OFF_X, OFF_Y, OFF_DIR, OFF_SPRITE, OFF_LOGIC, OFF_SUBSTATE = 0x00, 0x02, 0x04, 0x06, 0x08, 0x18, 0x1C
 # Same scope + exception as verify_native_object_pass.py -- this harness's object_pool check must match
@@ -86,6 +87,7 @@ def _object_update_globals(mem, ds, cs_seg, class_cache) -> ObjectUpdateGlobals:
         global_disable=mem.rw(ds, NO_CLAMP_GATE), a482=mem.rw(ds, A482), frame_233c=mem.rw(ds, FRAME_233C),
         horizontal_delta=mem.rw(ds, DELTA_X_2346), difficulty=mem.rw(ds, BEDC), tick=mem.rw(ds, TICK_2340),
         anim_2326=mem.rw(ds, 0x2326), level=mem.rw(ds, 0x2356),
+        a8c2_boss_mode=mem.rw(ds, A8C2_ADDR) == 0x0001, bedc=mem.rw(ds, BEDC),
         waypoint_word_reader=lambda off, _m=mem, _d=ds: _m.rw(_d, off & 0xFFFF))
 
 

@@ -39,7 +39,7 @@ from overkill.recovered.domain.object_update import ObjectUpdateGlobals
 from overkill.recovered.systems.action_spawns import native_a067
 from overkill.recovered.systems.input import decode_keyboard_input_flags
 from overkill.recovered.systems.movement import step_view_anchor_by_input
-from overkill.recovered.systems.object_update import native_object_update_pool
+from overkill.recovered.systems.object_update import native_object_pass_in_place, native_object_update_pool
 from overkill.recovered.systems.objects import apply_player_shot_to_pool
 
 # View-anchor record field offsets the controller writes (cf. recovered.views.object_slots);
@@ -93,16 +93,33 @@ def native_object_pass(state: NativeGameState, update_globals: ObjectUpdateGloba
     (``special_pool``) is *not* part of this scan (it is the player stage's, updated in 9B2E),
     so it is left untouched here.
 
+    The effect walk runs FIRST, order-dependently (:func:`native_object_pass_in_place`): each
+    effect-pool scanner's own 62F6 contact scan reads the GAMEPLAY pool as its candidates (always
+    the gameplay pool, never the effect pool itself, regardless of which pool the scanner lives in
+    -- see :func:`object_overlap_scan_62f6`), so an effect object can deactivate a gameplay candidate
+    mid-scan; the gameplay walk that follows must see that death (a killed candidate is skipped by
+    the whole-pool "inactive -> skip" gate, exactly like the VM).  Composing the two SEPARATELY
+    (each from the same frozen entry snapshot, as this function used to) drops that cross-pool kill
+    entirely -- a real, confirmed forward-carry-harness divergence (a candidate slot the VM
+    deactivates stays "alive" in the snapshot composition; see verify_native_forward_frames' L2/L1/
+    L3/L4/L5 walls, root-caused via a live write-watcher on the killed slot's active word landing at
+    1010:BF1B, an effect-pool scanner's own collision tail). The gameplay walk's own movement stays
+    the existing, whole-pool-verified snapshot pass (:func:`native_object_update_pool`) -- a
+    gameplay-pool object scanning OTHER gameplay-pool objects for contact (enemy-vs-enemy) is a
+    separate, not-yet-modelled case and stays VM-owned exactly as before.
+
     Verified against the VM at the gameplay-scan boundary (overkill.probes.verify_native_object_pass):
     one driver call over DS:2B5C reproduces the VM's whole gameplay pass byte-for-byte (every active
-    native-logic slot).  The effect pool is still only per-slot verified -- its scan increments the
-    DS:2340 tick once per entry, so a frozen-globals whole-pass check needs per-step tick evolution
-    first; the driver leaves non-native slots to the VM in both pools regardless.
+    native-logic slot) for the movement-only half this composes with. The effect walk's own in-place
+    pass is separately verified by overkill.probes.verify_native_object_pass_in_place.
     """
+    effect_pool_out, gameplay_after_effect_kills = native_object_pass_in_place(
+        state.effect_pool, state.object_pool, update_globals, entry_tick=update_globals.tick,
+    )
     return dataclasses.replace(
         state,
-        object_pool=native_object_update_pool(state.object_pool, update_globals),
-        effect_pool=native_object_update_pool(state.effect_pool, update_globals),
+        object_pool=native_object_update_pool(gameplay_after_effect_kills, update_globals),
+        effect_pool=effect_pool_out,
     )
 
 
