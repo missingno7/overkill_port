@@ -111,7 +111,10 @@ class B9f0MovementResult:
     B9F0's four paths (Path A sprite-refresh; the reached-target BA5A helper or plain sprite-refresh;
     the overshoot 5E42 step; the 5DB2 target seek) all tail-jump to BC4B.  Records the six handoff
     fields; ``substate``/``active`` are unchanged by the movement half (BC4B owns the post-move
-    y/active).  Compose with ``object_postmove_bc4b`` for the slot's post-move y/active."""
+    y/active).  Compose with ``object_postmove_bc4b`` for the slot's post-move y/active.
+    ``move_step_error`` is the 5E42 Bresenham accumulator (record byte +2E) -- only the BA5A helper
+    and the overshoot-step paths advance it (each makes its own 5E42 call); the other paths leave it
+    unwritten in the real ASM, so this carries the ORIGINAL input value through unchanged for them."""
 
     substate: int
     direction_or_step: int
@@ -119,6 +122,7 @@ class B9f0MovementResult:
     x_word: int
     y_word: int
     active_word: int
+    move_step_error: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -129,7 +133,10 @@ class B86dMovementResult:
     seek; the fall-through formation drift) all tail-jump to the shared BC4B post-move stage.  This
     records the six fields the movement half leaves at that handoff; ``substate`` and ``active`` are
     unchanged by the movement half (BC4B then owns the y clamp / X-bounds death).  Compose with
-    ``object_postmove_bc4b`` for the slot's post-move y/active."""
+    ``object_postmove_bc4b`` for the slot's post-move y/active.  ``move_step_error`` is the 5E42
+    Bresenham accumulator (record byte +2E) -- only the edge-steer branch advances it (its own 5E42
+    call computes a new value); the other two branches leave it unwritten in the real ASM, so this
+    carries the ORIGINAL input value through unchanged for them, not a guessed/zeroed one."""
 
     substate: int
     direction_or_step: int
@@ -137,6 +144,7 @@ class B86dMovementResult:
     x_word: int
     y_word: int
     active_word: int
+    move_step_error: int
 
 
 @dataclass(frozen=True, slots=True)

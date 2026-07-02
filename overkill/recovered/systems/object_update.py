@@ -47,6 +47,7 @@ _OFF_SPRITE = 0x08
 _OFF_OBJECT_TYPE = 0x14
 _OFF_LOGIC_ID = 0x18
 _OFF_SUBSTATE = 0x1C
+_OFF_MOVE_STEP_ERROR = 0x2E
 _OFF_COUNTER_20 = 0x20
 
 
@@ -121,8 +122,12 @@ def _advance_b86d(pool: ObjectPool, i: int, g: ObjectUpdateGlobals) -> dict | No
         g.vertical_delta, g.phase_2328, g.step_mode, g.direction_table,
     )
     pm = object_postmove_bc4b(mv.x_word, mv.y_word, mv.active_word, pool.logic_id(i), g.global_disable)
+    # mv.move_step_error is the ORIGINAL input passed through unchanged on the two branches that don't
+    # touch it (see B86dMovementResult's docstring), so applying it unconditionally is always correct --
+    # never a guess, and matches the edge-steer branch's own 5E42-advanced value on the branch that does.
     updates = {_OFF_DIRECTION: mv.direction_or_step, _OFF_SPRITE: mv.sprite_or_state,
-               _OFF_X: mv.x_word, _OFF_Y: pm.y_word, _OFF_ACTIVE: pm.active_word}
+               _OFF_X: mv.x_word, _OFF_Y: pm.y_word, _OFF_ACTIVE: pm.active_word,
+               _OFF_MOVE_STEP_ERROR: mv.move_step_error}
     return _fold_bc4b_collision(pool, i, g, updates)
 
 
@@ -142,8 +147,12 @@ def _advance_b9f0(pool: ObjectPool, i: int, g: ObjectUpdateGlobals) -> dict | No
         step_mode=g.step_mode, direction_table=g.direction_table,
     )
     pm = object_postmove_bc4b(mv.x_word, mv.y_word, mv.active_word, pool.logic_id(i), g.global_disable)
+    # mv.move_step_error is the ORIGINAL input passed through unchanged on the paths that don't touch it
+    # (see B9f0MovementResult's docstring), so applying it unconditionally is always correct -- never a
+    # guess, and matches the BA5A/overshoot branches' own 5E42-advanced value on the paths that do.
     updates = {_OFF_DIRECTION: mv.direction_or_step, _OFF_SPRITE: mv.sprite_or_state,
-               _OFF_X: mv.x_word, _OFF_Y: pm.y_word, _OFF_ACTIVE: pm.active_word}
+               _OFF_X: mv.x_word, _OFF_Y: pm.y_word, _OFF_ACTIVE: pm.active_word,
+               _OFF_MOVE_STEP_ERROR: mv.move_step_error}
     return _fold_bc4b_collision(pool, i, g, updates)
 
 
@@ -182,7 +191,12 @@ def _advance_b24d(pool: ObjectPool, i: int, g: ObjectUpdateGlobals) -> dict | No
     )
     if u is None:
         return None
-    return {_OFF_DIRECTION: u.direction_or_step, _OFF_X: u.x_word, _OFF_Y: u.y_word, _OFF_ACTIVE: u.active_word}
+    # object_update_b24d's own 5E42 call advances the Bresenham move_step_error accumulator every step
+    # (object_delta_steer_5e42 is stateful across calls); a single-call, VM-reset coverage probe can
+    # never notice this field going unapplied (nothing carries the pool forward to observe it), but a
+    # multi-tick native driver must persist it or every later tick re-steers from a stale error term.
+    return {_OFF_DIRECTION: u.direction_or_step, _OFF_X: u.x_word, _OFF_Y: u.y_word,
+            _OFF_ACTIVE: u.active_word, _OFF_MOVE_STEP_ERROR: u.move_step_error}
 
 
 def _advance_b909(pool: ObjectPool, i: int, g: ObjectUpdateGlobals) -> dict | None:

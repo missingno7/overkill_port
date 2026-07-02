@@ -369,7 +369,7 @@ def object_update_b86d(
             move_step_error, step_mode, direction_table,
         )
         return B86dMovementResult(substate, steer.direction_or_step, B86D_EDGE_STEER_SPRITE,
-                                  steer.x_word, steer.y_word, active_word)
+                                  steer.x_word, steer.y_word, active_word, steer.move_step_error)
     if (a7a0 & 0xFFFF) < B86D_A7A0_THRESHOLD:
         target = MovementTarget(y_word=target_y & B86D_LOW_BIT_CLEAR, x_word=target_x & B86D_LOW_BIT_CLEAR)
         seek = object_target_seek_step_5db2(
@@ -377,9 +377,11 @@ def object_update_b86d(
             B86D_A7A0_SEEK_MODE, direction_table,
         )
         new_dir = B86D_A7A0_BLOCKED_DIRECTION if seek.blocked else seek.direction_or_step
-        return B86dMovementResult(substate, new_dir, B86D_A7A0_SPRITE, seek.x_word, seek.y_word, active_word)
+        return B86dMovementResult(substate, new_dir, B86D_A7A0_SPRITE, seek.x_word, seek.y_word, active_word,
+                                  move_step_error)
     drift = object_update_b86d_drift(x_word, vertical_delta, phase_2328)
-    return B86dMovementResult(substate, direction, drift.sprite_or_state, drift.x_word, y_word, active_word)
+    return B86dMovementResult(substate, direction, drift.sprite_or_state, drift.x_word, y_word, active_word,
+                              move_step_error)
 
 
 B9F0_A482_MOVEMENT_SENTINEL = 0xA4E4  # DS:A482 == A4E4h -> the movement paths, else sprite-refresh
@@ -424,7 +426,7 @@ def object_update_b9f0(
     native driver composes with object_postmove_bc4b."""
     refreshed = b9f0_sprite_from_frame(frame)
     if (a482 & 0xFFFF) != B9F0_A482_MOVEMENT_SENTINEL:
-        return B9f0MovementResult(substate, direction, refreshed, x_word, y_word, active_word)  # Path A
+        return B9f0MovementResult(substate, direction, refreshed, x_word, y_word, active_word, move_step_error)  # Path A
 
     new_target_y = (target_y + vertical_delta) & 0xFFFF
     new_target_x = b9f0_wrapped_target_x((target_x + horizontal_delta) & 0xFFFF)
@@ -435,25 +437,28 @@ def object_update_b9f0(
             mask = b9f0_periodic_helper_mask(difficulty)
             helper_fires = (tick & mask) == mask
         if not helper_fires:
-            return B9f0MovementResult(substate, direction, refreshed, x_word, y_word, active_word)  # Path B
+            return B9f0MovementResult(substate, direction, refreshed, x_word, y_word, active_word, move_step_error)  # Path B
         deltas = object_delta_5e1b(x_word, y_word, ref_box_x, ref_box_y, ref_box_scan)
         s = object_delta_steer_5e42(
             x_word, y_word, direction, deltas.move_delta_y, deltas.move_delta_x,
             move_step_error, step_mode, direction_table,
         )
         return B9f0MovementResult(substate, s.direction_or_step, refreshed,
-                                  (s.x_word + B9F0_BA5A_X_NUDGE) & 0xFFFF, s.y_word, active_word)  # BA5A
+                                  (s.x_word + B9F0_BA5A_X_NUDGE) & 0xFFFF, s.y_word, active_word,
+                                  s.move_step_error)  # BA5A
 
     if (x_word & 0xFFFF) > new_target_x:
         s = object_delta_steer_5e42(
             x_word, y_word, direction, move_delta_y, move_delta_x, move_step_error, step_mode, direction_table,
         )
         return B9f0MovementResult(substate, s.direction_or_step, sprite,
-                                  b9f0_wrapped_x_on_overflow(s.x_word), s.y_word, active_word)  # Path C
+                                  b9f0_wrapped_x_on_overflow(s.x_word), s.y_word, active_word,
+                                  s.move_step_error)  # Path C
 
     target = MovementTarget(y_word=new_target_y & 0xFFFE, x_word=new_target_x & 0xFFFE)
     seek = object_target_seek_step_5db2(x_word & 0xFFFE, y_word & 0xFFFE, direction, target, B9F0_SEEK_MODE, direction_table)
-    return B9f0MovementResult(substate, seek.direction_or_step, sprite, seek.x_word, seek.y_word, active_word)  # Path D
+    return B9f0MovementResult(substate, seek.direction_or_step, sprite, seek.x_word, seek.y_word, active_word,
+                              move_step_error)  # Path D
 
 
 # 1010:AB10 logic_id=6 per-frame update.  The object dies once the level frame
