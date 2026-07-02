@@ -24,12 +24,14 @@ from overkill.recovered.adapters.cold_level_adapter import level_tile_context_fr
 from overkill.recovered.domain.frame_loop import FireControlState, FrameInput, PlayerFrameStep
 from overkill.recovered.domain.native_game_state import NativeGameState
 from overkill.recovered.domain.object_update import ObjectUpdateGlobals
+from overkill.recovered.domain.scroll import ScrollState, ScrollTickOutcome
 from overkill.recovered.domain.tilemap import LevelTileContext
 from overkill.recovered.systems.frame_loop import (
     native_action_fanout_step,
     native_object_pass,
     native_player_frame_step,
 )
+from overkill.recovered.systems.scroll import step_scroll_world_progress_gate_a66f
 
 
 @dataclass(frozen=True)
@@ -40,6 +42,12 @@ class NativeGame:
     state: NativeGameState
     origin_x: int = 0  # DS:234E scroll (the tile-probe origin)
     row_base: int = 0  # DS:2350 scroll (the tile-probe row base)
+    # The rest of A6FE/A74E's forward-scroll bookkeeping, carried between ticks so step_scroll can run
+    # the pure A66F gate natively (see overkill.recovered.systems.scroll).  Not tile-probe-consumed;
+    # defaults match a level's post-load state (DS:234C = the fixed row-source start, forward flag set).
+    row_source: int = 0x5B00  # DS:234C
+    rows_to_milestone: int = 0  # DS:A978
+    forward_last: bool = True  # DS:2354 == 0
     fire: FireControlState = dataclasses.field(default_factory=FireControlState)
 
     @classmethod
@@ -99,6 +107,36 @@ class NativeGame:
             source_x=source_x, source_y=source_y, read_ds_word=read_ds_word,
         )
         return dataclasses.replace(self, state=new_state, fire=new_fire)
+
+    @property
+    def scroll(self) -> ScrollState:
+        """This game's forward-scroll bookkeeping as one value object (the A66F/A6FE fields)."""
+        return ScrollState(
+            origin_x=self.origin_x, row_base=self.row_base, row_source=self.row_source,
+            rows_to_milestone=self.rows_to_milestone, forward_last=self.forward_last,
+        )
+
+    def step_scroll(self, *, a47c: int, a47e: int, a480: int) -> tuple["NativeGame", ScrollTickOutcome | None]:
+        """Run the native forward world-scroll tick (A66F gate -> A6FE), advancing origin_x/row_base.
+
+        This runs in the real frame order right BEFORE the action fan-out (A66F at 9BAC precedes A067
+        at 9BAF), so the row_base it produces is the DS:2350 the fan-out and object stages then read.
+        The gate globals DS:A47C/A47E/A480 are still-VM-owned per-frame inputs (like the other
+        ``step_*`` methods' kwargs).  Returns the (possibly unchanged) game plus the tick outcome; a
+        ``None`` outcome means A66F declined this tick (a rare boss/milestone branch, see
+        :func:`~overkill.recovered.systems.scroll.step_scroll_world_progress_gate_a66f`) and the
+        caller should leave the scroll state VM-owned for that one tick -- the game is returned
+        unchanged in that case.
+        """
+        outcome = step_scroll_world_progress_gate_a66f(self.scroll, a47c=a47c, a47e=a47e, a480=a480)
+        if outcome is None:
+            return self, None
+        s = outcome.state
+        game = dataclasses.replace(
+            self, origin_x=s.origin_x, row_base=s.row_base, row_source=s.row_source,
+            rows_to_milestone=s.rows_to_milestone, forward_last=s.forward_last,
+        )
+        return game, outcome
 
     def step_objects(self, update_globals: ObjectUpdateGlobals) -> "NativeGame":
         """Run the object-update pass over both pools, using this level's cold tile context.

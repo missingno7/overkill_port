@@ -116,6 +116,42 @@ def test_native_game_step_action_fanout_composes_and_wires_fire_state():
     assert (out.state.object_pool.x_word(0), out.state.object_pool.y_word(0)) == (0x50, 0x60)
 
 
+def _scroll_game(origin_x: int, row_base: int, **extra) -> NativeGame:
+    from overkill.asset_codecs.native_level import NativeLevel
+
+    lvl = NativeLevel(level=0, tile_plane=b"\x00" * 3744, class_table=b"\x01" * 256, blocks=b"", graphics=b"")
+    return NativeGame(lvl, _starting_state(), origin_x=origin_x, row_base=row_base, **extra)
+
+
+def test_native_game_step_scroll_advances_origin_and_row_base():
+    # origin_x==0 at entry -> this tick pulls a tile row (row_base += 13) and origin_x wraps to 15.
+    game = _scroll_game(origin_x=0, row_base=0x100, rows_to_milestone=10)
+    out, outcome = game.step_scroll(a47c=0, a47e=0, a480=0)
+    assert outcome is not None and outcome.pulled_row
+    assert out is not game  # functional: a new NativeGame
+    assert out.origin_x == 0x0F
+    assert out.row_base == 0x100 + 0x0D
+    assert out.rows_to_milestone == 9
+    # The evolved bookkeeping round-trips through the .scroll view.
+    assert out.scroll.origin_x == 0x0F and out.scroll.row_base == 0x100 + 0x0D
+
+
+def test_native_game_step_scroll_is_a_noop_when_gate_globals_are_set():
+    game = _scroll_game(origin_x=0, row_base=0x100)
+    out, outcome = game.step_scroll(a47c=1, a47e=0, a480=0)
+    assert outcome is not None and not outcome.pulled_row
+    assert out.origin_x == game.origin_x and out.row_base == game.row_base
+
+
+def test_native_game_step_scroll_declines_on_milestone_and_leaves_game_unchanged():
+    from overkill.recovered.systems.scroll import BOSS_MATERIALIZE_ROW_BASE, FORWARD_ROW_STRIDE
+
+    game = _scroll_game(origin_x=0, row_base=BOSS_MATERIALIZE_ROW_BASE - FORWARD_ROW_STRIDE, rows_to_milestone=1)
+    out, outcome = game.step_scroll(a47c=0, a47e=0, a480=0)
+    assert outcome is None  # A66F's boss-materialize branch -- caller stays VM-owned this tick
+    assert out is game  # unchanged
+
+
 def test_native_game_step_composes_all_three_stages_in_order():
     # step() is pure glue: it must produce EXACTLY what hand-chaining step_player ->
     # step_action_fanout -> step_objects (threading input_flags by hand) produces.
