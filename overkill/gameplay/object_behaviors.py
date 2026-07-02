@@ -310,6 +310,20 @@ def _run_object_behavior_b73e(cpu, *, parent: str, chain: str, cx_value: int) ->
     if resolution.kind != "waypoint_loop":
         raise AssertionError("pure B73E target-reached resolution missed the waypoint loop")
 
+    # B82D IS a real retry loop, confirmed by a live trace of the x/y-matched
+    # case (the tandy_text_score_gameplay snapshot): B857 "jz -> B826" jumps
+    # STRAIGHT BACK to the waypoint-read with NO intervening A7A0 check and NO
+    # DS:20A6 touch -- i.e. the loop-back skips the spawn-check entirely.  A
+    # separate whole-corpus live trace (DS:20A6 BP-tagged writes across
+    # 11000+ L4 frames) confirms the converse: B73E is dispatched once per
+    # frame like any other behavior, and DS:20A6 is touched at most ONCE per
+    # dispatch (B7BD's reaches_b808 check above already ran the spawn, once,
+    # for every resolution kind including this one) -- so this loop's own
+    # body must never call run_b800_spawn_pointer_advance itself.  Doing so
+    # was exactly the bug a real trace caught: it double-spawned, giving L1's
+    # forward-carry sweep an extra formation member (commit 2747255).  The
+    # A7A0 check that used to sit in this loop was never actually observed on
+    # the loop-back path either -- removed along with the spawn-check.
     for _ in range(0x20):
         cpu.s.si = cpu.mem.rw(ds, 0xA842)
         _cmp_word(cpu, cpu.s.si, 0xA894)
@@ -343,36 +357,12 @@ def _run_object_behavior_b73e(cpu, *, parent: str, chain: str, cx_value: int) ->
             _run_object_postmove_bc4b(cpu, parent=parent, chain=f"{chain} -> B73E -> B7BD -> B82D -> BC4B", cx_value=cx_value)
             cpu.s.ip = cpu.pop()
             return
-
-        _cmp_word(cpu, cpu.mem.rw(ds, 0xA7A0), 0x0023)
-        if cpu.mem.rw(ds, 0xA7A0) < 0x0023:
-            _run_object_postmove_bc4b(cpu, parent=parent, chain=f"{chain} -> B73E -> B7BD -> B82D -> B7BD", cx_value=cx_value)
-            cpu.s.ip = cpu.pop()
-            return
-        # Same spawn-window gate as the non-loop path above.  Confirmed via live
-        # ASM trace: inside the [02BCh, 02D0h] band, B800's pointer-advance and
-        # conditional 7476 spawn fall straight through into this same waypoint
-        # read/compare block (B826) -- i.e. it is also just another loop
-        # iteration, after the spawn side-effect runs first.
-        game_counter = cpu.mem.rw(ds, 0x2340)
-        loop_pure_reaches_b808 = b73e_reaches_b808(game_counter)
-        _cmp_word(cpu, game_counter, B73E_SPAWN_WINDOW_MIN)
-        if game_counter < B73E_SPAWN_WINDOW_MIN:
-            if not loop_pure_reaches_b808:
-                raise AssertionError("pure B73E spawn-window gate disagrees in B82D loop")
-            continue
-        _cmp_word(cpu, game_counter, B73E_SPAWN_WINDOW_MAX)
-        if game_counter > B73E_SPAWN_WINDOW_MAX:
-            if not loop_pure_reaches_b808:
-                raise AssertionError("pure B73E spawn-window gate disagrees in B82D loop")
-            continue
-        if loop_pure_reaches_b808:
-            raise AssertionError("pure B73E spawn-window gate disagrees in B82D loop")
-        run_b800_spawn_pointer_advance(branch="B7BD -> B82D loop -> B800")
+        # Both matched: real ASM jumps straight back to the waypoint-read
+        # (B857 "jz -> B826"), no spawn-check, no A7A0 check.
         continue
     _raise_unverified_path(
-        cpu, parent=parent, chain=f"{chain} -> B73E -> B7BD -> B82D loop",
-        target_ip=0xB7BD, bp=bp, cx_value=cx_value,
+        cpu, parent=parent, chain=f"{chain} -> B73E -> B7BD -> B82D loop (0x20 iterations exhausted)",
+        target_ip=0xB826, bp=bp, cx_value=cx_value,
     )
 
 
