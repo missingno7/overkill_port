@@ -76,9 +76,10 @@ standalone. Re-derive from metrics + demos each pass; do not guess. Two tiers:
 3. **The runtime path is VM-free.** Standalone needs none of: VM memory, interpreted ASM,
    original framebuffer, hook dispatch, CPU registers, segment addresses, live oracle calls.
 4. **The coastline is collapsed.** `scripts/source_port_status.py` shows gameplay logic
-   essentially all in `source_pure`/`game_core` (pure % → its ceiling; **22.0% as of
-   2026-06-30**, up from 14.3%), the `glue` hook count near zero, and `hooks.py` back under
-   its size budget. Remaining hooks are thin adapters used only by `--backend vm`.
+   essentially all in `source_pure`/`game_core` (pure % → its ceiling; **30.2% as of
+   2026-07-03**, up from 22.0% on 2026-06-30 and 14.3% earlier), the `glue` hook count near
+   zero, and `hooks.py` back under its size budget. Remaining hooks are thin adapters used
+   only by `--backend vm`.
 
 ### Full cold boot (the whole game, from a cold start)
 5. **Cold boot, no VM.** A native entry (e.g. `scripts/native_boot.py`) starts the game from
@@ -226,7 +227,7 @@ growing native gate.
 ## 5. Verification gates (tested against the demos — all must be green)
 
 ```
-suite        python -m pytest -q                         (550+ passed / 23 skipped today)
+suite        python -m pytest -q                         (1057 passed / 23 skipped, 2026-07-03)
 demo-replay  tests/test_demo_replay_equivalence.py       (bounded)  -> the hybrid byte-exact gate
 full demos   OVERKILL_FULL_DEMO_VERIFY=1 ... (the affected demos)    -> deep byte-exact
 layers       scripts/audit_recovered_layers.py + audit_architecture.py + lint.py
@@ -264,6 +265,10 @@ behaviors delegate). Continue, decision-by-decision, on the big lifted files (pu
 candidates by size: `object_movement` 1391, `game_state` 1255, `action_spawns` 1247,
 `object_behaviors` 1231, `object_runtime` 1095 — `frame_orchestration` is a frame *map*, do
 NOT put logic in it).
+
+**Recovered 2026-07-03:** `B73E` (logic_id `0x20`, the waypoint-follower) — was the dominant
+remaining object-behavior wall; its `B800` formation-spawn + `B82D` loop are now native and the
+`3153` xfail is gone. (Distinct from the still-open `3153` HUD *glyph blit* below.)
 
 Concrete next slices (each: trace → pure → thin adapter → demo-replay verify → commit):
 - The un-collapsed behaviors with no pure counterpart: `aed8`, `8d4f`.
@@ -316,8 +321,11 @@ proven 30/30). Remaining:
 ### Bucket C — the standalone `NativeGameState` runtime + verify mode (native gate)
 The native **frame controller** now exists: `overkill/recovered/systems/frame_loop.py` is the
 VM-free counterpart of `9B2E`, sequencing recovered systems over `NativeGameState`. Verified
-stages so far: input decode, the movement bits (`native_player_frame_step`), and the object
-pass (`native_object_pass`, whole-pool). Grow it stage by stage and build the loop around it:
+stages so far: input decode, the movement bits (`native_player_frame_step`), the object pass
+(`native_object_pass`, whole-pool), and **world-scroll** (`A66F` gate + `A6FE` forward tick,
+`recovered/systems/scroll.py`; wired into `NativeGame.step()` in real 9B2E→A66F→A067→AA0D order
+and carried self-sustaining in `verify_native_forward_frames`, 2026-07-03). Grow it stage by
+stage and build the loop around it:
 - **Finish the gameplay frame** before the loop can run a real level: the spawn machinery
   (`A067`/`A958` fire patterns + the `7524` allocator), collision-death (the `BC4B` contact
   path, `BFC7`→`C037`), scripted-input (`99F6`), and the sidearm/coordinate rings
