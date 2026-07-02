@@ -30,6 +30,7 @@ from overkill.recovered.domain.frame_loop import (
     FireControlState,
     FrameAccumulatorShiftOutcome,
     FrameInput,
+    FrameScanEntryOutcome,
     PlayerFrameStep,
 )
 from overkill.recovered.domain.native_game_state import NativeGameState
@@ -205,3 +206,12 @@ def step_demo_counter_tick_1f8f_081d(counter_98a7: int, speed_bucket_a47e: int, 
                 if speed_bucket_a47e <= 0x02:
                     reload = 0x28
     return DemoCounterTickOutcome(counter_98a7=reload, counter_98a6=(counter_98a6 + 1) & 0xFF)
+
+
+def step_frame_scan_entry_a940_tail(flag_98a8_before: int, boss_pending_a8c2: int) -> FrameScanEntryOutcome:
+    """Pure model of ``1010:A940``'s tail: the ``98A8``/``98A9`` edge-detect + the ``A8C2``
+    boss-scan fork.  Runs unconditionally every frame, after A940's ``DS:2356==5`` attract-mode
+    branch (not modelled here) whether or not that branch ran."""
+    new_98a9 = 1 if flag_98a8_before != 0 else 0
+    scan_target = "boss" if boss_pending_a8c2 == 1 else "normal"
+    return FrameScanEntryOutcome(flag_98a8=0, flag_98a9=new_98a9, scan_target=scan_target)

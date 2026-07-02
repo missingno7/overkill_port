@@ -82,6 +82,24 @@ class DemoCounterTickOutcome:
 
 
 @dataclass(frozen=True, slots=True)
+class FrameScanEntryOutcome:
+    """Result of ``1010:A940``'s TAIL -- the ``DS:98A8``/``DS:98A9`` edge-detect (unconditional,
+    runs every frame regardless of the ``DS:2356==5`` attract-mode branch) plus the ``DS:A8C2``
+    boss-latch fork that decides which object-scan entry the frame takes next.
+
+    ``flag_98a9`` mirrors whatever ``flag_98a8`` was AT ENTRY this frame (an edge-detect: "was
+    98A8 set last frame" latched into 98A9), and ``flag_98a8`` itself is always cleared to 0.
+    ``scan_target`` is ``"boss"`` when the boss latch (``DS:A8C2``, see
+    ``ObjectUpdateGlobals.a8c2_boss_mode``/``BOSS_GROUP_LATCH``) is 1 -- the rare, still-unlifted
+    ``0xA9DA``->``F797`` path, not modelled past this fork -- or ``"normal"`` (``0xA9E0``, the
+    already-recovered object scan, entered with ``CX=0x23``)."""
+
+    flag_98a8: int  # always 0 after
+    flag_98a9: int  # 0 or 1 -- mirrors flag_98a8's ENTRY value
+    scan_target: str  # "boss" | "normal"
+
+
+@dataclass(frozen=True, slots=True)
 class PlayerFrameStep:
     """Result of the native player sub-step: input decode -> the 9B2E movement bits.
 
