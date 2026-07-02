@@ -64,6 +64,23 @@ class FrameAccumulatorShiftOutcome:
     prev_a8ca: int
 
 
+# 1F8F:081D -- the demo/attract-mode counter tick.  A940 calls this once per frame only while
+# DS:2356 == 5 (attract-mode demo playback is active -- a SECOND, unrelated meaning of the same
+# global the level-select screen uses for its own chosen-cell value; see the frame-controller
+# memory's DS:2356 gotcha).  DS:A47E is the SAME "speed bucket" global object_update.py's
+# ObjectUpdateGlobals.a47e already threads through elsewhere (an early-global guard, <=2 -> B8F8
+# edge-steer) -- reused here as a difficulty/speed scale for how fast this timer reloads.
+DEMO_TICK_DEFAULT_RELOAD = 0x78
+
+
+@dataclass(frozen=True, slots=True)
+class DemoCounterTickOutcome:
+    """Result of one ``1F8F:081D`` demo/attract-mode counter tick."""
+
+    counter_98a7: int  # DS:98A7 after -- decremented, or reloaded from the speed-bucket table
+    counter_98a6: int  # DS:98A6 after -- reset to 0, or incremented
+
+
 @dataclass(frozen=True, slots=True)
 class PlayerFrameStep:
     """Result of the native player sub-step: input decode -> the 9B2E movement bits.

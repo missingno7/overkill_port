@@ -25,6 +25,8 @@ from __future__ import annotations
 import dataclasses
 
 from overkill.recovered.domain.frame_loop import (
+    DEMO_TICK_DEFAULT_RELOAD,
+    DemoCounterTickOutcome,
     FireControlState,
     FrameAccumulatorShiftOutcome,
     FrameInput,
@@ -178,3 +180,28 @@ def step_frame_accumulator_shift_a940(counter_a8ce: int, a8c8: int, a8cc: int) -
     ``DS:A8CC`` cells are then always reset to 0, so callers don't need to thread them forward."""
     new_counter = counter_a8ce if counter_a8ce == 0xFFFF else (counter_a8ce + 1) & 0xFFFF
     return FrameAccumulatorShiftOutcome(counter_a8ce=new_counter, prev_a8c6=a8c8, prev_a8ca=a8cc)
+
+
+def step_demo_counter_tick_1f8f_081d(counter_98a7: int, speed_bucket_a47e: int, counter_98a6: int) -> DemoCounterTickOutcome:
+    """Pure model of one ``1F8F:081D`` demo/attract-mode counter tick.
+
+    Decrements ``counter_98a7`` (wraps mod 0x100 like the real byte ``DEC``); if it is still
+    non-zero, ``counter_98a6`` resets to 0 and nothing else happens this tick.  Once it reaches
+    0, reloads it from a difficulty/speed-bucket table keyed on ``speed_bucket_a47e`` (the SAME
+    cascading nested-threshold shape as the ASM: default 0x78, tightening to 0x64/0x50/0x3C/0x28
+    as ``speed_bucket_a47e`` drops through 0x10/0x08/0x04/0x02 -- smaller = faster reload) and
+    increments ``counter_98a6``.
+    """
+    new_counter_98a7 = (counter_98a7 - 1) & 0xFF
+    if new_counter_98a7 != 0:
+        return DemoCounterTickOutcome(counter_98a7=new_counter_98a7, counter_98a6=0)
+    reload = DEMO_TICK_DEFAULT_RELOAD
+    if speed_bucket_a47e <= 0x10:
+        reload = 0x64
+        if speed_bucket_a47e <= 0x08:
+            reload = 0x50
+            if speed_bucket_a47e <= 0x04:
+                reload = 0x3C
+                if speed_bucket_a47e <= 0x02:
+                    reload = 0x28
+    return DemoCounterTickOutcome(counter_98a7=reload, counter_98a6=(counter_98a6 + 1) & 0xFF)
