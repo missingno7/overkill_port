@@ -183,6 +183,30 @@ class B24dSlotUpdate:
 
 
 @dataclass(frozen=True, slots=True)
+class Object8d4fSlotUpdate:
+    """Pure per-slot result of the 1010:8D4F behavior's NOT-BLOCKED path (EFAE logic_ids
+    0x13/0x15/0x1C/0x1F: target-patrol seek toward a SHARED GLOBAL waypoint (DS:A482 -> two words),
+    then BC4B post-move.
+
+    Unlike B2CD (a per-slot waypoint LIST with reach-and-advance), 8D4F reads ONE global waypoint pair
+    every call (no advance, no loop, no per-slot pointer) and 5DB2-seeks (mode 3, 8px/step) toward
+    {waypoint_x + 0x20, waypoint_y}.  When the seek is NOT blocked (target not yet reached -- the
+    overwhelmingly common case), the overlay at 1F8F:0297-0451 falls to a SHARED tail (0448) setting
+    ``sprite = (direction_or_step + 0x3B) & 0xFFFF`` for all four logic ids alike -- disassembled +
+    confirmed byte-exact against 5 live sprite writes (direction 2/3/4/6 -> sprite 0x3D/0x3E/0x3F/0x41,
+    all matching the formula exactly).  When BLOCKED (target reached), the overlay instead branches by
+    logic_id (0x13/0x15/0x1C/0x1F each get a DIFFERENT tail, per the raw bytes at 1F8F:02A1 onward) --
+    that 4-way branch is NOT yet modelled, so the pure function returns ``None`` on ``seek.blocked``
+    and the driver leaves the slot to the VM entirely for that tick.  Substate/active are untouched
+    (BC4B owns the post-move y clamp / X-bounds death, same as every other BC4B-tail behavior)."""
+
+    direction_or_step: int
+    sprite_or_state: int
+    x_word: int
+    y_word: int
+
+
+@dataclass(frozen=True, slots=True)
 class B2cdSlotUpdate:
     """Pure WHOLE per-slot result of the 1010:B2CD behavior (EFAE logic_id 0x12): waypoint seek + sprite.
 

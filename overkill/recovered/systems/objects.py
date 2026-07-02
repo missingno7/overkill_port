@@ -26,6 +26,7 @@ from overkill.recovered.domain.object_behaviors import (
     B86dMovementResult,
     B9f0MovementResult,
     BossGroupSlotTransition,
+    Object8d4fSlotUpdate,
     ObjectBoundsTileDecision,
     ObjectDeactivateDispatchDecision,
     ObjectLogicDispatchAA2B,
@@ -690,6 +691,39 @@ def object_update_aed8(
     else:  # tile_probe: deactivate iff the tile one map row below has class 1.
         new_active = 0x0000 if object_tile_probe_deactivates_ad60(final_x, y, tiles) else (active_word & 0xFFFF)
     return Aed8SlotUpdate(substate=new_substate, x_word=final_x, y_word=y, active_word=new_active)
+
+
+OBJECT_8D4F_WAYPOINT_TARGET_X_BIAS = 0x0020   # 8D54: target X = waypoint[0] + 0x20
+OBJECT_8D4F_SEEK_MODE = 0x0003                 # DS:2308 mode 8D4F always sets before 5DB2
+OBJECT_8D4F_SPRITE_BIAS = 0x003B               # 1F8F:044B: sprite = direction + 0x3B on the not-blocked tail
+
+
+def object_update_8d4f(
+    x_word: int,
+    y_word: int,
+    direction: int,
+    waypoint_x: int,
+    waypoint_y: int,
+    direction_table,
+) -> Object8d4fSlotUpdate | None:
+    """Pure per-slot 8D4F update, NOT-BLOCKED path only (EFAE logic_ids 0x13/0x15/0x1C/0x1F):
+    target-patrol seek toward a SHARED GLOBAL waypoint, then the shared sprite tail, then BC4B.
+
+    Reads the current global waypoint pair (``waypoint_x``/``waypoint_y``, from DS:A482 -> two DS
+    words -- the caller resolves the pointer, this owns the arithmetic) and 5DB2-seeks (mode 3, 8px)
+    toward ``{waypoint_x + 0x20, waypoint_y}``.  Unlike B2CD there is no per-slot waypoint list and no
+    reach-and-advance loop: one global target, one seek, every call.  Returns ``None`` when the seek
+    is blocked (target reached) -- the overlay then branches by logic_id into 4 different, not yet
+    modelled tails (see :class:`Object8d4fSlotUpdate`); otherwise the shared 1F8F:0448 tail sets
+    ``sprite = direction + 0x3B`` (disassembly-confirmed) and the caller composes this with
+    ``object_postmove_bc4b`` for y/active, matching every other BC4B-tail behavior."""
+    target = MovementTarget(y_word=waypoint_y & 0xFFFF, x_word=(waypoint_x + OBJECT_8D4F_WAYPOINT_TARGET_X_BIAS) & 0xFFFF)
+    seek = object_target_seek_step_5db2(x_word, y_word, direction, target, OBJECT_8D4F_SEEK_MODE, direction_table)
+    if seek.blocked:
+        return None  # the 4-way logic_id-specific reached-target tail -- not yet modelled
+    sprite = (seek.direction_or_step + OBJECT_8D4F_SPRITE_BIAS) & 0xFFFF
+    return Object8d4fSlotUpdate(direction_or_step=seek.direction_or_step, sprite_or_state=sprite,
+                                 x_word=seek.x_word, y_word=seek.y_word)
 
 
 B2CD_WAYPOINT_TARGET_X_BIAS = 0x0020   # B2D1: target X = waypoint[0] + 0x20

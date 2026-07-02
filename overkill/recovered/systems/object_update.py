@@ -26,6 +26,7 @@ from overkill.recovered.domain.movement import MovementTarget
 from overkill.recovered.systems.collision import object_postmove_bc4b, resolve_moving_object_collision
 from overkill.recovered.systems.movement import object_target_seek_step_5db2
 from overkill.recovered.systems.objects import (
+    object_update_8d4f,
     object_update_ae09,
     object_update_ae2c,
     object_update_ae7d,
@@ -212,6 +213,31 @@ def _advance_b909(pool: ObjectPool, i: int, g: ObjectUpdateGlobals) -> dict | No
     return {_OFF_DIRECTION: seek.direction_or_step, _OFF_X: seek.x_word, _OFF_Y: pm.y_word, _OFF_ACTIVE: pm.active_word}
 
 
+def _advance_8d4f(pool: ObjectPool, i: int, g: ObjectUpdateGlobals) -> dict | None:
+    # 8D4F (logic_ids 0x13/0x15/0x1C/0x1F, all four confirmed to share this one routine via the live
+    # EFC4 dispatch table): seek toward the SHARED GLOBAL waypoint at DS:A482 with 5DB2, then join BC4B.
+    # No per-slot waypoint pointer (unlike B2CD). None when there's no resolver, or the seek is blocked
+    # (the 4-way logic_id-specific reached-target tail -- not yet modelled) -> VM.
+    if g.waypoint_word_reader is None:
+        return None
+    waypoint_ptr = g.a482 & 0xFFFF
+    u = object_update_8d4f(
+        pool.x_word(i), pool.y_word(i), pool.direction_word(i),
+        g.waypoint_word_reader(waypoint_ptr), g.waypoint_word_reader((waypoint_ptr + 2) & 0xFFFF),
+        g.direction_table,
+    )
+    if u is None:
+        return None
+    # 8D4F joins the shared BC4B post-move (bounds X-death + Y-clamp), then the 62F6 contact scan may
+    # deactivate a CANDIDATE (a different slot) on a collision -- same tail as B86D/B9F0/B2CD; confirmed
+    # live via a write-watcher on a killed gameplay candidate landing at 1010:BF1B from a logic_id 0x1C
+    # scanner (see native_object_pass_in_place / frame_loop.native_object_pass).
+    pm = object_postmove_bc4b(u.x_word, u.y_word, pool.active_word(i), pool.logic_id(i), g.global_disable)
+    updates = {_OFF_DIRECTION: u.direction_or_step, _OFF_SPRITE: u.sprite_or_state,
+               _OFF_X: u.x_word, _OFF_Y: pm.y_word, _OFF_ACTIVE: pm.active_word}
+    return _fold_bc4b_collision(pool, i, g, updates)
+
+
 def _advance_b2cd(pool: ObjectPool, i: int, g: ObjectUpdateGlobals) -> dict | None:
     # B2CD (logic_id 0x12): walk the +0x36 DS waypoint list ({X+0x20,Y}, advancing past reached ones) with
     # 5DB2, then the level/BDAC/scroll sprite, joining BC4B.  Only direction/sprite/x/y change; the advanced
@@ -245,6 +271,10 @@ NATIVE_OBJECT_HANDLERS = {
     0x1E: _advance_b909,
     0x1D: _advance_b86d,
     0x14: _advance_b9f0,
+    0x13: _advance_8d4f,
+    0x15: _advance_8d4f,
+    0x1C: _advance_8d4f,
+    0x1F: _advance_8d4f,
 }
 
 
@@ -285,7 +315,10 @@ def native_object_update(
     )
 
 
-_COLLISION_LOGIC_IDS = frozenset((0x001D, 0x0014, 0x0012))  # B86D / B9F0 / B2CD: the BC4B contact-scan handlers
+_COLLISION_LOGIC_IDS = frozenset((0x001D, 0x0014, 0x0012, 0x0013, 0x0015, 0x001C, 0x001F))  # B86D / B9F0 /
+# B2CD / 8D4F(x4): the BC4B contact-scan handlers.  8D4F's own contact-scan reach was confirmed live (a
+# write-watcher traced a logic_id 0x1C scanner's collision-death tail to 1010:BF1B); all four 8D4F logic
+# ids share the exact same routine (same EFC4 dispatch target), so the same BC4B contact-scan applies.
 
 
 def native_object_pass_in_place(

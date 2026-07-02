@@ -30,7 +30,8 @@ STRIDE_WORDS = STRIDE >> 1
 OFF_SUBSTATE, OFF_DIR, OFF_SPRITE, OFF_X, OFF_Y, OFF_ACTIVE, OFF_LOGIC = 0x1C, 0x06, 0x08, 0x02, 0x04, 0x00, 0x18
 MAX_WALK = 0x40                # sanity cap on the captured loop count
 COLLISION_DEATH_LOGIC_ID = 0x0001                          # BFC7->C037/C032 contact death sets logic_id 1
-COLLISION_HANDLER_LOGIC_IDS = frozenset((0x1D, 0x14, 0x12))  # B86D / B9F0 / B2CD: slots that run the BC4B scan
+COLLISION_HANDLER_LOGIC_IDS = frozenset((0x1D, 0x14, 0x12, 0x13, 0x15, 0x1C, 0x1F))  # B86D / B9F0 / B2CD /
+# 8D4F(x4): slots that run the BC4B scan
 # per-frame globals (same projection as verify_native_object_update_driver)
 REF_BOX_X, REF_BOX_Y, A278, BDAC = 0x237E, 0x2380, 0xA278, 0xBDAC
 REF_BOX_SCAN, A47E, A7A0, A47C = 0x2390, 0xA47E, 0xA7A0, 0xA47C
