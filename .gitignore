@@ -42,6 +42,13 @@ artifacts/repros/
 .mypy_cache/
 .ruff_cache/
 
+# Hook coverage warm-start cache: a play.py runtime byproduct with a per-run
+# "updated" timestamp (so it churns every run); no test depends on it and it
+# self-rebuilds. Untracked to keep the tree clean for unattended /goal runs.
+artifacts/hook_coverage_cache.json
+# Stray verify/run logs dropped in artifacts/ root (byproducts, not fixtures).
+artifacts/*.log
+
 # Local Nuked-OPL3 build products
 nuked_opl3/_opl3_cffi*.pyd
 nuked_opl3/_opl3_cffi*.so
