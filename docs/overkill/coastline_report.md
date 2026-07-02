@@ -6,7 +6,13 @@ refactor can shorten/raise it over time. See `rescue_refactor.md` for the plan.
 
 Regenerate the metrics with `PYTHONPATH=. python scripts/source_port_status.py`.
 
-## Layer inventory (2026-06-19)
+> **⚠ STALE SNAPSHOT (numbers below are 2026-06-19).** As of **2026-07-03** the headline is
+> **~30.2%** pure (not 10.7%) with **178 pure rules** (not 44) — the object-behavior vein
+> (`b73e`/`aed8`/`8d4f`/`5e42`/`b250`/`b2cd`…), the collision island, and world-scroll are all
+> recovered since. **Always run `scripts/source_port_status.py` for live figures; do not trust the
+> table/counts below as current.** Kept only for the layer taxonomy + push-down candidate shape.
+
+## Layer inventory (2026-06-19 snapshot — see stale-warning above)
 
 | Layer | mods | lines | role | direction |
 |---|---|---|---|---|
@@ -18,8 +24,9 @@ Regenerate the metrics with `PYTHONPATH=. python scripts/source_port_status.py`.
 | `source_pure` (recovered/{domain,systems}+islands) | 18 | 1793 | **pure VM-free game logic** | **grow** |
 | `game_core` | 4 | 399 | backend-agnostic protocols/types | grow |
 
-**Headline:** 10.7% of game-logic mass is pure source-like (2192 / 20577 lines).
-The rescue raises this by moving logic from `lifted` down into `source_pure`.
+**Headline (2026-06-19 snapshot — STALE; ~30.2% as of 2026-07-03, run the script):** 10.7% of
+game-logic mass is pure source-like (2192 / 20577 lines). The rescue raises this by moving logic
+from `lifted` down into `source_pure`.
 
 ## Coastline metrics
 

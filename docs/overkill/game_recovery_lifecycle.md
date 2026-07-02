@@ -1165,9 +1165,10 @@ A live snapshot so this generic lifecycle has a concrete position (re-derive fro
 
 - **Phases 0–5 (foundation → playable hybrid → snapshots/demos): DONE.** `dos_re` runs OVERKILL;
   hybrid is playable; demos under `artifacts/demos/` are the regression anchors.
-- **Phase 6–7 (recover islands → merge): well advanced.** ~22% of game-logic mass is pure
-  (`source_port_status.py`), 108+ pure rules. The gameplay-frame mechanics are native and
-  produced-vs-VM verified: input decode, player movement, the whole object pass (all enemy/
+- **Phase 6–7 (recover islands → merge): well advanced.** ~30.2% of game-logic mass is pure
+  (`source_port_status.py`, 2026-07-03; was ~22% on 2026-06-30), 178 pure rules. The gameplay-frame
+  mechanics are native and produced-vs-VM verified: input decode, player movement, world-scroll
+  (`A66F`/`A6FE`), the whole object pass (all enemy/
   projectile behaviours, whole-pool), the tile-contact probe; plus render (native_video).
 - **Phase 8–9 (separate logic from VM adapters / equivalence boundaries): in progress.** The
   layered architecture (views/bridge/domain/systems + the audits) enforces it; equivalence

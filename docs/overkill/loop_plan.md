@@ -11,6 +11,13 @@
 > largely done (see the backlog markers below). Keep using THIS file as the **procedure for
 > fixing any new divergence** a demo surfaces (step 2's disassemble-and-compare loop is
 > still exactly right), and as the unattended-mode operating rules.
+>
+> **STALE BACKLOG WARNING (2026-07-03):** the specific backlog items below are a 2026-06-19
+> snapshot and several are now DONE — e.g. `B2CD` (`object_update_b2cd`), the `BFC7`→`C037`
+> collision-death transition, and the whole object-vs-object collision island are recovered as
+> pure systems. Do NOT treat the backlog as a live to-do list; the authoritative queue is
+> `overnight_endgame_execution.md` §6. `BD17`'s global death/counter side-effects may remain
+> partial — verify against `recovered/systems/` + `loop_blockers.md` before acting on any item here.
 
 **Goal:** drive OVERKILL toward clean, complete, *source-like* code that stays
 byte-exact with the original — gradually, one verified slice at a time. Progress

@@ -21,6 +21,21 @@ divergence, and boss-milestone declines gracefully shadow-defer to the VM. Commi
 passed / 23 skipped. Next forward-carry walls are unrelated: effect-pool timing skew (L4/L5) + harness
 step budget (L1/L5).
 
+**Doc-staleness sweep (2026-07-03).** Audited the `/goal` docs for outdated claims that would misdirect
+the loop and corrected them: the brief §6 (`overnight_endgame_execution.md`) no longer lists already-
+recovered work as to-do (`aed8`/`8d4f`/`5e42`/`b250`/`b2cd`, the `3153` HUD glyph + `hud_text`, the
+`BC4B`/`BFC7`→`C037` collision island, `9C01`/`A33A`); Bucket B starfield + HUD are marked
+recovery-DONE with only backend WIRING open. **Correction to the "starfield CRACKED" entry below (2026-
+06-30): the starfield is now FULLY recovered + verified** — `recovered/systems/starfield.py` +
+`domain/starfield.py`, `verify_native_starfield.py`, `test_starfield*.py`. Its "Next: recover…" tail is
+DONE; only wiring into `compose_playfield_indices` remains. The move address is `1F8F:0922/0960` (the
+old `4C76` is wrong/absent). `loop_blockers.md` starfield section moved OPEN→RESOLVED; the `0x1c`/`8D4F`
+whole-scan blocker flagged partially-superseded (`0x1c`→`_advance_8d4f` now dispatched). Stale headline
+metrics in `coastline_report.md` (10.7%), `native_recovery_goal.md` (13.9%), `game_recovery_lifecycle.md`
+(22%), and `loop_plan.md` backlog banner updated to point at the live `source_port_status.py` figure.
+Genuinely still open (unchanged): `99F6` scripted-input, `A212` view-anchor, the FULL-fanout `A970`
+held-action counters, `BD17` global death side-effects, and the render-layer backend wiring.
+
 ## 2026-06-30 - CORRECTION + the starfield blocker CRACKED
 
 **Correction (supersedes the "Native terrain compositor" + "Controllable cold level" entries below):**

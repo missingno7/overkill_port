@@ -18,7 +18,17 @@ context. Each has the analysis already done so a human can pick up fast.
 
 ---
 
-## OPEN (2026-06-29) — the starfield plate blocks the native frame (`--backend native`)
+## RESOLVED (2026-07-03) — the starfield is fully recovered; only backend WIRING remains
+
+> **Update (2026-07-03): recovery DONE, this is no longer a blocker.** The starfield is a recovered,
+> verified pure system — `recovered/systems/starfield.py` + `recovered/domain/starfield.py` (move at
+> `1F8F:0922/0960`), probe `verify_native_starfield.py`, tests `test_starfield.py`/`test_starfield_cold.py`.
+> Do NOT re-trace or re-recover it, and ignore the "Next: recover…" tails below (they are completed).
+> The `4C76` "move" address cited below is WRONG — it is absent from the code; the move is `1F8F:0922/0960`.
+> The ONLY remaining starfield work is wiring the pure system into `compose_playfield_indices` for the
+> standalone `--backend native` frame (Bucket C). The dated analysis below is kept as historical provenance.
+
+## (historical, 2026-06-29) — the starfield plate blocked the native frame (`--backend native`)
 
 The standalone native frame is `playfield = starfield plate + sprites` (+ HUD). Every native
 leaf is recovered **and proven byte-exact** EXCEPT the **starfield plate** (the sparse
@@ -574,7 +584,13 @@ but diverges deep in the **full** run (`OVERKILL_FULL_DEMO_VERIFY=1`).
 
 ---
 
-## OPEN (2026-06-30) — the whole object scan diverges on ~2 variant-2 gameplay slots/frame
+## PARTIALLY SUPERSEDED (2026-07-03) — the whole object scan diverges on ~2 variant-2 gameplay slots/frame
+
+> **Update (2026-07-03): the `0x1c`/`8D4F` premise below is STALE.** `object_update_8d4f` now exists
+> (`systems/objects.py`) and the native dispatch DOES handle `0x1c` (`_advance_8d4f`, `systems/object_update.py`),
+> so "my driver only dispatches 0x0C/0x02/0x1D/0x14, skips 0x1c" no longer holds. Re-derive this
+> divergence against the CURRENT driver before acting on it; the remaining un-dispatched scanner may be
+> only `0x1e` (`B909`, a spawner). Do not re-attempt from the stale analysis; re-trace first.
 
 `native_object_scan` (the VM-free A9E0 object pass over one contiguous 0x45-slot store, both
 pointer-table loops in place) was attempted and reverted (red). The effect loop is byte-exact

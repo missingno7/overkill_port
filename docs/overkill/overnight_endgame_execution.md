@@ -268,13 +268,20 @@ NOT put logic in it).
 
 **Recovered 2026-07-03:** `B73E` (logic_id `0x20`, the waypoint-follower) — was the dominant
 remaining object-behavior wall; its `B800` formation-spawn + `B82D` loop are now native and the
-`3153` xfail is gone. (Distinct from the still-open `3153` HUD *glyph blit* below.)
+`3153` xfail is gone.
+
+**Already recovered (do NOT re-attempt — verify current state before picking any object slice):**
+`aed8`/`8d4f` (`object_update_aed8`/`object_update_8d4f` in `systems/objects.py`, wired into the
+native dispatch in `systems/object_update.py`), the shared steer/selector helpers `5E42`
+(`object_delta_steer_5e42`, `systems/movement.py`) and `B250` (`overlap_contact_box_contains`,
+`systems/collision.py`), and `B2CD` (`object_update_b2cd`). The whole object-vs-object collision
+island is native too (see Bucket C). These are done; a fresh slice must re-check the code + probes
+before assuming anything here is open.
 
 Concrete next slices (each: trace → pure → thin adapter → demo-replay verify → commit):
-- The un-collapsed behaviors with no pure counterpart: `aed8`, `8d4f`.
-- The shared helpers behind several behaviors: `5E42` steer, `B250` overlap/contact selector.
-- Then walk each big lifted file, extracting each inline decision into `systems/` and thinning
-  its adapter, until the file is decision-free (only continuation glue remains).
+- Walk each big lifted file, extracting each remaining inline decision into `systems/` and thinning
+  its adapter, until the file is decision-free (only continuation glue remains). Confirm a decision
+  is not already lifted (grep `systems/`) before recovering it.
 - Each promotion that proves a memory layout extends `ObjectSlotView`/`ObjectSlotRecord`
   (only when a verified routine constrains a field — never by guessing).
 
@@ -290,33 +297,33 @@ verify the composed subsystem → close the boundary):
   (`ds:[bx+si+2]`, 0..0Ah loop). Needs its whole handler set mapped — a hard island.
 - `859E` = the status-cell quad composite: loops 4 cells (`9682/968C/9696/96A0`) via `85D5`,
   gated by `[95BC]`/`[BDAC]`, into the big render routine `511F` — a multi-level render island.
-- **HUD score digits** = `5F05` (pop digit → ASCII `+30h` → `jmp 519A`) → `519A` (mode
-  dispatch `jmp cs:[95BC*2 + 0x51B2]`; for Tandy `[95BC]=2` → **`1010:3153`**) → **`3153`
-  is an 8×8 Tandy glyph blit — THE recoverable leaf, in the rasterizer's wheelhouse:**
-  per char, `si = char*8 + DS:1816` (the 8-byte/char font); for each of 8 rows `lodsb` →
-  `DS:1514[byte*4]` (the bit→4bpp pixel-expand table, 2 words) `& DS:215C` (the colour
-  mask) → write to `CS:[95A4]` (the visible page) at cursor `DS:215E + DS:2160`, advancing
-  `di` by the Tandy bank geometry (`+0x2000`, wrap `+0x80A0`) = the rasterizer's
-  `tandy_b800_next_row`. (`al`=0x10/0x11 are cursor-control escapes → `333D`/`3322`.) The
-  BCD `score_bcd` (DS:2314) is **already recovered**. **Clean fresh-session slice:** lift
-  `3153` to a native glyph blit over the rasterizer geometry + extract the `1816`/`1514`
-  tables, witnessed byte-exact vs B800's digit band — then the HUD digits compose natively.
+- **HUD score digits (`5F05`→`519A`→`3153` Tandy glyph blit) — DONE (2026-06-29).** The glyph
+  blit is native (`native_video/hud_glyph.py`, probe `verify_hud_glyph.py`), and the whole packed-
+  B800 HUD text line incl. score digits is `native_video/hud_text.py` (probe
+  `verify_native_hud_text.py`). Do NOT re-recover; the only remaining HUD work is folding `hud_text`
+  into the standalone backend compose (Bucket C). The `1010:3153` hook is now a thin `--backend vm`
+  adapter.
 So the next real work is **island recovery**, not single-leaf collapse — best taken by a
 fresh agent with clean context, using the boundaries mapped above.
 
 ### Bucket B — render self-compose layers (witness byte-exact gate)
 Playfield composition is crystallised (`native_video/playfield.compose_playfield_indices`,
 proven 30/30). Remaining:
-- **Starfield background layer.** It is a **parallax PIXEL layer** (confirmed: the
-  static-buffer-scroll model fails 0/60; stars scroll at their own rate). Recover it as a
-  pixel star set + independent parallax scroll. The per-frame plot writes the off-screen
-  scroll-in region — locate it with a parallax-aware / off-screen-window trace (it dodged
-  the watcher-based probes; the `rep movs/stos` watcher blind-spot is now fixed, so re-run
-  attribution with watchers active). Gate: `compose_playfield_indices(starfield, sprites)`
-  byte-exact vs the VM playfield across demos.
-- **HUD layer.** Score digits already pinned to `5F05`; the right-panel chrome is static.
-  Recover it as a native HUD layer overlaid on the playfield. Gate: byte-exact vs B800's
-  HUD band.
+- **Starfield background layer — RECOVERY DONE; only the WIRING is open.** The parallax pixel
+  starfield is fully recovered + verified: pure `recovered/systems/starfield.py` +
+  `recovered/domain/starfield.py` (move at `1F8F:0922/0960`, plot/erase via `4D15`/`4D64`;
+  **NB: the old docs' `4C76` move address is wrong / absent from the code**), probe
+  `verify_native_starfield.py`, tests `test_starfield.py`/`test_starfield_cold.py`. Do NOT re-trace
+  or re-recover it. The genuinely-open work is **wiring** the recovered starfield into the standalone
+  frame — feed it into `compose_playfield_indices` so `--backend native` composes the plate from
+  recovered state instead of capturing the VM page (`native_video/playfield.py` still notes the plate
+  may be VM-captured). Gate: `compose_playfield_indices(starfield, sprites)` byte-exact vs the VM
+  playfield across demos.
+- **HUD layer — glyph/text recovery DONE; only the WIRING is open.** The glyph blit + the whole
+  packed-B800 HUD text line (incl. score digits) are native (`native_video/hud_glyph.py`,
+  `native_video/hud_text.py`; probes `verify_hud_glyph.py`, `verify_native_hud_text.py`). Remaining =
+  overlay `hud_text` on the playfield in the standalone backend compose (Bucket C). Gate: byte-exact
+  vs B800's HUD band.
 
 ### Bucket C — the standalone `NativeGameState` runtime + verify mode (native gate)
 The native **frame controller** now exists: `overkill/recovered/systems/frame_loop.py` is the
@@ -326,10 +333,17 @@ stages so far: input decode, the movement bits (`native_player_frame_step`), the
 `recovered/systems/scroll.py`; wired into `NativeGame.step()` in real 9B2E→A66F→A067→AA0D order
 and carried self-sustaining in `verify_native_forward_frames`, 2026-07-03). Grow it stage by
 stage and build the loop around it:
-- **Finish the gameplay frame** before the loop can run a real level: the spawn machinery
-  (`A067`/`A958` fire patterns + the `7524` allocator), collision-death (the `BC4B` contact
-  path, `BFC7`→`C037`), scripted-input (`99F6`), and the sidearm/coordinate rings
-  (`A212`/`9C01`/`A33A`). These are the remaining 9B2E stages (all multi-part islands).
+- **Finish the gameplay frame** before the loop can run a real level. Most stages are ALREADY
+  recovered — the honest remaining gaps are small. Recovered (do NOT re-recover; compose into the
+  runtime): spawn machinery (`native_a067` + `object_pool_find_free` 7524/7573 allocator, wired in
+  `native_action_fanout_step`; probes `verify_native_a067*`, `verify_native_allocator`) — only the
+  FULL-fanout `A970`-family held-action counters remain (declined in `frame_loop.py`); collision-
+  death (`object_postmove_bc4b`, `object_collision_death_transition_c037`, the whole object-vs-object
+  island in `systems/collision.py`; confirmed native in `loop_blockers.md`); the `9C01`/`A33A`
+  coordinate-ring stages (lifted in `game_state.py`). **Genuinely still open:** scripted-input
+  (`99F6` — not native; `verify_native_forward_frames` bails on `DS:A47C != 0` ticks) and the
+  `A212` view-anchor pre-update (VM-owned per `frame_loop.py`). Verify each against the code before
+  attempting — the list of what's left is short.
 - Define/grow `NativeGameState` (the source-level state the recovered systems already use as
   their structures) and a standalone loop that runs frame → recovered systems → render/audio
   state → `--backend native`, with NO VM.

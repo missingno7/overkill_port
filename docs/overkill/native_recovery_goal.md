@@ -155,11 +155,12 @@ self-contained routine not in `loop_blockers.md` first. Hygiene slices are valid
 whenever a substantive target is blocked. This queue is intentionally large — it will not
 run dry over many nights.
 
-> **Phase-1/1b slice vein status (2026-06-28):** the *byte-exact dual-mode extraction*
-> and *render-relocation* slice work is exhausted for now (objective: `source_port_status`
-> = 67 pure rules / 13.9% pure-source mass; the object-behavior decision/computation vein
-> is fully lifted; the cleanly-relocatable inline-render hooks are out of `hooks.py`, now
-> 3203 lines; a threshold/magic-number scan finds ~nothing un-named left). What remains is
+> **Phase-1/1b slice vein status (2026-06-28; metrics stale — regenerate with
+> `scripts/source_port_status.py`, ~30.2% / 178 pure rules as of 2026-07-03):** the *byte-exact
+> dual-mode extraction* and *render-relocation* slice work is exhausted for now (objective at the
+> time: 67 pure rules / 13.9% pure-source mass — since grown to ~30.2%; the object-behavior
+> decision/computation vein is fully lifted, incl. `b73e`/`aed8`/`8d4f`/`5e42`/`b250`/`b2cd`; the
+> cleanly-relocatable inline-render hooks are out of `hooks.py`). What remains is
 > (a) the **attended-only frontier** already in `loop_blockers.md` (call-tree-leaf
 > dispatchers, the `BFC7`/`BD17` death tails, the `[95F2]/[95F4]` contact-center
 > divergence), and (b) **Phase 2** — making the recovered rules take/return native state
@@ -172,9 +173,10 @@ run dry over many nights.
 Push each VM-coupled body in `overkill/gameplay/*.py` down into a pure `recovered/systems`
 rule (dual-mode, native-state-shaped per the AB10 template), thin the hook to an adapter,
 verify byte-exact vs the demo corpus. One subsystem at a time.
-- **`object_behaviors` → ObjectSystem** *(active)*: the ~14 `_run_object_*` bodies —
-  self-contained `aed8`/`ae09`/`aba3`/`ab77`/`ab10`✓/`aa2b` first, then the orchestrators
-  `b73e`/`b9f0`/`b24d`/`b86d`/`ad04`/`8d4f`/`efae` (lift their call trees as you go).
+- **`object_behaviors` → ObjectSystem** *(largely done — verify before picking)*: the ~14
+  `_run_object_*` bodies. The self-contained ones (`aed8`/`ae09`/`aba3`/`ab77`/`ab10`/`aa2b`) AND the
+  orchestrators (`b73e`✓/`b9f0`/`b24d`✓/`b86d`/`ad04`/`8d4f`✓/`efae`) are recovered as pure systems;
+  any still-inline decision is the residue to lift. grep `recovered/systems/` before assuming one is open.
 - **`collision` → CollisionSystem**: drop the ~49 self-check asserts where the rule is
   already live (oracle-gated; flag traps `4FF9`/`AC28`, AF survives the RET); lift any
   remaining inline predicates.
