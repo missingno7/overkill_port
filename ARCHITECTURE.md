@@ -206,10 +206,12 @@ snapshot is built from the view's named fields (no parallel offset→field decod
   `B297` loop now calls the native `run_post_contact_status_helper_9e19` instead
   of interpreting it (Phase-2 collapse, covered by the demo-replay suite); only
   its `61DC`/`511F` display children remain bounded.
-- **Next gameplay interpreted target:** `1010:B2CD`, a waypoint path-following
-  movement loop (walks the `A45C`/`A43C` coordinate tables, calls the lifted
-  `5DB2` per waypoint, sets `logic_id=12h`). Hottest unhooked gameplay routine in
-  the L2 coverage dump; reached alongside `BB03`/`BB80`. Needs an oracle capture.
+- **`1010:B2CD` waypoint path-follower: DONE** (recovered as `object_update_b2cd`,
+  `recovered/systems/objects.py`; walks the `A45C`/`A43C` coordinate tables via the
+  lifted `5DB2` per waypoint, `logic_id=12h`). For the current hottest unhooked
+  gameplay target, re-derive from a coverage dump rather than trusting a static
+  name here — the object-behaviour vein (incl. `B73E`/`8D4F`/`AED8`) is largely
+  lifted; see `docs/overkill/overnight_endgame_execution.md` §6.
 - `overkill/hooks.py` still holds non-EGA inline blits; move them behind thin
   wrappers like the EGA renderer already is. **Done:** `477E`, `41DA` (bodies now
   in `rendering/tandy.py`). **Remaining:** `497A`, `38B7`, `3849`, `41A6`, `447B`,
