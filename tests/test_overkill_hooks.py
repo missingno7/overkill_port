@@ -10136,6 +10136,7 @@ def test_interstitial_status_cell_d367_matches_interpreted_parent_with_child_bou
 
 
 def test_interstitial_timed_input_loop_d318_matches_interpreted_parent_with_child_boundaries():
+    from overkill.gameplay.starfield_bridge import advance_starfield_in_memory
     from overkill.hooks import overkill_interstitial_timed_input_loop_d318
 
     code = bytes.fromhex(
@@ -10172,11 +10173,28 @@ def test_interstitial_timed_input_loop_d318_matches_interpreted_parent_with_chil
         cpu.s.ip = cpu.pop()
 
     def far_counter_dummy(cpu):
+        # The hook side no longer dispatches this far call through the interpreter at all --
+        # overkill_interstitial_timed_input_loop_d318 inlines advance_starfield_in_memory (the
+        # verified native replacement for 1F8F:0922, see starfield_bridge.py) directly instead of
+        # routing through run_original_far_call. So the ASM-reference side must apply the SAME real
+        # effect here (not a no-op counter stand-in) for the two memory states to agree; this is not
+        # re-verifying the starfield move itself (that's proven byte-exact elsewhere against the VM
+        # oracle), just keeping this leaf's simulated side effect consistent between the two paths.
         assert (cpu.s.cs & 0xFFFF, cpu.s.ip & 0xFFFF) == (0x1F8F, 0x0922)
+        advance_starfield_in_memory(cpu)
         ss = cpu.s.ss & 0xFFFF
-        cpu.mem.ww(ss, 0x0190, (cpu.mem.rw(ss, 0x0190) + 1) & 0xFFFF)
-        cpu.s.ip = cpu.pop()
-        cpu.s.cs = cpu.pop()
+        ret_ip = cpu.pop()
+        ret_cs = cpu.pop()
+        # The hook path never executes a real CALL FAR/RETF here (it inlines the call, see above), so
+        # it never pushes a return address onto the stack at all. Scrub the transient bytes the
+        # interpreted CALL FAR instruction left behind below the now-restored SP so the two already-
+        # freed stack slots agree -- their contents (the just-consumed return CS:IP) carry no meaning
+        # once popped; only the live state above the matching final SP does.
+        sp = cpu.s.sp & 0xFFFF
+        cpu.mem.ww(ss, (sp - 4) & 0xFFFF, 0)
+        cpu.mem.ww(ss, (sp - 2) & 0xFFFF, 0)
+        cpu.s.ip = ret_ip
+        cpu.s.cs = ret_cs
 
     def make_cpu(use_hook: bool, *, counter: int, input_flags: int, release_after: int) -> CPU8086:
         mem = Memory()
