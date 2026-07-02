@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "status": "complete",
+  "created_at": "2026-07-02T00:00:00",
+  "stopped_at": "2026-07-02T00:00:00",
+  "snapshot": null,
+  "metadata": {
+    "program": "overkill",
+    "video": "tandy",
+    "sound": "pc",
+    "command_tail": "\r\u0002",
+    "no_replacements": true,
+    "note": "synthetic: real demo cold-start events truncated to just the first fire press+release (skip intro into the menu), then NO further input -- to observe the menu idle loop naturally accumulate its attract-mode counter untouched."
+  },
+  "start_boundary": 0,
+  "end_boundary": 9000,
+  "event_count": 3,
+  "events": [
+    {
+      "boundary": 578,
+      "seq": 0,
+      "kind": "dos_key",
+      "value": 14624,
+      "scancode": 57,
+      "text": " "
+    },
+    {
+      "boundary": 579,
+      "seq": 1,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 579,
+      "seq": 2,
+      "kind": "scan",
+      "value": 185
+    }
+  ]
+}
