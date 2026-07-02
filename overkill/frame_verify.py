@@ -32,6 +32,7 @@ EGA_PRESENT_HOOK: Addr = (0x1010, 0x2750)
 TANDY_PRESENT_HOOK: Addr = (0x1010, 0x3354)
 TIMER_WAIT_HOOK: Addr = (0x1010, 0x0679)
 RETRACE_WAIT_HOOK: Addr = (0x1010, 0x50C9)
+SOUND_ACTIVE_WAIT_HOOK: Addr = (0x1010, 0x9921)
 
 B800_BASE = 0xB8000
 B800_CGA_SIZE = 0x4000
@@ -44,7 +45,13 @@ HEIGHT = 200
 # runtime.  The interpreter has no asynchronous PIT/IRQ0 or real VGA retrace, so
 # the original busy-wait ASM at these addresses can otherwise spin forever.  The
 # verifier still compares everything around those waits at the next boundary.
-REFERENCE_ENV_HOOKS: set[Addr] = {TIMER_WAIT_HOOK, RETRACE_WAIT_HOOK}
+# SOUND_ACTIVE_WAIT_HOOK (1010:9921, "cmp ds:[BEFE],0 ; jnz 9921") has the same
+# problem: on real hardware the reprogrammed PIT/IRQ0 clears DS:BEFE
+# asynchronously while this spins; a reference runtime with only the timer/
+# retrace hooks has no other mechanism to ever clear it, so it spins until the
+# frame verifier's own step budget times out (confirmed: L5_start's reference
+# side hits FrameVerifyTimeout at 1010:9926, the loop's own jnz).
+REFERENCE_ENV_HOOKS: set[Addr] = {TIMER_WAIT_HOOK, RETRACE_WAIT_HOOK, SOUND_ACTIVE_WAIT_HOOK}
 
 # Mirrors scripts/play.py: this lifted loop is only validated for CGA mode.
 NON_CGA_INTERACTIVE_DISABLE: set[Addr] = {(0x1010, 0x58DF)}
