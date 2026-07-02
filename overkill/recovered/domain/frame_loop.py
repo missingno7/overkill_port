@@ -47,6 +47,24 @@ class FireControlState:
 
 
 @dataclass(frozen=True, slots=True)
+class FrameAccumulatorShiftOutcome:
+    """Result of the ``1010:A940`` per-frame accumulator-shift (the first thing ``A940`` does,
+    every frame, unconditionally -- called from ``97B2`` right before the ``A9E0`` object scan).
+
+    ``counter_a8ce`` is a SATURATING counter (``DS:A8CE``): incremented every frame, but frozen
+    once it reaches ``0xFFFF`` rather than wrapping -- a deliberate original design choice, not
+    an oversight.  ``prev_a8c6``/``prev_a8ca`` are this frame's ENTRY values of ``DS:A8C8``/
+    ``DS:A8CC`` shifted into the "previous frame" cells (``DS:A8C6``/``DS:A8CA``); ``DS:A8C8``/
+    ``DS:A8CC`` themselves are then unconditionally reset to 0, so whatever they accumulate
+    starts fresh each frame (the SAME two cells the ``0x9C`` interstitial's ``B5A9`` prelude also
+    force-resets early, on top of this regular per-frame reset -- see the front-end memory)."""
+
+    counter_a8ce: int
+    prev_a8c6: int
+    prev_a8ca: int
+
+
+@dataclass(frozen=True, slots=True)
 class PlayerFrameStep:
     """Result of the native player sub-step: input decode -> the 9B2E movement bits.
 

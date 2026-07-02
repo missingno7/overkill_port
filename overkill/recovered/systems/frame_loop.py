@@ -24,7 +24,12 @@ from __future__ import annotations
 
 import dataclasses
 
-from overkill.recovered.domain.frame_loop import FireControlState, FrameInput, PlayerFrameStep
+from overkill.recovered.domain.frame_loop import (
+    FireControlState,
+    FrameAccumulatorShiftOutcome,
+    FrameInput,
+    PlayerFrameStep,
+)
 from overkill.recovered.domain.native_game_state import NativeGameState
 from overkill.recovered.domain.object_slots import ObjectPool
 from overkill.recovered.domain.object_update import ObjectUpdateGlobals
@@ -162,3 +167,14 @@ def native_action_fanout_step(
         dataclasses.replace(state, object_pool=new_pool),
         FireControlState(latch_a980=result.new_a980, cursor_95da=result.final_cursor),
     )
+
+
+def step_frame_accumulator_shift_a940(counter_a8ce: int, a8c8: int, a8cc: int) -> FrameAccumulatorShiftOutcome:
+    """Pure model of ``1010:A940``'s own opening accumulator-shift (unconditional, every frame,
+    before A940's later attract-mode/boss-scan-fork decisions -- see the frame-controller memory
+    for why those are NOT modelled here yet).  ``counter_a8ce`` saturates at ``0xFFFF`` rather
+    than wrapping (matches the ASM's own ``cmp ...,0xFFFF; jz skip`` guard before the ``inc``).
+    ``a8c8``/``a8cc`` shift into the returned ``prev_a8c6``/``prev_a8ca``; the real ``DS:A8C8``/
+    ``DS:A8CC`` cells are then always reset to 0, so callers don't need to thread them forward."""
+    new_counter = counter_a8ce if counter_a8ce == 0xFFFF else (counter_a8ce + 1) & 0xFFFF
+    return FrameAccumulatorShiftOutcome(counter_a8ce=new_counter, prev_a8c6=a8c8, prev_a8ca=a8cc)
