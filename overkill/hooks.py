@@ -219,6 +219,8 @@ from .gameplay.frame_orchestration import (
 from .gameplay.objects import (
     call_object_logic_from_scan_aa01,
     finish_object_logic_scan_tail_aa04,
+    run_new_game_status_setup_9720,
+    run_new_game_status_text_setup_6176,
     run_object_motion_table_ab34,
     run_object_scroll_sprite_ab4f,
     run_reset_effect_slot_block_c3bf,
@@ -1568,6 +1570,54 @@ def overkill_reset_object_slot_and_status_setup_c4db(cpu):
         run_c4e5_tail,
         run_c51d_tail,
         run_859e_tail,
+    )
+
+
+@registry.replace(0x1010, 0x6176, "overkill_new_game_status_text_setup_6176")
+def overkill_new_game_status_text_setup_6176(cpu):
+    """Score/status text setup routine, reached from 971A's tail AND per-frame from 9786."""
+
+    def call_score_status_text_block(return_ip: int) -> None:
+        _call_installed_hook_like_near_call(cpu, (0x1010, 0x5EDB), overkill_score_status_text_block_5edb, return_ip)
+
+    def run_original_60f3(return_ip: int) -> None:
+        _run_interpreted_near_call_observed(cpu, 0x60F3, return_ip)
+
+    def call_status_display_parent(return_ip: int) -> None:
+        _call_installed_hook_like_near_call(cpu, (0x1010, 0x61DC), overkill_status_display_parent_61dc, return_ip)
+
+    def run_original_60e3(return_ip: int) -> None:
+        _run_interpreted_near_call_observed(cpu, 0x60E3, return_ip)
+
+    run_new_game_status_text_setup_6176(
+        cpu,
+        _self_disable_if_patched,
+        call_score_status_text_block,
+        run_original_60f3,
+        call_status_display_parent,
+        run_original_60e3,
+    )
+
+
+@registry.replace(0x1010, 0x9720, "overkill_new_game_status_setup_9720")
+def overkill_new_game_status_setup_9720(cpu):
+    """Post-level-confirm new-game setup: object/status reset + HUD text setup (971A's tail)."""
+
+    def call_reset_object_slot_and_status_setup(return_ip: int) -> None:
+        _call_installed_hook_like_near_call(
+            cpu, (0x1010, 0xC4DB), overkill_reset_object_slot_and_status_setup_c4db, return_ip
+        )
+
+    def call_new_game_status_text_setup(return_ip: int) -> None:
+        _call_installed_hook_like_near_call(
+            cpu, (0x1010, 0x6176), overkill_new_game_status_text_setup_6176, return_ip
+        )
+
+    run_new_game_status_setup_9720(
+        cpu,
+        _self_disable_if_patched,
+        call_reset_object_slot_and_status_setup,
+        call_new_game_status_text_setup,
     )
 
 

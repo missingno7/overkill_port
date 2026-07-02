@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from dos_re.cpu import DF
 
-from overkill.asm import _add_mem_word, loop_count
+from overkill.asm import _add_mem_word, _cmp_word, loop_count
 from overkill.recovered.views.object_slots import ObjectSlotView
 
 SIG_OBJECT_LOGIC_CALL_AA2B_AA01 = bytes.fromhex("e8 27 00 59 e2 d9")
@@ -312,6 +312,114 @@ def run_setup_tracked_status_tail_c51d(cpu, self_disable_if_patched, call_status
             f"{s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X}"
         )
     s.ip = 0x859E
+
+
+MODE_FLAG_95BC = 0x95BC
+MODE_UNOBSERVED_95BC_1 = 0x0001  # never seen live in this corpus -- mode is always 2 (Tandy) here
+
+SIG_NEW_GAME_STATUS_TEXT_SETUP_6176 = bytes.fromhex(
+    "e8 62 fd 2e 83 3e bc 95 01 75 09 e8 9b ef e8 54 fd e8 95 ef "
+    "e8 66 ff 2e 83 3e bc 95 01 75 09 e8 87 ef e8 58 ff e8 81 ef "
+    "e8 3b 00 2e 83 3e bc 95 01 75 09 e8 73 ef e8 2d 00 e8 6d ef "
+    "e8 2e ff 2e 83 3e bc 95 01 75 09 e8 5f ef e8 20 ff e8 59 ef c3"
+)
+
+
+def run_new_game_status_text_setup_6176(
+    cpu,
+    self_disable_if_patched,
+    call_score_status_text_block,
+    run_original_60f3,
+    call_status_display_parent,
+    run_original_60e3,
+) -> None:
+    """Lift 1010:6176, the score/status text setup routine.
+
+    Reached from TWO real call sites: ``9720`` (971A's one-time post-new-game-confirm HUD-init
+    tail) AND ``1010:9786`` (a per-frame status-refresh call inside/near the ``97B2`` main-frame-
+    loop prelude -- confirmed via a live write-watcher/stack trace on a mid-gameplay snapshot,
+    not from static analysis; this second caller has no literal source reference anywhere and is
+    only visible by tracing the real return address off the stack). Its own shape only makes
+    sense once you know ``CS:95BC`` (the same video-mode flag ``5145``/``5BEE``/``D318`` already
+    check; confirmed CGA=0/EGA=1/Tandy=2 via the existing ``dispatch_5a00``-family HookStop
+    metadata) is always ``2`` in this whole demo corpus, never ``1``: the routine is FOUR
+    always-run calls -- ``5EDB`` (score/status text block), ``60F3``, ``61DC`` (status display
+    parent), ``60E3`` -- each followed by a ``CMP CS:95BC,1`` gate that, when true, would run
+    THREE more Tandy-specific calls never observed live anywhere in this project. Rather than
+    guess those three calls' bodies, this hook replays each CMP for flag fidelity and fails loud
+    if the mode flag is ever actually 1 (an honest, verifiable boundary, not a silent skip).
+    ``60F3``/``60E3`` are not yet lifted, so they run as interpreted original ASM (any hooks they
+    themselves reach still fire normally); ``5EDB``/``61DC`` are already lifted and run as their
+    installed hooks THROUGH THE NORMAL DISPATCH (whatever's registered right now), matching the
+    project-wide ``call_installed_hook_like_near_call`` convention every other composed parent
+    hook in this codebase already uses (e.g. C4DB composing C4E5/C51D/859E) -- a handful of OLDER
+    unit tests that pop 61DC/6296/etc. to force raw-ASM comparison for their OWN narrow purpose
+    need 0x6176 added to their own pop list now that it wraps those addresses too (see the
+    matching test fixes landed alongside this)."""
+    if self_disable_if_patched(cpu, 0x6176, SIG_NEW_GAME_STATUS_TEXT_SETUP_6176, "overkill_new_game_status_text_setup_6176"):
+        return
+
+    s = cpu.s
+    mem = cpu.mem
+    cs = s.cs & 0xFFFF
+
+    def mode_gate() -> None:
+        mode = mem.rw(cs, MODE_FLAG_95BC)
+        _cmp_word(cpu, mode, MODE_UNOBSERVED_95BC_1)
+        if mode == MODE_UNOBSERVED_95BC_1:
+            raise RuntimeError(
+                "1010:6176 reached its CS:95BC==1 branch for the first time -- never observed "
+                "live anywhere in this project (mode is always 2 here); recover the 3 skipped "
+                "Tandy-specific calls before trusting this hook on such a session"
+            )
+
+    call_score_status_text_block(0x6179)
+    mode_gate()
+    run_original_60f3(0x618D)
+    mode_gate()
+    call_status_display_parent(0x61A1)
+    mode_gate()
+    run_original_60e3(0x61B5)
+    mode_gate()
+    s.ip = cpu.pop()
+
+
+SIG_NEW_GAME_STATUS_SETUP_9720 = bytes.fromhex(
+    "e8 b8 2d c7 06 5a a9 03 00 c7 06 5c a9 18 00 e8 44 ca eb 10"
+)
+
+
+def run_new_game_status_setup_9720(
+    cpu,
+    self_disable_if_patched,
+    call_reset_object_slot_and_status_setup,
+    call_new_game_status_text_setup,
+) -> None:
+    """Lift 1010:9720, part of 971A's post-level-confirm new-game setup.
+
+    Straight-line: reset object slots/status (``C4DB``, already lifted), seed two HUD/status
+    globals (``DS:A95A=3``, ``DS:A95C=0x18`` -- not yet given semantic names, just the raw
+    constants the ASM writes), run the score/status text setup (``6176``), then jump
+    unconditionally to ``9744`` (the caller's own continuation). Confirmed via live trace that
+    this jump is UNCONDITIONAL -- a static-read guess from an earlier session claimed a
+    level-0-specific branch sat right here; the real bytes have no such branch (dead/unreachable
+    code for that idea lives a few bytes further on, never reached from this call path). Unlike
+    6176, this specific address (9720) is ONLY ever reached from the one-time new-game-confirm
+    path -- confirmed by instrumented probes across every gameplay demo in the corpus showing
+    zero hits outside that context."""
+    if self_disable_if_patched(cpu, 0x9720, SIG_NEW_GAME_STATUS_SETUP_9720, "overkill_new_game_status_setup_9720"):
+        return
+
+    s = cpu.s
+    mem = cpu.mem
+    ds = s.ds & 0xFFFF
+
+    call_reset_object_slot_and_status_setup(0x9723)
+    mem.ww(ds, 0xA95A, 0x0003)
+    mem.ww(ds, 0xA95C, 0x0018)
+    call_new_game_status_text_setup(0x9732)
+    s.ip = 0x9744
+
 
 SIG_OBJECT_MOTION_TABLE_AB34 = bytes.fromhex(
     "bb 7c 23 8b 77 08 d1 e6 d1 e6 03 f2 ad 03 47 02 "
