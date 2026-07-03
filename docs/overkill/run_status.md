@@ -27,6 +27,29 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-03 - BOUNDARY: all PER-PRESENT HUD chrome recovered; remaining chrome is load-time-only
+
+Gap analysis + `D104` trace establish a clean boundary for the snapshot-driven recovery. The
+**per-present** HUD chrome — everything the per-frame render (`D104`) re-blits — is now fully
+recovered + byte-exact-verified: `compose_status_cells_859e` (859E icon/box cells), `compose_status_counters_61dc`
+(61DC counters + trailing panel cell), and `hud_text.compose_status_text_5edb` (5EDB score, earlier).
+Alongside the byte-exact playfield self-compose, that's the complete **snapshot-witnessable** frame.
+
+**What's left is load-time-only.** Composing the recovered chrome onto a blank page vs the VM B800:
+1846 bytes reproduced-and-matching; the ~5068 VM-nonzero bytes not reproduced are the **playfield**
+(dynamic gameplay content, a separate layer) + the **static labels/borders/panel-frame**. Those static
+elements are drawn ONCE at level-load and are NOT re-blit per present (confirmed: `D104` re-draws only
+the dynamic cells/counters/score; the gap regions stay as loaded), so they **cannot be driven on a
+gameplay snapshot** — recovering them needs a snapshot taken at level-load, or the cold-boot/load path
+(the deferred witness harness; the boot self-check accelerator + drive-on-snapshot oracle are the
+enablers already in place).
+
+**Net:** the snapshot-witnessable render is essentially complete (playfield + all per-present chrome +
+score, all byte-exact). The next frontier — the load-time static chrome, the front-end flow, native
+level/asset load, audio, and the cold-boot backbone — all live on the cold-boot path and are the
+fresh-context cold-boot phase. The reusable bricks (playfield compose, `paste_panel_cell`, the three
+HUD composers, `boot_selfcheck_checksum` + its acceleration, the drive-on-snapshot oracle) are banked.
+
 ## 2026-07-03 - HUD status-COUNTER composer (61DC) RECOVERED too, byte-exact vs the VM
 
 Extended the HUD-chrome recovery to `1010:61DC` (the status-counter display). Same snapshot-driven
