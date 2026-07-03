@@ -1,11 +1,10 @@
 """Persisted settings for the native backend.
 
-The native backend owns its own config file so the user does not need a wall of
-``play.py`` flags: ``play.py --backend native`` launches it, and everything else
-(interpolation, vsync, …) is toggled in the in-game settings overlay, which saves
-back here. The file is plain JSON keyed by :class:`BackendConfig` field name;
-unknown keys are ignored and missing keys fall back to the conservative defaults,
-so the file stays forward/backward compatible as settings are added.
+The native backend owns its own config file so the user does not need a wall of CLI flags:
+interpolation, vsync, etc. are toggled in the in-game settings overlay, which saves back here.
+The file is plain JSON keyed by :class:`BackendConfig` field name; unknown keys are ignored and
+missing keys fall back to the conservative defaults, so the file stays forward/backward compatible
+as settings are added.
 """
 from __future__ import annotations
 

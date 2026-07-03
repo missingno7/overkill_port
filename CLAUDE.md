@@ -33,7 +33,10 @@ It reads the brief above and works one verified slice at a time.
 ## Where things stand (2026-07-03)
 Gameplay-frame mechanics are native + produced-vs-VM verified: input decode, player movement,
 world-scroll (`A66F`/`A6FE`), the whole object pass. Pure game-logic mass ≈ 30.2% and climbing. The
-`B73E`/logic-id-0x20 wall and the object-behavior/collision veins are recovered. Genuinely still open:
-`99F6` scripted-input, `A212` view-anchor, the render-layer **backend wiring** (starfield + HUD are
-recovered but not yet composed into `--backend native`), front-end flow, native asset/level load, and
-audio drivers. See the brief §6 for the prioritized queue.
+`B73E`/logic-id-0x20 wall and the object-behavior/collision veins are recovered.
+`scripts/play_native.py` is now a genuine VM-less standalone (cold-loads a level, ticks the recovered
+frame stages, presents via pygame — zero `dos_re` imports); `scripts/play.py`'s old hybrid
+`--backend native` (a VM child + a "native" presenter) has been removed. Genuinely still open: `99F6`
+scripted-input, `A212` view-anchor, wiring the recovered starfield/HUD/sprite rendering into
+`play_native.py` (still a debug placeholder there), front-end flow, native level-init state (Bucket
+F), and audio drivers. See the brief §6 for the prioritized queue.

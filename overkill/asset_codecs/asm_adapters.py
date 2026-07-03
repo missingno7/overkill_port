@@ -8,11 +8,20 @@ specific to OVERKILL's loader code.
 """
 from __future__ import annotations
 
-from dos_re.cpu import CF, DF
-from overkill.asm import loop_count
+from ._flags import CF, DF
 
 OVERKILL_LOAD_ERROR_IP = 0x02B2
 OVERKILL_LOAD_DISPATCH_CONTINUATION_IP = 0x02A8
+
+
+def loop_count(cx: int) -> int:
+    """The 8086 LOOP iteration count; CX=0 means 65536 iterations.
+
+    Duplicated from ``overkill.asm`` (same 3-line rule, will never change) rather than imported,
+    so this package never pulls in ``overkill.asm``'s own ``dos_re.cpu``/``dos_re.memory``
+    dependency -- see ``._flags`` for why that matters here."""
+    count = cx & 0xFFFF
+    return 0x10000 if count == 0 else count
 
 
 def inc_mem_word_preserve_cf(cpu, seg: int, off: int) -> None:

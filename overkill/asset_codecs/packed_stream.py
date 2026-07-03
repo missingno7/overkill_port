@@ -8,8 +8,7 @@ instead of reading Python files directly.
 """
 from __future__ import annotations
 
-from dos_re.cpu import CF
-
+from ._flags import CF
 from .asm_adapters import OVERKILL_LOAD_ERROR_IP
 
 BUFFER_START = 0x0410

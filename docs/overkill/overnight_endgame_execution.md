@@ -428,11 +428,32 @@ game data files, running with no emulator at all. Concretely, the pre2 pattern t
 - **Gate:** `deploy_native.py` builds + smoke-tests green (VM-free), and a recorded native session
   cold-boots and plays through to the ending (§1.8), with `--backend vm` kept only as the oracle.
 
-**Where overkill is vs this target (2026-07-03):** the pure *systems* exist (`recovered/systems`),
-the render self-compose is byte-exact, and the HYBRID cold-boot (VM + recovered hooks) reaches the
-menu — but the `overkill/native/` runtime PACKAGE above does not exist yet, so there is no true VM-less
-`play_native.py` today. Building that package (state → cold_boot from data+constants → front_end →
-frame loop → render/audio) is the remaining endgame; the recovered systems are its parts.
+**Where overkill is vs this target (2026-07-03, updated):** a first real `scripts/play_native.py`
+now exists and RUNS: it cold-loads a level (`overkill.native_game.NativeGame`, byte-exact from the
+game's own files, no VM), ticks the recovered frame stages (input decode, view-anchor movement,
+world-scroll, the object-update pass) with real keyboard input, and presents via pygame — with
+**zero `dos_re` imports anywhere on that path** (verified: `sys.modules` has no `dos_re.*` entries
+after a full run). `scripts/play.py`'s `--backend native`/`--mp-publish` VM-child machinery (the
+thing that made the OLD `native_play.py` a hybrid presenter, not a standalone) has been removed
+from `play.py` entirely; `play.py` is now purely the VM/oracle tool. Getting there required fixing
+a real separability leak: `overkill/asset_codecs/*` (imported transitively by the level loader)
+had six modules importing `dos_re.cpu`'s `CF`/`DF` flag constants and one importing `overkill.asm`
+(which itself pulls in `dos_re.cpu`/`dos_re.memory`) — fixed by giving `asset_codecs` its own tiny,
+independent `_flags.py` + a local `loop_count`, so it never touches `dos_re` at all now.
+
+**Still open (this is a real render/state placeholder, not the endgame):** the STANDALONE render is
+currently a debug marker (black background + a dot at the tracked player position) — the byte-exact
+starfield/HUD/sprite visuals are proven correct in isolation (`native_video/*`) but not yet wired
+into `play_native.py` (the fresh-level starfield INIT state and the object-pool→sprite-pixel bridge
+are the open integration gaps). A handful of per-frame gameplay globals (Bucket C's still-open
+`99F6`/full-`A067`/coordinate-ring items) are supplied as the same documented 0/False "normal tick"
+defaults the recovered systems' own dataclasses already use, not derived from anywhere — `ref_box_x/y`
+(the view-anchor box) IS derived for real. There is also no real level-INIT state yet (Bucket F): the
+default spawn is a placeholder, not the verified cold-start position (`--snapshot` seeds a REAL
+verified starting state from a captured VM memory dump for this reason — a static file read, still
+zero `dos_re` on the default path). No front-end (Bucket E) yet — `--level N` is the only mode, like
+pre2's own `--from-level` debug path before its front-end existed. `scripts/deploy_native.py`
+(the build→`dist/` + VM-free smoke test) is not built yet — the next concrete slice.
 
 ---
 

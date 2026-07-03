@@ -6,8 +6,7 @@ that OVERKILL's loader expects after validating data files.
 """
 from __future__ import annotations
 
-from dos_re.cpu import CF
-
+from ._flags import CF
 from .asm_adapters import loop_count
 
 

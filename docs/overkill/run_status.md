@@ -3,6 +3,12 @@
 > `/goal` brief). State: suite **green (1100 passed / 23 skipped)**, tree clean, all work pushed to
 > `main`, pure% ≈ 30.3%. Launch with `/loop /goal`.
 >
+> **MILESTONE: `scripts/play_native.py` is a real, RUNNING, VM-less standalone (zero `dos_re` imports).**
+> Cold-loads a level, ticks the recovered gameplay stages, presents via pygame — verified with
+> `sys.modules` showing no `dos_re.*` entries after a full run. `play.py --backend native` (the old
+> VM-child hybrid) is REMOVED. See the dated entry below; rendering is still a debug placeholder
+> (wiring the real starfield/HUD/sprites in is the next slice).
+>
 > **MILESTONE: a hooks-ON cold boot now reaches a STABLE idle loop at the main menu, zero crashes.**
 > See the dated entries below for the full readout — this is the first time a cold boot has run
 > end-to-end (loader → boot self-check → menu render) without human-fed input or a crash.
@@ -40,6 +46,58 @@
 > FIRST; it unblocks the whole phase. This is a large, fresh-context undertaking — best begun with a
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
+
+## 2026-07-03 - MILESTONE: scripts/play_native.py is a REAL VM-less standalone (zero dos_re imports)
+
+Built the first genuine VM-less standalone entrypoint per the pre2-mirrored direction (below). Replaced
+`scripts/native_play.py` (which was NOT standalone — its default mode only presented one captured VM
+snapshot, and its `--backend native` support in `play.py` spawned a full VM child process) with
+`scripts/play_native.py`:
+
+- Cold-loads a level via `overkill.native_game.NativeGame` (byte-exact from `assets/OVERKILL` + the
+  materialized `artifacts/static_runtime_bundle/memory_1mb.bin` — both static files, no VM).
+- Runs real gameplay ticks each frame: keyboard input decode, view-anchor movement, native world-scroll
+  (A66F/A6FE), the object-update pass — all through the recovered pure systems. `ref_box_x`/`ref_box_y`
+  (the view-anchor box the object pass reads) are DERIVED for real (confirmed: DS:237E/2380 ARE the
+  view-anchor slot's own X/Y fields, DS:237C+02/+04); the handful of still-open Bucket-C globals get the
+  same documented 0/False "normal tick" defaults the recovered dataclasses already use.
+- Presents via pygame (indices → Tandy palette → blit); rendering is currently a DEBUG PLACEHOLDER (black
+  bg + a marker at the player position) — the real starfield/HUD/sprite visuals are proven correct in
+  isolation but not yet wired into this loop (clearly labeled as such in the file, not silently faked).
+- `--snapshot DIR`: DEBUG-only, seeds a REAL verified starting state from a captured VM memory dump via a
+  10-line local `_FlatMemory` reader (no `dos_re` import) reusing the existing
+  `read_native_game_state` projection.
+- On any exception from a gameplay stage (a real gap), stops ticking, prints it, holds the last frame.
+
+**Verified VM-free, not just claimed:** `sys.modules` shows zero `dos_re`/`dos_re.*` entries after
+importing `play_native`, cold-loading a level, running 10+ real ticks, and running the full pygame
+present loop headlessly (SDL dummy driver) — checked explicitly, not assumed.
+
+**A real separability leak found + fixed along the way:** `overkill/asset_codecs/*` (imported
+transitively by the level loader) is NOT pure — several modules (`rle.py`, `packed_stream.py`,
+`overlay.py`, `lz.py`, `checksum.py`, `asm_adapters.py`) import `dos_re.cpu`'s `CF`/`DF` flag constants
+(kept for their VM-hook-body forms, used by `--backend vm`), and `asm_adapters.py` also imported
+`overkill.asm` (which itself pulls in `dos_re.cpu`/`dos_re.memory`) just for the trivial 3-line
+`loop_count` helper. Since Python always executes a package's `__init__.py` (which eagerly imports every
+sibling) when importing ANY submodule, this transitively loaded the whole `dos_re` package the moment
+`native_level.py` was imported — even though `native_level.py` itself never touches `dos_re`. Fixed with
+a new, dependency-free `overkill/asset_codecs/_flags.py` (just the 2 integer constants, duplicated
+rather than shared — they're a stable 8086 register-bit layout, not emulator logic) + a local
+`loop_count` copy in `asm_adapters.py`; the 6 files now import from `._flags` instead of `dos_re.cpu`.
+
+**`play.py` pruned to the pure VM/oracle tool**, per the user's explicit "absorb play.py --backend native
+into play_native.py": removed `--backend`/`--mp-publish`/`--mp-input` args and both dispatch branches
+(the `run_mp`/`run_publisher` spawn-a-VM-child code). `play.py` no longer imports `native_play` at all.
+
+**Verified:** full suite green, **1100 passed / 23 skipped** (unchanged from before — zero regressions);
+layers+arch+lint audits green; the standalone loop runs 10 real ticks + a full headless pygame present
+loop with zero `dos_re` in `sys.modules`.
+
+**Honest next steps (recorded in the brief's Bucket G too):** wire the real starfield/HUD/sprite
+rendering into `play_native.py`'s render step (replacing the debug marker); recover the real level-init
+state (Bucket F — the current spawn is a placeholder, not verified); build `scripts/deploy_native.py`
+(import-closure → deny-list `dos_re`/workbench modules → copy to `dist/` → smoke-test VM-free in a
+scrubbed subprocess, mirroring pre2's `deploy_native.py` exactly); eventually the front-end (Bucket E).
 
 ## 2026-07-03 - DIRECTION (user): the VM-less standalone must mirror pre2_port (separate package + deploy→dist)
 

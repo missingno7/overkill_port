@@ -7,8 +7,7 @@ or depend on the generic VM framework.
 """
 from __future__ import annotations
 
-from dos_re.cpu import CF, DF
-
+from ._flags import CF, DF
 from .asm_adapters import linear_addr, loop_count, near_call_into_hook
 
 INPUT_RING_BASE = 0xD8B8

@@ -274,13 +274,6 @@ def main(argv: list[str] | None = None) -> int:
                         help="replay an input demo directory/json; loads its start snapshot unless --snapshot is also given")
     launch.add_argument("--demo-continue", action="store_true",
                         help="keep running/verifying after the input demo ends")
-    launch.add_argument("--backend", choices=("vm", "native"), default="vm",
-                        help="presentation backend: vm = the faithful SDL viewer/oracle (default); "
-                             "native = the modern VM-independent renderer (scripts/native_play.py)")
-    launch.add_argument("--mp-publish", default=None,
-                        help=argparse.SUPPRESS)  # internal: this is the VM child; publish frames to this shm name
-    launch.add_argument("--mp-input", default=None,
-                        help=argparse.SUPPRESS)  # internal: this is the VM child; read key events from this shm name
     launch.add_argument("--no-replacements", action="store_true",
                         help="ORACLE mode: run the pure original ASM with no recovered hooks (record "
                              "ground-truth cold-start demos; the reference side of the cold-start verifier)")
@@ -346,17 +339,6 @@ def main(argv: list[str] | None = None) -> int:
                              help="do not print the final ASM / Hook Coverage summary on exit")
 
     args = p.parse_args(argv)
-
-    # --backend native keeps play.py's full runtime + emulator loop (timing/IRQ/
-    # pacing/burst) and only swaps the viewer at the run_sdl_ui call site below.
-    if args.backend == "native" and (args.verify_hooks or args.verify_hook or args.verify_frames):
-        p.error("--backend native is a presentation mode, not a verifier")
-    if args.backend == "native" and not args.mp_publish:
-        # Presenter parent: spawn the VM in a child process and present its frames
-        # at the monitor refresh, decoupled from the VM's GIL. (The child re-enters
-        # this main with --mp-publish and runs the emulator + frame publisher.)
-        import native_play
-        return native_play.run_mp(args)
 
     if args.verify_frames and (args.verify_hooks or args.verify_hook):
         p.error("choose either --verify-frames or --verify-hooks/--verify-hook, not both")
@@ -1566,16 +1548,6 @@ def main(argv: list[str] | None = None) -> int:
     emu = threading.Thread(target=emulator_loop, name="overkill-emu", daemon=True)
     emu.start()
     try:
-        if args.backend == "native":
-            # VM child: publish composed frames to the presenter's shared-memory
-            # channel (the presenter parent runs run_mp / run_native_present above).
-            # This process has no window of its own, so the presenter (which has real
-            # keyboard focus) forwards gameplay key events via --mp-input; feed them
-            # into the same KeyDispatcher the interactive loop already pumps into the VM.
-            import native_play
-            native_play.run_publisher(args.mp_publish, frame_sync=frame_sync, stop=stop, video=args.video,
-                                      input_channel_name=args.mp_input, keyboard=keyboard)
-            return 0
         run_sdl_ui(
             args=args,
             frame_sync=frame_sync,

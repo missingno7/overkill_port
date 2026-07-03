@@ -6,8 +6,7 @@ this game-specific module because it is tied to OVERKILL's PSP/load layout.
 """
 from __future__ import annotations
 
-from dos_re.cpu import CF
-
+from ._flags import CF
 from .asm_adapters import linear_addr, loop_count
 
 

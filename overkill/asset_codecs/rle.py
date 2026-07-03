@@ -9,8 +9,7 @@ intentionally preserved.
 """
 from __future__ import annotations
 
-from dos_re.cpu import CF, DF
-
+from ._flags import CF, DF
 from .asm_adapters import (
     OVERKILL_LOAD_DISPATCH_CONTINUATION_IP,
     OVERKILL_LOAD_ERROR_IP,
