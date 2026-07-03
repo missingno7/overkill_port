@@ -1,7 +1,7 @@
 > **SESSION HANDOFF (2026-07-03, updated).** A fresh repo-rooted session picks up here. Everything you
 > need is **in this repo**: read `CLAUDE.md` → `AGENTS.md` → `overnight_endgame_execution.md` (the
-> `/goal` brief), then continue from its §6 queue. State: suite **green (1069 passed / 23 skipped)**,
-> tree clean, all work pushed to `main`, pure% ≈ 30.2%. Launch with `/loop /goal`.
+> `/goal` brief), then continue from its §6 queue. State: suite **green (1081 passed / 23 skipped)**,
+> tree clean, all work pushed to `main`, pure% ≈ 30.3%. Launch with `/loop /goal`.
 >
 > **Render self-compose (Bucket B) is now byte-exact across the WHOLE gameplay demo corpus** — the
 > playfield plate is native (`render_starfield_plate`) and both compositor families are modeled
