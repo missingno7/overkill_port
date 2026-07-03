@@ -6,8 +6,11 @@
 > **MILESTONE: `scripts/play_native.py` is a real, RUNNING, VM-less standalone (zero `dos_re` imports).**
 > Cold-loads a level, ticks the recovered gameplay stages, presents via pygame — verified with
 > `sys.modules` showing no `dos_re.*` entries after a full run. `play.py --backend native` (the old
-> VM-child hybrid) is REMOVED. See the dated entry below; rendering is still a debug placeholder
-> (wiring the real starfield/HUD/sprites in is the next slice).
+> VM-child hybrid) is REMOVED. RENDERING NOW DRAWS THE REAL FRAME: the recovered starfield + the full
+> object->sprite layer (player ship w/ flames, enemy wave, effects) — the whole composed native frame
+> equals the VM present page **0-for-0** on the L3 capture (see the newest dated entry). Still open:
+> HUD/chrome layer, `anim!=0` / OR-inverted sprite variants, and the Bucket-F cold level-start state
+> (gameplay still needs `--snapshot` for a real starting state).
 >
 > **MILESTONE: a hooks-ON cold boot now reaches a STABLE idle loop at the main menu, zero crashes.**
 > See the dated entries below for the full readout — this is the first time a cold boot has run
