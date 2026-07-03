@@ -54,6 +54,23 @@ class TextRenderRuntime:
 
 
 
+def _run_original_text_backend_until_return(cpu, return_ip: int, *, max_steps: int = 20000) -> bool:
+    """Run the current (unlifted) text backend's original bytes until it RETs to ``return_ip``.
+
+    Used by the 518C loop when 519A dispatches to a non-Tandy text backend (line-132 JMP): the
+    target's return word is already on ``SS:SP``, so run until ``CS:IP == return_ip`` with the
+    stack popped back.  Bounded by ``max_steps``; returns False if it never returns (fail loud)."""
+    s = cpu.s
+    entry_cs = s.cs & 0xFFFF
+    target_sp = (s.sp + 2) & 0xFFFF   # sp after the backend pops its return word
+    for _ in range(max_steps):
+        cpu.step()
+        if ((s.cs & 0xFFFF) == entry_cs and (s.ip & 0xFFFF) == (return_ip & 0xFFFF)
+                and (s.sp & 0xFFFF) == target_sp):
+            return True
+    return False
+
+
 def run_text_string_loop_518c(cpu, runtime: TextRenderRuntime) -> None:
     """Lift OVERKILL 1010:518C NUL-terminated text loop.
 
@@ -89,7 +106,14 @@ def run_text_string_loop_518c(cpu, runtime: TextRenderRuntime) -> None:
         cpu.push(0x5197)
         run_text_dispatch_519a(cpu, runtime)
         if (s.ip & 0xFFFF) != 0x5197:
-            raise RuntimeError(f"519A returned to unexpected IP {s.ip:04X} inside 518C text loop")
+            # 519A JMP'd to an unlifted non-Tandy text backend (its line-132 "keep original JMP
+            # semantics" path) -- e.g. the cold-boot intro/title text mode, which the lifted
+            # Tandy-3153 loop does not model.  The backend's original bytes are now at s.ip with
+            # the 5197 return already on SS:SP; run them until they RET to 5197, then continue the
+            # loop.  The gameplay Tandy path always returns to 5197 here, so this never triggers
+            # for it (no gameplay behaviour change).
+            if not _run_original_text_backend_until_return(cpu, 0x5197):
+                raise RuntimeError(f"519A unlifted text backend did not return to 5197 (ip={s.ip & 0xFFFF:04X})")
         old_bp = s.bp & 0xFFFF
         old_cf = cpu.get_flag(CF)
         result = (old_bp + 1) & 0xFFFF

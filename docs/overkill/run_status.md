@@ -27,6 +27,22 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-03 - Cold-boot harness: first hook gap FIXED (519A/518C); boot advances to the next (85D5)
+
+Started the iterative hooks-ON cold-boot harness. Fixed the first cold-boot-path hook gap: the lifted
+`518C` NUL-text loop couldn't host `519A` dispatching to an unlifted non-Tandy text backend (the
+cold-boot intro/title text mode) — `519A` JMPs there (`s.ip` off `0x5197`) and the Python loop raised
+before the VM ran it. Fix (`rendering/text.py`): when `s.ip != 0x5197` after `519A`, run the backend's
+original bytes until they RET to `0x5197` (`_run_original_text_backend_until_return`, the bounded
+nested-step pattern already used in `layer_sprites.py`). **Zero gameplay change** — the Tandy-3153 path
+always returns to `0x5197`, so the new branch never triggers for it (full suite stays green).
+
+**Verified:** the hooks-ON cold-boot now runs PAST `518C` (fires 4×) to the NEXT gap — `85D5 expected
+5A6C to return to 8628, got 1010:4199` at ~17.9K steps (same pattern, the cold-boot cell blit dispatches
+to an unlifted backend). Logged in `loop_blockers.md`. This confirms the harness loop works: each fixed
+gap advances the boot to the next, closing real latent coverage gaps in the recovered code as it goes.
+The cold-boot is now a **tractable, iterative build** (fix gap → rerun → next gap) rather than a wall.
+
 ## 2026-07-03 - Cold-boot harness: hooks-on boot is ~90x faster but hits a 519A cold-boot hook gap
 
 Explored the cold-boot witness harness from the hooks-ON angle (`create_overkill_runtime(...,

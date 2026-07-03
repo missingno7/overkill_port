@@ -18,7 +18,21 @@ context. Each has the analysis already done so a human can pick up fast.
 
 ---
 
-## OPEN (2026-07-03) — the 519A text dispatch raises on the cold-boot intro/title text path
+## RESOLVED (2026-07-03) — the 519A cold-boot text gap; next hooks-ON gap is 85D5
+
+> **Fixed:** the `518C` loop now handles `519A` dispatching to an unlifted non-Tandy text backend —
+> when `519A` JMPs to the backend (`s.ip != 0x5197`), `518C` runs its original bytes until they RET
+> to `0x5197` (`_run_original_text_backend_until_return`) instead of raising. Gameplay's Tandy-3153
+> path always returns to `0x5197`, so it's unchanged. Verified: the hooks-ON cold-boot now runs PAST
+> `518C` (fires 4×) to the **next** gap. The dated analysis below is kept as provenance.
+>
+> **NEXT hooks-ON cold-boot gap (2026-07-03):** `85D5 expected 5A6C to return to 8628, got 1010:4199`
+> (at `1010:C4DB`, ~17.9K steps). Same pattern: on cold-boot the `5A6C` cell blit dispatches to an
+> unlifted backend (`0x4199`, not the Tandy `306F`). Fix analogously — when `85D5`'s `call_cell_blit`
+> lands `s.ip` off `0x8628`/`0x863D`/`0x864E`, run the original blit backend until it returns. Then
+> rerun and take the following gap; this iterative loop is the cold-boot witness harness.
+
+## (historical) OPEN (2026-07-03) — the 519A text dispatch raises on the cold-boot intro/title text path
 
 Surfaced while testing a hooks-ON cold-boot (`install_replacements=True`, fast). The lifted `518C`
 NUL-text loop (`rendering/text.py`) calls `run_text_dispatch_519a` and asserts it returns to `0x5197`;
