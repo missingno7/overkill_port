@@ -18,6 +18,28 @@ context. Each has the analysis already done so a human can pick up fast.
 
 ---
 
+## OPEN (2026-07-03) — L3 sprite-compose: 5/29 playfield frames diverge (plate-independent)
+
+Surfaced while wiring the native starfield plate (not caused by it). `verify_playfield_compose`
+— `playfield = plate + composite_sprites(blocks)` vs the VM's decoded `[9598]` playfield — is
+byte-exact on **L1/L2/L4** (PASS) but **CHECK on L3**: 24/29 byte-exact, **5 frames diverge**.
+
+- **Plate-independent.** `verify_native_starfield_plate` shows the starfield plate is byte-exact
+  vs the VM on all 29 L3 frames; the 5 failures are identical whether the plate is VM-captured
+  (`verify_playfield_compose`) or native (`verify_native_starfield_plate` self-compose = 24/29
+  too). So the defect is in the **masked-sprite composite** (`composite_sprites` /
+  `decode_masked_sprite` / the `MASKED_COMPOSITORS` block capture), not the background.
+- **L3-specific in the current corpus** — L1/L2/L4 full-demos compose clean. Suspect an L3 sprite
+  path the block-capture models slightly wrong (a compositor variant / `row_add` / opaque-mask
+  edge case, or a block whose DF/rows differ). Not a `DF`-skip frame (skipped(DF)=0).
+- **Repro:** `python -m overkill.probes.verify_playfield_compose artifacts/demos/demo_play_tandy_L3_full_20260617_202520 60`
+  → `byte-exact=24 fail=5`. Next step for a fresh agent: dump the 5 diverging frames' per-block
+  draw list (which compositor IP / di / rows) and diff the native vs VM playfield pixels to
+  localize the offending block. Low urgency (render-fidelity, not a gameplay-logic gate), but it
+  caps the render self-compose gate at <100% on L3.
+
+---
+
 ## RESOLVED (2026-07-03) — the starfield is fully recovered; only backend WIRING remains
 
 > **Update (2026-07-03): recovery DONE, this is no longer a blocker.** The starfield is a recovered,
