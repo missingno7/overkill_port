@@ -7,10 +7,37 @@ pure composition of systems with no VM dependency.
 """
 from __future__ import annotations
 
+import enum
 from dataclasses import dataclass
 from typing import Sequence
 
 from overkill.recovered.domain.object_slots import ObjectPool
+
+
+class GameplayExit(enum.Enum):
+    """Which way the ``1010:97B2`` gameplay frame loop leaves gameplay this frame.
+
+    The frame loop tests three flags 9B2E sets, in this priority (``97CE..97E9``): ``A344`` ->
+    ``jmp 9734`` (a scripted "end/transition" command), then ``A342`` -> ``jmp 9902`` (game over),
+    then ``A346`` -> ``jmp 9908`` (the death/next-life tail).  The jump TARGETS (9734/9902/9908) are
+    not recovered yet, so a native loop treats reaching any of these as a fail-loud boundary.
+    """
+
+    SCRIPTED = 0x9734    # A344: scripted-input mode command DS:A47C == 4
+    GAME_OVER = 0x9902   # A342 (+A346): the death tail with A97A == 0
+    DEATH = 0x9908       # A346 alone: the death/next-life tail with A97A != 0
+
+
+@dataclass(frozen=True, slots=True)
+class GameplayTransition:
+    """A gameplay-loop exit the native frame detected this frame (see :class:`GameplayExit`)."""
+
+    exit: GameplayExit
+
+    @property
+    def jump_target(self) -> int:
+        """The original ``97B2`` jump target IP for this exit (an unrecovered continuation)."""
+        return self.exit.value
 
 
 @dataclass(frozen=True, slots=True)

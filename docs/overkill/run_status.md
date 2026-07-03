@@ -60,6 +60,28 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - Gameplay-exit DETECTOR recovered + demo-witnessed against real DEATH events
+
+Composed the two recovered 9B2E exit rules into the whole-frame decision the native loop needs:
+``systems/frame_loop.detect_gameplay_transition(a47c, a95a, a97a, v2326, anchor_counter_after_inc) ->
+GameplayTransition | None`` (domain: ``GameplayExit`` enum = SCRIPTED ``9734`` / GAME_OVER ``9902`` /
+DEATH ``9908``, in the ``97B2`` flag priority A344 > A342 > A346). Pure; composes
+``scripted_transition_fires_9b2e`` + ``death_tail_transition_9aff`` + the ``9AFF``-reached gate
+(``A95A==FFFF or A97A==0``).
+
+**Witnessed against the live 97B2 verdict** by new probe ``verify_native_gameplay_transition.py``: it
+replays a gameplay demo and, at ``1010:97CE`` (post-9B2E, flags hold the frame verdict), compares the
+detector (fed the same DS cells) to the flags 97B2 actually tests. On ``player_death`` (run-up to frame
+1790): **770 frames checked, 0 fails, and it caught 4 real DEATH-exit frames** -- so the positive path
+is grounded on actual death events, not only unit tests. (Harness note in ``loop_blockers.md``: the
+death FRAME itself exceeds the frame-verifier per-frame budget at ~1805, so the replay is capped just
+before it; the exit fires in the run-up window regardless.) Unit tests in ``test_frame_loop.py``.
+
+``native_app`` transition-flags stage note updated: DECISION recovered+witnessed; still UNMONITORED
+because the native model doesn't carry the inputs nor run the 9AFF stage that increments the death
+counter -- **that native 9AFF stage (+ threading A47C/A95A/A97A/2326 into NativeGameState) is the next
+slice**, after which the native loop can end a level fail-loud via this detector.
+
 ## 2026-07-04 - Attract scene machine DEMO-WITNESSED (whole scene range + auto-fire); transition-flag semantics identified
 
 **The pure attract rules are now demo-witnessed, full coverage.** New probe

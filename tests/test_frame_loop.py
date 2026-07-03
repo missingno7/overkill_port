@@ -280,3 +280,21 @@ def test_death_tail_transition_9aff():
     assert death_tail_transition_9aff(3, 0x0F, 1) == (True, False, True)    # death transition (A346)
     assert death_tail_transition_9aff(3, 0x0F, 0) == (True, True, True)     # + game-over (A342)
     assert death_tail_transition_9aff(3, 0x10, 0) == (False, False, True)   # past 0x0F: exact match only
+
+
+def test_detect_gameplay_transition_composes_the_exit_rules():
+    from overkill.recovered.systems.frame_loop import detect_gameplay_transition
+    from overkill.recovered.domain.frame_loop import GameplayExit
+    # normal gameplay frame: anchor present (A95A != FFFF, A97A != 0) -> no exit regardless of counter
+    assert detect_gameplay_transition(0, 0x1234, 5, 3, 0x0F) is None
+    # scripted transition takes priority even if a death tail would also fire
+    t = detect_gameplay_transition(4, 0xFFFF, 0, 3, 0x0F)
+    assert t.exit is GameplayExit.SCRIPTED and t.jump_target == 0x9734
+    # death tail reached via A95A == FFFF, A97A != 0 -> DEATH (jmp 9908)
+    assert detect_gameplay_transition(0, 0xFFFF, 1, 3, 0x0F).exit is GameplayExit.DEATH
+    # reached via A97A == 0 -> GAME_OVER (jmp 9902), and A342 beats A346
+    go = detect_gameplay_transition(0, 0x1234, 0, 3, 0x0F)
+    assert go.exit is GameplayExit.GAME_OVER and go.jump_target == 0x9902
+    # tail reached but countdown not at 0x0F, or wrong mode -> no exit
+    assert detect_gameplay_transition(0, 0xFFFF, 1, 3, 0x0E) is None
+    assert detect_gameplay_transition(0, 0xFFFF, 1, 2, 0x0F) is None

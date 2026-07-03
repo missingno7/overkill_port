@@ -192,6 +192,7 @@ def native_action_fanout_step(
 SCRIPTED_TRANSITION_A47C = 0x0004   # DS:A47C == 4 -> the scripted "end/transition" command
 DEATH_TAIL_MODE_2326 = 0x0003       # DS:2326 == 3 -> the 9AFF death tail is armed
 DEATH_COUNTDOWN_LIMIT = 0x000F      # the anchor slot's +08 counter value that fires the transition
+ANCHOR_STATE_ABSENT_A95A = 0xFFFF   # DS:A95A == FFFF (or A97A == 0) -> 9B2E reaches the 9AFF tail
 
 
 def scripted_transition_fires_9b2e(a47c: int) -> bool:
@@ -222,6 +223,34 @@ def death_tail_transition_9aff(v2326: int, anchor_counter_after_inc: int, a97a: 
     if (anchor_counter_after_inc & 0xFFFF) != DEATH_COUNTDOWN_LIMIT:
         return False, False, True
     return True, (a97a & 0xFFFF) == 0, True
+
+
+def detect_gameplay_transition(a47c: int, a95a: int, a97a: int, v2326: int,
+                               anchor_counter_after_inc: int):
+    """The whole-frame gameplay-exit decision the ``1010:9B2E`` controller reaches (or ``None``).
+
+    Composes the two recovered 9B2E exit rules in the original order + the ``97B2`` flag priority
+    (``A344`` > ``A342`` > ``A346``):
+
+    1. ``A344`` scripted transition fires first -- iff ``DS:A47C == 4`` (:func:`scripted_transition_fires_9b2e`).
+    2. otherwise the ``9AFF`` death tail is reached only when the tracked anchor state is absent
+       (``DS:A95A == FFFF`` or ``DS:A97A == 0``); there :func:`death_tail_transition_9aff` fires when
+       the dying mode ``DS:2326 == 3`` and the anchor slot's ``+08`` counter (already incremented this
+       frame) reaches ``0x0F`` -- ``A342``/game-over when ``A97A == 0``, else ``A346``/death.
+
+    Returns a :class:`GameplayTransition` for the exit, or ``None`` on a normal gameplay frame.  Pure:
+    the caller owns the DS reads (and the ``+08`` increment, matching
+    :func:`death_tail_transition_9aff`'s ``anchor_counter_after_inc`` contract).
+    """
+    from overkill.recovered.domain.frame_loop import GameplayExit, GameplayTransition
+
+    if scripted_transition_fires_9b2e(a47c):
+        return GameplayTransition(GameplayExit.SCRIPTED)
+    if (a95a & 0xFFFF) == ANCHOR_STATE_ABSENT_A95A or (a97a & 0xFFFF) == 0:
+        fires, game_over, _ = death_tail_transition_9aff(v2326, anchor_counter_after_inc, a97a)
+        if fires:
+            return GameplayTransition(GameplayExit.GAME_OVER if game_over else GameplayExit.DEATH)
+    return None
 
 
 def frame_axis_dispatch_offset(ah_count: int, al_count: int) -> int:

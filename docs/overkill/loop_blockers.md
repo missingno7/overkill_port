@@ -744,3 +744,13 @@ nor the shared store fixed them**. Confirmed not a tables-overlap bug and not AE
   each per-slot with `verify_native_object_update_driver`; then rebuild the shared-store
   `native_object_scan` + `verify_native_object_scan` (the design is correct, only the missing
   scanners blocked it) and it should go byte-exact.
+
+## 2026-07-04 — death/level-end FRAME exceeds the frame-verifier per-frame budget (replay caveat, not a bug)
+
+Replaying `demo_play_tandy_player_death_20260618_233821` under the frame verifier TIMES OUT at
+**frame 1805, IP 1010:32DB** (`FrameVerifyDivergence: FRAME VERIFY TIMEOUT ... budget=6000000`): the
+death/explosion+scene FRAME runs >6M instructions. Not a recovery defect — a harness per-frame budget
+limit at the transition frame. **Workaround:** witness transitions via the run-up (cap `max_frames`
+just before the heavy frame). `verify_native_gameplay_transition.py` already caught the 4 DEATH-exit
+frames at frames <1790. If a future slice needs to replay THROUGH a death/ending transition, raise the
+`frame_budget` for that run rather than treating the timeout as a divergence.
