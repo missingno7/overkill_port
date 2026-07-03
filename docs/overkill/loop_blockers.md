@@ -18,6 +18,25 @@ context. Each has the analysis already done so a human can pick up fast.
 
 ---
 
+## OPEN (2026-07-03) — the 519A text dispatch raises on the cold-boot intro/title text path
+
+Surfaced while testing a hooks-ON cold-boot (`install_replacements=True`, fast). The lifted `518C`
+NUL-text loop (`rendering/text.py`) calls `run_text_dispatch_519a` and asserts it returns to `0x5197`;
+on the cold-boot intro/title text it instead returns to **`0x4277`**, so the hook raises
+("519A returned to unexpected IP 4277 inside 518C text loop") and halts the boot at `1010:4277`.
+
+Root: `519A` dispatches through the video-mode text table (`CS:[95BC]` + backend flag `DS:21A2`); the
+cold-boot text is drawn in a mode/backend the lifted `519A` doesn't model (it was verified for the
+gameplay HUD text path). Not a gameplay regression (all gameplay tests + demos are green) — a latent
+coverage gap only reached on the cold-boot path.
+
+**To fix (a real cold-boot enabler):** trace what handler `519A` dispatches to at cold-boot (why the
+`0x4277` continuation), extend the lifted `519A`/`518C` to model that text mode, gate it produced-vs-VM
+(drive the intro/title text on a fresh hooks-on boot; or a synthetic-ASM oracle for the `519A` dispatch
+table). This is the first of the hooks-ON cold-boot-path gaps; fixing them one by one is the fast route
+to a cold-boot witness harness (see run_status). Repro: `create_overkill_runtime(exe, game_root,
+install_replacements=True)` then step — halts at `1010:4277` within ~18K steps.
+
 ## RESOLVED (2026-07-03) — the 306F blit leaf is now verified via a synthetic-ASM oracle
 
 > **Update (2026-07-03): the blit itself is DONE via oracle path #2.** `native_video/hud_chrome.paste_panel_cell`

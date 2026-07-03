@@ -27,6 +27,25 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-03 - Cold-boot harness: hooks-on boot is ~90x faster but hits a 519A cold-boot hook gap
+
+Explored the cold-boot witness harness from the hooks-ON angle (`create_overkill_runtime(...,
+install_replacements=True)`): the recovered hooks run native Python, so the boot is **~90x faster**
+than pure-ASM stepping — it reached `1010:4277` in **17.7K steps** (vs ~1.5M hooks-off to reach the
+game code). BUT a recovered hook raises on the cold-boot path: the `518C` NUL-text loop calls the
+lifted `519A` text dispatcher and asserts it returns to `0x5197`, but on the cold-boot intro/title text
+it returns to `0x4277` (see `loop_blockers.md`). So neither harness mode reaches the render cleanly:
+hooks-OFF is slow (compute walls — checksum accel'd, gfx-decode still), hooks-ON is fast but hits
+cold-boot-path hook-coverage gaps (`519A`, and likely others tuned for gameplay).
+
+**Cold-boot harness strategy (updated):** the fast path is hooks-ON + fixing each cold-boot-path hook
+gap as it surfaces (`519A` text dispatch first) — a bounded, iterative "run → hit a gap → fix the hook
+for the cold-boot case → rerun" loop, much faster to iterate than accelerating every compute wall
+hooks-off. Each fix also closes a real latent coverage gap in the recovered code (these hooks currently
+raise on valid cold-boot paths). This is the concrete way in to the whole cold-boot phase (front-end
+text/scenes, load-time chrome, level load) — a substantial but now-well-characterized fresh-context
+build.
+
 ## 2026-07-03 - BOUNDARY: all PER-PRESENT HUD chrome recovered; remaining chrome is load-time-only
 
 Gap analysis + `D104` trace establish a clean boundary for the snapshot-driven recovery. The
