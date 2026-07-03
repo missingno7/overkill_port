@@ -309,16 +309,18 @@ fresh agent with clean context, using the boundaries mapped above.
 ### Bucket B — render self-compose layers (witness byte-exact gate)
 Playfield composition is crystallised (`native_video/playfield.compose_playfield_indices`,
 proven 30/30). Remaining:
-- **Starfield background layer — RECOVERY DONE; only the WIRING is open.** The parallax pixel
-  starfield is fully recovered + verified: pure `recovered/systems/starfield.py` +
-  `recovered/domain/starfield.py` (move at `1F8F:0922/0960`, plot/erase via `4D15`/`4D64`;
-  **NB: the old docs' `4C76` move address is wrong / absent from the code**), probe
-  `verify_native_starfield.py`, tests `test_starfield.py`/`test_starfield_cold.py`. Do NOT re-trace
-  or re-recover it. The genuinely-open work is **wiring** the recovered starfield into the standalone
-  frame — feed it into `compose_playfield_indices` so `--backend native` composes the plate from
-  recovered state instead of capturing the VM page (`native_video/playfield.py` still notes the plate
-  may be VM-captured). Gate: `compose_playfield_indices(starfield, sprites)` byte-exact vs the VM
-  playfield across demos.
+- **Starfield background layer — RECOVERY DONE + PLATE WIRED (2026-07-03); only the backend-compose
+  hookup is open.** The parallax pixel starfield is fully recovered + verified: pure
+  `recovered/systems/starfield.py` + `recovered/domain/starfield.py` (move at `1F8F:0922/0960`,
+  plot/erase via `4D15`/`4D64`; **NB: the old docs' `4C76` move address is wrong / absent**), probe
+  `verify_native_starfield.py`, tests `test_starfield*.py`. **The PLATE is now built VM-free too:**
+  `native_video/starfield_plate.py` `render_starfield_plate(state, cursor)` turns `StarfieldState` into
+  the `(H,W)` index plate, proven byte-exact vs the VM plate across L1–L4 by
+  `verify_native_starfield_plate.py`, and its `compose_playfield_indices(native_plate, sprites)` matches
+  the VM playfield (modulo the pre-existing L3 sprite-compose divergence — a `verify_playfield_compose`
+  item, not starfield). Do NOT re-recover or re-verify the plate. The only remaining starfield work is
+  the last hop: make the standalone `--backend native` frame call `render_starfield_plate` (Bucket C)
+  instead of `render_present_page_indices` of the VM page.
 - **HUD layer — glyph/text recovery DONE; only the WIRING is open.** The glyph blit + the whole
   packed-B800 HUD text line (incl. score digits) are native (`native_video/hud_glyph.py`,
   `native_video/hud_text.py`; probes `verify_hud_glyph.py`, `verify_native_hud_text.py`). Remaining =

@@ -5,6 +5,34 @@
 > autonomous loop with `/loop /goal`. The docs were freshly de-staled this session — trust them, but
 > still verify a target against the code before recovering it (some `loop_blockers.md` entries are dated).
 
+## 2026-07-03 - Native starfield PLATE wired: standalone playfield needs no VM page
+
+**Bucket B/C (render self-compose) — the starfield plate is now built from recovered state, VM-free.**
+The playfield is `background plate + sprites`; the sprite layer + compose were already native, but the
+*plate* (the sparse parallax pixel starfield) was still captured from the VM page — the last VM
+dependency in the standalone playfield. Closed it: `native_video/starfield_plate.py`
+`render_starfield_plate(state, cursor)` builds the `(H,W)` index plate purely from the recovered
+`StarfieldState` — plot each star at `row*0x68 + cursor + dx` (`1010:4D15`, skip-occupied for
+star-on-star overlaps) onto an otherwise-zero page, then decode through the verified present-blit
+geometry (`render_present_page_indices`). Fails loud if the scroll cursor would push the star window
+across a 64KiB page boundary (unmodelled segment wrap) rather than truncate silently.
+
+**Gate:** `overkill/probes/verify_native_starfield_plate.py` (produced-vs-VM). Plate byte-exact vs the
+VM plate on **every** frame across L1/L1-hard/L2/L3/L4 (e.g. L2 40/40, L3 39/39, L4 40/40, 0 diff). It
+also reports the full self-compose `compose_playfield_indices(native_plate, sprites)` vs the VM
+`[9598]` playfield: identical to `verify_playfield_compose`'s numbers over a VM-captured plate (since
+the native plate is byte-identical), so L3's 5/39 compose shortfall is the **pre-existing sprite-compose
+divergence that baseline probe already shows** (confirmed: baseline is also 24/29), NOT a plate defect —
+so PASS is gated on the plate proof only. Unit test `tests/test_starfield_plate.py` (6 cases, VM-free)
+pins the geometry + skip/guard rules. Commit: (this pass).
+
+**Metrics:** pure% unchanged at **30.2%**, glue **318** (a backend render leaf, not an object collapse —
+correctly lands in `native_video`/backend, not `source_pure`). Suite green. **Next Bucket-C step:** feed
+`render_starfield_plate` into the standalone `--backend native` compose so the backend composes the plate
+from recovered state instead of `render_present_page_indices` of the VM page (the HUD `hud_text` overlay
+is the remaining background-layer wire). The L3 sprite-compose 5-frame divergence is a *separate*
+pre-existing item (in `verify_playfield_compose`), not starfield.
+
 ## 2026-07-03 - Pre-loop readiness pass: status-metrics tooling fix
 
 Orientation/handoff-readiness pass before launching the unattended loop. Suite re-confirmed green
