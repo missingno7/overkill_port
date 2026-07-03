@@ -27,6 +27,30 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-03 - Cold-boot witness investigation: characterized the boot self-check wall
+
+Investigated the recorded next step (a cold-boot witness harness). Concrete findings (boot a fresh
+pure-ASM runtime via `create_overkill_runtime(..., install_replacements=False)` and single-step):
+- Boot works. The DOS loader runs ~1.5M instructions in loader segments (`1B65`, `23AD`), then
+  execution reaches the game code at `CS=1010`.
+- It then enters a **compute-heavy boot self-check / decrypt phase**: a 65535-iteration checksum loop
+  at `1010:C916–C91D` (`mov dl,[si]; add ax,dx; add ah,al; inc si; loop C916`) with `C923: jmp C8DC`
+  forming an outer loop over lots of data. From 1.5M→4M steps execution stayed in this loop
+  (unique_ips frozen at 784) — it's bounded computation, not an env wait, but it's MANY millions of
+  instructions and **impractically slow to grind through in pure-Python stepping**.
+- `306F`/`859E`/`85D5`/`33AF` (the chrome/graphics render) fire **0 times** before/through this phase —
+  the render is past the self-check AND past the title (which will also need timer/input env handling).
+
+**Implication for the cold-boot harness (refines the plan):** a naive input-less step-to-render is not
+viable (the boot self-check is too slow in Python, then title/menu waits need env+input). The harness
+needs a **performance + env strategy**, in order: (a) get past the boot self-check cheaply — hook/skip
+`C8DC`-`C923` (a checksum/decrypt with no gameplay state) or capture a "just-booted" snapshot taken
+once past it; (b) reuse the frame-verifier's env-wait + demo-input machinery to drive the fresh runtime
+through title→menu→level; (c) then wrap/step `306F`/`859E`/the loader/the front-end scenes as the
+produced-vs-VM witness. This is a substantial, fresh-context undertaking — the first obstacle (the boot
+self-check) is now mapped so a fresh session can start on the performance strategy rather than
+rediscover it. (Scratch probe: `probe_coldboot_306f.py`.)
+
 ## 2026-07-03 - Native 306F PANEL-cell blit recovered + verified via a synthetic-ASM oracle
 
 Re-landed the static-HUD-chrome first leaf that the prior pass reverted (witness-poor in demos), now
