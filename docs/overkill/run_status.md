@@ -47,6 +47,38 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-03 - Front-end: real title screen VM-free + scrapped the play_native placeholders
+
+Direction from the user (they ran `play_native.py` and got a WHITE SQUARE): enforce the project's
+no-placeholder / fail-loud / no-staging rules, and wire the REAL render toward showing the game.
+Reference is `D:\Games\DOS\pre2_port` (a far more mature VM-less port: boot-data-as-constants, full
+front-end, real rendering, `deploy_native.py` -> `dist/` + a VM-import smoke test).
+
+Done this pass (all VM-free -- verified zero `dos_re` on the paths):
+* **Real title/options screen.** `native_video/front_end.decode_fullscreen_image` decodes `OKMENU.ENC`
+  through the recovered codecs (container LZ + `deplanarize_tandy`) to the exact 320x200 title screen --
+  a live decode from the game data, not a screenshot. `play_native.py` now OPENS on it (Space starts).
+  Byte-exact vs the VM title apart from a 276px overlay = the menu's red first-letter key highlights
+  (y[65..128] x[77..182], native white(15) vs VM red(12)) -- a real next front-end slice, not a decode
+  error. Unit test `tests/test_front_end_image.py` (checksum-pinned) + probe
+  `verify_native_front_end_image.py` (byte-exact-vs-VM, records the 276px overlay).
+* **Scrapped the placeholders.** Deleted `_placeholder_starting_state` (the fake spawn) and
+  `_render_indices` (the white marker square) from `play_native.py`. Gameplay now REQUIRES `--snapshot`
+  (a real captured start state) and **fails loud** without it -- no invented spawn (the cold level-start
+  state is still the open Bucket-F level loader).
+* **Real starfield background.** Replaced the white square with the recovered parallax starfield
+  (`native_video.starfield_plate.render_starfield_plate`, proven byte-exact vs the VM), seeded from the
+  snapshot's real star state (`_read_starfield`) and advanced each frame by `advance_starfield`. Verified:
+  renders the real 40-star field, gameplay loop steps 8s with no gap/crash, whole path VM-free.
+
+**NEXT (the piece that makes it recognisably the game): the object-record -> sprite-pixel bridge.** The
+standalone draws the real background but not yet the player/enemies. The sprite pipeline is recovered
+(`sprite_textures.decode_masked_sprite`, `composite_sprites`, `compose_playfield_indices`), and the
+level's sprite bank cold-loads (`NativeLevel.graphics`); what's missing is the VM-free mapping from an
+object slot (sprite id/anim + position) to its sprite source in the bank + dimensions -- the recovery
+the VM draw routines `75A6`/`768E`/`7746` do. Recover that, then compose starfield + sprites (+ HUD) into
+the real frame. Do NOT fake sprites in the meantime (rules: fail loud, no placeholder).
+
 ## 2026-07-03 - MILESTONE: scripts/play_native.py is a REAL VM-less standalone (zero dos_re imports)
 
 Built the first genuine VM-less standalone entrypoint per the pre2-mirrored direction (below). Replaced

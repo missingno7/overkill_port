@@ -6,37 +6,34 @@ runtime bundle) and runs the recovered gameplay frame systems with **NO VM, no `
 anywhere on this default run path** -- a genuinely standalone game, separable from the whole RE
 workbench.
 
-    python scripts/play_native.py --level 0                    # play LEVEL1 (0-based), VM-free
-    python scripts/play_native.py --level 0 --snapshot DIR     # DEBUG: seed a REAL, verified
-                                                                 # starting NativeGameState from a
-                                                                 # captured VM memory dump instead
-                                                                 # of the placeholder spawn (this
-                                                                 # is the ONLY flag that touches
-                                                                 # dos_re, and only lazily -- the
-                                                                 # default path never does)
+    python scripts/play_native.py                              # title/options screen (VM-free); Space starts
+    python scripts/play_native.py --snapshot DIR               # + gameplay from a REAL captured state
+    python scripts/play_native.py --no-title --snapshot DIR    # straight into gameplay
 
-Controls: arrow keys = move, Space = fire, Tab = secondary fire, ESC/close window = quit.
+Controls: title -> Space starts; in game: arrow keys = move, Space = fire, ESC/close = quit.
 
-STATUS -- what is real vs. still a placeholder here (be honest, never fake a gap):
+STATUS -- every layer here is REAL recovered code (no placeholders, fail loud on gaps):
 
+* FRONT-END: the title/options screen is the real ``OKMENU.ENC`` decoded VM-free through the
+  recovered codecs (``native_video.front_end.decode_fullscreen_image``), byte-exact vs the VM apart
+  from the red key-letter overlay the menu draws (a next front-end slice). Not a screenshot -- a
+  live decode from the game data.
 * Level data (tile plane, tile classes, block graphics, sprite bank) loads byte-exact from the
   original files, no VM (``overkill.asset_codecs.native_level.load_native_level``).
 * Gameplay ticks (input decode, view-anchor movement, world-scroll, the object-update pass) run
   through the recovered pure systems (``overkill.native_game.NativeGame``), no VM. A handful of
-  per-frame globals the object-update pass and action fan-out consume are not yet derivable
-  VM-free (open Bucket-C gaps: ``99F6`` scripted input, the FULL ``A067`` fan-out paths, the
-  ``9CB6`` contact probe, the coordinate rings). This runner supplies the same documented,
-  default-safe values those systems' own dataclasses already default to for the "normal tick"
-  case (0 / False) -- it does not invent new behaviour, it just doesn't yet model every rare
-  special-mode branch. ``ref_box_x``/``ref_box_y`` (the view-anchor box the object pass reads)
-  ARE derived for real, from the tracked view-anchor position -- see :func:`_object_update_globals`.
-* RENDERING is currently a DEBUG PLACEHOLDER: a black background + a marker block at the player's
-  tracked position. The real recovered visuals (the byte-exact starfield background, HUD chrome,
-  and the sprite draw list) are each proven correct in isolation (``overkill/native_video/*``) but
-  not yet WIRED into this standalone loop -- the fresh-level starfield INIT state and the
-  object-pool -> sprite-pixel bridge are still-open integration gaps (see
-  ``docs/overkill/overnight_endgame_execution.md`` Buckets B/C). When those land, :func:`_render_indices`
-  is where they plug in.
+  per-frame globals are still-open Bucket-C gaps (``99F6`` scripted input, the FULL ``A067`` fan-out,
+  the ``9CB6`` contact probe, the coordinate rings); this runner passes the systems' own documented
+  "normal tick" defaults, and ``ref_box_x``/``ref_box_y`` are DERIVED for real (see
+  :func:`_object_update_globals`).
+* RENDERING: the real recovered parallax STARFIELD background (``native_video.starfield_plate
+  .render_starfield_plate``, proven byte-exact vs the VM), advanced each frame by the recovered
+  ``advance_starfield`` move. The SPRITE layer (player + enemies) is the next piece to wire -- the
+  object-record -> sprite-pixel bridge -- so today the standalone draws the real background but not
+  yet the ships; it does NOT fake a ship in the meantime.
+* There is NO placeholder starting state: the cold level-start state is not a recovered VM-free
+  system yet (Bucket F level loader), so gameplay REQUIRES ``--snapshot`` (a real captured state) and
+  fails loud without it, rather than invent a spawn.
 * On any exception from a gameplay stage (a real unrecovered gap) the runner stops the tick loop,
   prints the gap, and holds the last frame -- it never silently fakes forward past a divergence.
 
@@ -60,29 +57,24 @@ sys.path.insert(0, str(ROOT))
 
 from overkill.native_game import NativeGame  # noqa: E402
 from overkill.recovered.domain.frame_loop import FrameInput  # noqa: E402
-from overkill.recovered.domain.frame_snapshot import CameraState, HudLayer  # noqa: E402
 from overkill.recovered.domain.native_game_state import NativeGameState  # noqa: E402
-from overkill.recovered.domain.object_slots import ObjectPool  # noqa: E402
 from overkill.recovered.domain.object_update import ObjectUpdateGlobals  # noqa: E402
+from overkill.recovered.domain.starfield import STAR_COUNT, Star, StarfieldState  # noqa: E402
 from overkill.recovered.systems.input import (  # noqa: E402
     DEFAULT_CONTROL_MAP,
     FIXED_DIRECTION_KEYS,
     key_state_from_pressed,
 )
+from overkill.recovered.systems.starfield import advance_starfield  # noqa: E402
 from overkill.recovered.systems.tandy_screen import (  # noqa: E402
     SCREEN_HEIGHT,
     SCREEN_WIDTH,
     TANDY_PALETTE_RGB,
 )
+from overkill.native_video.front_end import TITLE_OPTIONS, decode_fullscreen_image  # noqa: E402
 
 DEFAULT_BUNDLE = ROOT / "artifacts" / "static_runtime_bundle" / "memory_1mb.bin"
 DEFAULT_CONTAINER = ROOT / "assets" / "OVERKILL"
-
-_ANCHOR_STRIDE = 0x38          # the object-slot record size every pool uses
-_ANCHOR_BASE = 0x237C          # DS:237C -- the special/view-anchor slot's own base
-_GAMEPLAY_BASE = 0x2B5C        # DS:2B5C -- the gameplay object table
-_EFFECT_BASE = 0x23B4          # DS:23B4 -- the effect object table
-_OFF_X, _OFF_Y = 0x02, 0x04     # record byte offsets for X/Y (shared by every pool)
 
 
 class _FlatMemory:
@@ -107,43 +99,37 @@ class _FlatMemory:
         return self.data[p] | (self.data[(p + 1) & 0xFFFFF] << 8)
 
 
-def _anchor_pool(x: int, y: int) -> ObjectPool:
-    """The single-slot view-anchor pool (DS:237C) at a given tracked position."""
-    words = [0] * (_ANCHOR_STRIDE >> 1)
-    words[_OFF_X >> 1] = x & 0xFFFF
-    words[_OFF_Y >> 1] = y & 0xFFFF
-    words[0] = 1  # active
-    return ObjectPool(base=_ANCHOR_BASE, stride=_ANCHOR_STRIDE, slots=(tuple(words),))
-
-
-def _placeholder_starting_state() -> NativeGameState:
-    """A PLACEHOLDER cold-start state: the real level-init gameplay state (player spawn point,
-    initial object-table seed) is not yet a recovered pure system (Bucket F "level loader" is
-    still open) -- this is a reasonable default spawn for exercising the loop, not a verified
-    reproduction of the real game's level-start state. Use ``--snapshot`` for a real one."""
-    return NativeGameState(
-        special_pool=_anchor_pool(0x64, 0x80),
-        object_pool=ObjectPool(base=_GAMEPLAY_BASE, stride=_ANCHOR_STRIDE, slots=()),
-        effect_pool=ObjectPool(base=_EFFECT_BASE, stride=_ANCHOR_STRIDE, slots=()),
-        camera=CameraState(x=0, y=0),
-        hud=HudLayer(counters=(0, 0, 0), score_bcd=(0, 0)),
+def _read_starfield(mem: "_FlatMemory", ds: int) -> StarfieldState:
+    """Read the recovered starfield state (40 stars + the 3 layer counters + the enable gate) from a
+    captured game data segment -- the same fields ``overkill.probes.verify_native_starfield`` proves
+    reproduce the VM's parallax move byte-exact. Plain byte reads, no VM."""
+    stars = tuple(
+        Star(mem.rw(ds, (0xC6C1 + i * 6) & 0xFFFF),
+             mem.rw(ds, (0xC6C3 + i * 6) & 0xFFFF),
+             mem.rw(ds, (0xC6C5 + i * 6) & 0xFFFF))
+        for i in range(STAR_COUNT)
     )
+    counters = (mem.rw(ds, 0xC812), mem.rw(ds, 0xC814), mem.rw(ds, 0xC816))
+    enabled = mem.rw(ds, 0xA95A) != 0xFFFF
+    return StarfieldState(stars, counters, enabled)
 
 
-def _seed_state_from_snapshot(snapshot_dir: Path) -> NativeGameState:
-    """DEBUG: seed a REAL starting state from a captured VM memory dump (a static file read).
+def _seed_state_from_snapshot(snapshot_dir: Path) -> tuple[NativeGameState, StarfieldState]:
+    """Seed a REAL starting state from a captured VM memory dump (a static file read) -- the game
+    state AND the starfield state, both projected from the same captured data segment.
 
-    Only this function ever touches recovered-adapter code that expects VM-shaped memory, and it
-    does so over :class:`_FlatMemory` (no ``dos_re`` import) -- so passing ``--snapshot`` is the
-    only way this program ever gets near workbench-only conventions, and even then it is just
-    parsing bytes a previous (separate) run captured.
+    The cold level-start state (player spawn + object-table seed + the starfield init) is NOT yet a
+    recovered pure system (Bucket F "level loader" is still open), so there is no VM-free way to
+    produce it from the raw files today; rather than fake one, this program requires a captured
+    ``--snapshot`` to obtain a REAL starting state, and fails loud without it (see ``main``). Reading
+    is over :class:`_FlatMemory` (no ``dos_re`` import) -- just parsing bytes a previous run captured.
     """
     from overkill.recovered.adapters.native_game_state_adapter import read_native_game_state
 
     mem = _FlatMemory((snapshot_dir / "memory_1mb.bin").read_bytes())
     cpu_line = json.loads((snapshot_dir / "state.json").read_text(encoding="utf-8"))["cpu_snapshot"]
     ds = int(re.search(r"DS=([0-9A-Fa-f]{4})", cpu_line).group(1), 16)
-    return read_native_game_state(mem, ds)
+    return read_native_game_state(mem, ds), _read_starfield(mem, ds)
 
 
 # Host key -> the recovered FIXED_DIRECTION_KEYS scancode it corresponds to (single source of
@@ -180,22 +166,38 @@ def _object_update_globals(game: NativeGame) -> ObjectUpdateGlobals:
     )
 
 
-def _render_indices(game: NativeGame):
-    """DEBUG placeholder render: black background + a marker at the tracked player position.
+def _render_frame(game: NativeGame, starfield: StarfieldState):
+    """Render the real recovered playfield background: the parallax starfield plate.
 
-    See the module docstring's STATUS section -- the real recovered background/HUD/sprite
-    rendering is not yet wired into the standalone loop; this proves the loop and lets you SEE the
-    player move, nothing more.
+    This is the byte-exact recovered starfield (``native_video.starfield_plate.render_starfield_plate``,
+    proven vs the VM), plotted at the game's live present cursor (DS:234C = ``game.row_source``). It is
+    the BACKGROUND layer only; the sprite layer (player/enemies) is the next recovered piece to wire --
+    the object-record -> sprite-pixel bridge -- and until it lands this draws the real background, not a
+    fake ship. No placeholder: every pixel here is the recovered starfield.
     """
-    import numpy as np
+    from overkill.native_video.starfield_plate import render_starfield_plate
 
-    frame = np.zeros((SCREEN_HEIGHT, SCREEN_WIDTH), dtype=np.uint8)
-    x = game.state.special_pool.x_word(0) % SCREEN_WIDTH
-    y = game.state.special_pool.y_word(0) % SCREEN_HEIGHT
-    y0, y1 = max(0, y - 2), min(SCREEN_HEIGHT, y + 3)
-    x0, x1 = max(0, x - 2), min(SCREEN_WIDTH, x + 3)
-    frame[y0:y1, x0:x1] = 15  # bright marker (Tandy palette index 15 = white)
-    return frame
+    return render_starfield_plate(starfield, game.row_source)
+
+
+def _run_title_screen(display, pygame, container_data) -> bool:
+    """Show the REAL title/options screen (OKMENU.ENC), VM-free, until FIRE (Space) or quit.
+
+    This is the recovered front-end render: the whole title/options screen decodes from one container
+    asset through the pure codecs (``native_video.front_end.decode_fullscreen_image``) -- no VM, no
+    placeholder.  Returns True to advance into the game, False if the user quit.
+    """
+    title = decode_fullscreen_image(container_data, TITLE_OPTIONS)
+    display.set_title("OVERKILL - native (VM-less)  [title screen -- Space = start, Esc = quit]")
+    clock = pygame.time.Clock()
+    while True:
+        for ev in pygame.event.get():
+            if ev.type == pygame.QUIT or (ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE):
+                return False
+            if ev.type == pygame.KEYDOWN and ev.key == pygame.K_SPACE:
+                return True
+        display.draw(title)
+        clock.tick(30)
 
 
 class PygameDisplay:
@@ -238,11 +240,12 @@ def main(argv=None) -> int:
                          "overkill/static_runtime_bundle.py")
     ap.add_argument("--container", default=str(DEFAULT_CONTAINER), help="the OVERKILL asset container file")
     ap.add_argument("--snapshot", default=None,
-                    help="DEBUG: seed a real starting NativeGameState from a captured VM snapshot "
-                         "directory instead of the placeholder spawn (lazily touches dos_re; the "
-                         "default path never does)")
+                    help="REQUIRED for gameplay: a captured VM snapshot directory to seed the REAL "
+                         "starting game+starfield state (the cold level-start state is not a recovered "
+                         "system yet -- Bucket F level loader). Reads bytes only, no VM.")
     ap.add_argument("--scale", type=int, default=3)
     ap.add_argument("--fps", type=int, default=30)
+    ap.add_argument("--no-title", action="store_true", help="skip the title/options screen, go straight to gameplay")
     args = ap.parse_args(argv)
 
     bundle_path, container_path = Path(args.bundle), Path(args.container)
@@ -250,20 +253,35 @@ def main(argv=None) -> int:
         raise SystemExit(f"--bundle {bundle_path}: not found (build it via overkill/static_runtime_bundle.py)")
     if not container_path.is_file():
         raise SystemExit(f"--container {container_path}: not found -- point it at the OVERKILL game data")
+    # No placeholder spawn: the cold level-start state is not recovered yet, so fail loud rather than
+    # fake one. A real starting state comes only from a captured snapshot until the level loader lands.
+    if not args.snapshot:
+        raise SystemExit(
+            "gameplay needs a real starting state: pass --snapshot DIR (a captured VM snapshot).\n"
+            "The cold level-start state (player spawn + object seed + starfield init) is not yet a "
+            "recovered VM-free system (Bucket F level loader is still open) -- there is no honest way "
+            "to cold-start gameplay without the VM today, and this program will not fake one.")
 
-    state = (_seed_state_from_snapshot(Path(args.snapshot)) if args.snapshot
-             else _placeholder_starting_state())
-    game = NativeGame.load_level(bundle_path.read_bytes(), container_path.read_bytes(), args.level, state)
+    container_data = container_path.read_bytes()
+    state, starfield = _seed_state_from_snapshot(Path(args.snapshot))
+    game = NativeGame.load_level(bundle_path.read_bytes(), container_data, args.level, state)
     print(f"cold-loaded LEVEL{args.level + 1}: tile_plane={len(game.level.tile_plane)}B "
           f"blocks={len(game.level.blocks)}B graphics={len(game.level.graphics)}B (VM-free)")
 
     display = PygameDisplay(scale=args.scale)
     pygame = display.pygame
+
+    # Front-end: open on the REAL title/options screen (VM-free), like the actual game. Space starts.
+    if not args.no_title:
+        if not _run_title_screen(display, pygame, container_data):
+            display.close()
+            return 0
+
     clock = pygame.time.Clock()
     tick = 0
     gap: str | None = None
     running = True
-    last_frame = _render_indices(game)
+    last_frame = _render_frame(game, starfield)
     try:
         while running:
             for ev in pygame.event.get():
@@ -285,8 +303,9 @@ def main(argv=None) -> int:
                         update_globals=_object_update_globals(game),
                         scroll_gate=(0, 0, 0),
                     )
+                    starfield = advance_starfield(starfield)  # the recovered parallax move, one frame
                     tick += 1
-                    last_frame = _render_indices(game)
+                    last_frame = _render_frame(game, starfield)
                 except Exception as exc:  # noqa: BLE001 -- a real unrecovered gap, report + hold
                     gap = f"{type(exc).__name__}: {exc}"
                     print(f"gameplay gap at tick {tick}: {gap}")
