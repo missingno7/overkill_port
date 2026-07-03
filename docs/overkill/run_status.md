@@ -1,21 +1,31 @@
 > **SESSION HANDOFF (2026-07-03, updated).** A fresh repo-rooted session picks up here. Everything you
 > need is **in this repo**: read `CLAUDE.md` → `AGENTS.md` → `overnight_endgame_execution.md` (the
-> `/goal` brief), then continue from its §6 queue. State: suite **green (1081 passed / 23 skipped)**,
-> tree clean, all work pushed to `main`, pure% ≈ 30.3%. Launch with `/loop /goal`.
+> `/goal` brief). State: suite **green (1089 passed / 23 skipped)**, tree clean, all work pushed to
+> `main`, pure% ≈ 30.3%. Launch with `/loop /goal`.
 >
-> **Render self-compose (Bucket B) is now byte-exact across the WHOLE gameplay demo corpus** — the
-> playfield plate is native (`render_starfield_plate`) and both compositor families are modeled
-> (masked 2E6E/2F81/2FB6 + OR-inverted 2F40/2ECB). `verify_playfield_compose` = 100% on L1–L4. So the
-> render leaf is done; **the next frontier is INTEGRATION, not more render leaves.**
+> **The gameplay-demo-witnessable frontier is EXHAUSTED — the next phase is the COLD-BOOT runtime.**
+> This is the single most important orientation fact for the next run. What's done this session:
+> - **Bucket B render self-compose** is byte-exact across the whole gameplay demo corpus: native
+>   playfield plate (`render_starfield_plate`) + both compositor families (masked 2E6E/2F81/2FB6 +
+>   OR-inverted 2F40/2ECB); `verify_playfield_compose` = 100% on L1–L4.
+> - **Bucket A** clean pure-decision extractions are exhausted (last ones: `9FEA`, `B800` spawn-ptr).
+> - **New pattern for load-time code:** the static-HUD render (`859E→85D5→5A6C→306F`) runs only at
+>   cold-boot/level-load, so it has NO gameplay-demo witness. The `306F` blit leaf is recovered +
+>   verified via a **synthetic-ASM oracle** (`native_video/hud_chrome.paste_panel_cell` +
+>   `tests/test_hud_chrome.py`, which runs the real 306F opcodes on a CPU8086). Use this same
+>   "assemble the opcodes → run on CPU8086 → compare to the pure form" gate for any witness-poor
+>   load-time routine.
 >
-> **Best next targets (all bigger, pick one and slice it):** (1) **Bucket C** — assemble the standalone
-> `--backend native` frame: compose from recovered state (feed `render_starfield_plate` + the sprite
-> draw list + `hud_text` band into a full-frame compose), and drive the sprite draw list from the native
-> object pass instead of the VM-bound `SpriteDrawCollector` (this is the real VM-less step). (2) **Bucket
-> A islands** — `837A` handler-table dispatch, `859E` status-cell quad render island (both mapped in the
-> brief §6). (3) **99F6 scripted-input** — a `DS:[A47C]` jump-table of scripted-movement handlers (hard).
-> The docs were de-staled this session — trust them, but verify a target against the code before
-> recovering it (some `loop_blockers.md` entries are dated).
+> **What the next run should do — stand up the COLD-BOOT runtime (Bucket E/F/G):** the remaining
+> high-value work (front-end flow, native level/asset load into `NativeGameState`, the static-HUD
+> composer over `paste_panel_cell`, audio drivers, the full-frame compose) all execute on the
+> **cold-boot path**, which no snapshot demo witnesses. The enabling move is a **cold-boot witness
+> harness**: boot a fresh pure-ASM runtime (`overkill/runtime.py`, `install_replacements=False`) and
+> replay a cold-start demo through boot→menu→level (`InputDemoPlayback.is_cold_start`), so cold-boot
+> code (306F, 859E, the loader, the front-end scenes) can be observed + gated produced-vs-VM. Do this
+> FIRST; it unblocks the whole phase. This is a large, fresh-context undertaking — best begun with a
+> clean session, not mid-way through a long loop. Verify any target against the code before recovering
+> (some `loop_blockers.md` entries are dated).
 
 ## 2026-07-03 - Native 306F PANEL-cell blit recovered + verified via a synthetic-ASM oracle
 
