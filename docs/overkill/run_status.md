@@ -27,6 +27,34 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-03 - KEY REALIZATION: synthetic-ASM oracles recover cold-boot leaves WITHOUT the harness
+
+Investigating cold-boot wall 2 (`1010:45D0-4624`) showed it is a **bounded graphics de-planarization
+decode** (`shl al,1` runs + `mov ax,[45E4]; stosw` pixel writes; `cs:[0BD6]` is a gfx-mode flag set by
+the load dispatcher at `0CB9/0CC9/0CD9/0CE9`), not an env wait — the boot is a *sequence of bounded
+compute phases* (checksum, gfx decodes), not env-blocked here.
+
+**The important insight (reframes the whole cold-boot phase):** the **synthetic-ASM oracle** pattern —
+proven this session on `306F` (`paste_panel_cell`) and the boot checksum (`boot_selfcheck_checksum`) —
+verifies a witness-poor routine against its own opcodes on synthetic input, **without running the boot
+at all**. So the slow cold-boot *witness harness is NOT a prerequisite* for recovering + verifying the
+cold-boot render leaves (the `859E` cell composer, `85D5` cell selection, the `CS:0BE4` cell directory,
+the gfx decoders). Each can be recovered independently, in any order, via a synthetic oracle (load the
+routine's code from any snapshot memory image, set up synthetic inputs, run from its entry to its ret,
+compare to the pure form). The harness is only needed for the FINAL end-to-end cold-boot proof (§1.8),
+not for the piece-by-piece recovery.
+
+**Revised plan for the cold-boot render (do these in any order, each oracle-gated, no harness):**
+1. `859E` composer → pure `compose_status_cells_859e(page, panel_source, cell_dir, descriptors)` over
+   `paste_panel_cell`; oracle = run `859E→85D5→5A6C→306F` on synthetic descriptors/dir/source, compare
+   the B800 page. (Bigger: a multi-routine call-tree oracle.)
+2. `CS:0BE4` cell directory ← walk the decoded PANEL item headers (`planar.py`), gate vs the live
+   `CS:0BE4` words from a snapshot.
+3. The gfx decoders (`45D0` family) — check first whether `planar.py`'s 33AF/0CB8 load already covers
+   them before re-recovering.
+The boot checksum accelerator (committed) + this realization mean the harness itself is deferrable to
+the end; recovery can proceed leaf-by-leaf now.
+
 ## 2026-07-03 - Cold-boot: boot self-check checksum recovered + ACCELERATION proven to clear wall 1
 
 Built the first real piece of the cold-boot witness harness and proved the strategy. The boot
