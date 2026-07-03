@@ -1855,6 +1855,34 @@ def overkill_frame_status_counter_update_5f61(cpu):
     )
 
 
+def _run_5a6c_dispatched_target(cpu, return_ip: int, *, max_steps: int = 20000) -> None:
+    """After 5A6C's JMP dispatch, run the selected mode-specific blit target.
+
+    5A6C is a video-mode dispatch stub: it JMPs to the renderer for the active mode (for Tandy
+    gameplay, the lifted ``306F``).  If that target has a lifted hook, run it (the normal path).
+    If it is UNLIFTED (a non-Tandy / cold-boot blit backend, e.g. the intro/title text-mode cell
+    renderer), run its ORIGINAL bytes until it RETs to ``return_ip`` (the return the original 5A6C
+    CALL frame holds) -- the bounded nested-step pattern used elsewhere for unlifted leaves.  Only
+    the unlifted branch is new; the Tandy gameplay path (lifted target) is unchanged."""
+    if (cpu.s.cs & 0xFFFF, cpu.s.ip & 0xFFFF) == (0x1010, return_ip & 0xFFFF):
+        return
+    key = (cpu.s.cs & 0xFFFF, cpu.s.ip & 0xFFFF)
+    handler = cpu.replacement_hooks.get(key)
+    if handler is not None:
+        handler(cpu)
+        return
+    s = cpu.s
+    entry_cs = s.cs & 0xFFFF
+    target_sp = (s.sp + 2) & 0xFFFF   # sp after the target pops the original 5A6C return word
+    for _ in range(max_steps):
+        cpu.step()
+        if ((s.cs & 0xFFFF) == entry_cs and (s.ip & 0xFFFF) == (return_ip & 0xFFFF)
+                and (s.sp & 0xFFFF) == target_sp):
+            return
+    raise RuntimeError(
+        f"5A6C unlifted blit target did not return to {return_ip & 0xFFFF:04X} (ip={s.ip & 0xFFFF:04X})")
+
+
 @registry.replace(0x1010, 0x61DC, "overkill_status_display_parent_61dc")
 def overkill_status_display_parent_61dc(cpu):
     """Raw status/counter display parent around 61F7, 5A00, 6296, and 5A6C."""
@@ -1882,13 +1910,7 @@ def overkill_status_display_parent_61dc(cpu):
             overkill_menu_cell_source_blit_dispatch_5a6c,
             return_ip,
         )
-        if (cpu.s.cs & 0xFFFF, cpu.s.ip & 0xFFFF) != (0x1010, return_ip & 0xFFFF):
-            # 5A6C is a dispatch stub whose JMP target owns the RET that consumes
-            # the original 5A6C CALL frame.  Run that installed target without
-            # adding another synthetic CALL word.
-            handler = cpu.replacement_hooks.get((cpu.s.cs & 0xFFFF, cpu.s.ip & 0xFFFF))
-            if handler is not None:
-                handler(cpu)
+        _run_5a6c_dispatched_target(cpu, return_ip)
 
     run_status_display_parent_61dc(
         cpu,
@@ -1910,13 +1932,7 @@ def overkill_status_row_repeat_6120(cpu):
             overkill_menu_cell_source_blit_dispatch_5a6c,
             return_ip,
         )
-        if (cpu.s.cs & 0xFFFF, cpu.s.ip & 0xFFFF) != (0x1010, return_ip & 0xFFFF):
-            # 5A6C dispatches by JMP to the mode-specific renderer.  Run the
-            # installed target without another CALL push so its RET consumes the
-            # original 5A6C call frame.
-            handler = cpu.replacement_hooks.get((cpu.s.cs & 0xFFFF, cpu.s.ip & 0xFFFF))
-            if handler is not None:
-                handler(cpu)
+        _run_5a6c_dispatched_target(cpu, return_ip)
 
     def call_613e(return_ip: int) -> None:
         _call_installed_hook_like_near_call(
@@ -1994,15 +2010,7 @@ def overkill_status_cell_composite_85d5(cpu):
             overkill_menu_cell_source_blit_dispatch_5a6c,
             return_ip,
         )
-        if (cpu.s.cs & 0xFFFF, cpu.s.ip & 0xFFFF) != (0x1010, return_ip & 0xFFFF):
-            # 5A6C is a dispatch stub: the original CALL pushes return_ip,
-            # then 5A6C JMPs to the mode-specific renderer body (for Tandy,
-            # usually 306F).  Execute that installed target hook without an
-            # extra CALL push so the child RET consumes the original return.
-            handler = cpu.replacement_hooks.get((cpu.s.cs & 0xFFFF, cpu.s.ip & 0xFFFF))
-            if handler is None:
-                return
-            handler(cpu)
+        _run_5a6c_dispatched_target(cpu, return_ip)
 
     run_status_cell_composite_85d5(cpu, _self_disable_if_patched, call_613e, call_615a, call_5a6c)
 

@@ -18,7 +18,15 @@ context. Each has the analysis already done so a human can pick up fast.
 
 ---
 
-## RESOLVED (2026-07-03) — the 519A cold-boot text gap; next hooks-ON gap is 85D5
+## RESOLVED (2026-07-03) — the 519A/5A6C unlifted-backend cold-boot gaps (518C/85D5/5EF9 cleared)
+
+> **Fixed centrally.** `519A`'s unlifted-text-backend branch now runs the backend to its RET (fixes
+> `518C`/`5F06`/`5EF9`); `hooks._run_5a6c_dispatched_target` does the same for `5A6C`'s unlifted blit
+> backend (fixes `61DC`/`6120`/`85D5`). Both zero-gameplay-change (non-Tandy branch only). The hooks-ON
+> cold-boot now runs 60K steps with no crash (past all three gaps) to `1010:4A52`; next crash beyond
+> that is the next gap. See run_status. The dated per-gap notes below are kept as provenance.
+
+## (historical) RESOLVED (2026-07-03) — the 519A cold-boot text gap; next hooks-ON gap is 85D5
 
 > **Fixed:** the `518C` loop now handles `519A` dispatching to an unlifted non-Tandy text backend —
 > when `519A` JMPs to the backend (`s.ip != 0x5197`), `518C` runs its original bytes until they RET

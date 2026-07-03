@@ -27,6 +27,25 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-03 - Cold-boot harness: 519A + 5A6C unlifted-backend dispatch fixed (clears 518C/85D5/5EF9)
+
+Consolidated the cold-boot text/cell hook gaps into two root fixes (both zero gameplay change — only the
+non-Tandy/unlifted branch differs, never hit by the Tandy-3153/306F gameplay path):
+- **519A (central):** the text dispatcher's unlifted-backend branch now RUNS the backend's original
+  bytes until it RETs to the caller's return (instead of leaving `s.ip = target`, which the lifted
+  Python callers `518C`/`5F06`/`5EF9` couldn't host). Fixes ALL 519A callers at once. Simplified the
+  earlier per-caller `518C` patch back to a clean assertion (`519A` now guarantees the return).
+- **5A6C (shared):** `hooks._run_5a6c_dispatched_target` — after 5A6C's JMP dispatch, run the selected
+  target's lifted hook, or (unlifted cold-boot blit backend) its original bytes until return. Used by
+  the `61DC`/`6120`/`85D5` `call_5a6c` closures (previously their unlifted branch did nothing → the
+  caller asserted).
+
+**Verified:** the hooks-ON cold-boot now runs **60,000 steps with no crash** (was crashing at ~18K on
+`518C`, ~18K on `85D5`, ~22K on `5EF9`), advancing well past all three text/cell gaps to `1010:4A52`.
+Full suite green (gameplay unchanged). Each fix also closes a real latent coverage gap in the recovered
+text/cell render. The iterative harness keeps working: the next crash (past 60K steps) is the next gap;
+the boot is steadily marching toward the render/menu.
+
 ## 2026-07-03 - Cold-boot harness: first hook gap FIXED (519A/518C); boot advances to the next (85D5)
 
 Started the iterative hooks-ON cold-boot harness. Fixed the first cold-boot-path hook gap: the lifted

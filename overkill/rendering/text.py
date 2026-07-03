@@ -54,23 +54,6 @@ class TextRenderRuntime:
 
 
 
-def _run_original_text_backend_until_return(cpu, return_ip: int, *, max_steps: int = 20000) -> bool:
-    """Run the current (unlifted) text backend's original bytes until it RETs to ``return_ip``.
-
-    Used by the 518C loop when 519A dispatches to a non-Tandy text backend (line-132 JMP): the
-    target's return word is already on ``SS:SP``, so run until ``CS:IP == return_ip`` with the
-    stack popped back.  Bounded by ``max_steps``; returns False if it never returns (fail loud)."""
-    s = cpu.s
-    entry_cs = s.cs & 0xFFFF
-    target_sp = (s.sp + 2) & 0xFFFF   # sp after the backend pops its return word
-    for _ in range(max_steps):
-        cpu.step()
-        if ((s.cs & 0xFFFF) == entry_cs and (s.ip & 0xFFFF) == (return_ip & 0xFFFF)
-                and (s.sp & 0xFFFF) == target_sp):
-            return True
-    return False
-
-
 def run_text_string_loop_518c(cpu, runtime: TextRenderRuntime) -> None:
     """Lift OVERKILL 1010:518C NUL-terminated text loop.
 
@@ -105,15 +88,10 @@ def run_text_string_loop_518c(cpu, runtime: TextRenderRuntime) -> None:
 
         cpu.push(0x5197)
         run_text_dispatch_519a(cpu, runtime)
+        # 519A always returns to the pushed 5197: the Tandy-3153 glyph path, the 10h/11h control
+        # paths, and (cold-boot) the unlifted non-Tandy text backend, which 519A now runs to its RET.
         if (s.ip & 0xFFFF) != 0x5197:
-            # 519A JMP'd to an unlifted non-Tandy text backend (its line-132 "keep original JMP
-            # semantics" path) -- e.g. the cold-boot intro/title text mode, which the lifted
-            # Tandy-3153 loop does not model.  The backend's original bytes are now at s.ip with
-            # the 5197 return already on SS:SP; run them until they RET to 5197, then continue the
-            # loop.  The gameplay Tandy path always returns to 5197 here, so this never triggers
-            # for it (no gameplay behaviour change).
-            if not _run_original_text_backend_until_return(cpu, 0x5197):
-                raise RuntimeError(f"519A unlifted text backend did not return to 5197 (ip={s.ip & 0xFFFF:04X})")
+            raise RuntimeError(f"519A returned to unexpected IP {s.ip & 0xFFFF:04X} inside 518C text loop")
         old_bp = s.bp & 0xFFFF
         old_cf = cpu.get_flag(CF)
         result = (old_bp + 1) & 0xFFFF
@@ -152,9 +130,23 @@ def run_text_dispatch_519a(cpu, runtime: TextRenderRuntime) -> None:
         if target == 0x3153:
             run_tandy_text_glyph_3153(cpu, runtime)
             return
-        # Keep original JMP semantics for unlifted non-Tandy text backends.
+        # Unlifted non-Tandy text backend (e.g. the cold-boot intro/title text mode). The original
+        # 519A JMPs to it and the backend RETs to the caller's return already on SS:SP -- but the
+        # lifted callers (518C/5F06/5EF9) invoke 519A as a Python call and can't host that JMP, so
+        # run the backend's original bytes here until it RETs to that return, then return to the
+        # lifted caller.  Never reached in Tandy gameplay (that takes the 3153 branch above), so this
+        # changes no gameplay behaviour; equivalent to the original JMP for any VM-driven caller.
+        return_addr = mem.rw(ss, s.sp & 0xFFFF)
+        entry_sp = s.sp & 0xFFFF
         s.ip = target & 0xFFFF
-        return
+        for _ in range(20000):
+            cpu.step()
+            if ((s.cs & 0xFFFF) == cs and (s.ip & 0xFFFF) == (return_addr & 0xFFFF)
+                    and (s.sp & 0xFFFF) == ((entry_sp + 2) & 0xFFFF)):
+                return
+        raise RuntimeError(
+            f"519A unlifted text backend {target:04X} did not return to {return_addr:04X} "
+            f"(ip={s.ip & 0xFFFF:04X})")
 
     al = s.ax & 0xFF
     _cmp_byte(cpu, al, 0x10)
