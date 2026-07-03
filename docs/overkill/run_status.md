@@ -27,6 +27,31 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-03 - Composer oracle VALIDATED: drive original 859E on a snapshot, 12 blits, diff=0
+
+Established the oracle harness for the `859E` HUD-chrome composer (scratch `probe_run_859e.py`), the
+concrete enabler for building the native composer. Mechanism: `load_overkill_snapshot`, then
+`cpu.replacement_hooks.clear(); cpu.hook_verifier=None` (the lindis trick) to run ORIGINAL bytes, push
+a return sentinel, set `CS:IP=1010:859E`, and step to the ret. Result on the L2 snapshot: 859E runs the
+full render tree in **1285 steps, fires exactly 12 `306F` blits** (4 descriptors × 3 subcells), and
+**re-blits the chrome byte-identically (B800 diff=0)** — proving the render is deterministic from the
+loaded data and that I can drive + observe it on any snapshot. (Note: `load_overkill_snapshot` installs
+hooks; without the clear, 859E runs the lifted hook in 1 step and bypasses 306F.)
+
+**Captured the exact composition** (di / PANEL src_off / rows×width), PANEL seg `CS:[95B4]=0x6BE1`,
+`CS:[0BE4]` dir = `idx*0x90`:
+```
+descriptor i (di_base D = 0x7510, 0x7790, 0x7A10, 0x7C90; step 0x280):
+  subcell A (icon):  di = D + 0x14, src = per-descriptor (0x0870,0x0A00,0x0B90,0x0D20; step 0x190) 7x7
+  subcell B:         di = D - 0x04, src = 0x0EB0 (fixed)                                          8x1
+  subcell C (box):   di = D,        src = 0x1FC4 (fixed)                                          7x5
+```
+So the composer = 12 `paste_panel_cell` calls; the labels (WEAPON/MISSILES/...) are NOT 859E's — they're
+61DC's. **Next:** build `compose_status_cells_859e` by recovering `85D5`'s derivation of those 3 (di,
+src) per descriptor from the descriptor fields (`SS:9682+`: color/di/src_idx) + the `CS:0BE4` dir — then
+gate it byte-exact vs this driven-859E oracle (diff=0). The harness + captured data make it a bounded,
+well-specified slice; `85D5`'s exact index math is the one remaining piece to read.
+
 ## 2026-07-03 - KEY REALIZATION: synthetic-ASM oracles recover cold-boot leaves WITHOUT the harness
 
 Investigating cold-boot wall 2 (`1010:45D0-4624`) showed it is a **bounded graphics de-planarization
