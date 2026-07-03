@@ -4,8 +4,18 @@
 > `main`, pure% ≈ 30.3%. Launch with `/loop /goal`.
 >
 > **MILESTONE: a hooks-ON cold boot now reaches a STABLE idle loop at the main menu, zero crashes.**
-> See the dated entry below for the full readout — this is the first time a cold boot has run
+> See the dated entries below for the full readout — this is the first time a cold boot has run
 > end-to-end (loader → boot self-check → menu render) without human-fed input or a crash.
+>
+> **VISUAL CONFIRMATION (2026-07-03): the cold-boot title/options screen renders perfectly.** A
+> screenshot dumped from the emulated framebuffer at ~80K accelerated steps shows the real OVERKILL
+> title/options screen (logo, Keyboard/Joystick/Redefine-Keys options, "FIRE = START"), byte-for-byte
+> decoded through the recovered Tandy renderer. **Critical correction: pass
+> `overkill.launch.build_command_tail("tandy", "pc")` as `command_tail`** when booting a fresh runtime
+> for cold-boot work — an empty/default tail leaves the video mode at `0` (not Tandy), and every
+> earlier probe this session that used the default tail was running in the WRONG video mode (see the
+> dated entry for detail). Re-derive any "which address is the menu idle loop" finding against a
+> correctly-configured boot before trusting it.
 >
 > **The gameplay-demo-witnessable frontier is EXHAUSTED — the next phase is the COLD-BOOT runtime.**
 > This is the single most important orientation fact for the next run. What's done this session:
@@ -30,6 +40,37 @@
 > FIRST; it unblocks the whole phase. This is a large, fresh-context undertaking — best begun with a
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
+
+## 2026-07-03 - VISUAL CONFIRMATION: cold-boot title/options screen renders correctly; found the real bug
+
+Rendered a screenshot from a fresh cold-boot run (dependency-free PNG dump, reusing `scripts/render_frame
+.py`'s `render_tandy_ppm`/`write_png`, applied to a hooks-ON + checksum-accelerated boot at ~80K steps)
+to visually confirm what phase the earlier menu-advance probes were actually in — the user asked for a
+screenshot specifically to help diagnose this. **The result: a perfect, fully legible render of the real
+OVERKILL title/options screen** (logo, Keyboard/Amstrad-Joystick/Joystick/Redefine-Keys, Music options,
+"FIRE = START", the 1992 Tech-Noir copyright, the Epic MegaGames/PSP logo) — byte-for-byte through the
+recovered Tandy decode pipeline. This is strong independent visual proof that the cold-boot render chain
+(loader → self-check → video init → Tandy graphics blit → this screen) works end-to-end.
+
+**Root cause of every earlier probe's confusion this session, now found:** those probes booted with
+`create_overkill_runtime(..., command_tail=<default/empty>)`. The default/empty tail leaves the PSP video
+selector byte unset (`CS:[95BC] == 0`, not Tandy's `2`), so the game ran in a DIFFERENT (non-Tandy) video
+path the whole time — explaining why decoding the framebuffer via `render_tandy_ppm` earlier in this
+session produced illegible noise (a text-mode/other-mode buffer decoded as if it were Tandy packed
+graphics). **Fix: pass `overkill.launch.build_command_tail("tandy", "pc")` as `command_tail`** (already
+used correctly by `scripts/play.py`/the recorded demos, just missed in these ad-hoc scratch probes). With
+it, `CS:[95BC]` reads `2` and the screen decodes perfectly.
+
+**Consequence:** the "menu idle loop at 1010:558B, unique=1827" observations from the earlier probes this
+session (the crash-gap fixes' verification, the milestone finding) were all made with the WRONG tail —
+they still proved the crash-fixes work (no exceptions, stable idle cycling) and are NOT invalidated as
+functional-correctness evidence, but the SPECIFIC addresses/screen-identity assumptions from those runs
+(e.g. "this is definitely the Tandy 558B menu code path") should be re-verified against a
+correctly-configured boot before being relied on further. The `558B` menu-idle hypothesis is independently
+supported by the recovered `step_menu_idle_558b` system and its own demo-based verify probe
+(`verify_native_menu_idle_558b.py`), so it is very likely still correct, but this is worth a fresh,
+correctly-configured confirmation pass. Screenshot sent to the user; kept in scratch (`dump_frame.py`,
+`frame_menu3.png`) for reuse.
 
 ## 2026-07-03 - Diagnosed the menu-advance probe: wrong DS sampled, not a code defect
 
