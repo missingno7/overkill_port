@@ -47,6 +47,36 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-03 - Object->sprite bridge (LEVEL bank) verified byte-exact vs the VM's 75A6
+
+Recovered the VM-free object->sprite bridge for the LEVEL sprite bank and proved it byte-exact
+against the original draw:
+
+- **`overkill/native_video/object_sprites.py` -> `level_object_sprite_blocks(pool, level_graphics,
+  descriptor_table)`**: for each active object with `sprite_id >= 0x1C` (level bank), `anim == 0`,
+  `di != 0xFFFF`, look up `off = descriptor_table[sprite_id-0x1C]` in the real `cs:[9392]` word
+  table, slice `level_graphics[off:off+512]` (= `NativeLevel.graphics` = the VM's `cs:[95AE]`), and
+  `decode_masked_sprite(src, 8, 16)` -> one `SpriteBlock` at `di`. Common-bank (`<0x1C`), `anim!=0`,
+  off-screen slots are **skipped, not faked** (documented follow-ups).
+- **Descriptor table is READ, not computed.** The earlier `(sprite_id-0x1C)*0x400` formula was WRONG
+  for high ids (L5 sprite `0x162`: linear `0x1800` vs real `table[0x146]=0x1B0`). Fixed to read the
+  `cs:[9392]` table; all levels then pass.
+- **Proof: `overkill/probes/verify_native_object_sprites.py`** drives the ORIGINAL `75A6` per object
+  (hooks cleared; SS:BP = the record) and captures the first `2E6E` blit's `(di, si)`, then asserts
+  the bridge computes the identical `di` + bank offset. **PASS: L3 18/18, L5 6/6, L1 6/6, L6 16/16.**
+- **`NativeLevel(level=3).graphics == VM cs:[95AE]` byte-exact (diff=0).** (An earlier 54% "bank
+  mismatch" scare was a WRONG level index: the "L3" demo is level index **3**, not 2.)
+- Headless unit test: `tests/test_object_sprites.py` (selection/skip logic + non-linear descriptor
+  lookup, 3 tests).
+
+**Honest gap (why the composed native L3 frame shows only the starfield):** the *visible* sprites in
+these snapshots — the player ship + thrusters — are **COMMON-bank** (`sprite_id < 0x1C`, `cs:[95A6]`),
+which this level-bank bridge correctly skips. The 16 verified level-bank blocks are enemies that are
+off-screen in that frame. **NEXT for a recognizable native frame: recover the COMMON sprite bank
+`cs:[95A6]`** (player ship `0x01` + shared effects, built at boot from SHIP.BIC etc.), then wire both
+banks into `play_native.py`. `anim!=0` (`7688` no-draw) and the `obj[+24]`->`2ECB` OR-inverted case
+are the remaining bridge follow-ups.
+
 ## 2026-07-03 - Front-end: real title screen VM-free + scrapped the play_native placeholders
 
 Direction from the user (they ran `play_native.py` and got a WHITE SQUARE): enforce the project's
