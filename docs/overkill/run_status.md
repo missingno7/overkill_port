@@ -61,6 +61,26 @@ keeps the exact BL/SHL arithmetic (registers/flags unchanged) and now cross-chec
 pure rule on every live 9C01 tick (grounds the rule against the VM without changing behaviour). Unit
 test in ``test_frame_loop.py`` (the 9 ah/al combinations). Byte-exact preserved; suite green.
 
+## 2026-07-03 - Collapse: coord-ring ADVANCE STAGE (gate + whole-stage) pure; leaf well confirmed dry
+
+Extended ``systems/coord_ring.py`` to the whole ``1010:9CF1`` advance stage: ``coord_ring_advance_gate``
+(the ring advances iff the low input nibble ``DS:98BE & 0x0F`` is non-zero **or** the axis-response
+flag ``DS:A360`` is non-zero) + ``advance_coord_ring_cursors`` (the 4-cursor lockstep advance, a native
+runnable form). The ``run_frame_coord_ring_advance_9cf1`` adapter now delegates the gate (keeping the
+A360-CMP flag replay only on the no-input path, byte-exact). Tests in ``test_coord_ring.py`` (7).
+
+**Scouting conclusion (important for the next session): leaf-level pure extraction is essentially
+EXHAUSTED.** Walking the collision/movement/behavior surface (``systems/collision.py``,
+``systems/objects.py``, ``systems/movement.py``) shows every clean per-slot DECISION is already pure
+(overlap ``AC97``/``B250``/``62F6``, tile ``B00D``, post-move ``BC4B``, all the ``*_logic_*`` behavior
+rules, seek/step movement, timers, score). What remains "ASM-like" is **orchestration/control-flow**
+(pool scans, dispatch, the shared collision/tile-probe tails calling the pure predicates) that only
+shrinks by **extending the native runtime** (``systems/frame_loop.py`` + ``native_object_pass`` +
+``native_object_update``) to own more of the frame, not by more leaf extraction. So the real
+pure-mass lever now is Bucket C (native self-play): wire the still-declined stages (coord-ring
+store/advance/pull -- the pure forms now exist -- the ``A212`` chain, the ``A067`` full-fanout/``A970``
+counters) into the native loop and push ``verify_native_forward_frames`` past its 35-tick wall.
+
 ## 2026-07-03 - Collapse: delayed-coordinate ring wrap extracted to pure systems/coord_ring.py
 
 Extracted the ``1010:9CF1`` coordinate-ring cursor-advance wrap out of the lifted

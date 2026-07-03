@@ -26,6 +26,7 @@ from overkill.recovered.systems.coord_ring import (
     COORD_RING_STEP,
     COORD_RING_WRAP_AT,
     advance_coord_ring_ptr,
+    coord_ring_advance_gate,
 )
 from overkill.recovered.systems.frame_loop import frame_axis_dispatch_offset
 from overkill.recovered.systems.frame_timers import step_first_active_timer
@@ -1113,13 +1114,16 @@ def run_frame_coord_ring_advance_9cf1(cpu, self_disable_if_patched) -> None:
     s = cpu.s
     ds = s.ds & 0xFFFF
     mem = cpu.mem
-    _test = mem.rb(ds, 0x98BE) & 0x0F
-    # TEST flags dead: the CMP / ring-advance CMP below overwrites them first.
-    if _test == 0:
-        _cmp_word(cpu, mem.rw(ds, 0xA360), 0x0000)
-        if mem.rw(ds, 0xA360) == 0x0000:
-            s.ip = cpu.pop()
-            return
+    input_98be = mem.rb(ds, 0x98BE)
+    a360 = mem.rw(ds, 0xA360)
+    # TEST flags dead: the CMP / ring-advance CMP below overwrites them first.  The A360 CMP is only
+    # replayed on the no-input path (TEST == 0), exactly as the original; the advance decision is the
+    # pure gate.
+    if (input_98be & 0x0F) == 0:
+        _cmp_word(cpu, a360, 0x0000)
+    if not coord_ring_advance_gate(input_98be, a360):
+        s.ip = cpu.pop()
+        return
     for off in (0xA33A, 0xA33C, 0xA33E, 0xA340):
         _advance_coord_ring_ptr(cpu, ds, off)
     s.ip = cpu.pop()
