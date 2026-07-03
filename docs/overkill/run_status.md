@@ -27,6 +27,27 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-03 - Cold-boot: boot self-check checksum recovered + ACCELERATION proven to clear wall 1
+
+Built the first real piece of the cold-boot witness harness and proved the strategy. The boot
+self-check (`1010:C8DC-C923`) reads a file in 5120-byte blocks and runs a read-only running checksum
+(`C916` loop) over it — millions of interpreted instructions. Recovered the checksum as pure
+`asset_codecs/boot_selfcheck.boot_selfcheck_checksum(seed_ax, data)`, verified byte-exact vs the
+original `C916` opcodes by a synthetic-ASM oracle (`tests/test_boot_selfcheck.py`, 6 cases).
+
+**Acceleration proven (scratch `probe_coldboot_accel.py`):** installing a step-hook that computes the
+block checksum via the pure function and skips the interpreted `C916` loop (→ C91F with AX/SI/CX set)
+gets a fresh cold-boot **past the self-check** — 111 blocks accelerated, execution advanced from the
+frozen `C918` to new game code (unique IPs 784→1743). So the cold-boot-witness performance strategy
+WORKS.
+
+**Wall 2 mapped:** after the self-check, boot reaches a bit-shift/graphics-decode loop around
+`1010:45D0-4624` (planar→chunky shift sequence + `cmp cs:[0BD6]` branch) and cycles there (unique IPs
+frozen ~1755 from 2M→3M steps) — the next thing to accelerate or step through (likely intro/title art
+decode) before the render (`306F`/`859E`/`33AF` still 0). The harness path is now: accel `C916` (done) →
+handle wall 2 (45D0 decode) → env-wait + demo-input machinery → title→menu→level → witness the render.
+Each obstacle is being knocked down in order; the checksum accelerator is the first reusable brick.
+
 ## 2026-07-03 - Cold-boot witness investigation: characterized the boot self-check wall
 
 Investigated the recorded next step (a cold-boot witness harness). Concrete findings (boot a fresh
