@@ -12,6 +12,7 @@ from overkill.recovered.domain.coords import i16, u16
 from overkill.recovered.domain.directions import direction8
 from overkill.recovered.domain.movement import (
     AxisClampStepDecision,
+    ChildCoordUpdate,
     DeltaSteerStep,
     MovementStepOperation,
     MovementTarget,
@@ -438,6 +439,35 @@ def step_view_anchor_by_input(
         y = two_pass_axis_clamp_step(y, limit_word=OBJECT_CLAMP_Y_MIN, increment=False).final_word
         stepped = True
     return ViewAnchorMoveStep(x_word=x, y_word=y, stepped=stepped)
+
+
+CHILD_COORD_Y_MAX = 0x00C0  # 9FEA clamps the child Y into 0..0x00C0 (inclusive)
+
+
+@recovered_island(
+    asm="1010:9FEA",
+    contract="linked/child object coordinate update: base + table delta + 2x vertical scroll bias, Y clamped 0..00C0",
+    status="VERIFIED",
+    merge_target="MovementSystem",
+)
+def object_child_coord_update_9fea(
+    *, source_x: int, source_y: int, x_delta: int, y_delta: int, scroll_bias: int
+) -> ChildCoordUpdate:
+    """Pure 1010:9FEA child coordinate decision.
+
+    The child's X is the parent's X plus the table X delta.  Its Y is the parent's Y plus
+    the table Y delta plus the world vertical scroll bias (DS:A398) applied **twice**, then
+    clamped into ``0..0x00C0``: a Y that goes negative (bit 15 set) clamps to 0 (lower), and a
+    positive Y above 0x00C0 clamps to 0x00C0 (upper).  ``scroll_bias`` is one DS:A398 word;
+    the doubling is the ASM's two sequential adds.
+    """
+    x_word = (x_delta + source_x) & 0xFFFF
+    y_word = (y_delta + source_y + 2 * scroll_bias) & 0xFFFF
+    if y_word & 0x8000:
+        return ChildCoordUpdate(x_word=x_word, y_word=0x0000, lower_clamped=True, upper_clamped=False)
+    if y_word > CHILD_COORD_Y_MAX:
+        return ChildCoordUpdate(x_word=x_word, y_word=CHILD_COORD_Y_MAX, lower_clamped=False, upper_clamped=True)
+    return ChildCoordUpdate(x_word=x_word, y_word=y_word, lower_clamped=False, upper_clamped=False)
 
 
 @recovered_island(

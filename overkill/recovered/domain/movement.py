@@ -21,6 +21,23 @@ class ViewAnchorMoveStep:
 
 
 @dataclass(frozen=True, slots=True)
+class ChildCoordUpdate:
+    """Result of the 1010:9FEA linked/child-object coordinate update.
+
+    ``x_word``/``y_word`` are the child's new screen X/Y (Y already clamped into
+    ``0..0x00C0``); ``lower_clamped``/``upper_clamped`` record whether the Y clamp
+    fired at the bottom (Y went negative -> 0, sets DS:A39E) or the top (Y > 0x00C0
+    -> 0x00C0, sets DS:A39F).  Pure gameplay outputs only — the DS-memory writes and
+    the ASM register/flag choreography stay in the adapter.
+    """
+
+    x_word: int
+    y_word: int
+    lower_clamped: bool
+    upper_clamped: bool
+
+
+@dataclass(frozen=True, slots=True)
 class MovementTarget:
     """Copied target point used by the recovered 1010:5DB2 seeker.
 

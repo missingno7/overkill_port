@@ -31,8 +31,9 @@ from overkill.recovered.adapters.object_behavior_adapter import run_player_chase
 from overkill.recovered.domain.movement import VerticalScrollEdgeInput
 from overkill.recovered.systems.movement import (
     OBJECT_CLAMP_X_MAX, OBJECT_CLAMP_X_MIN, OBJECT_CLAMP_Y_MAX, OBJECT_CLAMP_Y_MIN,
-    decay_bottom_scroll_bias_a63c, one_pixel_axis_step, recover_top_scroll_bias_a662,
-    top_scroll_edge_response_a648, two_pass_axis_clamp_step, vertical_scroll_edge_response_a616,
+    decay_bottom_scroll_bias_a63c, object_child_coord_update_9fea, one_pixel_axis_step,
+    recover_top_scroll_bias_a662, top_scroll_edge_response_a648, two_pass_axis_clamp_step,
+    vertical_scroll_edge_response_a616,
 )
 from overkill.recovered.views.object_slots import (
     EFFECT_OBJECT_TABLE_BASE, GAMEPLAY_OBJECT_TABLE_BASE, OBJECT_SLOT_STRIDE,
@@ -360,39 +361,35 @@ def run_object_child_coord_update_9fea(cpu, self_disable_if_patched) -> None:
     ax = cpu.shift(4, ax, 1, 16)
     _add_reg16(cpu, 6, ax)
 
+    # Same memory-access order as the ASM: read the X delta, write the child X, then the Y
+    # inputs.  The gameplay DECISION (Y clamped 0..00C0) is the pure recovered system; the
+    # adapter keeps only the DOS writes + the exact register/flag choreography the verifier sees.
     x_delta = mem.rw(ds, s.si & 0xFFFF)
     s.si = (s.si + 2) & 0xFFFF
-    ax = (x_delta + mem.rw(ss, (s.bp + OFF_X) & 0xFFFF)) & 0xFFFF
-    # ADD flags are overwritten later by the Y clamps/cmp in all observed active paths.
-    s.ax = ax
+    src_x = mem.rw(ss, (s.bp + OFF_X) & 0xFFFF)
     dst = ObjectSlotView(mem, ds, bx)  # the spawned/target object's record (DS:BX)
-    dst.x_word = ax
+    dst.x_word = (x_delta + src_x) & 0xFFFF
 
     y_delta = mem.rw(ds, s.si & 0xFFFF)
     s.si = (s.si + 2) & 0xFFFF
-    ax_full = y_delta + mem.rw(ss, (s.bp + OFF_Y) & 0xFFFF)
-    ax_full += mem.rw(ds, 0xA398)
-    ax_full += mem.rw(ds, 0xA398)
-    ax = ax_full & 0xFFFF
-    s.ax = ax
-    dst.y_word = ax
+    src_y = mem.rw(ss, (s.bp + OFF_Y) & 0xFFFF)
+    scroll_bias = mem.rw(ds, 0xA398)
+    result = object_child_coord_update_9fea(
+        source_x=src_x, source_y=src_y, x_delta=x_delta, y_delta=y_delta, scroll_bias=scroll_bias
+    )
 
-    y = dst.y_word
-    _cmp_word(cpu, y, 0x0000)
-    if y & 0x8000:
-        dst.y_word = 0x0000
+    # Boundary ceremony: the ASM leaves AX = the pre-clamp Y, writes the (clamped) child Y, and
+    # its final flags are the CMP of the (lower-clamped) Y against 0x00C0 -- replay exactly that.
+    y_unclamped = (y_delta + src_y + 2 * scroll_bias) & 0xFFFF
+    s.ax = y_unclamped
+    dst.y_word = result.y_word
+    _cmp_word(cpu, y_unclamped, 0x0000)
+    y = 0x0000 if result.lower_clamped else y_unclamped
+    if result.lower_clamped:
         mem.wb(ds, 0xA39E, 0x01)
-        y = 0
-
     _cmp_word(cpu, y, 0x00C0)
-    # Signed JLE.  Values above 00C0 in the positive signed range trigger the
-    # upper clamp.  Negative values have already been clamped to zero above.
-    if y <= 0x00C0:
-        s.ip = cpu.pop()
-        return
-
-    dst.y_word = 0x00C0
-    mem.wb(ds, 0xA39F, 0x01)
+    if result.upper_clamped:
+        mem.wb(ds, 0xA39F, 0x01)
     s.ip = cpu.pop()
 
 

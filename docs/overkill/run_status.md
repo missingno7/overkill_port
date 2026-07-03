@@ -17,6 +17,27 @@
 > The docs were de-staled this session — trust them, but verify a target against the code before
 > recovering it (some `loop_blockers.md` entries are dated).
 
+## 2026-07-03 - Bucket A: 9FEA child-coord clamp decision promoted to a pure system (pure% 30.2->30.3)
+
+Bread-and-butter Bucket-A promotion (chosen via a subagent frontier scan of the big lifted files —
+most were already delegated to `systems/`; `9FEA` was the cleanest remaining un-delegated decision).
+Extracted `1010:9FEA`'s child/linked-object coordinate decision (child X = parent X + table dX; child
+Y = parent Y + table dY + 2x vertical scroll bias DS:A398, clamped 0..0x00C0 with the lower/upper
+clamp setting DS:A39E/A39F) into pure `recovered/systems/movement.object_child_coord_update_9fea`
+(+ `domain/movement.ChildCoordUpdate`). Thinned the adapter
+(`gameplay/object_movement.run_object_child_coord_update_9fea`) to read state -> call the pure
+decision -> replay only the ASM register/flag choreography (SI advance, AX = pre-clamp Y, the two
+CMPs, the A39E/A39F writes), preserving **exact** memory-access order so it's state-identical by
+construction.
+
+**Gates:** 12 VM-free unit tests (`tests/test_child_coord_9fea.py`) — 8 pin the pure clamp decision,
+4 run the real hook on a `CPU8086`+`Memory` and assert the full CPU contract (child X/Y, AX, SI,
+A39E/A39F, near-ret) per branch (null-link / no-clamp / lower / upper). Demo-replay equivalence green
+(23 passed). **Honest note:** `9FEA` is *witness-poor* in the current demos (0 invocations across
+L2/120f — it's a linked/child-object routine), so the primary proof is the adapter CPU-contract test
++ the by-construction state preservation (I derived the contract from the lifted ASM directly), NOT
+demo coverage. Layers+arch+lint green. Metric: pure% **30.2% -> 30.3%**, glue unchanged (318).
+
 ## 2026-07-03 - Finding: the HUD/border chrome is ~99.5% STATIC (scopes the Bucket-C full frame)
 
 Reconnaissance for the Bucket-C standalone full-frame compose (no code change). Decoded the full
