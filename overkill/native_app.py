@@ -93,8 +93,11 @@ GAMEPLAY_FRAME_STAGES: tuple[FrameStage, ...] = (
                "NativeGame.step: input decode + player move + scroll + fan-out (EARLY) + object pass;"
                " gaps INSIDE it: 99F6 scripted input, A212 chain, FULL fan-out/A970, 9CB6 probe"),
     FrameStage("transition_flags", "1010:97CE..97E9: A344->9734, A342->9902, A346->9908", UNMONITORED,
-               "the gameplay-exit flags (death/level-end/game-over family); NativeGameState does not"
-               " carry A342/A344/A346, so the native loop cannot end a level yet"),
+               "the gameplay-exit flags; SEMANTICS RECOVERED (systems/frame_loop): A344 = scripted"
+               " transition (DS:A47C == 4), A346 = the 9AFF death tail (dying mode DS:2326 == 3 +"
+               " anchor +08 countdown hits 0x0F), A342 = its game-over variant (A97A == 0) -- but the"
+               " native model does not carry A47C/2326/A97A yet, so the native loop still cannot end"
+               " a level; threading that state is the next structural slice"),
     FrameStage("frame_state_update", "1010:A940", GAP,
                "per-frame game-state cluster; pure pieces exist (accumulator shift, scan-entry fork)"
                " but the stage is not composed natively -- not run"),

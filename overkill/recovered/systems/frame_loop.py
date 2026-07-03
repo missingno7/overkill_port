@@ -189,6 +189,41 @@ def native_action_fanout_step(
     )
 
 
+SCRIPTED_TRANSITION_A47C = 0x0004   # DS:A47C == 4 -> the scripted "end/transition" command
+DEATH_TAIL_MODE_2326 = 0x0003       # DS:2326 == 3 -> the 9AFF death tail is armed
+DEATH_COUNTDOWN_LIMIT = 0x000F      # the anchor slot's +08 counter value that fires the transition
+
+
+def scripted_transition_fires_9b2e(a47c: int) -> bool:
+    """The 9B2E scripted-transition gate: ``A344 = 1`` (and the frame ends) iff ``DS:A47C == 4``.
+
+    9B2E clears ``A346``/``A344`` at entry each frame, runs the input poll (and ``99F6`` when the
+    scripted-input mode ``A47C`` is non-zero), then checks ``A47C == 4`` -- the script's own
+    "end/transition" command.  When it fires, 97B2 exits the gameplay loop via ``A344 -> jmp 9734``.
+    """
+    return (a47c & 0xFFFF) == SCRIPTED_TRANSITION_A47C
+
+
+def death_tail_transition_9aff(v2326: int, anchor_counter_after_inc: int, a97a: int
+                               ) -> tuple[bool, bool, bool]:
+    """The 9AFF death-tail decision: ``(deactivate_and_a346, a342, counter_matters)``.
+
+    9B2E reaches the ``9AFF`` tail when the tracked-anchor state is absent (``A95A == FFFF`` or
+    ``A97A == 0``).  There: nothing happens unless ``DS:2326 == 3`` (the dying mode); then the anchor
+    slot's ``+08`` counter (already incremented by the caller this frame) must reach ``0x0F`` -- at
+    which point the slot deactivates, ``4DBF`` runs, and ``A346 = 1`` (97B2 exits via ``jmp 9908``);
+    ``A342 = 1`` additionally iff ``A97A == 0`` (the game-over variant, ``jmp 9902``).
+
+    Returns ``(transition, game_over_variant, counted)``: ``counted`` is True when the tail is in the
+    counting mode (``2326 == 3``) at all -- the caller owns the actual ``+08`` increment.
+    """
+    if (v2326 & 0xFFFF) != DEATH_TAIL_MODE_2326:
+        return False, False, False
+    if (anchor_counter_after_inc & 0xFFFF) != DEATH_COUNTDOWN_LIMIT:
+        return False, False, True
+    return True, (a97a & 0xFFFF) == 0, True
+
+
 def frame_axis_dispatch_offset(ah_count: int, al_count: int) -> int:
     """The ``1010:9C01`` axis jump-table byte offset from the two present-slot counts.
 

@@ -261,3 +261,22 @@ def test_frame_axis_dispatch_offset_is_al_plus_3ah_times_2():
     # every offset is even (word table) and within the 0..16 span
     assert all(frame_axis_dispatch_offset(ah, al) % 2 == 0 for ah in range(3) for al in range(3))
     assert max(frame_axis_dispatch_offset(ah, al) for ah in range(3) for al in range(3)) == 16
+
+
+def test_scripted_transition_fires_only_on_a47c_4():
+    from overkill.recovered.systems.frame_loop import scripted_transition_fires_9b2e
+    assert scripted_transition_fires_9b2e(4) is True
+    for v in (0, 1, 2, 3, 5, 0x10):
+        assert scripted_transition_fires_9b2e(v) is False, v
+
+
+def test_death_tail_transition_9aff():
+    from overkill.recovered.systems.frame_loop import death_tail_transition_9aff
+    # 2326 != 3 -> nothing counts, nothing fires
+    assert death_tail_transition_9aff(0, 0x0F, 0) == (False, False, False)
+    assert death_tail_transition_9aff(2, 0x0F, 0) == (False, False, False)
+    # dying mode: counts every frame, fires only when the anchor +08 counter hits 0x0F
+    assert death_tail_transition_9aff(3, 0x0E, 1) == (False, False, True)
+    assert death_tail_transition_9aff(3, 0x0F, 1) == (True, False, True)    # death transition (A346)
+    assert death_tail_transition_9aff(3, 0x0F, 0) == (True, True, True)     # + game-over (A342)
+    assert death_tail_transition_9aff(3, 0x10, 0) == (False, False, True)   # past 0x0F: exact match only

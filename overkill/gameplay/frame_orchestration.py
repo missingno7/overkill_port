@@ -14,6 +14,10 @@ from collections.abc import Callable
 from overkill.asm import _add_reg16, _and_mem_word, _cmp_byte, _cmp_word, _dec_mem_word_preserve_cf, _inc_mem_word_preserve_cf, _sub_mem_word, _sub_reg16
 from dos_re.cpu import ZF
 from overkill.gameplay.starfield_bridge import advance_starfield_in_memory
+from overkill.recovered.systems.frame_loop import (
+    death_tail_transition_9aff,
+    scripted_transition_fires_9b2e,
+)
 from overkill.sounds.loaded_driver import OPTIONAL_SOUND_DRIVER_SEGMENT
 
 
@@ -176,28 +180,47 @@ def run_frame_controller_9b2e(
     def run_9aff_tail() -> None:
         # 9AFF is the early/transition tail reached when the active tracked
         # object/list state is absent.  Keep it inside this parent because both
-        # 9B61 and 9B68 branch here instead of returning through a child.
+        # 9B61 and 9B68 branch here instead of returning through a child.  The
+        # DECISION (dying mode -> death countdown -> A346/A342 transition) is the
+        # recovered pure rule death_tail_transition_9aff; this adapter owns the
+        # memory writes + flag replay and cross-checks the rule on every live tick.
         v2326 = mem.rw(ds, 0x2326)
         _cmp_word(cpu, v2326, 0x0003)
         if v2326 != 0x0003:
+            if death_tail_transition_9aff(v2326, 0, 0)[2]:
+                raise AssertionError("9AFF pure rule disagrees: counted on 2326 != 3")
             ret()
             return
 
         _inc_mem_word_preserve_cf(cpu, s.ss & 0xFFFF, (s.bp + 0x08) & 0xFFFF)
         bp8 = mem.rw(s.ss & 0xFFFF, (s.bp + 0x08) & 0xFFFF)
+        # the transition/counted halves depend only on 2326 + the counter; the game-over half is
+        # re-evaluated below at the ORIGINAL A97A read position (after 4DBF, which may mutate it).
+        transition, _, counted = death_tail_transition_9aff(v2326, bp8, 1)
+        if not counted:
+            raise AssertionError("9AFF pure rule disagrees: not counted on 2326 == 3")
         _cmp_word(cpu, bp8, 0x000F)
         if bp8 != 0x000F:
+            if transition:
+                raise AssertionError("9AFF pure rule disagrees: fired before the 0x0F countdown")
             ret()
             return
 
+        if not transition:
+            raise AssertionError("9AFF pure rule disagrees: did not fire at the 0x0F countdown")
         mem.ww(s.ss & 0xFFFF, (s.bp + 0x00) & 0xFFFF, 0x0000)
         call(0x4DBF, 0x9B19)
         mem.ww(ds, 0xA346, 0x0001)
-        v_a97a_tail = mem.rw(ds, 0xA97A)
+        v_a97a_tail = mem.rw(ds, 0xA97A)  # the original read position (post-4DBF)
+        _, game_over, _ = death_tail_transition_9aff(v2326, bp8, v_a97a_tail)
         _cmp_word(cpu, v_a97a_tail, 0x0000)
         if v_a97a_tail != 0x0000:
+            if game_over:
+                raise AssertionError("9AFF pure rule disagrees: game-over variant with A97A != 0")
             ret()
             return
+        if not game_over:
+            raise AssertionError("9AFF pure rule disagrees: no game-over variant with A97A == 0")
         mem.ww(ds, 0xA342, 0x0001)
         ret()
 
@@ -212,6 +235,8 @@ def run_frame_controller_9b2e(
 
     v_a47c = mem.rw(ds, 0xA47C)
     _cmp_word(cpu, v_a47c, 0x0004)
+    if (v_a47c == 0x0004) != scripted_transition_fires_9b2e(v_a47c):
+        raise AssertionError("9B2E scripted-transition pure rule disagrees with the live gate")
     if v_a47c == 0x0004:
         mem.ww(ds, 0xA344, 0x0001)
         ret()

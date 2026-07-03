@@ -50,6 +50,30 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - Attract scene machine DEMO-WITNESSED (whole scene range + auto-fire); transition-flag semantics identified
+
+**The pure attract rules are now demo-witnessed, full coverage.** New probe
+``overkill/probes/verify_native_attract.py`` replays a cold-start demo on the hooks-stripped ref side
+and checks every (D016 pre -> D0CA mid -> next D016) triple against ``attract_frame_step``:
+- ``demo_cold_start_attract_interrupt_synthetic``: 546 frames, 399 checked, scenes 0x0..0x5, PASS.
+- ``demo_cold_start_wait_synthetic``: 1846 frames, **1699 checked, scenes 0x0..0x12 (ALL), auto-fire
+  window 0x8..0x12 fully exercised (891 auto-fire transitions), 0 fails -- PASS.**
+The probe reports coverage explicitly (scene range + auto-fire count) so a PASS can't overclaim.
+Structural telemetry from the replays: in a full title->attract cold-start session, ``97B2``/``9B2E``
+NEVER run -- the attract "gameplay" is entirely the ``D007`` loop driving ``A067`` with injected fire.
+
+**Transition-flag semantics found readable in the lifted 9B2E** (``gameplay/frame_orchestration.py``):
+``A346``/``A344`` are cleared at 9B2E entry each frame; **A344=1** when scripted-input mode
+``DS:A47C == 4`` (a script "end/transition" command -> 97B2 jumps 9734); **A346=1** in the ``9AFF``
+death tail (anchor state absent: ``A95A==FFFF`` or ``A97A==0``, with ``DS:2326==3`` and the slot's
+``+08`` counter reaching 0x0F -> slot deactivated + ``4DBF``); **A342=1** additionally when
+``A97A==0`` (the game-over variant -> 97B2 jumps 9902). **The transition DECISIONS are now pure:**
+``systems/frame_loop.py`` gained ``scripted_transition_fires_9b2e`` + ``death_tail_transition_9aff``,
+and the lifted 9B2E adapter delegates BOTH with live cross-check assertions (the zero-risk pattern:
+registers/flags/memory writes unchanged, the rule grounded on every demo-replay tick). What remains
+for a native level-end: thread ``A47C``/``2326``/``A97A`` + the anchor ``+08`` death counter into the
+native model so the native loop can consume ``GameplayTransition`` fail-loudly.
+
 ## 2026-07-04 - STRUCTURE PIVOT: the native app skeleton + the recovered top-level design
 
 **Direction change (user):** recover the game's HIGH-LEVEL structure first -- game loop, mode/state

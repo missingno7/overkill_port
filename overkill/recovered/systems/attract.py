@@ -1,10 +1,12 @@
 """Pure attract/story scene-sequencer rules -- the ``1010:D007``/``D04D`` scene machine.
 
 Recovered from the D007..D0EF disassembly (2026-07-04; see ``domain/attract.py`` for the state model
-and the cell-by-cell readout).  VERIFICATION STATUS: **disassembly-grounded, not yet demo-witnessed**
--- the rules are a direct transcription of the decoded branches (each function's docstring cites its
-exact ASM range), with unit tests pinning the transcription; a cold-start/attract demo witness is the
-follow-up gate before any visible attract mode ships on these rules.
+and the cell-by-cell readout).  VERIFICATION STATUS: **demo-witnessed** by
+``overkill/probes/verify_native_attract.py`` against the live D04D on two cold-start replays:
+``demo_cold_start_attract_interrupt_synthetic`` (399 transitions, scenes 0x0..0x5) and
+``demo_cold_start_wait_synthetic`` (1699 transitions, the WHOLE scene range 0x0..0x12 incl. the whole
+auto-fire window 0x8..0x12 with 891 auto-fire transitions) -- 0 fails.  Scene-0's D160 branch and the
+next-scene entry actions (D0DB tail) remain declared gaps (fail-loud), outside the witnessed rules.
 
 Pure: no VM, no ``cpu``/``mem``.  The caller owns where BE06/BE08/BE0A/98BE live.
 """
