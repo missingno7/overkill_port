@@ -84,6 +84,15 @@ output, and **witness it against the live draws** before marking done.
       revisit only if a witness reveals one.
 
 ### Native regeneration (toward the self-composing backend)
+> **STATUS UPDATE (2026-07-04): the PLAYFIELD self-compose is DONE and wired.** Items 1 (the starfield
+> plate) and 3 (drive the compositors from native object state) below are recovered, byte-exact, and
+> wired into `scripts/play_native.py`: the native compose (starfield plate + the full object→sprite
+> draw for all three routines/compositors/banks) equals the VM present page **0-for-0** on the L3
+> capture. Remaining for full-screen parity is item 2 — the **HUD panel** (chrome/counters/score
+> composers exist + are individually verified vs B800, but are NOT yet folded into the standalone; the
+> base-panel background blit is the one un-recovered piece). See the 2026-07-03 sprite-draw milestone
+> in `run_status.md`.
+
 **Ground truth — DECODED the actual buffers at L2 gameplay (end of frame 200).** Two
 images settle the model (this section was corrected several times because it was
 first built from write-IP histograms; the reliable method is decode + LOOK at the

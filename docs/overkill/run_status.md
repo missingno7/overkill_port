@@ -1,7 +1,17 @@
-> **SESSION HANDOFF (2026-07-03, updated).** A fresh repo-rooted session picks up here. Everything you
-> need is **in this repo**: read `CLAUDE.md` → `AGENTS.md` → `overnight_endgame_execution.md` (the
-> `/goal` brief). State: suite **green (1100 passed / 23 skipped)**, tree clean, all work pushed to
-> `main`, pure% ≈ 30.3%. Launch with `/loop /goal`.
+> **SESSION HANDOFF (2026-07-04, updated).** A fresh repo-rooted session picks up here. Everything you
+> need is **in this repo**: read `CLAUDE.md` → `AGENTS.md` → `overkill/native_app.py` (the SKELETON /
+> structural map) → `overnight_endgame_execution.md` (the `/goal` brief, §6 direction update). State:
+> suite **green (1132 passed / 23 skipped)**, tree clean, all work pushed to `main`, pure% ≈ 30.5%.
+>
+> **PHASE: STRUCTURE-FIRST (2026-07-04).** The decision-leaf collapse is exhausted — the whole
+> movement/collision/behavior *decision* surface is already pure + byte-exact. The frontier is now
+> recovering the game's HIGH-LEVEL DESIGN and growing the native runtime, with explicit fail-loud
+> gaps; per-behavior details come later via targeted demos. **The spine is `overkill/native_app.py`**
+> — the recovered top-level flow, the `1010:97B2` frame-stage order (native/host/gap/unmonitored per
+> stage), and `describe_gaps()` (the machine-readable list of what's missing). The `1010:D007` attract
+> scene machine is demo-witnessed; the gameplay-exit transition rules (A344/A346/A342) are pure +
+> cross-checked live. NEXT structural slice: thread the transition state (A47C/2326/A97A) into
+> `NativeGameState` so the native loop can END a level fail-loudly (the first real mode transition).
 >
 > **MILESTONE: `scripts/play_native.py` is a real, RUNNING, VM-less standalone (zero `dos_re` imports).**
 > Cold-loads a level, ticks the recovered gameplay stages, presents via pygame — verified with

@@ -253,18 +253,29 @@ document, move on.
 
 ## 6. The work queue — native attempts that pull recovery (prioritized; skip blocked)
 
+> **DIRECTION UPDATE (2026-07-04) — STRUCTURE-FIRST; leaf collapse is EXHAUSTED.** The decision-leaf
+> phase (Bucket A) is essentially done: the whole movement/collision/behavior *decision* surface is
+> already pure + byte-exact. Do NOT keep grinding "the largest lifted file's next inline decision" —
+> there are almost none left, and what remains is orchestration/control-flow that only shrinks by
+> growing the native runtime. **The priority order is now: recover the game's high-level STRUCTURE
+> and grow the native runtime (Bucket C) — mode/state transitions, level-load flow, the frame/scene
+> machines — with explicit fail-loud gaps; fill precise per-behavior details later via targeted
+> demos.** The spine is [`overkill/native_app.py`](../../overkill/native_app.py) (the recovered
+> top-level flow + the machine-readable native/gap boundary; `describe_gaps()` lists what's missing).
+> Buckets B/D–G are unchanged; Bucket A is now maintenance, not the frontier.
+
 These are **features to attempt on `--backend native`**, not a top-down checklist. Each
 attempt is the §2 probe: try it, and where it needs missing state/behavior, drop into the
 §2 recovery loop to recover that leaf bottom-up, verify, and lift it — then the attempt
 completes. Ordered for an unattended run: safest/most-verifiable first (each demo-replay-
 gated), building pure mass, before the harder render/standalone integration.
 
-### Bucket A — gameplay/object collapse (the bulk; hybrid byte-exact gate)
-The object system is already mature (~30 pure predicates in `systems/objects.py`; surface
-behaviors delegate). Continue, decision-by-decision, on the big lifted files (push-down
-candidates by size: `object_movement` 1391, `game_state` 1255, `action_spawns` 1247,
-`object_behaviors` 1231, `object_runtime` 1095 — `frame_orchestration` is a frame *map*, do
-NOT put logic in it).
+### Bucket A — gameplay/object collapse (ESSENTIALLY EXHAUSTED as of 2026-07-04; maintenance only)
+The object system is mature: every clean per-slot decision is already a pure system (movement
+seek/step, the overlap/tile/post-move predicates, the behavior `*_logic_*` rules, timers, score).
+The big lifted files are thin adapters + orchestration glue now, not decision stores; do NOT expect
+meaningful pure-mass from walking them. Only touch this bucket when a *structural* slice (Bucket C)
+surfaces a genuinely-unrecovered leaf it needs — then recover that leaf here and move on.
 
 **Recovered 2026-07-03:** `B73E` (logic_id `0x20`, the waypoint-follower) — was the dominant
 remaining object-behavior wall; its `B800` formation-spawn + `B82D` loop are now native and the
@@ -470,13 +481,20 @@ pre2's own `--from-level` debug path before its front-end existed. `scripts/depl
 
 ---
 
-## 8. Queue refill (when Bucket A's surface is exhausted)
+## 8. Queue refill (Bucket A IS exhausted — refill by recovering STRUCTURE, not leaves)
 
-If no listed slice is actionable, regenerate the frontier instead of stopping:
-- Run a representative gameplay demo with fail-fast coverage; the routines that still appear
-  as `unknown`/`glue` in coverage are the next candidates.
-- Re-run `scripts/source_port_status.py`; target the largest remaining `lifted` file's next
-  inline decision.
+Bucket A's leaf surface is exhausted (see the §6 direction update). "Target the largest lifted
+file's next inline decision" is no longer productive — those decisions are already pure. Regenerate
+the frontier by recovering high-level structure instead:
+- **Grow the native runtime (Bucket C).** Take the next stage the `overkill/native_app.py` skeleton
+  marks `gap`/`unmonitored` and recover it: model its trigger state into `NativeGameState`, add the
+  pure rule (usually already there), wire it into the frame/scene machine, and verify against a
+  targeted demo. Each closed gap is a `describe_gaps()` entry removed.
+- **Recover structure the skeleton still narrates but doesn't run:** the mode-transition targets
+  (`9734`/`9902`/`9908`), the level-load flow, the scene-descriptor content (`DS:BE18`), the HUD fold.
+- Only when a structural slice needs a genuinely-unrecovered *leaf* do you drop back to a §2
+  bottom-up recovery — then close it and return to structure.
+- Run a representative demo with fail-fast coverage to spot any routines still `unknown`/`glue`.
 - Only after Buckets A–G are genuinely exhausted and **all of §1 (1–8) holds** is the run
   complete — i.e. the full game cold-boots and plays through with no VM.
 
