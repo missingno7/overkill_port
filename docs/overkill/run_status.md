@@ -32,9 +32,22 @@ B800 aperture at every present across L1–L4 and accumulated which pixels OUTSI
 **playfield self-compose (DONE, byte-exact corpus-wide)** + **the recovered dynamic HUD counters
 (DONE)** overlaid on a **static HUD/border chrome layer**. No new *per-frame* HUD recovery is needed.
 The one remaining leaf is the static chrome itself — since it never changes during play it is a
-**load-time draw**, so recover its generation as a load-time layer (Bucket E/F), NOT a per-frame
-capture (avoid the throwaway plate-capture the brief warns against). Probe kept in scratch
-(`probe_hud_static.py`) if the measurement needs redoing.
+**load-time draw**, so recover its generation as a load-time layer, NOT a per-frame capture (avoid
+the throwaway plate-capture the brief warns against). Probe kept in scratch (`probe_hud_static.py`).
+
+**Traced the chrome to its draw path (2026-07-03, same iteration):** the static HUD panel (the
+WEAPON/MISSILES/DRONE/GADGETS/UPGRADES cells + borders) is drawn by the status-cell render island,
+which is **already lifted (VM-aware)**: `859E` (`run_status_cell_quad_composite_859e`, the 4-cell
+`9682/968C/9696/96A0` parent) → `85D5` (`run_status_cell_composite_85d5`) → the `5A6C` cell blitter,
+with `511F` as the mode-1 page toggle (reached via `859E`'s `call_video_page_toggle`). So the chrome
+is NOT unrecovered raw ASM — the remaining work is a **promotion + integration**, not fresh recovery:
+lift the `859E→85D5→5A6C` render to a **pure native chrome-layer generator** (produce the static
+HUD/border `(H,W)` indices once, VM-free) so the standalone full frame = chrome-layer ⊕ playfield
+self-compose ⊕ the recovered HUD counters. This + the native **sprite draw list** (drive sprites from
+the native object pass instead of the VM-bound `SpriteDrawCollector`) are the two remaining Bucket-C
+integration efforts; both are multi-part and best taken with focused context. **NEXT SLICE:** begin
+the chrome-layer promotion (a pure generator that runs the recovered cell descriptors into an `(H,W)`
+chrome image, gated byte-exact vs the VM's static HUD/border region).
 
 ## 2026-07-03 - OR-inverted compositor leaves (2F40/2ECB) modeled: native compose now 100% on L3
 
