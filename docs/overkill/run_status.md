@@ -1,9 +1,21 @@
-> **SESSION HANDOFF (2026-07-03).** A fresh repo-rooted session picks up here. Everything you need is
-> **in this repo** (no external memory required): read `CLAUDE.md` → `AGENTS.md` →
-> `overnight_endgame_execution.md` (the `/goal` brief), then continue from its §6 queue. State: suite
-> **green (1057 passed / 23 skipped)**, tree clean, all work pushed to `main`, pure% ≈ 30.2%. Launch the
-> autonomous loop with `/loop /goal`. The docs were freshly de-staled this session — trust them, but
-> still verify a target against the code before recovering it (some `loop_blockers.md` entries are dated).
+> **SESSION HANDOFF (2026-07-03, updated).** A fresh repo-rooted session picks up here. Everything you
+> need is **in this repo**: read `CLAUDE.md` → `AGENTS.md` → `overnight_endgame_execution.md` (the
+> `/goal` brief), then continue from its §6 queue. State: suite **green (1069 passed / 23 skipped)**,
+> tree clean, all work pushed to `main`, pure% ≈ 30.2%. Launch with `/loop /goal`.
+>
+> **Render self-compose (Bucket B) is now byte-exact across the WHOLE gameplay demo corpus** — the
+> playfield plate is native (`render_starfield_plate`) and both compositor families are modeled
+> (masked 2E6E/2F81/2FB6 + OR-inverted 2F40/2ECB). `verify_playfield_compose` = 100% on L1–L4. So the
+> render leaf is done; **the next frontier is INTEGRATION, not more render leaves.**
+>
+> **Best next targets (all bigger, pick one and slice it):** (1) **Bucket C** — assemble the standalone
+> `--backend native` frame: compose from recovered state (feed `render_starfield_plate` + the sprite
+> draw list + `hud_text` band into a full-frame compose), and drive the sprite draw list from the native
+> object pass instead of the VM-bound `SpriteDrawCollector` (this is the real VM-less step). (2) **Bucket
+> A islands** — `837A` handler-table dispatch, `859E` status-cell quad render island (both mapped in the
+> brief §6). (3) **99F6 scripted-input** — a `DS:[A47C]` jump-table of scripted-movement handlers (hard).
+> The docs were de-staled this session — trust them, but verify a target against the code before
+> recovering it (some `loop_blockers.md` entries are dated).
 
 ## 2026-07-03 - OR-inverted compositor leaves (2F40/2ECB) modeled: native compose now 100% on L3
 
