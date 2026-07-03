@@ -5,6 +5,20 @@
 > autonomous loop with `/loop /goal`. The docs were freshly de-staled this session — trust them, but
 > still verify a target against the code before recovering it (some `loop_blockers.md` entries are dated).
 
+## 2026-07-03 - Pre-loop readiness pass: status-metrics tooling fix
+
+Orientation/handoff-readiness pass before launching the unattended loop. Suite re-confirmed green
+(**1057 passed / 23 skipped**, exit 0); `audit_recovered_layers` + `audit_architecture` + `lint` all
+green; tree clean and pushed.
+
+**Fix (commit `db7a18c`):** `scripts/source_port_status.py` printed `<unavailable: ModuleNotFoundError>`
+for two metrics — the object_record field-naming coverage and the **hook taxonomy / glue count** —
+because run-as-a-script left `sys.path[0] = scripts/` with the repo root absent, so `import overkill.*`
+failed. Added `sys.path.insert(0, ROOT)`. Both metrics now resolve: struct coverage **25/28 words named**
+(10 known / 15 guessed / 3 unknown), **335 registered hooks → 318 glue** (12 checkpoint, 5 env_wait, 0
+debug_probe). This matters because the glue count is the §7 secondary metric the loop must watch trend
+down; it was previously invisible. Headline pure% unchanged at **30.2%**.
+
 ## 2026-07-03 - B73E logic_id 0x20 recovered + world-scroll subsystem native
 
 **Bucket A (object collapse) — the dominant remaining wall fell.** `B73E` (logic_id `0x20`, the
