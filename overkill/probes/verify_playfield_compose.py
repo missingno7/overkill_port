@@ -48,7 +48,12 @@ def main(argv):
     from overkill.native_video.playfield import compose_playfield_indices
     from overkill.native_video.page_raster import render_present_page_indices
     from overkill.recovered.adapters.sprite_draw_extractor import LAYER_DRAW_ROUTINES
-    from overkill.recovered.systems.sprite_textures import MASKED_COMPOSITORS, decode_masked_sprite
+    from overkill.recovered.systems.sprite_textures import (
+        MASKED_COMPOSITORS,
+        OR_INVERTED_COMPOSITORS,
+        decode_masked_sprite,
+        decode_or_inverted_delta,
+    )
 
     demo = InputDemoPlayback.load(demo_dir)
     snapshot = demo.snapshot_path()
@@ -98,6 +103,30 @@ def main(argv):
             frame["blocks"].append(SpriteBlock(di, tex.pixels, tex.opaque))
             _orig(cpu)
         object.__setattr__(rep, "handler", hook)
+        wrapped.append((rep, orig))
+
+    for ip, (wpr, _row_add) in OR_INVERTED_COMPOSITORS.items():
+        rep = registry.replacements[(CS, ip)]
+        orig = rep.handler
+
+        def or_hook(cpu, _orig=orig, _wpr=wpr):
+            s = cpu.s
+            if st["cursor"] is None or (s.flags & DF):
+                if st["cursor"] is None or (s.flags & DF):
+                    frame["dirty"] = True
+                _orig(cpu)
+                return
+            mem_arr = np.frombuffer(cpu.mem.data, np.uint8)
+            if frame["plate"] is None:
+                frame["plate"] = render_present_page_indices(mem_arr, s.es & 0xFFFF, st["cursor"]).copy()
+                frame["cursor"] = st["cursor"]
+            rows = (s.cx & 0xFFFF) or 0x10000
+            ds, si, di = s.ds & 0xFFFF, s.si & 0xFFFF, s.di & 0xFFFF
+            src = bytes(mem_arr[((ds << 4) + si):((ds << 4) + si) + _wpr * rows * 4])
+            delta = decode_or_inverted_delta(src, _wpr, rows)
+            frame["blocks"].append(SpriteBlock(di, delta, np.ones(delta.shape, bool), kind="or_inverted"))
+            _orig(cpu)
+        object.__setattr__(rep, "handler", or_hook)
         wrapped.append((rep, orig))
 
     boundary = {"n": 0}

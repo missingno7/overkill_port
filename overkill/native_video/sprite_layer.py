@@ -61,13 +61,36 @@ def paste_block(screen: np.ndarray, di: int, cursor: int,
     dst[op] = px[op]
 
 
+def paste_or_inverted_block(screen: np.ndarray, di: int, cursor: int, delta: np.ndarray) -> None:
+    """Composite one 2F40/2ECB OR-inverted block: ``screen |= delta`` over its rect, clipped.
+
+    ``delta`` is the per-pixel ``0xF ^ src`` the leaf ORs in (see
+    :func:`overkill.recovered.systems.sprite_textures.decode_or_inverted_delta`). Unlike the
+    masked path this has no opacity mask — every in-rect pixel is ORed — and is
+    background-dependent, so callers must apply blocks in the original draw order."""
+    y0, x0 = block_screen_origin(di, cursor)
+    h, w = delta.shape
+    sy0, sx0 = max(y0, _Y_LO), max(x0, _X_LO)
+    sy1, sx1 = min(y0 + h, _Y_HI), min(x0 + w, _X_HI)
+    if sy1 <= sy0 or sx1 <= sx0:
+        return
+    py0, px0 = sy0 - y0, sx0 - x0
+    d = delta[py0:py0 + (sy1 - sy0), px0:px0 + (sx1 - sx0)]
+    screen[sy0:sy1, sx0:sx1] |= d
+
+
 def composite_sprites(screen: np.ndarray, sprites: Iterable, cursor: int,
                       di_shift: int = 0) -> np.ndarray:
     """Draw every sprite block onto ``screen`` (indices) in draw order, in place.
 
-    ``di_shift`` offsets every block's destination uniformly (whole-frame use); per
-    object interpolation instead passes already-shifted ``SnapshotSprite`` blocks."""
+    Masked blocks opaque-replace; ``kind == "or_inverted"`` blocks OR their delta in (the
+    2F40/2ECB leaves). ``di_shift`` offsets every block's destination uniformly (whole-frame
+    use); per object interpolation instead passes already-shifted ``SnapshotSprite`` blocks."""
     for spr in sprites:
         for b in spr.blocks:
-            paste_block(screen, (b.di + di_shift) & 0xFFFF, cursor, b.pixels, b.opaque)
+            di = (b.di + di_shift) & 0xFFFF
+            if getattr(b, "kind", "mask") == "or_inverted":
+                paste_or_inverted_block(screen, di, cursor, b.pixels)
+            else:
+                paste_block(screen, di, cursor, b.pixels, b.opaque)
     return screen

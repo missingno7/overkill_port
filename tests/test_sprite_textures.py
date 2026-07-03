@@ -11,9 +11,11 @@ import pytest
 
 from overkill.recovered.systems.sprite_textures import (
     MASKED_COMPOSITORS,
+    OR_INVERTED_COMPOSITORS,
     composite_indices,
     composite_words,
     decode_masked_sprite,
+    decode_or_inverted_delta,
 )
 
 
@@ -68,3 +70,32 @@ def test_recovered_compositor_geometry():
     assert MASKED_COMPOSITORS[0x2E6E] == (8, 0x0058, None)
     assert MASKED_COMPOSITORS[0x2F81] == (4, 0x0060, None)
     assert MASKED_COMPOSITORS[0x2FB6] == (2, 0x0064, 8)
+
+
+def _or_word_bytes(plane: int, skipped: int = 0xFFFF) -> bytes:
+    """One OR-inverted source group: the used plane word, then the skipped word."""
+    return bytes([plane & 0xFF, (plane >> 8) & 0xFF, skipped & 0xFF, (skipped >> 8) & 0xFF])
+
+
+def test_decode_or_inverted_delta_is_notted_source():
+    # plane 0x0F30 -> nibbles [3,0,0,F]; delta = 0xF ^ nibble = [C,F,F,0].
+    delta = decode_or_inverted_delta(_or_word_bytes(0x0F30), words_per_row=1, rows=1)
+    assert delta.shape == (1, 4)
+    assert list(delta[0]) == [0xC, 0xF, 0xF, 0x0]
+
+
+def test_decode_or_inverted_ignores_the_skipped_second_word():
+    # The second word of each 4-byte group is not read; changing it must not change the delta.
+    a = decode_or_inverted_delta(_or_word_bytes(0x1234, 0x0000), 1, 1)
+    b = decode_or_inverted_delta(_or_word_bytes(0x1234, 0xFFFF), 1, 1)
+    assert np.array_equal(a, b)
+
+
+def test_decode_or_inverted_rejects_short_source():
+    with pytest.raises(ValueError):
+        decode_or_inverted_delta(b"\x00\x00", words_per_row=2, rows=2)
+
+
+def test_recovered_or_inverted_geometry():
+    assert OR_INVERTED_COMPOSITORS[0x2F40] == (4, 0x0060)
+    assert OR_INVERTED_COMPOSITORS[0x2ECB] == (8, 0x0058)

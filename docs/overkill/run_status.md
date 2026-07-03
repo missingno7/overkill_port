@@ -5,6 +5,28 @@
 > autonomous loop with `/loop /goal`. The docs were freshly de-staled this session — trust them, but
 > still verify a target against the code before recovering it (some `loop_blockers.md` entries are dated).
 
+## 2026-07-03 - OR-inverted compositor leaves (2F40/2ECB) modeled: native compose now 100% on L3
+
+**Bucket B (render self-compose) — closed the L3 sprite-compose gap.** The native compose modeled
+only the masked compositor leaves (2E6E/2F81/2FB6); the **OR-inverted leaves 2F40/2ECB**
+(`dest_word |= ~src_word`, a background-dependent bitwise-OR of the inverted source) were unmodeled,
+so objects they draw were missing (an L3 16×16 white block: `native=0` where `vm=15`). This was the
+5-frame L3 divergence logged (and freshly root-caused) this session.
+
+Recovered end-to-end: pure `sprite_textures.decode_or_inverted_delta` (the `0xF ^ src` OR delta) +
+`OR_INVERTED_COMPOSITORS` table; an `or_inverted` block kind in `native_video` (`SpriteBlock.kind`,
+`sprite_layer.paste_or_inverted_block`, `composite_sprites` dispatch); and extractor capture
+(`_make_or_inverted_hook`, `to_snapshot_sprites` emits the OR block, `stats.or_inverted_blocks`).
+
+**Gate:** `verify_playfield_compose` now **L3 39/39** (was 24/29) and stays 100% on L1/L2/L4;
+`verify_native_starfield_plate` self-compose L3 **39/39** too (was 24/29). 6 VM-free unit tests
+(`test_sprite_textures.py` decode + geometry, `test_sprite_layer.py` OR paste + dispatch). Suite
+green; layers+arch+lint green. `loop_blockers.md` L3 item moved OPEN→RESOLVED. Commit: (this pass).
+
+**Metrics:** pure% 30.2% (the decode is pure/source; the compose+extractor are backend/bridge, so the
+render-fidelity win doesn't move the headline). The render self-compose gate is now byte-exact across
+the whole gameplay demo corpus — no known sprite-compose divergence remains.
+
 ## 2026-07-03 - Native starfield PLATE wired: standalone playfield needs no VM page
 
 **Bucket B/C (render self-compose) — the starfield plate is now built from recovered state, VM-free.**

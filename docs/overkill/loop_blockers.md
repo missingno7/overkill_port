@@ -18,7 +18,17 @@ context. Each has the analysis already done so a human can pick up fast.
 
 ---
 
-## OPEN (2026-07-03) — L3 sprite-compose: 5/29 playfield frames diverge (plate-independent)
+## RESOLVED (2026-07-03) — L3 sprite-compose: was the unmodeled OR-inverted 2F40/2ECB leaves
+
+> **Fixed same day.** Root cause: the native compose modeled only the masked compositor leaves
+> (2E6E/2F81/2FB6); the OR-inverted leaves **2F40/2ECB** (`dest_word |= ~src_word`) were not
+> captured, so the objects they draw (e.g. an L3 16×16 white block) were missing → `native=0`
+> where `vm=15`. Recovered `decode_or_inverted_delta` (pure, `0xF ^ src` OR delta) + an
+> `or_inverted` block kind in the native sprite layer + extractor capture. `verify_playfield_compose`
+> is now **39/39 on L3** (was 24/29) and stays 100% on L1/L2/L4; `verify_native_starfield_plate`
+> self-compose L3 39/39 too. The dated analysis below is kept as provenance.
+
+## (historical) OPEN (2026-07-03) — L3 sprite-compose: 5/29 playfield frames diverge (plate-independent)
 
 Surfaced while wiring the native starfield plate (not caused by it). `verify_playfield_compose`
 — `playfield = plate + composite_sprites(blocks)` vs the VM's decoded `[9598]` playfield — is

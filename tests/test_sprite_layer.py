@@ -9,7 +9,12 @@ import numpy as np
 
 from overkill.native_video.frame import SnapshotSprite, SpriteBlock
 from overkill.native_video.page_raster import PLAYFIELD_W, PLAYFIELD_Y0, PRESENT_ROW_BYTES, PRESENT_ROWS
-from overkill.native_video.sprite_layer import block_screen_origin, composite_sprites, paste_block
+from overkill.native_video.sprite_layer import (
+    block_screen_origin,
+    composite_sprites,
+    paste_block,
+    paste_or_inverted_block,
+)
 
 
 def test_block_origin_maps_di_relative_to_cursor():
@@ -69,6 +74,28 @@ def test_composite_sprites_draws_all_blocks_in_order():
     composite_sprites(screen, [spr], cursor=0x4000)
     assert screen[PLAYFIELD_Y0, 0] == 1
     assert screen[PLAYFIELD_Y0 + 4, 0] == 2
+
+
+def test_paste_or_inverted_block_ors_delta_into_background():
+    # OR-inverted (2F40/2ECB): screen |= delta, background-dependent, no opacity mask.
+    screen = np.zeros((200, 320), dtype=np.uint8)
+    screen[PLAYFIELD_Y0, 0:4] = [0x1, 0x2, 0x0, 0x8]
+    delta = np.array([[0x0, 0xF, 0x4, 0x8]], dtype=np.uint8)
+    paste_or_inverted_block(screen, di=0x4000, cursor=0x4000, delta=delta)
+    # 0x1|0=1, 0x2|0xF=0xF, 0x0|0x4=0x4, 0x8|0x8=0x8
+    assert list(screen[PLAYFIELD_Y0, 0:4]) == [0x1, 0xF, 0x4, 0x8]
+
+
+def test_composite_sprites_dispatches_or_inverted_kind():
+    screen = np.zeros((200, 320), dtype=np.uint8)
+    screen[PLAYFIELD_Y0, 0:2] = [0x3, 0x0]
+    spr = SnapshotSprite(
+        identity=1, sprite_id=2, anim_phase=0, screen_di=0x4000,
+        blocks=(SpriteBlock(0x4000, np.array([[0x4, 0xF]], np.uint8),
+                            np.ones((1, 2), bool), kind="or_inverted"),),
+    )
+    composite_sprites(screen, [spr], cursor=0x4000)
+    assert list(screen[PLAYFIELD_Y0, 0:2]) == [0x3 | 0x4, 0x0 | 0xF]  # OR, not replace
 
 
 def test_di_shift_translates_every_block():

@@ -12,10 +12,9 @@ first masked-sprite block, exactly where ``verify_playfield_compose`` snapshots 
 2. **self-compose** (informational): ``compose_playfield_indices(native_plate, sprite_blocks)``
    vs the VM's decoded ``[9598]`` playfield — the brief's Bucket-B gate, now with the plate
    produced natively.  Because the native plate is byte-identical to the VM plate (check 1), this
-   number is *identical* to ``verify_playfield_compose``'s over the VM-captured plate: any
-   shortfall (e.g. the 5/29 L3 frames) is the pre-existing sprite-compose divergence that baseline
-   probe already shows, NOT a plate defect — so it is reported, not gated here.  PASS is gated on
-   the plate proof (check 1), which is what this slice actually establishes.
+   number is *identical* to ``verify_playfield_compose``'s over the VM-captured plate (both model
+   the masked + OR-inverted compositor leaves), so it tracks that probe's result.  PASS is gated
+   on the plate proof (check 1), which is what this slice establishes.
 
 Usage:
     python -m overkill.probes.verify_native_starfield_plate <demo_dir> [frames]
@@ -68,7 +67,12 @@ def main(argv):
     from overkill.native_video.playfield import compose_playfield_indices
     from overkill.native_video.starfield_plate import render_starfield_plate
     from overkill.recovered.adapters.sprite_draw_extractor import LAYER_DRAW_ROUTINES
-    from overkill.recovered.systems.sprite_textures import MASKED_COMPOSITORS, decode_masked_sprite
+    from overkill.recovered.systems.sprite_textures import (
+        MASKED_COMPOSITORS,
+        OR_INVERTED_COMPOSITORS,
+        decode_masked_sprite,
+        decode_or_inverted_delta,
+    )
 
     demo = InputDemoPlayback.load(demo_dir)
     snapshot = demo.snapshot_path()
@@ -121,6 +125,30 @@ def main(argv):
             frame["blocks"].append(SpriteBlock(di, tex.pixels, tex.opaque))
             _orig(cpu)
         object.__setattr__(rep, "handler", hook)
+        wrapped.append((rep, orig))
+
+    for ip, (wpr, _row_add) in OR_INVERTED_COMPOSITORS.items():
+        rep = registry.replacements[(CS, ip)]
+        orig = rep.handler
+
+        def or_hook(cpu, _orig=orig, _wpr=wpr):
+            s = cpu.s
+            if st["cursor"] is None or (s.flags & DF):
+                frame["dirty"] = True
+                _orig(cpu)
+                return
+            mem_arr = np.frombuffer(cpu.mem.data, np.uint8)
+            if frame["plate"] is None:
+                frame["plate"] = render_starfield_plate(st["sf"], st["cursor"])
+                frame["vm_plate"] = render_present_page_indices(mem_arr, s.es & 0xFFFF, st["cursor"]).copy()
+                frame["cursor"] = st["cursor"]
+            rows = (s.cx & 0xFFFF) or 0x10000
+            ds, si, di = s.ds & 0xFFFF, s.si & 0xFFFF, s.di & 0xFFFF
+            src = bytes(mem_arr[((ds << 4) + si):((ds << 4) + si) + _wpr * rows * 4])
+            delta = decode_or_inverted_delta(src, _wpr, rows)
+            frame["blocks"].append(SpriteBlock(di, delta, np.ones(delta.shape, bool), kind="or_inverted"))
+            _orig(cpu)
+        object.__setattr__(rep, "handler", or_hook)
         wrapped.append((rep, orig))
 
     boundary = {"n": 0}

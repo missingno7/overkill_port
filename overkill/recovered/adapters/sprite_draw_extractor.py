@@ -14,20 +14,27 @@ current object. ``take_frame`` returns the frame's :class:`CapturedSprite` list.
 Identity is the object-record address ``SS:BP`` (the table slot is fixed across
 frames), so the renderer can interpolate a sprite's position between source ticks.
 
-This is the VM-bound extractor; the decode it relies on is pure. Non-masked
-compositor leaves (the OR-inverted 2F40/2ECB, the strided object copies) are NOT
-silently skipped - they are counted as ``unmodeled_blocks`` so missing coverage
-is explicit (recovery-first).
+This is the VM-bound extractor; the decode it relies on is pure. The masked leaves
+(2E6E/2F81/2FB6) and the OR-inverted leaves (2F40/2ECB, ``dest |= ~src``) are both
+captured now; any remaining non-masked leaves (the strided object copies) are NOT
+silently skipped - they are counted as ``unmodeled_blocks`` so missing coverage is
+explicit (recovery-first).
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Optional
 
 from overkill.recovered.systems.sprite_textures import (
     MASKED_COMPOSITORS,
+    OR_INVERTED_COMPOSITORS,
     SpriteTexture,
     decode_masked_sprite,
+    decode_or_inverted_delta,
 )
+
+if TYPE_CHECKING:
+    import numpy as np
 
 CS = 0x1010
 OBJ_SPRITE_INDEX = 0x08
@@ -49,11 +56,16 @@ LAYER_DRAW_ROUTINES: dict[int, tuple[int, ...]] = {
 
 @dataclass
 class SpriteBlock:
-    """One decoded compositor block placed in the page."""
+    """One decoded compositor block placed in the page.
+
+    Masked blocks (2E6E/2F81/2FB6) carry a decoded ``texture``; OR-inverted blocks
+    (2F40/2ECB) carry ``or_delta`` (the ``0xF ^ src`` OR delta) and ``kind == "or_inverted"``."""
 
     di: int                 # ES:DI destination (== an object screen_di slot)
-    compositor_ip: int      # which masked compositor produced it
-    texture: SpriteTexture  # the decoded, background-independent pixels
+    compositor_ip: int      # which compositor produced it
+    texture: Optional[SpriteTexture] = None  # decoded pixels (masked blocks)
+    or_delta: "Optional[np.ndarray]" = None  # per-pixel OR delta (or-inverted blocks)
+    kind: str = "mask"      # "mask" | "or_inverted"
 
 
 @dataclass
@@ -73,6 +85,7 @@ class CapturedSprite:
 class _Stats:
     high_calls: int = 0
     masked_blocks: int = 0
+    or_inverted_blocks: int = 0
     unmodeled_blocks: int = 0
     orphan_blocks: int = 0
     orphan_dis: list[int] = field(default_factory=list)
@@ -94,6 +107,8 @@ class SpriteDrawCollector:
             self._wrap(ip, self._make_high_hook(ip, slot_offsets))
         for ip in MASKED_COMPOSITORS:
             self._wrap(ip, self._make_comp_hook(ip))
+        for ip in OR_INVERTED_COMPOSITORS:
+            self._wrap(ip, self._make_or_inverted_hook(ip))
 
     def uninstall(self) -> None:
         for rep, orig in self._wrapped:
@@ -158,17 +173,25 @@ class SpriteDrawCollector:
     def to_snapshot_sprites(captured: list[CapturedSprite]) -> tuple:
         """Convert captured sprites to the backend's ``SnapshotSprite`` records.
 
-        The seam from the VM-bound extractor to the VM-independent backend: only
-        the decoded texture (pixels/opaque) + position + identity cross over."""
+        The seam from the VM-bound extractor to the VM-independent backend: only the decoded
+        render payload (masked pixels/opaque, or the OR-inverted delta) + position + identity
+        cross over."""
+        import numpy as np
+
         from overkill.native_video.frame import SnapshotSprite, SpriteBlock
+
+        def render_block(b: SpriteBlock) -> "object":
+            if b.kind == "or_inverted":
+                # or_delta is the pixels payload; opaque is unused by the OR path (full-True).
+                return SpriteBlock(di=b.di, pixels=b.or_delta,
+                                   opaque=np.ones(b.or_delta.shape, dtype=bool), kind="or_inverted")
+            return SpriteBlock(di=b.di, pixels=b.texture.pixels, opaque=b.texture.opaque)
+
         return tuple(
             SnapshotSprite(
                 identity=c.identity, sprite_id=c.sprite_id, anim_phase=c.anim_phase,
                 screen_di=c.screen_di,
-                blocks=tuple(
-                    SpriteBlock(di=b.di, pixels=b.texture.pixels, opaque=b.texture.opaque)
-                    for b in c.blocks
-                ),
+                blocks=tuple(render_block(b) for b in c.blocks),
             )
             for c in captured
         )
@@ -192,6 +215,31 @@ class SpriteDrawCollector:
             if captured is not None:
                 self._current.blocks.append(captured)
                 self.stats.masked_blocks += 1
+            elif self._current is None:
+                self.stats.orphan_blocks += 1
+                if len(self.stats.orphan_dis) < 32:
+                    self.stats.orphan_dis.append(di)
+        return hook
+
+    def _make_or_inverted_hook(self, ip: int):
+        from dos_re.cpu import DF
+        wpr, _row_add = OR_INVERTED_COMPOSITORS[ip]
+
+        def hook(cpu, orig):
+            s = cpu.s
+            rows = (s.cx & 0xFFFF) or 0x10000
+            forward = not (s.flags & DF)
+            ds, si, di = s.ds & 0xFFFF, s.si & 0xFFFF, s.di & 0xFFFF
+            captured = None
+            if forward and self._current is not None:
+                base = (ds << 4) & 0xFFFFF
+                src = bytes(cpu.mem.data[base + si: base + si + wpr * rows * 4])
+                captured = SpriteBlock(di=di, compositor_ip=ip, kind="or_inverted",
+                                       or_delta=decode_or_inverted_delta(src, wpr, rows))
+            orig(cpu)
+            if captured is not None:
+                self._current.blocks.append(captured)
+                self.stats.or_inverted_blocks += 1
             elif self._current is None:
                 self.stats.orphan_blocks += 1
                 if len(self.stats.orphan_dis) < 32:

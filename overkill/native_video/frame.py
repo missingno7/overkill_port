@@ -40,13 +40,21 @@ class SceneKind(Enum):
 
 @dataclass(frozen=True, eq=False)
 class SpriteBlock:
-    """One decoded masked-sprite block: its ``[9598]`` destination offset (``di``)
-    and background-independent indexed pixels + opaque mask. Composited by the
-    native sprite layer at ``di`` (offset from the present cursor)."""
+    """One decoded sprite-compositor block, drawn by the native sprite layer at ``di``
+    (offset from the present cursor).
+
+    ``kind`` selects the composite op:
+
+    * ``"mask"`` (default) — a masked sprite: ``pixels`` are the indexed colours, ``opaque``
+      the where-it-draws mask; the layer does opaque-replace (2E6E/2F81/2FB6).
+    * ``"or_inverted"`` — a 2F40/2ECB OR-inverted block: ``pixels`` holds the per-pixel OR
+      *delta* (``0xF ^ src``) and the layer ORs it into the background (``opaque`` is unused,
+      kept full-True for shape). This op is background-dependent, so draw order matters."""
 
     di: int
-    pixels: "np.ndarray"   # (h, w) uint8 colour indices
+    pixels: "np.ndarray"   # (h, w) uint8 colour indices, or the OR delta for kind="or_inverted"
     opaque: "np.ndarray"   # (h, w) bool
+    kind: str = "mask"
 
 
 @dataclass(frozen=True, eq=False)

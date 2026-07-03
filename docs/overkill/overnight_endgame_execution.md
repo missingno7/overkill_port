@@ -307,8 +307,11 @@ So the next real work is **island recovery**, not single-leaf collapse — best 
 fresh agent with clean context, using the boundaries mapped above.
 
 ### Bucket B — render self-compose layers (witness byte-exact gate)
-Playfield composition is crystallised (`native_video/playfield.compose_playfield_indices`,
-proven 30/30). Remaining:
+Playfield composition is crystallised (`native_video/playfield.compose_playfield_indices`) and now
+byte-exact across the WHOLE gameplay demo corpus: both the masked compositor leaves (2E6E/2F81/2FB6)
+and the **OR-inverted leaves 2F40/2ECB** (`dest |= ~src`, recovered 2026-07-03 as
+`decode_or_inverted_delta` + an `or_inverted` block kind) are modeled, so `verify_playfield_compose`
+is 100% on L1–L4 (L3 went 24/29 → 39/39). Remaining:
 - **Starfield background layer — RECOVERY DONE + PLATE WIRED (2026-07-03); only the backend-compose
   hookup is open.** The parallax pixel starfield is fully recovered + verified: pure
   `recovered/systems/starfield.py` + `recovered/domain/starfield.py` (move at `1F8F:0922/0960`,

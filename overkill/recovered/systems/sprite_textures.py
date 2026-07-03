@@ -41,6 +41,19 @@ MASKED_COMPOSITORS: dict[int, tuple[int, int, int | None]] = {
     0x2FB6: (2, 0x0064, 8),
 }
 
+# The OR-inverted compositor leaves (1010:2F40 / 2ECB, recovered in
+# ``overkill/rendering/tandy.py`` as ``_or_inverted_source_words_rows`` over
+# ``rasterizer.or_inverted_word_rows``). Instead of a masked (bg & mask)|data write, each
+# does ``dest_word |= ~src_word`` -- a background-DEPENDENT bitwise OR of the inverted source.
+# The source word used is the FIRST word of each 4-byte group (the second word is skipped),
+# so like the masked leaves the source is ``words_per_row * rows * 4`` bytes.  Both are CX-row
+# leaves (no fixed-row unroll).  Value: model these so the native compose stops missing the
+# objects they draw (e.g. L3, where an unmodelled 2F40 draw left a 16x16 white gap).
+OR_INVERTED_COMPOSITORS: dict[int, tuple[int, int]] = {
+    0x2F40: (4, 0x0060),   # (words_per_row, row_add) -- 16 px wide
+    0x2ECB: (8, 0x0058),   # 32 px wide
+}
+
 
 @dataclass(frozen=True)
 class SpriteTexture:
@@ -94,6 +107,25 @@ def decode_masked_sprite(source: bytes, words_per_row: int, rows: int) -> Sprite
     pixels = _bytes_to_nibbles(dlo, dhi).astype(np.uint8)
     opaque = _bytes_to_nibbles(mlo, mhi) == 0
     return SpriteTexture(pixels=pixels, opaque=opaque, mask_words=mask_words, data_words=data_words)
+
+
+def decode_or_inverted_delta(source: bytes, words_per_row: int, rows: int) -> np.ndarray:
+    """Decode a 2F40/2ECB OR-inverted block into its per-pixel OR delta ``(rows, wpr*4)``.
+
+    The leaf does ``dest_word |= ~src_word`` per source word. In palette-index space a byte
+    OR is a per-nibble OR, so the pixel effect is ``out_nibble = bg_nibble | (0xF ^ src_nibble)``.
+    This returns that ``0xF ^ src`` delta (uint8, 4-bit values) to OR into the background;
+    :func:`overkill.native_video.sprite_layer.composite_sprites` applies it.  ``source`` is laid
+    out as the leaf reads it: per output word the used plane word (2 bytes) then 2 skipped bytes,
+    ``words_per_row`` words per row, rows contiguous.
+    """
+    need = words_per_row * rows * SRC_BYTES_PER_WORD
+    if len(source) < need:
+        raise ValueError(f"or-inverted sprite needs {need} source bytes, got {len(source)}")
+    quad = np.frombuffer(bytes(source[:need]), dtype=np.uint8).reshape(rows, words_per_row, 4)
+    lo, hi = quad[:, :, 0], quad[:, :, 1]  # the word at SI (bytes +0/+1); +2/+3 are skipped
+    src_nibbles = _bytes_to_nibbles(lo, hi).astype(np.uint8)
+    return (0x0F ^ src_nibbles).astype(np.uint8)
 
 
 def composite_indices(texture: SpriteTexture, bg: np.ndarray) -> np.ndarray:
