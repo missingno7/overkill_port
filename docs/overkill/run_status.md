@@ -17,6 +17,25 @@
 > The docs were de-staled this session — trust them, but verify a target against the code before
 > recovering it (some `loop_blockers.md` entries are dated).
 
+## 2026-07-03 - Finding: the HUD/border chrome is ~99.5% STATIC (scopes the Bucket-C full frame)
+
+Reconnaissance for the Bucket-C standalone full-frame compose (no code change). Decoded the full
+B800 aperture at every present across L1–L4 and accumulated which pixels OUTSIDE the playfield window
+(`y∈[4,196), x∈[0,208)`) ever change vs frame 0:
+- **L1 80/24064 (0.3%)**, **L2 152 (0.6%)**, **L3 59 (0.2%)**, **L4 160 (0.7%)** — the HUD/border is
+  **99.3–99.8% static** during gameplay. The only dynamic pixels are tiny bands: the score digit
+  column (`x[232..239] y[27..65]`) and a secondary counter (`x[273..286] y[104..110]`).
+- Those dynamic bands are exactly the score/status counters **already recovered** (the
+  `5F05→519A→3153` glyph path / `native_video/hud_text.py`, proven by `verify_native_hud_text`).
+
+**Implication for the full-frame compose (the next Bucket-C slice):** the per-frame full frame =
+**playfield self-compose (DONE, byte-exact corpus-wide)** + **the recovered dynamic HUD counters
+(DONE)** overlaid on a **static HUD/border chrome layer**. No new *per-frame* HUD recovery is needed.
+The one remaining leaf is the static chrome itself — since it never changes during play it is a
+**load-time draw**, so recover its generation as a load-time layer (Bucket E/F), NOT a per-frame
+capture (avoid the throwaway plate-capture the brief warns against). Probe kept in scratch
+(`probe_hud_static.py`) if the measurement needs redoing.
+
 ## 2026-07-03 - OR-inverted compositor leaves (2F40/2ECB) modeled: native compose now 100% on L3
 
 **Bucket B (render self-compose) — closed the L3 sprite-compose gap.** The native compose modeled
