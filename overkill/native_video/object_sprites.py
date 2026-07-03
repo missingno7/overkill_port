@@ -1,66 +1,181 @@
-"""Native (VM-free) object -> sprite-block bridge: turn an object slot into its drawable sprite.
+"""Native (VM-free) object -> sprite-block bridge: turn each object slot into its drawable sprite(s).
 
-The VM's per-object sprite draw ``1010:75A6`` reads the object record and blits its sprite:
+An object is drawn by ONE of three shared layer-sprite routines, selected by its draw-type word
+``obj[+14]`` through the dispatch table ``cs:[75A0]`` (``{0: 7746, 1: 768E, 2: 75A6}``).  The three
+routines differ in sprite bank, frame table, id threshold, compositor and slot layout -- all recovered
+here VM-free (banks from :mod:`overkill.asset_codecs.shared_assets` + the level graphics; the masked
+decode from :mod:`overkill.recovered.systems.sprite_textures`):
 
-    sprite_id = obj[+08];  if sprite_id >= 0x1C:  si = cs:[0x9392 + (sprite_id-0x1C)*2]   (descriptor
-        table, linear 0x400 steps -> the sprite's offset in the LEVEL sprite bank cs:[95AE] =
-        NativeLevel.graphics);  di = obj[+0C];  anim = obj[+12];  the (mode,anim) dispatch at cs:[7628]
-        selects the compositor -- Tandy (mode 2), anim 0 -> ``2E6E`` (8-word/32px masked, CX=0x10 rows).
+* **75A6** (``dtype 2``): frame table ``cs:[9392]``; id ``< 0x1C`` -> the common bank ``cs:[95A6]`` =
+  ``MANEXPL.BIC``, else the LEVEL bank ``cs:[95AE]`` = ``NativeLevel.graphics`` (index ``id-0x1C``).
+  Compositor ``2E6E`` (8 words = 32 px, 16 rows).  It draws TWO slots: ``obj[+0C]`` at source ``off``,
+  then ``obj[+10]`` at source ``off + (ds:[1028] >> 1)`` (the sprite cell's second half).
+* **768E** (``dtype 1``): frame table ``cs:[9192]``; id ``< 0xFA`` -> ``cs:[95AA]`` = ``2X2.BIC``, else
+  ``cs:[95AC]`` = ``2X2C.BIC`` (index ``id-0xFA``).  Compositor ``2F81`` (4 words = 16 px, 16 rows).
+  ONE slot at ``obj[+0C]``.
+* **7746** (``dtype 0``): frame table ``cs:[8F92]``; bank ``cs:[95A8]`` = ``1X1.BIC`` (no threshold).
+  Compositor ``2FB6`` (2 words = 8 px, fixed 8 rows).  ONE slot at ``obj[+0C]``.
 
-This is the VM-free counterpart for the LEVEL bank (``sprite_id >= 0x1C``): map an object slot to the
-recovered ``decode_masked_sprite`` texture at the descriptor offset, positioned at ``di``.  It reuses
-the already-recovered decode + the byte-exact ``NativeLevel.graphics`` load, so no VM.
-
-SCOPE (fail loud, no faking): only the LEVEL bank + the Tandy masked (anim 0, ``2E6E``) case is handled.
-``sprite_id < 0x1C`` is the COMMON sprite bank ``cs:[95A6]`` (the player ship + shared effects, built
-at boot from SHIP.BIC etc.) -- not loaded here yet; those slots are skipped, not faked. ``anim != 0``
-maps to the dispatch's ``0x7688`` no-draw slot, and the ``obj[+24]`` flag selects the OR-inverted
-``2ECB`` variant -- both are follow-ups. Verified byte-exact vs the VM's ``75A6`` by
-``overkill/probes/verify_native_object_sprites.py``.
+Verified byte-exact vs the VM by ``overkill/probes/verify_native_object_sprites.py``, which drives the
+REAL draw-type dispatch ``1010:7596`` per object and matches every compositor blit's (routine, di,
+source offset).  SCOPE (fail loud, no faking): only the Tandy masked base case is handled -- objects
+with ``anim (+12) != 0`` or the ``obj[+24]`` OR-inverted variant flag set select a different compositor
+and are SKIPPED, not faked (documented follow-ups); unknown draw-types (``dtype`` not 0/1/2) are skipped.
 """
 from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Sequence
 
 from overkill.native_video.frame import SpriteBlock
 from overkill.recovered.systems.sprite_textures import decode_masked_sprite
 
-COMMON_BANK_THRESHOLD = 0x1C   # sprite_id < this -> the common bank cs:[95A6] (not handled here)
-TANDY_WORDS_PER_ROW = 8        # 2E6E compositor: 8 words/row = 32 px
-TANDY_ROWS = 0x10              # CX = 0x10 rows
+# Draw-type dispatch: obj[+14] -> routine entry (the constant cs:[75A0] table, entries 0..2).
+ROUTINE_7746 = 0x7746
+ROUTINE_768E = 0x768E
+ROUTINE_75A6 = 0x75A6
+DRAW_TYPE_ROUTINES = (ROUTINE_7746, ROUTINE_768E, ROUTINE_75A6)
+
+# Per-routine bank id thresholds (sprite_id below -> primary bank, at/above -> secondary bank).
+THRESHOLD_75A6 = 0x1C   # < : common (MANEXPL);  >= : level (G{n}), index id-0x1C
+THRESHOLD_768E = 0xFA   # < : 2X2;               >= : 2X2C,          index id-0xFA
+
+OFFSCREEN = 0xFFFF
 _OFF_SPRITE_ID = 0x08
-_OFF_DI = 0x0C
+_OFF_SLOT_0C = 0x0C
+_OFF_SLOT_10 = 0x10
 _OFF_ANIM = 0x12
-_SPRITE_SRC_BYTES = TANDY_WORDS_PER_ROW * TANDY_ROWS * 4   # 512 bytes for one masked sprite
+_OFF_DRAW_TYPE = 0x14
+_OFF_VARIANT = 0x24
+
+# Compositor geometry per routine (masked Tandy base case, anim 0): (comp_ip, words_per_row, rows).
+_COMP_75A6 = (0x2E6E, 8, 16)
+_COMP_768E = (0x2F81, 4, 16)
+_COMP_7746 = (0x2FB6, 2, 8)
 
 
-def level_object_sprite_blocks(pool, level_graphics: bytes, descriptor_table) -> list[SpriteBlock]:
-    """The level-bank sprite blocks for a pool's active objects (Tandy 2E6E masked, anim 0).
+@dataclass(frozen=True)
+class SpriteSlot:
+    """One compositor blit the VM's draw routine issues for an object: source + destination + shape.
 
-    ``level_graphics`` is ``NativeLevel.graphics`` (the de-planarized G{n}.BIC sprite bank = the VM's
-    ``cs:[95AE]``).  ``descriptor_table`` is the ``cs:[9392]`` word table (indexed by ``sprite_id-0x1C``)
-    giving each sprite's byte offset into that bank -- it is NOT a simple ``*0x400`` formula (confirmed:
-    high ids like 0x162 map to a non-linear offset), so the real table must be read.  Returns one
-    :class:`SpriteBlock` per drawable level-bank object; common-bank (``sprite_id < 0x1C``),
-    ``anim != 0`` and off-screen (``di == 0xFFFF``) slots are skipped (documented follow-ups, not faked).
+    ``comp_ip`` is the Tandy masked-compositor leaf (2E6E/2F81/2FB6); ``di`` the page destination;
+    ``bank`` + ``src_off`` locate the sprite pixels; ``words_per_row``/``rows`` its geometry.  This is
+    the byte-exact unit the verify probe checks against the live 7596 dispatch.
+    """
+
+    comp_ip: int
+    di: int
+    bank: bytes
+    src_off: int
+    words_per_row: int
+    rows: int
+
+
+@dataclass(frozen=True)
+class SpriteDrawContext:
+    """The VM-free inputs the object draw needs: the sprite banks, frame tables and the cell half-stride.
+
+    Banks are the de-planarized buffers the VM keeps at the matching ``cs:[95xx]`` segment; the frame
+    tables are the ``cs:[9392]/[9192]/[8F92]`` word tables (sprite index -> byte offset into the bank);
+    ``half_stride`` is ``ds:[1028] >> 1`` -- the source advance to 75A6's second (``obj[+10]``) slot.
+    """
+
+    common_bank: bytes    # cs:[95A6] = MANEXPL.BIC   (75A6, id < 0x1C)
+    level_bank: bytes     # cs:[95AE] = NativeLevel.graphics (75A6, id >= 0x1C)
+    wide_bank: bytes      # cs:[95AA] = 2X2.BIC       (768E, id < 0xFA)
+    wide_bank_hi: bytes   # cs:[95AC] = 2X2C.BIC      (768E, id >= 0xFA)
+    compact_bank: bytes   # cs:[95A8] = 1X1.BIC       (7746)
+    table_75a6: Sequence[int]   # cs:[9392]
+    table_768e: Sequence[int]   # cs:[9192]
+    table_7746: Sequence[int]   # cs:[8F92]
+    half_stride: int            # ds:[1028] >> 1
+
+
+def _table_get(table: Sequence[int], index: int) -> int | None:
+    if 0 <= index < len(table):
+        return table[index] & 0xFFFF
+    return None
+
+
+def object_slots(sprite_id: int, draw_type: int, slot_0c: int, slot_10: int,
+                 ctx: SpriteDrawContext) -> list[SpriteSlot]:
+    """The compositor slots the VM would draw for one (already anim-0, non-variant) object.
+
+    Empty if the draw-type is not a sprite routine (0/1/2) or the frame-table index is out of range.
+    A slot whose destination is off-screen (``0xFFFF``) is omitted, exactly as the VM's per-slot check.
+    """
+    if draw_type >= len(DRAW_TYPE_ROUTINES):
+        return []
+    routine = DRAW_TYPE_ROUTINES[draw_type]
+
+    if routine == ROUTINE_75A6:
+        if sprite_id < THRESHOLD_75A6:
+            bank, index = ctx.common_bank, sprite_id
+        else:
+            bank, index = ctx.level_bank, sprite_id - THRESHOLD_75A6
+        off = _table_get(ctx.table_75a6, index)
+        if off is None:
+            return []
+        comp, words, rows = _COMP_75A6
+        slots: list[SpriteSlot] = []
+        if slot_0c != OFFSCREEN:
+            slots.append(SpriteSlot(comp, slot_0c, bank, off, words, rows))
+        if slot_10 != OFFSCREEN:
+            slots.append(SpriteSlot(comp, slot_10, bank, (off + ctx.half_stride) & 0xFFFF, words, rows))
+        return slots
+
+    if routine == ROUTINE_768E:
+        if slot_0c == OFFSCREEN:
+            return []
+        if sprite_id < THRESHOLD_768E:
+            bank, index = ctx.wide_bank, sprite_id
+        else:
+            bank, index = ctx.wide_bank_hi, sprite_id - THRESHOLD_768E
+        off = _table_get(ctx.table_768e, index)
+        if off is None:
+            return []
+        comp, words, rows = _COMP_768E
+        return [SpriteSlot(comp, slot_0c, bank, off, words, rows)]
+
+    # ROUTINE_7746
+    if slot_0c == OFFSCREEN:
+        return []
+    off = _table_get(ctx.table_7746, sprite_id)
+    if off is None:
+        return []
+    comp, words, rows = _COMP_7746
+    return [SpriteSlot(comp, slot_0c, ctx.compact_bank, off, words, rows)]
+
+
+def _slot_block(slot: SpriteSlot) -> SpriteBlock | None:
+    need = slot.words_per_row * slot.rows * 4
+    src = slot.bank[slot.src_off:slot.src_off + need]
+    if len(src) < need:
+        return None
+    tex = decode_masked_sprite(src, slot.words_per_row, slot.rows)
+    return SpriteBlock(slot.di, tex.pixels, tex.opaque)
+
+
+def object_sprite_blocks(pool, ctx: SpriteDrawContext) -> list[SpriteBlock]:
+    """The drawable sprite blocks for a pool's active, anim-0, non-variant objects.
+
+    Objects with ``anim (+12) != 0`` or the ``obj[+24]`` variant flag set are skipped (they select a
+    different / OR-inverted compositor -- documented follow-ups, not faked).
     """
     blocks: list[SpriteBlock] = []
     for i in range(len(pool)):
         if pool.active_word(i) == 0:
             continue
-        sprite_id = pool.word_at(i, _OFF_SPRITE_ID)
-        if sprite_id < COMMON_BANK_THRESHOLD:
+        if pool.word_at(i, _OFF_ANIM) != 0 or pool.word_at(i, _OFF_VARIANT) != 0:
             continue
-        if pool.word_at(i, _OFF_ANIM) != 0:
-            continue
-        di = pool.word_at(i, _OFF_DI)
-        if di == 0xFFFF:
-            continue
-        table_index = sprite_id - COMMON_BANK_THRESHOLD
-        if table_index >= len(descriptor_table):
-            continue
-        off = descriptor_table[table_index] & 0xFFFFF
-        src = level_graphics[off:off + _SPRITE_SRC_BYTES]
-        if len(src) < _SPRITE_SRC_BYTES:
-            continue
-        tex = decode_masked_sprite(src, TANDY_WORDS_PER_ROW, TANDY_ROWS)
-        blocks.append(SpriteBlock(di, tex.pixels, tex.opaque))
+        for slot in object_slots(
+            pool.word_at(i, _OFF_SPRITE_ID),
+            pool.word_at(i, _OFF_DRAW_TYPE),
+            pool.word_at(i, _OFF_SLOT_0C),
+            pool.word_at(i, _OFF_SLOT_10),
+            ctx,
+        ):
+            block = _slot_block(slot)
+            if block is not None:
+                blocks.append(block)
     return blocks

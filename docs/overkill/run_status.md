@@ -47,7 +47,58 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
-## 2026-07-03 - Object->sprite bridge (LEVEL bank) verified byte-exact vs the VM's 75A6
+## 2026-07-03 - MILESTONE: FULL object->sprite draw is native + byte-exact (all 3 routines, both slots)
+
+The complete VM-free object->sprite bridge now renders the real gameplay frame -- **player ship WITH
+exhaust flames + the top projectile + enemies** -- and is proved byte-exact against the VM's real
+draw-type dispatch. Visual + index-space confirmation on the L3 demo: native compose vs the VM
+playfield differ by only **54 px, ALL of them starfield** (a separate subsystem); every sprite pixel
+matches.
+
+**The real structure (this CORRECTS the earlier "level bank" entry below):** an object is drawn by ONE
+of three shared routines, selected by its draw-type word `obj[+14]` through `cs:[75A0]`
+(`{0:7746, 1:768E, 2:75A6}`) -- NOT by the sprite-id/bank. Each routine has its own bank, frame table,
+id threshold, compositor and slot layout:
+- **75A6** (`dtype 2`, e.g. the player): table `cs:[9392]`; id `<0x1C` -> common bank `cs:[95A6]` =
+  **MANEXPL.BIC**, else LEVEL bank `cs:[95AE]` = `NativeLevel.graphics` (index `id-0x1C`). Compositor
+  **2E6E** (8 words/32px, 16 rows). Draws **TWO slots**: `obj[+0C]` at `off`, then `obj[+10]` at
+  `off + (ds:[1028]>>1)` (the cell's second half) -- this is the ship body + exhaust.
+- **768E** (`dtype 1`, most effects): table `cs:[9192]`; id `<0xFA` -> `cs:[95AA]` = **2X2.BIC**, else
+  `cs:[95AC]` = **2X2C.BIC**. Compositor **2F81** (4 words/16px, 16 rows). ONE slot at `obj[+0C]`.
+- **7746** (`dtype 0`, compact): table `cs:[8F92]`; bank `cs:[95A8]` = **1X1.BIC**. Compositor **2FB6**
+  (2 words/8px, fixed 8 rows, one unrolled blit). ONE slot at `obj[+0C]`.
+
+Per-row DI advance = `words_per_row*2 + row_add` (`0x68` for both 2E6E & 2F81). The four global banks
+(MANEXPL/2X2/2X2C/1X1) were ALREADY recovered + verified in `asset_codecs/shared_assets.py`
+(`load_shared_startup_assets`); this work is the **mapping** (which shared asset feeds which
+sprite-draw segment) + the dispatch + the two-slot 75A6 split.
+
+- **`overkill/native_video/object_sprites.py`**: `object_slots(sid, dtype, +0C, +10, ctx)` ->
+  `list[SpriteSlot]` (the exact compositor blits); `object_sprite_blocks(pool, ctx)` -> decoded
+  `SpriteBlock`s via `decode_masked_sprite` (which already supports 2E6E/2F81/2FB6 widths). `ctx` =
+  `SpriteDrawContext` (the 5 banks + the 3 tables + `half_stride = ds:[1028]>>1`).
+- **Proof: `overkill/probes/verify_native_object_sprites.py`** drives the ORIGINAL draw-type dispatch
+  `1010:7596` per active anim-0/non-variant object, captures EVERY 2E6E/2F81/2FB6 blit `(comp_ip, di,
+  si)` and asserts `object_slots` reconstructs the identical full per-row sequence. **PASS: L1 8/8,
+  L2 2/2, L3 20/20, L4 2/2, L5 9/9.** (The earlier probe checked only the FIRST blit while driving
+  75A6 in isolation -- it passed vacuously for objects that actually use 768E; this drives the REAL
+  dispatch and the full sequence.)
+- Headless unit test: `tests/test_object_sprites.py` (dispatch, per-routine bank/table/threshold, the
+  75A6 two-slot split, skip rules).
+
+**Still open (documented, not faked):** `anim(+12)!=0` (a different phase target) and the `obj[+24]`
+OR-inverted variant (`2F40`/`2ECB`, decoders already exist in `sprite_textures`) are SKIPPED; wiring
+this bridge into `play_native.py` (build `ctx` from the shared banks + level + the boot tables) so the
+standalone renders enemies is the next slice. The 54-px starfield diff (top region) is a separate
+starfield-plate discrepancy to chase.
+
+## 2026-07-03 - Object->sprite bridge (LEVEL bank) verified byte-exact vs the VM's 75A6 [SUPERSEDED]
+
+> **SUPERSEDED by the entry above (2026-07-03).** This entry's model -- "sprite_id>=0x1C -> LEVEL bank
+> via 75A6" -- was **miscategorised**: the routine is chosen by `obj[+14]`, not the sprite id, and the
+> effect objects it described actually draw via **768E** (a different bank/table/compositor). The
+> verify here drove 75A6 in isolation and checked only the first blit, so it passed without exercising
+> the real path. The corrected, full-dispatch bridge above replaces it.
 
 Recovered the VM-free object->sprite bridge for the LEVEL sprite bank and proved it byte-exact
 against the original draw:

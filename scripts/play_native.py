@@ -28,9 +28,12 @@ STATUS -- every layer here is REAL recovered code (no placeholders, fail loud on
   :func:`_object_update_globals`).
 * RENDERING: the real recovered parallax STARFIELD background (``native_video.starfield_plate
   .render_starfield_plate``, proven byte-exact vs the VM), advanced each frame by the recovered
-  ``advance_starfield`` move. The SPRITE layer (player + enemies) is the next piece to wire -- the
-  object-record -> sprite-pixel bridge -- so today the standalone draws the real background but not
-  yet the ships; it does NOT fake a ship in the meantime.
+  ``advance_starfield`` move, PLUS the full object SPRITE layer -- the player ship (with exhaust
+  flames), enemies and effects -- through the recovered object-record -> sprite-pixel bridge
+  (``native_video.object_sprites.object_sprite_blocks``), proven byte-exact vs the VM's 7596
+  draw-type dispatch. On the L3 capture the whole composed frame matches the VM present page
+  0-for-0. Objects mid-animation-phase or using the OR-inverted variant are not drawn yet (documented
+  gaps) -- they are SKIPPED, never faked.
 * There is NO placeholder starting state: the cold level-start state is not a recovered VM-free
   system yet (Bucket F level loader), so gameplay REQUIRES ``--snapshot`` (a real captured state) and
   fails loud without it, rather than invent a spawn.
@@ -46,10 +49,12 @@ VM-less standalone.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import re
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -72,9 +77,19 @@ from overkill.recovered.systems.tandy_screen import (  # noqa: E402
     TANDY_PALETTE_RGB,
 )
 from overkill.native_video.front_end import TITLE_OPTIONS, decode_fullscreen_image  # noqa: E402
+from overkill.native_video.object_sprites import (  # noqa: E402
+    SpriteDrawContext,
+    object_sprite_blocks,
+)
 
 DEFAULT_BUNDLE = ROOT / "artifacts" / "static_runtime_bundle" / "memory_1mb.bin"
 DEFAULT_CONTAINER = ROOT / "assets" / "OVERKILL"
+
+# The three sprite-frame tables + the draw-type dispatch live in the game code segment (CS:1010) --
+# constants materialized in the static bundle (identical there and in every snapshot).
+_CS = 0x1010
+_TABLE_75A6, _TABLE_768E, _TABLE_7746 = 0x9392, 0x9192, 0x8F92
+_SPRITE_CELL_STRIDE_OFF = 0x1028   # ds:[1028] -- 75A6's source advance to the +10 second slot is >>1
 
 
 class _FlatMemory:
@@ -114,9 +129,24 @@ def _read_starfield(mem: "_FlatMemory", ds: int) -> StarfieldState:
     return StarfieldState(stars, counters, enabled)
 
 
-def _seed_state_from_snapshot(snapshot_dir: Path) -> tuple[NativeGameState, StarfieldState]:
+@dataclass(frozen=True)
+class _SeededStart:
+    """A REAL starting point read from a captured snapshot: the game+starfield state, the sprite
+    half-stride, and the live scroll cursor trio (DS:234C/234E/2350) so the first native frame lands
+    the world + sprites exactly where the VM had them."""
+
+    state: NativeGameState
+    starfield: StarfieldState
+    half_stride: int
+    origin_x: int    # DS:234E
+    row_base: int    # DS:2350
+    row_source: int  # DS:234C
+
+
+def _seed_state_from_snapshot(snapshot_dir: Path) -> "_SeededStart":
     """Seed a REAL starting state from a captured VM memory dump (a static file read) -- the game
-    state AND the starfield state, both projected from the same captured data segment.
+    state, the starfield state, the 75A6 sprite half-stride (``ds:[1028] >> 1``) and the live scroll
+    cursor, all projected from the same captured data segment.
 
     The cold level-start state (player spawn + object-table seed + the starfield init) is NOT yet a
     recovered pure system (Bucket F "level loader" is still open), so there is no VM-free way to
@@ -129,7 +159,14 @@ def _seed_state_from_snapshot(snapshot_dir: Path) -> tuple[NativeGameState, Star
     mem = _FlatMemory((snapshot_dir / "memory_1mb.bin").read_bytes())
     cpu_line = json.loads((snapshot_dir / "state.json").read_text(encoding="utf-8"))["cpu_snapshot"]
     ds = int(re.search(r"DS=([0-9A-Fa-f]{4})", cpu_line).group(1), 16)
-    return read_native_game_state(mem, ds), _read_starfield(mem, ds)
+    return _SeededStart(
+        state=read_native_game_state(mem, ds),
+        starfield=_read_starfield(mem, ds),
+        half_stride=(mem.rw(ds, _SPRITE_CELL_STRIDE_OFF) >> 1) & 0xFFFF,
+        origin_x=mem.rw(ds, 0x234E),
+        row_base=mem.rw(ds, 0x2350),
+        row_source=mem.rw(ds, 0x234C),
+    )
 
 
 # Host key -> the recovered FIXED_DIRECTION_KEYS scancode it corresponds to (single source of
@@ -166,18 +203,60 @@ def _object_update_globals(game: NativeGame) -> ObjectUpdateGlobals:
     )
 
 
-def _render_frame(game: NativeGame, starfield: StarfieldState):
-    """Render the real recovered playfield background: the parallax starfield plate.
+def _build_sprite_context(bundle_data: bytes, container_data: bytes, game: NativeGame,
+                          half_stride: int) -> SpriteDrawContext:
+    """Assemble the VM-free object->sprite draw context from the game's own data.
 
-    This is the byte-exact recovered starfield (``native_video.starfield_plate.render_starfield_plate``,
-    proven vs the VM), plotted at the game's live present cursor (DS:234C = ``game.row_source``). It is
-    the BACKGROUND layer only; the sprite layer (player/enemies) is the next recovered piece to wire --
-    the object-record -> sprite-pixel bridge -- and until it lands this draws the real background, not a
-    fake ship. No placeholder: every pixel here is the recovered starfield.
+    The five sprite banks are the recovered de-planarized buffers (the four global startup banks from
+    ``load_shared_startup_assets`` -- MANEXPL/2X2/2X2C/1X1 -- plus this level's own sprite bank), and
+    the three frame tables are the ``CS:9392/9192/8F92`` word tables read from the static bundle (game
+    code constants). This is exactly the input ``object_sprite_blocks`` maps each object slot through,
+    proven byte-exact vs the VM's 7596 dispatch by ``verify_native_object_sprites``.
     """
+    from overkill.asset_codecs.shared_assets import load_shared_startup_assets
+
+    shared = load_shared_startup_assets(container_data)
+
+    def cs_word(off: int) -> int:
+        p = (_CS * 16 + (off & 0xFFFF)) & 0xFFFFF
+        return bundle_data[p] | (bundle_data[(p + 1) & 0xFFFFF] << 8)
+
+    return SpriteDrawContext(
+        common_bank=shared["MANEXPL.BIC"],
+        level_bank=game.level.graphics,
+        wide_bank=shared["2X2.BIC"],
+        wide_bank_hi=shared["2X2C.BIC"],
+        compact_bank=shared["1X1.BIC"],
+        table_75a6=[cs_word(_TABLE_75A6 + 2 * k) for k in range(0x400)],
+        table_768e=[cs_word(_TABLE_768E + 2 * k) for k in range(0x100)],
+        table_7746=[cs_word(_TABLE_7746 + 2 * k) for k in range(0x100)],
+        half_stride=half_stride,
+    )
+
+
+def _render_frame(game: NativeGame, starfield: StarfieldState, ctx: SpriteDrawContext):
+    """Render the real recovered playfield: the parallax starfield plate + the object sprite layer.
+
+    The background is the byte-exact recovered starfield (``render_starfield_plate``, proven vs the VM)
+    at the game's live present cursor (DS:234C = ``game.row_source``). Over it, the recovered
+    object->sprite bridge (``object_sprite_blocks``) draws every active object -- the player ship (with
+    its exhaust flames), enemies and effects -- each decoded from its real sprite bank at its real
+    destination, proven byte-exact vs the VM's 7596 draw-type dispatch. No placeholder: every pixel is
+    recovered game data. (Objects mid-animation-phase or using the OR-inverted variant are not drawn
+    yet -- documented gaps -- but they are skipped, never faked.)
+    """
+    from overkill.native_video.frame import SnapshotSprite
+    from overkill.native_video.playfield import compose_playfield_indices
     from overkill.native_video.starfield_plate import render_starfield_plate
 
-    return render_starfield_plate(starfield, game.row_source)
+    plate = render_starfield_plate(starfield, game.row_source)
+    blocks: list = []
+    for pool in (game.state.special_pool, game.state.effect_pool, game.state.object_pool):
+        blocks.extend(object_sprite_blocks(pool, ctx))
+    if not blocks:
+        return plate
+    sprite = SnapshotSprite(identity=0, sprite_id=0, anim_phase=0, screen_di=0, blocks=tuple(blocks))
+    return compose_playfield_indices(plate, [sprite], game.row_source)
 
 
 def _run_title_screen(display, pygame, container_data) -> bool:
@@ -263,8 +342,17 @@ def main(argv=None) -> int:
             "to cold-start gameplay without the VM today, and this program will not fake one.")
 
     container_data = container_path.read_bytes()
-    state, starfield = _seed_state_from_snapshot(Path(args.snapshot))
-    game = NativeGame.load_level(bundle_path.read_bytes(), container_data, args.level, state)
+    bundle_data = bundle_path.read_bytes()
+    seed = _seed_state_from_snapshot(Path(args.snapshot))
+    starfield = seed.starfield
+    # Cold-load the level, then plant the captured live scroll cursor (DS:234C/234E/2350) so the first
+    # native frame renders the world + sprites exactly where the VM had them.
+    game = dataclasses.replace(
+        NativeGame.load_level(bundle_data, container_data, args.level, seed.state,
+                              origin_x=seed.origin_x, row_base=seed.row_base),
+        row_source=seed.row_source,
+    )
+    sprite_ctx = _build_sprite_context(bundle_data, container_data, game, seed.half_stride)
     print(f"cold-loaded LEVEL{args.level + 1}: tile_plane={len(game.level.tile_plane)}B "
           f"blocks={len(game.level.blocks)}B graphics={len(game.level.graphics)}B (VM-free)")
 
@@ -281,7 +369,7 @@ def main(argv=None) -> int:
     tick = 0
     gap: str | None = None
     running = True
-    last_frame = _render_frame(game, starfield)
+    last_frame = _render_frame(game, starfield, sprite_ctx)
     try:
         while running:
             for ev in pygame.event.get():
@@ -305,7 +393,7 @@ def main(argv=None) -> int:
                     )
                     starfield = advance_starfield(starfield)  # the recovered parallax move, one frame
                     tick += 1
-                    last_frame = _render_frame(game, starfield)
+                    last_frame = _render_frame(game, starfield, sprite_ctx)
                 except Exception as exc:  # noqa: BLE001 -- a real unrecovered gap, report + hold
                     gap = f"{type(exc).__name__}: {exc}"
                     print(f"gameplay gap at tick {tick}: {gap}")
