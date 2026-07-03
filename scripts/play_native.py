@@ -60,6 +60,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from overkill.native_app import GameplayFrameSkeleton  # noqa: E402
 from overkill.native_game import NativeGame  # noqa: E402
 from overkill.recovered.domain.frame_loop import FrameInput  # noqa: E402
 from overkill.recovered.domain.native_game_state import NativeGameState  # noqa: E402
@@ -366,7 +367,37 @@ def main(argv=None) -> int:
             return 0
 
     clock = pygame.time.Clock()
-    tick = 0
+    # The frame runs through the skeleton (overkill.native_app) in the ORIGINAL 97B2 stage order:
+    # present the state 9B2E produced last tick, THEN advance -- the 9B2E-family step polls its own
+    # input, exactly like the original's input-poll-first controller.  The mutable cell carries the
+    # carried state between the two closures.
+    cell = {"game": game, "starfield": starfield, "tick": 0}
+
+    def _advance() -> None:
+        keys = pygame.key.get_pressed()
+        pressed = _pressed_scancodes(pygame, keys)
+        frame_input = FrameInput(control_map=DEFAULT_CONTROL_MAP,
+                                 key_state=key_state_from_pressed(pressed))
+        g = cell["game"]
+        g, _player_step = g.step(
+            frame_input,
+            no_clamp=False,
+            repeat_9790=0, state_232a=0, scroll_2350=g.row_base,
+            bdac=0, a958=0, be06=0,
+            source_index=0, source_x=0, source_y=0,
+            read_ds_word=lambda off: 0,
+            update_globals=_object_update_globals(g),
+            scroll_gate=(0, 0, 0),
+        )
+        cell["game"] = g
+        cell["starfield"] = advance_starfield(cell["starfield"])  # the recovered parallax move
+        cell["tick"] += 1
+
+    skeleton = GameplayFrameSkeleton(
+        render=lambda: _render_frame(cell["game"], cell["starfield"], sprite_ctx),
+        advance=_advance,
+    )
+
     gap: str | None = None
     running = True
     last_frame = _render_frame(game, starfield, sprite_ctx)
@@ -376,29 +407,14 @@ def main(argv=None) -> int:
                 if ev.type == pygame.QUIT or (ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE):
                     running = False
             if gap is None:
-                keys = pygame.key.get_pressed()
-                pressed = _pressed_scancodes(pygame, keys)
-                frame_input = FrameInput(control_map=DEFAULT_CONTROL_MAP,
-                                         key_state=key_state_from_pressed(pressed))
                 try:
-                    game, _player_step = game.step(
-                        frame_input,
-                        no_clamp=False,
-                        repeat_9790=0, state_232a=0, scroll_2350=game.row_base,
-                        bdac=0, a958=0, be06=0,
-                        source_index=0, source_x=0, source_y=0,
-                        read_ds_word=lambda off: 0,
-                        update_globals=_object_update_globals(game),
-                        scroll_gate=(0, 0, 0),
-                    )
-                    starfield = advance_starfield(starfield)  # the recovered parallax move, one frame
-                    tick += 1
-                    last_frame = _render_frame(game, starfield, sprite_ctx)
+                    last_frame = skeleton.tick()
                 except Exception as exc:  # noqa: BLE001 -- a real unrecovered gap, report + hold
                     gap = f"{type(exc).__name__}: {exc}"
-                    print(f"gameplay gap at tick {tick}: {gap}")
-                display.set_title(f"OVERKILL - native (VM-less)  tick={tick}  "
-                                  f"xy=({game.state.special_pool.x_word(0)},{game.state.special_pool.y_word(0)})")
+                    print(f"gameplay gap at tick {cell['tick']}: {gap}")
+                g = cell["game"]
+                display.set_title(f"OVERKILL - native (VM-less)  tick={cell['tick']}  "
+                                  f"xy=({g.state.special_pool.x_word(0)},{g.state.special_pool.y_word(0)})")
             else:
                 display.set_title(f"OVERKILL - native (VM-less)  HELD on gap: {gap[:70]}")
             display.draw(last_frame)

@@ -50,6 +50,46 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - STRUCTURE PIVOT: the native app skeleton + the recovered top-level design
+
+**Direction change (user):** recover the game's HIGH-LEVEL structure first -- game loop, mode/state
+transitions, level flow, orchestration -- with explicit fail-loud gaps; fill behavioural details later
+via targeted demos. Stop chasing edge-case leaves.
+
+**New top-level structure recovered this pass (disassembly-grounded, D007/D080..D0EF + 97B2..981D):**
+- **`1010:D007` is the attract/story SCENE LOOP**, a scene machine over three DS cells: `BE06` =
+  scene id (indexes a 6-byte descriptor table at `DS:BE18` -> the `CS:0BE4` panel directory; each
+  scene's graphic cell is drawn every frame at cursor (0x1F,0x18) via `D04D`); `BE08` = per-scene
+  countdown (dec per frame; at 0 -> reload 0x64 and `BE06++` = auto-advance); `BE0A` = a mod-0x14
+  **demo auto-fire cycle** -- on ticks 0F/11/13 it OVERWRITES the input with FIRE (`98BE=10h`) and
+  drives `A067` with `BP=237C` (the attract mode literally plays itself). Gate: scenes >= 8 with
+  countdown >= 0x14. Exits on real FIRE / any key (`98C3`) / terminal scene `0x13`; scene 0 branches
+  to `D160` (not recovered).
+- **`1010:97B2` is the gameplay frame loop** with THREE transition flags out of gameplay:
+  `A344 -> jmp 9734`, `A342 -> jmp 9902`, `A346 -> jmp 9908` (death/level-end/game-over family;
+  setters live in 9B2E's children -- not yet identified). Full stage order pinned in the skeleton.
+
+**New code:**
+- `overkill/native_app.py` -- the VM-less application SKELETON: the recovered top-level flow map
+  (module docstring = the design doc), `GAMEPLAY_FRAME_STAGES` (the 97B2 call order as a typed,
+  machine-readable stage map: native / host / gap / unmonitored per stage), `describe_gaps()`,
+  `GameplayFrameSkeleton` (runs the native stages in the ORIGINAL order: present-then-advance) and
+  `AttractSequencer` (the D007 machine; NOT wired into play_native -- scene content unrecovered).
+- `recovered/domain/gaps.py` -- `RecoveryGap` (fail-loud, greppable) + `UnmonitoredGap` (a declared
+  gap whose trigger state the native model cannot even see yet -- e.g. A342/A344/A346).
+- `recovered/domain/attract.py` + `recovered/systems/attract.py` -- the pure D007/D04D scene rules
+  (gate/auto-fire/countdown/exit), **disassembly-grounded, NOT yet demo-witnessed** (status in the
+  module docstring; witness before shipping a visible attract mode).
+- `scripts/play_native.py` ticks through `GameplayFrameSkeleton` in the original 97B2 order now.
+- Tests: `test_attract.py` (7), `test_native_app.py` (7). VM-free smoke: 30 skeleton ticks, zero
+  `dos_re` imports.
+
+**Next structural steps (in this direction):** witness the attract rules on a cold-start demo probe;
+identify the A342/A344/A346 setters (the mode-transition semantics -- what ends a level); recover the
+`DS:BE18` scene-descriptor table as data (scene -> graphic/story page); model `9734`/`9902`/`9908`
+(the transition targets); grow `NativeGameState` to carry the transition flags so the loop can end a
+level fail-loudly instead of unmonitored.
+
 ## 2026-07-03 - Collapse: 9C01 axis jump-table offset rule extracted to pure frame_loop.py
 
 Extracted the ``1010:9C01`` axis-condition jump-table index rule out of the lifted
