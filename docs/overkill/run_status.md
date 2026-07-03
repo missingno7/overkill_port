@@ -41,6 +41,41 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-03 - DIRECTION (user): the VM-less standalone must mirror pre2_port (separate package + deploy→dist)
+
+User set the endgame architecture explicitly and pointed at `D:\Games\DOS\pre2_port` (the mature, nearly
+done sibling) as the template. Studied it; the target is now recorded concretely in the brief's **Bucket G**
+(`overnight_endgame_execution.md`). Key points:
+
+- The VM-less game is a **separate self-contained package** (`overkill/native/`, mirroring `pre2/native/`)
+  that imports ONLY the pure recovered layer + its own native runtime — never `dos_re`/hooks/cpu/mem —
+  with its OWN screen (`native/vga.py`), boot state as **pure constants** (`native/boot_data.py`, built
+  once by a workbench probe; the VM's only remaining BUILD-TIME role), `native/cold_boot.py`,
+  `native/front_end.py`, `native/runtime.py`, `native/render.py`, `native/audio.py`.
+- **`scripts/play_native.py`** (rename `native_play.py`) is THE standalone entrypoint: DEFAULT = cold-boot
+  the whole game from `--game-root` game data (no snapshot, no VM); `--snapshot`/`--from-level` are DEBUG.
+- **`scripts/deploy_native.py`** (pre2 has one): import-closure of play_native.py → deny-list every VM
+  module → copy to `dist/overkillnative/` → **smoke-test in a scrubbed subprocess asserting NO VM module
+  imports**. That smoke test is the machine-checked VM-free proof. `dist/` = ships with only the game data.
+
+**Correcting the current confusion (the user's exact complaint):** today's `scripts/native_play.py` is NOT
+the standalone — its `main()` requires `--snapshot` and just presents one captured frame; and
+`play.py --backend native` spawns a VM CHILD (`--mp-publish`) with the "native" part being only the
+decoupled *presenter* — so `--backend native` is HYBRID (VM + native present), not VM-less.
+
+**Where overkill actually is vs the target (better than "nothing"):** the pure *systems* exist, and
+`overkill/native_game.py` (`NativeGame`) already cold-loads a level from the original files
+(`asset_codecs.load_native_level`) and advances the recovered frame stages VM-free — "the standalone
+backbone." Missing for a real `play_native.py`: (1) an `overkill/native/` package assembling
+state+cold_boot+render+input+present into a runnable level loop (the `--from-level` standalone — closest
+to shippable, since `NativeGame` exists), (2) the front-end/cold-boot-from-start flow (Bucket E), (3)
+`deploy_native.py`→dist. **Concrete first slice:** stand up `scripts/play_native.py` that runs a level via
+`NativeGame` + `native_video` + pygame present, VM-free (holding on the first unrecovered stage-gap, exactly
+like pre2's play_native) — a true VM-less-single-level entrypoint — then grow the front-end and the deploy
+script. (Note: this session's Bash safety classifier was intermittently unavailable, so the rename + new
+entrypoint + deploy script — which need running/verifying — are staged as the next concrete slice, not done
+blind; only the durable architecture direction was recorded this turn.)
+
 ## 2026-07-03 - VISUAL CONFIRMATION: cold-boot title/options screen renders correctly; found the real bug
 
 Rendered a screenshot from a fresh cold-boot run (dependency-free PNG dump, reusing `scripts/render_frame

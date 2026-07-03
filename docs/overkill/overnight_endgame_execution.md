@@ -395,15 +395,44 @@ So the native game can load its own data instead of inheriting a VM-loaded image
   scroll bounds). Gate: the built state is byte-exact vs the VM's post-load memory.
 - Milestone: with Bucket C's frame + this, a **VM-less single LEVEL** loads and plays.
 
-### Bucket G — the native boot backbone (cold-boot §1.5/§1.8: the native `main`)
-The cold-start wiring, added once A–F provide the pieces:
-- A native entry (`scripts/native_boot.py`) that owns the cold start: set up the host
-  (video/timer/audio/input), then run the front-end flow controller (E) → level load (F) →
-  the frame loop (C) + native render (native_video) + native audio (D) → transitions →
-  ending. No `dos_re` on the path.
-- The timer/tick model the whole game is paced by (`064A` installs the `06E5` IRQ0 at ~72.8 Hz)
-  becomes a native clock driving both the frame loop and the audio drivers.
-- Gate: a recorded native session boots cold and plays through to the ending (§1.8).
+### Bucket G — the native boot backbone + the SEPARATE VM-less standalone (cold-boot §1.5/§1.8)
+**Target architecture — mirror `D:\Games\DOS\pre2_port` (the mature sibling; study it directly).**
+The VM-less game must be a **separate, self-contained package** that imports ONLY the pure recovered
+layer and its own native runtime — never `dos_re`/`cpu`/`mem`/hooks — and ships to `dist/` with the
+game data files, running with no emulator at all. Concretely, the pre2 pattern to reproduce:
+
+- **`overkill/native/` package** — the VM-less runtime, separate from the RE workbench. Its modules
+  (per pre2's `pre2/native/`): `state.py` (`NativeGameState`), `vga.py` (its OWN screen/present, not
+  `dos_re`'s), `boot_data.py` (the game's initialized data segment as **pure constants** — built ONCE
+  by a workbench probe using the VM, e.g. `overkill/probes/extract_boot_data.py`; the VM's only
+  remaining, BUILD-TIME role, never a runtime dep — so no EXE/boot image at runtime), `cold_boot.py`
+  (`native_cold_boot(game_root, level)` → loads the game's own data + boot constants, no VM),
+  `front_end.py` (the intro→title→menu→map scene-flow generator, Bucket E), `runtime.py`
+  (`native_frame_step`, the gameplay frame, Bucket C), `render.py` (drives `native_video`),
+  `audio.py` (Bucket D), `input.py`. It consumes `overkill/recovered/systems` (the pure core).
+- **`scripts/play_native.py`** — THE standalone entrypoint (rename `scripts/native_play.py` to this).
+  DEFAULT behaviour: **cold-boot the whole game VM-less** from `--game-root` (the game data) + the boot
+  constants — intro → menu → level → play — reporting a "not-yet-recovered gap" and holding the last
+  frame when it hits one (pre2's `play_native.py` is the exact template). `--snapshot`/`--from-level`
+  are DEBUG-only paths. NB: today's `native_play.py` is NOT this — it is a snapshot viewer + the
+  `--backend native` *presenter* whose game still runs on a VM child; `--backend native` is HYBRID,
+  not the standalone. The standalone is this Bucket-G endgame, built once A–F provide the pieces.
+- **`scripts/deploy_native.py`** — the build→`dist/` script (pre2's is the template): compute the
+  import closure of `play_native.py`, **deny-list every VM/workbench module** (`dos_re`, `overkill.hooks`,
+  `overkill.runtime`, `cpu`/`mem`, the `bridge`/`probes`/`gameplay` VM-facing code), copy the closure +
+  a launcher into `dist/overkillnative/`, and **SMOKE-TEST it in a scrubbed subprocess** (sys.path =
+  the dist folder only) — cold-boot, run ticks, render a frame, and assert NO VM module was imported.
+  That smoke test is the machine-checked proof the shipped game is truly VM-free.
+- The timer/tick model (`064A` installs the `06E5` IRQ0 at ~72.8 Hz) becomes a native clock driving
+  both the frame loop and the audio drivers.
+- **Gate:** `deploy_native.py` builds + smoke-tests green (VM-free), and a recorded native session
+  cold-boots and plays through to the ending (§1.8), with `--backend vm` kept only as the oracle.
+
+**Where overkill is vs this target (2026-07-03):** the pure *systems* exist (`recovered/systems`),
+the render self-compose is byte-exact, and the HYBRID cold-boot (VM + recovered hooks) reaches the
+menu — but the `overkill/native/` runtime PACKAGE above does not exist yet, so there is no true VM-less
+`play_native.py` today. Building that package (state → cold_boot from data+constants → front_end →
+frame loop → render/audio) is the remaining endgame; the recovered systems are its parts.
 
 ---
 
