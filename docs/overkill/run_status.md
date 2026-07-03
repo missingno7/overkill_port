@@ -1,7 +1,11 @@
 > **SESSION HANDOFF (2026-07-03, updated).** A fresh repo-rooted session picks up here. Everything you
 > need is **in this repo**: read `CLAUDE.md` → `AGENTS.md` → `overnight_endgame_execution.md` (the
-> `/goal` brief). State: suite **green (1089 passed / 23 skipped)**, tree clean, all work pushed to
+> `/goal` brief). State: suite **green (1100 passed / 23 skipped)**, tree clean, all work pushed to
 > `main`, pure% ≈ 30.3%. Launch with `/loop /goal`.
+>
+> **MILESTONE: a hooks-ON cold boot now reaches a STABLE idle loop at the main menu, zero crashes.**
+> See the dated entry below for the full readout — this is the first time a cold boot has run
+> end-to-end (loader → boot self-check → menu render) without human-fed input or a crash.
 >
 > **The gameplay-demo-witnessable frontier is EXHAUSTED — the next phase is the COLD-BOOT runtime.**
 > This is the single most important orientation fact for the next run. What's done this session:
@@ -26,6 +30,32 @@
 > FIRST; it unblocks the whole phase. This is a large, fresh-context undertaking — best begun with a
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
+
+## 2026-07-03 - MILESTONE: hooks-ON cold boot reaches a stable menu idle loop, zero crashes (600K steps)
+
+With the `519A`/`5A6C` dispatcher fixes (below) + the checksum accelerator (`boot_selfcheck_checksum`,
+inlined as a step-hook on `1010:C916` — same technique validated earlier, not yet wired into
+`create_overkill_runtime` itself) applied to a hooks-ON boot, ran a bounded, incrementally-logged probe
+(scratch `bootcheck4.py`, `Monitor`-watched so progress is visible live instead of silent): **600,000
+steps, zero crashes.** The boot goes DOS loader → boot self-check (accelerated) → menu-loading text/cell
+render → and settles into a **stable idle loop** cycling `1010:D007 / 1010:4A4x / 1010:558B (the known
+menu-idle address) / 1F8F:0253 (a timer-ISR overlay)`, with the unique-`(cs,ip)` working set flat at
+**1827** across every 50K-step checkpoint from step 150K to 600K — the signature of a correct poll/wait
+loop, not a hang or bug. This is the first time a cold boot has run this far with NO crash and NO
+manual intervention.
+
+**What this proves:** the cold-boot render + menu-load path is now substantially working under the
+recovered hooks. **What's next to go further:** the idle loop is waiting for input (a keypress to start
+a game) — advancing past it needs feeding synthetic keyboard input to the runtime mid-boot (the same
+`dos_re` keyboard-state mechanism the demo-input pump uses), the same way a demo drives gameplay. That is
+the concrete next step toward a real cold-boot-to-level harness.
+
+**Process note:** the exploratory probe script initially had NO incremental output (wrote its result
+only at the very end) and was left running unbounded for ~1 hour with zero visibility before being
+killed — a mistake. Rewrote it to flush a progress line to disk every 50K steps and watched it live via
+`Monitor` with a bounded step count + a hard timeout, so any future stall is visible within seconds, not
+hours. Use this pattern (bounded budget + incremental flush + Monitor) for any further boot-stepping
+exploration.
 
 ## 2026-07-03 - Cold-boot harness: 519A + 5A6C unlifted-backend dispatch fixed (clears 518C/85D5/5EF9)
 
