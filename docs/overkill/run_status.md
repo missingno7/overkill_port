@@ -55,6 +55,18 @@ not for the piece-by-piece recovery.
 The boot checksum accelerator (committed) + this realization mean the harness itself is deferrable to
 the end; recovery can proceed leaf-by-leaf now.
 
+**Follow-up (2026-07-03): the three leaves share one root — the `526A` graphics decode.** Traced the
+PANEL-load dispatcher: `0CB8/0CC8/0CD8/0CE8` are the 4 load modes (block/sprite × directory) that set
+`cs:[0BD6]/[0BD8]` then `call 526A` (the real decode). The `CS:0BE4` cell directory (item 2) is
+populated *inside* `526A`, and the `859E` composer (item 1) sits on top of the decoded PANEL + that
+directory. So none of the three has a clean isolated entry point — they all need the `526A` decode
+internals understood first. **Conclusion:** the cold-boot render is a genuinely entangled multi-routine
+recovery rooted at `526A`, not a set of quick independent leaves — a substantial, focused undertaking
+best begun with FRESH context (start at `526A`: map the decode + how it fills `CS:0BE0/0BE4`, gate the
+decoded PANEL + directory vs a snapshot, then the `859E` composer over `paste_panel_cell`). The clean,
+independently-verifiable pieces this session already banked (`paste_panel_cell`, `boot_selfcheck_checksum`,
+both oracle-gated) remain the reusable bricks for that effort.
+
 ## 2026-07-03 - Cold-boot: boot self-check checksum recovered + ACCELERATION proven to clear wall 1
 
 Built the first real piece of the cold-boot witness harness and proved the strategy. The boot
