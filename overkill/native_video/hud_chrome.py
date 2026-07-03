@@ -40,6 +40,35 @@ def _le_word(source: np.ndarray, off: int) -> int:
     return int(source[off]) | (int(source[off + 1]) << 8)
 
 
+def xy_to_di_5a00(x: int, y: int) -> int:
+    """1010:5A00 (x,y) -> packed-B800 cell cursor: ``(y&3)*0x2000 + (y>>2)*0xA0 + x*4``.
+
+    ``x`` is a 4-byte cell column, ``y`` a scanline; the ``(y&3)*0x2000`` term is the Tandy
+    four-bank interleave and ``(y>>2)*0xA0`` the 160-byte row stride."""
+    return (((y & 3) * 0x2000) + ((y >> 2) * 0xA0) + (x * 4)) & 0xFFFF
+
+
+def compose_status_counters_61dc(page: np.ndarray, panel_source: np.ndarray, dir_table,
+                                 counters, *, a95a: int, draw_trailing: bool) -> np.ndarray:
+    """Compose the 1010:61DC status-counter cells + trailing markers into the packed ``page``.
+
+    Recovered from 61DC/6296: six counter cells starting at ``xy_to_di_5a00(0x1F, 0x40)`` (0x0A7C),
+    stepping ``di += 4`` per cell, each cell ``dir[counter_value + 0x19]`` (6296).  Then, only when
+    the ``[A95A]`` marker differs from ``[2374]`` (``draw_trailing``), two trailing cells: at
+    ``(0x1F, 0x0C)`` cell ``dir[(0 if a95a==0xFFFF else a95a) + 0x20]``, and at ``(0x21, 0x18)`` cell
+    ``dir[0x1E]``.  ``counters`` are the six post-countdown values (``SS:2368..2372``); ``dir_table``
+    the ``CS:0BE4`` directory.  Byte-exact vs the VM's 61DC by ``verify_native_hud_chrome.py``.
+    """
+    di = xy_to_di_5a00(0x1F, 0x40)
+    for i, value in enumerate(counters):
+        paste_panel_cell(page, panel_source, dir_table[(value + 0x19) & 0xFFFF], (di + i * 4) & 0xFFFF)
+    if draw_trailing:
+        s1 = 0 if a95a == 0xFFFF else a95a
+        paste_panel_cell(page, panel_source, dir_table[(s1 + 0x20) & 0xFFFF], xy_to_di_5a00(0x1F, 0x0C))
+        paste_panel_cell(page, panel_source, dir_table[0x1E], xy_to_di_5a00(0x21, 0x18))
+    return page
+
+
 def compose_status_cells_859e(page: np.ndarray, panel_source: np.ndarray, dir_table,
                               cells) -> np.ndarray:
     """Compose the 4 HUD status-cell groups (1010:859E via 85D5) into the packed ``page``.

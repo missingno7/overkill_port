@@ -27,6 +27,27 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-03 - HUD status-COUNTER composer (61DC) RECOVERED too, byte-exact vs the VM
+
+Extended the HUD-chrome recovery to `1010:61DC` (the status-counter display). Same snapshot-driven
+oracle. Recovered its composition: 6 counter cells from `xy_to_di_5a00(0x1F,0x40)=0x0A7C` stepping
+`di+=4`, each cell `dir[counter_value + 0x19]` (`6296`); plus 2 trailing cells gated on `[A95A] !=
+[2374]` — at `(0x1F,0x0C)` `dir[(a95a==FFFF?0:a95a) + 0x20]` and at `(0x21,0x18)` `dir[0x1E]`. Also
+recovered `5A00` xy→di: `(y&3)*0x2000 + (y>>2)*0xA0 + x*4` (Tandy 4-bank interleave; confirmed on 3
+witnessed samples). Added `native_video/hud_chrome.compose_status_counters_61dc` + `xy_to_di_5a00`.
+
+**Gate:** `verify_native_hud_chrome.py` now drives BOTH `859E` and `61DC` on a snapshot and asserts each
+composer reproduces its B800 byte-exact — **PASS diff=0 on L2/L4/L5** (both). 3 more VM-free unit tests.
+NOTE: on these snapshots the 6 counters are all 0, so the value→cell map `dir[value+0x19]` is witnessed
+only for value 0 (the nonzero path is read straight from `6296`'s `add si,0x19; dir[si]` but is
+witness-poor). Suite green; layers+arch+lint green.
+
+**Cold-boot chrome status:** `paste_panel_cell` (306F) ✓, `compose_status_cells_859e` (859E cells) ✓,
+`compose_status_counters_61dc` (61DC counters) ✓ — all byte-exact-verified. The remaining static chrome
+is the panel/border **background** (the big 40×6 `dir[a95a+0x20]` cell 61DC draws is part of it, now
+covered) + any borders drawn by other load-time routines. Next: find/verify the remaining background
+draw(s) via the same drive-on-snapshot oracle, then assemble the full static-HUD layer for the frame.
+
 ## 2026-07-03 - HUD status-cell composer (859E) RECOVERED, byte-exact vs the VM across 5 snapshots
 
 Built + verified `native_video/hud_chrome.compose_status_cells_859e` — the native form of the `859E`

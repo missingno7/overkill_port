@@ -16,8 +16,46 @@ from dos_re.memory import Memory
 from overkill.native_video.hud_chrome import (
     PAGE_SIZE,
     compose_status_cells_859e,
+    compose_status_counters_61dc,
     paste_panel_cell,
+    xy_to_di_5a00,
 )
+
+
+def test_xy_to_di_5a00_matches_witnessed_samples():
+    # (x,y) -> packed cell cursor, confirmed against the driven 61DC on snapshots
+    assert xy_to_di_5a00(0x1F, 0x40) == 0x0A7C   # counter row
+    assert xy_to_di_5a00(0x1F, 0x0C) == 0x025C   # trailing cell 1
+    assert xy_to_di_5a00(0x21, 0x18) == 0x0444   # trailing cell 2
+    assert xy_to_di_5a00(0x00, 0x01) == 0x2000   # (y&3)*0x2000 bank term
+
+
+def test_compose_status_counters_places_six_cells_by_value():
+    dir_table = [0] * 0x40
+    dir_table[0x19] = 0x100      # value 0 -> dir[0x19]
+    dir_table[0x1B] = 0x200      # value 2 -> dir[0x1B]
+    panel = _panel_with_cells({0x100: 0x55, 0x200: 0x66})
+    page = np.zeros(PAGE_SIZE, np.uint8)
+    compose_status_counters_61dc(page, panel, dir_table, [0, 0, 2, 0, 0, 0],
+                                 a95a=0, draw_trailing=False)
+    base = xy_to_di_5a00(0x1F, 0x40)
+    assert page[base] == 0x55                    # counter 0 (value 0) -> dir[0x19]
+    assert page[(base + 2 * 4) & 0xFFFF] == 0x66  # counter 2 (value 2) -> dir[0x1B]
+
+
+def test_compose_status_counters_trailing_cells_gated():
+    dir_table = [0] * 0x40
+    dir_table[0x19] = 0x100
+    dir_table[0x23] = 0x200      # a95a=3 -> dir[3 + 0x20]
+    dir_table[0x1E] = 0x300
+    panel = _panel_with_cells({0x100: 0x11, 0x200: 0x22, 0x300: 0x33})
+    off = np.zeros(PAGE_SIZE, np.uint8)
+    compose_status_counters_61dc(off, panel, dir_table, [0] * 6, a95a=3, draw_trailing=False)
+    assert off[xy_to_di_5a00(0x1F, 0x0C)] == 0    # trailing NOT drawn when gated off
+    on = np.zeros(PAGE_SIZE, np.uint8)
+    compose_status_counters_61dc(on, panel, dir_table, [0] * 6, a95a=3, draw_trailing=True)
+    assert on[xy_to_di_5a00(0x1F, 0x0C)] == 0x22  # dir[a95a + 0x20]
+    assert on[xy_to_di_5a00(0x21, 0x18)] == 0x33  # dir[0x1E]
 
 
 def _panel_with_cells(specs):
