@@ -83,6 +83,64 @@ class FrameChannel:
             pass
 
 
+_KEY_EVENT_CAPACITY = 256  # ring buffer slots; far more than one frame's worth of key taps
+_KEY_EVENT_HEADER = 8      # write_index (u32) + read_index (u32)
+
+
+class KeyEventChannel:
+    """Lock-free shared-memory scan-code event queue, presenter -> VM child.
+
+    ``--backend native`` splits the interactive session into a presenter process
+    (owns the visible window and therefore real OS keyboard focus) and a VM child
+    process (runs the emulator; headless, no window of its own -- see
+    :func:`run_publisher`). Without this channel the presenter's key events had
+    nowhere to go: it only handled its own hotkeys (F1/F11) and the VM child never
+    read a keyboard at all, so gameplay input was silently dropped end to end.
+
+    Each event is one byte using the XT make/break convention already used by
+    ``dos_re.interrupts.deliver_scancode`` throughout this project: bits 0-6 are
+    the scan code, bit 7 set means release. One writer (the presenter) advances
+    the write index, one reader (the VM child) advances the read index, so no
+    lock is needed.
+    """
+
+    def __init__(self, *, name: str | None = None, create: bool = False) -> None:
+        if create:
+            self.shm = shared_memory.SharedMemory(create=True, size=_KEY_EVENT_HEADER + _KEY_EVENT_CAPACITY)
+            struct.pack_into("<II", self.shm.buf, 0, 0, 0)
+        else:
+            self.shm = shared_memory.SharedMemory(name=name)
+        self.name = self.shm.name
+
+    def post(self, event_byte: int) -> None:
+        """Writer side (presenter): push one scan-code event byte."""
+        w, r = struct.unpack_from("<II", self.shm.buf, 0)
+        nxt = (w + 1) % _KEY_EVENT_CAPACITY
+        if nxt == r:
+            return  # ring full (a stuck reader) -- drop rather than block the presenter
+        self.shm.buf[_KEY_EVENT_HEADER + w] = event_byte & 0xFF
+        struct.pack_into("<I", self.shm.buf, 0, nxt)
+
+    def drain(self) -> list[int]:
+        """Reader side (VM child): pop every pending event byte."""
+        w, r = struct.unpack_from("<II", self.shm.buf, 0)
+        out = []
+        while r != w:
+            out.append(self.shm.buf[_KEY_EVENT_HEADER + r])
+            r = (r + 1) % _KEY_EVENT_CAPACITY
+        struct.pack_into("<I", self.shm.buf, 4, r)
+        return out
+
+    def close(self) -> None:
+        self.shm.close()
+
+    def unlink(self) -> None:
+        try:
+            self.shm.unlink()
+        except FileNotFoundError:
+            pass
+
+
 def _require_pygame():
     try:
         import pygame  # noqa: F401
@@ -254,15 +312,30 @@ def _composed_snapshot(composed_indices, frame_id):
 
 # ----- VM child: publish composed frames into the shared-memory channel ----------
 
-def run_publisher(channel_name, *, frame_sync, stop, video="tandy") -> None:
+def run_publisher(channel_name, *, frame_sync, stop, video="tandy",
+                  input_channel_name=None, keyboard=None) -> None:
     """Child side (inside play.py's VM process): consume play.py's published frames
-    and write the composed indexed page into the shared-memory channel."""
+    and write the composed indexed page into the shared-memory channel.
+
+    ``input_channel_name``/``keyboard``: this process is headless (no window, so no
+    keyboard focus of its own); if the presenter forwarded a :class:`KeyEventChannel`,
+    drain it every loop and feed the same ``KeyDispatcher`` the interactive
+    ``play.py`` loop already pumps into the VM each frame -- the only missing link
+    for native-backend gameplay input (see :class:`KeyEventChannel`).
+    """
     import numpy as np
     from overkill.native_video.page_raster import decode_tandy_b800_indices
     channel = FrameChannel(name=channel_name)
+    input_channel = KeyEventChannel(name=input_channel_name) if input_channel_name else None
     last_shown = 0
     try:
         while not stop.is_set():
+            if input_channel is not None and keyboard is not None:
+                for event_byte in input_channel.drain():
+                    if event_byte & 0x80:
+                        keyboard.post_up(event_byte & 0x7F)
+                    else:
+                        keyboard.post_down(event_byte)
             pending = frame_sync.take_pending()
             if pending is not None and pending[0] > last_shown:
                 last_shown = pending[0]
@@ -273,18 +346,30 @@ def run_publisher(channel_name, *, frame_sync, stop, video="tandy") -> None:
                 time.sleep(0.001)
     finally:
         channel.close()
+        if input_channel is not None:
+            input_channel.close()
 
 
 # ----- Presenter parent: free-run the present loop reading the channel -----------
 
-def run_native_present(channel, *, args) -> None:
-    """Parent side: present the child's frames at the monitor refresh (decoupled)."""
+def run_native_present(channel, *, args, input_channel=None) -> None:
+    """Parent side: present the child's frames at the monitor refresh (decoupled).
+
+    This process owns the visible window, so it is the only one with real OS
+    keyboard focus; ``input_channel`` (a :class:`KeyEventChannel`), when given,
+    forwards gameplay key events to the headless VM child (see
+    :func:`run_publisher`). F1/F11 and, while the settings overlay is open, every
+    other key stay local (unchanged) -- only keys the overlay does not consume are
+    forwarded as gameplay input.
+    """
     import numpy as np
+    from sdl_view import _build_pygame_scan
     _raise_timer_resolution()
     pygame = _require_pygame()
     backend = NativeOverkillVideoBackend(load_config())
     display = PygameDisplay(scale=args.scale, vsync=backend.config.target_present_hz is None)
     overlay = NativeOverlay(backend, display)
+    scan_map = _build_pygame_scan() if input_channel is not None else {}
     last_counter = 0
     source_id = 0
     last_title = 0.0
@@ -314,6 +399,14 @@ def run_native_present(channel, *, args) -> None:
                         display.toggle_fullscreen()
                     elif overlay.visible:
                         overlay.handle_key(ev.key, pygame)
+                    elif input_channel is not None:
+                        sc = scan_map.get(ev.key)
+                        if sc is not None:
+                            input_channel.post(sc)
+                elif ev.type == pygame.KEYUP and not overlay.visible and input_channel is not None:
+                    sc = scan_map.get(ev.key)
+                    if sc is not None:
+                        input_channel.post(sc | 0x80)
 
             t0 = time.perf_counter()
             if channel.peek_counter() > last_counter:  # new VM frame -> decode it
@@ -385,8 +478,13 @@ def run_native_present(channel, *, args) -> None:
 def run_mp(args) -> int:
     """Parent launcher: spawn the VM child process and present its frames."""
     channel = FrameChannel(create=True)
+    # Demo replay drives input from the recorded file, not the keyboard (matching the
+    # existing interactive/verify convention); only forward live keys otherwise.
+    input_channel = KeyEventChannel(create=True) if not getattr(args, "demo", None) else None
     cmd = [sys.executable, str(ROOT / "scripts" / "play.py"), "--backend", "native",
            "--mp-publish", channel.name, "--video", getattr(args, "video", "tandy")]
+    if input_channel is not None:
+        cmd += ["--mp-input", input_channel.name]
     if getattr(args, "demo", None):
         cmd += ["--demo", args.demo]
     if getattr(args, "sound", None):
@@ -396,7 +494,7 @@ def run_mp(args) -> int:
     print("native: launching VM child (decoupled present): " + " ".join(cmd), flush=True)
     child = subprocess.Popen(cmd)
     try:
-        run_native_present(channel, args=args)
+        run_native_present(channel, args=args, input_channel=input_channel)
     finally:
         if child.poll() is None:
             child.terminate()
@@ -406,6 +504,9 @@ def run_mp(args) -> int:
                 child.kill()
         channel.close()
         channel.unlink()
+        if input_channel is not None:
+            input_channel.close()
+            input_channel.unlink()
     return 0
 
 

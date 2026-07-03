@@ -279,6 +279,8 @@ def main(argv: list[str] | None = None) -> int:
                              "native = the modern VM-independent renderer (scripts/native_play.py)")
     launch.add_argument("--mp-publish", default=None,
                         help=argparse.SUPPRESS)  # internal: this is the VM child; publish frames to this shm name
+    launch.add_argument("--mp-input", default=None,
+                        help=argparse.SUPPRESS)  # internal: this is the VM child; read key events from this shm name
     launch.add_argument("--no-replacements", action="store_true",
                         help="ORACLE mode: run the pure original ASM with no recovered hooks (record "
                              "ground-truth cold-start demos; the reference side of the cold-start verifier)")
@@ -1567,8 +1569,12 @@ def main(argv: list[str] | None = None) -> int:
         if args.backend == "native":
             # VM child: publish composed frames to the presenter's shared-memory
             # channel (the presenter parent runs run_mp / run_native_present above).
+            # This process has no window of its own, so the presenter (which has real
+            # keyboard focus) forwards gameplay key events via --mp-input; feed them
+            # into the same KeyDispatcher the interactive loop already pumps into the VM.
             import native_play
-            native_play.run_publisher(args.mp_publish, frame_sync=frame_sync, stop=stop, video=args.video)
+            native_play.run_publisher(args.mp_publish, frame_sync=frame_sync, stop=stop, video=args.video,
+                                      input_channel_name=args.mp_input, keyboard=keyboard)
             return 0
         run_sdl_ui(
             args=args,
