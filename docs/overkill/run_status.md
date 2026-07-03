@@ -50,6 +50,17 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-03 - Collapse: 9C01 axis jump-table offset rule extracted to pure frame_loop.py
+
+Extracted the ``1010:9C01`` axis-condition jump-table index rule out of the lifted
+``gameplay/game_state.py`` into ``recovered/systems/frame_loop.py`` as ``frame_axis_dispatch_offset``:
+the frame controller counts how many of its four delayed-coordinate slots are live (two feed ``AH`` =
+``DS:A966``/``A96A``, two feed ``AL`` = ``DS:A968``/``A96C``, each ``0..2``), then indexes the
+``CS:9C70`` word table by ``((al + 3*ah) & 0xFF) << 1`` (``0..16``).  ZERO-RISK form: the adapter
+keeps the exact BL/SHL arithmetic (registers/flags unchanged) and now cross-checks it against the
+pure rule on every live 9C01 tick (grounds the rule against the VM without changing behaviour). Unit
+test in ``test_frame_loop.py`` (the 9 ah/al combinations). Byte-exact preserved; suite green.
+
 ## 2026-07-03 - Collapse: delayed-coordinate ring wrap extracted to pure systems/coord_ring.py
 
 Extracted the ``1010:9CF1`` coordinate-ring cursor-advance wrap out of the lifted

@@ -189,6 +189,18 @@ def native_action_fanout_step(
     )
 
 
+def frame_axis_dispatch_offset(ah_count: int, al_count: int) -> int:
+    """The ``1010:9C01`` axis jump-table byte offset from the two present-slot counts.
+
+    9C01 counts how many of its four delayed-coordinate slots are live: two feed ``AH``
+    (``DS:A966``/``A96A``) and two feed ``AL`` (``DS:A968``/``A96C``), so ``ah_count`` and
+    ``al_count`` are each ``0..2``.  It then forms ``BL = al + 3*ah`` (an 8-bit value ``0..8``) and
+    shifts left once to index the word jump table at ``CS:9C70`` -- i.e. the byte offset
+    ``((al + 3*ah) & 0xFF) << 1`` (``0..16``).  Pure: the caller owns the slot reads and the table.
+    """
+    return (((al_count + 3 * ah_count) & 0xFF) << 1) & 0xFFFF
+
+
 def step_frame_accumulator_shift_a940(counter_a8ce: int, a8c8: int, a8cc: int) -> FrameAccumulatorShiftOutcome:
     """Pure model of ``1010:A940``'s own opening accumulator-shift (unconditional, every frame,
     before A940's later attract-mode/boss-scan-fork decisions -- see the frame-controller memory

@@ -27,6 +27,7 @@ from overkill.recovered.systems.coord_ring import (
     COORD_RING_WRAP_AT,
     advance_coord_ring_ptr,
 )
+from overkill.recovered.systems.frame_loop import frame_axis_dispatch_offset
 from overkill.recovered.systems.frame_timers import step_first_active_timer
 from overkill.recovered.systems.status_display import status_cursor_stride
 from overkill.recovered.views.frame_timers import FrameTimersView
@@ -907,6 +908,11 @@ def run_frame_axis_condition_dispatch_9c01(
             if (s.cs & 0xFFFF, s.ip & 0xFFFF) != (cs, return_ip):
                 raise RuntimeError(f"9C01 expected {which.upper()} counter return {return_ip:04X}, got {s.cs & 0xFFFF:04X}:{s.ip & 0xFFFF:04X}")
 
+    # BL = AL + 3*AH, then SHL BX,1 -> the CS:9C70 jump-table byte offset.  The BL adds + shift set
+    # flags that are dead by the table lookup, so they need no replay; keep the exact arithmetic here
+    # for register fidelity and cross-check it against the recovered pure rule (grounds the rule on
+    # every live 9C01 tick without changing behaviour).
+    axis_ah, axis_al = (s.ax >> 8) & 0xFF, s.ax & 0xFF
     s.bx = (s.bx & 0xFF00) | (s.ax & 0x00FF)
     s.bx &= 0x00FF
     cpu.set_logic_flags(0, 8)  # XOR BH,BH
@@ -914,6 +920,9 @@ def run_frame_axis_condition_dispatch_9c01(
     _add_bl_ah(cpu)
     _add_bl_ah(cpu)
     s.bx = cpu.shift(4, s.bx & 0xFFFF, 1, 16)
+    expected_offset = frame_axis_dispatch_offset(axis_ah, axis_al)
+    if (s.bx & 0xFFFF) != expected_offset:
+        raise AssertionError(f"9C01 axis dispatch offset {s.bx & 0xFFFF:#06x} != pure {expected_offset:#06x}")
 
     target = mem.rw(cs, (0x9C70 + (s.bx & 0xFFFF)) & 0xFFFF)
     if target == 0x44AF:

@@ -9,6 +9,7 @@ from overkill.recovered.domain.object_update import ObjectUpdateGlobals
 from overkill.recovered.domain.tilemap import LevelTileContext
 from overkill.recovered.systems.frame_loop import (
     decode_frame_input,
+    frame_axis_dispatch_offset,
     native_action_fanout_step,
     native_object_pass,
     native_player_frame_step,
@@ -246,3 +247,17 @@ def test_fanout_full_pool_at_first_shot_declines_pool_but_still_arms_latch():
     assert out_state.object_pool is state.object_pool  # the full pool blocked the spawn -> untouched
     assert out_fire.latch_a980 == 1
     assert out_fire.cursor_95da == fire.cursor_95da
+
+
+def test_frame_axis_dispatch_offset_is_al_plus_3ah_times_2():
+    # ah/al are each 0..2 (present-slot counts); offset = ((al + 3*ah) & 0xFF) << 1.
+    expected = {
+        (0, 0): 0, (0, 1): 2, (0, 2): 4,
+        (1, 0): 6, (1, 1): 8, (1, 2): 10,
+        (2, 0): 12, (2, 1): 14, (2, 2): 16,
+    }
+    for (ah, al), off in expected.items():
+        assert frame_axis_dispatch_offset(ah, al) == off, (ah, al)
+    # every offset is even (word table) and within the 0..16 span
+    assert all(frame_axis_dispatch_offset(ah, al) % 2 == 0 for ah in range(3) for al in range(3))
+    assert max(frame_axis_dispatch_offset(ah, al) for ah in range(3) for al in range(3)) == 16
