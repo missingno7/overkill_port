@@ -18,6 +18,38 @@ context. Each has the analysis already done so a human can pick up fast.
 
 ---
 
+## OPEN (2026-07-03) — static-HUD-chrome render (859E→306F) is WITNESS-POOR in all snapshot demos
+
+Attempted the first native leaf of the static-HUD-chrome layer (Bucket C): `paste_panel_cell`, the
+pure form of the `1010:306F` Tandy PANEL-cell blit (`lodsw` rows → `lodsw` width×4 stride → per-row
+`rep movsb` into the packed B800 page, `DI += 0x2000` / wrap `+0x80A0`; a raw copy, no colour mask —
+disasm-accurate, transcribed instruction-by-instruction). **Reverted (unverifiable):** the whole cell
+render path `859E→85D5→5A6C→306F` fires **0 times** across EVERY snapshot demo checked — L2 (150f),
+`start_to_end`, `L1_start` all show `306F=0`, `859E=0`. The HUD chrome is drawn **once at
+cold-boot/level-load, BEFORE the demo snapshots are taken** (which is exactly why the earlier probe
+found it ~99.5% static during gameplay — it's never re-blit). So there is **no demo witness** to gate a
+native `306F` blit against.
+
+**Correction to the prior run_status plan:** the "859E fires every present via D104" claim (from a
+static byte-scan) is WRONG — D104/859E are not reached during snapshot-replay gameplay. Do NOT re-derive
+the plan from that.
+
+**To actually do this slice, a future run needs one of:**
+1. a **cold-boot run** (fresh runtime via the `.is_cold_start` demo path — `demo_cold_start_*` has no
+   snapshot; "boot a fresh runtime and replay") that executes the level-load HUD render, then wrap/step
+   `306F` there; or
+2. a **synthetic `306F` ASM oracle** (run the original `306F` bytes on a controlled CPU8086+Memory with a
+   small synthetic cell, compare to `paste_panel_cell`) — the AGENTS.md "synthetic fixtures + interpreted
+   ASM" path for witness-poor small routines.
+The `paste_panel_cell` design + the `verify_native_hud_text` handler/step patterns are recorded above and
+in this session's transcript; the blit mechanics are fully understood, only the witness is missing. Also
+note `306F` is a registered hook that the **lifted parents bypass** (859E/85D5/5A6C run their Python lifts
+and never jump to `306F`), and it's kept (not stripped) on the frame-verifier ref side — so neither a
+handler-wrap nor a ref-side step-hook observes it via the lifted gameplay path; the cold-boot path is the
+real witness.
+
+---
+
 ## RESOLVED (2026-07-03) — L3 sprite-compose: was the unmodeled OR-inverted 2F40/2ECB leaves
 
 > **Fixed same day.** Root cause: the native compose modeled only the masked compositor leaves

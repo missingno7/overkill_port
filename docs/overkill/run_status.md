@@ -17,6 +17,22 @@
 > The docs were de-staled this session — trust them, but verify a target against the code before
 > recovering it (some `loop_blockers.md` entries are dated).
 
+## 2026-07-03 - Attempted static-HUD-chrome native leaf (306F blit) → REVERTED (witness-poor)
+
+Used a fresh-context subagent to map the static-HUD-chrome render island; it correctly traced the path
+to `859E→85D5→5A6C→306F` (306F = a raw `rep movsb` PANEL-cell blit) and proposed `paste_panel_cell` as
+the first leaf. Implemented it (disasm-accurate) + a produced-vs-VM probe — but **306F fires 0 times in
+EVERY snapshot demo** (the chrome is drawn once at cold-boot/level-load, before the snapshots; that's why
+it reads ~99.5% static in gameplay). No demo witness ⇒ can't gate it byte-exact ⇒ **fully reverted** (per
+the invariants; never commit unverified / don't promote witness-poor as proven). Corrected the subagent's
+wrong "859E fires every present via D104" claim. Full analysis + the two real paths to do this later
+(a cold-boot fresh-runtime run, or a synthetic 306F ASM oracle) recorded in `loop_blockers.md`. Net: a
+mapped-and-understood-but-not-yet-witnessable island; tree green, no code change committed.
+
+**Implication for the loop:** the static-HUD-chrome (and the full-frame compose that needs it) is gated on
+the **cold-boot path**, not gameplay demos — so it belongs with the Bucket-E/G cold-boot work (a fresh
+focused session that stands up the cold-boot runtime), not a mid-gameplay slice.
+
 ## 2026-07-03 - Bucket A: B800 formation spawn-pointer wrap promoted to a pure system
 
 Small Bucket-A promotion of genuine spawn-*sequencing* logic (not a data-prep constant): extracted
