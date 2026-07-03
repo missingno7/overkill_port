@@ -31,6 +31,38 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-03 - Diagnosed the menu-advance probe: wrong DS sampled, not a code defect
+
+Follow-up to the menu-idle milestone: attempted to feed a synthetic Space keypress (`dos_re.interrupts
+.deliver_scancode`) into the hooks-ON cold boot to advance past the `558B` idle loop into gameplay.
+Confirmed the exact target: the recovered `step_menu_idle_558b` (`recovered/systems/menu.py`) exits
+when `DS:98BE` bit `0x10` (FIRE) is set, and the recovered keyboard decode
+(`recovered/systems/input.DEFAULT_CONTROL_MAP`) confirms scancode `0x39` (Space) maps to
+`INPUT_FIRE` — so Space is the right key and the recovered decode tables are internally consistent.
+
+**The probe attempt itself had a bug, now diagnosed (not a code defect):** it read/compared `DS:98BE`
+using whatever `DS` happened to be live at the arbitrary instruction boundary where the interrupt was
+delivered (a transient loader/boot segment, e.g. observed `DS=35FF`), not the game's actual resident
+data segment (the one live whenever `CS:IP` is inside known `1010`-segment game code like the `558B`
+idle loop). So the observed `98BE` values (`0x08`, then `0x00`) are not meaningful evidence of a
+real vs. expected mismatch — they were read from the wrong memory. Also identified a sequencing bug in
+the first attempt: `deliver_scancode` only runs the INT 9 ISR to completion, it does NOT itself run the
+game's own poll loop (`0162`/`0169`), so a press+release delivered back-to-back with zero `cpu.step()`
+calls between them can never be observed as "held" by the game's next poll — the corrected probe
+separates press → hold-for-N-steps → release, but still needs the DS fix to read/verify correctly.
+
+**Concrete next step (well-scoped, not a re-exploration):** sample the resident `DS` at a moment when
+`CS:IP` is confirmed inside the idle loop (e.g. exactly at `1010:558B`), and both deliver the keypress
+and check `98BE` relative to THAT segment — plus deliver the press while parked in the idle loop
+specifically (not at an arbitrary mid-boot instruction) so the timing relative to the poll loop is
+well-defined. The recovered decode logic itself is trusted and unchanged; this is purely a test-harness
+correctness fix.
+
+**Process note:** kept this exploration properly bounded this time — two Monitor-watched runs, each
+under 500K steps with live progress every 25K steps and clean early termination once the needed
+information was gathered, no silent long runs. No code was changed (pure investigation); tree stayed
+clean throughout.
+
 ## 2026-07-03 - MILESTONE: hooks-ON cold boot reaches a stable menu idle loop, zero crashes (600K steps)
 
 With the `519A`/`5A6C` dispatcher fixes (below) + the checksum accelerator (`boot_selfcheck_checksum`,
