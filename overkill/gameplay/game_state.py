@@ -22,6 +22,11 @@ from overkill.asm import (
     loop_count,
 )
 from dos_re.cpu import CF
+from overkill.recovered.systems.coord_ring import (
+    COORD_RING_STEP,
+    COORD_RING_WRAP_AT,
+    advance_coord_ring_ptr,
+)
 from overkill.recovered.systems.frame_timers import step_first_active_timer
 from overkill.recovered.systems.status_display import status_cursor_stride
 from overkill.recovered.views.frame_timers import FrameTimersView
@@ -1079,14 +1084,17 @@ def run_frame_tracked_coord_store_9cd9(cpu, self_disable_if_patched) -> None:
 
 
 def _advance_coord_ring_ptr(cpu, ds: int, off: int) -> None:
+    # The wrap rule is the pure recovered coord-ring geometry; this adapter owns only the DS memory
+    # writes + the dead CMP-flag replay for boundary fidelity.
     mem = cpu.mem
     old = mem.rw(ds, off)
-    new = (old + 0x0004) & 0xFFFF
+    new = (old + COORD_RING_STEP) & 0xFFFF
     mem.ww(ds, off, new)
     # ADD flags dead: the CMP below overwrites them before the helper returns.
-    _cmp_word(cpu, new, 0xA33A)
-    if new == 0xA33A:
-        mem.ww(ds, off, 0xA27A)
+    _cmp_word(cpu, new, COORD_RING_WRAP_AT)
+    final = advance_coord_ring_ptr(old)
+    if final != new:
+        mem.ww(ds, off, final)
 
 
 def run_frame_coord_ring_advance_9cf1(cpu, self_disable_if_patched) -> None:

@@ -50,6 +50,24 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-03 - Collapse: delayed-coordinate ring wrap extracted to pure systems/coord_ring.py
+
+Extracted the ``1010:9CF1`` coordinate-ring cursor-advance wrap out of the lifted
+``gameplay/game_state.py`` into a pure module: ``recovered/systems/coord_ring.py``
+(``advance_coord_ring_ptr`` + the ring geometry constants -- base ``DS:A27A``, wrap-at ``DS:A33A``,
+step 4, 48 ``(x,y)`` slots). ``_advance_coord_ring_ptr`` is now a thin adapter that owns only the DS
+memory writes + dead-CMP-flag replay and delegates the wrap decision to the pure rule; byte-exact
+preserved (the 9CF1 demo-replay verify is unchanged). Unit test ``tests/test_coord_ring.py`` (5).
+Pure mass 30.4% -> 30.5% (systems modules 37 -> 38).
+
+**Scouting note (why this slice):** the big lifted object files (object_movement/behaviors) are
+already thoroughly collapsed -- every clean pure decision is delegated to ``systems/``; what remains
+is VM control-flow glue + shared movement/tile tails (islands), matching the brief's "single-leaf
+slices exhausted". The coordinate rings (``9CD9``/``9CF1``/``A031``/``99CD`` in game_state.py) are
+one of the few remaining places with un-extracted pure arithmetic; the store/pull halves (ring state
+model) are the natural follow-ups, and they feed the native frame loop's still-declined coord-ring
+stage.
+
 ## 2026-07-03 - MILESTONE: FULL object->sprite draw is native + byte-exact (all 3 routines, both slots)
 
 The complete VM-free object->sprite bridge now renders the real gameplay frame -- **player ship WITH
