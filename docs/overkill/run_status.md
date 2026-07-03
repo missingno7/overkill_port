@@ -17,6 +17,25 @@
 > The docs were de-staled this session — trust them, but verify a target against the code before
 > recovering it (some `loop_blockers.md` entries are dated).
 
+## 2026-07-03 - Native 306F PANEL-cell blit recovered + verified via a synthetic-ASM oracle
+
+Re-landed the static-HUD-chrome first leaf that the prior pass reverted (witness-poor in demos), now
+proven the right way. `native_video/hud_chrome.paste_panel_cell` is the pure page-writer form of the
+`1010:306F` Tandy PANEL-cell blit (`{rows,width}` header → per-row `rep movsb` of `width*4` bytes into
+the packed B800 page, `DI += 0x2000` / wrap `+0x80A0`; raw copy, no colour mask). Since 306F runs only
+at cold-boot/level-load (no snapshot-demo witness), it's gated by a **synthetic-ASM oracle**
+(`tests/test_hud_chrome.py`): it assembles the exact 306F opcodes, runs them on a real `CPU8086` over
+synthetic cells, and asserts the B800 page is byte-identical to `paste_panel_cell` — the same
+"synthetic fixtures + interpreted ASM" gate the asset codecs use (6 cases: single/multi/wide cell,
+bank-wrap, single-row, many cursors). This is a verified recovered blit awaiting its consumer (the
+cold-boot native frame), exactly like the Bucket-F codecs sit verified ahead of the loader.
+
+Suite green; layers+arch+lint green. `loop_blockers.md` 306F item moved OPEN→RESOLVED (verified via
+oracle path #2). The witness-poor probe was NOT re-added (it always sees 0 calls in gameplay). Next:
+the remaining chrome pieces (85D5 cell selection, 859E's 4-descriptor loop, 61DC counters) compose over
+this blit — but they, and the full-frame compose that consumes them, belong with the **cold-boot
+runtime** phase (Bucket E/G) where the render actually executes.
+
 ## 2026-07-03 - Attempted static-HUD-chrome native leaf (306F blit) → REVERTED (witness-poor)
 
 Used a fresh-context subagent to map the static-HUD-chrome render island; it correctly traced the path

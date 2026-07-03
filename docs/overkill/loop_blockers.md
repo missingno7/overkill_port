@@ -18,6 +18,15 @@ context. Each has the analysis already done so a human can pick up fast.
 
 ---
 
+## RESOLVED (2026-07-03) — the 306F blit leaf is now verified via a synthetic-ASM oracle
+
+> **Update (2026-07-03): the blit itself is DONE via oracle path #2.** `native_video/hud_chrome.paste_panel_cell`
+> is byte-exact to the original 306F opcodes, proven by `tests/test_hud_chrome.py` (assembles the exact
+> 306F bytes, runs them on a `CPU8086` over synthetic cells, compares). The demo witness-poverty below is
+> unchanged and still applies to the FULL render path (85D5/859E cell selection + descriptor loop), which
+> stays for the cold-boot phase — but the raw blit no longer needs a demo witness. The analysis below is
+> kept for the remaining cell-selection/composer work.
+
 ## OPEN (2026-07-03) — static-HUD-chrome render (859E→306F) is WITNESS-POOR in all snapshot demos
 
 Attempted the first native leaf of the static-HUD-chrome layer (Bucket C): `paste_panel_cell`, the
