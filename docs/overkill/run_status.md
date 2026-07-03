@@ -17,6 +17,26 @@
 > The docs were de-staled this session — trust them, but verify a target against the code before
 > recovering it (some `loop_blockers.md` entries are dated).
 
+## 2026-07-03 - Bucket A: B800 formation spawn-pointer wrap promoted to a pure system
+
+Small Bucket-A promotion of genuine spawn-*sequencing* logic (not a data-prep constant): extracted
+the `B800` formation-spawn list-pointer advance from the `b73e` behavior's `run_b800_spawn_pointer_advance`
+closure into pure `recovered/systems/objects.advance_formation_spawn_ptr(ptr)` — advance DS:20A6 by one
+2-byte entry, wrapping at 0x20C7 back to 0x20A8 (which formation slot spawns next). The adapter now
+writes the final pointer once (the intermediate pre-wrap write is unobservable — the wrap CMP + AND
+BX,1 flags are dead before any boundary, per the existing comment). 3 unit tests
+(`tests/test_formation_spawn_seed_7476.py`: step-by-two + both wrap edges). Gate: b73e IS demo-exercised
+(recovered this session), so demo-replay equivalence covers it byte-exact. Suite green; layers+arch+lint
+green. Tiny pure-mass nudge; glue unchanged.
+
+**Frontier note for the next run:** the readily-sliceable Bucket-A decisions are essentially exhausted —
+a subagent scan found `9FEA` (done) and this `B800` wrap as the last clean un-delegated decisions; the
+other candidates are either already pure or trivial data-prep constants (e.g. the `9CD9`/`99CD` +8
+coord-center offset — NOT worth promoting, it would just inflate pure% without real crystallization).
+The genuinely valuable remaining work is the **Bucket-C integration islands** (chrome-layer promotion via
+the lifted `859E→85D5→5A6C` path; the native sprite-draw-list) and the large Buckets D–G — all multi-part
+and **best taken with fresh, focused context** per the brief, not rapid auto-loop micro-ticks.
+
 ## 2026-07-03 - Bucket A: 9FEA child-coord clamp decision promoted to a pure system (pure% 30.2->30.3)
 
 Bread-and-butter Bucket-A promotion (chosen via a subagent frontier scan of the big lifted files —

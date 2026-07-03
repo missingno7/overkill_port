@@ -8,7 +8,23 @@ synthetic oracle behind the demo-level ``overkill.probes.verify_native_formation
 from __future__ import annotations
 
 from overkill.recovered.domain.object_slots import FormationSpawnSeed7476
-from overkill.recovered.systems.objects import formation_spawn_seed_7476
+from overkill.recovered.systems.objects import (
+    FORMATION_SPAWN_PTR_BASE,
+    advance_formation_spawn_ptr,
+    formation_spawn_seed_7476,
+)
+
+
+def test_advance_formation_spawn_ptr_steps_by_two():
+    assert advance_formation_spawn_ptr(0x20A8) == 0x20AA
+    assert advance_formation_spawn_ptr(0x20C4) == 0x20C6
+
+
+def test_advance_formation_spawn_ptr_wraps_past_last_entry():
+    # 0x20C6 + 2 = 0x20C8 >= 0x20C7 -> wrap to base
+    assert advance_formation_spawn_ptr(0x20C6) == FORMATION_SPAWN_PTR_BASE
+    # exact-threshold edge: 0x20C5 + 2 = 0x20C7 also wraps
+    assert advance_formation_spawn_ptr(0x20C5) == 0x20A8
 
 
 def test_formation_spawn_seed_normal_mode():

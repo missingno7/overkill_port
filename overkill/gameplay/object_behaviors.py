@@ -62,6 +62,7 @@ from overkill.recovered.systems.objects import (
     B73E_TARGET_RESET_A47E_MAX,
     B73E_TARGET_RESET_DIRECT_COUNTER_MAX,
     B86D_FORMATION_SPAWN_TICKS,
+    advance_formation_spawn_ptr,
     b73e_idle_sprite_frame,
     b73e_reaches_b808,
     b73e_target_reached_resolution,
@@ -139,14 +140,12 @@ def _run_object_behavior_b73e(cpu, *, parent: str, chain: str, cx_value: int) ->
         # fetched entry's low bit.  Shared verbatim by the direct B7BD path and
         # the B82D waypoint loop -- confirmed identical via live ASM trace
         # (both land on the same 4D95 advance-and-fetch, then AND BX,1/JNZ).
-        old_ptr = cpu.mem.rw(ds, 0x20A6)
-        new_ptr = (old_ptr + 0x0002) & 0xFFFF
+        # The pointer advance-and-wrap (which formation slot spawns next) is the pure system;
+        # the intermediate pre-wrap write is unobservable (the wrap CMP + AND BX,1 flags are dead
+        # here, overwritten by the 7476 call / target-reached CMPs before any boundary), so the
+        # adapter writes the final pointer once.
+        new_ptr = advance_formation_spawn_ptr(cpu.mem.rw(ds, 0x20A6))
         cpu.mem.ww(ds, 0x20A6, new_ptr)
-        # The pointer-wrap CMP and the AND BX,1 flags are dead here (overwritten
-        # by the 7476 call or the target-reached CMPs before any boundary).
-        if new_ptr >= 0x20C7:
-            cpu.mem.ww(ds, 0x20A6, 0x20A8)
-            new_ptr = 0x20A8
         cpu.s.bx = cpu.mem.rw(ds, new_ptr)
         cpu.s.bx &= 0x0001
         if cpu.s.bx == 0:

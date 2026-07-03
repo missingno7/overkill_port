@@ -278,6 +278,21 @@ B86D_OUTGOING_SPRITE_FALLING = 0x0076
 B86D_VERTICAL_DELTA_RISING = 0xFFFF
 
 
+FORMATION_SPAWN_PTR_BASE = 0x20A8        # DS:20A6 list pointer resets here on wrap
+FORMATION_SPAWN_PTR_WRAP_LIMIT = 0x20C7  # a post-advance pointer >= this wraps back to base
+
+
+def advance_formation_spawn_ptr(ptr: int) -> int:
+    """Pure B800 formation-spawn list pointer advance (sequences which formation slot spawns next).
+
+    Advances the DS:20A6 pointer by one 2-byte entry, wrapping back to 0x20A8 once it reaches
+    0x20C7 (i.e. once it would step past the last entry at 0x20C6).  The caller then fetches the
+    entry at the new pointer and gates the 7476 formation spawn on its low bit.
+    """
+    nxt = (ptr + 2) & 0xFFFF
+    return FORMATION_SPAWN_PTR_BASE if nxt >= FORMATION_SPAWN_PTR_WRAP_LIMIT else nxt
+
+
 def b86d_formation_spawn_tick_index(game_counter: int) -> int | None:
     """Pure B86D formation-spawn schedule from the DS:2340 counter.
 
