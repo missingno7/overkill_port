@@ -27,6 +27,27 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-03 - HUD status-cell composer (859E) RECOVERED, byte-exact vs the VM across 5 snapshots
+
+Built + verified `native_video/hud_chrome.compose_status_cells_859e` — the native form of the `859E`
+HUD status-cell render (the WEAPON/MISSILES/DRONE/GADGETS icon caps + boxes). Recovered `85D5`'s exact
+per-descriptor derivation: for each of the 4 descriptors (`SS:9682/968C/9696/96A0`; fields `+0`
+color-idx, `+2` di_base, `+4` src_idx) it blits 3 PANEL cells via `paste_panel_cell` — A(icon)
+`di=di_base+0x14, dir[src_idx+match]`; B `di=di_base-0x04, dir[0x17+match]`; C(box) `di=di_base,
+dir[color_idx]` — where `dir` is the `CS:0BE4` cell-offset table, `match` the `[95FA]` marker hit, and
+color-idx swaps to `[BE16]` under the `[BDAC]` highlight.
+
+**Gate:** `overkill/probes/verify_native_hud_chrome.py` drives the ORIGINAL `859E` on a snapshot (the
+`cpu.replacement_hooks.clear()` trick) and asserts `compose_status_cells_859e` reproduces its B800
+byte-exact. **PASS, diff=0 on L2/L3/L4/L5/L1-hard** (all `marker=0xFFFF`, so the match=0 path is
+witnessed; the match=1 highlight path is derived from `85D5` but witness-poor — noted). 2 VM-free unit
+tests pin the composition (`tests/test_hud_chrome.py`). Suite green; layers+arch+lint green.
+
+**Cold-boot chrome status:** `paste_panel_cell` (306F blit) ✓ + `compose_status_cells_859e` (859E cells)
+✓ are both recovered + verified. Remaining chrome pieces: `61DC` (the counter cells + WEAPON/MISSILES
+label text) and the borders/panel background — then the full static-HUD-chrome layer composes for the
+cold-boot frame. Both are now reachable by the same "drive the original on a snapshot, diff=0" oracle.
+
 ## 2026-07-03 - Composer oracle VALIDATED: drive original 859E on a snapshot, 12 blits, diff=0
 
 Established the oracle harness for the `859E` HUD-chrome composer (scratch `probe_run_859e.py`), the

@@ -13,7 +13,46 @@ import numpy as np
 
 from dos_re.cpu import CPU8086, CPUState
 from dos_re.memory import Memory
-from overkill.native_video.hud_chrome import PAGE_SIZE, paste_panel_cell
+from overkill.native_video.hud_chrome import (
+    PAGE_SIZE,
+    compose_status_cells_859e,
+    paste_panel_cell,
+)
+
+
+def _panel_with_cells(specs):
+    """Build a PANEL byte array with 1x1 cells {off: fill}; returns (bytes, dir helper)."""
+    buf = bytearray(0x1000)
+    for off, fill in specs.items():
+        buf[off:off + 4] = bytes([1, 0, 1, 0])          # rows=1, width=1 -> 4 data bytes
+        buf[off + 4:off + 8] = bytes([fill, fill, fill, fill])
+    return np.frombuffer(bytes(buf), np.uint8)
+
+
+def test_compose_status_cells_places_A_B_C_per_descriptor():
+    # dir maps: src_idx 2 -> cell 0xAA (A); 0x17 -> 0xBB (B); color_idx 5 -> 0xCC (C)
+    dir_table = [0] * 0x40
+    dir_table[2], dir_table[0x17], dir_table[5] = 0x100, 0x200, 0x300
+    panel = _panel_with_cells({0x100: 0xAA, 0x200: 0xBB, 0x300: 0xCC})
+    page = np.zeros(PAGE_SIZE, np.uint8)
+    di_base = 0x1000
+    compose_status_cells_859e(page, panel, dir_table, [(di_base, 2, 5, 0)])
+    assert page[di_base + 0x14] == 0xAA          # A: di_base + 0x14, dir[src_idx]
+    assert page[(di_base - 0x04) & 0xFFFF] == 0xBB  # B: di_base - 0x04, dir[0x17]
+    assert page[di_base] == 0xCC                  # C: di_base, dir[color_idx]
+
+
+def test_compose_status_cells_match_bumps_A_and_B_to_next_cell():
+    dir_table = [0] * 0x40
+    dir_table[3], dir_table[0x18] = 0x100, 0x200   # src_idx+match=3, 0x17+match=0x18
+    dir_table[5] = 0x300
+    panel = _panel_with_cells({0x100: 0x11, 0x200: 0x22, 0x300: 0x33})
+    page = np.zeros(PAGE_SIZE, np.uint8)
+    di_base = 0x0800
+    compose_status_cells_859e(page, panel, dir_table, [(di_base, 2, 5, 1)])  # match=1
+    assert page[di_base + 0x14] == 0x11          # A uses dir[src_idx + 1]
+    assert page[(di_base - 0x04) & 0xFFFF] == 0x22  # B uses dir[0x17 + 1]
+    assert page[di_base] == 0x33                  # C unaffected by match
 
 # The exact 1010:306F opcodes (verified via scripts/lindis.py):
 #   lodsw; mov cx,ax; lodsw; mov es,cs:[95A4]; shl ax,1; shl ax,1; mov bp,ax;

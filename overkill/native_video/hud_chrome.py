@@ -40,6 +40,32 @@ def _le_word(source: np.ndarray, off: int) -> int:
     return int(source[off]) | (int(source[off + 1]) << 8)
 
 
+def compose_status_cells_859e(page: np.ndarray, panel_source: np.ndarray, dir_table,
+                              cells) -> np.ndarray:
+    """Compose the 4 HUD status-cell groups (1010:859E via 85D5) into the packed ``page``.
+
+    Recovered from 85D5: for each of the 4 descriptors (``SS:9682/968C/9696/96A0``) it blits three
+    PANEL cells through ``paste_panel_cell``, in order:
+
+    * **A** (icon):  ``di = di_base + 0x14``, cell ``dir[src_idx + match]``;
+    * **B**:         ``di = di_base - 0x04``, cell ``dir[0x17 + match]``;
+    * **C** (box):   ``di = di_base``,        cell ``dir[color_idx]``.
+
+    ``di_base`` is the descriptor's ``+02`` field; ``src_idx`` its ``+04``; ``color_idx`` its ``+00``
+    (or ``[BE16]`` when the ``[BDAC]`` highlight is active on this descriptor); ``match`` is the
+    ``[95FA]`` marker hit (0/1) that bumps A/B to the next cell.  ``dir_table[i]`` is the ``CS:0BE4``
+    cell-offset directory; the (di_base, src_idx, color_idx, match) tuple per descriptor is
+    ``cells`` (the caller resolves the marker/highlight game-state into those four).  Byte-exact vs
+    the VM's ``859E`` render by ``overkill/probes/verify_native_hud_chrome.py``.
+    """
+    for di_base, src_idx, color_idx, match in cells:
+        db = di_base & 0xFFFF
+        paste_panel_cell(page, panel_source, dir_table[(src_idx + match) & 0xFFFF], (db + 0x14) & 0xFFFF)
+        paste_panel_cell(page, panel_source, dir_table[(0x17 + match) & 0xFFFF], (db - 0x04) & 0xFFFF)
+        paste_panel_cell(page, panel_source, dir_table[color_idx & 0xFFFF], db)
+    return page
+
+
 def paste_panel_cell(page: np.ndarray, source: np.ndarray, src_off: int, di: int) -> int:
     """Blit one PANEL cell into the packed ``page`` at ``ES:DI`` exactly as ``1010:306F`` does.
 
