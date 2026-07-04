@@ -60,6 +60,26 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - Bucket F: composed the native new-game DATA setup (9720..9748) + a tight render boundary
+
+Assembled the recovered pieces into the native level-start DATA entry point:
+``frame_loop.native_new_game_data_setup(new_level_index, slot_ptr_table)`` = ``apply_new_game_setup_c4db``
+(C4DB object-pool seed + control reset) + the ``9723`` counter init (A95A=3, A95C=0x18) + the advanced
+level index (DS:2356; caller advances via ``menu.advance_level_index_9744``).
+
+**Verified against the WHOLE 9720..9748 range** (``verify_native_new_game_data_setup``): drives the real
+range (C4DB -> counter init -> 6176 panel draw -> level advance) and does a full-DGROUP diff. Result:
+**266 data cells byte-exact (wrong=0), and the ONLY other DGROUP writes are exactly the 8 documented
+render-glue cells** the ``6176`` panel draw touches (``NEW_GAME_SETUP_RENDER_CELLS`` = 215E/2160/2370/
+2372/9682/968A/9696/969E) -- boundary tight (all 8 change, none unmodelled). So the data model misses no
+game-data write; the render bookkeeping is cleanly separated into the presentation layer (fail-loud: not
+modelled here). This is the single native call a cold level-start uses to build its initial game state.
+
+Bucket-F level-start DATA is now native end-to-end (object seed + control reset + counters + level
+index, all byte-exact vs the VM). Remaining Bucket F: the render/presentation glue (5C9A/6176 -- host),
+the player-spawn/starfield init (needs a level-load capture), and calling this from a NativeGame
+cold-start.
+
 ## 2026-07-04 - Skeleton: added NEW_GAME_SETUP_STAGES (the 971A/9734 -> 9744 -> 97B2 bridge map)
 
 Folded the recovered front-end->gameplay bridge into the skeleton as ``native_app.NEW_GAME_SETUP_STAGES``

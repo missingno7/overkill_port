@@ -641,6 +641,34 @@ def apply_new_game_setup_c4db(slot_ptr_table) -> dict:
     return writes
 
 
+#: The render-glue cells the 6176 panel-draw writes inside the 9720..9748 new-game setup range -- NOT
+#: part of the data model (they belong to the HUD/panel presentation layer, verified as the documented
+#: completeness boundary in verify_native_new_game_data_setup).
+NEW_GAME_SETUP_RENDER_CELLS = (0x215E, 0x2160, 0x2370, 0x2372, 0x9682, 0x968A, 0x9696, 0x969E)
+
+
+def native_new_game_data_setup(new_level_index: int, slot_ptr_table) -> dict:
+    """The DATA half of the new-game / level-start setup (``1010:9720..9748``), composed native.
+
+    Composes the verified data-setup pieces into one ``{DGROUP offset: value}`` cell-map:
+    :func:`apply_new_game_setup_c4db` (the C4DB object-pool seed + frame-control reset) + the ``9723``
+    counter init (``DS:A95A := 3``, ``DS:A95C := 0x18``) + the advanced level index (``DS:2356``; the
+    caller advances it via :func:`overkill.recovered.systems.menu.advance_level_index_9744`).
+
+    This is the DATA model ONLY.  The setup range also runs the ``5C9A`` full-screen blit and the
+    ``6176`` panel draw -- host PRESENTATION whose render-bookkeeping cell writes
+    (:data:`NEW_GAME_SETUP_RENDER_CELLS`) are deliberately NOT modelled here.
+    ``verify_native_new_game_data_setup`` proves this map matches the VM for every data cell AND that the
+    only other DGROUP writes are exactly those render cells (a documented completeness boundary).  This
+    is the native entry point a cold level-start calls to build its initial game-data state.
+    """
+    cells = dict(apply_new_game_setup_c4db(slot_ptr_table))
+    cells[0xA95A] = 0x0003
+    cells[0xA95C] = 0x0018
+    cells[0x2356] = new_level_index & 0xFFFF
+    return cells
+
+
 def step_frame_accumulator_shift_a940(counter_a8ce: int, a8c8: int, a8cc: int) -> FrameAccumulatorShiftOutcome:
     """Pure model of ``1010:A940``'s own opening accumulator-shift (unconditional, every frame,
     before A940's later attract-mode/boss-scan-fork decisions -- see the frame-controller memory

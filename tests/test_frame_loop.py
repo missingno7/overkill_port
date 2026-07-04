@@ -516,3 +516,18 @@ def test_apply_new_game_setup_c4db_composes_both_halves():
             assert writes[(rec_off + fo) & 0xFFFF] == val
     # 36 records x 7 fields + 11 control cells, no collision on this build
     assert len(writes) == 36 * 7 + 11
+
+
+def test_native_new_game_data_setup_composition():
+    from overkill.recovered.systems.frame_loop import (
+        native_new_game_data_setup, apply_new_game_setup_c4db,
+    )
+    table = {cx: (0x237C + (cx % 0x24) * 0x38) & 0xFFFF for cx in range(1, 0x25)}
+    cells = native_new_game_data_setup(0x0003, table)
+    # the C4DB write-map is included verbatim
+    for off, val in apply_new_game_setup_c4db(table).items():
+        assert cells[off] == val
+    # plus the counter init + the (already-advanced) level index
+    assert cells[0xA95A] == 0x0003
+    assert cells[0xA95C] == 0x0018
+    assert cells[0x2356] == 0x0003
