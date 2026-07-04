@@ -36,7 +36,8 @@ def test_gap_boundary_is_declared_and_reported():
     # the known-unrecovered pieces must stay visible: the transition flags + the frame-state update
     by_name = {s.name: s for s in GAMEPLAY_FRAME_STAGES}
     assert by_name["transition_flags"].status == GAP        # decision recovered + wired fail-loud
-    assert by_name["frame_state_update"].status == GAP
+    assert by_name["service_gate"].status == GAP             # 073C sound/timer -- not recovered
+    assert by_name["frame_state_update"].status == NATIVE    # A940 gameplay path composed + verified
     assert by_name["conditional_hud_cell"].status == UNMONITORED  # still a truly-unmonitored stage
     report = "\n".join(describe_gaps())
     for expected in ("transition_flags", "Bucket F", "D160", "menu logic"):

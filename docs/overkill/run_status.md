@@ -60,6 +60,24 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - Native A940 frame-state-update stage composed + produced-vs-VM verified (gameplay path)
+
+Closed the skeleton's ``frame_state_update`` gap (GAP -> NATIVE): ``systems/frame_loop
+.frame_state_update_a940`` composes the two already-pure A940 halves -- the saturating accumulator
+shift (A8CE++, A8C8/A8CC -> A8C6/A8CA, A8CC:=0) + the scan-entry fork (98A8/98A9 edge, A8C2 boss fork)
+-- into the whole native gameplay A940 stage (``DS:2356 != 5``). The attract-mode middle (2356 == 5:
+the 98A2/98A4/98A5 counters + 1F8F:081D demo tick) is a declared sub-gap that FAILS LOUD.
+
+**Verified byte-exact produced-vs-VM** by ``verify_native_a940.py`` (drive the live A940 on a gameplay
+demo, compare the composer's output to the exit cells): **L3 checked=750, fails=0.** The probe also
+settled a doc bug empirically: A940 does NOT reset ``DS:A8C8`` (only A8CC) -- exit A8C8 == entry A8C8
+across the corpus; corrected ``FrameAccumulatorShiftOutcome``'s docstring. Unit tests +2.
+
+NOTE (same as the transition stage): the composer is verified but its output cells aren't threaded
+into the native loop yet -- wiring needs a ``NativeFrameGlobals`` carrier (the recurring
+"frame-controller globals not in NativeGameState" plumbing; the next foundational slice that unblocks
+A940 + the transition inputs + coord-ring all at once).
+
 ## 2026-07-04 - Gameplay-exit boundary WIRED into play_native (fail-loud level-end)
 
 Wired the recovered `detect_gameplay_transition` into the native standalone loop: each frame

@@ -298,3 +298,24 @@ def test_detect_gameplay_transition_composes_the_exit_rules():
     # tail reached but countdown not at 0x0F, or wrong mode -> no exit
     assert detect_gameplay_transition(0, 0xFFFF, 1, 3, 0x0E) is None
     assert detect_gameplay_transition(0, 0xFFFF, 1, 2, 0x0F) is None
+
+
+def test_frame_state_update_a940_gameplay_path_composes_the_two_halves():
+    from overkill.recovered.systems.frame_loop import frame_state_update_a940
+    r = frame_state_update_a940(counter_a8ce=0x10, a8c8=0x22, a8cc=0x33, mode_2356=0,
+                                flag_98a8=1, boss_pending_a8c2=0)
+    # accumulator: A8CE++, A8C6 <- entry A8C8, A8CA <- entry A8CC, A8CC := 0
+    assert (r.counter_a8ce, r.prev_a8c6, r.prev_a8ca, r.a8cc_reset) == (0x11, 0x22, 0x33, 0)
+    # scan-entry tail: 98A8 := 0, 98A9 := edge(entry 98A8 != 0), scan fork on A8C2
+    assert (r.flag_98a8, r.flag_98a9, r.scan_target) == (0, 1, "normal")
+    assert frame_state_update_a940(0xFFFF, 0, 0, 0, 0, 0).counter_a8ce == 0xFFFF   # saturates
+    assert frame_state_update_a940(0, 0, 0, 0, 0, 1).scan_target == "boss"          # A8C2 == 1
+    assert frame_state_update_a940(0, 0, 0, 0, 0, 0).flag_98a9 == 0                 # 98A8 was 0
+
+
+def test_frame_state_update_a940_attract_path_fails_loud():
+    import pytest
+    from overkill.recovered.systems.frame_loop import frame_state_update_a940
+    from overkill.recovered.domain.gaps import RecoveryGap
+    with pytest.raises(RecoveryGap):
+        frame_state_update_a940(0, 0, 0, 5, 0, 0)   # DS:2356 == 5 attract middle not modelled

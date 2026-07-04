@@ -101,9 +101,12 @@ GAMEPLAY_FRAME_STAGES: tuple[FrameStage, ...] = (
                " counter is live, but the other trigger cells (A47C/A95A/A97A/2326) are seeded-static"
                " because the native loop doesn't run the stages that mutate them yet -- so a REAL death"
                " isn't detected from native gameplay until that upstream state is native (next slice)"),
-    FrameStage("frame_state_update", "1010:A940", GAP,
-               "per-frame game-state cluster; pure pieces exist (accumulator shift, scan-entry fork)"
-               " but the stage is not composed natively -- not run"),
+    FrameStage("frame_state_update", "1010:A940", NATIVE,
+               "the gameplay path (DS:2356 != 5) is composed + produced-vs-VM verified as"
+               " systems/frame_loop.frame_state_update_a940 (accumulator shift + scan-entry fork;"
+               " 750/750 A940 frames byte-exact, verify_native_a940). The DS:2356 == 5 attract-mode"
+               " counter/demo-tick middle is a declared sub-gap (fails loud). Its output cells"
+               " (A8CE/A8C6/A8CA/A8CC/98A8/98A9) are not threaded into the native loop yet"),
     FrameStage("service_gate", "1010:073C", GAP, "sound/timer service gate; not recovered -- not run"),
     FrameStage("status_text", "1010:60A2", GAP,
                "per-frame status text; hud_text composers exist but are not wired into the standalone"),

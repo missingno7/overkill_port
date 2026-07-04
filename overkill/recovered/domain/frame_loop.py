@@ -81,10 +81,11 @@ class FrameAccumulatorShiftOutcome:
     ``counter_a8ce`` is a SATURATING counter (``DS:A8CE``): incremented every frame, but frozen
     once it reaches ``0xFFFF`` rather than wrapping -- a deliberate original design choice, not
     an oversight.  ``prev_a8c6``/``prev_a8ca`` are this frame's ENTRY values of ``DS:A8C8``/
-    ``DS:A8CC`` shifted into the "previous frame" cells (``DS:A8C6``/``DS:A8CA``); ``DS:A8C8``/
-    ``DS:A8CC`` themselves are then unconditionally reset to 0, so whatever they accumulate
-    starts fresh each frame (the SAME two cells the ``0x9C`` interstitial's ``B5A9`` prelude also
-    force-resets early, on top of this regular per-frame reset -- see the front-end memory)."""
+    ``DS:A8CC`` shifted into the "previous frame" cells (``DS:A8C6``/``DS:A8CA``).  Only ``DS:A8CC``
+    is then reset to 0; ``DS:A8C8`` is NOT reset by A940 -- it stays, so ``A8C6 = A8C8`` each frame
+    until something else changes ``A8C8`` (empirically confirmed by ``verify_native_a940.py``: the
+    exit A8C8 always equals the entry A8C8 across the gameplay corpus).  The caller applies the two
+    writes; only ``A8CC`` needs threading-as-reset."""
 
     counter_a8ce: int
     prev_a8c6: int
@@ -124,6 +125,25 @@ class FrameScanEntryOutcome:
     flag_98a8: int  # always 0 after
     flag_98a9: int  # 0 or 1 -- mirrors flag_98a8's ENTRY value
     scan_target: str  # "boss" | "normal"
+
+
+@dataclass(frozen=True, slots=True)
+class FrameStateUpdateA940:
+    """The whole ``1010:A940`` per-frame game-state update, GAMEPLAY path (``DS:2356 != 5``).
+
+    A940's unconditional halves are the already-pure accumulator shift + scan-entry tail; the
+    ``DS:2356 == 5`` attract-mode counter/demo-tick middle is skipped in gameplay (a declared sub-gap).
+    These are the exact DS cells A940 writes on a gameplay frame -- so a native loop can run the stage
+    from ``(counter_a8ce, a8c8, a8cc, flag_98a8, a8c2)`` without the VM.
+    """
+
+    counter_a8ce: int   # DS:A8CE (saturating)
+    prev_a8c6: int      # DS:A8C6 <- entry DS:A8C8
+    prev_a8ca: int      # DS:A8CA <- entry DS:A8CC
+    a8cc_reset: int     # DS:A8CC := 0 (A8C8 is NOT reset by A940 -- it stays; see the probe)
+    flag_98a8: int      # DS:98A8 := 0
+    flag_98a9: int      # DS:98A9 (edge of the entry DS:98A8)
+    scan_target: str    # "boss" if DS:A8C2 == 1 else "normal"
 
 
 @dataclass(frozen=True, slots=True)

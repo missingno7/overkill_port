@@ -253,6 +253,35 @@ def detect_gameplay_transition(a47c: int, a95a: int, a97a: int, v2326: int,
     return None
 
 
+ATTRACT_MODE_2356 = 0x0005   # DS:2356 == 5 -> A940 runs its attract-mode counter/demo-tick middle
+
+
+def frame_state_update_a940(counter_a8ce: int, a8c8: int, a8cc: int, mode_2356: int,
+                            flag_98a8: int, boss_pending_a8c2: int):
+    """The whole ``1010:A940`` game-state update for a GAMEPLAY frame (``DS:2356 != 5``).
+
+    Composes the two already-pure A940 halves -- :func:`step_frame_accumulator_shift_a940` (the
+    unconditional saturating counter + the A8C8/A8CC->A8C6/A8CA shift, A8CC reset) and
+    :func:`step_frame_scan_entry_a940_tail` (the 98A8/98A9 edge + the A8C2 boss-scan fork) -- into the
+    whole native stage.  The ``DS:2356 == 5`` attract-mode middle (the 98A2/98A4/98A5 counters + the
+    1F8F:081D demo tick) is a declared sub-gap: it FAILS LOUD here rather than run un-modeled.
+    Verified produced-vs-VM by ``overkill/probes/verify_native_a940.py``.
+    """
+    from overkill.recovered.domain.frame_loop import FrameStateUpdateA940
+    from overkill.recovered.domain.gaps import RecoveryGap
+
+    if (mode_2356 & 0xFFFF) == ATTRACT_MODE_2356:
+        raise RecoveryGap("1010:A940 attract-mode middle (DS:2356 == 5)",
+                          "the 98A2/98A4/98A5 attract counters + the 1F8F:081D demo tick are not "
+                          "modelled natively yet")
+    accum = step_frame_accumulator_shift_a940(counter_a8ce, a8c8, a8cc)
+    scan = step_frame_scan_entry_a940_tail(flag_98a8, boss_pending_a8c2)
+    return FrameStateUpdateA940(
+        counter_a8ce=accum.counter_a8ce, prev_a8c6=accum.prev_a8c6, prev_a8ca=accum.prev_a8ca,
+        a8cc_reset=0, flag_98a8=scan.flag_98a8, flag_98a9=scan.flag_98a9, scan_target=scan.scan_target,
+    )
+
+
 def frame_axis_dispatch_offset(ah_count: int, al_count: int) -> int:
     """The ``1010:9C01`` axis jump-table byte offset from the two present-slot counts.
 
