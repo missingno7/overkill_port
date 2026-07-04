@@ -5,6 +5,11 @@
 > tested against the demos, committing as it goes, until the cold-boot done-condition in §1 is
 > met (and prints `COLD-BOOT ENDGAME REACHED`).
 >
+> **PRECEDENCE:** the invariants/gates/discipline here are timeless; the WORK QUEUE (§6 buckets)
+> is updated less often than the live frontier. **The single authoritative "what next" is the
+> frontier statement at the top of [`run_status.md`](run_status.md)** — when it and §6 disagree,
+> run_status wins. Also read run_status's STANDING MECHANISMS list before building any tooling.
+>
 > The **lifecycle & vision** (the *why* + the full arc + the equivalence boundaries) is
 > [`game_recovery_lifecycle.md`](game_recovery_lifecycle.md); the OVERKILL restatement is
 > [`native_game_endgame.md`](native_game_endgame.md).

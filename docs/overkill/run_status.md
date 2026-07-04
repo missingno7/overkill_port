@@ -1,64 +1,44 @@
-> **SESSION HANDOFF (2026-07-04, updated).** A fresh repo-rooted session picks up here. Everything you
-> need is **in this repo**: read `CLAUDE.md` → `AGENTS.md` → `overkill/native_app.py` (the SKELETON /
-> structural map) → `overnight_endgame_execution.md` (the `/goal` brief, §6 direction update). State:
-> suite **green (1132 passed / 23 skipped)**, tree clean, all work pushed to `main`, pure% ≈ 30.5%.
+> **SESSION HANDOFF (2026-07-04, evening — this header is the ONE authoritative orientation).** A
+> fresh session picks up here: read `CLAUDE.md` → `AGENTS.md` → `overkill/native_app.py` (the
+> structural map) → the NEWEST dated entries below. State: suite **green (1183 passed / 23
+> skipped)**, tree clean, all pushed to `main`, pure game-logic mass ≈ 32.9%.
+> **When an older dated entry conflicts with a newer one, the NEWER one wins** — several early
+> models were corrected later (the "formation wave" is PLANET 3's family only, not the global wave;
+> the A47C "death script" label was wrong; the CS:066B fast-forward poke is retired).
 >
-> **PHASE: STRUCTURE-FIRST (2026-07-04).** The decision-leaf collapse is exhausted — the whole
-> movement/collision/behavior *decision* surface is already pure + byte-exact. The frontier is now
-> recovering the game's HIGH-LEVEL DESIGN and growing the native runtime, with explicit fail-loud
-> gaps; per-behavior details come later via targeted demos. **The spine is `overkill/native_app.py`**
-> — the recovered top-level flow, the `1010:97B2` frame-stage order (native/host/gap/unmonitored per
-> stage), and `describe_gaps()` (the machine-readable list of what's missing). The `1010:D007` attract
-> scene machine is demo-witnessed; the gameplay-exit transition rules (A344/A346/A342) are pure +
-> cross-checked live. NEXT structural slice: thread the transition state (A47C/2326/A97A) into
-> `NativeGameState` so the native loop can END a level fail-loudly (the first real mode transition).
+> **THE FRONTIER (single statement — leaf recovery is DRY; this is an INTEGRATION project).** In
+> order: (a) the planet-0 leader-group behavior handlers (`F762`/`F758`/`F75D`/`F776`, the
+> `0x76..0x79` zoo entries) via fast-forward traces — the COLD-BOOT ENEMY WAVE — then a NativeGame
+> behavior-registry stage (dispatch on `+0x18` = `OFF_LOGIC_ID` through the cold-loaded `EFC4`
+> table, fail-loud per unrecovered index); (b) the death→respawn + level-advance edge COMPOSITIONS
+> (all pieces recovered); (c) the level-select cursor render (`5A00`/`5A6C`) + the
+> title→select→cold-start menu flow; (d) endings + audio drivers.
 >
-> **MILESTONE: `scripts/play_native.py` is a real, RUNNING, VM-less standalone (zero `dos_re` imports).**
-> Cold-loads a level, ticks the recovered gameplay stages, presents via pygame — verified with
-> `sys.modules` showing no `dos_re.*` entries after a full run. `play.py --backend native` (the old
-> VM-child hybrid) is REMOVED. RENDERING NOW DRAWS THE REAL FRAME: the recovered starfield + the full
-> object->sprite layer (player ship w/ flames, enemy wave, effects) — the whole composed native frame
-> equals the VM present page **0-for-0** on the L3 capture (see the newest dated entry). Still open:
-> HUD/chrome layer, `anim!=0` / OR-inverted sprite variants, and the Bucket-F cold level-start state
-> (gameplay still needs `--snapshot` for a real starting state).
+> **STANDING MECHANISMS — check this list BEFORE building ANY tooling (the anti-duplication rule;
+> two of these were nearly rebuilt because they were invisible from the entry docs):**
+> * `overkill/timing_fastforward.advance_frames_fast` — drift-free raw-bytes forward traces
+>   (1 logic frame = 4 completed 0679 waits; count `A7A0` transitions). NEVER poke `CS:066B`.
+> * `overkill/recovered/islands.py` — the `@recovered_island` confidence taxonomy
+>   (GUESS→OBSERVED→ASM_MATCHED→VERIFIED→CANONICAL) + `scripts/gen_island_manifest.py` + drift
+>   test. Every NEW recovered fn in `systems/` carries it; annotate legacy fns when touched.
+> * The state-view names: `recovered/views/object_slots.py` (OFF_* layout names — `+0x16` =
+>   `OFF_HAZARD_CLASS`, the type-dispatch key; `+0x18` = `OFF_LOGIC_ID`, the EFC4 behavior-dispatch
+>   index) + `recovered/domain/object_slots.py` (pure named accessors). Use names, not raw offsets.
+> * `recovered/adapters/flat_memory.py` (`FlatMemory`/`MutFlatMemory` — the VM-free image readers),
+>   `probes/_harness.py` (`run_ref_step_probe` — demo replay w/ input), `scripts/lindis.py`
+>   (branch arrows now show the ENCODED target).
+> * Cold-boot probes MUST pass `overkill.launch.build_command_tail("tandy", "pc")` as the command
+>   tail — an empty tail boots the WRONG video mode (a past whole-session trap).
 >
-> **MILESTONE: a hooks-ON cold boot now reaches a STABLE idle loop at the main menu, zero crashes.**
-> See the dated entries below for the full readout — this is the first time a cold boot has run
-> end-to-end (loader → boot self-check → menu render) without human-fed input or a crash.
+> **MILESTONE (standing):** `scripts/play_native.py` is a real VM-less standalone — cold level boot
+> (no snapshot), the real composed frame (starfield + full object-sprite layer, byte-exact vs the VM
+> page on the L3 capture), player movement + firing work. MISSING: enemies (the `A9DD..AA2A`
+> behavior walk — frontier (a)), the level-end/death continuations (frontier (b)), the HUD layer,
+> the menu flow (frontier (c)).
 >
-> **VISUAL CONFIRMATION (2026-07-03): the cold-boot title/options screen renders perfectly.** A
-> screenshot dumped from the emulated framebuffer at ~80K accelerated steps shows the real OVERKILL
-> title/options screen (logo, Keyboard/Joystick/Redefine-Keys options, "FIRE = START"), byte-for-byte
-> decoded through the recovered Tandy renderer. **Critical correction: pass
-> `overkill.launch.build_command_tail("tandy", "pc")` as `command_tail`** when booting a fresh runtime
-> for cold-boot work — an empty/default tail leaves the video mode at `0` (not Tandy), and every
-> earlier probe this session that used the default tail was running in the WRONG video mode (see the
-> dated entry for detail). Re-derive any "which address is the menu idle loop" finding against a
-> correctly-configured boot before trusting it.
->
-> **The gameplay-demo-witnessable frontier is EXHAUSTED — the next phase is the COLD-BOOT runtime.**
-> This is the single most important orientation fact for the next run. What's done this session:
-> - **Bucket B render self-compose** is byte-exact across the whole gameplay demo corpus: native
->   playfield plate (`render_starfield_plate`) + both compositor families (masked 2E6E/2F81/2FB6 +
->   OR-inverted 2F40/2ECB); `verify_playfield_compose` = 100% on L1–L4.
-> - **Bucket A** clean pure-decision extractions are exhausted (last ones: `9FEA`, `B800` spawn-ptr).
-> - **New pattern for load-time code:** the static-HUD render (`859E→85D5→5A6C→306F`) runs only at
->   cold-boot/level-load, so it has NO gameplay-demo witness. The `306F` blit leaf is recovered +
->   verified via a **synthetic-ASM oracle** (`native_video/hud_chrome.paste_panel_cell` +
->   `tests/test_hud_chrome.py`, which runs the real 306F opcodes on a CPU8086). Use this same
->   "assemble the opcodes → run on CPU8086 → compare to the pure form" gate for any witness-poor
->   load-time routine.
->
-> **What the next run should do — stand up the COLD-BOOT runtime (Bucket E/F/G):** the remaining
-> high-value work (front-end flow, native level/asset load into `NativeGameState`, the static-HUD
-> composer over `paste_panel_cell`, audio drivers, the full-frame compose) all execute on the
-> **cold-boot path**, which no snapshot demo witnesses. The enabling move is a **cold-boot witness
-> harness**: boot a fresh pure-ASM runtime (`overkill/runtime.py`, `install_replacements=False`) and
-> replay a cold-start demo through boot→menu→level (`InputDemoPlayback.is_cold_start`), so cold-boot
-> code (306F, 859E, the loader, the front-end scenes) can be observed + gated produced-vs-VM. Do this
-> FIRST; it unblocks the whole phase. This is a large, fresh-context undertaking — best begun with a
-> clean session, not mid-way through a long loop. Verify any target against the code before recovering
-> (some `loop_blockers.md` entries are dated).
+> Durable technique notes that used to live in this header (the synthetic-ASM oracle for
+> witness-poor load-time code, the cold-boot witness-harness idea, the Bucket A/B completion
+> readouts) are preserved in the dated entries below and in `overnight_endgame_execution.md`.
 
 ## 2026-07-04 - Up-to-speed plan item 3/4: the confidence taxonomy ALREADY EXISTED (islands.py) -- adopted + extended
 
