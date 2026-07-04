@@ -7,10 +7,12 @@
 > the A47C "death script" label was wrong; the CS:066B fast-forward poke is retired).
 >
 > **THE FRONTIER (single statement — leaf recovery is DRY; this is an INTEGRATION project).** In
-> order: (a) the COLD-BOOT ENEMY WAVE: first xref-scan the behavior zoo for SHARED WORKERS (the
-> pre2 second-pass principle — most of the 149 `EFC4` handlers are likely thin wrappers; the worker
-> set is the true recovery surface), then the planet-0 leader-group handlers
-> (`F762`/`F758`/`F75D`/`F776`, the `0x76..0x79` entries) via fast-forward traces, then a NativeGame
+> order: (a) the COLD-BOOT ENEMY WAVE = **PLANET 1's family** (the play order is planets
+> 1→2→3→4→5→0; planet 0 is the FINAL mothership/boss level — see the planet-numbering entry):
+> first xref-scan the behavior zoo for SHARED WORKERS (the pre2 second-pass principle — most of
+> the 149 `EFC4` handlers are likely thin wrappers; the worker set is the true recovery surface),
+> then trace planet 1's A7A0-phased per-planet spawn family (`B574`/`B615`, behaviors
+> `0x1F`/`0x20`/`0x22`) from the `L1_start` snapshot via fast-forward, then a NativeGame
 > behavior-registry stage (dispatch on `+0x18` = `OFF_LOGIC_ID` through the cold-loaded `EFC4`
 > table, fail-loud per unrecovered index) gated by a WHOLE-WALK shadow probe (`A9DD..AA2A`, all
 > slots, one boundary); (b) the death→respawn + level-advance edge COMPOSITIONS (all pieces
@@ -42,6 +44,51 @@
 > Durable technique notes that used to live in this header (the synthetic-ASM oracle for
 > witness-poor load-time code, the cold-boot witness-harness idea, the Bucket A/B completion
 > readouts) are preserved in the dated entries below and in `overnight_endgame_execution.md`.
+
+## 2026-07-04 - Behavior-zoo SIZED by xref scan: 79% thin stubs; the worker set is ~17, several ALREADY recovered
+
+Ran the shared-worker-first sizing (``scripts/behavior_zoo_xref.py``, linear-span xref over every
+EFC4 handler on the L1 snapshot). The pre2 second-pass pattern holds DECISIVELY:
+* 149 behavior indices -> 134 distinct handler entries (5x BC45 filler; 6 alias groups -- ``8D4F``
+  alone serves behaviors 13/15/1C/**1F**/7D/7E, i.e. the L1 controller object's behavior);
+* **106/134 handlers are THIN STUBS** (< 0x20 bytes to their flow break);
+* shared CALL workers: **``AFD8`` x21 (the mega-worker)**, ``7476`` x6, ``5DB2`` x6 (= the RECOVERED
+  ``object_target_seek_step_5db2``!), ``4D95`` x4, ``BAE1``/``B729``/``5E42`` x3 (5E42 = the
+  RECOVERED ``object_delta_steer_5e42``), ``BBED``/``B3BF``/``AF63`` x2 (AF63 = the recovered
+  step-delta table) + 7 single-use;
+* shared TAIL workers (handlers ending ``jmp X``): ``B2C8`` x9, ``AD60`` x5 (= the RECOVERED
+  ``object_tile_probe_deactivates_ad60``), ``F779``/``BB03``/``ADC9`` x3, 6 more x2 + 17 single-use;
+  common exits BC45 x72 / BC4B x9.
+So the TRUE new-recovery surface is roughly: ``AFD8`` (one routine covering 21 behaviors -- the
+biggest single lever in the project right now), ``7476``, ``4D95``, ``B2C8``, ``ADC9``, ``BB03``,
+``B729``, ``BAE1``, ``B3BF``, ``BBED``, ``F779``, ``F55A``, ``B85C``, ``B2CD``/``B2AC``,
+``87B5``/``8744`` -- ~15 workers plus per-behavior stub parameters, NOT 149 routines. CAVEAT: linear
+spans only (conditional paths not walked) -- counts are LOWER bounds on sharing.
+NEXT (enemy track): disassemble + drive ``AFD8`` first (21 behaviors), then ``B2C8``+``AD60`` tails
+(motion/deactivation family), then the planet-1 spawn-family behaviors 0x1F (=8D4F) and 0x20 (B73E)
+from the L1 fast-forward trace.
+
+## 2026-07-04 - PLANET NUMBERING pinned by the demo corpus: play order 1,2,3,4,5,0 -- planet 0 is the FINAL boss level
+
+User-prompted check that corrected a fresh wrong claim ("planet 0 = the cold-boot level"). Reading
+``DS:2356`` from EVERY demo snapshot: ``L1``->planet 1, ``L2``->2, ``L3``->3, ``L4``->4, ``L5``->5,
+**``L6``->planet 0** (L6_begin/boss/continue/defeated_by_boss/different_weapons/mothership_end).
+So the PLAY order is planets 1..5 then 0 -- consistent with the recovered pieces: a new game inits
+``2356 = 0`` (``new_game_session_init_96ee``) and the setup ADVANCES it 0->1
+(``advance_level_index_9744``) before the first level; the 5->0 wrap IS the final level, not a
+restart. Consequences:
+* the COLD-BOOT FIRST level is **planet 1** -> its enemy wave is the A7A0-phased per-planet family
+  (``B574``: ``B615`` spawn < 0xC8, pause < 0xF0, ``B58A`` boss transform) -- the ``L1_start``
+  fast-forward observations (behaviors 0x1F/0x20 spawning) were ALREADY the right family;
+* the ``B4A2`` leader-group family (driver -> leader 0x78 + escorts 0x76/0x77/0x79) is the FINAL
+  level's MOTHERSHIP formation (the L6 demos incl. ``L6_mothership_end`` witness it);
+* NO capture session needed -- the corpus covers every planet (planet-0 gameplay: the six L6_*
+  snapshots + player_death; the planet=0 A7A0=0 snapshots -- menu_interaction, showcase,
+  start_to_end, the two 202606xx -- are PRE-GAMEPLAY captures where 2356 still holds the init 0);
+* LATENT MISMATCH to fix when wiring waves: ``build_cold_level_start`` leaves ``2356 = 0`` (the
+  session init) while ``play_native --level N`` loads the LEVEL(N+1) assets -- the cold state must
+  apply the 9744 advance (or set 2356 = N+1) so the wave driver dispatches the RIGHT family.
+Docstrings/CLAUDE.md corrected (wave_driver_dispatch_b556 now records the numbering).
 
 ## 2026-07-04 - Five pre2 endgame principles ADOPTED (mined from the pre2_port methodology docs)
 
