@@ -249,6 +249,27 @@ def step_death_countdown_9e69(a47c: int, counter_2384: int, a362: int, a95a: int
     return new_a362, new_a95a, new_a95a == 0xFFFF
 
 
+def step_game_over_countdown_9ee4(a97a: int):
+    """The ``1010:9EE4`` game-over animation countdown (a death-island leaf; sets ``A97A -> 0``).
+
+    Recovered from the ``9EE4..9EF5`` disassembly, confirmed by ``verify_native_a97a_game_over.py``:
+    when ``DS:A97A == 0`` the routine no-ops and returns (game over already settled); otherwise it
+    decrements ``A97A`` and, when that reaches 0, the game-over-final branch fires (``9EF5``: sets
+    2384/BEFF, then ``jmp 77DF``) -- ``A97A == 0`` is what the gameplay-exit GAME_OVER verdict keys on
+    (:func:`death_tail_transition_9aff`).  While still counting (``A97A > 0`` after the decrement) it
+    takes the plain ``9EF2 -> jmp 77DF`` path.  (The 2384/BEFF writes on the reached-zero path are not
+    part of this countdown leaf.)
+
+    Returns ``(new_a97a, reached_zero, rets_early)``: ``rets_early`` marks the no-op ``A97A == 0``
+    entry.  Pure: the caller owns the DS read/write.
+    """
+    a97a &= 0xFFFF
+    if a97a == 0:
+        return 0, False, True
+    new_a97a = (a97a - 1) & 0xFFFF
+    return new_a97a, new_a97a == 0, False
+
+
 def death_tail_reached_9aff(a95a: int, a97a: int) -> bool:
     """Whether 9B2E branches into the ``9AFF`` death tail: the tracked anchor state is absent."""
     return (a95a & 0xFFFF) == ANCHOR_STATE_ABSENT_A95A or (a97a & 0xFFFF) == 0

@@ -88,8 +88,15 @@ anchor-loss countdown (gated off when ``A47C == 1`` or ``2384 >= 3``; else toggl
 on the A362==0 frames; ``A95A: 0 -> FFFF`` = anchor lost). **Driven-oracle verified** (force synthetic
 ``(A47C,2384,A362,A95A)``, drive the original 9E69 to a ret / 9E9C, compare A362+A95A):
 ``verify_native_death_countdown.py`` **8/8 branches, 0 fails** (the oracle pinned the arm polarity).
-Remaining leaves: the ``A95C`` difficulty countdown (9E43..9E61), the ``A97A`` game-over countdown
-(9EE4..9EEC), then compose the whole 9E40 state machine + thread the death cells into NativeGameState.
+Remaining leaves: the ``A95C`` difficulty countdown (9E43..9E61), then compose the whole 9E40 state
+machine + thread the death cells into NativeGameState.
+
+**A97A game-over countdown leaf RECOVERED (next pass):** ``systems/frame_loop.step_game_over_countdown_9ee4``
+-- ``A97A == 0`` no-ops; else decrement, and reaching 0 is the game-over trigger (the ``A97A == 0`` the
+GAME_OVER verdict keys on). **Driven-oracle verified** ``verify_native_a97a_game_over.py`` 5/5, 0 fails.
+The oracle again earned its keep: it caught that lindis mis-displayed the ``9EF0 jz`` target (dec-to-0
+takes the ``9EF5`` game-over-final path with 2384/BEFF, dec-to-nonzero falls to ``9EF2``) -- pin branch
+targets by oracle, not by eye.
 
 ## 2026-07-04 - A940 attract-mode middle recovered (driven-oracle) -> A940 stage now complete both paths
 

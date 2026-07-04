@@ -373,3 +373,14 @@ def test_step_death_countdown_9e69_arm_gate_and_toggle():
     assert step_death_countdown_9e69(a47c=0, counter_2384=2, a362=1, a95a=0x3) == (0, 0x2, False)
     # A95A 0 -> FFFF = anchor lost (death stage 1 complete)
     assert step_death_countdown_9e69(a47c=0, counter_2384=0, a362=1, a95a=0x0) == (0, 0xFFFF, True)
+
+
+def test_step_game_over_countdown_9ee4():
+    from overkill.recovered.systems.frame_loop import step_game_over_countdown_9ee4
+    # A97A == 0 -> no-op ret (game over already settled)
+    assert step_game_over_countdown_9ee4(0) == (0, False, True)
+    # decrement to non-zero -> still counting (9EF2)
+    assert step_game_over_countdown_9ee4(0x57) == (0x56, False, False)
+    assert step_game_over_countdown_9ee4(2) == (1, False, False)
+    # decrement to zero -> game over reached (9EF5)
+    assert step_game_over_countdown_9ee4(1) == (0, True, False)
