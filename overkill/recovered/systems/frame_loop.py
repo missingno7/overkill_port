@@ -284,6 +284,54 @@ def detect_gameplay_transition(a47c: int, a95a: int, a97a: int, v2326: int,
 ATTRACT_MODE_2356 = 0x0005   # DS:2356 == 5 -> A940 runs its attract-mode counter/demo-tick middle
 
 
+def a940_speed_bucket(a47e: int) -> int:
+    """A940's attract reload from the ``DS:A47E`` speed bucket: 0x0A default, tightening as A47E drops.
+
+    ``CL = 0x0A; if A47E <= 0x10: 0x06; if <= 0x08: 0x04; if <= 0x04: 0x01`` (1010:A98F..A9A7).
+    """
+    a47e &= 0xFFFF
+    bucket = 0x0A
+    if a47e <= 0x10:
+        bucket = 0x06
+        if a47e <= 0x08:
+            bucket = 0x04
+            if a47e <= 0x04:
+                bucket = 0x01
+    return bucket
+
+
+def step_a940_attract_middle(a98a2: int, a98aa: int, a98a5: int, a98a3: int, a47e: int):
+    """A940's ``DS:2356 == 5`` attract-mode counter block (1010:A970..A9AD, game_state.py's 118-154).
+
+    Returns ``(new_98a2, new_98a4, new_98aa, new_98a5, new_98a3)`` (recovered from the A970..A9AD
+    disassembly + confirmed against the original by ``verify_native_a940_attract.py`` -- NB the driven
+    oracle caught that the lifted ``game_state`` attract branch mis-handles the ``98A5 > 1`` path, which
+    no gameplay demo exercises):
+    * ``98A2 != 0`` -> negate ``98AA``, clear ``98A2``, set ``98A4 = 1``; else ``98A4 = 0`` (98A2/98AA
+      unchanged);
+    * the ``98A5`` countdown (``A982..A9B3``): ``98A5 == 0`` -> stays 0 and ``98A3`` increments;
+      ``98A5 == 1`` -> reloads :func:`a940_speed_bucket` and ``98A3`` increments; ``98A5 > 1`` ->
+      decrements to ``98A5-1`` and ``98A3`` is RESET to 0 (the ``A9B3`` branch).
+    (The 1F8F:081D demo tick is separate -- :func:`step_demo_counter_tick_1f8f_081d`.)  Pure.
+    """
+    a98a2 &= 0xFF
+    if a98a2 != 0:
+        new_98aa = (-(a98aa & 0xFFFF)) & 0xFFFF
+        new_98a2, new_98a4 = 0, 1
+    else:
+        new_98aa, new_98a2, new_98a4 = a98aa & 0xFFFF, 0, 0
+    a98a5 &= 0xFF
+    if a98a5 == 0:
+        new_98a5, new_98a3 = 0, (a98a3 + 1) & 0xFF
+    else:
+        dec = (a98a5 - 1) & 0xFF
+        if dec != 0:
+            new_98a5, new_98a3 = dec, 0
+        else:
+            new_98a5, new_98a3 = a940_speed_bucket(a47e), (a98a3 + 1) & 0xFF
+    return new_98a2, new_98a4, new_98aa, new_98a5, new_98a3
+
+
 def frame_state_update_a940(counter_a8ce: int, a8c8: int, a8cc: int, mode_2356: int,
                             flag_98a8: int, boss_pending_a8c2: int):
     """The whole ``1010:A940`` game-state update for a GAMEPLAY frame (``DS:2356 != 5``).
@@ -300,8 +348,9 @@ def frame_state_update_a940(counter_a8ce: int, a8c8: int, a8cc: int, mode_2356: 
 
     if (mode_2356 & 0xFFFF) == ATTRACT_MODE_2356:
         raise RecoveryGap("1010:A940 attract-mode middle (DS:2356 == 5)",
-                          "the 98A2/98A4/98A5 attract counters + the 1F8F:081D demo tick are not "
-                          "modelled natively yet")
+                          "recovered as step_a940_attract_middle + step_demo_counter_tick_1f8f_081d, "
+                          "but this gameplay-path signature doesn't carry the attract inputs -- a "
+                          "caller in attract mode composes those two directly")
     accum = step_frame_accumulator_shift_a940(counter_a8ce, a8c8, a8cc)
     scan = step_frame_scan_entry_a940_tail(flag_98a8, boss_pending_a8c2)
     return FrameStateUpdateA940(

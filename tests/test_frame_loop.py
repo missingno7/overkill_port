@@ -338,3 +338,25 @@ def test_step_death_tail_9aff_increments_and_fires():
     # reached but not dying (2326 != 3) -> unchanged
     assert step_death_tail_9aff(0xFFFF, 1, 2, 0x05).anchor_counter == 0x05
     assert step_death_tail_9aff(0xFFFF, 1, 2, 0x05).transition is None
+
+
+def test_a940_speed_bucket_cascades():
+    from overkill.recovered.systems.frame_loop import a940_speed_bucket
+    assert a940_speed_bucket(0x40) == 0x0A     # > 0x10
+    assert a940_speed_bucket(0x10) == 0x06
+    assert a940_speed_bucket(0x08) == 0x04
+    assert a940_speed_bucket(0x04) == 0x01
+
+
+def test_a940_attract_middle_98a5_countdown_and_98a2_negate():
+    from overkill.recovered.systems.frame_loop import step_a940_attract_middle
+    # 98A2 != 0 -> negate 98AA, clear 98A2, set 98A4 = 1
+    assert step_a940_attract_middle(a98a2=1, a98aa=5, a98a5=0, a98a3=0x10, a47e=0x40) == \
+        (0, 1, (-5) & 0xFFFF, 0, 0x11)
+    # 98A5 == 0 -> stays 0, 98A3 increments
+    assert step_a940_attract_middle(0, 0x1234, 0, 0x10, 0x40) == (0, 0, 0x1234, 0, 0x11)
+    # 98A5 == 1 -> reload bucket, 98A3 increments
+    assert step_a940_attract_middle(0, 0x1234, 1, 0x7F, 0x40) == (0, 0, 0x1234, 0x0A, 0x80)
+    # 98A5 > 1 -> decrement, 98A3 RESET to 0 (the A9B3 branch the lifted code misses)
+    assert step_a940_attract_middle(0, 0x1234, 5, 0x20, 0x40) == (0, 0, 0x1234, 4, 0)
+    assert step_a940_attract_middle(0, 0x1234, 3, 0x99, 0x40) == (0, 0, 0x1234, 2, 0)

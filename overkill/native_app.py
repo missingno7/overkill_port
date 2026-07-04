@@ -105,8 +105,8 @@ GAMEPLAY_FRAME_STAGES: tuple[FrameStage, ...] = (
                "the gameplay path (DS:2356 != 5) is composed + produced-vs-VM verified as"
                " systems/frame_loop.frame_state_update_a940 (accumulator shift + scan-entry fork;"
                " 750/750 A940 frames byte-exact, verify_native_a940). The DS:2356 == 5 attract-mode"
-               " counter/demo-tick middle is a declared sub-gap (fails loud). Its output cells"
-               " (A8CE/A8C6/A8CA/A8CC/98A8/98A9) are not threaded into the native loop yet"),
+               " middle is ALSO recovered now (step_a940_attract_middle, driven-oracle 8/8) though not"
+               " composed into the gameplay-path signature. Output cells not threaded into the loop yet"),
     FrameStage("service_gate", "1010:073C", GAP, "sound/timer service gate; not recovered -- not run"),
     FrameStage("status_text", "1010:60A2", GAP,
                "per-frame status text; hud_text composers exist but are not wired into the standalone"),

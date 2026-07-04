@@ -60,6 +60,26 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - A940 attract-mode middle recovered (driven-oracle) -> A940 stage now complete both paths
+
+Recovered A940's ``DS:2356 == 5`` attract-mode counter block (the sub-gap left by the gameplay-path
+A940 slice): ``systems/frame_loop.step_a940_attract_middle`` (the 98A2/98A4/98AA negate + the 98A5
+countdown / 98A3 reset-or-inc) + ``a940_speed_bucket`` (the A47E reload cascade 0x0A/06/04/01).
+
+**Verified by DRIVEN ORACLE** (``verify_native_a940_attract.py``): no gameplay demo runs 97B2/A940 with
+2356==5, so the probe forces ``DS:2356=5`` + synthetic ``(98A2,98AA,98A5,98A3,A47E)`` and drives the
+ORIGINAL A940 to its A9E0 exit, comparing all 5 cells -- **8/8 branch combos, 0 fails.** The oracle
+earned its keep: it caught that the LIFTED game_state attract branch mis-handles ``98A5 > 1`` (it
+should DECREMENT 98A5 + RESET 98A3 to 0 via A9B3, not overwrite/inc) -- a latent bug that no gameplay
+demo exercises (logged in loop_blockers). The pure rule is correct.
+
+Frame-controller scouting this pass (recorded so the next run doesn't re-scout): the remaining
+gameplay frontier is all ISLANDS -- the object behaviors that AREN'T native (0x2a/8676 etc.) are
+mode-dependent SPAWNERS (allocator + child-spawn), 99F6 is a scripted-input jump table, the HUD base
+panel (frame/scope/gauges/radar) is ~80% un-recovered (859E draws only the 4 buttons, 2298 of 11391
+HUD px), and the death-firing path needs the collision-death upstream. Clean single-leaf frame stages
+are done.
+
 ## 2026-07-04 - Native 9AFF death-tail STAGE (the stateful counter increment) demo-witnessed on death
 
 Recovered the STATEFUL half of the death exit: ``systems/frame_loop.step_death_tail_9aff(a95a, a97a,

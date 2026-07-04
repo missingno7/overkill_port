@@ -754,3 +754,14 @@ limit at the transition frame. **Workaround:** witness transitions via the run-u
 just before the heavy frame). `verify_native_gameplay_transition.py` already caught the 4 DEATH-exit
 frames at frames <1790. If a future slice needs to replay THROUGH a death/ending transition, raise the
 `frame_budget` for that run rather than treating the timeout as a divergence.
+
+## 2026-07-04 — lifted A940 attract branch (game_state.py ~150-154) mis-handles 98A5 > 1 (untested path)
+
+The lifted ``run_frame_game_state_update_a940`` attract-mode branch (``DS:2356 == 5``) writes 98A5/98A3
+unconditionally in the ``98A5 != 0`` arm, so for ``98A5 > 1`` it sets 98A5:=CL(0) + inc 98A3. The
+ORIGINAL (driven-oracle, ``verify_native_a940_attract.py``) instead DECREMENTS 98A5 to 98A5-1 and
+RESETS 98A3 to 0 (the ``1010:A9B3`` branch). This lifted bug is latent — NO gameplay demo runs 97B2
+with ``2356 == 5`` (the in-game demo-playback mode), so it's never exercised in the suite. The PURE
+``step_a940_attract_middle`` is correct (matches the original on all branches). If the lifted attract
+branch is ever put on a witnessed path, fix it to match the pure rule (or delegate the lifted adapter
+to ``step_a940_attract_middle`` + ``a940_speed_bucket``). Low priority (attract-only).
