@@ -60,6 +60,18 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - Up-to-speed plan item 2/4: the lindis/CPU branch-target display FIXED at the source
+
+The recurring "lindis mis-displays jz/jnb/loop targets" lesson (burned every disassembly session;
+docs are full of oracle-corrected polarities) is fixed where it lived: ``dos_re/cpu.py``'s Jcc /
+loop-family / jcxz trace strings printed the POST-EXECUTION IP -- i.e. the FALL-THROUGH address when
+the branch was not taken -- which read as a wrong disassembly target. Now the arrow ALWAYS shows the
+ENCODED branch target and ``taken``/``not`` reports the execution outcome. Verified on today's known
+case: ``B490: 73 03`` now prints ``jnb -> 1010:B495`` (was ``-> B492``, the fall-through), matching
+the driven-oracle-pinned B48B thresholds. No trace-string parser exists (grepped); suite-gated.
+Disassembly listings no longer need per-branch oracle polarity checks -- but keep pinning DECISIONS
+by oracle anyway (the discipline stands; the tool just stopped lying).
+
 ## 2026-07-04 - UP-TO-SPEED PLAN started + the TIMING FAST-FORWARD primitive landed (pre2 parity, item 1/4)
 
 Diagnosed why this port runs slower/more chaotic than pre2_port (same author, started 9 days later,

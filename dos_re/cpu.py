@@ -622,21 +622,23 @@ class CPU8086:
             return f"iret -> {target_cs:04X}:{target_ip:04X}"
         if 0x70 <= op <= 0x7F:
             rel = self.sign8(self.fetch8()); take = self.condition(op & 0xF)
-            old = s.ip
-            if take: s.ip = (s.ip + rel) & 0xFFFF
-            return f"{JCC_NAMES[op & 0xF]} -> {s.cs:04X}:{s.ip if take else old:04X} {'taken' if take else 'not'}"
+            # The arrow always shows the ENCODED branch target; taken/not is the execution outcome.
+            # (It used to show the fall-through IP when not taken, which mis-read as disassembly.)
+            target = (s.ip + rel) & 0xFFFF
+            if take: s.ip = target
+            return f"{JCC_NAMES[op & 0xF]} -> {s.cs:04X}:{target:04X} {'taken' if take else 'not'}"
         if op in (0xE0, 0xE1, 0xE2):
             rel = self.sign8(self.fetch8()); s.cx = (s.cx - 1) & 0xFFFF
             take = s.cx != 0 and (op == 0xE2 or (op == 0xE1 and self.get_flag(ZF)) or (op == 0xE0 and not self.get_flag(ZF)))
             target = (s.ip + rel) & 0xFFFF
             if take: s.ip = target
             name = {0xE0: 'loopne', 0xE1: 'loope', 0xE2: 'loop'}[op]
-            return f"{name} -> {s.cs:04X}:{s.ip:04X} {'taken' if take else 'not'} cx={s.cx:04X}"
+            return f"{name} -> {s.cs:04X}:{target:04X} {'taken' if take else 'not'} cx={s.cx:04X}"
         if op == 0xE3:
             rel = self.sign8(self.fetch8()); take = s.cx == 0
             target = (s.ip + rel) & 0xFFFF
             if take: s.ip = target
-            return f"jcxz -> {s.cs:04X}:{s.ip:04X} {'taken' if take else 'not'}"
+            return f"jcxz -> {s.cs:04X}:{target:04X} {'taken' if take else 'not'}"
 
         # String operations
         if op in (0xA4, 0xA5, 0xAA, 0xAB, 0xAC, 0xAD, 0xAE, 0xAF):
