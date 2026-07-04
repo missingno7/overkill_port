@@ -589,3 +589,15 @@ def test_player_companion_spawn_c453():
     from overkill.recovered.systems.frame_loop import player_companion_spawn_c453
     rec = player_companion_spawn_c453()
     assert rec == {0x00: 1, 0x14: 1, 0x16: 6}   # active + logic/type of the player's companion object
+
+
+def test_respawn_control_reset_c461():
+    from overkill.recovered.systems.frame_loop import respawn_control_reset_c461
+    r = respawn_control_reset_c461()
+    # the A3B4 coordinate ring: 26 words -> 0xFFFF
+    assert all(r[(0xA3B4 + i * 2) & 0xFFFF] == 0xFFFF for i in range(26))
+    # the countdown counters + the zeroed control family
+    assert r[0xA95A] == 3 and r[0xA95C] == 0x18
+    assert all(r[o] == 0 for o in (0xA970, 0xA972, 0xA974, 0xA976, 0xA97A, 0xA97E, 0xA39A, 0xA39C))
+    assert r[0x9788] == 0xFFFF
+    assert len(r) == 26 + 2 + 8 + 1

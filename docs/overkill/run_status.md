@@ -60,6 +60,20 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - Bucket F: respawn/level-start control re-init (C461) -- completes the C3A6 memset
+
+Recovered the C3A6 tail's control reset: ``frame_loop.respawn_control_reset_c461`` (``C461..C4AD``) -- the
+``A3B4`` coordinate ring (26 words -> 0xFFFF) + ``A95A=3``/``A95C=0x18`` + the zeroed control family
+``A970/A972/A974/A976/A97A/A97E`` + the scripted-move counters ``A39A/A39C=0`` + ``9788=0xFFFF`` (37
+cells). Byte-exact AND complete vs the VM (``verify_native_respawn_control_reset``, driving C461->C4B3;
+the A3B4 ring's ES write lands in DGROUP since SS==DS). The ``9DB9`` game-over-arm call + ``A980``/``20A6``
+writes that follow are separate.
+
+**The C3A6 respawn/level-start re-init is now essentially fully recovered:** two pool re-seeds
+(``object_pool_seed_c4db`` for the 0x32CA pool; the 34-slot 0x8D12 pool remains), player spawn
+(``player_spawn_record_c42f``), companion spawn (``player_companion_spawn_c453``), and this control reset.
+NEXT: the 34-slot 0x8D12 pool re-seed, or wiring the cold starfield into play_native.
+
 ## 2026-07-04 - Bucket F: player COMPANION spawn (C453) -- the flame/exhaust object stamped at spawn
 
 Continued the C3A6 player-spawn recovery: right after the player record stamp, ``C450`` allocates a

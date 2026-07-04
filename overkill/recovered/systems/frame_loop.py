@@ -735,6 +735,33 @@ def player_companion_spawn_c453() -> dict:
     return {0x00: 1, 0x14: 1, 0x16: 6}
 
 
+def respawn_control_reset_c461() -> dict:
+    """The ``1010:C461..C4AD`` respawn / level-start control re-init (the C3A6 tail, after the player +
+    companion spawn).  Returns the exact ``{DGROUP offset: value}`` map it writes:
+
+    * the ``A3B4`` coordinate ring -- 26 words -> ``0xFFFF`` (the empty-slot sentinel);
+    * ``A95A = 3`` / ``A95C = 0x18`` -- the death/difficulty countdown counters (as at session start);
+    * ``A970``/``A972``/``A974``/``A976``/``A97A``/``A97E`` -> 0 -- the A970-family counters + the
+      game-over/HUD cell ``A97A``;
+    * ``A39A``/``A39C`` -> 0 -- the scripted-move coordinate counters (see
+      :func:`step_scripted_move_counters_9a3e`);
+    * ``9788 = 0xFFFF``.
+
+    Pure data (a memset of the per-life control state; ``SS==DS`` so the ``A3B4`` ring's ES write lands
+    in DGROUP too).  The ``9DB9`` game-over-arm call + ``A980``/``20A6`` writes that FOLLOW at ``C4B3+``
+    are separate.  Byte-exact + complete vs the VM (``verify_native_respawn_control_reset``).
+    """
+    reset: dict = {}
+    for i in range(26):
+        reset[(0xA3B4 + i * 2) & 0xFFFF] = 0xFFFF
+    reset[0xA95A] = 0x0003
+    reset[0xA95C] = 0x0018
+    for off in (0xA970, 0xA972, 0xA974, 0xA976, 0xA97A, 0xA97E, 0xA39A, 0xA39C):
+        reset[off] = 0x0000
+    reset[0x9788] = 0xFFFF
+    return reset
+
+
 def new_game_session_init_96ee() -> dict:
     """The session-start (new-game) DATA init at ``1010:96EE..9715`` -- the TOP of the mode machine's
     game session.
