@@ -432,3 +432,17 @@ def test_step_game_over_arm_9db9():
     assert step_game_over_arm_9db9(0x30, 0, 0, 0, 1) == (1, 0x0D)
     assert step_game_over_arm_9db9(0x30, 0, 0, 1, 1) == (1, None)   # BDAC == 1 -> no BEFF
     assert step_game_over_arm_9db9(0x30, 0, 0, 0, 0) == (1, None)   # 98C0 == 0 -> no BEFF
+
+
+def test_step_death_handler_9a16_composition():
+    from overkill.recovered.systems.frame_loop import step_death_handler_9a16
+    # sets scripted input 98BE := 8 always
+    assert step_death_handler_9a16(0x30, 0, 0x02, 0x05, 0, 0, 1)[0] == 0x08
+    # A47C advances only when (post sub-steps) A97A == 0x58 AND A95A == 3 AND A95C == 0x18.
+    # A95C=0x18 with A95A=3 -> 9DEA no-ops (A95A stays 3, A95C stays 0x18); A97A 0x58 -> advance
+    i98be, a97c, a95a, a95c, adv = step_death_handler_9a16(0x58, 0, 0x03, 0x18, 0, 0, 1)
+    assert (a95a, a95c, adv) == (0x03, 0x18, True)
+    # A97A != 0x58 -> no advance
+    assert step_death_handler_9a16(0x30, 0, 0x03, 0x18, 0, 0, 1)[4] is False
+    # A95C != 0x18 (9DEA increments it) -> no advance
+    assert step_death_handler_9a16(0x58, 0, 0x03, 0x05, 0, 0, 1)[4] is False

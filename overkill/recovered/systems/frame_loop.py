@@ -242,6 +242,24 @@ def scripted_input_prologue_99f6(a47c: int, prev_2380: int):
     return prev_2380 & 0xFFFE, 0x00, (a47c << 1) & 0xFFFF
 
 
+def step_death_handler_9a16(a97a: int, a97c: int, a95a: int, a95c: int,
+                            counter_2384: int, bdac: int, flag_98c0: int):
+    """The whole ``1010:9A16`` scripted-input DEATH handler (the ``A47C == 3`` step of the 99F6 script).
+
+    COMPOSES the recovered death-handler sub-steps -- no VM/render calls, fully native: set the
+    scripted input ``DS:98BE := 8`` (down), run :func:`step_game_over_arm_9db9` then
+    :func:`step_death_seq_9dea`, then ADVANCE the script step ``inc DS:A47C`` only when (after those
+    sub-steps) ``A97A == 0x58`` AND ``A95A == 3`` AND ``A95C == 0x18`` (all three -- confirmed by
+    ``verify_native_death_handler_9a16.py``).
+
+    Returns ``(input_98be, new_a97c, new_a95a, new_a95c, a47c_advanced)``.  Pure.
+    """
+    new_a97c, _ = step_game_over_arm_9db9(a97a, a97c, counter_2384, bdac, flag_98c0)
+    new_a95c, new_a95a, _ = step_death_seq_9dea(a95c, a95a, flag_98c0)
+    a47c_advanced = (a97a & 0xFFFF) == 0x0058 and new_a95a == 0x0003 and new_a95c == 0x0018
+    return 0x08, new_a97c, new_a95a, new_a95c, a47c_advanced
+
+
 def step_game_over_arm_9db9(a97a: int, a97c: int, counter_2384: int, bdac: int, flag_98c0: int):
     """The ``1010:9DB9`` game-over ARM (a 99F6-death-handler sub-step; sets the ``A97C`` flag).
 

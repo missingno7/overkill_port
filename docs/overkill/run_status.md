@@ -60,6 +60,20 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - COMPOSED the first native death handler (99F6 9A16, A47C==3)
+
+First COMPOSITION (not just a leaf): ``systems/frame_loop.step_death_handler_9a16`` builds the whole
+``1010:9A16`` scripted-input death handler (the A47C==3 script step) from the recovered sub-steps --
+NO VM/render calls: set scripted input ``98BE := 8``, run ``step_game_over_arm_9db9`` then
+``step_death_seq_9dea``, then advance the script ``inc A47C`` only when (post sub-steps) ``A97A == 0x58``
+AND ``A95A == 3`` AND ``A95C == 0x18``. Driven-oracle ``verify_native_death_handler_9a16.py`` (drives
+the original handler, which itself calls 9DB9+9DEA) **24/24, 0 fails**.
+
+So the 99F6 death-script step for A47C==3 is now fully native. Toward native death FIRING, remaining:
+compose the other A47C handlers (9A3E==2, 9A78==1) the same way, then the ARM (the upstream collision
+that sets A47C into the death-script range) + running 99F6 in play_native. The composition pattern is
+proven; the render calls that blocked earlier composition attempts are NOT in these death handlers.
+
 ## 2026-07-04 - 9DB9 game-over ARM recovered; HUD-fold needs a level-load capture
 
 Recovered ``systems/frame_loop.step_game_over_arm_9db9`` (the 99F6-death-handler ARM sub-step): no-op
