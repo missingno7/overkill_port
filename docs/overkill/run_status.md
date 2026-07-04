@@ -60,6 +60,24 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - Enemy-spawner scoping: formation CHILDREN recovered; the wave/LEADER trigger is the gap
+
+Investigated the enemy-wave spawner (the pool stays empty at cold start). Findings:
+* The formation-CHILD spawn is ALREADY recovered: ``b86d_formation_spawn_tick_index`` (B86D schedules
+  spawns on exact DS:2340 counter ticks), ``advance_formation_spawn_ptr`` (B800 spawn-list pointer),
+  ``formation_spawn_seed_7476`` (the child stamp). These are OBJECT BEHAVIORS (via the AA2B draw-layer
+  dispatch) -- so a formation LEADER object must already be active for children to spawn.
+* Where enemies live: NOT the gameplay pool (0x2B5C) as assumed -- scanning the L2_full snapshot, the only
+  active non-player object is in the EFFECT pool (``0x23B4`` slot 0, logic(+8)=0xA at 0xD9/0x60). Mid-level
+  snapshots are surprisingly quiet (1-2 active objects), so they don't reveal the wave cadence.
+* THE GAP: what spawns the formation LEADER / first enemy from the LEVEL SCHEDULE as the world scrolls
+  (tied to DS:A978 rows-to-milestone + the level map/Gn data). Not located in the recovered code.
+
+NEXT-RUN PLAN: trace a FIRING/active gameplay demo (e.g. showcase or L2_full played forward, NOT the quiet
+start snapshot) and watch for the first EFFECT/gameplay-pool activation -- capture the routine that does
+the 7524 alloc + stamp of an enemy, and what gates it (scroll position / A978 / a level enemy list
+pointer). That routine is the enemy-wave spawner. It shares the cold tile-probe origin fix (already done).
+
 ## 2026-07-04 - MILESTONE: play_native FIRES -- cold-started level shoots real (persisting) player shots, VM-free
 
 Executed the 4-step plan from last pass and it WORKS. play_native's cold start now produces live gameplay:
