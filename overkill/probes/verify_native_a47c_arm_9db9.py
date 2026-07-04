@@ -1,10 +1,10 @@
-"""Driven-oracle: the 9DB9 game-over ARM vs the ORIGINAL 1010:9DB9.
+"""Driven-oracle: the 9DB9 A47C-script ARM vs the ORIGINAL 1010:9DB9.
 
 Drives the original bytes across every ``(A97A, A97C, 2384, BDAC, 98C0)`` branch combo (stops at the
-rets 9DC0/9DC8/9DE9) and compares ``(A97C, BEFF)`` to ``systems.frame_loop.step_game_over_arm_9db9``.
+rets 9DC0/9DC8/9DE9) and compares ``(A97C, BEFF)`` to ``systems.frame_loop.step_a47c_arm_9db9``.
 
 Usage:
-    python -m overkill.probes.verify_native_game_over_arm_9db9 [snapshot_dir]
+    python -m overkill.probes.verify_native_a47c_arm_9db9 [snapshot_dir]
 """
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ DEFAULT_SNAP = "artifacts/demos/demo_play_tandy_player_death_20260618_233821/sna
 
 def main(argv) -> int:
     from overkill.runtime import load_overkill_snapshot
-    from overkill.recovered.systems.frame_loop import step_game_over_arm_9db9
+    from overkill.recovered.systems.frame_loop import step_a47c_arm_9db9
 
     snap = Path(argv[0]) if argv else ROOT / DEFAULT_SNAP
     rt = load_overkill_snapshot(ROOT / "assets" / "OVERKILL", str(snap), game_root=ROOT / "assets")
@@ -52,7 +52,7 @@ def main(argv) -> int:
                     for c0 in (0, 1):
                         n += 1
                         vm_a97c, vm_beff = drive(a97a, a97c, c2384, bdac, c0)
-                        new_a97c, beff = step_game_over_arm_9db9(a97a, a97c, c2384, bdac, c0)
+                        new_a97c, beff = step_a47c_arm_9db9(a97a, a97c, c2384, bdac, c0)
                         mine = (new_a97c, beff if beff is not None else 0)
                         if mine != (vm_a97c, vm_beff):
                             fails += 1
@@ -61,7 +61,7 @@ def main(argv) -> int:
                                   "vm=", (hex(vm_a97c), hex(vm_beff)))
 
     print(f"9DB9 game-over arm driven-oracle: combos={n} fails={fails}")
-    print("RESULT:", "PASS -- step_game_over_arm_9db9 matches the original 9DB9 on every branch"
+    print("RESULT:", "PASS -- step_a47c_arm_9db9 matches the original 9DB9 on every branch"
           if not fails else "CHECK")
     return 0 if not fails else 1
 

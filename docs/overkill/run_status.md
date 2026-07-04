@@ -60,6 +60,29 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - CONFIRMED via trace + renamed the A47C-script functions (death->A47C, evidence closed)
+
+**The decisive trace resolved it.** Traced the player_death demo forward recording every ``DS:A47C``
+change + every ``1010:A6B9`` (arm) execution: across the ENTIRE run up to the death frame (my 97B2
+frame-counter reached 770; the harness reached the death frame 1805 where it hit the known death-frame
+budget limit at ``1010:32DB``) -- **A47C stayed 0 the whole time (nonzero frames = 0) and the A680 arm
+NEVER fired (0 hits)**. So the A47C scripted-input subsystem is completely dormant through player death:
+it is definitively NOT the death mechanism. (Player death = the separate ``9AFF`` +08 anchor counter,
+already grounded.) The A47C script is a scroll-position-triggered scripted event that simply never
+occurs in this demo.
+
+**Rename pass (the mislabel is now confirmed, not just suspected).** Renamed the three functions whose
+A47C linkage I directly established by composition -- the ``A47C==3`` handler + its two sub-steps:
+``step_death_handler_9a16`` -> ``step_a47c_handler_9a16``, ``step_game_over_arm_9db9`` ->
+``step_a47c_arm_9db9``, ``step_death_seq_9dea`` -> ``step_a47c_seq_9dea`` (+ their probe files
+``verify_native_a47c_{handler_9a16,arm_9db9,seq_9dea}.py``), with docstrings stating the "death" label
+was UNVERIFIED and why. Chose NEUTRAL A47C-script names, NOT another unproven label ("boss"). All three
+probes still PASS byte-exact. GROUNDED death names KEPT as-is (``step_death_tail_9aff``,
+``detect_gameplay_transition`` -- demo-witnessed). The countdown leaves (``step_death_countdown_9e69``,
+``step_game_over_countdown_9ee4``, ``step_a95c_difficulty_countdown_9e43``) are NOT yet renamed -- their
+exact A47C-reachability isn't established, so renaming them would be a fresh guess; deferred with a
+loop_blocker note until a trace links them.
+
 ## 2026-07-04 - CORRECTION: the "death-script" A47C subsystem is MISLABELED -- it is NOT player death
 
 **Honest walk-back of this session's "death" naming.** While wiring the A680 arm toward play_native I

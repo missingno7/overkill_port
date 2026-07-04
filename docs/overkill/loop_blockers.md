@@ -18,9 +18,19 @@ context. Each has the analysis already done so a human can pick up fast.
 
 ---
 
-## 2026-07-04 — What is the A47C scripted-input script? ("death" label is UNVERIFIED)
+## 2026-07-04 — What is the A47C scripted-input script? (PARTLY RESOLVED: it is NOT player death)
 
-**Blocker:** the A47C-indexed scripted-input subsystem (armed at `1010:A680` -> `A6B9` `mov [A47C],1`;
+**UPDATE (resolved half):** traced the player_death demo forward recording `DS:A47C` changes + `A6B9`
+executions — across the WHOLE run up to the death frame (1805), A47C stayed 0 and the arm never fired.
+So the A47C script is definitively NOT player death (death = the separate `9AFF` +08 anchor counter).
+The three directly-A47C-linked functions were renamed `step_death_*`/`step_game_over_*` ->
+`step_a47c_*` (byte-exact, probes pass). **Residual open:** (1) what the A47C script POSITIVELY is
+(boss/cutscene/scripted-event) — needs a demo that actually drives A47C nonzero (e.g. a scroll-to-
+position or boss-intro capture); (2) whether the countdown leaves `step_death_countdown_9e69` /
+`step_game_over_countdown_9ee4` / `step_a95c_difficulty_countdown_9e43` are reachable only via the A47C
+script (they were NOT renamed pending that link). Original analysis retained below.
+
+**Blocker (original):** the A47C-indexed scripted-input subsystem (armed at `1010:A680` -> `A6B9` `mov [A47C],1`;
 dispatched by `99F6`; handlers 1=9A78, 2=9A3E, 3=9A16; counters A95A/A95C/A97A/2384) was recovered
 byte-exact this session and LABELED "death"/"game-over", but that semantic label is an assumption and the
 evidence points elsewhere:

@@ -1,11 +1,11 @@
-"""Driven-oracle: the 9DEA death-sequence A95A/A95C advance vs the ORIGINAL 1010:9DEA.
+"""Driven-oracle: the 9DEA A47C-script A95A/A95C advance vs the ORIGINAL 1010:9DEA.
 
 Drives the original bytes with a synthetic ``(A95C, A95A, 98C0)``, stops at ``9DF8`` (no-op ret) or
 ``9EC2`` (the jmp target both active paths reach), and compares ``(A95C, A95A, BEFF)`` to
-``systems.frame_loop.step_death_seq_9dea``.
+``systems.frame_loop.step_a47c_seq_9dea``.
 
 Usage:
-    python -m overkill.probes.verify_native_death_seq_9dea [snapshot_dir]
+    python -m overkill.probes.verify_native_a47c_seq_9dea [snapshot_dir]
 """
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ COMBOS = [(0x05, 0x03, 0), (0x17, 0x00, 1), (0x18, 0x03, 1), (0x18, 0x03, 0), (0
 
 def main(argv) -> int:
     from overkill.runtime import load_overkill_snapshot
-    from overkill.recovered.systems.frame_loop import step_death_seq_9dea
+    from overkill.recovered.systems.frame_loop import step_a47c_seq_9dea
 
     snap = Path(argv[0]) if argv else ROOT / DEFAULT_SNAP
     rt = load_overkill_snapshot(ROOT / "assets" / "OVERKILL", str(snap), game_root=ROOT / "assets")
@@ -51,7 +51,7 @@ def main(argv) -> int:
     fails = []
     for a95c, a95a, c0 in COMBOS:
         vm = drive(a95c, a95a, c0)
-        new_a95c, new_a95a, beff = step_death_seq_9dea(a95c, a95a, c0)
+        new_a95c, new_a95a, beff = step_a47c_seq_9dea(a95c, a95a, c0)
         mine = (new_a95c, new_a95a, beff if beff is not None else 0x0000)
         if mine != vm:
             fails.append(((a95c, a95a, c0), tuple(hex(x) for x in mine), tuple(hex(x) for x in vm)))
@@ -60,7 +60,7 @@ def main(argv) -> int:
     for f in fails:
         print("  FAIL in=", f[0], "mine=", f[1], "vm=", f[2])
     ok = not fails
-    print("RESULT:", "PASS -- step_death_seq_9dea matches the original 9DEA on every branch"
+    print("RESULT:", "PASS -- step_a47c_seq_9dea matches the original 9DEA on every branch"
           if ok else "CHECK")
     return 0 if ok else 1
 

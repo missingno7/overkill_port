@@ -275,13 +275,14 @@ def scripted_input_prologue_99f6(a47c: int, prev_2380: int):
 
 
 def step_scripted_move_counters_9a3e(counter_2384: int, a39c: int, a39a: int):
-    """The ``1010:9A3E`` scripted-move coordinate-counter update (the A47C==2 death-script step's head).
+    """The ``1010:9A3E`` scripted-move coordinate-counter update (the A47C==2 script step's head).
 
     Recovered from ``9A3E..9A73``, confirmed by ``verify_native_scripted_move_counters_9a3e.py``: it
     increments ``DS:A39C`` (capped) and decrements ``DS:A39A`` (capped) with the caps chosen by the
-    death counter ``DS:2384`` -- ``2384 == 0`` caps at ``A39C 0x08`` / ``A39A 0xFFF8``, else ``0x0F`` /
-    ``0xFFF1``.  (The tail past ``9A73`` -- the boss/death-entity spawn via 7524 + the coordinate-table
+    A47C-script counter ``DS:2384`` -- ``2384 == 0`` caps at ``A39C 0x08`` / ``A39A 0xFFF8``, else
+    ``0x0F`` / ``0xFFF1``.  (The tail past ``9A73`` -- the entity spawn via 7524 + the coordinate-table
     movement -- is a spawner island, NOT part of this counter leaf.)  Returns ``(new_a39c, new_a39a)``.
+    (A47C is the scripted-input/event script, NOT player death -- see :func:`a47c_script_arms_a680`.)
     """
     if (counter_2384 & 0xFFFF) == 0:
         cap_c, cap_a = 0x0008, 0xFFF8
@@ -293,30 +294,37 @@ def step_scripted_move_counters_9a3e(counter_2384: int, a39c: int, a39a: int):
     return new_a39c, new_a39a
 
 
-def step_death_handler_9a16(a97a: int, a97c: int, a95a: int, a95c: int,
+def step_a47c_handler_9a16(a97a: int, a97c: int, a95a: int, a95c: int,
                             counter_2384: int, bdac: int, flag_98c0: int):
-    """The whole ``1010:9A16`` scripted-input DEATH handler (the ``A47C == 3`` step of the 99F6 script).
+    """The whole ``1010:9A16`` scripted-input handler (the ``A47C == 3`` step of the 99F6 script).
 
-    COMPOSES the recovered death-handler sub-steps -- no VM/render calls, fully native: set the
-    scripted input ``DS:98BE := 8`` (down), run :func:`step_game_over_arm_9db9` then
-    :func:`step_death_seq_9dea`, then ADVANCE the script step ``inc DS:A47C`` only when (after those
-    sub-steps) ``A97A == 0x58`` AND ``A95A == 3`` AND ``A95C == 0x18`` (all three -- confirmed by
-    ``verify_native_death_handler_9a16.py``).
+    NOTE: previously named ``step_death_handler_9a16``; the "death" label is UNVERIFIED and contradicted
+    by evidence -- A47C is dormant (``==0``) across the ENTIRE player-death demo and its arm (A680) is
+    scroll-POSITION gated -- so this is the scripted-input/event script, NOT player death (see
+    :func:`a47c_script_arms_a680` + loop_blockers.md).  ``A95A``/``A95C``/``A97A`` are this script's
+    counters, not death counters (they hold the same resting values in ordinary L1/L2 play).
+
+    COMPOSES the recovered sub-steps -- no VM/render calls, fully native: set the scripted input
+    ``DS:98BE := 8`` (down), run :func:`step_a47c_arm_9db9` then :func:`step_a47c_seq_9dea`, then ADVANCE
+    the script step ``inc DS:A47C`` only when (after those sub-steps) ``A97A == 0x58`` AND ``A95A == 3``
+    AND ``A95C == 0x18`` (all three -- confirmed by ``verify_native_a47c_handler_9a16.py``).
 
     Returns ``(input_98be, new_a97c, new_a95a, new_a95c, a47c_advanced)``.  Pure.
     """
-    new_a97c, _ = step_game_over_arm_9db9(a97a, a97c, counter_2384, bdac, flag_98c0)
-    new_a95c, new_a95a, _ = step_death_seq_9dea(a95c, a95a, flag_98c0)
+    new_a97c, _ = step_a47c_arm_9db9(a97a, a97c, counter_2384, bdac, flag_98c0)
+    new_a95c, new_a95a, _ = step_a47c_seq_9dea(a95c, a95a, flag_98c0)
     a47c_advanced = (a97a & 0xFFFF) == 0x0058 and new_a95a == 0x0003 and new_a95c == 0x0018
     return 0x08, new_a97c, new_a95a, new_a95c, a47c_advanced
 
 
-def step_game_over_arm_9db9(a97a: int, a97c: int, counter_2384: int, bdac: int, flag_98c0: int):
-    """The ``1010:9DB9`` game-over ARM (a 99F6-death-handler sub-step; sets the ``A97C`` flag).
+def step_a47c_arm_9db9(a97a: int, a97c: int, counter_2384: int, bdac: int, flag_98c0: int):
+    """The ``1010:9DB9`` A47C-script ARM sub-step (of the ``A47C==3`` handler; sets the ``A97C`` flag).
 
-    Recovered from ``9DB9..9DE9``, confirmed by ``verify_native_game_over_arm_9db9.py`` (32 combos):
-    no-op when ``DS:A97A == 0x58`` or ``DS:A97C == 1`` (already armed); otherwise, only while the death
-    counter ``DS:2384 < 3``, it ARMS ``A97C := 1`` and (only when ``DS:BDAC != 1`` AND ``DS:98C0 != 0``)
+    NOTE: previously ``step_game_over_arm_9db9``; the "game-over" label is UNVERIFIED (see
+    :func:`step_a47c_handler_9a16`) -- ``A97A``/``A97C`` are A47C-script cells, not confirmed game-over.
+    Recovered from ``9DB9..9DE9``, confirmed by ``verify_native_a47c_arm_9db9.py`` (32 combos):
+    no-op when ``DS:A97A == 0x58`` or ``DS:A97C == 1`` (already armed); otherwise, only while the counter
+    ``DS:2384 < 3``, it ARMS ``A97C := 1`` and (only when ``DS:BDAC != 1`` AND ``DS:98C0 != 0``)
     writes ``DS:BEFF := 0x0D``.  When ``2384 >= 3`` it leaves ``A97C`` at 0.
 
     Returns ``(new_a97c, beff)`` where ``beff`` is ``0x0D`` or ``None``.  Pure.
@@ -329,10 +337,12 @@ def step_game_over_arm_9db9(a97a: int, a97c: int, counter_2384: int, bdac: int, 
     return 1, beff
 
 
-def step_death_seq_9dea(a95c: int, a95a: int, flag_98c0: int):
-    """The ``1010:9DEA`` death-sequence A95A/A95C advance (a 99F6-death-handler sub-step).
+def step_a47c_seq_9dea(a95c: int, a95a: int, flag_98c0: int):
+    """The ``1010:9DEA`` A47C-script A95A/A95C advance (a sub-step of the ``A47C==3`` handler).
 
-    Recovered from ``9DEA..9E16``, confirmed by ``verify_native_death_seq_9dea.py``: while ``DS:A95C``
+    NOTE: previously ``step_death_seq_9dea``; the "death" label is UNVERIFIED (see
+    :func:`step_a47c_handler_9a16`).
+    Recovered from ``9DEA..9E16``, confirmed by ``verify_native_a47c_seq_9dea.py``: while ``DS:A95C``
     hasn't reached ``0x18`` it just increments ``A95C`` (``9E12``); once ``A95C == 0x18`` AND
     ``DS:A95A != 3`` it advances the anchor (``inc A95A``), resets ``A95C = 0``, and (only when
     ``DS:98C0 != 0``) writes ``DS:BEFF = 0x1C``; if ``A95C == 0x18`` and ``A95A == 3`` it no-ops

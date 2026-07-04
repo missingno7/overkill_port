@@ -1,13 +1,13 @@
-"""Driven-oracle: the composed 99F6 death handler 9A16 vs the ORIGINAL 1010:9A16 (A47C==3 script step).
+"""Driven-oracle: the composed 99F6 A47C handler 9A16 vs the ORIGINAL 1010:9A16 (A47C==3 script step).
 
 Drives the original handler (which itself calls 9DB9 + 9DEA) with a synthetic state, seeds ``A47C = 3``,
 runs to its ret, and compares the handler's script state -- ``98BE`` (scripted input), ``A97C``,
 ``A95A``, ``A95C``, and whether ``A47C`` advanced (3 -> 4) -- to
-``systems.frame_loop.step_death_handler_9a16``.  Proves the native COMPOSITION of the recovered
+``systems.frame_loop.step_a47c_handler_9a16``.  Proves the native COMPOSITION of the recovered
 sub-steps + the A47C-advance gate.
 
 Usage:
-    python -m overkill.probes.verify_native_death_handler_9a16 [snapshot_dir]
+    python -m overkill.probes.verify_native_a47c_handler_9a16 [snapshot_dir]
 """
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ DEFAULT_SNAP = "artifacts/demos/demo_play_tandy_player_death_20260618_233821/sna
 
 def main(argv) -> int:
     from overkill.runtime import load_overkill_snapshot
-    from overkill.recovered.systems.frame_loop import step_death_handler_9a16
+    from overkill.recovered.systems.frame_loop import step_a47c_handler_9a16
 
     snap = Path(argv[0]) if argv else ROOT / DEFAULT_SNAP
     rt = load_overkill_snapshot(ROOT / "assets" / "OVERKILL", str(snap), game_root=ROOT / "assets")
@@ -59,7 +59,7 @@ def main(argv) -> int:
     fails = 0
     for c in combos:
         vm = drive(*c)
-        mine = step_death_handler_9a16(*c)
+        mine = step_a47c_handler_9a16(*c)
         if tuple(mine) != tuple(vm):
             fails += 1
             if fails <= 8:
@@ -68,7 +68,7 @@ def main(argv) -> int:
                       "vm=", tuple(hex(x) if isinstance(x, int) else x for x in vm))
 
     print(f"9A16 death handler driven-oracle: combos={len(combos)} fails={fails}")
-    print("RESULT:", "PASS -- step_death_handler_9a16 matches the original 9A16 composition"
+    print("RESULT:", "PASS -- step_a47c_handler_9a16 matches the original 9A16 composition"
           if not fails else "CHECK")
     return 0 if not fails else 1
 
