@@ -60,6 +60,30 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - GROUNDED the death-firing island (the collision/end-of-life state machine 9E40..9EFC)
+
+Traced the death signals on ``demo_play_tandy_player_death`` (write-watcher on the fixed game DS,
+``scratchpad/trace_death.py``) and disassembled the setters -- the death-firing UPSTREAM (what the
+now-recovered detector/9AFF-tail need to actually FIRE natively) is a bounded state machine at
+**1010:9E40..9EFC**, run once per frame:
+
+- **``A95A`` every-other-frame countdown = STAGE 1 of death.** Entry ``9E69``: gated on ``DS:A47C``
+  (``cmp A47C,1`` -> ret when ==1) and ``DS:2384`` (``cmp 2384,3`` -> ret when >= 3); when armed it
+  toggles ``DS:A362`` (``inc; and 1``) and on the ``A362==0`` frames ``dec DS:A95A``. When A95A wraps
+  ``0 -> FFFF`` (``9E98``, the traced setter) the anchor is "lost" -> the 9AFF tail becomes reachable.
+- **STAGE 2** is the already-recovered ``9AFF`` tail (``2384`` counts up to ``0x0F`` -> the DEATH/
+  GAME_OVER exit). So death = A95A counts down to FFFF, THEN 2384 counts up to 0x0F.
+- Also in the block: the ``A95C`` difficulty-scaled countdown (``9E43..9E61``, dec 1/2/3 by ``DS:BEDC``),
+  the ``A97A`` game-over countdown (``9EE4..9EEC`` -> the traced ``C495``/``A97A->0`` game-over setter),
+  and per-frame ``61DC``/``511F`` (HUD counters + video) calls. Cells touched: A95A/A95C/A97A/2384/
+  A362/BEFF/BEDC/98C0/9791/978C.
+
+This is a multi-iteration ISLAND (recover the leaves bottom-up: the A95A countdown, then A95C, then
+A97A/game-over, then compose + demo-witness on player_death). NOTE the arm-condition polarity (JNZ/JB)
+must be pinned by a demo witness / driven oracle, not manual disasm reading (the A940 attract oracle
+already caught one such mis-read this session). Once native, the play_native exit boundary (already
+wired) FIRES on a real native death. Trace/finding logged so the next run recovers directly.
+
 ## 2026-07-04 - A940 attract-mode middle recovered (driven-oracle) -> A940 stage now complete both paths
 
 Recovered A940's ``DS:2356 == 5`` attract-mode counter block (the sub-gap left by the gameplay-path
