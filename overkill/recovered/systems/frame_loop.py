@@ -700,6 +700,28 @@ def native_new_game_data_setup(new_level_index: int, slot_ptr_table) -> dict:
     return cells
 
 
+NEW_GAME_SESSION_START_LIVES = 0x0003   # DS:2358 lives/continue counter at a fresh game session
+
+
+def new_game_session_init_96ee() -> dict:
+    """The session-start (new-game) DATA init at ``1010:96EE..9715`` -- the TOP of the mode machine's
+    game session.
+
+    Returns the exact ``{DGROUP offset: word value}`` map the init writes: ``DS:2356 = 0`` (planet index
+    -> planet 0), ``DS:2358 = 3`` (the lives/continue counter -- :data:`NEW_GAME_SESSION_START_LIVES`),
+    ``DS:235A = 0``, ``DS:A342 = 0`` (clears the game-over flag), and the four score bytes
+    ``DS:2314..2317 = 0`` (modelled as the two words ``2314``/``2316``).  Reached from the title/menu on
+    "start" and from the game-over tail (``98EB -> jmp 96E0``) to restart; flows into the ``971A``
+    new-game setup.  Byte-exact AND complete vs the VM (``verify_native_new_game_session_init``).
+
+    The preceding ``96E0..96EB`` video/palette init (``CB1C``/``4FC3``/``5145``/``5559``) is host
+    presentation, not modelled here.  Pure data (a memset of the session globals); the caller owns the
+    DS writes.
+    """
+    return {0x2356: 0x0000, 0x2358: NEW_GAME_SESSION_START_LIVES, 0x235A: 0x0000,
+            0xA342: 0x0000, 0x2314: 0x0000, 0x2316: 0x0000}
+
+
 GAMEPLAY_EXIT_GAME_OVER_9902 = 0x9902   # the A342 gameplay-exit target
 GAMEPLAY_EXIT_DEATH_9908 = 0x9908       # the A346 gameplay-exit target
 

@@ -60,6 +60,25 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - Mode spine: found the new-game/session-start init (96E0/96EE) -- top of the mode machine
+
+Located the top of the game-session mode machine. ``1010:96E0`` is the NEW-GAME entry (reached from the
+title/menu on "start" AND from the game-over tail ``98EB -> jmp 96E0`` to restart). Its DATA init
+(``96EE..9715``, a pure mov block after the ``96E0..96EB`` video/palette glue) is recovered as
+``frame_loop.new_game_session_init_96ee``: ``DS:2356=0`` (planet 0), ``DS:2358=3`` (**lives := 3** --
+confirms 2358 is the lives/continue counter, matching the death decrement 3->2->..->0xFFFF), ``235A=0``,
+``A342=0`` (clears the game-over flag), and the four score bytes ``2314..2317=0``. It flows into the
+``971A`` new-game setup (NEW_GAME_SETUP_STAGES). Byte-exact AND complete vs the VM (6 cells, no other
+DGROUP writes -- ``verify_native_new_game_session_init``).
+
+**The session mode-graph is now grounded end-to-end:** title/menu -(start)-> 96E0 (session init:
+lives=3, planet=0, score=0) -> 971A setup -> per-level loop (scene video config + 97B2) -> exits
+(detect_gameplay_transition) -> {level_end -> 9744 next planet, death/game_over -> 2358 lives counter ->
+9773: 2358==0xFFFF -> game-over 98EB -> jmp 96E0 (restart), else respawn re-init -> gameplay}. Remaining
+GAPs (fail-loud): the OUTER title/menu <-> attract(D007) <-> 96E0 wiring (the boot-to-session selector),
+the 98EB game-over presentation tail, and the respawn re-init routine bodies. NEXT: the title/attract ->
+96E0 entry edge (how "start game" is reached from the front-end/attract).
+
 ## 2026-07-04 - Mode edges: recovered the gameplay-exit targets (level-end / death / game-over) + lives counter
 
 Made the mode-transition EDGES out of the 97B2 gameplay loop explicit -- disassembled the three

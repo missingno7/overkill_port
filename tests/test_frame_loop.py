@@ -559,3 +559,15 @@ def test_death_continue_counter_update():
     # game-over: forces the counter to 0 first, then the same decrement
     assert death_continue_counter_update(True, 3, 0) == 0xFFFF
     assert death_continue_counter_update(True, 3, 1) == 0
+
+
+def test_new_game_session_init_96ee():
+    from overkill.recovered.systems.frame_loop import (
+        new_game_session_init_96ee, NEW_GAME_SESSION_START_LIVES,
+    )
+    cells = new_game_session_init_96ee()
+    assert cells[0x2356] == 0            # planet 0
+    assert cells[0x2358] == 3 == NEW_GAME_SESSION_START_LIVES   # lives := 3
+    assert cells[0xA342] == 0            # game-over flag cleared
+    assert cells[0x2314] == 0 and cells[0x2316] == 0            # score bytes zeroed
+    assert set(cells) == {0x2356, 0x2358, 0x235A, 0xA342, 0x2314, 0x2316}
