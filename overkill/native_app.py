@@ -27,8 +27,9 @@ RECOVERED TOP-LEVEL FLOW (the game's actual design, from the dispatchers):
                                                          D160 + scene-entry actions GAP]
     level load           per-level assets (1010:0E9C: LEV{n}MAP/BLX + G{n} -> native_level)
                          [native]; the level-START STATE -- object-table seed (C4DB) + player spawn
-                         (C42F: 237C active at x=0xC0,y=0x58) now NATIVE; starfield init still "Bucket F"
-                                                                          [GAP: starfield needs --snapshot]
+                         (C42F: 237C active at x=0xC0,y=0x58) + starfield (cold-load load_starfield_state
+                         + advance_starfield; NOT re-seeded per level -- proven) are all NATIVE
+                                                                          [Bucket F now cold-loadable]
     gameplay frame loop  1010:97B2 -- the stage order in GAMEPLAY_FRAME_STAGES below; exits via three
                          transition flags: A344 -> jmp 9734, A342 -> jmp 9902, A346 -> jmp 9908
                          (death / level-end / game-over family -- setters live in 9B2E's children)

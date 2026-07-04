@@ -60,6 +60,26 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - Bucket F: the STARFIELD init is cold-loadable (no capture) -- proven, gap closed
+
+Acting on the user's steer (a menu->level-start demo shows how the starfield is initialised), settled the
+last Bucket-F level-start gap. The starfield is NOT re-seeded per level: scanning the code shows NOTHING
+writes the DS:0xC6C1 star stream (the two refs at 4C77/4CF3 are ``mov si,C6C1`` reads for the plot/move),
+so the stream is static image data (dx/color fixed) scrolled in place by ``advance_starfield``.
+
+Proven: the level-1 START starfield equals the cold-loaded starfield (``load_starfield_state``, from the
+static runtime bundle) ADVANCED by exactly 71 frames (the pre-level screens) -- a FULL 40-star match
+(rows+dx+color), and dx/color are static-equal cold-vs-level. New regression test
+``test_cold_starfield_advances_to_a_real_level_start`` locks it in (pure, no VM). So the "starfield init
+needs --snapshot" framing was WRONG: the init is ``load_starfield_state`` + ``advance_starfield``, no
+capture required.
+
+**Bucket F level-start state is now fully cold-loadable / native:** object-pool seed (C4DB), player spawn
+(C42F @ 0xC0/0x58), and the starfield -- all recovered. ``scripts/play_native.py`` still READS the
+starfield from ``--snapshot`` (``_read_starfield``); wiring it to ``load_starfield_state`` is now a pure
+mechanical swap (kept separate since play_native's player/object state is still snapshot-based, so the
+frame-phase must line up). NEXT: the 7524 companion/flame spawn (C450), or wiring the cold starfield.
+
 ## 2026-07-04 - Bucket F: recovered the PLAYER SPAWN state (C42F, 237C active @ x=0xC0/y=0x58)
 
 Chased the respawn re-init (the 9773 else-branch, ``C3A6``) and found it contains the player spawn --
