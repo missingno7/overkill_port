@@ -29,3 +29,52 @@ def test_cold_level_start_is_a_coherent_frame_zero():
     # the cold starfield is present + enabled (its own byte-exactness is proven in test_starfield_cold)
     assert len(starfield.stars) == 40
     assert starfield.enabled
+
+
+CONTAINER = ROOT / "assets" / "OVERKILL"
+COLD_ROW_BASE = 0x009C   # level-load leaves DS:2350 here (60C5 sets 0xEA0, the 16x A781 warm-up -> 0x9C)
+
+
+@pytest.mark.skipif(not (BUNDLE.is_file() and CONTAINER.is_file()),
+                    reason="static runtime bundle or OVERKILL container not present")
+def test_cold_start_fires_a_persisting_shot():
+    """The cold-started level FIRES: with the level-load scroll origin (row_base 0x9C, not 0 -- which
+    underflows the tile probe) and the player anchor as the fan-out source, holding fire spawns player
+    shots into the gameplay pool that persist + move across frames.  End-to-end proof that play_native's
+    cold start produces live gameplay, VM-free.
+    """
+    import dataclasses
+    from overkill.native_game import NativeGame
+    from overkill.recovered.domain.frame_loop import FrameInput
+    from overkill.recovered.domain.object_update import ObjectUpdateGlobals
+    from overkill.recovered.systems.input import DEFAULT_CONTROL_MAP, key_state_from_pressed
+
+    state, _ = build_cold_level_start(BUNDLE.read_bytes())
+    game = dataclasses.replace(
+        NativeGame.load_level(BUNDLE.read_bytes(), CONTAINER.read_bytes(), 0, state, origin_x=0,
+                              row_base=COLD_ROW_BASE),
+        row_source=0x5B00)
+    FIRE = 0x39
+
+    def tick(g, fire):
+        fi = FrameInput(control_map=DEFAULT_CONTROL_MAP,
+                        key_state=key_state_from_pressed({FIRE} if fire else set()))
+        glob = ObjectUpdateGlobals(ref_box_x=g.state.special_pool.x_word(0),
+                                   ref_box_y=g.state.special_pool.y_word(0), a278=0,
+                                   tile_probe_suppressed=False, tiles=g.tile_context)
+        g, _ = g.step(fi, no_clamp=False, repeat_9790=0, state_232a=0, scroll_2350=g.row_base, bdac=0,
+                      a958=0, be06=0, source_index=0, source_x=g.state.special_pool.x_word(0),
+                      source_y=g.state.special_pool.y_word(0), read_ds_word=lambda o: 0,
+                      update_globals=glob, scroll_gate=(0, 0, 0))
+        return g
+
+    def n_active(g):
+        return sum(1 for i in range(len(g.state.object_pool)) if g.state.object_pool.active_word(i) != 0)
+
+    g = game
+    assert n_active(g) == 0                     # fresh level: no shots yet
+    g = tick(g, fire=True)
+    assert n_active(g) == 1                      # a shot spawned at the player
+    for t in range(1, 4):                        # tap-fire: alternate so the latch re-arms
+        g = tick(g, fire=(t % 2 == 0))
+    assert n_active(g) >= 2                       # earlier shots persisted + new ones added

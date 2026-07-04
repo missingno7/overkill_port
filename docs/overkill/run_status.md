@@ -60,6 +60,29 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - MILESTONE: play_native FIRES -- cold-started level shoots real (persisting) player shots, VM-free
+
+Executed the 4-step plan from last pass and it WORKS. play_native's cold start now produces live gameplay:
+holding fire spawns player shots that persist + move across frames, no VM, no snapshot.
+
+Two fixes:
+* **Cold scroll origin (``_COLD_ROW_BASE = 0x9C``):** pinned the frame-0 level-start ``DS:2350`` from the
+  LEVEL-LOAD code -- ``60C5`` sets ``2350 = 0xEA0`` (= tile-plane size), then the ``16x A781`` warm-up
+  scroll settles it to ``0x9C`` (``60D5 cmp [2350],0x9C``); ``234E`` stays 0 (``60B3``). So this is
+  cold-DERIVED, not guessed. ``_cold_seeded_start`` now uses ``origin_x=0, row_base=0x9C`` (was 0/0, which
+  underflowed the object-pass tile probe -> IndexError).
+* **Fan-out source = player:** ``_advance`` now passes the player view-anchor position
+  (``special_pool.x/y_word(0)`` = 0xC0/0x58) as the fire source (was hardcoded 0,0 -> shots at the origin).
+
+Verified: ``test_cold_start_fires_a_persisting_shot`` (new) -- fresh level has 0 shots; one fire -> 1 shot
+at the player; tap-firing accumulates persisting shots. Headless play_native cold run is crash-free.
+
+So the VM-less native runtime now: cold-boots a LEVEL + renders the real frame (player+starfield+sprites)
++ FIRES. Remaining toward "the real game": (1) enemy-WAVE spawner (still populates nothing -- the pool
+starts empty; separate track); (2) the FULL fan-out / A970 lifecycle for scroll > 0xB6 (later in the
+level); (3) front-end intro/menu -> cold-start wiring; (4) sustained-play divergence (verify vs VM over
+many ticks). NEXT: the enemy-wave spawner (trace an L1 demo for the first gameplay-pool activation).
+
 ## 2026-07-04 - REFRAME: firing at level start is the EARLY path (works); the real blocker is the cold scroll origin
 
 Investigated "make play_native fire" and REFRAMED both gameplay tracks (this supersedes the A067/A970

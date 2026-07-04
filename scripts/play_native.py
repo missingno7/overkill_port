@@ -100,6 +100,9 @@ _CS = 0x1010
 _TABLE_75A6, _TABLE_768E, _TABLE_7746 = 0x9392, 0x9192, 0x8F92
 _SPRITE_CELL_STRIDE_OFF = 0x1028   # ds:[1028] -- 75A6's source advance to the +10 second slot is >>1
 _COLD_ROW_SOURCE = 0x5B00          # DS:234C -- the fixed row-source start (NativeGame's level-post-load default)
+_COLD_ROW_BASE = 0x009C            # DS:2350 -- level-load leaves the view row base here: 60C5 sets 0xEA0,
+#                                    then the 16x A781 warm-up scroll settles it to 0x9C (60D5 cmp); this
+#                                    is the frame-0 level-start scroll (row_base=0 underflows the tile probe)
 
 
 class _FlatMemory:
@@ -200,10 +203,11 @@ def _cold_seeded_start(bundle_data: bytes) -> "_SeededStart":
     loop also needs -- the scroll cursor (DS:234C/234E/2350), the sprite half-stride (``ds:[1028]>>1``)
     and the exit-guard inputs -- are read from the SAME cold runtime data image (byte-array read, no VM).
 
-    The scroll cursor is the LEVEL-POST-LOAD origin (``origin_x = 0``, ``row_base = 0``,
-    ``row_source = _COLD_ROW_SOURCE``) -- the same defaults :class:`overkill.native_game.NativeGame`
-    documents for a freshly loaded level (NOT the cold image's live cursor, which is mid-scroll and would
-    wrap the starfield page).  The sprite half-stride is a level-invariant param read from the cold image.
+    The scroll cursor is the LEVEL-POST-LOAD origin (``origin_x = 0``, ``row_base = _COLD_ROW_BASE``,
+    ``row_source = _COLD_ROW_SOURCE``) -- the values the level-load leaves in DS:234E/2350/234C (NOT the
+    cold image's live cursor, which is mid-scroll and would wrap the starfield page).  ``row_base = 0x9C``
+    (not 0) matters: the object-pass tile probe subtracts against ``row_base``, so ``row_base = 0`` would
+    UNDERFLOW for any object below the top row (crash).  The sprite half-stride is read from the cold image.
 
     The exit guards are set to their semantic cold-start values so the frame-0 detector cannot spuriously
     end the level: ``A47C = 0`` (no scripted mode), ``A95A = 3`` (anchor present), ``2326 = 0`` (not
@@ -220,7 +224,7 @@ def _cold_seeded_start(bundle_data: bytes) -> "_SeededStart":
         starfield=starfield,
         half_stride=(mem.rw(ds, _SPRITE_CELL_STRIDE_OFF) >> 1) & 0xFFFF,
         origin_x=0x0000,               # level-post-load view origin (DS:234E)
-        row_base=0x0000,               # level-post-load view row base (DS:2350)
+        row_base=_COLD_ROW_BASE,       # level-post-load view row base (DS:2350) -- 0x9C, see the constant
         row_source=_COLD_ROW_SOURCE,   # DS:234C -- the fixed row-source start
         a47c=0x0000,   # cold: no scripted-input mode active
         a95a=0x0003,   # cold: anchor present (lives counter at session start)
@@ -439,7 +443,10 @@ def main(argv=None) -> int:
             no_clamp=False,
             repeat_9790=0, state_232a=0, scroll_2350=g.row_base,
             bdac=0, a958=0, be06=0,
-            source_index=0, source_x=0, source_y=0,
+            # the fire fan-out spawns from the firing object -- the player view-anchor (special_pool slot
+            # 0) at its live position, so shots leave the ship's muzzle (was hardcoded 0,0 -> origin).
+            source_index=0,
+            source_x=g.state.special_pool.x_word(0), source_y=g.state.special_pool.y_word(0),
             read_ds_word=lambda off: 0,
             update_globals=_object_update_globals(g),
             scroll_gate=(0, 0, 0),
