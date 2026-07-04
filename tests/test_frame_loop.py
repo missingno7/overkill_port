@@ -583,3 +583,9 @@ def test_player_spawn_record_c42f():
     assert rec[0x04] == PLAYER_SPAWN_Y == 0x58   # spawn y
     assert rec[0x0A] == 1 and rec[0x14] == 2 and rec[0x16] == 3
     assert set(rec) == {0x00, 0x02, 0x04, 0x0A, 0x14, 0x16}
+
+
+def test_player_companion_spawn_c453():
+    from overkill.recovered.systems.frame_loop import player_companion_spawn_c453
+    rec = player_companion_spawn_c453()
+    assert rec == {0x00: 1, 0x14: 1, 0x16: 6}   # active + logic/type of the player's companion object

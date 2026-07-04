@@ -715,11 +715,24 @@ def player_spawn_record_c42f() -> dict:
     ``+0x04 = 0x58`` (spawn y), ``+0x0A = 1``, ``+0x14 = 2``, ``+0x16 = 3``.  Byte-exact vs the VM
     (``verify_native_player_spawn``).  Returns ``{field offset: value}`` for the ``DS:237C`` record.
 
-    The steps that FOLLOW the stamp -- the ``7524`` companion-object spawn (``ds:[bx]=1`` &c.), the
-    ``A3B4`` coordinate-ring clear (26 words -> 0xFFFF), and the ``A95A``/``A95C``/``A970``.. counter
-    re-init -- are separate; this leaf is just the player record's initial fields.
+    The steps that FOLLOW the stamp -- the ``7524`` companion-object spawn
+    (:func:`player_companion_spawn_c453`), the ``A3B4`` coordinate-ring clear (26 words -> 0xFFFF), and
+    the ``A95A``/``A95C``/``A970``.. counter re-init -- are separate; this leaf is just the player
+    record's initial fields.
     """
     return {0x00: 1, 0x02: PLAYER_SPAWN_X, 0x04: PLAYER_SPAWN_Y, 0x0A: 1, 0x14: 2, 0x16: 3}
+
+
+def player_companion_spawn_c453() -> dict:
+    """The player COMPANION object stamp at ``1010:C453..C45F`` -- the object spawned alongside the player
+    at spawn (its flame/exhaust anchor), right after the ``7524`` allocation at ``C450``.
+
+    The freshly-allocated object record gets ``+0x00 = 1`` (active), ``+0x14 = 1``, ``+0x16 = 6`` (its
+    logic/sprite type).  Byte-exact vs the VM (``verify_native_player_companion_spawn``).  Returns the
+    ``{field offset: value}`` stamp template; WHICH slot ``7524`` returns is the allocator's concern (on
+    the death snapshot it lands in the effect table), so this leaf models only the template.
+    """
+    return {0x00: 1, 0x14: 1, 0x16: 6}
 
 
 def new_game_session_init_96ee() -> dict:

@@ -60,6 +60,21 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - Bucket F: player COMPANION spawn (C453) -- the flame/exhaust object stamped at spawn
+
+Continued the C3A6 player-spawn recovery: right after the player record stamp, ``C450`` allocates a
+companion object via ``7524`` and stamps it (``C453..C45F``). Recovered as
+``frame_loop.player_companion_spawn_c453`` -- the allocated record gets ``+0x00=1`` (active), ``+0x14=1``,
+``+0x16=6`` (its logic/sprite type, the player's flame/exhaust anchor). Driven-oracle 3/3
+(``verify_native_player_companion_spawn``, driving C450 through the 7524 alloc; the slot lands in the
+effect table on the death snapshot). This leaf is the stamp template; the 7524 allocation itself is the
+allocator's concern.
+
+Remaining C3A6 tail: the ``A3B4`` coordinate-ring clear (26 words -> 0xFFFF) + the ``A95A=3``/``A95C=0x18``/
+``A970..974=0`` counter re-init (a clean memset leaf), and the two pool re-seeds (the 34-slot 0x8D12 pool
+is new; the 36-slot 0x32CA one is already object_pool_seed_c4db). NEXT: the A3B4/A95x/A970 respawn
+control re-init, or wiring the cold starfield into play_native.
+
 ## 2026-07-04 - Bucket F: the STARFIELD init is cold-loadable (no capture) -- proven, gap closed
 
 Acting on the user's steer (a menu->level-start demo shows how the starfield is initialised), settled the
