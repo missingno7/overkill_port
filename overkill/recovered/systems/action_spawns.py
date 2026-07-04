@@ -156,19 +156,30 @@ def a067_path_copies_counters(path: A067FirePath) -> bool:
 
 def native_a067(pool: ObjectPool, cursor: int, *, input_98be: int, latch_a980: int, repeat_9790: int,
                 state_232a: int, scroll_2350: int, bdac: int, a958: int, be06: int,
-                source_index: int, source_x: int, source_y: int, read_ds_word) -> A067Result | None:
-    """Pure WHOLE 1010:A067 entry gate + EARLY spawn dispatch -- the composed first layer of the fan-out.
+                source_index: int, source_x: int, source_y: int, read_ds_word,
+                effect_pool: "ObjectPool | None" = None, cursor_a43a: int = 0,
+                a970: int = 0, a972: int = 0, a976: int = 0, a974: int = 0,
+                a95e: int = 0, a960: int = 0, a97e: int = 0, a96e: int = 0,
+                mirror_schedule: tuple = (), side_schedule: tuple = ()) -> A067Result | None:
+    """Pure WHOLE 1010:A067 entry gate + spawn dispatch -- the composed A067 fire.
 
     Chains the verified pieces end-to-end: the entry gate (:func:`action_fanout_gate`) decides whether the
     fire runs this frame and writes DS:A980; when armed, the path branch (:func:`a067_fire_path`) selects the
-    spawn.  This composes the EARLY tails (scroll DS:2350 <= B6h & BDAC == 0): A958 == 2 -> the A1C8 pair,
-    else the A19F single, each at the A1AE muzzle from the firing object ``{source_index, source_x,
-    source_y}``.  Returns an :class:`A067Result` (the DS:A980 write-back + the ordered shots + the final
-    DS:95DA cursor) for the gate-only and EARLY frames -- including the committed partial when the A1C8
-    pair fills the pool after its first shot (the second shot's 7550 recycle stays unmodelled but the
-    cursor is byte-exact); returns None for the FULL fan-out (A515/A584/A3FF/A3CA/A0E8 -- a separate,
-    larger composition) or a full pool at the first shot (nothing find_free-allocated, the 7550 recycle
-    is unmodelled), so the caller/probe leaves those frames to the VM."""
+    spawn.  The EARLY tails (scroll DS:2350 <= B6h & BDAC == 0): A958 == 2 -> the A1C8 pair, else the A19F
+    single, each at the A1AE muzzle from the firing object ``{source_index, source_x, source_y}``.
+
+    The FULL fan-out (A515/A584/A3FF/A3CA/A0E8) is now COMPOSED too, via
+    :func:`~overkill.recovered.systems.objects.native_a067_full_fanout` -- but ONLY when the caller supplies
+    its extra inputs (``effect_pool`` + the ``a970``-family held-action counters + the A515 scan state
+    ``cursor_a43a``/``a960``/``a97e`` + ``a95e``/``a96e`` + the ``mirror_schedule``/``side_schedule``).
+    The FULL result rides back on :attr:`A067Result.full_result` so the caller can thread its counters
+    frame-to-frame.  When those inputs are NOT supplied (``effect_pool is None``) the FULL path still
+    returns ``None`` (the VM owns the frame) -- backward-compatible with callers that don't thread the
+    full state yet.
+
+    Returns an :class:`A067Result` for gate-only / EARLY / composed-FULL frames; ``None`` for an
+    un-threaded FULL path, the ``a958 >= 5`` dead tail, a saturated pool, or a full pool at the first
+    shot (the 7550 recycle is unmodelled) -- the caller leaves those frames to the VM."""
     gate = action_fanout_gate(input_98be, latch_a980, repeat_9790, state_232a)
     if not gate.runs:
         # not firing / held-non-repeatable: only DS:A980 is written, nothing spawns, the cursor is untouched
@@ -180,8 +191,22 @@ def native_a067(pool: ObjectPool, cursor: int, *, input_98be: int, latch_a980: i
     elif path is A067FirePath.EARLY_DEFAULT:
         shot = native_a19f_tail(pool, cursor, source_index, source_x, source_y, read_ds_word)
         shots = (shot,) if shot is not None else None
+    elif path is A067FirePath.FULL_FANOUT and effect_pool is not None:
+        # the composed FULL fan-out -- only the plain FULL_FANOUT path (the FULL_BDAC_A114/A515 paths have
+        # no native composition yet), and only when the caller threads its state
+        from overkill.recovered.systems.objects import native_a067_full_fanout
+        full = native_a067_full_fanout(
+            pool, effect_pool, cursor, cursor_a43a, a970=a970, a972=a972, a976=a976, a974=a974,
+            a95e=a95e, a960=a960, a97e=a97e, a958=a958, a96e=a96e, input_98be=input_98be,
+            source_index=source_index, source_x=source_x, source_y=source_y,
+            mirror_schedule=mirror_schedule, side_schedule=side_schedule, read_ds_word=read_ds_word)
+        if full is None:
+            return None  # a958 >= 5 dead tail or a saturated pool -> the VM owns this frame
+        return A067Result(new_a980=gate.new_latch_word, spawns=full.spawns,
+                          final_cursor=full.final_cursor, ran_fanout=True, full_result=full)
     else:
-        return None  # the FULL fan-out is not composed here -> the VM owns this frame
+        # an un-threaded FULL_FANOUT, or a FULL_BDAC_A114/A515 path (no native composition) -> VM-owned
+        return None
     if shots is None:
         return None  # full pool (the 7550 recycle path) is unmodelled -> the VM owns this frame
     shots = tuple(shots)

@@ -277,6 +277,9 @@ class A067Result:
     spawns: tuple
     final_cursor: int
     ran_fanout: bool
+    #: On a composed FULL-fan-out frame, the full result (its threaded counters + A515 scan state) so the
+    #: caller can carry them frame-to-frame; ``None`` on gate-only / EARLY frames.
+    full_result: "A067FanoutResult | None" = None
 
 
 @dataclass(frozen=True, slots=True)

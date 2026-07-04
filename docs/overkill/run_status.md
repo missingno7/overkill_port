@@ -60,6 +60,27 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - A067 composition step 1: native_a067 now COMPOSES the FULL fan-out (backward-compatible)
+
+Systematic first brick of wiring the A067 FULL fan-out into gameplay. The FULL fan-out
+(``native_a067_full_fanout``) was already byte-exact vs the VM (L6 58/58) but ``native_a067`` (the
+frame-loop entry) just ``return None``-declined the FULL path. Now ``native_a067`` DELEGATES to it: on the
+``FULL_FANOUT`` path, IF the caller threads the extra state (``effect_pool`` + the ``a970``-family
+held-action counters + the A515 scan state ``cursor_a43a``/``a960``/``a97e`` + ``a95e``/``a96e`` + the
+mirror/side schedules), it runs the capstone and returns an ``A067Result`` whose new ``full_result`` field
+carries the threaded counters back for the next frame. Only the plain ``FULL_FANOUT`` path (NOT
+``FULL_BDAC_A114``/``A515`` -- unmodelled) delegates; without the threaded state it still returns None
+(backward-compatible -- existing callers like ``native_action_fanout_step`` are unchanged).
+
+Verified: ``test_a067_full_fanout`` (7 passed) -- the delegated FULL path matches ``native_a067_full_fanout``
+directly (shots + cursor + ``full_result``), and the un-threaded FULL path still declines. Trigger is
+DS:98BE bit 4.
+
+NEXT (systematic, step 2): thread the FULL-fanout state through ``FireControlState`` + ``native_action_
+fanout_step`` + ``NativeGame`` so the STANDALONE runs the FULL fan-out (carry a970-family + A515 scan
+state frame-to-frame; the A970 self-increment is the one still-unmodelled piece). Then play_native fires
+real shots. Enemy-WAVE spawner is still the separate track.
+
 ## 2026-07-04 - FRONTIER SCOPING: the two "make gameplay populated" gaps, precisely located
 
 With the VM-less cold LEVEL BOOT landed, the next real target is "enemies + fire actually happen." Scoped

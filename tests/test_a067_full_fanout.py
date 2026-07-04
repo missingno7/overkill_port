@@ -62,3 +62,36 @@ def test_a515_state_passthrough_when_gated():
     # A515 gate closed (a960==0) -> its scan state is unchanged (a960/a97e/a43a pass through)
     r = _run(a960=0, a97e=0)
     assert r.a960 == 0 and r.a97e == 0 and r.cursor_a43a == EFFECT_BASE
+
+
+def test_native_a067_composes_full_fanout_when_threaded():
+    # native_a067's FULL path (scroll > 0xB6) delegates to native_a067_full_fanout when the caller threads
+    # its state -- the shots + cursor match the capstone directly, and full_result rides back for threading.
+    from overkill.recovered.systems.action_spawns import native_a067
+    gp = ObjectPool(base=BASE, stride=STRIDE, slots=(_FREE,) * 8)
+    eff = ObjectPool(base=EFFECT_BASE, stride=STRIDE, slots=(_FREE,) * 0x23)
+    full = dict(effect_pool=eff, cursor_a43a=EFFECT_BASE, a970=0x11, a972=0x22, a976=0x33, a974=0x44,
+                a95e=0, a960=0, a97e=0, a96e=_NO_SRC, mirror_schedule=(0x1000, _NO_SRC),
+                side_schedule=(_NO_SRC,) * 4)
+    # armed fire, FULL path: scroll 0x100 > 0xB6
+    res = native_a067(gp, BASE, input_98be=0x10, latch_a980=0, repeat_9790=0, state_232a=0,
+                      scroll_2350=0x100, bdac=0, a958=0, be06=0, source_index=0, source_x=0x50,
+                      source_y=0x60, read_ds_word=_read, **full)
+    ref = native_a067_full_fanout(gp, eff, BASE, EFFECT_BASE, read_ds_word=_read,
+                                  a970=0x11, a972=0x22, a976=0x33, a974=0x44, a95e=0, a960=0, a97e=0,
+                                  a958=0, a96e=_NO_SRC, input_98be=0x10, source_index=0, source_x=0x50,
+                                  source_y=0x60, mirror_schedule=(0x1000, _NO_SRC),
+                                  side_schedule=(_NO_SRC,) * 4)
+    assert res is not None and res.ran_fanout and res.new_a980 == 1
+    assert res.spawns == ref.spawns and res.final_cursor == ref.final_cursor
+    assert res.full_result == ref   # the threaded counters + A515 scan state ride back for the caller
+
+
+def test_native_a067_full_path_declines_when_not_threaded():
+    # backward-compatible: without the FULL inputs, the FULL path still returns None (VM owns the frame)
+    from overkill.recovered.systems.action_spawns import native_a067
+    gp = ObjectPool(base=BASE, stride=STRIDE, slots=(_FREE,) * 8)
+    res = native_a067(gp, BASE, input_98be=0x10, latch_a980=0, repeat_9790=0, state_232a=0,
+                      scroll_2350=0x100, bdac=0, a958=0, be06=0, source_index=0, source_x=0x50,
+                      source_y=0x60, read_ds_word=_read)
+    assert res is None
