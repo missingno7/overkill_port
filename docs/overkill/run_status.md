@@ -60,6 +60,24 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - Level-select GRID layout cold-loaded (2x3 planet grid: positions + sprites)
+
+Toward wiring the level-select flow: recovered the level-select cursor's GRID LAYOUT data. The cursor
+draw (``1010:D4BC``) reads, per cell ``DS:BEDA`` (0-5): the position word ``DS:0xBEDE[BEDA]`` (-> the
+``5A00`` draw-position setter) + the sprite pointer ``CS:0xD37E[BEDA]`` (-> ``5A6C`` blit). Both static:
+* positions = a clean 2x3 grid -- columns X = 0x2E/0x53/0x78, rows Y = 0x02/0x15 (matches the BEDA nav:
+  +/-3 = row, +/-1 = column);
+* sprite pointers ``CS:0xD37E`` = 6 planet icons stepping 0x8C8 apart (0x4000, 0x48C8, ...) BUT these are
+  RUNTIME-populated (0 in the cold bundle, filled at sprite-decode) -- fail-loud caught an initial wrong
+  "cold-loadable" claim, so the adapter excludes them (render-time concern).
+Cold-loadable now: ``recovered/adapters/level_select_grid_adapter.load_level_select_grid_positions
+(exe_image)`` -> 6 ``(x, y)`` positions (the static 2x3 grid; test ``test_level_select_grid``).
+
+So the level-select DATA is recovered (grid layout + the nav/fire LOGIC from systems/menu). NEXT to wire
+the title->level-select->cold-start flow: the cursor RENDER (the ``5A00`` draw-position + ``5A6C`` sprite
+blit semantics over the LEVSCR background), then drive the recovered nav (step_level_select_*) from arrow
+keys + fire (resolve_level_select_fire_d424) -> cold-start the chosen level. play_native integration.
+
 ## 2026-07-04 - Front-end render: 5 more full-screen menu screens are already decodable (dialog gap narrowed)
 
 Started the front-end integration (dialog placement). Measured the menu assets' deplanarized sizes and
