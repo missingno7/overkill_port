@@ -70,10 +70,18 @@ Driven-oracle 10/10 (``verify_native_wave_spawn_phase``; the oracle pinned the t
 the jnb targets the other way, the recurring lesson). So the wave cadence is a PHASE MACHINE on A7A0:
 per-planet spawns early, a pause, then the formation.
 
-NEXT: (a) where A7A0 is incremented/reset (the wave CLOCK -- find writers of A7A0) + what runs the B48B
-routine (the leader behaviour / per-frame); (b) the B615 per-planet spawn stamp (the other path); then the
-pure ``formation_wave_step`` + NativeGame wiring. Enemy spawn is now: table + stamp + formation stamp +
-cursor walk + PHASE dispatch all recovered; the A7A0 clock + wiring remain.
+The A7A0 CLOCK is now characterized (writer scan): ``inc [A7A0]`` once per frame at ``6031`` (a
+free-running per-frame wave counter), reset to 0 at ``FA2F`` (a high/init routine -- level or wave-cycle
+start). A7A0 is compared at MANY thresholds -- 0x23 (B7BF), 0x28 (B880), 0x31/0x32 (B48B/B97C), 0x5A
+(B497), 0xC8 (B576), 0xF0 (B581) -- so the wave schedule is a MULTI-PHASE machine over frame-time (each
+threshold gates a different spawn/behaviour beat), of which B48B's per_planet/pause/formation split is one
+slice (recovered).
+
+NEXT: (a) the other A7A0-threshold beats (0x23/0x28/0xC8/0xF0 -- more spawn variants) if a full wave
+schedule is wanted, OR pragmatically just wire what's recovered; (b) the B615 per-planet spawn stamp; then
+the pure ``formation_wave_step`` + NativeGame wiring (A7A0 as a native frame counter -> phase -> spawn from
+the cold-loaded formation table). Enemy spawn recovered: table + base/formation stamps + cursor walk +
+phase dispatch + the A7A0 clock; remaining = the other beats + the per-planet stamp + wiring.
 
 ## 2026-07-04 - DIRECTION: aligned with the sibling pre2_port (a COMPLETE VM-less native port) -- the proven endgame
 
