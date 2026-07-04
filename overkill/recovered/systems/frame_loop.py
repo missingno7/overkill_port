@@ -225,6 +225,30 @@ def death_tail_transition_9aff(v2326: int, anchor_counter_after_inc: int, a97a: 
     return True, (a97a & 0xFFFF) == 0, True
 
 
+def step_death_countdown_9e69(a47c: int, counter_2384: int, a362: int, a95a: int):
+    """STAGE 1 of the death sequence: the ``1010:9E69`` per-frame ``A95A`` anchor-loss countdown.
+
+    Recovered from the ``9E69..9E9C`` disassembly, confirmed by the driven oracle
+    ``verify_native_death_countdown.py`` (the branch polarity was pinned there, not by eye).  The
+    countdown is gated off (``A95A``/``A362`` unchanged) when ``DS:A47C == 1`` (``9E69``) or the death
+    counter ``DS:2384 >= 3`` (``9E71``).  Otherwise it toggles ``DS:A362`` (``inc; and 1``) and, only
+    on the ``A362 == 0`` frames (``9E95``), decrements ``DS:A95A`` (``9E98``).  When A95A wraps
+    ``0 -> FFFF`` the anchor is lost and the 9AFF death tail (:func:`step_death_tail_9aff`) becomes
+    reachable.
+
+    Returns ``(new_a362, new_a95a, anchor_lost)``.  Pure: the caller owns the DS reads/writes and the
+    block's other side effects (BEFF/A95C/etc., not part of this countdown).
+    """
+    a362, a95a = a362 & 0xFFFF, a95a & 0xFFFF
+    if (a47c & 0xFFFF) == 1 or (counter_2384 & 0xFFFF) >= 3:
+        return a362, a95a, False
+    new_a362 = (a362 + 1) & 0x01
+    if new_a362 != 0:
+        return new_a362, a95a, False
+    new_a95a = (a95a - 1) & 0xFFFF
+    return new_a362, new_a95a, new_a95a == 0xFFFF
+
+
 def death_tail_reached_9aff(a95a: int, a97a: int) -> bool:
     """Whether 9B2E branches into the ``9AFF`` death tail: the tracked anchor state is absent."""
     return (a95a & 0xFFFF) == ANCHOR_STATE_ABSENT_A95A or (a97a & 0xFFFF) == 0

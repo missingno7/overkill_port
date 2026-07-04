@@ -78,11 +78,18 @@ now-recovered detector/9AFF-tail need to actually FIRE natively) is a bounded st
   and per-frame ``61DC``/``511F`` (HUD counters + video) calls. Cells touched: A95A/A95C/A97A/2384/
   A362/BEFF/BEDC/98C0/9791/978C.
 
-This is a multi-iteration ISLAND (recover the leaves bottom-up: the A95A countdown, then A95C, then
-A97A/game-over, then compose + demo-witness on player_death). NOTE the arm-condition polarity (JNZ/JB)
-must be pinned by a demo witness / driven oracle, not manual disasm reading (the A940 attract oracle
-already caught one such mis-read this session). Once native, the play_native exit boundary (already
-wired) FIRES on a real native death. Trace/finding logged so the next run recovers directly.
+This is a multi-iteration ISLAND (recover the leaves bottom-up). NOTE the arm-condition polarity
+(JNZ/JB) must be pinned by a demo witness / driven oracle, not manual disasm reading (the A940 attract
+oracle already caught one such mis-read this session). Once native, the play_native exit boundary
+(already wired) FIRES on a real native death.
+
+**STAGE 1 LEAF RECOVERED this pass:** ``systems/frame_loop.step_death_countdown_9e69`` -- the A95A
+anchor-loss countdown (gated off when ``A47C == 1`` or ``2384 >= 3``; else toggle A362, decrement A95A
+on the A362==0 frames; ``A95A: 0 -> FFFF`` = anchor lost). **Driven-oracle verified** (force synthetic
+``(A47C,2384,A362,A95A)``, drive the original 9E69 to a ret / 9E9C, compare A362+A95A):
+``verify_native_death_countdown.py`` **8/8 branches, 0 fails** (the oracle pinned the arm polarity).
+Remaining leaves: the ``A95C`` difficulty countdown (9E43..9E61), the ``A97A`` game-over countdown
+(9EE4..9EEC), then compose the whole 9E40 state machine + thread the death cells into NativeGameState.
 
 ## 2026-07-04 - A940 attract-mode middle recovered (driven-oracle) -> A940 stage now complete both paths
 

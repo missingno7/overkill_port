@@ -360,3 +360,16 @@ def test_a940_attract_middle_98a5_countdown_and_98a2_negate():
     # 98A5 > 1 -> decrement, 98A3 RESET to 0 (the A9B3 branch the lifted code misses)
     assert step_a940_attract_middle(0, 0x1234, 5, 0x20, 0x40) == (0, 0, 0x1234, 4, 0)
     assert step_a940_attract_middle(0, 0x1234, 3, 0x99, 0x40) == (0, 0, 0x1234, 2, 0)
+
+
+def test_step_death_countdown_9e69_arm_gate_and_toggle():
+    from overkill.recovered.systems.frame_loop import step_death_countdown_9e69
+    # gated off when A47C == 1 or 2384 >= 3 -> no change
+    assert step_death_countdown_9e69(a47c=1, counter_2384=0, a362=0, a95a=0x3) == (0, 0x3, False)
+    assert step_death_countdown_9e69(a47c=0, counter_2384=3, a362=1, a95a=0x3) == (1, 0x3, False)
+    # armed, A362 0 -> toggles to 1, no decrement
+    assert step_death_countdown_9e69(a47c=0, counter_2384=0, a362=0, a95a=0x3) == (1, 0x3, False)
+    # armed, A362 1 -> toggles to 0, decrements A95A (every-other-frame)
+    assert step_death_countdown_9e69(a47c=0, counter_2384=2, a362=1, a95a=0x3) == (0, 0x2, False)
+    # A95A 0 -> FFFF = anchor lost (death stage 1 complete)
+    assert step_death_countdown_9e69(a47c=0, counter_2384=0, a362=1, a95a=0x0) == (0, 0xFFFF, True)
