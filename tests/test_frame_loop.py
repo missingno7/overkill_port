@@ -481,3 +481,21 @@ def test_level_start_control_reset_c51d():
     # the control words + the A47C-script counter clear to 0
     assert r[0xA958] == 0 and r[0xA95E] == 0 and r[0xA960] == 0 and r[0x2384] == 0
     assert len(r) == 11
+
+
+def test_object_pool_seed_c4db_logic():
+    from overkill.recovered.systems.frame_loop import (
+        object_pool_seed_c4db, OBJECT_SEED_FB_BASE_C3A2, OBJECT_SEED_FB_STEP,
+    )
+    # a synthetic table cx(1..0x24) -> record offset; use base 0x237C + cx*0x38 like the real build
+    table = {cx: (0x237C + (cx % 0x24) * 0x38) & 0xFFFF for cx in range(1, 0x25)}
+    seed = object_pool_seed_c4db(table)
+    assert len(seed) == 36
+    # every record gets the fixed template (inactive, +0x0A=1, zeros elsewhere)
+    for off, fields in seed.items():
+        assert fields[0x00] == 0 and fields[0x06] == 0 and fields[0x0A] == 1
+        assert fields[0x18] == 0 and fields[0x24] == 0 and fields[0x2E] == 0
+    # the framebuffer pointer steps 0x3314, +0x280, ... in processing order (cx=0x24 first)
+    assert seed[table[0x24]][0x0E] == OBJECT_SEED_FB_BASE_C3A2                       # cx=0x24 -> 0x3314
+    assert seed[table[0x23]][0x0E] == (OBJECT_SEED_FB_BASE_C3A2 + OBJECT_SEED_FB_STEP) & 0xFFFF
+    assert seed[table[1]][0x0E] == (OBJECT_SEED_FB_BASE_C3A2 + 35 * OBJECT_SEED_FB_STEP) & 0xFFFF

@@ -60,6 +60,24 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - Bucket F: recovered the C4DB object-pool SEED (36 records x 7 fields, byte-exact)
+
+Took the integration the last pass pointed to -- the ``C4DB`` object-pool seed loop (``C4E5..C51B``),
+the level-start object state (Bucket F). Recovered ``frame_loop.object_pool_seed_c4db(slot_ptr_table)``:
+for each of the 36 slots ``cx = 0x24..1`` it reads the object-record offset from the ``DS:0x32CA`` word
+table and stamps a fixed template (``+0x00``/``+0x06``/``+0x18``/``+0x24``/``+0x2E`` = 0, ``+0x0A`` = 1)
+plus a per-slot framebuffer back-buffer pointer at ``+0x0E`` stepping ``0x3314, +0x280, ...`` in
+processing order (the ``CS:C3A2`` accumulator). Modelled as pure LOGIC taking the pointer table as input
+(not hard-coding the data table). Driven-oracle **36 records x 7 fields = 252 checks, 0 fails**
+(``verify_native_object_pool_seed_c4db``).
+
+Structure confirmed: the pool is 36 records at ``DS:0x237C`` + ``i*0x38`` (the known object stride); the
+``DS:0x32CA`` table maps processing slot ``cx`` -> record (``0x237C`` + ``(cx mod 0x24)*0x38`` on this
+build); each object owns a distinct ``0x280``-strided framebuffer save area. This + the earlier
+``level_start_control_reset_c51d`` together cover the whole C4DB new-game setup (seed loop + control
+reset). Remaining Bucket-F level-start work is the surrounding integration (wiring these into a native
+cold level-start in NativeGame), plus the player-spawn/starfield init still needing a level-load capture.
+
 ## 2026-07-04 - Mapped the 971A new-game/level-start bridge; recovered the six-planet level advance (9744)
 
 Turned to the front-end->gameplay bridge (the largest remaining structural gap) and disassembled the

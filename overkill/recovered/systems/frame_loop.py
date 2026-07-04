@@ -568,6 +568,37 @@ def frame_axis_dispatch_offset(ah_count: int, al_count: int) -> int:
     return (((al_count + 3 * ah_count) & 0xFF) << 1) & 0xFFFF
 
 
+OBJECT_SEED_SLOT_TABLE_32CA = 0x32CA   # layout-justified: DS word table cx(1..0x24) -> object-record offset
+OBJECT_SEED_FB_BASE_C3A2 = 0x3314      # first per-slot framebuffer back-buffer pointer (CS:C3A2 init)
+OBJECT_SEED_FB_STEP = 0x0280           # per-slot framebuffer pointer stride
+OBJECT_SEED_COUNT = 0x24               # 36 object slots seeded
+
+
+def object_pool_seed_c4db(slot_ptr_table) -> dict:
+    """The ``1010:C4DB`` object-pool SEED loop (``C4E5..C51B``; the head of the C4DB new-game setup,
+    Bucket-F level-start object state).
+
+    For each of the 36 slots ``cx = 0x24 .. 1`` (descending, as the ASM ``loop`` runs it) it reads the
+    slot's object-record offset from the ``DS:0x32CA`` word table and stamps a fixed template plus a
+    per-slot framebuffer back-buffer pointer at ``+0x0E`` that steps ``0x3314, +0x280, +0x280, ...`` in
+    that processing order (``CS:C3A2`` accumulator).  The template zeroes ``+0x00`` (inactive) / ``+0x06``
+    / ``+0x18`` / ``+0x24`` / ``+0x2E`` and sets ``+0x0A = 1``.  Byte-exact vs the VM (36 records x 7
+    fields) in ``verify_native_object_pool_seed_c4db``.
+
+    ``slot_ptr_table`` is a mapping ``cx (1..0x24) -> record offset`` (the caller reads the real table
+    from ``DS:0x32CA``; on this build it resolves to base ``0x237C`` + stride ``0x38``).  Returns
+    ``{record_offset: {field_offset: value}}`` -- the pure LOGIC (order/template/pointer stepping); the
+    caller owns the table read and the DS/SS writes.
+    """
+    seed: dict = {}
+    render = OBJECT_SEED_FB_BASE_C3A2
+    for cx in range(OBJECT_SEED_COUNT, 0, -1):   # 0x24 down to 1, matching the ASM loop
+        off = slot_ptr_table[cx] & 0xFFFF
+        seed[off] = {0x00: 0, 0x06: 0, 0x0A: 1, 0x0E: render & 0xFFFF, 0x18: 0, 0x24: 0, 0x2E: 0}
+        render = (render + OBJECT_SEED_FB_STEP) & 0xFFFF
+    return seed
+
+
 def level_start_control_reset_c51d() -> dict:
     """The ``1010:C51D..C559`` level-start reset of the frame-control cells (part of the C4DB
     new-game setup; Bucket-F level-start state).  Returns the exact ``{DS offset: value}`` map the
