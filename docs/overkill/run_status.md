@@ -60,6 +60,34 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - UP-TO-SPEED PLAN started + the TIMING FAST-FORWARD primitive landed (pre2 parity, item 1/4)
+
+Diagnosed why this port runs slower/more chaotic than pre2_port (same author, started 9 days later,
+finished in 15 days): pre2's methodology accelerators are missing here. THE PLAN (execute in order,
+one gated slice each):
+  1. TIMING FAST-FORWARD (this slice -- DONE);
+  2. fix lindis branch-target display (recurring mis-read source; always pin polarity by oracle until
+     then);
+  3. confidence taxonomy (GUESS->OBSERVED->ASM_MATCHED->VERIFIED) as @oracle_link-style metadata on
+     recovered fns + a GENERATED manifest doc + drift test (kills the mislabel-rework class);
+  4. state-view layer over the 0x38 object record + DGROUP cells (pre2's dgroup_view pattern; offsets
+     confined to one module).
+
+THE PRIMITIVE: `overkill/timing_fastforward.advance_frames_fast(cpu, waits, on_frame=...)` -- advance
+a hooks-cleared RAW-BYTES runtime by whole `0679` frame-waits, delivering the REAL installed IRQ0 ISR
+(1010:06E5) at the game's own wait points (identical semantics to the frame verifier's ASM-side wait
+handler; also services the `9921` sound wait). Gates (probes/verify_timing_fastforward, all green over
+800 waits from L1_start): (a) CADENCE -- the logic-frame counter bank 601E (frame parity 2324, dividers
+2326/2328/2336, wave clock A7A0) advances +1 exactly every ~4.02 waits, no skips -> ONE LOGIC FRAME =
+4 WAITS (70Hz tick / ~17.5fps logic; count A7A0 transitions when reasoning in frames); (b) DETERMINISM
+-- two runs byte-identical DGROUP; (c) the old `CS:066B=1` poke RETIRED by measurement: loses 314
+DGROUP bytes (first DS:20A6) and stalls permanently at the 9926 sound wait -- but its pre-stall
+gameplay trajectory matches, so prior poke-based structure findings stand. loop_blockers updated.
+
+Forward traces (enemy waves, menu flows, sustained play, cadence questions) are now cheap AND exact --
+use this primitive, never the poke, and only fall back to the demo frame-verifier when input replay or
+produced-vs-VM comparison is required.
+
 ## 2026-07-04 - Refactor: one shared flat-image memory shape (adapters/flat_memory)
 
 Consolidated the duplicated VM-free flat-image readers -- ``scripts/play_native._FlatMemory``

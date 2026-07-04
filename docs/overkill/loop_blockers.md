@@ -4,16 +4,17 @@ Open items the autonomous loop attempted but could not finish byte-exact. Do NOT
 re-attempt these in the loop; they need a reproduction trace and/or gameplay
 context. Each has the analysis already done so a human can pick up fast.
 
-> TECHNIQUE (2026-07-04): free-run timing FAST-FORWARD (unblocks the free-run stall). A raw free-run of
-> the VM from a gameplay snapshot STALLS at the frame-wait `1010:0679` (`cmp cs:[066B],0; jz 0679` -- a
-> spin until the timer ISR sets CS:[066B]); in free-run the ISR never fires, so it spins forever (this is
-> why forward traces used the slow frame-verifier harness). FAST-FORWARD: in the step loop, when
-> `IP == 0x0679 and cs:[066B]==0`, write `cs:[066B] = 1` -- the frame gate opens and the loop advances one
-> frame. Validated: advanced 126 frames from L1_start and effect-pool enemies spawned (per-planet batches
-> as A7A0 ticked). CAVEAT: skips the timer ISR's OTHER work, so it is a TRACING aid (cheap forward
-> observation of cadence / spawns / sustained state), NOT byte-exact -- for byte-exact multi-frame verify
-> keep the frame-verifier harness (or recover the ISR body to fast-forward it byte-equivalently, à la
-> pre2's timing_fastforward). Use for: the enemy spawn-cadence trace + any "run forward, watch DS cells".
+> TECHNIQUE (2026-07-04, SUPERSEDED same day): free-run timing FAST-FORWARD is now a real primitive --
+> `overkill/timing_fastforward.advance_frames_fast(cpu, waits, on_frame=...)` (verified by
+> `probes/verify_timing_fastforward`). It advances a hooks-cleared raw-bytes runtime by whole `0679`
+> waits, delivering the REAL installed IRQ0 ISR at the game's own wait points (the verifier's ASM-side
+> semantics) -- deterministic, drift-free, and it services the `9921` sound wait too. Use it for ALL
+> forward traces. The old `cs:[066B] = 1` poke is RETIRED: measured against the primitive it loses
+> 314 bytes of DGROUP (music/SFX + BIOS-chain state, first diff DS:20A6) and STALLS PERMANENTLY at the
+> `1010:9926` sound-active wait (BEFE only clears via the ISR), though its gameplay trajectory matches
+> in the pre-stall overlap (so past poke-based STRUCTURE findings remain valid). Measured pacing: one
+> gameplay LOGIC frame = ~4 waits (the `601E` counter bank incl. the A7A0 wave clock advances every
+> 4th wait) -- count A7A0 transitions, not waits, when reasoning in frames.
 
 > Status note (2026-06-19): the byte-exact frontier is effectively closed —
 > oracle suite 244/244 and demo-replay 19/19 (bounded) are green. The primary driver is now
