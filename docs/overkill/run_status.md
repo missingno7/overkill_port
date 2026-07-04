@@ -70,11 +70,14 @@ entry, checks the stamped record + that the cursor advances by 4).
 
 So the enemy-wave data path is now recovered end-to-end as pure fns + a cold-loader: formation table
 (``load_enemy_formation_table``) -> per-enemy stamp (``formation_enemy_stamp_b5e6``) -> cursor walk (+4);
-the tick gate is ``b86d_formation_spawn_tick_index`` (DS:2340). NEXT (final enemy slice): the pure
-COMPOSITION ``formation_wave_step`` (given the cursor + tick counter: on a B86D spawn tick, emit the next
-formation enemy stamp + advance the cursor until the 24-list is exhausted), then wire it into NativeGame's
-object pass / play_native so the cold level populates. The leader-context (+0x02/+0x04) + the enemy's own
-B86D drift behaviour are the remaining details for byte-exact SUSTAINED enemy motion (spawn is exact).
+CORRECTION on the wave DISPATCH: it is NOT the B86D/7476 path (that is a different formation family).
+``B5E6`` is reached via ``jmp B49F -> B5D8 -> B5E6`` -- an OBJECT-BEHAVIOR handler (the formation-LEADER
+object). The spawn cadence (how often the leader's behaviour runs B5E6 -- once per frame? a counter?) is
+in ``B49F``/``B5D8`` and is NOT yet traced. NEXT (final enemy slice): (a) trace ``B49F``/``B5D8`` to pin
+the leader behaviour + spawn cadence + what makes a leader active (the wave TRIGGER); (b) then the pure
+``formation_wave_step`` composition (cursor + cadence -> next formation enemy stamp + advance) and wire it
+into NativeGame so the cold level populates. The leader-context (+0x02/+0x04) + the enemy's drift
+behaviour remain for byte-exact SUSTAINED motion (the SPAWN stamp itself is exact + verified).
 
 ## 2026-07-04 - Enemy WAVE fully mapped + formation table cold-loaded (24-enemy 3-col snake)
 
