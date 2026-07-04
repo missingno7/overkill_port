@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import dataclasses
 
+from overkill.recovered.islands import recovered_island
 from overkill.recovered.domain.frame_loop import (
     DEMO_TICK_DEFAULT_RELOAD,
     DemoCounterTickOutcome,
@@ -773,6 +774,13 @@ def respawn_control_reset_c461() -> dict:
     return reset
 
 
+@recovered_island(
+    asm="1010:8209..8247",
+    contract="the enemy spawn field template written into a 7524-allocated slot; "
+             "x/y from the caller's ss:[bp+2/4] frame",
+    status="VERIFIED",
+    merge_target="EnemyWaveSystem",
+)
 def enemy_spawn_stamp_8209(x: int, y: int) -> dict:
     """The ``1010:8209..8247`` ENEMY spawn stamp -- the field template the level-wave spawner writes into
     a freshly ``7524``-allocated (effect-pool) slot for each enemy of a formation.
@@ -793,6 +801,13 @@ WAVE_PHASE_PER_PLANET_A7A0 = 0x0032   # DS:A7A0 < this -> the per-planet spawn p
 WAVE_PHASE_FORMATION_A7A0 = 0x005A    # DS:A7A0 >= this -> the formation-schedule spawn path (B5E6)
 
 
+@recovered_island(
+    asm="1010:B48B",
+    contract="PLANET 3's A7A0 wave-phase dispatch: <0x32 per_planet / <0x5A none / >=0x5A the "
+             "formation snake (reached via the B556 planet dispatch)",
+    status="VERIFIED",
+    merge_target="EnemyWaveSystem",
+)
 def wave_spawn_phase_b48b(a7a0: int) -> str:
     """The ``1010:B48B`` enemy-wave phase dispatch, keyed on the wave-phase clock ``DS:A7A0``.
 
@@ -810,6 +825,15 @@ def wave_spawn_phase_b48b(a7a0: int) -> str:
     return "formation"
 
 
+@recovered_island(
+    asm="1010:B5DE..B612",
+    contract="the next-formation-enemy step over the cold A8D2 schedule: stamp at cursor, advance, "
+             "(None, cursor) when exhausted",
+    status="ASM_MATCHED",
+    merge_target="EnemyWaveSystem",
+    unknowns="a composition of individually-driven pieces, NOT driven end-to-end as one unit; "
+             "the +0x02/+0x04 leader-context fields are caller-owned",
+)
 def formation_wave_next_spawn(cursor_index: int, formation_table):
     """Produce the NEXT enemy of the wave formation from the cold-loaded schedule table.
 
@@ -829,6 +853,13 @@ def formation_wave_next_spawn(cursor_index: int, formation_table):
     return formation_enemy_stamp_b5e6(x, y), cursor_index + 1
 
 
+@recovered_island(
+    asm="1010:B5E6",
+    contract="formation-enemy stamp = 8209 base + schedule overrides (+34=x+0x20, +32=y, +18=0x61, "
+             "+08=0xE7); +02/+04 are leader-context, excluded",
+    status="VERIFIED",
+    merge_target="EnemyWaveSystem",
+)
 def formation_enemy_stamp_b5e6(x: int, y: int) -> dict:
     """The ``1010:B5E6`` FORMATION-enemy stamp -- :func:`enemy_spawn_stamp_8209` with the B5E6
     schedule-position overrides applied.
@@ -858,6 +889,13 @@ WAVE_DRIVER_PER_PLANET_A7A0 = 0x00C8   # else: DS:A7A0 < this -> the B615 per-pl
 WAVE_DRIVER_BOSS_A7A0 = 0x00F0         # else: DS:A7A0 >= this -> the B58A boss self-transform
 
 
+@recovered_island(
+    asm="1010:B556",
+    contract="the wave-driver object's (behavior 0x21) planet-keyed dispatch: 4->8D83, 3->B48B "
+             "phase machine, 0->B4A2 leader group, else A7A0-phased per_planet/none/boss_transform",
+    status="VERIFIED",
+    merge_target="EnemyWaveSystem",
+)
 def wave_driver_dispatch_b556(planet_2356: int, a7a0: int) -> str:
     """The ``1010:B556`` WAVE-DRIVER dispatch -- the per-frame behavior handler of the wave-driver
     object (behavior ``+0x18 == 0x21``), keyed on the PLANET index ``DS:2356`` then the wave clock
@@ -894,6 +932,13 @@ def wave_driver_dispatch_b556(planet_2356: int, a7a0: int) -> str:
 ENEMY_TYPE_16 = 4  # the +0x16 record type the wave machinery counts as "an enemy"
 
 
+@recovered_island(
+    asm="1010:B468",
+    contract="count effect-pool records with +00 active AND +16 == 4 (the enemy type); mirrors "
+             "DS:A47E; ==1 gates the B4A2 leader-group wave start",
+    status="VERIFIED",
+    merge_target="EnemyWaveSystem",
+)
 def count_active_enemies_b468(records) -> int:
     """The ``1010:B468`` active-enemy count: over the effect pool's 35 slots (via the ``DS:32CA``
     pointer table), count records with ``+0x00 != 0`` (active) AND ``+0x16 == 4`` (the enemy type,
@@ -908,6 +953,13 @@ def count_active_enemies_b468(records) -> int:
                if (active & 0xFFFF) != 0 and (typ & 0xFFFF) == ENEMY_TYPE_16)
 
 
+@recovered_island(
+    asm="1010:B58A..B5A6",
+    contract="wave-driver -> planet boss in place: +18=0x22, +08=0x71, +20=10*(planet+1) HP, "
+             "+04=0x60 (non-special planets at A7A0 >= 0xF0)",
+    status="VERIFIED",
+    merge_target="EnemyWaveSystem",
+)
 def boss_transform_stamp_b58a(planet_2356: int) -> dict:
     """The ``1010:B58A..B5A6`` BOSS self-transform -- the wave-driver's record overwrite when a
     non-special planet's wave clock reaches ``A7A0 >= 0xF0``.

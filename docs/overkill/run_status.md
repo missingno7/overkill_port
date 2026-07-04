@@ -60,6 +60,41 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - Up-to-speed plan item 3/4: the confidence taxonomy ALREADY EXISTED (islands.py) -- adopted + extended
+
+LESSON FIRST: I built a duplicate. The pre2 confidence-taxonomy mechanism has been in this repo all
+along -- ``overkill/recovered/islands.py`` (the ``@recovered_island`` decorator: asm / contract /
+status GUESS->OBSERVED->ASM_MATCHED->VERIFIED->CANONICAL / merge_target / unknowns), with
+``scripts/gen_island_manifest.py`` -> ``docs/overkill/recovered_islands.md`` and the
+``tests/test_island_registry.py`` drift test -- but only 20 of ~290 recovered functions use it
+(movement + tandy_screen), so it was invisible from the docs I read. I wrote a parallel
+``oracle_link`` system; the ARCHITECTURE AUDIT failed it (layer classification), which led to
+discovering islands.py. The duplicate is fully reverted; the existing mechanism is the standard.
+**Check for an existing mechanism before building one** (grep for the pre2 pattern name first).
+
+Adopted: the 7 enemy-wave functions in ``systems/frame_loop`` now carry ``@recovered_island``
+(merge_target ``EnemyWaveSystem``): 8209 spawn stamp, B48B phase (VERIFIED), B5E6 formation stamp
+(VERIFIED), B556 planet-keyed driver / B468 count / B58A boss transform (VERIFIED, 18/18 driven), and
+``formation_wave_next_spawn`` honestly ASM_MATCHED (composition, unknowns field carries the gap) --
+the distinction the ladder exists to keep visible. Manifest regenerated: 27 islands.
+
+POLICY (binding): every NEW recovered function in ``systems/`` carries ``@recovered_island`` with a
+truthfully-cited status; legacy functions get annotated WHEN TOUCHED -- never bulk-guess statuses.
+
+ITEM 4/4 RESOLVED BY INVENTORY (the lesson applied): the state-view layer ALSO already exists, at
+both layers -- ``recovered/views/object_slots.py`` (the memory-layout lens: named OFF_* offsets over
+the 0x38 record -- note ``+0x16`` = ``OFF_HAZARD_CLASS`` (the type-dispatch key) and ``+0x18`` =
+``OFF_LOGIC_ID`` (the EFC4 behavior-dispatch index; today's discovery gives these names their exact
+meaning), table bases, ObjectSlotView) and ``recovered/domain/object_slots.py`` (pure named accessors:
+``ObjectPool.logic_id/sprite_word/active_word/substate/move_delta_*``, systems-importable). Remaining
+work is ADOPTION coverage (use the names when touching code, like the island sweep), not construction.
+
+**THE UP-TO-SPEED PLAN IS COMPLETE** (1 fast-forward BUILT, 2 lindis fix BUILT, 3 islands taxonomy
+ADOPTED, 4 state-view ADOPTED). The frontier returns to the GAME: (a) the planet-0 leader-group
+handlers (F762/F758/F75D/F776 + the 0x76..0x79 zoo) via fast-forward traces -- the cold-boot enemy
+wave -- then the NativeGame behavior-registry stage; (b) the death->respawn + level-advance edge
+compositions (nearly free); (c) the level-select cursor render + menu flow.
+
 ## 2026-07-04 - Up-to-speed plan item 2/4: the lindis/CPU branch-target display FIXED at the source
 
 The recurring "lindis mis-displays jz/jnb/loop targets" lesson (burned every disassembly session;

@@ -4,7 +4,7 @@
      Source of truth = the @recovered_island metadata on each recovered function.
      tests/test_island_registry.py fails if this file drifts from the code. -->
 
-20 recovered islands (2 ASM_MATCHED, 18 VERIFIED).
+27 recovered islands (3 ASM_MATCHED, 24 VERIFIED).
 
 | ASM boundary | Function | Status | Merge target | Contract |
 |---|---|---|---|---|
@@ -15,6 +15,7 @@
 | `1010:5DB2` | `systems.movement.object_target_seek_step_5db2` | VERIFIED | MovementSystem | whole per-slot 5DB2 target-seek movement: pick direction toward target, then step x/y by 5E0C mode |
 | `1010:5E1B` | `systems.movement.object_delta_5e1b` | VERIFIED | MovementSystem | object-delta helper: signed per-axis deltas = slot - (target + pad), pad 4px solid else 12px |
 | `1010:5E42` | `systems.movement.object_delta_steer_5e42` | VERIFIED | MovementSystem | runtime-patched delta-steer: signed deltas -> Bresenham axis pick -> A348 direction -> step |
+| `1010:8209..8247` | `systems.frame_loop.enemy_spawn_stamp_8209` | VERIFIED | EnemyWaveSystem | the enemy spawn field template written into a 7524-allocated slot; x/y from the caller's ss:[bp+2/4] frame |
 | `1010:9B6F`, `1010:9B79`, `1010:9B83`, `1010:9B8D` | `systems.movement.step_view_anchor_by_input` | VERIFIED | FrameLoop | 9B2E movement-bits stage: apply held direction input to the view-anchor position via the four A5D1/A5EA/A5F9/A607 axis clamp-steps |
 | `1010:9FEA` | `systems.movement.object_child_coord_update_9fea` | VERIFIED | MovementSystem | linked/child object coordinate update: base + table delta + 2x vertical scroll bias, Y clamped 0..00C0 |
 | `1010:A5D1` | `systems.movement.one_pixel_axis_step` | VERIFIED | MovementSystem | single-pixel axis step when the no-clamp global gate is set |
@@ -28,3 +29,9 @@
 | `1010:AEE4`, `1010:AF22`, `1010:AF63` | `systems.movement.step_operations_for_direction` | VERIFIED | MovementSystem | ordered x/y mutations for an 8-way movement step (order = 8086 flag order at RET) |
 | `1010:B1B0` | `systems.movement.align_word_to_four` | VERIFIED | MovementSystem | 4-pixel grid alignment of a coordinate word |
 | `1010:B1B0` | `systems.movement.player_center_target_from_view` | VERIFIED | MovementSystem | player/view-centre chase target (237E+0Ah, 2380+0Ch, 4-pixel aligned) |
+| `1010:B468` | `systems.frame_loop.count_active_enemies_b468` | VERIFIED | EnemyWaveSystem | count effect-pool records with +00 active AND +16 == 4 (the enemy type); mirrors DS:A47E; ==1 gates the B4A2 leader-group wave start |
+| `1010:B48B` | `systems.frame_loop.wave_spawn_phase_b48b` | VERIFIED | EnemyWaveSystem | PLANET 3's A7A0 wave-phase dispatch: <0x32 per_planet / <0x5A none / >=0x5A the formation snake (reached via the B556 planet dispatch) |
+| `1010:B556` | `systems.frame_loop.wave_driver_dispatch_b556` | VERIFIED | EnemyWaveSystem | the wave-driver object's (behavior 0x21) planet-keyed dispatch: 4->8D83, 3->B48B phase machine, 0->B4A2 leader group, else A7A0-phased per_planet/none/boss_transform |
+| `1010:B58A..B5A6` | `systems.frame_loop.boss_transform_stamp_b58a` | VERIFIED | EnemyWaveSystem | wave-driver -> planet boss in place: +18=0x22, +08=0x71, +20=10*(planet+1) HP, +04=0x60 (non-special planets at A7A0 >= 0xF0) |
+| `1010:B5DE..B612` | `systems.frame_loop.formation_wave_next_spawn` | ASM_MATCHED | EnemyWaveSystem | the next-formation-enemy step over the cold A8D2 schedule: stamp at cursor, advance, (None, cursor) when exhausted |
+| `1010:B5E6` | `systems.frame_loop.formation_enemy_stamp_b5e6` | VERIFIED | EnemyWaveSystem | formation-enemy stamp = 8209 base + schedule overrides (+34=x+0x20, +32=y, +18=0x61, +08=0xE7); +02/+04 are leader-context, excluded |
