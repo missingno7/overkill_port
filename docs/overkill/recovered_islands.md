@@ -4,17 +4,19 @@
      Source of truth = the @recovered_island metadata on each recovered function.
      tests/test_island_registry.py fails if this file drifts from the code. -->
 
-29 recovered islands (3 ASM_MATCHED, 26 VERIFIED).
+31 recovered islands (3 ASM_MATCHED, 28 VERIFIED).
 
 | ASM boundary | Function | Status | Merge target | Contract |
 |---|---|---|---|---|
 | `1010:3354` | `systems.tandy_screen.di_to_screen` | ASM_MATCHED | RenderBackend | Tandy mode-2 packed VRAM byte offset (di) -> screen pixel (x,y) (left pixel of the byte) |
 | `1010:3354` | `systems.tandy_screen.screen_to_di` | ASM_MATCHED | RenderBackend | Tandy mode-2 screen pixel (x,y) -> packed VRAM byte offset (di) |
+| `1010:4D95` | `systems.frame_loop.canned_random_next_4d95` | VERIFIED | EnemyWaveSystem | the canned pseudo-random source: cursor DS:20A6 += 2, wrapping to 20A8 at >= 20C7, then return the ring word at the cursor |
 | `1010:5DB2` | `systems.movement.choose_target_seek_direction` | VERIFIED | MovementSystem | map the 5DB2 direction-bit nibble through the direction table to a step direction |
 | `1010:5DB2` | `systems.movement.encode_target_seek_bits` | VERIFIED | MovementSystem | 5DB2 direction-bit nibble toward a target (Y unsigned, X signed) |
 | `1010:5DB2` | `systems.movement.object_target_seek_step_5db2` | VERIFIED | MovementSystem | whole per-slot 5DB2 target-seek movement: pick direction toward target, then step x/y by 5E0C mode |
 | `1010:5E1B` | `systems.movement.object_delta_5e1b` | VERIFIED | MovementSystem | object-delta helper: signed per-axis deltas = slot - (target + pad), pad 4px solid else 12px |
 | `1010:5E42` | `systems.movement.object_delta_steer_5e42` | VERIFIED | MovementSystem | runtime-patched delta-steer: signed deltas -> Bresenham axis pick -> A348 direction -> step |
+| `1010:7476..74B4`, `1010:74B5..74E1`, `1010:74E2..74FD` | `systems.frame_loop.enemy_shot_stamp_7476` | VERIFIED | EnemyWaveSystem | the enemy SHOT spawn: gameplay-pool alloc (7573), sound BEFF=0x1A if 98C0, muzzle offset by the A8C2 leader-group flag, the type-2/behavior-0x0B/sprite-0x31 stamp, and the 74E2 aim deltas at the player anchor into +0x2A/+0x2C (the 5E42 steer inputs) |
 | `1010:8209..8247` | `systems.frame_loop.enemy_spawn_stamp_8209` | VERIFIED | EnemyWaveSystem | the enemy spawn field template written into a 7524-allocated slot; x/y from the caller's ss:[bp+2/4] frame |
 | `1010:9B6F`, `1010:9B79`, `1010:9B83`, `1010:9B8D` | `systems.movement.step_view_anchor_by_input` | VERIFIED | FrameLoop | 9B2E movement-bits stage: apply held direction input to the view-anchor position via the four A5D1/A5EA/A5F9/A607 axis clamp-steps |
 | `1010:9FEA` | `systems.movement.object_child_coord_update_9fea` | VERIFIED | MovementSystem | linked/child object coordinate update: base + table delta + 2x vertical scroll bias, Y clamped 0..00C0 |

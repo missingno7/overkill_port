@@ -50,6 +50,22 @@
 > witness-poor load-time code, the cold-boot witness-harness idea, the Bucket A/B completion
 > readouts) are preserved in the dated entries below and in `overnight_endgame_execution.md`.
 
+## 2026-07-05 - The 0x20 behavior's last two callees recovered: 4D95 canned-random + 7476 enemy shot (driven)
+
+(/goal loop.) ``canned_random_next_4d95(cursor, ring)`` (the fixed 16-word ring cold-loaded by
+``adapters/canned_random_adapter``; cursor DS:20A6 +2 wrap-at-20C7) and ``enemy_shot_stamp_7476
+(shooter_x, shooter_y, leader_group_a8c2, player_x_237e, player_y_2380)`` (muzzle +0x0C/+0x0C or
++0x1C/+0x08 by A8C2; type 2 / behavior 0x0B / sprite 0x31; the 74E2 aim deltas into +0x2A/+0x2C =
+the 5E42 steer inputs; DS:BEFF=0x1A sound + 7573 alloc caller-owned). ORACLE
+``verify_native_enemy_shot``: 4D95 40/40 across a full wrap; 7476 8/8 (both muzzles x both 98C0
+sound-gate states, full stamp + deltas byte-exact on the allocated slot). Islands VERIFIED (31).
+
+WITH THIS, behavior 0x20's every callee is pure: 5DB2 seek (B729/B85C), AFD8 locomotion, 4D95
+random, 7476 shot. NEXT: compose ``behavior 0x20`` itself as the pure per-frame handler (the FFFF
+approach phase + substates 0..2 + the hold/shoot/dive/re-shuffle logic vs the 2340/232E/A7A0
+clocks + the A844 ring) with a fast-forward-driven whole-behavior oracle -- then the behavior
+registry stage has its first two natives (0x20 + the shot 0x0B via 5E42).
+
 ## 2026-07-05 - AFD8 COMPLETE: the full worker composed pure + driven 192/192 (the x21 mega-worker is DONE)
 
 (Built-in /goal loop, continuing.) ``systems/contact_step.contact_probe_afd8(x, y, direction, a278,

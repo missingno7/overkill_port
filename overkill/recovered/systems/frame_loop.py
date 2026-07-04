@@ -976,6 +976,67 @@ def boss_transform_stamp_b58a(planet_2356: int) -> dict:
             0x20: (10 * ((planet_2356 & 0xFFFF) + 1)) & 0xFFFF, 0x04: 0x0060}
 
 
+CANNED_RANDOM_RING_BASE_20A8 = 0x20A8   # the static 16-word ring DS:20A8..20C6 (cursor DS:20A6)
+CANNED_RANDOM_RING_END_20C7 = 0x20C7    # 4D9A: cmp cursor, 20C7; wrap to 20A8 when >= (jnb)
+CANNED_RANDOM_RING_WORDS = 16
+
+
+@recovered_island(
+    asm="1010:4D95",
+    contract="the canned pseudo-random source: cursor DS:20A6 += 2, wrapping to 20A8 at >= 20C7, "
+             "then return the ring word at the cursor",
+    status="VERIFIED",
+    merge_target="EnemyWaveSystem",
+)
+def canned_random_next_4d95(cursor_20a6: int, ring) -> tuple[int, int]:
+    """The ``1010:4D95`` pseudo-random step: returns ``(value, next_cursor_20a6)``.
+
+    ``ring`` is the static 16-word table cold-loaded from ``DS:20A8..20C6``
+    (``adapters/canned_random_adapter.load_canned_random_ring``).  Not an LCG -- a fixed sequence
+    the enemy attack logic samples (e.g. the ``B7F3`` shoot gate tests ``value & 1``).  Driven-
+    oracle (``verify_native_enemy_shot``) across a full wrap.
+    """
+    cursor = (cursor_20a6 + 2) & 0xFFFF
+    if cursor >= CANNED_RANDOM_RING_END_20C7:
+        cursor = CANNED_RANDOM_RING_BASE_20A8
+    return ring[(cursor - CANNED_RANDOM_RING_BASE_20A8) // 2] & 0xFFFF, cursor
+
+
+ENEMY_SHOT_SOUND_BEFF = 0x1A            # queued when DS:98C0 != 0
+ENEMY_SHOT_MUZZLE_NORMAL = (0x0C, 0x0C)      # (dy, dx) added to the firing record's y/x
+ENEMY_SHOT_MUZZLE_LEADER_GROUP = (0x1C, 0x08)  # when the leader-group flag DS:A8C2 == 1
+
+
+@recovered_island(
+    asm=("1010:7476..74B4", "1010:74B5..74E1", "1010:74E2..74FD"),
+    contract="the enemy SHOT spawn: gameplay-pool alloc (7573), sound BEFF=0x1A if 98C0, muzzle "
+             "offset by the A8C2 leader-group flag, the type-2/behavior-0x0B/sprite-0x31 stamp, "
+             "and the 74E2 aim deltas at the player anchor into +0x2A/+0x2C (the 5E42 steer inputs)",
+    status="VERIFIED",
+    merge_target="EnemyWaveSystem",
+)
+def enemy_shot_stamp_7476(shooter_x: int, shooter_y: int, leader_group_a8c2: bool,
+                          player_x_237e: int, player_y_2380: int) -> dict:
+    """The ``1010:7476`` enemy-shot record template (the fields written into the ``7573``-allocated
+    gameplay slot).  Returns the ``{field offset: value}`` map; the allocation (which slot), the
+    ``DS:BEFF`` sound queue and the ``DS:98C0`` gate are the caller's.
+
+    The shot spawns at the shooter's position + the muzzle offset (leader-group variant when
+    ``DS:A8C2 == 1``), typed 2 (the EFAE dispatch family) with behavior ``0x0B`` and sprite
+    ``0x31``; ``74E2`` writes the signed aim deltas toward the player view-anchor
+    (``y - ([2380] + 9)`` and ``x - [237E]``) into ``+0x2C``/``+0x2A`` -- the exact inputs the
+    recovered ``object_delta_steer_5e42`` movement consumes.  Byte-exact vs the VM
+    (``verify_native_enemy_shot``).
+    """
+    dy, dx = ENEMY_SHOT_MUZZLE_LEADER_GROUP if leader_group_a8c2 else ENEMY_SHOT_MUZZLE_NORMAL
+    y = (shooter_y + dy) & 0xFFFF
+    x = (shooter_x + dx) & 0xFFFF
+    return {0x00: 1, 0x02: x, 0x04: y, 0x06: 0, 0x08: 0x0031, 0x0A: 1, 0x14: 0,
+            0x16: 2, 0x18: 0x000B, 0x1C: 0xFFFF, 0x1E: 0,
+            0x2A: (x - player_x_237e) & 0xFFFF,
+            0x2C: (y - ((player_y_2380 + 9) & 0xFFFF)) & 0xFFFF}
+
+
 def new_game_session_init_96ee() -> dict:
     """The session-start (new-game) DATA init at ``1010:96EE..9715`` -- the TOP of the mode machine's
     game session.
