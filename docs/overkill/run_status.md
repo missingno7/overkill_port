@@ -60,6 +60,32 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - DIRECTION: aligned with the sibling pre2_port (a COMPLETE VM-less native port) -- the proven endgame
+
+Studied the sibling `D:\Games\DOS\pre2_port` (Prehistorik 2), a COMPLETE VM-less native port -- exactly
+OVERKILL's endgame, further along. Key takeaways to steer OVERKILL (its docs are the reference):
+
+* **Target shape (proven):** ``scripts/play_native.py`` is the PRODUCT -- cold-boots the WHOLE game from
+  the initialised data segment (a ``boot_data.py``, no EXE) + assets, driving intro -> titles -> menu ->
+  world-map -> gameplay -> endings, all recovered + byte-exact. OVERKILL is on the same path (cold level
+  boot + fire done); the FRONT-END (title/attract/menu -> cold start) + endings are the flow gaps.
+* **Crystallization intention (the state-view layer):** pre2 moved recovered code from raw offsets
+  (``rw(0x6BF6)``) to source-like named fields (``s.wind``, ``slot.x``) via ONE swappable layer
+  (``pre2/bridge/dgroup_view.py`` -- StructView/StructArray/_U16 field descriptors; backends: ByteBackend
+  for native+memcmp, Overlay/WidthContract for contract islands). OVERKILL's recovered fns currently
+  return raw ``{offset: value}`` dicts (enemy_spawn_stamp_8209 &c.) -- that is the EARLY form; the
+  intention is to evolve them toward named structs/views. Not urgent mid-recovery (pre2 did it late), but
+  it is the direction: "shaped by reconstructed structs + recovered functions, not hundreds of hooks."
+* **Technique that unblocks OVERKILL tracing NOW:** pre2 recovered a TIMING FAST-FORWARD primitive
+  (``timing_fastforward.advance_frame_fast``) that collapses the VGA-retrace / timer busy-waits in closed
+  form -- the exact thing that made my OVERKILL free-run STALL on the ``0679`` timer-wait (so I had to use
+  the slow frame-verifier harness). Recovering an OVERKILL equivalent (find/collapse its frame-wait poll)
+  would make forward traces (enemy dispatch, sustained play) far cheaper. Worth doing before the next big
+  trace-heavy investigation.
+
+No code change this entry -- direction/technique note. Continue the gameplay recovery toward the pre2-shaped
+complete cold-boot game.
+
 ## 2026-07-04 - Formation-enemy STAMP recovered (frame_loop.formation_enemy_stamp_b5e6) -- iterator step
 
 Recovered the B5E6 iterator's per-enemy stamp: ``formation_enemy_stamp_b5e6(x, y)`` = ``enemy_spawn_stamp_
