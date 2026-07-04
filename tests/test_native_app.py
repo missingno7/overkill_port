@@ -12,6 +12,7 @@ from overkill.native_app import (
     GAMEPLAY_FRAME_STAGES,
     HOST,
     NATIVE,
+    NEW_GAME_SETUP_STAGES,
     UNMONITORED,
     AttractSequencer,
     GameplayFrameSkeleton,
@@ -30,6 +31,24 @@ def test_stage_map_matches_the_97b2_call_order():
     ]
     assert all(s.status in (NATIVE, HOST, GAP, UNMONITORED) for s in GAMEPLAY_FRAME_STAGES)
     assert all(s.asm.startswith("1010:") for s in GAMEPLAY_FRAME_STAGES)
+
+
+def test_new_game_setup_bridge_map_is_declared_and_honest():
+    # the 971A/9734 -> 9744 -> 97B2 new-game/level-start bridge, in flow order
+    assert [s.name for s in NEW_GAME_SETUP_STAGES] == [
+        "level_select", "screen_load", "new_game_setup", "countdown_init", "panel_draw",
+        "level0_intro", "level_advance", "setup_tail",
+    ]
+    assert all(s.status in (NATIVE, HOST, GAP, UNMONITORED) for s in NEW_GAME_SETUP_STAGES)
+    assert all(s.asm.startswith("1010:") for s in NEW_GAME_SETUP_STAGES)
+    by_name = {s.name: s for s in NEW_GAME_SETUP_STAGES}
+    assert by_name["new_game_setup"].status == NATIVE     # C4DB composed + proven complete
+    assert by_name["level_advance"].status == NATIVE       # 9744 six-planet advance recovered
+    assert by_name["screen_load"].status == HOST           # 5C9A VGA blit is presentation
+    assert by_name["setup_tail"].status == GAP             # the unrecovered per-level setup remainder
+    # the newly-declared bridge gaps surface in the honest gap report
+    report = "\n".join(describe_gaps())
+    assert "new_game_setup.setup_tail" in report and "new_game_setup.level0_intro" in report
 
 
 def test_gap_boundary_is_declared_and_reported():

@@ -60,6 +60,23 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - Skeleton: added NEW_GAME_SETUP_STAGES (the 971A/9734 -> 9744 -> 97B2 bridge map)
+
+Folded the recovered front-end->gameplay bridge into the skeleton as ``native_app.NEW_GAME_SETUP_STAGES``
+-- the machine-readable map of the new-game/level-start setup, mirroring ``GAMEPLAY_FRAME_STAGES`` (the
+97B2 map). Documents the CONVERGENT structure honestly: TWO entry points meet at the level-advance --
+``971A`` (NEW GAME: D390/5C9A/C4DB/counter-init/6176 then ``jmp 9744``) and ``9734`` (LEVEL-END
+TRANSITION, the A344 scripted-exit target of ``detect_gameplay_transition``: the ``2356==0`` level-0
+story branch, then falls into 9744) -- then the converged per-level setup tail into 97B2.
+
+Each step is tagged native/host/gap from THIS session's disassembly only (conservative, after the A47C
+mislabel lesson): ``new_game_setup`` (C4DB) = NATIVE (apply_new_game_setup_c4db, complete);
+``level_advance`` (9744) = NATIVE; ``screen_load`` (5C9A) / ``panel_draw`` (6176) = HOST presentation;
+``level_select`` (D390) / ``level0_intro`` (9844) / ``setup_tail`` (9755..97B2) = GAP. The GAP entries
+now surface in ``describe_gaps()`` (prefixed ``new_game_setup.``), and the Bucket-F gap line is updated
+to note C4DB + level-advance are native, with the player-spawn/starfield init + native-cold-level-start
+wiring as the remaining work. Tests pin the flow order + the native/host/gap tags.
+
 ## 2026-07-04 - Bucket F: COMPOSED the whole C4DB new-game setup + proved it COMPLETE (segment diff)
 
 Composed the two recovered C4DB halves into one native entry point: ``frame_loop.apply_new_game_setup_

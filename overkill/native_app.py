@@ -114,14 +114,53 @@ GAMEPLAY_FRAME_STAGES: tuple[FrameStage, ...] = (
 )
 
 
+#: The new-game / level-start setup that bridges the front-end to the gameplay frame loop.
+#: TWO entry points converge at the level-advance (1010:9744):
+#:   * 1010:971A -- NEW GAME (fresh start): runs the new-game prologue, then ``jmp 9744``.
+#:   * 1010:9734 -- LEVEL-END TRANSITION (the A344 scripted-exit target of detect_gameplay_transition):
+#:     runs the level-transition prologue (the level-0 story branch), then falls into 9744.
+#: Both then run the converged per-level setup tail into 1010:97B2 (GAMEPLAY_FRAME_STAGES).
+NEW_GAME_SETUP_STAGES: tuple[FrameStage, ...] = (
+    # --- new-game prologue (1010:971A) ---
+    FrameStage("level_select", "1010:D390", GAP,
+               "level-select-family setup call; the grid direction/confirm DECISIONS are recovered"
+               " (systems/menu + native_front_end), but the screen loop itself is host/presentation --"
+               " not composed into this bridge yet"),
+    FrameStage("screen_load", "1010:5C9A", HOST,
+               "full-screen VGA plane blit (rep movsb 0x1F40 + 03CE register writes) -- presentation"),
+    FrameStage("new_game_setup", "1010:C4DB", NATIVE,
+               "object-pool seed + frame-control reset; native form = frame_loop.apply_new_game_setup_c4db"
+               " (263 DGROUP cells, correct AND complete vs the VM -- verify_native_new_game_setup_c4db)"),
+    FrameStage("countdown_init", "1010:9723", NATIVE,
+               "DS:A95A := 3, DS:A95C := 0x18 -- the A47C-script counters' new-game init (constants)"),
+    FrameStage("panel_draw", "1010:6176", HOST,
+               "HUD/panel draw composite (dual-page gated on CS:95BC) -- presentation"),
+    # --- level-end transition prologue (1010:9734, alternate entry) ---
+    FrameStage("level0_intro", "1010:9844 (via 9734, if DS:2356 == 0)", GAP,
+               "level-0 story-intro splash (far-call text 1F8F:0980 + fire-wait) -- not recovered;"
+               " only on the level-end transition entry, not on a fresh new game"),
+    # --- converged per-level setup -> 97B2 ---
+    FrameStage("level_advance", "1010:9744", NATIVE,
+               "six-planet level-index advance; native form = frame_loop.advance_level_index_9744"
+               " (DS:2356 0->1->..5->0, driven-oracle 9/9)"),
+    FrameStage("setup_tail", "1010:9755..97B2", GAP,
+               "the remaining per-level setup calls (the 98C0->BEFF gate + 5145/5BCA/0B3E/0E9C/60AC/"
+               "C3A6/77C5/99BF/9BE2/A940/C57C/B5A9/5F43) that lead into the 97B2 gameplay frame loop --"
+               " mostly init/presentation glue, not recovered"),
+)
+
+
 def describe_gaps() -> list[str]:
     """Every declared gap in the skeleton, one line each (for reports/tests -- keep it honest)."""
     out = [f"{s.name}: [{s.status}] {s.asm} -- {s.note}"
            for s in GAMEPLAY_FRAME_STAGES if s.status in (GAP, UNMONITORED)]
+    out += [f"new_game_setup.{s.name}: [{s.status}] {s.asm} -- {s.note}"
+            for s in NEW_GAME_SETUP_STAGES if s.status in (GAP, UNMONITORED)]
     out.append("attract scene 0: [gap] 1010:D0D1 -> D160 -- special branch not recovered (fail-loud)")
     out.append("attract scene advance: [gap] 1010:D0DB.. -- next-scene entry actions not recovered")
-    out.append("level start state: [gap] Bucket F -- player spawn/object seed/starfield init need a"
-               " captured snapshot; no VM-free cold level start yet")
+    out.append("level start state: [gap] Bucket F -- C4DB new-game setup is native"
+               " (apply_new_game_setup_c4db) + level advance (advance_level_index_9744); still GAP:"
+               " the player spawn/starfield init + wiring these into a native cold level-start")
     out.append("front-end menu logic: [gap] key-redefine/joystick/menu branches -- title image only")
     return out
 
@@ -194,7 +233,7 @@ class AttractSequencer:
 
 
 __all__ = [
-    "FrameStage", "GAMEPLAY_FRAME_STAGES", "describe_gaps",
+    "FrameStage", "GAMEPLAY_FRAME_STAGES", "NEW_GAME_SETUP_STAGES", "describe_gaps",
     "GameplayFrameSkeleton", "AttractSequencer",
     "NATIVE", "HOST", "GAP", "UNMONITORED",
     "RecoveryGap", "UnmonitoredGap",
