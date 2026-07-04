@@ -60,6 +60,22 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - Formation-enemy STAMP recovered (frame_loop.formation_enemy_stamp_b5e6) -- iterator step
+
+Recovered the B5E6 iterator's per-enemy stamp: ``formation_enemy_stamp_b5e6(x, y)`` = ``enemy_spawn_stamp_
+8209`` + the B5E6 schedule-position overrides (``+0x34 = x+0x20``, ``+0x32 = y``, ``+0x18 = 0x61``,
+``+0x08 = 0xE7``; drops ``+0x02``/``+0x04`` = leader-context, not schedule-driven). Driven-oracle 3/3
+(``verify_native_formation_enemy_stamp`` drives B5E6 through the 81F4 alloc from a synthetic A8D0 cursor
+entry, checks the stamped record + that the cursor advances by 4).
+
+So the enemy-wave data path is now recovered end-to-end as pure fns + a cold-loader: formation table
+(``load_enemy_formation_table``) -> per-enemy stamp (``formation_enemy_stamp_b5e6``) -> cursor walk (+4);
+the tick gate is ``b86d_formation_spawn_tick_index`` (DS:2340). NEXT (final enemy slice): the pure
+COMPOSITION ``formation_wave_step`` (given the cursor + tick counter: on a B86D spawn tick, emit the next
+formation enemy stamp + advance the cursor until the 24-list is exhausted), then wire it into NativeGame's
+object pass / play_native so the cold level populates. The leader-context (+0x02/+0x04) + the enemy's own
+B86D drift behaviour are the remaining details for byte-exact SUSTAINED enemy motion (spawn is exact).
+
 ## 2026-07-04 - Enemy WAVE fully mapped + formation table cold-loaded (24-enemy 3-col snake)
 
 Completed the enemy-wave structure (the last gameplay subsystem). It is a FIXED FORMATION:

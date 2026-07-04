@@ -789,6 +789,28 @@ def enemy_spawn_stamp_8209(x: int, y: int) -> dict:
             0x20: 4, 0x24: 0, 0x28: 0xFFFF, 0x32: y, 0x34: x}
 
 
+def formation_enemy_stamp_b5e6(x: int, y: int) -> dict:
+    """The ``1010:B5E6`` FORMATION-enemy stamp -- :func:`enemy_spawn_stamp_8209` with the B5E6
+    schedule-position overrides applied.
+
+    The formation iterator reads ``(x, y)`` from the ``DS:A8D2`` schedule (via ``lodsw``) and stamps the
+    enemy's position at ``+0x34 = x + 0x20`` / ``+0x32 = y``, plus ``+0x18 = 0x61`` and ``+0x08 = 0xE7``
+    (sprite) overrides.  Byte-exact for the SCHEDULE-driven fields vs the VM
+    (``verify_native_formation_enemy_stamp``).
+
+    EXCLUDES ``+0x02``/``+0x04``: the base 8209 stamp fills those from the caller's ``ss:[bp+2/4]``, but in
+    the formation path that ``bp`` is the LEADER object's frame (not the schedule), so they are
+    leader-context, not modelled here -- the formation enemy's position lives in ``+0x34``/``+0x32``.
+    """
+    stamp = enemy_spawn_stamp_8209(x, y)
+    del stamp[0x02]
+    del stamp[0x04]
+    stamp[0x08] = 0x00E7
+    stamp[0x18] = 0x0061
+    stamp[0x34] = (x + 0x20) & 0xFFFF
+    return stamp
+
+
 def new_game_session_init_96ee() -> dict:
     """The session-start (new-game) DATA init at ``1010:96EE..9715`` -- the TOP of the mode machine's
     game session.

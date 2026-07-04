@@ -629,3 +629,17 @@ def test_enemy_spawn_stamp_8209():
     assert s[0x28] == 0xFFFF
     # masks to 16 bits
     assert enemy_spawn_stamp_8209(0x1_0140, 0)[0x02] == 0x0140
+
+
+def test_formation_enemy_stamp_b5e6():
+    from overkill.recovered.systems.frame_loop import formation_enemy_stamp_b5e6, enemy_spawn_stamp_8209
+    s = formation_enemy_stamp_b5e6(0x0050, 0x00A8)
+    # schedule position lives in +0x34 (x + 0x20) / +0x32 (y); NOT +0x02/+0x04 (leader-context, dropped)
+    assert 0x02 not in s and 0x04 not in s
+    assert s[0x34] == 0x0070 and s[0x32] == 0x00A8
+    # the B5E6 overrides
+    assert s[0x08] == 0x00E7 and s[0x18] == 0x0061
+    # everything else inherits the base 8209 stamp
+    base = enemy_spawn_stamp_8209(0x0050, 0x00A8)
+    for fo in (0x00, 0x06, 0x0A, 0x14, 0x16, 0x20, 0x24, 0x28):
+        assert s[fo] == base[fo]
