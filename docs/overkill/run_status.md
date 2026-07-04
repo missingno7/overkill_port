@@ -60,6 +60,26 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - COLD level-start state assembled VM-free (build_cold_level_start) -- de-stages play_native
+
+First real de-staging step toward the VM-less cold start (per the user: move play_native off its
+``--snapshot`` staging toward the real game). New adapter
+``recovered/adapters/cold_level_start.build_cold_level_start(exe_image)`` assembles the frame-0
+level-start ``(NativeGameState, StarfieldState)`` ENTIRELY from the recovered seeds -- session init
+(96EE) + C4DB new-game setup + C3A6 gameplay-pool seed + control reset (C461) + player spawn (C42F) +
+cold starfield -- by writing them into a fresh data image and reading back through the EXISTING
+VM-verified ``read_native_game_state`` projection. No VM, no capture.
+
+Result (``test_cold_level_start``): player view-anchor active at (0xC0, 0x58); all 34 gameplay + 35 effect
+slots FREE (a fresh level has no live enemies); 40-star cold starfield enabled. Every write is an already
+byte-exact recovered seed, so the assembly needs no new oracle. Marked omission (not faked): the 7524
+companion/flame object needs the runtime allocator, so it is not placed.
+
+**This is the state brick play_native needs to drop --snapshot.** NEXT: wire ``build_cold_level_start``
+into play_native as the default cold start (it still also needs the level-start SCROLL cursor
+234C/234E/2350 + the sprite half-stride -- both cold-derivable from the level data), then the standalone
+boots a level with zero VM. After that: the forward-carry wall (A067 fan-out) for sustained play.
+
 ## 2026-07-04 - Bucket F: recovered the GAMEPLAY pool seed (C3B5) -- resolves "where is 0x2B5C seeded"
 
 Recovered the last C3A6 pool re-init: ``frame_loop.object_pool_seed_c3b5`` (``C3B5..C3E5``) -- the seed
