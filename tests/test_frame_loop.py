@@ -407,3 +407,15 @@ def test_scripted_input_prologue_99f6():
     assert scripted_input_prologue_99f6(a47c=1, prev_2380=0x0001) == (0x0000, 0, 2)
     assert scripted_input_prologue_99f6(a47c=4, prev_2380=0x1235) == (0x1234, 0, 8)
     assert scripted_input_prologue_99f6(a47c=0x10, prev_2380=0x0000) == (0x0000, 0, 0x20)
+
+
+def test_step_death_seq_9dea():
+    from overkill.recovered.systems.frame_loop import step_death_seq_9dea
+    # A95C not yet 0x18 -> just increment A95C
+    assert step_death_seq_9dea(0x05, 0x03, 0) == (0x06, 0x03, None)
+    assert step_death_seq_9dea(0x17, 0x00, 1) == (0x18, 0x00, None)
+    # A95C == 0x18 and A95A == 3 -> no-op
+    assert step_death_seq_9dea(0x18, 0x03, 1) == (0x18, 0x03, None)
+    # A95C == 0x18 and A95A != 3 -> advance (inc A95A, A95C=0); BEFF only when 98C0 != 0
+    assert step_death_seq_9dea(0x18, 0x02, 0) == (0x00, 0x03, None)
+    assert step_death_seq_9dea(0x18, 0x05, 1) == (0x00, 0x06, 0x1C)

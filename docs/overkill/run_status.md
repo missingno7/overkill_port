@@ -60,6 +60,21 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - 9DEA death-seq A95A/A95C advance recovered; HUD base-panel grounding
+
+Recovered another 99F6-death-handler sub-step: ``systems/frame_loop.step_death_seq_9dea`` -- while
+``A95C != 0x18`` increment it; at ``A95C == 0x18`` with ``A95A != 3`` advance the anchor (inc A95A,
+A95C:=0, BEFF:=0x1C when 98C0!=0); ``A95A == 3`` is the no-op. Driven-oracle
+``verify_native_death_seq_9dea.py`` 6/6 (the oracle again pinned a jnz polarity I'd mis-read).
+
+**HUD base-panel grounding (for the HUD-fold integration):** the HUD is entirely CELL-based
+(``paste_panel_cell`` from the PANEL asset ``CS:[95B4]`` via the recovered 306F copy). ``859E`` +
+``8517``/``852B`` build/draw only the FOUR status cells (WEAPON/MISSILES/GADGETS/UPGRADES descriptors
+at DS:9682/968C/9696/96A0); the base panel (frame/scope/gauges/radar -- ~80% of the HUD px) is drawn
+by OTHER paste_panel_cell calls at level-load that are NOT yet located. NEXT for the HUD fold: find the
+level-load routine that blits the full-panel cell list (grep/trace the 306F/5A6C callers at level
+start), then compose it via the already-recovered paste_panel_cell + decode to index space.
+
 ## 2026-07-04 - Death machine IS the 99F6 scripted-input sequence; its dispatch entry recovered
 
 **Key finding:** the death state machine ``9E40..9EFC`` has NO near-call callers -- it's a JUMP-TABLE

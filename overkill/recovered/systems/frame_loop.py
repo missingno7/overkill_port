@@ -242,6 +242,26 @@ def scripted_input_prologue_99f6(a47c: int, prev_2380: int):
     return prev_2380 & 0xFFFE, 0x00, (a47c << 1) & 0xFFFF
 
 
+def step_death_seq_9dea(a95c: int, a95a: int, flag_98c0: int):
+    """The ``1010:9DEA`` death-sequence A95A/A95C advance (a 99F6-death-handler sub-step).
+
+    Recovered from ``9DEA..9E16``, confirmed by ``verify_native_death_seq_9dea.py``: while ``DS:A95C``
+    hasn't reached ``0x18`` it just increments ``A95C`` (``9E12``); once ``A95C == 0x18`` AND
+    ``DS:A95A != 3`` it advances the anchor (``inc A95A``), resets ``A95C = 0``, and (only when
+    ``DS:98C0 != 0``) writes ``DS:BEFF = 0x1C``; if ``A95C == 0x18`` and ``A95A == 3`` it no-ops
+    (``9DF8 ret``).
+
+    Returns ``(new_a95c, new_a95a, beff)`` where ``beff`` is ``0x1C`` or ``None``.  Pure.
+    """
+    a95c, a95a = a95c & 0xFFFF, a95a & 0xFFFF
+    if a95c != 0x0018:
+        return (a95c + 1) & 0xFFFF, a95a, None
+    if a95a == 0x0003:
+        return a95c, a95a, None
+    beff = 0x1C if (flag_98c0 & 0xFFFF) != 0 else None
+    return 0x0000, (a95a + 1) & 0xFFFF, beff
+
+
 def step_a95c_difficulty_countdown_9e43(bedc: int, a95c: int):
     """The ``1010:9E43`` difficulty-scaled ``A95C`` countdown (a death-island leaf).
 
