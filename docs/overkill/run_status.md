@@ -50,6 +50,29 @@
 > witness-poor load-time code, the cold-boot witness-harness idea, the Bucket A/B completion
 > readouts) are preserved in the dated entries below and in `overnight_endgame_execution.md`.
 
+## 2026-07-04 - AFD8 (the x21 mega-worker) CHARACTERIZED: the enemy terrain-contact probe on the RECOVERED 5073/505B substrate
+
+Opened the AFD8 recovery (the worker 21 zoo handlers call). Disassembly (lindis, correct targets now):
+* ``AFD8..B00C`` top shape: ``[A430] = 0`` (the contact flag); snapshot the object's X -> ``A432``/
+  ``A438`` and Y -> ``A434``/``A436``; bias ``[bp+2] += [A278] - 0x10``; ``call B00D``; un-bias
+  (``+= 0x10``, ``-= [A278]``); ``cmp [A430],0``; ``ret`` -- **the caller branches on the returned
+  FLAGS** (contact / no contact), classic probe contract.
+* ``B00D``: ``call 5073`` (coordinate->tile offset) -> ``bx``; ``bx == FFFF`` -> return; else
+  ``dx = bx``; ``bx = [bp+6] << 1``; ``jmp cs:[bx + B022]`` -- **a THIRD dispatch table at CS:B022,
+  keyed on the object's +0x06 field** (NOT the tile class as first guessed -- [bp+6] is the record's
+  direction/step field, OFF_DIRECTION_OR_STEP). Entries land in B03C..B1xx handlers.
+* The ``B03C`` handler family: ``bx = dx - 0x0D; call 505B`` (tile-class lookup); on class match,
+  window checks (``test [bp+4],0xF``), then ``inc [bp+2]``/``inc [A438]`` + ``call BDD0`` (the
+  contact-slot scan family) -- stepping the probe point across the contact window.
+* SUBSTRATE ALREADY PURE (standing-mechanisms check paid off): ``compute_tile_probe_5073`` +
+  ``lookup_tile_class_505b`` (systems/tilemap.py) are verified; BDD0 is the known contact-scan
+  family; ``A278`` is already in ``ObjectUpdateGlobals``.
+NEXT (the AFD8 slice, fresh context): (a) cold-load the CS:B022 dispatch table (adapter, like
+behavior_dispatch_adapter -- count its entries by the +0x06 key range); (b) recover the top shape +
+the per-key handlers as pure fns over the tilemap substrate; (c) driven-oracle: drive AFD8 with a
+synthetic record over live L1 tiles, compare A430/A432..A438 + the record writes + the returned ZF.
+This one routine unlocks 21 zoo behaviors' contact logic.
+
 ## 2026-07-04 - Behavior-zoo SIZED by xref scan: 79% thin stubs; the worker set is ~17, several ALREADY recovered
 
 Ran the shared-worker-first sizing (``scripts/behavior_zoo_xref.py``, linear-span xref over every
