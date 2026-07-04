@@ -50,6 +50,52 @@
 > witness-poor load-time code, the cold-boot witness-harness idea, the Bucket A/B completion
 > readouts) are preserved in the dated entries below and in `overnight_endgame_execution.md`.
 
+## 2026-07-05 - Behavior 0x20 COMPOSED PURE (ASM_MATCHED): the first zoo resident + the A844 ring cold-loaded
+
+(/goal loop.) ``systems/enemy_behaviors.step_enemy_behavior_20(...)`` -- the planet-1 wave enemy as
+a pure per-frame DECISION fn returning ``EnemyBehaviorStep`` (record/global writes + move/shoot
+action flags; the caller runs the recovered 5DB2 seek and 7476 shot). Covers the full phase map:
+FFFF approach (2338-clock sprite ramp, arrival checks), hold gate (A7A0 >= 0x23), the 2340-window
+shoot (4D95 low-bit gate, random consumed only in-window), the dive retarget (A47E <= 3 parity-
+gated via B7C7 / the 2340 < 5 ungated B7CE entry; target y = anchor+8 & ~7, [2340]=0x28, substate
+0, sprite 0x78, target x 0x20), the 232E==0x3F re-shuffle from the A844 ring (cursor A842, skip-if-
+already-there, +0x20 x bias), and the substate exit chain 0->1->2 (re-approach / sprite 0x79 / fly
++X 4px to sprite 0x77). Ring cold-loaded: ``adapters/enemy_slot_ring_adapter`` (20 pairs,
+cold==live pinned). 7 unit tests; island **VERIFIED** by the whole-behavior driven oracle
+(``verify_native_behavior_20``): drives the ORIGINAL B73E per phase and compares against the pure
+decision COMPOSED with the recovered 5DB2 seek (mode 2, DS:A348 table), the 7476 shot stamp and the
+4D95 random -- **16/16** across both sprite ramps, the 0x22-vs-0x23 hold boundary (the >= polarity
+now ORACLE-pinned), both shoot parities, all three dive variants, both re-shuffle cases and the
+full substate chain. Oracle lessons: (a) clear BOTH pools *and* keep the player anchor away from
+the cases -- the real seek path includes the player-touch check and the C037 death transition
+zeroed a case's sprite (write-trap diagnosed); (b) that touch-death lives in the WALK's collision
+stage, outside the behavior decision (a registry-stage concern). Islands 33.
+
+NEXT (frontier (a) continues): behavior 0x1F = far-call 1F8F:027A (the L1 controller -- disassemble
+the overlay side), the BDD0 contact predicate leaf, then the NativeGame behavior-registry stage +
+the whole-walk shadow probe over 200 fast-forwarded frames (the /goal condition's proof).
+
+FIRST LOOK at 1F8F:027A (the 8D4F ALIAS FAMILY body -- behaviors 13/15/1C/1F/7D/7E are ONE
+parametrized handler): si = [DS:A482] (ANOTHER schedule cursor, 8-byte stride); seek target from
+the schedule (x+0x20 -> 2306, y -> 2304), step mode [2308] = 3 (the 8px 5DB2 step) via the
+**TRAMPOLINE 1010:8D8B** (far-call helper: invokes the near 1010 routine whose offset is in AX --
+how the overlay reaches main-segment code; ax=5DB2 here); on 230A != 0 (still seeking) dispatch
+per-behavior tails on [bp+0x18] (0x13->0432, 0x15->03E6, 0x1C->03A6, 0x1F->0368, 0x7D->0309); the
+default/0x7E path ADVANCES [A482] += 8 and SPAWNS the next enemy from the schedule (ax=81F4 through
+the trampoline; stamps the new record's +0x34/+0x32 targets from the schedule pair). So the 0x1F
+object IS the L1 wave controller: it flies a scheduled path and spawns the 0x20 enemies -- decode
+the per-behavior tails (0368 for 0x1F) + find the A482 schedule table next.
+
+THE 0x1F TAIL (1F8F:0368) CLOSES THE L1 WAVE MECHANISM: on waypoint arrival (230A != 0 after the
+mode-3 seek) -> [A482] += 4, then a **burst of FIVE 81F4 spawns** (trampoline; leader-context
++02/+04 from the CONTROLLER's own bp position), each assigned a formation slot from the **A844
+ring** ([A842] += 4 per spawn; +0x34 = ring_x+0x20, +0x32 = ring_y), stamped behavior 0x20 +
+substate FFFF, inc A47E -- exactly the L1 snapshot's 5x 0x20 + controller, A47E=6. The controller's
+sprite = its +0x06 direction + 0x3B (0x41 in the snapshot -> direction 6). The common exit 0448
+also writes that sprite every frame. REMAINING for the registry stage: pure-compose 0x1F (waypoint
+seek mode 3 + the arrival burst), find the A482 schedule table + its level-setup init (writer
+scan), the BDD0 predicate, then the walk + shadow probe.
+
 ## 2026-07-05 - The 0x20 behavior's last two callees recovered: 4D95 canned-random + 7476 enemy shot (driven)
 
 (/goal loop.) ``canned_random_next_4d95(cursor, ring)`` (the fixed 16-word ring cold-loaded by

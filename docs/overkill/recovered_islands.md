@@ -4,7 +4,7 @@
      Source of truth = the @recovered_island metadata on each recovered function.
      tests/test_island_registry.py fails if this file drifts from the code. -->
 
-31 recovered islands (3 ASM_MATCHED, 28 VERIFIED).
+32 recovered islands (3 ASM_MATCHED, 29 VERIFIED).
 
 | ASM boundary | Function | Status | Merge target | Contract |
 |---|---|---|---|---|
@@ -39,3 +39,4 @@
 | `1010:B58A..B5A6` | `systems.frame_loop.boss_transform_stamp_b58a` | VERIFIED | EnemyWaveSystem | wave-driver -> planet boss in place: +18=0x22, +08=0x71, +20=10*(planet+1) HP, +04=0x60 (non-special planets at A7A0 >= 0xF0) |
 | `1010:B5DE..B612` | `systems.frame_loop.formation_wave_next_spawn` | ASM_MATCHED | EnemyWaveSystem | the next-formation-enemy step over the cold A8D2 schedule: stamp at cursor, advance, (None, cursor) when exhausted |
 | `1010:B5E6` | `systems.frame_loop.formation_enemy_stamp_b5e6` | VERIFIED | EnemyWaveSystem | formation-enemy stamp = 8209 base + schedule overrides (+34=x+0x20, +32=y, +18=0x61, +08=0xE7); +02/+04 are leader-context, excluded |
+| `1010:B73E..B7BC`, `1010:B7BD..B85B`, `1010:B74E` | `systems.enemy_behaviors.step_enemy_behavior_20` | VERIFIED | EnemyWaveSystem | behavior 0x20 (the planet-1 wave enemy) as a pure per-frame decision: approach the formation slot / hold+shoot in the 2340 window (4D95 low-bit gate) / dive-retarget at the player (A47E<=3 or 2340<5, parity-gated) / re-shuffle from the A844 ring at 232E==0x3F / the +0x1C substate exit chain |
