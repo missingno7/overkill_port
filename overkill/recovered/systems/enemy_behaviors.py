@@ -22,7 +22,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from overkill.recovered.domain.movement import MovementTarget
 from overkill.recovered.islands import recovered_island
+from overkill.recovered.systems.frame_loop import enemy_spawn_stamp_8209
+from overkill.recovered.systems.movement import object_target_seek_step_5db2
 
 BEHAVIOR_20_HOLD_A7A0 = 0x0023          # arrival idles until the wave clock reaches this
 BEHAVIOR_20_SHOOT_WINDOW = (0x02BC, 0x02D0)   # the DS:2340 walk-clock shoot window (inclusive)
@@ -130,3 +133,79 @@ def step_enemy_behavior_20(*, x_word: int, y_word: int, substate_1c: int,
         raise ValueError("A844 slot ring: every entry equals the current position (impossible ring)")
     return EnemyBehaviorStep(record_writes=writes, global_writes={0xA842: cursor},
                              shoot=shoot, random_stepped=random_stepped)
+
+WAVE_CONTROLLER_SPRITE_BIAS = 0x3B     # the 0448 exit: sprite = direction (+0x06) + 0x3B, every frame
+WAVE_CONTROLLER_SEEK_MODE = 3          # [2308] = 3 -- the 8px 5DB2 step
+WAVE_CONTROLLER_BURST = 5              # five 81F4 spawns per waypoint arrival
+WAVE_CONTROLLER_SCHEDULE_X_BIAS = 0x20  # schedule/ring x words are stored -0x20
+
+
+@dataclass(frozen=True)
+class WaveControllerStep:
+    """One frame of the 0x1F wave controller: the seek movement, the every-frame sprite write,
+    and (on waypoint arrival) the schedule advance + the five-enemy spawn burst."""
+
+    x_word: int
+    y_word: int
+    direction: int               # +0x06 after the frame (the seek's write; unchanged when arrived)
+    sprite: int                  # +0x08 = direction + 0x3B (written every frame at the 0448 exit)
+    arrived: bool                # the seek's blocked branch == at the waypoint
+    schedule_advance: int        # bytes to add to DS:A482 (4 on arrival, else 0)
+    ring_cursor_after: int       # DS:A842 after the burst (+4 per spawn attempt, NO wrap in 0368)
+    spawn_stamps: tuple          # 5 enemy stamps on arrival (caller drops one per failed alloc,
+    #                              but the ring cursor advance above stays -- exactly the original)
+    seek_globals: dict           # the every-frame B729-shape target setup: 2304/2306/2308
+
+
+@recovered_island(
+    asm=("1F8F:027A..02A0", "1F8F:0368..03A5", "1F8F:0448..0451", "1010:8D8B"),
+    contract="behavior 0x1F (the planet-1 WAVE CONTROLLER, via the 8D4F stub + the 8D8B trampoline):"
+             " seek the A482-schedule waypoint (x+0x20/y, 5DB2 mode 3); on arrival advance the"
+             " schedule +4 and burst FIVE 81F4 spawns (leader-context = the controller's position,"
+             " formation slots from the A844 ring cursor +4 each NO wrap, behavior 0x20, substate"
+             " FFFF); sprite = direction + 0x3B every frame",
+    status="VERIFIED",
+    merge_target="EnemyWaveSystem",
+    unknowns="the sibling family tails (0x13/0x15/0x1C/0x7D/0x7E) are separate recoveries; the"
+             " burst's past-A894 ring reads are caller-owned (no wrap in 0368)",
+)
+def step_wave_controller_1f(*, x_word: int, y_word: int, direction: int,
+                            schedule_x_raw: int, schedule_y: int,
+                            ring_cursor_a842: int, ring_slot_at,
+                            direction_table) -> WaveControllerStep:
+    """One frame of behavior ``0x1F`` (``1F8F:027A``, the 0x1F tail), pure.
+
+    ``schedule_x_raw``/``schedule_y`` are the CURRENT ``[A482]`` schedule pair (x without the +0x20
+    bias); ``ring_slot_at(cursor_word) -> (x_raw, y)`` serves the ``A844`` ring reads (the burst
+    does NOT wrap -- past-the-end reads are the caller's fail-loud concern).
+    """
+    target = MovementTarget(y_word=schedule_y & 0xFFFF,
+                            x_word=(schedule_x_raw + WAVE_CONTROLLER_SCHEDULE_X_BIAS) & 0xFFFF)
+    seek_globals = {0x2304: target.y_word, 0x2306: target.x_word,
+                    0x2308: WAVE_CONTROLLER_SEEK_MODE}
+    seek = object_target_seek_step_5db2(x_word, y_word, direction, target,
+                                        WAVE_CONTROLLER_SEEK_MODE, direction_table)
+    if not seek.blocked:
+        return WaveControllerStep(
+            x_word=seek.x_word, y_word=seek.y_word, direction=seek.direction_or_step,
+            sprite=(seek.direction_or_step + WAVE_CONTROLLER_SPRITE_BIAS) & 0xFFFF,
+            arrived=False, schedule_advance=0, ring_cursor_after=ring_cursor_a842 & 0xFFFF,
+            spawn_stamps=(), seek_globals=seek_globals)
+
+    # arrived at the waypoint: the 0368 burst
+    stamps = []
+    cursor = ring_cursor_a842 & 0xFFFF
+    for _ in range(WAVE_CONTROLLER_BURST):
+        ring_x_raw, ring_y = ring_slot_at(cursor)
+        cursor = (cursor + 4) & 0xFFFF
+        stamp = enemy_spawn_stamp_8209(x_word, y_word)
+        stamp[0x34] = (ring_x_raw + WAVE_CONTROLLER_SCHEDULE_X_BIAS) & 0xFFFF
+        stamp[0x32] = ring_y & 0xFFFF
+        stamp[0x18] = 0x0020
+        stamp[0x1C] = 0xFFFF
+        stamps.append(stamp)
+    return WaveControllerStep(
+        x_word=x_word, y_word=y_word, direction=direction,
+        sprite=(direction + WAVE_CONTROLLER_SPRITE_BIAS) & 0xFFFF,
+        arrived=True, schedule_advance=4, ring_cursor_after=cursor,
+        spawn_stamps=tuple(stamps), seek_globals=seek_globals)

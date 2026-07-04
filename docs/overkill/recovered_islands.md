@@ -4,7 +4,7 @@
      Source of truth = the @recovered_island metadata on each recovered function.
      tests/test_island_registry.py fails if this file drifts from the code. -->
 
-32 recovered islands (3 ASM_MATCHED, 29 VERIFIED).
+34 recovered islands (3 ASM_MATCHED, 31 VERIFIED).
 
 | ASM boundary | Function | Status | Merge target | Contract |
 |---|---|---|---|---|
@@ -27,6 +27,7 @@
 | `1010:A63C` | `systems.movement.decay_bottom_scroll_bias_a63c` | VERIFIED | MovementSystem | bottom scroll-bias decay toward zero |
 | `1010:A648`, `1010:A662` | `systems.movement.top_scroll_edge_response_a648` | VERIFIED | MovementSystem | top-edge scroll-bias response to input at the screen top |
 | `1010:A662` | `systems.movement.recover_top_scroll_bias_a662` | VERIFIED | MovementSystem | top scroll-bias recovery toward zero |
+| `1010:AB10..AB4E`, `1010:AC22..AC27` | `systems.companion.step_companion_ab10` | VERIFIED | PlayerSystem | the type-6 companion (exhaust flame): deactivate when the ANCHOR SPRITE (DS:2384 == the 237C record's +0x08, oracle-pinned aliasing) >= 3 or [A47C] >= 3; else sprite = A40C[[2336]] + 9 and position = the anchor + the A414[anchor_sprite*4] (dx, dy) pair |
 | `1010:AEE4`, `1010:AF22`, `1010:AF63` | `systems.movement.step_delta_for_direction` | VERIFIED | MovementSystem | signed (dx, dy) for one 8-way direction-table step |
 | `1010:AEE4`, `1010:AF22`, `1010:AF63` | `systems.movement.step_operations_for_direction` | VERIFIED | MovementSystem | ordered x/y mutations for an 8-way movement step (order = 8086 flag order at RET) |
 | `1010:AFD8..B00C`, `1010:B00D..B021` | `systems.contact_step.contact_probe_afd8` | VERIFIED | EnemyWaveSystem | the FULL AFD8 worker: clear A430, snapshot X/Y to A432/A434 (+ the A438/A436 step mirrors), probe at x + [A278] - 0x10 via 5073 (deriving 215A = adjusted x), off-map -> blocked, else the B022 direction step; un-bias; blocked verdict = ZF(cmp A430,0) |
@@ -40,3 +41,4 @@
 | `1010:B5DE..B612` | `systems.frame_loop.formation_wave_next_spawn` | ASM_MATCHED | EnemyWaveSystem | the next-formation-enemy step over the cold A8D2 schedule: stamp at cursor, advance, (None, cursor) when exhausted |
 | `1010:B5E6` | `systems.frame_loop.formation_enemy_stamp_b5e6` | VERIFIED | EnemyWaveSystem | formation-enemy stamp = 8209 base + schedule overrides (+34=x+0x20, +32=y, +18=0x61, +08=0xE7); +02/+04 are leader-context, excluded |
 | `1010:B73E..B7BC`, `1010:B7BD..B85B`, `1010:B74E` | `systems.enemy_behaviors.step_enemy_behavior_20` | VERIFIED | EnemyWaveSystem | behavior 0x20 (the planet-1 wave enemy) as a pure per-frame decision: approach the formation slot / hold+shoot in the 2340 window (4D95 low-bit gate) / dive-retarget at the player (A47E<=3 or 2340<5, parity-gated) / re-shuffle from the A844 ring at 232E==0x3F / the +0x1C substate exit chain |
+| `1F8F:027A..02A0`, `1F8F:0368..03A5`, `1F8F:0448..0451`, `1010:8D8B` | `systems.enemy_behaviors.step_wave_controller_1f` | VERIFIED | EnemyWaveSystem | behavior 0x1F (the planet-1 WAVE CONTROLLER, via the 8D4F stub + the 8D8B trampoline): seek the A482-schedule waypoint (x+0x20/y, 5DB2 mode 3); on arrival advance the schedule +4 and burst FIVE 81F4 spawns (leader-context = the controller's position, formation slots from the A844 ring cursor +4 each NO wrap, behavior 0x20, substate FFFF); sprite = direction + 0x3B every frame |

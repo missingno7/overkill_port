@@ -50,6 +50,57 @@
 > witness-poor load-time code, the cold-boot witness-harness idea, the Bucket A/B completion
 > readouts) are preserved in the dated entries below and in `overnight_endgame_execution.md`.
 
+## 2026-07-05 - BDD0 DECODED: the AFD8 contact scan is the ALREADY-RECOVERED player-hazard filter
+
+The last AFD8 unknown maps onto existing pure pieces. ``BDD0``: if the caller's ``+0x0A`` == 1 ->
+no scan (clc); else walk the 0x23 effect slots against the probe point (``A438``, ``A436`` -- the
+AFD8 mirror cells): candidate iff active AND ``+0x0A != 1`` AND ``+0x14 == 1`` AND ``+0x16 == 4``
+AND behavior ``0x82..0x94`` -- **exactly ``collision.is_player_hazard_scan_candidate``'s recovered
+filter (PLAYER_HAZARD_LOGIC_MIN/MAX)** -- within a +/-0x10 box on both axes (CONTACT_HALF_EXTENT),
+excluding same ``+0x0E`` link keys; hit -> ``5059`` (the stc/damage exit). So the BDD0 pure form is
+a COMPOSITION of collision.py predicates + the box test; L1 enemies (behaviors 0x1F/0x20) are NOT
+in the hazard range, so enemy steps scan against player-hazard objects only -- consistent with the
+cleared-pool oracle environments. Compose + oracle as part of the walk slice.
+
+## 2026-07-05 - The type-6 COMPANION (exhaust flame) recovered pure -- driven 120/120 vs AB10
+
+(/goal loop.) ``systems/companion.step_companion_ab10``: hide (deactivate) when the SHIP POSE >= 3
+or ``A47C >= 3``; else sprite = ``A40C``[[2336] & 7] + 9 and position = the 237C anchor + the
+``A414``[pose*4] (dx, dy) pair. ORACLE (``verify_native_companion``): **120/120** (3 A47C states x
+8 dividers x 5 poses). KEY ALIASING LESSON the oracle caught: **``DS:2384`` IS the 237C anchor
+record's ``+0x08`` sprite field** (0x237C + 8 = 0x2384) -- the disasm read it as a separate mode
+global, the first probe set "both" cells and got contradictory gates; the trace pinned the alias.
+Add to the state-view sweep: name 2384 as anchor.sprite, not a global. Islands 35.
+
+## 2026-07-05 - Behavior 0x1F (the WAVE CONTROLLER) recovered pure -- driven 4/4 WHOLE vs 1F8F:027A
+
+(/goal loop.) ``systems/enemy_behaviors.step_wave_controller_1f``: seek the ``A482``-schedule
+waypoint (x_raw+0x20/y via the recovered 5DB2, MODE 3 = 8px; seek globals 2304/2306/2308 written
+every frame), sprite = direction + 0x3B every frame (the 0448 exit); on ARRIVAL (blocked seek ==
+at-waypoint) advance the schedule +4 and burst FIVE spawns (8209 base with leader-context = the
+controller's position, formation slots from consecutive ``A844`` ring reads -- cursor +4 each,
+**NO wrap in 0368** -- behavior 0x20, substate FFFF, +A47E each). A schedule cold-load adapter was
+DRAFTED AND WITHDRAWN: the cold==live pin caught runtime-written words embedded in the A82A region
+past the flown prefix (index 6 held A844 cold vs A858 live -- a ring-cursor-like value INSIDE the
+stream), so the region is NOT a flat static pair list; the schedule STRUCTURE decode is its own
+future slice (the C115 behavior-keyed bases 0x13->A4E4 / 0x15->A5C0 / 0x1F->A82A stand; the
+controller only ever consumes the pair at [A482], which the probe reads live). ORACLE
+(``verify_native_wave_controller``): drives the far handler whole (fly far/near, the ARRIVAL burst
+incl. all 5 spawned records' stamps, and a later-waypoint case) -- **4/4**. Islands 34.
+
+THE PLANET-1 WAVE STACK IS NOW FULLY PURE: controller 0x1F + enemy 0x20 + locomotion AFD8 + seek
+5DB2 + shot 7476/0x0B (5E42 steer) + random 4D95 + the schedule/ring/dispatch tables cold-loaded.
+REMAINING for the /goal registry milestone: the type-6 companion handler (``AB10``), the BDD0
+contact predicate + the walk's collision/touch-death stage (C037), the walk composition itself
+(A9DD order + the 2340 tick), then the whole-walk shadow probe over 200 fast-forwarded frames.
+
+AB10 (the TYPE-6 handler -- the type dispatch goes straight there, no behavior table) IS NOW
+MAPPED, tiny: if ``[2384] >= 3`` or ``[A47C] >= 3`` -> DEACTIVATE (``AC22``: +0 = 0); else the
+exhaust-flame follow: sprite = ``A40C``[``[2336]``] + 9 (the &7 frame divider through an 8-byte
+anim table), position = the 237C anchor's x/y + the ``(dx, dy)`` pair at ``A414``[anchor.sprite*4]
+(the offset follows the SHIP's animation frame). Both tables likely static -- pin cold==live in
+the adapter test. Next small slice after 0x1F lands.
+
 ## 2026-07-05 - Behavior 0x20 COMPOSED PURE (ASM_MATCHED): the first zoo resident + the A844 ring cold-loaded
 
 (/goal loop.) ``systems/enemy_behaviors.step_enemy_behavior_20(...)`` -- the planet-1 wave enemy as
