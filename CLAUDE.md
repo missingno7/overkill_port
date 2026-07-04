@@ -56,8 +56,10 @@ the `/goal` brief's bucket list, which is updated less often).
   (`1010:A9DD..AA2A`) dispatches each active record through the type table (`CS:AA36`, key `+0x16`)
   then the 149-entry behavior table (`CS:EFC4`, key `+0x18` = `OFF_LOGIC_ID`) into per-behavior
   state machines (the "zoo") — cold-loadable maps via `adapters/behavior_dispatch_adapter`, handler
-  bodies mostly unrecovered. The wave driver is PLANET-KEYED (`B556`): planet 0 (cold boot) = the
-  `B4A2` leader-group family; the earlier "formation wave" recovery is planet 3's family only.
+  bodies mostly unrecovered. The wave driver is PLANET-KEYED (`B556`), and the PLAY ORDER is planets
+  1→2→3→4→5→0 (planet 0 = the FINAL mothership/boss level, the `L6_*` demos): the cold-boot FIRST
+  level is planet 1 (the A7A0-phased per-planet family, `L1_*` demos); the `B4A2` leader group is
+  the final level's mothership; the "formation wave" recovery is planet 3's family only.
 - **Genuinely open:** the behavior zoo (start with planet 0's leader group), the `9734/9902/9908`
   transition continuations (mostly compositions of recovered pieces), the level-select cursor render
   + menu-flow wiring, HUD wiring, scene-content, endings, audio.

@@ -910,9 +910,12 @@ def wave_driver_dispatch_b556(planet_2356: int, a7a0: int) -> str:
     ``"none"`` (pause, jmp BC4B), else ``"boss_transform"`` (:func:`boss_transform_stamp_b58a` -- the
     driver becomes the planet boss).  Driven-oracle (``verify_native_wave_driver_dispatch``).
 
-    IMPORTANT CORRECTION this fn records: the ``B5D8``/``B5E6`` formation snake (and the whole
-    :func:`wave_spawn_phase_b48b` machine) is PLANET 3's family only -- the earlier docs assumed it was
-    "the" enemy wave.  The cold-boot planet 0 uses the leader-group family instead.
+    PLANET NUMBERING (demo-corpus-confirmed): the PLAY order is planets 1,2,3,4,5 then 0 -- a new
+    game inits ``2356 = 0`` and :func:`advance_level_index_9744` advances 0->1 before the first
+    level, wrapping 5->0 for the FINAL level.  So planet 0 = the LAST (mothership/boss) level and
+    its ``B4A2`` leader group is the mothership formation (the ``L6_*`` demo snapshots); the
+    COLD-BOOT FIRST level is planet 1 (the A7A0-phased per-planet family; the ``L1_*`` snapshots).
+    The ``B5D8``/``B5E6`` formation snake is planet 3's family only.
     """
     p = planet_2356 & 0xFFFF
     if p == WAVE_DRIVER_PLANET_8D83:
