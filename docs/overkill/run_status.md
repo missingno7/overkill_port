@@ -69,7 +69,19 @@ into each 7524-allocated effect-pool slot): ``enemy_spawn_stamp_8209(x, y)`` -> 
 (``verify_native_enemy_spawn_stamp`` drives ``81E9`` through the 7524 alloc with a seeded schedule frame
 ``ss:[bp+2/4]`` and checks the stamped record).
 
-NEXT (slice 2): find + recover the schedule iterator. Callers found: ``81E9`` <- ``81CC``, ``B61F``;
+SLICE 2 LOCATED (the formation-schedule iterator @ ``1010:B5E6``): it walks the enemy schedule via the
+pointer ``DS:A8D0``: ``si = [A8D0]`` -> ``call 81F4`` (spawn, uses enemy_spawn_stamp_8209) -> ``lodsw``
+X -> ``+0x20`` -> ``[bx+0x34]`` -> ``lodsw`` Y -> ``[bx+0x32]`` -> overrides ``[bx+0x18]=0x61``,
+``[bx+8]=0xE7`` (sprite) -> ``inc [A47E]`` -> ``[A8D0] += 4`` (one X,Y WORD-PAIR advanced per enemy).
+So the LEVEL ENEMY LIST is a stream of ``(x, y)`` word pairs at ``DS:A8D0``, terminated when A8D0 reaches
+``A932`` (``B5DE cmp [A8D0],A932``). A parallel path at ``B615``/``B61F`` spawns with per-level config
+(gated on ``[2356]`` = planet). This is the wave spawn.
+
+NEXT (slice 3): (a) recover the ``B5E6`` iterator STEP as a pure fn (read x,y; stamp = enemy_spawn_stamp_
+8209 + the B5E6 overrides; advance the ptr) -- driven-oracle; (b) find where ``A8D0`` is INITIALISED to
+the level's enemy list (level-load / 0E9C) + the WAVE GATE (what runs B5E6 -- the B86D formation-leader
+behavior on the DS:2340 tick schedule?). Then wire it + the list into NativeGame so the cold level spawns
+enemies on schedule. -- Original caller list: ``81E9`` <- ``81CC``, ``B61F``;
 ``81F4`` <- ``86A3``, ``B5EB``, ``D13A``, ``F121``. The ``81CC`` caller (``81C9``) is a SINGLE-enemy
 wrapper (spawns one, then overrides ``+0x02=0x10`` / ``+0x04=[A40A]``), NOT the formation walk. The
 FORMATION-schedule iterator is among the ``B6xx`` callers (``B61F``/``B5EB``) -- the same B86D/B800
