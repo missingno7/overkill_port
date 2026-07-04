@@ -60,6 +60,33 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - FRONTIER CONSOLIDATED: leaf recovery exhausted; the port is now an INTEGRATION project
+
+Oriented on the front-end (the recommended next track) and confirmed the same shape as the enemy track:
+the LOGIC is recovered, the WIRING is the work. Front-end state:
+* RECOVERED (pure fns, systems/menu.py): ``step_menu_idle_558b`` (main-menu idle), the level-select grid
+  nav ``step_level_select_page_down/up/decrement/increment`` (D476/D480/D488/D490),
+  ``resolve_level_select_fire_d424``, ``step_menu_transition_wait_ce40``, ``step_yes_no_choice_989e``,
+  ``step_interstitial_tick_d318``, ``advance_level_index_9744``.
+* RECOVERED (render): the full-screen images (OKMENU title, PLAQ/HISCORE/THEND) decode byte-exact
+  (native_video/front_end.decode_fullscreen_image).
+* NOT WIRED: none of the menu logic drives play_native's front-end (it just shows the title image +
+  Space->cold-start). Blocked on: the SMALLER-DIALOG PLACEMENT -- the level-select grid / CHOOSE decode to
+  centred sub-images but their on-screen x/y layout is not recovered (front_end.py raises for them). Also
+  open: the red key-letter overlay on the options screen.
+
+CONSOLIDATED FRONTIER (honest, across all tracks): the clean-decision-LEAF well is now DRY -- gameplay
+(movement/collision/objects/fire), the enemy-wave data path, and the front-end menu logic are ALL
+recovered + verified as pure fns. What remains toward the pre2-shaped complete game is entirely
+INTEGRATION + a few unrecovered RENDER/SUBSYSTEM pieces:
+  1. wire the recovered pieces into play_native's native loop (enemy waves w/ the leader model; the menu
+     flow) -- multi-file NativeGame/play_native integrations, proven via fast-forward + frame-verifier;
+  2. recover the render gaps that block wiring: smaller-dialog placement, the options red overlay;
+  3. unrecovered SUBSYSTEMS: endings, audio drivers.
+NEXT RUN: pick ONE integration and do it end-to-end with fresh context (the per-slice leaf loop is done;
+this is native-runtime GROWTH). Recommended first: smaller-dialog placement (unblocks the menu flow) OR
+the enemy-wave NativeGame wiring (gameplay is more visible). Both are self-contained given what's recovered.
+
 ## 2026-07-04 - Enemy leader-context pinned via the fast-forward trace; frontier is now INTEGRATION not leaves
 
 Used the new timing fast-forward (loop_blockers) to trace REAL enemy spawns from L1_start cheaply (458
