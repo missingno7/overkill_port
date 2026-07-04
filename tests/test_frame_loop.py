@@ -470,3 +470,14 @@ def test_a47c_script_arms_a680():
     assert a47c_script_arms_a680(0, 2, 0x0EA0) is False   # ...not merely nonzero
     assert a47c_script_arms_a680(0, 1, 0x0E52) is False    # 2350 must match exactly
     assert a47c_script_arms_a680(0, 1, 0x0EA1) is False
+
+
+def test_level_start_control_reset_c51d():
+    from overkill.recovered.systems.frame_loop import level_start_control_reset_c51d
+    r = level_start_control_reset_c51d()
+    # the delayed-coordinate ring (+ neighbours) clears to the empty-slot sentinel 0xFFFF
+    for off in (0xA962, 0xA964, 0xA966, 0xA968, 0xA96A, 0xA96C, 0xA96E):
+        assert r[off] == 0xFFFF
+    # the control words + the A47C-script counter clear to 0
+    assert r[0xA958] == 0 and r[0xA95E] == 0 and r[0xA960] == 0 and r[0x2384] == 0
+    assert len(r) == 11

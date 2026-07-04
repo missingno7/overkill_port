@@ -76,8 +76,18 @@ Turned to the front-end->gameplay bridge (the largest remaining structural gap) 
   new-game setup (9723/9729) -- they are general new-game counters, exactly as the trace implied, NOT
   death state. This vindicates renaming the ``step_death_*`` A47C functions last pass.
 
-Next bridge slices live in ``971A``'s children (5C9A/C4DB score-digit + level-0-specific 9844/5BEE at
-``9734``); each is a bounded leaf to drive-verify the same way.
+**Follow-up (same pass): the bridge is glue, not decision logic.** Disassembled 971A's children --
+``5C9A`` is a full-screen VGA plane blit (rep movsb + 03CE reg writes), ``9844`` is the level-0 story
+splash (far-call text + fire-wait), ``C4DB`` is object-pool + control-cell init. None carry pure
+decision content; the front-end->gameplay bridge is presentation/init/wait glue, so the clean-leaf
+model is largely exhausted here too (as on the gameplay side). Recovered the one cleanly-bounded piece:
+``level_start_control_reset_c51d`` (``C51D..C559``) -- the level-start reset of the frame-control cells
+(the four delayed-coordinate slots A966/A968/A96A/A96C + neighbours -> 0xFFFF empty-sentinel; A958/A95E/
+A960/2384 -> 0), driven-oracle 11/11 byte-exact. Ties into the earlier ``frame_axis_dispatch_offset``
+(which counts those slots). **The remaining bridge substance is INTEGRATION-shaped, not leaves:** the
+C4DB 36-slot object-record seed (per-slot framebuffer pointer stepping by 0x280 via the DS:3002 pointer
+table) is the Bucket-F object-pool seed; the screen blits + story splash are presentation. Next real
+progress needs a native-runtime integration (grow NativeGame/level-start), not more leaf extraction.
 
 ## 2026-07-04 - CONFIRMED via trace + renamed the A47C-script functions (death->A47C, evidence closed)
 

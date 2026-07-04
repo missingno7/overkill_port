@@ -568,6 +568,27 @@ def frame_axis_dispatch_offset(ah_count: int, al_count: int) -> int:
     return (((al_count + 3 * ah_count) & 0xFF) << 1) & 0xFFFF
 
 
+def level_start_control_reset_c51d() -> dict:
+    """The ``1010:C51D..C559`` level-start reset of the frame-control cells (part of the C4DB
+    new-game setup; Bucket-F level-start state).  Returns the exact ``{DS offset: value}`` map the
+    setup writes, driven-oracle byte-exact (``verify_native_level_start_control_reset_c51d``):
+
+    * the four delayed-coordinate slots :func:`frame_axis_dispatch_offset` consumes (``A966``/``A96A``
+      feed AH, ``A968``/``A96C`` feed AL) plus their neighbours ``A962``/``A964``/``A96E`` -> ``0xFFFF``
+      (the empty-slot sentinel: 9C01 then counts none present);
+    * ``A958`` / ``A95E`` / ``A960`` -> 0 (fire-latch + related control words);
+    * ``A47C``-script counter ``2384`` -> 0.
+
+    Pure data (a memset, not a decision); the caller owns the DS writes.  The rest of C4DB -- the
+    36-slot object-record seed loop (``C4E5..C51B``, per-slot framebuffer pointer stepping by 0x280
+    via the DS:3002 pointer table) -- is the object-pool seed, a separate Bucket-F integration.
+    """
+    reset = {0xA958: 0x0000, 0xA95E: 0x0000, 0xA960: 0x0000, 0x2384: 0x0000}
+    for off in (0xA962, 0xA964, 0xA966, 0xA968, 0xA96A, 0xA96C, 0xA96E):
+        reset[off] = 0xFFFF
+    return reset
+
+
 def step_frame_accumulator_shift_a940(counter_a8ce: int, a8c8: int, a8cc: int) -> FrameAccumulatorShiftOutcome:
     """Pure model of ``1010:A940``'s own opening accumulator-shift (unconditional, every frame,
     before A940's later attract-mode/boss-scan-fork decisions -- see the frame-controller memory
