@@ -41,6 +41,23 @@ class GameplayTransition:
 
 
 @dataclass(frozen=True, slots=True)
+class DeathTailStep:
+    """The result of one ``1010:9AFF`` death-tail stage (the STATEFUL half of the death exit).
+
+    9B2E reaches ``9AFF`` when the tracked anchor state is absent (``A95A == FFFF`` or ``A97A == 0``);
+    there, if the dying mode ``DS:2326 == 3``, it INCREMENTS the anchor slot's ``+08`` death counter
+    and fires the exit when it reaches ``0x0F`` (deactivating the anchor slot).  ``anchor_counter`` is
+    the new ``+08`` value (unchanged when the tail isn't reached / not dying); ``transition`` is the
+    :class:`GameplayTransition` when it fires, else ``None``; ``deactivate_anchor`` is whether the
+    anchor slot's active word is zeroed this frame.
+    """
+
+    anchor_counter: int
+    transition: "GameplayTransition | None"
+    deactivate_anchor: bool
+
+
+@dataclass(frozen=True, slots=True)
 class FrameInput:
     """The per-frame input source the native controller decodes (replaces the INT 9 path).
 

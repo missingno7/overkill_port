@@ -60,6 +60,25 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - Native 9AFF death-tail STAGE (the stateful counter increment) demo-witnessed on death
+
+Recovered the STATEFUL half of the death exit: ``systems/frame_loop.step_death_tail_9aff(a95a, a97a,
+v2326, anchor_counter) -> DeathTailStep(anchor_counter, transition, deactivate_anchor)`` -- reached
+only when the anchor state is absent (``A95A==FFFF or A97A==0``, ``death_tail_reached_9aff``); in the
+dying mode (``2326==3``) it INCREMENTS the anchor slot's ``+08`` death counter and fires the exit at
+``0x0F`` (deactivating the anchor). (``detect_gameplay_transition`` is the stateless verdict given the
+already-incremented counter; this owns the increment the detector's input depended on.)
+
+**Demo-witnessed** by ``verify_native_death_tail.py`` on the player_death run-up (1790 frames):
+**checked=770, reached=48 (counter counting up), fired=4 (real DEATH exits), 0 fails** -- the counter
+transition, the exit verdict, AND the anchor deactivation all reproduce the live 9B2E byte-exact.
+Unit tests +1.
+
+So the death exit is now fully recovered end to end: the reached-gate + the stateful counter + the
+verdict, all demo-witnessed. Wiring it to actually FIRE from native gameplay still needs the upstream
+death-trigger (what sets A95A=FFFF/A97A=0/2326=3 -- the collision-death island) native; that + the
+NativeFrameGlobals carrier are the remaining pieces for a self-detecting native death.
+
 ## 2026-07-04 - Native A940 frame-state-update stage composed + produced-vs-VM verified (gameplay path)
 
 Closed the skeleton's ``frame_state_update`` gap (GAP -> NATIVE): ``systems/frame_loop

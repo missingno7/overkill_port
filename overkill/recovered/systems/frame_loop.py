@@ -225,6 +225,34 @@ def death_tail_transition_9aff(v2326: int, anchor_counter_after_inc: int, a97a: 
     return True, (a97a & 0xFFFF) == 0, True
 
 
+def death_tail_reached_9aff(a95a: int, a97a: int) -> bool:
+    """Whether 9B2E branches into the ``9AFF`` death tail: the tracked anchor state is absent."""
+    return (a95a & 0xFFFF) == ANCHOR_STATE_ABSENT_A95A or (a97a & 0xFFFF) == 0
+
+
+def step_death_tail_9aff(a95a: int, a97a: int, v2326: int, anchor_counter: int):
+    """One ``1010:9AFF`` death-tail stage: advance the death counter + maybe fire the exit.
+
+    The STATEFUL half of the death exit (:func:`detect_gameplay_transition` is the stateless verdict
+    given the already-incremented counter; this OWNS the increment).  Reached only when
+    :func:`death_tail_reached_9aff`; then, in the dying mode (``DS:2326 == 3``), the anchor slot's
+    ``+08`` counter is incremented and the exit fires at ``0x0F`` (deactivating the anchor).  When the
+    tail isn't reached or isn't dying, the counter is returned UNCHANGED.  Pure: the caller owns the
+    DS reads and the ``+08`` write-back.
+    """
+    from overkill.recovered.domain.frame_loop import DeathTailStep, GameplayExit, GameplayTransition
+
+    counter = anchor_counter & 0xFFFF
+    if not death_tail_reached_9aff(a95a, a97a) or (v2326 & 0xFFFF) != DEATH_TAIL_MODE_2326:
+        return DeathTailStep(counter, None, False)
+    new_counter = (counter + 1) & 0xFFFF
+    fires, game_over, _ = death_tail_transition_9aff(v2326, new_counter, a97a)
+    if not fires:
+        return DeathTailStep(new_counter, None, False)
+    exit_ = GameplayExit.GAME_OVER if game_over else GameplayExit.DEATH
+    return DeathTailStep(new_counter, GameplayTransition(exit_), True)
+
+
 def detect_gameplay_transition(a47c: int, a95a: int, a97a: int, v2326: int,
                                anchor_counter_after_inc: int):
     """The whole-frame gameplay-exit decision the ``1010:9B2E`` controller reaches (or ``None``).

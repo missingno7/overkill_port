@@ -319,3 +319,22 @@ def test_frame_state_update_a940_attract_path_fails_loud():
     from overkill.recovered.domain.gaps import RecoveryGap
     with pytest.raises(RecoveryGap):
         frame_state_update_a940(0, 0, 0, 5, 0, 0)   # DS:2356 == 5 attract middle not modelled
+
+
+def test_step_death_tail_9aff_increments_and_fires():
+    from overkill.recovered.systems.frame_loop import step_death_tail_9aff
+    from overkill.recovered.domain.frame_loop import GameplayExit
+    # anchor present -> tail not reached -> counter unchanged, no transition
+    r = step_death_tail_9aff(a95a=0x3, a97a=0x57, v2326=3, anchor_counter=0x10)
+    assert (r.anchor_counter, r.transition, r.deactivate_anchor) == (0x10, None, False)
+    # reached (A95A==FFFF) + dying + below limit -> increments, no fire
+    r = step_death_tail_9aff(a95a=0xFFFF, a97a=1, v2326=3, anchor_counter=0x0D)
+    assert (r.anchor_counter, r.transition) == (0x0E, None)
+    # increments to 0x0F -> DEATH fires + anchor deactivates
+    r = step_death_tail_9aff(a95a=0xFFFF, a97a=1, v2326=3, anchor_counter=0x0E)
+    assert r.anchor_counter == 0x0F and r.transition.exit is GameplayExit.DEATH and r.deactivate_anchor
+    # reached via A97A==0 -> GAME_OVER variant
+    assert step_death_tail_9aff(0x3, 0, 3, 0x0E).transition.exit is GameplayExit.GAME_OVER
+    # reached but not dying (2326 != 3) -> unchanged
+    assert step_death_tail_9aff(0xFFFF, 1, 2, 0x05).anchor_counter == 0x05
+    assert step_death_tail_9aff(0xFFFF, 1, 2, 0x05).transition is None
