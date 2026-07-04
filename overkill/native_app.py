@@ -149,6 +149,23 @@ NEW_GAME_SETUP_STAGES: tuple[FrameStage, ...] = (
                " mostly init/presentation glue, not recovered"),
 )
 
+#: The DS:2356 per-planet video/palette dispatch (``1010:C565``: ``jmp cs:[2356*2 + 0xC570]``).
+#:
+#: Level-load RENDERING config -- NOT the top-level game-mode machine (an earlier hypothesis; corrected
+#: after disassembly).  For the six planets (``DS:2356 = 0..5``, the range ``advance_level_index_9744``
+#: produces) it selects one of THREE handlers that set the CGA/Tandy colour mode (port ``0x3D8`` bit 2)
+#: + BIOS palette (``int10 AH=0Bh``).  Dispatch drive-verified in ``verify_native_planet_video_dispatch``.
+#: Scenes 6+ (``832E``/``BC3E``/...) are DISTINCT special-scene handlers -- a separate GAP, not bounded
+#: or recovered here.
+PLANET_VIDEO_DISPATCH: dict[int, int] = {0: 0x4F37, 1: 0x4FC3, 2: 0x4F57, 3: 0x4FC3, 4: 0x4F37, 5: 0x4F57}
+
+#: What each of the three distinct per-planet video/palette handlers does (from disassembly).
+PLANET_VIDEO_HANDLERS: dict[int, str] = {
+    0x4F37: "config A (planets 0,4): CGA/Tandy mode port 0x3D8 bit 2 SET",
+    0x4FC3: "config B (planets 1,3): BIOS palette 1 (int10 AH=0Bh BL=1) + 0x3D8 bit 2 clear",
+    0x4F57: "config C (planets 2,5): BIOS palette 0 (int10 AH=0Bh BL=0) + 0x3D8 bit 2 clear",
+}
+
 
 def describe_gaps() -> list[str]:
     """Every declared gap in the skeleton, one line each (for reports/tests -- keep it honest)."""
@@ -233,7 +250,8 @@ class AttractSequencer:
 
 
 __all__ = [
-    "FrameStage", "GAMEPLAY_FRAME_STAGES", "NEW_GAME_SETUP_STAGES", "describe_gaps",
+    "FrameStage", "GAMEPLAY_FRAME_STAGES", "NEW_GAME_SETUP_STAGES",
+    "PLANET_VIDEO_DISPATCH", "PLANET_VIDEO_HANDLERS", "describe_gaps",
     "GameplayFrameSkeleton", "AttractSequencer",
     "NATIVE", "HOST", "GAP", "UNMONITORED",
     "RecoveryGap", "UnmonitoredGap",

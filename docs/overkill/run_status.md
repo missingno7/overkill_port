@@ -60,6 +60,24 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - Structure: recovered the per-planet video/palette dispatch (C565/2356) + a course-correction
+
+Chased the ``1010:C565`` ``jmp cs:[DS:2356*2 + 0xC570]`` dispatch as a candidate for the TOP-LEVEL
+game-mode machine. **It is NOT that** -- disassembly shows the six-planet handlers (``4F37``/``4FC3``/
+``4F57``) are per-planet VIDEO/PALETTE setup (CGA/Tandy mode port ``0x3D8`` bit 2 + BIOS palette
+``int10 AH=0Bh``). So the C570 table is level-load RENDERING config, not the mode spine. Recorded honestly
+as ``native_app.PLANET_VIDEO_DISPATCH`` (six planets -> 3 configs, pattern A,B,C,B,A,C) +
+``PLANET_VIDEO_HANDLERS``; drive-verified 6/6 (``verify_native_planet_video_dispatch``). Scenes 6+
+(``832E``/``BC3E``/...) are distinct special-scene handlers -- a separate GAP, not bounded here.
+
+**Where the REAL top-level mode machine is (next step):** ``DS:2356`` is the planet/scene index, not the
+title/attract/menu/game selector. The outer mode machine lives ABOVE the level loop -- it is the
+boot -> title/menu (front_end) -> attract (``D007``) -> new-game-setup (``971A``) -> level loop
+(scene-dispatch + ``97B2``) -> exit (``detect_gameplay_transition``) graph. That graph, lifted into an
+explicit native state machine in ``native_app.py`` with fail-loud edges, is the highest-value structural
+target (per the user's structure-first mandate). Next slice: locate the outer mode selector (the caller
+side of the front-end <-> attract <-> gameplay transitions) and model it as the mode graph.
+
 ## 2026-07-04 - Structure: pinned the object-pool layout the C4DB seed covers (special + effect table)
 
 Investigating how to wire the native level-start into NativeGame surfaced a clean structural fact worth

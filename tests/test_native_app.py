@@ -51,6 +51,15 @@ def test_new_game_setup_bridge_map_is_declared_and_honest():
     assert "new_game_setup.setup_tail" in report and "new_game_setup.level0_intro" in report
 
 
+def test_planet_video_dispatch_is_six_planets_three_configs():
+    from overkill.native_app import PLANET_VIDEO_DISPATCH, PLANET_VIDEO_HANDLERS
+    # exactly the six planets (2356 = 0..5)
+    assert sorted(PLANET_VIDEO_DISPATCH) == list(range(6))
+    # three distinct handlers in the A,B,C,B,A,C pattern
+    assert set(PLANET_VIDEO_DISPATCH.values()) == set(PLANET_VIDEO_HANDLERS) == {0x4F37, 0x4FC3, 0x4F57}
+    assert [PLANET_VIDEO_DISPATCH[i] for i in range(6)] == [0x4F37, 0x4FC3, 0x4F57, 0x4FC3, 0x4F37, 0x4F57]
+
+
 def test_gap_boundary_is_declared_and_reported():
     # the known-unrecovered pieces must stay visible: the transition flags + the frame-state update
     by_name = {s.name: s for s in GAMEPLAY_FRAME_STAGES}
