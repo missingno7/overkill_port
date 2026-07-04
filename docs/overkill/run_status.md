@@ -60,6 +60,21 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - Bucket F: recovered the GAMEPLAY pool seed (C3B5) -- resolves "where is 0x2B5C seeded"
+
+Recovered the last C3A6 pool re-init: ``frame_loop.object_pool_seed_c3b5`` (``C3B5..C3E5``) -- the seed
+for the GAMEPLAY/enemy pool at ``DS:0x2B5C`` (``POOL_BASE_GAMEPLAY``), the one the C4DB new-game seed does
+NOT cover. This resolves the open question from the pool-layout slice ("the gameplay table is seeded
+elsewhere"): it's seeded HERE, in the respawn/level-start C3A6. 34 slots from table ``DS:0x8D12`` (which
+maps to ``0x2B5C`` + i*0x38), template ``+0x00/+0x18/+0x2E=0`` + a back-buffer pointer ``+0x0E`` stepping
+``0x8D58 += 0x40``. Driven-oracle **34 records x 4 fields = 136 checks, 0 fails**
+(``verify_native_gameplay_pool_seed``). Fixed a docstring cross-ref in object_pool_seed_c4db accordingly.
+
+**Bucket-F level-start is now COMPLETE at the pool level:** C4DB seeds special+effect (36, 0x32CA); C3A6
+seeds gameplay (34, 0x8D12/0x2B5C) + re-seeds special+effect + player/companion spawn + control reset +
+starfield (cold). Every level-start pool + spawn is byte-exact vs the VM. NEXT: wiring the cold
+starfield/level-start into play_native, or a fresh subsystem (score add-points path, audio).
+
 ## 2026-07-04 - Bucket F: respawn/level-start control re-init (C461) -- completes the C3A6 memset
 
 Recovered the C3A6 tail's control reset: ``frame_loop.respawn_control_reset_c461`` (``C461..C4AD``) -- the

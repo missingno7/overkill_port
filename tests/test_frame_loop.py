@@ -601,3 +601,18 @@ def test_respawn_control_reset_c461():
     assert all(r[o] == 0 for o in (0xA970, 0xA972, 0xA974, 0xA976, 0xA97A, 0xA97E, 0xA39A, 0xA39C))
     assert r[0x9788] == 0xFFFF
     assert len(r) == 26 + 2 + 8 + 1
+
+
+def test_object_pool_seed_c3b5_gameplay():
+    from overkill.recovered.systems.frame_loop import (
+        object_pool_seed_c3b5, GAMEPLAY_SEED_FB_BASE, GAMEPLAY_SEED_FB_STEP, POOL_BASE_GAMEPLAY,
+    )
+    # gameplay table cx(1..0x22) -> 0x2B5C + cx*0x38 (like the real 0x8D12 table)
+    table = {cx: (POOL_BASE_GAMEPLAY + (cx - 1) * 0x38) & 0xFFFF for cx in range(1, 0x23)}
+    seed = object_pool_seed_c3b5(table)
+    assert len(seed) == 34
+    for off, fields in seed.items():
+        assert fields[0x00] == 0 and fields[0x18] == 0 and fields[0x2E] == 0   # inactive template
+    # back-buffer pointer steps 0x8D58 += 0x40 in processing order (cx=0x22 first)
+    assert seed[table[0x22]][0x0E] == GAMEPLAY_SEED_FB_BASE
+    assert seed[table[1]][0x0E] == (GAMEPLAY_SEED_FB_BASE + 33 * GAMEPLAY_SEED_FB_STEP) & 0xFFFF

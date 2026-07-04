@@ -580,6 +580,36 @@ POOL_BASE_GAMEPLAY = 0x2B5C    # layout-justified: the gameplay/enemy table (rec
 POOL_EFFECT_SLOTS = 35         # effect-table slot count (records 1..35, up to 0x2B24)
 
 
+GAMEPLAY_SEED_SLOT_TABLE_8D12 = 0x8D12   # layout-justified: DS word table cx(1..0x22) -> gameplay record
+GAMEPLAY_SEED_FB_BASE = 0x8D58           # first per-slot back-buffer pointer (CS:C3A2 init in C3A6)
+GAMEPLAY_SEED_FB_STEP = 0x0040           # per-slot back-buffer pointer stride
+GAMEPLAY_SEED_COUNT = 0x22               # 34 gameplay/enemy slots seeded
+
+
+def object_pool_seed_c3b5(slot_ptr_table) -> dict:
+    """The ``1010:C3B5`` GAMEPLAY object-pool seed loop (``C3BF..C3E5``; the first pool re-init in the
+    respawn/level-start routine ``C3A6``).
+
+    This is the seed for the GAMEPLAY/enemy pool (:data:`POOL_BASE_GAMEPLAY` = ``0x2B5C``) -- the one the
+    C4DB new-game seed does NOT cover (see :func:`object_pool_seed_c4db`); it resolves the earlier open
+    question of where the gameplay table is initialised.  For each of the 34 slots ``cx = 0x22..1`` it
+    reads the record offset from the ``DS:0x8D12`` word table and stamps ``+0x00 = 0`` (inactive) /
+    ``+0x18 = 0`` / ``+0x2E = 0`` plus a per-slot back-buffer pointer at ``+0x0E`` that steps ``0x8D58,
+    +0x40, ...``.  Byte-exact vs the VM (34 records x 4 fields) in ``verify_native_gameplay_pool_seed``.
+
+    ``slot_ptr_table`` maps ``cx (1..0x22) -> record offset`` (read from ``DS:0x8D12``; resolves to
+    ``0x2B5C`` + stride ``0x38`` on this build).  Returns ``{record_offset: {field: value}}`` -- the pure
+    LOGIC; the caller owns the table read + the writes.
+    """
+    seed: dict = {}
+    render = GAMEPLAY_SEED_FB_BASE
+    for cx in range(GAMEPLAY_SEED_COUNT, 0, -1):   # 0x22 down to 1, matching the ASM loop
+        off = slot_ptr_table[cx] & 0xFFFF
+        seed[off] = {0x00: 0, 0x0E: render & 0xFFFF, 0x18: 0, 0x2E: 0}
+        render = (render + GAMEPLAY_SEED_FB_STEP) & 0xFFFF
+    return seed
+
+
 def object_pool_seed_c4db(slot_ptr_table) -> dict:
     """The ``1010:C4DB`` object-pool SEED loop (``C4E5..C51B``; the head of the C4DB new-game setup,
     Bucket-F level-start object state).
@@ -595,26 +625,7 @@ def object_pool_seed_c4db(slot_ptr_table) -> dict:
     the special view-anchor (:data:`POOL_BASE_SPECIAL`, record 0, 1 slot) + the effect table
     (:data:`POOL_BASE_EFFECT`, records 1..35, :data:`POOL_EFFECT_SLOTS` slots) -- one contiguous
     ``0x237C..0x2B24`` block on the ``0x38`` grid.  The gameplay/enemy table (:data:`POOL_BASE_GAMEPLAY`)
-    sits exactly one stride PAST the last seeded record and is NOT initialised by C4DB (it is seeded
-    elsewhere, per-level).
-
-    ``slot_ptr_table`` is a mapping ``cx (1..0x24) -> record offset`` (the caller reads the real table
-    from ``DS:0x32CA``; on this build it resolves to base ``0x237C`` + stride ``0x38``).  Returns
-    ``{record_offset: {field_offset: value}}`` -- the pure LOGIC (order/template/pointer stepping); the
-    caller owns the table read and the DS/SS writes.
-    """
-
-
-def object_pool_seed_c4db(slot_ptr_table) -> dict:
-    """The ``1010:C4DB`` object-pool SEED loop (``C4E5..C51B``; the head of the C4DB new-game setup,
-    Bucket-F level-start object state).
-
-    For each of the 36 slots ``cx = 0x24 .. 1`` (descending, as the ASM ``loop`` runs it) it reads the
-    slot's object-record offset from the ``DS:0x32CA`` word table and stamps a fixed template plus a
-    per-slot framebuffer back-buffer pointer at ``+0x0E`` that steps ``0x3314, +0x280, +0x280, ...`` in
-    that processing order (``CS:C3A2`` accumulator).  The template zeroes ``+0x00`` (inactive) / ``+0x06``
-    / ``+0x18`` / ``+0x24`` / ``+0x2E`` and sets ``+0x0A = 1``.  Byte-exact vs the VM (36 records x 7
-    fields) in ``verify_native_object_pool_seed_c4db``.
+    is seeded separately by :func:`object_pool_seed_c3b5` (in the respawn/level-start C3A6).
 
     ``slot_ptr_table`` is a mapping ``cx (1..0x24) -> record offset`` (the caller reads the real table
     from ``DS:0x32CA``; on this build it resolves to base ``0x237C`` + stride ``0x38``).  Returns
