@@ -60,6 +60,21 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - Enemy-wave PHASE dispatch recovered (wave_spawn_phase_b48b) -- the wave clock DS:A7A0
+
+Traced the enemy-wave DISPATCH (correcting last pass: it is gated by ``DS:A7A0``, a wave-phase clock, at
+``1010:B48B`` -- reached before the B5E6 formation spawn). Recovered ``wave_spawn_phase_b48b(a7a0)``:
+``A7A0 < 0x32`` -> ``"per_planet"`` (the B615 per-planet-config spawn); ``0x32 <= A7A0 < 0x5A`` ->
+``"none"`` (an inter-wave PAUSE); ``A7A0 >= 0x5A`` -> ``"formation"`` (the B5E6 24-enemy schedule wave).
+Driven-oracle 10/10 (``verify_native_wave_spawn_phase``; the oracle pinned the thresholds -- lindis read
+the jnb targets the other way, the recurring lesson). So the wave cadence is a PHASE MACHINE on A7A0:
+per-planet spawns early, a pause, then the formation.
+
+NEXT: (a) where A7A0 is incremented/reset (the wave CLOCK -- find writers of A7A0) + what runs the B48B
+routine (the leader behaviour / per-frame); (b) the B615 per-planet spawn stamp (the other path); then the
+pure ``formation_wave_step`` + NativeGame wiring. Enemy spawn is now: table + stamp + formation stamp +
+cursor walk + PHASE dispatch all recovered; the A7A0 clock + wiring remain.
+
 ## 2026-07-04 - DIRECTION: aligned with the sibling pre2_port (a COMPLETE VM-less native port) -- the proven endgame
 
 Studied the sibling `D:\Games\DOS\pre2_port` (Prehistorik 2), a COMPLETE VM-less native port -- exactly

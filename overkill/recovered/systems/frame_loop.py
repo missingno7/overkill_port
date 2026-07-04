@@ -789,6 +789,27 @@ def enemy_spawn_stamp_8209(x: int, y: int) -> dict:
             0x20: 4, 0x24: 0, 0x28: 0xFFFF, 0x32: y, 0x34: x}
 
 
+WAVE_PHASE_PER_PLANET_A7A0 = 0x0032   # DS:A7A0 < this -> the per-planet spawn path (B615)
+WAVE_PHASE_FORMATION_A7A0 = 0x005A    # DS:A7A0 >= this -> the formation-schedule spawn path (B5E6)
+
+
+def wave_spawn_phase_b48b(a7a0: int) -> str:
+    """The ``1010:B48B`` enemy-wave phase dispatch, keyed on the wave-phase clock ``DS:A7A0``.
+
+    As A7A0 advances the spawn behaviour changes: ``A7A0 < 0x32`` -> ``"per_planet"`` (the B615 path, a
+    per-planet-configured spawn); ``0x32 <= A7A0 < 0x5A`` -> ``"none"`` (an inter-wave PAUSE, jmp BC4B, no
+    spawn); ``A7A0 >= 0x5A`` -> ``"formation"`` (the B5E6 schedule-driven 24-enemy formation).  Driven-
+    oracle (``verify_native_wave_spawn_phase``) -- the oracle pins these thresholds (the disassembler's
+    ``jnb`` targets read the other way).  Pure predicate; the caller owns the A7A0 read + the chosen path.
+    """
+    a = a7a0 & 0xFFFF
+    if a < WAVE_PHASE_PER_PLANET_A7A0:
+        return "per_planet"
+    if a < WAVE_PHASE_FORMATION_A7A0:
+        return "none"
+    return "formation"
+
+
 def formation_enemy_stamp_b5e6(x: int, y: int) -> dict:
     """The ``1010:B5E6`` FORMATION-enemy stamp -- :func:`enemy_spawn_stamp_8209` with the B5E6
     schedule-position overrides applied.

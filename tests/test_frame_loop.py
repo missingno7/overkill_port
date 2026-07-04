@@ -643,3 +643,13 @@ def test_formation_enemy_stamp_b5e6():
     base = enemy_spawn_stamp_8209(0x0050, 0x00A8)
     for fo in (0x00, 0x06, 0x0A, 0x14, 0x16, 0x20, 0x24, 0x28):
         assert s[fo] == base[fo]
+
+
+def test_wave_spawn_phase_b48b():
+    from overkill.recovered.systems.frame_loop import wave_spawn_phase_b48b
+    assert wave_spawn_phase_b48b(0x00) == "per_planet"
+    assert wave_spawn_phase_b48b(0x31) == "per_planet"
+    assert wave_spawn_phase_b48b(0x32) == "none"          # inter-wave pause
+    assert wave_spawn_phase_b48b(0x59) == "none"
+    assert wave_spawn_phase_b48b(0x5A) == "formation"     # the 24-enemy formation wave
+    assert wave_spawn_phase_b48b(0xFF) == "formation"
