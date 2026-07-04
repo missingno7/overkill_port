@@ -60,6 +60,28 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - LOCATED the enemy-wave spawner: 1010:81E9..822E (allocate + stamp enemy from schedule X/Y)
+
+Traced it properly (method: run_ref_step_probe on the L1_start demo -- which advances frames, unlike a
+free-run that STALLS on the 0679 timer-wait -- + a Memory.ww write-trap gated on ``self is ref_mem`` AND
+``seg == DS`` [the seg check is essential: without it the trap catches SPRITE-COMPOSITOR pixel writes at
+2F81/3360/35C6 whose framebuffer offsets coincidentally hit object-record offsets in a DIFFERENT
+segment]). The clean trap pinned two DS object-activation writers over 150 frames:
+* ``IP A4F1`` -> GAMEPLAY pool (0x2B5C..) = PLAYER SHOTS (the A4EA fan-out spawn, expected).
+* ``IP ~820E`` -> EFFECT pool (0x23B4..), CONSECUTIVE slots (a 6-enemy formation) = THE ENEMY-WAVE SPAWN.
+
+The enemy-spawn routine ``81E9..822E``: ``call 7524`` (alloc slot -> bx; ret if pool full), then stamp:
+``+0x00=1`` (active), ``+0x0A=1``, ``+0x02 & +0x34 = X`` (from ``ss:[bp+2]``), ``+0x04 & +0x32 = Y`` (from
+``ss:[bp+4]``), ``+0x06=4``, ``+0x14=1``, ``+0x28=0xFFFF``; a ``98C0``-gated ``BEFF=0x0B`` side write. So
+X/Y come from the CALLER's schedule entry (``bp`` frame) -- the caller iterates the level's enemy
+schedule and calls this per enemy in a formation.
+
+NEXT-RUN PLAN (bounded, 2 slices): (1) recover ``enemy_spawn_stamp_8209(x,y)`` -- the field template, a
+clean driven-oracle leaf like player_companion_spawn (drive through the 7524 alloc, check the stamped
+enemy record); (2) find + recover the CALLER (the level enemy-schedule iterator that supplies X/Y and
+gates on the scroll/A978) -- disassemble the callers of 81E9/81F4. That is the wave spawner; wiring it +
+the schedule read into NativeGame makes the cold level POPULATE with enemies.
+
 ## 2026-07-04 - Enemy-spawner scoping: formation CHILDREN recovered; the wave/LEADER trigger is the gap
 
 Investigated the enemy-wave spawner (the pool stays empty at cold start). Findings:
