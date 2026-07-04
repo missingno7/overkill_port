@@ -419,3 +419,16 @@ def test_step_death_seq_9dea():
     # A95C == 0x18 and A95A != 3 -> advance (inc A95A, A95C=0); BEFF only when 98C0 != 0
     assert step_death_seq_9dea(0x18, 0x02, 0) == (0x00, 0x03, None)
     assert step_death_seq_9dea(0x18, 0x05, 1) == (0x00, 0x06, 0x1C)
+
+
+def test_step_game_over_arm_9db9():
+    from overkill.recovered.systems.frame_loop import step_game_over_arm_9db9
+    # no-op when A97A == 0x58 or A97C == 1 (already armed)
+    assert step_game_over_arm_9db9(0x58, 0, 0, 0, 1) == (0, None)
+    assert step_game_over_arm_9db9(0x30, 1, 0, 0, 1) == (1, None)
+    # A97A != 0x58, A97C == 0, 2384 >= 3 -> stays 0
+    assert step_game_over_arm_9db9(0x30, 0, 3, 0, 1) == (0, None)
+    # 2384 < 3 -> arm A97C := 1; BEFF = 0x0D only when BDAC != 1 AND 98C0 != 0
+    assert step_game_over_arm_9db9(0x30, 0, 0, 0, 1) == (1, 0x0D)
+    assert step_game_over_arm_9db9(0x30, 0, 0, 1, 1) == (1, None)   # BDAC == 1 -> no BEFF
+    assert step_game_over_arm_9db9(0x30, 0, 0, 0, 0) == (1, None)   # 98C0 == 0 -> no BEFF

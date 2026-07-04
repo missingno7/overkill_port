@@ -60,7 +60,28 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
-## 2026-07-04 - 9DEA death-seq A95A/A95C advance recovered; HUD base-panel grounding
+## 2026-07-04 - 9DB9 game-over ARM recovered; HUD-fold needs a level-load capture
+
+Recovered ``systems/frame_loop.step_game_over_arm_9db9`` (the 99F6-death-handler ARM sub-step): no-op
+when ``A97A == 0x58`` or ``A97C == 1``; while ``2384 < 3`` it arms ``A97C := 1`` (+ ``BEFF := 0x0D``
+when ``BDAC != 1`` AND ``98C0 != 0``); ``2384 >= 3`` leaves A97C at 0. Driven-oracle
+``verify_native_game_over_arm_9db9.py`` **32/32 exhaustive combos, 0 fails**. So the 99F6 death handler's
+sub-steps are now largely native (the A95A/A95C/A97A countdowns + 9DEA advance + 9DB9 arm). Metrics:
+pure ~31.9% (203 pure rules).
+
+**HUD-fold blocker (recorded so the next run doesn't re-scout):** the full-panel draw is spread across
+MANY ``5A6C`` cell-blit callers (5550/612a/62xx/86xx/98xx/cd4f/cf69/d0xx/d2xx/d3xx/d4xx) + boot
+(``0x758`` calls 859E); it is NOT a single clean routine, and no current demo captures a LEVEL-LOAD
+(the gameplay snapshots are mid-level, HUD already drawn; the cold-start demos stop at attract). To
+recover the HUD base panel: capture a cold-start-through-to-level-load demo, trace the B800 HUD-region
+writes there to isolate the panel cell-list draw, then compose via the recovered ``paste_panel_cell``.
+
+**Loop-strategy note:** the clean single-leaf frontier is now genuinely worked to the granular tail
+(these death-handler sub-steps). The three remaining HIGH-VALUE targets are all multi-iteration
+INTEGRATIONS needing focused investigation, not per-iteration clean slices: (1) compose the 99F6 death
+handler -> native death firing (needs the arm/upstream + the render calls); (2) the HUD fold (needs the
+level-load capture above); (3) the 35-tick forward-carry wall (A067 spawn drift). A future run should
+pick ONE and drive it across passes with a dedicated capture/trace.
 
 Recovered another 99F6-death-handler sub-step: ``systems/frame_loop.step_death_seq_9dea`` -- while
 ``A95C != 0x18`` increment it; at ``A95C == 0x18`` with ``A95A != 3`` advance the anchor (inc A95A,

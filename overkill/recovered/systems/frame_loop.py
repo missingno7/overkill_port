@@ -242,6 +242,24 @@ def scripted_input_prologue_99f6(a47c: int, prev_2380: int):
     return prev_2380 & 0xFFFE, 0x00, (a47c << 1) & 0xFFFF
 
 
+def step_game_over_arm_9db9(a97a: int, a97c: int, counter_2384: int, bdac: int, flag_98c0: int):
+    """The ``1010:9DB9`` game-over ARM (a 99F6-death-handler sub-step; sets the ``A97C`` flag).
+
+    Recovered from ``9DB9..9DE9``, confirmed by ``verify_native_game_over_arm_9db9.py`` (32 combos):
+    no-op when ``DS:A97A == 0x58`` or ``DS:A97C == 1`` (already armed); otherwise, only while the death
+    counter ``DS:2384 < 3``, it ARMS ``A97C := 1`` and (only when ``DS:BDAC != 1`` AND ``DS:98C0 != 0``)
+    writes ``DS:BEFF := 0x0D``.  When ``2384 >= 3`` it leaves ``A97C`` at 0.
+
+    Returns ``(new_a97c, beff)`` where ``beff`` is ``0x0D`` or ``None``.  Pure.
+    """
+    if (a97a & 0xFFFF) == 0x0058 or (a97c & 0xFFFF) == 1:
+        return a97c & 0xFFFF, None
+    if (counter_2384 & 0xFFFF) >= 3:
+        return 0, None
+    beff = 0x0D if (bdac & 0xFFFF) != 1 and (flag_98c0 & 0xFFFF) != 0 else None
+    return 1, beff
+
+
 def step_death_seq_9dea(a95c: int, a95a: int, flag_98c0: int):
     """The ``1010:9DEA`` death-sequence A95A/A95C advance (a 99F6-death-handler sub-step).
 
