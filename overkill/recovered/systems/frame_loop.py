@@ -773,6 +773,22 @@ def respawn_control_reset_c461() -> dict:
     return reset
 
 
+def enemy_spawn_stamp_8209(x: int, y: int) -> dict:
+    """The ``1010:8209..8247`` ENEMY spawn stamp -- the field template the level-wave spawner writes into
+    a freshly ``7524``-allocated (effect-pool) slot for each enemy of a formation.
+
+    Positioned from the caller's schedule entry: ``x`` = ``ss:[bp+2]``, ``y`` = ``ss:[bp+4]``.  Stamps
+    ``+0x00 = 1`` (active), ``+0x02`` & ``+0x34 = x``, ``+0x04`` & ``+0x32 = y``, ``+0x06 = 4``,
+    ``+0x0A = 1``, ``+0x14 = 1``, ``+0x16 = 4``, ``+0x18 = 0x14``, ``+0x20 = 4``, ``+0x24 = 0``,
+    ``+0x28 = 0xFFFF``.  Byte-exact vs the VM (``verify_native_enemy_spawn_stamp``).  Returns the
+    ``{field offset: value}`` template; the ``7524`` allocation (which slot) + the caller's enemy-schedule
+    iteration are separate (the CALLER, still to recover, supplies x/y and gates on the scroll).
+    """
+    x, y = x & 0xFFFF, y & 0xFFFF
+    return {0x00: 1, 0x02: x, 0x04: y, 0x06: 4, 0x0A: 1, 0x14: 1, 0x16: 4, 0x18: 0x14,
+            0x20: 4, 0x24: 0, 0x28: 0xFFFF, 0x32: y, 0x34: x}
+
+
 def new_game_session_init_96ee() -> dict:
     """The session-start (new-game) DATA init at ``1010:96EE..9715`` -- the TOP of the mode machine's
     game session.

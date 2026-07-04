@@ -60,6 +60,25 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - Enemy spawn STAMP recovered (frame_loop.enemy_spawn_stamp_8209) -- slice 1 of the wave spawner
+
+Recovered the enemy spawn stamp (``1010:8209..8247``, the field template the level-wave spawner writes
+into each 7524-allocated effect-pool slot): ``enemy_spawn_stamp_8209(x, y)`` -> ``+0x00=1`` (active),
+``+0x02``/``+0x34 = x``, ``+0x04``/``+0x32 = y``, ``+0x06=4``, ``+0x0A=1``, ``+0x14=1``, ``+0x16=4``,
+``+0x18=0x14``, ``+0x20=4``, ``+0x24=0``, ``+0x28=0xFFFF``. Driven-oracle 3/3
+(``verify_native_enemy_spawn_stamp`` drives ``81E9`` through the 7524 alloc with a seeded schedule frame
+``ss:[bp+2/4]`` and checks the stamped record).
+
+NEXT (slice 2): find + recover the schedule iterator. Callers found: ``81E9`` <- ``81CC``, ``B61F``;
+``81F4`` <- ``86A3``, ``B5EB``, ``D13A``, ``F121``. The ``81CC`` caller (``81C9``) is a SINGLE-enemy
+wrapper (spawns one, then overrides ``+0x02=0x10`` / ``+0x04=[A40A]``), NOT the formation walk. The
+FORMATION-schedule iterator is among the ``B6xx`` callers (``B61F``/``B5EB``) -- the same B86D/B800
+formation family already partly recovered (``b86d_formation_spawn_tick_index``/``advance_formation_spawn_
+ptr``). So slice 2 = disassemble ``B5EB``/``B61F`` (and the B800 spawn-ptr walk) to find where the per-
+enemy x/y (the ``bp`` frame) comes from -- the level enemy-list/formation-table format -- and how the
+wave is gated on the scroll (DS:2350/A978/the B86D DS:2340 tick schedule). Wiring that + this stamp into
+NativeGame makes the cold level POPULATE with enemies. (The stamp -- slice 1 -- is done + verified.)
+
 ## 2026-07-04 - LOCATED the enemy-wave spawner: 1010:81E9..822E (allocate + stamp enemy from schedule X/Y)
 
 Traced it properly (method: run_ref_step_probe on the L1_start demo -- which advances frames, unlike a

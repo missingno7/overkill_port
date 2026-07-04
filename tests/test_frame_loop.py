@@ -616,3 +616,16 @@ def test_object_pool_seed_c3b5_gameplay():
     # back-buffer pointer steps 0x8D58 += 0x40 in processing order (cx=0x22 first)
     assert seed[table[0x22]][0x0E] == GAMEPLAY_SEED_FB_BASE
     assert seed[table[1]][0x0E] == (GAMEPLAY_SEED_FB_BASE + 33 * GAMEPLAY_SEED_FB_STEP) & 0xFFFF
+
+
+def test_enemy_spawn_stamp_8209():
+    from overkill.recovered.systems.frame_loop import enemy_spawn_stamp_8209
+    s = enemy_spawn_stamp_8209(0x0140, 0x0050)
+    assert s[0x00] == 1                                  # active
+    assert s[0x02] == 0x0140 and s[0x34] == 0x0140       # x (+ its copy)
+    assert s[0x04] == 0x0050 and s[0x32] == 0x0050       # y (+ its copy)
+    assert s[0x06] == 4 and s[0x0A] == 1 and s[0x14] == 1
+    assert s[0x16] == 4 and s[0x18] == 0x14 and s[0x20] == 4 and s[0x24] == 0
+    assert s[0x28] == 0xFFFF
+    # masks to 16 bits
+    assert enemy_spawn_stamp_8209(0x1_0140, 0)[0x02] == 0x0140
