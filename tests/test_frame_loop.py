@@ -384,3 +384,17 @@ def test_step_game_over_countdown_9ee4():
     assert step_game_over_countdown_9ee4(2) == (1, False, False)
     # decrement to zero -> game over reached (9EF5)
     assert step_game_over_countdown_9ee4(1) == (0, True, False)
+
+
+def test_step_a95c_difficulty_countdown_9e43():
+    from overkill.recovered.systems.frame_loop import step_a95c_difficulty_countdown_9e43
+    # BEDC decrement scale: 0 -> 1, 1 -> 2, >=2 -> 3
+    assert step_a95c_difficulty_countdown_9e43(0, 5) == (4, False)
+    assert step_a95c_difficulty_countdown_9e43(1, 5) == (3, False)
+    assert step_a95c_difficulty_countdown_9e43(2, 5) == (2, False)
+    assert step_a95c_difficulty_countdown_9e43(5, 10) == (7, False)   # BEDC >= 2 -> dec 3
+    # reaching 0 (A95C <= count) reloads to 0x18
+    assert step_a95c_difficulty_countdown_9e43(0, 1) == (0x18, True)
+    assert step_a95c_difficulty_countdown_9e43(1, 2) == (0x18, True)
+    assert step_a95c_difficulty_countdown_9e43(2, 3) == (0x18, True)
+    assert step_a95c_difficulty_countdown_9e43(2, 1) == (0x18, True)

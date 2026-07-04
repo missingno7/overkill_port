@@ -225,6 +225,27 @@ def death_tail_transition_9aff(v2326: int, anchor_counter_after_inc: int, a97a: 
     return True, (a97a & 0xFFFF) == 0, True
 
 
+A95C_RELOAD = 0x0018   # DS:A95C reloads to 0x18 when the difficulty countdown reaches 0 (9E63)
+
+
+def step_a95c_difficulty_countdown_9e43(bedc: int, a95c: int):
+    """The ``1010:9E43`` difficulty-scaled ``A95C`` countdown (a death-island leaf).
+
+    Recovered from the ``9E43..9E63`` disassembly, confirmed by ``verify_native_a95c_countdown.py``:
+    ``A95C`` is decremented by ``1`` / ``2`` / ``3`` per frame for ``DS:BEDC`` == 0 / == 1 / >= 2
+    (three sequential ``dec`` sites gated by the BEDC compares), and when the countdown reaches 0 it
+    reloads to :data:`A95C_RELOAD` (``9E63``); otherwise it continues (``9E61 jnz 9EC2``).
+
+    Returns ``(new_a95c, reloaded)``.  Pure: the caller owns the DS read/write.
+    """
+    bedc &= 0xFFFF
+    count = 1 if bedc == 0 else (2 if bedc == 1 else 3)
+    a95c &= 0xFFFF
+    if a95c > count:
+        return (a95c - count) & 0xFFFF, False
+    return A95C_RELOAD, True
+
+
 def step_death_countdown_9e69(a47c: int, counter_2384: int, a362: int, a95a: int):
     """STAGE 1 of the death sequence: the ``1010:9E69`` per-frame ``A95A`` anchor-loss countdown.
 

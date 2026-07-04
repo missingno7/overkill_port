@@ -88,8 +88,15 @@ anchor-loss countdown (gated off when ``A47C == 1`` or ``2384 >= 3``; else toggl
 on the A362==0 frames; ``A95A: 0 -> FFFF`` = anchor lost). **Driven-oracle verified** (force synthetic
 ``(A47C,2384,A362,A95A)``, drive the original 9E69 to a ret / 9E9C, compare A362+A95A):
 ``verify_native_death_countdown.py`` **8/8 branches, 0 fails** (the oracle pinned the arm polarity).
-Remaining leaves: the ``A95C`` difficulty countdown (9E43..9E61), then compose the whole 9E40 state
-machine + thread the death cells into NativeGameState.
+**A95C difficulty countdown leaf RECOVERED too:** ``systems/frame_loop.step_a95c_difficulty_countdown_9e43``
+-- decrements A95C by 1/2/3 per frame for ``DS:BEDC`` == 0 / == 1 / >= 2, reloading to ``0x18`` at 0.
+Driven-oracle ``verify_native_a95c_countdown.py`` 10/10, 0 fails (the oracle pinned that the reload
+``mov A95C,0x18`` is at 9E63, so the routine's output is 0x18 -- stop after it at 9E69, not at 9E63).
+
+So ALL THREE death-island countdowns are now native + verified (A95A anchor-loss 9E69, A95C difficulty
+9E43, A97A game-over 9EE4) plus the 9AFF tail. Remaining: compose the whole 9E40 state machine
+(sequence the countdowns + the 61DC/511F calls + the entry gate) and thread the death cells into
+NativeGameState, so play_native's wired exit boundary fires on a real native death.
 
 **A97A game-over countdown leaf RECOVERED (next pass):** ``systems/frame_loop.step_game_over_countdown_9ee4``
 -- ``A97A == 0`` no-ops; else decrement, and reaching 0 is the game-over trigger (the ``A97A == 0`` the
