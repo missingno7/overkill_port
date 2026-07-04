@@ -166,6 +166,23 @@ PLANET_VIDEO_HANDLERS: dict[int, str] = {
     0x4F57: "config C (planets 2,5): BIOS palette 0 (int10 AH=0Bh BL=0) + 0x3D8 bit 2 clear",
 }
 
+#: The mode-transition EDGES out of the 97B2 gameplay loop -- where each exit flag
+#: (``detect_gameplay_transition``, the 1010:97CE..97E9 dispatch) jumps.  Grounded by disassembly of the
+#: targets.  These are the level/death/game-over transitions of the top-level mode machine.
+GAMEPLAY_EXIT_TARGETS: tuple[FrameStage, ...] = (
+    FrameStage("level_end", "1010:9734 (flag A344)", NATIVE,
+               "scripted / level-end: a story branch (if DS:2356==0) then CONVERGES at the 9744 "
+               "level-advance (NEW_GAME_SETUP_STAGES) -> re-enters the level loop at the next planet"),
+    FrameStage("game_over", "1010:9902 (flag A342)", GAP,
+               "forces the DS:2358 lives/continue counter to 0 (frame_loop.death_continue_counter_update),"
+               " then falls into the death handler; the game-over presentation + return-to-front-end past"
+               " 991A (BEFF mode codes + jmp 9773) is a GAP"),
+    FrameStage("death", "1010:9908 (flag A346)", GAP,
+               "re-seeds the object pool (C4DB) + decrements the DS:2358 lives counter "
+               "(frame_loop.death_continue_counter_update; DS:978D cancels the loss); the respawn-vs-"
+               "game-over branch past 991A (BEFF mode codes + jmp 9773) is a GAP"),
+)
+
 
 def describe_gaps() -> list[str]:
     """Every declared gap in the skeleton, one line each (for reports/tests -- keep it honest)."""
@@ -173,6 +190,8 @@ def describe_gaps() -> list[str]:
            for s in GAMEPLAY_FRAME_STAGES if s.status in (GAP, UNMONITORED)]
     out += [f"new_game_setup.{s.name}: [{s.status}] {s.asm} -- {s.note}"
             for s in NEW_GAME_SETUP_STAGES if s.status in (GAP, UNMONITORED)]
+    out += [f"gameplay_exit.{s.name}: [{s.status}] {s.asm} -- {s.note}"
+            for s in GAMEPLAY_EXIT_TARGETS if s.status in (GAP, UNMONITORED)]
     out.append("attract scene 0: [gap] 1010:D0D1 -> D160 -- special branch not recovered (fail-loud)")
     out.append("attract scene advance: [gap] 1010:D0DB.. -- next-scene entry actions not recovered")
     out.append("level start state: [gap] Bucket F -- C4DB new-game setup is native"
@@ -250,7 +269,7 @@ class AttractSequencer:
 
 
 __all__ = [
-    "FrameStage", "GAMEPLAY_FRAME_STAGES", "NEW_GAME_SETUP_STAGES",
+    "FrameStage", "GAMEPLAY_FRAME_STAGES", "NEW_GAME_SETUP_STAGES", "GAMEPLAY_EXIT_TARGETS",
     "PLANET_VIDEO_DISPATCH", "PLANET_VIDEO_HANDLERS", "describe_gaps",
     "GameplayFrameSkeleton", "AttractSequencer",
     "NATIVE", "HOST", "GAP", "UNMONITORED",

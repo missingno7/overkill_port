@@ -700,6 +700,30 @@ def native_new_game_data_setup(new_level_index: int, slot_ptr_table) -> dict:
     return cells
 
 
+GAMEPLAY_EXIT_GAME_OVER_9902 = 0x9902   # the A342 gameplay-exit target
+GAMEPLAY_EXIT_DEATH_9908 = 0x9908       # the A346 gameplay-exit target
+
+
+def death_continue_counter_update(is_game_over: bool, lives_2358: int, flag_978d: int) -> int:
+    """The ``DS:2358`` lives / continue-counter update at the two death-family gameplay-exit targets:
+    the death handler (``1010:9908``, flag A346) and the game-over entry (``1010:9902``, flag A342).
+
+    Game-over (``9902``) forces the counter to 0 first, then falls into the death handler; the death
+    handler re-seeds the object pool (``C4DB``) and DECREMENTS the counter, with the "no-death" flag
+    ``DS:978D`` (``!= 0``) cancelling the decrement (net-zero -- a practice/invuln branch).  A counter
+    that underflows to ``0xFFFF`` is the game-over sentinel.  Byte-exact 12/12 vs the VM
+    (``verify_native_death_continue_counter``).
+
+    Pure; the caller owns the DS reads/writes, the ``C4DB`` re-seed, and the deeper respawn-vs-game-over
+    branch past ``991A`` (the ``BEFF`` mode codes + ``jmp 9773`` -- still a GAP).
+    """
+    lives = 0 if is_game_over else (lives_2358 & 0xFFFF)
+    lives = (lives - 1) & 0xFFFF
+    if (flag_978d & 0xFF) != 0:
+        lives = (lives + 1) & 0xFFFF
+    return lives
+
+
 def step_frame_accumulator_shift_a940(counter_a8ce: int, a8c8: int, a8cc: int) -> FrameAccumulatorShiftOutcome:
     """Pure model of ``1010:A940``'s own opening accumulator-shift (unconditional, every frame,
     before A940's later attract-mode/boss-scan-fork decisions -- see the frame-controller memory

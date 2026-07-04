@@ -60,6 +60,18 @@ def test_planet_video_dispatch_is_six_planets_three_configs():
     assert [PLANET_VIDEO_DISPATCH[i] for i in range(6)] == [0x4F37, 0x4FC3, 0x4F57, 0x4FC3, 0x4F37, 0x4F57]
 
 
+def test_gameplay_exit_targets_are_declared():
+    from overkill.native_app import GAMEPLAY_EXIT_TARGETS
+    by_name = {s.name: s for s in GAMEPLAY_EXIT_TARGETS}
+    assert set(by_name) == {"level_end", "game_over", "death"}
+    assert by_name["level_end"].status == NATIVE   # converges at the recovered 9744 level-advance
+    assert by_name["game_over"].status == GAP        # deep BEFF respawn/game-over branch not recovered
+    assert by_name["death"].status == GAP
+    assert all(s.asm.startswith("1010:") for s in GAMEPLAY_EXIT_TARGETS)
+    report = "\n".join(describe_gaps())
+    assert "gameplay_exit.death" in report and "gameplay_exit.game_over" in report
+
+
 def test_gap_boundary_is_declared_and_reported():
     # the known-unrecovered pieces must stay visible: the transition flags + the frame-state update
     by_name = {s.name: s for s in GAMEPLAY_FRAME_STAGES}

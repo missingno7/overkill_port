@@ -60,6 +60,37 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - Mode edges: recovered the gameplay-exit targets (level-end / death / game-over) + lives counter
+
+Made the mode-transition EDGES out of the 97B2 gameplay loop explicit -- disassembled the three
+gameplay-exit targets ``detect_gameplay_transition`` selects (native_app.GAMEPLAY_EXIT_TARGETS):
+
+* **level_end (9734, flag A344)** = NATIVE: a story branch (2356==0) then CONVERGES at the recovered
+  9744 level-advance -> re-enters the level loop at the next planet.
+* **game_over (9902, flag A342)** = forces the ``DS:2358`` lives/continue counter to 0, then falls into
+  the death handler.
+* **death (9908, flag A346)** = re-seeds the object pool (C4DB) + decrements ``DS:2358``.
+
+Recovered the counter update as ``frame_loop.death_continue_counter_update(is_game_over, 2358, 978d)`` --
+death decrements the lives counter, the "no-death" flag ``DS:978D`` cancels the loss (net-zero), an
+underflow to ``0xFFFF`` is the game-over sentinel, and game-over zeroes it first. Driven-oracle **12/12**
+(``verify_native_death_continue_counter``, driving 9908/9902 -> 991A). ``DS:2358`` is thus the
+lives/continue counter of the top-level mode machine.
+
+The respawn-vs-game-over branch is also grounded now (``jmp 9773``): ``if DS:2358 == 0xFFFF`` (the lives
+underflow sentinel) ``-> jmp 98EB`` (the game-over path); else RESPAWN via a level re-init
+(``C3A6``/``77C5``/``99BF``/``6176`` + player record at ``237C`` via ``9BE2`` + ``A940``) back into the
+gameplay loop. So the mode graph's death sub-machine is: death/game_over -> ``death_continue_counter_update``
+-> ``9773`` -> {``2358==0xFFFF`` -> game-over ``98EB``, else respawn re-init -> gameplay}. Still GAP
+(fail-loud): the ``98EB`` game-over tail (return-to-front-end) and the respawn re-init routine bodies.
+
+Recon note for NEXT: ``DS:BEFF`` is NOT the top-level mode spine -- a code-segment scan shows it is
+WRITTEN from 80+ sites (``mov byte [BEFF],imm``), i.e. a broadly-set action/event CODE (sound/effect
+trigger family), not a single mode selector. The real "top-level mode machine" is the OUTER loop
+sequencing boot -> title/menu -> attract (D007) -> new-game -> level-loop -> game-over/front-end; the
+next structural step is to locate that outer loop (the caller side that ties front_end <-> D007 <->
+gameplay together) rather than a single dispatch variable.
+
 ## 2026-07-04 - Structure: recovered the per-planet video/palette dispatch (C565/2356) + a course-correction
 
 Chased the ``1010:C565`` ``jmp cs:[DS:2356*2 + 0xC570]`` dispatch as a candidate for the TOP-LEVEL

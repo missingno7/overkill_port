@@ -547,3 +547,15 @@ def test_c4db_pool_layout_constants():
     assert POOL_BASE_GAMEPLAY == last_effect + OBJECT_RECORD_STRIDE == 0x2B5C
     # 1 special + 35 effect == the 36 seeded records
     assert 1 + POOL_EFFECT_SLOTS == 0x24
+
+
+def test_death_continue_counter_update():
+    from overkill.recovered.systems.frame_loop import death_continue_counter_update
+    # death: decrements the lives counter; 978D cancels the loss (net-zero)
+    assert death_continue_counter_update(False, 3, 0) == 2
+    assert death_continue_counter_update(False, 3, 1) == 3
+    assert death_continue_counter_update(False, 1, 0) == 0
+    assert death_continue_counter_update(False, 0, 0) == 0xFFFF   # underflow == game-over sentinel
+    # game-over: forces the counter to 0 first, then the same decrement
+    assert death_continue_counter_update(True, 3, 0) == 0xFFFF
+    assert death_continue_counter_update(True, 3, 1) == 0
