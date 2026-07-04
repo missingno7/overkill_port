@@ -60,6 +60,27 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - MILESTONE: play_native COLD-STARTS a level with NO --snapshot (real VM-less level boot)
+
+Wired ``build_cold_level_start`` into ``scripts/play_native.py``: ``--snapshot`` is now an optional DEBUG
+override, and the DEFAULT path cold-starts the level from the recovered seeds. New ``_cold_seeded_start``
+builds the ``_SeededStart`` from ``build_cold_level_start`` (game+starfield state) + the cold data image
+(sprite half-stride) + the level-post-load scroll origin (origin_x=0, row_base=0, row_source=0x5B00 --
+NOT the cold image's mid-scroll live cursor, which wraps the starfield page) + semantic cold exit guards
+(A47C=0, A95A=3, 2326=0, so the frame-0 detector cannot spuriously end the level).
+
+Verified headless (SDL dummy): ``python scripts/play_native.py --level 0 --no-title`` cold-loads LEVEL1
+(tile_plane 3744B, VM-free) and runs the frame loop with NO snapshot, no crash, no fail-loud gap, past
+the old ~35-tick verify wall (standalone play drifts visually but does not fault). First fix needed along
+the way: the level-post-load scroll origin (the bundle's live 234C=0xff98 crossed the 64KiB starfield
+page -- fail-loud caught it).
+
+**This is the first real VM-less LEVEL BOOT** -- play_native is now the cold entrypoint the user asked
+for (start levels first; intro/menu next). Remaining for real gameplay: the forward-carry wall (A067
+fan-out / enemy spawning -- currently no enemies spawn natively), then the front-end (title image + D007
+attract are native; menu logic gap) to open on intro/menu like the original. NEXT: A067 spawn fan-out, or
+the title/menu -> cold-start wiring.
+
 ## 2026-07-04 - COLD level-start state assembled VM-free (build_cold_level_start) -- de-stages play_native
 
 First real de-staging step toward the VM-less cold start (per the user: move play_native off its

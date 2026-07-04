@@ -99,6 +99,7 @@ DEFAULT_CONTAINER = ROOT / "assets" / "OVERKILL"
 _CS = 0x1010
 _TABLE_75A6, _TABLE_768E, _TABLE_7746 = 0x9392, 0x9192, 0x8F92
 _SPRITE_CELL_STRIDE_OFF = 0x1028   # ds:[1028] -- 75A6's source advance to the +10 second slot is >>1
+_COLD_ROW_SOURCE = 0x5B00          # DS:234C -- the fixed row-source start (NativeGame's level-post-load default)
 
 
 class _FlatMemory:
@@ -187,6 +188,44 @@ def _seed_state_from_snapshot(snapshot_dir: Path) -> "_SeededStart":
         a95a=mem.rw(ds, 0xA95A),
         a97a=mem.rw(ds, 0xA97A),
         v2326=mem.rw(ds, 0x2326),
+    )
+
+
+def _cold_seeded_start(bundle_data: bytes) -> "_SeededStart":
+    """Assemble a REAL cold level-start :class:`_SeededStart` -- no VM, no gameplay snapshot.
+
+    The game + starfield STATE is built entirely from the recovered level-start seeds
+    (:func:`overkill.recovered.adapters.cold_level_start.build_cold_level_start` -- session init + C4DB
+    setup + gameplay-pool seed + control reset + player spawn + cold starfield).  The render params the
+    loop also needs -- the scroll cursor (DS:234C/234E/2350), the sprite half-stride (``ds:[1028]>>1``)
+    and the exit-guard inputs -- are read from the SAME cold runtime data image (byte-array read, no VM).
+
+    The scroll cursor is the LEVEL-POST-LOAD origin (``origin_x = 0``, ``row_base = 0``,
+    ``row_source = _COLD_ROW_SOURCE``) -- the same defaults :class:`overkill.native_game.NativeGame`
+    documents for a freshly loaded level (NOT the cold image's live cursor, which is mid-scroll and would
+    wrap the starfield page).  The sprite half-stride is a level-invariant param read from the cold image.
+
+    The exit guards are set to their semantic cold-start values so the frame-0 detector cannot spuriously
+    end the level: ``A47C = 0`` (no scripted mode), ``A95A = 3`` (anchor present), ``2326 = 0`` (not
+    dying); ``A97A`` is read from the cold image.
+    """
+    from overkill.recovered.adapters.cold_level_start import build_cold_level_start
+    from overkill.recovered.adapters.starfield_adapter import DATA_SEGMENT
+
+    state, starfield = build_cold_level_start(bundle_data)
+    mem = _FlatMemory(bundle_data)
+    ds = DATA_SEGMENT
+    return _SeededStart(
+        state=state,
+        starfield=starfield,
+        half_stride=(mem.rw(ds, _SPRITE_CELL_STRIDE_OFF) >> 1) & 0xFFFF,
+        origin_x=0x0000,               # level-post-load view origin (DS:234E)
+        row_base=0x0000,               # level-post-load view row base (DS:2350)
+        row_source=_COLD_ROW_SOURCE,   # DS:234C -- the fixed row-source start
+        a47c=0x0000,   # cold: no scripted-input mode active
+        a95a=0x0003,   # cold: anchor present (lives counter at session start)
+        a97a=mem.rw(ds, 0xA97A),
+        v2326=0x0000,  # cold: not in the dying mode
     )
 
 
@@ -340,9 +379,9 @@ def main(argv=None) -> int:
                          "overkill/static_runtime_bundle.py")
     ap.add_argument("--container", default=str(DEFAULT_CONTAINER), help="the OVERKILL asset container file")
     ap.add_argument("--snapshot", default=None,
-                    help="REQUIRED for gameplay: a captured VM snapshot directory to seed the REAL "
-                         "starting game+starfield state (the cold level-start state is not a recovered "
-                         "system yet -- Bucket F level loader). Reads bytes only, no VM.")
+                    help="OPTIONAL debug override: seed the starting game+starfield state from a captured "
+                         "VM snapshot directory instead of the cold level-start seeds. Reads bytes only, "
+                         "no VM. Omit it to cold-start the level from the recovered seeds (the default).")
     ap.add_argument("--scale", type=int, default=3)
     ap.add_argument("--fps", type=int, default=30)
     ap.add_argument("--no-title", action="store_true", help="skip the title/options screen, go straight to gameplay")
@@ -353,18 +392,14 @@ def main(argv=None) -> int:
         raise SystemExit(f"--bundle {bundle_path}: not found (build it via overkill/static_runtime_bundle.py)")
     if not container_path.is_file():
         raise SystemExit(f"--container {container_path}: not found -- point it at the OVERKILL game data")
-    # No placeholder spawn: the cold level-start state is not recovered yet, so fail loud rather than
-    # fake one. A real starting state comes only from a captured snapshot until the level loader lands.
-    if not args.snapshot:
-        raise SystemExit(
-            "gameplay needs a real starting state: pass --snapshot DIR (a captured VM snapshot).\n"
-            "The cold level-start state (player spawn + object seed + starfield init) is not yet a "
-            "recovered VM-free system (Bucket F level loader is still open) -- there is no honest way "
-            "to cold-start gameplay without the VM today, and this program will not fake one.")
-
     container_data = container_path.read_bytes()
     bundle_data = bundle_path.read_bytes()
-    seed = _seed_state_from_snapshot(Path(args.snapshot))
+    # DEFAULT: cold-start the level from the recovered level-start seeds (VM-free, no capture). The
+    # --snapshot path stays as a debug override that seeds from a captured VM state instead.
+    if args.snapshot:
+        seed = _seed_state_from_snapshot(Path(args.snapshot))
+    else:
+        seed = _cold_seeded_start(bundle_data)
     starfield = seed.starfield
     # Cold-load the level, then plant the captured live scroll cursor (DS:234C/234E/2350) so the first
     # native frame renders the world + sprites exactly where the VM had them.
