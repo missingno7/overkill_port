@@ -446,3 +446,14 @@ def test_step_death_handler_9a16_composition():
     assert step_death_handler_9a16(0x30, 0, 0x03, 0x18, 0, 0, 1)[4] is False
     # A95C != 0x18 (9DEA increments it) -> no advance
     assert step_death_handler_9a16(0x58, 0, 0x03, 0x05, 0, 0, 1)[4] is False
+
+
+def test_step_scripted_move_counters_9a3e():
+    from overkill.recovered.systems.frame_loop import step_scripted_move_counters_9a3e
+    # 2384 == 0 -> caps A39C 0x08 / A39A 0xFFF8
+    assert step_scripted_move_counters_9a3e(0, 0x05, 0xFFFA) == (0x06, 0xFFF9)
+    assert step_scripted_move_counters_9a3e(0, 0x08, 0xFFF8) == (0x08, 0xFFF8)   # capped
+    # 2384 != 0 -> caps A39C 0x0F / A39A 0xFFF1
+    assert step_scripted_move_counters_9a3e(1, 0x05, 0xFFF5) == (0x06, 0xFFF4)
+    assert step_scripted_move_counters_9a3e(1, 0x0F, 0xFFF1) == (0x0F, 0xFFF1)   # capped
+    assert step_scripted_move_counters_9a3e(3, 0x00, 0xFFFF) == (0x01, 0xFFFE)

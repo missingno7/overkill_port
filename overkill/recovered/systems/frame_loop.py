@@ -242,6 +242,25 @@ def scripted_input_prologue_99f6(a47c: int, prev_2380: int):
     return prev_2380 & 0xFFFE, 0x00, (a47c << 1) & 0xFFFF
 
 
+def step_scripted_move_counters_9a3e(counter_2384: int, a39c: int, a39a: int):
+    """The ``1010:9A3E`` scripted-move coordinate-counter update (the A47C==2 death-script step's head).
+
+    Recovered from ``9A3E..9A73``, confirmed by ``verify_native_scripted_move_counters_9a3e.py``: it
+    increments ``DS:A39C`` (capped) and decrements ``DS:A39A`` (capped) with the caps chosen by the
+    death counter ``DS:2384`` -- ``2384 == 0`` caps at ``A39C 0x08`` / ``A39A 0xFFF8``, else ``0x0F`` /
+    ``0xFFF1``.  (The tail past ``9A73`` -- the boss/death-entity spawn via 7524 + the coordinate-table
+    movement -- is a spawner island, NOT part of this counter leaf.)  Returns ``(new_a39c, new_a39a)``.
+    """
+    if (counter_2384 & 0xFFFF) == 0:
+        cap_c, cap_a = 0x0008, 0xFFF8
+    else:
+        cap_c, cap_a = 0x000F, 0xFFF1
+    a39c, a39a = a39c & 0xFFFF, a39a & 0xFFFF
+    new_a39c = a39c if a39c == cap_c else (a39c + 1) & 0xFFFF
+    new_a39a = a39a if a39a == cap_a else (a39a - 1) & 0xFFFF
+    return new_a39c, new_a39a
+
+
 def step_death_handler_9a16(a97a: int, a97c: int, a95a: int, a95c: int,
                             counter_2384: int, bdac: int, flag_98c0: int):
     """The whole ``1010:9A16`` scripted-input DEATH handler (the ``A47C == 3`` step of the 99F6 script).

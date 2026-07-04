@@ -60,6 +60,27 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - 9A3E scripted-move counter head recovered; the other death-script steps are spawner islands
+
+Recovered ``systems/frame_loop.step_scripted_move_counters_9a3e`` -- the A47C==2 death-script step's
+HEAD (increments A39C / decrements A39A, caps chosen by ``2384``). Driven-oracle 7/7.
+
+**Death-script structure fully mapped now (the 99F6 A47C handlers):** the death sequence steps through
+A47C = 1 -> 2 -> 3. **A47C==3 (9A16) = the countdown handler -- COMPOSED native (prior pass).**
+**A47C==1/2 (9A78/9A3E) = the death-ENTITY spawn + coordinate-table movement** -- these call the 7524
+allocator + stamp a boss/death object (logic 0x52, sprite 0xF at 0x20/0x58) and drive scripted input
+(98BE) from a coordinate table (A35C/A358) vs the view anchor DS:237E -- a SPAWNER island, only the
+counter head (9A3E) is a clean leaf.
+
+**Honest state / recommendation for the next runs:** the death/scripted-input island's CLEAN pieces are
+now done (the countdown leaves + handler, the dispatch, the 9A3E counter head). The rest -- the
+death-entity spawn (7524 + stamp + coord-table movement in 9A78/9A3E) and the ARM (the upstream
+collision that sets A47C=1 to start the script) -- are SPAWNER/UPSTREAM islands. Combined with the HUD
+fold (needs a level-load capture) and the 35-tick forward-carry wall (A067 spawn drift), the frontier
+is now THREE big integrations, each needing a dedicated capture/trace + multi-pass focus, not more
+per-iteration clean leaves. The per-slice loop has recovered the clean frontier (pure ~32.0%, ~207
+rules); the highest-value next move is to pick ONE integration and drive it deliberately.
+
 ## 2026-07-04 - COMPOSED the first native death handler (99F6 9A16, A47C==3)
 
 First COMPOSITION (not just a leaf): ``systems/frame_loop.step_death_handler_9a16`` builds the whole
