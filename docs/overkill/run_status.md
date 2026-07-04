@@ -50,6 +50,29 @@
 > witness-poor load-time code, the cold-boot witness-harness idea, the Bucket A/B completion
 > readouts) are preserved in the dated entries below and in `overnight_endgame_execution.md`.
 
+## 2026-07-05 - The B022 contact-step handlers RECOVERED PURE + driven 448/448 (enemy locomotion core)
+
+(Overnight run, continuing the AFD8 slice.) The per-direction step handlers are now a pure system:
+``systems/contact_step.contact_step_b022(direction, ContactStepState, tile_class_at, contact_at)``
+-- the 4 axis steppers + the 4 diagonal compositions (original control flow: a refused first axis
+still attempts the second, ``blocked`` accumulates). Semantics recovered: leading-edge tile checks
+(class 0 walkable; ``+/-0xD`` column, ``+/-1`` row), sub-tile STRADDLE checks (X handlers gate
+terrain on the 215A column boundary, Y handlers on ``y & 0xF``), the 215A sample counter with
+column wraps of the threaded tile offset, 1px step + A438/A436 mirror deltas, contact-scan UNDO.
+
+ORACLE (``verify_native_contact_step``): drives ``B00D`` on live L1 tiles with a synthetic record,
+7x8 positions x 8 directions = **448/448 byte-exact** incl. dx read-back, with a COVERAGE GATE
+(419 stepped / 47 blocked -- terrain refusals really exercised; pools cleared so BDD0 misses
+deterministically; the contact-undo branch is unit-tested pure). KEY ORACLE LESSON captured: the
+first probe version seeded ``DS:215A`` as an input and failed 480/600 -- **215A is DERIVED by 5073
+from x (written unmasked) on every probe**, not persistent state; the fixed probe captures the
+derived value. Unit tests ``test_contact_step`` (7); island VERIFIED; manifest 28.
+
+REMAINING for the full AFD8 island: the top shape (A432/A434 snapshots, the A278-0x10 bias window,
+off-map early-out, the final ZF contract) + the pure BDD0 contact predicate -- then the 21 caller
+stubs can be recovered as thin parameterizations. NEXT after that: behaviors 0x1F (8D4F) / 0x20
+(B73E) -- the planet-1 spawn family -- via the L1 fast-forward.
+
 ## 2026-07-05 - AFD8 DECODED: the enemy MOVE-ONE-STEP-WITH-COLLISION worker; its 8-direction dispatch cold-loaded
 
 (Overnight run, heartbeat cron 19656f49.) Completed the AFD8 map from yesterday's characterization:

@@ -4,7 +4,7 @@
      Source of truth = the @recovered_island metadata on each recovered function.
      tests/test_island_registry.py fails if this file drifts from the code. -->
 
-27 recovered islands (3 ASM_MATCHED, 24 VERIFIED).
+28 recovered islands (3 ASM_MATCHED, 25 VERIFIED).
 
 | ASM boundary | Function | Status | Merge target | Contract |
 |---|---|---|---|---|
@@ -27,6 +27,7 @@
 | `1010:A662` | `systems.movement.recover_top_scroll_bias_a662` | VERIFIED | MovementSystem | top scroll-bias recovery toward zero |
 | `1010:AEE4`, `1010:AF22`, `1010:AF63` | `systems.movement.step_delta_for_direction` | VERIFIED | MovementSystem | signed (dx, dy) for one 8-way direction-table step |
 | `1010:AEE4`, `1010:AF22`, `1010:AF63` | `systems.movement.step_operations_for_direction` | VERIFIED | MovementSystem | ordered x/y mutations for an 8-way movement step (order = 8086 flag order at RET) |
+| `1010:B022`, `1010:B03C`, `1010:B07D`, `1010:B0C9`, `1010:B0CC`, `1010:B039`, `1010:B10C`, `1010:B10F`, `1010:B07A` | `systems.contact_step.contact_step_b022` | VERIFIED | EnemyWaveSystem | the AFD8 per-direction 1px contact step (B022 dispatch on +0x06): leading-edge tile checks (class 0 walkable), sub-tile straddle checks, the 215A X sample counter with column wraps, step + contact-undo, blocked accumulation across diagonal composition |
 | `1010:B1B0` | `systems.movement.align_word_to_four` | VERIFIED | MovementSystem | 4-pixel grid alignment of a coordinate word |
 | `1010:B1B0` | `systems.movement.player_center_target_from_view` | VERIFIED | MovementSystem | player/view-centre chase target (237E+0Ah, 2380+0Ch, 4-pixel aligned) |
 | `1010:B468` | `systems.frame_loop.count_active_enemies_b468` | VERIFIED | EnemyWaveSystem | count effect-pool records with +00 active AND +16 == 4 (the enemy type); mirrors DS:A47E; ==1 gates the B4A2 leader-group wave start |
