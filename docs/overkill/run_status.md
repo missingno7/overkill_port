@@ -60,6 +60,23 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - Bucket F: recovered the PLAYER SPAWN state (C42F, 237C active @ x=0xC0/y=0x58)
+
+Chased the respawn re-init (the 9773 else-branch, ``C3A6``) and found it contains the player spawn --
+one of the headline Bucket-F gaps ("player spawn ... needs a captured snapshot"). ``C3A6`` re-inits two
+object pools (a 34-slot pool from table ``DS:0x8D12`` + the 36-slot C4DB-style pool from ``0x32CA``) then
+STAMPS the player record: ``frame_loop.player_spawn_record_c42f`` -- ``DS:237C`` ``+0x00=1`` (active),
+``+0x02=0xC0`` (spawn x), ``+0x04=0x58`` (spawn y), ``+0x0A=1``, ``+0x14=2``, ``+0x16=3``. Driven-oracle
+**6/6** (``verify_native_player_spawn``, driving C42F->C450). The player-spawn state is now NATIVE (no
+longer needs ``--snapshot``); updated the native_app level-load gap note accordingly.
+
+The C3A6 tail after the stamp: a ``7524`` companion-object spawn (``ds:[bx]=1``, ``+0x14=1``, ``+0x16=6``
+-- the player's flame/shot?), an ``A3B4`` coordinate-ring clear (26 words -> 0xFFFF), and the
+``A95A=3``/``A95C=0x18``/``A970..974=0`` counter re-init. Remaining Bucket-F GAP: the STARFIELD init
+(still needs a capture) and the two pool re-seeds' full byte-exact recovery (the C4DB-style one is already
+``object_pool_seed_c4db``; the 34-slot 0x8D12 pool is new). NEXT: the starfield init, or the companion/
+flame spawn (7524 at C450).
+
 ## 2026-07-04 - Score subsystem mapped (32-bit LE @ 2314); representation corrected
 
 Mapped the score subsystem's structure (boundary, not yet a recovered leaf). The score is a **32-bit

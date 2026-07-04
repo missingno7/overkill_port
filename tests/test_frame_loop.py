@@ -571,3 +571,15 @@ def test_new_game_session_init_96ee():
     assert cells[0xA342] == 0            # game-over flag cleared
     assert cells[0x2314] == 0 and cells[0x2316] == 0            # score bytes zeroed
     assert set(cells) == {0x2356, 0x2358, 0x235A, 0xA342, 0x2314, 0x2316}
+
+
+def test_player_spawn_record_c42f():
+    from overkill.recovered.systems.frame_loop import (
+        player_spawn_record_c42f, PLAYER_SPAWN_X, PLAYER_SPAWN_Y,
+    )
+    rec = player_spawn_record_c42f()
+    assert rec[0x00] == 1                        # active
+    assert rec[0x02] == PLAYER_SPAWN_X == 0xC0   # spawn x
+    assert rec[0x04] == PLAYER_SPAWN_Y == 0x58   # spawn y
+    assert rec[0x0A] == 1 and rec[0x14] == 2 and rec[0x16] == 3
+    assert set(rec) == {0x00, 0x02, 0x04, 0x0A, 0x14, 0x16}

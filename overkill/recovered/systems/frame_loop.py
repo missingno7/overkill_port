@@ -702,6 +702,25 @@ def native_new_game_data_setup(new_level_index: int, slot_ptr_table) -> dict:
 
 NEW_GAME_SESSION_START_LIVES = 0x0003   # DS:2358 lives/continue counter at a fresh game session
 
+PLAYER_SPAWN_RECORD = 0x237C   # layout-justified: the player view-anchor object record (special pool)
+PLAYER_SPAWN_X = 0x00C0        # DS:237C+02 spawn x
+PLAYER_SPAWN_Y = 0x0058        # DS:237C+04 spawn y
+
+
+def player_spawn_record_c42f() -> dict:
+    """The player view-anchor record (``DS:237C``) SPAWN stamp at ``1010:C42F..C44B`` -- the Bucket-F
+    player-spawn state, inside the level/respawn re-init ``C3A6``.
+
+    Activates and positions the player object: ``+0x00 = 1`` (active), ``+0x02 = 0xC0`` (spawn x),
+    ``+0x04 = 0x58`` (spawn y), ``+0x0A = 1``, ``+0x14 = 2``, ``+0x16 = 3``.  Byte-exact vs the VM
+    (``verify_native_player_spawn``).  Returns ``{field offset: value}`` for the ``DS:237C`` record.
+
+    The steps that FOLLOW the stamp -- the ``7524`` companion-object spawn (``ds:[bx]=1`` &c.), the
+    ``A3B4`` coordinate-ring clear (26 words -> 0xFFFF), and the ``A95A``/``A95C``/``A970``.. counter
+    re-init -- are separate; this leaf is just the player record's initial fields.
+    """
+    return {0x00: 1, 0x02: PLAYER_SPAWN_X, 0x04: PLAYER_SPAWN_Y, 0x0A: 1, 0x14: 2, 0x16: 3}
+
 
 def new_game_session_init_96ee() -> dict:
     """The session-start (new-game) DATA init at ``1010:96EE..9715`` -- the TOP of the mode machine's
