@@ -709,10 +709,11 @@ def new_game_session_init_96ee() -> dict:
 
     Returns the exact ``{DGROUP offset: word value}`` map the init writes: ``DS:2356 = 0`` (planet index
     -> planet 0), ``DS:2358 = 3`` (the lives/continue counter -- :data:`NEW_GAME_SESSION_START_LIVES`),
-    ``DS:235A = 0``, ``DS:A342 = 0`` (clears the game-over flag), and the four score bytes
-    ``DS:2314..2317 = 0`` (modelled as the two words ``2314``/``2316``).  Reached from the title/menu on
-    "start" and from the game-over tail (``98EB -> jmp 96E0``) to restart; flows into the ``971A``
-    new-game setup.  Byte-exact AND complete vs the VM (``verify_native_new_game_session_init``).
+    ``DS:235A = 0``, ``DS:A342 = 0`` (clears the game-over flag), and the score ``DS:2314..2317 = 0`` --
+    a 32-bit little-endian value (NOT BCD digits: ``532D`` ranks it against the high-score table with a
+    4-byte ``sub``/``sbb``), modelled here as the two words ``2314``/``2316``.  Reached from the
+    title/menu on "start" and from the game-over tail (``98EB -> jmp 96E0``) to restart; flows into the
+    ``971A`` new-game setup.  Byte-exact AND complete vs the VM (``verify_native_new_game_session_init``).
 
     The preceding ``96E0..96EB`` video/palette init (``CB1C``/``4FC3``/``5145``/``5559``) is host
     presentation, not modelled here.  Pure data (a memset of the session globals); the caller owns the

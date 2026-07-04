@@ -60,6 +60,20 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - Score subsystem mapped (32-bit LE @ 2314); representation corrected
+
+Mapped the score subsystem's structure (boundary, not yet a recovered leaf). The score is a **32-bit
+little-endian value at DS:2314..2317** (NOT BCD digits, as the session-init note implied -- corrected):
+``532D`` ranks it against the 8-entry high-score table with a 4-byte ``sub``/``sbb`` compare; ``5434``
+copies the two score words into the "SCORE:" display buffer; display also via ``5F05``. Operand refs to
+2314 are all display/high-score/bonus/init (528D/53A6/5444/5EE2/5F11/9708) -- the ADD-POINTS path is NOT
+among them, so points are awarded elsewhere (a ``bp``-relative 32-bit add in the kill/scoring flow, not
+yet located = GAP). Corrected ``new_game_session_init_96ee``'s docstring accordingly.
+
+NEXT: locating the add-points routine needs the enemy-kill/scoring path (award value per object type);
+alternatively the respawn re-init bodies (C3A6/77C5/99BF at the 9773 else-branch) are a more bounded next
+target.
+
 ## 2026-07-04 - CAPSTONE: the top-level mode machine as an explicit native graph (APP_MODE_GRAPH)
 
 Folded the whole session's mode-machine recovery into ONE explicit structure: ``native_app.APP_MODE_GRAPH``
