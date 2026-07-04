@@ -60,6 +60,29 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - Enemy WAVE fully mapped + formation table cold-loaded (24-enemy 3-col snake)
+
+Completed the enemy-wave structure (the last gameplay subsystem). It is a FIXED FORMATION:
+* **Formation table** DS:``A8D2`` -- a static list of ``(x, y)`` word pairs (STATIC game data: identical
+  in the cold bundle and a live L1 capture), terminated at ``A932`` = 24 enemies in 3 columns
+  (``x`` = 0x50 / 0x38 / 0x20), each an 8-step snake in ``y`` (0x18 apart, 0x00..0xA8). Now COLD-LOADABLE:
+  ``recovered/adapters/enemy_formation_adapter.load_enemy_formation_table(exe_image)`` (test
+  ``test_enemy_formation``).
+* **Cursor** DS:``A8D0`` -- walks the list; reset to ``A8D2`` at ``B5A9`` (start a wave); ``+= 4`` per
+  enemy (``B60D``).
+* **Iterator** ``B5E6`` -- per spawn tick: ``call 81F4`` (=enemy_spawn_stamp_8209) then schedule
+  ``x -> [bx+0x34]`` (biased ``+0x20``), ``y -> [bx+0x32]``, overrides ``[bx+0x18]=0x61`` / ``[bx+8]=0xE7``
+  (sprite). NOTE (from the drive): the base stamp's ``+0x02``/``+0x04`` come from the LEADER's ``bp``
+  frame, NOT the schedule -- so the formation enemy's position lives in ``+0x34``/``+0x32``; a pure
+  ``B5E6`` step can't model ``+0x02/+0x04`` standalone (leader-context).
+* **Wave gate** = the B86D formation family on the DS:2340 tick schedule (``b86d_formation_spawn_tick_
+  index`` already recovered) -- what dispatches B5E6.
+
+NEXT (final enemy slice): wire it into NativeGame -- a formation-leader with a B86D tick schedule that,
+per tick, spawns the next formation enemy (stamp + the B5E6 position/overrides) until the 24-list is
+exhausted, cursor reset per wave. Then the cold level POPULATES with the enemy formation. The pieces are
+all recovered now (stamp + table + iterator fields + tick schedule); this is composition/wiring.
+
 ## 2026-07-04 - Enemy spawn STAMP recovered (frame_loop.enemy_spawn_stamp_8209) -- slice 1 of the wave spawner
 
 Recovered the enemy spawn stamp (``1010:8209..8247``, the field template the level-wave spawner writes
