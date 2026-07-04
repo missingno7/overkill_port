@@ -572,6 +572,37 @@ OBJECT_SEED_SLOT_TABLE_32CA = 0x32CA   # layout-justified: DS word table cx(1..0
 OBJECT_SEED_FB_BASE_C3A2 = 0x3314      # first per-slot framebuffer back-buffer pointer (CS:C3A2 init)
 OBJECT_SEED_FB_STEP = 0x0280           # per-slot framebuffer pointer stride
 OBJECT_SEED_COUNT = 0x24               # 36 object slots seeded
+OBJECT_RECORD_STRIDE = 0x38            # layout-justified: object-record size
+#: The pool bases the C4DB seed covers, all on the object-record grid (base + i*0x38):
+POOL_BASE_SPECIAL = 0x237C     # layout-justified: the view-anchor / player slot (record 0), 1 slot
+POOL_BASE_EFFECT = 0x23B4      # layout-justified: the effect table (records 1..35), 35 slots
+POOL_BASE_GAMEPLAY = 0x2B5C    # layout-justified: the gameplay/enemy table (record 36+) -- NOT C4DB-seeded
+POOL_EFFECT_SLOTS = 35         # effect-table slot count (records 1..35, up to 0x2B24)
+
+
+def object_pool_seed_c4db(slot_ptr_table) -> dict:
+    """The ``1010:C4DB`` object-pool SEED loop (``C4E5..C51B``; the head of the C4DB new-game setup,
+    Bucket-F level-start object state).
+
+    For each of the 36 slots ``cx = 0x24 .. 1`` (descending, as the ASM ``loop`` runs it) it reads the
+    slot's object-record offset from the ``DS:0x32CA`` word table and stamps a fixed template plus a
+    per-slot framebuffer back-buffer pointer at ``+0x0E`` that steps ``0x3314, +0x280, +0x280, ...`` in
+    that processing order (``CS:C3A2`` accumulator).  The template zeroes ``+0x00`` (inactive) / ``+0x06``
+    / ``+0x18`` / ``+0x24`` / ``+0x2E`` and sets ``+0x0A = 1``.  Byte-exact vs the VM (36 records x 7
+    fields) in ``verify_native_object_pool_seed_c4db``.
+
+    POOL LAYOUT (verified in ``verify_native_c4db_seed_pool_layout``): the 36 seeded records are exactly
+    the special view-anchor (:data:`POOL_BASE_SPECIAL`, record 0, 1 slot) + the effect table
+    (:data:`POOL_BASE_EFFECT`, records 1..35, :data:`POOL_EFFECT_SLOTS` slots) -- one contiguous
+    ``0x237C..0x2B24`` block on the ``0x38`` grid.  The gameplay/enemy table (:data:`POOL_BASE_GAMEPLAY`)
+    sits exactly one stride PAST the last seeded record and is NOT initialised by C4DB (it is seeded
+    elsewhere, per-level).
+
+    ``slot_ptr_table`` is a mapping ``cx (1..0x24) -> record offset`` (the caller reads the real table
+    from ``DS:0x32CA``; on this build it resolves to base ``0x237C`` + stride ``0x38``).  Returns
+    ``{record_offset: {field_offset: value}}`` -- the pure LOGIC (order/template/pointer stepping); the
+    caller owns the table read and the DS/SS writes.
+    """
 
 
 def object_pool_seed_c4db(slot_ptr_table) -> dict:

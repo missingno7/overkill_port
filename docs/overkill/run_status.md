@@ -60,6 +60,22 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - Structure: pinned the object-pool layout the C4DB seed covers (special + effect table)
+
+Investigating how to wire the native level-start into NativeGame surfaced a clean structural fact worth
+recording. The C4DB 36-record seed covers EXACTLY the special view-anchor (``DS:0x237C``, record 0, 1
+slot) + the effect table (``DS:0x23B4``, records 1..35, 35 slots) -- one contiguous ``0x237C..0x2B24``
+block on the ``0x38`` object-record grid. The **gameplay/enemy table (``DS:0x2B5C``) is NOT C4DB-seeded**
+-- it sits exactly one stride past the last seeded record (``0x2B24 + 0x38``) and is initialised
+elsewhere (per-level). Verified from the real ``DS:0x32CA`` slot table in
+``verify_native_c4db_seed_pool_layout`` (5/5 checks) + named constants ``POOL_BASE_SPECIAL/EFFECT/
+GAMEPLAY`` + ``POOL_EFFECT_SLOTS``.
+
+This resolves what ``native_new_game_data_setup`` initialises vs leaves (it seeds special+effect, not the
+gameplay pool) -- the map the eventual ``NativeGame`` cold-start needs to translate the flat cell-map into
+the special/effect/gameplay ObjectPools. NativeGame's pools (special 0x237C, effect 0x23B4, gameplay
+0x2B5C) now line up 1:1 with these bases; the gameplay-pool seed is a separate (still-open) piece.
+
 ## 2026-07-04 - Bucket F: composed the native new-game DATA setup (9720..9748) + a tight render boundary
 
 Assembled the recovered pieces into the native level-start DATA entry point:

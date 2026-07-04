@@ -531,3 +531,19 @@ def test_native_new_game_data_setup_composition():
     assert cells[0xA95A] == 0x0003
     assert cells[0xA95C] == 0x0018
     assert cells[0x2356] == 0x0003
+
+
+def test_c4db_pool_layout_constants():
+    from overkill.recovered.systems.frame_loop import (
+        POOL_BASE_SPECIAL, POOL_BASE_EFFECT, POOL_BASE_GAMEPLAY,
+        POOL_EFFECT_SLOTS, OBJECT_RECORD_STRIDE,
+    )
+    # special(1) + effect table(35) are one contiguous 0x38-grid block ending at 0x2B24
+    assert POOL_BASE_SPECIAL == 0x237C and POOL_BASE_EFFECT == 0x23B4
+    assert POOL_BASE_EFFECT == POOL_BASE_SPECIAL + OBJECT_RECORD_STRIDE
+    last_effect = POOL_BASE_EFFECT + (POOL_EFFECT_SLOTS - 1) * OBJECT_RECORD_STRIDE
+    assert last_effect == 0x2B24
+    # the gameplay table sits exactly one stride past the last seeded record (NOT C4DB-seeded)
+    assert POOL_BASE_GAMEPLAY == last_effect + OBJECT_RECORD_STRIDE == 0x2B5C
+    # 1 special + 35 effect == the 36 seeded records
+    assert 1 + POOL_EFFECT_SLOTS == 0x24
