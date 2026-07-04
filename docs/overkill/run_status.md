@@ -60,6 +60,15 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - Refactor: one shared flat-image memory shape (adapters/flat_memory)
+
+Consolidated the duplicated VM-free flat-image readers -- ``scripts/play_native._FlatMemory``
+(read-only) and ``adapters/cold_level_start._MutMem`` (mutable) -- into
+``recovered/adapters/flat_memory`` (``FlatMemory`` / ``MutFlatMemory``, tested). Both consumers
+switched; also fixed the stale ``_FlatMemory`` docstring claim ("used ONLY by the --snapshot path" --
+false since the cold-start path landed). Probes keep their local one-off readers (verification
+artifacts, not runtime). Pure behavior identical; suite-gated.
+
 ## 2026-07-04 - ENEMY-AI STRUCTURE CRACKED: the object type/behavior dispatch tables + the planet-keyed wave driver (MAJOR MODEL CORRECTION)
 
 Traced the enemy subsystem's actual per-frame structure. The controller path's tail runs an OBJECT

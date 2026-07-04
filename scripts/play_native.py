@@ -68,6 +68,7 @@ sys.path.insert(0, str(ROOT))
 
 from overkill.native_app import GameplayFrameSkeleton  # noqa: E402
 from overkill.native_game import NativeGame  # noqa: E402
+from overkill.recovered.adapters.flat_memory import FlatMemory  # noqa: E402
 from overkill.recovered.domain.gaps import RecoveryGap  # noqa: E402
 from overkill.recovered.systems.frame_loop import detect_gameplay_transition  # noqa: E402
 from overkill.recovered.domain.frame_loop import FrameInput  # noqa: E402
@@ -105,29 +106,7 @@ _COLD_ROW_BASE = 0x009C            # DS:2350 -- level-load leaves the view row b
 #                                    is the frame-0 level-start scroll (row_base=0 underflows the tile probe)
 
 
-class _FlatMemory:
-    """A read-only flat 1 MiB buffer with dos_re.memory.Memory's ``rb``/``rw`` shape.
-
-    Used ONLY by :func:`_seed_state_from_snapshot` (the optional ``--snapshot`` debug path) so a
-    captured VM memory dump can be read with the existing recovered ``read_native_game_state``
-    projection WITHOUT importing ``dos_re`` -- this is a plain byte-array reader, not an emulator.
-    """
-
-    def __init__(self, data: bytes) -> None:
-        self.data = data
-
-    def _phys(self, seg: int, off: int) -> int:
-        return ((seg & 0xFFFF) * 16 + (off & 0xFFFF)) & 0xFFFFF
-
-    def rb(self, seg: int, off: int) -> int:
-        return self.data[self._phys(seg, off)]
-
-    def rw(self, seg: int, off: int) -> int:
-        p = self._phys(seg, off)
-        return self.data[p] | (self.data[(p + 1) & 0xFFFFF] << 8)
-
-
-def _read_starfield(mem: "_FlatMemory", ds: int) -> StarfieldState:
+def _read_starfield(mem: "FlatMemory", ds: int) -> StarfieldState:
     """Read the recovered starfield state (40 stars + the 3 layer counters + the enable gate) from a
     captured game data segment -- the same fields ``overkill.probes.verify_native_starfield`` proves
     reproduce the VM's parallax move byte-exact. Plain byte reads, no VM."""
@@ -173,11 +152,11 @@ def _seed_state_from_snapshot(snapshot_dir: Path) -> "_SeededStart":
     recovered pure system (Bucket F "level loader" is still open), so there is no VM-free way to
     produce it from the raw files today; rather than fake one, this program requires a captured
     ``--snapshot`` to obtain a REAL starting state, and fails loud without it (see ``main``). Reading
-    is over :class:`_FlatMemory` (no ``dos_re`` import) -- just parsing bytes a previous run captured.
+    is over :class:`FlatMemory` (no ``dos_re`` import) -- just parsing bytes a previous run captured.
     """
     from overkill.recovered.adapters.native_game_state_adapter import read_native_game_state
 
-    mem = _FlatMemory((snapshot_dir / "memory_1mb.bin").read_bytes())
+    mem = FlatMemory((snapshot_dir / "memory_1mb.bin").read_bytes())
     cpu_line = json.loads((snapshot_dir / "state.json").read_text(encoding="utf-8"))["cpu_snapshot"]
     ds = int(re.search(r"DS=([0-9A-Fa-f]{4})", cpu_line).group(1), 16)
     return _SeededStart(
@@ -217,7 +196,7 @@ def _cold_seeded_start(bundle_data: bytes) -> "_SeededStart":
     from overkill.recovered.adapters.starfield_adapter import DATA_SEGMENT
 
     state, starfield = build_cold_level_start(bundle_data)
-    mem = _FlatMemory(bundle_data)
+    mem = FlatMemory(bundle_data)
     ds = DATA_SEGMENT
     return _SeededStart(
         state=state,

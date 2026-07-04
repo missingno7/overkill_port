@@ -17,6 +17,7 @@ Known omission (marked, not faked): the ``7524`` companion/flame object
 """
 from __future__ import annotations
 
+from overkill.recovered.adapters.flat_memory import MutFlatMemory
 from overkill.recovered.adapters.native_game_state_adapter import read_native_game_state
 from overkill.recovered.adapters.starfield_adapter import DATA_SEGMENT, load_starfield_state
 from overkill.recovered.domain.native_game_state import NativeGameState
@@ -35,32 +36,6 @@ from overkill.recovered.systems.frame_loop import (
 )
 
 
-class _MutMem:
-    """A tiny mutable flat-image reader/writer with the recovered readers' ``rb``/``rw`` shape.
-
-    Plain bytes -- NOT an emulator, no ``dos_re``: it lets the recovered seeds be applied and then read
-    back through :func:`read_native_game_state` exactly as if they had run on the real data segment.
-    """
-
-    def __init__(self, data: bytes) -> None:
-        self.data = bytearray(data)
-
-    def _phys(self, seg: int, off: int) -> int:
-        return ((seg & 0xFFFF) * 16 + (off & 0xFFFF)) & 0xFFFFF
-
-    def rb(self, seg: int, off: int) -> int:
-        return self.data[self._phys(seg, off)]
-
-    def rw(self, seg: int, off: int) -> int:
-        p = self._phys(seg, off)
-        return self.data[p] | (self.data[p + 1] << 8)
-
-    def ww(self, seg: int, off: int, val: int) -> None:
-        p = self._phys(seg, off)
-        self.data[p] = val & 0xFF
-        self.data[p + 1] = (val >> 8) & 0xFF
-
-
 def build_cold_level_start(exe_image: bytes) -> tuple[NativeGameState, StarfieldState]:
     """Assemble the frame-0 level-start ``(NativeGameState, StarfieldState)`` from the recovered seeds.
 
@@ -68,7 +43,7 @@ def build_cold_level_start(exe_image: bytes) -> tuple[NativeGameState, Starfield
     at ``DS:0x32CA`` / ``DS:0x8D12`` and the starfield stream); this applies the level-start writes on top
     and projects the result.  No VM, no captured snapshot.
     """
-    mem = _MutMem(exe_image)
+    mem = MutFlatMemory(exe_image)
     ds = DATA_SEGMENT
 
     def write_map(cell_map):
