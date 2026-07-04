@@ -77,9 +77,18 @@ directly (shots + cursor + ``full_result``), and the un-threaded FULL path still
 DS:98BE bit 4.
 
 NEXT (systematic, step 2): thread the FULL-fanout state through ``FireControlState`` + ``native_action_
-fanout_step`` + ``NativeGame`` so the STANDALONE runs the FULL fan-out (carry a970-family + A515 scan
-state frame-to-frame; the A970 self-increment is the one still-unmodelled piece). Then play_native fires
-real shots. Enemy-WAVE spawner is still the separate track.
+fanout_step`` + ``NativeGame`` so the STANDALONE runs the FULL fan-out. **The A970 lifecycle -- the piece
+that was "unmodelled" -- is now fully MAPPED (this pass):**
+  * GATE: ``a3a0 == 0`` (i.e. ``A970 == 0``) opens the shot (A41A: ``if a3a0 != 0: return None``);
+  * RESET: ``respawn_control_reset_c461`` sets A970/A972/A974/A976 = 0 (recovered);
+  * INCREMENT: ``add ds:[A970],2`` at ``A440`` / ``A46C`` on a FULL fire (the "caller's += 2");
+  * DECAY: dec-if-nonzero (floor 0) per frame -- ``BDAC``(A970) / ``BDB8``(A974) / ``BDC4``(A976) /
+    ``BD9E``(A97E), each a trivial 3-instr ``cmp/jz/dec`` leaf; ``BD98`` dec A972 (unconditional, other
+    context).
+So the step-2 model is: carry A970-family in FireControlState; each frame apply the decay; on a FULL fire
+add 2; feed to ``native_a067_full_fanout``. REMAINING to confirm: the decay routines' per-frame CALLER +
+frequency (are BDAC/BDB8/BDC4 called once/frame unconditionally, or gated?) -- a short trace pins it.
+Then play_native fires real shots. Enemy-WAVE spawner is still the separate track.
 
 ## 2026-07-04 - FRONTIER SCOPING: the two "make gameplay populated" gaps, precisely located
 
