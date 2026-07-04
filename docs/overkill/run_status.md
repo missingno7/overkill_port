@@ -60,6 +60,31 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - FRONTIER SCOPING: the two "make gameplay populated" gaps, precisely located
+
+With the VM-less cold LEVEL BOOT landed, the next real target is "enemies + fire actually happen." Scoped
+it honestly (no forced slice -- these are multi-slice subsystems, best attacked with fresh context):
+
+* **A067 FULL fan-out (player held-fire spawn actions).** IMPORTANT (verified this pass -- avoid
+  re-recovering): the spawn SEEDS and per-shot logic are ALREADY recovered -- ``object_spawn_seed_a4ea``
+  (the A4EA type-0x32 shot seed, byte-exact), ``PlayerShotSpawn`` (the A41A single-slot spawn),
+  ``A515LinkSpawn``, ``object_spawn_seed_8209/7420``, ``formation_spawn_seed_7476``; the ``A970 += 2``
+  counter is documented as "the fanout caller's". So the gap is NOT recovery, it's COMPOSITION:
+  ``native_action_fanout_step`` DECLINES the FULL fan-out paths because the A970-family held-action
+  counters must be threaded frame-to-frame (their per-child increment isn't wired into the native loop),
+  and FULL_BDAC_A114/A515 have no native composition yet. NEXT-RUN PLAN: compose the FULL fan-out over the
+  already-recovered seeds + thread the A970 counters through NativeGame, verified vs a firing demo.
+
+* **Enemy-WAVE spawner (populates the 0x2B5C gameplay pool).** DISTINCT from A067 (that's player fire).
+  Cold-start leaves the gameplay pool empty (correct -- a fresh level has no live enemies); enemies enter
+  as the world scrolls, driven by the level's wave schedule. Its location is NOT yet pinned -- needs a
+  demo trace of what activates a ``0x2B5C``-region slot (a ``7524`` alloc + stamp) as ``DS:A978``
+  (rows-to-milestone) ticks. NEXT-RUN PLAN: trace an L1 demo for the first gameplay-pool activation, find
+  the caller, recover the wave-table read.
+
+Both are the "forward-carry wall" in different guises. The cold boot renders the correct (unpopulated)
+level-start frame; these two make it a live game. Front-end (title->attract->level) is the other track.
+
 ## 2026-07-04 - MILESTONE: play_native COLD-STARTS a level with NO --snapshot (real VM-less level boot)
 
 Wired ``build_cold_level_start`` into ``scripts/play_native.py``: ``--snapshot`` is now an optional DEBUG
