@@ -60,6 +60,44 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - REFRAME: firing at level start is the EARLY path (works); the real blocker is the cold scroll origin
+
+Investigated "make play_native fire" and REFRAMED both gameplay tracks (this supersedes the A067/A970
+framing for LEVEL START -- that FULL-fanout path is for scroll > 0xB6, later in the level):
+
+* **Firing already works on the EARLY path.** At cold start ``scroll_2350 = row_base = 0 <= 0xB6``, so
+  the fan-out takes the EARLY path (``native_a19f_tail``), which IS recovered + wired through
+  ``NativeGame.step`` -> ``native_action_fanout_step``. Confirmed: with the player position as the fire
+  source, ``native_action_fanout_step`` spawns a shot (slot 0 active at 0xC0/0x58). So firing is NOT
+  gated on the FULL fan-out / A970 at level start.
+
+* **BUG in play_native (bounded fix):** ``_advance`` passes ``source_x=0, source_y=0`` (hardcoded) to the
+  fan-out -- shots spawn at the ORIGIN, not the player. It should pass the player anchor's position
+  (``special_pool.x_word(0)``/``y_word(0)`` = 0xC0/0x58) + ``source_index=0``.
+
+* **REAL BLOCKER (deep):** fixing the source to the player position then crashes the object pass with an
+  ``IndexError`` in ``object_tile_probe_deactivates_ad60`` -- ``tile_plane[offset]`` out of range. The
+  probe offset for an object at (0xC0,0x58) with the cold origin ``origin_x=0``/``row_base=0`` is
+  ``0xff69`` (an UNDERFLOW: the probe subtracts against ``row_base``, and ``row_base=0 < obj_y=0x58``).
+  So the cold-start scroll origin I chose (0,0) is WRONG for the tile system -- the real level-start
+  ``DS:2350``/``234E`` must position the view so objects land inside the 3744-byte tile plane. This gates
+  ANY populated gameplay pool (shots AND enemies), so it is the shared blocker for both tracks.
+
+ROOT CAUSE CONFIRMED: the tile-probe underflows because ``row_base = 0 < obj_y``. Any valid ``row_base``
+fixes the range; candidates found (all put obj(0xC0,0x58) in-range): level-load writes ``234E = 0``
+(``60B3``) + ``2350 = 0x9C`` (``CFD2``, offsets ~0x5) or ``2350 = 0xEA0`` (``60C5`` = 3744 = tile-plane
+size, offsets ~0xE09); the L1-start capture has ``234E=0x0F``/``2350=0xB6`` (offsets ~0x1F) but those are
+a few scroll-frames in, NOT frame 0. So ``2350`` is a RUNTIME scroll value, not a single level-load
+constant -- the frame-0 value must be pinned + tile-alignment-verified before use (a wrong-but-in-range
+row_base would deactivate objects on the WRONG tiles -- do NOT guess-commit it).
+
+NEXT-RUN PLAN (bounded): (1) trace a cold->level demo (or the level-load 0E9C/setup-tail path) for the
+234E/2350 values at the FIRST gameplay frame; (2) set them in ``_cold_seeded_start`` (currently 0/0);
+(3) fix ``_advance`` to pass the player anchor position as the fan-out source (currently 0/0); (4) verify
+play_native cold-fires a shot that persists (no IndexError, shot at the player). That makes play_native
+FIRE at level start. Only AFTER (later scroll > 0xB6) does the FULL fan-out / A970 lifecycle matter.
+Enemy-wave spawner shares the same origin fix (any gameplay-pool object needs the in-range tile context).
+
 ## 2026-07-04 - A067 composition step 1: native_a067 now COMPOSES the FULL fan-out (backward-compatible)
 
 Systematic first brick of wiring the A067 FULL fan-out into gameplay. The FULL fan-out
@@ -85,10 +123,20 @@ that was "unmodelled" -- is now fully MAPPED (this pass):**
   * DECAY: dec-if-nonzero (floor 0) per frame -- ``BDAC``(A970) / ``BDB8``(A974) / ``BDC4``(A976) /
     ``BD9E``(A97E), each a trivial 3-instr ``cmp/jz/dec`` leaf; ``BD98`` dec A972 (unconditional, other
     context).
-So the step-2 model is: carry A970-family in FireControlState; each frame apply the decay; on a FULL fire
-add 2; feed to ``native_a067_full_fanout``. REMAINING to confirm: the decay routines' per-frame CALLER +
-frequency (are BDAC/BDB8/BDC4 called once/frame unconditionally, or gated?) -- a short trace pins it.
-Then play_native fires real shots. Enemy-WAVE spawner is still the separate track.
+So the step-2 model is: carry A970-family in FireControlState; on a FULL fire add 2; apply the decay;
+feed to ``native_a067_full_fanout``.
+
+CORRECTION (this pass -- the decay is NOT a simple per-frame call): the decay handlers BDAC/BDB8/BDC4/
+BD9E have NO near-callers (E8) -- they are DISPATCHED (object-behavior/jump-table), and the routine just
+above (``BD82``) shows the family is entangled with A3B4-RING processing: BD82 walks the A3B4 coordinate
+ring (26 words, the one respawn_control_reset fills with 0xFFFF), and for each non-0xFFFF entry zeroes the
+pointed-to object and ``dec [A972]`` -- i.e. the counters track QUEUED objects in the ring, not a plain
+cooldown tick. So the A970 decay cadence is tied to the ring/object lifecycle, a deeper investigation
+than a per-frame decrement. NEXT-RUN PLAN: trace A970/A972/A974/A976 across a FIRING L1 demo to see the
+exact per-frame delta (increment vs decay) empirically, THEN model it; only then is the FireControlState
+threading honest (a modelled-decay is required -- a no-decay stub would fire once then never, which is
+incomplete, not faked, but not useful). play_native firing is thus 1 investigation + 1 threading slice
+away. Enemy-WAVE spawner is still the separate track.
 
 ## 2026-07-04 - FRONTIER SCOPING: the two "make gameplay populated" gaps, precisely located
 
