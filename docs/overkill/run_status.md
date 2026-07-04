@@ -60,6 +60,25 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - Enemy-wave data path CONSOLIDATED into one callable (formation_wave_next_spawn)
+
+Composed the recovered enemy-wave DATA path into the pure step ``formation_wave_next_spawn(cursor,
+formation_table)`` -> ``(enemy_stamp, next_cursor)``: it stamps the enemy at the cursor
+(``formation_enemy_stamp_b5e6`` over the cold-loaded table's ``(x,y)``) and advances the cursor, or
+returns ``(None, cursor)`` when the 24-list is exhausted. This is the callable the native wave driver will
+walk. Unit-tested (composition + exhaustion).
+
+HONEST SCOPE (deliberately caller-owned, to be verified vs the VM at wire-time, NOT guessed here): WHEN to
+spawn -- the ``A7A0`` formation phase (``wave_spawn_phase_b48b``) + the per-frame cadence (how often the
+B49F leader dispatches B5E6) -- and the enemy's ``+0x02``/``+0x04`` leader-context fields (from the
+formation leader's object frame). Those are the remaining enemy unknowns; everything else (table, base +
+formation stamps, cursor walk, phase dispatch, A7A0 clock) is recovered + verified.
+
+So the enemy-wave subsystem is recovered as far as clean leaves allow; the last enemy step is the
+NativeGame wiring, which needs the cadence + leader-context traced (a focused forward-trace, cheaper once
+the timing fast-forward from pre2 is recovered -- see the pre2 direction entry). Front-end flow + endings
++ audio are the other remaining tracks toward the pre2-shaped complete game.
+
 ## 2026-07-04 - Enemy-wave PHASE dispatch recovered (wave_spawn_phase_b48b) -- the wave clock DS:A7A0
 
 Traced the enemy-wave DISPATCH (correcting last pass: it is gated by ``DS:A7A0``, a wave-phase clock, at

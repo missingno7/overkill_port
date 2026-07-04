@@ -810,6 +810,25 @@ def wave_spawn_phase_b48b(a7a0: int) -> str:
     return "formation"
 
 
+def formation_wave_next_spawn(cursor_index: int, formation_table):
+    """Produce the NEXT enemy of the wave formation from the cold-loaded schedule table.
+
+    Composes the recovered enemy-wave DATA path: the formation table (``x, y`` pairs, from
+    ``enemy_formation_adapter.load_enemy_formation_table``) + the per-enemy stamp
+    (:func:`formation_enemy_stamp_b5e6`) + the ``DS:A8D0 += 4`` cursor advance (modelled as ``+1`` over the
+    pair list).  Returns ``(enemy_stamp, next_cursor)`` for the enemy at ``cursor_index``, or
+    ``(None, cursor_index)`` once the list is exhausted.
+
+    Deliberately NOT owned here (the CALLER supplies them at wire-time, verified against the VM then): WHEN
+    to spawn -- the ``A7A0`` formation phase (:func:`wave_spawn_phase_b48b`) + the per-frame cadence -- and
+    the enemy's ``+0x02``/``+0x04`` leader-context fields (from the formation leader's object frame, not the
+    schedule).  This is the pure "next formation enemy" step the native wave driver walks."""
+    if cursor_index >= len(formation_table):
+        return None, cursor_index
+    x, y = formation_table[cursor_index]
+    return formation_enemy_stamp_b5e6(x, y), cursor_index + 1
+
+
 def formation_enemy_stamp_b5e6(x: int, y: int) -> dict:
     """The ``1010:B5E6`` FORMATION-enemy stamp -- :func:`enemy_spawn_stamp_8209` with the B5E6
     schedule-position overrides applied.

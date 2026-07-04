@@ -653,3 +653,16 @@ def test_wave_spawn_phase_b48b():
     assert wave_spawn_phase_b48b(0x59) == "none"
     assert wave_spawn_phase_b48b(0x5A) == "formation"     # the 24-enemy formation wave
     assert wave_spawn_phase_b48b(0xFF) == "formation"
+
+
+def test_formation_wave_next_spawn():
+    from overkill.recovered.systems.frame_loop import formation_wave_next_spawn, formation_enemy_stamp_b5e6
+    table = ((0x50, 0xA8), (0x38, 0x18), (0x20, 0x60))
+    # walks the table one enemy per call, stamping each via formation_enemy_stamp_b5e6
+    stamp, cur = formation_wave_next_spawn(0, table)
+    assert cur == 1 and stamp == formation_enemy_stamp_b5e6(0x50, 0xA8)
+    stamp, cur = formation_wave_next_spawn(cur, table)
+    assert cur == 2 and stamp == formation_enemy_stamp_b5e6(0x38, 0x18)
+    # exhausted -> no more spawns, cursor held
+    assert formation_wave_next_spawn(3, table) == (None, 3)
+    assert formation_wave_next_spawn(99, table) == (None, 99)

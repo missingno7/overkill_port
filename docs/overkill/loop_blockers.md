@@ -4,6 +4,17 @@ Open items the autonomous loop attempted but could not finish byte-exact. Do NOT
 re-attempt these in the loop; they need a reproduction trace and/or gameplay
 context. Each has the analysis already done so a human can pick up fast.
 
+> TECHNIQUE (2026-07-04): free-run timing FAST-FORWARD (unblocks the free-run stall). A raw free-run of
+> the VM from a gameplay snapshot STALLS at the frame-wait `1010:0679` (`cmp cs:[066B],0; jz 0679` -- a
+> spin until the timer ISR sets CS:[066B]); in free-run the ISR never fires, so it spins forever (this is
+> why forward traces used the slow frame-verifier harness). FAST-FORWARD: in the step loop, when
+> `IP == 0x0679 and cs:[066B]==0`, write `cs:[066B] = 1` -- the frame gate opens and the loop advances one
+> frame. Validated: advanced 126 frames from L1_start and effect-pool enemies spawned (per-planet batches
+> as A7A0 ticked). CAVEAT: skips the timer ISR's OTHER work, so it is a TRACING aid (cheap forward
+> observation of cadence / spawns / sustained state), NOT byte-exact -- for byte-exact multi-frame verify
+> keep the frame-verifier harness (or recover the ISR body to fast-forward it byte-equivalently, à la
+> pre2's timing_fastforward). Use for: the enemy spawn-cadence trace + any "run forward, watch DS cells".
+
 > Status note (2026-06-19): the byte-exact frontier is effectively closed —
 > oracle suite 244/244 and demo-replay 19/19 (bounded) are green. The primary driver is now
 > the cold-boot endgame `/goal` brief ([`overnight_endgame_execution.md`](overnight_endgame_execution.md));
