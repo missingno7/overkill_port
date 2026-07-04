@@ -7,12 +7,15 @@
 > the A47C "death script" label was wrong; the CS:066B fast-forward poke is retired).
 >
 > **THE FRONTIER (single statement — leaf recovery is DRY; this is an INTEGRATION project).** In
-> order: (a) the planet-0 leader-group behavior handlers (`F762`/`F758`/`F75D`/`F776`, the
-> `0x76..0x79` zoo entries) via fast-forward traces — the COLD-BOOT ENEMY WAVE — then a NativeGame
+> order: (a) the COLD-BOOT ENEMY WAVE: first xref-scan the behavior zoo for SHARED WORKERS (the
+> pre2 second-pass principle — most of the 149 `EFC4` handlers are likely thin wrappers; the worker
+> set is the true recovery surface), then the planet-0 leader-group handlers
+> (`F762`/`F758`/`F75D`/`F776`, the `0x76..0x79` entries) via fast-forward traces, then a NativeGame
 > behavior-registry stage (dispatch on `+0x18` = `OFF_LOGIC_ID` through the cold-loaded `EFC4`
-> table, fail-loud per unrecovered index); (b) the death→respawn + level-advance edge COMPOSITIONS
-> (all pieces recovered); (c) the level-select cursor render (`5A00`/`5A6C`) + the
-> title→select→cold-start menu flow; (d) endings + audio drivers.
+> table, fail-loud per unrecovered index) gated by a WHOLE-WALK shadow probe (`A9DD..AA2A`, all
+> slots, one boundary); (b) the death→respawn + level-advance edge COMPOSITIONS (all pieces
+> recovered); (c) the level-select cursor render (`5A00`/`5A6C`) + the title→select→cold-start menu
+> flow; (d) endings + audio drivers. See the "Five pre2 endgame principles" entry below.
 >
 > **STANDING MECHANISMS — check this list BEFORE building ANY tooling (the anti-duplication rule;
 > two of these were nearly rebuilt because they were invisible from the entry docs):**
@@ -39,6 +42,39 @@
 > Durable technique notes that used to live in this header (the synthetic-ASM oracle for
 > witness-poor load-time code, the cold-boot witness-harness idea, the Bucket A/B completion
 > readouts) are preserved in the dated entries below and in `overnight_endgame_execution.md`.
+
+## 2026-07-04 - Five pre2 endgame principles ADOPTED (mined from the pre2_port methodology docs)
+
+A systematic sweep of pre2_port's docs (AGENTS/charter/methodology/recovery_architecture/state_view/
+symbol_ledger/second_pass/checkpoints) for principles OVERKILL lacks. Five are adopted as BINDING
+guidance (the rest we already practice):
+
+1. **SHARED-WORKER-FIRST for the behavior zoo** (pre2's second-pass collapse): before recovering any
+   of the 149 EFC4 behavior handlers one-by-one, map which are THIN WRAPPERS over shared workers
+   (pre2: 6 dispatch handlers -> one ``project_entity`` worker; hooking the worker covered all six).
+   The zoo's real recovery surface is the WORKER set, not 149 handlers. First step of the enemy
+   track: xref-scan the F0xx-F7xx + 7Axx-8Dxx handlers for common call targets (81F4 spawn, the
+   movement helpers, 7524 alloc...) and size the true worker set.
+2. **VERIFIER MOVES UP as islands merge** (composed-island checkpoint): when leaves compose into a
+   subsystem, verify at the SUBSYSTEM boundary (pre2: one checkpoint at the object-walk RET proved
+   the whole 12-slot pass, replacing six per-leaf verifiers). For the NativeGame behavior-registry
+   stage: gate the WHOLE A9DD..AA2A walk (all slots, one boundary), not per-handler.
+3. **PRE-LIVE SHADOW PROBE before wiring a big island**: lockstep the composed native pass against
+   the ASM oracle over a full level BEFORE it goes live (pre2's tick-level shadow caught an 8-bit
+   dispatch detail per-leaf tests missed). The fast-forward makes this cheap now.
+4. **HOOK-ROLE TAXONOMY + collapse audit**: every hook is probe / verifier / replacement-adapter /
+   gap-detector, and its role is its LIFETIME. OVERKILL's 318 "glue" hooks need role classification
+   and a per-subsystem collapse plan (a hook accumulating logic = logic that belongs in recovered/).
+   A ``hook_audit``-style "which hooks still fire on this snapshot" tool guides retirement.
+5. **STATE OWNERSHIP is the depth metric, not pure%**: early = ASM owns state (hooks mirror);
+   middle = ASM owns state (hooks replace routines); late = NativeGameState owns state, VM verify-
+   only. play_native's wired slice is already LATE phase; the hooks-ON runtime is MIDDLE. Report
+   progress as "which subsystems' state does the native runtime own" -- pure% saturates, this doesn't.
+
+Also reaffirmed from pre2's warnings: never collapse hooks to a modern invented design (only on the
+original call graph's evidence); naming altitude (ObjectSlot is a fact, "Enemy" is an earned
+interpretation); a verifier that passes only because a nested hook hides original behavior proves
+nothing. Full mined list in the session transcript; these five are the ones that change our plan.
 
 ## 2026-07-04 - Up-to-speed plan item 3/4: the confidence taxonomy ALREADY EXISTED (islands.py) -- adopted + extended
 
