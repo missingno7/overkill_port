@@ -228,27 +228,37 @@ def death_tail_transition_9aff(v2326: int, anchor_counter_after_inc: int, a97a: 
 A95C_RELOAD = 0x0018   # DS:A95C reloads to 0x18 when the difficulty countdown reaches 0 (9E63)
 SCRIPTED_INPUT_TABLE_9A0C = 0x9A0C   # the CS jump table 99F6 dispatches through, indexed by A47C*2
 
-DEATH_ARM_GATE_2350 = 0x0EA0   # DS:2350 must equal this for the A680 death-script arm to fire
+A47C_ARM_GATE_2350 = 0x0EA0   # DS:2350 must equal this for the A680 A47C-script arm to fire
 
 
-def death_script_arms_a680(a480: int, gate_234e: int, gate_2350: int) -> bool:
-    """The ``1010:A680`` death-script ARM gate: does this frame set ``DS:A47C = 1`` (launch the
-    scripted death sequence)?
+def a47c_script_arms_a680(a480: int, gate_234e: int, gate_2350: int) -> bool:
+    """The ``1010:A680`` scripted-input ARM gate: does this frame set ``DS:A47C = 1`` (launch the
+    A47C-indexed scripted-input/event script)?
 
-    This is the *upstream trigger* for the whole A47C scripted-input system -- the missing native
-    link between gameplay and the death handlers (:func:`step_death_handler_9a16` &c. run once A47C
-    is armed and 99F6 dispatches on it).  Recovered end-to-end by ``verify_native_death_arm_a680.py``
-    driving ``A680`` (which first calls the world-scroll ``A6FE``, then a ``C591`` housekeeping call)
-    and observing whether control reaches the ``mov ds:[A47C],1`` at ``A6B9`` vs the bail at ``A6FD``.
+    This is the *upstream trigger* for the A47C scripted-input system -- 99F6 then dispatches on A47C
+    to its per-mode handlers (1=9A78, 2=9A3E, 3=9A16) and the script self-advances via ``inc [A47C]``.
+    Recovered end-to-end by ``verify_native_a47c_arm_a680.py`` driving ``A680`` (which first calls the
+    world-scroll ``A6FE``, then a ``C591`` housekeeping call) and observing whether control reaches the
+    ``mov ds:[A47C],1`` at ``A6B9`` vs the bail at ``A6FD``.
 
     The disassembler *displays* the three guards as ``[A480]==0`` / ``[234E]==0`` / ``[2350]==0x0EA0``
     ``jnz``-bails, but the live oracle is ground truth (lindis mis-renders these jz/jnz targets): the
     arm fires **iff** ``A480 == 0`` **and** ``234E == 1`` **and** ``2350 == 0x0EA0`` -- the ``234E``
     guard reads as ``== 1``, not ``!= 0`` (A6FE decrements it before the compare), and ``2350`` must
-    match exactly.  Values are read as 16-bit words.  Pure predicate; the caller owns the A47C write
-    and the death-entity spawn (``62AA`` + ``7524`` tail) that follow the arm.
+    match exactly.  Values are read as 16-bit words.
+
+    WHAT THIS SCRIPT ACTUALLY IS -- UNVERIFIED.  ``234E``/``2350`` are the world-SCROLL cursor
+    (origin_x / row_base, per play_native), so this arm fires at a specific scroll POSITION, and it
+    spawns an entity (``62AA`` + ``7524`` at A6BF, si=A3EE) -- the shape of a scripted level/boss
+    event, NOT collision-death.  Evidence: ``A47C == 0`` at EVERY demo seed incl. player_death and
+    L6_boss, and the "death countdown" cells ``A95A``/``A97A`` hold normal-play resting values in
+    ordinary L1/L2 gameplay.  The GROUNDED (demo-witnessed) player-death path is the SEPARATE ``9AFF``
+    ``+08`` anchor counter (:func:`step_death_tail_9aff` / :func:`detect_gameplay_transition`), which
+    does not touch A47C.  The A47C-script functions here are byte-exact but their "death"/"game-over"
+    naming is a provisional label pending a trace that actually drives A47C nonzero (see
+    loop_blockers.md).  Pure predicate; the caller owns the A47C write + the spawn tail.
     """
-    return (a480 & 0xFFFF) == 0 and (gate_234e & 0xFFFF) == 1 and (gate_2350 & 0xFFFF) == DEATH_ARM_GATE_2350
+    return (a480 & 0xFFFF) == 0 and (gate_234e & 0xFFFF) == 1 and (gate_2350 & 0xFFFF) == A47C_ARM_GATE_2350
 
 
 def scripted_input_prologue_99f6(a47c: int, prev_2380: int):

@@ -60,28 +60,37 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
-## 2026-07-04 - RECOVERED the death-script ARM (A680 trigger) -- gameplay -> death loop now closed structurally
+## 2026-07-04 - CORRECTION: the "death-script" A47C subsystem is MISLABELED -- it is NOT player death
 
-The missing structural link: **what natively FIRES death.** Scanned the 1010 code segment for writes to
-``DS:A47C`` (the scripted-input mode selector) and found the ARM at ``1010:A6B9`` (``mov ds:[A47C],1``),
-inside the frame's world-scroll block (``A680``, which calls ``A6FE`` then a ``C591`` housekeeping call).
-Recovered its gate as ``systems/frame_loop.death_script_arms_a680(a480, 234e, 2350)`` -- driven-oracle
-40/40 (``verify_native_death_arm_a680.py``, driving A680 and observing arm ``A6B9`` vs bail ``A6FD``).
+**Honest walk-back of this session's "death" naming.** While wiring the A680 arm toward play_native I
+checked its real trigger and found the whole A47C-script "death" attribution is UNVERIFIED and the
+evidence contradicts it. Keeping the record straight (fail loud, never overclaim):
 
-**Gate (oracle ground truth, NOT the lindis-displayed polarity):** arm fires **iff** ``A480 == 0`` AND
-``234E == 1`` AND ``2350 == 0x0EA0``. lindis renders the ``234E`` guard as ``!= 0`` but the live oracle
-proves it is exactly ``== 1`` (``A6FE`` decrements ``234E`` before the ``cmp``); ``2350`` must match
-``0x0EA0`` exactly. (Recurring lesson re-confirmed: pin branch polarity by oracle, never by the
-disassembler's jump-target display.)
+- The A680 ARM (``a47c_script_arms_a680``, was ``death_script_arms_a680``) fires ``A47C=1`` **iff**
+  ``A480==0 AND 234E==1 AND 2350==0x0EA0`` -- driven-oracle 40/40, still byte-exact. BUT ``234E``/``2350``
+  are the world-SCROLL cursor (origin_x/row_base, per play_native), so the arm fires at a specific
+  scroll POSITION and then spawns an entity (``62AA``+``7524`` at A6BF). That is the shape of a scripted
+  LEVEL/BOSS event, not collision-death.
+- **Demo-seed evidence (sampled 6 demos):** ``A47C == 0`` at EVERY seed incl. player_death AND L6_boss;
+  the supposed "death countdown" cells ``A95A==0x0003`` and ``A97A``=nonzero hold the SAME resting
+  values in ordinary L1/L2 gameplay. So A95A/A95C/A97A are general per-frame counters, not death state.
+- **What IS grounded as death:** the SEPARATE ``9AFF`` ``+08`` anchor counter --
+  ``step_death_tail_9aff`` + ``detect_gameplay_transition`` -- which is demo-witnessed on player_death
+  (4 real DEATH frames) and does NOT touch A47C. That labeling stands.
 
-**This closes the death control-flow loop structurally:** ARM (A680, ``death_script_arms_a680``) ->
-``A47C = 1`` -> 99F6 scripted-input dispatch (``scripted_input_prologue_99f6``) -> the A47C handlers
-(1=9A78 spawn/move, 2=9A3E move + ``step_scripted_move_counters_9a3e``, 3=9A16
-``step_death_handler_9a16`` countdown) -> the 9AFF/A95x/A97x countdown tails -> DEATH/GAME_OVER exit.
-Every NODE of that chain is now a recovered pure function; what remains is the two SPAWNER-island tails
-(the 7524 death-entity stamp + coord-table movement in 9A78/9A3E) and wiring 99F6 into play_native so the
-native build actually runs the sequence. The arm's own spawn tail (``62AA`` + ``7524`` at A6BF, si=A3EE)
-is the same spawner-island shape.
+**Action taken this pass:** renamed the freshest overclaim (``death_script_arms_a680`` ->
+``a47c_script_arms_a680``, ``DEATH_ARM_GATE_2350`` -> ``A47C_ARM_GATE_2350``, probe ->
+``verify_native_a47c_arm_a680.py``) and rewrote its docstring to state the trigger semantics are
+unverified. The OLDER A47C-script functions (``step_death_handler_9a16``, ``step_death_countdown_9e69``,
+``step_death_seq_9dea``, ``step_game_over_arm_9db9``, ``step_scripted_move_counters_9a3e``,
+``scripted_input_prologue_99f6``) remain byte-exact and correct AS CODE, but their "death"/"game-over"
+NAMES are provisional -- a dedicated rename pass should follow once the decisive trace lands (logged in
+loop_blockers.md). NOT renamed en masse this pass to avoid a large risky churn mid-loop.
+
+**Decisive experiment (for a future pass, see loop_blockers):** trace player_death to the actual death
+FRAME (~1805) OR any demo forward and record when/if A47C ever goes nonzero + whether A6B9 fires -- that
+determines what the A47C script is (boss/cutscene auto-movement vs death). Cheap per-instruction Python
+tracing over ~1800 frames timed out; needs a lighter anchor-gated trace or a purpose-recorded demo.
 
 ## 2026-07-04 - 9A3E scripted-move counter head recovered; the other death-script steps are spawner islands
 

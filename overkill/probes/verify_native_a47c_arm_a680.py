@@ -1,13 +1,15 @@
-"""Driven-oracle: the death-script ARM gate vs the ORIGINAL 1010:A680.
+"""Driven-oracle: the A47C-script ARM gate vs the ORIGINAL 1010:A680.
 
 Drives the original frame block at ``A680`` (which calls the world-scroll ``A6FE`` then a ``C591``
 housekeeping call) with synthetic ``(A480, 234E, 2350)`` and observes whether control reaches the
 ``mov ds:[A47C],1`` arm at ``A6B9`` or bails to ``A6FD`` -- comparing that outcome to
-``systems.frame_loop.death_script_arms_a680``.  Proves the native death TRIGGER (the upstream link
-that launches the A47C scripted-death sequence).
+``systems.frame_loop.a47c_script_arms_a680``.  Proves the native ARM (the upstream link that launches
+the A47C scripted-input/event script).  NOTE: this arm is scroll-POSITION-gated (234E/2350 are the
+scroll cursor); the script it launches is NOT confirmed to be player death -- see the function's
+docstring + loop_blockers.md.
 
 Usage:
-    python -m overkill.probes.verify_native_death_arm_a680 [snapshot_dir]
+    python -m overkill.probes.verify_native_a47c_arm_a680 [snapshot_dir]
 """
 from __future__ import annotations
 
@@ -19,14 +21,14 @@ sys.path.insert(0, str(ROOT))
 
 CS = 0x1010
 ENTRY = 0xA680
-ARM = 0xA6B9      # mov ds:[A47C],1  -- reaching here == the death script will arm
+ARM = 0xA6B9      # mov ds:[A47C],1  -- reaching here == the A47C script will arm
 NOARM = 0xA6FD    # bail target
 DEFAULT_SNAP = "artifacts/demos/demo_play_tandy_player_death_20260618_233821/snapshot"
 
 
 def main(argv) -> int:
     from overkill.runtime import load_overkill_snapshot
-    from overkill.recovered.systems.frame_loop import death_script_arms_a680
+    from overkill.recovered.systems.frame_loop import a47c_script_arms_a680
 
     snap = Path(argv[0]) if argv else ROOT / DEFAULT_SNAP
     rt = load_overkill_snapshot(ROOT / "assets" / "OVERKILL", str(snap), game_root=ROOT / "assets")
@@ -59,14 +61,14 @@ def main(argv) -> int:
     fails = 0
     for a480, v234e, v2350 in combos:
         vm = drive(a480, v234e, v2350)
-        mine = death_script_arms_a680(a480, v234e, v2350)
+        mine = a47c_script_arms_a680(a480, v234e, v2350)
         if mine != vm:
             fails += 1
             if fails <= 8:
                 print("  FAIL in=", (a480, hex(v234e), hex(v2350)), "mine=", mine, "vm=", vm)
 
-    print(f"A680 death-arm gate driven-oracle: combos={len(combos)} fails={fails}")
-    print("RESULT:", "PASS -- death_script_arms_a680 matches the original A680 arm gate"
+    print(f"A680 A47C-arm gate driven-oracle: combos={len(combos)} fails={fails}")
+    print("RESULT:", "PASS -- a47c_script_arms_a680 matches the original A680 arm gate"
           if not fails else "CHECK")
     return 0 if not fails else 1
 

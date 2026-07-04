@@ -18,6 +18,31 @@ context. Each has the analysis already done so a human can pick up fast.
 
 ---
 
+## 2026-07-04 — What is the A47C scripted-input script? ("death" label is UNVERIFIED)
+
+**Blocker:** the A47C-indexed scripted-input subsystem (armed at `1010:A680` -> `A6B9` `mov [A47C],1`;
+dispatched by `99F6`; handlers 1=9A78, 2=9A3E, 3=9A16; counters A95A/A95C/A97A/2384) was recovered
+byte-exact this session and LABELED "death"/"game-over", but that semantic label is an assumption and the
+evidence points elsewhere:
+- the A680 arm gate is `A480==0 AND 234E==1 AND 2350==0x0EA0` — `234E`/`2350` are the world-scroll cursor,
+  so it fires at a scroll POSITION and spawns an entity (`62AA`+`7524`): a scripted level/boss event
+  shape, not collision-death;
+- `A47C==0` at all 6 sampled demo seeds (incl. player_death and L6_boss); `A95A==3` / `A97A`!=0 are normal
+  L1/L2 resting values, not death countdowns;
+- the GROUNDED player-death path is the separate `9AFF` +08 anchor counter
+  (`step_death_tail_9aff`/`detect_gameplay_transition`), demo-witnessed, which never touches A47C.
+
+**Decisive experiment (before any rename pass or before wiring 99F6 into play_native as "death"):** trace
+a demo forward and record every frame where `DS:A47C` changes and whether `1010:A6B9` executes. The
+player_death demo's death frame is ~1805; a naive per-instruction Python step-callback over that many
+frames TIMED OUT (>2 min). Need either (a) a lighter trace sampling at a single per-frame anchor IP with
+near-zero work, (b) a purpose-recorded short demo that drives A47C nonzero (a scripted level-event/
+boss-intro capture), or (c) instrumenting the VM memory-write path to log writes to A47C. Outcome
+determines whether to rename the `step_death_*`/`step_game_over_*` functions to their true (scripted-
+input/event) meaning. Functions are byte-exact regardless — a NAMING/semantics blocker, not correctness.
+
+---
+
 ## RESOLVED (2026-07-03) — the 519A/5A6C unlifted-backend cold-boot gaps (518C/85D5/5EF9 cleared)
 
 > **Fixed centrally.** `519A`'s unlifted-text-backend branch now runs the backend to its RET (fixes
