@@ -398,3 +398,12 @@ def test_step_a95c_difficulty_countdown_9e43():
     assert step_a95c_difficulty_countdown_9e43(1, 2) == (0x18, True)
     assert step_a95c_difficulty_countdown_9e43(2, 3) == (0x18, True)
     assert step_a95c_difficulty_countdown_9e43(2, 1) == (0x18, True)
+
+
+def test_scripted_input_prologue_99f6():
+    from overkill.recovered.systems.frame_loop import scripted_input_prologue_99f6
+    # clears bit 0 of 2380, clears 98BE, table byte offset = A47C * 2
+    assert scripted_input_prologue_99f6(a47c=0, prev_2380=0xFFFF) == (0xFFFE, 0, 0)
+    assert scripted_input_prologue_99f6(a47c=1, prev_2380=0x0001) == (0x0000, 0, 2)
+    assert scripted_input_prologue_99f6(a47c=4, prev_2380=0x1235) == (0x1234, 0, 8)
+    assert scripted_input_prologue_99f6(a47c=0x10, prev_2380=0x0000) == (0x0000, 0, 0x20)

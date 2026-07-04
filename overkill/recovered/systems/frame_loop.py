@@ -226,6 +226,20 @@ def death_tail_transition_9aff(v2326: int, anchor_counter_after_inc: int, a97a: 
 
 
 A95C_RELOAD = 0x0018   # DS:A95C reloads to 0x18 when the difficulty countdown reaches 0 (9E63)
+SCRIPTED_INPUT_TABLE_9A0C = 0x9A0C   # the CS jump table 99F6 dispatches through, indexed by A47C*2
+
+
+def scripted_input_prologue_99f6(a47c: int, prev_2380: int):
+    """The ``1010:99F6`` scripted-input dispatch prologue (the entry to the A47C-driven script system).
+
+    99F6 runs each frame the scripted-input mode is active (``DS:A47C != 0`` -- boss/cutscene
+    auto-movement, and the death/end-of-life sequence): it clears bit 0 of ``DS:2380`` and the input
+    byte ``DS:98BE``, then jumps through ``jmp cs:[A47C*2 + 9A0C]`` to the per-mode handler.  Returns
+    ``(new_2380, new_98be, table_byte_offset)`` -- the handler IP is
+    ``cs:[SCRIPTED_INPUT_TABLE_9A0C + table_byte_offset]`` (a code-table constant the caller reads).
+    Pure: the caller owns the DS writes + the table read.
+    """
+    return prev_2380 & 0xFFFE, 0x00, (a47c << 1) & 0xFFFF
 
 
 def step_a95c_difficulty_countdown_9e43(bedc: int, a95c: int):

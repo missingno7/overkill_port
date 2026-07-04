@@ -60,6 +60,29 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - Death machine IS the 99F6 scripted-input sequence; its dispatch entry recovered
+
+**Key finding:** the death state machine ``9E40..9EFC`` has NO near-call callers -- it's a JUMP-TABLE
+target of the ``1010:99F6`` scripted-input dispatch (``jmp cs:[A47C*2 + 9A0C]``). So the whole death /
+end-of-life sequence is a set of **A47C-driven scripted-input handlers**, not a standalone routine.
+This reframes native death firing: it needs the ``99F6`` system (the A47C script that ARMs + drives
+the death), not just the countdown leaves -- a multi-iteration integration. Its ARM is upstream
+(the collision that sets the death-script A47C).
+
+**Dispatch ENTRY recovered:** ``systems/frame_loop.scripted_input_prologue_99f6`` -- 99F6 clears bit 0
+of ``DS:2380`` + the input byte ``DS:98BE``, then dispatches by ``A47C*2`` through the ``CS:9A0C`` code
+table.  Driven-oracle verified (``verify_native_scripted_input_dispatch.py``, 5/5) -- the FIRST leaf of
+the scripted-input system (which unblocks, eventually, forward-carry on A47C != 0 ticks + native death
+firing + boss scripts).
+
+**Frontier note (consolidated):** the clean single-leaf frame-stage / behavior recoveries are
+EXHAUSTED -- every remaining gameplay behavior that isn't native (0x21/B556, 0x2a/8676, 0x68, ...) is a
+mode-dependent (DS:2356) DISPATCHER/SPAWNER island, and the death path is the 99F6 script system. The
+remaining work is BIG INTEGRATIONS: (a) the 99F6 scripted-input handlers -> native death firing;
+(b) the HUD base-panel fold (~80% un-recovered); (c) the 35-tick forward-carry wall (A067 spawn drift).
+Future runs: pick one integration and drive it across passes (recover its leaves bottom-up), not more
+clean single slices.
+
 ## 2026-07-04 - GROUNDED the death-firing island (the collision/end-of-life state machine 9E40..9EFC)
 
 Traced the death signals on ``demo_play_tandy_player_death`` (write-watcher on the fixed game DS,
