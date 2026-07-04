@@ -16,8 +16,13 @@
 > behavior-registry stage (dispatch on `+0x18` = `OFF_LOGIC_ID` through the cold-loaded `EFC4`
 > table, fail-loud per unrecovered index) gated by a WHOLE-WALK shadow probe (`A9DD..AA2A`, all
 > slots, one boundary); (b) the death→respawn + level-advance edge COMPOSITIONS (all pieces
-> recovered); (c) the level-select cursor render (`5A00`/`5A6C`) + the title→select→cold-start menu
-> flow; (d) endings + audio drivers. See the "Five pre2 endgame principles" entry below.
+> recovered) and then PROMOTE `APP_MODE_GRAPH` into an executing `NativeSession` (owns mode +
+> planet + lives, walks the edges, fail-loud per unrecovered edge — today the mode graph is
+> documentation-as-code; this makes the spine THE program); (c) the level-select cursor render
+> (`5A00`/`5A6C`) + the title→select→cold-start menu flow; (d) endings + audio drivers.
+> BACKGROUND slice any run may take: the HOOK-ROLE AUDIT tool (classify the 335 hooks as probe/
+> verifier/replacement/gap-detector + measure which still fire per snapshot — the retirement
+> driver; pre2's `hook_audit.py` pattern). See the "Five pre2 endgame principles" entry below.
 >
 > **STANDING MECHANISMS — check this list BEFORE building ANY tooling (the anti-duplication rule;
 > two of these were nearly rebuilt because they were invisible from the entry docs):**
