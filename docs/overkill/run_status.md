@@ -60,6 +60,25 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - Mapped the 971A new-game/level-start bridge; recovered the six-planet level advance (9744)
+
+Turned to the front-end->gameplay bridge (the largest remaining structural gap) and disassembled the
+``971A..97B2`` new-game/level-start setup. Findings (structure-first map growth):
+- **``971A`` is the level-start setup** that chains straight into ``97B2`` (the gameplay frame stages):
+  calls D390/5C9A/C4DB, **initializes ``DS:A95A := 3`` and ``DS:A95C := 0x18``** (9723/9729), calls
+  6176, then flows through the level-advance block into the per-frame setup (5145/5BCA/0B3E/0E9C/60AC/
+  C3A6/77C5/99BF/9BE2/**A940**/C57C/B5A9/5F43).
+- **``DS:2356`` is the level index (six planets)**; ``9744`` advances it: ``inc [2356]; wrap at 6``.
+  Recovered as ``systems/menu.advance_level_index_9744`` (cycle ``0->1->2->3->4->5->0``), driven-oracle
+  9/9 (``verify_native_level_advance_9744``). This is the step taken on the SCRIPTED level-end exit
+  (``9734``, ``detect_gameplay_transition``'s SCRIPTED target) and by 971A.
+- **Independent confirmation of the A47C-rename:** ``A95A``/``A95C`` are INITIALIZED to 3/0x18 by the
+  new-game setup (9723/9729) -- they are general new-game counters, exactly as the trace implied, NOT
+  death state. This vindicates renaming the ``step_death_*`` A47C functions last pass.
+
+Next bridge slices live in ``971A``'s children (5C9A/C4DB score-digit + level-0-specific 9844/5BEE at
+``9734``); each is a bounded leaf to drive-verify the same way.
+
 ## 2026-07-04 - CONFIRMED via trace + renamed the A47C-script functions (death->A47C, evidence closed)
 
 **The decisive trace resolved it.** Traced the player_death demo forward recording every ``DS:A47C``

@@ -68,3 +68,12 @@ def test_level_select_direction_handler_matches_asm(handler_ip, pure_fn, beda_va
             assert actual == beda_before == predicted.beda, (
                 f"handler {handler_ip:04X} beda={beda_before}: DS:BEDA={actual:02X} changed "
                 f"on a predicted-reject path (should be untouched)")
+
+
+def test_advance_level_index_9744_six_planet_cycle():
+    """The 9744 level-progression advance: inc DS:2356, wrap after the sixth planet (0->..5->0)."""
+    from overkill.recovered.systems.menu import advance_level_index_9744
+    assert [advance_level_index_9744(v) for v in range(6)] == [1, 2, 3, 4, 5, 0]
+    # any out-of-range value increments-then-wraps to 0 (matches inc; cmp>=6 -> reset)
+    assert advance_level_index_9744(6) == 0
+    assert advance_level_index_9744(7) == 0

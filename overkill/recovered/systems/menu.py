@@ -93,6 +93,19 @@ def resolve_level_select_fire_d424(beda: int) -> LevelSelectFireResult:
     return LevelSelectFireResult(level=(ax - 1) & 0xFFFF)
 
 
+def advance_level_index_9744(v2356: int) -> int:
+    """``1010:9744``: advance the level index ``DS:2356`` to the next of the six planets, wrapping
+    after the last.  The ASM is ``inc [2356]; cmp [2356],6; jb keep; mov [2356],0`` -- increment,
+    then reset to 0 once the incremented value reaches :data:`LEVEL_SELECT_CELL_COUNT` (6).  So the
+    cycle is ``0->1->2->3->4->5->0`` (driven-oracle ``verify_native_level_advance_9744``).  This is
+    the level-progression step taken on the scripted level-end transition (``9734``, the SCRIPTED
+    exit target of :func:`~overkill.recovered.systems.frame_loop.detect_gameplay_transition`) and by
+    the ``971A`` new-game/level-start setup.  Pure; the caller owns the ``DS:2356`` write.
+    """
+    n = ((v2356 & 0xFFFF) + 1) & 0xFFFF
+    return 0 if n >= LEVEL_SELECT_CELL_COUNT else n
+
+
 def step_interstitial_tick_d318(counter: int, *, fire_pressed: bool) -> InterstitialTickOutcome:
     """Pure model of one ``1010:D318`` interstitial-loop iteration's decision.
 
