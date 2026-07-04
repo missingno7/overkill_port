@@ -60,6 +60,22 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - Front-end render: 5 more full-screen menu screens are already decodable (dialog gap narrowed)
+
+Started the front-end integration (dialog placement). Measured the menu assets' deplanarized sizes and
+found the "smaller dialog placement" gap is NARROWER than stated: HISCORE / LEVSCR (level-select) /
+WINSCR / CALIB / REDEF each deplanarize to exactly 160*200 = 32000 chunky bytes -- they are FULL-SCREEN
+320x200 screens, so ``decode_fullscreen_image`` renders them DIRECTLY (they were mislabelled as smaller
+dialogs). Exposed them as ``native_video/front_end.FULLSCREEN_MENU_SCREENS`` (OKMENU + those 5), corrected
+the comment, and added ``test_all_fullscreen_menu_screens_decode`` (each -> (200,320) 4-bit).
+
+So the genuinely PLACED sub-screen images are only CHOOSE / PLAQ0..5 / PANEL (deplanarize to <32000B) --
+those still need per-scene x/y placement. This unblocks rendering the level-select screen (LEVSCR is
+full-screen) for the menu-flow wiring. NEXT: (a) wire LEVSCR + the recovered level-select grid logic
+(step_level_select_*) into play_native's front-end (title -> level-select -> cold-start of the chosen
+level); (b) recover the CHOOSE/PLAQn placement (their {w,h} header + the VM blit x/y) for the score/choose
+dialogs.
+
 ## 2026-07-04 - FRONTIER CONSOLIDATED: leaf recovery exhausted; the port is now an INTEGRATION project
 
 Oriented on the front-end (the recommended next track) and confirmed the same shape as the enemy track:

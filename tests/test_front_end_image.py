@@ -13,6 +13,7 @@ import pathlib
 import pytest
 
 from overkill.native_video.front_end import (
+    FULLSCREEN_MENU_SCREENS,
     SCREEN_HEIGHT,
     SCREEN_WIDTH,
     TITLE_OPTIONS,
@@ -37,8 +38,21 @@ def test_title_options_decodes_to_a_full_320x200_screen():
 
 
 @pytest.mark.skipif(not OVERKILL.is_file(), reason="assets/OVERKILL not present")
+def test_all_fullscreen_menu_screens_decode():
+    # OKMENU + HISCORE / LEVSCR / WINSCR / CALIB / REDEF are all full 320x200 menu screens (they
+    # deplanarize to exactly 160*200 bytes), so decode_fullscreen_image renders each directly.
+    container = OVERKILL.read_bytes()
+    assert TITLE_OPTIONS in FULLSCREEN_MENU_SCREENS
+    for name in FULLSCREEN_MENU_SCREENS:
+        img = decode_fullscreen_image(container, name)
+        assert img.shape == (SCREEN_HEIGHT, SCREEN_WIDTH), name
+        assert int(img.max()) <= 15 and int(img.min()) >= 0, name
+        assert img.any(), name                              # not a blank screen
+
+
+@pytest.mark.skipif(not OVERKILL.is_file(), reason="assets/OVERKILL not present")
 def test_non_fullscreen_dialog_fails_loud():
-    # CHOOSE.ENC deplanarizes to a smaller centred dialog (per-scene placement not recovered yet):
+    # CHOOSE.ENC deplanarizes to a smaller PLACED dialog (per-scene x/y placement not recovered yet):
     # decode_fullscreen_image must raise, not mangle a wrong-sized buffer.
     with pytest.raises(ValueError):
         decode_fullscreen_image(OVERKILL.read_bytes(), "CHOOSE.ENC")

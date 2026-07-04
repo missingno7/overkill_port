@@ -24,12 +24,19 @@ SCREEN_WIDTH = 320
 SCREEN_HEIGHT = 200
 _BYTES_PER_ROW = SCREEN_WIDTH // 2   # 160: 2 pixels per byte (4bpp packed)
 
-# The container names of the full-screen front-end images (all the same {rows,stride}+4-plane form).
-# The title/options screen (full 320x200), verified byte-exact vs the VM. Other container screens
-# (CHOOSE, PLAQ0..5, HISCORE, REDEF, ...) deplanarize to SMALLER images -- centred dialogs with their
-# own on-screen placement, a per-scene layout the front-end flow still has to recover; decode_fullscreen
-# _image fails loud on them rather than mangling a non-320x200 buffer.
+# The container names of the front-end images (all the same {rows,stride}+4-plane form).
+# FULL-SCREEN (320x200) menu screens: OKMENU (title/options, byte-exact vs the VM) plus HISCORE / LEVSCR
+# (level-select) / WINSCR / CALIB / REDEF -- these deplanarize to exactly 160*200 = 32000 chunky bytes, so
+# decode_fullscreen_image renders them directly (structure verified; per-screen byte-exactness vs the VM
+# is a follow-up). The genuinely SMALLER, placed images (CHOOSE, PLAQ0..5, PANEL) deplanarize to sub-screen
+# buffers with their own on-screen x/y placement -- a per-scene layout not recovered yet;
+# decode_fullscreen_image fails loud on those rather than mangling a wrong-sized buffer.
 TITLE_OPTIONS = "OKMENU.ENC"
+
+#: The full-screen (320x200) front-end menu screens decode_fullscreen_image handles (OKMENU + 5 others).
+FULLSCREEN_MENU_SCREENS = (
+    "OKMENU.ENC", "HISCORE.ENC", "LEVSCR.ENC", "WINSCR.ENC", "CALIB.ENC", "REDEF.ENC",
+)
 
 
 def _chunky_to_indices(chunky: bytes, width: int, height: int) -> np.ndarray:
