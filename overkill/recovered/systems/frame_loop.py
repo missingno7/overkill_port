@@ -851,6 +851,76 @@ def formation_enemy_stamp_b5e6(x: int, y: int) -> dict:
     return stamp
 
 
+WAVE_DRIVER_PLANET_LEADER_GROUP = 0    # DS:2356 == 0 -> the B4A2 leader-group family
+WAVE_DRIVER_PLANET_PHASE_MACHINE = 3   # DS:2356 == 3 -> the B48B phase machine (wave_spawn_phase_b48b)
+WAVE_DRIVER_PLANET_8D83 = 4            # DS:2356 == 4 -> the 8D83 planet-4 family
+WAVE_DRIVER_PER_PLANET_A7A0 = 0x00C8   # else: DS:A7A0 < this -> the B615 per-planet spawn
+WAVE_DRIVER_BOSS_A7A0 = 0x00F0         # else: DS:A7A0 >= this -> the B58A boss self-transform
+
+
+def wave_driver_dispatch_b556(planet_2356: int, a7a0: int) -> str:
+    """The ``1010:B556`` WAVE-DRIVER dispatch -- the per-frame behavior handler of the wave-driver
+    object (behavior ``+0x18 == 0x21``), keyed on the PLANET index ``DS:2356`` then the wave clock
+    ``DS:A7A0``.
+
+    Each planet runs a different wave family: ``2356 == 4`` -> ``"planet4_family"`` (jmp ``8D83``);
+    ``2356 == 3`` -> ``"phase_machine"`` (jmp ``B48B`` -- then :func:`wave_spawn_phase_b48b` applies:
+    per-planet / pause / the 24-enemy formation snake); ``2356 == 0`` -> ``"leader_group"`` (jmp
+    ``B4A2`` -- when :func:`count_active_enemies_b468` == 1, i.e. only the driver itself remains, it
+    transforms into the leader ``0x78`` + allocs the ``0x76``/``0x77``/``0x79`` escorts); any OTHER
+    planet is A7A0-phased: ``< 0xC8`` -> ``"per_planet"`` (the B615 config-driven spawn), ``< 0xF0`` ->
+    ``"none"`` (pause, jmp BC4B), else ``"boss_transform"`` (:func:`boss_transform_stamp_b58a` -- the
+    driver becomes the planet boss).  Driven-oracle (``verify_native_wave_driver_dispatch``).
+
+    IMPORTANT CORRECTION this fn records: the ``B5D8``/``B5E6`` formation snake (and the whole
+    :func:`wave_spawn_phase_b48b` machine) is PLANET 3's family only -- the earlier docs assumed it was
+    "the" enemy wave.  The cold-boot planet 0 uses the leader-group family instead.
+    """
+    p = planet_2356 & 0xFFFF
+    if p == WAVE_DRIVER_PLANET_8D83:
+        return "planet4_family"
+    if p == WAVE_DRIVER_PLANET_PHASE_MACHINE:
+        return "phase_machine"
+    if p == WAVE_DRIVER_PLANET_LEADER_GROUP:
+        return "leader_group"
+    a = a7a0 & 0xFFFF
+    if a < WAVE_DRIVER_PER_PLANET_A7A0:
+        return "per_planet"
+    if a < WAVE_DRIVER_BOSS_A7A0:
+        return "none"
+    return "boss_transform"
+
+
+ENEMY_TYPE_16 = 4  # the +0x16 record type the wave machinery counts as "an enemy"
+
+
+def count_active_enemies_b468(records) -> int:
+    """The ``1010:B468`` active-enemy count: over the effect pool's 35 slots (via the ``DS:32CA``
+    pointer table), count records with ``+0x00 != 0`` (active) AND ``+0x16 == 4`` (the enemy type,
+    :data:`ENEMY_TYPE_16`).
+
+    ``records`` is an iterable of ``(active_word, type_word)`` pairs (the ``+0x00``/``+0x16`` fields
+    per slot).  Mirrors ``DS:A47E`` (the running count the spawn/despawn paths inc/dec) and gates the
+    ``B4A2`` leader-group wave start (``count == 1`` -- only the wave-driver object itself remains).
+    Driven-oracle (``verify_native_wave_driver_dispatch``) against the live L1 pool.
+    """
+    return sum(1 for active, typ in records
+               if (active & 0xFFFF) != 0 and (typ & 0xFFFF) == ENEMY_TYPE_16)
+
+
+def boss_transform_stamp_b58a(planet_2356: int) -> dict:
+    """The ``1010:B58A..B5A6`` BOSS self-transform -- the wave-driver's record overwrite when a
+    non-special planet's wave clock reaches ``A7A0 >= 0xF0``.
+
+    The driver object becomes the planet boss in place: ``+0x18 = 0x22`` (the boss behavior),
+    ``+0x08 = 0x71`` (sprite), ``+0x20 = 10 * (planet + 1)`` (hit points scale with the planet index),
+    ``+0x04 = 0x60`` (Y position).  Returns the ``{field offset: value}`` stamp; the caller owns the
+    record write.  Driven-oracle (``verify_native_wave_driver_dispatch``).
+    """
+    return {0x18: 0x0022, 0x08: 0x0071,
+            0x20: (10 * ((planet_2356 & 0xFFFF) + 1)) & 0xFFFF, 0x04: 0x0060}
+
+
 def new_game_session_init_96ee() -> dict:
     """The session-start (new-game) DATA init at ``1010:96EE..9715`` -- the TOP of the mode machine's
     game session.

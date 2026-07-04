@@ -93,7 +93,12 @@ GAMEPLAY_FRAME_STAGES: tuple[FrameStage, ...] = (
                "projection/culling of object screen_di; folded into the native object pass"),
     FrameStage("game_state_controller", "1010:9B2E", NATIVE,
                "NativeGame.step: input decode + player move + scroll + fan-out (EARLY) + object pass;"
-               " gaps INSIDE it: 99F6 scripted input, A212 chain, FULL fan-out/A970, 9CB6 probe"),
+               " gaps INSIDE it: 99F6 scripted input, A212 chain, FULL fan-out/A970, 9CB6 probe, and"
+               " the OBJECT BEHAVIOR WALK (1010:A9DD..AA2A: per active record of both pools, the AA36"
+               " type dispatch -> EFC4 behavior dispatch -> 149 per-behavior enemy-AI state machines;"
+               " tables cold-load via adapters/behavior_dispatch_adapter + the wave-driver 0x21 top"
+               " dispatch is pure frame_loop.wave_driver_dispatch_b556, but the behavior handler"
+               " bodies are unrecovered -- enemies do not move/spawn/think natively yet)"),
     FrameStage("transition_flags", "1010:97CE..97E9: A344->9734, A342->9902, A346->9908", GAP,
                "the gameplay-exit boundary; the DECISION is recovered + demo-witnessed"
                " (systems/frame_loop.detect_gameplay_transition -> GameplayTransition; A344 scripted /"

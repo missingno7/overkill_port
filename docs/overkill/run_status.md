@@ -60,6 +60,47 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - ENEMY-AI STRUCTURE CRACKED: the object type/behavior dispatch tables + the planet-keyed wave driver (MAJOR MODEL CORRECTION)
+
+Traced the enemy subsystem's actual per-frame structure. The controller path's tail runs an OBJECT
+BEHAVIOR WALK (``1010:A9DD..AA2A``): for every ACTIVE record of the effect pool (35 slots via the
+pointer table ``DS:32CA``, ``+= DS:2340`` tick inc, wrap 0x5DC) then the gameplay pool (34 slots via
+``DS:8D12``), call ``AA2B``:
+* ``AA2B`` = the TYPE dispatch: ``bx = [bp+0x16] << 1; jmp cs:[bx+0xAA36]`` (8 entries; types 2 and 4
+  -> ``EFAE``; type 0 -> ``BC45`` no-op exit).
+* ``EFAE`` = the BEHAVIOR dispatch: mirrors position (``[bp+4]->DS:D1FE``, ``[bp+2]->DS:D200``) then
+  ``bx = [bp+0x18] << 1; jmp cs:[bx+0xEFC4]`` -- a **149-entry jump table** (behaviors 0x00..0x94),
+  the per-behavior enemy-AI state machines (the "zoo", ``7Axx..8Dxx`` + ``F0xx..F7xx``).
+Both tables are static CS data -> COLD-LOADED (``adapters/behavior_dispatch_adapter``, test
+``test_behavior_dispatch``). This is WHY enemies don't move/spawn natively: NativeGame.step never runs
+the walk (gap now declared in the ``game_state_controller`` stage note).
+
+**MODEL CORRECTION (the wave driver is PLANET-KEYED):** behavior ``0x21`` = the wave-driver object;
+its handler ``B556`` dispatches on the PLANET ``DS:2356``, not one global wave machine:
+* ``2356==4`` -> ``8D83`` (planet-4 family);  ``2356==3`` -> ``B48B`` = the A7A0 phase machine
+  (``wave_spawn_phase_b48b`` + the B5D8/B5E6 24-enemy formation snake -- so the earlier "formation
+  wave" recovery is PLANET 3's family, not the cold-boot wave);
+* ``2356==0`` (the cold-boot planet!) -> ``B4A2``: when ``B468`` (count of active ``+0x16==4``
+  records, mirrors ``DS:A47E``) == 1 -- only the driver itself left -- the driver TRANSFORMS into the
+  formation leader (beh ``0x78``, spr 0x22, pos (0,0)) + allocs escorts ``0x76``/``0x77``/``0x79``
+  (sprs 0x20/0x21/0x23), regs at ``A8BE``/``A8BA``/``A8C0``;
+* any OTHER planet: A7A0-phased -- ``<0xC8`` per-planet spawn (``B615``), ``<0xF0`` pause, ``>=0xF0``
+  the driver becomes the PLANET BOSS in place (``B58A``: beh 0x22, spr 0x71, HP = 10*(planet+1)).
+Recovered pure: ``wave_driver_dispatch_b556``, ``count_active_enemies_b468``,
+``boss_transform_stamp_b58a`` (+ tests). Driven-oracle 18/18 (``verify_native_wave_driver_dispatch``:
+the B556 matrix, the B58A stamp read-back, B468 on the pristine L1 pool == live A47E == 6, and the
+AA2B->EFAE->B556 chain incl. the D1FE/D200 mirror -- pinning both tables' indexing on original bytes).
+
+Other facts pinned: L1_start snapshot is PLANET 1 (2356=1; its pool: 5x beh-0x20 per-planet enemies +
+1x beh-0x1F, so the "formation" trace observations were planet-1 families); behaviors 0x1F/0x20/0x21
+are stamped from per-level DATA (no immediate-stamp writer in CS -- the level-setup/config path
+creates the wave-driver object); the B5DE exhaustion branch (cursor==A932) transforms the LEADER (beh
+0x64, y=[2380], spr 0x8E). NEXT (enemy track): (a) find the per-level spawn config that creates the
+wave-driver/initial objects at level setup (the 99BF/A940/C57C tail family) so the cold pool gets a
+REAL driver; (b) recover the planet-0 leader-group handlers (F762/F758/F75D/F776 + the 0x76..0x79
+zoo entries) -- that IS the cold-boot enemy wave; (c) then wire the walk into NativeGame as a
+behavior-registry stage (fail-loud per unrecovered behavior index).
+
 ## 2026-07-04 - Level-select GRID layout cold-loaded (2x3 planet grid: positions + sprites)
 
 Toward wiring the level-select flow: recovered the level-select cursor's GRID LAYOUT data. The cursor
