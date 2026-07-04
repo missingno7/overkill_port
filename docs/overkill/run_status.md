@@ -60,6 +60,29 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - CAPSTONE: the top-level mode machine as an explicit native graph (APP_MODE_GRAPH)
+
+Folded the whole session's mode-machine recovery into ONE explicit structure: ``native_app.APP_MODE_GRAPH``
+-- a node-per-mode graph (``AppMode``/``ModeEdge``) of the top-level control flow, each node + edge tagged
+native/gap so the recovered-vs-unknown boundary is machine-readable. Nodes: boot -> title_menu ->
+{attract, new_game} ; new_game(96E0) -> level_setup(971A) -> level_play(97B2) ->
+{level_end(9734)->level_setup, death(9908), game_over(9902)->death} ; death -> {game_over_seq(2358==0xFFFF),
+respawn->level_play} ; game_over_seq(98EB) -> new_game (restart). Test pins well-formedness (no dangling
+edges, valid statuses) + the grounded native spine; gap nodes/edges surface in ``describe_gaps()``
+(``mode.*``).
+
+Also investigated the outer front-end->game entry: ``96E0`` is reached by fall-through from a video-init
+block (``96BC..96DD``) and directly only from game-over restart (``98FF``); NO E8/E9 ref lands in
+``9680..96E0`` from the front-end, so the first-start entry is a longer fall-through chain from above
+``9680`` (or an indirect) -- left as the marked ``title_menu -> new_game`` GAP edge rather than
+rabbit-holed. This is the honest boundary.
+
+**Structure-first status:** the top-level game LOOP + mode/state transitions are now an explicit native
+graph with clear fail-loud gaps -- the core of the user's structure-first mandate. The remaining spine
+gaps are all edge-of-graph: the boot->title->game FIRST-start wiring, the attract-exit destination, the
+98EB game-over tail, and the respawn re-init bodies. NEXT candidates: the score subsystem (2314..2317,
+zeroed at session start -- find the increment path) or the respawn re-init routines (C3A6/77C5/99BF).
+
 ## 2026-07-04 - Mode spine: found the new-game/session-start init (96E0/96EE) -- top of the mode machine
 
 Located the top of the game-session mode machine. ``1010:96E0`` is the NEW-GAME entry (reached from the

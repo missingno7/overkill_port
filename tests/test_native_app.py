@@ -60,6 +60,29 @@ def test_planet_video_dispatch_is_six_planets_three_configs():
     assert [PLANET_VIDEO_DISPATCH[i] for i in range(6)] == [0x4F37, 0x4FC3, 0x4F57, 0x4FC3, 0x4F37, 0x4F57]
 
 
+def test_app_mode_graph_is_well_formed_and_grounded():
+    from overkill.native_app import APP_MODE_GRAPH
+    nodes = {m.name for m in APP_MODE_GRAPH}
+    # the recovered session spine is all present
+    assert {"boot", "title_menu", "attract", "new_game", "level_setup", "level_play",
+            "level_end", "death", "game_over", "game_over_seq"} <= nodes
+    for m in APP_MODE_GRAPH:
+        assert m.status in (NATIVE, HOST, GAP, UNMONITORED)
+        assert m.asm   # every node cites an anchor (an ASM address or an asset/module)
+        for e in m.edges:
+            assert e.to in nodes, f"{m.name} -> {e.to} dangles"   # no edge to a non-existent mode
+            assert e.status in (NATIVE, HOST, GAP, UNMONITORED)
+    by = {m.name: m for m in APP_MODE_GRAPH}
+    # the grounded native spine
+    assert by["new_game"].status == NATIVE and by["level_play"].status == NATIVE
+    # the death sub-machine restarts via the game-over tail back to new_game
+    assert any(e.to == "new_game" for e in by["game_over_seq"].edges)
+    # the still-open outer edge is a declared gap
+    assert any(e.to == "new_game" and e.status == GAP for e in by["title_menu"].edges)
+    report = "\n".join(describe_gaps())
+    assert "mode.title_menu" in report and "mode.boot" in report
+
+
 def test_gameplay_exit_targets_are_declared():
     from overkill.native_app import GAMEPLAY_EXIT_TARGETS
     by_name = {s.name: s for s in GAMEPLAY_EXIT_TARGETS}

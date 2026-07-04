@@ -184,10 +184,81 @@ GAMEPLAY_EXIT_TARGETS: tuple[FrameStage, ...] = (
 )
 
 
+@dataclass(frozen=True)
+class ModeEdge:
+    """A transition out of an :class:`AppMode` -- where it goes, on what trigger, and who owns it."""
+
+    to: str
+    on: str
+    status: str
+
+
+@dataclass(frozen=True)
+class AppMode:
+    """One node of the top-level game-session mode machine: an ASM anchor + its outgoing edges."""
+
+    name: str
+    asm: str
+    status: str
+    note: str
+    edges: tuple[ModeEdge, ...]
+
+
+#: The top-level game-session MODE MACHINE -- the recovered high-level control graph, one node per mode,
+#: each with its outgoing transition edges.  This is the spine the per-mode structures hang off
+#: (AttractSequencer, NEW_GAME_SETUP_STAGES, GAMEPLAY_FRAME_STAGES, GAMEPLAY_EXIT_TARGETS).  Every node
+#: and edge is tagged native/gap so the boundary between recovered flow and unknown flow is explicit.
+APP_MODE_GRAPH: tuple[AppMode, ...] = (
+    AppMode("boot", "254A:04D7 -> 1010:0D42", GAP,
+            "LZEXE unpack -> container open -> video mode -> shared startup assets",
+            (ModeEdge("title_menu", "after init", GAP),)),
+    AppMode("title_menu", "OKMENU.ENC (native_video.front_end)", GAP,
+            "title/options full-screen image is native; the menu/key-redefine LOGIC + the exit to a game"
+            " is a GAP",
+            (ModeEdge("attract", "idle timeout", GAP), ModeEdge("new_game", "start", GAP))),
+    AppMode("attract", "1010:D007", NATIVE,
+            "the D007 scene machine is native + demo-witnessed (systems/attract); WHERE its fire/any-key"
+            " exit transfers (back to title vs into a game) is not yet pinned",
+            (ModeEdge("title_menu", "fire / any key / terminal scene 0x13", GAP),)),
+    AppMode("new_game", "1010:96E0 / 96EE", NATIVE,
+            "session init: planet=0, lives=3, score=0, game-over flag cleared "
+            "(frame_loop.new_game_session_init_96ee, byte-exact + complete); the 96E0..96EB video init is"
+            " host presentation. Reached at first-start (front-end, GAP) AND game-over restart (98FF)",
+            (ModeEdge("level_setup", "fall-through -> 971A", NATIVE),)),
+    AppMode("level_setup", "1010:971A", NATIVE,
+            "new-game / level-start setup (apply_new_game_setup_c4db complete + advance_level_index_9744);"
+            " per-stage detail + gaps in NEW_GAME_SETUP_STAGES",
+            (ModeEdge("level_play", "-> 97B2", NATIVE),)),
+    AppMode("level_play", "1010:97B2", NATIVE,
+            "gameplay frame loop (GAMEPLAY_FRAME_STAGES); exits via detect_gameplay_transition",
+            (ModeEdge("level_end", "flag A344", NATIVE),
+             ModeEdge("death", "flag A346", NATIVE),
+             ModeEdge("game_over", "flag A342", NATIVE))),
+    AppMode("level_end", "1010:9734", NATIVE,
+            "scripted / level-end: advance to the next planet",
+            (ModeEdge("level_setup", "2356++ -> 9744 converge", NATIVE),)),
+    AppMode("death", "1010:9908", NATIVE,
+            "re-seed (C4DB) + DS:2358 lives-- (death_continue_counter_update); branch at 9773 on the lives"
+            " sentinel",
+            (ModeEdge("game_over_seq", "2358 == 0xFFFF", NATIVE),
+             ModeEdge("level_play", "else: respawn re-init (routine bodies GAP)", GAP))),
+    AppMode("game_over", "1010:9902", NATIVE,
+            "force DS:2358 := 0 (death_continue_counter_update) then fall into the death handler",
+            (ModeEdge("death", "-> 9908", NATIVE),)),
+    AppMode("game_over_seq", "1010:98EB", GAP,
+            "game-over presentation tail (cleanup + delay); its body is a GAP",
+            (ModeEdge("new_game", "jmp 96E0 (restart)", NATIVE),)),
+)
+
+
 def describe_gaps() -> list[str]:
     """Every declared gap in the skeleton, one line each (for reports/tests -- keep it honest)."""
     out = [f"{s.name}: [{s.status}] {s.asm} -- {s.note}"
            for s in GAMEPLAY_FRAME_STAGES if s.status in (GAP, UNMONITORED)]
+    out += [f"mode.{mode.name}: [{mode.status}] {mode.asm} -- {mode.note}"
+            for mode in APP_MODE_GRAPH if mode.status in (GAP, UNMONITORED)]
+    out += [f"mode.{mode.name} -> {e.to}: [{e.status}] on {e.on}"
+            for mode in APP_MODE_GRAPH for e in mode.edges if e.status in (GAP, UNMONITORED)]
     out += [f"new_game_setup.{s.name}: [{s.status}] {s.asm} -- {s.note}"
             for s in NEW_GAME_SETUP_STAGES if s.status in (GAP, UNMONITORED)]
     out += [f"gameplay_exit.{s.name}: [{s.status}] {s.asm} -- {s.note}"
@@ -270,6 +341,7 @@ class AttractSequencer:
 
 __all__ = [
     "FrameStage", "GAMEPLAY_FRAME_STAGES", "NEW_GAME_SETUP_STAGES", "GAMEPLAY_EXIT_TARGETS",
+    "AppMode", "ModeEdge", "APP_MODE_GRAPH",
     "PLANET_VIDEO_DISPATCH", "PLANET_VIDEO_HANDLERS", "describe_gaps",
     "GameplayFrameSkeleton", "AttractSequencer",
     "NATIVE", "HOST", "GAP", "UNMONITORED",
