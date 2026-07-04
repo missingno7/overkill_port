@@ -60,7 +60,29 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
-## 2026-07-04 - Enemy-wave data path CONSOLIDATED into one callable (formation_wave_next_spawn)
+## 2026-07-04 - Enemy leader-context pinned via the fast-forward trace; frontier is now INTEGRATION not leaves
+
+Used the new timing fast-forward (loop_blockers) to trace REAL enemy spawns from L1_start cheaply (458
+frames free-run). Findings on a spawned enemy's record:
+* ``+0x32``/``+0x34`` = the per-enemy POSITION (Y / X) -- the formation offsets (patterns confirmed:
+  columns at +0x34 = 0x30/0x40/0x50/0x60, rows stepping in +0x32).
+* ``+0x02``/``+0x04`` = the WAVE/LEADER ORIGIN -- SHARED across a wave's enemies, VARIES per wave (seen
+  +02 = 0x70 then 0x20; +04 = 0 then 0xC0). So it is per-wave LEADER STATE, not a constant -- confirming
+  the enemy wiring needs the leader-object model, not a fixed stamp.
+* ``+0x18`` distinguishes the path: ``0x20`` = per-planet (B615), ``0x61`` = formation (B5E6, recovered).
+CAVEAT: the fast-forward skips the ISR, so after ~90 frames the drift stopped further spawns (only the
+early per-planet waves were clean) -- fine for structure, not for byte-exact cadence.
+
+FRONTIER ASSESSMENT (honest, per brief §8): the enemy-spawn CLEAN-LEAF well is now dry -- table, stamps,
+cursor, phase dispatch, clock, and the spawn composition are all recovered + verified; what remains
+(leader-object model for +0x02/+0x04, the per-frame cadence, NativeGame wiring) is INTEGRATION, not
+extractable leaves. Likewise the other big tracks -- front-end flow (title/attract/menu -> cold-start),
+endings, audio -- are integrations/unrecovered subsystems, not clean leaves. So the phase has shifted:
+the highest-value work is now GROWING THE NATIVE RUNTIME (wiring recovered pieces + the front-end flow),
+using the fast-forward + frame-verifier to prove each integration, toward the pre2-shaped complete game.
+NEXT: pick ONE integration -- the front-end title->cold-start->play flow is the most self-contained and
+the biggest gap vs pre2's completeness (its pieces -- title image, D007 attract, cold level start, fire --
+are all recovered; the wiring is the work).
 
 Composed the recovered enemy-wave DATA path into the pure step ``formation_wave_next_spawn(cursor,
 formation_table)`` -> ``(enemy_stamp, next_cursor)``: it stamps the enemy at the cursor
