@@ -50,6 +50,31 @@
 > witness-poor load-time code, the cold-boot witness-harness idea, the Bucket A/B completion
 > readouts) are preserved in the dated entries below and in `overnight_endgame_execution.md`.
 
+## 2026-07-05 - AFD8 DECODED: the enemy MOVE-ONE-STEP-WITH-COLLISION worker; its 8-direction dispatch cold-loaded
+
+(Overnight run, heartbeat cron 19656f49.) Completed the AFD8 map from yesterday's characterization:
+the ``CS:B022`` table has exactly **8 entries keyed on the record's +0x06 DIRECTION field** -- the 8
+movement directions: key 4=``B03C`` step +X, 0=``B07D`` -X, 2=``B0CC`` +Y, 6=``B10F`` -Y, and the
+DIAGONALS COMPOSE the axis handlers (3=``B039`` +Y∘+X, 1=``B0C9`` -X∘+Y, 5=``B10C`` +X∘-Y,
+7=``B07A`` -Y∘-X -- each is just ``call axis1`` then fall into axis2). Each axis handler: leading-
+edge tile-class checks (recovered ``505B``; class 0 = walkable; ``+/-0xD`` = one tile column in the
+5073 offset space), the ``DS:215A`` sub-tile sample counter (already named in systems/tilemap), the
+1-pixel position step on ``+0x02``/``+0x04`` mirrored to ``A438``/``A436``, the ``BDD0``
+contact-slot scan (carry = hit -> undo the step), ``A430 = 1`` on block (``B032``). So
+**AFD8(record) = "try to move 1px in direction +0x06 with terrain + contact collision; ZF returns
+no-contact"** -- why 21 zoo behaviors call it: it IS enemy locomotion.
+
+COMMITTED this tick: ``adapters/contact_step_dispatch_adapter.load_contact_step_dispatch`` (the
+8-entry table, cold==live test-pinned; ``test_contact_step_dispatch``). Check (a) DONE -- the BDD0
+scan substrate is ALREADY PURE in ``systems/collision.py``: ``slot_contains_probe_point`` + the
+hazard-scan predicates (BDE3 family), and ``CONTACT_HALF_EXTENT = 0x10`` matches AFD8's ``+/-0x10``
+bias window exactly -- the stepper slice COMPOSES, it does not re-derive. NEXT (the stepper slice,
+fresh context): (b) recover the pure per-direction stepper over the systems/tilemap +
+systems/collision substrates (axis fns + diagonal composition, the 215A counter, the A43x mirror
+cells); (c) driven oracle: drive AFD8 on live L1 tiles with a synthetic record per direction x
+walkable/blocked/contact cases, compare the record step + A430..A438 + ZF; (d) then the top shape
+(A278 bias window) and the ``@recovered_island`` annotations.
+
 ## 2026-07-04 - AFD8 (the x21 mega-worker) CHARACTERIZED: the enemy terrain-contact probe on the RECOVERED 5073/505B substrate
 
 Opened the AFD8 recovery (the worker 21 zoo handlers call). Disassembly (lindis, correct targets now):
