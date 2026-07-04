@@ -499,3 +499,20 @@ def test_object_pool_seed_c4db_logic():
     assert seed[table[0x24]][0x0E] == OBJECT_SEED_FB_BASE_C3A2                       # cx=0x24 -> 0x3314
     assert seed[table[0x23]][0x0E] == (OBJECT_SEED_FB_BASE_C3A2 + OBJECT_SEED_FB_STEP) & 0xFFFF
     assert seed[table[1]][0x0E] == (OBJECT_SEED_FB_BASE_C3A2 + 35 * OBJECT_SEED_FB_STEP) & 0xFFFF
+
+
+def test_apply_new_game_setup_c4db_composes_both_halves():
+    from overkill.recovered.systems.frame_loop import (
+        apply_new_game_setup_c4db, object_pool_seed_c4db, level_start_control_reset_c51d,
+    )
+    table = {cx: (0x237C + (cx % 0x24) * 0x38) & 0xFFFF for cx in range(1, 0x25)}
+    writes = apply_new_game_setup_c4db(table)
+    # the control reset half is present verbatim
+    for off, val in level_start_control_reset_c51d().items():
+        assert writes[off] == val
+    # the object-seed half is flattened in (record_off + field -> value)
+    for rec_off, fields in object_pool_seed_c4db(table).items():
+        for fo, val in fields.items():
+            assert writes[(rec_off + fo) & 0xFFFF] == val
+    # 36 records x 7 fields + 11 control cells, no collision on this build
+    assert len(writes) == 36 * 7 + 11

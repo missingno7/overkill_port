@@ -60,6 +60,26 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - Bucket F: COMPOSED the whole C4DB new-game setup + proved it COMPLETE (segment diff)
+
+Composed the two recovered C4DB halves into one native entry point: ``frame_loop.apply_new_game_setup_
+c4db(slot_ptr_table)`` = ``object_pool_seed_c4db`` (the 36-record seed) merged with
+``level_start_control_reset_c51d`` (the control reset), a flat ``{DGROUP offset: value}`` write-map
+(SS==DS on this build, so records + control cells share one segment; 263 cells, no collision).
+
+**Verified CORRECT *and* COMPLETE** (``verify_native_new_game_setup_c4db``): drives the whole C4DB
+(C4DB..C55F) and does a full 64K DGROUP before/after diff -- every changed word is one of the 263
+predicted cells, none missed. The completeness diff caught a real subtlety first: with SS==DS the STACK
+lives in DGROUP, so the routine's push/pop/call churns stack memory (~SP 0xA278, mirrors ``cx``); the
+probe now excludes the ``[min_sp, sp_entry)`` stack window, after which C4DB writes EXACTLY the 263 game
+cells (its only other write is the out-of-DGROUP ``CS:C3A2`` framebuffer accumulator). This is a genuine
+completeness proof, not just per-cell correctness.
+
+The whole C4DB new-game setup is now a single verified native call. NEXT Bucket-F step: wire
+``apply_new_game_setup_c4db`` + ``advance_level_index_9744`` into a native cold level-start in
+NativeGame (the surrounding 971A integration), plus the player-spawn/starfield init (still needs a
+level-load capture).
+
 ## 2026-07-04 - Bucket F: recovered the C4DB object-pool SEED (36 records x 7 fields, byte-exact)
 
 Took the integration the last pass pointed to -- the ``C4DB`` object-pool seed loop (``C4E5..C51B``),

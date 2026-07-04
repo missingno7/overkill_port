@@ -620,6 +620,27 @@ def level_start_control_reset_c51d() -> dict:
     return reset
 
 
+def apply_new_game_setup_c4db(slot_ptr_table) -> dict:
+    """The WHOLE ``1010:C4DB`` new-game setup as one flat ``{DGROUP offset: value}`` write-map --
+    COMPOSES :func:`object_pool_seed_c4db` (the C4E5..C51B object-record seed) with
+    :func:`level_start_control_reset_c51d` (the C51D..C559 control-cell reset).
+
+    ``SS == DS`` (both the DGROUP data segment) on this build, so the object records and the control
+    cells live in one segment and merge into a single write-map.  Proven byte-exact AND COMPLETE
+    (a full-segment before/after diff shows C4DB writes exactly these DGROUP cells -- its only other
+    write is the ``CS:C3A2`` framebuffer accumulator, outside DGROUP) by
+    ``verify_native_new_game_setup_c4db``.  This is the native entry point a cold level-start calls to
+    seed the object pool + reset the frame-control cells.  ``slot_ptr_table`` is the ``DS:0x32CA``
+    ``cx (1..0x24) -> record offset`` map; the caller owns the writes.
+    """
+    writes: dict = {}
+    for rec_off, fields in object_pool_seed_c4db(slot_ptr_table).items():
+        for fo, val in fields.items():
+            writes[(rec_off + fo) & 0xFFFF] = val
+    writes.update(level_start_control_reset_c51d())
+    return writes
+
+
 def step_frame_accumulator_shift_a940(counter_a8ce: int, a8c8: int, a8cc: int) -> FrameAccumulatorShiftOutcome:
     """Pure model of ``1010:A940``'s own opening accumulator-shift (unconditional, every frame,
     before A940's later attract-mode/boss-scan-fork decisions -- see the frame-controller memory
