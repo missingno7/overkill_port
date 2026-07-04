@@ -37,6 +37,12 @@ STATUS -- every layer here is REAL recovered code (no placeholders, fail loud on
 * There is NO placeholder starting state: the cold level-start state is not a recovered VM-free
   system yet (Bucket F level loader), so gameplay REQUIRES ``--snapshot`` (a real captured state) and
   fails loud without it, rather than invent a spawn.
+* GAMEPLAY-EXIT BOUNDARY: each frame the loop runs the recovered, demo-witnessed
+  ``detect_gameplay_transition`` (death / game-over / scripted level-end, the 1010:97B2 flags) and
+  STOPS fail-loud if one fires -- the native runtime cannot follow the unrecovered 9734/9902/9908
+  continuations, so it reports the exit instead of running blindly past it. (The anchor death counter
+  is live; the other trigger cells are seeded-static until the native loop runs the stages that mutate
+  them, so on a normal mid-level capture no exit fires -- a fail-loud guard, never a fake.)
 * On any exception from a gameplay stage (a real unrecovered gap) the runner stops the tick loop,
   prints the gap, and holds the last frame -- it never silently fakes forward past a divergence.
 
@@ -62,6 +68,8 @@ sys.path.insert(0, str(ROOT))
 
 from overkill.native_app import GameplayFrameSkeleton  # noqa: E402
 from overkill.native_game import NativeGame  # noqa: E402
+from overkill.recovered.domain.gaps import RecoveryGap  # noqa: E402
+from overkill.recovered.systems.frame_loop import detect_gameplay_transition  # noqa: E402
 from overkill.recovered.domain.frame_loop import FrameInput  # noqa: E402
 from overkill.recovered.domain.native_game_state import NativeGameState  # noqa: E402
 from overkill.recovered.domain.object_update import ObjectUpdateGlobals  # noqa: E402
@@ -133,8 +141,8 @@ def _read_starfield(mem: "_FlatMemory", ds: int) -> StarfieldState:
 @dataclass(frozen=True)
 class _SeededStart:
     """A REAL starting point read from a captured snapshot: the game+starfield state, the sprite
-    half-stride, and the live scroll cursor trio (DS:234C/234E/2350) so the first native frame lands
-    the world + sprites exactly where the VM had them."""
+    half-stride, the live scroll cursor trio (DS:234C/234E/2350) so the first native frame lands the
+    world + sprites exactly where the VM had them, plus the gameplay-exit inputs the loop watches."""
 
     state: NativeGameState
     starfield: StarfieldState
@@ -142,6 +150,14 @@ class _SeededStart:
     origin_x: int    # DS:234E
     row_base: int    # DS:2350
     row_source: int  # DS:234C
+    # The gameplay-exit detector inputs (DS:A47C/A95A/A97A/2326). The native loop does NOT yet run the
+    # stages that MUTATE these (they change only when the player dies / a script ends the level), so
+    # they are carried at their seeded values -- a fail-loud guard, not a live model. For a normal
+    # mid-level capture the anchor is present (A95A != FFFF, A97A != 0) so no exit is ever detected.
+    a47c: int
+    a95a: int
+    a97a: int
+    v2326: int
 
 
 def _seed_state_from_snapshot(snapshot_dir: Path) -> "_SeededStart":
@@ -167,6 +183,10 @@ def _seed_state_from_snapshot(snapshot_dir: Path) -> "_SeededStart":
         origin_x=mem.rw(ds, 0x234E),
         row_base=mem.rw(ds, 0x2350),
         row_source=mem.rw(ds, 0x234C),
+        a47c=mem.rw(ds, 0xA47C),
+        a95a=mem.rw(ds, 0xA95A),
+        a97a=mem.rw(ds, 0xA97A),
+        v2326=mem.rw(ds, 0x2326),
     )
 
 
@@ -392,6 +412,20 @@ def main(argv=None) -> int:
         cell["game"] = g
         cell["starfield"] = advance_starfield(cell["starfield"])  # the recovered parallax move
         cell["tick"] += 1
+        # The 97B2 gameplay-exit boundary: end this level fail-loud if a death / game-over / scripted
+        # transition is detected (recovered + demo-witnessed as detect_gameplay_transition). The anchor
+        # +08 death counter is live (special_pool slot 0); the other inputs are the seeded-static guard
+        # values (see _SeededStart) -- so on a normal capture this never fires, but a real exit stops
+        # the loop instead of running blindly past an unrecovered 9734/9902/9908 continuation.
+        exit_ = detect_gameplay_transition(
+            a47c=seed.a47c, a95a=seed.a95a, a97a=seed.a97a, v2326=seed.v2326,
+            anchor_counter_after_inc=g.state.special_pool.word_at(0, 0x08),
+        )
+        if exit_ is not None:
+            raise RecoveryGap(
+                f"gameplay exit {exit_.exit.name} (1010:97B2 -> {exit_.jump_target:#06x})",
+                "the native loop detected a level-end/death/game-over; that transition target is not "
+                "recovered yet (the native runtime cannot continue past it)")
 
     skeleton = GameplayFrameSkeleton(
         render=lambda: _render_frame(cell["game"], cell["starfield"], sprite_ctx),

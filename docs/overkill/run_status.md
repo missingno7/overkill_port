@@ -60,6 +60,23 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - Gameplay-exit boundary WIRED into play_native (fail-loud level-end)
+
+Wired the recovered `detect_gameplay_transition` into the native standalone loop: each frame
+`scripts/play_native.py` now runs the gameplay-exit check and raises `RecoveryGap` (holds the frame,
+reports) if a death / game-over / scripted level-end fires -- the native runtime stops fail-loud
+instead of running blindly past the unrecovered `9734/9902/9908` continuations. `_SeededStart` carries
+the trigger cells (A47C/A95A/A97A/2326) read from the snapshot; the anchor +08 death counter is live
+(special_pool slot 0). Smoke: on a normal L3 capture (A95A=0x3, A97A=0x57, A47C=0, 2326=1 -> anchor
+present) the check returns None for 40+ ticks -- no false exit-fire.
+
+**PARTIAL / honest gap (native_app transition_flags now `GAP`, not `unmonitored`):** the boundary is
+wired + fail-loud, but a REAL death isn't yet DETECTED from native gameplay because the native loop
+doesn't run the stages that set A95A=FFFF / A97A=0 / 2326=3 (those are the death trigger) -- the
+trigger cells are seeded-static. Making the native loop actually reach a death (run the upstream
+death-state + the 9AFF stage that increments the counter) is the next slice; this one closes the
+"boundary exists in the loop" half fail-loud.
+
 ## 2026-07-04 - Gameplay-exit DETECTOR recovered + demo-witnessed against real DEATH events
 
 Composed the two recovered 9B2E exit rules into the whole-frame decision the native loop needs:

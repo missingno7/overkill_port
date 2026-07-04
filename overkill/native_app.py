@@ -92,14 +92,15 @@ GAMEPLAY_FRAME_STAGES: tuple[FrameStage, ...] = (
     FrameStage("game_state_controller", "1010:9B2E", NATIVE,
                "NativeGame.step: input decode + player move + scroll + fan-out (EARLY) + object pass;"
                " gaps INSIDE it: 99F6 scripted input, A212 chain, FULL fan-out/A970, 9CB6 probe"),
-    FrameStage("transition_flags", "1010:97CE..97E9: A344->9734, A342->9902, A346->9908", UNMONITORED,
-               "the gameplay-exit flags; the DECISION is recovered + demo-witnessed as"
-               " systems/frame_loop.detect_gameplay_transition -> GameplayTransition (A344 scripted /"
-               " A346 death / A342 game-over, in 97B2 priority; matched the live verdict incl. 4 real"
-               " DEATH frames on the player_death demo). Still UNMONITORED because the native model"
-               " does not carry the inputs (A47C/A95A/A97A/2326 + the anchor +08 death counter) nor"
-               " run the 9AFF death-tail stage that increments it -- that native stage is the next"
-               " slice; the JUMP TARGETS 9734/9902/9908 are unrecovered continuations (fail-loud)"),
+    FrameStage("transition_flags", "1010:97CE..97E9: A344->9734, A342->9902, A346->9908", GAP,
+               "the gameplay-exit boundary; the DECISION is recovered + demo-witnessed"
+               " (systems/frame_loop.detect_gameplay_transition -> GameplayTransition; A344 scripted /"
+               " A346 death / A342 game-over in 97B2 priority; matched the live verdict incl. 4 real"
+               " DEATH frames) and is now WIRED into play_native -- each frame it fails loud if an exit"
+               " fires (the 9734/9902/9908 targets are unrecovered). PARTIAL: the anchor +08 death"
+               " counter is live, but the other trigger cells (A47C/A95A/A97A/2326) are seeded-static"
+               " because the native loop doesn't run the stages that mutate them yet -- so a REAL death"
+               " isn't detected from native gameplay until that upstream state is native (next slice)"),
     FrameStage("frame_state_update", "1010:A940", GAP,
                "per-frame game-state cluster; pure pieces exist (accumulator shift, scan-entry fork)"
                " but the stage is not composed natively -- not run"),
