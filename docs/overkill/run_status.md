@@ -50,6 +50,62 @@
 > witness-poor load-time code, the cold-boot witness-harness idea, the Bucket A/B completion
 > readouts) are preserved in the dated entries below and in `overnight_endgame_execution.md`.
 
+## 2026-07-05 - AFD8 COMPLETE: the full worker composed pure + driven 192/192 (the x21 mega-worker is DONE)
+
+(Built-in /goal loop, continuing.) ``systems/contact_step.contact_probe_afd8(x, y, direction, a278,
+LevelTileContext, contact_at)`` composes the WHOLE worker: A430 clear + A432/A434 snapshots +
+A438/A436 step mirrors, the ``x + [A278] - 0x10`` leading-edge bias (cancels in the final position),
+the 5073 probe (215A = adjusted x derived), the off-map early-out, the B022 direction step, un-bias.
+ORACLE gate 2 (``verify_native_contact_step``): drives the ORIGINAL AFD8 whole, comparing against
+the pure composition over a **PURE tile context** (origin/row_base/tile plane read once from the
+snapshot -- no VM callbacks): **192/192 byte-exact** (48 blocked incl. forced off-map), on top of
+gate 1's 448/448 handler matrix. Islands: contact_step_b022 + contact_probe_afd8 both VERIFIED.
+
+The x21 mega-worker is fully recovered. NEXT (frontier (a) continues): the 21 caller stubs are now
+thin parameterizations (direction source + post-step reactions) -- recover the planet-1 spawn-family
+behaviors 0x1F (``8D4F``) and 0x20 (``B73E``) first, tracing cadence from L1_start with the
+fast-forward; then the BDD0 contact predicate leaf; then the NativeGame behavior-registry stage +
+the whole-walk shadow probe (the /goal condition's proof).
+
+FIRST LOOK at those two (disassembled, not yet recovered):
+* **0x1F (``8D4F``) is a FAR-CALL STUB into the 1F8F overlay segment** (``call far 1F8F:027A; jmp
+  BC4B``) -- and a whole stub family sits beside it (``8D57``->1F8F:0452, ``8D5F``->1F8F:0473 with an
+  HP>=0x64 gate + BFC7, ``8D73``->1F8F:069A, ``8D7B``->1F8F:06B5, ``8D83``->1F8F:08AC = the planet-4
+  wave family!). The behavior zoo EXTENDS INTO 1F8F; the xref scan only counted CS:1010 workers --
+  rerun it over the overlay when sizing that half.
+* **0x20 (``B73E``) is a SUBSTATE machine**: ``FFFF``/0/1/2 on ``+0x1C`` (OFF_SUBSTATE) via a 3-entry
+  table at ``CS:B74E``. The FFFF approach phase: sprite animated from the ``DS:2338`` clock
+  (y < 0x60 -> 0x7F - [2338], else 0x7A + [2338]), arrival test against the formation slot
+  ``+0x32``/``+0x34``, another A7A0 threshold (0x23) at arrival, else fall to the SHARED MOVE TAIL
+  ``B85C`` -- NOW DECODED, and the chain CLOSES ON RECOVERED CODE: ``B85C`` = ``[2308]=2; call B729;
+  [bp+6]=4`` and ``B729`` = ``[2304]=[bp+0x32]; [2306]=[bp+0x34]; call 5DB2; cmp [230A],0; ret`` --
+  i.e. **the planet-1 enemy approach movement IS ``object_target_seek_step_5db2`` (already
+  VERIFIED)** aimed at the formation slot, with ``2308`` the step mode and ``230A`` the arrived
+  flag. Behavior 0x20 is a THIN COMPOSITION of recovered pieces (sprite anim from the 2338 clock +
+  arrival substate machine + the 5DB2 seek) -- the pre2 second-pass principle fully vindicated.
+  Recover it as the next slice with a driven oracle; its shape is the TEMPLATE for the whole
+  approach-movement behavior family. Full phase map now decoded: approach the slot (FFFF phase,
+  5DB2-seek, anim from 2338) -> idle at the slot until ``A7A0 >= 0x23`` -> in ``DS:2340`` walk-clock
+  windows (0x2BC/0x2D0 thresholds at ``B7F3``, partially decoded) RETARGET AT THE PLAYER
+  (``B7C7``: target_y = [2380]+8 &~7 -- the view-anchor Y, gated on the 2324 frame parity;
+  [2340]=0x28 reset; substate=0; sprite 0x78; target_x=0x20) -- the dive attack. Substates:
+  0 = re-approach checks, 1 = sprite 0x79, 2 = fly +X until x >= 0xA0 (sprite 0x77, the exit?).
+  AND the hold-formation loop (``B7F3``): in the 2340 window 0x2BC..0x2D0, ``call 4D95`` (the x4
+  worker, likely the RNG) gates ``call 7476`` (the x6 worker -- likely the ENEMY SHOT spawner);
+  with ``A47E > 3`` and ``[232E] == 0x3F``, pick a NEW slot from a SECOND position ring
+  ``DS:A844..A894`` (cursor ``A842``, (x+0x20, y) pairs, skip-if-already-there) -- the formation
+  re-shuffle. So 0x20's remaining unrecovered callees are exactly 4D95 + 7476 -- both already on
+  the xref worker list; recover them as leaves first. BOTH NOW DECODED:
+  * ``4D95`` = a CANNED pseudo-random source: cursor ``DS:20A6`` += 2 wrapping over the static ring
+    ``DS:20A8..20C6`` (16 words); returns the word -- pure + cold-loadable.
+  * ``7476`` = the ENEMY SHOT spawner: alloc via ``7573`` (gameplay pool), sound ``[BEFF]=0x1A``
+    (gated on ``98C0``), muzzle offset (+0xC,+0xC) or (+0x1C,+0x8) when the leader-group flag
+    ``A8C2`` is set, then the stamp ``{+0:1, +6:0, +8:0x31, +0xA:1, +0x14:0, +0x16:2, +0x18:0x0B,
+    +0x1C:FFFF, +0x1E:0}`` and ``74E2`` aim deltas AT THE PLAYER into ``+0x2A``/``+0x2C``
+    (= OFF_MOVE_DELTA_X/Y, consumed by the RECOVERED object_delta_steer_5e42!) -- shot behavior
+    0x0B is the 5E42 steer family. The whole planet-1 enemy stack (approach/hold/shoot/dive/
+    re-shuffle + shots) decomposes into recovered pieces + small stamps.
+
 ## 2026-07-05 - The B022 contact-step handlers RECOVERED PURE + driven 448/448 (enemy locomotion core)
 
 (Overnight run, continuing the AFD8 slice.) The per-direction step handlers are now a pure system:

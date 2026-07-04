@@ -144,6 +144,47 @@ def main(argv) -> int:
     if not (stepped_n and blocked_n):
         fails += 1
         print("  COVERAGE FAIL: the matrix must exercise both stepped and blocked outcomes")
+
+    # -- gate 2: the FULL AFD8 worker vs the pure composition (PURE tile context, no VM callbacks)
+    from overkill.recovered.domain.tilemap import LevelTileContext
+    from overkill.recovered.systems.contact_step import contact_probe_afd8
+
+    plane_seg = m.rw(CS, 0x9592)
+    tiles = LevelTileContext(
+        origin_x_word=m.rw(ds, 0x234E), row_base_word=m.rw(ds, 0x2350),
+        tile_plane=bytes(m.mem.data[plane_seg * 16:plane_seg * 16 + 0x4000])
+        if hasattr(m, "mem") else bytes(m.data[plane_seg * 16:plane_seg * 16 + 0x4000]),
+        class_table=tuple(m.rb(ds, (0xC3AA + i) & 0xFFFF) for i in range(256)),
+    )
+    cases2 = fails2 = blocked2 = 0
+    for x in (0x30, 0x70, 0xB0, 0x9000):
+        for y in (0x18, 0x40, 0x7F):
+            for direction in range(8):
+                for a278 in (0x0000, 0x0020):
+                    cases2 += 1
+                    m.ww(ds, SCRATCH_RECORD + 0x00, 1)
+                    m.ww(ds, SCRATCH_RECORD + 0x02, x)
+                    m.ww(ds, SCRATCH_RECORD + 0x04, y)
+                    m.ww(ds, SCRATCH_RECORD + 0x06, direction)
+                    m.ww(ds, 0xA278, a278)
+                    m.ww(ds, 0xA430, 0xBEEF)
+                    for cell in (0xA432, 0xA434, 0xA436, 0xA438):
+                        m.ww(ds, cell, 0x5555)
+                    run_to_sentinel(0xAFD8)
+                    vm = (m.rw(ds, SCRATCH_RECORD + 0x02), m.rw(ds, SCRATCH_RECORD + 0x04),
+                          m.rw(ds, 0xA430) != 0, m.rw(ds, 0xA432), m.rw(ds, 0xA434),
+                          m.rw(ds, 0xA438), m.rw(ds, 0xA436), m.rw(ds, 0x215A))
+                    r = contact_probe_afd8(x, y, direction, a278, tiles, lambda: False)
+                    mine = (r.x_word, r.y_word, r.blocked, r.snap_x, r.snap_y,
+                            r.mirror_x, r.mirror_y, r.sample_215a)
+                    ok = vm == mine
+                    fails2 += not ok
+                    blocked2 += vm[2]
+                    if not ok and fails2 <= 6:
+                        print(f"  FAIL(full) x={x:04X} y={y:02X} dir={direction} a278={a278:04X}: "
+                              f"vm={vm} mine={mine}")
+    print(f"full AFD8 composition: {cases2} cases, fails={fails2} (blocked={blocked2})")
+    fails += fails2
     print("RESULT:", "PASS -- contact_step_b022 matches the original B00D/B022 dispatch on live L1"
           " tiles" if not fails else "CHECK")
     return 0 if not fails else 1

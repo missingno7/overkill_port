@@ -26,11 +26,15 @@ from __future__ import annotations
 
 import dataclasses
 
-from overkill.recovered.domain.contact_step import ContactStepState
+from overkill.recovered.domain.contact_step import ContactProbeResult, ContactStepState
+from overkill.recovered.domain.tilemap import LevelTileContext, TileProbeInput
 from overkill.recovered.islands import recovered_island
+from overkill.recovered.systems.tilemap import compute_tile_probe_5073, lookup_tile_class_byte
 
 TILE_COLUMN_STRIDE = 0x0D    # one tile column in the 5073 offset space
 SUBTILE_MASK = 0x0F
+PROBE_X_BIAS = 0x10          # AFD8 probes at x + [A278] - 0x10 (the leading-edge window)
+OFFMAP_SENTINEL = 0xFFFF     # 5073's negative-adjusted-X result; B00D -> blocked immediately
 
 
 def _blocked(state: ContactStepState) -> ContactStepState:
@@ -136,3 +140,53 @@ def contact_step_b022(direction: int, state: ContactStepState, tile_class_at,
     first, second = _DIAGONAL[d]
     mid = _AXIS[first](state, tile_class_at, contact_at)
     return _AXIS[second](mid, tile_class_at, contact_at)
+
+
+def tile_class_reader(tiles: LevelTileContext):
+    """The ``tile_class_at(offset)`` callback over a level tile context (the 505B composition).
+
+    Fail-loud on out-of-plane offsets (IndexError) -- the original would read whatever bytes sit
+    there; a native runtime must not silently sample garbage."""
+    def tile_class_at(offset: int) -> int:
+        return lookup_tile_class_byte(tiles.tile_plane[offset], tiles.class_table)
+
+    return tile_class_at
+
+
+@recovered_island(
+    asm=("1010:AFD8..B00C", "1010:B00D..B021"),
+    contract="the FULL AFD8 worker: clear A430, snapshot X/Y to A432/A434 (+ the A438/A436 step "
+             "mirrors), probe at x + [A278] - 0x10 via 5073 (deriving 215A = adjusted x), off-map "
+             "-> blocked, else the B022 direction step; un-bias; blocked verdict = ZF(cmp A430,0)",
+    status="VERIFIED",
+    merge_target="EnemyWaveSystem",
+    unknowns="the BDD0 contact predicate is caller-owned (oracle runs no-contact on a cleared "
+             "pool; the undo branch is unit-tested)",
+)
+def contact_probe_afd8(x_word: int, y_word: int, direction: int, a278: int,
+                       tiles: LevelTileContext, contact_at) -> ContactProbeResult:
+    """The full ``1010:AFD8`` enemy contact-step worker (pure composition).
+
+    Snapshots the position (``A432``/``A434``; the ``A438``/``A436`` mirrors then track the step),
+    probes at the ``A278``-biased leading edge, runs the ``B022`` direction handler, and un-biases.
+    The record's net movement is exactly the handler's step (the bias cancels).  Driven-oracle
+    (``verify_native_contact_step`` gate 2) against the whole original AFD8 on live L1 tiles.
+    """
+    x_biased = (x_word + a278 - PROBE_X_BIAS) & 0xFFFF
+    probe = compute_tile_probe_5073(TileProbeInput(
+        origin_x_word=tiles.origin_x_word, row_base_word=tiles.row_base_word,
+        object_x_word=x_biased, object_y_word=y_word))
+    sample0 = probe.adjusted_x_word & 0xFFFF
+    if probe.tile_offset_word == OFFMAP_SENTINEL:
+        return ContactProbeResult(x_word=x_word, y_word=y_word, blocked=True,
+                                  snap_x=x_word, snap_y=y_word, mirror_x=x_word, mirror_y=y_word,
+                                  sample_215a=sample0, tile_offset=OFFMAP_SENTINEL)
+    st = contact_step_b022(direction, ContactStepState(x_biased, y_word, probe.tile_offset_word,
+                                                       sample0),
+                           tile_class_reader(tiles), contact_at)
+    final_x = (st.x_word + PROBE_X_BIAS - a278) & 0xFFFF
+    return ContactProbeResult(
+        x_word=final_x, y_word=st.y_word, blocked=st.blocked,
+        snap_x=x_word, snap_y=y_word,
+        mirror_x=(x_word + st.mirror_dx_x) & 0xFFFF, mirror_y=(y_word + st.mirror_dx_y) & 0xFFFF,
+        sample_215a=st.sample_215a, tile_offset=st.tile_offset & 0xFFFF)

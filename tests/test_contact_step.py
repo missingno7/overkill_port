@@ -73,6 +73,23 @@ def test_contact_hit_undoes_the_step_and_flags_blocked():
     assert out.mirror_dx_x == 0  # the A438 mirror inc is undone too
 
 
+def test_contact_probe_afd8_off_map_blocks_without_stepping():
+    from overkill.recovered.domain.tilemap import LevelTileContext
+    from overkill.recovered.systems.contact_step import contact_probe_afd8
+
+    tiles = LevelTileContext(origin_x_word=0x000F, row_base_word=0x009C,
+                             tile_plane=bytes(0x1000), class_table=(0,) * 256)
+    # x + a278 - 0x10 lands in the negative-adjusted-X range -> the 5073 off-map early-out
+    r = contact_probe_afd8(0x9000, 0x40, 4, 0x0000, tiles, lambda: False)
+    assert r.blocked and (r.x_word, r.y_word) == (0x9000, 0x40)
+    assert (r.snap_x, r.snap_y) == (r.mirror_x, r.mirror_y) == (0x9000, 0x40)
+    assert r.tile_offset == 0xFFFF
+    # a walkable step: the A278 bias cancels -- the record moves exactly one pixel
+    r2 = contact_probe_afd8(0x30, 0x40, 4, 0x0020, tiles, lambda: False)
+    assert not r2.blocked and (r2.x_word, r2.y_word) == (0x31, 0x40)
+    assert (r2.mirror_x, r2.mirror_y) == (0x31, 0x40) and (r2.snap_x, r2.snap_y) == (0x30, 0x40)
+
+
 def test_diagonal_composes_both_axes_and_accumulates_blocked():
     # key 3 = +Y then +X; both open -> both step
     out = contact_step_b022(3, ContactStepState(0x30, 0x40, 0x90, 0x3), _cls(set()), _no_contact)
