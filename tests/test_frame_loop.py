@@ -457,3 +457,16 @@ def test_step_scripted_move_counters_9a3e():
     assert step_scripted_move_counters_9a3e(1, 0x05, 0xFFF5) == (0x06, 0xFFF4)
     assert step_scripted_move_counters_9a3e(1, 0x0F, 0xFFF1) == (0x0F, 0xFFF1)   # capped
     assert step_scripted_move_counters_9a3e(3, 0x00, 0xFFFF) == (0x01, 0xFFFE)
+
+
+def test_death_script_arms_a680():
+    from overkill.recovered.systems.frame_loop import death_script_arms_a680, DEATH_ARM_GATE_2350
+    assert DEATH_ARM_GATE_2350 == 0x0EA0
+    # the one arming combination
+    assert death_script_arms_a680(0, 1, 0x0EA0) is True
+    # each guard is necessary
+    assert death_script_arms_a680(1, 1, 0x0EA0) is False   # A480 must be 0
+    assert death_script_arms_a680(0, 0, 0x0EA0) is False   # 234E must be exactly 1
+    assert death_script_arms_a680(0, 2, 0x0EA0) is False   # ...not merely nonzero
+    assert death_script_arms_a680(0, 1, 0x0E52) is False    # 2350 must match exactly
+    assert death_script_arms_a680(0, 1, 0x0EA1) is False

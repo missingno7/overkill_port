@@ -60,6 +60,29 @@
 > clean session, not mid-way through a long loop. Verify any target against the code before recovering
 > (some `loop_blockers.md` entries are dated).
 
+## 2026-07-04 - RECOVERED the death-script ARM (A680 trigger) -- gameplay -> death loop now closed structurally
+
+The missing structural link: **what natively FIRES death.** Scanned the 1010 code segment for writes to
+``DS:A47C`` (the scripted-input mode selector) and found the ARM at ``1010:A6B9`` (``mov ds:[A47C],1``),
+inside the frame's world-scroll block (``A680``, which calls ``A6FE`` then a ``C591`` housekeeping call).
+Recovered its gate as ``systems/frame_loop.death_script_arms_a680(a480, 234e, 2350)`` -- driven-oracle
+40/40 (``verify_native_death_arm_a680.py``, driving A680 and observing arm ``A6B9`` vs bail ``A6FD``).
+
+**Gate (oracle ground truth, NOT the lindis-displayed polarity):** arm fires **iff** ``A480 == 0`` AND
+``234E == 1`` AND ``2350 == 0x0EA0``. lindis renders the ``234E`` guard as ``!= 0`` but the live oracle
+proves it is exactly ``== 1`` (``A6FE`` decrements ``234E`` before the ``cmp``); ``2350`` must match
+``0x0EA0`` exactly. (Recurring lesson re-confirmed: pin branch polarity by oracle, never by the
+disassembler's jump-target display.)
+
+**This closes the death control-flow loop structurally:** ARM (A680, ``death_script_arms_a680``) ->
+``A47C = 1`` -> 99F6 scripted-input dispatch (``scripted_input_prologue_99f6``) -> the A47C handlers
+(1=9A78 spawn/move, 2=9A3E move + ``step_scripted_move_counters_9a3e``, 3=9A16
+``step_death_handler_9a16`` countdown) -> the 9AFF/A95x/A97x countdown tails -> DEATH/GAME_OVER exit.
+Every NODE of that chain is now a recovered pure function; what remains is the two SPAWNER-island tails
+(the 7524 death-entity stamp + coord-table movement in 9A78/9A3E) and wiring 99F6 into play_native so the
+native build actually runs the sequence. The arm's own spawn tail (``62AA`` + ``7524`` at A6BF, si=A3EE)
+is the same spawner-island shape.
+
 ## 2026-07-04 - 9A3E scripted-move counter head recovered; the other death-script steps are spawner islands
 
 Recovered ``systems/frame_loop.step_scripted_move_counters_9a3e`` -- the A47C==2 death-script step's
