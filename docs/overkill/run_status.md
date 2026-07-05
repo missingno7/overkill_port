@@ -1,121 +1,17 @@
-> **SESSION HANDOFF (2026-07-05 — this header is the ONE authoritative orientation).** A fresh
-> session picks up here: read `CLAUDE.md` → `AGENTS.md` → the NEWEST dated entries below (they hold
-> the detail; this header is only the north star). Suite **green (1211 passed / 23 skipped)**, tree
-> clean, all pushed to `main`. **When an older dated entry conflicts with a newer one, the NEWER
-> wins** (corrected models: the "formation wave" is PLANET 3's only; the A47C "death script" label
-> was wrong; the CS:066B poke is retired).
+> **THIS FILE IS A JOURNAL.** The project's plans + state live in
+> [`docs/overkill/campaigns/`](campaigns/README.md) — the campaign model (adopted 2026-07-05, the
+> pre2 convergence structure): ONE campaign per session, driven toward its done-condition; done
+> includes hook retirement; NO re-banking plans. ADR-1: **the DGROUP image is the game state**
+> (byte-backed, named views over it; `NativeGameState` is a render projection only).
 >
-> ## THE NORTH STAR: LEVEL 1, FULLY PLAYABLE (cold boot → fight → die/win), VM-free.
-> Scope is deliberately NARROW — only planet 1's behaviors, one level. This forces WIRING over more
-> recovery (the anti-pattern to avoid: we have a large, byte-exact-verified enemy stack proven only
-> in *probes*; `play_native` still shows zero enemies). Done = these clauses literally true:
-> 1. `play_native --level 0` cold-boots + renders the frame — **DONE**.
-> 2. player moves + fires — **DONE**.
-> 3. enemies spawn as the level scrolls (`4A65` walker) + behave (the behavior walk), RENDERED —
->    **behave + RENDERED is WIRED (2026-07-05): `play_native --snapshot` shows the real moving enemy
->    wave** via `overkill/native_walk_frame` over a DGROUP image (smoke `verify_play_native_enemies`,
->    90/90 frames, enemies move). REMAINING for clause 3: COLD spawn (the `4A65` walker in the frame
->    flow so `--level 0` populates without a snapshot) + the scenery behaviors `0x19/0x1A`.
-> 4. player shots kill enemies; enemy shots/contact hurt the player — anchor-touch + damage
->    recovered; the PLAYER-SHOT behavior (0x02) is now handled in the walk (`_step_shot_02` -> the
->    verified `object_update_aed8`; shadow still 200/0). REMAINING: copy the fanout's fired shots
->    into the image (play_native) so they appear + walk, and the `62F6` shot↔enemy kill scan.
-> 5. death→respawn / level-end→win — detection is fail-loud; **edges are recovered pieces, not
->    composed**.
-> 6. HUD (lives/score/energy) — composers exist, **unwired**.
-> 7. audio — DEFERRED (playable-silent is acceptable for this milestone).
->
-> **L1 WIRING — slice 1 of N landed (2026-07-05):** the per-frame counter cascade is recovered as a
-> pure VERIFIED island — `frame_loop.advance_frame_counters_5f61` (driven 64/64 vs the original
-> `1010:5F61`; `verify_native_frame_counters` + unit tests). It advances the enemy phase clocks the
-> walk reads; KEY: `A7A0` is gated `/4` (2332) and the wave oscillator `/8` (2328) — an earlier
-> hand-inlined bank in `verify_cold_populate` had `A7A0` ticking every frame and `233A` hardcoded 0,
-> now fixed to call the recovered fn. This is the first piece of the play_native wiring + it applies
-> the island discipline in new code (the debt fix).
->
-> **LOOP CLOSED (2026-07-05): the walk is WIRED into play_native.** `overkill/native_walk_frame`
-> (advance_object_frame = the counter cascade + the behaviour walk over a MutFlatMemory image;
-> sync_player_anchor; project_state) is the runtime seam; `play_native --snapshot` runs it each tick
-> (NativeGame owns player+scroll via `run_object_pass=False`; the image owns the object pools) and
-> renders the projected enemies. Smoke `verify_play_native_enemies` proves 90/90 moving.
-> **THE NEXT WIRING SLICE:** COLD spawn — run the `4A65` script walker in the frame flow so
-> `--level 0` populates without a snapshot. BLOCKER (decoded 2026-07-05, ready to recover): as L1
-> scrolls in from row 0x110 the walker spawns SCENERY the walk must handle (fail-loud otherwise) --
-> the controller spawns frame 0, scenery `0x19` first blocks at ~frame 6. The scenery CHAIN, fully
-> decoded, built on ALREADY-recovered pieces:
-> * shared tail **`BB03`** = a vertical BOUNCE: dir 6 (up) via the recovered `AFD8`
->   (`contact_probe_afd8`) until y==0 or contact -> flip to dir 2 (down) until y==0xC0 or contact ->
->   flip back; exits via the recovered `BC45` postmove (already in the walk).
-> * behavior **`0x1A`** (`BAD4`): sprite = `([2338] >> 1) + 0x24` (NOTE: `>>1`, an earlier note said
->   `>>4` -- corrected by re-decode), then `BB03`. FULLY recoverable now (all pieces exist).
-> * behavior **`0x19`** (`BAF0`): sprite = `[233A] + 0x36`; when `[232E]==0x3F` (every 64 frames)
->   call `C237` then `BB03`. `C237` is NOT a move -- it FIRES: BEDC/A956-gated rate, `7573` alloc,
->   stamp a projectile at (x+4, y+4), dir = shooter +6, sprite 0x30, type 2, **behavior 0x04**,
->   +0x16=2/+0x18=4/+0x1C=FFFF, with an x>=8 & bp.x<=0xE0 guard + a +0x18-keyed C2CE dispatch.
-> * behavior **`0x04`** (the C237 projectile) = `AEBF`, an **AED8-FAMILY VARIANT** (a planet/dir
->   gate then the same `AEE4` direction-dispatch + `B250` contact the walk already recovers as
->   `_advance_aed8` for 0x02/0x03) -- tractable via that machinery, not a fresh recovery.
->
-> **PRIORITY RE-SEQUENCE (2026-07-05, judgment call).** The scenery chain above is a DEEP,
-> interlocking recovery (BB03 + C237 emit + 0x04 dispatch family + 0x1A, each needing a driven
-> oracle) for LOW-VALUE background hazards, and it is the only thing forcing cold-spawn right now.
-> The HIGHER-VALUE L1 clauses -- 4 (player shots kill enemies / enemies hurt the player, the `62F6`
-> scan) and 5 (death→respawn / level-end→win) -- are the actual GAME, and they run on the
-> ALREADY-WIRED snapshot path (no scenery needed). RECOMMENDED next: do COMBAT (clause 4) on the
-> snapshot path first -- (a) stamp the player fire fan-out into the IMAGE gameplay pool so shots are
-> visible + walked, (b) the `62F6` object-overlap scan so player shots kill enemies + enemy
-> shots/contact hurt the player -- THEN the death/level-end edges (clause 5). DEFER the cold-spawn
-> scenery chain (it's real + decoded above, but it's polish, not playability). The snapshot path is
-> a fully playable L1 sandbox to build combat in; cold-boot spawn can come last.
->
-> **COMBAT SLICE DE-RISKED (2026-07-05).** PLAYER SHOTS ARE BEHAVIOR 0x02 (the A4EA fanout seed
-> stamps logic_id=2 = `AED8`) -- ALREADY recovered as `object_update_aed8` + registered in
-> `NATIVE_OBJECT_HANDLERS` (object_update.py). So "shots visible + moving" is a DELEGATION BRIDGE,
-> not new recovery: in `behavior_walk._dispatch`, for a type-2/4 behavior NOT in the walk's own set
-> {0x1F,0x20,0x0B,0x01}, project the record to a 1-slot `ObjectPool(base=rec, stride=0x38,
-> slots=(words,))`, build an `ObjectUpdateGlobals` from the image cells (tiles + ref_box=237E/2380 +
-> a278 + step_mode 2312 + direction_table A348 + a47e/a7a0/phase_2328/global_disable...), call the
-> `NATIVE_OBJECT_HANDLERS` handler, write back its `{offset: value}`. This lights up 0x02 (player
-> shots) AND 0x0C/0x05/0x06/0x12/0x1E/0x1D/0x14/0x13/15/1C at once. GATE: the 200-frame shadow probe
-> must STILL pass (the delegation only touches ids the walk currently fail-louds on -- none appear
-> in the L1_start shadow -- so it should stay 200/0); verify player shots via a new fire→walk→VM
-> oracle. Plus: copy the fanout's new gameplay-pool records from NativeGame into the image each tick
-> (play_native) so the shots the player fires actually enter the walked pool. THEN 62F6 for the
-> shot↔enemy kill. This is the concrete combat entry point for the next session.
->
-> ## WHAT'S RECOVERED + VERIFIED FOR L1 (all pushed):
-> the whole behavior walk (`adapters/behavior_walk`, 200-frame zero-divergence shadow), the scene
-> spawner (`adapters/level_object_script.run_level_object_script_4a65`, 18/18 all planets incl.
-> ground snap), and every L1 behavior: 0x1F controller, 0x20 enemy, 0x0B shot, type-6 companion,
-> type-5 pickup, 0x01 dying (partial). Cold-populate PROVEN to spawn the controller
-> (`probes/verify_cold_populate` — currently CHECK, blocked on the scenery behaviors).
->
-> ## OPEN DEBT worth addressing (do NOT let these rot further):
-> * The `adapters/` recovery (behavior_walk, level_object_script) uses RAW hex offsets, not the
->   `OFF_*` state-view names, and carries no `@recovered_island` (the scanner only reads `systems/`)
->   — so the confidence manifest is blind to the milestone code. Fix the taxonomy's adapter blind
->   spot; apply `OFF_*` in new code.
-> * `run_object_pass` flag is committed but unused until the wiring lands.
->
-> **STANDING MECHANISMS — check this list BEFORE building ANY tooling (the anti-duplication rule;
-> two of these were nearly rebuilt because they were invisible from the entry docs):**
-> * `overkill/timing_fastforward.advance_frames_fast` — drift-free raw-bytes forward traces
->   (1 logic frame = 4 completed 0679 waits; count `A7A0` transitions). NEVER poke `CS:066B`.
-> * `overkill/recovered/islands.py` — the `@recovered_island` confidence taxonomy
->   (GUESS→OBSERVED→ASM_MATCHED→VERIFIED→CANONICAL) + `scripts/gen_island_manifest.py` + drift
->   test. Every NEW recovered fn in `systems/` carries it; annotate legacy fns when touched.
-> * The state-view names: `recovered/views/object_slots.py` (OFF_* layout names — `+0x16` =
->   `OFF_HAZARD_CLASS`, the type-dispatch key; `+0x18` = `OFF_LOGIC_ID`, the EFC4 behavior-dispatch
->   index) + `recovered/domain/object_slots.py` (pure named accessors). Use names, not raw offsets.
-> * `recovered/adapters/flat_memory.py` (`FlatMemory`/`MutFlatMemory` — the VM-free image readers),
->   `probes/_harness.py` (`run_ref_step_probe` — demo replay w/ input), `scripts/lindis.py`
->   (branch arrows now show the ENCODED target).
-> * Cold-boot probes MUST pass `overkill.launch.build_command_tail("tandy", "pc")` as the command
->   tail — an empty tail boots the WRONG video mode (a past whole-session trap).
->
-> Durable detail (the wiring design, the walker decode, the cold-populate gap, the pre2 principles,
-> the planet numbering) lives in the dated entries below — this header stays a north star, not a
-> plan dump. When you finish an L1 clause, update clause status here; keep the header SHORT.
+> Orientation for a fresh session: `CLAUDE.md` → `campaigns/README.md` (pick the active campaign) →
+> the newest journal entries below (newer wins on conflict). Standing mechanisms (check BEFORE
+> building tooling): `timing_fastforward.advance_frames_fast` (never poke CS:066B),
+> `recovered/islands.py` (@recovered_island + gen_island_manifest), the state-view names
+> (`views/object_slots.py` OFF_* / domain accessors), `adapters/flat_memory.py`,
+> `probes/_harness.py`, `scripts/lindis.py` (encoded targets), `scripts/behavior_zoo_xref.py`;
+> cold-boot probes MUST pass `overkill.launch.build_command_tail("tandy", "pc")`.
+> Suite green: 1217 passed / 23 skipped (2026-07-05).
 
 ## 2026-07-05 - THE WALK SLICE IS FULLY PREREQUISITE-FREE: allocators decoded, 0x0B already pure
 

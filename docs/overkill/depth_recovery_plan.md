@@ -1,5 +1,10 @@
 # Depth Recovery Plan — from "verified at ASM altitude" to human-readable game source
 
+> **SUPERSEDED (2026-07-05) by [`campaigns/`](campaigns/README.md)** — the campaign operating model
+> absorbed this plan's tracks (Track 1 → the L1 campaigns; Track 2 → ADR-1's named view, on-touch;
+> Track 3′ → the Spine campaign; Track 4 → each campaign's done-includes-retirement rule). Kept for
+> the §1 state analysis; do not plan from here.
+
 > Written 2026-07-05 after a deep state review. This is a STRATEGIC companion to `run_status.md`
 > (which tracks the live per-slice frontier). It answers: what does the code actually look like now,
 > what is stale / needs redoing, and how do we recover the MAIN PARTS of the game so they READ like

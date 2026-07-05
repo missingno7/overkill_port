@@ -11,8 +11,12 @@ levels → ending) with the original binary kept only as an optional verificatio
   and every declared fail-loud gap (`describe_gaps()`).
 - **What to build next + the cold-boot done-condition (the canonical `/goal` brief):**
   [`docs/overkill/overnight_endgame_execution.md`](docs/overkill/overnight_endgame_execution.md).
-- **Latest state / where the last session left off:** [`docs/overkill/run_status.md`](docs/overkill/run_status.md)
-  (newest entry on top). Live metrics: `python scripts/source_port_status.py`.
+- **THE OPERATING MODEL — campaigns (pick ONE, drive it to done):**
+  [`docs/overkill/campaigns/README.md`](docs/overkill/campaigns/README.md) — the roadmap, the rules
+  (done includes hook retirement; no re-banking plans), and ADR-1 (the DGROUP image IS the game
+  state; `NativeGameState` is a render projection).
+- **The journal (what happened, newest on top):** [`docs/overkill/run_status.md`](docs/overkill/run_status.md).
+  Live metrics: `python scripts/source_port_status.py`.
 - **Known blockers to skip (verify before trusting; some entries are dated):**
   [`docs/overkill/loop_blockers.md`](docs/overkill/loop_blockers.md).
 
