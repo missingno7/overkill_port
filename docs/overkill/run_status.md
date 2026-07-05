@@ -50,12 +50,21 @@
 >   call `C237` then `BB03`. `C237` is NOT a move -- it FIRES: BEDC/A956-gated rate, `7573` alloc,
 >   stamp a projectile at (x+4, y+4), dir = shooter +6, sprite 0x30, type 2, **behavior 0x04**,
 >   +0x16=2/+0x18=4/+0x1C=FFFF, with an x>=8 & bp.x<=0xE0 guard + a +0x18-keyed C2CE dispatch.
-> * behavior **`0x04`** (the C237 projectile) is UNRECOVERED -- decode `EFC4[4]` next; it's the
->   deepest link. Recover order: BB03 + 0x1A (clean, driven-oracle a synthetic record vs VM) ->
->   0x04 -> C237 emit -> 0x19 -> register all in the walk -> extend the shadow to a scroll-through
->   range that hits them -> then wire the 4A65 walker into play_native's cold frame flow.
-> AFTER cold spawn: player fire into the image (shots visible) -> shot↔enemy collision (`62F6`) ->
-> the death/level-end edges -> HUD.
+> * behavior **`0x04`** (the C237 projectile) = `AEBF`, an **AED8-FAMILY VARIANT** (a planet/dir
+>   gate then the same `AEE4` direction-dispatch + `B250` contact the walk already recovers as
+>   `_advance_aed8` for 0x02/0x03) -- tractable via that machinery, not a fresh recovery.
+>
+> **PRIORITY RE-SEQUENCE (2026-07-05, judgment call).** The scenery chain above is a DEEP,
+> interlocking recovery (BB03 + C237 emit + 0x04 dispatch family + 0x1A, each needing a driven
+> oracle) for LOW-VALUE background hazards, and it is the only thing forcing cold-spawn right now.
+> The HIGHER-VALUE L1 clauses -- 4 (player shots kill enemies / enemies hurt the player, the `62F6`
+> scan) and 5 (death→respawn / level-end→win) -- are the actual GAME, and they run on the
+> ALREADY-WIRED snapshot path (no scenery needed). RECOMMENDED next: do COMBAT (clause 4) on the
+> snapshot path first -- (a) stamp the player fire fan-out into the IMAGE gameplay pool so shots are
+> visible + walked, (b) the `62F6` object-overlap scan so player shots kill enemies + enemy
+> shots/contact hurt the player -- THEN the death/level-end edges (clause 5). DEFER the cold-spawn
+> scenery chain (it's real + decoded above, but it's polish, not playability). The snapshot path is
+> a fully playable L1 sandbox to build combat in; cold-boot spawn can come last.
 >
 > ## WHAT'S RECOVERED + VERIFIED FOR L1 (all pushed):
 > the whole behavior walk (`adapters/behavior_walk`, 200-frame zero-divergence shadow), the scene
