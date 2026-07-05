@@ -68,10 +68,12 @@
 >   the 2078 counter registration, the complete 0209 controller init (schedule + HP 0x14 + A47E=1 +
 >   A480=0x64 + the 2342/2344/2346/2348 wave-state flags + A7A0=0 clock reset), the cursor advance,
 >   and multi-entry-per-row. GROUND-OBJECT path (scan==1 & gate!=1, behaviors 0x19/0x1A/0x8A) is
->   fail-loud (3 gap skips reported) -- NEXT SUB-SLICE: the 4B4A..4BE7 terrain-surface snap is
->   DECODED (snap X/Y to 16px; per-column tile search via es=[9592] plane + the C3AA class table,
->   stepping 209C toward y<0x60 up else down until an open tile; Y = 209C<<4) -- implement it over
->   a tile context + oracle the 3 skipped cases, then the play_native wiring per the plan above.
+>   THE GROUND SNAP IS NOW DONE + VERIFIED: ``_ground_snap_4b4a`` (snap X/Y to 16px; the tile-column
+>   search via the CS:[9592] plane + the C3AA class table, stepping 209C toward the surface -- y<0x60
+>   down, else up, wrapping 0..0xC -- until an open tile; Y = row<<4). ``verify_native_level_script``
+>   now **18/18, ZERO gaps** across all 6 planets (the 3 former ground cases -- planet-1 0x19/0x1A,
+>   planet-2 0x8A -- pass byte-exact, full-DGROUP incl. the 209C/209E/20A0 scratch). The 4A65 walker
+>   is COMPLETE. NEXT: the play_native image-backed wiring per the plan above.
 > * VERIFY: the shadow probe must STILL pass untouched; plus a headless play_native smoke (N ticks
 >   from --snapshot: active enemies move/spawn) and the full suite.
 >

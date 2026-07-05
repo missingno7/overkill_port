@@ -7,8 +7,9 @@ ENTIRE DGROUP (the completeness-diff pattern: only the live stack window exclude
 the spawn stamps, the 2078 counter registration, the controller 0209 init, the cursor advance and
 the multi-entry-per-row iteration byte-exact.
 
-Ground-object entries (scan == 1, gate != 1) currently fail loud in the native walker; the case
-list reports which triggers exercised them so the 4B4A snap decode can close the gap.
+Ground-object entries (scan == 1, gate != 1) run the 4B4A terrain-surface snap over the level
+plane; the ``MutFlatMemory`` pre-state copy carries the whole image (plane + class table), so the
+diff exercises them for real.  Any remaining ``RecoveryGap`` is reported (and counts as CHECK).
 
 Usage:
     python -m overkill.probes.verify_native_level_script [snapshot_dir]
@@ -109,9 +110,10 @@ def main(argv) -> int:
                                      f"(vm={vm_bytes[diffs[0]]:02X} native={nat_bytes[diffs[0]]:02X})"))
 
     print(f"level object script: {cases} cases, fails={fails}, native-gap skips={gaps}")
-    print("RESULT:", "PASS -- the native 4A65 walker matches the original for every non-gap entry"
-          if fails == 0 and cases > gaps else "CHECK")
-    return 0 if fails == 0 and cases > gaps else 1
+    print("RESULT:", f"PASS -- the native 4A65 walker matches the original across {cases} entries"
+          f" (all 6 planets, incl. the ground-object terrain snap)"
+          if fails == 0 and gaps == 0 else "CHECK")
+    return 0 if fails == 0 and gaps == 0 else 1
 
 
 if __name__ == "__main__":

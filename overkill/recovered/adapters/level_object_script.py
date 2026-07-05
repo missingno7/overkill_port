@@ -17,8 +17,11 @@ consumed by the recovered BFC7 completion-drop), and for CONTROLLER behaviors th
 init with the behavior's SPAWN schedule (0x1F -> A82E etc. -- distinct from the C054 death-chain
 bases), HP 0x14, ``A47E = 1``, ``A480 = 0x64``.
 
-The GROUND-object path (scan == 1 AND gate != 1: 16px tile snap + the 209C/20A0 tile prep,
-``1010:4B4A..4BE7``) is a declared gap until its decode lands -- fail-loud, never guessed.
+The GROUND-object path (scan == 1 AND gate != 1, ``1010:4B4A..4BE7``): snap X/Y to 16px, then
+search that tile COLUMN of the level plane for the ground surface (the recovered ``5073``-shape
+offset ``row_base + 0xD - x_tile*0xD + y_tile`` into the ``CS:[9592]`` plane, classified through the
+``DS:C3AA`` table) -- stepping the tile row toward the surface (Y<0x60 down, else up, wrapping the
+0..0xC column) until an open tile, then Y = row<<4.  So scenery sits ON the terrain.
 Called from the frame flow at ``1010:A83C``; verified by ``probes/verify_native_level_script``.
 """
 from __future__ import annotations
@@ -26,6 +29,12 @@ from __future__ import annotations
 from overkill.recovered.domain.gaps import RecoveryGap
 
 DS = 0x25CC
+CODE_SEG = 0x1010
+TILE_PLANE_SEG_CELL = 0x9592     # CS:[9592] -- the level tile-plane segment
+TILE_CLASS_TABLE_C3AA = 0xC3AA   # DS:C3AA -- the 256-entry raw-tile -> class map (as in 505B)
+TILE_COLUMN_STRIDE = 0x0D
+GROUND_SEARCH_SPLIT = 0x60       # 20A0 (snapped Y) < this searches DOWN, else UP
+GROUND_COLUMN_ROWS = 0x0D        # the tile-row index wraps over 0..0xC
 SCRIPT_PTR_TABLE_C5E9 = 0xC5E9
 KIND_TABLE_C81A = 0xC81A
 COUNTER_TABLE_2078 = 0x2078
@@ -35,6 +44,48 @@ CONTROLLER_SPAWN_SCHEDULES = {0x13: 0xA484, 0x15: 0xA4E8, 0x1C: 0xA7A2, 0x1F: 0x
                               0x7D: 0xA638, 0x7E: 0xA6F4}
 
 EFFECT_POOL_BASE, EFFECT_POOL_WRAP, EFFECT_SLOTS = 0x23B4, 0x2B5C, 0x23
+
+
+def _ground_snap_4b4a(mem, rec: int) -> None:
+    """``1010:4B4A..4BE6``: snap X/Y to the 16px grid, then drop the object onto the terrain surface
+    by searching its tile column of the level plane (in place; writes the 209C/209E/20A0 scratch)."""
+    x = mem.rw(DS, rec + 0x02) & 0xFFF0
+    mem.ww(DS, rec + 0x02, x)
+    y = mem.rw(DS, rec + 0x04) & 0xFFF0
+    mem.ww(DS, rec + 0x04, y)
+    mem.ww(DS, 0x20A0, y)
+    mem.ww(DS, 0x209C, (y >> 4) & 0xFFFF)
+    plane_seg = mem.rw(CODE_SEG, TILE_PLANE_SEG_CELL)
+    # the tile-column base for this X (row_base + 0xD - x_tile*0xD), computed the 4B6D loop's way
+    col = (mem.rw(DS, 0x2350) + TILE_COLUMN_STRIDE) & 0xFFFF
+    ax = x
+    if ax & 0x8000:
+        while ax != 0:
+            col = (col + TILE_COLUMN_STRIDE) & 0xFFFF
+            ax = (ax + 0x10) & 0xFFFF
+    else:
+        while ax != 0:
+            col = (col - TILE_COLUMN_STRIDE) & 0xFFFF
+            ax = (ax - 0x10) & 0xFFFF
+    mem.ww(DS, 0x209E, col)
+    # search the column for the first open tile (class 0), stepping toward the surface
+    for _ in range(2 * GROUND_COLUMN_ROWS + 1):
+        rowidx = mem.rw(DS, 0x209C)
+        tile = mem.rb(plane_seg, (col + rowidx) & 0xFFFF)
+        if mem.rb(DS, (TILE_CLASS_TABLE_C3AA + tile) & 0xFFFF) == 0:
+            mem.ww(DS, rec + 0x04, (rowidx << 4) & 0xFFFF)
+            return
+        if mem.rw(DS, 0x20A0) < GROUND_SEARCH_SPLIT:
+            rowidx = (rowidx + 1) & 0xFFFF
+            if rowidx >= GROUND_COLUMN_ROWS:
+                rowidx = 0
+        else:
+            rowidx = (rowidx - 1) & 0xFFFF
+            if rowidx == 0xFFFF:
+                rowidx = GROUND_COLUMN_ROWS - 1
+        mem.ww(DS, 0x209C, rowidx)
+    raise RecoveryGap("ground-object tile search found no open tile",
+                      "the level column has no class-0 tile -- unexpected for real level data")
 
 
 def _alloc_7524(mem) -> int:
@@ -120,8 +171,7 @@ def run_level_object_script_4a65(mem) -> None:
             mem.ww(DS, slot + 0x16, 4)
             mem.ww(DS, slot + 0x18, beh)
             if gate != 1 and scan == 1:
-                raise RecoveryGap(f"ground-object tile snap (behavior {beh:#x})",
-                                  "the 4B4A..4BE7 snap + 209C/20A0 tile prep is not decoded yet")
+                _ground_snap_4b4a(mem, slot)
             # the 4BE7 tail
             hp = (planet + 1) & 0xFFFF if scan == 1 else 0x000C
             mem.ww(DS, slot + 0x20, hp)

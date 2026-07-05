@@ -53,3 +53,26 @@ def test_controller_entry_spawns_the_wave_driver_and_arms_the_wave_state():
 def test_controller_spawn_schedules_are_the_expected_bases():
     assert CONTROLLER_SPAWN_SCHEDULES[0x1F] == 0xA82E    # distinct from the C054 death-chain A83E
     assert CONTROLLER_SPAWN_SCHEDULES[0x13] == 0xA484
+
+
+def test_ground_snap_drops_the_object_onto_the_first_open_tile():
+    from overkill.recovered.adapters.level_object_script import (
+        CODE_SEG,
+        TILE_CLASS_TABLE_C3AA,
+        _ground_snap_4b4a,
+    )
+
+    mem = MutFlatMemory(bytes(0x100000))
+    rec = 0x2400
+    mem.ww(DS, rec + 0x02, 0x0010)      # X = 0x10 -> col base row_base+0xD-0xD = 0
+    mem.ww(DS, rec + 0x04, 0x0058)      # Y (< 0x60 -> search downward), row 5
+    mem.ww(DS, 0x2350, 0x0000)          # row_base 0
+    mem.ww(CODE_SEG, 0x9592, 0x4000)    # a scratch tile-plane segment
+    mem.wb(DS, TILE_CLASS_TABLE_C3AA + 1, 1)   # tile byte 1 = solid, 0 = open
+    # column base 0: rows 5 and 6 solid, row 7 open
+    for r, tile in ((5, 1), (6, 1), (7, 0)):
+        mem.wb(0x4000, r, tile)
+    _ground_snap_4b4a(mem, rec)
+    assert mem.rw(DS, rec + 0x02) == 0x0010          # X snapped to 16px
+    assert mem.rw(DS, rec + 0x04) == (7 << 4)        # dropped to the first open row (7)
+    assert mem.rw(DS, 0x209C) == 7 and mem.rw(DS, 0x209E) == 0x0000
