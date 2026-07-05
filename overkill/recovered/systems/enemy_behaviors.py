@@ -209,3 +209,32 @@ def step_wave_controller_1f(*, x_word: int, y_word: int, direction: int,
         sprite=(direction + WAVE_CONTROLLER_SPRITE_BIAS) & 0xFFFF,
         arrived=True, schedule_advance=4, ring_cursor_after=cursor,
         spawn_stamps=tuple(stamps), seek_globals=seek_globals)
+
+
+# behavior 0x27 sprite scroller: the base sprite is planet-selected, animated on the DS:2338 clock.
+SCROLLER_27_SPRITE_BASE = 0x0027           # 835D: default base sprite
+SCROLLER_27_SPRITE_BASE_PLANET5 = 0x0024   # 8365: base on planet 5 (DS:2356 == 5)
+SCROLLER_27_PLANET5 = 0x0005
+
+
+@recovered_island(
+    asm=("1010:835D..8377",),
+    contract="behavior 0x27 (1010:835D): a pure sprite scroller -- sprite = base + (DS:2338 >> 1) "
+             "with base 0x24 on planet 5 (DS:2356==5) else 0x27, then x += 1; the handler then "
+             "falls into the shared BC45 postmove tail (drift/clamp/bounds/contact, caller-owned).",
+    status="OBSERVED",
+    merge_target="EnemyWaveSystem",
+    unknowns="the +0x08 sprite is written raw; the BC45 tail (A278 drift, Y clamp, X-bounds death, "
+             "BCCB contact, 62F6 scan) is applied by the caller, not here.",
+)
+def step_sprite_scroller_27_835d(*, clock_2338: int, planet_2356: int, x_word: int) -> EnemyBehaviorStep:
+    """One frame of behavior ``0x27`` (``1010:835D``), pure.
+
+    ``clock_2338`` is the DS:2338 sub-bank counter (mod 6); the ``>> 1`` gives a 3-phase sprite
+    cycle over the animated base.  ``x_word`` is the record's +0x02 X, stepped +1 (the ``inc [bp+2]``
+    before the ``jmp BC45``); the BC45 drift/clamp/collision tail runs afterwards in the caller.
+    """
+    base = (SCROLLER_27_SPRITE_BASE_PLANET5 if (planet_2356 & 0xFFFF) == SCROLLER_27_PLANET5
+            else SCROLLER_27_SPRITE_BASE)
+    sprite = (base + ((clock_2338 & 0xFFFF) >> 1)) & 0xFFFF
+    return EnemyBehaviorStep(record_writes={0x08: sprite, 0x02: (x_word + 1) & 0xFFFF})

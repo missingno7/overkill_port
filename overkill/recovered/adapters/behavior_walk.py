@@ -36,6 +36,7 @@ from overkill.recovered.systems.collision import (
 from overkill.recovered.systems.companion import step_companion_ab10
 from overkill.recovered.systems.enemy_behaviors import (
     step_enemy_behavior_20,
+    step_sprite_scroller_27_835d,
     step_wave_controller_1f,
 )
 from overkill.recovered.systems.frame_loop import (
@@ -164,6 +165,14 @@ def _step_enemy_20(mem, rec: int) -> None:
         mem.ww(DS, rec + off, val)
     for off, val in r.global_writes.items():
         mem.ww(DS, off, val)
+
+
+def _step_scroller_27(mem, rec: int) -> None:
+    r = step_sprite_scroller_27_835d(
+        clock_2338=mem.rw(DS, 0x2338), planet_2356=mem.rw(DS, 0x2356),
+        x_word=mem.rw(DS, rec + 0x02))
+    for off, val in r.record_writes.items():
+        mem.ww(DS, rec + off, val)
 
 
 def _step_shot_0b(mem, rec: int, tiles: LevelTileContext) -> None:
@@ -544,6 +553,9 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
         elif beh == 0x01:
             _step_dying_01(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # BE43/BEAD/BEC2 exit jmp BC45
+        elif beh == 0x27:
+            _step_scroller_27(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # 835D exits jmp BC45
         else:
             raise RecoveryGap(f"behavior {beh:#04x} (record {rec:04X})",
                               "no native handler registered -- recover it before walking")

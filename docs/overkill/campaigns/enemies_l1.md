@@ -21,7 +21,7 @@ the unrecovered behaviors, by hit frequency (= recovery priority) —
 | 0x1a | 480 | 1010:BAD4 | scenery (see scene.md) |
 | 0x91 | 383 | 1010:8291 | sprite anim: ax from [2356] diff, cycle on frame ctr [2330]; -> BC45 |
 | 0x25 | 367 | 1010:8265 | spawn child (C237 alloc, sprite 0x1A) when [232C]==0x1F; -> BC45 |
-| 0x27 | 320 | 1010:835D | |
+| ~~0x27~~ | ~~320~~ | 1010:835D | **RECOVERED** (step_sprite_scroller_27_835d): sprite=base+(2338>>1), x+=1, BC45 |
 | 0x12 | 281 | 1010:B2CD | (B2C8 shared-tail family, x9) |
 | 0x19 | 256 | 1010:BAF0 | scenery (see scene.md) |
 | 0x29 | 182 | 1010:8721 | |
@@ -34,8 +34,17 @@ the unrecovered behaviors, by hit frequency (= recovery priority) —
 | 0x01 key1 latch9 | 32 | (in-walk 0x01) | the dying-morph (BE60 prev 0x24/0x25 -> respawn-as) |
 
 Handlers are THIN (spot-checked 0x25/0x90/0x91: ~20-40 bytes each — read a few record fields + a
-global (2330 frame ctr / 2356 diff / 232C timer), set sprite or spawn via C237, then the recovered
-BC45 tail). This is small-slice work, not a rewrite.
+global (2330/2338 frame ctr / 2356 diff / 232C timer), set sprite or spawn via C237, then the
+recovered BC45 tail). This is small-slice work, not a rewrite. **0x27 is DONE** (the loop is proven:
+add the handler → its gap drops to 0 in `verify_native_walk_demo` → the 200/0 free-run shadow holds
+→ no new divergence). NOTE: recovering one behavior UNMASKS downstream ones — a gap aborts the whole
+frame, so handling 0x27 let the walk reach records that then surfaced 0x8b/0x8c earlier. The gap set
+shifts as the frontier peels; drive it to empty.
+
+**Next actor:** 0x91/0x90 (8291/8282, the sprite-anim sisters — sprite=base(2356)+[95EA table >>5 of
+2330], with a [232C]==0x1F secondary jump table at 82CA that spawns via C237 — so this pulls in the
+C237 shared spawn worker, itself a difficulty-gated 7573 alloc + a parent-behavior jump table at
+C2CE). Or 0x25 (8265, the simplest C237 consumer). C237 is the next shared prerequisite.
 
 plus the **player-death** chain (9EA3; A95C=0 + [9791] + 2384=3 ship-death) ×3, and **type-5 pickup
 COLLECT** (AAD3: sound 7 + 5F0D score + AB00 +0x26 dispatch) ×2. Handler addresses via
