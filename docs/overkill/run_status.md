@@ -74,6 +74,19 @@
 >   now **18/18, ZERO gaps** across all 6 planets (the 3 former ground cases -- planet-1 0x19/0x1A,
 >   planet-2 0x8A -- pass byte-exact, full-DGROUP incl. the 209C/209E/20A0 scratch). The 4A65 walker
 >   is COMPLETE. NEXT: the play_native image-backed wiring per the plan above.
+>
+> **COLD-POPULATE PROVEN + a new gap surfaced (2026-07-05).** ``probes/verify_cold_populate`` runs
+> the WHOLE native pipeline from the COLD bundle (no snapshot): set 2356=1, advance A978 from 0x110,
+> tick the 601E counter bank, run the 4A65 script walker + the behavior walk per frame. RESULT: the
+> WAVE CONTROLLER SPAWNS FROM COLD DATA at frame 0 (controllers=1) -- the spawn pipeline works
+> end-to-end VM-free. It currently reports CHECK because as the level scrolls in, the script spawns
+> GROUND SCENERY (behaviors 0x19/0x1A -> 1010:BAF0/BAD4, 0x8A -> 8C1F) that the behavior walk has no
+> handler for -- a REAL gap the mid-level L1_start shadow never reached (it started already past the
+> scenery). NEXT TARGET (the cold-populate gate's blocker): recover the scenery behaviors -- 0x1A =
+> ``[2338]>>4 + 0x24`` sprite; 0x19 = ``[233A] + 0x36`` sprite + (if [232E]==0x3F) a C237 move; both
+> fall into the SHARED ``BB03`` scroll-follow tail (an xref x3 worker) + ``C237``. Recover BB03/C237
+> + the two thin behaviors, register them in the walk (extend the shadow probe to a scroll-through
+> range that hits them), and the cold gate goes PASS. THEN the play_native image-backed wiring.
 > * VERIFY: the shadow probe must STILL pass untouched; plus a headless play_native smoke (N ticks
 >   from --snapshot: active enemies move/spawn) and the full suite.
 >
