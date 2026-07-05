@@ -66,6 +66,21 @@
 > scenery chain (it's real + decoded above, but it's polish, not playability). The snapshot path is
 > a fully playable L1 sandbox to build combat in; cold-boot spawn can come last.
 >
+> **COMBAT SLICE DE-RISKED (2026-07-05).** PLAYER SHOTS ARE BEHAVIOR 0x02 (the A4EA fanout seed
+> stamps logic_id=2 = `AED8`) -- ALREADY recovered as `object_update_aed8` + registered in
+> `NATIVE_OBJECT_HANDLERS` (object_update.py). So "shots visible + moving" is a DELEGATION BRIDGE,
+> not new recovery: in `behavior_walk._dispatch`, for a type-2/4 behavior NOT in the walk's own set
+> {0x1F,0x20,0x0B,0x01}, project the record to a 1-slot `ObjectPool(base=rec, stride=0x38,
+> slots=(words,))`, build an `ObjectUpdateGlobals` from the image cells (tiles + ref_box=237E/2380 +
+> a278 + step_mode 2312 + direction_table A348 + a47e/a7a0/phase_2328/global_disable...), call the
+> `NATIVE_OBJECT_HANDLERS` handler, write back its `{offset: value}`. This lights up 0x02 (player
+> shots) AND 0x0C/0x05/0x06/0x12/0x1E/0x1D/0x14/0x13/15/1C at once. GATE: the 200-frame shadow probe
+> must STILL pass (the delegation only touches ids the walk currently fail-louds on -- none appear
+> in the L1_start shadow -- so it should stay 200/0); verify player shots via a new fire→walk→VM
+> oracle. Plus: copy the fanout's new gameplay-pool records from NativeGame into the image each tick
+> (play_native) so the shots the player fires actually enter the walked pool. THEN 62F6 for the
+> shot↔enemy kill. This is the concrete combat entry point for the next session.
+>
 > ## WHAT'S RECOVERED + VERIFIED FOR L1 (all pushed):
 > the whole behavior walk (`adapters/behavior_walk`, 200-frame zero-divergence shadow), the scene
 > spawner (`adapters/level_object_script.run_level_object_script_4a65`, 18/18 all planets incl.
