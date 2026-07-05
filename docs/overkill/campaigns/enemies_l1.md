@@ -58,6 +58,32 @@ shifts as the frontier peels; drive it to empty.
 Shared workers still to recover: **C237** (child-spawn, unlocks 0x25/0x90/0x91), **74E2** (0x29's
 ramp action). B729/5DB2/5E42 seek + steer are already recovered.
 
+### C237 child-spawn — TURN-KEY SPEC (empirically traced 2026-07-05, `scratchpad/trace_c237.py`)
+
+Decoded + demo-traced (25x throttled 0x25 calls witnessed; `BEDC=0` throughout L1):
+1. **Throttle** on `BEDC`/`DS:A956` (A956 is a SHARED counter ticked by EVERY C237 caller — 0x19,
+   0x24, 0x25, 0x90, 0x91 — in walk order): `BEDC==2` always spawn (A956 untouched); `BEDC==1`
+   `A956=(A956+1)`, spawn iff `A956&1`; else (`BEDC==0`/other) `A956=(A956+1)`, spawn iff
+   `A956&3==0`. The A956 write happens even on no-spawn. **Per-frame shadow starts A956 from the VM
+   value, so only within-frame call ORDER matters** (same as the VM's walk order → matches).
+2. **Spawn** → `7573` alloc (cursor DS:95DA) → slot or FFFF. Stamp: +00=1, +02=parent_x+4,
+   +04=parent_y+4, +06=parent_dir, +08=0x30, +0A=0, +14=0, +16=2, **+18=4** (child is behavior 0x04),
+   +1C=FFFF, +1E=0. Then IF `child_x(+02) >= 8` AND `parent_x <= 0xE0` AND `[98C0]`: `BEFF =
+   sound[parent_beh & 0xF]` (table 0x0B/0x0C/0x0E/0x11/0x12/0x13/0x14/0x15 for idx 0..7; parent==0x92
+   forces idx6=0x14). Return `bx = slot`.
+3. **No spawn** (throttle): return `bx = caller's entry bx` (STALE), `al=0`. **Pool-full**: `bx=FFFF`.
+
+**Caller 0x25 (8265)**: `if [232C]==0x1F { bx=C237(); if bx!=FFFF: [bx+8]=0x1A }`. So: spawned →
+`[slot+8]=0x1A`; **throttled → bx stale 0x4A → writes `DS:[0x52]=0x1A`** (MUST model — traced 25x);
+pool-full → nothing. **Caller 0x30 (8898)** ignores bx, just spawns + `BEFF=0x0E`. **0x90/0x91** call
+C237 via their 82CA anim-index jump table (more involved).
+
+**Unmask warning:** recovering C237 makes it spawn behavior-**0x04** children (handler AEBF: on L1
+`[2356]!=0` → `jmp AF60`, a variant of the recovered AED8 movement) — so the NEXT frame's walk hits
+0x04; recover AEBF/AF60 in the same slice or expect a fresh 0x04 gap. Suggested slice order: C237
+pure (throttle + stamp + sound) → 0x25 consumer (incl. the 0x52 stale write) → 0x04/AEBF → then
+0x30, then 0x90/0x91's jump table. Gate each on `verify_native_walk_demo` + 200/0 free-run.
+
 plus the **player-death** chain (9EA3; A95C=0 + [9791] + 2384=3 ship-death) ×3, and **type-5 pickup
 COLLECT** (AAD3: sound 7 + 5F0D score + AB00 +0x26 dispatch) ×2. Handler addresses via
 `scripts/behavior_zoo_xref.py` (149 indices -> 134 handlers; 106 are thin stubs over shared workers

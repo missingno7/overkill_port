@@ -29,12 +29,15 @@ step-language schema emerge, then a shadow-gated interpreter -> editor-ready. Ea
 is now tagged there.
 
 Highest-value next unlock: **C237** (the child-spawn shared worker) -- gates 0x25/0x90/0x91 (~646
-demo hits). Decoded: a difficulty throttle (BEDC/A956: spawn every / every-2nd / every-4th call), the
-7573 alloc (recovered), a parent-field stamp, and a parent-behavior&0xF SOUND-selection jump table
-(C2CE -> BEFF sound 0x0B..0x15). CAVEAT to verify empirically before wiring: the throttle's no-spawn
-return leaves `bx` = the caller's dispatch bx (id<<1), and 0x25 branches on `cmp bx,FFFF` -> a stale
-write to DS:[id<<1 + 8] on throttled frames; confirm against the VM before modelling. Clean non-C237
-alternatives: 0x12 (B2CD waypoint follower, 15 hits) and 0x29 (needs 74E2 decoded).
+demo hits). **Now fully decoded AND empirically demo-traced** -- the turn-key spec + caller reactions
+live in [`campaigns/enemies_l1.md`](campaigns/enemies_l1.md#c237-child-spawn). Trace (`trace_c237.py`,
+9500 frames) CONFIRMED the two things a static read couldn't: (a) the throttle fires often (0x25
+throttled 25x; A956 is a SHARED every-4th counter across all C237 callers, but the per-frame shadow
+starts A956 from the VM so only within-frame call order matters), and (b) the stale-bx quirk is REAL
+-- a throttled 0x25 call leaves bx=0x4A and writes `DS:[0x52]=0x1A` (must model). Recovering C237
+also UNMASKS behavior 0x04 (AEBF -> AF60, an AED8 variant). Suggested slice order: C237 pure -> 0x25
+(incl. the 0x52 stale write) -> 0x04 -> 0x30 -> 0x90/0x91. Clean non-C237 alternatives if preferred:
+0x12 (B2CD waypoint follower) and 0x29 (needs 74E2).
 
 ## 2026-07-05 - THE L1 FRONTIER IS NOW KNOWN: the demo walk-shadow names every unrecovered actor
 
