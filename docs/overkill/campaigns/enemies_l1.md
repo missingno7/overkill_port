@@ -41,10 +41,18 @@ add the handler → its gap drops to 0 in `verify_native_walk_demo` → the 200/
 frame, so handling 0x27 let the walk reach records that then surfaced 0x8b/0x8c earlier. The gap set
 shifts as the frontier peels; drive it to empty.
 
-**Next actor:** 0x91/0x90 (8291/8282, the sprite-anim sisters — sprite=base(2356)+[95EA table >>5 of
-2330], with a [232C]==0x1F secondary jump table at 82CA that spawns via C237 — so this pulls in the
-C237 shared spawn worker, itself a difficulty-gated 7573 alloc + a parent-behavior jump table at
-C2CE). Or 0x25 (8265, the simplest C237 consumer). C237 is the next shared prerequisite.
+**Next actors (scouted, by dependency):**
+* 0x2f (8820): sprite=0x43, [2308]=2, `call B729` (the 5DB2 seek tail — RECOVERED), then A278 drift
+  on +0x34 + a +0x32/+0x34 target flip. No new worker — a good next slice.
+* 0x29 (8721): a [2328]==7-gated sprite ramp to 0xA4 (then `call 74E2`), then [2312]=2 + `call 5E42`
+  (the delta-steer — RECOVERED). Needs 74E2 decoded (small).
+* 0x30 (8851): planet-5 anchor-proximity branch + a [233C]-indexed [96D2] sprite-anim table.
+* 0x91/0x90 (8291/8282): sprite=base(2356)+[95EA table, 2330>>5], + a [232C]==0x1F jump table (82CA)
+  that spawns via **C237** — pulls in the C237 shared spawn worker (difficulty-gated 7573 alloc +
+  a parent-behavior jump table at C2CE). 0x25 (8265) is the simplest C237 consumer.
+
+Shared workers still to recover: **C237** (child-spawn, unlocks 0x25/0x90/0x91), **74E2** (0x29's
+ramp action). B729/5DB2/5E42 seek + steer are already recovered.
 
 plus the **player-death** chain (9EA3; A95C=0 + [9791] + 2384=3 ship-death) ×3, and **type-5 pickup
 COLLECT** (AAD3: sound 7 + 5F0D score + AB00 +0x26 dispatch) ×2. Handler addresses via
