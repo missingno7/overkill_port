@@ -88,3 +88,8 @@ Format: `behaviour (handler) — guards → primitives(operands) → tail`.
   `animate` + `spawn` + `sound`; the `animate`-from-a-DATA-table shape (vs 0x27's inline) recurs
   (also 0x90/0x91's `95EA` table). Planet-5 has an extra anchor-proximity freeze (modelled, untested
   by the L1 demo).
+- **0x90 / 0x91 (`8282` / `8291`)** — `animate`(base[`2356`] + `95EA`[`2330`>>5]) → `gate`(`232C`==0x1F)
+  → the `95EA` value ALSO selects a `spawn`(C237) at `X±4` (value 0→-4, 2→+4, 1→none) → `BC45`.
+  `step_animated_spawner_90_91` (one fn, two bases). Note the recurring pattern: a table value that is
+  BOTH a sprite delta and a dispatch selector — a compact "phase table" idiom worth a first-class slot
+  in the eventual step language.

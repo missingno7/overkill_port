@@ -318,3 +318,55 @@ def step_spawner_anim_30(*, planet_2356: int, anchor_y_2380: int, y_word: int, s
     spawn = ((gate_2326 & 0xFFFF) == SPAWNER_30_GATE_2326_PLANET5 if p5
              else (gate_232a & 0xFFFF) == SPAWNER_30_GATE_232A)
     return Spawner30Step(early_return=False, sprite=sprite, spawn=spawn)
+
+
+# behaviors 0x90 / 0x91 animated spawners (1010:8282 / 8291): identical but for the base sprite.
+# The [2330]>>5 clock indexes the DS:95EA table; the value is BOTH the sprite delta AND the 82CA
+# jump-table selector (only values 0/1/2 occur on L1: 95EA[0..3] = {1,0,1,2}).
+ANIM_SPAWNER_90_BASE = 0x0088
+ANIM_SPAWNER_90_BASE_PLANET4 = 0x016C
+ANIM_SPAWNER_91_BASE = 0x008B
+ANIM_SPAWNER_91_BASE_PLANET4 = 0x016F
+ANIM_SPAWNER_PLANET4 = 0x0004
+ANIM_SPAWNER_GATE_232C = 0x001F
+
+
+@dataclass(frozen=True, slots=True)
+class AnimSpawner9091Step:
+    """behaviors 0x90/0x91 per-frame outcome (caller applies the sprite + the offset spawn)."""
+    sprite: int
+    spawn_x_delta: "int | None"   # None = no spawn; -4 / +4 = spawn a C237 child at that X offset
+
+
+@recovered_island(
+    asm=("1010:8282..82E9",),
+    contract="behaviors 0x90/0x91 (1010:8282/8291): base sprite (0x88/0x8B, or 0x16C/0x16F on planet "
+             "4) + the DS:95EA[[2330]>>5] delta; when [232C]==0x1F the same table value selects the "
+             "82CA action -- value 0 spawns a C237 child at X-4, value 2 at X+4, value 1 does nothing "
+             "(the ONLY values reachable on L1). The X offset is applied around the C237 call.",
+    status="OBSERVED",
+    merge_target="EnemyWaveSystem",
+    unknowns="the 82CA table entries for values >=3 (targets 4683/0402/... ) are NOT reachable on L1 "
+             "(95EA[0..3]={1,0,1,2}) and are left unrecovered (ValueError); the C237 spawn is caller-run.",
+)
+def step_animated_spawner_90_91(*, base_normal: int, base_planet4: int, planet_2356: int,
+                                anim_table_value: int, gate_232c: int) -> AnimSpawner9091Step:
+    """One frame of behavior ``0x90``/``0x91`` (``1010:8282``/``8291``), pure (the C237 spawn excluded).
+
+    ``anim_table_value`` is the ``DS:95EA[[2330]>>5]`` word the caller read.  It is added to the
+    planet-selected base sprite AND, on the ``[232C]==0x1F`` frame, selects the 82CA action: 0 -> a
+    C237 child spawned at ``X-4``, 2 -> at ``X+4``, 1 -> nothing.  The caller applies the sprite write
+    and, per ``spawn_x_delta``, the offset-then-C237-then-restore.
+    """
+    base = base_planet4 if (planet_2356 & 0xFFFF) == ANIM_SPAWNER_PLANET4 else base_normal
+    tv = anim_table_value & 0xFFFF
+    sprite = (base + tv) & 0xFFFF
+    spawn_x_delta = None
+    if (gate_232c & 0xFFFF) == ANIM_SPAWNER_GATE_232C:
+        if tv == 0:
+            spawn_x_delta = -4
+        elif tv == 2:
+            spawn_x_delta = 4
+        elif tv != 1:
+            raise ValueError(f"unverified 82CA jump target for 95EA value {tv:#x} (only 0/1/2 on L1)")
+    return AnimSpawner9091Step(sprite=sprite, spawn_x_delta=spawn_x_delta)

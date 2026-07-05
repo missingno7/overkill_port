@@ -23,7 +23,7 @@ the unrecovered behaviors, by hit frequency (= recovery priority) —
 | behavior | hits | handler (CS:EFC4) | note |
 |---|---|---|---|
 | 0x1a | 480 | 1010:BAD4 | scenery (see scene.md) |
-| 0x91 | 383 | 1010:8291 | sprite anim: ax from [2356] diff, cycle on frame ctr [2330]; -> BC45 |
+| ~~0x91~~ | ~~383~~ | 1010:8291 | **RECOVERED** (step_animated_spawner_90_91): animate 95EA@2330 + C237 spawn at X±4 on [232C]==0x1F |
 | ~~0x25~~ | ~~367~~ | 1010:8265 | **RECOVERED** (_step_spawn_25 + C237): spawn child when [232C]==0x1F, sprite 0x1A; incl. the throttled-stale [0x52] write |
 | ~~0x27~~ | ~~320~~ | 1010:835D | **RECOVERED** (step_sprite_scroller_27_835d): sprite=base+(2338>>1), x+=1, BC45 |
 | 0x12 | 281 | 1010:B2CD | (B2C8 shared-tail family, x9) |
@@ -31,7 +31,7 @@ the unrecovered behaviors, by hit frequency (= recovery priority) —
 | 0x29 | 182 | 1010:8721 | |
 | 0x8c | 108 | 1010:BB80 | scenery-ish (BBxx) |
 | 0x28 | 84 | 1010:8676 | alias-group with 0x2A |
-| 0x90 | 80 | 1010:8282 | sprite anim (sister of 0x91) |
+| ~~0x90~~ | ~~80~~ | 1010:8282 | **RECOVERED** (sister of 0x91, same fn, base 0x88/0x16C) |
 | ~~0x2f~~ | ~~80~~ | 1010:8820 | **RECOVERED** (step_bounce_scanner_2f): sprite 0x43, B729 seek, target-x drift, blocked→target-y bounce 0↔0xC0 |
 | ~~0x30~~ | ~~80~~ | 1010:8851 | **RECOVERED** (step_spawner_anim_30): animate [96D2]@233C, gate [232A]==0xF -> C237 spawn + sound 0x0E |
 | 0x11 | 4 | 1010:B2C3 | (B2C8 shared-tail family) |
@@ -44,6 +44,12 @@ add the handler → its gap drops to 0 in `verify_native_walk_demo` → the 200/
 → no new divergence). NOTE: recovering one behavior UNMASKS downstream ones — a gap aborts the whole
 frame, so handling 0x27 let the walk reach records that then surfaced 0x8b/0x8c earlier. The gap set
 shifts as the frontier peels; drive it to empty.
+
+**IMMEDIATE next: behavior 0x04** (handler AEBF -> AF60) — now UNMASKED (24+ demo gaps) because the
+recovered 0x25/0x30/0x90/0x91 spawn C237 children (which are behaviour 0x04). AEBF on L1 ([2356]!=0)
+-> AF60 = step the child 2px in its direction ([bp+6]) TWICE (the call/ret-doubled 8-dir step at
+AF6E), then the B250 contact + AD60 bounds tail (both recovered in the AED8 family) via the pushed
+B250 return. It's an AED8 variant WITHOUT the substate decrement. Recover it to close the spawn chain.
 
 **Next actors (scouted, by dependency):**
 * 0x2f (8820): sprite=0x43, [2308]=2, `call B729` (the 5DB2 seek tail — RECOVERED), then A278 drift

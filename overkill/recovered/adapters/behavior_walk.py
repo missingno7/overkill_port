@@ -35,6 +35,7 @@ from overkill.recovered.systems.collision import (
 )
 from overkill.recovered.systems.companion import step_companion_ab10
 from overkill.recovered.systems.enemy_behaviors import (
+    step_animated_spawner_90_91,
     step_bounce_scanner_2f,
     step_enemy_behavior_20,
     step_spawner_anim_30,
@@ -218,6 +219,23 @@ def _step_spawn_25(mem, rec: int) -> None:
         mem.ww(DS, 0x0052, 0x001A)
     elif result != 0xFFFF:
         mem.ww(DS, result + 0x08, 0x001A)
+
+
+_ANIM_SPAWNER_BASES = {0x90: (0x0088, 0x016C), 0x91: (0x008B, 0x016F)}
+
+
+def _step_anim_spawner_90_91(mem, rec: int, beh: int) -> None:
+    anim = mem.rw(DS, (0x95EA + ((mem.rw(DS, 0x2330) >> 5) & 0xFFFF) * 2) & 0xFFFF)
+    base_normal, base_planet4 = _ANIM_SPAWNER_BASES[beh]
+    r = step_animated_spawner_90_91(
+        base_normal=base_normal, base_planet4=base_planet4,
+        planet_2356=mem.rw(DS, 0x2356), anim_table_value=anim, gate_232c=mem.rw(DS, 0x232C))
+    mem.ww(DS, rec + 0x08, r.sprite)
+    if r.spawn_x_delta is not None:
+        # 82D0/82DE: offset X, spawn a C237 child at the offset, restore X
+        mem.ww(DS, rec + 0x02, (mem.rw(DS, rec + 0x02) + r.spawn_x_delta) & 0xFFFF)
+        _spawn_child_c237(mem, rec, beh)
+        mem.ww(DS, rec + 0x02, (mem.rw(DS, rec + 0x02) - r.spawn_x_delta) & 0xFFFF)
 
 
 def _step_spawner_30(mem, rec: int) -> None:
@@ -635,6 +653,9 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
         elif beh == 0x30:
             _step_spawner_30(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8851 exits jmp BC45
+        elif beh in (0x90, 0x91):
+            _step_anim_spawner_90_91(mem, rec, beh)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8282/8291 exit jmp BC45
         else:
             raise RecoveryGap(f"behavior {beh:#04x} (record {rec:04X})",
                               "no native handler registered -- recover it before walking")
