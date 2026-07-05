@@ -12,7 +12,10 @@
 > 1. `play_native --level 0` cold-boots + renders the frame — **DONE**.
 > 2. player moves + fires — **DONE**.
 > 3. enemies spawn as the level scrolls (`4A65` walker) + behave (the behavior walk), RENDERED —
->    logic recovered + shadow-proven; **NOT wired into play_native**; scenery `0x19/0x1A` unrecovered.
+>    **behave + RENDERED is WIRED (2026-07-05): `play_native --snapshot` shows the real moving enemy
+>    wave** via `overkill/native_walk_frame` over a DGROUP image (smoke `verify_play_native_enemies`,
+>    90/90 frames, enemies move). REMAINING for clause 3: COLD spawn (the `4A65` walker in the frame
+>    flow so `--level 0` populates without a snapshot) + the scenery behaviors `0x19/0x1A`.
 > 4. player shots kill enemies; enemy shots/contact hurt the player — anchor-touch + damage
 >    recovered; **the `62F6` shot↔enemy scan is the gap**.
 > 5. death→respawn / level-end→win — detection is fail-loud; **edges are recovered pieces, not
@@ -28,13 +31,15 @@
 > now fixed to call the recovered fn. This is the first piece of the play_native wiring + it applies
 > the island discipline in new code (the debt fix).
 >
-> **THE NEXT WIRING SLICE (closes the loop for the first time):** wire the
-> shadow-proven behavior walk into `play_native` over a `MutFlatMemory` DGROUP image, starting from
-> `--snapshot L1_start` (which already has live enemies) so NO new recovery is needed — and SEE the
-> enemies move in the pygame window. Sequence after that: cold spawn (the `4A65` walker in the frame
-> flow + the scenery behaviors) → shot↔enemy collision (`62F6`) → the death/level-end edges → HUD.
-> Detailed wiring design + the cold-populate gap are in the dated entries below.
-> `native_game.step` already has an additive `run_object_pass: bool = True` flag for this.
+> **LOOP CLOSED (2026-07-05): the walk is WIRED into play_native.** `overkill/native_walk_frame`
+> (advance_object_frame = the counter cascade + the behaviour walk over a MutFlatMemory image;
+> sync_player_anchor; project_state) is the runtime seam; `play_native --snapshot` runs it each tick
+> (NativeGame owns player+scroll via `run_object_pass=False`; the image owns the object pools) and
+> renders the projected enemies. Smoke `verify_play_native_enemies` proves 90/90 moving.
+> **THE NEXT WIRING SLICE:** COLD spawn — run the `4A65` script walker in the frame flow + recover
+> the scenery behaviors `0x19/0x1A` (+ `BB03`/`C237`) so `--level 0` populates without a snapshot
+> (the cold path currently keeps the player-only frame). Then: player fire into the image (shots
+> visible) → shot↔enemy collision (`62F6`) → the death/level-end edges → HUD.
 >
 > ## WHAT'S RECOVERED + VERIFIED FOR L1 (all pushed):
 > the whole behavior walk (`adapters/behavior_walk`, 200-frame zero-divergence shadow), the scene

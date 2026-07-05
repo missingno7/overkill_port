@@ -409,7 +409,26 @@ def main(argv=None) -> int:
     # present the state 9B2E produced last tick, THEN advance -- the 9B2E-family step polls its own
     # input, exactly like the original's input-poll-first controller.  The mutable cell carries the
     # carried state between the two closures.
-    cell = {"game": game, "starfield": starfield, "tick": 0}
+    #
+    # OBJECT-FRAME OWNERSHIP: the enemy wave (the whole A9D3..AA25 behaviour walk) runs over a
+    # MutFlatMemory DGROUP image via overkill.native_walk_frame -- the shadow-proven registry of
+    # recovered systems -- so play_native SHOWS the real enemies (controller/wave/shots/companion).
+    # NativeGame still owns the player anchor + scroll; each tick syncs the anchor into the image,
+    # advances the object frame, and projects the pools back out for the renderer.  The image is
+    # only available on the --snapshot path today (it needs a live DGROUP); the cold path keeps the
+    # player-only frame until the level-object-script spawn is wired into build_cold_level_start.
+    from overkill.native_walk_frame import (  # noqa: E402
+        advance_object_frame, level_tiles, project_state, sync_player_anchor,
+    )
+    from overkill.recovered.adapters.flat_memory import MutFlatMemory  # noqa: E402
+
+    walk_image = None
+    walk_tiles = None
+    if args.snapshot:
+        walk_image = MutFlatMemory((Path(args.snapshot) / "memory_1mb.bin").read_bytes())
+        walk_tiles = level_tiles(walk_image)
+
+    cell = {"game": game, "starfield": starfield, "tick": 0, "walk_gap": None}
 
     def _advance() -> None:
         keys = pygame.key.get_pressed()
@@ -429,7 +448,24 @@ def main(argv=None) -> int:
             read_ds_word=lambda off: 0,
             update_globals=_object_update_globals(g),
             scroll_gate=(0, 0, 0),
+            # the object pass is run over the DGROUP image below (the full behaviour walk), so skip
+            # NativeGame's dataclass object pass when the image owns the pools -- no double-step.
+            run_object_pass=walk_image is None,
         )
+        # The native OBJECT FRAME over the image: sync the player anchor + scroll, advance the whole
+        # behaviour walk, and project the enemy/effect/shot pools back into g for rendering. Fail-loud
+        # on an unrecovered object (holds the last good frame, like a gameplay-stage exception).
+        if walk_image is not None and cell["walk_gap"] is None:
+            sp = g.state.special_pool
+            sync_player_anchor(walk_image, sp.x_word(0), sp.y_word(0), sp.word_at(0, 0x08))
+            walk_image.ww(0x25CC, 0x234E, g.origin_x)
+            walk_image.ww(0x25CC, 0x2350, g.row_base)
+            try:
+                advance_object_frame(walk_image, walk_tiles)
+                g = g.with_state(project_state(walk_image))
+            except RecoveryGap as exc:
+                cell["walk_gap"] = f"{type(exc).__name__}: {exc}"
+                print(f"object-walk gap at tick {cell['tick']}: {cell['walk_gap']}")
         cell["game"] = g
         cell["starfield"] = advance_starfield(cell["starfield"])  # the recovered parallax move
         cell["tick"] += 1
