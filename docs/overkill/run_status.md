@@ -36,10 +36,26 @@
 > sync_player_anchor; project_state) is the runtime seam; `play_native --snapshot` runs it each tick
 > (NativeGame owns player+scroll via `run_object_pass=False`; the image owns the object pools) and
 > renders the projected enemies. Smoke `verify_play_native_enemies` proves 90/90 moving.
-> **THE NEXT WIRING SLICE:** COLD spawn — run the `4A65` script walker in the frame flow + recover
-> the scenery behaviors `0x19/0x1A` (+ `BB03`/`C237`) so `--level 0` populates without a snapshot
-> (the cold path currently keeps the player-only frame). Then: player fire into the image (shots
-> visible) → shot↔enemy collision (`62F6`) → the death/level-end edges → HUD.
+> **THE NEXT WIRING SLICE:** COLD spawn — run the `4A65` script walker in the frame flow so
+> `--level 0` populates without a snapshot. BLOCKER (decoded 2026-07-05, ready to recover): as L1
+> scrolls in from row 0x110 the walker spawns SCENERY the walk must handle (fail-loud otherwise) --
+> the controller spawns frame 0, scenery `0x19` first blocks at ~frame 6. The scenery CHAIN, fully
+> decoded, built on ALREADY-recovered pieces:
+> * shared tail **`BB03`** = a vertical BOUNCE: dir 6 (up) via the recovered `AFD8`
+>   (`contact_probe_afd8`) until y==0 or contact -> flip to dir 2 (down) until y==0xC0 or contact ->
+>   flip back; exits via the recovered `BC45` postmove (already in the walk).
+> * behavior **`0x1A`** (`BAD4`): sprite = `([2338] >> 1) + 0x24` (NOTE: `>>1`, an earlier note said
+>   `>>4` -- corrected by re-decode), then `BB03`. FULLY recoverable now (all pieces exist).
+> * behavior **`0x19`** (`BAF0`): sprite = `[233A] + 0x36`; when `[232E]==0x3F` (every 64 frames)
+>   call `C237` then `BB03`. `C237` is NOT a move -- it FIRES: BEDC/A956-gated rate, `7573` alloc,
+>   stamp a projectile at (x+4, y+4), dir = shooter +6, sprite 0x30, type 2, **behavior 0x04**,
+>   +0x16=2/+0x18=4/+0x1C=FFFF, with an x>=8 & bp.x<=0xE0 guard + a +0x18-keyed C2CE dispatch.
+> * behavior **`0x04`** (the C237 projectile) is UNRECOVERED -- decode `EFC4[4]` next; it's the
+>   deepest link. Recover order: BB03 + 0x1A (clean, driven-oracle a synthetic record vs VM) ->
+>   0x04 -> C237 emit -> 0x19 -> register all in the walk -> extend the shadow to a scroll-through
+>   range that hits them -> then wire the 4A65 walker into play_native's cold frame flow.
+> AFTER cold spawn: player fire into the image (shots visible) -> shot↔enemy collision (`62F6`) ->
+> the death/level-end edges -> HUD.
 >
 > ## WHAT'S RECOVERED + VERIFIED FOR L1 (all pushed):
 > the whole behavior walk (`adapters/behavior_walk`, 200-frame zero-divergence shadow), the scene
