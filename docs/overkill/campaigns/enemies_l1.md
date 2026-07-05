@@ -1,5 +1,9 @@
 # Campaign: ENEMIES & WAVES — L1 (tier: byte-exact)
 
+> Crystallization target for this campaign: [`actor_model.md`](../actor_model.md) — lift each recovered
+> handler into a primitive decomposition (tag it in §4 there) so the zoo converges on a verified,
+> data-driven step language. Recover against the demo frontier below; tag as you go.
+
 **Scope.** Planet 1's full enemy lifecycle: the 0x1F wave controller, 0x20 enemies
 (approach/hold/shoot/dive/re-shuffle), 0x0B enemy shots, 0x01 dying, the type-6 companion, type-5
 pickups — spawning, behaving, rendering.
@@ -28,7 +32,7 @@ the unrecovered behaviors, by hit frequency (= recovery priority) —
 | 0x8c | 108 | 1010:BB80 | scenery-ish (BBxx) |
 | 0x28 | 84 | 1010:8676 | alias-group with 0x2A |
 | 0x90 | 80 | 1010:8282 | sprite anim (sister of 0x91) |
-| 0x2f | 80 | 1010:8820 | |
+| ~~0x2f~~ | ~~80~~ | 1010:8820 | **RECOVERED** (step_bounce_scanner_2f): sprite 0x43, B729 seek, target-x drift, blocked→target-y bounce 0↔0xC0 |
 | 0x30 | 80 | 1010:8851 | |
 | 0x11 | 4 | 1010:B2C3 | (B2C8 shared-tail family) |
 | 0x01 key1 latch9 | 32 | (in-walk 0x01) | the dying-morph (BE60 prev 0x24/0x25 -> respawn-as) |

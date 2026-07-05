@@ -238,3 +238,34 @@ def step_sprite_scroller_27_835d(*, clock_2338: int, planet_2356: int, x_word: i
             else SCROLLER_27_SPRITE_BASE)
     sprite = (base + ((clock_2338 & 0xFFFF) >> 1)) & 0xFFFF
     return EnemyBehaviorStep(record_writes={0x08: sprite, 0x02: (x_word + 1) & 0xFFFF})
+
+
+# behavior 0x2f patrol-bounce: static sprite, seek (caller), then drift the target and bounce target-y.
+BOUNCE_2F_SPRITE = 0x0043           # 8820: fixed sprite
+BOUNCE_2F_TARGET_Y_HI = 0x00C0      # 8849: the far bounce endpoint
+BOUNCE_2F_TARGET_Y_LO = 0x0000      # 8841: the near bounce endpoint
+
+
+@recovered_island(
+    asm=("1010:8820..8851",),
+    contract="behavior 0x2f (1010:8820): sprite=0x43, then the B729 seek (mode 2, caller-applied via "
+             "5DB2); the target X (+0x34) drifts by DS:A278 every frame, and WHEN THE SEEK IS BLOCKED "
+             "the target Y (+0x32) toggles between 0 and 0xC0 (a vertical patrol bounce); then BC45.",
+    status="OBSERVED",
+    merge_target="EnemyWaveSystem",
+    unknowns="the seek itself (+0x02/+0x04/+0x06) is applied by the caller's _apply_seek; 'blocked' is "
+             "the 5DB2 result (B729's `cmp [230A],0`), 230A being excluded shadow scratch.",
+)
+def step_bounce_scanner_2f(*, blocked: bool, target_y_32: int, target_x_34: int,
+                           a278: int) -> EnemyBehaviorStep:
+    """One frame of behavior ``0x2f`` (``1010:8820``), pure (the seek excluded).
+
+    The caller runs the B729 seek first and passes its ``blocked`` flag.  This owns the non-seek
+    writes: the fixed sprite, the target-X drift by ``a278``, and -- only when the seek was blocked --
+    the target-Y bounce toggle (``0`` <-> ``0xC0``).
+    """
+    writes = {0x08: BOUNCE_2F_SPRITE, 0x34: (target_x_34 + a278) & 0xFFFF}
+    if blocked:
+        writes[0x32] = (BOUNCE_2F_TARGET_Y_HI if (target_y_32 & 0xFFFF) == 0
+                        else BOUNCE_2F_TARGET_Y_LO)
+    return EnemyBehaviorStep(record_writes=writes)

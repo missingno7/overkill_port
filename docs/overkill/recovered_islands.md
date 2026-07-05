@@ -4,7 +4,7 @@
      Source of truth = the @recovered_island metadata on each recovered function.
      tests/test_island_registry.py fails if this file drifts from the code. -->
 
-36 recovered islands (1 OBSERVED, 3 ASM_MATCHED, 32 VERIFIED).
+37 recovered islands (2 OBSERVED, 3 ASM_MATCHED, 32 VERIFIED).
 
 | ASM boundary | Function | Status | Merge target | Contract |
 |---|---|---|---|---|
@@ -20,6 +20,7 @@
 | `1010:7476..74B4`, `1010:74B5..74E1`, `1010:74E2..74FD` | `systems.frame_loop.enemy_shot_stamp_7476` | VERIFIED | EnemyWaveSystem | the enemy SHOT spawn: gameplay-pool alloc (7573), sound BEFF=0x1A if 98C0, muzzle offset by the A8C2 leader-group flag, the type-2/behavior-0x0B/sprite-0x31 stamp, and the 74E2 aim deltas at the player anchor into +0x2A/+0x2C (the 5E42 steer inputs) |
 | `1010:8209..8247` | `systems.frame_loop.enemy_spawn_stamp_8209` | VERIFIED | EnemyWaveSystem | the enemy spawn field template written into a 7524-allocated slot; x/y from the caller's ss:[bp+2/4] frame |
 | `1010:835D..8377` | `systems.enemy_behaviors.step_sprite_scroller_27_835d` | OBSERVED | EnemyWaveSystem | behavior 0x27 (1010:835D): a pure sprite scroller -- sprite = base + (DS:2338 >> 1) with base 0x24 on planet 5 (DS:2356==5) else 0x27, then x += 1; the handler then falls into the shared BC45 postmove tail (drift/clamp/bounds/contact, caller-owned). |
+| `1010:8820..8851` | `systems.enemy_behaviors.step_bounce_scanner_2f` | OBSERVED | EnemyWaveSystem | behavior 0x2f (1010:8820): sprite=0x43, then the B729 seek (mode 2, caller-applied via 5DB2); the target X (+0x34) drifts by DS:A278 every frame, and WHEN THE SEEK IS BLOCKED the target Y (+0x32) toggles between 0 and 0xC0 (a vertical patrol bounce); then BC45. |
 | `1010:9B6F`, `1010:9B79`, `1010:9B83`, `1010:9B8D` | `systems.movement.step_view_anchor_by_input` | VERIFIED | FrameLoop | 9B2E movement-bits stage: apply held direction input to the view-anchor position via the four A5D1/A5EA/A5F9/A607 axis clamp-steps |
 | `1010:9FEA` | `systems.movement.object_child_coord_update_9fea` | VERIFIED | MovementSystem | linked/child object coordinate update: base + table delta + 2x vertical scroll bias, Y clamped 0..00C0 |
 | `1010:A5D1` | `systems.movement.one_pixel_axis_step` | VERIFIED | MovementSystem | single-pixel axis step when the no-clamp global gate is set |

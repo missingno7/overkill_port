@@ -35,6 +35,7 @@ from overkill.recovered.systems.collision import (
 )
 from overkill.recovered.systems.companion import step_companion_ab10
 from overkill.recovered.systems.enemy_behaviors import (
+    step_bounce_scanner_2f,
     step_enemy_behavior_20,
     step_sprite_scroller_27_835d,
     step_wave_controller_1f,
@@ -91,7 +92,7 @@ def _alloc(mem, cursor_cell: int, base: int, wrap: int, slots: int) -> int:
     return 0xFFFF
 
 
-def _apply_seek(mem, rec: int, target_y: int, target_x: int, mode: int) -> None:
+def _apply_seek(mem, rec: int, target_y: int, target_x: int, mode: int) -> bool:
     """The B729/B85C move tail: target globals, the 5DB2 seek, then the +0x06 = 4 override."""
     mem.ww(DS, 0x2304, target_y)
     mem.ww(DS, 0x2306, target_x)
@@ -103,6 +104,9 @@ def _apply_seek(mem, rec: int, target_y: int, target_x: int, mode: int) -> None:
     mem.ww(DS, rec + 0x02, seek.x_word)
     mem.ww(DS, rec + 0x04, seek.y_word)
     mem.ww(DS, rec + 0x06, seek.direction_or_step)
+    # B729 exposes the seek's blocked state as `cmp [230A],0`; 230A is excluded shadow scratch, so a
+    # caller that branches on it (behavior 0x2f) reads the pure result rather than the global.
+    return seek.blocked
 
 
 def _step_controller_1f(mem, rec: int) -> None:
@@ -171,6 +175,16 @@ def _step_scroller_27(mem, rec: int) -> None:
     r = step_sprite_scroller_27_835d(
         clock_2338=mem.rw(DS, 0x2338), planet_2356=mem.rw(DS, 0x2356),
         x_word=mem.rw(DS, rec + 0x02))
+    for off, val in r.record_writes.items():
+        mem.ww(DS, rec + off, val)
+
+
+def _step_bounce_2f(mem, rec: int) -> None:
+    # 8825 sets the seek mode [2308]=2 then calls B729; the seek reads the PRE-drift target (+0x32/34)
+    blocked = _apply_seek(mem, rec, mem.rw(DS, rec + 0x32), mem.rw(DS, rec + 0x34), 2)
+    r = step_bounce_scanner_2f(
+        blocked=blocked, target_y_32=mem.rw(DS, rec + 0x32),
+        target_x_34=mem.rw(DS, rec + 0x34), a278=mem.rw(DS, 0xA278))
     for off, val in r.record_writes.items():
         mem.ww(DS, rec + off, val)
 
@@ -556,6 +570,9 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
         elif beh == 0x27:
             _step_scroller_27(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # 835D exits jmp BC45
+        elif beh == 0x2F:
+            _step_bounce_2f(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8820 exits jmp BC45
         else:
             raise RecoveryGap(f"behavior {beh:#04x} (record {rec:04X})",
                               "no native handler registered -- recover it before walking")
