@@ -183,6 +183,22 @@ class B24dSlotUpdate:
 
 
 @dataclass(frozen=True, slots=True)
+class Af60SlotUpdate:
+    """Pure WHOLE per-slot result of the 1010:AF60 movement (EFAE logic_id 4, planet != 0 on L1).
+
+    AF60 steps the slot TWICE by its fixed direction (+06, 2px each -- the same 8-way table AED8/B24D
+    use, at MOVEMENT_MODE_STEP_5E0C's mode-2 pixel/repeat), then joins the identical B250 overlap-
+    contact selector + AD5A/ADC9 -> AD60 tail: no contact -> AD5A (x += DS:A278) then AD60; contact ->
+    ADC9 (x = FFFFh, the death sentinel) then AD60.  Direction and sprite are untouched -- only x/y/
+    active change.  The in-box contact's single 9E19 fan-out (logic_id 4 != 3, so exactly one call
+    per :func:`contact_fanout_count`) is caller-owned, signalled by ``x_word == 0xFFFF``."""
+
+    x_word: int
+    y_word: int
+    active_word: int
+
+
+@dataclass(frozen=True, slots=True)
 class Object8d4fSlotUpdate:
     """Pure per-slot result of the 1010:8D4F behavior's NOT-BLOCKED path (EFAE logic_ids
     0x13/0x15/0x1C/0x1F: target-patrol seek toward a SHARED GLOBAL waypoint (DS:A482 -> two words),

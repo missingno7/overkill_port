@@ -67,6 +67,7 @@ from overkill.recovered.systems.objects import (
     child_spawn_sound_c237,
     child_spawn_throttle_c237,
     object_update_aed8,
+    object_update_af60,
     object_update_b24d,
 )
 from overkill.recovered.systems.score import bcd_add_score
@@ -191,9 +192,11 @@ def _spawn_child_c237(mem, rec: int, parent_beh: int) -> "int | None":
     """1010:C237: the difficulty-throttled child spawn. Returns the child slot offset (spawned),
     0xFFFF (pool full), or None (throttled -- no allocation)."""
     bedc = mem.rw(DS, 0xBEDC)
-    allow, a956 = child_spawn_throttle_c237(bedc, mem.rw(DS, 0xA956))
+    # DS:A956 is a BYTE counter (`inc`/`and` at C245/C253 are the FE 06 / 80 26 byte-width opcodes) --
+    # a word rw/ww here would clobber the adjacent DS:A957 byte (a real bug the demo shadow caught).
+    allow, a956 = child_spawn_throttle_c237(bedc, mem.rb(DS, 0xA956))
     if bedc != 0x0002:
-        mem.ww(DS, 0xA956, a956)          # A956 is ticked on the BEDC 0/1 paths, spawn or not
+        mem.wb(DS, 0xA956, a956)          # A956 is ticked on the BEDC 0/1 paths, spawn or not
     if not allow:
         return None
     slot = _alloc(mem, 0x95DA, GAMEPLAY_POOL_BASE, GAMEPLAY_POOL_WRAP, GAMEPLAY_SLOTS)
@@ -303,6 +306,29 @@ def _step_shot_02(mem, rec: int, tiles: LevelTileContext) -> None:
     mem.ww(DS, rec + 0x02, u.x_word)
     mem.ww(DS, rec + 0x04, u.y_word)
     mem.ww(DS, rec + 0x00, u.active_word)
+
+
+def _step_child_04(mem, rec: int, tiles: LevelTileContext) -> None:
+    """Behavior 0x04 (``1010:AEBF``, EFAE logic_id 4) -- the C237-spawned child. On the ``planet !=
+    0`` path (DS:2356 != 0, always true on L1: 2356==1) AEBF falls straight into AF60 with B250
+    pushed as the return -- a thin adapter around the whole-AF60 update (double 2px step + the
+    shared B250 contact + AD5A/ADC9 -> AD60 tail).  Contact triggers the single 9E19 fan-out
+    (logic_id 4 != 3, so exactly one call per contact_fanout_count) exactly like behavior 0x0B's
+    shot-hit beat."""
+    if mem.rw(DS, 0x2356) == 0:
+        raise RecoveryGap("behavior 0x04 planet-0 direction dispatch (1010:AECD)",
+                          "the AEE4 8px-step / direction==4 special case is not recovered "
+                          "(only the AF60 double-step path used on planets 1-5)")
+    u = object_update_af60(
+        mem.rw(DS, rec + 0x02), mem.rw(DS, rec + 0x04), mem.rw(DS, rec + 0x06),
+        mem.rw(DS, rec + 0x00), mem.rw(DS, rec + 0x1E),
+        mem.rw(DS, rec + 0x0A), mem.rw(DS, rec + 0x18),
+        mem.rw(DS, 0x237E), mem.rw(DS, 0x2380), mem.rw(DS, 0xA278), False, tiles)
+    mem.ww(DS, rec + 0x02, u.x_word)
+    mem.ww(DS, rec + 0x04, u.y_word)
+    mem.ww(DS, rec + 0x00, u.active_word)
+    if u.x_word == 0xFFFF:
+        _shot_hit_9e19(mem)
 
 
 def _shot_hit_9e19(mem) -> None:
@@ -638,6 +664,8 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
             _step_shot_0b(mem, rec, tiles)                      # B24D's AD5A/AD60 tail is internal
         elif beh == 0x02:
             _step_shot_02(mem, rec, tiles)                      # player shots (AED8's AD60 internal)
+        elif beh == 0x04:
+            _step_child_04(mem, rec, tiles)                     # C237 children (AF60's AD60 internal)
         elif beh == 0x01:
             _step_dying_01(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # BE43/BEAD/BEC2 exit jmp BC45

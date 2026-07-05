@@ -18,6 +18,7 @@ from overkill.recovered.domain.object_behaviors import (
     Ae2cSlotUpdate,
     Ae7dSlotUpdate,
     Aed8SlotUpdate,
+    Af60SlotUpdate,
     B1b0Update,
     B24dSlotUpdate,
     B2cdSlotUpdate,
@@ -1068,6 +1069,56 @@ def object_update_b24d(
         active_word=new_active,
         move_step_error=steer.move_step_error,
     )
+
+
+def object_update_af60(
+    x_word: int,
+    y_word: int,
+    direction: int,
+    active_word: int,
+    substate_1e: int,
+    draw_layer: int,
+    logic_id: int,
+    ref_box_x: int,
+    ref_box_y: int,
+    a278: int,
+    tile_probe_suppressed: bool,
+    tiles: LevelTileContext,
+) -> Af60SlotUpdate:
+    """Pure WHOLE per-slot AF60 update (EFAE logic_id 4, planet != 0 path): double 2px step + B250
+    contact + AD60 -> active.
+
+    AF60 steps the slot twice by its FIXED direction (+06 unchanged; MOVEMENT_MODE_STEP_5E0C mode
+    2's ``pixels=2, repeat=2``), then the same B250 overlap-contact selector + AD5A/ADC9 -> AD60 tail
+    every EFAE-family behavior shares: contact iff ``+1E != 1`` AND the stepped point is inside the
+    DS:237E/2380 view box (:func:`overlap_contact_box_contains`) -- no contact -> AD5A adds DS:A278 to
+    X; contact -> ADC9 sets X = FFFFh; AD60 (:func:`object_bounds_tile_decision_ad60`) then clears
+    ``active`` out of play bounds or (tile-probe family) when the tile one row below has class 1."""
+    x = x_word & 0xFFFF
+    y = y_word & 0xFFFF
+    for _ in range(2):   # AF60's own call/ret double-step (MOVEMENT_MODE_STEP_5E0C mode 2 pixels=2)
+        for op in step_operations_for_direction(direction, 2):
+            delta = i16(op.delta_word)
+            if op.axis == "x":
+                x = u16(x + delta)
+            else:
+                y = u16(y + delta)
+
+    contact = (substate_1e & 0xFFFF) != AED8_SUBSTATE_SKIP_OVERLAP and overlap_contact_box_contains(
+        x, y, ref_box_x, ref_box_y
+    )
+    final_x = AED8_CONTACT_DEATH_X if contact else u16(x + a278)
+
+    decision = object_bounds_tile_decision_ad60(
+        final_x, y, draw_layer, logic_id, tile_probe_suppressed=tile_probe_suppressed
+    )
+    if decision.kind == "deactivate":
+        new_active = 0x0000
+    elif decision.kind == "skip":
+        new_active = active_word & 0xFFFF
+    else:  # tile_probe: deactivate iff the tile one map row below has class 1.
+        new_active = 0x0000 if object_tile_probe_deactivates_ad60(final_x, y, tiles) else (active_word & 0xFFFF)
+    return Af60SlotUpdate(x_word=final_x, y_word=y, active_word=new_active)
 
 
 ABA3_SPRITE_OFFSET = 0x0014

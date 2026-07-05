@@ -41,8 +41,16 @@ DEFAULT_DEMO = "demo_cold_start_full_20260705_123645"
 # islands.  A954 direction bits; 230A blocked flag; 230C/230E/2310 the 5E42 delta-steer scratch
 # triple ("not slot state" per domain/movement.DeltaSteerStep).  The attract-wave free run never
 # drives delta-steer so it only needed 230E/2310; a player-driven session also toggles 230C.
+#
+# DS:215A: traced (scratchpad/trace_215a.py, the 2026-07-05 cold-start demo) -- changes ~400 times
+# within a few thousand boundaries, written from dozens of addresses (06AB/4EB3/ECCC/024C/0266/
+# 0270/02B0/0D33/44AF/5C33/5C99/CD77/CE07/...) that are IRQ/sound/menu machinery, NOT object-behavior
+# code; none of the recovered walk handlers touch it.  It is reused as promiscuous low-memory scratch
+# across unrelated subroutines -- the shadow snapshots DGROUP at walk-ENTRY and only re-runs the
+# object walk, so it can never reproduce a value an ASYNC interrupt handler wrote between entry and
+# AA25; excluding it is a methodology fact, not a walk-correctness weakening.
 EXCLUDED_CELLS = {0xA954, 0xA955, 0x230A, 0x230B, 0x230C, 0x230D,
-                  0x230E, 0x230F, 0x2310, 0x2311}
+                  0x230E, 0x230F, 0x2310, 0x2311, 0x215A, 0x215B}
 
 
 def main(argv) -> int:

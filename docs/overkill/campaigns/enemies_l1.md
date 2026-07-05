@@ -45,26 +45,28 @@ add the handler → its gap drops to 0 in `verify_native_walk_demo` → the 200/
 frame, so handling 0x27 let the walk reach records that then surfaced 0x8b/0x8c earlier. The gap set
 shifts as the frontier peels; drive it to empty.
 
-**IMMEDIATE next: behavior 0x04** (handler AEBF -> AF60) — now UNMASKED (24+ demo gaps) because the
-recovered 0x25/0x30/0x90/0x91 spawn C237 children (which are behaviour 0x04). AEBF on L1 ([2356]!=0)
--> AF60 = step the child 2px in its direction ([bp+6]) TWICE (the call/ret-doubled 8-dir step at
-AF6E), then the B250 contact + AD60 bounds tail (both recovered in the AED8 family) via the pushed
-B250 return. It's an AED8 variant WITHOUT the substate decrement. Recover it to close the spawn chain.
+**The C237 spawn chain is now FULLY CLOSED**: 0x25/0x30/0x90/0x91 spawn C237 children (behaviour
+0x04), and **0x04 is RECOVERED** (`object_update_af60` in systems/objects.py + `_step_child_04` in
+the walk) — AEBF on L1 ([2356]!=0, always true) falls into AF60 = step the child 2px in its fixed
+direction TWICE (the call/ret-doubled 8-dir step, reusing the already-recovered
+`step_operations_for_direction`), then the SAME B250 contact + AD5A/ADC9->AD60 tail every EFAE-family
+behavior shares (AED8/B24D/AF60 are now a 3-member family); contact fires the single 9E19 damage
+beat (logic_id 4 != 3, exactly one call). Self-contained like 0x02/0x0B -- does NOT fall through
+`_postmove_bc45`. Two real bugs the shadow caught while landing this (both fixed, see run_status.md):
+DS:A956 is a BYTE counter (word rw/ww was clobbering the adjacent DS:A957), and DS:215A is
+promiscuous IRQ/sound/menu scratch (400+ writes from unrelated addresses traced) now excluded from
+both shadow probes' EXCLUDED_CELLS, same class as the 230A/230C steer scratch.
 
 **Next actors (scouted, by dependency):**
-* 0x2f (8820): sprite=0x43, [2308]=2, `call B729` (the 5DB2 seek tail — RECOVERED), then A278 drift
-  on +0x34 + a +0x32/+0x34 target flip. No new worker — a good next slice.
 * 0x29 (8721): a [2328]==7-gated sprite ramp to 0xA4 (then `call 74E2`), then [2312]=2 + `call 5E42`
   (the delta-steer — RECOVERED). Needs 74E2 decoded (small).
-* 0x30 (8851): planet-5 anchor-proximity branch + a [233C]-indexed [96D2] sprite-anim table.
-* 0x91/0x90 (8291/8282): sprite=base(2356)+[95EA table, 2330>>5], + a [232C]==0x1F jump table (82CA)
-  that spawns via **C237** — pulls in the C237 shared spawn worker (difficulty-gated 7573 alloc +
-  a parent-behavior jump table at C2CE). 0x25 (8265) is the simplest C237 consumer.
+* 0x12 (B2CD, 507 hits): the B2C8 shared-tail family (x9 handlers) — worth decoding the shared tail
+  once to unlock several behaviors at once (0x11 too).
+* 0x28 (8676, alias-group with 0x2A): likely another small C237-adjacent or animate-only actor.
 
-Shared workers still to recover: **C237** (child-spawn, unlocks 0x25/0x90/0x91), **74E2** (0x29's
-ramp action). B729/5DB2/5E42 seek + steer are already recovered.
+Remaining scenery (0x1a/0x19/0x8c/0x8b) belongs to scene.md.
 
-### C237 child-spawn — TURN-KEY SPEC (empirically traced 2026-07-05, `scratchpad/trace_c237.py`)
+### C237 child-spawn — DONE (spec below kept as historical reference; empirically traced 2026-07-05)
 
 Decoded + demo-traced (25x throttled 0x25 calls witnessed; `BEDC=0` throughout L1):
 1. **Throttle** on `BEDC`/`DS:A956` (A956 is a SHARED counter ticked by EVERY C237 caller — 0x19,

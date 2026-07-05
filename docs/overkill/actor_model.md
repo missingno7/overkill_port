@@ -93,3 +93,15 @@ Format: `behaviour (handler) — guards → primitives(operands) → tail`.
   `step_animated_spawner_90_91` (one fn, two bases). Note the recurring pattern: a table value that is
   BOTH a sprite delta and a dispatch selector — a compact "phase table" idiom worth a first-class slot
   in the eventual step language.
+- **0x04 (`AEBF`→`AF60`)** — the spawned CHILD's own behaviour, not a moving-object actor: type 2 (not
+  6), so it's SELF-CONTAINED (like 0x02/0x0B) and never reaches the shared `BC45` tail. `step(2px) ×2`
+  (fixed direction, no substate timer) → the same `contact`(B250, the `237E`/`2380` player box) →
+  `drift`(AD5A, `+A278`) or `death-sentinel`(ADC9, `X=FFFF`) → `bounds`(AD60) → on contact, the single
+  `9E19` damage beat (same primitive 0x0B's shot-hit uses). `object_update_af60` — the third member of
+  the AED8/B24D/AF60 "EFAE per-object update" family (all share `contact`+`AD60`, differ only in the
+  movement clause). This closes the C237 spawn chain: `0x25`/`0x30`/`0x90`/`0x91` now produce zero
+  residual gaps. Landing it caught two REAL bugs via the demo shadow (not modelling artifacts): `DS:
+  A956` is a byte counter, not a word (a word write clobbered the adjacent `A957`); and `DS:215A` is
+  promiscuous IRQ/sound/menu scratch (400+ writes traced from unrelated addresses in a few thousand
+  boundaries) — added to `EXCLUDED_CELLS`, the same class as the `230A`/`230C` steer scratch. Both are
+  exactly the kind of finding this crystallization discipline is meant to surface early.

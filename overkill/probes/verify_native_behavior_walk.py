@@ -33,8 +33,10 @@ DEFAULT_SNAP = "artifacts/demos/demo_play_tandy_L1_start_20260618_143947/snapsho
 # out-of-model scratch (documented): the 5DB2/5E42 steer globals live OUTSIDE the pure islands
 # (A954 direction bits, 230A blocked flag, 230C/230E/2310 the 5E42 delta-steer scratch triple --
 # "not slot state" per domain/movement.DeltaSteerStep; the attract wave only toggles 230E/2310).
+# DS:215A is promiscuous IRQ/sound/menu scratch, not object-behavior state -- see
+# verify_native_walk_demo.EXCLUDED_CELLS for the trace evidence.
 EXCLUDED_CELLS = {0xA954, 0xA955, 0x230A, 0x230B, 0x230C, 0x230D,
-                  0x230E, 0x230F, 0x2310, 0x2311}
+                  0x230E, 0x230F, 0x2310, 0x2311, 0x215A, 0x215B}
 
 
 def main(argv) -> int:
