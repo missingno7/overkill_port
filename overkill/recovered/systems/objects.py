@@ -209,6 +209,74 @@ def formation_spawn_seed_7476(slot_x: int, slot_y: int, boss_mode: bool,
     )
 
 
+# 1010:C237 difficulty-throttled child spawn.  A behavior calls it to drop a child object into the
+# gameplay pool at the parent's position; DS:BEDC gates the spawn RATE via the shared DS:A956 counter
+# (ticked by EVERY C237 caller), and the child's spawn plays a per-parent SFX.
+CHILD_SPAWN_C237_SOUND_BY_PARENT_NIBBLE = (0x0B, 0x0C, 0x0E, 0x11, 0x12, 0x13, 0x14, 0x15)
+CHILD_SPAWN_C237_PARENT_92_SOUND = 0x14   # parent behaviour 0x92 forces the idx-6 sound
+CHILD_SPAWN_C237_MIN_CHILD_X = 0x0008     # child_x >= 8 to reach the sound (else early return)
+CHILD_SPAWN_C237_MAX_PARENT_X = 0x00E0    # parent_x <= 0xE0 (unsigned) to reach the sound
+
+
+def child_spawn_throttle_c237(bedc: int, a956: int) -> "tuple[bool, int]":
+    """Pure 1010:C237 spawn-rate throttle (C237..C25E).
+
+    ``BEDC == 2`` -> always spawn, ``A956`` untouched.  ``BEDC == 1`` -> ``A956 = (A956+1) & 1``,
+    spawn iff the result is non-zero (every other call).  Any other ``BEDC`` (incl. 0) ->
+    ``A956 = (A956+1) & 3``, spawn iff the result is zero (every fourth call).  ``A956`` is a SHARED
+    counter every C237 caller ticks, so the returned value must be written back.  Returns
+    ``(allow_spawn, a956_after)``.
+    """
+    b = bedc & 0xFFFF
+    if b == 0x0002:
+        return True, a956 & 0xFFFF
+    if b == 0x0001:
+        a = (a956 + 1) & 0x0001
+        return a != 0, a
+    a = (a956 + 1) & 0x0003
+    return a == 0, a
+
+
+def child_spawn_seed_c237(parent_x: int, parent_y: int, parent_dir: int) -> "dict[int, int]":
+    """Pure 1010:C237 child stamp (C268..C2A2): the field template written into the allocated slot.
+
+    The child is placed +4px from the parent in X and Y, inherits the parent's direction, and is an
+    active (non-solid) ``type=2`` / ``behaviour=4`` object with sprite ``0x30`` and substate ``FFFF``.
+    Returned as ``{record_offset: value}`` in the original stamp order; the adapter owns the 7573
+    allocation and the write.
+    """
+    return {
+        0x04: (parent_y + 4) & 0xFFFF,
+        0x02: (parent_x + 4) & 0xFFFF,
+        0x06: parent_dir & 0xFFFF,
+        0x00: 0x0001,
+        0x1E: 0x0000,
+        0x08: 0x0030,
+        0x0A: 0x0000,
+        0x14: 0x0000,
+        0x16: 0x0002,
+        0x18: 0x0004,
+        0x1C: 0xFFFF,
+    }
+
+
+def child_spawn_sound_c237(parent_beh: int, child_x: int, parent_x: int) -> "int | None":
+    """Pure 1010:C237 spawn-SFX selection (C2A7..C357): the BEFF sound, or None if gated out.
+
+    The sound only plays when the child ended up at ``child_x >= 8`` AND the parent is at
+    ``parent_x <= 0xE0`` (unsigned) -- otherwise C237 returns early with no sound.  The id is the
+    per-parent-nibble table (``parent_beh & 0xF``), except parent behaviour ``0x92`` which forces the
+    idx-6 sound.  The caller still gates the actual write on ``DS:98C0`` (sound enabled).
+    """
+    if (child_x & 0xFFFF) < CHILD_SPAWN_C237_MIN_CHILD_X:
+        return None
+    if (parent_x & 0xFFFF) > CHILD_SPAWN_C237_MAX_PARENT_X:
+        return None
+    if (parent_beh & 0xFFFF) == 0x0092:
+        return CHILD_SPAWN_C237_PARENT_92_SOUND
+    return CHILD_SPAWN_C237_SOUND_BY_PARENT_NIBBLE[parent_beh & 0x000F]
+
+
 # 1010:B73E no-substate idle-phase rules.  These are the pure gameplay
 # decisions the B73E behavior makes once it is on the FFFFh-substate path,
 # recovered as source-level formulas rather than inline ASM arithmetic.

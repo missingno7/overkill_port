@@ -60,7 +60,13 @@ from overkill.recovered.views.object_slots import (
 )
 from overkill.recovered.domain.collision import PostMoveContactWindow
 from overkill.recovered.systems.movement import object_target_seek_step_5db2
-from overkill.recovered.systems.objects import object_update_aed8, object_update_b24d
+from overkill.recovered.systems.objects import (
+    child_spawn_seed_c237,
+    child_spawn_sound_c237,
+    child_spawn_throttle_c237,
+    object_update_aed8,
+    object_update_b24d,
+)
 from overkill.recovered.systems.score import bcd_add_score
 
 # the C054 death-beat schedule re-arm: dying CONTROLLER behaviors chain the NEXT wave schedule
@@ -177,6 +183,40 @@ def _step_scroller_27(mem, rec: int) -> None:
         x_word=mem.rw(DS, rec + 0x02))
     for off, val in r.record_writes.items():
         mem.ww(DS, rec + off, val)
+
+
+def _spawn_child_c237(mem, rec: int, parent_beh: int) -> "int | None":
+    """1010:C237: the difficulty-throttled child spawn. Returns the child slot offset (spawned),
+    0xFFFF (pool full), or None (throttled -- no allocation)."""
+    bedc = mem.rw(DS, 0xBEDC)
+    allow, a956 = child_spawn_throttle_c237(bedc, mem.rw(DS, 0xA956))
+    if bedc != 0x0002:
+        mem.ww(DS, 0xA956, a956)          # A956 is ticked on the BEDC 0/1 paths, spawn or not
+    if not allow:
+        return None
+    slot = _alloc(mem, 0x95DA, GAMEPLAY_POOL_BASE, GAMEPLAY_POOL_WRAP, GAMEPLAY_SLOTS)
+    if slot == 0xFFFF:
+        return 0xFFFF
+    for off, val in child_spawn_seed_c237(mem.rw(DS, rec + 0x02), mem.rw(DS, rec + 0x04),
+                                          mem.rw(DS, rec + 0x06)).items():
+        mem.ww(DS, slot + off, val)
+    sound = child_spawn_sound_c237(parent_beh, mem.rw(DS, slot + 0x02), mem.rw(DS, rec + 0x02))
+    if sound is not None and mem.rb(DS, 0x98C0):
+        mem.wb(DS, 0xBEFF, sound)
+    return slot
+
+
+def _step_spawn_25(mem, rec: int) -> None:
+    # 8265: only spawn when the 232C clock hits 0x1F; then C237, and stamp the child sprite 0x1A.
+    if mem.rw(DS, 0x232C) != 0x001F:
+        return
+    result = _spawn_child_c237(mem, rec, 0x25)
+    if result is None:
+        # throttled: 0x25's `cmp bx,FFFF; mov [bx+8],0x1A` runs with the STALE dispatch bx = 0x25<<1
+        # = 0x4A, so it writes DS:[0x4A+8] = DS:[0x52] (an artifact, oracle-traced 25x).
+        mem.ww(DS, 0x0052, 0x001A)
+    elif result != 0xFFFF:
+        mem.ww(DS, result + 0x08, 0x001A)
 
 
 def _step_bounce_2f(mem, rec: int) -> None:
@@ -573,6 +613,9 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
         elif beh == 0x2F:
             _step_bounce_2f(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8820 exits jmp BC45
+        elif beh == 0x25:
+            _step_spawn_25(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8265 exits jmp BC45
         else:
             raise RecoveryGap(f"behavior {beh:#04x} (record {rec:04X})",
                               "no native handler registered -- recover it before walking")

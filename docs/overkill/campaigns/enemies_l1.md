@@ -24,7 +24,7 @@ the unrecovered behaviors, by hit frequency (= recovery priority) —
 |---|---|---|---|
 | 0x1a | 480 | 1010:BAD4 | scenery (see scene.md) |
 | 0x91 | 383 | 1010:8291 | sprite anim: ax from [2356] diff, cycle on frame ctr [2330]; -> BC45 |
-| 0x25 | 367 | 1010:8265 | spawn child (C237 alloc, sprite 0x1A) when [232C]==0x1F; -> BC45 |
+| ~~0x25~~ | ~~367~~ | 1010:8265 | **RECOVERED** (_step_spawn_25 + C237): spawn child when [232C]==0x1F, sprite 0x1A; incl. the throttled-stale [0x52] write |
 | ~~0x27~~ | ~~320~~ | 1010:835D | **RECOVERED** (step_sprite_scroller_27_835d): sprite=base+(2338>>1), x+=1, BC45 |
 | 0x12 | 281 | 1010:B2CD | (B2C8 shared-tail family, x9) |
 | 0x19 | 256 | 1010:BAF0 | scenery (see scene.md) |

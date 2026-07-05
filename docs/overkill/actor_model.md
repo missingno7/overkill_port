@@ -78,3 +78,8 @@ Format: `behaviour (handler) — guards → primitives(operands) → tail`.
   += `A278`), `gate`(seek blocked?) → toggle +0x32 target-y `0`↔`0xC0` → `BC45` tail.
   `step_bounce_scanner_2f` + the seek applied by the caller. First actor to reuse the `seek` primitive
   and to branch on a primitive's RESULT (blocked) — the "gate on an action outcome" shape.
+- **0x25 (`8265`)** — `gate`(`232C`==0x1F) → `spawn`(child via `C237`) → set child sprite 0x1A → `BC45`.
+  First actor to use the `spawn` primitive. The `spawn` primitive itself (`C237`,
+  `child_spawn_*_c237`) is now recovered: a shared difficulty throttle (`BEDC`/shared `A956`), the 7573
+  alloc + field stamp (child = behaviour 0x04), and a per-parent-nibble SFX. Note the recovered
+  primitive vocabulary now includes `spawn(C237)` alongside `spawn(7420)` / `shoot(7476)`.
