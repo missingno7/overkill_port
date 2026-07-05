@@ -11,7 +11,35 @@
 > (`views/object_slots.py` OFF_* / domain accessors), `adapters/flat_memory.py`,
 > `probes/_harness.py`, `scripts/lindis.py` (encoded targets), `scripts/behavior_zoo_xref.py`;
 > cold-boot probes MUST pass `overkill.launch.build_command_tail("tandy", "pc")`.
-> Suite green: 1217 passed / 23 skipped (2026-07-05).
+> Suite green: 1222 passed / 23 skipped (2026-07-05).
+
+## 2026-07-05 - COMBAT campaign: the 62F6 chain COMPOSED into the walk's postmove (kill/survive oracle-pinned)
+
+The walk's BC45/BC4B postmove now runs the full object-vs-object combat chain natively:
+`object_overlap_scan_62f6` (who overlaps) -> `bec5_moving_object_outcome` (reaction family) ->
+`collision_damage_counter_chain_bf25` (damage) -> the existing `_bfc7_touch_death` (the FULL BFC7
+death: score, completion drops, C054, sound, the dying stamp). Candidate fates: variant 2 (player
+shot) clears active directly; 5/6/7/8/C run the BD17 chain; owner-link/unclassified fail-louds.
+Composed from the already-recovered leaves — zero new recovery except one decode fix:
+
+* **`bp+36` in the BF25 survival docstrings is DECIMAL 36 = `+24h`.** The survive case diffed 2
+  bytes (vm wrote `+24h := 5`, native wrote `+36h`); lindis prints decimal bp offsets
+  (`[bp+22]`=+16h, `[bp+24]`=+18h). Docstrings clarified in systems/domain collision.
+* The capstone `resolve_moving_object_collision` was NOT used directly: its died-path computes the
+  C037 sprite by +16h object TYPE (raises on the type-4 enemy); the walk's shadow-verified BFC7
+  death keys the C042 table on the +14h scan key. Composed the sub-pieces instead — the unverified
+  C037-by-type leaf never runs.
+* Gate: `probes/verify_native_combat` — a solid player shot (A4EA seed, `+1E=1`) planted against
+  the live L1 wave, one whole walk frame VM vs native, full-DGROUP diff: shot-on-enemy (hp 4 -> 0,
+  dying stamp, shot consumed), shot-far (no interaction), shot-on-controller (hp 14h -> 10h
+  survive + `+24h=5`) — 3/3 zero-diff, WITH fired-assertions (the oracle fails if the chain
+  doesn't fire). Walk order note: effect pool HIGH cx -> LOW, so the FIRST-walked record in a
+  stacked group eats the hit (cx=7 died, not cx=3 — earlier "no hit" was a wrong-record read).
+* The whole-walk shadow stays **200 frames / 0 divergence**; +3 unit tests
+  (`test_behavior_walk_combat.py`) on the static bundle.
+
+Enemy shots (`+1E=0`) are invisible to the scan, so free-run corpora can't witness it — the
+campaign's remaining gate is a FIRING demo (real fire inputs end-to-end).
 
 ## 2026-07-05 - THE WALK SLICE IS FULLY PREREQUISITE-FREE: allocators decoded, 0x0B already pure
 

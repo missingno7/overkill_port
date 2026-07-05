@@ -645,7 +645,7 @@ def resolve_collision_hit(
     dying state when the chain reports ``died``.  ``enter_at_bf25`` is False for the variant-2
     sprite path that enters at BF2D (one fewer decrement).
 
-    Survival's hit-react state (``bp+36 = 5``) and the A8C2 boss-group fan-out are pool/adapter
+    Survival's hit-react state (``bp+36`` decimal = ``+24h`` := 5) and the A8C2 boss-group fan-out are pool/adapter
     side effects, not part of this per-object outcome; on a non-1/2 ``object_type`` death the
     C037 leaf raises (the original's unverified-type tail), and that contract is inherited here.
     """

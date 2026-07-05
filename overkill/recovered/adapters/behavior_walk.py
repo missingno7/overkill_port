@@ -12,11 +12,15 @@ memory-shaped state (``MutFlatMemory`` in the shadow probe; the NativeGame proje
   registry (``+0x18``): 0x1F -> ``step_wave_controller_1f`` (+ the arrival burst through the native
   ``7524`` allocator), 0x20 -> ``step_enemy_behavior_20`` (+ the seek/shot application through the
   native ``7573`` allocator), 0x0B -> ``object_update_b24d``.  ANY other active type/behavior
-  raises :class:`RecoveryGap` -- the registry is fail-loud, never silently partial.
+  raises :class:`RecoveryGap` -- the registry is fail-loud, never silently partial,
+* the BC45/BC4B postmove tail per walked record: drift, Y clamp, X-bounds death, the BCCB
+  anchor-touch, and the 62F6 object-vs-object COMBAT chain (62F6 overlap -> BEC5 reaction ->
+  BF25 damage -> the full BFC7 death; player shots are the solid candidates).
 
 The trailing far call ``1F8F:0922`` is OUTSIDE this stage (the shadow probe compares at ``AA25``).
 Verified by ``probes/verify_native_behavior_walk`` (the whole-walk shadow over fast-forwarded
-frames from L1_start).
+frames from L1_start) and ``probes/verify_native_combat`` (the kill / no-hit / survive combat
+driven oracle, full-DGROUP zero diff).
 """
 from __future__ import annotations
 
@@ -39,9 +43,18 @@ from overkill.recovered.systems.frame_loop import (
     enemy_shot_stamp_7476,
 )
 from overkill.recovered.systems.collision import (
+    bec5_candidate_deactivated,
+    bec5_moving_object_outcome,
     clamp_postmove_y_bcb1,
+    collision_damage_counter_chain_bf25,
+    object_overlap_scan_62f6,
     object_postmove_x_bounds_deactivates_bc4b,
     postmove_contact_window_test_aa71,
+)
+from overkill.recovered.views.object_slots import (
+    GAMEPLAY_OBJECT_TABLE_BASE,
+    GAMEPLAY_OBJECT_TABLE_COUNT,
+    read_object_pool,
 )
 from overkill.recovered.domain.collision import PostMoveContactWindow
 from overkill.recovered.systems.movement import object_target_seek_step_5db2
@@ -443,8 +456,51 @@ def _postmove_bc45(mem, rec: int, tiles: LevelTileContext, *, with_drift: bool) 
             if mem.rw(DS, 0xA8C2) != 1:
                 _bfc7_touch_death(mem, rec)
             _player_hit_9e69(mem)
-    # the 62F6 object-overlap scan follows; during the L1 free run its candidates (player shots)
-    # do not exist -- extend from shadow evidence if it ever writes
+    # the 62F6 object-vs-object scan: the walked (moving) record vs the LIVE gameplay pool (player
+    # shots are the solid candidates -- the A4EA seed stamps +1E=1; enemy shots are +1E=0 and thus
+    # invisible to the scan).  Chains the recovered collision leaves the way BC4B does:
+    # 62F6 (who overlaps) -> BEC5 (the reaction family) -> BF25 (damage) -> BFC7 (the FULL death).
+    if mem.rw(DS, rec) == 0:
+        return                          # died in the BCCB touch above -- nothing left to scan
+    hit = object_overlap_scan_62f6(
+        scanner_active_word=mem.rw(DS, rec + 0x00),
+        scanner_x_word=mem.rw(DS, rec + 0x02), scanner_y_word=mem.rw(DS, rec + 0x04),
+        scanner_draw_layer=mem.rw(DS, rec + 0x0A),
+        scanner_logic_id=mem.rw(DS, rec + 0x18), scanner_object_type=mem.rw(DS, rec + 0x16),
+        candidates=read_object_pool(mem, DS, GAMEPLAY_OBJECT_TABLE_BASE,
+                                    GAMEPLAY_OBJECT_TABLE_COUNT))
+    if hit is None:
+        return
+    cand = GAMEPLAY_OBJECT_TABLE_BASE + hit * 0x38
+    cand_logic = mem.rw(DS, cand + 0x18)
+    outcome = bec5_moving_object_outcome(
+        candidate_logic_id=cand_logic, a8c2_boss_mode=mem.rw(DS, 0xA8C2) == 1,
+        candidate_sprite=mem.rw(DS, cand + 0x08))
+    if outcome.kind == "owner_or_unclassified":
+        raise RecoveryGap(f"BEC5 owner-link/unclassified collision (record {rec:04X}, "
+                          f"candidate logic {cand_logic:#x})",
+                          "the +0x30 owner-pointer reaction is not recovered")
+    # the struck candidate's fate (BEC5): variant 2 clears active directly; 5/6/7/8/C run BD0D
+    if bec5_candidate_deactivated(cand_logic):
+        if cand_logic == 0x0002:
+            mem.ww(DS, cand + 0x00, 0)
+        else:
+            _bd17_deactivate(mem, cand)
+    # the scanner's fate: instant death (counter := 0) or the BF25 damage chain; either death
+    # runs the FULL BFC7 beat (score, completion drops, C054, sound 0x19, the dying stamp)
+    if outcome.kind == "instant_death":
+        mem.ww(DS, rec + 0x20, 0)
+        _bfc7_touch_death(mem, rec)
+        return
+    chain = collision_damage_counter_chain_bf25(mem.rw(DS, rec + 0x20), mem.rw(DS, 0xBEDC),
+                                                outcome.enter_at_bf25)
+    mem.ww(DS, rec + 0x20, chain.new_counter_20)
+    if chain.died:
+        _bfc7_touch_death(mem, rec)
+    else:
+        # survival's hit-react state: BF25's [bp+36] = 5 tail -- DECIMAL 36 = +24h (the variant
+        # word), oracle-pinned by the controller-survives case
+        mem.ww(DS, rec + 0x24, 0x0005)
 
 
 def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:

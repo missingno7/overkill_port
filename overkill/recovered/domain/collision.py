@@ -162,7 +162,7 @@ class CollisionHitOutcome:
     Merges the two recovered collision leaves into the single result a hit produces on the
     struck object: ``new_counter_20`` (post-chain hit counter), ``died`` (a decrement reached
     zero), and ``death_transition`` -- the BFC7/C037 dying-state stamp (logic_id -> 1 + death
-    sprite) when it died, else ``None``.  Survival's hit-react state (``bp+36 = 5``) and the
+    sprite) when it died, else ``None``.  Survival's hit-react state (``bp+36`` decimal = ``+24h`` := 5) and the
     A8C2 boss-group fan-out are pool/adapter side effects, not part of this per-object outcome.
     """
 
