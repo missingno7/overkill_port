@@ -354,7 +354,18 @@ def main(argv: list[str] | None = None) -> int:
     if args.demo:
         demo_playback = InputDemoPlayback.load(args.demo)
         if args.snapshot is None:
-            args.snapshot = str(demo_playback.snapshot_path())
+            if demo_playback.is_cold_start:
+                # a cold-start demo replays from power-on: boot a FRESH runtime with the demo's
+                # own recorded boot params so replay is deterministic regardless of CLI defaults
+                meta = demo_playback.manifest.get("metadata", {})
+                args.video = str(meta.get("video", args.video))
+                args.sound = str(meta.get("sound", args.sound))
+                if args.dos_args is None and meta.get("command_tail") is not None:
+                    command_tail = str(meta["command_tail"])
+                print(f"cold-start demo replay: fresh boot, video={args.video} "
+                      f"sound={args.sound} tail={command_tail!r}")
+            else:
+                args.snapshot = str(demo_playback.snapshot_path())
 
     explicit_verify_hooks = {parse_verify_addr(text) for text in args.verify_hook}
     if (args.verify_hooks or explicit_verify_hooks) and not args.verify_preview:

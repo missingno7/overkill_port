@@ -153,6 +153,42 @@ def title_fire_release_wait(cpu: CPU8086) -> bool:
     return _selector_idle_head(cpu, coarse=True) is not None
 
 
+# 1F8F:024B..0259 -- the overlay-segment WAIT-FOR-ALL-KEYS-RELEASED loop:
+#     mov di,98C3h; mov cx,80h; xor al,al; {inc di; or al,[di]; loop}; jnz head
+# It ORs the first 80h bytes of the INT 9 key-state table (DS:98C4..9943) and
+# spins until every one is zero -- i.e. until the player physically releases all
+# keys.  Gameplay reaches it mid-level (pause/level transitions), and like the
+# menu waits above it contains no timer/retrace/presenter boundary, so demo
+# replay deadlocks there: the recorded release is gated on a frozen boundary
+# counter.  (Witnessed at frame 12432 of the 2026-07-05 cold-start session.)
+_ALL_KEYS_RELEASE_WAIT_CS = 0x1F8F
+_ALL_KEYS_RELEASE_WAIT_HEAD = 0x024B
+_ALL_KEYS_RELEASE_WAIT_SIG = bytes.fromhex("bf c3 98 b9 80 00 32 c0 47 0a 05 e2 fb 75 f1")
+_KEY_STATE_BASE = 0x98C4
+_KEY_STATE_SCAN_SPAN = 0x80
+
+
+def _all_keys_release_wait_spinning(mem, ds: int) -> bool:
+    return any(mem.rb(ds, (_KEY_STATE_BASE + i) & 0xFFFF) for i in range(_KEY_STATE_SCAN_SPAN))
+
+
+def all_keys_release_wait(cpu: CPU8086) -> bool:
+    """True while parked anywhere in the 1F8F:024B all-keys-released busy-wait (coarse).
+
+    Signature-guarded (the 1F8F segment hosts overlays) and gated on the wait
+    actually spinning (some key still down); used by play.py's coarse sampler so
+    a recorded release is delivered one event at a time, exactly like the title
+    fire-release wait.
+    """
+    cs, ip = cpu.addr()
+    if cs != _ALL_KEYS_RELEASE_WAIT_CS or not (0x024B <= ip <= 0x0259):
+        return False
+    if cpu.mem.block(_ALL_KEYS_RELEASE_WAIT_CS, _ALL_KEYS_RELEASE_WAIT_HEAD, 15) \
+            != _ALL_KEYS_RELEASE_WAIT_SIG:
+        return False
+    return _all_keys_release_wait_spinning(cpu.mem, cpu.s.ds & 0xFFFF)
+
+
 # CBDD..CBE5: `mov al,[54]; cmp al,[54]; je $-6` -- the CBD5 frame-tick wait.
 _FRAME_TICK_WAIT_SIG = bytes.fromhex("a0 54 00 3a 06 54 00 74 fa")
 
@@ -198,8 +234,9 @@ def frame_verify_input_wait(cpu: CPU8086) -> tuple[str, Addr] | None:
     boundary, pump demo input there, and advance instead of spinning forever.
 
     Covers every boundary-less keyboard wait the menus use: the CALL-0162 press/
-    release family, the 2-instruction [98xx] flag-poll (D434), and the level-select
-    idle loop (D445).  Unlike :func:`title_fire_release_wait` (which accepts any
+    release family, the 2-instruction [98xx] flag-poll (D434), the level-select
+    idle loop (D445), plus the overlay-segment all-keys-released wait (1F8F:024B)
+    that gameplay reaches mid-level.  Unlike :func:`title_fire_release_wait` (which accepts any
     instruction of the loop, because play.py only samples at coarse chunk
     boundaries), this fires *only* at each loop's head.  The frame verifier checks
     it every step, so both the reference and candidate stop at the identical
@@ -215,6 +252,14 @@ def frame_verify_input_wait(cpu: CPU8086) -> tuple[str, Addr] | None:
     cs, ip = cpu.addr()
     mem = cpu.mem
     ds = cpu.s.ds & 0xFFFF
+    # The overlay-segment all-keys-released wait: fire only at its 024B head
+    # (every-step lockstep, same as the selector idle loop below).
+    if cs == _ALL_KEYS_RELEASE_WAIT_CS:
+        if ip == _ALL_KEYS_RELEASE_WAIT_HEAD \
+                and mem.block(cs, _ALL_KEYS_RELEASE_WAIT_HEAD, 15) == _ALL_KEYS_RELEASE_WAIT_SIG \
+                and _all_keys_release_wait_spinning(mem, ds):
+            return "wait", (_ALL_KEYS_RELEASE_WAIT_CS, _ALL_KEYS_RELEASE_WAIT_HEAD)
+        return None
     if cs != 0x1010:
         return None
     if _is_input_wait_head(mem, ip) and _input_wait_spinning(mem, ds, ip):
@@ -269,7 +314,7 @@ def pump_demo_frame(demo, boundary_n: int, runtimes: Sequence, cpu: CPU8086) -> 
     approximate selector replacement hooks are removed) so this sub-frame delivery
     keeps the verifier's reference and candidate in lockstep.
     """
-    if title_fire_release_wait(cpu):
+    if title_fire_release_wait(cpu) or all_keys_release_wait(cpu):
         return boundary_n, demo.apply_to_runtimes(boundary_n, runtimes, single=True)
     if _on_input_select_screen(cpu):
         return boundary_n, 0
