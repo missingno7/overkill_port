@@ -363,7 +363,7 @@ class ObjectBoundsTileDecision:
     - ``"deactivate"``: the object left the play-field box and AD60 routes it to
       the BD17 deactivate tail.
     - ``"skip"``: the object stayed in bounds but is not a tile-probing family
-      (wrong draw layer, non-probing logic id, or the BDAC probe-suppress flag),
+      (wrong hazard_class, non-probing logic id, or the BDAC probe-suppress flag),
       so AD60 just returns.
     - ``"tile_probe"``: an in-bounds probing family with BDAC clear, so AD60 runs
       the 5073/505B tile probe tail.

@@ -4,7 +4,7 @@
      Source of truth = the @recovered_island metadata on each recovered function.
      tests/test_island_registry.py fails if this file drifts from the code. -->
 
-39 recovered islands (4 OBSERVED, 3 ASM_MATCHED, 32 VERIFIED).
+40 recovered islands (5 OBSERVED, 3 ASM_MATCHED, 32 VERIFIED).
 
 | ASM boundary | Function | Status | Merge target | Contract |
 |---|---|---|---|---|
@@ -39,6 +39,7 @@
 | `1010:B022`, `1010:B03C`, `1010:B07D`, `1010:B0C9`, `1010:B0CC`, `1010:B039`, `1010:B10C`, `1010:B10F`, `1010:B07A` | `systems.contact_step.contact_step_b022` | VERIFIED | EnemyWaveSystem | the AFD8 per-direction 1px contact step (B022 dispatch on +0x06): leading-edge tile checks (class 0 walkable), sub-tile straddle checks, the 215A X sample counter with column wraps, step + contact-undo, blocked accumulation across diagonal composition |
 | `1010:B1B0` | `systems.movement.align_word_to_four` | VERIFIED | MovementSystem | 4-pixel grid alignment of a coordinate word |
 | `1010:B1B0` | `systems.movement.player_center_target_from_view` | VERIFIED | MovementSystem | player/view-centre chase target (237E+0Ah, 2380+0Ch, 4-pixel aligned) |
+| `1010:B2C3..B2CD (the 0x11 one-shot morph)`, `1010:B2CD..B3BC (the 0x12 waypoint follower)` | `systems.enemy_behaviors.step_waypoint_follower_11_12` | OBSERVED | EnemyWaveSystem | behaviors 0x11/0x12: 0x11 seeds the +0x36 waypoint pointer to the cold A43C table and retags the record 0x12, then falls into 0x12's body. 0x12 reads (x+0x20,y) pairs from the pointer via the 5DB2 seek (mode 2 iff planet==0 or BDAC==1, else mode 1); on a BLOCKED seek it advances the pointer by 4 and retries with the next pair (until a seek succeeds); the final direction picks the sprite via a planet/BDAC-keyed bias table (the full B2C3..B3BC cascade, byte-decoded). Exits via BC4B (no drift). |
 | `1010:B468` | `systems.frame_loop.count_active_enemies_b468` | VERIFIED | EnemyWaveSystem | count effect-pool records with +00 active AND +16 == 4 (the enemy type); mirrors DS:A47E; ==1 gates the B4A2 leader-group wave start |
 | `1010:B48B` | `systems.frame_loop.wave_spawn_phase_b48b` | VERIFIED | EnemyWaveSystem | PLANET 3's A7A0 wave-phase dispatch: <0x32 per_planet / <0x5A none / >=0x5A the formation snake (reached via the B556 planet dispatch) |
 | `1010:B556` | `systems.frame_loop.wave_driver_dispatch_b556` | VERIFIED | EnemyWaveSystem | the wave-driver object's (behavior 0x21) planet-keyed dispatch: 4->8D83, 3->B48B phase machine, 0->B4A2 leader group, else A7A0-phased per_planet/none/boss_transform |

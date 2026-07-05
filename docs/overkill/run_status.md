@@ -13,6 +13,46 @@
 > cold-boot probes MUST pass `overkill.launch.build_command_tail("tandy", "pc")`.
 > Suite green: 1222 passed / 23 skipped (2026-07-05).
 
+## 2026-07-05 - Behaviors 0x11/0x12 native (waypoint follower) UNMASKS a real field-offset bug fixed
+   across the whole AD60 family (aed8/b24d/af60/ae09/ae2c/ae7d) -- retroactively affects 0x02/0x0B too
+
+Recovered `step_waypoint_follower_11_12` (systems/enemy_behaviors.py): 0x11 is a one-shot morph
+(seed the `+0x36` cursor to the cold `A43C` table, retag the record 0x12) that falls straight into
+0x12's body -- the first STATEFUL actor (a per-record path cursor) and the first with an internal
+RETRY LOOP (advance the cursor + retry the 5DB2 seek until one succeeds). Also fixed a missed
+DS:2304/2306 global write (B2D4/B2D8 -- the seek target globals every retry re-stamps; only the
+FINAL survives to the frame boundary) caught by the demo shadow on the first pass.
+
+**Recovering 0x11/0x12 unmasked a genuine, pre-existing field-offset bug** in the ALREADY-VERIFIED
+`object_bounds_tile_decision_ad60` family: the real AD60 ASM gates its tile-probe branch on
+`cmp ss:[bp+22],0002h` -- **hazard_class (+0x16)**, not draw_layer/gate_or_layer (+0x0A) -- but
+EVERY wired adapter call site (`_step_shot_02` for 0x02, `_step_shot_0b` for 0x0B, `_step_child_04`
+for 0x04) passed `rec+0x0A`. This never showed up before because 0x0B's logic_id (0x0B) fails the
+tile-probe id-membership check regardless of which field gates it (same "skip" outcome, different
+reason), and 0x02/0x04 never happened to reach a frame where the REAL tile probe would fire and
+differ observably -- until a C237-spawned 0x04 child (hazard_class=2, logic_id=4, BOTH match the
+tile-probe family) crossed a class-1 tile at demo frame 3767 and genuinely deactivated via `1010:
+BD1C`, while native (gated on the wrong field) never ran the probe at all. Traced with a targeted
+CS:IP write-trap (not guessed) before touching any code.
+
+Fixed at the SHARED function level (not papered over per-caller): renamed the misleading
+`draw_layer` parameter to `hazard_class` across all 6 `object_bounds_tile_decision_ad60`-family
+functions (2 of the 6 -- `ae09`/`ae2c`/`ae7d` -- aren't wired into the walk yet but share the same
+bug, fixed for when they are); fixed the 3 live adapter call sites to read `rec+0x16`; routed their
+"deactivate" outcome through the existing `_bd17_deactivate` helper (previously they wrote
+`active=0` directly, bypassing BD17's hazard_class-keyed extra effects -- a no-op difference for
+hazard_class=2 records specifically, but not future-proof). Also fixed the SAME bug's
+already-existing but misleadingly-keyworded oracle probe (`verify_native_object_update.py`) and a
+downstream import in the `gameplay/object_bounds.py` HOOK layer (which was independently correct via
+the `OFF_DRAW_LAYER = OFF_HAZARD_CLASS` alias -- only the constant name needed to follow).
+
+Verified: the demo shadow's 3767/5345 divergences (both `2Bxx`-pool active-word mismatches) are
+GONE; the full 8294-frame demo run is back to exactly the 3 known pre-existing pool-spawn
+divergences (614/6037/6897, already logged, unrelated); the 200/0 free-run shadow holds; 76 targeted
+unit tests + full suite green. This is exactly the kind of bug the demo-shadow discipline exists to
+surface: a static disassembly read alone would not have caught it (the bug is silent whenever the
+wrong-vs-right field values coincide on outcome), only comparing REAL gameplay frames did.
+
 ## 2026-07-05 - Behavior 0x04 native: the C237 spawn chain is CLOSED (+ two real bugs caught and fixed)
 
 `object_update_af60` (systems/objects.py) + `_step_child_04` (the walk): the C237-spawned child's own

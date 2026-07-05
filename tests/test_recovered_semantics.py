@@ -789,14 +789,14 @@ def test_recovered_ad60_bounds_tile_decision_is_pure_and_named():
         OBJECT_BOUNDS_MAX_X,
         OBJECT_BOUNDS_MAX_Y,
         OBJECT_BOUNDS_MIN_X,
-        OBJECT_BOUNDS_TILE_PROBE_DRAW_LAYER,
+        OBJECT_BOUNDS_TILE_PROBE_HAZARD_CLASS,
         OBJECT_BOUNDS_TILE_PROBE_LOGIC_IDS,
         object_bounds_tile_decision_ad60,
     )
 
     in_bounds_x = (OBJECT_BOUNDS_MIN_X + OBJECT_BOUNDS_MAX_X) // 2
     in_bounds_y = OBJECT_BOUNDS_MAX_Y - 1
-    probe_layer = OBJECT_BOUNDS_TILE_PROBE_DRAW_LAYER
+    probe_layer = OBJECT_BOUNDS_TILE_PROBE_HAZARD_CLASS
     probe_logic = OBJECT_BOUNDS_TILE_PROBE_LOGIC_IDS[0]
 
     # Out-of-bounds families route to the deactivate tail on any failing edge.
@@ -1102,7 +1102,7 @@ def test_recovered_ad60_bounds_tile_tail_adapter_matches_pure_decision():
         OBJECT_BOUNDS_MAX_X,
         OBJECT_BOUNDS_MAX_Y,
         OBJECT_BOUNDS_MIN_X,
-        OBJECT_BOUNDS_TILE_PROBE_DRAW_LAYER,
+        OBJECT_BOUNDS_TILE_PROBE_HAZARD_CLASS,
         OBJECT_BOUNDS_TILE_PROBE_LOGIC_IDS,
     )
     from overkill.recovered.views.object_slots import OFF_DRAW_LAYER, OFF_LOGIC_ID, OFF_X, OFF_Y
@@ -1123,7 +1123,7 @@ def test_recovered_ad60_bounds_tile_tail_adapter_matches_pure_decision():
 
     in_x = (OBJECT_BOUNDS_MIN_X + OBJECT_BOUNDS_MAX_X) // 2
     in_y = OBJECT_BOUNDS_MAX_Y - 1
-    layer = OBJECT_BOUNDS_TILE_PROBE_DRAW_LAYER
+    layer = OBJECT_BOUNDS_TILE_PROBE_HAZARD_CLASS
     logic = OBJECT_BOUNDS_TILE_PROBE_LOGIC_IDS[0]
 
     # The skip branches (in-bounds, non-probing) just return to the pushed IP and

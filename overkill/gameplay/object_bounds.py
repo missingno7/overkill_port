@@ -18,7 +18,7 @@ from overkill.recovered.systems.objects import (
     OBJECT_BOUNDS_MAX_X,
     OBJECT_BOUNDS_MAX_Y,
     OBJECT_BOUNDS_MIN_X,
-    OBJECT_BOUNDS_TILE_PROBE_DRAW_LAYER,
+    OBJECT_BOUNDS_TILE_PROBE_HAZARD_CLASS,
     OBJECT_BOUNDS_TILE_PROBE_LOGIC_IDS,
     object_bounds_tile_decision_ad60,
 )
@@ -78,8 +78,8 @@ def _run_object_bounds_tile_tail_ad60(cpu, *, parent: str, chain: str, cx_value:
     if y > OBJECT_BOUNDS_MAX_Y:
         _deactivate("AD60")
         return
-    _cmp_word(cpu, draw_layer, OBJECT_BOUNDS_TILE_PROBE_DRAW_LAYER)
-    if draw_layer != OBJECT_BOUNDS_TILE_PROBE_DRAW_LAYER:
+    _cmp_word(cpu, draw_layer, OBJECT_BOUNDS_TILE_PROBE_HAZARD_CLASS)
+    if draw_layer != OBJECT_BOUNDS_TILE_PROBE_HAZARD_CLASS:
         _skip()
         return
     for good in OBJECT_BOUNDS_TILE_PROBE_LOGIC_IDS:

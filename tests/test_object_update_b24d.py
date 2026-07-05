@@ -19,7 +19,7 @@ def _call(**kw):
     base = dict(
         x_word=0x50, y_word=0x50, direction_or_step=4, active_word=1, substate_1e=0,
         move_delta_x=0, move_delta_y=0, move_step_error=0, step_mode=0, direction_table=_BLOCKED,
-        draw_layer=0, logic_id=0x0B, ref_box_x=0x52, ref_box_y=0x50, a278=0x04,
+        hazard_class=0, logic_id=0x0B, ref_box_x=0x52, ref_box_y=0x50, a278=0x04,
         tile_probe_suppressed=True, tiles=_TILES,
     )
     base.update(kw)

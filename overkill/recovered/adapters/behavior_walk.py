@@ -35,12 +35,14 @@ from overkill.recovered.systems.collision import (
 )
 from overkill.recovered.systems.companion import step_companion_ab10
 from overkill.recovered.systems.enemy_behaviors import (
+    WAYPOINT_FOLLOWER_TABLE_SEED,
     step_animated_spawner_90_91,
     step_bounce_scanner_2f,
     step_enemy_behavior_20,
     step_spawner_anim_30,
     step_sprite_scroller_27_835d,
     step_wave_controller_1f,
+    step_waypoint_follower_11_12,
 )
 from overkill.recovered.systems.frame_loop import (
     canned_random_next_4d95,
@@ -241,6 +243,32 @@ def _step_anim_spawner_90_91(mem, rec: int, beh: int) -> None:
         mem.ww(DS, rec + 0x02, (mem.rw(DS, rec + 0x02) - r.spawn_x_delta) & 0xFFFF)
 
 
+def _step_waypoint_12(mem, rec: int) -> None:
+    table = tuple(mem.rb(DS, (0xA348 + i) & 0xFFFF) for i in range(16))
+
+    def waypoint_at(ptr: int) -> "tuple[int, int]":
+        return mem.rw(DS, ptr & 0xFFFF), mem.rw(DS, (ptr + 2) & 0xFFFF)
+
+    r = step_waypoint_follower_11_12(
+        x_word=mem.rw(DS, rec + 0x02), y_word=mem.rw(DS, rec + 0x04),
+        direction=mem.rw(DS, rec + 0x06), waypoint_ptr=mem.rw(DS, rec + 0x36),
+        waypoint_at=waypoint_at, bdac=mem.rw(DS, 0xBDAC), planet_2356=mem.rw(DS, 0x2356),
+        boss_2350=mem.rw(DS, 0x2350), direction_table=table)
+    mem.ww(DS, rec + 0x02, r.x_word)
+    mem.ww(DS, rec + 0x04, r.y_word)
+    mem.ww(DS, rec + 0x06, r.direction_or_step)
+    mem.ww(DS, rec + 0x36, r.waypoint_ptr_after)
+    mem.ww(DS, rec + 0x08, r.sprite)
+    mem.ww(DS, 0x2306, r.target_x_2306)   # B2D4: the seek target globals (every retry rewrites them)
+    mem.ww(DS, 0x2304, r.target_y_2304)   # B2D8
+
+
+def _step_waypoint_11(mem, rec: int) -> None:
+    mem.ww(DS, rec + 0x36, WAYPOINT_FOLLOWER_TABLE_SEED)   # B2C3: seed the waypoint pointer
+    mem.ww(DS, rec + 0x18, 0x0012)                          # B2C8: retag the record as 0x12
+    _step_waypoint_12(mem, rec)                             # falls straight into 0x12's body
+
+
 def _step_spawner_30(mem, rec: int) -> None:
     anim = mem.rw(DS, (0x96D2 + (mem.rw(DS, 0x233C) & 0xFFFF) * 2) & 0xFFFF)
     r = step_spawner_anim_30(
@@ -272,7 +300,7 @@ def _step_shot_0b(mem, rec: int, tiles: LevelTileContext) -> None:
         mem.rw(DS, rec + 0x02), mem.rw(DS, rec + 0x04), mem.rw(DS, rec + 0x06),
         mem.rw(DS, rec + 0x00), mem.rw(DS, rec + 0x1E),
         mem.rw(DS, rec + 0x2A), mem.rw(DS, rec + 0x2C), mem.rw(DS, rec + 0x2E),
-        mem.rw(DS, 0x2312), table, mem.rw(DS, rec + 0x0A), mem.rw(DS, rec + 0x18),
+        mem.rw(DS, 0x2312), table, mem.rw(DS, rec + 0x16), mem.rw(DS, rec + 0x18),
         mem.rw(DS, 0x237E), mem.rw(DS, 0x2380), mem.rw(DS, 0xA278),
         False, tiles)
     if u is None:
@@ -281,8 +309,9 @@ def _step_shot_0b(mem, rec: int, tiles: LevelTileContext) -> None:
     mem.ww(DS, rec + 0x06, u.direction_or_step)
     mem.ww(DS, rec + 0x02, u.x_word)
     mem.ww(DS, rec + 0x04, u.y_word)
-    mem.ww(DS, rec + 0x00, u.active_word)
     mem.ww(DS, rec + 0x2E, u.move_step_error)
+    if u.active_word == 0:
+        _bd17_deactivate(mem, rec)   # BD17: clear active + the hazard_class-keyed death side effects
     if u.x_word == 0xFFFF:
         _shot_hit_9e19(mem)   # the ADC9 in-box contact marker; the 9E19 fan-out is the VM's
         #                       "separate global side effect" the pure island leaves caller-owned
@@ -297,7 +326,7 @@ def _step_shot_02(mem, rec: int, tiles: LevelTileContext) -> None:
     u = object_update_aed8(
         mem.rw(DS, rec + 0x1C), mem.rw(DS, rec + 0x06), mem.rw(DS, rec + 0x02),
         mem.rw(DS, rec + 0x04), mem.rw(DS, rec + 0x00), mem.rw(DS, rec + 0x1E),
-        mem.rw(DS, rec + 0x0A), mem.rw(DS, rec + 0x18),
+        mem.rw(DS, rec + 0x16), mem.rw(DS, rec + 0x18),
         mem.rw(DS, 0x237E), mem.rw(DS, 0x2380), mem.rw(DS, 0xA278), False, tiles)
     if u is None:
         raise RecoveryGap(f"behavior 0x02 timer-death / odd-direction (record {rec:04X})",
@@ -305,7 +334,8 @@ def _step_shot_02(mem, rec: int, tiles: LevelTileContext) -> None:
     mem.ww(DS, rec + 0x1C, u.substate)
     mem.ww(DS, rec + 0x02, u.x_word)
     mem.ww(DS, rec + 0x04, u.y_word)
-    mem.ww(DS, rec + 0x00, u.active_word)
+    if u.active_word == 0:
+        _bd17_deactivate(mem, rec)   # BD17: clear active + the hazard_class-keyed death side effects
 
 
 def _step_child_04(mem, rec: int, tiles: LevelTileContext) -> None:
@@ -322,11 +352,12 @@ def _step_child_04(mem, rec: int, tiles: LevelTileContext) -> None:
     u = object_update_af60(
         mem.rw(DS, rec + 0x02), mem.rw(DS, rec + 0x04), mem.rw(DS, rec + 0x06),
         mem.rw(DS, rec + 0x00), mem.rw(DS, rec + 0x1E),
-        mem.rw(DS, rec + 0x0A), mem.rw(DS, rec + 0x18),
+        mem.rw(DS, rec + 0x16), mem.rw(DS, rec + 0x18),
         mem.rw(DS, 0x237E), mem.rw(DS, 0x2380), mem.rw(DS, 0xA278), False, tiles)
     mem.ww(DS, rec + 0x02, u.x_word)
     mem.ww(DS, rec + 0x04, u.y_word)
-    mem.ww(DS, rec + 0x00, u.active_word)
+    if u.active_word == 0:
+        _bd17_deactivate(mem, rec)   # BD17: clear active + the hazard_class-keyed death side effects
     if u.x_word == 0xFFFF:
         _shot_hit_9e19(mem)
 
@@ -684,6 +715,12 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
         elif beh in (0x90, 0x91):
             _step_anim_spawner_90_91(mem, rec, beh)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8282/8291 exit jmp BC45
+        elif beh == 0x11:
+            _step_waypoint_11(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=False)   # B2C3->B2CD exits jmp BC4B
+        elif beh == 0x12:
+            _step_waypoint_12(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=False)   # B2CD exits jmp BC4B
         else:
             raise RecoveryGap(f"behavior {beh:#04x} (record {rec:04X})",
                               "no native handler registered -- recover it before walking")

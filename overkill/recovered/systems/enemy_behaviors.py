@@ -370,3 +370,96 @@ def step_animated_spawner_90_91(*, base_normal: int, base_planet4: int, planet_2
         elif tv != 1:
             raise ValueError(f"unverified 82CA jump target for 95EA value {tv:#x} (only 0/1/2 on L1)")
     return AnimSpawner9091Step(sprite=sprite, spawn_x_delta=spawn_x_delta)
+
+
+# behaviors 0x11/0x12 (1010:B2C3/B2CD): the cold A43C waypoint-path follower. 0x11 is a one-shot
+# morph (seed the waypoint pointer, retag the record as 0x12) that falls straight into 0x12's body.
+WAYPOINT_FOLLOWER_TABLE_SEED = 0xA43C     # 0x11's one-time reset value for the +0x36 pointer field
+WAYPOINT_FOLLOWER_X_BIAS = 0x0020         # B2D1: the raw table X gets +0x20 before it's a target
+WAYPOINT_FOLLOWER_MAX_RETRIES = 64        # the ASM loops with no explicit bound; this is a fail-loud cap
+WAYPOINT_FOLLOWER_MODE_PLANET0 = 0x0002   # planet 0 or BDAC==1 -> 5DB2 mode 2 (AF60 double-step)
+WAYPOINT_FOLLOWER_BDAC_SPRITE_BIAS = 0x003B
+WAYPOINT_FOLLOWER_BOSS_PLANETS = (0x0000, 0x0005, 0x0006)
+WAYPOINT_FOLLOWER_BOSS_GATE_2350 = 0x0E52
+WAYPOINT_FOLLOWER_SPRITE_BY_PLANET = {
+    0x0001: 0x002A, 0x0002: 0x00D2, 0x0003: 0x00EC, 0x0004: 0x00EC, 0x0007: 0x00EC,
+}
+WAYPOINT_FOLLOWER_SPRITE_DEFAULT = 0x00EC          # any planet not explicitly listed above
+WAYPOINT_FOLLOWER_SPRITE_BOSS_NO_GATE = 0x0115     # planet in (0,5,6), [2350] != the E52 gate
+WAYPOINT_FOLLOWER_SPRITE_BOSS_GATED = {0x0000: 0x0105, 0x0006: 0x0105}   # planet 5 falls to DEFAULT
+
+
+@dataclass(frozen=True, slots=True)
+class WaypointFollowerStep:
+    """behaviors 0x11/0x12 per-frame outcome: the seek result + the advanced waypoint pointer +
+    sprite. Caller applies via BC4B (no A278 drift, unlike the BC45-tail actors).  ``target_x_2306``/
+    ``target_y_2304`` are B2D4/B2D8's own global writes (every retry re-writes them; only the FINAL
+    -- the successful attempt's -- survives to the frame boundary)."""
+    x_word: int
+    y_word: int
+    direction_or_step: int
+    waypoint_ptr_after: int
+    sprite: int
+    target_x_2306: int
+    target_y_2304: int
+
+
+def _waypoint_follower_sprite(direction: int, bdac: int, planet: int, boss_2350: int) -> int:
+    if (bdac & 0xFFFF) == 0x0001:
+        return (direction + WAYPOINT_FOLLOWER_BDAC_SPRITE_BIAS) & 0xFFFF
+    p = planet & 0xFFFF
+    if p in WAYPOINT_FOLLOWER_BOSS_PLANETS:
+        if (boss_2350 & 0xFFFF) != WAYPOINT_FOLLOWER_BOSS_GATE_2350:
+            return (direction + WAYPOINT_FOLLOWER_SPRITE_BOSS_NO_GATE) & 0xFFFF
+        return (direction + WAYPOINT_FOLLOWER_SPRITE_BOSS_GATED.get(
+            p, WAYPOINT_FOLLOWER_SPRITE_DEFAULT)) & 0xFFFF
+    return (direction + WAYPOINT_FOLLOWER_SPRITE_BY_PLANET.get(
+        p, WAYPOINT_FOLLOWER_SPRITE_DEFAULT)) & 0xFFFF
+
+
+@recovered_island(
+    asm=("1010:B2C3..B2CD (the 0x11 one-shot morph)", "1010:B2CD..B3BC (the 0x12 waypoint follower)"),
+    contract="behaviors 0x11/0x12: 0x11 seeds the +0x36 waypoint pointer to the cold A43C table and "
+             "retags the record 0x12, then falls into 0x12's body. 0x12 reads (x+0x20,y) pairs from "
+             "the pointer via the 5DB2 seek (mode 2 iff planet==0 or BDAC==1, else mode 1); on a "
+             "BLOCKED seek it advances the pointer by 4 and retries with the next pair (until a seek "
+             "succeeds); the final direction picks the sprite via a planet/BDAC-keyed bias table "
+             "(the full B2C3..B3BC cascade, byte-decoded). Exits via BC4B (no drift).",
+    status="OBSERVED",
+    merge_target="EnemyWaveSystem",
+    unknowns="the cold A43C table's actual length/content is read live via waypoint_at, not modelled "
+             "as fixed data here; WAYPOINT_FOLLOWER_MAX_RETRIES is a fail-loud safety cap, not an "
+             "ASM-derived bound (the original loop has none).",
+)
+def step_waypoint_follower_11_12(*, x_word: int, y_word: int, direction: int, waypoint_ptr: int,
+                                 waypoint_at, bdac: int, planet_2356: int,
+                                 boss_2350: int, direction_table) -> WaypointFollowerStep:
+    """One frame of behaviors 0x11/0x12 (``1010:B2C3``/``B2CD``), pure.
+
+    ``waypoint_at(ptr)`` returns the ``(raw_x, y)`` word pair the caller reads from ``DS:[ptr]``/
+    ``DS:[ptr+2]`` (the cold A43C table).  Loops the 5DB2 seek across successive pairs (advancing
+    ``ptr`` by 4 each time the seek reports blocked) until one succeeds, returning the final
+    position/direction, the pointer to persist into ``+0x36``, and the sprite.
+    """
+    mode = (WAYPOINT_FOLLOWER_MODE_PLANET0
+            if (planet_2356 & 0xFFFF) == 0x0000 or (bdac & 0xFFFF) == 0x0001 else 0x0001)
+    ptr = waypoint_ptr & 0xFFFF
+    x, y, d = x_word & 0xFFFF, y_word & 0xFFFF, direction & 0xFFFF
+    target_x = target_y = 0
+    for _ in range(WAYPOINT_FOLLOWER_MAX_RETRIES):
+        raw_x, raw_y = waypoint_at(ptr)
+        target_x = (raw_x + WAYPOINT_FOLLOWER_X_BIAS) & 0xFFFF
+        target_y = raw_y & 0xFFFF
+        step = object_target_seek_step_5db2(
+            x, y, d, MovementTarget(y_word=target_y, x_word=target_x), mode, direction_table)
+        if not step.blocked:
+            x, y, d = step.x_word, step.y_word, step.direction_or_step
+            break
+        ptr = (ptr + 4) & 0xFFFF
+    else:
+        raise ValueError(f"waypoint follower exceeded {WAYPOINT_FOLLOWER_MAX_RETRIES} blocked retries "
+                         f"(ptr={ptr:#06x}) -- the A43C table may not terminate as expected")
+    sprite = _waypoint_follower_sprite(d, bdac, planet_2356, boss_2350)
+    return WaypointFollowerStep(x_word=x, y_word=y, direction_or_step=d,
+                                waypoint_ptr_after=ptr, sprite=sprite,
+                                target_x_2306=target_x, target_y_2304=target_y)

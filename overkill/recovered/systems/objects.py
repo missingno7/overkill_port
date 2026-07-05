@@ -677,7 +677,7 @@ def object_update_ae09(
     x_word: int,
     y_word: int,
     active_word: int,
-    draw_layer: int,
+    hazard_class: int,
     logic_id: int,
     tile_probe_suppressed: bool,
     tiles: LevelTileContext,
@@ -693,7 +693,7 @@ def object_update_ae09(
     dispatch (movement primitive + bounds/tile -> the next slot)."""
     move = object_movement_step_ae09(substate, direction_or_step, x_word, y_word)
     decision = object_bounds_tile_decision_ad60(
-        move.x_word, move.y_word, draw_layer, logic_id, tile_probe_suppressed=tile_probe_suppressed
+        move.x_word, move.y_word, hazard_class, logic_id, tile_probe_suppressed=tile_probe_suppressed
     )
     if decision.kind == "deactivate":
         new_active = 0x0000
@@ -724,7 +724,7 @@ def object_update_aed8(
     y_word: int,
     active_word: int,
     substate_1e: int,
-    draw_layer: int,
+    hazard_class: int,
     logic_id: int,
     ref_box_x: int,
     ref_box_y: int,
@@ -766,7 +766,7 @@ def object_update_aed8(
     final_x = AED8_CONTACT_DEATH_X if contact else u16(x + a278)
 
     decision = object_bounds_tile_decision_ad60(
-        final_x, y, draw_layer, logic_id, tile_probe_suppressed=tile_probe_suppressed
+        final_x, y, hazard_class, logic_id, tile_probe_suppressed=tile_probe_suppressed
     )
     if decision.kind == "deactivate":
         new_active = 0x0000
@@ -896,7 +896,7 @@ def object_update_ae2c(
     x_word: int,
     y_word: int,
     active_word: int,
-    draw_layer: int,
+    hazard_class: int,
     a278: int,
     anim_2326: int,
     tile_probe_suppressed: bool,
@@ -927,7 +927,7 @@ def object_update_ae2c(
 
     final_x = (x + a278) & 0xFFFF  # AD5A
     decision = object_bounds_tile_decision_ad60(
-        final_x, y, draw_layer, 0x0006, tile_probe_suppressed=tile_probe_suppressed)
+        final_x, y, hazard_class, 0x0006, tile_probe_suppressed=tile_probe_suppressed)
     if decision.kind == "deactivate":
         new_active = 0x0000
     elif decision.kind == "skip":
@@ -950,7 +950,7 @@ def object_update_ae7d(
     x_word: int,
     y_word: int,
     active_word: int,
-    draw_layer: int,
+    hazard_class: int,
     a278: int,
     tile_probe_suppressed: bool,
     tiles: LevelTileContext,
@@ -979,7 +979,7 @@ def object_update_ae7d(
 
     final_x = (x + a278) & 0xFFFF  # AD5A
     decision = object_bounds_tile_decision_ad60(
-        final_x, y, draw_layer, 0x0005, tile_probe_suppressed=tile_probe_suppressed)
+        final_x, y, hazard_class, 0x0005, tile_probe_suppressed=tile_probe_suppressed)
     if decision.kind == "deactivate":
         new_active = 0x0000
     elif decision.kind == "skip":
@@ -1027,7 +1027,7 @@ def object_update_b24d(
     move_step_error: int,
     step_mode: int,
     direction_table,
-    draw_layer: int,
+    hazard_class: int,
     logic_id: int,
     ref_box_x: int,
     ref_box_y: int,
@@ -1054,7 +1054,7 @@ def object_update_b24d(
     final_x = AED8_CONTACT_DEATH_X if contact else u16(steer.x_word + a278)
 
     decision = object_bounds_tile_decision_ad60(
-        final_x, steer.y_word, draw_layer, logic_id, tile_probe_suppressed=tile_probe_suppressed
+        final_x, steer.y_word, hazard_class, logic_id, tile_probe_suppressed=tile_probe_suppressed
     )
     if decision.kind == "deactivate":
         new_active = 0x0000
@@ -1077,7 +1077,7 @@ def object_update_af60(
     direction: int,
     active_word: int,
     substate_1e: int,
-    draw_layer: int,
+    hazard_class: int,
     logic_id: int,
     ref_box_x: int,
     ref_box_y: int,
@@ -1110,7 +1110,7 @@ def object_update_af60(
     final_x = AED8_CONTACT_DEATH_X if contact else u16(x + a278)
 
     decision = object_bounds_tile_decision_ad60(
-        final_x, y, draw_layer, logic_id, tile_probe_suppressed=tile_probe_suppressed
+        final_x, y, hazard_class, logic_id, tile_probe_suppressed=tile_probe_suppressed
     )
     if decision.kind == "deactivate":
         new_active = 0x0000
@@ -1473,21 +1473,22 @@ def object_update_8a23(slot_x: int, slot_y: int, slot_direction: int) -> tuple[i
 OBJECT_BOUNDS_MIN_X = 0x0008
 OBJECT_BOUNDS_MAX_X = 0x00E0
 OBJECT_BOUNDS_MAX_Y = 0x00C8
-OBJECT_BOUNDS_TILE_PROBE_DRAW_LAYER = 0x0002
+OBJECT_BOUNDS_TILE_PROBE_HAZARD_CLASS = 0x0002
 OBJECT_BOUNDS_TILE_PROBE_LOGIC_IDS = (0x0002, 0x0004, 0x000C, 0x0005, 0x0006, 0x0009, 0x0008)
 
 
 def object_bounds_tile_decision_ad60(
     x: int,
     y: int,
-    draw_layer: int,
+    hazard_class: int,
     logic_id: int,
     tile_probe_suppressed: bool,
 ) -> ObjectBoundsTileDecision:
     """Pure AD60 branch classification recovered from 1010:AD60.
 
     AD60 deactivates an object that left the play-field box, otherwise returns
-    unless the object is a tile-probing family (draw layer ``0002h``, a probing
+    unless the object is a tile-probing family (``hazard_class`` ``0002h`` -- AD60's
+    ``cmp ss:[bp+22],0002h`` reads slot ``+0x16``, NOT ``+0x0A`` -- a probing
     ``logic_id``, and the BDAC probe-suppress flag clear).  The hook/adapter
     still replays the original CMP order so live 8086 flags match the oracle at
     each branch; this function owns the stable branch decision.
@@ -1495,7 +1496,7 @@ def object_bounds_tile_decision_ad60(
     px = x & 0xFFFF
     if px < OBJECT_BOUNDS_MIN_X or px > OBJECT_BOUNDS_MAX_X or (y & 0xFFFF) > OBJECT_BOUNDS_MAX_Y:
         return ObjectBoundsTileDecision("deactivate")
-    if (draw_layer & 0xFFFF) != OBJECT_BOUNDS_TILE_PROBE_DRAW_LAYER:
+    if (hazard_class & 0xFFFF) != OBJECT_BOUNDS_TILE_PROBE_HAZARD_CLASS:
         return ObjectBoundsTileDecision("skip")
     if (logic_id & 0xFFFF) not in OBJECT_BOUNDS_TILE_PROBE_LOGIC_IDS:
         return ObjectBoundsTileDecision("skip")

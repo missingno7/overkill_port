@@ -26,7 +26,7 @@ the unrecovered behaviors, by hit frequency (= recovery priority) —
 | ~~0x91~~ | ~~383~~ | 1010:8291 | **RECOVERED** (step_animated_spawner_90_91): animate 95EA@2330 + C237 spawn at X±4 on [232C]==0x1F |
 | ~~0x25~~ | ~~367~~ | 1010:8265 | **RECOVERED** (_step_spawn_25 + C237): spawn child when [232C]==0x1F, sprite 0x1A; incl. the throttled-stale [0x52] write |
 | ~~0x27~~ | ~~320~~ | 1010:835D | **RECOVERED** (step_sprite_scroller_27_835d): sprite=base+(2338>>1), x+=1, BC45 |
-| 0x12 | 281 | 1010:B2CD | (B2C8 shared-tail family, x9) |
+| ~~0x12~~ | ~~281~~ | 1010:B2CD | **RECOVERED** (step_waypoint_follower_11_12): the cold A43C waypoint-path follower, seek+retry loop |
 | 0x19 | 256 | 1010:BAF0 | scenery (see scene.md) |
 | 0x29 | 182 | 1010:8721 | |
 | 0x8c | 108 | 1010:BB80 | scenery-ish (BBxx) |
@@ -34,7 +34,7 @@ the unrecovered behaviors, by hit frequency (= recovery priority) —
 | ~~0x90~~ | ~~80~~ | 1010:8282 | **RECOVERED** (sister of 0x91, same fn, base 0x88/0x16C) |
 | ~~0x2f~~ | ~~80~~ | 1010:8820 | **RECOVERED** (step_bounce_scanner_2f): sprite 0x43, B729 seek, target-x drift, blocked→target-y bounce 0↔0xC0 |
 | ~~0x30~~ | ~~80~~ | 1010:8851 | **RECOVERED** (step_spawner_anim_30): animate [96D2]@233C, gate [232A]==0xF -> C237 spawn + sound 0x0E |
-| 0x11 | 4 | 1010:B2C3 | (B2C8 shared-tail family) |
+| ~~0x11~~ | ~~4~~ | 1010:B2C3 | **RECOVERED**: one-shot morph -- seeds +0x36=A43C, retags behavior 0x12, falls into 0x12's body |
 | 0x01 key1 latch9 | 32 | (in-walk 0x01) | the dying-morph (BE60 prev 0x24/0x25 -> respawn-as) |
 
 Handlers are THIN (spot-checked 0x25/0x90/0x91: ~20-40 bytes each — read a few record fields + a
@@ -57,12 +57,19 @@ DS:A956 is a BYTE counter (word rw/ww was clobbering the adjacent DS:A957), and 
 promiscuous IRQ/sound/menu scratch (400+ writes from unrelated addresses traced) now excluded from
 both shadow probes' EXCLUDED_CELLS, same class as the 230A/230C steer scratch.
 
+**IMPORTANT — the AD60 field-offset bug (fixed 2026-07-05, see run_status.md):** recovering 0x11/0x12
+unmasked a genuine bug in the ALREADY-VERIFIED `object_bounds_tile_decision_ad60` family (aed8/b24d/
+af60/ae09/ae2c/ae7d): the real AD60 gates its tile-probe branch on **hazard_class (+0x16)**, not
+draw_layer/gate_or_layer (+0x0A) as every wired adapter passed. Fixed at the shared-function level
+(param renamed `hazard_class`) + the 3 live call sites + routed "deactivate" through `_bd17_deactivate`
+for full fidelity. **If you add a NEW behavior that calls any object_update_* function taking a
+`hazard_class` parameter, pass `rec+0x16` — NOT `rec+0x0A`.**
+
 **Next actors (scouted, by dependency):**
 * 0x29 (8721): a [2328]==7-gated sprite ramp to 0xA4 (then `call 74E2`), then [2312]=2 + `call 5E42`
   (the delta-steer — RECOVERED). Needs 74E2 decoded (small).
-* 0x12 (B2CD, 507 hits): the B2C8 shared-tail family (x9 handlers) — worth decoding the shared tail
-  once to unlock several behaviors at once (0x11 too).
 * 0x28 (8676, alias-group with 0x2A): likely another small C237-adjacent or animate-only actor.
+* 0x24 (80 hits): appeared as a fresh gap after 0x11/0x12 unmasking — not yet scouted.
 
 Remaining scenery (0x1a/0x19/0x8c/0x8b) belongs to scene.md.
 

@@ -105,3 +105,20 @@ Format: `behaviour (handler) — guards → primitives(operands) → tail`.
   promiscuous IRQ/sound/menu scratch (400+ writes traced from unrelated addresses in a few thousand
   boundaries) — added to `EXCLUDED_CELLS`, the same class as the `230A`/`230C` steer scratch. Both are
   exactly the kind of finding this crystallization discipline is meant to surface early.
+- **0x11 / 0x12 (`B2C3`→`B2CD`)** — the first STATEFUL actor: `+0x36` (a per-record pointer field)
+  holds a cursor into the COLD `A43C` waypoint table. `0x11` is a one-shot morph (`seed`(ptr=A43C),
+  `retag`(behaviour:=0x12)) that falls straight into `0x12`'s body. `0x12`: `seek`(mode 2 iff planet
+  0 or `BDAC`==1, else mode 1) toward `waypoint[ptr]+0x20,waypoint[ptr+2]`; on `blocked`, `advance`
+  (ptr+=4) and `retry` with the next pair — the first primitive with an internal RETRY LOOP, not a
+  single decision; `gate`(the final direction) selects the sprite from a `planet`×`BDAC` bias table
+  (the fully-decoded `B2C3..B3BC` cascade) → `BC4B` (no drift). `step_waypoint_follower_11_12`.
+  Reuses `seek` (5DB2) exactly as recovered elsewhere — no new movement primitive, just a new
+  CONTROL shape (loop-until-non-blocked over cold data) worth a first-class "follow a path" verb in
+  the step language, alongside the existing decision-per-frame verbs. Wiring this ALSO caught a
+  missing `DS:2304/2306` global write (the seek's own target-position side effect, re-stamped every
+  retry) AND unmasked a genuine field-offset bug in the shared `bounds`(AD60) primitive itself:
+  every wired caller passed the WRONG record field (`+0x0A` instead of `+0x16`) to its tile-probe
+  gate — silent until a real hazard_class=2/logic_id=4 object (a C237 child) crossed a class-1 tile.
+  Fixed at the primitive level (all 6 `object_bounds_tile_decision_ad60` callers), see run_status.md.
+  Lesson for the model: a shared primitive's CORRECTNESS is only as strong as its weakest caller's
+  wiring — the primitive itself was fine, evidence just never reached the buggy branch before.
