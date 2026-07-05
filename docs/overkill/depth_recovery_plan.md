@@ -64,9 +64,10 @@ be converted later. This is THE foundational debt.
 exist — but the adapters bypass them (127 raw offsets). "Offsets out of the LOGIC" (the pre2
 milestone) is unmet in exactly the code that matters most now.
 
-### P3 — Naming altitude: address-tagged, not semantic
-239 functions named by address; no `Enemy`/`Player`/`Wave`/`Scoring` concepts. The behavior "zoo" is
-a flat set of `_advance_*` / `step_*_<addr>` handlers, not an `Enemy` archetype with named states.
+### P3 — ~~Naming altitude~~ (DESCOPED): the SPINE doesn't execute
+Reframed per the owner decision: we are NOT renaming leaves. The real readability gap is that the
+BACKBONE — `APP_MODE_GRAPH` (boot → level → death/respawn/game-over) — is documentation, not a
+running structure; `play_native` drives an ad-hoc loop. Fix the spine, keep the leaf names.
 
 ### P4 — Scaffolding sprawl + un-executed spine + manifest blind spot
 `hooks.py` (3265 lines), 318 unretired glue hooks, a mode graph that does not run, a manifest that
@@ -97,19 +98,27 @@ The single highest-leverage depth investment. Steps:
    staying 200/0 — a zero-risk mechanical refactor with a strong net.
 4. **Extend the raw-offset metric to the adapters** so the debt is visible and trends down.
 
-### Track 3 — SEMANTIC CRYSTALLIZATION by subsystem (after L1 plays)
-Group + rename the address-tagged functions into readable, game-concept modules — but ONLY collapse
-where the ORIGINAL call graph supports it (the evidence-based collapse rule; never an invented modern
-design). Target shape:
-* `player/` — ship move, fire fan-out, death, respawn.
-* `enemy/` — the behavior zoo as an `Enemy` archetype: `approach()`, `hold()`, `shoot()`, `dive()`,
-  `reshuffle()` (behavior 0x20 already decomposes exactly this way); `WaveController` (0x1F).
-* `wave/` — the formation table, the A844 ring, the spawn schedule, the 4A65 scene script.
-* `combat/` — the 62F6 overlap scan, damage, the C037 death transition, 5F0D scoring, pickups.
-* `frame/` — the 97B2 tick spine, the 5F61 timing cascade, the mode machine.
-Each function keeps its `@recovered_island` (now with a semantic name); the address lives in the
-metadata, not the identifier. Rename `object_update_aed8` → `enemy.timed_mover_step` / the player
-shot's `player_shot.step`, etc.
+### Track 3 — ~~SEMANTIC CRYSTALLIZATION (rename)~~ — DESCOPED (owner decision 2026-07-05)
+The full 239-function rename into `enemy.step` / `player_shot.step` archetype modules is **explicitly
+cut** — it is high-churn, cosmetic, and destabilises the byte-exact gates for little gain. The
+address-tagged names (`object_update_aed8`, `wave_driver_dispatch_b556`) STAY. Readability comes from
+the SPINE (Track 3′ below) and the data-model view (Track 2), not from renaming leaves.
+
+### Track 3′ — COVER THE CORE / SPINE CONCEPTS (the replacement — this is the priority)
+Make the game's BACKBONE a real, executing, followable structure — "a good drag" through the whole
+game, not documentation-as-code. Concretely:
+* **Execute `APP_MODE_GRAPH`.** Promote it (native_app.py) from a described graph into a running
+  `NativeSession` that OWNS the game flow — mode + planet + lives + score — and walks the edges:
+  boot → title → level-setup → gameplay → {death → respawn | level-end → next | game-over → title}.
+  The edge bodies are recovered pieces (death/level-advance compositions); wire them, fail-loud on
+  the unrecovered ones. This single move turns the spine into THE program.
+* **Keep the frame spine legible at the concept level.** `GAMEPLAY_FRAME_STAGES` (the 97B2 order) +
+  the 5F61 timing cascade + the A9D3 object walk are the per-frame heartbeat; keep them named and
+  wired as STAGES, so a reader follows "input → move → scroll → objects → present" without chasing
+  addresses. This is structure, not renaming.
+* **One page that maps the spine to the code** (extend `native_app.describe_gaps()` into a full
+  "here is the game, here is what runs natively vs the VM"). The spine doc IS the readability.
+Leaf functions stay address-named; the VALUE is that the backbone reads like a game.
 
 ### Track 4 — STRAND THE SCAFFOLDING (ongoing hygiene, per wired subsystem)
 * **Hook-role audit tool** (pre2's `hook_audit`): classify the 335 hooks as probe / verifier /
@@ -123,14 +132,13 @@ shot's `player_shot.step`, etc.
 * **Extend the manifest to adapters** and raise coverage — it should be the true "what's recovered"
   map, not a 15% sample.
 
-## 4. Sequencing recommendation (the one-paragraph answer)
+## 4. Sequencing recommendation (the one-paragraph answer) — updated per the owner decision
 
-Keep **Track 1 (finish L1 playable)** as the active north star — it's close and it proves one level
-end-to-end. Start **Track 2 (nail the object record)** in parallel *now*, because it is the shared
-vocabulary and the longer we build adapters on raw offsets the larger the eventual conversion; it is
-also bounded and zero-risk (byte-backed view, shadow-gated). Defer **Track 3 (semantic
-crystallization)** until L1 plays — refactoring 239 functions into archetype modules is far safer
-against a working, playable reference than mid-recovery. Run **Track 4 (scaffolding hygiene)**
-opportunistically, one subsystem at a time, as each goes native. Net: L1 becomes playable, the data
-model becomes named, new code becomes readable, and the big rename lands last against a game that
-already works — the pre2-proven order.
+**No leaf-renaming.** Keep **Track 1 (finish L1 playable)** as the north star — it proves one level
+end-to-end. Do **Track 3′ (cover the spine)** as the main readability work: make `APP_MODE_GRAPH`
+EXECUTE as a `NativeSession` so the game has a coherent backbone you can follow, and keep the frame
+stages named + wired. Keep **Track 2 (the object-record view)** LIGHTWEIGHT — a named byte-backed
+struct for the core data model (a concept, not churn), adopted in new code and on-touch, never a
+big sweep. Run **Track 4 (scaffolding hygiene)** opportunistically per subsystem. Net: L1 plays, the
+spine executes and reads like a game, the core data structure is named — and we never spend a slice
+renaming leaves.
