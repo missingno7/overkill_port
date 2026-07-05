@@ -13,6 +13,29 @@
 > cold-boot probes MUST pass `overkill.launch.build_command_tail("tandy", "pc")`.
 > Suite green: 1222 passed / 23 skipped (2026-07-05).
 
+## 2026-07-05 - THE L1 FRONTIER IS NOW KNOWN: the demo walk-shadow names every unrecovered actor
+
+`probes/verify_native_walk_demo` shadows every A9D3..AA25 walk frame of the owner's played L1 (native
+walk on a pre-state copy vs the VM, full-DGROUP diff) and tallies RecoveryGaps as the frontier. Over
+**8294 walk frames**: the opening wave (first ~2500) walks BYTE-PERFECT; then the level's actor zoo
+appears. **Unrecovered behaviors by frequency** (= recovery order): 0x1a(480) 0x91(383) 0x25(367)
+0x27(320) 0x12(281) 0x19(256) 0x29(182) 0x8c(108) 0x28(84) 0x90(80) 0x2f(80) 0x30(80) 0x11(4) +
+0x01-key1-latch9(32) + player-death 9EA3(3) + type-5 pickup collect(2). The full table + handler
+pointers live in [`campaigns/enemies_l1.md`](campaigns/enemies_l1.md) (the authoritative L1 target
+list). Recover HIGH-frequency first; each slice = one behavior + a `verify_native_walk_demo`
+gap-count drop + the 200/0 free-run shadow held.
+
+Instrument/oracle hygiene landed with this: (1) the demo shadow flushes incremental progress (gap
+set every 500 frames) + live divergence lines -- no more blind long runs; reads the tile plane FRESH
+per frame (the level scrolls). (2) **Completed the documented steer-scratch exclusion**: DS:230C/230D
+is the 5E42 delta-steer scratch triple with 230E/2310 ("not slot state" per
+domain/movement.DeltaSteerStep) -- the attract-wave free run never toggles it so the canonical
+exclusion list omitted it; a player-driven session does. Added to BOTH the free-run and demo shadows
+(free-run stays 200/0). Two non-gap divergence classes flagged for the campaign: the 2B5C
+gameplay-pool spawn mismatch (7573 alloc) and the 215A derived-scratch drift. Full-session cold-start
+REPLAY now reaches frame 20639/22923 (past the fixed 12432 all-keys-released deadlock) before a
+transition-blit wait at 1010:3273 -- logged in loop_blockers.
+
 ## 2026-07-05 - THE CORE CORPUS: a human-played cold-start session (intro -> menu -> full L1 -> L2 start)
 
 `artifacts/demos/demo_cold_start_full_20260705_123645` (commit 13f47bb): the owner played a complete

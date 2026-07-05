@@ -37,7 +37,12 @@ WALK_END = 0xAA25
 DGROUP = 0x25CC
 GAMEPLAY_BASE = 0x2B5C
 DEFAULT_DEMO = "demo_cold_start_full_20260705_123645"
-EXCLUDED_CELLS = {0xA954, 0xA955, 0x230A, 0x230B, 0x230E, 0x230F, 0x2310, 0x2311}
+# out-of-model steer scratch (documented): the 5DB2/5E42 steer globals live OUTSIDE the pure
+# islands.  A954 direction bits; 230A blocked flag; 230C/230E/2310 the 5E42 delta-steer scratch
+# triple ("not slot state" per domain/movement.DeltaSteerStep).  The attract-wave free run never
+# drives delta-steer so it only needed 230E/2310; a player-driven session also toggles 230C.
+EXCLUDED_CELLS = {0xA954, 0xA955, 0x230A, 0x230B, 0x230C, 0x230D,
+                  0x230E, 0x230F, 0x2310, 0x2311}
 
 
 def main(argv) -> int:
@@ -59,10 +64,10 @@ def main(argv) -> int:
         m = cpu.mem
         ds = cpu.s.ds & 0xFFFF
         if ip == WALK_ENTRY and st["pre"] is None:
+            # read the tile plane FRESH every frame: the level scrolls and rewrites the plane
+            # in place, so a per-segment cache goes stale and spuriously diverges the AD60 tile probe
             seg = m.rw(CS, 0x9592)
-            if seg != st["plane_seg"]:
-                st["plane_seg"] = seg
-                st["plane"] = bytes(m.data[seg * 16:seg * 16 + 0x4000])
+            st["plane"] = bytes(m.data[seg * 16:seg * 16 + 0x4000])
             if st["classes"] is None:
                 st["classes"] = tuple(m.rb(ds, (0xC3AA + i) & 0xFFFF) for i in range(256))
             st["pre"] = bytes(m.data)
@@ -77,6 +82,10 @@ def main(argv) -> int:
             pre, sp = st["pre"], st["sp"]
             st["pre"] = None
             stats["frames"] += 1
+            if stats["frames"] % 500 == 0:
+                print(f"  ..walk frame {stats['frames']}: diverged={stats['diverged']} "
+                      f"distinct-gaps={len(gaps)} combat-exposed={stats['combat_exposed']}"
+                      + (f" gaps={sorted(gaps)}" if gaps else ""), flush=True)
             native = MutFlatMemory(pre)
             tiles = LevelTileContext(origin_x_word=native.rw(ds, 0x234E),
                                      row_base_word=native.rw(ds, 0x2350),
@@ -84,7 +93,10 @@ def main(argv) -> int:
             try:
                 run_behavior_walk_a9d3(native, tiles)
             except RecoveryGap as gap:
-                gaps[str(gap)] += 1
+                # normalise away the per-record address so the distinct-gap set is the
+                # actual behavior/type frontier, not one key per object instance
+                key = str(gap).split(" (record ")[0].split(" (candidate ")[0]
+                gaps[key] += 1
                 return
             base = DGROUP * 16
             vm = bytes(m.data[base:base + 0x10000])
@@ -96,10 +108,12 @@ def main(argv) -> int:
                      and not (sp - 0x60 <= o < sp)]
             if diffs:
                 stats["diverged"] += 1
-                if len(first_divs) < 5:
-                    first_divs.append(
-                        f"walk frame {stats['frames']}: {len(diffs)}B first DS:{diffs[0]:04X} "
-                        f"vm={vm[diffs[0]]:02X} nat={nat[diffs[0]]:02X}")
+                if len(first_divs) < 12:
+                    line = (f"walk frame {stats['frames']}: {len(diffs)}B at "
+                            + ",".join(f"DS:{o:04X}(vm={vm[o]:02X}/nat={nat[o]:02X})"
+                                       for o in diffs[:6]))
+                    first_divs.append(line)
+                    print(f"  DIVERGENCE {line}", flush=True)
 
     run_ref_step_probe_cold_start(demo, max_frames, on_ref_step)
 

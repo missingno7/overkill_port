@@ -30,6 +30,29 @@ context. Each has the analysis already done so a human can pick up fast.
 
 ---
 
+## 2026-07-05 — Cold-start full-session replay hangs at the L1→L2 transition (1010:3273 blit)
+
+**Repro:** `python scripts/verify_cold_start_demo.py artifacts/demos/demo_cold_start_full_20260705_123645`
+now clears the frame-12432 all-keys-released deadlock (fixed: `input_waits.all_keys_release_wait`,
+1F8F:024B) and replays pure-ASM==hybrid in lockstep from cold boot to **frame 20639 / 22923** — then
+`FRAME VERIFY TIMEOUT side=reference frame=20639 budget=120000000 at=1010:3273`.
+
+**Analysis:** 1010:3273 is one instruction of a long UNROLLED Tandy column-blit (`lodsb` -> table
+lookup at DS:1514 -> AND mask -> write both interleaved banks es:[di] / es:[di+2] -> `add di,2000h;
+test di,8000h; jz; add di,80A0h` bank wrap), just below the Tandy present hook (3354). Straight-line
+blit can't loop 120M steps on its own, so an OUTER transition loop is redrawing without reaching a
+present/timer/retrace boundary — the reference side (no async IRQ0) can't advance whatever
+IRQ/counter gates the loop. Same ROOT as the CBD5 frame-tick wait (`advance_frame_tick_wait`, DS:[54]
+via INT 1Ch) and the REFERENCE_ENV_HOOKS rationale, but in the L1→L2 level-transition draw, not a
+named busy-wait. Frame 20639 ≈ the last ~2000 frames = the level-complete/L2-load sequence.
+
+**Why deferred:** this is level-transition (Scene/Spine) code, outside the current gameplay-walk
+frontier; the determinism result 0→20639 is already strong and the demo replays correctly
+interactively (owner-confirmed). **Pick up:** trap the outer loop enclosing 3273 at frame 20639,
+find the counter/flag it waits on, and if IRQ-gated add a verifier-side advancer like
+`advance_frame_tick_wait` (interactive play unaffected — it fires the real ISR). The bounded gap
+run (`verify_native_walk_demo … 20000`) sidesteps it and still covers all of L1 gameplay.
+
 ## 2026-07-04 — What is the A47C scripted-input script? (PARTLY RESOLVED: it is NOT player death)
 
 **UPDATE (resolved half):** traced the player_death demo forward recording `DS:A47C` changes + `A6B9`
