@@ -1,112 +1,46 @@
-> **SESSION HANDOFF (2026-07-04, evening — this header is the ONE authoritative orientation).** A
-> fresh session picks up here: read `CLAUDE.md` → `AGENTS.md` → `overkill/native_app.py` (the
-> structural map) → the NEWEST dated entries below. State: suite **green (1183 passed / 23
-> skipped)**, tree clean, all pushed to `main`, pure game-logic mass ≈ 32.9%.
-> **When an older dated entry conflicts with a newer one, the NEWER one wins** — several early
-> models were corrected later (the "formation wave" is PLANET 3's family only, not the global wave;
-> the A47C "death script" label was wrong; the CS:066B fast-forward poke is retired).
+> **SESSION HANDOFF (2026-07-05 — this header is the ONE authoritative orientation).** A fresh
+> session picks up here: read `CLAUDE.md` → `AGENTS.md` → the NEWEST dated entries below (they hold
+> the detail; this header is only the north star). Suite **green (1211 passed / 23 skipped)**, tree
+> clean, all pushed to `main`. **When an older dated entry conflicts with a newer one, the NEWER
+> wins** (corrected models: the "formation wave" is PLANET 3's only; the A47C "death script" label
+> was wrong; the CS:066B poke is retired).
 >
-> **MILESTONE (2026-07-05): THE NATIVE BEHAVIOR WALK IS PROVEN — enemies think natively.**
-> ``adapters/behavior_walk.run_behavior_walk_a9d3`` runs the whole ``1010:A9D3..AA25`` object walk
-> as a registry of recovered pure systems, and ``probes/verify_native_behavior_walk`` shadows it
-> against the VM per fast-forwarded frame from L1_start: **200 frames, ZERO divergence** (full 64K
-> DGROUP diff; only the live stack window + the documented 5DB2/5E42 steer scratch excluded).
-> Covered natively: the 0x1F wave controller (waypoint seek + 5-enemy bursts + schedule/ring
-> cursors), 0x20 enemies (approach/hold/shoot/dive/re-shuffle), 0x0B shots (+ the 9E19 player-hit
-> beat: 23A0 flash, BEDC-scaled A95C damage, exhaustion refill into the 9E69 life beat), 0x01 dying
-> (partial, fail-loud edges), type-5 pickups (drift + the AA46/8331 touch predicate), the type-6
-> companion, the BC45/BC4B postmove (drift/clamp/bounds/BD17 chains), the BCCB anchor-touch ->
-> BFC7 death (score, linked counters, the C054 beats incl. the controller schedule CHAIN
-> 0x1F->A83E + the death-drop pickup), the 61DC energy redraw, and the native 7524/7573 allocators.
-> NEXT: lift the walk into NativeGame/play_native as the registry stage (the walk composition is
-> memory-shaped and ready), then the remaining fail-loud edges (latch-9 morphs, collect, C15B).
-> THE WIRING PLAN (designed + partially started -- native_game.step already has the additive
-> ``run_object_pass: bool = True`` flag, uncommitted):
-> * OWNERSHIP: play_native keeps a MutFlatMemory DGROUP image beside NativeGame. Per tick:
->   (1) g.step(..., run_object_pass=False) -- player/scroll/fan-out only; (2) sync INTO the image:
->   the 237C anchor record (+2/+4/+8 from special slot 0; 2384 aliases +8) + 237E/2380 + any
->   NEW fan-out-created gameplay records; (3) tick the frame counter bank on the image (the
->   6009..6046 chain: 233E wrap-3, 233C &3, 2336 &7, A7A0 inc, 2324 xor 1, 2326 &3, 2328 &7 --
->   pin the routine ENTRY at ~6003 (the 233A clear's owner) before annotating); (4)
->   run_behavior_walk_a9d3(image, tiles); (5) project the pools OUT of the image into g.state
->   (read_native_game_state) for the renderer + the exit detector.
-> * DELEGATION: extend the walk registry for the ids NATIVE_OBJECT_HANDLERS covers (0x0C ae09,
->   0x02 aed8, 0x05 ae7d, 0x06 ae2c, 0x12 b2cd, 0x1E b909, 0x1D b86d, 0x14 b9f0, 0x13/15/1C
->   8d4f-partial) via a 1-slot ObjectPool projection bridge (ObjectPool(base=rec, stride=0x38,
->   slots=(words,)) + ObjectUpdateGlobals from the live cells) so player shots etc. don't regress;
->   0x0B/0x1F keep the full native walk handlers. Unknown ids stay fail-loud.
-> * COLD ENEMIES: the initial-spawn mechanism is FOUND + DECODED -- ``1010:4A65``, the LEVEL
->   OBJECT SCRIPT walker (the scene-content subsystem): per-planet script pointer at
->   ``DS:C5E9 + 2356*2`` -> a cursor cell -> entries; each entry fires when the scroll ROW
->   trigger word == ``DS:A978``; entry shape: trigger, [optional FFFF-terminated flags prefix ->
->   20A2], count-ish word, x base -> 206C, y base -> 206E, kind = trigger&0x3F through a C81A-ish
->   byte table -> 2070; then per group: (scan +0x14, gate +0x0A, BEHAVIOR +0x18, count) via far
->   1F8F:0163 prep + 7524 allocs; stamps: +0=1, +2 = sx+206E, +4/+0x32 = sy+206C, +6=4, +8=0,
->   +0x16=4, +0x28 = [2098] linked-counter (with the 209A list registration -> the 2078 table),
->   ground objects ([+0x0A]==1 & [+0x14]==1) get 16px tile-snap + the 209C/20A0 tile-address prep.
->   The single register-sourced behavior stamp in the whole game is here (4B35: mov [bx+18h],ax).
->   CONFIRMED COLD-LOADABLE: the per-planet scripts (heads C85C/C8DE/CA02/CC36/CC80/CCAA via the
->   cursor cells C5F5..C5FF at [C5E9 + planet*2]) and the shared groupdefs (CFxx/D1xx) are
->   BYTE-IDENTICAL cold vs live -- static DGROUP data, no file parsing needed; the cold cursor
->   cells hold the script heads. Entry shape (reinterpreted from the live L1 stream): quads of
->   (trigger_row == A978 fires, groupdef_ptr, x_base -> 206C, y_base -> 206E); the groupdef at the
->   pointer carries (scan, gate, BEHAVIOR, count) + the spawn positions. The walker's caller is
->   **1010:A83C** (the frame-flow stage near A846 -- pin its stage identity when wiring). TO
->   RECOVER: the 4A65 walker -- NOW FULLY DECODED, implement + oracle + wire:
->   groupdef = (scan +0x14, gate +0x0A, behavior +0x18, count) then count x (x, y) position pairs
->   (si += 4 per spawn, loop -> 4ACE); per spawn: HP +0x20 = planet+1 (or 0x0C when scan != 1),
->   +0x24 = 0; the 2078 completion-counter registration (1F8F:0163: first free of 16 byte-pair
->   slots; [209A]/[2098]; inc per member + kind byte at +1); CONTROLLER spawns get the 1F8F:0209
->   init with their SPAWN schedule (0x13->A484, 0x15->A4E8, 0x1C->A7A2, **0x1F->A82E** -- matches
->   the live cursor A832 after one pair, distinct from the DEATH-chain bases; 0x7D->A638,
->   0x7E->A6F4; 0x21 -> 0209 with a leftover-ax edge, fail-loud): [A482]=schedule, [A842]=A844,
->   HP=0x14, **[A47E]=1**, [A480]=0x64. After each group -> re-enter the walker (multi-entry per
->   trigger row). Then wire per the plan; set 2356 = (level + 1) % 6 cold.
->   DONE + VERIFIED: ``adapters/level_object_script.run_level_object_script_4a65`` (the walker,
->   memory-shaped) driven byte-exact vs the ORIGINAL 4A65 -- ``verify_native_level_script``
->   **18/18 non-gap cases across all 6 planets** (full-DGROUP completeness diff): the spawn stamps,
->   the 2078 counter registration, the complete 0209 controller init (schedule + HP 0x14 + A47E=1 +
->   A480=0x64 + the 2342/2344/2346/2348 wave-state flags + A7A0=0 clock reset), the cursor advance,
->   and multi-entry-per-row. GROUND-OBJECT path (scan==1 & gate!=1, behaviors 0x19/0x1A/0x8A) is
->   THE GROUND SNAP IS NOW DONE + VERIFIED: ``_ground_snap_4b4a`` (snap X/Y to 16px; the tile-column
->   search via the CS:[9592] plane + the C3AA class table, stepping 209C toward the surface -- y<0x60
->   down, else up, wrapping 0..0xC -- until an open tile; Y = row<<4). ``verify_native_level_script``
->   now **18/18, ZERO gaps** across all 6 planets (the 3 former ground cases -- planet-1 0x19/0x1A,
->   planet-2 0x8A -- pass byte-exact, full-DGROUP incl. the 209C/209E/20A0 scratch). The 4A65 walker
->   is COMPLETE. NEXT: the play_native image-backed wiring per the plan above.
+> ## THE NORTH STAR: LEVEL 1, FULLY PLAYABLE (cold boot → fight → die/win), VM-free.
+> Scope is deliberately NARROW — only planet 1's behaviors, one level. This forces WIRING over more
+> recovery (the anti-pattern to avoid: we have a large, byte-exact-verified enemy stack proven only
+> in *probes*; `play_native` still shows zero enemies). Done = these clauses literally true:
+> 1. `play_native --level 0` cold-boots + renders the frame — **DONE**.
+> 2. player moves + fires — **DONE**.
+> 3. enemies spawn as the level scrolls (`4A65` walker) + behave (the behavior walk), RENDERED —
+>    logic recovered + shadow-proven; **NOT wired into play_native**; scenery `0x19/0x1A` unrecovered.
+> 4. player shots kill enemies; enemy shots/contact hurt the player — anchor-touch + damage
+>    recovered; **the `62F6` shot↔enemy scan is the gap**.
+> 5. death→respawn / level-end→win — detection is fail-loud; **edges are recovered pieces, not
+>    composed**.
+> 6. HUD (lives/score/energy) — composers exist, **unwired**.
+> 7. audio — DEFERRED (playable-silent is acceptable for this milestone).
 >
-> **COLD-POPULATE PROVEN + a new gap surfaced (2026-07-05).** ``probes/verify_cold_populate`` runs
-> the WHOLE native pipeline from the COLD bundle (no snapshot): set 2356=1, advance A978 from 0x110,
-> tick the 601E counter bank, run the 4A65 script walker + the behavior walk per frame. RESULT: the
-> WAVE CONTROLLER SPAWNS FROM COLD DATA at frame 0 (controllers=1) -- the spawn pipeline works
-> end-to-end VM-free. It currently reports CHECK because as the level scrolls in, the script spawns
-> GROUND SCENERY (behaviors 0x19/0x1A -> 1010:BAF0/BAD4, 0x8A -> 8C1F) that the behavior walk has no
-> handler for -- a REAL gap the mid-level L1_start shadow never reached (it started already past the
-> scenery). NEXT TARGET (the cold-populate gate's blocker): recover the scenery behaviors -- 0x1A =
-> ``[2338]>>4 + 0x24`` sprite; 0x19 = ``[233A] + 0x36`` sprite + (if [232E]==0x3F) a C237 move; both
-> fall into the SHARED ``BB03`` scroll-follow tail (an xref x3 worker) + ``C237``. Recover BB03/C237
-> + the two thin behaviors, register them in the walk (extend the shadow probe to a scroll-through
-> range that hits them), and the cold gate goes PASS. THEN the play_native image-backed wiring.
-> * VERIFY: the shadow probe must STILL pass untouched; plus a headless play_native smoke (N ticks
->   from --snapshot: active enemies move/spawn) and the full suite.
+> **THE ONE NEXT SLICE (do this first — it closes the loop for the first time):** wire the
+> shadow-proven behavior walk into `play_native` over a `MutFlatMemory` DGROUP image, starting from
+> `--snapshot L1_start` (which already has live enemies) so NO new recovery is needed — and SEE the
+> enemies move in the pygame window. Sequence after that: cold spawn (the `4A65` walker in the frame
+> flow + the scenery behaviors) → shot↔enemy collision (`62F6`) → the death/level-end edges → HUD.
+> Detailed wiring design + the cold-populate gap are in the dated entries below.
+> `native_game.step` already has an additive `run_object_pass: bool = True` flag for this.
 >
-> **THE FRONTIER (single statement — leaf recovery is DRY; this is an INTEGRATION project).** In
-> order: (a) the COLD-BOOT ENEMY WAVE = **PLANET 1's family** (the play order is planets
-> 1→2→3→4→5→0; planet 0 is the FINAL mothership/boss level — see the planet-numbering entry):
-> first xref-scan the behavior zoo for SHARED WORKERS (the pre2 second-pass principle — most of
-> the 149 `EFC4` handlers are likely thin wrappers; the worker set is the true recovery surface),
-> then trace planet 1's A7A0-phased per-planet spawn family (`B574`/`B615`, behaviors
-> `0x1F`/`0x20`/`0x22`) from the `L1_start` snapshot via fast-forward, then a NativeGame
-> behavior-registry stage (dispatch on `+0x18` = `OFF_LOGIC_ID` through the cold-loaded `EFC4`
-> table, fail-loud per unrecovered index) gated by a WHOLE-WALK shadow probe (`A9DD..AA2A`, all
-> slots, one boundary); (b) the death→respawn + level-advance edge COMPOSITIONS (all pieces
-> recovered) and then PROMOTE `APP_MODE_GRAPH` into an executing `NativeSession` (owns mode +
-> planet + lives, walks the edges, fail-loud per unrecovered edge — today the mode graph is
-> documentation-as-code; this makes the spine THE program); (c) the level-select cursor render
-> (`5A00`/`5A6C`) + the title→select→cold-start menu flow; (d) endings + audio drivers.
-> BACKGROUND slice any run may take: the HOOK-ROLE AUDIT tool (classify the 335 hooks as probe/
-> verifier/replacement/gap-detector + measure which still fire per snapshot — the retirement
-> driver; pre2's `hook_audit.py` pattern). See the "Five pre2 endgame principles" entry below.
+> ## WHAT'S RECOVERED + VERIFIED FOR L1 (all pushed):
+> the whole behavior walk (`adapters/behavior_walk`, 200-frame zero-divergence shadow), the scene
+> spawner (`adapters/level_object_script.run_level_object_script_4a65`, 18/18 all planets incl.
+> ground snap), and every L1 behavior: 0x1F controller, 0x20 enemy, 0x0B shot, type-6 companion,
+> type-5 pickup, 0x01 dying (partial). Cold-populate PROVEN to spawn the controller
+> (`probes/verify_cold_populate` — currently CHECK, blocked on the scenery behaviors).
+>
+> ## OPEN DEBT worth addressing (do NOT let these rot further):
+> * The `adapters/` recovery (behavior_walk, level_object_script) uses RAW hex offsets, not the
+>   `OFF_*` state-view names, and carries no `@recovered_island` (the scanner only reads `systems/`)
+>   — so the confidence manifest is blind to the milestone code. Fix the taxonomy's adapter blind
+>   spot; apply `OFF_*` in new code.
+> * `run_object_pass` flag is committed but unused until the wiring lands.
 >
 > **STANDING MECHANISMS — check this list BEFORE building ANY tooling (the anti-duplication rule;
 > two of these were nearly rebuilt because they were invisible from the entry docs):**
@@ -124,15 +58,9 @@
 > * Cold-boot probes MUST pass `overkill.launch.build_command_tail("tandy", "pc")` as the command
 >   tail — an empty tail boots the WRONG video mode (a past whole-session trap).
 >
-> **MILESTONE (standing):** `scripts/play_native.py` is a real VM-less standalone — cold level boot
-> (no snapshot), the real composed frame (starfield + full object-sprite layer, byte-exact vs the VM
-> page on the L3 capture), player movement + firing work. MISSING: enemies (the `A9DD..AA2A`
-> behavior walk — frontier (a)), the level-end/death continuations (frontier (b)), the HUD layer,
-> the menu flow (frontier (c)).
->
-> Durable technique notes that used to live in this header (the synthetic-ASM oracle for
-> witness-poor load-time code, the cold-boot witness-harness idea, the Bucket A/B completion
-> readouts) are preserved in the dated entries below and in `overnight_endgame_execution.md`.
+> Durable detail (the wiring design, the walker decode, the cold-populate gap, the pre2 principles,
+> the planet numbering) lives in the dated entries below — this header stays a north star, not a
+> plan dump. When you finish an L1 clause, update clause status here; keep the header SHORT.
 
 ## 2026-07-05 - THE WALK SLICE IS FULLY PREREQUISITE-FREE: allocators decoded, 0x0B already pure
 
