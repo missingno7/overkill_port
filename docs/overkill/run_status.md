@@ -6,6 +6,21 @@
 > models were corrected later (the "formation wave" is PLANET 3's family only, not the global wave;
 > the A47C "death script" label was wrong; the CS:066B fast-forward poke is retired).
 >
+> **MILESTONE (2026-07-05): THE NATIVE BEHAVIOR WALK IS PROVEN — enemies think natively.**
+> ``adapters/behavior_walk.run_behavior_walk_a9d3`` runs the whole ``1010:A9D3..AA25`` object walk
+> as a registry of recovered pure systems, and ``probes/verify_native_behavior_walk`` shadows it
+> against the VM per fast-forwarded frame from L1_start: **200 frames, ZERO divergence** (full 64K
+> DGROUP diff; only the live stack window + the documented 5DB2/5E42 steer scratch excluded).
+> Covered natively: the 0x1F wave controller (waypoint seek + 5-enemy bursts + schedule/ring
+> cursors), 0x20 enemies (approach/hold/shoot/dive/re-shuffle), 0x0B shots (+ the 9E19 player-hit
+> beat: 23A0 flash, BEDC-scaled A95C damage, exhaustion refill into the 9E69 life beat), 0x01 dying
+> (partial, fail-loud edges), type-5 pickups (drift + the AA46/8331 touch predicate), the type-6
+> companion, the BC45/BC4B postmove (drift/clamp/bounds/BD17 chains), the BCCB anchor-touch ->
+> BFC7 death (score, linked counters, the C054 beats incl. the controller schedule CHAIN
+> 0x1F->A83E + the death-drop pickup), the 61DC energy redraw, and the native 7524/7573 allocators.
+> NEXT: lift the walk into NativeGame/play_native as the registry stage (the walk composition is
+> memory-shaped and ready), then the remaining fail-loud edges (latch-9 morphs, collect, C15B).
+>
 > **THE FRONTIER (single statement — leaf recovery is DRY; this is an INTEGRATION project).** In
 > order: (a) the COLD-BOOT ENEMY WAVE = **PLANET 1's family** (the play order is planets
 > 1→2→3→4→5→0; planet 0 is the FINAL mothership/boss level — see the planet-numbering entry):
@@ -49,6 +64,76 @@
 > Durable technique notes that used to live in this header (the synthetic-ASM oracle for
 > witness-poor load-time code, the cold-boot witness-harness idea, the Bucket A/B completion
 > readouts) are preserved in the dated entries below and in `overnight_endgame_execution.md`.
+
+## 2026-07-05 - THE WALK SLICE IS FULLY PREREQUISITE-FREE: allocators decoded, 0x0B already pure
+
+Everything the NativeGame behavior-registry walk needs now exists or is decoded:
+* ``7524`` (effect alloc): cursor ``[95D8]``, forward scan 0x23 slots with the ``2B5C -> 23B4``
+  wrap, first INACTIVE slot -> cursor updated + returned, FFFF when full. Deterministic; trivially
+  pure. (``7573`` = the gameplay-pool twin, cursor ``95DA``, plus a 7550 recycle fallback keyed on
+  behaviors 9/0xA / type 1 -> BD0D when full.)
+* behavior ``0x0B`` (the enemy shot) = ``B24D`` -- **already recovered** (``systems/object_update``,
+  ``object_update_b24d`` family, tested).
+* the walk shape (A9DD..AA25): effect slots HIGH->LOW (cx 0x23..1 via 32CA), ``inc [2340]``
+  (wrap 0x5DC) per effect visit, the A8C2==1 leader-tick call (skip on L1, fail-loud if set),
+  ``[2346] = 0`` between pools, gameplay slots HIGH->LOW (cx 0x22..1 via 8D12); the trailing far
+  ``1F8F:0922`` is OUTSIDE the compare boundary (compare at AA25).
+* per-record: type dispatch (t0 nop, t6 companion, t2/t4 -> behavior dispatch; others fail-loud);
+  behaviors present in a 200-frame L1 free-run: 0x1F (controller), 0x20 (enemies), 0x0B (shots).
+NEXT SLICE (the /goal milestone): systems walk composition + the NativeGame registry stage + the
+``verify_native_behavior_walk`` shadow probe -- trap A9DD per fast-forwarded frame, snapshot, run
+the native walk, let the VM run to AA25, diff pools + walk globals; 200 frames, zero divergence.
+
+SHADOW STATUS (first full runs): the walk composition (``adapters/behavior_walk.py``) + the probe
+(``probes/verify_native_behavior_walk.py``) EXIST and run 200 frames with only **34 diverged
+frames, all classified by write-trace**:
+1. ``BEFF = 0x0B`` queued BY ``8209`` ITSELF (first instruction, ungated) per burst spawn -- add to
+   the burst application;
+2. frame 86 = the WAVE-END BEAT: the controller re-arms via the C115 family ([A482] = **A83E** -- a
+   FOURTH schedule base beyond A4E4/A5C0/A82A!), records its position (2376/2378), and spawns the
+   type-5 PICKUP via a ``7424`` stamp (fields traced: +0=1, +2=x, +16=5, +26=2 the pickup kind,
+   +8=0x48, +28=FFFF...) -- recover the wave-end path (reached from the 0x1F flow when the
+   schedule pair hits the FFFF sentinel, presumably);
+3. the ``BC45/BC4B`` POSTMOVE TAIL runs after EVERY jmp-exiting handler (0x1F stub, 0x20, 0x01,
+   type-5; NOT the ret-exiting companion) -- it is ALREADY PURE: ``object_postmove_bc4b`` (y clamp
+   + X-bounds death; frame 87's pickup died exactly there) and the follow-on collision tail
+   (``_fold_bc4b_collision`` in object_update: the 62F6 anchor/shot scan -> the C037 death
+   transitions; frame 200's behavior-1 came from an enemy touching the anchor) -- apply both in
+   the walk after those handlers (decode the tiny BC45-vs-BC4B entry delta first);
+4. ``230E/230F/2310/2311`` = the 5E42 steer's direction/axis scratch (flapping with the shots) --
+   OUT-OF-MODEL per the 5E42 island contract, add to the probe's documented exclusions beside
+   A954/230A. Registered handlers so far: 0x1F, 0x20, 0x0B, 0x01 (partial, fail-loud edges),
+   type-5 pickup (drift + the recovered AA46/8331 touch predicate; collect = declared gap),
+   type-6 companion; catalog says that IS the complete 200-frame set.
+
+THE BC45 TAIL, FULLY DECODED (implement in the walk after the jmp-exiting handlers):
+* entry BC45 = ``[bp+2] += [A278]`` (scroll drift; used by 0x01 + type-5), entry BC4B skips it
+  (0x1F stub + 0x20); then ``call BCB1`` = EXACTLY ``clamp_postmove_y_bcb1``; then the X-bounds
+  death = EXACTLY ``object_postmove_x_bounds_deactivates_bc4b`` (wide-set + A47C gate as recovered)
+  -> on death ``BD17``: ``+0 = 0``; type 4 -> ``BD5C``: ``call C054`` (DECODE NEXT: the kill-count/
+  score beat) then the ``+0x28`` linked-counter clear (index*2 + 2078 table walk, per the recovered
+  OFF_LINKED_COUNTER_INDEX note); type 1 -> ``BD56``: ``+0x16 = 2``; then the logic-keyed A970
+  decay beats (7/8/0xA/0xC -> BDAC/BDB8/BD9E family, already documented).
+* survivor + ``A47C == 0`` -> ``call BCCB`` then ``call 62F6``:
+  - BCCB (the ANCHOR-TOUCH scan): skip if inactive / type 5 / behavior 0 or 1; ``+0x14 == 1`` ->
+    the AA46 predicate (recovered), ``== 2`` -> AA71 (recovered); on touch: if ``A8C2 != 1`` ->
+    ``call BFC7`` (the C037-family self death transition + player-damage extras -- DECODE the
+    extras) then ``call 9E69`` (an effect spawn -- DECODE; frame 200's event needs BOTH);
+  - 62F6 = the recovered ``object_overlap_scan_62f6`` family (vs the gameplay pool candidates).
+* the walk exit map: companion AB10 rets (NO tail); B24D's bounds/AD60 tail is INSIDE the pure fn.
+
+STANDING-MECHANISMS CHECK PAID OFF A THIRD TIME: **the native behavior registry already exists** --
+``systems/object_update.py`` has ``NATIVE_OBJECT_HANDLERS`` (per-logic_id ``_advance_*`` fns for
+ae09/aed8/b86d/b9f0/ae7d/ae2c/b24d/b909/8d4f/b2cd) and ``native_object_pass_in_place`` (the A9E0
+walk: iteration order, the DS:2340 inc-per-entry with 0x5DC wrap, LIVE candidate pools for the
+collision scans). The milestone therefore EXTENDS it rather than building anew: (a) register the
+new 0x1F full controller (the existing ``_advance_8d4f`` models only the waypoint seek -- add the
+arrival BURST + schedule/ring cursors), 0x20 (step_enemy_behavior_20 + the seek/shot application)
+and the type-6 companion (the walk must TYPE-dispatch before behavior-dispatch: t6 -> companion,
+t0 -> nop, t2/t4 -> the behavior registry); (b) add a FAIL-LOUD mode (unknown active type/behavior
+raises, replacing the hybrid-tolerant ``continue``); (c) verify the walk ORDER against the VM
+(cx 0x23..1 = HIGH record -> LOW; check ObjectPool's slot ordering matches -- same-frame burst
+spawns make order observable); (d) the shadow probe drives it all.
 
 ## 2026-07-05 - BDD0 DECODED: the AFD8 contact scan is the ALREADY-RECOVERED player-hazard filter
 

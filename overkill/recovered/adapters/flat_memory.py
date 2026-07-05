@@ -47,3 +47,6 @@ class MutFlatMemory(FlatMemory):
         p = self._phys(seg, off)
         self.data[p] = val & 0xFF
         self.data[(p + 1) & 0xFFFFF] = (val >> 8) & 0xFF
+
+    def wb(self, seg: int, off: int, val: int) -> None:
+        self.data[self._phys(seg, off)] = val & 0xFF
