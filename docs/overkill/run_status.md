@@ -13,6 +13,21 @@
 > cold-boot probes MUST pass `overkill.launch.build_command_tail("tandy", "pc")`.
 > Suite green: 1222 passed / 23 skipped (2026-07-05).
 
+## 2026-07-05 - Spawner actors 0x30 + 0x90 + 0x91 native (the C237 primitive pays off)
+
+With `spawn(C237)` recovered, the C237-consumer actors fell quickly: 0x30 (8851: animate [96D2]@233C
++ gated C237 spawn + sound 0x0E), then 0x90/0x91 (8282/8291: animate [95EA]@2330 + the 82CA "phase
+table" that spawns a C237 child at X±4 on [232C]==0x1F -- one shared fn, base 0x88/0x8B). Each: target
+demo gap -> 0, NO new divergence (still only frame-614), 200/0 free-run held. Native actor set now:
+0x1F, 0x20, 0x0B, 0x02, 0x25, 0x27, 0x2f, 0x30, 0x90, 0x91 (+ the C237 worker) = 10 behaviors.
+
+**IMMEDIATE next: behavior 0x04** (AEBF->AF60) -- now UNMASKED (24+ demo gaps) since the spawners drop
+C237 children (which ARE behaviour 0x04). AF60 = the 2px-in-direction step doubled (call/ret trick) +
+the recovered B250/AD60 tail; an AED8 variant w/o the substate decrement. Recovering it closes the
+spawn chain. Then the scenery set (0x19/0x1a/0x8c/0x8b -> scene.md), 0x29 (needs 74E2), 0x12, plus
+player-death + pickup. Frontier (demo, by freq after this turn): 0x8c/0x19/0x1a(scenery) 0x24(80)
+0x12(68) 0x04(24) ...
+
 ## 2026-07-05 - C237 spawn worker + 0x25 native (the big unlock landed, first-try clean)
 
 The empirical trace paid off: C237 (child_spawn_throttle/seed/sound_c237) + behavior 0x25 verified
