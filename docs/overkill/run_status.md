@@ -20,6 +20,60 @@
 > 0x1F->A83E + the death-drop pickup), the 61DC energy redraw, and the native 7524/7573 allocators.
 > NEXT: lift the walk into NativeGame/play_native as the registry stage (the walk composition is
 > memory-shaped and ready), then the remaining fail-loud edges (latch-9 morphs, collect, C15B).
+> THE WIRING PLAN (designed + partially started -- native_game.step already has the additive
+> ``run_object_pass: bool = True`` flag, uncommitted):
+> * OWNERSHIP: play_native keeps a MutFlatMemory DGROUP image beside NativeGame. Per tick:
+>   (1) g.step(..., run_object_pass=False) -- player/scroll/fan-out only; (2) sync INTO the image:
+>   the 237C anchor record (+2/+4/+8 from special slot 0; 2384 aliases +8) + 237E/2380 + any
+>   NEW fan-out-created gameplay records; (3) tick the frame counter bank on the image (the
+>   6009..6046 chain: 233E wrap-3, 233C &3, 2336 &7, A7A0 inc, 2324 xor 1, 2326 &3, 2328 &7 --
+>   pin the routine ENTRY at ~6003 (the 233A clear's owner) before annotating); (4)
+>   run_behavior_walk_a9d3(image, tiles); (5) project the pools OUT of the image into g.state
+>   (read_native_game_state) for the renderer + the exit detector.
+> * DELEGATION: extend the walk registry for the ids NATIVE_OBJECT_HANDLERS covers (0x0C ae09,
+>   0x02 aed8, 0x05 ae7d, 0x06 ae2c, 0x12 b2cd, 0x1E b909, 0x1D b86d, 0x14 b9f0, 0x13/15/1C
+>   8d4f-partial) via a 1-slot ObjectPool projection bridge (ObjectPool(base=rec, stride=0x38,
+>   slots=(words,)) + ObjectUpdateGlobals from the live cells) so player shots etc. don't regress;
+>   0x0B/0x1F keep the full native walk handlers. Unknown ids stay fail-loud.
+> * COLD ENEMIES: the initial-spawn mechanism is FOUND + DECODED -- ``1010:4A65``, the LEVEL
+>   OBJECT SCRIPT walker (the scene-content subsystem): per-planet script pointer at
+>   ``DS:C5E9 + 2356*2`` -> a cursor cell -> entries; each entry fires when the scroll ROW
+>   trigger word == ``DS:A978``; entry shape: trigger, [optional FFFF-terminated flags prefix ->
+>   20A2], count-ish word, x base -> 206C, y base -> 206E, kind = trigger&0x3F through a C81A-ish
+>   byte table -> 2070; then per group: (scan +0x14, gate +0x0A, BEHAVIOR +0x18, count) via far
+>   1F8F:0163 prep + 7524 allocs; stamps: +0=1, +2 = sx+206E, +4/+0x32 = sy+206C, +6=4, +8=0,
+>   +0x16=4, +0x28 = [2098] linked-counter (with the 209A list registration -> the 2078 table),
+>   ground objects ([+0x0A]==1 & [+0x14]==1) get 16px tile-snap + the 209C/20A0 tile-address prep.
+>   The single register-sourced behavior stamp in the whole game is here (4B35: mov [bx+18h],ax).
+>   CONFIRMED COLD-LOADABLE: the per-planet scripts (heads C85C/C8DE/CA02/CC36/CC80/CCAA via the
+>   cursor cells C5F5..C5FF at [C5E9 + planet*2]) and the shared groupdefs (CFxx/D1xx) are
+>   BYTE-IDENTICAL cold vs live -- static DGROUP data, no file parsing needed; the cold cursor
+>   cells hold the script heads. Entry shape (reinterpreted from the live L1 stream): quads of
+>   (trigger_row == A978 fires, groupdef_ptr, x_base -> 206C, y_base -> 206E); the groupdef at the
+>   pointer carries (scan, gate, BEHAVIOR, count) + the spawn positions. The walker's caller is
+>   **1010:A83C** (the frame-flow stage near A846 -- pin its stage identity when wiring). TO
+>   RECOVER: the 4A65 walker -- NOW FULLY DECODED, implement + oracle + wire:
+>   groupdef = (scan +0x14, gate +0x0A, behavior +0x18, count) then count x (x, y) position pairs
+>   (si += 4 per spawn, loop -> 4ACE); per spawn: HP +0x20 = planet+1 (or 0x0C when scan != 1),
+>   +0x24 = 0; the 2078 completion-counter registration (1F8F:0163: first free of 16 byte-pair
+>   slots; [209A]/[2098]; inc per member + kind byte at +1); CONTROLLER spawns get the 1F8F:0209
+>   init with their SPAWN schedule (0x13->A484, 0x15->A4E8, 0x1C->A7A2, **0x1F->A82E** -- matches
+>   the live cursor A832 after one pair, distinct from the DEATH-chain bases; 0x7D->A638,
+>   0x7E->A6F4; 0x21 -> 0209 with a leftover-ax edge, fail-loud): [A482]=schedule, [A842]=A844,
+>   HP=0x14, **[A47E]=1**, [A480]=0x64. After each group -> re-enter the walker (multi-entry per
+>   trigger row). Then wire per the plan; set 2356 = (level + 1) % 6 cold.
+>   DONE + VERIFIED: ``adapters/level_object_script.run_level_object_script_4a65`` (the walker,
+>   memory-shaped) driven byte-exact vs the ORIGINAL 4A65 -- ``verify_native_level_script``
+>   **18/18 non-gap cases across all 6 planets** (full-DGROUP completeness diff): the spawn stamps,
+>   the 2078 counter registration, the complete 0209 controller init (schedule + HP 0x14 + A47E=1 +
+>   A480=0x64 + the 2342/2344/2346/2348 wave-state flags + A7A0=0 clock reset), the cursor advance,
+>   and multi-entry-per-row. GROUND-OBJECT path (scan==1 & gate!=1, behaviors 0x19/0x1A/0x8A) is
+>   fail-loud (3 gap skips reported) -- NEXT SUB-SLICE: the 4B4A..4BE7 terrain-surface snap is
+>   DECODED (snap X/Y to 16px; per-column tile search via es=[9592] plane + the C3AA class table,
+>   stepping 209C toward y<0x60 up else down until an open tile; Y = 209C<<4) -- implement it over
+>   a tile context + oracle the 3 skipped cases, then the play_native wiring per the plan above.
+> * VERIFY: the shadow probe must STILL pass untouched; plus a headless play_native smoke (N ticks
+>   from --snapshot: active enemies move/spawn) and the full suite.
 >
 > **THE FRONTIER (single statement — leaf recovery is DRY; this is an INTEGRATION project).** In
 > order: (a) the COLD-BOOT ENEMY WAVE = **PLANET 1's family** (the play order is planets

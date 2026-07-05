@@ -164,6 +164,7 @@ class NativeGame:
         read_ds_word,
         update_globals: ObjectUpdateGlobals,
         scroll_gate: tuple[int, int, int] = (0, 0, 0),
+        run_object_pass: bool = True,
     ) -> tuple["NativeGame", PlayerFrameStep]:
         """Run one whole native game tick: player -> scroll -> action fan-out -> object scan, in the
         real 9B2E -> A66F -> A067 -> AA0D order (confirmed always in that order -- see
@@ -192,5 +193,9 @@ class NativeGame:
             scroll_2350=fanout_scroll, bdac=bdac, a958=a958, be06=be06,
             source_index=source_index, source_x=source_x, source_y=source_y, read_ds_word=read_ds_word,
         )
-        game = game.step_objects(update_globals)
+        # run_object_pass=False lets a caller that owns the FULL A9D3..AA25 behavior walk (the
+        # image-backed adapters/behavior_walk registry, shadow-proven) replace this dataclass
+        # object pass instead of double-stepping the shared logic ids.
+        if run_object_pass:
+            game = game.step_objects(update_globals)
         return game, player_step
