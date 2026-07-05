@@ -83,3 +83,8 @@ Format: `behaviour (handler) — guards → primitives(operands) → tail`.
   `child_spawn_*_c237`) is now recovered: a shared difficulty throttle (`BEDC`/shared `A956`), the 7573
   alloc + field stamp (child = behaviour 0x04), and a per-parent-nibble SFX. Note the recovered
   primitive vocabulary now includes `spawn(C237)` alongside `spawn(7420)` / `shoot(7476)`.
+- **0x30 (`8851`)** — `animate`(sprite = table[`96D2` + `233C`*2] + 0x44) → `gate`(`232A`==0xF) →
+  `spawn`(C237) + `sound`(BEFF=0x0E) → `BC45`. `step_spawner_anim_30`. First composition of
+  `animate` + `spawn` + `sound`; the `animate`-from-a-DATA-table shape (vs 0x27's inline) recurs
+  (also 0x90/0x91's `95EA` table). Planet-5 has an extra anchor-proximity freeze (modelled, untested
+  by the L1 demo).

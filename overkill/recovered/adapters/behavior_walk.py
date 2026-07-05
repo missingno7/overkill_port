@@ -37,6 +37,7 @@ from overkill.recovered.systems.companion import step_companion_ab10
 from overkill.recovered.systems.enemy_behaviors import (
     step_bounce_scanner_2f,
     step_enemy_behavior_20,
+    step_spawner_anim_30,
     step_sprite_scroller_27_835d,
     step_wave_controller_1f,
 )
@@ -217,6 +218,21 @@ def _step_spawn_25(mem, rec: int) -> None:
         mem.ww(DS, 0x0052, 0x001A)
     elif result != 0xFFFF:
         mem.ww(DS, result + 0x08, 0x001A)
+
+
+def _step_spawner_30(mem, rec: int) -> None:
+    anim = mem.rw(DS, (0x96D2 + (mem.rw(DS, 0x233C) & 0xFFFF) * 2) & 0xFFFF)
+    r = step_spawner_anim_30(
+        planet_2356=mem.rw(DS, 0x2356), anchor_y_2380=mem.rw(DS, 0x2380),
+        y_word=mem.rw(DS, rec + 0x04), sprite_08=mem.rw(DS, rec + 0x08),
+        anim_table_value=anim, gate_2326=mem.rw(DS, 0x2326), gate_232a=mem.rw(DS, 0x232A))
+    if r.early_return:
+        return
+    mem.ww(DS, rec + 0x08, r.sprite)
+    if r.spawn:
+        _spawn_child_c237(mem, rec, 0x30)     # 0x30 ignores the return (uses the spawn side effect)
+        if mem.rb(DS, 0x98C0):
+            mem.wb(DS, 0xBEFF, 0x0E)          # 0x30's own sound override (post-C237)
 
 
 def _step_bounce_2f(mem, rec: int) -> None:
@@ -616,6 +632,9 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
         elif beh == 0x25:
             _step_spawn_25(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8265 exits jmp BC45
+        elif beh == 0x30:
+            _step_spawner_30(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8851 exits jmp BC45
         else:
             raise RecoveryGap(f"behavior {beh:#04x} (record {rec:04X})",
                               "no native handler registered -- recover it before walking")

@@ -33,7 +33,7 @@ the unrecovered behaviors, by hit frequency (= recovery priority) —
 | 0x28 | 84 | 1010:8676 | alias-group with 0x2A |
 | 0x90 | 80 | 1010:8282 | sprite anim (sister of 0x91) |
 | ~~0x2f~~ | ~~80~~ | 1010:8820 | **RECOVERED** (step_bounce_scanner_2f): sprite 0x43, B729 seek, target-x drift, blocked→target-y bounce 0↔0xC0 |
-| 0x30 | 80 | 1010:8851 | |
+| ~~0x30~~ | ~~80~~ | 1010:8851 | **RECOVERED** (step_spawner_anim_30): animate [96D2]@233C, gate [232A]==0xF -> C237 spawn + sound 0x0E |
 | 0x11 | 4 | 1010:B2C3 | (B2C8 shared-tail family) |
 | 0x01 key1 latch9 | 32 | (in-walk 0x01) | the dying-morph (BE60 prev 0x24/0x25 -> respawn-as) |
 

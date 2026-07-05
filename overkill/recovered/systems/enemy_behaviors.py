@@ -269,3 +269,52 @@ def step_bounce_scanner_2f(*, blocked: bool, target_y_32: int, target_x_34: int,
         writes[0x32] = (BOUNCE_2F_TARGET_Y_HI if (target_y_32 & 0xFFFF) == 0
                         else BOUNCE_2F_TARGET_Y_LO)
     return EnemyBehaviorStep(record_writes=writes)
+
+
+# behavior 0x30 spawner: a [233C]-clocked sprite animation that periodically spawns a C237 child.
+SPAWNER_30_PLANET5 = 0x0005
+SPAWNER_30_SPRITE_BIAS = 0x0044      # 887A: sprite = table[233C] + 0x44
+SPAWNER_30_FREEZE_DY = 0x000C        # planet-5 anchor-proximity freeze threshold
+SPAWNER_30_FREEZE_SPRITE = 0x0046
+SPAWNER_30_GATE_2326_PLANET5 = 0x0003   # planet-5 spawn gate on [2326]
+SPAWNER_30_GATE_232A = 0x000F           # non-planet-5 spawn gate on [232A]
+
+
+@dataclass(frozen=True, slots=True)
+class Spawner30Step:
+    """behavior 0x30 per-frame outcome (caller applies)."""
+    early_return: bool   # planet-5 anchor-freeze: skip the anim + spawn
+    sprite: int          # the animated sprite to write to +0x08 (when not early_return)
+    spawn: bool          # fire the C237 child spawn + sound 0x0E this frame
+
+
+@recovered_island(
+    asm=("1010:8851..88A7",),
+    contract="behavior 0x30 (1010:8851): a [233C]-clocked sprite animation (sprite = "
+             "table[96D2 + 233C*2] + 0x44) that spawns a C237 child + plays sound 0x0E when its "
+             "spawn gate fires (planet5: [2326]==3, else [232A]==0xF); the planet-5 branch also "
+             "freezes (skip anim+spawn) when |[2380]-y| >= 0xC and the sprite is already 0x46.",
+    status="OBSERVED",
+    merge_target="EnemyWaveSystem",
+    unknowns="the planet-5 sub-paths ([2356]==5) are modelled from the disasm but NOT exercised by "
+             "the L1 demo shadow; the C237 spawn + the BEFF=0x0E sound are applied by the caller.",
+)
+def step_spawner_anim_30(*, planet_2356: int, anchor_y_2380: int, y_word: int, sprite_08: int,
+                         anim_table_value: int, gate_2326: int, gate_232a: int) -> Spawner30Step:
+    """One frame of behavior ``0x30`` (``1010:8851``), pure (the C237 spawn excluded).
+
+    ``anim_table_value`` is the word the caller read from ``DS:[96D2 + 233C*2]``.  On planet 5 the
+    actor freezes (no anim, no spawn) when it is far enough from the anchor and already showing the
+    ``0x46`` sprite.  The spawn gate differs by planet; the caller runs C237 + the sound when
+    ``spawn`` is set.
+    """
+    p5 = (planet_2356 & 0xFFFF) == SPAWNER_30_PLANET5
+    if p5:
+        raw = (anchor_y_2380 - y_word) & 0xFFFF
+        dy = raw if raw < 0x8000 else (0x10000 - raw)
+        if dy >= SPAWNER_30_FREEZE_DY and (sprite_08 & 0xFFFF) == SPAWNER_30_FREEZE_SPRITE:
+            return Spawner30Step(early_return=True, sprite=sprite_08 & 0xFFFF, spawn=False)
+    sprite = (anim_table_value + SPAWNER_30_SPRITE_BIAS) & 0xFFFF
+    spawn = ((gate_2326 & 0xFFFF) == SPAWNER_30_GATE_2326_PLANET5 if p5
+             else (gate_232a & 0xFFFF) == SPAWNER_30_GATE_232A)
+    return Spawner30Step(early_return=False, sprite=sprite, spawn=spawn)
