@@ -13,6 +13,18 @@
 > cold-boot probes MUST pass `overkill.launch.build_command_tail("tandy", "pc")`.
 > Suite green: 1222 passed / 23 skipped (2026-07-05).
 
+## 2026-07-05 - C237 spawn worker + 0x25 native (the big unlock landed, first-try clean)
+
+The empirical trace paid off: C237 (child_spawn_throttle/seed/sound_c237) + behavior 0x25 verified
+first-try -- 0x25 demo gap 208 -> 0, NO new divergence, 200/0 free-run held. The stale-bx write
+(DS:[0x52]=0x1A on throttled frames) modelled from the trace was correct. The spawned 0x04 child did
+NOT flood (stays masked behind commoner gaps); sibling caller 0x24 newly unmasked. **The `spawn(C237)`
+primitive is now recovered**, so the remaining C237 consumers are easy follow-ons: 0x30 (8851: an
+`animate`-from-[96D2]-table + C237 spawn + sound 0x0E; on L1 the planet-5 branch is skipped) then
+0x90/0x91 (8282/8291: animate from [95EA]@2330 + a 82CA anim-index jump table into C237). Actors
+native so far: 0x1F, 0x20, 0x0B, 0x02, 0x27, 0x2f, 0x25 (+ C237). Frontier now (demo, by freq):
+0x91(390) 0x19/0x1a/0x8c/0x8b(scenery) 0x90(160) 0x24(80) 0x12(15) 0x11(1) + player-death + pickup.
+
 ## 2026-07-05 - ACTOR ZOO recovery begins: 0x27 + 0x2f native, and the actor-model design target
 
 The demo frontier is now being drained one behavior per slice (the proven loop: add handler ->
