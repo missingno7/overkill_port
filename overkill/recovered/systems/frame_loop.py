@@ -853,6 +853,79 @@ def formation_wave_next_spawn(cursor_index: int, formation_table):
     return formation_enemy_stamp_b5e6(x, y), cursor_index + 1
 
 
+#: the per-frame counter cells the 5F61 routine advances (used to seed/read a frame-counter dict)
+FRAME_COUNTER_CELLS = (0x2324, 0x2326, 0x2328, 0x232A, 0x232C, 0x232E, 0x2330, 0x2332, 0x2334,
+                       0x2336, 0x2338, 0x233A, 0x233C, 0x233E, 0x2342, 0x2344, 0x2346, 0x2348,
+                       0xA7A0)
+
+
+@recovered_island(
+    asm="1010:5F61..606E",
+    contract="the per-frame counter routine: a multi-rate cascade -- every frame advance the mod "
+             "counters 2324(parity)/2326(4)/2328(8)/232A(16)/232C(32)/232E(64)/2330(128) + 2332(4);"
+             " when 2332 wraps to 0 (every 4th frame) advance the SUB-BANK 2334(10)/2336(8)/2338(6)/"
+             "233A(5)/233C(4)/233E(3) + the A7A0 wave clock; when 2328==7 (every 8th frame) step the"
+             " 2342/2344/2348 wave oscillator (2342 flips 1<->FFFF, the +/-1 wave direction)",
+    status="VERIFIED",
+    merge_target="FrameLoop",
+    unknowns="enemies_alive=False (A47E==0, wave cleared) takes the A480-countdown -> CB1C palette"
+             " branch (host video) -- caller-owned; the 606F HUD-energy tail is a separate island",
+)
+def advance_frame_counters_5f61(cells: dict, *, enemies_alive: bool = True) -> dict:
+    """Advance every per-frame counter of ``1010:5F61`` once (pure).  ``cells`` maps each DGROUP
+    offset in :data:`FRAME_COUNTER_CELLS` to its current value; returns the updated map.
+
+    The enemy behaviors read these clocks (A7A0 hold gate, 2338 approach ramp, 2324 parity, 2336
+    companion anim, 232E re-shuffle gate, ...), so a native frame must advance them exactly -- the
+    key subtlety being that the A7A0 sub-bank ticks only EVERY 4TH FRAME (gated by 2332) and the
+    wave oscillator only every 8th (gated by 2328)."""
+    if not enemies_alive:
+        raise ValueError("advance_frame_counters_5f61: the A47E==0 branch (A480 countdown -> CB1C "
+                         "palette) is host video, not modeled here")
+    c = dict(cells)
+
+    def modn(off: int, n: int) -> None:      # the cmp/reset form (2334/2338/233A/233E)
+        v = (c[off] + 1) & 0xFFFF
+        c[off] = 0 if v >= n else v
+
+    # 5F89: the wave oscillator, only when 2328 == 7 (its pre-increment value this frame)
+    if c[0x2328] == 7:
+        if c[0x2342] == 0xFFFF:
+            c[0x2344] = (c[0x2344] - 1) & 0xFFFF
+            if c[0x2344] == 0:
+                c[0x2342] = (-c[0x2342]) & 0xFFFF
+                c[0x2348] = (c[0x2348] + 1) & 0xFFFF
+        else:
+            c[0x2344] = (c[0x2344] + 1) & 0xFFFF
+            if c[0x2344] == 2:
+                c[0x2342] = (-c[0x2342]) & 0xFFFF
+                c[0x2348] = (c[0x2348] + 1) & 0xFFFF
+    # 5FBA: the 2348 mask + the 2346 reset on its wrap
+    c[0x2348] &= 0x0F
+    if c[0x2348] == 0:
+        c[0x2346] = 8
+        c[0x2348] = (c[0x2348] + 1) & 0xFFFF
+    # 5FCB: 2332 mod 4; the /4 sub-bank runs when it wraps to 0
+    c[0x2332] = (c[0x2332] + 1) & 0x03
+    if c[0x2332] == 0:
+        modn(0x2334, 0x0A)
+        modn(0x2338, 0x06)
+        modn(0x233A, 0x05)
+        modn(0x233E, 0x03)
+        c[0x233C] = (c[0x233C] + 1) & 0x03
+        c[0x2336] = (c[0x2336] + 1) & 0x07
+        c[0xA7A0] = (c[0xA7A0] + 1) & 0xFFFF
+    # 6030: the every-frame mod counters
+    c[0x2324] ^= 1
+    c[0x2326] = (c[0x2326] + 1) & 0x03
+    c[0x2328] = (c[0x2328] + 1) & 0x07
+    c[0x232A] = (c[0x232A] + 1) & 0x0F
+    c[0x232C] = (c[0x232C] + 1) & 0x1F
+    c[0x232E] = (c[0x232E] + 1) & 0x3F
+    c[0x2330] = (c[0x2330] + 1) & 0x7F
+    return c
+
+
 @recovered_island(
     asm="1010:B5E6",
     contract="formation-enemy stamp = 8209 base + schedule overrides (+34=x+0x20, +32=y, +18=0x61, "

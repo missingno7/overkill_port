@@ -38,17 +38,17 @@ DEFAULT_BUNDLE = "artifacts/static_runtime_bundle/memory_1mb.bin"
 
 
 def _tick_counter_bank(mem) -> None:
-    """The 1010:6003..6046 per-frame counter bank (DGROUP half): the dividers + the A7A0 wave
-    clock + the 2324 frame parity that gate the enemy behaviors."""
-    mem.ww(DS, 0x233A, 0)
-    mem.ww(DS, 0x233E, (mem.rw(DS, 0x233E) + 1) % 3)
-    mem.ww(DS, 0x233C, (mem.rw(DS, 0x233C) + 1) & 3)
-    mem.ww(DS, 0x2336, (mem.rw(DS, 0x2336) + 1) & 7)
-    mem.ww(DS, 0xA7A0, (mem.rw(DS, 0xA7A0) + 1) & 0xFFFF)
-    mem.ww(DS, 0x2324, mem.rw(DS, 0x2324) ^ 1)
-    mem.ww(DS, 0x2326, (mem.rw(DS, 0x2326) + 1) & 3)
-    mem.ww(DS, 0x2328, (mem.rw(DS, 0x2328) + 1) & 7)
-    mem.ww(DS, 0x2338, (mem.rw(DS, 0x2338) + 1) & 0xFFFF)
+    """Advance the per-frame counter cascade via the RECOVERED 1010:5F61 island (A7A0 wave clock is
+    gated /4, the oscillator /8 -- an earlier hand-inlined version got these rates wrong)."""
+    from overkill.recovered.systems.frame_loop import (
+        FRAME_COUNTER_CELLS,
+        advance_frame_counters_5f61,
+    )
+    if mem.rw(DS, 0xA47E) == 0:
+        return   # the wave-cleared A480/CB1C branch is host video -- skip in the smoke
+    cells = {off: mem.rw(DS, off) for off in FRAME_COUNTER_CELLS}
+    for off, val in advance_frame_counters_5f61(cells).items():
+        mem.ww(DS, off, val)
 
 
 def _census(mem):

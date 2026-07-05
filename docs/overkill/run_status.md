@@ -20,7 +20,15 @@
 > 6. HUD (lives/score/energy) — composers exist, **unwired**.
 > 7. audio — DEFERRED (playable-silent is acceptable for this milestone).
 >
-> **THE ONE NEXT SLICE (do this first — it closes the loop for the first time):** wire the
+> **L1 WIRING — slice 1 of N landed (2026-07-05):** the per-frame counter cascade is recovered as a
+> pure VERIFIED island — `frame_loop.advance_frame_counters_5f61` (driven 64/64 vs the original
+> `1010:5F61`; `verify_native_frame_counters` + unit tests). It advances the enemy phase clocks the
+> walk reads; KEY: `A7A0` is gated `/4` (2332) and the wave oscillator `/8` (2328) — an earlier
+> hand-inlined bank in `verify_cold_populate` had `A7A0` ticking every frame and `233A` hardcoded 0,
+> now fixed to call the recovered fn. This is the first piece of the play_native wiring + it applies
+> the island discipline in new code (the debt fix).
+>
+> **THE NEXT WIRING SLICE (closes the loop for the first time):** wire the
 > shadow-proven behavior walk into `play_native` over a `MutFlatMemory` DGROUP image, starting from
 > `--snapshot L1_start` (which already has live enemies) so NO new recovery is needed — and SEE the
 > enemies move in the pygame window. Sequence after that: cold spawn (the `4A65` walker in the frame
