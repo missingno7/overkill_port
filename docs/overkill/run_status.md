@@ -13,6 +13,29 @@
 > cold-boot probes MUST pass `overkill.launch.build_command_tail("tandy", "pc")`.
 > Suite green: 1222 passed / 23 skipped (2026-07-05).
 
+## 2026-07-05 - Behavior 0x04 native: the C237 spawn chain is CLOSED (+ two real bugs caught and fixed)
+
+`object_update_af60` (systems/objects.py) + `_step_child_04` (the walk): the C237-spawned child's own
+movement (double 2px step, fixed direction) + the shared B250 contact / AD5A-ADC9->AD60 tail (the
+third EFAE-family member alongside AED8/B24D) + the single 9E19 contact beat. Self-contained (no
+BC45), matching 0x02/0x0B's shape. **0x25/0x30/0x90/0x91 now produce ZERO residual gaps** -- the
+spawn chain is fully native.
+
+Two REAL bugs surfaced and fixed while landing this (both by the demo shadow, not guesswork):
+1. **DS:A956 is a BYTE, not a word** -- the ASM's `inc`/`and` at C245/C253 are FE 06 / 80 26 (byte
+   opcodes). My C237 throttle used word rw/ww, clobbering the adjacent DS:A957. Fixed to byte ops.
+2. **DS:215A is promiscuous scratch, not object-state** -- traced (`scratchpad/trace_215a.py`) to
+   400+ writes from dozens of unrelated IRQ/sound/menu addresses within a few thousand boundaries;
+   none from object-behavior code. Added to EXCLUDED_CELLS in both shadow probes (same class as the
+   existing 230A/230C steer-scratch exclusion) -- a methodology fact (async writes between the
+   shadow's snapshot and AA25 can never be reproduced by re-running only the object walk), not a
+   correctness weakening.
+
+Verified: 5397 walk frames, only the pre-existing frame-614 divergence remains; 200/0 free-run holds;
+suite 1222 passed / 23 skipped. Native actor set: 0x1F, 0x20, 0x0B, 0x02, 0x04, 0x25, 0x27, 0x2f,
+0x30, 0x90, 0x91 (+ C237) = 11 behaviors. Frontier now (demo, by freq): 0x1a(576)/0x8c(510, scenery)
+0x12(507) 0x29(310) 0x19(288, scenery) 0x28(201) 0x24(80) 0x8b(16) + player-death/pickup/latch9.
+
 ## 2026-07-05 - Spawner actors 0x30 + 0x90 + 0x91 native (the C237 primitive pays off)
 
 With `spawn(C237)` recovered, the C237-consumer actors fell quickly: 0x30 (8851: animate [96D2]@233C
