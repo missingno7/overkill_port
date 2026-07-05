@@ -50,6 +50,32 @@ def sync_player_anchor(image, x_word: int, y_word: int, sprite_word: int) -> Non
     image.ww(DS, VIEW_Y_2380, y_word & 0xFFFF)
 
 
+GAMEPLAY_POOL_BASE = 0x2B5C
+GAMEPLAY_SLOTS = 0x22
+RECORD_STRIDE = 0x38
+
+
+def sync_new_gameplay_records(image, pool) -> int:
+    """Copy records the dataclass-side fan-out CREATED this tick into the image's gameplay pool
+    (ADR-1: the image is the state; anything mutated outside it must flow in within the tick).
+
+    Without this, a fired player shot lives only in the dataclass pool and is DESTROYED when the
+    walked image is projected back over it (the dual-state bug).  A record is 'new' when the
+    dataclass slot is active but the image's same-index slot is not; the full 0x38-byte record is
+    copied.  Returns how many records were synced."""
+    synced = 0
+    for i in range(min(len(pool), GAMEPLAY_SLOTS)):
+        if pool.active_word(i) == 0:
+            continue
+        rec = GAMEPLAY_POOL_BASE + i * RECORD_STRIDE
+        if image.rw(DS, rec) != 0:
+            continue
+        for w in range(RECORD_STRIDE // 2):
+            image.ww(DS, rec + w * 2, pool.word_at(i, w * 2))
+        synced += 1
+    return synced
+
+
 def advance_object_frame(image, tiles: LevelTileContext) -> None:
     """Advance one native object frame IN PLACE over ``image``: the per-frame counter cascade (when
     enemies are alive) then the whole behaviour walk.  Fail-loud on any unrecovered object (the walk

@@ -418,7 +418,8 @@ def main(argv=None) -> int:
     # only available on the --snapshot path today (it needs a live DGROUP); the cold path keeps the
     # player-only frame until the level-object-script spawn is wired into build_cold_level_start.
     from overkill.native_walk_frame import (  # noqa: E402
-        advance_object_frame, level_tiles, project_state, sync_player_anchor,
+        advance_object_frame, level_tiles, project_state, sync_new_gameplay_records,
+        sync_player_anchor,
     )
     from overkill.recovered.adapters.flat_memory import MutFlatMemory  # noqa: E402
 
@@ -458,6 +459,9 @@ def main(argv=None) -> int:
         if walk_image is not None and cell["walk_gap"] is None:
             sp = g.state.special_pool
             sync_player_anchor(walk_image, sp.x_word(0), sp.y_word(0), sp.word_at(0, 0x08))
+            # ADR-1: anything the dataclass side created this tick flows into the image BEFORE the
+            # walk -- otherwise fired shots would be destroyed by the projection below.
+            sync_new_gameplay_records(walk_image, g.state.object_pool)
             walk_image.ww(0x25CC, 0x234E, g.origin_x)
             walk_image.ww(0x25CC, 0x2350, g.row_base)
             try:
