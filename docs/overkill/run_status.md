@@ -13,6 +13,22 @@
 > cold-boot probes MUST pass `overkill.launch.build_command_tail("tandy", "pc")`.
 > Suite green: 1222 passed / 23 skipped (2026-07-05).
 
+## 2026-07-05 - THE CORE CORPUS: a human-played cold-start session (intro -> menu -> full L1 -> L2 start)
+
+`artifacts/demos/demo_cold_start_full_20260705_123645` (commit 13f47bb): the owner played a complete
+cold-start session -- near-pacifist (every enemy lifecycle runs uninterrupted; a few kills + firing
+give the combat chain real witnesses), finishing L1 and stopping at the L2 start. 1217 events /
+22923 boundaries. **This demo is the standing target: drive the native runtime until this session
+replays fully VM-less.** Owner's framing to keep (it matches the recovered structure exactly): a
+level is a scroll-cued PERFORMANCE -- the 4A65 script fires on trigger_row==A978 (stage position),
+controllers are stage managers, behaviors are actors, the player only interrupts. Two replay bugs
+the demo exposed, fixed the same day: play.py --demo now cold-boots snapshotless demos with their
+recorded boot params, and the 1F8F:024B all-keys-released wait (no frame boundary -> replay
+deadlock at frame 12432) joined the shared input_waits detector family (verifier pseudo-boundary +
+single-event pump delivery). New instrument: `probes/verify_native_walk_demo` -- the whole-walk
+shadow over EVERY A9D3..AA25 frame of the played session, with RecoveryGaps counted as the
+evidence-driven frontier.
+
 ## 2026-07-05 - COMBAT campaign: the 62F6 chain COMPOSED into the walk's postmove (kill/survive oracle-pinned)
 
 The walk's BC45/BC4B postmove now runs the full object-vs-object combat chain natively:
