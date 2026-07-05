@@ -45,7 +45,7 @@ from overkill.recovered.systems.collision import (
 )
 from overkill.recovered.domain.collision import PostMoveContactWindow
 from overkill.recovered.systems.movement import object_target_seek_step_5db2
-from overkill.recovered.systems.objects import object_update_b24d
+from overkill.recovered.systems.objects import object_update_aed8, object_update_b24d
 from overkill.recovered.systems.score import bcd_add_score
 
 # the C054 death-beat schedule re-arm: dying CONTROLLER behaviors chain the NEXT wave schedule
@@ -173,6 +173,26 @@ def _step_shot_0b(mem, rec: int, tiles: LevelTileContext) -> None:
     if u.x_word == 0xFFFF:
         _shot_hit_9e19(mem)   # the ADC9 in-box contact marker; the 9E19 fan-out is the VM's
         #                       "separate global side effect" the pure island leaves caller-owned
+
+
+def _step_shot_02(mem, rec: int, tiles: LevelTileContext) -> None:
+    """Behavior 0x02 (``1010:AED8``, EFAE logic_id 2) -- the PLAYER SHOT (the A4EA fanout seed
+    stamps logic_id 2).  A thin memory-shaped adapter around the already-VERIFIED whole-AED8 update
+    (``object_update_aed8``: the timer dec + the AEE4 8px step + the B250 contact + the AD60 bounds
+    tail).  The timer-death / odd-direction sub-paths return None (an unmodeled fallback) -> fail
+    loud."""
+    u = object_update_aed8(
+        mem.rw(DS, rec + 0x1C), mem.rw(DS, rec + 0x06), mem.rw(DS, rec + 0x02),
+        mem.rw(DS, rec + 0x04), mem.rw(DS, rec + 0x00), mem.rw(DS, rec + 0x1E),
+        mem.rw(DS, rec + 0x0A), mem.rw(DS, rec + 0x18),
+        mem.rw(DS, 0x237E), mem.rw(DS, 0x2380), mem.rw(DS, 0xA278), False, tiles)
+    if u is None:
+        raise RecoveryGap(f"behavior 0x02 timer-death / odd-direction (record {rec:04X})",
+                          "object_update_aed8's unmodeled ADC9 fallback")
+    mem.ww(DS, rec + 0x1C, u.substate)
+    mem.ww(DS, rec + 0x02, u.x_word)
+    mem.ww(DS, rec + 0x04, u.y_word)
+    mem.ww(DS, rec + 0x00, u.active_word)
 
 
 def _shot_hit_9e19(mem) -> None:
@@ -463,6 +483,8 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
             _postmove_bc45(mem, rec, tiles, with_drift=False)   # every B73E exit is jmp BC4B
         elif beh == 0x0B:
             _step_shot_0b(mem, rec, tiles)                      # B24D's AD5A/AD60 tail is internal
+        elif beh == 0x02:
+            _step_shot_02(mem, rec, tiles)                      # player shots (AED8's AD60 internal)
         elif beh == 0x01:
             _step_dying_01(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # BE43/BEAD/BEC2 exit jmp BC45

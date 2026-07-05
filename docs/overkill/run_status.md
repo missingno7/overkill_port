@@ -17,7 +17,9 @@
 >    90/90 frames, enemies move). REMAINING for clause 3: COLD spawn (the `4A65` walker in the frame
 >    flow so `--level 0` populates without a snapshot) + the scenery behaviors `0x19/0x1A`.
 > 4. player shots kill enemies; enemy shots/contact hurt the player — anchor-touch + damage
->    recovered; **the `62F6` shot↔enemy scan is the gap**.
+>    recovered; the PLAYER-SHOT behavior (0x02) is now handled in the walk (`_step_shot_02` -> the
+>    verified `object_update_aed8`; shadow still 200/0). REMAINING: copy the fanout's fired shots
+>    into the image (play_native) so they appear + walk, and the `62F6` shot↔enemy kill scan.
 > 5. death→respawn / level-end→win — detection is fail-loud; **edges are recovered pieces, not
 >    composed**.
 > 6. HUD (lives/score/energy) — composers exist, **unwired**.
