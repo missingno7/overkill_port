@@ -13,6 +13,29 @@
 > cold-boot probes MUST pass `overkill.launch.build_command_tail("tandy", "pc")`.
 > Suite green: 1222 passed / 23 skipped (2026-07-05).
 
+## 2026-07-05 - ACTOR ZOO recovery begins: 0x27 + 0x2f native, and the actor-model design target
+
+The demo frontier is now being drained one behavior per slice (the proven loop: add handler ->
+`verify_native_walk_demo` gap for it drops to 0, NO new divergence, the 200/0 free-run shadow held ->
+commit). Landed: **0x27** (835D, sprite scroller) and **0x2f** (8820, patrol-bounce: B729 seek +
+target-y bounce when blocked; `_apply_seek` now returns the seek's blocked flag). Recovering each
+UNMASKS downstream behaviors (a gap aborts the whole frame), so the gap set shifts as it peels.
+
+New crystallization target: **[`actor_model.md`](actor_model.md)** -- OVERKILL has no behaviour
+bytecode-VM, but a real implicit model (data-driven 4A65 cue sheet + schedules; EFC4 dispatch table;
+a CLOSED primitive vocabulary the hand-written handlers compose over the 0x38 record). Plan: recover
+handlers against the demo, TAG each with its primitive decomposition (actor_model.md Sec 4), let the
+step-language schema emerge, then a shadow-gated interpreter -> editor-ready. Each recovered behavior
+is now tagged there.
+
+Highest-value next unlock: **C237** (the child-spawn shared worker) -- gates 0x25/0x90/0x91 (~646
+demo hits). Decoded: a difficulty throttle (BEDC/A956: spawn every / every-2nd / every-4th call), the
+7573 alloc (recovered), a parent-field stamp, and a parent-behavior&0xF SOUND-selection jump table
+(C2CE -> BEFF sound 0x0B..0x15). CAVEAT to verify empirically before wiring: the throttle's no-spawn
+return leaves `bx` = the caller's dispatch bx (id<<1), and 0x25 branches on `cmp bx,FFFF` -> a stale
+write to DS:[id<<1 + 8] on throttled frames; confirm against the VM before modelling. Clean non-C237
+alternatives: 0x12 (B2CD waypoint follower, 15 hits) and 0x29 (needs 74E2 decoded).
+
 ## 2026-07-05 - THE L1 FRONTIER IS NOW KNOWN: the demo walk-shadow names every unrecovered actor
 
 `probes/verify_native_walk_demo` shadows every A9D3..AA25 walk frame of the owner's played L1 (native
