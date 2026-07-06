@@ -19,6 +19,23 @@
 > work is COMPLETE for L1. Next frontier: play_native integration polish, other planets' controller
 > families (0x1c etc.), the 9734/9902/9908 transition continuations, HUD/menu wiring, audio.
 
+## 2026-07-06 - the 8D4F controller family + 0x1C decoded (investigation; ready to implement)
+
+The six controller behaviors (0x13/0x15/0x1C/0x1F/0x7D/0x7E) share ONE body: `8D4F -> far 1F8F:027A`
+-- the A482-schedule seek (mode 3, exactly the recovered `step_wave_controller_1f`'s front half),
+then an ARRIVAL dispatch on `+0x18`: 0x13 -> 1F8F:0432, 0x15 -> 03E6, **0x1C -> 03A6**, 0x1F -> 0368
+(the recovered planet-1 burst), 0x7D -> 0309, 0x7E -> 02CB. So each planet's controller = the SAME
+seek + a per-behavior arrival body -- the recovered dataclass/adapter structure extends naturally.
+
+**0x1C's arrival body (1F8F:03A6..03E4), fully decoded:** `A482 += 8` (its schedule entries are
+8 bytes: waypoint pair + target pair), ONE `81F4` spawn at the controller position (the recovered
+`enemy_spawn_stamp_8209`), the entry's 3rd/4th words -> the child's `+0x34/+0x32` target (+0x20 x
+bias), child behavior **0x1D** (`+0x1C = 0x14`) -- or **0x1E with sprite 0x43** when the controller's
+y == 0 -- then `A47E++` and the shared 0448 en-route tail. So planet 2's enemies are the 0x1D/0x1E
+family (which the L2 frontier's 0x06/0x31/0x4d/0x33 hits likely morph from/spawn). NEXT SLICES: lift
+0x1C into the walk (reusing the 0x1F adapter shape), then 0x1D/0x1E, then the rest of the L2 list --
+each gated on the L2_full shadow (now runnable, see below).
+
 ## 2026-07-06 - the walk shadow now runs SNAPSHOT demos; the WHOLE planet-2 frontier mapped (zero divergence)
 
 Extended `verify_native_walk_demo` to snapshot-based demos (the L2/L3/L4/L6 recordings) -- the
