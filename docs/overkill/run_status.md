@@ -38,6 +38,15 @@ sprite compositors (`object_sprite_blocks` SKIPS ``anim(+12) != 0`` and ``varian
 records -- the explosion/hit-flash frames are exactly those); (4) the resizable-window crash --
 FIXED (scale to the live window size).
 
+**THE DRAW-ELIGIBILITY GATE IS FOUND (1010:A8C4..A8F4, the special-pool draw walk)**: per active
+32CA record -- skip when ``[BDAC] != 1 AND [2350] <= 0xB6 AND +0x16 == 1`` (a type-1 late-level
+suppression), then **skip unless ``+0x0A == 1``** (the confirmed gate), else ``call 7596`` (the
+draw dispatch).  Plus A8F7: when ``[A47C] != 0`` also draw the ``[9788]`` outro record.  The
+FIRST loop (A894.., the gameplay pool via 7596 at A8BE) has its OWN gates -- read A880..A8BE
+next; that likely explains the frame-1000/7000 overdraw.  Wire these gates into
+``object_sprite_blocks``/play_native and re-run verify_native_frame_1to1 -- expect the mean to
+collapse toward the ~40-px star-phase floor.
+
 **FIRST 1:1 LEAD (2026-07-07, late)**: the overdraw is PARTLY the ``+0x0A == 0`` records --
 skipping them in the sprite layer collapses frame 4000 from 2087 to 343 px with ZERO vm-only
 regressions (frames 1000/7000 unchanged at 740/1414, a second cause there).  NEXT: confirm the
