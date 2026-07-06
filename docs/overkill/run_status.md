@@ -38,6 +38,16 @@ sprite compositors (`object_sprite_blocks` SKIPS ``anim(+12) != 0`` and ``varian
 records -- the explosion/hit-flash frames are exactly those); (4) the resizable-window crash --
 FIXED (scale to the live window size).
 
+**FRAME-4000 SOLVED: the ship overdraw is the DYING MODE.** ``2326 == 3`` at that frame -- the
+ship was mid-death-explosion; during dying the visible anchor sprite is the ``+08`` explosion
+counter mapping (the 9AFF death-tail contract play_native's death branch already implements),
+NOT the ``+08 sprite cell``s normal read -- the probe's compose lacks that mapping and drew the
+normal ship (109 px overdraw) where the VM showed explosion frames.  FIX THE COMPOSE: when
+``2326 == 3`` (or A95A==FFFF), map the anchor sprite from the +08 counter exactly as
+play_native's dying branch does -- and that same mapping is what the OWNER saw missing
+("explosion shows only half / ship disappears when shot").  Remaining at 4000 after the anchor:
+~1978 px from the other pools (census next).
+
 **FRAME-4000 ATTRIBUTION (per-record, the One-pool wrapper recipe)**: in the SPECIAL pool only
 the ANCHOR produces pixels natively (109 px, ALL overdraw -- the VM page has NO SHIP at frame
 4000: the VM suppressed the anchor draw in a state the native ignores -- dying/warp/invisible?
