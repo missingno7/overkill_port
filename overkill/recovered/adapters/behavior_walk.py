@@ -35,6 +35,7 @@ from overkill.recovered.systems.collision import (
     view_contact_rect_test,
 )
 from overkill.recovered.systems.companion import step_companion_ab10
+from overkill.recovered.systems.contact_step import contact_probe_afd8
 from overkill.recovered.systems.enemy_behaviors import (
     RAMP_29_DEATH_Y_MAX,
     RAMP_29_DEATH_Y_MIN,
@@ -50,6 +51,14 @@ from overkill.recovered.systems.enemy_behaviors import (
     step_sprite_scroller_27_835d,
     step_wave_controller_1f,
     step_waypoint_follower_11_12,
+)
+from overkill.recovered.systems.scenery_behaviors import (
+    SCENERY_19_EMIT_DIRECTION,
+    bb03_bounce_after_step,
+    bb03_bounce_boundary,
+    scenery_19_should_emit,
+    step_scenery_emitter_sprite_19,
+    step_scenery_sprite_ramp_1a,
 )
 from overkill.recovered.systems.frame_loop import (
     canned_random_next_4d95,
@@ -195,6 +204,47 @@ def _step_enemy_20(mem, rec: int) -> None:
         mem.ww(DS, rec + off, val)
     for off, val in r.global_writes.items():
         mem.ww(DS, off, val)
+
+
+def _bb03_bounce(mem, rec: int, tiles: LevelTileContext) -> None:
+    direction = mem.rw(DS, rec + 0x06)
+    y = mem.rw(DS, rec + 0x04)
+    flip = bb03_bounce_boundary(direction, y)
+    if flip is not None:
+        mem.ww(DS, rec + 0x06, flip)
+        return
+    result = contact_probe_afd8(mem.rw(DS, rec + 0x02), y, direction, mem.rw(DS, 0xA278),
+                                tiles, lambda: False)
+    mem.ww(DS, rec + 0x02, result.x_word)
+    mem.ww(DS, rec + 0x04, result.y_word)
+    # AFD8's own observable DGROUP writes (the "scratch" cells the ASM itself writes every call,
+    # not just internal working state) -- A430 the blocked flag, A432/A434 the pre-step snapshot,
+    # A436/A438 the post-step mirror. 215A is excluded shadow scratch (written for fidelity anyway).
+    mem.ww(DS, 0xA430, 1 if result.blocked else 0)
+    mem.ww(DS, 0xA432, result.snap_x)
+    mem.ww(DS, 0xA434, result.snap_y)
+    mem.ww(DS, 0xA436, result.mirror_y)
+    mem.ww(DS, 0xA438, result.mirror_x)
+    mem.ww(DS, 0x215A, result.sample_215a)
+    flip = bb03_bounce_after_step(direction, result.blocked)
+    if flip is not None:
+        mem.ww(DS, rec + 0x06, flip)
+
+
+def _step_scenery_1a(mem, rec: int, tiles: LevelTileContext) -> None:
+    mem.ww(DS, rec + 0x08, step_scenery_sprite_ramp_1a(mem.rw(DS, 0x2338)))
+    _bb03_bounce(mem, rec, tiles)
+
+
+def _step_scenery_19(mem, rec: int, tiles: LevelTileContext) -> None:
+    mem.ww(DS, rec + 0x08, step_scenery_emitter_sprite_19(mem.rw(DS, 0x233A)))
+    if scenery_19_should_emit(mem.rw(DS, 0x232E)):
+        # 1010:BAE1: force direction=4 for the spawn, then restore this record's own direction.
+        saved_dir = mem.rw(DS, rec + 0x06)
+        mem.ww(DS, rec + 0x06, SCENERY_19_EMIT_DIRECTION)
+        _spawn_child_c237(mem, rec, 0x19)
+        mem.ww(DS, rec + 0x06, saved_dir)
+    _bb03_bounce(mem, rec, tiles)
 
 
 def _step_scroller_27(mem, rec: int) -> None:
@@ -773,6 +823,12 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
         elif beh == 0x12:
             _step_waypoint_12(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=False)   # B2CD exits jmp BC4B
+        elif beh == 0x1A:
+            _step_scenery_1a(mem, rec, tiles)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # BAD4->BB03 exits jmp BC45 (WITH drift)
+        elif beh == 0x19:
+            _step_scenery_19(mem, rec, tiles)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # BAF0->BB03 exits jmp BC45 (WITH drift)
         else:
             raise RecoveryGap(f"behavior {beh:#04x} (record {rec:04X})",
                               "no native handler registered -- recover it before walking")

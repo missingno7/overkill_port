@@ -212,8 +212,12 @@ def formation_spawn_seed_7476(slot_x: int, slot_y: int, boss_mode: bool,
 
 # 1010:C237 difficulty-throttled child spawn.  A behavior calls it to drop a child object into the
 # gameplay pool at the parent's position; DS:BEDC gates the spawn RATE via the shared DS:A956 counter
-# (ticked by EVERY C237 caller), and the child's spawn plays a per-parent SFX.
-CHILD_SPAWN_C237_SOUND_BY_PARENT_NIBBLE = (0x0B, 0x0C, 0x0E, 0x11, 0x12, 0x13, 0x14, 0x15)
+# (ticked by EVERY C237 caller), and the child's spawn plays a per-parent SFX.  The 1010:C2CE table
+# is the FULL 16-entry table (parent_beh & 0xF, 0..15); entries 12-15 duplicate 5/6/9/8.
+CHILD_SPAWN_C237_SOUND_BY_PARENT_NIBBLE = (
+    0x0B, 0x0C, 0x0E, 0x11, 0x12, 0x13, 0x14, 0x15,
+    0x1A, 0x1B, 0x1E, 0x18, 0x13, 0x14, 0x1B, 0x1A,
+)
 CHILD_SPAWN_C237_PARENT_92_SOUND = 0x14   # parent behaviour 0x92 forces the idx-6 sound
 CHILD_SPAWN_C237_MIN_CHILD_X = 0x0008     # child_x >= 8 to reach the sound (else early return)
 CHILD_SPAWN_C237_MAX_PARENT_X = 0x00E0    # parent_x <= 0xE0 (unsigned) to reach the sound

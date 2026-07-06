@@ -4,7 +4,7 @@
      Source of truth = the @recovered_island metadata on each recovered function.
      tests/test_island_registry.py fails if this file drifts from the code. -->
 
-41 recovered islands (6 OBSERVED, 3 ASM_MATCHED, 32 VERIFIED).
+45 recovered islands (10 OBSERVED, 3 ASM_MATCHED, 32 VERIFIED).
 
 | ASM boundary | Function | Status | Merge target | Contract |
 |---|---|---|---|---|
@@ -48,4 +48,8 @@
 | `1010:B5DE..B612` | `systems.frame_loop.formation_wave_next_spawn` | ASM_MATCHED | EnemyWaveSystem | the next-formation-enemy step over the cold A8D2 schedule: stamp at cursor, advance, (None, cursor) when exhausted |
 | `1010:B5E6` | `systems.frame_loop.formation_enemy_stamp_b5e6` | VERIFIED | EnemyWaveSystem | formation-enemy stamp = 8209 base + schedule overrides (+34=x+0x20, +32=y, +18=0x61, +08=0xE7); +02/+04 are leader-context, excluded |
 | `1010:B73E..B7BC`, `1010:B7BD..B85B`, `1010:B74E` | `systems.enemy_behaviors.step_enemy_behavior_20` | VERIFIED | EnemyWaveSystem | behavior 0x20 (the planet-1 wave enemy) as a pure per-frame decision: approach the formation slot / hold+shoot in the 2340 window (4D95 low-bit gate) / dive-retarget at the player (A47E<=3 or 2340<5, parity-gated) / re-shuffle from the A844 ring at 232E==0x3F / the +0x1C substate exit chain |
+| `1010:BAD4..BADF` | `systems.scenery_behaviors.step_scenery_sprite_ramp_1a` | OBSERVED | SceneSystem | behavior 0x1A (1010:BAD4): sprite = (DS:2338 >> 1) + 0x24, unconditionally, then falls into the shared BB03 bounce (1010:BB03) every frame -- no gate of its own. |
+| `1010:BAF0..BAFE` | `systems.scenery_behaviors.step_scenery_emitter_sprite_19` | OBSERVED | SceneSystem | behavior 0x19 (1010:BAF0): sprite = DS:233A + 0x36, unconditionally; when DS:232E==0x3F, emit a C237 child (via 1010:BAE1, which stamps direction=4 for the spawn regardless of this record's own direction, then restores it) -- then falls into the shared BB03 bounce every frame. |
+| `1010:BB03..BB0D (the immediate Y-boundary flip)` | `systems.scenery_behaviors.bb03_bounce_boundary` | OBSERVED | SceneSystem | 1010:BB03's Y-boundary pre-check: if the CURRENT bounce direction has already reached its endpoint (dir==6 and Y==0, or dir!=6 and Y==0xC0), flip immediately with no AFD8 call. Otherwise the caller must attempt one AFD8 contact-step in `direction` and use :func:`bb03_bounce_after_step` on the result. |
+| `1010:BB0E..BB3D` | `systems.scenery_behaviors.bb03_bounce_after_step` | OBSERVED | SceneSystem | 1010:BB03's post-step flip: after the caller's AFD8 contact-step attempt in the CURRENT bounce direction, flip to the opposite phase iff the step was blocked (DS:A430 != 0); otherwise the direction (and thus the bounce phase) is unchanged. |
 | `1F8F:027A..02A0`, `1F8F:0368..03A5`, `1F8F:0448..0451`, `1010:8D8B` | `systems.enemy_behaviors.step_wave_controller_1f` | VERIFIED | EnemyWaveSystem | behavior 0x1F (the planet-1 WAVE CONTROLLER, via the 8D4F stub + the 8D8B trampoline): seek the A482-schedule waypoint (x+0x20/y, 5DB2 mode 3); on arrival advance the schedule +4 and burst FIVE 81F4 spawns (leader-context = the controller's position, formation slots from the A844 ring cursor +4 each NO wrap, behavior 0x20, substate FFFF); sprite = direction + 0x3B every frame |

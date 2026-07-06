@@ -13,6 +13,44 @@
 > cold-boot probes MUST pass `overkill.launch.build_command_tail("tandy", "pc")`.
 > Suite green: 1222 passed / 23 skipped (2026-07-06).
 
+## 2026-07-06 - MILESTONE: scenery 0x1A/0x19 native, `verify_cold_populate` PASSES, demo stays 0-divergence
+
+Recovered the SHARED `BB03` vertical-bounce tail (over the already-recovered, verified
+`contact_probe_afd8`/AFD8 -- 21-caller shared worker, never wired into a live adapter before this)
+plus **0x1A** (sprite ramp + BB03) and **0x19** (a different sprite ramp + a periodic C237 emit via
+the `1010:BAE1` helper, forcing direction=4 for the spawned child then restoring it) in a new module,
+`overkill/recovered/systems/scenery_behaviors.py` (kept separate from `enemy_behaviors.py` -- these
+are scene.md's scope, not enemies_l1's). Together the single largest chunk of the L1 frontier
+(576+288 = 864 hits). **`verify_cold_populate` now PASSES** (peak enemies=15, a tracked enemy moves,
+0 gap-frames, VM-free) -- one of scene.md's TWO done-condition clauses; the demo shadow holds at
+**8294/8294 zero divergence**.
+
+Three real bugs surfaced and fixed while landing this (the demo-shadow discipline catching each one
+before it could compound):
+1. **Caught a wrong AFD8 flag reading BEFORE writing code**, not by trial and error: the recovered
+   island's own contract phrasing ("blocked verdict = ZF(cmp A430,0)") is ambiguous about WHICH ZF
+   state means blocked; reading the EXISTING verified adapter's plain-English comment
+   (`contact_step_dispatch_adapter.py`: "DS:A430 = 1 on block") resolved it correctly on the first
+   attempt -- exactly the "verify against existing evidence, don't guess" discipline this session
+   has repeatedly needed.
+2. **The adapter never wrote AFD8's own observable DGROUP side effects** (`A430` the blocked flag,
+   `A432`/`A434` the pre-step snapshot, `A436`/`A438` the post-step mirror) -- these are REAL ASM
+   writes every AFD8 call makes, not just internal working state, so omitting them causes a byte
+   divergence that, left in place across many frames, would slowly compound (caught immediately via
+   the full-DGROUP demo shadow, before it accumulated).
+3. **`with_drift=False` was wrong for 0x1A/0x19** -- their disassembled exits are literally
+   `jmp BC45` (not `BC4B`), so the shared level-scroll drift (`+= DS:A278`) DOES apply, same as every
+   other BC45-tail actor; this produced a slow, GROWING 1px/frame X divergence (VM always exactly 1px
+   ahead of native, compounding every frame) that made the root cause obvious once traced.
+4. **The C237 sound-selection table (`1010:C2CE`) only had 8 of its 16 real entries** -- every prior
+   C237 caller's `parent_beh & 0xF` happened to land in 0-7; 0x19 is the first caller landing at
+   index 9, an outright `IndexError` (not a silent divergence) that forced re-dumping the FULL table.
+
+Suite: 1222 passed / 23 skipped; both layer audits pass. Native actor set now 17 behaviors + the
+C237 spawn worker + the BB03 bounce. Remaining L1 gaps (demo tally): 0x8c(769, scenery, unmasked
+further by this session's fixes) 0x28(488, needs 81F4+0x14) 0x8b(363, scenery) 0x89(46) +
+0x01-latch9/0x26(43) + player-death(5) + pickup-collect(2).
+
 ## 2026-07-06 - MILESTONE: ZERO divergence across the ENTIRE 8294-frame demo (two deep bugs found+fixed)
 
 Recovering **0x24** (`_step_spawn_child_sprite`, generalised from `_step_spawn_25` -- byte-identical
