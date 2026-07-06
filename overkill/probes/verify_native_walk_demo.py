@@ -28,6 +28,9 @@ sys.path.insert(0, str(ROOT))
 from overkill.probes._harness import (  # noqa: E402
     load_demo, run_ref_step_probe, run_ref_step_probe_cold_start,
 )
+from overkill.probes._shadow_cache import (  # noqa: E402
+    WalkShadowRecorder, cache_path_for, demo_key, iter_cached_frames, load_cache,
+)
 from overkill.recovered.adapters.behavior_walk import run_behavior_walk_a9d3  # noqa: E402
 from overkill.recovered.adapters.flat_memory import MutFlatMemory  # noqa: E402
 from overkill.recovered.domain.gaps import RecoveryGap  # noqa: E402
@@ -55,81 +58,107 @@ EXCLUDED_CELLS = {0xA954, 0xA955, 0x230A, 0x230B, 0x230C, 0x230D,
                   0x230E, 0x230F, 0x2310, 0x2311, 0x215A, 0x215B}
 
 
+def _check_frame(pre_full, post_dgroup: bytes, sp: int, stats, gaps: Counter,
+                 first_divs: list) -> None:
+    """Run the native walk over one VM pre-state and diff DGROUP against the VM post-state.
+
+    The SINGLE comparison body both paths share -- the live-VM run and the recorded-cache replay
+    feed it identical data, so the verdict logic cannot drift between them."""
+    ds = DGROUP
+    base = DGROUP * 16
+    native = MutFlatMemory(pre_full)
+    stats["frames"] += 1
+    for i in range(0x22):
+        rec = GAMEPLAY_BASE + i * 0x38
+        if native.rw(ds, rec) and native.rw(ds, rec + 0x1E):
+            stats["combat_exposed"] += 1
+            break
+    if stats["frames"] % 500 == 0:
+        print(f"  ..walk frame {stats['frames']}: diverged={stats['diverged']} "
+              f"distinct-gaps={len(gaps)} combat-exposed={stats['combat_exposed']}"
+              + (f" gaps={sorted(gaps)}" if gaps else ""), flush=True)
+    # the tile plane + class table are read FRESH from this frame's own pre-state (the level
+    # scrolls the plane in place, and the 0B3E level-data init REBUILDS the class table at level
+    # transitions/respawns -- one-shot caches go stale on any demo crossing a level end)
+    seg = native.rw(CS, 0x9592)
+    plane = bytes(native.data[seg * 16:seg * 16 + 0x4000])
+    classes = tuple(native.rb(ds, (0xC3AA + i) & 0xFFFF) for i in range(256))
+    tiles = LevelTileContext(origin_x_word=native.rw(ds, 0x234E),
+                             row_base_word=native.rw(ds, 0x2350),
+                             tile_plane=plane, class_table=classes)
+    try:
+        run_behavior_walk_a9d3(native, tiles)
+    except RecoveryGap as gap:
+        # normalise away the per-record address so the distinct-gap set is the
+        # actual behavior/type frontier, not one key per object instance
+        key = str(gap).split(" (record ")[0].split(" (candidate ")[0]
+        gaps[key] += 1
+        return
+    nat = bytes(native.data[base:base + 0x10000])
+    if post_dgroup == nat:
+        return
+    diffs = [o for o in range(0x10000)
+             if post_dgroup[o] != nat[o] and o not in EXCLUDED_CELLS
+             and not (sp - 0x60 <= o < sp)]
+    if diffs:
+        stats["diverged"] += 1
+        if len(first_divs) < 12:
+            line = (f"walk frame {stats['frames']}: {len(diffs)}B at "
+                    + ",".join(f"DS:{o:04X}(vm={post_dgroup[o]:02X}/nat={nat[o]:02X})"
+                               for o in diffs[:6]))
+            first_divs.append(line)
+            print(f"  DIVERGENCE {line}", flush=True)
+
+
 def main(argv) -> int:
+    force_vm = any(a in ("vm", "--vm") for a in argv)
+    argv = [a for a in argv if a not in ("vm", "--vm")]
     demo = load_demo(argv[0] if argv else None, DEFAULT_DEMO)
     max_frames = int(argv[1]) if len(argv) > 1 else None
 
-    st = {"pre": None, "sp": 0, "plane_seg": None, "plane": None, "classes": None}
     stats = {"frames": 0, "diverged": 0, "combat_exposed": 0}
     gaps: Counter = Counter()
     first_divs: list[str] = []
 
-    def on_ref_step(cpu) -> None:
-        if (cpu.s.cs & 0xFFFF) != CS:
-            return
-        ip = cpu.s.ip & 0xFFFF
-        m = cpu.mem
-        ds = cpu.s.ds & 0xFFFF
-        if ip == WALK_ENTRY and st["pre"] is None:
-            # read the tile plane FRESH every frame: the level scrolls and rewrites the plane
-            # in place, so a per-segment cache goes stale and spuriously diverges the AD60 tile probe
-            seg = m.rw(CS, 0x9592)
-            st["plane"] = bytes(m.data[seg * 16:seg * 16 + 0x4000])
-            # the class table is read FRESH per frame too: the 0B3E level-data init REBUILDS it at
-            # a level transition (and at the death respawn), so a one-shot cache goes stale on any
-            # demo that crosses a level end (e.g. the L2_full playthrough)
-            st["classes"] = tuple(m.rb(ds, (0xC3AA + i) & 0xFFFF) for i in range(256))
-            st["pre"] = bytes(m.data)
-            st["sp"] = cpu.s.sp & 0xFFFF
-            for i in range(0x22):
-                rec = GAMEPLAY_BASE + i * 0x38
-                if m.rw(ds, rec) and m.rw(ds, rec + 0x1E):
-                    stats["combat_exposed"] += 1
-                    break
-            return
-        if ip == WALK_END and st["pre"] is not None:
-            pre, sp = st["pre"], st["sp"]
-            st["pre"] = None
-            stats["frames"] += 1
-            if stats["frames"] % 500 == 0:
-                print(f"  ..walk frame {stats['frames']}: diverged={stats['diverged']} "
-                      f"distinct-gaps={len(gaps)} combat-exposed={stats['combat_exposed']}"
-                      + (f" gaps={sorted(gaps)}" if gaps else ""), flush=True)
-            native = MutFlatMemory(pre)
-            tiles = LevelTileContext(origin_x_word=native.rw(ds, 0x234E),
-                                     row_base_word=native.rw(ds, 0x2350),
-                                     tile_plane=st["plane"], class_table=st["classes"])
-            try:
-                run_behavior_walk_a9d3(native, tiles)
-            except RecoveryGap as gap:
-                # normalise away the per-record address so the distinct-gap set is the
-                # actual behavior/type frontier, not one key per object instance
-                key = str(gap).split(" (record ")[0].split(" (candidate ")[0]
-                gaps[key] += 1
-                return
-            base = DGROUP * 16
-            vm = bytes(m.data[base:base + 0x10000])
-            nat = bytes(native.data[base:base + 0x10000])
-            if vm == nat:
-                return
-            diffs = [o for o in range(0x10000)
-                     if vm[o] != nat[o] and o not in EXCLUDED_CELLS
-                     and not (sp - 0x60 <= o < sp)]
-            if diffs:
-                stats["diverged"] += 1
-                if len(first_divs) < 12:
-                    line = (f"walk frame {stats['frames']}: {len(diffs)}B at "
-                            + ",".join(f"DS:{o:04X}(vm={vm[o]:02X}/nat={nat[o]:02X})"
-                                       for o in diffs[:6]))
-                    first_divs.append(line)
-                    print(f"  DIVERGENCE {line}", flush=True)
-
-    if demo.is_cold_start:
-        run_ref_step_probe_cold_start(demo, max_frames, on_ref_step)
+    key = demo_key(demo)
+    cache_file = cache_path_for(demo)
+    cached = None if force_vm else load_cache(cache_file, key, max_frames)
+    if cached is not None:
+        print(f"  (replaying {cached['frames']} recorded walk frames from {cache_file.name} -- "
+              f"same states, same comparison, no VM)", flush=True)
+        for pre_full, post_dgroup, sp in iter_cached_frames(cached):
+            _check_frame(pre_full, post_dgroup, sp, stats, gaps, first_divs)
     else:
-        # a snapshot-based demo (the L2/L3/L4/L6 recordings): same trap, the snapshot harness
-        frames = (demo.end_boundary + 5) if max_frames is None else max_frames
-        run_ref_step_probe(demo, frames, on_ref_step)
+        recorder = WalkShadowRecorder(key, max_frames)
+        base = DGROUP * 16
+        st = {"pre": None, "sp": 0}
+
+        def on_ref_step(cpu) -> None:
+            if (cpu.s.cs & 0xFFFF) != CS:
+                return
+            ip = cpu.s.ip & 0xFFFF
+            m = cpu.mem
+            if ip == WALK_ENTRY and st["pre"] is None:
+                st["pre"] = bytes(m.data)
+                st["sp"] = cpu.s.sp & 0xFFFF
+                return
+            if ip == WALK_END and st["pre"] is not None:
+                pre, sp = st["pre"], st["sp"]
+                st["pre"] = None
+                post_dgroup = bytes(m.data[base:base + 0x10000])
+                recorder.add_frame(pre, post_dgroup, sp)
+                _check_frame(pre, post_dgroup, sp, stats, gaps, first_divs)
+
+        if demo.is_cold_start:
+            run_ref_step_probe_cold_start(demo, max_frames, on_ref_step)
+        else:
+            # a snapshot-based demo (the L2/L3/L4/L6 recordings): same trap, the snapshot harness
+            frames = (demo.end_boundary + 5) if max_frames is None else max_frames
+            run_ref_step_probe(demo, frames, on_ref_step)
+        if stats["frames"]:
+            recorder.save(cache_file)
+            print(f"  (recorded {stats['frames']} walk frames -> {cache_file.name}; future runs "
+                  f"replay in seconds -- pass 'vm' to force the live oracle)", flush=True)
 
     print(f"walk frames shadowed: {stats['frames']}  diverged: {stats['diverged']}  "
           f"combat-exposed: {stats['combat_exposed']}")

@@ -9,8 +9,12 @@
 > building tooling): `timing_fastforward.advance_frames_fast` (never poke CS:066B),
 > `recovered/islands.py` (@recovered_island + gen_island_manifest), the state-view names
 > (`views/object_slots.py` OFF_* / domain accessors), `adapters/flat_memory.py`,
-> `probes/_harness.py`, `scripts/lindis.py` (encoded targets), `scripts/behavior_zoo_xref.py`;
-> cold-boot probes MUST pass `overkill.launch.build_command_tail("tandy", "pc")`.
+> `probes/_harness.py`, **`probes/_shadow_cache.py` (2026-07-06: the demo walk shadow auto-records
+> per-frame VM states on first run and replays them in ~40s instead of ~5min -- same states, same
+> comparison; pass `vm` to force the live oracle; caches live in `artifacts/shadow_cache/`,
+> gitignored, keyed on the demo file sha1 + frame budget)**, `scripts/lindis.py` (encoded targets),
+> `scripts/behavior_zoo_xref.py`; cold-boot probes MUST pass
+> `overkill.launch.build_command_tail("tandy", "pc")`.
 > Suite green: 1225 passed / 23 skipped (2026-07-06). **SCENE.MD CAMPAIGN DONE**: `play_native --level
 > 0` (cold, no snapshot) now spawns/moves a real enemy wave, VM-free (`verify_play_native_cold` PASS).
 > **THE ENTIRE DEMO WALK IS NATIVE (2026-07-06): 8294/8294 frames, ZERO divergence, ZERO gaps.**
@@ -18,6 +22,20 @@
 > collect + the 9EA3 death chain; BDD0 wired through AFD8). The enemies_l1 + scene campaigns' walk
 > work is COMPLETE for L1. Next frontier: play_native integration polish, other planets' controller
 > families (0x1c etc.), the 9734/9902/9908 transition continuations, HUD/menu wiring, audio.
+
+## 2026-07-06 - the WALK-SHADOW CACHE: demo re-verification drops ~5min -> ~40s (the grind fix)
+
+The demo walk shadow's VM side is deterministic per demo, so `verify_native_walk_demo` now
+AUTO-RECORDS, during a normal live run, exactly what it consumes per walk frame (the full pre-state,
+the post DGROUP window, sp) into `artifacts/shadow_cache/<demo>.walkcache` (delta-encoded: the
+between-frame DGROUP writes as sparse runs, the tile plane dedup-by-hash, the static remainder once
+from frame 0 -- the 8294-frame cold demo caches in 46MB), and REPLAYS it on subsequent runs: the
+SAME states through the SAME `_check_frame` comparison body (refactored so both paths share it --
+the verdict logic cannot drift), no VM. Proven: the cached replay reproduces the live run's verdict
+identically (8294/8294, diverged=0, combat-exposed=168) in **38s vs ~5min**. `vm` on the CLI forces
+the live oracle; the cache is keyed on the demo file's sha1 + the exact frame budget and refuses
+mismatches. This is the grind fix agreed with the owner -- the L2..L5 zoo work re-runs this gate
+dozens of times.
 
 ## 2026-07-06 - FIX: the cold game played INVISIBLY -- the A90C screen projection is now wired (owner-caught)
 
