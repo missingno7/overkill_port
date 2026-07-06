@@ -11,7 +11,45 @@
 > (`views/object_slots.py` OFF_* / domain accessors), `adapters/flat_memory.py`,
 > `probes/_harness.py`, `scripts/lindis.py` (encoded targets), `scripts/behavior_zoo_xref.py`;
 > cold-boot probes MUST pass `overkill.launch.build_command_tail("tandy", "pc")`.
-> Suite green: 1222 passed / 23 skipped (2026-07-06).
+> Suite green: 1222 passed / 23 skipped (2026-07-06). **SCENE.MD CAMPAIGN DONE**: `play_native --level
+> 0` (cold, no snapshot) now spawns/moves a real enemy wave, VM-free (`verify_play_native_cold` PASS).
+
+## 2026-07-06 - MILESTONE: scene.md DONE -- play_native's cold path wires the level-object-script + full behaviour walk
+
+Finished the scene.md turn-key wiring (steps c/d/e): `play_native.py`'s cold path (no `--snapshot`)
+now builds the object-walk DGROUP image unconditionally via a new `build_cold_level_start_image`
+(`overkill/recovered/adapters/cold_level_start.py` -- the raw seeded-write half split out of
+`build_cold_level_start`, which now just projects it; both stay byte-identical, locked by a new test),
+syncs `rows_to_milestone` into the image each tick, and runs `run_level_object_script_4a65` before
+`advance_object_frame` -- so the level's spawn script actually fires from cold data and the whole
+behaviour walk drives the resulting enemies. New probe `overkill/probes/verify_play_native_cold.py`
+mirrors play_native's exact wiring headlessly (no pygame) and **PASSES**: peak enemies=20, a tracked
+enemy moves, 0 gap-frames, at 200 frames on planet 1 (`--level 0`).
+
+**One real, easy-to-miss bug found and fixed via this probe** (not by trial and error -- by comparing
+against the OLD `verify_cold_populate`'s working timeline once my probe showed 0 enemies where it
+should've shown a live wave): the level-object-script trigger check (`1010:A83C`) runs in the
+DRAW/PRESENT half of the original loop ("present last tick's state, then advance"), so it must compare
+against `rows_to_milestone` as it stood BEFORE this tick's scroll step, not after. Cold `origin_x=0`
+pulls a row (decrementing `rows_to_milestone`) on the very FIRST scroll tick, so syncing the
+post-step value silently skipped the exact entry the empirically-confirmed cold seed (`0x110`) was
+built to match -- zero spawns, no exception, nothing loud. Fixed in `_advance()` by capturing
+`rows_to_milestone` BEFORE calling `g.step(...)` and syncing that pre-step value into the image.
+
+A second smaller fix inside the new probe itself (not a play_native bug): the census only scanned
+`object_pool`, but wave controllers (behavior 0x1F) and some early enemies land in `special_pool`/
+`effect_pool` -- scanning all three pools (matching how `_render_frame` already does it) revealed the
+wave was live the whole time.
+
+**Known, pre-existing, non-blocking limits**: past ~frame 208-248 the ALREADY-DOCUMENTED `0x01 latch-9`
+gap surfaces (same one the demo tally lists, 43 hits -- enemies_l1's open item, not new). Planet 2
+(`--level 1`) hits behavior `0x1c` (no native handler) immediately -- a DIFFERENT wave-controller
+family than planet 1/3's (CLAUDE.md: "the 'formation wave' recovery is planet 3's family only");
+cold-populate is proven for planet 1 only, other planets remain open zoo work.
+
+Suite green (see header), lint clean, both layer audits pass, demo shadow still 8294/8294 zero
+divergence (this slice touched only play_native.py + a probe + cold_level_start.py's own split, no
+behaviour-walk semantics changed). **scene.md's campaign done-condition is now met.**
 
 ## 2026-07-06 - MILESTONE: scenery 0x1A/0x19 native, `verify_cold_populate` PASSES, demo stays 0-divergence
 

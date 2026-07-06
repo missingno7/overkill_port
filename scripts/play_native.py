@@ -34,9 +34,12 @@ STATUS -- every layer here is REAL recovered code (no placeholders, fail loud on
   draw-type dispatch. On the L3 capture the whole composed frame matches the VM present page
   0-for-0. Objects mid-animation-phase or using the OR-inverted variant are not drawn yet (documented
   gaps) -- they are SKIPPED, never faked.
-* There is NO placeholder starting state: the cold level-start state is not a recovered VM-free
-  system yet (Bucket F level loader), so gameplay REQUIRES ``--snapshot`` (a real captured state) and
-  fails loud without it, rather than invent a spawn.
+* There is NO placeholder starting state: the DEFAULT (no ``--snapshot``) cold-boots the level-start
+  state entirely from the recovered seeds (``overkill.recovered.adapters.cold_level_start``) -- no VM,
+  no capture. This includes the enemy wave: the level-object-script walker (``4A65``) and the whole
+  object behaviour walk run over a DGROUP image seeded identically to the projected game state, so a
+  cold ``--level 0`` spawns/moves real enemies (``overkill.probes.verify_play_native_cold``, PASS for
+  planet 1). ``--snapshot`` remains a debug override to seed from a captured VM state instead.
 * GAMEPLAY-EXIT BOUNDARY: each frame the loop runs the recovered, demo-witnessed
   ``detect_gameplay_transition`` (death / game-over / scripted level-end, the 1010:97B2 flags) and
   STOPS fail-loud if one fires -- the native runtime cannot follow the unrecovered 9734/9902/9908
@@ -104,6 +107,10 @@ _COLD_ROW_SOURCE = 0x5B00          # DS:234C -- the fixed row-source start (Nati
 _COLD_ROW_BASE = 0x009C            # DS:2350 -- level-load leaves the view row base here: 60C5 sets 0xEA0,
 #                                    then the 16x A781 warm-up scroll settles it to 0x9C (60D5 cmp); this
 #                                    is the frame-0 level-start scroll (row_base=0 underflows the tile probe)
+_COLD_ROWS_TO_MILESTONE = 0x0110   # DS:A978 at level-start: confirmed empirically for ALL SIX planets --
+#                                    each planet's level-object script's own FIRST entry trigger_row is
+#                                    0x110 (read directly from the cold data: DS:[C5E9+p*2] -> the cursor
+#                                    cell -> the script head -> its first trigger_row word, for p in 0..5)
 
 
 def _read_starfield(mem: "FlatMemory", ds: int) -> StarfieldState:
@@ -133,6 +140,7 @@ class _SeededStart:
     origin_x: int    # DS:234E
     row_base: int    # DS:2350
     row_source: int  # DS:234C
+    rows_to_milestone: int  # DS:A978 -- the level-script scroll-trigger counter
     # The gameplay-exit detector inputs (DS:A47C/A95A/A97A/2326). The native loop does NOT yet run the
     # stages that MUTATE these (they change only when the player dies / a script ends the level), so
     # they are carried at their seeded values -- a fail-loud guard, not a live model. For a normal
@@ -166,6 +174,7 @@ def _seed_state_from_snapshot(snapshot_dir: Path) -> "_SeededStart":
         origin_x=mem.rw(ds, 0x234E),
         row_base=mem.rw(ds, 0x2350),
         row_source=mem.rw(ds, 0x234C),
+        rows_to_milestone=mem.rw(ds, 0xA978),
         a47c=mem.rw(ds, 0xA47C),
         a95a=mem.rw(ds, 0xA95A),
         a97a=mem.rw(ds, 0xA97A),
@@ -173,20 +182,24 @@ def _seed_state_from_snapshot(snapshot_dir: Path) -> "_SeededStart":
     )
 
 
-def _cold_seeded_start(bundle_data: bytes) -> "_SeededStart":
+def _cold_seeded_start(bundle_data: bytes, level_index: int = 0) -> "_SeededStart":
     """Assemble a REAL cold level-start :class:`_SeededStart` -- no VM, no gameplay snapshot.
 
     The game + starfield STATE is built entirely from the recovered level-start seeds
     (:func:`overkill.recovered.adapters.cold_level_start.build_cold_level_start` -- session init + C4DB
-    setup + gameplay-pool seed + control reset + player spawn + cold starfield).  The render params the
-    loop also needs -- the scroll cursor (DS:234C/234E/2350), the sprite half-stride (``ds:[1028]>>1``)
-    and the exit-guard inputs -- are read from the SAME cold runtime data image (byte-array read, no VM).
+    setup + gameplay-pool seed + control reset + player spawn + cold starfield, seeded with the chosen
+    PLANET via ``level_index``).  The render params the loop also needs -- the scroll cursor
+    (DS:234C/234E/2350), the sprite half-stride (``ds:[1028]>>1``) and the exit-guard inputs -- are read
+    from the SAME cold runtime data image (byte-array read, no VM).
 
     The scroll cursor is the LEVEL-POST-LOAD origin (``origin_x = 0``, ``row_base = _COLD_ROW_BASE``,
     ``row_source = _COLD_ROW_SOURCE``) -- the values the level-load leaves in DS:234E/2350/234C (NOT the
     cold image's live cursor, which is mid-scroll and would wrap the starfield page).  ``row_base = 0x9C``
     (not 0) matters: the object-pass tile probe subtracts against ``row_base``, so ``row_base = 0`` would
     UNDERFLOW for any object below the top row (crash).  The sprite half-stride is read from the cold image.
+    ``rows_to_milestone = _COLD_ROWS_TO_MILESTONE`` (DS:A978) is likewise a level-load constant, not read
+    from the raw cold image (confirmed empirically identical -- 0x110 -- for all six planets' level
+    scripts' own first trigger row).
 
     The exit guards are set to their semantic cold-start values so the frame-0 detector cannot spuriously
     end the level: ``A47C = 0`` (no scripted mode), ``A95A = 3`` (anchor present), ``2326 = 0`` (not
@@ -195,7 +208,7 @@ def _cold_seeded_start(bundle_data: bytes) -> "_SeededStart":
     from overkill.recovered.adapters.cold_level_start import build_cold_level_start
     from overkill.recovered.adapters.starfield_adapter import DATA_SEGMENT
 
-    state, starfield = build_cold_level_start(bundle_data)
+    state, starfield = build_cold_level_start(bundle_data, level_index)
     mem = FlatMemory(bundle_data)
     ds = DATA_SEGMENT
     return _SeededStart(
@@ -205,6 +218,7 @@ def _cold_seeded_start(bundle_data: bytes) -> "_SeededStart":
         origin_x=0x0000,               # level-post-load view origin (DS:234E)
         row_base=_COLD_ROW_BASE,       # level-post-load view row base (DS:2350) -- 0x9C, see the constant
         row_source=_COLD_ROW_SOURCE,   # DS:234C -- the fixed row-source start
+        rows_to_milestone=_COLD_ROWS_TO_MILESTONE,  # DS:A978 -- 0x110, see the constant
         a47c=0x0000,   # cold: no scripted-input mode active
         a95a=0x0003,   # cold: anchor present (lives counter at session start)
         a97a=mem.rw(ds, 0xA97A),
@@ -382,7 +396,7 @@ def main(argv=None) -> int:
     if args.snapshot:
         seed = _seed_state_from_snapshot(Path(args.snapshot))
     else:
-        seed = _cold_seeded_start(bundle_data)
+        seed = _cold_seeded_start(bundle_data, args.level)
     starfield = seed.starfield
     # Cold-load the level, then plant the captured live scroll cursor (DS:234C/234E/2350) so the first
     # native frame renders the world + sprites exactly where the VM had them.
@@ -390,6 +404,7 @@ def main(argv=None) -> int:
         NativeGame.load_level(bundle_data, container_data, args.level, seed.state,
                               origin_x=seed.origin_x, row_base=seed.row_base),
         row_source=seed.row_source,
+        rows_to_milestone=seed.rows_to_milestone,
     )
     sprite_ctx = _build_sprite_context(bundle_data, container_data, game, seed.half_stride)
     print(f"cold-loaded LEVEL{args.level + 1}: tile_plane={len(game.level.tile_plane)}B "
@@ -414,20 +429,23 @@ def main(argv=None) -> int:
     # MutFlatMemory DGROUP image via overkill.native_walk_frame -- the shadow-proven registry of
     # recovered systems -- so play_native SHOWS the real enemies (controller/wave/shots/companion).
     # NativeGame still owns the player anchor + scroll; each tick syncs the anchor into the image,
-    # advances the object frame, and projects the pools back out for the renderer.  The image is
-    # only available on the --snapshot path today (it needs a live DGROUP); the cold path keeps the
-    # player-only frame until the level-object-script spawn is wired into build_cold_level_start.
+    # advances the object frame, and projects the pools back out for the renderer.  On the cold path
+    # the image is seeded identically to `seed.state` (build_cold_level_start_image -- the SAME
+    # session/C4DB/gameplay-pool/control-reset/player-spawn writes), so the level-object-script
+    # walker (4A65) fires from the SAME planet's spawn script the projected NativeGame is playing.
     from overkill.native_walk_frame import (  # noqa: E402
         advance_object_frame, level_tiles, project_state, sync_new_gameplay_records,
         sync_player_anchor,
     )
     from overkill.recovered.adapters.flat_memory import MutFlatMemory  # noqa: E402
+    from overkill.recovered.adapters.level_object_script import run_level_object_script_4a65  # noqa: E402
 
-    walk_image = None
-    walk_tiles = None
     if args.snapshot:
         walk_image = MutFlatMemory((Path(args.snapshot) / "memory_1mb.bin").read_bytes())
-        walk_tiles = level_tiles(walk_image)
+    else:
+        from overkill.recovered.adapters.cold_level_start import build_cold_level_start_image
+        walk_image = build_cold_level_start_image(bundle_data, args.level)
+    walk_tiles = level_tiles(walk_image)
 
     cell = {"game": game, "starfield": starfield, "tick": 0, "walk_gap": None}
 
@@ -437,6 +455,13 @@ def main(argv=None) -> int:
         frame_input = FrameInput(control_map=DEFAULT_CONTROL_MAP,
                                  key_state=key_state_from_pressed(pressed))
         g = cell["game"]
+        # The level-object-script trigger check (4A65, called from the DRAW/PRESENT half of the
+        # original loop -- "present last tick's state, then advance") compares against the
+        # rows_to_milestone value AS IT STOOD before this tick's scroll step, not after: a cold-start
+        # origin_x of 0 pulls a row (and decrements rows_to_milestone) on frame 0's OWN scroll tick,
+        # so checking the post-step value would skip the very entry the cold seed was built to match
+        # (confirmed empirically: rows_to_milestone's cold value equals the first trigger_row exactly).
+        pre_step_rows_to_milestone = g.rows_to_milestone
         g, _player_step = g.step(
             frame_input,
             no_clamp=False,
@@ -464,7 +489,9 @@ def main(argv=None) -> int:
             sync_new_gameplay_records(walk_image, g.state.object_pool)
             walk_image.ww(0x25CC, 0x234E, g.origin_x)
             walk_image.ww(0x25CC, 0x2350, g.row_base)
+            walk_image.ww(0x25CC, 0xA978, pre_step_rows_to_milestone)
             try:
+                run_level_object_script_4a65(walk_image)
                 advance_object_frame(walk_image, walk_tiles)
                 g = g.with_state(project_state(walk_image))
             except RecoveryGap as exc:

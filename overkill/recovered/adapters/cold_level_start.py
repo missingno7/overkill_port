@@ -42,16 +42,13 @@ from overkill.recovered.systems.frame_loop import (
 LEVEL_INDEX_TO_PLANET = (1, 2, 3, 4, 5, 0)
 
 
-def build_cold_level_start(exe_image: bytes, level_index: int = 0) -> tuple[NativeGameState, StarfieldState]:
-    """Assemble the frame-0 level-start ``(NativeGameState, StarfieldState)`` from the recovered seeds.
+def build_cold_level_start_image(exe_image: bytes, level_index: int = 0) -> MutFlatMemory:
+    """Build the raw seeded DGROUP image (the level-start writes, no projection).
 
-    ``exe_image`` is the cold runtime data image (its data segment holds the static pool pointer tables
-    at ``DS:0x32CA`` / ``DS:0x8D12`` and the starfield stream); this applies the level-start writes on top
-    and projects the result.  No VM, no captured snapshot.  ``level_index`` is play_native's 0-based
-    level argument, mapped to the planet number via :data:`LEVEL_INDEX_TO_PLANET` (``DS:2356``) --
-    :func:`new_game_session_init_96ee` alone always seeds planet 0 (a fresh SESSION, not a chosen
-    level), so this overrides it afterward, matching how :func:`native_new_game_data_setup`
-    (the level-select entry point) sets the SAME cell from a chosen level index.
+    This is the same write sequence :func:`build_cold_level_start` projects through
+    :func:`read_native_game_state`; exposed separately so callers that need the LIVE image itself (e.g.
+    ``play_native``'s object-behaviour-walk DGROUP, which the level-object-script walker and the
+    behaviour walk both mutate in place) can seed it identically instead of re-deriving the writes.
     """
     mem = MutFlatMemory(exe_image)
     ds = DATA_SEGMENT
@@ -79,4 +76,21 @@ def build_cold_level_start(exe_image: bytes, level_index: int = 0) -> tuple[Nati
     for fo, val in player_spawn_record_c42f().items():
         mem.ww(ds, PLAYER_SPAWN_RECORD + fo, val)
 
+    return mem
+
+
+def build_cold_level_start(exe_image: bytes, level_index: int = 0) -> tuple[NativeGameState, StarfieldState]:
+    """Assemble the frame-0 level-start ``(NativeGameState, StarfieldState)`` from the recovered seeds.
+
+    ``exe_image`` is the cold runtime data image (its data segment holds the static pool pointer tables
+    at ``DS:0x32CA`` / ``DS:0x8D12`` and the starfield stream); this applies the level-start writes on top
+    (:func:`build_cold_level_start_image`) and projects the result.  No VM, no captured snapshot.
+    ``level_index`` is play_native's 0-based level argument, mapped to the planet number via
+    :data:`LEVEL_INDEX_TO_PLANET` (``DS:2356``) -- :func:`new_game_session_init_96ee` alone always seeds
+    planet 0 (a fresh SESSION, not a chosen level), so this overrides it afterward, matching how
+    :func:`native_new_game_data_setup` (the level-select entry point) sets the SAME cell from a chosen
+    level index.
+    """
+    mem = build_cold_level_start_image(exe_image, level_index)
+    ds = DATA_SEGMENT
     return read_native_game_state(mem, ds), load_starfield_state(exe_image)

@@ -5,10 +5,30 @@ import pathlib
 
 import pytest
 
-from overkill.recovered.adapters.cold_level_start import build_cold_level_start
+from overkill.recovered.adapters.cold_level_start import (
+    build_cold_level_start, build_cold_level_start_image,
+)
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 BUNDLE = ROOT / "artifacts" / "static_runtime_bundle" / "memory_1mb.bin"
+
+
+@pytest.mark.skipif(not BUNDLE.is_file(), reason="static runtime bundle not present")
+def test_cold_level_start_image_matches_the_projection():
+    """build_cold_level_start_image is the SAME seeded write sequence build_cold_level_start projects
+    -- play_native's object-walk DGROUP (built via the image function) must agree with the NativeGame
+    state (built via the projecting function) byte-for-byte on every field either one reads."""
+    from overkill.recovered.adapters.native_game_state_adapter import read_native_game_state
+    from overkill.recovered.adapters.starfield_adapter import DATA_SEGMENT
+
+    bundle = BUNDLE.read_bytes()
+    state, _starfield = build_cold_level_start(bundle, level_index=2)
+    image = build_cold_level_start_image(bundle, level_index=2)
+    reprojected = read_native_game_state(image, DATA_SEGMENT)
+
+    assert reprojected.special_pool.x_word(0) == state.special_pool.x_word(0)
+    assert reprojected.special_pool.y_word(0) == state.special_pool.y_word(0)
+    assert image.rw(DATA_SEGMENT, 0x2356) == 3  # level_index=2 -> planet 3 (LEVEL_INDEX_TO_PLANET)
 
 
 @pytest.mark.skipif(not BUNDLE.is_file(), reason="static runtime bundle not present")
