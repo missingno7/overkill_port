@@ -536,6 +536,62 @@ def step_ramp_steer_29(*, sprite: int, gate_2328: int) -> Ramp29Step:
     return Ramp29Step(fired=True, sprite=new_sprite, retarget=reached, steer=reached)
 
 
+# behavior 0x01's key-1 latch-9 MORPH (1010:BE5A/BE60) and its target, behavior 0x26 (1010:8302).
+# When a dying key-1 record's latch counter (+0x22) reaches 9, its PREVIOUS logic id (+0x1A) picks a
+# morph: 0x24 -> float UP (direction 6, sprite 0x97, y -= 8); 0x25 -> float DOWN (direction 2, sprite
+# 0x91, y += 8); anything else -> the BD17 deactivate.  The morph stamps behavior 0x26, saves the
+# (new) position into +0x32 (y) / +0x34 (x), and RETURNS -- skipping the BC45 postmove THIS frame.
+# 0x26 then AFD8-floats in that direction each frame; on a blocked step OR y >= 0xC0 the sprite ramps
+# +1 (with sound 0x1E) to the FINISHED sprite (0x98/0x92), where it waits for DS:2326 == 3 to reset
+# y from +0x32 and drop the sprite back -- a respawn loop.
+DYING_LATCH9_MORPHS = {0x24: (0x0006, 0x0097, -8), 0x25: (0x0002, 0x0091, 8)}
+MORPH_26_FINISHED_SPRITES = (0x0098, 0x0092)
+MORPH_26_RESET_GATE_2326 = 0x0003
+MORPH_26_DEATH_Y = 0x00C0
+MORPH_26_RAMP_SOUND = 0x001E
+
+
+@recovered_island(
+    asm=("1010:BE5A..BEA3",),
+    contract="behavior 0x01 key-1 latch-9 morph (1010:BE60): previous logic id 0x24 -> (direction 6, "
+             "sprite 0x97, y-=8); 0x25 -> (direction 2, sprite 0x91, y+=8); else None (-> the BD17 "
+             "deactivate). The caller stamps behavior 0x26, writes +0x32=new_y / +0x34=x, and SKIPS "
+             "the BC45 postmove this frame (the morph path RETURNS, unlike the BEA4/BEB9 anim paths).",
+    status="OBSERVED",
+    merge_target="EnemyWaveSystem",
+    unknowns="none -- a 3-way constant table, fully decoded",
+)
+def dying_latch9_morph_be60(prev_logic_id: int) -> "tuple[int, int, int] | None":
+    """The (direction, sprite, y_delta) morph for a latch-9 dying record, or ``None`` -> deactivate."""
+    return DYING_LATCH9_MORPHS.get(prev_logic_id & 0xFFFF)
+
+
+@recovered_island(
+    asm=("1010:8302..8330 (the float+ramp)", "1010:82EC..8301 (the finished-wait/reset)"),
+    contract="behavior 0x26 (1010:8302): if sprite is FINISHED (0x98/0x92), wait for DS:2326==3 then "
+             "y = +0x32 and sprite -= 1 (the reset); otherwise AFD8-step in the record's direction -- "
+             "a BLOCKED step or y >= 0xC0 ramps the sprite +1 (sound 0x1E via [98C0]); else nothing. "
+             "All paths exit jmp BC45 (WITH drift).",
+    status="OBSERVED",
+    merge_target="EnemyWaveSystem",
+    unknowns="the AFD8 step (with the wired BDD0 contact predicate) runs in the adapter; this owns "
+             "the finished/reset/ramp decision only.",
+)
+def morph_26_is_finished(sprite: int) -> bool:
+    """Whether the 0x26 float has already ramped to its finished sprite (0x98/0x92)."""
+    return (sprite & 0xFFFF) in MORPH_26_FINISHED_SPRITES
+
+
+def morph_26_should_reset(gate_2326: int) -> bool:
+    """Whether a finished 0x26 resets this frame (``DS:2326 == 3``)."""
+    return (gate_2326 & 0xFFFF) == MORPH_26_RESET_GATE_2326
+
+
+def morph_26_should_ramp(blocked: bool, y_word: int) -> bool:
+    """Whether the 0x26 float ramps its sprite this frame (a blocked step OR y >= 0xC0)."""
+    return blocked or (y_word & 0xFFFF) >= MORPH_26_DEATH_Y
+
+
 # behaviors 0x28 / 0x2A (1010:8676, an alias group): an animated SPAWNER. The 8654 helper animates
 # a sprite from a DS:96AA ramp table indexed by a per-record counter (+0x06) that advances only when
 # DS:2332 == 0 (wrapping mod 0x18); once per cycle -- when the counter is exactly 7 AND no enemies

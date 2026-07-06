@@ -93,6 +93,15 @@ Format: `behaviour (handler) — guards → primitives(operands) → tail`.
   `step_animated_spawner_90_91` (one fn, two bases). Note the recurring pattern: a table value that is
   BOTH a sprite delta and a dispatch selector — a compact "phase table" idiom worth a first-class slot
   in the eventual step language.
+- **0x01 latch-9 morph (`BE5A/BE60`) + 0x26 (`8302`)** — the first RESPAWN-CYCLE pair: the dying
+  handler's key-1 latch, at exactly 9, MORPHS the record (`+0x1A` previous-id keyed: 0x24→up/0x97,
+  0x25→down/0x91, else `BD17`) into behavior 0x26, snapshotting the position into `+0x32`/`+0x34` and
+  `ret`-ing PAST the shared BC45 tail — the first actor path where "skip the postmove this frame" is
+  semantic, not incidental (the BD17 deactivate tails also `ret`). 0x26 then `step`(AFD8+BDD0, the
+  morphed direction) until `blocked ∨ y≥0xC0` → `animate`(+1 ramp to a FINISHED sprite) + `sound`(0x1E)
+  → `gate`(`2326`==3) → RESET (y from `+0x32`, sprite back) — a scenery object that dies, floats away,
+  and respawns. New vocabulary: the morph (an actor rewriting its own cast entry mid-walk) and the
+  postmove-skip `ret`; both matter for the eventual step-language schema.
 - **0x89 (`B2A6`)** — `animate`(sprite = `233C` + 0x1C) → `gate`(`232C`==0x1F) → `spawn`(C237 via the
   shared `BAE1` dir-4 emit) → the shared `BB03` bounce. A pure re-parameterization of 0x19 (different
   clock/bias/gate, same shape) — the first actor recovered by constants-only diff against an existing

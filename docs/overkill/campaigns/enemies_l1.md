@@ -42,7 +42,8 @@ the unrecovered behaviors, by hit frequency (= recovery priority) —
 | ~~0x2f~~ | ~~80~~ | 1010:8820 | **RECOVERED** (step_bounce_scanner_2f): sprite 0x43, B729 seek, target-x drift, blocked→target-y bounce 0↔0xC0 |
 | ~~0x30~~ | ~~80~~ | 1010:8851 | **RECOVERED** (step_spawner_anim_30): animate [96D2]@233C, gate [232A]==0xF -> C237 spawn + sound 0x0E |
 | ~~0x11~~ | ~~4~~ | 1010:B2C3 | **RECOVERED**: one-shot morph -- seeds +0x36=A43C, retags behavior 0x12, falls into 0x12's body |
-| 0x01 key1 latch9 | 32 | (in-walk 0x01) | the dying-morph (BE60 prev 0x24/0x25 -> respawn-as) |
+| ~~0x01 key1 latch9~~ | ~~32~~ | (in-walk 0x01) | **RECOVERED** (dying_latch9_morph_be60 -> behavior 0x26; +0x32=new_y/+0x34=x; skips BC45 that frame) |
+| ~~0x26~~ | -- | 1010:8302 | **RECOVERED** (the morph target: AFD8+BDD0 float-away, sprite ramp on block/y>=0xC0, [2326]==3 respawn reset) |
 
 Handlers are THIN (spot-checked 0x25/0x90/0x91: ~20-40 bytes each — read a few record fields + a
 global (2330/2338 frame ctr / 2356 diff / 232C timer), set sprite or spawn via C237, then the
@@ -95,14 +96,9 @@ run_status.md) — the demo went from 3 unexplained divergences to ZERO:**
   0x1C`, counter advances when `DS:2332==0`, wraps mod 0x18); the spawn is gated on `DS:A47E==0` AND
   counter==7. Byte-exact across all 8294 demo frames. (The planet 2/5 child variants are decoded but
   not L1-exercised; planet 3/0 leave the `0x14` default -- an unrecovered child if ever hit there.)
-* 0x01 latch-9 morph (43 hits): the dying object's `+0x1A` previous_logic_id selects a MORPH target
-  (`0x24`→direction=6/behavior=0x26/sprite=0x97/Y-=8; `0x25`→direction=2/behavior=0x26/sprite=0x91/
-  Y+=8; anything else→BD17 deactivate), then seeds `+0x32/+0x34` (target) to the record's OWN current
-  position and `ret`s (skips BC45 entirely THIS frame — the postmove only resumes next frame under
-  the new behavior). The morph target, **behavior 0x26** (handler `8302`), needs the ALREADY-
-  RECOVERED `contact_probe_afd8` (AFD8, verified) but ALSO an UNSPECIFIED "BDD0 contact predicate"
-  callback the pure function's contract calls caller-owned — needs its own investigation before
-  0x26 (and thus the latch-9 morph) can be recovered. Deferred, comparable scope to C237.
+* ~~0x01 latch-9 morph + 0x26~~ **RECOVERED 2026-07-06** (`dying_latch9_morph_be60` +
+  `morph_26_*` in enemy_behaviors.py; `_step_dying_01` returns a run-postmove bool since the morph
+  and the BD17 tails `ret` past BC45): exactly as specced below, with the BDD0 predicate wired.
 * type-5 pickup COLLECT (2 hits, `_step_pickup_5`'s declared gap): BOTH demo collections use pickup
   kind `+0x26 == 2` (traced, `scratchpad/trace_pickup.py`) -> the `AB00` jump table's index-2 entry
   (`1010:9D67`) ONLY -- no need to decode the other 7 entries. Decoded: sound 0x1C, then a
@@ -113,12 +109,12 @@ run_status.md) — the demo went from 3 unexplained divergences to ZERO:**
   but unverified). Needs `511F` scoped (does it touch DGROUP state the shadow compares?) before this
   is safe to compose. Small but 3-deep; not yet a quick slice.
 
-**The scenery cluster is DONE** (0x1a/0x19/0x89/0x8c/0x8b all native, 2026-07-06). The BDD0 contact
-predicate is RECOVERED + wired: it was already `collision.player_hazard_scan_hit`, just unwired;
-`contact_at` now takes the step's mirror deltas and `_bdd0_contact_at(mem, rec)` scans the effect
-pool. **The remaining demo gap frontier is 58 frames**: `0x01 latch-9` + `0x26` (51 -- the morph and
-its target close each other; 0x26's AFD8/BDD0 dependency is now WIRED, so it is re-scoped from
-"blocked" to turn-key), player-death 9EA3 (5), pickup-collect (2).
+**The L1 behavior ZOO is essentially DONE** (2026-07-06): the scenery cluster (0x1a/0x19/0x89/0x8c/
+0x8b), the BDD0 contact predicate (was `collision.player_hazard_scan_hit`, now wired through
+`contact_at(mirror_dx_x, mirror_dx_y)` + `_bdd0_contact_at`), and the 0x01-latch9 morph + 0x26 pair
+are ALL native. **The remaining demo gap frontier is 7 frames, both non-zoo** (frame-loop
+composition, not behavior handlers): player-death 9EA3 (5) and pickup-collect (2) -- turn-key specs
+below under "Next actors".
 
 ### C237 child-spawn — DONE (spec below kept as historical reference; empirically traced 2026-07-05)
 

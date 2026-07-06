@@ -41,7 +41,12 @@ from overkill.recovered.systems.enemy_behaviors import (
     RAMP_29_DEATH_Y_MIN,
     RAMP_29_STEER_MODE_AFTER,
     RAMP_29_STEER_MODE_DURING,
+    MORPH_26_RAMP_SOUND,
     WAYPOINT_FOLLOWER_TABLE_SEED,
+    dying_latch9_morph_be60,
+    morph_26_is_finished,
+    morph_26_should_ramp,
+    morph_26_should_reset,
     retarget_delta_toward_anchor_74e2,
     step_animated_spawner_90_91,
     step_bounce_scanner_2f,
@@ -706,28 +711,76 @@ def _step_pickup_5(mem, rec: int) -> None:
                           " is not recovered")
 
 
-def _step_dying_01(mem, rec: int) -> None:
+def _step_dying_01(mem, rec: int) -> bool:
     """Behavior 0x01 (``1010:BE3C``) -- the death/explosion transition (entered via the recovered
     C037 collision-death stamp: logic_id 1, latch 0, prev id kept).  Parity-gated (odd ``2324``
-    frames only): latch++, then the ``+0x14``-keyed anim: key 1 -> sprite = latch (until the
-    latch-9 morph, a declared gap); key 2 -> sprite = latch + 3 (until the latch-0xC BD17 tail,
-    a declared gap); key 0 -> no-op."""
+    frames only): latch++, then the ``+0x14``-keyed anim: key 1 -> sprite = latch until the latch-9
+    MORPH (BE60: prev 0x24/0x25 respawn as behavior 0x26, direction/sprite/y-delta per the morph
+    table, +0x32=new_y / +0x34=x -- and RETURN, skipping BC45 this frame); key 2 -> sprite = latch+3
+    until the latch-0xC BD17 deactivate; key 0 -> no-op.  Returns whether the BC45 postmove runs
+    (False only on the morph path's early ``ret``)."""
     if mem.rw(DS, 0x2324) != 1:
-        return
+        return True
     latch = (mem.rw(DS, rec + 0x22) + 1) & 0xFFFF
     mem.ww(DS, rec + 0x22, latch)
     key = mem.rw(DS, rec + 0x14)
     if key == 0:
-        return
-    if key == 1 and latch != 9:
-        mem.ww(DS, rec + 0x08, latch)
-        return
-    if key == 2 and latch != 0x0C:
-        mem.ww(DS, rec + 0x08, (latch + 3) & 0xFFFF)
-        return
+        return True
+    if key == 1:
+        if latch != 9:
+            mem.ww(DS, rec + 0x08, latch)
+            return True
+        morph = dying_latch9_morph_be60(mem.rw(DS, rec + 0x1A))
+        if morph is None:
+            _bd17_deactivate(mem, rec)   # BE6C: jmp BD17 -- BD17's paths ret (no BC45)
+            return False
+        direction, sprite, y_delta = morph
+        mem.ww(DS, rec + 0x06, direction)
+        mem.ww(DS, rec + 0x18, 0x0026)
+        mem.ww(DS, rec + 0x08, sprite)
+        new_y = (mem.rw(DS, rec + 0x04) + y_delta) & 0xFFFF
+        mem.ww(DS, rec + 0x04, new_y)
+        mem.ww(DS, rec + 0x32, new_y)                     # BE97/BE9A: +0x32 = the NEW y
+        mem.ww(DS, rec + 0x34, mem.rw(DS, rec + 0x02))    # BE9D/BEA0: +0x34 = x
+        return False                                      # BEA3: ret -- SKIP the BC45 postmove
+    if key == 2:
+        if latch != 0x0C:
+            mem.ww(DS, rec + 0x08, (latch + 3) & 0xFFFF)
+            return True
+        _bd17_deactivate(mem, rec)       # BEB6: jmp BD17 -- BD17's paths ret (no BC45)
+        return False
     raise RecoveryGap(f"behavior 0x01 key {key} latch {latch:#x} (record {rec:04X})",
-                      "the latch-9 morph (BE60: prev 0x24/0x25 -> respawn-as) and the key-2 "
-                      "latch-0xC BD17 deactivate tail are not recovered")
+                      "an unobserved +0x14 anim key -- only keys 0/1/2 are in the BE54 table")
+
+
+def _step_morph_26(mem, rec: int, tiles: LevelTileContext) -> None:
+    """Behavior 0x26 (``1010:8302``) -- the latch-9 morph target's float-away/respawn loop.
+
+    FINISHED sprite (0x98/0x92): wait for ``DS:2326 == 3``, then reset y from +0x32 and drop the
+    sprite back (the respawn).  Otherwise one AFD8 step in the record's direction (with the wired
+    BDD0 contact predicate); a BLOCKED step or ``y >= 0xC0`` ramps the sprite +1 with sound 0x1E."""
+    sprite = mem.rw(DS, rec + 0x08)
+    if morph_26_is_finished(sprite):
+        if morph_26_should_reset(mem.rw(DS, 0x2326)):     # 82EC: [2326]==3 -> the reset
+            mem.ww(DS, rec + 0x04, mem.rw(DS, rec + 0x32))
+            mem.ww(DS, rec + 0x08, (sprite - 1) & 0xFFFF)
+        return
+    result = contact_probe_afd8(mem.rw(DS, rec + 0x02), mem.rw(DS, rec + 0x04),
+                                mem.rw(DS, rec + 0x06), mem.rw(DS, 0xA278),
+                                tiles, _bdd0_contact_at(mem, rec))
+    mem.ww(DS, rec + 0x02, result.x_word)
+    mem.ww(DS, rec + 0x04, result.y_word)
+    # AFD8's own observable scratch (same cells every AFD8 site persists).
+    mem.ww(DS, 0xA430, 1 if result.blocked else 0)
+    mem.ww(DS, 0xA432, result.snap_x)
+    mem.ww(DS, 0xA434, result.snap_y)
+    mem.ww(DS, 0xA436, result.mirror_y)
+    mem.ww(DS, 0xA438, result.mirror_x)
+    mem.ww(DS, 0x215A, result.sample_215a)
+    if morph_26_should_ramp(result.blocked, mem.rw(DS, rec + 0x04)):
+        mem.ww(DS, rec + 0x08, (mem.rw(DS, rec + 0x08) + 1) & 0xFFFF)
+        if mem.rb(DS, 0x98C0):
+            mem.wb(DS, 0xBEFF, MORPH_26_RAMP_SOUND)
 
 
 def _score_add_5f0d(mem, delta: int) -> None:
@@ -979,8 +1032,11 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
         elif beh == 0x04:
             _step_child_04(mem, rec, tiles)                     # C237 children (AF60's AD60 internal)
         elif beh == 0x01:
-            _step_dying_01(mem, rec)
-            _postmove_bc45(mem, rec, tiles, with_drift=True)    # BE43/BEAD/BEC2 exit jmp BC45
+            if _step_dying_01(mem, rec):                        # False: the latch-9 morph / BD17 ret
+                _postmove_bc45(mem, rec, tiles, with_drift=True)  # BE43/BEAD/BEC2 exit jmp BC45
+        elif beh == 0x26:
+            _step_morph_26(mem, rec, tiles)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # 831C/832E/82F3/82FF exit jmp BC45
         elif beh == 0x27:
             _step_scroller_27(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # 835D exits jmp BC45

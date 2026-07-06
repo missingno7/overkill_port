@@ -13,9 +13,27 @@
 > cold-boot probes MUST pass `overkill.launch.build_command_tail("tandy", "pc")`.
 > Suite green: 1225 passed / 23 skipped (2026-07-06). **SCENE.MD CAMPAIGN DONE**: `play_native --level
 > 0` (cold, no snapshot) now spawns/moves a real enemy wave, VM-free (`verify_play_native_cold` PASS).
-> Native actor set: 21 behaviors (0x28, 0x89, 0x8C, 0x8B recovered 2026-07-06; BDD0 wired through
-> AFD8). **The L1 scenery cluster is DONE.** Gap frontier: 58 frames total -- 0x01-latch9+0x26 (51),
-> player-death (5), pickup-collect (2).
+> Native actor set: 23 behaviors (0x28/0x89/0x8C/0x8B + the 0x01-latch9 morph + 0x26 recovered
+> 2026-07-06; BDD0 wired through AFD8). **The L1 behavior ZOO is essentially DONE.** Gap frontier:
+> **7 frames** -- player-death 9EA3 (5, needs the A95C/9791/2384 ship-death compose), pickup-collect
+> (2, needs the AB00 index-2 chain incl. 511F scoping). Both have turn-key specs in enemies_l1.md.
+
+## 2026-07-06 - MILESTONE: the 0x01 latch-9 morph + behavior 0x26 RECOVERED -- the L1 zoo is essentially DONE
+
+Closed the 0x01-latch9/0x26 pair (51 of the 58 remaining gap frames; they close each other). The
+latch-9 MORPH (`1010:BE5A/BE60`, inside the dying handler): when a key-1 dying record's latch hits 9,
+its previous logic id picks the morph (`0x24` -> dir 6/sprite 0x97/y-=8; `0x25` -> dir 2/sprite
+0x91/y+=8; else BD17), stamps behavior 0x26, saves +0x32=new_y / +0x34=x, and RETURNS -- skipping
+BC45 that frame (`_step_dying_01` now returns a run-postmove bool; the BD17 tails also skip, since
+BD17's paths `ret`). **0x26** (`1010:8302`): the morph target's float-away/respawn loop -- AFD8-step
+in the morphed direction (with the wired BDD0 predicate) until BLOCKED or y>=0xC0, then a sprite ramp
+(+1, sound 0x1E) to the finished sprite (0x98/0x92), where it waits for `DS:2326==3` to reset y from
++0x32 and drop the sprite back. Also closed the key-2 latch-0xC BD17 deactivate (same slice; it was
+in the same gap message).
+
+**Demo shadow: PASS, 0 divergence, 8294/8294. The gap frontier is 7 frames**: player-death 9EA3 (5) +
+pickup-collect (2) -- both non-zoo (frame-loop composition work). Native actor set: **23 behaviors**.
+Free-run 200/0; suite green; audits + manifest pass.
 
 ## 2026-07-06 - MILESTONE: the 0x8C/0x8B ground crawler RECOVERED -- the L1 scenery cluster is DONE
 
