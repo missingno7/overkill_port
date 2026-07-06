@@ -87,11 +87,10 @@ def main(argv) -> int:
         table = [image.rw(CS, (0x8D92 + 2 * k) & 0xFFFF) for k in range(0x100)]
         bank_ptr = 0x959C if row_base >= BANK2_ROW_BASE else 0x959A
         graphics = mem_np[image.rw(CS, bank_ptr) * 16: image.rw(CS, bank_ptr) * 16 + 0x10000]
-        phase = image.rw(DS, 0x234E)
-        if phase == 0:      # the phased window is not modelled yet -- compose only when aligned
-            tiles = np.zeros_like(plate)
-            compose_tile_window(tiles, plane, row_base, table, graphics)
-            plate = np.where(tiles > 0, tiles, plate)
+        tiles = np.zeros_like(plate)
+        compose_tile_window(tiles, plane, row_base, table, graphics,
+                            phase_234e=image.rw(DS, 0x234E))
+        plate = np.where(tiles > 0, tiles, plate)
         blocks = []
         for pool in (state.special_pool, state.effect_pool, state.object_pool):
             blocks.extend(object_sprite_blocks(pool, ctx))

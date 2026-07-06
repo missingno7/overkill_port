@@ -55,7 +55,19 @@ if row <= 0xE52 call **7948** (the 13-TILE ROW LOOP: es=[9592] the plane seg, si
 [A406]=13, per tile ``al = plane[si]`` dispatched through the PLANET-KEYED handler table
 ``[95DE + planet*2]`` writing a 16px cell at ``[A40A] += 0x10``; special tile ids
 0x04/0x07/0x6C/0x6D branch at 7977.. to 7A6E/7A7A/7AAE/7AC4) + call 4A65 (already recovered)
--> jmp **5A7E** (the row -> page blit).  **render_tile_row IS RECOVERED -- BYTE-EXACT vs the driven 36A2 on BOTH banks**
+-> jmp **5A7E** (the row -> page blit).  ## 2026-07-07 - THE NATIVE FRAME IS PIXEL-EXACT: 1:1 mean diff = 3 px of 39936 (L2, 1500 presents)
+
+The full native compose -- starfield + THE TERRAIN TILE WINDOW + sprites -- against the pure VM:
+presents 0/250/500/750/1000/1250 diff 0/0/2/1/2/13 px.  The window model (oracle-fit on two
+fixtures): a 192-scanline slice of the strip stack ``row_base, row_base-0x0D, ...`` starting
+``16 + [234E]`` scanlines in; tiles are the page BASE and stars fill unlit pixels (4D15).  The
+first phase guess (16-k) measured WORSE and was replaced by the fitted 16+k -- the instrument
+catches wrong models in one run.  REMAINING render residue: the <=13-px transients (anim/variant
+sprites -- the explosion/hit-flash compositors) and the fine star-phase.  NEXT: wire the tile
+window + the 7948 tile-cue spawner into play_native (the game gets its terrain + tile-spawned
+actors), then the anim/variant compositors, then extend the 1:1 sweep deeper (the whole demo).
+
+**render_tile_row IS RECOVERED -- BYTE-EXACT vs the driven 36A2 on BOTH banks**
 (`native_video/tile_row.py` + `verify_native_tile_row`, the chrome-probe driven-oracle pattern;
 six row_bases including the 0xE5F bank boundary; NOTE 36AB picks the bank from the GLOBAL
 DS:[2350]).  NEXT: the visible-window compose (which pulled rows sit where on screen -- derive

@@ -35,20 +35,18 @@ def compose_tile_window(frame: np.ndarray, plane, row_base: int, table_8d92, gra
                         phase_234e: int = 0) -> None:
     """Compose the visible terrain window onto a ``(200, 320)`` index ``frame`` (in place).
 
-    Band ``b`` (screen rows ``4 + b*16 ..``) carries the tile row at plane index
-    ``row_base - (b+1)*0x0D`` -- oracle-fit to 2 px (the residue is sprites) on the pure-VM
-    present-500 fixture with ``[234E] == 0``.  A nonzero ``phase_234e`` (the mid-strip scroll
-    step) is NOT modelled yet: a first ``16-k`` slice guess made phased frames WORSE (measured),
-    so this fails loud rather than draw a misaligned field -- fit the phase against captured
-    phased fixtures before wiring it."""
-    if phase_234e:
-        raise ValueError(f"[234E] phase {phase_234e:#x} not modelled -- strip-aligned scroll "
-                         "only (fit the sub-strip offset against a phased pure-VM fixture)")
-    for band in range(WINDOW_BANDS):
-        rb = (row_base - (band + 1) * PLANE_ROW_STRIDE) & 0xFFFF
-        strip = render_tile_row(plane, rb, table_8d92, graphics)
-        y0 = WINDOW_TOP_Y + band * TILE_ROWS
-        frame[y0: y0 + TILE_ROWS, 0: strip.shape[1]] = strip
+    The window is a 192-scanline slice of the strip stack ``row_base, row_base-0x0D, ...``
+    starting ``16 + phase`` scanlines in.  ORACLE-FIT on pure-VM fixtures: present 500
+    (phase 0 -> start 16, 2 px residue) and present 750 (phase 6 -> start 22, 99.1%; the
+    residue is sprites in both).  At phase 0 this is exactly the aligned band model (band
+    ``b`` = plane row ``row_base - (b+1)*0x0D``)."""
+    strips = [render_tile_row(plane, (row_base - s * PLANE_ROW_STRIDE) & 0xFFFF,
+                              table_8d92, graphics)
+              for s in range(WINDOW_BANDS + 2)]
+    stack = np.concatenate(strips, axis=0)
+    start = TILE_ROWS + (phase_234e & 0x0F)
+    window = stack[start: start + WINDOW_BANDS * TILE_ROWS]
+    frame[WINDOW_TOP_Y: WINDOW_TOP_Y + window.shape[0], 0: window.shape[1]] = window
 
 
 def render_tile_row(plane: "bytes | np.ndarray", row_base: int,
