@@ -67,15 +67,26 @@ def main(argv) -> int:
 
     frames = diff_total = 0
     worst = (0, -1)
+    # PHASE (the 97B2 stage order): A90C projects AFTER the 5BDC present, so a boundary's page
+    # was drawn with the PREVIOUS tick's +0x0C cells while its records carry the FRESH ones.
+    # Compose from frame i's pre-state and diff against frame i+1's page -- the aligned pair.
+    pending = None      # (i, native_frame) awaiting the NEXT frame's page
     for i, (pre, post, sp) in enumerate(iter_cached_frames(cached)):
-        if i % stride:
-            continue
         image = MutFlatMemory(pre)
         cursor = image.rw(DS, 0x234C)
-        page_seg = image.rw(CS, 0x9598)
-        pre_np = np.frombuffer(bytes(image.data), dtype=np.uint8)
-        vm = render_present_page_indices(pre_np, page_seg, cursor)
-
+        if pending is not None:
+            j, native = pending
+            pending = None
+            pre_np = np.frombuffer(bytes(image.data), dtype=np.uint8)
+            vm = render_present_page_indices(pre_np, image.rw(CS, 0x9598), cursor)
+            d = int((native[PLAYFIELD] != vm[PLAYFIELD]).sum())
+            frames += 1
+            diff_total += d
+            if d > worst[0]:
+                worst = (d, j)
+            print(f"  frame {j:5d} (vs page {i}): playfield diff px = {d}")
+        if i % stride:
+            continue
         ctx = pn._build_sprite_context(bundle_data, container_data, game0,
                                        (image.rw(DS, 0x1028) >> 1) & 0xFFFF)
         state = project_state(image)
@@ -89,12 +100,7 @@ def main(argv) -> int:
             native = compose_playfield_indices(plate, [sprite], cursor)
         else:
             native = plate
-        d = int((native[PLAYFIELD] != vm[PLAYFIELD]).sum())
-        frames += 1
-        diff_total += d
-        if d > worst[0]:
-            worst = (d, i)
-        print(f"  frame {i:5d}: playfield diff px = {d}")
+        pending = (i, native)
     area = 192 * 208
     print(f"frames sampled: {frames}; mean diff px/frame: {diff_total // max(1, frames)} "
           f"of {area}; worst: {worst[0]} at frame {worst[1]}")

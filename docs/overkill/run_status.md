@@ -38,6 +38,19 @@ sprite compositors (`object_sprite_blocks` SKIPS ``anim(+12) != 0`` and ``varian
 records -- the explosion/hit-flash frames are exactly those); (4) the resizable-window crash --
 FIXED (scale to the live window size).
 
+**THE FULL A846 DRAW ANATOMY (decoded to the loop level)**: A849 loop (32CA?) -> 5AC8 per record
+(the ERASE/restore pass) -> A85E loop cx=0x22 over **8D12** -> 5AC8 -> 4CED(?) -> A879 loop
+cx=0x22 over **8D12** -> **call 7746 DIRECTLY, unconditionally** (the gameplay pool ALWAYS draws
+the 1x1 8px routine -- NOT the 7596 draw-type dispatch!) -> A891 loop cx=0x23 over 32CA -> 7596
+when ``+0x0A == 0`` -> A8C4 loop cx=0x24 over 32CA -> 7596 when ``+0x0A == 1`` (+ the A8F7
+[9788] outro record when A47C!=0).  NATIVE DIVERGENCE FOUND: object_sprite_blocks applies the
+7596 dispatch to ALL pools -- the gameplay pool must use 7746 only.  PHASE-FIX NULL RESULT: the
+one-frame page shift changes NOTHING (identical diffs) -- the layer-0 specials are genuinely
+absent from the page around frame 4000 despite A891 drawing them; NEXT EXPERIMENT: pattern-search
+the VM page for one missing record's sprite pixels (drawn elsewhere? never drawn? check 5AC8's
+erase semantics and whether the A849 first loop erases 32CA BEFORE A891 redraws -- and whether
+A891's 7596 path bails inside the 768E/75A6 resolvers for those records).
+
 **PHASE PIN (the 97B2 stage order, from native_app.py)**: per tick -- 0672 / 511F / **A846 (the
 draw walks: A87C then the A891 0-layer then the A8C4 1-layer)** / 981F / **5BDC (present)** /
 **A90C (the projection scan -- AFTER the present!)** / 9B2E (with the A9D3 walk INSIDE).  So at
