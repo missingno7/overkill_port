@@ -19,6 +19,24 @@
 > work is COMPLETE for L1. Next frontier: play_native integration polish, other planets' controller
 > families (0x1c etc.), the 9734/9902/9908 transition continuations, HUD/menu wiring, audio.
 
+## 2026-07-06 - FIX: the cold game played INVISIBLY -- the A90C screen projection is now wired (owner-caught)
+
+The owner ran `play_native` and saw only the starfield -- and was right: the game LOGIC ran (the
+unpiloted ship was killed + respawned by real enemies in a headless run) but ZERO sprite pixels
+reached the screen. Root cause: the sprite compositor places objects from the records' `+0x0C`
+screen-projection cells, which only the A90C/5A92 present scan computes -- the cold path never ran
+it (the snapshot path worked because the VM had filled the cells, which also hid the gap from every
+state-level probe: they verify RECORDS, not pixels -- a real verification blind spot).
+
+Fix: `sync_screen_projection` in native_walk_frame -- the A90C projection half over the SAME tables/
+counts as the ASM (cx=0x24 over 32CA incl. the anchor, cx=0x22 over 8D12), computing `+0x0C` via the
+ALREADY-RECOVERED, verify_native_screen_di-proven `project_object_screen_di` (DS:99C8 column table +
+the DS:234C cursor; 0xFFFF cull sentinel exactly as 35CC leaves it; `+0x10` untouched -- live VM
+records carry 0 there on Tandy). play_native syncs `234C = g.row_source` into the image and runs the
+projection after each walk. NEW PIXEL GATE `verify_play_native_render`: renders play_native's exact
+frames headlessly and asserts the ship is visible from frame 2 (153 px) and the wave lights the
+screen (peak ~1567 px) -- PASS. All state probes still PASS; suite green; lint clean.
+
 ## 2026-07-06 - the 8D4F controller family + 0x1C decoded (investigation; ready to implement)
 
 The six controller behaviors (0x13/0x15/0x1C/0x1F/0x7D/0x7E) share ONE body: `8D4F -> far 1F8F:027A`

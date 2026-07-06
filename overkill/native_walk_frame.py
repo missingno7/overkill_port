@@ -87,6 +87,39 @@ def advance_object_frame(image, tiles: LevelTileContext) -> None:
     run_behavior_walk_a9d3(image, tiles)
 
 
+PROJECTION_COLUMN_TABLE_99C8 = 0x99C8   # DS:99C8 -- the per-X-column page-di base (0F0B-built)
+SPECIAL_EFFECT_TABLE_32CA = 0x32CA      # entries 1..0x24 (0x24 = the player anchor 237C)
+GAMEPLAY_TABLE_8D12 = 0x8D12            # entries 1..0x22
+
+
+def sync_screen_projection(image) -> None:
+    """The A90C present-scan's PROJECTION half: write every active record's ``+0x0C`` screen-di.
+
+    The sprite compositor places objects from the records' ``+0x0C`` cells, which the original
+    A90C/5A92 present scan computes each frame from the object x/y via the ``DS:99C8`` column table
+    + the present scroll cursor ``DS:234C`` (the recovered, verify_native_screen_di-proven
+    :func:`~overkill.native_video.projection.project_object_screen_di`).  Culled objects get the
+    ``0xFFFF`` off-screen sentinel, exactly as the 35CC handler leaves them.  Without this pass a
+    cold-booted image renders NOTHING: the walk moves the objects but their projection cells stay
+    dead, so every sprite culls (the play_native stars-only bug).  ``+0x10`` (the second slot cell)
+    is deliberately untouched -- live VM records carry 0 there on the Tandy path, which is what the
+    spawn stamps/pool seeds already leave.  Loops the SAME tables/counts as 1010:A90C (cx=0x24 over
+    32CA -- entry 0x24 IS the player anchor -- and cx=0x22 over 8D12)."""
+    from overkill.native_video.projection import project_object_screen_di
+
+    scroll = image.rw(DS, 0x234C)
+    for table, count in ((SPECIAL_EFFECT_TABLE_32CA, 0x24), (GAMEPLAY_TABLE_8D12, 0x22)):
+        for cx in range(1, count + 1):
+            rec = image.rw(DS, (table + cx * 2) & 0xFFFF)
+            if not rec or image.rw(DS, rec) == 0:
+                continue
+            x = image.rw(DS, rec + 0x02)
+            col = image.rw(DS, (PROJECTION_COLUMN_TABLE_99C8 + x * 2) & 0xFFFF) if x < 0x00E0 \
+                else 0xFFFF
+            di = project_object_screen_di(x, image.rw(DS, rec + 0x04), col, scroll)
+            image.ww(DS, rec + 0x0C, 0xFFFF if di is None else di)
+
+
 def project_state(image) -> NativeGameState:
     """Project the image's object pools + camera + HUD into a :class:`NativeGameState` for render."""
     return read_native_game_state(image, DS)

@@ -421,7 +421,7 @@ def main(argv=None) -> int:
     # walker (4A65) fires from the SAME planet's spawn script the projected NativeGame is playing.
     from overkill.native_walk_frame import (  # noqa: E402
         advance_object_frame, level_tiles, project_state, sync_new_gameplay_records,
-        sync_player_anchor,
+        sync_player_anchor, sync_screen_projection,
     )
     from overkill.recovered.adapters.flat_memory import MutFlatMemory  # noqa: E402
     from overkill.recovered.adapters.level_object_script import run_level_object_script_4a65  # noqa: E402
@@ -502,10 +502,14 @@ def main(argv=None) -> int:
             sync_new_gameplay_records(walk_image, g.state.object_pool)
             walk_image.ww(0x25CC, 0x234E, g.origin_x)
             walk_image.ww(0x25CC, 0x2350, g.row_base)
+            walk_image.ww(0x25CC, 0x234C, g.row_source)
             walk_image.ww(0x25CC, 0xA978, pre_step_rows_to_milestone)
             try:
                 run_level_object_script_4a65(walk_image)
                 advance_object_frame(walk_image, walk_tiles)
+                # the A90C present-scan's projection: every record's +0x0C screen-di (the sprite
+                # compositor's placement input) -- without it a cold image renders NOTHING.
+                sync_screen_projection(walk_image)
                 g = g.with_state(project_state(walk_image))
             except RecoveryGap as exc:
                 cell["walk_gap"] = f"{type(exc).__name__}: {exc}"
