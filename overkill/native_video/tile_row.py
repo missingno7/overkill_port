@@ -25,6 +25,32 @@ TILE_ROWS = 16
 BANK2_ROW_BASE = 0x0E5F   # 36AB: row_base >= 0xE5F reads the [959C] bank
 
 
+#: the visible window: 12 16-row bands from screen y=4; band b's plane row = row_base - (b+1)*0xD
+WINDOW_BANDS = 12
+WINDOW_TOP_Y = 4
+PLANE_ROW_STRIDE = 0x0D
+
+
+def compose_tile_window(frame: np.ndarray, plane, row_base: int, table_8d92, graphics,
+                        phase_234e: int = 0) -> None:
+    """Compose the visible terrain window onto a ``(200, 320)`` index ``frame`` (in place).
+
+    Band ``b`` (screen rows ``4 + b*16 ..``) carries the tile row at plane index
+    ``row_base - (b+1)*0x0D`` -- oracle-fit to 2 px (the residue is sprites) on the pure-VM
+    present-500 fixture with ``[234E] == 0``.  A nonzero ``phase_234e`` (the mid-strip scroll
+    step) is NOT modelled yet: a first ``16-k`` slice guess made phased frames WORSE (measured),
+    so this fails loud rather than draw a misaligned field -- fit the phase against captured
+    phased fixtures before wiring it."""
+    if phase_234e:
+        raise ValueError(f"[234E] phase {phase_234e:#x} not modelled -- strip-aligned scroll "
+                         "only (fit the sub-strip offset against a phased pure-VM fixture)")
+    for band in range(WINDOW_BANDS):
+        rb = (row_base - (band + 1) * PLANE_ROW_STRIDE) & 0xFFFF
+        strip = render_tile_row(plane, rb, table_8d92, graphics)
+        y0 = WINDOW_TOP_Y + band * TILE_ROWS
+        frame[y0: y0 + TILE_ROWS, 0: strip.shape[1]] = strip
+
+
 def render_tile_row(plane: "bytes | np.ndarray", row_base: int,
                     table_8d92, graphics: "bytes | np.ndarray") -> np.ndarray:
     """One 13-tile terrain row as ``(16, 208)`` colour indices.

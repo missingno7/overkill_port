@@ -79,6 +79,19 @@ def main(argv) -> int:
                                        (image.rw(DS, 0x1028) >> 1) & 0xFFFF)
         state = project_state(image)
         plate = render_starfield_plate(load_starfield_state(bytes(image.data)), cursor)
+        # the terrain tile window (the page BASE; stars only fill unlit bytes -- the 4D15 rule,
+        # so tiles first and the star plate fills the black)
+        from overkill.native_video.tile_row import BANK2_ROW_BASE, compose_tile_window
+        row_base = image.rw(DS, 0x2350)
+        plane = mem_np[image.rw(CS, 0x9592) * 16: image.rw(CS, 0x9592) * 16 + 0x10000]
+        table = [image.rw(CS, (0x8D92 + 2 * k) & 0xFFFF) for k in range(0x100)]
+        bank_ptr = 0x959C if row_base >= BANK2_ROW_BASE else 0x959A
+        graphics = mem_np[image.rw(CS, bank_ptr) * 16: image.rw(CS, bank_ptr) * 16 + 0x10000]
+        phase = image.rw(DS, 0x234E)
+        if phase == 0:      # the phased window is not modelled yet -- compose only when aligned
+            tiles = np.zeros_like(plate)
+            compose_tile_window(tiles, plane, row_base, table, graphics)
+            plate = np.where(tiles > 0, tiles, plate)
         blocks = []
         for pool in (state.special_pool, state.effect_pool, state.object_pool):
             blocks.extend(object_sprite_blocks(pool, ctx))
