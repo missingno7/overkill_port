@@ -55,7 +55,14 @@ if row <= 0xE52 call **7948** (the 13-TILE ROW LOOP: es=[9592] the plane seg, si
 [A406]=13, per tile ``al = plane[si]`` dispatched through the PLANET-KEYED handler table
 ``[95DE + planet*2]`` writing a 16px cell at ``[A40A] += 0x10``; special tile ids
 0x04/0x07/0x6C/0x6D branch at 7977.. to 7A6E/7A7A/7AAE/7AC4) + call 4A65 (already recovered)
--> jmp **5A7E** (the row -> page blit).  **THE TILE PIXEL BLIT IS FULLY DECODED (5A7E -> mode-2 body 36A2)**: 13 tiles per row; per tile
+-> jmp **5A7E** (the row -> page blit).  **render_tile_row IS RECOVERED -- BYTE-EXACT vs the driven 36A2 on BOTH banks**
+(`native_video/tile_row.py` + `verify_native_tile_row`, the chrome-probe driven-oracle pattern;
+six row_bases including the 0xE5F bank boundary; NOTE 36AB picks the bank from the GLOBAL
+DS:[2350]).  NEXT: the visible-window compose (which pulled rows sit where on screen -- derive
+from the A7EB page-relative di + the present cursor) wired into the 1:1 instrument's native
+side and play_native; expect the present-500+ diffs to collapse.
+
+**THE TILE PIXEL BLIT IS FULLY DECODED (5A7E -> mode-2 body 36A2)**: 13 tiles per row; per tile
 ``id = plane[[2350]-relative bx]`` (plane seg [9592]), ``si = CS:[8D92 + (id-1)*2]`` (the tile
 GRAPHICS offset table), source seg = ``[959A]`` (or ``[959C]`` when row_base >= 0xE5F -- a second
 bank), dest = the work page, 16 rows x 4 movsw (16px) with ``di += 0x60`` between rows.  ALL
