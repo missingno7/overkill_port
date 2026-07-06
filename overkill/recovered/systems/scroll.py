@@ -98,3 +98,27 @@ def step_scroll_world_progress_gate_a66f(
     if outcome.pulled_row and outcome.state.row_base in (BOSS_MATERIALIZE_ROW_BASE, UNKNOWN_MILESTONE_ROW_BASE):
         return None
     return outcome
+
+
+def step_scroll_with_milestones(
+    scroll: ScrollState, *, a47c: int, a47e: int, a480: int,
+) -> ScrollTickOutcome:
+    """The NATIVE composition of :func:`step_scroll_world_progress_gate_a66f`: the milestones apply
+    the tick and are REPORTED instead of declining to a VM that no longer exists.
+
+    Live-traced (the L2_full demo, run_status 2026-07-06): at the milestone rows the VM's scroll
+    tick genuinely APPLIES -- the row_base REACHES 0x0E52 and later 0x0EA0 -- and the milestone
+    side effects run on top: ``0x0E52`` calls ``C591``, a mode-1-only palette write (a TANDY NO-OP,
+    so nothing to do natively); ``0x0EA0`` runs the ``A680`` level-end arm (``A47C = 1`` + the
+    ``62AA`` sweep + the four A3EE outro spawns -- the CALLER owns those memory actions, keyed off
+    ``outcome.milestone``).  Normal ticks and the A47C/A47E/A480 hold are byte-identical to the
+    verified gate.
+    """
+    if a47c != 0 or a47e != 0 or a480 != 0:
+        return ScrollTickOutcome(state=scroll, pulled_row=False)
+    outcome = step_scroll_forward_a6fe(scroll)
+    if outcome.pulled_row and outcome.state.row_base in (BOSS_MATERIALIZE_ROW_BASE,
+                                                         UNKNOWN_MILESTONE_ROW_BASE):
+        return ScrollTickOutcome(state=outcome.state, pulled_row=True,
+                                 milestone=outcome.state.row_base)
+    return outcome

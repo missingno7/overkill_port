@@ -31,7 +31,7 @@ from overkill.recovered.systems.frame_loop import (
     native_object_pass,
     native_player_frame_step,
 )
-from overkill.recovered.systems.scroll import step_scroll_world_progress_gate_a66f
+from overkill.recovered.systems.scroll import step_scroll_with_milestones
 
 
 @dataclass(frozen=True)
@@ -121,16 +121,13 @@ class NativeGame:
 
         This runs in the real frame order right BEFORE the action fan-out (A66F at 9BAC precedes A067
         at 9BAF), so the row_base it produces is the DS:2350 the fan-out and object stages then read.
-        The gate globals DS:A47C/A47E/A480 are still-VM-owned per-frame inputs (like the other
-        ``step_*`` methods' kwargs).  Returns the (possibly unchanged) game plus the tick outcome; a
-        ``None`` outcome means A66F declined this tick (a rare boss/milestone branch, see
-        :func:`~overkill.recovered.systems.scroll.step_scroll_world_progress_gate_a66f`) and the
-        caller should leave the scroll state VM-owned for that one tick -- the game is returned
-        unchanged in that case.
+        The gate globals DS:A47C/A47E/A480 are per-frame inputs (like the other ``step_*`` methods'
+        kwargs).  The once-per-level A66F milestones are composed natively
+        (:func:`~overkill.recovered.systems.scroll.step_scroll_with_milestones`): the tick APPLIES at
+        the milestone rows (live-traced) and ``outcome.milestone`` reports which fired -- 0x0E52 is a
+        Tandy no-op; 0x0EA0 is the level-end arm whose memory actions the runtime (play_native) owns.
         """
-        outcome = step_scroll_world_progress_gate_a66f(self.scroll, a47c=a47c, a47e=a47e, a480=a480)
-        if outcome is None:
-            return self, None
+        outcome = step_scroll_with_milestones(self.scroll, a47c=a47c, a47e=a47e, a480=a480)
         s = outcome.state
         game = dataclasses.replace(
             self, origin_x=s.origin_x, row_base=s.row_base, row_source=s.row_source,

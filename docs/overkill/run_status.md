@@ -23,6 +23,30 @@
 > work is COMPLETE for L1. Next frontier: play_native integration polish, other planets' controller
 > families (0x1c etc.), the 9734/9902/9908 transition continuations, HUD/menu wiring, audio.
 
+## 2026-07-06 - MILESTONE: the LEVEL END arms natively -- the scroll crosses the whole plane, the outro takes the stage
+
+The A66F milestones are composed natively: `step_scroll_with_milestones` (systems/scroll.py) APPLIES
+the tick at the two once-per-level rows (live-traced) and REPORTS the milestone instead of the old
+None-decline (`ScrollTickOutcome.milestone`; NativeGame.step_scroll switched over -- normal ticks
+byte-identical, demo-replay equivalence green). 0x0E52 = the C591 Tandy no-op (nothing to do);
+**0x0EA0 = `run_level_end_arm_a680`** (behavior_walk.py): `A47C = 1` (the scroll gate then holds),
+the 62AA sweep (sound 8 + every remaining on-screen enemy dies the full BFC7 death, score and all),
+and the FOUR A3EE outro objects spawn (behavior 0x53, native). play_native fires it the moment
+row_base lands on the plane end.
+
+Landing this exposed + fixed a REAL pacing bug: `advance_object_frame` gated the whole counter
+cascade on `A47E != 0` (a smoke-probe shortcut) -- the ASM's 5F61 advances the counters ALWAYS; the
+A47E==0 branch only adds the A480 wave-cleared countdown (now modeled; its ==0 music restart stays a
+host/audio boundary). Every animation clock used to FREEZE whenever the field was clear.
+
+New probe `verify_play_native_levelend` PASSES: the scroll crosses the ENTIRE plane (no 0xE52
+stall), arms at 0xEA0, the four 0x53s animate on stage, the scroll holds. All four play_native
+probes + both cached shadows stay green. **Two recorded blockers for the FULL natural playthrough:**
+(1) the row-4 script entry spawns the 0x21 wave driver via the 4A65 walker's declared leftover-ax
+gap (the probe skips that single entry, documented); (2) the outro PHASES (9A78's 9AD1 autopilot --
+DECODED: it drives the ship via synthetic 98BE input bits toward the A358 target -- then 9A3E/9A16,
+both partially recovered) -> A344 -> the 9744 advance + next-level load. Those are the next slices.
+
 ## 2026-07-06 - the 0x1C/0x1D/0x1E planet-2 controller family native; OBJECT TYPE 1 scoped
 
 The planet-2 wave is native (see the 4417360 commit message for the full decode): 0x1C (the shared

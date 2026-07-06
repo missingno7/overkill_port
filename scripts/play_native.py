@@ -425,6 +425,7 @@ def main(argv=None) -> int:
     )
     from overkill.recovered.adapters.flat_memory import MutFlatMemory  # noqa: E402
     from overkill.recovered.adapters.level_object_script import run_level_object_script_4a65  # noqa: E402
+    from overkill.recovered.adapters.behavior_walk import run_level_end_arm_a680  # noqa: E402
     from overkill.recovered.adapters.cold_level_start import (  # noqa: E402
         apply_respawn_seeds, build_cold_level_start_image,
     )
@@ -450,6 +451,7 @@ def main(argv=None) -> int:
         # so checking the post-step value would skip the very entry the cold seed was built to match
         # (confirmed empirically: rows_to_milestone's cold value equals the first trigger_row exactly).
         pre_step_rows_to_milestone = g.rows_to_milestone
+        pre_step_row_base = g.row_base
         # The 9B61 death branch: when the tracked anchor state is absent (A95A == FFFF after the
         # native 9E69/9EA3 death chain, or the A97A bar empty), the original SKIPS the whole
         # player-move/scroll/fan-out flow and runs the 9AFF death tail instead -- the anchor's +08
@@ -488,6 +490,16 @@ def main(argv=None) -> int:
                 # NativeGame's dataclass object pass when the image owns the pools -- no double-step.
                 run_object_pass=walk_image is None,
             )
+        # The 0xEA0 LEVEL-END milestone (the native scroll now APPLIES the milestone ticks and the
+        # runtime owns the A680 arm's memory actions, live-traced): the moment row_base lands on the
+        # plane end, arm the outro -- A47C=1 (the scroll gate then holds), the 62AA sweep kills every
+        # remaining enemy (score and all), and the four A3EE outro objects (behavior 0x53) spawn.
+        # The A47C outro PHASES (the autopilot fly-off -> A344 -> the next level) are the next slice;
+        # until then the game holds on the armed outro scene fail-loud-visibly rather than stalling.
+        if not dying and g.row_base == 0x0EA0 and pre_step_row_base != 0x0EA0 \
+                and walk_image.rw(0x25CC, 0xA47C) == 0:
+            run_level_end_arm_a680(walk_image)
+            print(f"level-end arm at tick {cell['tick']}: the outro is on stage (A47C=1)")
         # The native OBJECT FRAME over the image: sync the player anchor + scroll, advance the whole
         # behaviour walk, and project the enemy/effect/shot pools back into g for rendering. Fail-loud
         # on an unrecovered object (holds the last good frame, like a gameplay-stage exception).

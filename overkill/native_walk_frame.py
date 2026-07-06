@@ -77,13 +77,19 @@ def sync_new_gameplay_records(image, pool) -> int:
 
 
 def advance_object_frame(image, tiles: LevelTileContext) -> None:
-    """Advance one native object frame IN PLACE over ``image``: the per-frame counter cascade (when
-    enemies are alive) then the whole behaviour walk.  Fail-loud on any unrecovered object (the walk
-    raises ``RecoveryGap``)."""
-    if image.rw(DS, ACTIVE_ENEMY_COUNT_A47E) != 0:
-        cells = {off: image.rw(DS, off) for off in FRAME_COUNTER_CELLS}
-        for off, val in advance_frame_counters_5f61(cells).items():
-            image.ww(DS, off, val)
+    """Advance one native object frame IN PLACE over ``image``: the 5F61 head (the A480
+    wave-cleared countdown, which runs only while NO enemies are alive; hitting 0 fires the
+    planet-track music restart -- CB1C, a host/audio boundary) + the per-frame counter cascade
+    (which the ASM runs ALWAYS -- the old ``A47E != 0`` gate here was a smoke-probe shortcut that
+    froze every animation clock whenever the field was clear), then the whole behaviour walk.
+    Fail-loud on any unrecovered object (the walk raises ``RecoveryGap``)."""
+    if image.rw(DS, ACTIVE_ENEMY_COUNT_A47E) == 0:
+        a480 = image.rw(DS, 0xA480)
+        if a480 != 0:
+            image.ww(DS, 0xA480, (a480 - 1) & 0xFFFF)   # 5F6F; ==0 -> CB1C music (host boundary)
+    cells = {off: image.rw(DS, off) for off in FRAME_COUNTER_CELLS}
+    for off, val in advance_frame_counters_5f61(cells).items():
+        image.ww(DS, off, val)
     run_behavior_walk_a9d3(image, tiles)
 
 

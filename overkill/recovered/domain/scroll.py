@@ -29,7 +29,11 @@ class ScrollTickOutcome:
 
     ``pulled_row`` is the caller's cue that the real ASM's A7EB strip-copy (rendering, not modelled
     here -- see :mod:`overkill.recovered.systems.scroll`) would also have run this tick.
+    ``milestone`` (set only by the milestone-composing native step) is the row_base a pulled row
+    landed on when it is one of the two once-per-level A66F milestones -- 0x0E52 (the C591 call, a
+    Tandy no-op) or 0x0EA0 (the A680 level-end arm) -- else ``None``.
     """
 
     state: ScrollState
     pulled_row: bool
+    milestone: int | None = None

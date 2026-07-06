@@ -1375,6 +1375,51 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
                       "no native type handler registered -- recover it before walking")
 
 
+#: the A3EE level-end outro spawn table (4 entries x (x, y, sprite) -- the sprite also seeds +0x36,
+#: the base the 0x53 handler animates from).  Static data, read from the image at arm time.
+LEVEL_END_OUTRO_TABLE_A3EE = 0xA3EE
+
+
+def run_level_end_arm_a680(mem) -> None:
+    """The ``1010:A680`` LEVEL-END ARM (the 0xEA0 scroll milestone's memory actions, live-traced):
+    ``A47C = 1`` (the outro script arms -- the scroll gate then holds), the ``62AA`` sweep (sound 8;
+    every remaining live on-screen enemy -- x <= 0xE0, type 4, logic not 0/1 -- has its HP zeroed
+    and dies the full BFC7 death, score and all), then the FOUR A3EE outro objects spawn via 7524
+    (behavior 0x53, +0x14=2/+0x16=4/+0x28=FFFF, position + sprite/+0x36 from the table)."""
+    mem.ww(DS, 0xA47C, 0x0001)                              # A6B9
+    # 62AA: the field sweep
+    if mem.rb(DS, 0x98C0):
+        mem.wb(DS, 0xBEFF, 0x08)
+    for cx in range(EFFECT_SLOTS, 0, -1):
+        rec = mem.rw(DS, (EFFECT_TABLE_32CA + cx * 2) & 0xFFFF)
+        if not rec or mem.rw(DS, rec) == 0:
+            continue
+        if mem.rw(DS, rec + 0x02) > 0x00E0:
+            continue
+        if mem.rw(DS, rec + 0x16) != 4:
+            continue
+        if mem.rw(DS, rec + 0x18) in (0x0000, 0x0001):
+            continue
+        mem.ww(DS, rec + 0x20, 0x0000)                      # 62EE: HP = 0
+        _bfc7_touch_death(mem, rec)                         # 62F3: jmp BFC7
+    # A6C2..A6F8: the four outro spawns
+    si = LEVEL_END_OUTRO_TABLE_A3EE
+    for _ in range(4):
+        slot = _alloc(mem, 0x95D8, EFFECT_POOL_BASE, EFFECT_POOL_WRAP, EFFECT_SLOTS)
+        if slot != 0xFFFF:
+            mem.ww(DS, slot + 0x00, 1)
+            mem.ww(DS, slot + 0x14, 0x0002)
+            mem.ww(DS, slot + 0x16, 0x0004)
+            mem.ww(DS, slot + 0x18, 0x0053)
+            mem.ww(DS, slot + 0x28, 0xFFFF)
+            mem.ww(DS, slot + 0x02, mem.rw(DS, si))
+            mem.ww(DS, slot + 0x04, mem.rw(DS, (si + 2) & 0xFFFF))
+            spr = mem.rw(DS, (si + 4) & 0xFFFF)
+            mem.ww(DS, slot + 0x08, spr)
+            mem.ww(DS, slot + 0x36, spr)
+        si = (si + 6) & 0xFFFF
+
+
 def run_behavior_walk_a9d3(mem, tiles: LevelTileContext) -> None:
     """Run the whole ``A9D3..AA25`` object behavior walk natively over ``mem`` (in place)."""
     if mem.rw(DS, 0xA8C2) == 1:

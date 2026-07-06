@@ -1,0 +1,155 @@
+"""Headless smoke: play_native's cold path reaches the LEVEL END and the outro arms, VM-free.
+
+Mirrors play_native's cold wiring and lets the scroll run the whole plane: the probe CLEARS the
+wave state each tick (A47E/A480 = 0 + deactivating spawned type-2/4 records -- a documented probe
+convenience standing in for the player shooting everything, so the A66F gate never holds) and spins
+until row_base crosses the whole level.  Asserts the native milestone composition:
+
+* the scroll does NOT stall at 0x0E52 (the C591 milestone -- a Tandy no-op, previously a decline),
+* at 0x0EA0 the A680 arm fires: ``A47C == 1``, the four A3EE outro objects (behavior 0x53) are live,
+* the walk keeps running with the outro on stage (the 0x53 sprites animate), and the scroll HOLDS
+  (A47C nonzero gates it) -- the armed outro scene, awaiting the phase handlers (the next slice).
+
+Usage:
+    python -m overkill.probes.verify_play_native_levelend [bundle_path] [max_ticks]
+"""
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
+
+DS = 0x25CC
+ANCHOR = 0x237C
+DEFAULT_BUNDLE = "artifacts/static_runtime_bundle/memory_1mb.bin"
+DEFAULT_CONTAINER = "assets/OVERKILL"
+
+
+def main(argv) -> int:
+    import dataclasses
+
+    from overkill.native_game import NativeGame
+    from overkill.native_walk_frame import (
+        advance_object_frame, level_tiles, project_state, sync_new_gameplay_records,
+        sync_player_anchor,
+    )
+    from overkill.recovered.adapters.behavior_walk import run_level_end_arm_a680
+    from overkill.recovered.adapters.cold_level_start import (
+        build_cold_level_start, build_cold_level_start_image,
+    )
+    from overkill.recovered.adapters.level_object_script import run_level_object_script_4a65
+    from overkill.recovered.domain.frame_loop import FrameInput
+    from overkill.recovered.domain.gaps import RecoveryGap
+    from overkill.recovered.domain.object_update import ObjectUpdateGlobals
+    from overkill.recovered.systems.input import DEFAULT_CONTROL_MAP, key_state_from_pressed
+
+    bundle_path = Path(argv[0]) if argv else ROOT / DEFAULT_BUNDLE
+    max_ticks = int(argv[1]) if len(argv) > 1 else 6000
+    bundle_data = bundle_path.read_bytes()
+    container_data = (ROOT / DEFAULT_CONTAINER).read_bytes()
+
+    state, _sf = build_cold_level_start(bundle_data, 0)
+    game = dataclasses.replace(
+        NativeGame.load_level(bundle_data, container_data, 0, state, origin_x=0, row_base=0x9C),
+        rows_to_milestone=0x0110)
+    walk_image = build_cold_level_start_image(bundle_data, 0)
+    walk_tiles = level_tiles(walk_image)
+    empty_input = FrameInput(control_map=DEFAULT_CONTROL_MAP, key_state=key_state_from_pressed(set()))
+
+    passed_e52 = False
+    armed_at = None
+    outro_sig = []          # (tick, tuple of the 0x53 records' sprites)
+    gap = None
+    for t in range(max_ticks):
+        pre_rows = game.rows_to_milestone
+        pre_row_base = game.row_base
+
+        def clear_field() -> None:
+            # the probe convenience: the "player" clears everything instantly so the scroll never
+            # holds and freshly-scripted spawns never walk -- the END mechanics are what's under test
+            walk_image.ww(DS, 0xA47E, 0)
+            walk_image.ww(DS, 0xA480, 0)
+            for table, n in ((0x32CA, 0x23), (0x8D12, 0x22)):
+                for cx in range(1, n + 1):
+                    rec = walk_image.rw(DS, (table + cx * 2) & 0xFFFF)
+                    if rec and rec != ANCHOR and walk_image.rw(DS, rec) \
+                            and walk_image.rw(DS, rec + 0x16) in (2, 4):
+                        walk_image.ww(DS, rec, 0)
+
+        if armed_at is None:
+            clear_field()
+        game, _ = game.step(
+            empty_input, no_clamp=False,
+            repeat_9790=0, state_232a=0, scroll_2350=game.row_base,
+            bdac=0, a958=0, be06=0,
+            source_index=0, source_x=game.state.special_pool.x_word(0),
+            source_y=game.state.special_pool.y_word(0),
+            read_ds_word=lambda off: 0,
+            update_globals=ObjectUpdateGlobals(
+                ref_box_x=game.state.special_pool.x_word(0),
+                ref_box_y=game.state.special_pool.y_word(0),
+                a278=0, tile_probe_suppressed=False, tiles=game.tile_context),
+            scroll_gate=(walk_image.rw(DS, 0xA47C), walk_image.rw(DS, 0xA47E),
+                         walk_image.rw(DS, 0xA480)),
+            run_object_pass=False)
+        if game.row_base == 0x0E52 and pre_row_base != 0x0E52:
+            passed_e52 = True
+        if game.row_base == 0x0EA0 and pre_row_base != 0x0EA0 \
+                and walk_image.rw(DS, 0xA47C) == 0:
+            run_level_end_arm_a680(walk_image)
+            armed_at = t
+            print(f"  armed at tick {t} (row_base=0x0EA0)")
+        sp = game.state.special_pool
+        sync_player_anchor(walk_image, sp.x_word(0), sp.y_word(0), sp.word_at(0, 0x08))
+        sync_new_gameplay_records(walk_image, game.state.object_pool)
+        walk_image.ww(DS, 0x234E, game.origin_x)
+        walk_image.ww(DS, 0x2350, game.row_base)
+        walk_image.ww(DS, 0x234C, game.row_source)
+        walk_image.ww(DS, 0xA978, pre_rows)
+        try:
+            run_level_object_script_4a65(walk_image)
+        except RecoveryGap as exc:
+            if "wave driver" not in str(exc):
+                raise
+            # the row-4 script entry spawns the 0x21 wave driver via the walker's DECLARED gap (the
+            # 1F8F:0209 leftover-ax schedule quirk).  Skip that single entry (advance the cursor) so
+            # the END mechanics under test stay reachable; the driver spawn remains the recorded
+            # blocker for a full NATURAL playthrough.
+            planet = walk_image.rw(DS, 0x2356)
+            cell = walk_image.rw(DS, (0xC5E9 + planet * 2) & 0xFFFF)
+            si = walk_image.rw(DS, cell)
+            si += 2
+            if walk_image.rw(DS, si) == 0xFFFF:
+                si += 2
+            walk_image.ww(DS, cell, (si + 6) & 0xFFFF)
+        if armed_at is None:
+            clear_field()      # the script fires INSIDE the frame; clear before the walk sees them
+        advance_object_frame(walk_image, walk_tiles)
+        game = game.with_state(project_state(walk_image))
+
+        if armed_at is not None:
+            sprites = []
+            for cx in range(1, 0x24):
+                rec = walk_image.rw(DS, (0x32CA + cx * 2) & 0xFFFF)
+                if rec and walk_image.rw(DS, rec) and walk_image.rw(DS, rec + 0x18) == 0x53:
+                    sprites.append(walk_image.rw(DS, rec + 0x08))
+            outro_sig.append((t, tuple(sorted(sprites))))
+            if t - armed_at >= 60:
+                break
+
+    n_outro = len(outro_sig[-1][1]) if outro_sig else 0
+    animated = len({s for _, s in outro_sig}) > 1 if outro_sig else False
+    held = game.row_base == 0x0EA0
+    print(f"passed 0x0E52: {passed_e52}; armed at: {armed_at}; outro objects live: {n_outro}; "
+          f"outro animating: {animated}; scroll held at 0xEA0: {held}; gap: {gap}")
+    ok = (passed_e52 and armed_at is not None and n_outro == 4 and animated and held
+          and walk_image.rw(DS, 0xA47C) == 1)
+    print("RESULT:", "PASS -- the level scrolls to its end, the outro arms (A47C=1), the four 0x53 "
+          "objects are on stage animating, and the scroll holds -- VM-free" if ok else "CHECK")
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))
