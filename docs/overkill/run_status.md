@@ -23,6 +23,28 @@
 > work is COMPLETE for L1. Next frontier: play_native integration polish, other planets' controller
 > families (0x1c etc.), the 9734/9902/9908 transition continuations, HUD/menu wiring, audio.
 
+## 2026-07-06 - SEVEN behaviors in one pass (the cache pays off) + a 3-bug fix in the 7420 pickup stamp
+
+With the 4-second cached L2 gate, recovered in ONE sitting: **0x52** (the phase-1 outro no-op),
+**0x53** (the A3EE outro objects: sprite = [96D2 + (2328 & ~1)] + rec[+0x36]), **0x31** (sprite 0x2E,
+x += 3), **0x33** (THREE chained AFD8 steps with BDD0; first block flips the vertical phase, dir ^= 2),
+**0x35**/0x22 (the B3BF sprite ((2342+1)>>1)+0x71, x += 1 (+1 on planet 0); at x >= 0xA0 the full
+BFC7 death + the B402 8-way radial burst of behavior-3 children -- the recovered AED8 alias),
+**0x38** (dir snaps 3/5 at the y rails, sprite 0x6E, one 2px AF63 step), and **0x06** (wired the
+ALREADY-RECOVERED `object_update_ae2c` -- the tile-gated scroll-left mover).
+
+The L2 shadow then caught a REAL LATENT BUG the whole L1 demo could never expose: a 2-byte divergence
+(frame 4479) forensically traced -- cache-frame inspection -> a native write-trap -> a live-VM
+write-watch pinning the writers at 1010:7437/7470 -- to the **7420 pickup stamp**: the real ASM
+stamps ``x = [2378] + [A278]`` (the drift IS added), ``y = min([2376], 0xC0)`` (clamped), and
+``sprite = [237A] + 0x46`` (KIND-keyed -- L1 only ever drops kind 2 = 0x48, so the old fixed-0x48
+model was L1-blind; L2 drops kind 1 -> 0x47). Fixed to the ASM.
+
+**Both cached gates PASS at zero divergence** (L1 8294/8294; L2 6561 frames). The unmasking went
+DEEP: the L2 frontier is now the real planet-2 zoo (~30 behaviors incl. the 0x1c/0x1d/0x1e family,
+0x39/0x3a/0x3b/0x3c/0x3e, 0x40/0x42/0x44..0x4f, 0x8a/0x8f, object type 1, the 0x0C decay, pickup
+kinds 1/3/4) -- each now a small slice with a 4-second gate.
+
 ## 2026-07-06 - the WALK-SHADOW CACHE: demo re-verification drops ~5min -> ~40s (the grind fix)
 
 The demo walk shadow's VM side is deterministic per demo, so `verify_native_walk_demo` now

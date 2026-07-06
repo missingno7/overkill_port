@@ -107,11 +107,13 @@ from overkill.recovered.domain.collision import PostMoveContactWindow
 from overkill.recovered.systems.movement import (
     object_delta_steer_5e42,
     object_target_seek_step_5db2,
+    step_operations_for_direction,
 )
 from overkill.recovered.systems.objects import (
     child_spawn_seed_c237,
     child_spawn_sound_c237,
     child_spawn_throttle_c237,
+    object_update_ae2c,
     object_update_aed8,
     object_update_af60,
     object_update_b24d,
@@ -396,6 +398,101 @@ def _step_ground_crawler(mem, rec: int, tiles: LevelTileContext, sign: int) -> N
         sign, mem.rw(DS, 0x233C), moved, mem.rw(DS, rec + 0x06)))
     if ground_crawler_should_spawn(mem.rw(DS, 0x2330)):
         _spawn_ground_crawler_shot(mem, rec)
+
+
+def _step_mover_06(mem, rec: int, tiles: LevelTileContext) -> None:
+    """Behavior 0x06 (``1010:AE2C``, EFAE logic_id 6) -- the recovered whole-slot scroll-left mover
+    with the tile-gated down-step (``object_update_ae2c``, produced-vs-VM verified)."""
+    u = object_update_ae2c(
+        mem.rw(DS, rec + 0x02), mem.rw(DS, rec + 0x04), mem.rw(DS, rec + 0x00),
+        mem.rw(DS, rec + 0x16), mem.rw(DS, 0xA278), mem.rw(DS, 0x2326), False, tiles)
+    if u is None:
+        raise RecoveryGap(f"behavior 0x06 ADC9 death (record {rec:04X})",
+                          "object_update_ae2c's y==0xC8 death sub-path is not modeled natively")
+    mem.ww(DS, rec + 0x06, u.direction_or_step)
+    mem.ww(DS, rec + 0x08, u.sprite_or_state)
+    mem.ww(DS, rec + 0x02, u.x_word)
+    mem.ww(DS, rec + 0x04, u.y_word)
+    if u.active_word == 0:
+        _bd17_deactivate(mem, rec)   # BD17: clear active + the hazard_class-keyed death side effects
+
+
+def _step_bouncer_33(mem, rec: int, tiles: LevelTileContext) -> None:
+    """Behavior 0x33 (``1010:88CF``): THREE chained AFD8 contact-steps in the record's direction
+    (each with the wired BDD0 predicate); the FIRST blocked step stops the chain and flips the
+    vertical phase (``direction ^= 2``)."""
+    for _ in range(3):
+        result = contact_probe_afd8(mem.rw(DS, rec + 0x02), mem.rw(DS, rec + 0x04),
+                                    mem.rw(DS, rec + 0x06), mem.rw(DS, 0xA278),
+                                    tiles, _bdd0_contact_at(mem, rec))
+        mem.ww(DS, rec + 0x02, result.x_word)
+        mem.ww(DS, rec + 0x04, result.y_word)
+        mem.ww(DS, 0xA430, 1 if result.blocked else 0)
+        mem.ww(DS, 0xA432, result.snap_x)
+        mem.ww(DS, 0xA434, result.snap_y)
+        mem.ww(DS, 0xA436, result.mirror_y)
+        mem.ww(DS, 0xA438, result.mirror_x)
+        mem.ww(DS, 0x215A, result.sample_215a)
+        if result.blocked:
+            mem.ww(DS, rec + 0x06, mem.rw(DS, rec + 0x06) ^ 0x0002)   # 88E1: flip the vertical phase
+            return
+
+
+def _step_riser_35(mem, rec: int) -> None:
+    """Behaviors 0x35/0x22 (``1010:B3DF``): sprite = ((DS:2342 + 1) >> 1) + 0x71 (the B3BF worker),
+    x += 1 (again on planet 0); at x >= 0xA0 the record dies (the full BFC7 beat) and BURSTS eight
+    radial behavior-3 children (the B402 spawner: directions 7..0, sprites 0x0F..0x08, spawned at
+    (x+d, y+d) with d = 0xC when +0x14 == 2 else 4 -- behavior 3 is the recovered AED8 alias)."""
+    mem.ww(DS, rec + 0x08, ((mem.rw(DS, 0x2342) + 1) >> 1) + 0x0071 & 0xFFFF)
+    x = (mem.rw(DS, rec + 0x02) + 1) & 0xFFFF
+    if mem.rw(DS, 0x2356) == 0:
+        x = (x + 1) & 0xFFFF
+    mem.ww(DS, rec + 0x02, x)
+    if x < 0x00A0:
+        return
+    _bfc7_touch_death(mem, rec)
+    # B402: the 8-way radial burst
+    d = 0x000C if mem.rw(DS, rec + 0x14) == 2 else 0x0004
+    burst_y = (mem.rw(DS, rec + 0x04) + d) & 0xFFFF
+    burst_x = (mem.rw(DS, rec + 0x02) + d) & 0xFFFF
+    mem.ww(DS, 0xA8B2, burst_y)
+    mem.ww(DS, 0xA8B4, burst_x)
+    for cx in range(8, 0, -1):
+        slot = _alloc(mem, 0x95DA, GAMEPLAY_POOL_BASE, GAMEPLAY_POOL_WRAP, GAMEPLAY_SLOTS)
+        if slot == 0xFFFF:
+            return
+        mem.ww(DS, slot + 0x06, cx - 1)
+        mem.ww(DS, slot + 0x08, (cx - 1 + 8) & 0xFFFF)
+        mem.ww(DS, slot + 0x04, burst_y)
+        mem.ww(DS, slot + 0x02, burst_x)
+        mem.ww(DS, slot + 0x00, 1)
+        mem.ww(DS, slot + 0x1E, 0)
+        mem.ww(DS, slot + 0x0A, 1)
+        mem.ww(DS, slot + 0x14, 0)
+        mem.ww(DS, slot + 0x16, 2)
+        mem.ww(DS, slot + 0x18, 3)
+        mem.ww(DS, slot + 0x1C, 0xFFFF)
+
+
+def _step_edge_runner_38(mem, rec: int) -> None:
+    """Behavior 0x38 (``1010:89FF``): direction snaps to 3 at y == 0 / 5 at y == 0xC0 (else keeps),
+    sprite = 0x6E, then ONE 2px 8-way step (the AF63 single-step -- half of the recovered AF60
+    double-step, same direction table)."""
+    y = mem.rw(DS, rec + 0x04)
+    if y == 0:
+        mem.ww(DS, rec + 0x06, 0x0003)
+    elif y == 0x00C0:
+        mem.ww(DS, rec + 0x06, 0x0005)
+    mem.ww(DS, rec + 0x08, 0x006E)
+    x, yv = mem.rw(DS, rec + 0x02), mem.rw(DS, rec + 0x04)
+    for op in step_operations_for_direction(mem.rw(DS, rec + 0x06) & 0x7, 2):
+        delta = i16(op.delta_word)
+        if op.axis == "x":
+            x = (x + delta) & 0xFFFF
+        else:
+            yv = (yv + delta) & 0xFFFF
+    mem.ww(DS, rec + 0x02, x)
+    mem.ww(DS, rec + 0x04, yv)
 
 
 def _step_scroller_27(mem, rec: int) -> None:
@@ -824,14 +921,20 @@ def _score_add_5f0d(mem, delta: int) -> None:
 
 
 def _pickup_spawn_7420(mem) -> None:
-    """``1010:7420``: alloc an effect slot and stamp the pickup at (``2378``, ``2376``), kind
-    ``237A`` (the f86 write-trace pinned every field)."""
+    """``1010:7420``: alloc an effect slot and stamp the pickup -- ``x = [2378] + [A278]`` (the
+    drift IS added at spawn, 7430), ``y = min([2376], 0xC0)`` (the 743A clamp), kind ``[237A]`` into
+    ``+0x26``, and ``sprite = [237A] + 0x46`` (KIND-KEYED, 746A -- the old fixed ``0x48`` was
+    L1-blind: L1 only ever drops kind 2, and the L2_full shadow caught kind 1 -> 0x47)."""
     slot = _alloc(mem, 0x95D8, EFFECT_POOL_BASE, EFFECT_POOL_WRAP, EFFECT_SLOTS)
     if slot == 0xFFFF:
         return
-    for off, val in ((0x00, 1), (0x02, mem.rw(DS, 0x2378)), (0x04, mem.rw(DS, 0x2376)),
-                     (0x22, 0), (0x14, 1), (0x16, 5), (0x18, 0), (0x28, 0xFFFF),
-                     (0x24, 0), (0x26, mem.rw(DS, 0x237A)), (0x08, 0x48), (0x0A, 0)):
+    kind = mem.rw(DS, 0x237A)
+    y = mem.rw(DS, 0x2376)
+    if y > 0x00C0:
+        y = 0x00C0
+    for off, val in ((0x00, 1), (0x02, (mem.rw(DS, 0x2378) + mem.rw(DS, 0xA278)) & 0xFFFF),
+                     (0x04, y), (0x22, 0), (0x14, 1), (0x16, 5), (0x18, 0), (0x28, 0xFFFF),
+                     (0x24, 0), (0x26, kind), (0x08, (kind + 0x46) & 0xFFFF), (0x0A, 0)):
         mem.ww(DS, slot + off, val)
 
 
@@ -1128,6 +1231,31 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
         elif beh == 0x8B:
             _step_ground_crawler(mem, rec, tiles, 0x0001)       # BB88: A952 = +1
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # BB8E body exits jmp BC45 (WITH drift)
+        elif beh == 0x06:
+            _step_mover_06(mem, rec, tiles)                     # AE2C (recovered whole-slot update)
+        elif beh == 0x31:
+            # 1010:88AA: sprite = 0x2E, x += 3, jmp BC45 -- a plain right-scroller
+            mem.ww(DS, rec + 0x08, 0x002E)
+            mem.ww(DS, rec + 0x02, (mem.rw(DS, rec + 0x02) + 3) & 0xFFFF)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)
+        elif beh == 0x33:
+            _step_bouncer_33(mem, rec, tiles)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # 88CF exits jmp BC45
+        elif beh == 0x35:
+            _step_riser_35(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # B3DF exits jmp BC45 (both paths)
+        elif beh == 0x38:
+            _step_edge_runner_38(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # 89FF exits jmp BC45
+        elif beh == 0x52:
+            # 1010:8D23: the phase-1 outro object -- a NO-OP body (jmp BC45; the postmove drifts it)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)
+        elif beh == 0x53:
+            # 1010:8D26: the A3EE level-end outro objects -- sprite = [96D2 + (2328 & ~1)] + rec[+0x36]
+            # (the same 96D2 anim table 0x30 uses, clocked by 2328 word-aligned), then jmp BC45.
+            anim = mem.rw(DS, (0x96D2 + (mem.rw(DS, 0x2328) & 0xFFFE)) & 0xFFFF)
+            mem.ww(DS, rec + 0x08, (anim + mem.rw(DS, rec + 0x36)) & 0xFFFF)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)
         else:
             raise RecoveryGap(f"behavior {beh:#04x} (record {rec:04X})",
                               "no native handler registered -- recover it before walking")
