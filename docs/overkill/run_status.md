@@ -23,6 +23,27 @@
 > work is COMPLETE for L1. Next frontier: play_native integration polish, other planets' controller
 > families (0x1c etc.), the 9734/9902/9908 transition continuations, HUD/menu wiring, audio.
 
+## 2026-07-06 - the 0x1C/0x1D/0x1E planet-2 controller family native; OBJECT TYPE 1 scoped
+
+The planet-2 wave is native (see the 4417360 commit message for the full decode): 0x1C (the shared
+8D4F/027A seek + the 03A6 one-child arrival), 0x1D (the ALREADY-RECOVERED `object_update_b86d` wired
++ its caller-owned ASM extras -- incl. a cached-gate-caught fix: 5E1B WRITES the record's +0x2C/+0x2A
+delta cells on the edge path), 0x1E (the vertical patrol: seek own target, on arrival 7476 shot +
+Y-target toggle 0<->0xC0). L2 zero-div, L1 8294/8294, free-run 200/0, suite green.
+
+**OBJECT TYPE 1 scoped (the next L2 item, 807 hits -- a TYPE, not a behavior):** the AA36 type table
+is `0:BC45(nop) 1:AD04 2/4:EFAE 3:44AF 5:AAC2(pickup) 6:AB10(companion) 7:C3F8`. **AD04 = the
+player's FOLLOWER objects**, dispatched by record IDENTITY: `bp == [A966]/[A968]/[A96A]/[A96C]` (the
+four flames 9FAF positions) -> AB71/AB69/AB61/AB59; `bp == [A962]/[A964]` (the two ring-delay
+followers A031 feeds) -> ABA3; `sprite == 0xF` -> ABCA (the A96E-registered indicator, cf. the 9D91
+spawn); with an early-out `BDAC != 1 AND 2350 <= 0xB6 -> ret` (followers act only past row 0xB6 or
+in boss mode). Sub-workers to decode for the slice: AB34/AB4F (positioners?), AC28 (the RECOVERED
+tile-collision probe plan), AC81 (?), the AB99 BFC7-on-the-follower death indirection, the ABF3
+common tail, and the A42C/A42E pointer choreography ([ptr] = FFFF detaches on the dying pose).
+The remaining L2 frontier after type 1: 0x3c(571) 0x2b(516) 0x23(440) 0x2e(300) 0x8f(274)
+0x21(264, the wave driver -- `wave_driver_dispatch_b556` is already pure!) 0x3e/0x2c/0x8a/0x39/
+0x40/0x3a/0x34/0x22/0x47/0x3b/0x4b/0x4c/0x4e/... -- each a small slice on the 4-second cached gate.
+
 ## 2026-07-06 - SEVEN behaviors in one pass (the cache pays off) + a 3-bug fix in the 7420 pickup stamp
 
 With the 4-second cached L2 gate, recovered in ONE sitting: **0x52** (the phase-1 outro no-op),
