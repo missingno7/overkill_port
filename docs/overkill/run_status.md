@@ -23,6 +23,19 @@
 > work is COMPLETE for L1. Next frontier: play_native integration polish, other planets' controller
 > families (0x1c etc.), the 9734/9902/9908 transition continuations, HUD/menu wiring, audio.
 
+## 2026-07-07 - menu recon: the LEVEL-SELECT loop + cursor draw are fully mapped (wire next)
+
+The D3F0 level-select loop: per frame -- 0672(?) -> 511F -> **D4AA (the cursor draw)** -> 5160 ->
+50C9 (frame wait) -> D434 (the 98BE input dispatch: bits 1/2/8/4 -> the RECOVERED
+step_level_select_* handlers on BEDA; bit 0x10 FIRE -> the RECOVERED resolve_level_select_fire_d424
+-> [2356]).  **D4AA**: (1) restore the saved background patch (a 5A6C cell from ``[9598]:8000`` --
+the old-cursor erase); (2) the BEDA cursor: xy from the 6-entry word table ``DS:BEDE[BEDA]`` ->
+5A00, cell pointer from ``CS:D37E[BEDA]``, blitted from the ``[9598]`` segment; (3) a SECOND cursor
+keyed on ``DS:BEDC`` (xy table ``DS:BEEA``, cells ``CS:D37E[BEDC+6]``).  To wire natively: identify
+what the ``[9598]`` segment holds at menu time (the cursor cells' home), decode the two xy tables +
+cell pointers from the image, and compose LEVSCR.ENC + cursors in play_native's front-end with the
+recovered grid logic (planet = D424's value; level_index = LEVEL_INDEX_TO_PLANET.index(planet)).
+
 ## 2026-07-07 - GAME OVER -> TITLE is native: the 98EB flow wired (banner + hold + fresh session)
 
 The last RecoveryGap in play_native's death path is gone.  98EB decoded: 5145 (mode-1 no-op on
