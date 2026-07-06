@@ -4,7 +4,59 @@ Open items the autonomous loop attempted but could not finish byte-exact. Do NOT
 re-attempt these in the loop; they need a reproduction trace and/or gameplay
 context. Each has the analysis already done so a human can pick up fast.
 
-## 2026-07-06 — behavior 0x8C/0x8B (the BB80/BB88 ground-crawler scenery): 79-byte divergence at demo frame 3072
+## 2026-07-06 — SHARED AFD8/BB03 "blocked" gap: the missing BDD0 contact predicate (blocks 0x8c/0x8b/0x89, prob. 0x26)
+
+**The high-leverage root-cause hypothesis** (two independent behaviors now hit the SAME signature —
+`DS:A430` blocked-flag vm=1/nat=0, position 1px behind, and the dependent phase/direction wrong):
+
+* **0x8C/0x8B ground-crawler** — divergence at demo frame **3072** (over its BBED terrain-follow AFD8;
+  full entry below).
+* **0x89 scenery emitter** — ATTEMPTED+REVERTED 2026-07-06. It is a near-clone of the recovered 0x19
+  (sprite = `DS:233C + 0x1C`; when `DS:232C==0x1F` emit a C237 child via the SAME BAE1 dir=4 helper;
+  then the shared `BB03` bounce) — no terrain-follow of its own, ALL reused verified pieces. Yet the
+  demo shadow FAILS at walk frame **4535**: `DS:A430` vm=01/nat=00, a bounce record's Y off by 1
+  (`DS:2460` vm=88/nat=89) and its BB03 direction phase wrong (`DS:2462` vm=06/nat=02), `DS:A436`
+  (AFD8 mirror_y) off by 1. Repro: re-add `step_scenery_emitter_sprite_89`/`scenery_89_should_emit`
+  (scenery_behaviors.py) + `_step_scenery_89` + the `beh==0x89` dispatch (behavior_walk.py, clone of
+  `_step_scenery_19`), run `verify_native_walk_demo "" 20000`.
+
+Because 0x89 reuses the EXACT `_bb03_bounce` that 0x19/0x1A pass, and still under-blocks, the shared
+`contact_probe_afd8` (AFD8) is returning `blocked=False` where the VM's AFD8 blocks — on positions the
+0x19/0x1A demo frames simply never reach. AFD8's own recovered-island contract already flags the cause:
+"**the BDD0 contact predicate is caller-owned** (oracle runs no-contact on a cleared pool)". Every
+current AFD8 caller passes `lambda: False` for that predicate. **Recovering the real BDD0 contact
+predicate is the shared unblock** for 0x8c/0x8b/0x89 (~1449 demo gap frames) AND the 0x26/latch-9 morph
+(which enemies_l1.md independently flagged as needing "the BDD0 contact predicate"). NEXT high-leverage
+target: thread the (now-decoded, below) BDD0 predicate through `contact_probe_afd8` in place of the
+`lambda: False` stubs — then re-attempt 0x89 (trivial), then 0x8c/0x8b.
+
+**BDD0 fully decoded (1010:BDD0..BE3B), ready to implement:** an object-overlap predicate over the
+EFFECT pool. Inputs: the PROBING record's `+0x0A` and `+0x0E`, and the probe point `DS:A438`
+(mirror_x) / `DS:A436` (mirror_y) that AFD8 writes as it steps.
+```
+if probing_record[+0x0A] == 1: return NO-contact            ; BDD0/BDD4
+for each of the 0x23 effect records (base 0x23B4, stride 0x38):   ; BDD6..BE38
+    if rec[+0x00]==0: continue                               ; inactive
+    if rec[+0x0A]==1: continue
+    if rec[+0x14]!=1: continue
+    if rec[+0x16]!=4: continue                               ; type 4 only
+    if not (0x82 <= rec[+0x18] <= 0x94): continue            ; behavior window
+    if not (rec[+0x02]-0x10 < probe_x < rec[+0x02]+0x10): continue   ; 0x20-wide X box (di=A438)
+    if not (rec[+0x04]-0x10 < probe_y < rec[+0x04]+0x10): continue   ; 0x20-tall Y box (ax=A436)
+    if probing_record[+0x0E] == rec[+0x0E]: continue         ; same group -> skip
+    return CONTACT (the ASM jmps 5059, the STC contact exit)
+return NO-contact (clc)
+```
+Note the box test is STRICT ge/le -> skip (jge/jle at BE10/BE17/BE21/BE28), so contact requires the
+probe strictly inside the (cand±0x10) open interval on BOTH axes. **Wiring plan:** the current
+`contact_at` callback (contact_step_b022 arg, today `lambda: False`) is no-arg, but BDD0 needs the
+probe point AFD8 is mid-step on. Either (a) have contact_step_b022 pass the current probe (x,y) to
+`contact_at`, or (b) have the AFD8 adapter write A438/A436 before each `contact_at` call and pass a
+closure `lambda: _bdd0(mem, rec)` that reads them. Verify with `verify_native_contact_step` (AFD8's
+own gate) THEN the 0x89/crawler demo frames. This touches the VERIFIED contact_step_b022 interface,
+so it is a focused slice on its own — recover it deliberately, not as a crawler sub-step.
+
+### behavior 0x8C/0x8B (the BB80/BB88 ground-crawler scenery): 79-byte divergence at demo frame 3072
 
 **Attempted + REVERTED** (behavior_walk.py + scenery_behaviors.py reverted to HEAD; the play_native
 cold-wiring slice `f745f6f` is unaffected). The handler RUNS correctly enough to drop 0x8c/0x8b off

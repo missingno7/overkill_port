@@ -111,7 +111,10 @@ run_status.md) — the demo went from 3 unexplained divergences to ZERO:**
   but unverified). Needs `511F` scoped (does it touch DGROUP state the shadow compares?) before this
   is safe to compose. Small but 3-deep; not yet a quick slice.
 
-Remaining scenery (0x1a/0x19/0x8c/0x8b/0x89) belongs to scene.md.
+Remaining scenery (0x1a/0x19 DONE; 0x8c/0x8b/0x89 belong to scene.md but are BLOCKED on the shared
+BDD0 contact predicate -- see loop_blockers.md 2026-07-06: 0x89 is a trivial 0x19 clone yet diverges
+with the same `A430` blocked-flag mismatch as the crawler, so the real unblock is recovering 1010:BDD0
+and threading it through `contact_probe_afd8`).
 
 ### C237 child-spawn — DONE (spec below kept as historical reference; empirically traced 2026-07-05)
 

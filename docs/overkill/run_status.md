@@ -29,13 +29,18 @@ behavior -- WRONG: on L1 the child is overridden to 0x29, so the whole slice reu
 the only new pure logic was the 8654 sprite anim. **Byte-exact across all 8294 demo walk frames**
 (demo shadow PASS, 0 divergence); free-run 200/0; suite green. Native actor set is now 18 behaviors.
 
-Also this pass: **attempted 0x8C/0x8B** (the BB80/BB88 ground-crawler scenery, the single largest gap
-at 769+ hits) -- decoded the full BBED terrain-follow + the 7476 shot emit, handler runs and drops
-both off the gap list, BUT a stable 79-byte divergence at demo frame 3072 (crawler X 1px behind +
-sprite anim-term present where the VM is blocked) needs a per-frame trace to isolate the AFD8-input
-mismatch. **Fully reverted per discipline** + logged in loop_blockers.md (2026-07-06 entry) with the
-complete decode so a future trace-equipped session resumes fast. The scenery cluster (0x8c/0x8b/0x89,
-now 1449 gap frames) is the dominant remaining L1 frontier, all blocked behind that one trace.
+Also this pass: **attempted 0x8C/0x8B AND 0x89, both reverted -- and CONVERGED on the shared root
+cause.** 0x8c/0x8b (the BB80/BB88 ground-crawler) diverged at demo frame 3072 (`A430` blocked-flag
+vm=1/nat=0, X 1px behind); 0x89 (a trivial clone of the recovered 0x19 -- sprite ramp + BAE1 emit +
+the shared BB03 bounce, ALL reused verified pieces) diverged at frame 4535 with the IDENTICAL
+signature (`A430` vm=1/nat=0, Y off by 1, BB03 phase wrong). Two independent behaviors, same failure:
+`contact_probe_afd8` returns blocked=False where the VM blocks, on positions 0x19/0x1A never reach.
+Root cause is the **missing BDD0 contact predicate** (AFD8's own island contract flags it caller-owned;
+every caller passes `lambda: False`). **Fully decoded 1010:BDD0** (an effect-pool object-overlap scan;
+full pseudocode + wiring plan in loop_blockers.md 2026-07-06) -- recovering it + threading it through
+AFD8 is the shared unblock for 0x8c/0x8b/0x89 (~1449 gap frames) AND the 0x26/latch-9 morph. That is a
+FOCUSED slice on its own (it touches the verified contact_step_b022 interface); flagged as the clear
+next high-leverage target, not attempted this pass. Both attempts fully reverted; tree green.
 
 ## 2026-07-06 - MILESTONE: scene.md DONE -- play_native's cold path wires the level-object-script + full behaviour walk
 
