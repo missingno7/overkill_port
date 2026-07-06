@@ -11,8 +11,31 @@
 > (`views/object_slots.py` OFF_* / domain accessors), `adapters/flat_memory.py`,
 > `probes/_harness.py`, `scripts/lindis.py` (encoded targets), `scripts/behavior_zoo_xref.py`;
 > cold-boot probes MUST pass `overkill.launch.build_command_tail("tandy", "pc")`.
-> Suite green: 1222 passed / 23 skipped (2026-07-06). **SCENE.MD CAMPAIGN DONE**: `play_native --level
+> Suite green: 1225 passed / 23 skipped (2026-07-06). **SCENE.MD CAMPAIGN DONE**: `play_native --level
 > 0` (cold, no snapshot) now spawns/moves a real enemy wave, VM-free (`verify_play_native_cold` PASS).
+> Native actor set: 18 behaviors (0x28 recovered 2026-07-06). Frontier: the 0x8c/0x8b/0x89 scenery
+> cluster (blocked behind one frame-3072 AFD8 trace, see loop_blockers.md), then 0x01-latch9 / death / pickup.
+
+## 2026-07-06 - behavior 0x28 RECOVERED (the largest truly-open L1 gap); 0x8c/0x8b crawler attempted+reverted
+
+Recovered **0x28** (`step_spawner_28`, alias-group with 0x2A -- handler 1010:8676 + its 8654 helper),
+the largest remaining truly-open enemy gap (488 demo hits). It's an animated spawner: sprite ramps
+off `DS:96AA[+0x06 counter] + 0x1C` (counter advances only when `DS:2332==0`, wraps mod 0x18); once
+per cycle -- when `DS:A47E==0` (no active enemies) AND the counter hits 7 -- it fires a child via the
+81F4 worker, which is `_alloc(7524)` + the ALREADY-RECOVERED `enemy_spawn_stamp_8209` (stamps the
+child behavior `0x14` by default), then 8676 OVERRIDES the child per-planet (planet 1 -> behavior
+`0x29`, sprite `0xA1`, already recovered). The enemies_l1 note claimed 0x28 needed a new `0x14` child
+behavior -- WRONG: on L1 the child is overridden to 0x29, so the whole slice reused recovered pieces;
+the only new pure logic was the 8654 sprite anim. **Byte-exact across all 8294 demo walk frames**
+(demo shadow PASS, 0 divergence); free-run 200/0; suite green. Native actor set is now 18 behaviors.
+
+Also this pass: **attempted 0x8C/0x8B** (the BB80/BB88 ground-crawler scenery, the single largest gap
+at 769+ hits) -- decoded the full BBED terrain-follow + the 7476 shot emit, handler runs and drops
+both off the gap list, BUT a stable 79-byte divergence at demo frame 3072 (crawler X 1px behind +
+sprite anim-term present where the VM is blocked) needs a per-frame trace to isolate the AFD8-input
+mismatch. **Fully reverted per discipline** + logged in loop_blockers.md (2026-07-06 entry) with the
+complete decode so a future trace-equipped session resumes fast. The scenery cluster (0x8c/0x8b/0x89,
+now 1449 gap frames) is the dominant remaining L1 frontier, all blocked behind that one trace.
 
 ## 2026-07-06 - MILESTONE: scene.md DONE -- play_native's cold path wires the level-object-script + full behaviour walk
 

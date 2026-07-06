@@ -531,3 +531,54 @@ def step_ramp_steer_29(*, sprite: int, gate_2328: int) -> Ramp29Step:
     new_sprite = (sprite + 1) & 0xFFFF
     reached = new_sprite == RAMP_29_TARGET_SPRITE
     return Ramp29Step(fired=True, sprite=new_sprite, retarget=reached, steer=reached)
+
+
+# behaviors 0x28 / 0x2A (1010:8676, an alias group): an animated SPAWNER. The 8654 helper animates
+# a sprite from a DS:96AA ramp table indexed by a per-record counter (+0x06) that advances only when
+# DS:2332 == 0 (wrapping mod 0x18); once per cycle -- when the counter is exactly 7 AND no enemies
+# are active (DS:A47E == 0) -- it fires a child via the 81F4 spawn worker (the recovered
+# enemy_spawn_stamp_8209 over a 7524 effect-slot), then bumps the counter past 7.  The child's final
+# behavior/sprite are a per-planet override the caller applies (planet 1: behavior 0x29, sprite 0xA1).
+SPAWNER_28_SPRITE_BIAS = 0x001C          # 8676: cx = 0x1C (the sprite table's additive bias)
+SPAWNER_28_COUNTER_WRAP = 0x0018         # 8654: the +0x06 counter wraps mod 0x18
+SPAWNER_28_SPAWN_COUNTER = 0x0007        # 86A0: spawn fires the frame the counter equals 7
+
+
+@dataclass(frozen=True, slots=True)
+class Spawner28Step:
+    """behavior 0x28 per-frame outcome (caller applies the record writes + the 81F4 spawn)."""
+    counter: int         # the new +0x06 counter (already bumped past 7 on a spawn frame)
+    sprite: int          # the animated sprite to write to +0x08
+    spawn: bool          # fire the 81F4 child spawn this frame (caller does alloc + stamp + override)
+
+
+@recovered_island(
+    asm=("1010:8654..8675", "1010:8676..86A5"),
+    contract="behavior 0x28 (1010:8676 + its 8654 helper), planet-1 path: advance the +0x06 counter "
+             "when DS:2332==0 (wrap mod 0x18); sprite = DS:96AA[counter] + 0x1C. Then, iff "
+             "DS:A47E==0 AND counter==7, bump the counter (+1) and fire the 81F4 spawn; else no spawn.",
+    status="OBSERVED",
+    merge_target="EnemyWaveSystem",
+    unknowns="the 81F4 spawn (7524 alloc + enemy_spawn_stamp_8209 + the [98C0] sound) and the "
+             "per-planet child override (planet 1: +0x18=0x29, +0x08=0xA1, +0x20=4, X/Y += 8) are "
+             "applied by the caller; the non-planet-1 child variants (0x2B/0x7A) are not L1-exercised.",
+)
+def step_spawner_28(*, counter_06: int, gate_2332: int, active_a47e: int,
+                    sprite_table: "tuple[int, ...]") -> Spawner28Step:
+    """One frame of behavior ``0x28`` (``1010:8676``), pure (the 81F4 spawn excluded).
+
+    ``counter_06`` is the record's current ``+0x06``; ``sprite_table`` is the 0x18-byte ``DS:96AA``
+    ramp the caller read live.  The counter advances (wrapping mod 0x18) only on frames where
+    ``DS:2332 == 0``; the sprite is always ``table[counter] + 0x1C``.  The spawn gate (``DS:A47E==0``
+    and ``counter == 7``) also bumps the counter one past 7 so it fires exactly once per cycle.
+    """
+    counter = counter_06 & 0xFFFF
+    if (gate_2332 & 0xFFFF) == 0:
+        counter = (counter + 1) & 0xFFFF
+        if counter >= SPAWNER_28_COUNTER_WRAP:
+            counter = 0
+    sprite = (sprite_table[counter] + SPAWNER_28_SPRITE_BIAS) & 0xFFFF
+    spawn = (active_a47e & 0xFFFF) == 0 and counter == SPAWNER_28_SPAWN_COUNTER
+    if spawn:
+        counter = (counter + 1) & 0xFFFF
+    return Spawner28Step(counter=counter, sprite=sprite, spawn=spawn)

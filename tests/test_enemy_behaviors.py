@@ -94,3 +94,32 @@ def test_slot_ring_is_static_cold_equals_live():
     cold = load_enemy_slot_ring(BUNDLE.read_bytes())
     assert len(cold) == 20
     assert cold == load_enemy_slot_ring(LIVE.read_bytes())
+
+
+# behavior 0x28 (step_spawner_28): a 96AA-ramp anim spawner gated on [2332]/[A47E]/counter.
+_SPAWNER_28_TABLE = tuple([0, 0, 1, 2, 3, 4] + [5] * 12 + [4, 3, 2, 1, 0, 0])  # the real DS:96AA ramp
+
+
+def test_spawner_28_counter_advances_only_when_2332_zero_and_wraps():
+    from overkill.recovered.systems.enemy_behaviors import step_spawner_28
+
+    # [2332] != 0 -> counter frozen, sprite = table[counter] + 0x1C, no spawn
+    r = step_spawner_28(counter_06=3, gate_2332=1, active_a47e=5, sprite_table=_SPAWNER_28_TABLE)
+    assert r.counter == 3 and r.sprite == _SPAWNER_28_TABLE[3] + 0x1C and not r.spawn
+    # [2332] == 0 -> counter advances; sprite reads the ADVANCED counter
+    r = step_spawner_28(counter_06=3, gate_2332=0, active_a47e=5, sprite_table=_SPAWNER_28_TABLE)
+    assert r.counter == 4 and r.sprite == _SPAWNER_28_TABLE[4] + 0x1C
+    # wrap: counter 0x17 + 1 == 0x18 -> 0
+    r = step_spawner_28(counter_06=0x17, gate_2332=0, active_a47e=5, sprite_table=_SPAWNER_28_TABLE)
+    assert r.counter == 0
+
+
+def test_spawner_28_spawn_gate_needs_no_enemies_and_counter_7_then_bumps():
+    from overkill.recovered.systems.enemy_behaviors import step_spawner_28
+
+    # counter reaches 7 (from 6, [2332]==0) with A47E==0 -> spawn, and the counter is bumped past 7
+    r = step_spawner_28(counter_06=6, gate_2332=0, active_a47e=0, sprite_table=_SPAWNER_28_TABLE)
+    assert r.spawn and r.counter == 8
+    # same counter but enemies active -> no spawn, counter stays at 7
+    r = step_spawner_28(counter_06=6, gate_2332=0, active_a47e=1, sprite_table=_SPAWNER_28_TABLE)
+    assert not r.spawn and r.counter == 7

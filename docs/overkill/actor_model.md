@@ -93,6 +93,15 @@ Format: `behaviour (handler) — guards → primitives(operands) → tail`.
   `step_animated_spawner_90_91` (one fn, two bases). Note the recurring pattern: a table value that is
   BOTH a sprite delta and a dispatch selector — a compact "phase table" idiom worth a first-class slot
   in the eventual step language.
+- **0x28 / 0x2A (`8676` + its `8654` helper)** — an animated spawner whose `spawn` fires a SELF-COUNTED
+  child: `animate`(sprite = `96AA`[+0x06 counter] + 0x1C, the counter a per-record clock that advances
+  only when `2332`==0, wrapping mod 0x18) → `gate`(`A47E`==0 AND counter==7, i.e. once per cycle while
+  no enemies live) → `spawn`(`81F4` = `alloc(7524)` + the recovered `enemy_spawn_stamp_8209`) with a
+  per-planet CHILD-BEHAVIOUR OVERRIDE (planet 1/4→0x29, 2→0x2B, 5→0x7A; the 8209 stamp's default 0x14
+  survives only on planets 3/0). `step_spawner_28`. New idiom: `spawn` where the child's behaviour is a
+  DATA-selected field-patch over a shared stamp template — the same "phase table" compression as
+  0x90/0x91 but applied to the spawned actor's TYPE, not the parent's sprite. The counter-in-`+0x06`
+  (a field usually holding direction) is a reminder the record schema is behaviour-overloaded.
 - **0x04 (`AEBF`→`AF60`)** — the spawned CHILD's own behaviour, not a moving-object actor: type 2 (not
   6), so it's SELF-CONTAINED (like 0x02/0x0B) and never reaches the shared `BC45` tail. `step(2px) ×2`
   (fixed direction, no substate timer) → the same `contact`(B250, the `237E`/`2380` player box) →

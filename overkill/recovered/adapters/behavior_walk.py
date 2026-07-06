@@ -47,6 +47,7 @@ from overkill.recovered.systems.enemy_behaviors import (
     step_bounce_scanner_2f,
     step_enemy_behavior_20,
     step_ramp_steer_29,
+    step_spawner_28,
     step_spawner_anim_30,
     step_sprite_scroller_27_835d,
     step_wave_controller_1f,
@@ -63,6 +64,7 @@ from overkill.recovered.systems.scenery_behaviors import (
 from overkill.recovered.systems.frame_loop import (
     canned_random_next_4d95,
     enemy_shot_stamp_7476,
+    enemy_spawn_stamp_8209,
 )
 from overkill.recovered.systems.collision import (
     bec5_candidate_deactivated,
@@ -378,6 +380,45 @@ def _step_spawner_30(mem, rec: int) -> None:
         _spawn_child_c237(mem, rec, 0x30)     # 0x30 ignores the return (uses the spawn side effect)
         if mem.rb(DS, 0x98C0):
             mem.wb(DS, 0xBEFF, 0x0E)          # 0x30's own sound override (post-C237)
+
+
+#: 0x28's per-planet child override (86BB..8704): (behavior +0x18, sprite +0x08, retarget-via-74E2).
+#: Planets NOT in this map fall through to BC45 leaving the 81F4 default behavior (0x14) -- but only
+#: planets 1/4 (0x29) are exercised by the L1 demo shadow; 2 (0x2B) and 5 (0x7A) are decoded-not-tested.
+_SPAWNER_28_CHILD_BY_PLANET = {0x01: (0x29, 0xA1, False), 0x04: (0x29, 0xA1, False),
+                               0x02: (0x2B, 0xA5, True), 0x05: (0x7A, 0x20, True)}
+
+
+def _step_spawner_28(mem, rec: int) -> None:
+    table = tuple(mem.rb(DS, (0x96AA + i) & 0xFFFF) for i in range(0x18))
+    r = step_spawner_28(counter_06=mem.rw(DS, rec + 0x06), gate_2332=mem.rw(DS, 0x2332),
+                        active_a47e=mem.rw(DS, 0xA47E), sprite_table=table)
+    mem.ww(DS, rec + 0x06, r.counter)
+    mem.ww(DS, rec + 0x08, r.sprite)
+    if not r.spawn:
+        return
+    slot = _alloc(mem, 0x95D8, EFFECT_POOL_BASE, EFFECT_POOL_WRAP, EFFECT_SLOTS)   # 81F4 -> 7524
+    if slot == 0xFFFF:
+        return
+    if mem.rb(DS, 0x98C0):
+        mem.wb(DS, 0xBEFF, 0x0B)             # 81F4's own sound (pre-stamp, gated on [98C0])
+    for off, val in enemy_spawn_stamp_8209(mem.rw(DS, rec + 0x02), mem.rw(DS, rec + 0x04)).items():
+        mem.ww(DS, slot + off, val)
+    mem.ww(DS, slot + 0x20, 0x0004)          # 86AE (redundant with the 8209 stamp, but the ASM re-writes it)
+    mem.ww(DS, slot + 0x02, (mem.rw(DS, slot + 0x02) + 0x08) & 0xFFFF)   # 86B3: child X += 8
+    mem.ww(DS, slot + 0x04, (mem.rw(DS, slot + 0x04) + 0x08) & 0xFFFF)   # 86B7: child Y += 8
+    override = _SPAWNER_28_CHILD_BY_PLANET.get(mem.rw(DS, 0x2356))
+    if override is None:
+        return                                # other planets: child stays the 0x14 default
+    behavior, sprite, retarget = override
+    mem.ww(DS, slot + 0x18, behavior)
+    mem.ww(DS, slot + 0x08, sprite)
+    if retarget:                              # 86F1/8701: planets 2/5 aim the child at the anchor
+        dx, dy = retarget_delta_toward_anchor_74e2(
+            mem.rw(DS, slot + 0x02), mem.rw(DS, slot + 0x04),
+            mem.rw(DS, 0x237E), mem.rw(DS, 0x2380))
+        mem.ww(DS, slot + 0x2A, dx)
+        mem.ww(DS, slot + 0x2C, dy)
 
 
 def _step_bounce_2f(mem, rec: int) -> None:
@@ -814,6 +855,9 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
         elif beh == 0x30:
             _step_spawner_30(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8851 exits jmp BC45
+        elif beh in (0x28, 0x2A):
+            _step_spawner_28(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8676 exits jmp BC45
         elif beh in (0x90, 0x91):
             _step_anim_spawner_90_91(mem, rec, beh)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8282/8291 exit jmp BC45

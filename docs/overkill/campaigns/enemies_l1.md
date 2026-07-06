@@ -34,8 +34,8 @@ the unrecovered behaviors, by hit frequency (= recovery priority) —
 | ~~0x12~~ | ~~281~~ | 1010:B2CD | **RECOVERED** (step_waypoint_follower_11_12): the cold A43C waypoint-path follower, seek+retry loop |
 | 0x19 | 256 | 1010:BAF0 | scenery (see scene.md) |
 | ~~0x29~~ | ~~182~~ | 1010:8721 | **RECOVERED** (step_ramp_steer_29): sprite ramp -> 74E2 retarget -> 5E42 steer -> Y-bounds BFC7 death |
-| 0x8c | 108 | 1010:BB80 | scenery-ish (BBxx) |
-| 0x28 | 84 | 1010:8676 | alias-group with 0x2A |
+| 0x8c | 108 | 1010:BB80 | scenery-ish (BBxx) -- ATTEMPTED+REVERTED, see loop_blockers.md (frame-3072 divergence) |
+| ~~0x28~~ | ~~84~~ | 1010:8676 | **RECOVERED** (step_spawner_28, alias-group with 0x2A): 96AA-ramp anim gated on [2332]==0; when [A47E]==0 AND the +0x06 counter==7, fire the 81F4 spawn (7524 alloc + enemy_spawn_stamp_8209) with the per-planet child override (planet 1 -> behavior 0x29) |
 | ~~0x90~~ | ~~80~~ | 1010:8282 | **RECOVERED** (sister of 0x91, same fn, base 0x88/0x16C) |
 | ~~0x2f~~ | ~~80~~ | 1010:8820 | **RECOVERED** (step_bounce_scanner_2f): sprite 0x43, B729 seek, target-x drift, blocked→target-y bounce 0↔0xC0 |
 | ~~0x30~~ | ~~80~~ | 1010:8851 | **RECOVERED** (step_spawner_anim_30): animate [96D2]@233C, gate [232A]==0xF -> C237 spawn + sound 0x0E |
@@ -85,9 +85,14 @@ run_status.md) — the demo went from 3 unexplained divergences to ZERO:**
    fan-out on `u.contact`, never on `x_word`.
 
 **Next actors (scouted, by dependency):**
-* 0x28 (8676, alias-group with 0x2A): pulls in a NEW spawn worker (`81F4`, effect-pool alloc, a
-  fuller stamp than C237) whose spawned child is ANOTHER unrecovered behavior (`0x14`) -- a
-  multi-part chain like C237/0x04 was. Deferred; not a quick slice.
+* ~~0x28~~ **RECOVERED 2026-07-06** (`step_spawner_28`): the note below was WRONG about the child --
+  `81F4`'s stamp is the already-recovered `enemy_spawn_stamp_8209` (which defaults the child to
+  behavior `0x14`), but 8676 then OVERRIDES the child behavior per-planet (`86BB..8704`): planet 1/4
+  -> `0x29` (recovered), planet 2 -> `0x2B`, planet 5 -> `0x7A`. On L1 the child is `0x29`, so NO new
+  behavior was needed. The only new pure logic was the `8654` sprite anim (`DS:96AA[+0x06 counter] +
+  0x1C`, counter advances when `DS:2332==0`, wraps mod 0x18); the spawn is gated on `DS:A47E==0` AND
+  counter==7. Byte-exact across all 8294 demo frames. (The planet 2/5 child variants are decoded but
+  not L1-exercised; planet 3/0 leave the `0x14` default -- an unrecovered child if ever hit there.)
 * 0x01 latch-9 morph (43 hits): the dying object's `+0x1A` previous_logic_id selects a MORPH target
   (`0x24`→direction=6/behavior=0x26/sprite=0x97/Y-=8; `0x25`→direction=2/behavior=0x26/sprite=0x91/
   Y+=8; anything else→BD17 deactivate), then seeds `+0x32/+0x34` (target) to the record's OWN current
