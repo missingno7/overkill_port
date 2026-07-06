@@ -23,6 +23,36 @@
 > work is COMPLETE for L1. Next frontier: play_native integration polish, other planets' controller
 > families (0x1c etc.), the 9734/9902/9908 transition continuations, HUD/menu wiring, audio.
 
+## 2026-07-07 - OWNER PLAYTEST #2 + the NEW VERIFICATION BAR: 1:1 demo frames, native vs VM page
+
+**Owner findings (all real; the state gates saw none of them):** (1) the player ship and its
+explosion draw HALF -- FIXED this session: the +0x10 second-slot projection was never computed
+on the cold path (the docstring's "+0x10 is always 0" claim was WRONG; the 356C handler projects
+the SAME record at ``x + 0x10`` -- 16 units along the flight axis -- with its own cull, and the
+rule is now oracle-proven 8293/8293 against the cached VM values, one-present-scan phase);
+(2) **the terrain TILES never render** -- play_native's frame = starfield plate + sprites; there
+is NO native tile-plane layer (the VM scrolls tile rows into the work page via 0E9C/A781; that
+compose is UNRECOVERED) -- the biggest visible gap, top of the queue; (3) a shot deployer
+"disappears but keeps deploying" and the shot player ship "disappears" -- likely the ANIM/VARIANT
+sprite compositors (`object_sprite_blocks` SKIPS ``anim(+12) != 0`` and ``variant(+24) != 0``
+records -- the explosion/hit-flash frames are exactly those); (4) the resizable-window crash --
+FIXED (scale to the live window size).
+
+**THE 1:1 INSTRUMENT IS LIVE**: `verify_native_frame_1to1` samples cached frames, composes the
+native frame (live VM stars + the pre-state's own pools/projection cells) and diffs the playfield
+vs the VM's own page.  FIRST READING (L1 demo, every 1000th frame): mean 1085 px/frame of 39936
+(~2.7%), worst 2087 @ frame 4000 -- the diff = the skipped anim/variant sprite routines + the
+missing tile layer where terrain scrolls in + residue.  Drive it to ZERO, then flip it to a gate.
+
+**THE OWNER'S BAR (adopt as the standing verification model): play the demo on NATIVE and compare
+1:1 vs the hybrid/VM.**  The walk-shadow cache already stores the FULL VM machine state per frame
+(including the video pages), so the gate is buildable TODAY: `verify_native_frame_1to1` -- for
+every cached frame, compose the native frame from the pre-state and pixel-diff against
+`render_present_page_indices` of the VM's own page.  Land it first as a REPORTING probe (the
+diff count is the TODO list; the tile layer will dominate), then drive it to zero: tiles ->
+anim/variant sprite routines -> any residue.  This replaces "probe the pieces" with "diff the
+whole screen", which is what the owner is asking for.
+
 ## 2026-07-07 - THE LEVEL-SELECT MENU IS NATIVE: the L1 VERTICAL SLICE IS COMPLETE
 
 play_native's front-end is now the real game flow: title (OKMENU) -> **the LEVEL-SELECT screen**

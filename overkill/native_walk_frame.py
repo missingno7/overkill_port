@@ -107,10 +107,14 @@ def sync_screen_projection(image) -> None:
     :func:`~overkill.native_video.projection.project_object_screen_di`).  Culled objects get the
     ``0xFFFF`` off-screen sentinel, exactly as the 35CC handler leaves them.  Without this pass a
     cold-booted image renders NOTHING: the walk moves the objects but their projection cells stay
-    dead, so every sprite culls (the play_native stars-only bug).  ``+0x10`` (the second slot cell)
-    is deliberately untouched -- live VM records carry 0 there on the Tandy path, which is what the
-    spawn stamps/pool seeds already leave.  Loops the SAME tables/counts as 1010:A90C (cx=0x24 over
-    32CA -- entry 0x24 IS the player anchor -- and cx=0x22 over 8D12)."""
+    dead, so every sprite culls (the play_native stars-only bug).  Records whose draw-type (+0x14)
+    selects the TWO-SLOT 75A6 sprite routine (draw-type 2 -- the player family) also get ``+0x10``:
+    the 356C handler projects the SAME x at ``y + 0x10`` with its OWN cull (``3586 add [bp+2],10h``
+    / ``358A call 5A36`` / ``358D/359E mov [bp+16],ax`` with the ``[234C]`` add).  Oracle: live
+    anchor records carry ``+0x10 == +0x0C + 0x680`` (16 rows) on every cached frame -- refuting
+    this docstring's earlier "+0x10 is always 0" claim (the half-drawn-ship playtest bug).  Loops
+    the SAME tables/counts as 1010:A90C (cx=0x24 over 32CA -- entry 0x24 IS the player anchor --
+    and cx=0x22 over 8D12)."""
     from overkill.native_video.projection import project_object_screen_di
 
     scroll = image.rw(DS, 0x234C)
@@ -120,10 +124,17 @@ def sync_screen_projection(image) -> None:
             if not rec or image.rw(DS, rec) == 0:
                 continue
             x = image.rw(DS, rec + 0x02)
+            y = image.rw(DS, rec + 0x04)
             col = image.rw(DS, (PROJECTION_COLUMN_TABLE_99C8 + x * 2) & 0xFFFF) if x < 0x00E0 \
                 else 0xFFFF
-            di = project_object_screen_di(x, image.rw(DS, rec + 0x04), col, scroll)
+            di = project_object_screen_di(x, y, col, scroll)
             image.ww(DS, rec + 0x0C, 0xFFFF if di is None else di)
+            if image.rw(DS, rec + 0x14) == 2:   # the two-slot 75A6 routine -> the 356C dual cell
+                x2 = (x + 0x10) & 0xFFFF        # 3586: [bp+2] += 0x10 -- 16 units ALONG the x axis
+                col2 = image.rw(DS, (PROJECTION_COLUMN_TABLE_99C8 + x2 * 2) & 0xFFFF) \
+                    if x2 < 0x00E0 else 0xFFFF
+                di2 = project_object_screen_di(x2, y, col2, scroll)
+                image.ww(DS, rec + 0x10, 0xFFFF if di2 is None else di2)
 
 
 def project_state(image) -> NativeGameState:
