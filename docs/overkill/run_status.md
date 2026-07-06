@@ -19,6 +19,34 @@
 > work is COMPLETE for L1. Next frontier: play_native integration polish, other planets' controller
 > families (0x1c etc.), the 9734/9902/9908 transition continuations, HUD/menu wiring, audio.
 
+## 2026-07-06 - THE LEVEL-END CHAIN MAPPED (VM-traced on the L2_full demo) -- the next campaign phase
+
+Traced the complete real level-end sequence (walk-entry sampled A47C/2350/A344/2356/A978/A47E/A480
+across all 6561 walk frames of `demo_play_tandy_L2_full`):
+1. `walk 5048`: 2350 reaches **0x0E52** (the `C591` milestone -- still unscoped) with A978=3.
+2. `walk 6327`: 2350 = **0x0EA0** (the plane END; 0xEA0 is the tile-plane size), A978 wrapped
+   NEGATIVE (0xFFFD -- the trigger counter keeps decrementing past 0), A47E/A480 = 0 (all waves
+   cleared -- the scroll only gets here once everything is killed, since waves pause it).
+3. `walk 6342`: **A47C 0 -> 1** (the recovered `a47c_script_arms_a680` decision fires at 234E==1;
+   the arm also spawns the level-end object via 62AA/7524, si=A3EE -- the outro fly-off).
+4. `walk 6353`: A47C 1 -> 2 (the 9A78 phase-1 handler); `walk 6523`: 2 -> 3 (the 9A3E scripted-move
+   phase, ~170 frames -- the outro animation); `walk 6561`: **A47C 3 -> 0 with A344 = 1** (the
+   phase-3 9A16 handler completed -- its recovered gate needs A97A==0x58/A95A==3/A95C==0x18 -- and
+   the scripted transition fired).
+5. Same frame: **2356 advanced 2 -> 3 (9734 -> 9744, the level ADVANCE)**, the next level loaded
+   (2350=0x9C post-warm-up), **A978 = 0x111** (note: the real post-load seed is 0x111, ONE above the
+   first trigger row -- the first pulled row decrements it to 0x110 and the script fires; our cold
+   model seeds 0x110 directly, firing at tick 0 instead of tick ~16 -- a benign 16-tick offset worth
+   aligning when the level-load goes native).
+
+**The native level-end TODO map** (in order): (a) scope C591 (the 0xE52 milestone); (b) the 62AA
+level-end spawn (si=A3EE stamp); (c) the A47C phase handlers 9A78/9A3E/9A16 (9A3E/9A16 partially
+recovered as pure decisions); (d) the A344 -> 9734 continuation = the 9744 level advance (recovered)
++ a native next-level load -- play_native can rebuild its walk image + NativeGame with level_index+1
+using the EXISTING cold-boot machinery. The A66F native gate currently returns None (declines) at
+BOTH milestones, so play_native's scroll would freeze at 0xE52 today -- the milestones must be
+composed before a full level is playable to its end.
+
 ## 2026-07-06 - the respawn is a LEVEL RESTART (VM-traced); the scroll gate goes live
 
 A live-VM trace of the demo's REAL death->respawn moments (walk-entry sampled: A95A/A47E/A480/A47C/
