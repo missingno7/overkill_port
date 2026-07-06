@@ -11,11 +11,16 @@ pickups — spawning, behaving, rendering.
 **Done when:** the cold-populate gate (`verify_cold_populate`) PASSES (cold boot → controller
 spawns → waves fly, no snapshot) and the 200-frame shadow stays 200/0; enemy hooks verify-only.
 
-**State (2026-07-05):** the whole behavior walk is shadow-proven (200/0) and WIRED into play_native
-from --snapshot (enemies render + move). The opening wave (first ~2500 walk frames of a real played
-L1) walks byte-perfect. **The full L1 actor list is now KNOWN** — `probes/verify_native_walk_demo`
-shadows every A9D3..AA25 frame of the owner's cold-start L1 playthrough and tallies exactly which
-behaviors the level exercises that aren't native yet.
+**State (2026-07-06): ZERO DIVERGENCE across the ENTIRE demo.** `probes/verify_native_walk_demo` now
+reports **8294/8294 walk frames byte-exact** (every frame the walk can natively run, i.e. excluding
+only the remaining behavior-gap frames below) — the demo's 3 long-standing divergences (614/6037/
+6897) are RESOLVED, not just tolerated. Root causes (both real, both fixed, see run_status.md):
+(1) `GAMEPLAY_POOL_WRAP` was a mistranscribed, non-slot-aligned constant that let the C237/7573
+allocator's cursor drift past the pool into adjacent memory; (2) `x_word==0xFFFF` was used as an
+AMBIGUOUS proxy for "B250 contact happened," but ordinary AD5A drift can coincidentally wrap X to
+the same sentinel with no contact at all -- fixed by exposing the actual `contact: bool` decision on
+the 3 `*SlotUpdate` dataclasses. The whole behavior walk is shadow-proven (200/0 free-run) and WIRED
+into play_native from --snapshot (enemies render + move).
 
 **THE L1 FRONTIER (authoritative, from `demo_cold_start_full_20260705_123645`, 8294 walk frames):**
 the unrecovered behaviors, by hit frequency (= recovery priority) —
@@ -28,7 +33,7 @@ the unrecovered behaviors, by hit frequency (= recovery priority) —
 | ~~0x27~~ | ~~320~~ | 1010:835D | **RECOVERED** (step_sprite_scroller_27_835d): sprite=base+(2338>>1), x+=1, BC45 |
 | ~~0x12~~ | ~~281~~ | 1010:B2CD | **RECOVERED** (step_waypoint_follower_11_12): the cold A43C waypoint-path follower, seek+retry loop |
 | 0x19 | 256 | 1010:BAF0 | scenery (see scene.md) |
-| 0x29 | 182 | 1010:8721 | |
+| ~~0x29~~ | ~~182~~ | 1010:8721 | **RECOVERED** (step_ramp_steer_29): sprite ramp -> 74E2 retarget -> 5E42 steer -> Y-bounds BFC7 death |
 | 0x8c | 108 | 1010:BB80 | scenery-ish (BBxx) |
 | 0x28 | 84 | 1010:8676 | alias-group with 0x2A |
 | ~~0x90~~ | ~~80~~ | 1010:8282 | **RECOVERED** (sister of 0x91, same fn, base 0x88/0x16C) |
@@ -65,13 +70,26 @@ draw_layer/gate_or_layer (+0x0A) as every wired adapter passed. Fixed at the sha
 for full fidelity. **If you add a NEW behavior that calls any object_update_* function taking a
 `hazard_class` parameter, pass `rec+0x16` — NOT `rec+0x0A`.**
 
-**Next actors (scouted, by dependency):**
-* 0x29 (8721): a [2328]==7-gated sprite ramp to 0xA4 (then `call 74E2`), then [2312]=2 + `call 5E42`
-  (the delta-steer — RECOVERED). Needs 74E2 decoded (small).
-* 0x28 (8676, alias-group with 0x2A): likely another small C237-adjacent or animate-only actor.
-* 0x24 (80 hits): appeared as a fresh gap after 0x11/0x12 unmasking — not yet scouted.
+**~~0x24~~ RECOVERED** (8248, `_step_spawn_child_sprite`): byte-identical to 0x25 apart from the
+sprite constant (0x1E). `_step_spawn_25` generalised into `_step_spawn_child_sprite(parent_beh,
+sprite)`, now shared by both.
 
-Remaining scenery (0x1a/0x19/0x8c/0x8b) belongs to scene.md.
+**Two more deep bugs fixed while landing 0x24/0x29 (both real, both confirmed via forensics, see
+run_status.md) — the demo went from 3 unexplained divergences to ZERO:**
+1. `GAMEPLAY_POOL_WRAP` was `0x2CA4` (NOT slot-aligned to base+slots*stride) -- the allocator's
+   wrap check could never fire, letting the C237/7573 cursor drift past the pool. Fixed by reusing
+   the canonical `GAMEPLAY_OBJECT_ALLOCATOR_WRAP_SENTINEL` from `views/object_slots.py`.
+2. `x_word == 0xFFFF` is an AMBIGUOUS proxy for "B250 contact" -- ordinary AD5A drift can
+   coincidentally wrap X to the same sentinel with NO contact. The `contact: bool` decision is now
+   an explicit field on `Aed8SlotUpdate`/`B24dSlotUpdate`/`Af60SlotUpdate`; callers gate the 9E19
+   fan-out on `u.contact`, never on `x_word`.
+
+**Next actors (scouted, by dependency):**
+* 0x28 (8676, alias-group with 0x2A): pulls in a NEW spawn worker (`81F4`, effect-pool alloc, a
+  fuller stamp than C237) whose spawned child is ANOTHER unrecovered behavior (`0x14`) -- a
+  multi-part chain like C237/0x04 was. Deferred; not a quick slice.
+
+Remaining scenery (0x1a/0x19/0x8c/0x8b/0x89) belongs to scene.md.
 
 ### C237 child-spawn — DONE (spec below kept as historical reference; empirically traced 2026-07-05)
 

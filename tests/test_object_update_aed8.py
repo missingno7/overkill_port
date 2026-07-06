@@ -35,13 +35,15 @@ def test_out_of_range_direction_returns_none():
 def test_contact_path_sets_x_ffff_and_deactivates():
     # substate_1e != 1 and the dir-4 stepped pos (0x58,0x50) is inside the ref box -> ADC9 -> X=FFFF,
     # which is out of play bounds -> AD60 deactivates.
-    assert _call(substate_1e=0) == Aed8SlotUpdate(substate=4, x_word=0xFFFF, y_word=0x50, active_word=0)
+    assert _call(substate_1e=0) == Aed8SlotUpdate(substate=4, x_word=0xFFFF, y_word=0x50, active_word=0,
+                                                  contact=True)
 
 
 def test_no_contact_skip_overlap_adds_a278_and_survives():
     # +1E == 1 skips the overlap test -> AD5A: X = stepped(0x58) + a278(0x04) = 0x5C, in bounds,
     # hazard_class 0 is not the tile-probe family -> skip -> active unchanged.
-    assert _call(substate_1e=0x0001) == Aed8SlotUpdate(substate=4, x_word=0x005C, y_word=0x50, active_word=1)
+    assert _call(substate_1e=0x0001) == Aed8SlotUpdate(substate=4, x_word=0x005C, y_word=0x50,
+                                                       active_word=1, contact=False)
 
 
 def test_no_contact_when_outside_box_even_if_not_skipped():

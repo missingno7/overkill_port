@@ -28,9 +28,10 @@ def test_step_shot_02_matches_a_direct_object_update_aed8_call():
         mem.ww(DS, rec + off, val)
 
     # the reference: call the VERIFIED whole-AED8 update directly with the same field mapping
+    # (hazard_class is +0x16, NOT +0x0A -- matches the adapter's corrected field read)
     u = object_update_aed8(
         fields[0x1C], fields[0x06], fields[0x02], fields[0x04], fields[0x00], fields[0x1E],
-        fields[0x0A], fields[0x18], mem.rw(DS, 0x237E), mem.rw(DS, 0x2380), mem.rw(DS, 0xA278),
+        fields[0x16], fields[0x18], mem.rw(DS, 0x237E), mem.rw(DS, 0x2380), mem.rw(DS, 0xA278),
         False, tiles)
     assert u is not None      # the chosen case is on the modeled path
 

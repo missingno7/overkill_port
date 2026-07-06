@@ -4,7 +4,7 @@
      Source of truth = the @recovered_island metadata on each recovered function.
      tests/test_island_registry.py fails if this file drifts from the code. -->
 
-40 recovered islands (5 OBSERVED, 3 ASM_MATCHED, 32 VERIFIED).
+41 recovered islands (6 OBSERVED, 3 ASM_MATCHED, 32 VERIFIED).
 
 | ASM boundary | Function | Status | Merge target | Contract |
 |---|---|---|---|---|
@@ -21,6 +21,7 @@
 | `1010:8209..8247` | `systems.frame_loop.enemy_spawn_stamp_8209` | VERIFIED | EnemyWaveSystem | the enemy spawn field template written into a 7524-allocated slot; x/y from the caller's ss:[bp+2/4] frame |
 | `1010:8282..82E9` | `systems.enemy_behaviors.step_animated_spawner_90_91` | OBSERVED | EnemyWaveSystem | behaviors 0x90/0x91 (1010:8282/8291): base sprite (0x88/0x8B, or 0x16C/0x16F on planet 4) + the DS:95EA[[2330]>>5] delta; when [232C]==0x1F the same table value selects the 82CA action -- value 0 spawns a C237 child at X-4, value 2 at X+4, value 1 does nothing (the ONLY values reachable on L1). The X offset is applied around the C237 call. |
 | `1010:835D..8377` | `systems.enemy_behaviors.step_sprite_scroller_27_835d` | OBSERVED | EnemyWaveSystem | behavior 0x27 (1010:835D): a pure sprite scroller -- sprite = base + (DS:2338 >> 1) with base 0x24 on planet 5 (DS:2356==5) else 0x27, then x += 1; the handler then falls into the shared BC45 postmove tail (drift/clamp/bounds/contact, caller-owned). |
+| `1010:8721..8766` | `systems.enemy_behaviors.step_ramp_steer_29` | OBSERVED | EnemyWaveSystem | behavior 0x29 (1010:8721): if sprite != 0xA4, gate on [2328]==7 then ramp sprite += 1 (else no-op this frame); once the ramp reaches 0xA4, retarget (74E2) and steer (5E42, [2312]=2 during the call); then a Y-bounds check (y>0xC0 or y<0) runs the BFC7 death; else BC45. |
 | `1010:8820..8851` | `systems.enemy_behaviors.step_bounce_scanner_2f` | OBSERVED | EnemyWaveSystem | behavior 0x2f (1010:8820): sprite=0x43, then the B729 seek (mode 2, caller-applied via 5DB2); the target X (+0x34) drifts by DS:A278 every frame, and WHEN THE SEEK IS BLOCKED the target Y (+0x32) toggles between 0 and 0xC0 (a vertical patrol bounce); then BC45. |
 | `1010:8851..88A7` | `systems.enemy_behaviors.step_spawner_anim_30` | OBSERVED | EnemyWaveSystem | behavior 0x30 (1010:8851): a [233C]-clocked sprite animation (sprite = table[96D2 + 233C*2] + 0x44) that spawns a C237 child + plays sound 0x0E when its spawn gate fires (planet5: [2326]==3, else [232A]==0xF); the planet-5 branch also freezes (skip anim+spawn) when |[2380]-y| >= 0xC and the sprite is already 0x46. |
 | `1010:9B6F`, `1010:9B79`, `1010:9B83`, `1010:9B8D` | `systems.movement.step_view_anchor_by_input` | VERIFIED | FrameLoop | 9B2E movement-bits stage: apply held direction input to the view-anchor position via the four A5D1/A5EA/A5F9/A607 axis clamp-steps |

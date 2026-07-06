@@ -37,7 +37,8 @@ def test_skip_overlap_adds_a278_and_survives():
     # +1E == 1 skips the overlap test -> AD5A: X = 0x50 + a278(0x04) = 0x54, in bounds, logic 0x0B is not
     # a tile-probe family -> skip -> active unchanged; the blocked steer leaves direction at 4.
     assert _call(substate_1e=0x0001) == B24dSlotUpdate(
-        direction_or_step=4, x_word=0x0054, y_word=0x50, active_word=1, move_step_error=0
+        direction_or_step=4, x_word=0x0054, y_word=0x50, active_word=1, move_step_error=0,
+        contact=False,
     )
 
 

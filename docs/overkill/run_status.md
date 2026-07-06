@@ -11,7 +11,53 @@
 > (`views/object_slots.py` OFF_* / domain accessors), `adapters/flat_memory.py`,
 > `probes/_harness.py`, `scripts/lindis.py` (encoded targets), `scripts/behavior_zoo_xref.py`;
 > cold-boot probes MUST pass `overkill.launch.build_command_tail("tandy", "pc")`.
-> Suite green: 1222 passed / 23 skipped (2026-07-05).
+> Suite green: 1222 passed / 23 skipped (2026-07-06).
+
+## 2026-07-06 - MILESTONE: ZERO divergence across the ENTIRE 8294-frame demo (two deep bugs found+fixed)
+
+Recovering **0x24** (`_step_spawn_child_sprite`, generalised from `_step_spawn_25` -- byte-identical
+to 0x25 apart from the sprite constant) and **0x29** (`step_ramp_steer_29` + the new
+`retarget_delta_toward_anchor_74e2` primitive: sprite ramp -> 74E2 retarget -> the recovered 5E42
+steer -> a signed Y-bounds BFC7 death) unmasked TWO genuine, pre-existing bugs via the demo shadow --
+fixing both took the demo from 3 long-standing unexplained divergences (614/6037/6897) to
+**RESULT: PASS -- zero divergence on every natively-walkable frame (8294/8294)**.
+
+**Bug 1 -- `GAMEPLAY_POOL_WRAP` was mistranscribed.** `behavior_walk.py` defined
+`GAMEPLAY_POOL_WRAP = 0x2CA4`, but `(0x2CA4 - GAMEPLAY_POOL_BASE) / 0x38 = 5.857` -- NOT slot-aligned.
+`_alloc`'s wrap check (`if cur == wrap: cur = base`) can therefore never fire via exact equality, so
+the C237/7573 allocator's cursor can drift PAST the intended pool into adjacent memory whenever a
+scan needs more than ~5 tries to find an inactive slot. The canonical, CORRECTLY slot-aligned
+sentinel already existed: `views/object_slots.py`'s `GAMEPLAY_OBJECT_ALLOCATOR_WRAP_SENTINEL =
+GAMEPLAY_OBJECT_TABLE_BASE + GAMEPLAY_OBJECT_TABLE_COUNT * OBJECT_SLOT_STRIDE` (`0x32CC`). Fixed by
+importing and reusing it instead of a second, drifted copy -- exactly the "check for an existing
+mechanism before building one" rule this repo keeps re-learning. This alone resolved the frame-614/
+6037/6897 divergences that had been open since the demo frontier was first established.
+
+**Bug 2 -- `x_word == 0xFFFF` is an AMBIGUOUS proxy for "B250 contact happened."** The real ASM
+branches DETERMINISTICALLY at detection time (contact -> ADC9 stamps X=FFFFh, then the 9E19 fan-out;
+no-contact -> AD5A drifts X by `+DS:A278`) -- but ordinary AD5A drift can coincidentally WRAP X to
+the exact same 0xFFFF sentinel with NO contact at all (witnessed: a C237-spawned child stamped at an
+off-screen parent's position, whose own 2px-step-then-drift arithmetic happened to land exactly on
+0xFFFF). The adapters (`_step_shot_0b`, `_step_child_04`) inferred "was there contact" AFTER THE
+FACT by checking `x_word == 0xFFFF` -- ambiguous, and wrong in this case: native ran the 9E19 damage
+beat on a frame the real VM's C237 throttle never even spawned a child for. Fixed by exposing the
+ACTUAL `contact: bool` the B250 selector computes as an explicit field on `Aed8SlotUpdate`/
+`B24dSlotUpdate`/`Af60SlotUpdate` (the 3 already-shared "EFAE per-object update" dataclasses); the
+adapters now gate the 9E19 fan-out on `u.contact`, never re-derived from position.
+
+**Forensic method** (documented since it's reusable): dumped the FULL effect+gameplay pool state at
+walk-entry and post-walk on both VM and native to confirm every RECORD matched exactly (ruling out a
+position bug) while 4 global cells (23A0/A95C/BEFF/236A -- the 9E19 signature) still diverged; traced
+the VM's OWN C237 call sequence for that exact frame (showing all 3 calls throttled, no real spawn);
+then instrumented the NATIVE walk's dispatch loop directly to catch a phantom `beh=4` record being
+walked from a gameplay slot that both pre- and post-walk snapshots showed inactive -- proving the
+child was a genuine same-frame spawn-then-death transient, not spurious record corruption.
+
+Suite: 1222 passed / 23 skipped. Native actor set: 0x1F, 0x20, 0x0B, 0x02, 0x04, 0x11, 0x12, 0x24,
+0x25, 0x27, 0x29, 0x2f, 0x30, 0x90, 0x91 (+ the C237 spawn worker) = 15 behaviors. Remaining L1
+frontier (demo tally, by freq): 0x1a(576, scenery) 0x8c(562, scenery) 0x8b(363, scenery)
+0x28(328, needs the new 81F4 worker + behavior 0x14) 0x19(288, scenery) 0x89(46) + player-death/
+pickup-collect/dying-latch9.
 
 ## 2026-07-05 - Behaviors 0x11/0x12 native (waypoint follower) UNMASKS a real field-offset bug fixed
    across the whole AD60 family (aed8/b24d/af60/ae09/ae2c/ae7d) -- retroactively affects 0x02/0x0B too

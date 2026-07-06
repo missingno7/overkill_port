@@ -25,7 +25,10 @@ from dataclasses import dataclass, field
 from overkill.recovered.domain.movement import MovementTarget
 from overkill.recovered.islands import recovered_island
 from overkill.recovered.systems.frame_loop import enemy_spawn_stamp_8209
-from overkill.recovered.systems.movement import object_target_seek_step_5db2
+from overkill.recovered.systems.movement import (
+    object_delta_steer_5e42,
+    object_target_seek_step_5db2,
+)
 
 BEHAVIOR_20_HOLD_A7A0 = 0x0023          # arrival idles until the wave clock reaches this
 BEHAVIOR_20_SHOOT_WINDOW = (0x02BC, 0x02D0)   # the DS:2340 walk-clock shoot window (inclusive)
@@ -463,3 +466,68 @@ def step_waypoint_follower_11_12(*, x_word: int, y_word: int, direction: int, wa
     return WaypointFollowerStep(x_word=x, y_word=y, direction_or_step=d,
                                 waypoint_ptr_after=ptr, sprite=sprite,
                                 target_x_2306=target_x, target_y_2304=target_y)
+
+
+# 1010:74E2 retarget: refresh a record's steer deltas (+0x2A/+0x2C) toward the CURRENT view/anchor
+# position -- the same Y-bias formula formation_spawn_seed_7476 already uses for a fresh spawn.
+RETARGET_74E2_VIEW_Y_BIAS = 0x0009
+
+
+def retarget_delta_toward_anchor_74e2(record_x: int, record_y: int,
+                                      anchor_x_237e: int, anchor_y_2380: int) -> "tuple[int, int]":
+    """Pure 1010:74E2: ``(move_delta_x, move_delta_y)`` toward the current view/anchor.
+
+    ``move_delta_x = record_x - anchor_x_237e``; ``move_delta_y = record_y - (anchor_y_2380 + 9)``
+    (the same ``+9`` Y bias as :func:`formation_spawn_seed_7476`).  Pure arithmetic; the caller
+    writes the pair into the record's ``+0x2A``/``+0x2C`` fields.
+    """
+    move_delta_x = (record_x - anchor_x_237e) & 0xFFFF
+    move_delta_y = (record_y - (anchor_y_2380 + RETARGET_74E2_VIEW_Y_BIAS)) & 0xFFFF
+    return move_delta_x, move_delta_y
+
+
+# behavior 0x29 (1010:8721): a sprite ramp-then-retarget, steered by the recovered 5E42 delta-steer,
+# with a Y-bounds death check.
+RAMP_29_TARGET_SPRITE = 0x00A4
+RAMP_29_GATE_2328 = 0x0007
+RAMP_29_STEER_MODE_DURING = 0x0002   # [2312] during the 5E42 call (2px step, not the 3px AF22 mode)
+RAMP_29_STEER_MODE_AFTER = 0x0003    # [2312] restored after (read by some OTHER caller next time)
+RAMP_29_DEATH_Y_MAX = 0x00C0
+RAMP_29_DEATH_Y_MIN = 0x0000
+
+
+@dataclass(frozen=True, slots=True)
+class Ramp29Step:
+    """behavior 0x29 per-frame outcome (caller applies; the 5E42 steer + Y-bounds death check run
+    outside, since they need the steered Y this decision doesn't compute)."""
+    fired: bool                 # False = the 2328 gate missed entirely -> BC45 untouched
+    sprite: "int | None"
+    retarget: bool               # True -> the caller refreshes move_delta_x/y via 74E2 before steering
+    steer: bool                  # True -> the caller runs the 5E42 steer (writes direction/x/y/error)
+
+
+@recovered_island(
+    asm=("1010:8721..8766",),
+    contract="behavior 0x29 (1010:8721): if sprite != 0xA4, gate on [2328]==7 then ramp sprite += 1 "
+             "(else no-op this frame); once the ramp reaches 0xA4, retarget (74E2) and steer (5E42, "
+             "[2312]=2 during the call); then a Y-bounds check (y>0xC0 or y<0) runs the BFC7 death; "
+             "else BC45.",
+    status="OBSERVED",
+    merge_target="EnemyWaveSystem",
+    unknowns="the steer (5E42) and death (BFC7) actions, plus the Y-bounds check they gate on, are "
+             "applied by the caller; this owns the ramp/gate/retarget-trigger decision only.",
+)
+def step_ramp_steer_29(*, sprite: int, gate_2328: int) -> Ramp29Step:
+    """One frame of behavior ``0x29`` (``1010:8721``), pure (the 74E2/5E42/BFC7 actions excluded).
+
+    ``sprite`` is the record's current ``+0x08``.  Returns whether this frame fires at all (the
+    ``[2328]==7`` gate, skipped once ``sprite`` already equals the ramp target), the ramped sprite,
+    and whether the ramp JUST reached the target (triggering a 74E2 retarget before steering).
+    """
+    if (sprite & 0xFFFF) == RAMP_29_TARGET_SPRITE:
+        return Ramp29Step(fired=True, sprite=None, retarget=False, steer=True)
+    if (gate_2328 & 0xFFFF) != RAMP_29_GATE_2328:
+        return Ramp29Step(fired=False, sprite=None, retarget=False, steer=False)
+    new_sprite = (sprite + 1) & 0xFFFF
+    reached = new_sprite == RAMP_29_TARGET_SPRITE
+    return Ramp29Step(fired=True, sprite=new_sprite, retarget=reached, steer=reached)

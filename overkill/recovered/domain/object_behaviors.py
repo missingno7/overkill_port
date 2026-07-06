@@ -155,13 +155,17 @@ class Aed8SlotUpdate:
     overlap-contact selector against the DS:237E/2380 view box, then joins the AD60 bounds/tile tail:
     no contact -> AD5A (x += DS:A278) then AD60; contact -> ADC9 (x = FFFFh) then AD60.  AD60 sets the
     slot ``active`` word (out-of-bounds, or the tile one row below has class 1).  AEE4/AD60 do not touch
-    the sprite or direction, so this records only the four fields AED8 changes.  The B250 fan-out 9E19
-    status side effects and the timer-expired (substate->0) death are out of this transform's scope."""
+    the sprite or direction, so this records only the four fields AED8 changes.  ``contact`` is the
+    ACTUAL B250 decision (the caller must use this to gate the 9E19 fan-out, NOT re-derive it from
+    ``x_word == 0xFFFF`` -- ordinary AD5A drift can coincidentally wrap X to 0xFFFF with no contact at
+    all, e.g. an off-screen-spawned object).  The B250 fan-out 9E19 status side effects and the
+    timer-expired (substate->0) death are out of this transform's scope."""
 
     substate: int
     x_word: int
     y_word: int
     active_word: int
+    contact: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -172,14 +176,17 @@ class B24dSlotUpdate:
     the same B250 overlap-contact selector against the DS:237E/2380 view box and joins the shared AD5A/
     ADC9 -> AD60 tail: no contact -> AD5A (x += DS:A278) then AD60; contact -> ADC9 (x = FFFFh) then AD60.
     AD60 sets the slot ``active`` word (out of bounds; logic_id 0x0B is not a tile-probe family).  The
-    substate and sprite are untouched.  The in-box contact's 9E19 fan-out (x1/3/5 by difficulty) is a
-    separate global side effect, out of this slot transform's scope."""
+    substate and sprite are untouched.  ``contact`` is the ACTUAL B250 decision (the caller must use
+    this to gate the 9E19 fan-out, NOT re-derive it from ``x_word == 0xFFFF`` -- ordinary AD5A drift
+    can coincidentally wrap X to 0xFFFF with no contact at all).  The in-box contact's 9E19 fan-out
+    (x1/3/5 by difficulty) is a separate global side effect, out of this slot transform's scope."""
 
     direction_or_step: int
     x_word: int
     y_word: int
     active_word: int
     move_step_error: int
+    contact: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -190,12 +197,16 @@ class Af60SlotUpdate:
     use, at MOVEMENT_MODE_STEP_5E0C's mode-2 pixel/repeat), then joins the identical B250 overlap-
     contact selector + AD5A/ADC9 -> AD60 tail: no contact -> AD5A (x += DS:A278) then AD60; contact ->
     ADC9 (x = FFFFh, the death sentinel) then AD60.  Direction and sprite are untouched -- only x/y/
-    active change.  The in-box contact's single 9E19 fan-out (logic_id 4 != 3, so exactly one call
-    per :func:`contact_fanout_count`) is caller-owned, signalled by ``x_word == 0xFFFF``."""
+    active change.  ``contact`` is the ACTUAL B250 decision (the caller must use this to gate the
+    single 9E19 fan-out -- logic_id 4 != 3, so exactly one call per :func:`contact_fanout_count` --
+    NOT re-derive it from ``x_word == 0xFFFF``: ordinary AD5A drift can coincidentally wrap X to
+    0xFFFF with no contact at all, e.g. an off-screen-spawned child whose own step+drift lands
+    exactly on the sentinel -- oracle-caught, see run_status.md)."""
 
     x_word: int
     y_word: int
     active_word: int
+    contact: bool
 
 
 @dataclass(frozen=True, slots=True)

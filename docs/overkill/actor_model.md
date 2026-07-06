@@ -122,3 +122,35 @@ Format: `behaviour (handler) — guards → primitives(operands) → tail`.
   Fixed at the primitive level (all 6 `object_bounds_tile_decision_ad60` callers), see run_status.md.
   Lesson for the model: a shared primitive's CORRECTNESS is only as strong as its weakest caller's
   wiring — the primitive itself was fine, evidence just never reached the buggy branch before.
+- **0x24 (`8248`)** — byte-identical to `0x25` apart from the sprite constant (0x1E vs 0x1A):
+  `gate`(`232C`==0x1F) → `spawn`(child via `C237`) → set child sprite → `BC45`. Generalised
+  `_step_spawn_25` into `_step_spawn_child_sprite(parent_beh, sprite)`, the first case of two
+  actors converging on ONE parameterised adapter — exactly the shape the eventual step-language
+  should capture as one template with per-actor constants, not two near-duplicate functions.
+- **0x29 (`8721`)** — a sprite RAMP-then-retarget-then-steer: `gate`(`2328`==7) → `animate`
+  (sprite += 1, once per gated frame) → on reaching the ramp target (0xA4), `retarget`(the NEW
+  `74E2` primitive: `move_delta = record_pos - anchor_pos`, Y-biased +9 — the SAME formula
+  `formation_spawn_seed_7476` already uses for a fresh spawn) → `steer`(5E42, mode 2 during the
+  call, restored to 3 after) → `gate`(steered Y out of `[0,0xC0]`, SIGNED) → `death`(BFC7) → `BC45`
+  regardless. First reuse of `steer`(5E42) outside a spawn seed, and first actor whose OWN
+  death-gate (not the shared BC45 tail's) triggers BFC7 directly. `step_ramp_steer_29` +
+  `retarget_delta_toward_anchor_74e2`.
+
+**Landing 0x24/0x29 surfaced TWO deep, pre-existing bugs the demo shadow's full-frame comparison was
+built to catch** (see run_status.md for the full forensics):
+1. **`GAMEPLAY_POOL_WRAP` was mistranscribed** (`0x2CA4`, not slot-aligned to
+   `base + slots*stride`) — the allocator's `cur == wrap` check could never fire, letting the
+   cursor drift into adjacent memory once a scan needed more than ~5 tries. Fixed by reusing the
+   ALREADY-CORRECT, canonical `GAMEPLAY_OBJECT_ALLOCATOR_WRAP_SENTINEL` from `views/object_slots.py`
+   instead of a second, drifted copy — a "check for an existing mechanism" lesson.
+2. **`x_word == 0xFFFF` is an AMBIGUOUS proxy for "contact happened."** The real ASM branches
+   DETERMINISTICALLY at detection time (contact -> ADC9 stamps FFFF; no-contact -> AD5A drifts by
+   `+A278`) — but ordinary drift arithmetic can ALSO wrap X to exactly 0xFFFF with no contact at all
+   (an off-screen-spawned child's own step+drift). The 3 pure `*SlotUpdate` dataclasses now expose
+   the ACTUAL `contact: bool` the B250 selector computed, so the 9E19 fan-out gates on the real
+   decision, not a coincidental byte value.
+
+Fixing both took the demo from 3 unexplained divergences (614/6037/6897, open since early this
+session) to **zero divergence across all 8294 walk frames** — proof that this crystallization
+discipline (recover an actor → run the FULL demo → chase every divergence to its root, never explain
+it away) surfaces real bugs that a narrower gate would leave latent indefinitely.

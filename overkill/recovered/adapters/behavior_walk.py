@@ -26,6 +26,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from overkill.recovered.domain.coords import i16
 from overkill.recovered.domain.gaps import RecoveryGap
 from overkill.recovered.domain.movement import MovementTarget
 from overkill.recovered.domain.tilemap import LevelTileContext
@@ -35,10 +36,16 @@ from overkill.recovered.systems.collision import (
 )
 from overkill.recovered.systems.companion import step_companion_ab10
 from overkill.recovered.systems.enemy_behaviors import (
+    RAMP_29_DEATH_Y_MAX,
+    RAMP_29_DEATH_Y_MIN,
+    RAMP_29_STEER_MODE_AFTER,
+    RAMP_29_STEER_MODE_DURING,
     WAYPOINT_FOLLOWER_TABLE_SEED,
+    retarget_delta_toward_anchor_74e2,
     step_animated_spawner_90_91,
     step_bounce_scanner_2f,
     step_enemy_behavior_20,
+    step_ramp_steer_29,
     step_spawner_anim_30,
     step_sprite_scroller_27_835d,
     step_wave_controller_1f,
@@ -58,12 +65,16 @@ from overkill.recovered.systems.collision import (
     postmove_contact_window_test_aa71,
 )
 from overkill.recovered.views.object_slots import (
+    GAMEPLAY_OBJECT_ALLOCATOR_WRAP_SENTINEL,
     GAMEPLAY_OBJECT_TABLE_BASE,
     GAMEPLAY_OBJECT_TABLE_COUNT,
     read_object_pool,
 )
 from overkill.recovered.domain.collision import PostMoveContactWindow
-from overkill.recovered.systems.movement import object_target_seek_step_5db2
+from overkill.recovered.systems.movement import (
+    object_delta_steer_5e42,
+    object_target_seek_step_5db2,
+)
 from overkill.recovered.systems.objects import (
     child_spawn_seed_c237,
     child_spawn_sound_c237,
@@ -87,7 +98,11 @@ EFFECT_SLOTS = 0x23
 GAMEPLAY_SLOTS = 0x22
 TICK_2340_PERIOD = 0x05DC
 EFFECT_POOL_BASE, EFFECT_POOL_WRAP = 0x23B4, 0x2B5C          # the 7524 allocator scan bounds
-GAMEPLAY_POOL_BASE, GAMEPLAY_POOL_WRAP = 0x2B5C, 0x2CA4      # the 7573 twin (views-documented)
+# the 7573 twin: was 0x2CA4 (a stray, NOT slot-aligned value -- (0x2CA4-0x2B5C)/0x38 = 5.857, so the
+# `cur == wrap` check could never trigger, letting the cursor drift past the pool into adjacent
+# memory whenever a scan needed more than ~5 slots).  The canonical, slot-aligned sentinel already
+# exists in views/object_slots.py; reuse it instead of a second, drifted copy.
+GAMEPLAY_POOL_BASE, GAMEPLAY_POOL_WRAP = GAMEPLAY_OBJECT_TABLE_BASE, GAMEPLAY_OBJECT_ALLOCATOR_WRAP_SENTINEL
 
 
 def _alloc(mem, cursor_cell: int, base: int, wrap: int, slots: int) -> int:
@@ -213,17 +228,18 @@ def _spawn_child_c237(mem, rec: int, parent_beh: int) -> "int | None":
     return slot
 
 
-def _step_spawn_25(mem, rec: int) -> None:
-    # 8265: only spawn when the 232C clock hits 0x1F; then C237, and stamp the child sprite 0x1A.
+def _step_spawn_child_sprite(mem, rec: int, parent_beh: int, sprite: int) -> None:
+    # the 8248/8265 shape (behaviors 0x24/0x25 -- byte-identical apart from the sprite constant):
+    # only spawn when the 232C clock hits 0x1F; then C237, and stamp the child's sprite.
     if mem.rw(DS, 0x232C) != 0x001F:
         return
-    result = _spawn_child_c237(mem, rec, 0x25)
+    result = _spawn_child_c237(mem, rec, parent_beh)
     if result is None:
-        # throttled: 0x25's `cmp bx,FFFF; mov [bx+8],0x1A` runs with the STALE dispatch bx = 0x25<<1
-        # = 0x4A, so it writes DS:[0x4A+8] = DS:[0x52] (an artifact, oracle-traced 25x).
-        mem.ww(DS, 0x0052, 0x001A)
+        # throttled: `cmp bx,FFFF; mov [bx+8],sprite` runs with the STALE dispatch bx = parent_beh<<1,
+        # so it writes DS:[(parent_beh<<1)+8] -- an artifact (oracle-traced for 0x25: bx=0x4A -> 0x52).
+        mem.ww(DS, ((parent_beh << 1) + 8) & 0xFFFF, sprite)
     elif result != 0xFFFF:
-        mem.ww(DS, result + 0x08, 0x001A)
+        mem.ww(DS, result + 0x08, sprite)
 
 
 _ANIM_SPAWNER_BASES = {0x90: (0x0088, 0x016C), 0x91: (0x008B, 0x016F)}
@@ -269,6 +285,36 @@ def _step_waypoint_11(mem, rec: int) -> None:
     _step_waypoint_12(mem, rec)                             # falls straight into 0x12's body
 
 
+def _step_ramp_steer_29(mem, rec: int) -> None:
+    r = step_ramp_steer_29(sprite=mem.rw(DS, rec + 0x08), gate_2328=mem.rw(DS, 0x2328))
+    if not r.fired:
+        return
+    if r.sprite is not None:
+        mem.ww(DS, rec + 0x08, r.sprite)
+    if r.retarget:
+        dx, dy = retarget_delta_toward_anchor_74e2(
+            mem.rw(DS, rec + 0x02), mem.rw(DS, rec + 0x04),
+            mem.rw(DS, 0x237E), mem.rw(DS, 0x2380))
+        mem.ww(DS, rec + 0x2A, dx)
+        mem.ww(DS, rec + 0x2C, dy)
+    if not r.steer:
+        return
+    mem.ww(DS, 0x2312, RAMP_29_STEER_MODE_DURING)
+    table = tuple(mem.rb(DS, (0xA348 + i) & 0xFFFF) for i in range(16))
+    steer = object_delta_steer_5e42(
+        mem.rw(DS, rec + 0x02), mem.rw(DS, rec + 0x04), mem.rw(DS, rec + 0x06),
+        mem.rw(DS, rec + 0x2C), mem.rw(DS, rec + 0x2A), mem.rw(DS, rec + 0x2E),
+        RAMP_29_STEER_MODE_DURING, table)
+    mem.ww(DS, rec + 0x06, steer.direction_or_step)
+    mem.ww(DS, rec + 0x02, steer.x_word)
+    mem.ww(DS, rec + 0x04, steer.y_word)
+    mem.ww(DS, rec + 0x2E, steer.move_step_error)
+    mem.ww(DS, 0x2312, RAMP_29_STEER_MODE_AFTER)
+    y_signed = i16(steer.y_word)
+    if y_signed > RAMP_29_DEATH_Y_MAX or y_signed < RAMP_29_DEATH_Y_MIN:
+        _bfc7_touch_death(mem, rec)
+
+
 def _step_spawner_30(mem, rec: int) -> None:
     anim = mem.rw(DS, (0x96D2 + (mem.rw(DS, 0x233C) & 0xFFFF) * 2) & 0xFFFF)
     r = step_spawner_anim_30(
@@ -312,7 +358,7 @@ def _step_shot_0b(mem, rec: int, tiles: LevelTileContext) -> None:
     mem.ww(DS, rec + 0x2E, u.move_step_error)
     if u.active_word == 0:
         _bd17_deactivate(mem, rec)   # BD17: clear active + the hazard_class-keyed death side effects
-    if u.x_word == 0xFFFF:
+    if u.contact:
         _shot_hit_9e19(mem)   # the ADC9 in-box contact marker; the 9E19 fan-out is the VM's
         #                       "separate global side effect" the pure island leaves caller-owned
 
@@ -358,7 +404,7 @@ def _step_child_04(mem, rec: int, tiles: LevelTileContext) -> None:
     mem.ww(DS, rec + 0x04, u.y_word)
     if u.active_word == 0:
         _bd17_deactivate(mem, rec)   # BD17: clear active + the hazard_class-keyed death side effects
-    if u.x_word == 0xFFFF:
+    if u.contact:
         _shot_hit_9e19(mem)
 
 
@@ -706,9 +752,15 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
         elif beh == 0x2F:
             _step_bounce_2f(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8820 exits jmp BC45
+        elif beh == 0x24:
+            _step_spawn_child_sprite(mem, rec, 0x24, 0x001E)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8248 exits jmp BC45
         elif beh == 0x25:
-            _step_spawn_25(mem, rec)
+            _step_spawn_child_sprite(mem, rec, 0x25, 0x001A)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8265 exits jmp BC45
+        elif beh == 0x29:
+            _step_ramp_steer_29(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8721 exits jmp BC45
         elif beh == 0x30:
             _step_spawner_30(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8851 exits jmp BC45

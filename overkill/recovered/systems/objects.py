@@ -774,7 +774,8 @@ def object_update_aed8(
         new_active = active_word & 0xFFFF
     else:  # tile_probe: deactivate iff the tile one map row below has class 1.
         new_active = 0x0000 if object_tile_probe_deactivates_ad60(final_x, y, tiles) else (active_word & 0xFFFF)
-    return Aed8SlotUpdate(substate=new_substate, x_word=final_x, y_word=y, active_word=new_active)
+    return Aed8SlotUpdate(substate=new_substate, x_word=final_x, y_word=y, active_word=new_active,
+                         contact=contact)
 
 
 OBJECT_8D4F_WAYPOINT_TARGET_X_BIAS = 0x0020   # 8D54: target X = waypoint[0] + 0x20
@@ -1068,6 +1069,7 @@ def object_update_b24d(
         y_word=steer.y_word,
         active_word=new_active,
         move_step_error=steer.move_step_error,
+        contact=contact,
     )
 
 
@@ -1118,7 +1120,7 @@ def object_update_af60(
         new_active = active_word & 0xFFFF
     else:  # tile_probe: deactivate iff the tile one map row below has class 1.
         new_active = 0x0000 if object_tile_probe_deactivates_ad60(final_x, y, tiles) else (active_word & 0xFFFF)
-    return Af60SlotUpdate(x_word=final_x, y_word=y, active_word=new_active)
+    return Af60SlotUpdate(x_word=final_x, y_word=y, active_word=new_active, contact=contact)
 
 
 ABA3_SPRITE_OFFSET = 0x0014
