@@ -38,6 +38,16 @@ sprite compositors (`object_sprite_blocks` SKIPS ``anim(+12) != 0`` and ``varian
 records -- the explosion/hit-flash frames are exactly those); (4) the resizable-window crash --
 FIXED (scale to the live window size).
 
+**PHASE PIN (the 97B2 stage order, from native_app.py)**: per tick -- 0672 / 511F / **A846 (the
+draw walks: A87C then the A891 0-layer then the A8C4 1-layer)** / 981F / **5BDC (present)** /
+**A90C (the projection scan -- AFTER the present!)** / 9B2E (with the A9D3 walk INSIDE).  So at
+the cached walk boundary the page was drawn with the PREVIOUS tick's +0x0C cells while the
+records carry the FRESH ones -- the native compose (fresh cells) is ONE PRESENT AHEAD of the
+page.  Sprites that just entered the screen explain pure-overdraw diffs.  RECONCILE either by
+composing with the previous-tick cells (cache the prior frame's +0x0C during iteration) or by
+diffing against the NEXT frame's page.  THEN re-measure; only after the phase is exact do the
+remaining diffs mean real render gaps (anim/variant compositors, tiles).
+
 **CORRECTION (same night): +0x0A is a DRAW-LAYER, not a suppression.** The 32CA pool is drawn in
 TWO passes: A891 (cx=0x23) draws the ``+0x0A == 0`` records FIRST, then A8C4 (cx=0x24) draws the
 ``+0x0A == 1`` records ON TOP (both through 7596; same BDAC/2350/type-1 skip in each; an A87C
