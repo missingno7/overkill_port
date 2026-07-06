@@ -38,6 +38,15 @@ sprite compositors (`object_sprite_blocks` SKIPS ``anim(+12) != 0`` and ``varian
 records -- the explosion/hit-flash frames are exactly those); (4) the resizable-window crash --
 FIXED (scale to the live window size).
 
+**CENSUS (frame 4000): the VM page is STARS-ONLY** -- special 109 / effect(=the 32CA non-anchor
+records) 1903 / object 37 px, ALL overdraw; the VM drew NO sprites at that boundary.  Revised
+hypothesis: during the dying mode (``2326 == 3``) the frame loop SKIPS the whole A846 sprite
+draw (the 9AFF death tail owns the screen) -- find A846's caller gate.  Also verify what the
+other sampled frames' pages contain (some may be non-dying with real sprite content -- the
+1000/7000 diffs need their own 2326 reads).  The pool naming pinned by the census: the projected
+"special_pool" = the anchor table entry (2 blocks), "effect_pool" = the rest of 32CA,
+"object_pool" = 8D12 (the 7746-only pool).
+
 **FRAME-4000 SOLVED: the ship overdraw is the DYING MODE.** ``2326 == 3`` at that frame -- the
 ship was mid-death-explosion; during dying the visible anchor sprite is the ``+08`` explosion
 counter mapping (the 9AFF death-tail contract play_native's death branch already implements),
