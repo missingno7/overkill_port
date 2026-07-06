@@ -38,6 +38,15 @@ sprite compositors (`object_sprite_blocks` SKIPS ``anim(+12) != 0`` and ``varian
 records -- the explosion/hit-flash frames are exactly those); (4) the resizable-window crash --
 FIXED (scale to the live window size).
 
+**FRAME-4000 ATTRIBUTION (per-record, the One-pool wrapper recipe)**: in the SPECIAL pool only
+the ANCHOR produces pixels natively (109 px, ALL overdraw -- the VM page has NO SHIP at frame
+4000: the VM suppressed the anchor draw in a state the native ignores -- dying/warp/invisible?
+check DS:2384/A95A/2326 at that frame); the remaining ~1978 px must come from the effect/object
+pools (finish the census with the same wrapper -- likely the gameplay-pool 7596-vs-7746 size
+mismatch).  NOTE the wrapper must wrap ALL pools; the special-pool non-anchor records produced
+NO blocks (their pool-view fields differ from the raw record dump -- verify the projected pool's
+field mapping while at it).
+
 **THE FULL A846 DRAW ANATOMY (decoded to the loop level)**: A849 loop (32CA?) -> 5AC8 per record
 (the ERASE/restore pass) -> A85E loop cx=0x22 over **8D12** -> 5AC8 -> 4CED(?) -> A879 loop
 cx=0x22 over **8D12** -> **call 7746 DIRECTLY, unconditionally** (the gameplay pool ALWAYS draws
