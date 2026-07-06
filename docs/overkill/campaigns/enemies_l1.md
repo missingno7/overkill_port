@@ -88,6 +88,23 @@ run_status.md) — the demo went from 3 unexplained divergences to ZERO:**
 * 0x28 (8676, alias-group with 0x2A): pulls in a NEW spawn worker (`81F4`, effect-pool alloc, a
   fuller stamp than C237) whose spawned child is ANOTHER unrecovered behavior (`0x14`) -- a
   multi-part chain like C237/0x04 was. Deferred; not a quick slice.
+* 0x01 latch-9 morph (43 hits): the dying object's `+0x1A` previous_logic_id selects a MORPH target
+  (`0x24`→direction=6/behavior=0x26/sprite=0x97/Y-=8; `0x25`→direction=2/behavior=0x26/sprite=0x91/
+  Y+=8; anything else→BD17 deactivate), then seeds `+0x32/+0x34` (target) to the record's OWN current
+  position and `ret`s (skips BC45 entirely THIS frame — the postmove only resumes next frame under
+  the new behavior). The morph target, **behavior 0x26** (handler `8302`), needs the ALREADY-
+  RECOVERED `contact_probe_afd8` (AFD8, verified) but ALSO an UNSPECIFIED "BDD0 contact predicate"
+  callback the pure function's contract calls caller-owned — needs its own investigation before
+  0x26 (and thus the latch-9 morph) can be recovered. Deferred, comparable scope to C237.
+* type-5 pickup COLLECT (2 hits, `_step_pickup_5`'s declared gap): BOTH demo collections use pickup
+  kind `+0x26 == 2` (traced, `scratchpad/trace_pickup.py`) -> the `AB00` jump table's index-2 entry
+  (`1010:9D67`) ONLY -- no need to decode the other 7 entries. Decoded: sound 0x1C, then a
+  shield/HP-refill state machine (bump `DS:A95A` to 3, then `DS:A95C` to 0x18 -- the SAME globals
+  `_shot_hit_9e19`/`_player_hit_9e69` decrement, i.e. this pickup HEALS), calling `9EC2` after each
+  step. `9EC2` itself calls the RECOVERED `61DC` (`_energy_redraw_61dc`) plus a CONDITIONAL
+  (`cs:[95BC]==1`) pair of calls to `511F` (undecoded -- likely render/palette, not gameplay state,
+  but unverified). Needs `511F` scoped (does it touch DGROUP state the shadow compares?) before this
+  is safe to compose. Small but 3-deep; not yet a quick slice.
 
 Remaining scenery (0x1a/0x19/0x8c/0x8b/0x89) belongs to scene.md.
 
