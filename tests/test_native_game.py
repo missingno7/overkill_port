@@ -143,13 +143,17 @@ def test_native_game_step_scroll_is_a_noop_when_gate_globals_are_set():
     assert out.origin_x == game.origin_x and out.row_base == game.row_base
 
 
-def test_native_game_step_scroll_declines_on_milestone_and_leaves_game_unchanged():
+def test_native_game_step_scroll_applies_and_reports_the_milestone():
+    # the NATIVE milestone composition (live-traced, run_status 2026-07-06): the tick APPLIES at the
+    # once-per-level milestone rows and outcome.milestone reports which fired -- the old None-decline
+    # ("stay VM-owned this tick") is gone along with the VM it deferred to.
     from overkill.recovered.systems.scroll import BOSS_MATERIALIZE_ROW_BASE, FORWARD_ROW_STRIDE
 
     game = _scroll_game(origin_x=0, row_base=BOSS_MATERIALIZE_ROW_BASE - FORWARD_ROW_STRIDE, rows_to_milestone=1)
     out, outcome = game.step_scroll(a47c=0, a47e=0, a480=0)
-    assert outcome is None  # A66F's boss-materialize branch -- caller stays VM-owned this tick
-    assert out is game  # unchanged
+    assert outcome is not None and outcome.pulled_row
+    assert outcome.milestone == BOSS_MATERIALIZE_ROW_BASE
+    assert out.row_base == BOSS_MATERIALIZE_ROW_BASE  # the pulled row genuinely lands on the milestone
 
 
 def test_native_game_step_composes_all_stages_in_order_incl_native_scroll():

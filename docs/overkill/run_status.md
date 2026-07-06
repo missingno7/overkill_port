@@ -23,6 +23,18 @@
 > work is COMPLETE for L1. Next frontier: play_native integration polish, other planets' controller
 > families (0x1c etc.), the 9734/9902/9908 transition continuations, HUD/menu wiring, audio.
 
+## 2026-07-06 - PROCESS BREACH owned + fixed: f1de17d was committed RED (one failing test)
+
+The f1de17d level-end commit went in with `test_native_game_step_scroll_declines_on_milestone...`
+FAILING -- the commit command was shell-chained off the gate-output `cat` instead of a verdict
+check, so the red suite didn't stop it. The failing test encoded the OLD milestone contract (the
+None-decline "stay VM-owned this tick"), which the slice intentionally replaced with the
+live-traced apply-and-report contract; the test is UPDATED to assert the new behavior (not
+weakened -- the new contract is the VM-traced ground truth, and the test now checks MORE: the tick
+applies, the milestone is reported, the row lands on it). Fixed in the follow-up commit with a
+freshly green full suite. Lesson recorded: never chain `git commit` after a verification command
+whose failure doesn't gate it -- read the verdict first.
+
 ## 2026-07-06 - MILESTONE: the LEVEL END arms natively -- the scroll crosses the whole plane, the outro takes the stage
 
 The A66F milestones are composed natively: `step_scroll_with_milestones` (systems/scroll.py) APPLIES
