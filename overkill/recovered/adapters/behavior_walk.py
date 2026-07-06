@@ -328,6 +328,18 @@ def _step_scenery_89(mem, rec: int, tiles: LevelTileContext) -> None:
     _bb03_bounce(mem, rec, tiles)
 
 
+def _step_scenery_8a(mem, rec: int, tiles: LevelTileContext) -> None:
+    """Behavior 0x8A (``1010:8C1F``): sprite = ``[233C] + 0x9D``, then jmp B2AC -- the SAME tail
+    as 0x89 (the 232C==0x1F BAE1 dir=4 emit + the shared BB03 bounce)."""
+    mem.ww(DS, rec + 0x08, (mem.rw(DS, 0x233C) + 0x009D) & 0xFFFF)
+    if scenery_89_should_emit(mem.rw(DS, 0x232C)):
+        saved_dir = mem.rw(DS, rec + 0x06)
+        mem.ww(DS, rec + 0x06, SCENERY_19_EMIT_DIRECTION)
+        _spawn_child_c237(mem, rec, 0x8A)
+        mem.ww(DS, rec + 0x06, saved_dir)
+    _bb03_bounce(mem, rec, tiles)
+
+
 def _ground_follow_move_bbed(mem, rec: int, tiles: LevelTileContext, sign: int) -> bool:
     """1010:BBED: walk the ground crawler one step along the terrain surface. Returns whether it
     MOVED (DS:A430 == 0 on return -- the body gates the animation term on this).
@@ -505,6 +517,41 @@ def _step_patrol_1e(mem, rec: int) -> None:
     mem.ww(DS, rec + 0x32, 0x0000 if mem.rw(DS, rec + 0x32) != 0 else 0x00C0)
 
 
+def _step_hover_3a(mem, rec: int) -> None:
+    """Behavior 0x3A (``1010:8A55``): sprite = ``[96D2 + [233C]*2] + 0xCC``; while signed
+    x >= 0x80, HOME on the player anchor -- 5E1B deltas (PERSISTED to +0x2A/+0x2C, real record
+    state) then the 5E42 steer with the CURRENT ``[2312]`` mode (8A72..8A7B leaves 2312 alone)."""
+    anim = mem.rw(DS, (0x96D2 + (mem.rw(DS, 0x233C) & 0xFFFF) * 2) & 0xFFFF)
+    mem.ww(DS, rec + 0x08, (anim + 0x00CC) & 0xFFFF)
+    x = mem.rw(DS, rec + 0x02)
+    if i16(x) < 0x0080:
+        return
+    deltas = object_delta_5e1b(x, mem.rw(DS, rec + 0x04), mem.rw(DS, 0x237E),
+                               mem.rw(DS, 0x2380), mem.rw(DS, 0x237C + 0x14))
+    mem.ww(DS, rec + 0x2C, deltas.move_delta_y)
+    mem.ww(DS, rec + 0x2A, deltas.move_delta_x)
+    table = tuple(mem.rb(DS, (0xA348 + i) & 0xFFFF) for i in range(16))
+    steer = object_delta_steer_5e42(
+        mem.rw(DS, rec + 0x02), mem.rw(DS, rec + 0x04), mem.rw(DS, rec + 0x06),
+        mem.rw(DS, rec + 0x2C), mem.rw(DS, rec + 0x2A), mem.rw(DS, rec + 0x2E),
+        mem.rw(DS, 0x2312), table)
+    mem.ww(DS, rec + 0x06, steer.direction_or_step)
+    mem.ww(DS, rec + 0x02, steer.x_word)
+    mem.ww(DS, rec + 0x04, steer.y_word)
+    mem.ww(DS, rec + 0x2E, steer.move_step_error)
+
+
+def _step_glitter_3b(mem, rec: int) -> None:
+    """Behavior 0x3B (``1010:8A7E``): sprite = (4D95 canned random & 3) + a planet-keyed base
+    (0x152 on planets 0/6-sentinel, else 0xA9); x += 2.  The random RING advances (20A6)."""
+    ring = tuple(mem.rw(DS, 0x20A8 + i * 2) for i in range(16))
+    rand, nxt = canned_random_next_4d95(mem.rw(DS, 0x20A6), ring)
+    mem.ww(DS, 0x20A6, nxt)
+    base = 0x0152 if mem.rw(DS, 0x2356) in (0x0000, 0x0006) else 0x00A9
+    mem.ww(DS, rec + 0x08, ((rand & 3) + base) & 0xFFFF)
+    mem.ww(DS, rec + 0x02, (mem.rw(DS, rec + 0x02) + 2) & 0xFFFF)
+
+
 def _step_mover_06(mem, rec: int, tiles: LevelTileContext) -> None:
     """Behavior 0x06 (``1010:AE2C``, EFAE logic_id 6) -- the recovered whole-slot scroll-left mover
     with the tile-gated down-step (``object_update_ae2c``, produced-vs-VM verified)."""
@@ -543,12 +590,35 @@ def _step_bouncer_33(mem, rec: int, tiles: LevelTileContext) -> None:
             return
 
 
+def _step_bounce_sprite_3d(mem, rec: int, tiles: LevelTileContext) -> None:
+    """Behavior 0x3D (``1010:8AC7``): sprite = ``[96D2 + [233C]*2] + 0xC5``, then jmp 88CF --
+    the SAME triple-AFD8 bounce body 0x33 uses."""
+    anim = mem.rw(DS, (0x96D2 + (mem.rw(DS, 0x233C) & 0xFFFF) * 2) & 0xFFFF)
+    mem.ww(DS, rec + 0x08, (anim + 0x00C5) & 0xFFFF)
+    _step_bouncer_33(mem, rec, tiles)
+
+
+def _step_lurker_3c(mem, rec: int, tiles: LevelTileContext) -> None:
+    """Behavior 0x3C (``1010:8AA4``): sprite 0xC5 WAITING for x == 0xB0 exactly; there -- sound
+    0x1D (98C0-gated BEFF write), MORPH ``+0x18 += 1`` (-> 0x3D), dir = 7, and falls straight into
+    the 0x3D body the SAME frame (8AC2 -> 8AC7)."""
+    mem.ww(DS, rec + 0x08, 0x00C5)
+    if mem.rw(DS, rec + 0x02) != 0x00B0:
+        return
+    if mem.rb(DS, 0x98C0):
+        mem.wb(DS, 0xBEFF, 0x1D)
+    mem.ww(DS, rec + 0x18, (mem.rw(DS, rec + 0x18) + 1) & 0xFFFF)
+    mem.ww(DS, rec + 0x06, 0x0007)
+    _step_bounce_sprite_3d(mem, rec, tiles)
+
+
 def _step_riser_35(mem, rec: int) -> None:
     """Behaviors 0x35/0x22 (``1010:B3DF``): sprite = ((DS:2342 + 1) >> 1) + 0x71 (the B3BF worker),
     x += 1 (again on planet 0); at x >= 0xA0 the record dies (the full BFC7 beat) and BURSTS eight
     radial behavior-3 children (the B402 spawner: directions 7..0, sprites 0x0F..0x08, spawned at
     (x+d, y+d) with d = 0xC when +0x14 == 2 else 4 -- behavior 3 is the recovered AED8 alias)."""
-    mem.ww(DS, rec + 0x08, ((mem.rw(DS, 0x2342) + 1) >> 1) + 0x0071 & 0xFFFF)
+    # B3BF: inc ax is 16-BIT -- [2342]==0xFFFF wraps to 0 BEFORE the shift (caught at L2 frame 4024)
+    mem.ww(DS, rec + 0x08, ((((mem.rw(DS, 0x2342) + 1) & 0xFFFF) >> 1) + 0x0071) & 0xFFFF)
     x = (mem.rw(DS, rec + 0x02) + 1) & 0xFFFF
     if mem.rw(DS, 0x2356) == 0:
         x = (x + 1) & 0xFFFF
@@ -598,6 +668,31 @@ def _step_edge_runner_38(mem, rec: int) -> None:
             yv = (yv + delta) & 0xFFFF
     mem.ww(DS, rec + 0x02, x)
     mem.ww(DS, rec + 0x04, yv)
+
+
+def _step_faller_39(mem, rec: int) -> None:
+    """Behavior 0x39 (``1010:8A23``): sprite 0x6E WAITING for signed x >= 0x80; there -- at
+    x == 0x80 EXACTLY a one-shot sound 0x0B (98C0-gated BEFF), dir = 2, the AF60 DOUBLE 2px step
+    (twice the 0x38 single-step, same direction table), then the y > 0xC0 (unsigned) BFC7 kill."""
+    mem.ww(DS, rec + 0x08, 0x006E)
+    x = mem.rw(DS, rec + 0x02)
+    if i16(x) < 0x0080:
+        return
+    if x == 0x0080 and mem.rb(DS, 0x98C0):
+        mem.wb(DS, 0xBEFF, 0x0B)
+    mem.ww(DS, rec + 0x06, 0x0002)
+    xv, yv = mem.rw(DS, rec + 0x02), mem.rw(DS, rec + 0x04)
+    for _ in range(2):
+        for op in step_operations_for_direction(0x2, 2):
+            delta = i16(op.delta_word)
+            if op.axis == "x":
+                xv = (xv + delta) & 0xFFFF
+            else:
+                yv = (yv + delta) & 0xFFFF
+    mem.ww(DS, rec + 0x02, xv)
+    mem.ww(DS, rec + 0x04, yv)
+    if yv > 0x00C0:
+        _bfc7_touch_death(mem, rec)
 
 
 def _step_scroller_27(mem, rec: int) -> None:
@@ -703,6 +798,13 @@ def _step_ramp_steer_29(mem, rec: int) -> None:
         mem.ww(DS, rec + 0x2C, dy)
     if not r.steer:
         return
+    _steer_missile_tail_8744(mem, rec)
+
+
+def _steer_missile_tail_8744(mem, rec: int) -> None:
+    """The shared ``1010:8744`` steer tail (behavior 0x3F's whole body; 0x29 and 0x3E jump here):
+    ``[2312] = 2``, the 5E42 delta steer (the record's own +0x2C/+0x2A deltas), write-backs,
+    ``[2312] = 3``, then the signed-Y bounds kill (y > 0xC0 or y < 0 -> BFC7)."""
     mem.ww(DS, 0x2312, RAMP_29_STEER_MODE_DURING)
     table = tuple(mem.rb(DS, (0xA348 + i) & 0xFFFF) for i in range(16))
     steer = object_delta_steer_5e42(
@@ -717,6 +819,22 @@ def _step_ramp_steer_29(mem, rec: int) -> None:
     y_signed = i16(steer.y_word)
     if y_signed > RAMP_29_DEATH_Y_MAX or y_signed < RAMP_29_DEATH_Y_MIN:
         _bfc7_touch_death(mem, rec)
+
+
+def _step_arm_missile_3e(mem, rec: int) -> None:
+    """Behavior 0x3E (``1010:8ADD``): sprite 0x0E WAITING for signed x >= 0xA0; there -- MORPH
+    ``+0x18 = 0x3F``, the 74E2 self-retarget (deltas toward the anchor PERSISTED to +0x2A/+0x2C),
+    and the shared 8744 steer tail the SAME frame."""
+    mem.ww(DS, rec + 0x08, 0x000E)
+    if i16(mem.rw(DS, rec + 0x02)) < 0x00A0:
+        return
+    mem.ww(DS, rec + 0x18, 0x003F)
+    dx, dy = retarget_delta_toward_anchor_74e2(
+        mem.rw(DS, rec + 0x02), mem.rw(DS, rec + 0x04),
+        mem.rw(DS, 0x237E), mem.rw(DS, 0x2380))
+    mem.ww(DS, rec + 0x2A, dx)
+    mem.ww(DS, rec + 0x2C, dy)
+    _steer_missile_tail_8744(mem, rec)
 
 
 def _step_spawner_30(mem, rec: int) -> None:
@@ -1204,11 +1322,14 @@ def _postmove_bc45(mem, rec: int, tiles: LevelTileContext, *, with_drift: bool) 
     # 62F6 (who overlaps) -> BEC5 (the reaction family) -> BF25 (damage) -> BFC7 (the FULL death).
     if mem.rw(DS, rec) == 0:
         return                          # died in the BCCB touch above -- nothing left to scan
+    # FIELD BINDING (disasm 62F6, caught by the L2 0x8A scanner with +0x0A==0): the pre-gate reads
+    # [bp+22] = +0x16 (OFF_DRAW_LAYER == OFF_HAZARD_CLASS) and the wide-window key reads
+    # [bp+20] = +0x14 (OFF_OBJECT_TYPE == OFF_SCAN_FLAG) -- NOT +0x0A, which 62F6 never tests.
     hit = object_overlap_scan_62f6(
         scanner_active_word=mem.rw(DS, rec + 0x00),
         scanner_x_word=mem.rw(DS, rec + 0x02), scanner_y_word=mem.rw(DS, rec + 0x04),
-        scanner_draw_layer=mem.rw(DS, rec + 0x0A),
-        scanner_logic_id=mem.rw(DS, rec + 0x18), scanner_object_type=mem.rw(DS, rec + 0x16),
+        scanner_draw_layer=mem.rw(DS, rec + 0x16),
+        scanner_logic_id=mem.rw(DS, rec + 0x18), scanner_object_type=mem.rw(DS, rec + 0x14),
         candidates=read_object_pool(mem, DS, GAMEPLAY_OBJECT_TABLE_BASE,
                                     GAMEPLAY_OBJECT_TABLE_COUNT))
     if hit is None:
@@ -1330,6 +1451,9 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
         elif beh == 0x89:
             _step_scenery_89(mem, rec, tiles)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # B2A6->BB03 exits jmp BC45 (WITH drift)
+        elif beh == 0x8A:
+            _step_scenery_8a(mem, rec, tiles)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8C1F->B2AC->BB03 exits jmp BC45
         elif beh == 0x8C:
             _step_ground_crawler(mem, rec, tiles, 0xFFFF)       # BB80: A952 = -1
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # BB8E body exits jmp BC45 (WITH drift)
@@ -1361,6 +1485,28 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
         elif beh == 0x38:
             _step_edge_runner_38(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # 89FF exits jmp BC45
+        elif beh == 0x39:
+            _step_faller_39(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8A23 exits jmp BC45 (all paths)
+        elif beh == 0x3A:
+            _step_hover_3a(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8A55 exits jmp BC45 (both paths)
+        elif beh == 0x3B:
+            _step_glitter_3b(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8A7E exits jmp BC45
+        elif beh == 0x3C:
+            _step_lurker_3c(mem, rec, tiles)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8AA4 exits jmp BC45 (both paths)
+        elif beh == 0x3D:
+            _step_bounce_sprite_3d(mem, rec, tiles)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8AC7 -> 88CF exits jmp BC45
+        elif beh == 0x3E:
+            _step_arm_missile_3e(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8ADD exits jmp BC45 (all paths)
+        elif beh == 0x3F:
+            # 1010:8AF6: jmp 8744 -- the whole body IS the shared steer tail
+            _steer_missile_tail_8744(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8744 exits jmp BC45 (both paths)
         elif beh == 0x52:
             # 1010:8D23: the phase-1 outro object -- a NO-OP body (jmp BC45; the postmove drifts it)
             _postmove_bc45(mem, rec, tiles, with_drift=True)

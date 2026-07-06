@@ -23,6 +23,25 @@
 > work is COMPLETE for L1. Next frontier: play_native integration polish, other planets' controller
 > families (0x1c etc.), the 9734/9902/9908 transition continuations, HUD/menu wiring, audio.
 
+## 2026-07-06 - the WHOLE L2 scenery family is native (all 8) + TWO latent bugs fixed (0x35 wrap, 62F6 field binding)
+
+The reverted batch re-landed ONE AT A TIME on the 4s cached L2 gate -- and both "batch divergences"
+turned out to be pre-existing bugs the new handlers merely exposed (details in loop_blockers.md,
+RESOLVED entry): **0x35**'s sprite formula missed the 16-bit `inc` wrap (`[2342]==0xFFFF` -> VM 0x71
+vs native 0x8071 -- the persistent DS:250D byte), and `_postmove_bc45`'s 62F6 call MIS-BOUND the
+scanner fields (`draw_layer` got +0x0A, `object_type` got +0x16; the ASM reads +0x16 for the gate and
++0x14 for the wide key -- exactly the canonical `OFF_DRAW_LAYER`/`OFF_OBJECT_TYPE` aliases; every
+other caller was already right). The L2 0x8A scanner (+0x0A==0) was the first record in any demo to
+discriminate the binding -- it was being gated out of the shot-collision scan entirely.
+
+Native now: **0x39** (x>=0x80 faller, AF60 double-step), **0x3A** (233C-anim hover, 5E1B/5E42 homing),
+**0x3B** (4D95-random glitter), **0x3C->0x3D** (x==0xB0 lurker morph into the 88CF bounce),
+**0x3E->0x3F** (x>=0xA0 arm + the shared 8744 steer tail, extracted from 0x29's steer section),
+**0x8A** (the 0x89-tail scenery emitter). Gates: the 4s cached L2 shadow AND the full L1 demo shadow,
+both zero divergence. The L2 walk's remaining gap frontier (from the gate): object type 1, behaviors
+0x2b/0x2e/0x34/0x40/0x42/0x44..0x48/0x4b/0x4c/0x4d/0x4e/0x8f, the 0x0C BD17 decay beat, pickup
+kinds 1/4, and 2x "behavior 0x06 ADC9 death".
+
 ## 2026-07-06 - MILESTONE: L1 ROLLS INTO L2 -- the 9744 next-level load is native, session carried
 
 play_native's SCRIPTED exit now runs `_load_next_level` instead of stopping: the SAME cold-boot
@@ -34,7 +53,8 @@ per tick (the level plane can now CHANGE mid-run). `verify_play_native_levelend`
 chain: scroll the plane -> arm -> outro -> autopilot -> LEVEL COMPLETE -> **planet 2 boots with the
 score/lives carried and the L2 wave controller on stage** -- then the L2 walk gaps on its KNOWN zoo
 frontier (0x39 scenery spawns in L2's very first script row), the honest boundary: **the L2 zoo
-(0x39/0x8A first) is now the direct blocker for continuous L1->L2 play.**
+(0x39/0x8A first) is now the direct blocker for continuous L1->L2 play.** (RESOLVED same day -- the
+whole scenery family landed; see the newer entry above.)
 
 ## 2026-07-06 - MILESTONE: LEVEL COMPLETE fires natively -- the whole outro plays, autopilot and all
 

@@ -4,11 +4,30 @@ Open items the autonomous loop attempted but could not finish byte-exact. Do NOT
 re-attempt these in the loop; they need a reproduction trace and/or gameplay
 context. Each has the analysis already done so a human can pick up fast.
 
-## 2026-07-06 — the L2 scenery batch (0x39/0x3A/0x3B/0x3C/0x3D/0x3E/0x3F/0x8A): attempted as ONE batch, reverted — redo ONE AT A TIME on the 4s cached gate
+## 2026-07-06 — RESOLVED: the L2 scenery batch (0x39/0x3A/0x3B/0x3C/0x3D/0x3E/0x3F/0x8A) — ALL EIGHT native
 
-**Fully decoded, adapters written once (in the session transcript + summarized here), reverted after
-two divergence families.** Lesson: batch-of-8 hides which handler is wrong — the 4-second cached L2
-gate makes one-at-a-time nearly free, so do that.
+**FIXED (2026-07-06, the one-at-a-time re-land).** Neither divergence family was in the eight
+handlers themselves — both were pre-existing bugs the new handlers merely EXPOSED by making more
+frames walkable:
+
+1. **The persistent DS:250D byte** was behavior **0x35**'s sprite formula: `B3BF`'s `inc ax` is
+   16-BIT, so `[2342]==0xFFFF` wraps to 0 BEFORE the `shr` — the native `(0xFFFF+1)>>1` produced
+   `0x8000+0x71 = 0x8071` where the VM produces `0x71`.  (Rec 0x2504 at cache frame ~4023 is a
+   0x35 riser, NOT a scenery record — the batch-of-8 mis-attributed it.)
+2. **The 0x8A shot-collision miss** was a FIELD MIS-BINDING in `_postmove_bc45`'s
+   `object_overlap_scan_62f6` call: it passed `scanner_draw_layer=+0x0A` / `scanner_object_type=+0x16`,
+   but the ASM gates on `[bp+22]` = **+0x16** (`OFF_DRAW_LAYER == OFF_HAZARD_CLASS`) and keys the
+   wide window on `[bp+20]` = **+0x14** (`OFF_OBJECT_TYPE == OFF_SCAN_FLAG`).  62F6 never reads
+   +0x0A.  Every OTHER caller (the VM hook, `object_update.py`, both probes) already bound the
+   canonical aliases correctly; only the behavior_walk adapter mis-mapped them.  The L2 0x8A
+   scanner (+0x0A==0, +0x16==4) was the first record in any demo to discriminate the fields.
+
+All eight handlers + both fixes land together gated on the 4s cached L2 shadow (zero divergence)
+AND the full L1 demo shadow.  Lesson confirmed: batch-of-8 hides WHICH handler is wrong — but also,
+a "new handler's divergence" can be an OLD bug newly exposed; attribute by inspecting the diverging
+record's `+0x18` in the cache before blaming the new code.
+
+<details><summary>original batch notes (decodes now landed; kept for the record)</summary>
 
 Decodes (disasm-verified):
 * **0x39 (8A23)**: sprite 0x6E; `i16(x) >= 0x80` (SIGNED jl) -> (x==0x80 exactly: sound 0x0B),
@@ -37,6 +56,8 @@ The two divergence families to solve when re-landing:
    one of the anim-table sprite writes produced a 0x80xx sprite word: check which behavior owns
    rec 0x2504 at frame 4024 in the cache and whether the [96D2 + clock*2] index needs a mask
    (the clock cell may exceed the table).
+
+</details>
 
 ## 2026-07-06 — RESOLVED: the BDD0 contact predicate is recovered + wired; 0x89 DONE
 
