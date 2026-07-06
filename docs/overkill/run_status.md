@@ -38,6 +38,19 @@ sprite compositors (`object_sprite_blocks` SKIPS ``anim(+12) != 0`` and ``varian
 records -- the explosion/hit-flash frames are exactly those); (4) the resizable-window crash --
 FIXED (scale to the live window size).
 
+**CRITICAL CORRECTION: the walk cache CANNOT be the 1:1 render oracle.**  The cached pre-states
+come from the HYBRID runtime -- the presentation path (A846/5BDC/...) is HOOKED OUT there, so NO
+page in the cache holds the playfield pixels (B800 playfield = 0 px at every probed frame;
+[95A4]=B800; the work page 35FF replay = 0 px too).  Tonight's 1:1 diff numbers (40/740/2087...)
+were native-vs-EMPTY -- meaningless as render verification (the per-record attribution recipes
+and the A846 anatomy remain valid ASM work).  THE REAL ORACLE: the PURE-VM side of the frame
+verifier (dos_re/frame_verify: hooks cleared, the ORIGINAL presentation executes -- the pattern
+verify_native_hud_text already uses).  REBUILD verify_native_frame_1to1 on that: run the demo on
+the pure VM, capture B800 (or [95A4]) at a fixed frame phase, compose natively from the SAME
+state, diff.  Slower than the cache (a real VM run) but byte-honest; record its own page cache
+the same way the walk shadow does (extend the recorder to store the page at the boundary of the
+PURE ref run).
+
 **CENSUS (frame 4000): the VM page is STARS-ONLY** -- special 109 / effect(=the 32CA non-anchor
 records) 1903 / object 37 px, ALL overdraw; the VM drew NO sprites at that boundary.  Revised
 hypothesis: during the dying mode (``2326 == 3``) the frame loop SKIPS the whole A846 sprite
