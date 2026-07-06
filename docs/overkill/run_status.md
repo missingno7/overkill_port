@@ -49,9 +49,15 @@ of 4473..9267 vm-nonzero -- **the terrain tiles scrolled in at ~present 500 and 
 TILE LAYER now dominates everything**.  THE ORDERED RENDER TODO (by measured cost): (1) the
 tile-plane layer -- A781 decoded to the edge: the scroll-step owns the cursors (234E 16-step
 wrap, row_base -0x0D + A978, 234C += [959E] wrapping [95C0]->[95BE]); the PULL body is A7EB:
-``di/si = [234C] - [95BE]`` then **call A81B = the tile-row RENDER (tile ids -> pixels into the
-work page [9598])** -- recover A81B as the pure tile-row renderer, then compose the visible
-window natively (the assets already load: NativeGame.level.blocks/tile_plane/graphics); (2) the 75A6 anim sub-handlers (bx = mode*8 +
+``di/si = [234C] - [95BE]`` then **call A81B = the tile-row RENDER** -- A81B decoded:
+``bx = [2350]``; if ``[2352]==1`` (a mode) ``bx -= 0xA9`` -> jmp 5A7E; else ``[A408] = bx``,
+if row <= 0xE52 call **7948** (the 13-TILE ROW LOOP: es=[9592] the plane seg, si=[A408],
+[A406]=13, per tile ``al = plane[si]`` dispatched through the PLANET-KEYED handler table
+``[95DE + planet*2]`` writing a 16px cell at ``[A40A] += 0x10``; special tile ids
+0x04/0x07/0x6C/0x6D branch at 7977.. to 7A6E/7A7A/7AAE/7AC4) + call 4A65 (already recovered)
+-> jmp **5A7E** (the row -> page blit).  RECOVERY ORDER: the per-planet tile handler (ONE
+planet first -- what does the common handler do with al?), then 5A7E, then the native window
+compose verified against the pure-VM oracle pages; (2) the 75A6 anim sub-handlers (bx = mode*8 +
 anim*2 at 75FA..7605) + the +0x24 OR-variant path (760B) -- the 55..186 px combat residue;
 (3) the star-phase/dying-mode fine residue.  Each lands re-measured on this instrument.
 
