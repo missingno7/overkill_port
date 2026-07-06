@@ -46,7 +46,13 @@ cache frame-0 B800 page as a byte oracle):
   per-frame cell states.  The native HUD compose is therefore: paste 0x25 -> 859E cells -> 61DC
   counters -> 60E3 planet/score digits -> 5EDB text, all from the natively-decoded PANEL.ENC
   (51288 B of {rows,width} cells) + the CS:0BE4 directory.  (5A00's convention: AL = x cell-col,
-  AH = y scanline.)
+  AH = y scanline.)  60E3's body is TINY: the 518C zero-terminated string loop over the DS:235C
+  block (with 3153's 0x10-colour / 0x11-cursor escapes -- the SAME loop compose_status_text_5edb
+  already implements) + ONE planet char from the byte table ``DS:2362[planet 2356]`` via 519A
+  (Tandy mode = the recovered 3153 glyph blit; 519A also has a [21A2]-gated deferred-queue path
+  via [9594]/[2160] -- gameplay runs the direct path).  The backdrop cell 0x25 BAKES the green
+  zeros, so at frame 0 only the planet digit visibly differs -- score redraws matter once play
+  starts scoring.
 - The dual-page toggle is 511F gated on CS:[95BC]==1; Tandy runs mode 2 (95BC==2, single-page).
 - 9773 confirms: lives==FFFF -> jmp **98EB** (the game-over flow) -- the step-2 decode target.
 
