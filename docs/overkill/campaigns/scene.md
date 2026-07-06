@@ -27,8 +27,34 @@ other BC45-tail actor. Also extended the `C237` child-spawn sound table from 8 t
 entries (`1010:C2CE`) -- 0x19 is the first caller whose `parent_beh & 0xF` (9) falls outside the
 previously-observed 0-7 range.
 
-**Next:** wire the already-recovered `4A65` level-object-script walker into `play_native`'s cold
-tick (the walker itself has been DONE and demo-driven for 18/18 planets since earlier this
-session/project) -- the LAST piece for this campaign's own done-condition, now that populate PASSES
-VM-free. Remaining L1 scenery gaps (0x8c/0x8b/0x89, per the demo tally) are a SEPARATE, smaller
-mop-up; not blocking the done-condition.
+**Next: wire `4A65` into `play_native`'s cold tick — SCOPED, de-risked, turn-key.** The walker itself
+has been DONE and demo-driven for 18/18 planets since earlier this project. Traced the full
+integration (no code changed, investigation only):
+
+1. **`NativeGame` already tracks `DS:A978` live** as `rows_to_milestone` (`native_game.py`, wired
+   into `ScrollState`/`step_scroll_forward_a6fe` -- the ALREADY-RECOVERED, VERIFIED forward-scroll
+   tick). No new scroll recovery needed -- just sync it into the image each tick, exactly like
+   `walk_image.ww(0x25CC, 0x2350, g.row_base)` already does for row_base
+   (`scripts/play_native.py` `_advance()`).
+2. **`build_cold_level_start` currently hardcodes planet 0** via `new_game_session_init_96ee()`
+   (`DS:2356 = 0` unconditionally) -- but planet 0 is the FINAL BOSS level, not planet 1 (the
+   cold-boot first level)! The ALREADY-RECOVERED `native_new_game_data_setup(new_level_index,
+   slot_ptr_table)` (`systems/frame_loop.py`) takes a level index and sets `DS:2356` correctly, but
+   `build_cold_level_start` doesn't call it -- this is why `play_native.py`'s `--level` argument
+   doesn't currently reach the planet field at all.
+3. **Genuinely open:** what `DS:A978`'s CORRECT cold-start value is for planet 1 (the
+   `verify_cold_populate` smoke just uses `0x110` as a stand-in, not derived from a recovered
+   cold-seed -- needs checking against the cold bundle/a real snapshot's frame-0 value).
+
+**Turn-key steps:** (a) parameterise `build_cold_level_start(exe_image, level_index)` to use
+`native_new_game_data_setup` (or override `DS:2356` after the existing pipeline) instead of the
+hardcoded-planet-0 `new_game_session_init_96ee`; (b) confirm/derive A978's correct cold value for
+planet 1; (c) build `walk_image` unconditionally in `play_native.py` (not just `--snapshot`), seeded
+via `build_cold_level_start`; (d) each tick, sync `A978 = g.rows_to_milestone` into the image
+(one line, same pattern as the existing row_base sync) BEFORE calling
+`run_level_object_script_4a65(walk_image)`, then `advance_object_frame` as today; (e) new
+end-to-end verification: cold `play_native --level 0` actually renders a moving enemy wave (extend
+`verify_cold_populate`-style census into an interactive/headless play_native smoke).
+
+Remaining L1 scenery gaps (0x8c/0x8b/0x89, per the demo tally) are a SEPARATE, smaller mop-up; not
+blocking this campaign's done-condition.
