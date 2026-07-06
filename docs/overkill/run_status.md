@@ -19,6 +19,31 @@
 > work is COMPLETE for L1. Next frontier: play_native integration polish, other planets' controller
 > families (0x1c etc.), the 9734/9902/9908 transition continuations, HUD/menu wiring, audio.
 
+## 2026-07-06 - MILESTONE: the NATIVE DEATH->RESPAWN CYCLE -- die, explode, respawn, keep playing, VM-free
+
+Composed the 9908/9773 respawn continuation into play_native: on the DEATH exit, instead of stopping
+fail-loud, the loop runs the native continuation -- `2358--` lives (with the `[978D]` cheat re-inc),
+the BEFF=2 respawn-jingle queue, then `apply_respawn_seeds` (NEW in cold_level_start.py: the SHARED
+level-start/respawn re-init both the cold boot and the real 9773 run -- C4DB + the C3A6 pool seed +
+C461 + C42F + the post-intro bar; the cold builder now delegates to it, so the seed sequence lives in
+ONE place) + the B5A9 formation-cursor reset + the A8C2/20A6 re-inits. Score/planet/scroll persist
+(no 96EE, no scroll writes -- the level continues where it was). Lives exhausted (`2358 == FFFF`) ->
+the 98EB game-over flow stays fail-loud. Audio (5F43) + presentation (6176/C57C/D305/4DBF) stay host
+boundaries.
+
+New probe `verify_play_native_respawn` PASSES: forced death -> explosion -> respawn (lives=2, ship at
+0xC0/0x58, A95A=3, bar full) -> 463 frames of continued play -> a NATURAL death (the level's own
+content killed the unpiloted ship -- exercising the same path unforced) -> respawn (lives=1) -> play
+continues. TWO probe-expectation findings recorded on the way (both REAL behavior, not bugs): planet
+1's script has its ONLY 0x1F wave-controller entry at row 0x110, so post-respawn content comes from
+LATER script rows' other behavior types (0x27/0x11/0x30/0x83...), not fresh 0x20 formations; and the
+respawned ship has no grace period in our post-intro model (the real intro script IS the grace).
+`verify_play_native_cold` + `verify_play_native_death` still PASS; suite green; lint clean.
+
+**play_native is now: cold boot -> title -> live level -> combat both ways -> death -> respawn ->
+... -> game over (fail-loud).** The remaining L1 in-level items: the boss row (62AA at 0xEA0), the
+level-end 9734 continuation, HUD wiring.
+
 ## 2026-07-06 - play_native: the NATIVE DEATH TAIL is wired -- explosion anim + DEATH exit, VM-free
 
 Composed the 9B61/9AFF death flow into `play_native._advance` (the first half of the death->respawn

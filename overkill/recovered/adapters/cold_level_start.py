@@ -51,41 +51,53 @@ def build_cold_level_start_image(exe_image: bytes, level_index: int = 0) -> MutF
     behaviour walk both mutate in place) can seed it identically instead of re-deriving the writes.
     """
     mem = MutFlatMemory(exe_image)
+    # 1) session start (a fresh SESSION only -- the respawn flow re-runs everything BUT this)
+    for off, val in new_game_session_init_96ee().items():
+        mem.ww(DATA_SEGMENT, off, val)
+    mem.ww(DATA_SEGMENT, 0x2356, LEVEL_INDEX_TO_PLANET[level_index % len(LEVEL_INDEX_TO_PLANET)])
+    # 2..6) the level-start / respawn re-init (shared with the 9908 death->respawn composition)
+    apply_respawn_seeds(mem)
+    return mem
+
+
+def apply_respawn_seeds(mem) -> None:
+    """The level-start / RESPAWN re-init over a live DGROUP image (in place) -- the seed sequence
+    both the cold level start and the ``9908`` death continuation run: C4DB (special + effect pool
+    seed + frame-control reset), the C3A6 gameplay-pool seed, the C461 control reset, the C42F
+    player spawn, and the post-intro health bar.
+
+    This is exactly what the real ``9908 -> 9773`` respawn re-runs after a death (C4DB at 9908,
+    C3A6 -- whose own tail is C42F/C461 -- at 977D), minus the session-scoped ``96EE`` init (score/
+    lives/planet persist across deaths).  The health-bar reseed models the post-intro fixed point:
+    the real intro script refills DS:A97A 0 -> 0x58 via the per-frame 77C5 tick (gated on
+    DS:A97C == 1) before handing over to normal play (the 9A16 script-advance requires A97A==0x58
+    AND A95A==3 AND A95C==0x18); an EMPTY bar IS the 9B61 death condition, so leaving it unseeded
+    would start (re)play dying the moment the counter bank cycles.
+    """
     ds = DATA_SEGMENT
 
     def write_map(cell_map):
         for off, val in cell_map.items():
             mem.ww(ds, off, val)
 
-    # 1) session start
-    write_map(new_game_session_init_96ee())
-    mem.ww(ds, 0x2356, LEVEL_INDEX_TO_PLANET[level_index % len(LEVEL_INDEX_TO_PLANET)])
-    # 2) C4DB new-game setup (special + effect seed + control reset) via the DS:0x32CA table
+    # C4DB new-game setup (special + effect seed + control reset) via the DS:0x32CA table
     table_32ca = {cx: mem.rw(ds, OBJECT_SEED_SLOT_TABLE_32CA + cx * 2)
                   for cx in range(1, OBJECT_SEED_COUNT + 1)}
     write_map(apply_new_game_setup_c4db(table_32ca))
-    # 3) C3A6 gameplay-pool seed via the DS:0x8D12 table
+    # C3A6 gameplay-pool seed via the DS:0x8D12 table
     table_8d12 = {cx: mem.rw(ds, GAMEPLAY_SEED_SLOT_TABLE_8D12 + cx * 2)
                   for cx in range(1, GAMEPLAY_SEED_COUNT + 1)}
     for rec, fields in object_pool_seed_c3b5(table_8d12).items():
         for fo, val in fields.items():
             mem.ww(ds, rec + fo, val)
-    # 4) respawn / level-start control reset
+    # respawn / level-start control reset
     write_map(respawn_control_reset_c461())
-    # 5) player spawn (record 0x237C active at 0xC0/0x58) -- last, over the inactive seed
+    # player spawn (record 0x237C active at 0xC0/0x58) -- last, over the inactive seed
     for fo, val in player_spawn_record_c42f().items():
         mem.ww(ds, PLAYER_SPAWN_RECORD + fo, val)
-    # 6) the health BAR at its post-intro fixed point (AFTER C4DB, which zeroes it): the real level
-    # intro (the A47C script) fills DS:A97A 0 -> 0x58 via the per-frame 77C5 tick (gated on
-    # DS:A97C == 1) and only hands over to normal play once it is FULL (the 9A16 script-advance
-    # requires A97A==0x58 AND A95A==3 AND A95C==0x18).  This cold start models the post-intro frame 0
-    # (like row_base = 0x9C models the post-warm-up scroll), so seed the bar full -- an EMPTY bar IS
-    # the 9B61 death condition (A97A == 0 -> the 9AFF death tail), so leaving it unseeded would start
-    # the level dying the moment the counter bank cycles.
+    # the health BAR at its post-intro fixed point (AFTER C4DB/C461, which zero it -- see docstring)
     mem.ww(ds, 0xA97A, 0x0058)
     mem.ww(ds, 0xA97C, 0x0001)
-
-    return mem
 
 
 def build_cold_level_start(exe_image: bytes, level_index: int = 0) -> tuple[NativeGameState, StarfieldState]:

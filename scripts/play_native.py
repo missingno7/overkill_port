@@ -78,7 +78,7 @@ from overkill.recovered.systems.frame_loop import (  # noqa: E402
     detect_gameplay_transition,
     step_death_tail_9aff,
 )
-from overkill.recovered.domain.frame_loop import FrameInput  # noqa: E402
+from overkill.recovered.domain.frame_loop import FrameInput, GameplayExit  # noqa: E402
 from overkill.recovered.domain.native_game_state import NativeGameState  # noqa: E402
 from overkill.recovered.domain.object_update import ObjectUpdateGlobals  # noqa: E402
 from overkill.recovered.domain.starfield import STAR_COUNT, Star, StarfieldState  # noqa: E402
@@ -425,11 +425,13 @@ def main(argv=None) -> int:
     )
     from overkill.recovered.adapters.flat_memory import MutFlatMemory  # noqa: E402
     from overkill.recovered.adapters.level_object_script import run_level_object_script_4a65  # noqa: E402
+    from overkill.recovered.adapters.cold_level_start import (  # noqa: E402
+        apply_respawn_seeds, build_cold_level_start_image,
+    )
 
     if args.snapshot:
         walk_image = MutFlatMemory((Path(args.snapshot) / "memory_1mb.bin").read_bytes())
     else:
-        from overkill.recovered.adapters.cold_level_start import build_cold_level_start_image
         walk_image = build_cold_level_start_image(bundle_data, args.level)
     walk_tiles = level_tiles(walk_image)
 
@@ -520,9 +522,37 @@ def main(argv=None) -> int:
             anchor_counter_after_inc=g.state.special_pool.word_at(0, 0x08),
         )
         if exit_ is not None:
+            if exit_.exit is GameplayExit.DEATH:
+                # The 9908 death CONTINUATION, natively: dec the lives (990B; the [978D] cheat
+                # re-incs), queue the respawn jingle (BEFF=2), then the 9773 re-entry -- which is
+                # the SAME level-start seed sequence the cold boot runs (C4DB + C3A6/C42F/C461 +
+                # the post-intro bar), shared as apply_respawn_seeds -- plus the B5A9 formation-
+                # cursor reset and the A8C2/20A6 re-inits. Score/planet/scroll persist (no 96EE,
+                # no scroll writes -- the level continues from where it was). Audio (5F43 music)
+                # and presentation (6176 HUD / C57C palette / D305 intro) stay host boundaries.
+                lives = (walk_image.rw(0x25CC, 0x2358) - 1) & 0xFFFF
+                if walk_image.rb(0x25CC, 0x978D):
+                    lives = (lives + 1) & 0xFFFF
+                walk_image.ww(0x25CC, 0x2358, lives)
+                if lives == 0xFFFF:                   # 9773: lives exhausted -> the 98EB game-over flow
+                    raise RecoveryGap(
+                        "game over (9773 -> 98EB)",
+                        "the lives counter is exhausted; the 98EB game-over/high-score flow is not "
+                        "recovered yet (the native runtime cannot continue past it)")
+                if walk_image.rb(0x25CC, 0x98C0):
+                    walk_image.wb(0x25CC, 0xBEFF, 0x02)
+                apply_respawn_seeds(walk_image)
+                walk_image.ww(0x25CC, 0xA8D0, 0xA8D2)  # B5A9: the formation-schedule cursor reset
+                walk_image.ww(0x25CC, 0xA8C8, 0)
+                walk_image.ww(0x25CC, 0xA8CC, 0)
+                walk_image.ww(0x25CC, 0xA8C2, 0)
+                walk_image.ww(0x25CC, 0x20A6, 0x20A8)  # the canned-random ring cursor reset (9792)
+                cell["game"] = g.with_state(project_state(walk_image))
+                print(f"respawn at tick {cell['tick']}: lives={lives}")
+                return
             raise RecoveryGap(
                 f"gameplay exit {exit_.exit.name} (1010:97B2 -> {exit_.jump_target:#06x})",
-                "the native loop detected a level-end/death/game-over; that transition target is not "
+                "the native loop detected a game-over/scripted transition; that target is not "
                 "recovered yet (the native runtime cannot continue past it)")
 
     skeleton = GameplayFrameSkeleton(
