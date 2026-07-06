@@ -49,7 +49,11 @@ verify_native_hud_text already uses).  REBUILD verify_native_frame_1to1 on that:
 the pure VM, capture B800 (or [95A4]) at a fixed frame phase, compose natively from the SAME
 state, diff.  Slower than the cache (a real VM run) but byte-honest; record its own page cache
 the same way the walk shadow does (extend the recorder to store the page at the boundary of the
-PURE ref run).
+PURE ref run).  MECHANISM (proven by verify_native_hud_text): patch the ref CPU's ``step`` to
+detect ``cs:ip == 1010:5BDC``'s RETURN (the present complete -- page fully drawn, projection not
+yet rescanned); there snapshot ``[95A4]`` + DGROUP, compose natively from that state, diff the
+playfield.  One pure-VM demo run records ``(state, page)`` pairs into a new cache file; every
+later iteration replays at cache speed.
 
 **CENSUS (frame 4000): the VM page is STARS-ONLY** -- special 109 / effect(=the 32CA non-anchor
 records) 1903 / object 37 px, ALL overdraw; the VM drew NO sprites at that boundary.  Revised
