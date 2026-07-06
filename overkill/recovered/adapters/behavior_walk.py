@@ -710,7 +710,7 @@ def _pickup_collect_aad3(mem, rec: int) -> None:
     _score_add_5f0d(mem, 0x20)
     kind = mem.rw(DS, rec + 0x26)
     if kind != 2:
-        raise RecoveryGap(f"pickup kind {kind} collect (the AB00 index-{kind} entry, record {rec:04X})",
+        raise RecoveryGap(f"pickup kind {kind} collect -- the AB00 index-{kind} entry (record {rec:04X})",
                           "only kind 2 (1010:9D67, the shield/HP heal) is demo-witnessed + recovered;"
                           " kinds 0/1/3/4 (AF44/9D4D/62AA/9DB9) are not")
     # 9D67: sound 0x1C + the A95A/A95C heal + ONE 9EC2 HUD-energy beat.

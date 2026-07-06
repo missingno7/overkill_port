@@ -25,7 +25,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from overkill.probes._harness import load_demo, run_ref_step_probe_cold_start  # noqa: E402
+from overkill.probes._harness import (  # noqa: E402
+    load_demo, run_ref_step_probe, run_ref_step_probe_cold_start,
+)
 from overkill.recovered.adapters.behavior_walk import run_behavior_walk_a9d3  # noqa: E402
 from overkill.recovered.adapters.flat_memory import MutFlatMemory  # noqa: E402
 from overkill.recovered.domain.gaps import RecoveryGap  # noqa: E402
@@ -56,9 +58,6 @@ EXCLUDED_CELLS = {0xA954, 0xA955, 0x230A, 0x230B, 0x230C, 0x230D,
 def main(argv) -> int:
     demo = load_demo(argv[0] if argv else None, DEFAULT_DEMO)
     max_frames = int(argv[1]) if len(argv) > 1 else None
-    if not demo.is_cold_start:
-        print("ERROR: needs a cold-start demo")
-        return 2
 
     st = {"pre": None, "sp": 0, "plane_seg": None, "plane": None, "classes": None}
     stats = {"frames": 0, "diverged": 0, "combat_exposed": 0}
@@ -76,8 +75,10 @@ def main(argv) -> int:
             # in place, so a per-segment cache goes stale and spuriously diverges the AD60 tile probe
             seg = m.rw(CS, 0x9592)
             st["plane"] = bytes(m.data[seg * 16:seg * 16 + 0x4000])
-            if st["classes"] is None:
-                st["classes"] = tuple(m.rb(ds, (0xC3AA + i) & 0xFFFF) for i in range(256))
+            # the class table is read FRESH per frame too: the 0B3E level-data init REBUILDS it at
+            # a level transition (and at the death respawn), so a one-shot cache goes stale on any
+            # demo that crosses a level end (e.g. the L2_full playthrough)
+            st["classes"] = tuple(m.rb(ds, (0xC3AA + i) & 0xFFFF) for i in range(256))
             st["pre"] = bytes(m.data)
             st["sp"] = cpu.s.sp & 0xFFFF
             for i in range(0x22):
@@ -123,7 +124,12 @@ def main(argv) -> int:
                     first_divs.append(line)
                     print(f"  DIVERGENCE {line}", flush=True)
 
-    run_ref_step_probe_cold_start(demo, max_frames, on_ref_step)
+    if demo.is_cold_start:
+        run_ref_step_probe_cold_start(demo, max_frames, on_ref_step)
+    else:
+        # a snapshot-based demo (the L2/L3/L4/L6 recordings): same trap, the snapshot harness
+        frames = (demo.end_boundary + 5) if max_frames is None else max_frames
+        run_ref_step_probe(demo, frames, on_ref_step)
 
     print(f"walk frames shadowed: {stats['frames']}  diverged: {stats['diverged']}  "
           f"combat-exposed: {stats['combat_exposed']}")

@@ -19,6 +19,27 @@
 > work is COMPLETE for L1. Next frontier: play_native integration polish, other planets' controller
 > families (0x1c etc.), the 9734/9902/9908 transition continuations, HUD/menu wiring, audio.
 
+## 2026-07-06 - the walk shadow now runs SNAPSHOT demos; the WHOLE planet-2 frontier mapped (zero divergence)
+
+Extended `verify_native_walk_demo` to snapshot-based demos (the L2/L3/L4/L6 recordings) -- the
+cold-start-only guard was the only blocker; the class table is now read fresh per frame too (the
+0B3E level-data init REBUILDS it at level transitions/respawns, so the one-shot cache would go stale
+on any demo crossing a level end). **The L2_full playthrough (6561 walk frames incl. the full
+LEVEL-END sequence): zero divergence on every natively-walkable frame** -- the L1 zoo already covers
+most of planet 2. The complete planet-2 + level-end gap frontier: `0x06`(28) `0x1c`(25, the planet-2
+wave controller) `0x31`(24) `0x4d`(16) `0x33`(15) **`0x53`(11, the A3EE outro objects)** `0x44`(1)
+`0x45`(1) + the `0x0C` BD17 decay beat (9) + pickup collect kinds 1/3/4 (L2's pickup variety).
+
+**Level-end decodes this pass (ready to implement):** `C591` (the 0xE52 milestone) is a TANDY NO-OP
+(mode-1 palette DAC only) -- the native scroll gate can stop declining that row. The `A680` 0xEA0
+arm: `A47C=1` + `62AA` (sound 8 + BFC7-sweep-kill every remaining live enemy -- ALL pieces already
+native) + FOUR outro objects spawned via 7524 from the `A3EE` table ((0x20,0x18,spr 0x10),
+(0x20,0x98,0x13), (0x40,0x28,0x16), (0x40,0x88,0x19); stamp: +0x14=2, +0x16=4, +0x18=0x53,
++0x28=FFFF, sprite also into +0x36). The 9A78 phase-1 handler: an A358-table scripted move (the
+9AD1 worker) until [98BE] clears, then `A47C=2` + a 7524 spawn (behavior 0x52, sprite 0xF at
+(0x20,...)) -- phase 2 (9A3E, scripted-move counters, partially recovered) and phase 3 (9A16,
+recovered decision) follow, ending in A344=1.
+
 ## 2026-07-06 - THE LEVEL-END CHAIN MAPPED (VM-traced on the L2_full demo) -- the next campaign phase
 
 Traced the complete real level-end sequence (walk-entry sampled A47C/2350/A344/2356/A978/A47E/A480
