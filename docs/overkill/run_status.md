@@ -19,6 +19,32 @@
 > work is COMPLETE for L1. Next frontier: play_native integration polish, other planets' controller
 > families (0x1c etc.), the 9734/9902/9908 transition continuations, HUD/menu wiring, audio.
 
+## 2026-07-06 - play_native: the NATIVE DEATH TAIL is wired -- explosion anim + DEATH exit, VM-free
+
+Composed the 9B61/9AFF death flow into `play_native._advance` (the first half of the death->respawn
+plan): when the anchor state is absent (`death_tail_reached_9aff`, live image reads), the player/
+scroll/fan-out step is SKIPPED (the ship + scroll freeze, matching 9B61's branch) and the recovered
+`step_death_tail_9aff` runs instead -- the anchor's +08 cell (which IS `DS:2384`: 0x237C+8, so the
+9EA3 chain's `[2384]=3` death-pose write seeds the explosion counter at 3) counts the explosion
+animation sprites 3..0xF on 2326==3 phases, the anchor deactivates at 0x0F, and the already-live
+exit detector fires DEATH/GAME_OVER. The object WALK keeps running throughout (the wave stays
+live). The 4DBF death-moment call stays a declared host boundary (the loop stops fail-loud at the
+exit before any continuation). `sync_player_anchor` is skipped while dying (the anchor is
+image-owned; syncing would clobber the counter with a stale sprite).
+
+TWO supporting fixes: (1) **`build_cold_level_start_image` now seeds the health BAR at its
+post-intro fixed point** (`A97A=0x58`, `A97C=1`, written AFTER C4DB which zeroes them) -- an empty
+bar IS the 9B61 death condition, so the old unseeded 0 would have started the cold level dying the
+moment the counter bank cycles (the real intro fills the bar via 77C5 before handing over; same
+modeling as `_COLD_ROW_BASE`). (2) The now-dead `_SeededStart` exit-guard fields (a47c/a95a/a97a/
+v2326) removed -- the detector reads the image since fb81bc1.
+
+New probe `verify_play_native_death` PASSES: 12 phase-3-clocked +08 advances (sprites 3..0xF
+exactly), ship frozen, wave still changing, DEATH exit at 0x0F, anchor deactivated. The cold probe
+(`verify_play_native_cold`) still PASSES (no spurious dying at start). Suite green; lint clean.
+**Remaining for the full cycle: the 9908/9773 respawn composition** (all pieces scoped, see the
+previous entry) -- then a death continues into a respawn instead of stopping fail-loud.
+
 ## 2026-07-06 - play_native's gameplay-exit guards read LIVE from the walk image; the death->respawn chain decoded
 
 Wired `detect_gameplay_transition`'s inputs (A47C/A95A/A97A/2326) to LIVE walk-image reads in

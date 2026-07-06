@@ -73,7 +73,11 @@ from overkill.native_app import GameplayFrameSkeleton  # noqa: E402
 from overkill.native_game import NativeGame  # noqa: E402
 from overkill.recovered.adapters.flat_memory import FlatMemory  # noqa: E402
 from overkill.recovered.domain.gaps import RecoveryGap  # noqa: E402
-from overkill.recovered.systems.frame_loop import detect_gameplay_transition  # noqa: E402
+from overkill.recovered.systems.frame_loop import (  # noqa: E402
+    death_tail_reached_9aff,
+    detect_gameplay_transition,
+    step_death_tail_9aff,
+)
 from overkill.recovered.domain.frame_loop import FrameInput  # noqa: E402
 from overkill.recovered.domain.native_game_state import NativeGameState  # noqa: E402
 from overkill.recovered.domain.object_update import ObjectUpdateGlobals  # noqa: E402
@@ -103,6 +107,7 @@ DEFAULT_CONTAINER = ROOT / "assets" / "OVERKILL"
 _CS = 0x1010
 _TABLE_75A6, _TABLE_768E, _TABLE_7746 = 0x9392, 0x9192, 0x8F92
 _SPRITE_CELL_STRIDE_OFF = 0x1028   # ds:[1028] -- 75A6's source advance to the +10 second slot is >>1
+_ANCHOR_RECORD = 0x237C            # the player view-anchor record (special_pool slot 0)
 _COLD_ROW_SOURCE = 0x5B00          # DS:234C -- the fixed row-source start (NativeGame's level-post-load default)
 _COLD_ROW_BASE = 0x009C            # DS:2350 -- level-load leaves the view row base here: 60C5 sets 0xEA0,
 #                                    then the 16x A781 warm-up scroll settles it to 0x9C (60D5 cmp); this
@@ -131,8 +136,9 @@ def _read_starfield(mem: "FlatMemory", ds: int) -> StarfieldState:
 @dataclass(frozen=True)
 class _SeededStart:
     """A REAL starting point read from a captured snapshot: the game+starfield state, the sprite
-    half-stride, the live scroll cursor trio (DS:234C/234E/2350) so the first native frame lands the
-    world + sprites exactly where the VM had them, plus the gameplay-exit inputs the loop watches."""
+    half-stride, and the live scroll cursor trio (DS:234C/234E/2350) so the first native frame lands
+    the world + sprites exactly where the VM had them.  (The gameplay-exit detector inputs are NOT
+    carried here anymore -- they are read LIVE from the walk image each tick, ADR-1.)"""
 
     state: NativeGameState
     starfield: StarfieldState
@@ -141,14 +147,6 @@ class _SeededStart:
     row_base: int    # DS:2350
     row_source: int  # DS:234C
     rows_to_milestone: int  # DS:A978 -- the level-script scroll-trigger counter
-    # The gameplay-exit detector inputs (DS:A47C/A95A/A97A/2326). The native loop does NOT yet run the
-    # stages that MUTATE these (they change only when the player dies / a script ends the level), so
-    # they are carried at their seeded values -- a fail-loud guard, not a live model. For a normal
-    # mid-level capture the anchor is present (A95A != FFFF, A97A != 0) so no exit is ever detected.
-    a47c: int
-    a95a: int
-    a97a: int
-    v2326: int
 
 
 def _seed_state_from_snapshot(snapshot_dir: Path) -> "_SeededStart":
@@ -175,10 +173,6 @@ def _seed_state_from_snapshot(snapshot_dir: Path) -> "_SeededStart":
         row_base=mem.rw(ds, 0x2350),
         row_source=mem.rw(ds, 0x234C),
         rows_to_milestone=mem.rw(ds, 0xA978),
-        a47c=mem.rw(ds, 0xA47C),
-        a95a=mem.rw(ds, 0xA95A),
-        a97a=mem.rw(ds, 0xA97A),
-        v2326=mem.rw(ds, 0x2326),
     )
 
 
@@ -187,9 +181,9 @@ def _cold_seeded_start(bundle_data: bytes, level_index: int = 0) -> "_SeededStar
 
     The game + starfield STATE is built entirely from the recovered level-start seeds
     (:func:`overkill.recovered.adapters.cold_level_start.build_cold_level_start` -- session init + C4DB
-    setup + gameplay-pool seed + control reset + player spawn + cold starfield, seeded with the chosen
-    PLANET via ``level_index``).  The render params the loop also needs -- the scroll cursor
-    (DS:234C/234E/2350), the sprite half-stride (``ds:[1028]>>1``) and the exit-guard inputs -- are read
+    setup + gameplay-pool seed + control reset + player spawn + cold starfield + the post-intro health
+    bar, seeded with the chosen PLANET via ``level_index``).  The render params the loop also needs --
+    the scroll cursor (DS:234C/234E/2350) and the sprite half-stride (``ds:[1028]>>1``) -- are read
     from the SAME cold runtime data image (byte-array read, no VM).
 
     The scroll cursor is the LEVEL-POST-LOAD origin (``origin_x = 0``, ``row_base = _COLD_ROW_BASE``,
@@ -200,10 +194,6 @@ def _cold_seeded_start(bundle_data: bytes, level_index: int = 0) -> "_SeededStar
     ``rows_to_milestone = _COLD_ROWS_TO_MILESTONE`` (DS:A978) is likewise a level-load constant, not read
     from the raw cold image (confirmed empirically identical -- 0x110 -- for all six planets' level
     scripts' own first trigger row).
-
-    The exit guards are set to their semantic cold-start values so the frame-0 detector cannot spuriously
-    end the level: ``A47C = 0`` (no scripted mode), ``A95A = 3`` (anchor present), ``2326 = 0`` (not
-    dying); ``A97A`` is read from the cold image.
     """
     from overkill.recovered.adapters.cold_level_start import build_cold_level_start
     from overkill.recovered.adapters.starfield_adapter import DATA_SEGMENT
@@ -219,10 +209,6 @@ def _cold_seeded_start(bundle_data: bytes, level_index: int = 0) -> "_SeededStar
         row_base=_COLD_ROW_BASE,       # level-post-load view row base (DS:2350) -- 0x9C, see the constant
         row_source=_COLD_ROW_SOURCE,   # DS:234C -- the fixed row-source start
         rows_to_milestone=_COLD_ROWS_TO_MILESTONE,  # DS:A978 -- 0x110, see the constant
-        a47c=0x0000,   # cold: no scripted-input mode active
-        a95a=0x0003,   # cold: anchor present (lives counter at session start)
-        a97a=mem.rw(ds, 0xA97A),
-        v2326=0x0000,  # cold: not in the dying mode
     )
 
 
@@ -462,28 +448,48 @@ def main(argv=None) -> int:
         # so checking the post-step value would skip the very entry the cold seed was built to match
         # (confirmed empirically: rows_to_milestone's cold value equals the first trigger_row exactly).
         pre_step_rows_to_milestone = g.rows_to_milestone
-        g, _player_step = g.step(
-            frame_input,
-            no_clamp=False,
-            repeat_9790=0, state_232a=0, scroll_2350=g.row_base,
-            bdac=0, a958=0, be06=0,
-            # the fire fan-out spawns from the firing object -- the player view-anchor (special_pool slot
-            # 0) at its live position, so shots leave the ship's muzzle (was hardcoded 0,0 -> origin).
-            source_index=0,
-            source_x=g.state.special_pool.x_word(0), source_y=g.state.special_pool.y_word(0),
-            read_ds_word=lambda off: 0,
-            update_globals=_object_update_globals(g),
-            scroll_gate=(0, 0, 0),
-            # the object pass is run over the DGROUP image below (the full behaviour walk), so skip
-            # NativeGame's dataclass object pass when the image owns the pools -- no double-step.
-            run_object_pass=walk_image is None,
-        )
+        # The 9B61 death branch: when the tracked anchor state is absent (A95A == FFFF after the
+        # native 9E69/9EA3 death chain, or the A97A bar empty), the original SKIPS the whole
+        # player-move/scroll/fan-out flow and runs the 9AFF death tail instead -- the anchor's +08
+        # cell becomes the explosion-animation counter (incremented on 2326==3 phases; the renderer
+        # draws those frames as the anchor sprite), firing the exit at 0x0F.  The object WALK still
+        # runs during the death animation (proven: the demo shadow stayed byte-exact through the
+        # demo's 5 real death beats).  The post-fire 4DBF call (the death jingle/text) is a declared
+        # host boundary -- the loop stops fail-loud at the exit before any continuation anyway.
+        dying = death_tail_reached_9aff(walk_image.rw(0x25CC, 0xA95A), walk_image.rw(0x25CC, 0xA97A))
+        if dying:
+            tail = step_death_tail_9aff(
+                walk_image.rw(0x25CC, 0xA95A), walk_image.rw(0x25CC, 0xA97A),
+                walk_image.rw(0x25CC, 0x2326), walk_image.rw(0x25CC, _ANCHOR_RECORD + 0x08))
+            walk_image.ww(0x25CC, _ANCHOR_RECORD + 0x08, tail.anchor_counter)
+            if tail.deactivate_anchor:
+                walk_image.ww(0x25CC, _ANCHOR_RECORD + 0x00, 0)   # 9B11: the anchor slot deactivates
+        else:
+            g, _player_step = g.step(
+                frame_input,
+                no_clamp=False,
+                repeat_9790=0, state_232a=0, scroll_2350=g.row_base,
+                bdac=0, a958=0, be06=0,
+                # the fire fan-out spawns from the firing object -- the player view-anchor (special_pool
+                # slot 0) at its live position, so shots leave the ship's muzzle.
+                source_index=0,
+                source_x=g.state.special_pool.x_word(0), source_y=g.state.special_pool.y_word(0),
+                read_ds_word=lambda off: 0,
+                update_globals=_object_update_globals(g),
+                scroll_gate=(0, 0, 0),
+                # the object pass is run over the DGROUP image below (the full behaviour walk), so skip
+                # NativeGame's dataclass object pass when the image owns the pools -- no double-step.
+                run_object_pass=walk_image is None,
+            )
         # The native OBJECT FRAME over the image: sync the player anchor + scroll, advance the whole
         # behaviour walk, and project the enemy/effect/shot pools back into g for rendering. Fail-loud
         # on an unrecovered object (holds the last good frame, like a gameplay-stage exception).
         if walk_image is not None and cell["walk_gap"] is None:
             sp = g.state.special_pool
-            sync_player_anchor(walk_image, sp.x_word(0), sp.y_word(0), sp.word_at(0, 0x08))
+            if not dying:
+                # during the death anim the anchor is image-owned (the +08 explosion counter) -- the
+                # dataclass side didn't step, so syncing would clobber the counter with a stale sprite.
+                sync_player_anchor(walk_image, sp.x_word(0), sp.y_word(0), sp.word_at(0, 0x08))
             # ADR-1: anything the dataclass side created this tick flows into the image BEFORE the
             # walk -- otherwise fired shots would be destroyed by the projection below.
             sync_new_gameplay_records(walk_image, g.state.object_pool)

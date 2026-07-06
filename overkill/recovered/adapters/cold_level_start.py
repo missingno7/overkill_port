@@ -75,6 +75,15 @@ def build_cold_level_start_image(exe_image: bytes, level_index: int = 0) -> MutF
     # 5) player spawn (record 0x237C active at 0xC0/0x58) -- last, over the inactive seed
     for fo, val in player_spawn_record_c42f().items():
         mem.ww(ds, PLAYER_SPAWN_RECORD + fo, val)
+    # 6) the health BAR at its post-intro fixed point (AFTER C4DB, which zeroes it): the real level
+    # intro (the A47C script) fills DS:A97A 0 -> 0x58 via the per-frame 77C5 tick (gated on
+    # DS:A97C == 1) and only hands over to normal play once it is FULL (the 9A16 script-advance
+    # requires A97A==0x58 AND A95A==3 AND A95C==0x18).  This cold start models the post-intro frame 0
+    # (like row_base = 0x9C models the post-warm-up scroll), so seed the bar full -- an EMPTY bar IS
+    # the 9B61 death condition (A97A == 0 -> the 9AFF death tail), so leaving it unseeded would start
+    # the level dying the moment the counter bank cycles.
+    mem.ww(ds, 0xA97A, 0x0058)
+    mem.ww(ds, 0xA97C, 0x0001)
 
     return mem
 
