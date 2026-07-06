@@ -23,6 +23,21 @@
 > work is COMPLETE for L1. Next frontier: play_native integration polish, other planets' controller
 > families (0x1c etc.), the 9734/9902/9908 transition continuations, HUD/menu wiring, audio.
 
+## 2026-07-07 - GAME OVER -> TITLE is native: the 98EB flow wired (banner + hold + fresh session)
+
+The last RecoveryGap in play_native's death path is gone.  98EB decoded: 5145 (mode-1 no-op on
+Tandy) -> 57E6 (the game-over jingle 5, host audio) -> 5C35 (the banner: the ``CS:[95B2]`` cell at
+``(0, 0x4E)`` through the 5C46 wipe -- and [95B2] is **THEND.BIC**, byte-matched to the natively-
+decoded asset) -> a 0x96-frame 50C9 hold -> 5283 (score->high-score check + the far 1F8F:0000/0076
+entry flow -- NOT recovered, logged + SKIPPED in the native path, never faked) -> jmp 96E0 (the
+title flow).  play_native: lives==FFFF now freezes the playfield, overlays the 44x320 THEND banner,
+holds 150 ticks, returns to the title screen, and Space starts a FRESH session (the same cold-boot
+machinery; 96EE resets score/lives).  ``verify_play_native_gameover`` gates the chain: the banner
+asset byte-exact vs the VM segment, the last-life death fires the 98EB condition, the [978D] cheat
+guards it, the restart is fresh.  The L1 vertical slice now has: cold boot -> title -> L1 with HUD
+-> death/respawn -> level end -> L2 ... -> game over -> title -> again.  Remaining for the slice:
+the MENU FLOW polish (level select / options wiring).
+
 ## 2026-07-07 - THE HUD IS WIRED: play_native renders the full panel, BYTE-EXACT vs the VM page
 
 `native_video/hud_panel.py` (+ the `adapters/hud_panel_state.py` state reader) composes the WHOLE

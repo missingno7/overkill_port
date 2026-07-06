@@ -459,8 +459,22 @@ def main(argv=None) -> int:
     def _hud_panel_indices():
         return panel_indices_from_page(compose_hud_panel_from_image(walk_image, **hud_ctx))
 
+    # The 98EB game-over banner: THEND.BIC (byte-matched to the VM's CS:[95B2] segment) -- one
+    # {rows,width} cell, drawn by 5C35 at (0, 0x4E) over the playfield.  Decoded once, VM-free.
+    _banner_dec = _np.frombuffer(
+        deplanarize_tandy(load_container_asset(container_data, "THEND.BIC"),
+                          sprite_mode=False, emit_item_headers=True), dtype=_np.uint8)
+    _banner_rows = int(_banner_dec[0]) | (int(_banner_dec[1]) << 8)
+    _banner_stride = ((int(_banner_dec[2]) | (int(_banner_dec[3]) << 8)) << 2)
+    _b = _banner_dec[4: 4 + _banner_rows * _banner_stride].reshape(_banner_rows, _banner_stride)
+    _banner_idx = _np.empty((_banner_rows, _banner_stride * 2), dtype=_np.uint8)
+    _banner_idx[:, 0::2] = (_b >> 4) & 0x0F
+    _banner_idx[:, 1::2] = _b & 0x0F
+    _GAME_OVER_BANNER_Y = 0x4E     # 5C35: 5A00(x=0, y=0x4E)
+    _GAME_OVER_HOLD_TICKS = 0x96   # 98F4: the 150-frame 50C9 hold
+
     cell = {"game": game, "starfield": starfield, "tick": 0, "walk_gap": None,
-            "level": args.level, "sprite_ctx": sprite_ctx}
+            "level": args.level, "sprite_ctx": sprite_ctx, "game_over": None}
 
     def _load_next_level() -> None:
         """The 9744 LEVEL-ADVANCE continuation, natively: the SAME cold-boot machinery reloads the
@@ -487,6 +501,24 @@ def main(argv=None) -> int:
                                                    seed.half_stride)
         cell["level"] = nxt
         print(f"LEVEL COMPLETE -> level {nxt + 1} (score/lives carried, lives={lives})")
+
+    def _restart_session() -> None:
+        """The 96E0 continuation after game over: a FRESH session on the start level -- the
+        SAME cold-boot machinery, whose 96EE fresh-session init resets score and lives."""
+        lvl = args.level
+        new_img = build_cold_level_start_image(bundle_data, lvl)
+        walk_image.data[:] = new_img.data
+        nstate, nstarfield = build_cold_level_start(bundle_data, lvl)
+        cell["game"] = dataclasses.replace(
+            NativeGame.load_level(bundle_data, container_data, lvl, nstate,
+                                  origin_x=0, row_base=_COLD_ROW_BASE),
+            row_source=_COLD_ROW_SOURCE, rows_to_milestone=_COLD_ROWS_TO_MILESTONE)
+        cell["starfield"] = nstarfield
+        cell["sprite_ctx"] = _build_sprite_context(bundle_data, container_data, cell["game"],
+                                                   seed.half_stride)
+        cell["level"] = lvl
+        cell["game_over"] = None
+        print(f"fresh session: LEVEL{lvl + 1} (score/lives reset by 96EE)")
 
     def _advance() -> None:
         keys = pygame.key.get_pressed()
@@ -616,10 +648,15 @@ def main(argv=None) -> int:
                     lives = (lives + 1) & 0xFFFF
                 walk_image.ww(0x25CC, 0x2358, lives)
                 if lives == 0xFFFF:                   # 9773: lives exhausted -> the 98EB game-over flow
-                    raise RecoveryGap(
-                        "game over (9773 -> 98EB)",
-                        "the lives counter is exhausted; the 98EB game-over/high-score flow is not "
-                        "recovered yet (the native runtime cannot continue past it)")
+                    # 98EB natively: the THEND.BIC banner (5C35's [95B2] cell, target (0, 0x4E))
+                    # holds ~0x96 frames, then jmp 96E0 -- the title flow (a fresh session on
+                    # restart).  The 5283 high-score entry (far 1F8F:0000/0076) is NOT recovered:
+                    # logged and SKIPPED, never faked.
+                    cell["game_over"] = _GAME_OVER_HOLD_TICKS
+                    print(f"GAME OVER at tick {cell['tick']}: the 98EB banner holds "
+                          f"{_GAME_OVER_HOLD_TICKS} ticks, then the title screen "
+                          "(the 5283 high-score entry is not recovered -- skipped)")
+                    return
                 if walk_image.rb(0x25CC, 0x98C0):
                     walk_image.wb(0x25CC, 0xBEFF, 0x02)
                 apply_respawn_seeds(walk_image)
@@ -663,7 +700,20 @@ def main(argv=None) -> int:
             for ev in pygame.event.get():
                 if ev.type == pygame.QUIT or (ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE):
                     running = False
-            if gap is None:
+            if cell["game_over"] is not None:
+                # The 98EB hold: the frozen playfield + the THEND banner, then the title flow.
+                frame = _render_with_hud()
+                frame[_GAME_OVER_BANNER_Y:_GAME_OVER_BANNER_Y + _banner_rows,
+                      :_banner_idx.shape[1]] = _banner_idx
+                last_frame = frame
+                display.set_title("OVERKILL - native (VM-less)  GAME OVER")
+                cell["game_over"] -= 1
+                if cell["game_over"] <= 0:
+                    if not _run_title_screen(display, pygame, container_data):
+                        running = False
+                    else:
+                        _restart_session()
+            elif gap is None:
                 try:
                     last_frame = skeleton.tick()
                 except Exception as exc:  # noqa: BLE001 -- a real unrecovered gap, report + hold
