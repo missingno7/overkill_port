@@ -46,15 +46,26 @@ integration (no code changed, investigation only):
    `verify_cold_populate` smoke just uses `0x110` as a stand-in, not derived from a recovered
    cold-seed -- needs checking against the cold bundle/a real snapshot's frame-0 value).
 
-**Turn-key steps:** (a) parameterise `build_cold_level_start(exe_image, level_index)` to use
-`native_new_game_data_setup` (or override `DS:2356` after the existing pipeline) instead of the
-hardcoded-planet-0 `new_game_session_init_96ee`; (b) confirm/derive A978's correct cold value for
-planet 1; (c) build `walk_image` unconditionally in `play_native.py` (not just `--snapshot`), seeded
-via `build_cold_level_start`; (d) each tick, sync `A978 = g.rows_to_milestone` into the image
-(one line, same pattern as the existing row_base sync) BEFORE calling
-`run_level_object_script_4a65(walk_image)`, then `advance_object_frame` as today; (e) new
-end-to-end verification: cold `play_native --level 0` actually renders a moving enemy wave (extend
-`verify_cold_populate`-style census into an interactive/headless play_native smoke).
+**Turn-key steps -- (a) DONE, (b)-(e) remain:**
+(a) **DONE**: `build_cold_level_start(exe_image, level_index=0)` now takes the level index and
+overrides `DS:2356` via `LEVEL_INDEX_TO_PLANET = (1,2,3,4,5,0)` after the session-init's hardcoded
+planet-0 write (existing callers unaffected -- default `level_index=0` now correctly seeds planet 1,
+verified against `test_cold_level_start.py` + full suite).
+(b) **Still open, do NOT guess**: A978's correct cold value for planet 1. Traced so far: the RAW
+static bundle's `DS:A978` is `0x0000` (not a usable cold seed as-is, same situation as `row_base`
+needing the hardcoded `_COLD_ROW_BASE=0x9C` constant in `play_native.py` rather than a bundle read).
+`verify_cold_populate`'s own `0x110` is a hand-picked stand-in, NOT yet independently confirmed
+against the level-script's own first-trigger-row data (attempted once: reading
+`DS:[C5E9+2]` -> `0xC5F7` -> that cell's own word gave `0xC8D6`, close to but not matching the
+`C8DE`/etc "head" addresses from earlier session notes -- the cursor/indirection chain needs a
+careful FRESH re-trace, not a rushed guess, before hardcoding a value).
+(c) build `walk_image` unconditionally in `play_native.py` (not just `--snapshot`), seeded via
+`build_cold_level_start(bundle_data, args.level)`.
+(d) each tick, sync `A978 = g.rows_to_milestone` into the image (one line, same pattern as the
+existing row_base sync) BEFORE calling `run_level_object_script_4a65(walk_image)`, then
+`advance_object_frame` as today.
+(e) new end-to-end verification: cold `play_native --level 0` actually renders a moving enemy wave
+(extend `verify_cold_populate`-style census into an interactive/headless play_native smoke).
 
 Remaining L1 scenery gaps (0x8c/0x8b/0x89, per the demo tally) are a SEPARATE, smaller mop-up; not
 blocking this campaign's done-condition.

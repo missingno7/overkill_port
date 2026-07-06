@@ -36,12 +36,22 @@ from overkill.recovered.systems.frame_loop import (
 )
 
 
-def build_cold_level_start(exe_image: bytes) -> tuple[NativeGameState, StarfieldState]:
+#  The play order is planets 1->2->3->4->5->0 (planet 0 is the FINAL boss level); play_native's
+#  0-based --level argument names the Nth level a player plays, so level 0 -> planet 1, ..., level 4
+#  -> planet 5, level 5 -> planet 0.
+LEVEL_INDEX_TO_PLANET = (1, 2, 3, 4, 5, 0)
+
+
+def build_cold_level_start(exe_image: bytes, level_index: int = 0) -> tuple[NativeGameState, StarfieldState]:
     """Assemble the frame-0 level-start ``(NativeGameState, StarfieldState)`` from the recovered seeds.
 
     ``exe_image`` is the cold runtime data image (its data segment holds the static pool pointer tables
     at ``DS:0x32CA`` / ``DS:0x8D12`` and the starfield stream); this applies the level-start writes on top
-    and projects the result.  No VM, no captured snapshot.
+    and projects the result.  No VM, no captured snapshot.  ``level_index`` is play_native's 0-based
+    level argument, mapped to the planet number via :data:`LEVEL_INDEX_TO_PLANET` (``DS:2356``) --
+    :func:`new_game_session_init_96ee` alone always seeds planet 0 (a fresh SESSION, not a chosen
+    level), so this overrides it afterward, matching how :func:`native_new_game_data_setup`
+    (the level-select entry point) sets the SAME cell from a chosen level index.
     """
     mem = MutFlatMemory(exe_image)
     ds = DATA_SEGMENT
@@ -52,6 +62,7 @@ def build_cold_level_start(exe_image: bytes) -> tuple[NativeGameState, Starfield
 
     # 1) session start
     write_map(new_game_session_init_96ee())
+    mem.ww(ds, 0x2356, LEVEL_INDEX_TO_PLANET[level_index % len(LEVEL_INDEX_TO_PLANET)])
     # 2) C4DB new-game setup (special + effect seed + control reset) via the DS:0x32CA table
     table_32ca = {cx: mem.rw(ds, OBJECT_SEED_SLOT_TABLE_32CA + cx * 2)
                   for cx in range(1, OBJECT_SEED_COUNT + 1)}
