@@ -34,7 +34,9 @@ the unrecovered behaviors, by hit frequency (= recovery priority) —
 | ~~0x12~~ | ~~281~~ | 1010:B2CD | **RECOVERED** (step_waypoint_follower_11_12): the cold A43C waypoint-path follower, seek+retry loop |
 | 0x19 | 256 | 1010:BAF0 | scenery (see scene.md) |
 | ~~0x29~~ | ~~182~~ | 1010:8721 | **RECOVERED** (step_ramp_steer_29): sprite ramp -> 74E2 retarget -> 5E42 steer -> Y-bounds BFC7 death |
-| 0x8c | 108 | 1010:BB80 | scenery-ish (BBxx) -- ATTEMPTED+REVERTED, see loop_blockers.md (frame-3072 divergence) |
+| ~~0x8c~~ | ~~108~~ | 1010:BB80 | **RECOVERED** (ground crawler, sign -1; with 0x8b via the shared BB8E body + BBED terrain-follow over AFD8+BDD0) |
+| ~~0x8b~~ | ~~(363)~~ | 1010:BB88 | **RECOVERED** (ground crawler, sign +1 -- same body as 0x8c) |
+| ~~0x89~~ | ~~(158)~~ | 1010:B2A6 | **RECOVERED** (0x19-clone: sprite 233C+0x1C, BAE1 emit on 232C==0x1F, BB03 bounce) |
 | ~~0x28~~ | ~~84~~ | 1010:8676 | **RECOVERED** (step_spawner_28, alias-group with 0x2A): 96AA-ramp anim gated on [2332]==0; when [A47E]==0 AND the +0x06 counter==7, fire the 81F4 spawn (7524 alloc + enemy_spawn_stamp_8209) with the per-planet child override (planet 1 -> behavior 0x29) |
 | ~~0x90~~ | ~~80~~ | 1010:8282 | **RECOVERED** (sister of 0x91, same fn, base 0x88/0x16C) |
 | ~~0x2f~~ | ~~80~~ | 1010:8820 | **RECOVERED** (step_bounce_scanner_2f): sprite 0x43, B729 seek, target-x drift, blocked→target-y bounce 0↔0xC0 |
@@ -111,11 +113,12 @@ run_status.md) — the demo went from 3 unexplained divergences to ZERO:**
   but unverified). Needs `511F` scoped (does it touch DGROUP state the shadow compares?) before this
   is safe to compose. Small but 3-deep; not yet a quick slice.
 
-Remaining scenery (0x1a/0x19/**0x89** DONE; 0x8c/0x8b belong to scene.md). The **BDD0 contact predicate
-is now RECOVERED + wired** (2026-07-06): it was already `collision.player_hazard_scan_hit`, just
-unwired; `contact_at` now takes the step's mirror deltas and `_bdd0_contact_at(mem, rec)` scans the
-effect pool. 0x89 (the trivial 0x19 clone that diverged on the same `A430` mismatch) now passes the
-full demo shadow. The 0x8c/0x8b crawler is re-attemptable with the same predicate.
+**The scenery cluster is DONE** (0x1a/0x19/0x89/0x8c/0x8b all native, 2026-07-06). The BDD0 contact
+predicate is RECOVERED + wired: it was already `collision.player_hazard_scan_hit`, just unwired;
+`contact_at` now takes the step's mirror deltas and `_bdd0_contact_at(mem, rec)` scans the effect
+pool. **The remaining demo gap frontier is 58 frames**: `0x01 latch-9` + `0x26` (51 -- the morph and
+its target close each other; 0x26's AFD8/BDD0 dependency is now WIRED, so it is re-scoped from
+"blocked" to turn-key), player-death 9EA3 (5), pickup-collect (2).
 
 ### C237 child-spawn — DONE (spec below kept as historical reference; empirically traced 2026-07-05)
 

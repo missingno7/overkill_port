@@ -93,6 +93,21 @@ Format: `behaviour (handler) — guards → primitives(operands) → tail`.
   `step_animated_spawner_90_91` (one fn, two bases). Note the recurring pattern: a table value that is
   BOTH a sprite delta and a dispatch selector — a compact "phase table" idiom worth a first-class slot
   in the eventual step language.
+- **0x89 (`B2A6`)** — `animate`(sprite = `233C` + 0x1C) → `gate`(`232C`==0x1F) → `spawn`(C237 via the
+  shared `BAE1` dir-4 emit) → the shared `BB03` bounce. A pure re-parameterization of 0x19 (different
+  clock/bias/gate, same shape) — the first actor recovered by constants-only diff against an existing
+  handler. Its landing also PROVED the wired `BDD0` contact predicate (its BB03 bounce hits contact
+  frames 0x19/0x1A never reach).
+- **0x8C / 0x8B (`BB80`/`BB88` → the shared `BB8E` body)** — the GROUND CRAWLER, the first
+  TERRAIN-FOLLOWING actor: `flag`(`A952` = ±1, the two behaviors differ ONLY in this sign) →
+  `terrain-probe`(`BBED`: 5073 over X+`A278`-0x10, then tile `[bx + A952 (-0xD on the left path)]`
+  via 505B — class-0 = no ground = blocked) → `step`(AFD8 **with the BDD0 contact predicate**, dir
+  0/4 picked by X vs the view anchor) → `animate`(sprite = 0x61 + 4*`A952` + `233C`-only-when-moved
+  + dir) → `gate`(`2330` ∈ {0x7F,0x6B,0x57}) → `shoot`(7476 + sprite/X/Y patch). New vocabulary:
+  `terrain-probe` (sampling the plane AHEAD of the step, distinct from the step's own collision) and
+  the anim-term-gated-on-motion idiom. Landing it unmasked the B2CD seek-mode global
+  (`WaypointFollowerStep.seek_mode_2308`) — the 0x12 follower's `[2308]` write the adapter had
+  never persisted (write-scratch omissions surface only when a later-walked actor's frame is diffed).
 - **0x28 / 0x2A (`8676` + its `8654` helper)** — an animated spawner whose `spawn` fires a SELF-COUNTED
   child: `animate`(sprite = `96AA`[+0x06 counter] + 0x1C, the counter a per-record clock that advances
   only when `2332`==0, wrapping mod 0x18) → `gate`(`A47E`==0 AND counter==7, i.e. once per cycle while

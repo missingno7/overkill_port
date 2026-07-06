@@ -72,7 +72,18 @@ so it is a focused slice on its own — recover it deliberately, not as a crawle
 
 </details>
 
-### behavior 0x8C/0x8B (the BB80/BB88 ground-crawler scenery): 79-byte divergence at demo frame 3072 — RE-ATTEMPTABLE now BDD0 is wired
+### behavior 0x8C/0x8B — RESOLVED (2026-07-06, same day): recovered with the wired BDD0; zero divergence
+
+The crawler is DONE. Re-added with `_bdd0_contact_at` threaded into its AFD8 step; the frame-3072
+divergence disappeared (BDD0 was the root cause, as hypothesised). Landing it unmasked one FINAL
+1-byte divergence (frame 3535, `DS:2308`): B2CD (waypoint 0x12) writes its seek-mode global
+(`1`, or `2` iff planet==0/BDAC==1) which the adapter never persisted — fixed via
+`WaypointFollowerStep.seek_mode_2308`. Demo shadow now PASSES at zero divergence with the whole
+scenery cluster native. Historical decode below (kept for the record).
+
+<details><summary>original blocker entry (resolved)</summary>
+
+#### behavior 0x8C/0x8B (the BB80/BB88 ground-crawler scenery): 79-byte divergence at demo frame 3072
 
 **Attempted + REVERTED** (behavior_walk.py + scenery_behaviors.py reverted to HEAD; the play_native
 cold-wiring slice `f745f6f` is unaffected). The handler RUNS correctly enough to drop 0x8c/0x8b off
@@ -103,6 +114,8 @@ elif structure. NEEDS a per-frame trace of effect-slot-2 through BOTH the VM and
 frame 3072 (dump probe_x, 5073 bx, plane[bx], class, the chosen direction, and AFD8's blocked verdict
 on each side) to isolate. Candidate: BBED may pass a REAL BDD0 contact predicate to AFD8 (the same
 caller-owned predicate the 0x26 recovery needs) rather than the `lambda: False` the BB03 bounce uses.
+
+</details>
 
 > TECHNIQUE (2026-07-04, SUPERSEDED same day): free-run timing FAST-FORWARD is now a real primitive --
 > `overkill/timing_fastforward.advance_frames_fast(cpu, waits, on_frame=...)` (verified by

@@ -397,7 +397,8 @@ class WaypointFollowerStep:
     """behaviors 0x11/0x12 per-frame outcome: the seek result + the advanced waypoint pointer +
     sprite. Caller applies via BC4B (no A278 drift, unlike the BC45-tail actors).  ``target_x_2306``/
     ``target_y_2304`` are B2D4/B2D8's own global writes (every retry re-writes them; only the FINAL
-    -- the successful attempt's -- survives to the frame boundary)."""
+    -- the successful attempt's -- survives to the frame boundary); ``seek_mode_2308`` is B2DB/B2EF's
+    seek-mode global write (1, overwritten to 2 iff planet==0 or BDAC==1 -- same per retry)."""
     x_word: int
     y_word: int
     direction_or_step: int
@@ -405,6 +406,7 @@ class WaypointFollowerStep:
     sprite: int
     target_x_2306: int
     target_y_2304: int
+    seek_mode_2308: int
 
 
 def _waypoint_follower_sprite(direction: int, bdac: int, planet: int, boss_2350: int) -> int:
@@ -465,7 +467,8 @@ def step_waypoint_follower_11_12(*, x_word: int, y_word: int, direction: int, wa
     sprite = _waypoint_follower_sprite(d, bdac, planet_2356, boss_2350)
     return WaypointFollowerStep(x_word=x, y_word=y, direction_or_step=d,
                                 waypoint_ptr_after=ptr, sprite=sprite,
-                                target_x_2306=target_x, target_y_2304=target_y)
+                                target_x_2306=target_x, target_y_2304=target_y,
+                                seek_mode_2308=mode)
 
 
 # 1010:74E2 retarget: refresh a record's steer deltas (+0x2A/+0x2C) toward the CURRENT view/anchor

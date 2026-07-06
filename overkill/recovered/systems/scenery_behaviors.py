@@ -131,3 +131,50 @@ def step_scenery_emitter_sprite_89(clock_233c: int) -> int:
 def scenery_89_should_emit(gate_232c: int) -> bool:
     """Whether behavior 0x89 emits a C237 child this frame (``DS:232C == 0x1F``)."""
     return (gate_232c & 0xFFFF) == SCENERY_89_EMIT_GATE_232C
+
+
+# 1010:BB80 (0x8C) / BB88 (0x8B): the GROUND-CRAWLER scenery. The two behaviors are ONE body
+# (1010:BB8E), differing only by the sign flag they stash in DS:A952: 0x8C writes 0xFFFF (-1), 0x8B
+# writes 0x0001. The shared 1010:BBED terrain-follow helper walks the object one step along the
+# ground surface (probing the tile column ahead via 5073/505B, then stepping via AFD8 -- with the
+# real BDD0 contact predicate); the body then picks a sprite from the animation clock (only when it
+# moved) and periodically fires a shot. The memory-touching move + spawn live in the adapter.
+GROUND_CRAWLER_SPRITE_BASE = 0x0061
+GROUND_CRAWLER_PROBE_X_BIAS = -0x0010    # BBED: probe column is one tile-and-a-bit ahead of X+A278
+GROUND_CRAWLER_LEFT_DIRECTION = 0x0004   # BC2B: X < anchor -> step direction 4 (and bias the probe row)
+GROUND_CRAWLER_RIGHT_DIRECTION = 0x0000  # BBF3: default step direction 0 (X >= anchor)
+GROUND_CRAWLER_LEFT_ROW_BIAS = -0x000D   # BC34: the X<anchor path also shifts the probe by -0xD
+#: BBB5..BBC8: the three DS:2330 animation-clock phases on which the crawler fires a shot (via 7476).
+GROUND_CRAWLER_SPAWN_CLOCKS = (0x007F, 0x006B, 0x0057)
+GROUND_CRAWLER_CHILD_SPRITE = 0x0003     # BBD2: the fired child's sprite (over 7476's default 0x31)
+GROUND_CRAWLER_CHILD_XY_BIAS = -0x0008   # BBD7/BBDB: the fired child's X and Y are each nudged -8
+
+
+@recovered_island(
+    asm=("1010:BB91..BBB4",),
+    contract="the ground-crawler body's sprite (1010:BB9A): 0x61 + 4*DS:A952 + anim + dir, where anim "
+             "is DS:233C when the BBED move was NOT blocked (DS:A430==0) else 0 (BB91 mov bx,0), and "
+             "dir is the 0/4 step direction BBED chose. 4*A952 wraps mod 0x10000.",
+    status="OBSERVED",
+    merge_target="SceneSystem",
+    unknowns="none",
+)
+def ground_crawler_sprite_8b_8c(sign_a952: int, animate_clock_233c: int, moved: bool,
+                                direction: int) -> int:
+    """The pure sprite for the ground-crawler body (``1010:BB9A``): ``0x61 + 4*A952 + anim + dir``."""
+    sign = sign_a952 & 0xFFFF
+    anim = (animate_clock_233c & 0xFFFF) if moved else 0
+    return (GROUND_CRAWLER_SPRITE_BASE + 4 * sign + anim + (direction & 0xFFFF)) & 0xFFFF
+
+
+@recovered_island(
+    asm=("1010:BBB5..BBC8",),
+    contract="the ground-crawler shot gate (1010:BBB5): fire a child shot iff DS:2330 is one of "
+             "0x7F/0x6B/0x57 (three animation-clock phases); otherwise jmp BC45 with no spawn.",
+    status="OBSERVED",
+    merge_target="SceneSystem",
+    unknowns="none",
+)
+def ground_crawler_should_spawn(clock_2330: int) -> bool:
+    """Whether the ground crawler fires a shot this frame (``DS:2330`` on one of three phases)."""
+    return (clock_2330 & 0xFFFF) in GROUND_CRAWLER_SPAWN_CLOCKS

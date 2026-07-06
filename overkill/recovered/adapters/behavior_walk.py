@@ -54,15 +54,25 @@ from overkill.recovered.systems.enemy_behaviors import (
     step_waypoint_follower_11_12,
 )
 from overkill.recovered.systems.scenery_behaviors import (
+    GROUND_CRAWLER_CHILD_SPRITE,
+    GROUND_CRAWLER_CHILD_XY_BIAS,
+    GROUND_CRAWLER_LEFT_DIRECTION,
+    GROUND_CRAWLER_LEFT_ROW_BIAS,
+    GROUND_CRAWLER_PROBE_X_BIAS,
+    GROUND_CRAWLER_RIGHT_DIRECTION,
     SCENERY_19_EMIT_DIRECTION,
     bb03_bounce_after_step,
     bb03_bounce_boundary,
+    ground_crawler_should_spawn,
+    ground_crawler_sprite_8b_8c,
     scenery_19_should_emit,
     scenery_89_should_emit,
     step_scenery_emitter_sprite_19,
     step_scenery_emitter_sprite_89,
     step_scenery_sprite_ramp_1a,
 )
+from overkill.recovered.systems.tilemap import compute_tile_probe_5073
+from overkill.recovered.domain.tilemap import TileProbeInput
 from overkill.recovered.systems.frame_loop import (
     canned_random_next_4d95,
     enemy_shot_stamp_7476,
@@ -109,6 +119,9 @@ _DEATH_DEC_ONLY = frozenset((0x16, 0x17, 0x18, 0x7F, 0x80, 0x81, 0x1D, 0x1E, 0x2
                              0x61, 0x62, 0x65, 0x14))
 
 DS = 0x25CC
+CODE_SEG = 0x1010
+TILE_PLANE_SEG_CELL = 0x9592       # CS:[9592] -- the level tile-plane segment (read live like 4B4A)
+TILE_CLASS_TABLE_C3AA = 0xC3AA     # DS:C3AA -- the 256-entry raw-tile -> class map (505B)
 EFFECT_TABLE_32CA = 0x32CA
 GAMEPLAY_TABLE_8D12 = 0x8D12
 EFFECT_SLOTS = 0x23
@@ -302,6 +315,83 @@ def _step_scenery_89(mem, rec: int, tiles: LevelTileContext) -> None:
     _bb03_bounce(mem, rec, tiles)
 
 
+def _ground_follow_move_bbed(mem, rec: int, tiles: LevelTileContext, sign: int) -> bool:
+    """1010:BBED: walk the ground crawler one step along the terrain surface. Returns whether it
+    MOVED (DS:A430 == 0 on return -- the body gates the animation term on this).
+
+    Sets DS:A430 (blocked flag), stamps the chosen step direction into rec+0x06 (0 when X >= the view
+    anchor, 4 when X < it), and -- when the tile ahead is solid -- steps via the recovered AFD8 with
+    the real BDD0 contact predicate (persisting its position + the A430/A432.. scratch).  The terrain
+    PRE-PROBE: 5073 over (X + A278 - 0x10) -> base tile offset, then +A952 (and -0xD on the X<anchor
+    path) selects the tile whose class (505B/C3AA) gates the step -- a class-0 (open) tile means 'no
+    ground there', so the crawler is BLOCKED (no AFD8 step)."""
+    mem.ww(DS, 0xA430, 0)
+    mem.ww(DS, rec + 0x06, GROUND_CRAWLER_RIGHT_DIRECTION)
+
+    x = mem.rw(DS, rec + 0x02)
+    y = mem.rw(DS, rec + 0x04)
+    probe_x = (x + mem.rw(DS, 0xA278) + GROUND_CRAWLER_PROBE_X_BIAS) & 0xFFFF
+    probe = compute_tile_probe_5073(TileProbeInput(
+        origin_x_word=mem.rw(DS, 0x234E), row_base_word=mem.rw(DS, 0x2350),
+        object_x_word=probe_x, object_y_word=y))
+    mem.ww(DS, 0x215A, probe.adjusted_x_word)   # 5073 writes DS:215A = origin_x + probe_x
+    if probe.negative_adjusted_x:               # BC0E: bx == FFFF -> blocked, no step
+        mem.ww(DS, 0xA430, 1)
+        return False
+
+    bx = probe.tile_offset_word
+    if x < mem.rw(DS, 0x237E):                   # BC17: X < anchor -> the left (direction 4) path
+        mem.ww(DS, rec + 0x06, GROUND_CRAWLER_LEFT_DIRECTION)
+        bx = (bx + sign + GROUND_CRAWLER_LEFT_ROW_BIAS) & 0xFFFF
+    else:                                        # X >= anchor -> the right (direction 0) path
+        bx = (bx + sign) & 0xFFFF
+
+    plane_seg = mem.rw(CODE_SEG, TILE_PLANE_SEG_CELL)
+    tile = mem.rb(plane_seg, bx)
+    if mem.rb(DS, (TILE_CLASS_TABLE_C3AA + tile) & 0xFFFF) == 0:  # BC20/BC3A: class 0 -> blocked
+        mem.ww(DS, 0xA430, 1)
+        return False
+
+    direction = mem.rw(DS, rec + 0x06)
+    result = contact_probe_afd8(x, y, direction, mem.rw(DS, 0xA278), tiles, _bdd0_contact_at(mem, rec))
+    mem.ww(DS, rec + 0x02, result.x_word)
+    mem.ww(DS, rec + 0x04, result.y_word)
+    mem.ww(DS, 0xA430, 1 if result.blocked else 0)
+    mem.ww(DS, 0xA432, result.snap_x)
+    mem.ww(DS, 0xA434, result.snap_y)
+    mem.ww(DS, 0xA436, result.mirror_y)
+    mem.ww(DS, 0xA438, result.mirror_x)
+    mem.ww(DS, 0x215A, result.sample_215a)
+    return not result.blocked
+
+
+def _spawn_ground_crawler_shot(mem, rec: int) -> None:
+    """1010:BBCA: fire a 7476 shot from the crawler, then override its sprite (0x03) and nudge its X/Y
+    by -8 (BBD2/BBD7/BBDB) -- otherwise a standard 7476 enemy-shot (behavior 0x0B) child."""
+    slot = _alloc(mem, 0x95DA, GAMEPLAY_POOL_BASE, GAMEPLAY_POOL_WRAP, GAMEPLAY_SLOTS)
+    if slot == 0xFFFF:
+        return
+    stamp = enemy_shot_stamp_7476(mem.rw(DS, rec + 0x02), mem.rw(DS, rec + 0x04),
+                                  mem.rw(DS, 0xA8C2) == 1, mem.rw(DS, 0x237E), mem.rw(DS, 0x2380))
+    for off, val in stamp.items():
+        mem.ww(DS, slot + off, val)
+    if mem.rb(DS, 0x98C0):
+        mem.wb(DS, 0xBEFF, 0x1A)
+    mem.ww(DS, slot + 0x08, GROUND_CRAWLER_CHILD_SPRITE)
+    mem.ww(DS, slot + 0x04, (mem.rw(DS, slot + 0x04) + GROUND_CRAWLER_CHILD_XY_BIAS) & 0xFFFF)
+    mem.ww(DS, slot + 0x02, (mem.rw(DS, slot + 0x02) + GROUND_CRAWLER_CHILD_XY_BIAS) & 0xFFFF)
+
+
+def _step_ground_crawler(mem, rec: int, tiles: LevelTileContext, sign: int) -> None:
+    """behaviors 0x8C (sign 0xFFFF) / 0x8B (sign 0x0001): the shared ground-crawler body (1010:BB8E)."""
+    mem.ww(DS, 0xA952, sign)
+    moved = _ground_follow_move_bbed(mem, rec, tiles, sign)
+    mem.ww(DS, rec + 0x08, ground_crawler_sprite_8b_8c(
+        sign, mem.rw(DS, 0x233C), moved, mem.rw(DS, rec + 0x06)))
+    if ground_crawler_should_spawn(mem.rw(DS, 0x2330)):
+        _spawn_ground_crawler_shot(mem, rec)
+
+
 def _step_scroller_27(mem, rec: int) -> None:
     r = step_sprite_scroller_27_835d(
         clock_2338=mem.rw(DS, 0x2338), planet_2356=mem.rw(DS, 0x2356),
@@ -382,6 +472,7 @@ def _step_waypoint_12(mem, rec: int) -> None:
     mem.ww(DS, rec + 0x08, r.sprite)
     mem.ww(DS, 0x2306, r.target_x_2306)   # B2D4: the seek target globals (every retry rewrites them)
     mem.ww(DS, 0x2304, r.target_y_2304)   # B2D8
+    mem.ww(DS, 0x2308, r.seek_mode_2308)  # B2DB/B2EF: the seek-mode global (1, or 2 on planet0/BDAC)
 
 
 def _step_waypoint_11(mem, rec: int) -> None:
@@ -929,6 +1020,12 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
         elif beh == 0x89:
             _step_scenery_89(mem, rec, tiles)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # B2A6->BB03 exits jmp BC45 (WITH drift)
+        elif beh == 0x8C:
+            _step_ground_crawler(mem, rec, tiles, 0xFFFF)       # BB80: A952 = -1
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # BB8E body exits jmp BC45 (WITH drift)
+        elif beh == 0x8B:
+            _step_ground_crawler(mem, rec, tiles, 0x0001)       # BB88: A952 = +1
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # BB8E body exits jmp BC45 (WITH drift)
         else:
             raise RecoveryGap(f"behavior {beh:#04x} (record {rec:04X})",
                               "no native handler registered -- recover it before walking")

@@ -4,7 +4,7 @@
      Source of truth = the @recovered_island metadata on each recovered function.
      tests/test_island_registry.py fails if this file drifts from the code. -->
 
-47 recovered islands (12 OBSERVED, 3 ASM_MATCHED, 32 VERIFIED).
+49 recovered islands (14 OBSERVED, 3 ASM_MATCHED, 32 VERIFIED).
 
 | ASM boundary | Function | Status | Merge target | Contract |
 |---|---|---|---|---|
@@ -54,4 +54,6 @@
 | `1010:BAF0..BAFE` | `systems.scenery_behaviors.step_scenery_emitter_sprite_19` | OBSERVED | SceneSystem | behavior 0x19 (1010:BAF0): sprite = DS:233A + 0x36, unconditionally; when DS:232E==0x3F, emit a C237 child (via 1010:BAE1, which stamps direction=4 for the spawn regardless of this record's own direction, then restores it) -- then falls into the shared BB03 bounce every frame. |
 | `1010:BB03..BB0D (the immediate Y-boundary flip)` | `systems.scenery_behaviors.bb03_bounce_boundary` | OBSERVED | SceneSystem | 1010:BB03's Y-boundary pre-check: if the CURRENT bounce direction has already reached its endpoint (dir==6 and Y==0, or dir!=6 and Y==0xC0), flip immediately with no AFD8 call. Otherwise the caller must attempt one AFD8 contact-step in `direction` and use :func:`bb03_bounce_after_step` on the result. |
 | `1010:BB0E..BB3D` | `systems.scenery_behaviors.bb03_bounce_after_step` | OBSERVED | SceneSystem | 1010:BB03's post-step flip: after the caller's AFD8 contact-step attempt in the CURRENT bounce direction, flip to the opposite phase iff the step was blocked (DS:A430 != 0); otherwise the direction (and thus the bounce phase) is unchanged. |
+| `1010:BB91..BBB4` | `systems.scenery_behaviors.ground_crawler_sprite_8b_8c` | OBSERVED | SceneSystem | the ground-crawler body's sprite (1010:BB9A): 0x61 + 4*DS:A952 + anim + dir, where anim is DS:233C when the BBED move was NOT blocked (DS:A430==0) else 0 (BB91 mov bx,0), and dir is the 0/4 step direction BBED chose. 4*A952 wraps mod 0x10000. |
+| `1010:BBB5..BBC8` | `systems.scenery_behaviors.ground_crawler_should_spawn` | OBSERVED | SceneSystem | the ground-crawler shot gate (1010:BBB5): fire a child shot iff DS:2330 is one of 0x7F/0x6B/0x57 (three animation-clock phases); otherwise jmp BC45 with no spawn. |
 | `1F8F:027A..02A0`, `1F8F:0368..03A5`, `1F8F:0448..0451`, `1010:8D8B` | `systems.enemy_behaviors.step_wave_controller_1f` | VERIFIED | EnemyWaveSystem | behavior 0x1F (the planet-1 WAVE CONTROLLER, via the 8D4F stub + the 8D8B trampoline): seek the A482-schedule waypoint (x+0x20/y, 5DB2 mode 3); on arrival advance the schedule +4 and burst FIVE 81F4 spawns (leader-context = the controller's position, formation slots from the A844 ring cursor +4 each NO wrap, behavior 0x20, substate FFFF); sprite = direction + 0x3B every frame |

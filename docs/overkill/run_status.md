@@ -13,9 +13,27 @@
 > cold-boot probes MUST pass `overkill.launch.build_command_tail("tandy", "pc")`.
 > Suite green: 1225 passed / 23 skipped (2026-07-06). **SCENE.MD CAMPAIGN DONE**: `play_native --level
 > 0` (cold, no snapshot) now spawns/moves a real enemy wave, VM-free (`verify_play_native_cold` PASS).
-> Native actor set: 19 behaviors (0x28, 0x89 recovered 2026-07-06; the BDD0 contact predicate is now
-> wired through AFD8). Frontier: the 0x8c/0x8b crawler (re-attemptable now BDD0 is wired), then
-> 0x01-latch9 / player-death / pickup-collect.
+> Native actor set: 21 behaviors (0x28, 0x89, 0x8C, 0x8B recovered 2026-07-06; BDD0 wired through
+> AFD8). **The L1 scenery cluster is DONE.** Gap frontier: 58 frames total -- 0x01-latch9+0x26 (51),
+> player-death (5), pickup-collect (2).
+
+## 2026-07-06 - MILESTONE: the 0x8C/0x8B ground crawler RECOVERED -- the L1 scenery cluster is DONE
+
+With BDD0 wired, re-added the 0x8C/0x8B ground crawler (the BB80/BB88 pair over the shared BB8E body
++ the BBED terrain-follow: 5073/505B pre-probe of the tile ahead, AFD8 step with the real
+`_bdd0_contact_at` predicate, sprite `0x61 + 4*A952 + anim(233C, only-when-moved) + dir`, and the
+BBB5 shot gate firing a 7476 child with sprite/X/Y overrides on three DS:2330 phases). The old
+frame-3072 divergence is GONE -- BDD0 was indeed the root cause. Landing it unmasked ONE new 1-byte
+divergence (frame 3535, `DS:2308` vm=1/nat=2): B2CD (the 0x12 waypoint follower) writes its seek-mode
+GLOBAL (`[2308]=1`, overwritten to 2 iff planet==0 or BDAC==1) which the pure fn computed internally
+but never exposed -- fixed by adding `seek_mode_2308` to `WaypointFollowerStep` and persisting it in
+the adapter (the previous crawler gap frames had masked this omission).
+
+**Demo shadow: PASS, zero divergence across all 8294 walk frames.** The gap frontier COLLAPSED from
+1449 frames to **58**: 50x `0x01 latch-9` (needs 0x26), 5x player-death (9EA3), 2x pickup-collect,
+1x `0x26` (newly unmasked -- the latch-9 morph target, now reachable AND its AFD8 dependency [the
+BDD0 predicate] is already wired). Native actor set: **21 behaviors**. Suite green; audits pass.
+Next: 0x26 + the 0x01 latch-9 morph (they close each other; 51 of the remaining 58 gap frames).
 
 ## 2026-07-06 - BDD0 contact predicate WIRED into AFD8; behavior 0x89 RECOVERED (the shared blocker, resolved)
 
