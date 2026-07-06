@@ -38,6 +38,19 @@ sprite compositors (`object_sprite_blocks` SKIPS ``anim(+12) != 0`` and ``varian
 records -- the explosion/hit-flash frames are exactly those); (4) the resizable-window crash --
 FIXED (scale to the live window size).
 
+**FIRST 1:1 LEAD (2026-07-07, late)**: the overdraw is PARTLY the ``+0x0A == 0`` records --
+skipping them in the sprite layer collapses frame 4000 from 2087 to 343 px with ZERO vm-only
+regressions (frames 1000/7000 unchanged at 740/1414, a second cause there).  NEXT: confirm the
++0x0A skip in the A90C/5A92 present-scan ASM before adopting it -- 5A92 decoded: es=[9598],
+di=+0x0C, si=+0x0E, then ``jmp cs:[5AB6 + (draw_type(+0x14) + 3*mode(95BC))*2]`` -- a
+(draw-type x video-mode) HANDLER MATRIX; the Tandy column
+(34AD/34D8/3542) decoded: they are GATELESS row blits from ``si = +0x0E`` (34AD = the two-slot
+form: 16 rows x 8 movsw from +0x0C, then AGAIN at ``di = +0x10`` / ``si += 0x140`` -- the
+half-stride second half).  So the suppression is NOT in the present -- it lives in the 75A6/768E
+RESOLVERS that compute ``+0x0E``/``+0x0C`` per record (they run before the present; find their
++0x0A / anim / variant gates there).  Then chase the 1000/7000 overdraw family (native draws records the VM page lacks --
+classify via the frame-4000 recipe: dump live-projection records, diff the block sets).
+
 **THE 1:1 INSTRUMENT IS LIVE**: `verify_native_frame_1to1` samples cached frames, composes the
 native frame (live VM stars + the pre-state's own pools/projection cells) and diffs the playfield
 vs the VM's own page.  FIRST READING (L1 demo, every 1000th frame): mean 1085 px/frame of 39936
