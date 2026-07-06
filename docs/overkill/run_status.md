@@ -55,9 +55,15 @@ if row <= 0xE52 call **7948** (the 13-TILE ROW LOOP: es=[9592] the plane seg, si
 [A406]=13, per tile ``al = plane[si]`` dispatched through the PLANET-KEYED handler table
 ``[95DE + planet*2]`` writing a 16px cell at ``[A40A] += 0x10``; special tile ids
 0x04/0x07/0x6C/0x6D branch at 7977.. to 7A6E/7A7A/7AAE/7AC4) + call 4A65 (already recovered)
--> jmp **5A7E** (the row -> page blit).  RECOVERY ORDER: the per-planet tile handler (ONE
-planet first -- what does the common handler do with al?), then 5A7E, then the native window
-compose verified against the pure-VM oracle pages; (2) the 75A6 anim sub-handlers (bx = mode*8 +
+-> jmp **5A7E** (the row -> page blit).  CORRECTION: 7948 is NOT pixels -- it is the
+**TILE-CUE OBJECT SPAWNER** (the planet handlers match special tile ids and 7524/81C9-allocate
+records stamping behavior/sprite -- planet-2's 7B06: id 0x5A -> beh 0x2E cell, id ?? -> beh
+0x2A spr 0x1C at x=[A40A], id ?? -> beh 0x8F spr 0xBF...).  TWO consequences: (a) the tile-row
+PIXELS are **5A7E** (the plain-path jmp target) -- THE render recovery target; (b) **the native
+cold path never runs the 7948 tile cues** -- terrain-level enemies/scenery that spawn from tile
+ids are MISSING natively (the walk shadow can't see it -- it replays VM pre-states with spawns
+already present); wire run-7948-per-pulled-row into the native scroll step (play_native pulls
+rows via its own milestone machinery -- add the cue walk there). (2) the 75A6 anim sub-handlers (bx = mode*8 +
 anim*2 at 75FA..7605) + the +0x24 OR-variant path (760B) -- the 55..186 px combat residue;
 (3) the star-phase/dying-mode fine residue.  Each lands re-measured on this instrument.
 
