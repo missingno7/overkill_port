@@ -328,6 +328,75 @@ def _step_scenery_89(mem, rec: int, tiles: LevelTileContext) -> None:
     _bb03_bounce(mem, rec, tiles)
 
 
+def _b729_seek(mem, rec: int) -> bool:
+    """``1010:B729``: copy the record's own +0x32/+0x34 targets into 2304/2306 and run the 5DB2
+    seek with the LIVE ``[2308]`` mode (B729 does NOT set the mode); returns the blocked state
+    (the ASM exposes it to the caller as ZF from ``cmp [230A],0``)."""
+    return _apply_seek(mem, rec, mem.rw(DS, rec + 0x32), mem.rw(DS, rec + 0x34),
+                       mem.rw(DS, 0x2308))
+
+
+def _step_drift_seeker_2e(mem, rec: int) -> bool:
+    """Behavior 0x2E (``1010:87DA``): the target-x cell rides the scroll (``+0x34 += [A278]``),
+    sprite = (4D95 canned random & 3) + 0xAD (the RING advances); WAITING while signed x < 0x80
+    (that path exits jmp BC45 -- WITH drift); at x == 0x80 EXACTLY the 8802 one-shot (sound 0x0B,
+    target_y = ``([2380]+8) & ~1``, target_x = 0x7530), then every frame from x >= 0x80 the B729
+    seek toward the record's own targets (live [2308] mode), exiting jmp BC4B -- WITHOUT drift.
+    Returns the postmove's ``with_drift``."""
+    mem.ww(DS, rec + 0x34, (mem.rw(DS, rec + 0x34) + mem.rw(DS, 0xA278)) & 0xFFFF)
+    ring = tuple(mem.rw(DS, 0x20A8 + i * 2) for i in range(16))
+    rand, nxt = canned_random_next_4d95(mem.rw(DS, 0x20A6), ring)
+    mem.ww(DS, 0x20A6, nxt)
+    mem.ww(DS, rec + 0x08, ((rand & 3) + 0x00AD) & 0xFFFF)
+    x = mem.rw(DS, rec + 0x02)
+    if i16(x) < 0x0080:
+        return True
+    if x == 0x0080:
+        if mem.rb(DS, 0x98C0):
+            mem.wb(DS, 0xBEFF, 0x0B)
+        mem.ww(DS, rec + 0x32, (mem.rw(DS, 0x2380) + 8) & 0xFFFE)
+        mem.ww(DS, rec + 0x34, 0x7530)
+    _b729_seek(mem, rec)
+    return False
+
+
+def _step_beacon_46_47(mem, rec: int, beh: int, sprite_add: int) -> None:
+    """Behaviors 0x46 (``1010:8C28``, +0x4B) / 0x47 (``1010:8C31``, +0x51) -- byte-identical apart
+    from the sprite constant: sprite = ``[2338] + add``, then the shared ``87B5`` tail -- x > 0x60
+    (unsigned) drifts right 4px; x <= 0x60 WAITS for ``[2330] == 0x7F``, then dir = 4 and ONE C237
+    child (the child's sprite is left as C237 seeded it)."""
+    mem.ww(DS, rec + 0x08, (mem.rw(DS, 0x2338) + sprite_add) & 0xFFFF)
+    x = mem.rw(DS, rec + 0x02)
+    if x > 0x0060:
+        mem.ww(DS, rec + 0x02, (x + 4) & 0xFFFF)
+        return
+    if mem.rw(DS, 0x2330) != 0x007F:
+        return
+    mem.ww(DS, rec + 0x06, 0x0004)
+    _spawn_child_c237(mem, rec, beh)
+
+
+def _step_pulser_8f(mem, rec: int) -> None:
+    """Behavior 0x8F (``1010:8769``): sprite = ``[96C2 + ([232E]>>3)*2] + 0xBF`` (+3 when
+    y <= 0x60 -- the ja skips the add above it); when the clock phase ``[232E]>>3 == 3``,
+    ONE C237 child whose sprite is stamped 0x44."""
+    phase = (mem.rw(DS, 0x232E) >> 3) & 0xFFFF
+    base = (mem.rw(DS, (0x96C2 + ((phase << 1) & 0xFFFF)) & 0xFFFF) + 0x00BF) & 0xFFFF
+    sprite = base
+    if mem.rw(DS, rec + 0x04) <= 0x0060:
+        sprite = (sprite + 3) & 0xFFFF   # 8788 adds to [bp+8] in memory -- bx keeps the base
+    mem.ww(DS, rec + 0x08, sprite)
+    if phase != 3:
+        return
+    slot = _spawn_child_c237(mem, rec, 0x8F)
+    if slot is None:
+        # throttled: `cmp bx,FFFF; mov [bx+8],44h` runs with the STALE bx = the sprite BASE
+        # (877B's anim+0xBF -- the 8788 +3 went to memory, not bx), the 8248-shape artifact.
+        mem.ww(DS, (base + 8) & 0xFFFF, 0x0044)
+    elif slot != 0xFFFF:
+        mem.ww(DS, slot + 0x08, 0x0044)
+
+
 def _step_scenery_8a(mem, rec: int, tiles: LevelTileContext) -> None:
     """Behavior 0x8A (``1010:8C1F``): sprite = ``[233C] + 0x9D``, then jmp B2AC -- the SAME tail
     as 0x89 (the 232C==0x1F BAE1 dir=4 emit + the shared BB03 bounce)."""
@@ -784,6 +853,18 @@ def _step_waypoint_11(mem, rec: int) -> None:
     _step_waypoint_12(mem, rec)                             # falls straight into 0x12's body
 
 
+#: the 8BC8..8BF5 waypoint-seed stubs (byte-identical apart from the table pointer): each seeds
+#: its own +0x36 waypoint TABLE and jumps to B2C8 -- the retag-as-0x12 + follower body 0x11 uses.
+_WAYPOINT_SEED_BY_BEHAVIOR = {0x41: 0x96F0, 0x43: 0x970C, 0x44: 0x9724,
+                              0x45: 0x973C, 0x4A: 0x975C, 0x51: 0x9764}
+
+
+def _step_waypoint_seed(mem, rec: int, beh: int) -> None:
+    mem.ww(DS, rec + 0x36, _WAYPOINT_SEED_BY_BEHAVIOR[beh])
+    mem.ww(DS, rec + 0x18, 0x0012)                          # B2C8: retag the record as 0x12
+    _step_waypoint_12(mem, rec)
+
+
 def _step_ramp_steer_29(mem, rec: int) -> None:
     r = step_ramp_steer_29(sprite=mem.rw(DS, rec + 0x08), gate_2328=mem.rw(DS, 0x2328))
     if not r.fired:
@@ -819,6 +900,115 @@ def _steer_missile_tail_8744(mem, rec: int) -> None:
     y_signed = i16(steer.y_word)
     if y_signed > RAMP_29_DEATH_Y_MAX or y_signed < RAMP_29_DEATH_Y_MIN:
         _bfc7_touch_death(mem, rec)
+
+
+def _step_latch_bouncer_4b(mem, rec: int, tiles: LevelTileContext) -> None:
+    """Behavior 0x4B (``1010:8C6D``): sprite = ``[96D2 + [233C]*2] + 0xCF`` WAITING for x == 0x40
+    EXACTLY; there -- MORPH ``+0x18 = 0x33``, dir = 1, and jmp 88CF (the 0x33 triple-AFD8 bounce
+    body) the SAME frame."""
+    anim = mem.rw(DS, (0x96D2 + (mem.rw(DS, 0x233C) & 0xFFFF) * 2) & 0xFFFF)
+    mem.ww(DS, rec + 0x08, (anim + 0x00CF) & 0xFFFF)
+    if mem.rw(DS, rec + 0x02) != 0x0040:
+        return
+    mem.ww(DS, rec + 0x18, 0x0033)
+    mem.ww(DS, rec + 0x06, 0x0001)
+    _step_bouncer_33(mem, rec, tiles)
+
+
+def _step_glide_4c(mem, rec: int) -> bool:
+    """Behavior 0x4C (``1010:8C94``): while dir != 0 -- sprite 0x74 WAITING for x == 0xB0 EXACTLY
+    (that path exits BC45, WITH drift), arrival sets dir = 0; then sprite = ``([2328]>>2) + 0x73``
+    and x -= 4, exiting BC4B (no drift).  Returns the postmove's ``with_drift``."""
+    if mem.rw(DS, rec + 0x06) != 0:
+        mem.ww(DS, rec + 0x08, 0x0074)
+        if mem.rw(DS, rec + 0x02) != 0x00B0:
+            return True
+        mem.ww(DS, rec + 0x06, 0x0000)
+    mem.ww(DS, rec + 0x08, ((mem.rw(DS, 0x2328) >> 2) + 0x0073) & 0xFFFF)
+    mem.ww(DS, rec + 0x02, (mem.rw(DS, rec + 0x02) - 4) & 0xFFFF)
+    return False
+
+
+def _step_glide_morph_4d(mem, rec: int) -> bool:
+    """Behavior 0x4D (``1010:8CC2``): sprite 0x6E; while dir == 4 WAIT for x == 0x80 EXACTLY
+    (that path exits BC45, WITH drift), arrival sets dir = 0; then x -= 4 (BC4B, no drift) until
+    x == 0x60 EXACTLY -- there dir = 2, MORPH ``+0x18 = 0x39``, and jmp 8A23 (the 0x39 faller
+    body) the SAME frame (BC45).  Returns the postmove's ``with_drift``."""
+    mem.ww(DS, rec + 0x08, 0x006E)
+    if mem.rw(DS, rec + 0x06) == 0x0004:
+        if mem.rw(DS, rec + 0x02) != 0x0080:
+            return True
+        mem.ww(DS, rec + 0x06, 0x0000)
+    x = (mem.rw(DS, rec + 0x02) - 4) & 0xFFFF
+    mem.ww(DS, rec + 0x02, x)
+    if x != 0x0060:
+        return False
+    mem.ww(DS, rec + 0x06, 0x0002)
+    mem.ww(DS, rec + 0x18, 0x0039)
+    _step_faller_39(mem, rec)
+    return True
+
+
+def _step_bobber_42(mem, rec: int) -> None:
+    """Behavior 0x42 (``1010:8BF8``): sprite = ``[96D2 + [233C]*2] + 0xCF``, x += 1, and a
+    ``[232E]``-clocked vertical bob -- y -= 1 while the clock is <= 0x1F, y += 1 above."""
+    anim = mem.rw(DS, (0x96D2 + (mem.rw(DS, 0x233C) & 0xFFFF) * 2) & 0xFFFF)
+    mem.ww(DS, rec + 0x08, (anim + 0x00CF) & 0xFFFF)
+    mem.ww(DS, rec + 0x02, (mem.rw(DS, rec + 0x02) + 1) & 0xFFFF)
+    dy = 1 if mem.rw(DS, 0x232E) > 0x001F else -1
+    mem.ww(DS, rec + 0x04, (mem.rw(DS, rec + 0x04) + dy) & 0xFFFF)
+
+
+def _step_jitter_40(mem, rec: int) -> None:
+    """Behavior 0x40 (``1010:8B3B``): sprite = ``[96D2 + [233C]*2] + 0xCF``; jitter ONE random
+    axis -- the 4D95 draw's low bit picks a cell offset from the ``[96EC]`` pair {+0x04, +0x02} --
+    by ``([232E] & 1)*2 - 1`` (+/-1px); then while signed x >= 0x80, a C237 child on the
+    ``[232C] == 0x1F`` tick and x += 2."""
+    anim = mem.rw(DS, (0x96D2 + (mem.rw(DS, 0x233C) & 0xFFFF) * 2) & 0xFFFF)
+    mem.ww(DS, rec + 0x08, (anim + 0x00CF) & 0xFFFF)
+    ring = tuple(mem.rw(DS, 0x20A8 + i * 2) for i in range(16))
+    rand, nxt = canned_random_next_4d95(mem.rw(DS, 0x20A6), ring)
+    mem.ww(DS, 0x20A6, nxt)
+    cell = mem.rw(DS, (0x96EC + ((rand & 1) << 1)) & 0xFFFF)
+    delta = ((mem.rw(DS, 0x232E) & 1) << 1) - 1
+    mem.ww(DS, (rec + cell) & 0xFFFF, (mem.rw(DS, (rec + cell) & 0xFFFF) + delta) & 0xFFFF)
+    if i16(mem.rw(DS, rec + 0x02)) < 0x0080:
+        return
+    if mem.rw(DS, 0x232C) == 0x001F:
+        _spawn_child_c237(mem, rec, 0x40)
+    mem.ww(DS, rec + 0x02, (mem.rw(DS, rec + 0x02) + 2) & 0xFFFF)
+
+
+def _step_dropper_34(mem, rec: int) -> None:
+    """Behavior 0x34 (``1010:88E8``): planet-keyed sprite (``[96DA + [2356]*2]``, minus 1 on the
+    upper half y < 0x60); on planets 0/6 only, WAIT for x >= 0x50; then every frame the ``[232E]``
+    clock is >= 0x32 -- sound 0x13 and a C237 child aimed down-ish on the upper half (dir 2, or 3
+    when ``[2324] != 1``) / up-ish on the lower half (dir 6, or 5 when ``[2324] != 1``)."""
+    planet = mem.rw(DS, 0x2356)
+    sprite = mem.rw(DS, (0x96DA + ((planet << 1) & 0xFFFF)) & 0xFFFF)
+    upper = mem.rw(DS, rec + 0x04) < 0x0060
+    if upper:
+        sprite = (sprite - 1) & 0xFFFF
+    mem.ww(DS, rec + 0x08, sprite)
+    if planet in (0x0006, 0x0000) and mem.rw(DS, rec + 0x02) < 0x0050:
+        return
+    if mem.rw(DS, 0x232E) < 0x0032:
+        return
+    if mem.rb(DS, 0x98C0):
+        mem.wb(DS, 0xBEFF, 0x13)
+    if upper:
+        d = 0x0002 if mem.rw(DS, 0x2324) == 1 else 0x0003
+    else:
+        d = 0x0006 if mem.rw(DS, 0x2324) == 1 else 0x0005
+    mem.ww(DS, rec + 0x06, d)
+    _spawn_child_c237(mem, rec, 0x34)
+
+
+def _step_missile_2b(mem, rec: int) -> None:
+    """Behavior 0x2B (``1010:8715``): sprite = ``0xA5 + [233C]``, then jmp 8744 -- the shared
+    steer tail (0x28's planet-2 child; the sprite base matches the 8676 spawner's 0xA5 stamp)."""
+    mem.ww(DS, rec + 0x08, (0x00A5 + mem.rw(DS, 0x233C)) & 0xFFFF)
+    _steer_missile_tail_8744(mem, rec)
 
 
 def _step_arm_missile_3e(mem, rec: int) -> None:
@@ -1442,6 +1632,9 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
         elif beh == 0x12:
             _step_waypoint_12(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=False)   # B2CD exits jmp BC4B
+        elif beh in _WAYPOINT_SEED_BY_BEHAVIOR:
+            _step_waypoint_seed(mem, rec, beh)
+            _postmove_bc45(mem, rec, tiles, with_drift=False)   # 8BC8.. -> B2C8 exits jmp BC4B
         elif beh == 0x1A:
             _step_scenery_1a(mem, rec, tiles)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # BAD4->BB03 exits jmp BC45 (WITH drift)
@@ -1454,6 +1647,15 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
         elif beh == 0x8A:
             _step_scenery_8a(mem, rec, tiles)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8C1F->B2AC->BB03 exits jmp BC45
+        elif beh == 0x2E:
+            drift = _step_drift_seeker_2e(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=drift)   # waiting: BC45; seeking: BC4B
+        elif beh in (0x46, 0x47):
+            _step_beacon_46_47(mem, rec, beh, 0x004B if beh == 0x46 else 0x0051)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # 87B5 exits jmp BC45 (all paths)
+        elif beh == 0x8F:
+            _step_pulser_8f(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8769 exits jmp BC45 (all paths)
         elif beh == 0x8C:
             _step_ground_crawler(mem, rec, tiles, 0xFFFF)       # BB80: A952 = -1
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # BB8E body exits jmp BC45 (WITH drift)
@@ -1485,6 +1687,9 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
         elif beh == 0x38:
             _step_edge_runner_38(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # 89FF exits jmp BC45
+        elif beh == 0x34:
+            _step_dropper_34(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # 88E8 exits jmp BC45 (all paths)
         elif beh == 0x39:
             _step_faller_39(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8A23 exits jmp BC45 (all paths)
@@ -1500,6 +1705,24 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
         elif beh == 0x3D:
             _step_bounce_sprite_3d(mem, rec, tiles)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8AC7 -> 88CF exits jmp BC45
+        elif beh == 0x2B:
+            _step_missile_2b(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8715->8744 exits jmp BC45
+        elif beh == 0x40:
+            _step_jitter_40(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8B3B exits jmp BC45 (all paths)
+        elif beh == 0x42:
+            _step_bobber_42(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8BF8 exits jmp BC45 (both paths)
+        elif beh == 0x4B:
+            _step_latch_bouncer_4b(mem, rec, tiles)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8C6D / 88CF exit jmp BC45
+        elif beh == 0x4C:
+            drift = _step_glide_4c(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=drift)   # waiting: BC45; gliding: BC4B
+        elif beh == 0x4D:
+            drift = _step_glide_morph_4d(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=drift)   # wait/morph: BC45; gliding: BC4B
         elif beh == 0x3E:
             _step_arm_missile_3e(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8ADD exits jmp BC45 (all paths)

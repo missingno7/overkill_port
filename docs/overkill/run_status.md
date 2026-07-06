@@ -23,6 +23,27 @@
 > work is COMPLETE for L1. Next frontier: play_native integration polish, other planets' controller
 > families (0x1c etc.), the 9734/9902/9908 transition continuations, HUD/menu wiring, audio.
 
+## 2026-07-06 - twelve more L2-zoo behaviors native; OWNER REDIRECT: L1 vertical slice first
+
+Landed one-at-a-time on the 4s cached L2 gate (each individually zero-divergence): **0x8F** (the
+[232E]-phased pulser + sprite-0x44 C237 child; the throttled stale-bx artifact writes
+DS:[sprite_base+8]), **0x46/0x47** (the [2338]-anim beacons over the shared 87B5 tail -- drift right
+above x=0x60, else wait for [2330]==0x7F then dir=4 + C237), **0x2E** (the drift-seeker: target-x
+rides [A278], 4D95 sprite, the 8802 x==0x80 one-shot seeds target (anchor_y+8)&~1 / x=0x7530, then
+the B729 seek -- NOTE B729 uses the record's OWN +0x32/+0x34 with the LIVE [2308] mode), **0x2B**
+(sprite 0xA5+[233C] over the extracted 8744 steer tail), **0x34** (the half-screen-mirrored C237
+dropper, planet-keyed sprite), **0x40** (the random-axis jitterer -- the [96EC] cell-offset pair
+picks +0x02/+0x04), **0x42** (the [232E] bobber), **0x41/0x43/0x44/0x45/0x4A/0x51** (the 8BC8..8BF5
+waypoint-seed stubs -- each seeds its own +0x36 table and retags as the recovered 0x12 follower),
+**0x4B** (x==0x40 morph into the 0x33 bounce), **0x4C** (the glide-back), **0x4D** (the x==0x60
+morph into the 0x39 faller). Both shadows zero-divergence (L2 cached + L1 8294/8294). The L2 gap
+frontier after this batch: 0x22(x127)/0x4F/0x48, the BD17 decay beats (0xc/0x5), pickups 1/3/4,
+the 0x06 ADC9 death, object type 1.
+
+**OWNER REDIRECT (mid-batch): stop the L2 zoo here -- complete the L1 VERTICAL SLICE first** (HUD,
+menu flow, game-over->title: the cold-starting game with L1 fully playable). The L2 work above is
+banked; the zoo grind resumes only after the L1 product loop is closed.
+
 ## 2026-07-06 - the WHOLE L2 scenery family is native (all 8) + TWO latent bugs fixed (0x35 wrap, 62F6 field binding)
 
 The reverted batch re-landed ONE AT A TIME on the 4s cached L2 gate -- and both "batch divergences"
