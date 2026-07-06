@@ -13,9 +13,28 @@
 > cold-boot probes MUST pass `overkill.launch.build_command_tail("tandy", "pc")`.
 > Suite green: 1225 passed / 23 skipped (2026-07-06). **SCENE.MD CAMPAIGN DONE**: `play_native --level
 > 0` (cold, no snapshot) now spawns/moves a real enemy wave, VM-free (`verify_play_native_cold` PASS).
-> Native actor set: 23 behaviors + the pickup COLLECT (all 2026-07-06; BDD0 wired through AFD8).
-> **The L1 behavior ZOO is DONE.** Gap frontier: **5 frames** -- ONLY the player-death 9EA3 chain
-> (A95C=0 + [9791] gate + 2384=3 ship-death compose) remains in the whole 8294-frame demo.
+> **THE ENTIRE DEMO WALK IS NATIVE (2026-07-06): 8294/8294 frames, ZERO divergence, ZERO gaps.**
+> Every actor/spawn/death/pickup in the whole played L1 demo runs natively byte-exact (23 behaviors +
+> collect + the 9EA3 death chain; BDD0 wired through AFD8). The enemies_l1 + scene campaigns' walk
+> work is COMPLETE for L1. Next frontier: play_native integration polish, other planets' controller
+> families (0x1c etc.), the 9734/9902/9908 transition continuations, HUD/menu wiring, audio.
+
+## 2026-07-06 - **MILESTONE: THE ENTIRE DEMO WALK IS NATIVE -- 8294/8294, zero divergence, ZERO GAPS**
+
+Recovered the 9EA3 player-death chain (the LAST gap in the demo): on the A95A life underflow in
+`_player_hit_9e69` -- `A95C = 0`; if the `DS:[9791]` byte is 1 (an invulnerability/refill flag),
+A95A/A95C refill to 3/0x18 and return (no beat); else `DS:2384 = 3` (the ship-death pose every pose
+gate tests) + sound 0x19, then the 9EC2 energy beat (61DC; the 511F pair stays mode-1-gated,
+Tandy-unreachable). `_shot_hit_9e19` funnels its exhaustion into the same 9E69, so one fix covers
+both damage beats. The non-death path now also routes through `_hud_energy_beat_9ec2` (fidelity +
+the fail-loud mode-1 guard).
+
+**`verify_native_walk_demo`: 8294/8294 walk frames, diverged=0, NO recovery gaps -- the first run in
+project history where every frame of the owner's real played demo is natively walkable and
+byte-exact.** The A9D3..AA25 object behavior walk -- every enemy, spawner, scenery, shot, child,
+death, morph, respawn, and pickup the demo exercises -- is now a complete native system. Suite
+green; audits + manifest pass. The remaining 5 "gap frames" from the previous run are all closed:
+the demo's 5 player-death beats now run the real death chain (2384=3 + sound) natively.
 
 ## 2026-07-06 - the type-5 pickup COLLECT recovered -- ONLY player-death remains in the demo
 

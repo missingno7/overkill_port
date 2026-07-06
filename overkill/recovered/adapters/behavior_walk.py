@@ -880,6 +880,11 @@ def _bd17_deactivate(mem, rec: int) -> None:
 
 
 def _player_hit_9e69(mem) -> None:
+    """``1010:9E69`` -- the player LIFE beat: gates, sound 3, the BEDC parity throttle, then
+    ``A95A -= 1``.  UNDERFLOW (the 9EA3 death-flag chain): ``A95C = 0``; if the ``DS:[9791]`` byte
+    is 1 (an invulnerability/refill flag), A95A/A95C refill to 3/0x18 and RETURN (no energy beat);
+    otherwise ``DS:2384 = 3`` (the ship-death pose -- the >=3 dying state every pose gate tests) +
+    sound 0x19, then the 9EC2 energy beat as on the normal path."""
     if mem.rw(DS, 0xA47C) == 1 or mem.rw(DS, 0x2384) >= 3:
         return
     if mem.rb(DS, 0x98C0):
@@ -892,9 +897,16 @@ def _player_hit_9e69(mem) -> None:
     hp = (mem.rw(DS, 0xA95A) - 1) & 0xFFFF
     mem.ww(DS, 0xA95A, hp)
     if hp == 0xFFFF:
-        raise RecoveryGap("player health exhausted (the 9EA3 death-flag chain)",
-                          "A95C=0 + [9791] gate + 2384=3 ship-death path not composed yet")
-    _energy_redraw_61dc(mem)
+        # 9EA3: the death-flag chain.
+        mem.ww(DS, 0xA95C, 0x0000)
+        if mem.rb(DS, 0x9791) == 1:          # 9EA9: the refill flag -> 9ED7 (no death, no beat)
+            mem.ww(DS, 0xA95A, 0x0003)
+            mem.ww(DS, 0xA95C, 0x0018)
+            return
+        mem.ww(DS, 0x2384, 0x0003)           # 9EB0: the ship-death pose
+        if mem.rb(DS, 0x98C0):
+            mem.wb(DS, 0xBEFF, 0x19)         # 9EBD: the death sound
+    _hud_energy_beat_9ec2(mem)               # 9EC2: 61DC (+ the mode-1 511F pair, Tandy-unreachable)
 
 
 def _bfc7_touch_death(mem, rec: int) -> None:

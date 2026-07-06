@@ -105,12 +105,13 @@ run_status.md) — the demo went from 3 unexplained divergences to ZERO:**
   the live snapshot, so `511F` is UNREACHABLE on this port's path (9EC2 = the recovered 61DC alone;
   a fail-loud guard raises if a mode-1 image ever reaches it). Kinds 0/1/3/4 stay fail-loud gaps.
 
-**The L1 behavior ZOO is essentially DONE** (2026-07-06): the scenery cluster (0x1a/0x19/0x89/0x8c/
-0x8b), the BDD0 contact predicate (was `collision.player_hazard_scan_hit`, now wired through
-`contact_at(mirror_dx_x, mirror_dx_y)` + `_bdd0_contact_at`), and the 0x01-latch9 morph + 0x26 pair
-are ALL native. **The remaining demo gap frontier is 7 frames, both non-zoo** (frame-loop
-composition, not behavior handlers): player-death 9EA3 (5) and pickup-collect (2) -- turn-key specs
-below under "Next actors".
+**THE ENTIRE DEMO WALK IS NATIVE (2026-07-06): 8294/8294 frames, zero divergence, ZERO gaps.** The
+scenery cluster (0x1a/0x19/0x89/0x8c/0x8b), the BDD0 contact predicate (was
+`collision.player_hazard_scan_hit`, now wired through `contact_at(mirror_dx_x, mirror_dx_y)` +
+`_bdd0_contact_at`), the 0x01-latch9 morph + 0x26 pair, the type-5 pickup COLLECT, and the 9EA3
+player-death chain are ALL native. This campaign's demo-frontier work is COMPLETE for L1; what
+remains for the campaign's full done-condition is hook retirement review + the other planets'
+controller families (0x1c/0x13/0x15/0x7D/0x7E -- the 8D4F alias group) when their campaigns arrive.
 
 ### C237 child-spawn — DONE (spec below kept as historical reference; empirically traced 2026-07-05)
 
