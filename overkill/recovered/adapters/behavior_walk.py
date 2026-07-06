@@ -105,6 +105,7 @@ from overkill.recovered.views.object_slots import (
 )
 from overkill.recovered.domain.collision import PostMoveContactWindow
 from overkill.recovered.systems.movement import (
+    object_delta_5e1b,
     object_delta_steer_5e42,
     object_target_seek_step_5db2,
     step_operations_for_direction,
@@ -117,6 +118,7 @@ from overkill.recovered.systems.objects import (
     object_update_aed8,
     object_update_af60,
     object_update_b24d,
+    object_update_b86d,
 )
 from overkill.recovered.systems.score import bcd_add_score
 
@@ -398,6 +400,106 @@ def _step_ground_crawler(mem, rec: int, tiles: LevelTileContext, sign: int) -> N
         sign, mem.rw(DS, 0x233C), moved, mem.rw(DS, rec + 0x06)))
     if ground_crawler_should_spawn(mem.rw(DS, 0x2330)):
         _spawn_ground_crawler_shot(mem, rec)
+
+
+def _spawn_enemy_shot_7476(mem, rec: int) -> None:
+    """``1010:7476`` from a live record: alloc + the recovered shot stamp + the [98C0] sound."""
+    slot = _alloc(mem, 0x95DA, GAMEPLAY_POOL_BASE, GAMEPLAY_POOL_WRAP, GAMEPLAY_SLOTS)
+    if slot == 0xFFFF:
+        return
+    stamp = enemy_shot_stamp_7476(mem.rw(DS, rec + 0x02), mem.rw(DS, rec + 0x04),
+                                  mem.rw(DS, 0xA8C2) == 1, mem.rw(DS, 0x237E), mem.rw(DS, 0x2380))
+    for off, val in stamp.items():
+        mem.ww(DS, slot + off, val)
+    if mem.rb(DS, 0x98C0):
+        mem.wb(DS, 0xBEFF, 0x1A)
+
+
+def _step_controller_1c(mem, rec: int) -> None:
+    """Behavior 0x1C (the planet-2 WAVE CONTROLLER; the shared 8D4F/1F8F:027A body + the 03A6
+    arrival): seek the A482-schedule waypoint (x+0x20/y, 5DB2 mode 3); ON ARRIVAL advance the
+    schedule +8 (its entries are waypoint pair + target pair) and 81F4-spawn ONE child at the
+    controller's position -- behavior 0x1D (or 0x1E with sprite 0x43 when the controller's y == 0)
+    with the entry's target pair in +0x34/+0x32 and +0x1C = 0x14 -- then A47E++.  ALL paths end in
+    the 0448 tail: sprite = direction + 0x3B."""
+    a482 = mem.rw(DS, 0xA482)
+    target_x = (mem.rw(DS, a482) + 0x20) & 0xFFFF
+    target_y = mem.rw(DS, (a482 + 2) & 0xFFFF)
+    blocked = _apply_seek(mem, rec, target_y, target_x, 3)
+    if blocked:                                     # 02B3 -> 03A6: the 0x1C arrival body
+        mem.ww(DS, 0xA482, (a482 + 8) & 0xFFFF)
+        slot = _alloc(mem, 0x95D8, EFFECT_POOL_BASE, EFFECT_POOL_WRAP, EFFECT_SLOTS)  # 81F4 -> 7524
+        if slot != 0xFFFF:
+            if mem.rb(DS, 0x98C0):
+                mem.wb(DS, 0xBEFF, 0x0B)            # 81F4's own sound
+            for off, val in enemy_spawn_stamp_8209(mem.rw(DS, rec + 0x02),
+                                                   mem.rw(DS, rec + 0x04)).items():
+                mem.ww(DS, slot + off, val)
+            mem.ww(DS, slot + 0x34, (mem.rw(DS, (a482 + 4) & 0xFFFF) + 0x20) & 0xFFFF)
+            mem.ww(DS, slot + 0x32, mem.rw(DS, (a482 + 6) & 0xFFFF))
+            if mem.rw(DS, rec + 0x04) == 0:         # 03CB: the y==0 controller variant
+                mem.ww(DS, slot + 0x18, 0x001E)
+                mem.ww(DS, slot + 0x08, 0x0043)
+            else:
+                mem.ww(DS, slot + 0x18, 0x001D)
+            mem.ww(DS, slot + 0x1C, 0x0014)
+            mem.ww(DS, 0xA47E, (mem.rw(DS, 0xA47E) + 1) & 0xFFFF)
+    # 1F8F:0448: the shared en-route/arrival sprite tail
+    mem.ww(DS, rec + 0x08, (mem.rw(DS, rec + 0x06) + 0x3B) & 0xFFFF)
+
+
+def _step_formation_1d(mem, rec: int) -> None:
+    """Behavior 0x1D (``1010:B86D``) -- the planet-2 formation enemy, via the ALREADY-RECOVERED
+    (BC4B-handoff-verified) ``object_update_b86d``.  Caller-owned extras per the ASM: the A7A0 seek
+    block's global writes ([2308]=1 + the record's low-bit-cleared x/y/target cells + B729's
+    2304/2306 targets), and the drift path's 7476 formation shots on the DS:2340 schedule ticks
+    (0x2EF/0x159/0x79)."""
+    table = tuple(mem.rb(DS, (0xA348 + i) & 0xFFFF) for i in range(16))
+    x, y = mem.rw(DS, rec + 0x02), mem.rw(DS, rec + 0x04)
+    a47e, a7a0 = mem.rw(DS, 0xA47E), mem.rw(DS, 0xA7A0)
+    r = object_update_b86d(
+        x, y, mem.rw(DS, rec + 0x1C), mem.rw(DS, rec + 0x06), mem.rw(DS, rec + 0x00),
+        mem.rw(DS, rec + 0x34), mem.rw(DS, rec + 0x32), mem.rw(DS, rec + 0x2E),
+        a47e, a7a0, mem.rw(DS, 0x237E), mem.rw(DS, 0x2380), mem.rw(DS, 0x237C + 0x14),
+        mem.rw(DS, 0x2342), mem.rw(DS, 0x2328), mem.rw(DS, 0x2312), table)
+    on_edge_path = a47e <= 2 or x > 0x00C0
+    if on_edge_path:
+        # 5E1B WRITES the record's +0x2C/+0x2A delta cells (5E31/5E3E -- real record state, not
+        # scratch); the pure b86d consumes them internally, so persist them here.
+        deltas = object_delta_5e1b(x, y, mem.rw(DS, 0x237E), mem.rw(DS, 0x2380),
+                                   mem.rw(DS, 0x237C + 0x14))
+        mem.ww(DS, rec + 0x2C, deltas.move_delta_y)
+        mem.ww(DS, rec + 0x2A, deltas.move_delta_x)
+    if not on_edge_path and a7a0 < 0x0028:
+        # B885..B89C: the A7A0 seek block's own writes -- [2308]=1, the record's target/x/y cells
+        # low-bit-cleared IN PLACE, and B729's 2304/2306 target globals (from the masked target).
+        mem.ww(DS, 0x2308, 0x0001)
+        ty, tx = mem.rw(DS, rec + 0x32) & 0xFFFE, mem.rw(DS, rec + 0x34) & 0xFFFE
+        mem.ww(DS, rec + 0x32, ty)
+        mem.ww(DS, rec + 0x34, tx)
+        mem.ww(DS, 0x2304, ty)
+        mem.ww(DS, 0x2306, tx)
+    elif not on_edge_path:
+        # the fall-through drift path: the 7476 formation shots on the exact 2340 ticks (B8B0..)
+        if mem.rw(DS, 0x2340) in (0x02EF, 0x0159, 0x0079):
+            _spawn_enemy_shot_7476(mem, rec)
+    mem.ww(DS, rec + 0x1C, r.substate)
+    mem.ww(DS, rec + 0x06, r.direction_or_step)
+    mem.ww(DS, rec + 0x08, r.sprite_or_state)
+    mem.ww(DS, rec + 0x02, r.x_word)
+    mem.ww(DS, rec + 0x04, r.y_word)
+    mem.ww(DS, rec + 0x2E, r.move_step_error)
+
+
+def _step_patrol_1e(mem, rec: int) -> None:
+    """Behavior 0x1E (``1010:B909``) -- the planet-2 vertical PATROL: seek toward the record's own
+    +0x32/+0x34 target (5DB2 mode 2 via the B729 tail); on a BLOCKED seek (arrival) fire a 7476 shot
+    and toggle the Y target between 0 and 0xC0."""
+    blocked = _apply_seek(mem, rec, mem.rw(DS, rec + 0x32), mem.rw(DS, rec + 0x34), 2)
+    if not blocked:
+        return
+    _spawn_enemy_shot_7476(mem, rec)
+    mem.ww(DS, rec + 0x32, 0x0000 if mem.rw(DS, rec + 0x32) != 0 else 0x00C0)
 
 
 def _step_mover_06(mem, rec: int, tiles: LevelTileContext) -> None:
@@ -1233,6 +1335,15 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # BB8E body exits jmp BC45 (WITH drift)
         elif beh == 0x06:
             _step_mover_06(mem, rec, tiles)                     # AE2C (recovered whole-slot update)
+        elif beh == 0x1C:
+            _step_controller_1c(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=False)   # the 8D4F stub exits jmp BC4B
+        elif beh == 0x1D:
+            _step_formation_1d(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=False)   # B86D exits jmp BC4B
+        elif beh == 0x1E:
+            _step_patrol_1e(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=False)   # B909 exits jmp BC4B
         elif beh == 0x31:
             # 1010:88AA: sprite = 0x2E, x += 3, jmp BC45 -- a plain right-scroller
             mem.ww(DS, rec + 0x08, 0x002E)
