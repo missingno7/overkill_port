@@ -23,6 +23,23 @@
 > work is COMPLETE for L1. Next frontier: play_native integration polish, other planets' controller
 > families (0x1c etc.), the 9734/9902/9908 transition continuations, HUD/menu wiring, audio.
 
+## 2026-07-07 - THE HUD IS WIRED: play_native renders the full panel, BYTE-EXACT vs the VM page
+
+`native_video/hud_panel.py` (+ the `adapters/hud_panel_state.py` state reader) composes the WHOLE
+right-third panel from the natively-decoded PANEL.ENC: the 5C9A backdrop (see below), the 859E
+chrome, the 61DC counters, the 60F3 lives row (ship/empty cells, 8-byte spacing -- 613E's Tandy
+step is di+=4 called twice), the 77F6 energy bar (A97A>>1 filled FFCE/C4EE rows growing UP from
+(0x1D,0x5F), zero-tail to 0x2C rows), the 5EDB score line and the 60E3 planet digit.
+**`verify_native_hud_panel` proves the compose BYTE-EXACT against the L1 cache frame-0 B800 page**
+(10400/10400 panel bytes, natively-decoded asset: `deplanarize_tandy(..., sprite_mode=False,
+emit_item_headers=True)` == the VM's CS:[95B4] segment exactly).  play_native overlays
+`panel_indices_from_page` per frame (~0.9 ms); `verify_play_native_render` now also gates the
+panel pixels.  KEY ORACLE FINDS: (1) the 5C46/375B curtain wipe's FINAL state is NOT a plain
+cell paste -- scanlines 0..4/194..199 stay black, 5..100 carry cell row y-1 (one LOW), 101..193
+carry row y (pinned by driving the ORIGINAL 5C9A on a zeroed B800 and mapping every scanline);
+(2) PANEL.ENC == the VM panel segment byte-for-byte.  The L1 vertical slice's HUD step is DONE;
+next: game-over -> title (98EB), then the menu flow.
+
 ## 2026-07-06 - HUD recon (the L1 vertical slice, step 1): the panel anatomy is mapped
 
 The right-third panel (cols 216..319) at level start decomposes into (validated against the L1

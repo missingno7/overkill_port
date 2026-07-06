@@ -437,6 +437,28 @@ def main(argv=None) -> int:
     else:
         walk_image = build_cold_level_start_image(bundle_data, args.level)
 
+    # The HUD panel: composed per frame from the walk image's LIVE state cells through the
+    # byte-exact-gated compose (verify_native_hud_panel) -- backdrop, chrome, counters, lives,
+    # energy bar, score digits, planet digit.  Static inputs (the natively-decoded PANEL.ENC cell
+    # library, the CS:0BE4 directory, the DGROUP glyph font) are read once.
+    import numpy as _np  # noqa: E402
+    from overkill.asset_codecs.container import load_container_asset  # noqa: E402
+    from overkill.asset_codecs.planar import deplanarize_tandy  # noqa: E402
+    from overkill.native_video.hud_panel import PANEL_LEFT_PX, panel_indices_from_page  # noqa: E402
+    from overkill.recovered.adapters.hud_panel_state import (  # noqa: E402
+        compose_hud_panel_from_image, read_hud_dir_table, read_hud_font,
+    )
+    hud_ctx = {
+        "panel_source": _np.frombuffer(
+            deplanarize_tandy(load_container_asset(container_data, "PANEL.ENC"),
+                              sprite_mode=False, emit_item_headers=True), dtype=_np.uint8),
+        "dir_table": read_hud_dir_table(walk_image),
+        "font": read_hud_font(walk_image),
+    }
+
+    def _hud_panel_indices():
+        return panel_indices_from_page(compose_hud_panel_from_image(walk_image, **hud_ctx))
+
     cell = {"game": game, "starfield": starfield, "tick": 0, "walk_gap": None,
             "level": args.level, "sprite_ctx": sprite_ctx}
 
@@ -623,14 +645,19 @@ def main(argv=None) -> int:
                 "the native loop detected a game-over/scripted transition; that target is not "
                 "recovered yet (the native runtime cannot continue past it)")
 
+    def _render_with_hud():
+        frame = _render_frame(cell["game"], cell["starfield"], cell["sprite_ctx"])
+        frame[:, PANEL_LEFT_PX:] = _hud_panel_indices()
+        return frame
+
     skeleton = GameplayFrameSkeleton(
-        render=lambda: _render_frame(cell["game"], cell["starfield"], cell["sprite_ctx"]),
+        render=_render_with_hud,
         advance=_advance,
     )
 
     gap: str | None = None
     running = True
-    last_frame = _render_frame(game, starfield, cell["sprite_ctx"])
+    last_frame = _render_with_hud()
     try:
         while running:
             for ev in pygame.event.get():

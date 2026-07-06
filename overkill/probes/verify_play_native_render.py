@@ -101,10 +101,26 @@ def main(argv) -> int:
         if f in (2, 30, 60, 90, 120) or (f == frames - 1):
             print(f"  frame {f:3d}: sprite pixels on screen = {pixels}")
 
+    # The HUD panel: the byte-exact-gated compose (verify_native_hud_panel) over the walk image's
+    # LIVE cells must light the panel region up -- the experience gate for the play_native overlay.
+    from overkill.asset_codecs.container import load_container_asset
+    from overkill.asset_codecs.planar import deplanarize_tandy
+    from overkill.native_video.hud_panel import panel_indices_from_page
+    from overkill.recovered.adapters.hud_panel_state import (
+        compose_hud_panel_from_image, read_hud_dir_table, read_hud_font)
+    panel_source = np.frombuffer(
+        deplanarize_tandy(load_container_asset(container_data, "PANEL.ENC"),
+                          sprite_mode=False, emit_item_headers=True), dtype=np.uint8)
+    panel = panel_indices_from_page(compose_hud_panel_from_image(
+        walk_image, panel_source=panel_source,
+        dir_table=read_hud_dir_table(walk_image), font=read_hud_font(walk_image)))
+    panel_pixels = int((panel > 0).sum())
+    print(f"HUD panel pixels lit: {panel_pixels} / {panel.size}")
+
     print(f"ship pixels at frame 2: {ship_pixels_early}; peak sprite pixels: {max_pixels}")
-    ok = (ship_pixels_early or 0) >= 30 and max_pixels >= 300
+    ok = (ship_pixels_early or 0) >= 30 and max_pixels >= 300 and panel_pixels >= 5000
     print("RESULT:", "PASS -- the cold-booted game RENDERS: the ship is visible from the first "
-          "frames and the wave lights the screen up" if ok else "CHECK")
+          "frames, the wave lights the screen up, and the HUD panel is composed" if ok else "CHECK")
     return 0 if ok else 1
 
 

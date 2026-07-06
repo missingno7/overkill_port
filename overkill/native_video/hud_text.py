@@ -102,6 +102,32 @@ def draw_glyph_char(page: np.ndarray, font: np.ndarray, ch: int, col: int, row_b
     return advance_cursor(col, row_base)
 
 
+def compose_status_string_518c(page: np.ndarray, *, font: np.ndarray, string_bytes,
+                               colour: int, col: int, row_base: int) -> dict:
+    """Compose one ``1010:518C`` NUL-terminated string (with ``3153``'s inline ``0x10`` colour /
+    ``0x11`` cursor escapes) into the packed ``page`` -- the label loop of
+    :func:`compose_status_text_5edb`, exposed for the OTHER 518C callers (``60E3`` draws the
+    ``DS:235C`` block + the planet digit through this exact loop).  Returns the final
+    ``{'colour', 'col', 'row_base'}`` cursor state."""
+    i = 0
+    n = len(string_bytes)
+    while i < n and (string_bytes[i] & 0xFF) != 0:
+        b = string_bytes[i] & 0xFF
+        if b == CTRL_SET_COLOUR:
+            colour = string_bytes[i + 1] & 0xFF
+            i += 2
+        elif b == CTRL_SET_CURSOR:
+            row = string_bytes[i + 1] & 0xFF
+            col_char = string_bytes[i + 2] & 0xFF
+            row_base = (row * TEXT_ROW_STRIDE) & 0xFFFF
+            col = (col_char << 2) & 0xFF
+            i += 3
+        else:
+            col, row_base = draw_glyph_char(page, font, b, col, row_base, colour)
+            i += 1
+    return {"colour": colour, "col": col, "row_base": row_base}
+
+
 def compose_status_text_5edb(page: np.ndarray, *, font: np.ndarray, label_bytes,
                              score_bytes, colour: int, col: int, row_base: int) -> dict:
     """Compose the full ``1010:5EDB`` HUD/status line into the packed ``page`` (mutated).
@@ -117,22 +143,9 @@ def compose_status_text_5edb(page: np.ndarray, *, font: np.ndarray, label_bytes,
     ``{'colour', 'col', 'row_base'}`` -- the VM's ``215C/215E/2160`` after the line.
     """
     # 518C NUL-terminated string loop over the label, honouring 3153's inline escapes.
-    i = 0
-    n = len(label_bytes)
-    while i < n and (label_bytes[i] & 0xFF) != 0:
-        b = label_bytes[i] & 0xFF
-        if b == CTRL_SET_COLOUR:
-            colour = label_bytes[i + 1] & 0xFF
-            i += 2
-        elif b == CTRL_SET_CURSOR:
-            row = label_bytes[i + 1] & 0xFF
-            col_char = label_bytes[i + 2] & 0xFF
-            row_base = (row * TEXT_ROW_STRIDE) & 0xFFFF
-            col = (col_char << 2) & 0xFF
-            i += 3
-        else:
-            col, row_base = draw_glyph_char(page, font, b, col, row_base, colour)
-            i += 1
+    cur = compose_status_string_518c(page, font=font, string_bytes=label_bytes,
+                                     colour=colour, col=col, row_base=row_base)
+    colour, col, row_base = cur["colour"], cur["col"], cur["row_base"]
 
     # The four score bytes, most-significant first, each as two BCD digits (high then low).
     for byte in reversed([sb & 0xFF for sb in score_bytes[:SCORE_BYTES]]):
