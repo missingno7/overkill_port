@@ -75,6 +75,14 @@ tile wiring needs only the correct planet-keyed asset + the walk image's own liv
 (level_tiles already reads it) + the CS:8D92 table (static, in the bundle).  OPEN: bank 2's
 identity (``[959C]``, used for row_base >= 0xE5F -- the level-intro strip; != LEV2BLX/G2 --
 scan the container for it).  0E9C itself is just three standard asset loads into segments.
+**SUSPECTED BUG (decide first next session): 0E9C indexes the asset table BY PLANET
+(``si = [2356]*4 + 14E8``), but play_native passes the level INDEX to
+``NativeGame.load_level``/``load_native_level`` (LEV{n} naming) -- if LEV{n} = planet n, then
+--level 0 (planet 1) natively loads LEV0 (the MOTHERSHIP's map/blocks/graphics): wrong terrain
+data + wrong collision plane on every level, invisible so far only because tiles never rendered.
+DECISIVE TEST: decode_level_tile_map(container, planet) vs the fresh-level-load snapshot planes
+(tests/test_level_map_placement.py's fixtures) -- check which ``level`` convention those
+snapshots used; then fix play_native's calls to pass the PLANET (LEVEL_INDEX_TO_PLANET[idx]).**
 
 **render_tile_row IS RECOVERED -- BYTE-EXACT vs the driven 36A2 on BOTH banks**
 (`native_video/tile_row.py` + `verify_native_tile_row`, the chrome-probe driven-oracle pattern;
