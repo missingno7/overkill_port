@@ -82,6 +82,7 @@ from overkill.recovered.systems.frame_loop import (
     canned_random_next_4d95,
     enemy_shot_stamp_7476,
     enemy_spawn_stamp_8209,
+    pickup_heal_9d67,
 )
 from overkill.recovered.systems.collision import (
     PLAYER_HAZARD_SCAN_REQUIRED_GATE,
@@ -687,10 +688,45 @@ def _energy_redraw_61dc(mem) -> None:
                 break
 
 
+def _hud_energy_beat_9ec2(mem) -> None:
+    """``1010:9EC2``: the HUD-energy beat -- the 61DC redraw, plus (mode-1 dual-page video ONLY,
+    ``cs:[95BC]==1``) a 511F/61DC/511F page pair.  Tandy is mode 2, so the 511F half never runs on
+    this port's path; fail loud rather than fake it if a mode-1 image ever reaches here."""
+    _energy_redraw_61dc(mem)
+    if mem.rw(CODE_SEG, 0x95BC) == 1:
+        raise RecoveryGap("the 9EC2 dual-page energy beat (1010:511F)",
+                          "cs:[95BC]==1 (mode-1 dual-page video) -- 511F is not recovered; the Tandy"
+                          " path (mode 2) never takes this branch")
+
+
+def _pickup_collect_aad3(mem, rec: int) -> None:
+    """``1010:AAD3``: the type-5 pickup COLLECT -- pose gate, sound 7, score +0x20 (5F0D), the
+    ``+0x26``-keyed AB00 kind dispatch (kind 2 = the 9D67 shield/HP heal -- the only demo-witnessed
+    kind), then the BD17 deactivate of the pickup record (the AB0C tail)."""
+    if mem.rw(DS, 0x2384) >= 3:             # AAD3's own pose gate (dying pose -> no collect)
+        return
+    if mem.rb(DS, 0x98C0):
+        mem.wb(DS, 0xBEFF, 0x07)            # AAE2: sound 7 (kind 2 then overwrites with 0x1C)
+    _score_add_5f0d(mem, 0x20)
+    kind = mem.rw(DS, rec + 0x26)
+    if kind != 2:
+        raise RecoveryGap(f"pickup kind {kind} collect (the AB00 index-{kind} entry, record {rec:04X})",
+                          "only kind 2 (1010:9D67, the shield/HP heal) is demo-witnessed + recovered;"
+                          " kinds 0/1/3/4 (AF44/9D4D/62AA/9DB9) are not")
+    # 9D67: sound 0x1C + the A95A/A95C heal + ONE 9EC2 HUD-energy beat.
+    if mem.rb(DS, 0x98C0):
+        mem.wb(DS, 0xBEFF, 0x1C)
+    a95a, a95c = pickup_heal_9d67(mem.rw(DS, 0xA95A), mem.rw(DS, 0xA95C))
+    mem.ww(DS, 0xA95A, a95a)
+    mem.ww(DS, 0xA95C, a95c)
+    _hud_energy_beat_9ec2(mem)
+    _bd17_deactivate(mem, rec)              # AB0C: pop bp; jmp BD17 -- the pickup deactivates
+
+
 def _step_pickup_5(mem, rec: int) -> None:
     """The type-5 PICKUP handler (``1010:AAC2``): drift +X, then the recovered AA46/8331 player-
-    overlap test (the DS:214E pose-offset projection into 95F2/95F4).  The COLLECT path (sound 7 +
-    the 5F0D score + the +0x26-keyed AB00 effect dispatch) is a declared gap."""
+    overlap test (the DS:214E pose-offset projection into 95F2/95F4); a hit runs the AAD3 COLLECT
+    (sound 7 + the 5F0D score + the +0x26-keyed AB00 dispatch + the BD17 deactivate)."""
     x = (mem.rw(DS, rec + 0x02) + 1) & 0xFFFF
     mem.ww(DS, rec + 0x02, x)
     if x & 0x8000:                          # AA46: negative X -> no test
@@ -706,9 +742,7 @@ def _step_pickup_5(mem, rec: int) -> None:
     mem.ww(DS, 0x95F4, center.y_word)
     slot = SimpleNamespace(x_word=x, y_word=mem.rw(DS, rec + 0x04))
     if view_contact_rect_test(slot, center).hit:
-        raise RecoveryGap(f"type-5 pickup COLLECT (record {rec:04X})",
-                          "the AAD3 collect path (sound 7 + 5F0D score + the AB00 +0x26 dispatch)"
-                          " is not recovered")
+        _pickup_collect_aad3(mem, rec)
 
 
 def _step_dying_01(mem, rec: int) -> bool:

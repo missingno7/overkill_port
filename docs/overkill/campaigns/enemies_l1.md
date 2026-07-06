@@ -99,15 +99,11 @@ run_status.md) — the demo went from 3 unexplained divergences to ZERO:**
 * ~~0x01 latch-9 morph + 0x26~~ **RECOVERED 2026-07-06** (`dying_latch9_morph_be60` +
   `morph_26_*` in enemy_behaviors.py; `_step_dying_01` returns a run-postmove bool since the morph
   and the BD17 tails `ret` past BC45): exactly as specced below, with the BDD0 predicate wired.
-* type-5 pickup COLLECT (2 hits, `_step_pickup_5`'s declared gap): BOTH demo collections use pickup
-  kind `+0x26 == 2` (traced, `scratchpad/trace_pickup.py`) -> the `AB00` jump table's index-2 entry
-  (`1010:9D67`) ONLY -- no need to decode the other 7 entries. Decoded: sound 0x1C, then a
-  shield/HP-refill state machine (bump `DS:A95A` to 3, then `DS:A95C` to 0x18 -- the SAME globals
-  `_shot_hit_9e19`/`_player_hit_9e69` decrement, i.e. this pickup HEALS), calling `9EC2` after each
-  step. `9EC2` itself calls the RECOVERED `61DC` (`_energy_redraw_61dc`) plus a CONDITIONAL
-  (`cs:[95BC]==1`) pair of calls to `511F` (undecoded -- likely render/palette, not gameplay state,
-  but unverified). Needs `511F` scoped (does it touch DGROUP state the shadow compares?) before this
-  is safe to compose. Small but 3-deep; not yet a quick slice.
+* ~~type-5 pickup COLLECT~~ **RECOVERED 2026-07-06** (`_pickup_collect_aad3` + `pickup_heal_9d67` in
+  frame_loop.py): exactly as specced below -- and the `511F` question resolved itself: its calls are
+  gated on `cs:[95BC]==1` (mode-1 dual-page video), and Tandy is mode 2 on both the cold bundle and
+  the live snapshot, so `511F` is UNREACHABLE on this port's path (9EC2 = the recovered 61DC alone;
+  a fail-loud guard raises if a mode-1 image ever reaches it). Kinds 0/1/3/4 stay fail-loud gaps.
 
 **The L1 behavior ZOO is essentially DONE** (2026-07-06): the scenery cluster (0x1a/0x19/0x89/0x8c/
 0x8b), the BDD0 contact predicate (was `collision.player_hazard_scan_hit`, now wired through

@@ -229,6 +229,29 @@ def death_tail_transition_9aff(v2326: int, anchor_counter_after_inc: int, a97a: 
 A95C_RELOAD = 0x0018   # DS:A95C reloads to 0x18 when the difficulty countdown reaches 0 (9E63)
 SCRIPTED_INPUT_TABLE_9A0C = 0x9A0C   # the CS jump table 99F6 dispatches through, indexed by A47C*2
 
+# 1010:9D67 -- the kind-2 pickup's HEAL (the AB00 collect dispatch, index 2; sound 0x1C is the
+# caller's).  The SAME A95A/A95C pair the 9E19/9E69 damage beats decrement and the 9723 new-game
+# init seeds (A95A=3, A95C=0x18): a collect first steps A95A back toward 3 (ONE step per collect),
+# and only once A95A is full does it refill A95C all the way to 0x18 (the ASM loops the inc).
+PICKUP_HEAL_LIVES_FULL_A95A = 0x0003
+PICKUP_HEAL_ENERGY_FULL_A95C = 0x0018
+
+
+@recovered_island(
+    asm=("1010:9D73..9D90",),
+    contract="the kind-2 pickup heal: if A95A != 3, A95A += 1 (one step per collect, A95C untouched); "
+             "else A95C fills straight to 0x18 (the 9D84 inc-loop's fixed point). The single 9EC2 "
+             "HUD-energy beat that follows either branch is the caller's.",
+    status="OBSERVED",
+    merge_target="PlayerSystem",
+    unknowns="none -- both branches fully decoded; the A95C loop's only exit is A95C == 0x18",
+)
+def pickup_heal_9d67(a95a: int, a95c: int) -> "tuple[int, int]":
+    """The kind-2 pickup's ``(new_a95a, new_a95c)`` heal step (``1010:9D73..9D90``)."""
+    if (a95a & 0xFFFF) != PICKUP_HEAL_LIVES_FULL_A95A:
+        return (a95a + 1) & 0xFFFF, a95c & 0xFFFF
+    return a95a & 0xFFFF, PICKUP_HEAL_ENERGY_FULL_A95C
+
 A47C_ARM_GATE_2350 = 0x0EA0   # DS:2350 must equal this for the A680 A47C-script arm to fire
 
 

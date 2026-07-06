@@ -13,10 +13,25 @@
 > cold-boot probes MUST pass `overkill.launch.build_command_tail("tandy", "pc")`.
 > Suite green: 1225 passed / 23 skipped (2026-07-06). **SCENE.MD CAMPAIGN DONE**: `play_native --level
 > 0` (cold, no snapshot) now spawns/moves a real enemy wave, VM-free (`verify_play_native_cold` PASS).
-> Native actor set: 23 behaviors (0x28/0x89/0x8C/0x8B + the 0x01-latch9 morph + 0x26 recovered
-> 2026-07-06; BDD0 wired through AFD8). **The L1 behavior ZOO is essentially DONE.** Gap frontier:
-> **7 frames** -- player-death 9EA3 (5, needs the A95C/9791/2384 ship-death compose), pickup-collect
-> (2, needs the AB00 index-2 chain incl. 511F scoping). Both have turn-key specs in enemies_l1.md.
+> Native actor set: 23 behaviors + the pickup COLLECT (all 2026-07-06; BDD0 wired through AFD8).
+> **The L1 behavior ZOO is DONE.** Gap frontier: **5 frames** -- ONLY the player-death 9EA3 chain
+> (A95C=0 + [9791] gate + 2384=3 ship-death compose) remains in the whole 8294-frame demo.
+
+## 2026-07-06 - the type-5 pickup COLLECT recovered -- ONLY player-death remains in the demo
+
+Recovered the AAD3 collect chain (`_pickup_collect_aad3`): the pose gate (`[2384]>=3` -> no collect),
+sound 7, score +0x20 (the recovered 5F0D), the `+0x26`-keyed AB00 kind dispatch -- kind 2 (`9D67`,
+both demo collections' kind) = sound 0x1C + the A95A/A95C HEAL (`pickup_heal_9d67` in frame_loop.py:
+A95A steps toward 3 one-per-collect, THEN A95C fills to 0x18 -- the same cells the 9E19/9E69 damage
+beats decrement and the 9723 init seeds) + ONE 9EC2 HUD-energy beat -- then the BD17 deactivate of
+the pickup (the AB0C tail). **Key finding that made this turn-key**: 9EC2's 511F calls are gated on
+`cs:[95BC]==1` (mode-1 dual-page video); Tandy is mode 2 (confirmed on both the cold bundle and the
+live snapshot), so 511F is UNREACHABLE on this port's path -- 9EC2 reduces to the already-recovered
+61DC redraw (a fail-loud guard raises if a mode-1 image ever reaches it). Other pickup kinds
+(0/1/3/4) stay fail-loud gaps (not demo-witnessed).
+
+**Demo shadow: PASS, 0 divergence, 8294/8294. The gap frontier is 5 frames -- ONLY the player-death
+9EA3 chain remains.** Suite green; audits + manifest pass.
 
 ## 2026-07-06 - MILESTONE: the 0x01 latch-9 morph + behavior 0x26 RECOVERED -- the L1 zoo is essentially DONE
 
