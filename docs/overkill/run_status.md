@@ -19,6 +19,29 @@
 > work is COMPLETE for L1. Next frontier: play_native integration polish, other planets' controller
 > families (0x1c etc.), the 9734/9902/9908 transition continuations, HUD/menu wiring, audio.
 
+## 2026-07-06 - the respawn is a LEVEL RESTART (VM-traced); the scroll gate goes live
+
+A live-VM trace of the demo's REAL death->respawn moments (walk-entry sampled: A95A/A47E/A480/A47C/
+2350/2358/A97A; then an entry-point path trace) corrected the respawn model landed earlier today:
+1. **Death RESTARTS the level.** At the 9AFF fire moment, `4DBF -> 0B3E` (the level-data
+   initializer, now disassembled) REWINDS all six script cursors to their heads
+   (`SCRIPT_CURSOR_HEADS_0B3E` + `rewind_level_scripts_0b3e` in level_object_script.py), rebuilds
+   the tile plane/class table, and the scroll lands back at the level start (2350=0x9C); A47E/A480
+   are zeroed (the wave state clears). Score/lives persist. So the respawned level REPLAYS from the
+   top -- which is also HOW waves come back after a death (the row-0x110 controller entry re-fires).
+2. **The scroll is paused nearly the whole level.** The demo's 2350 sat at 0xB6 for thousands of
+   frames: the A66F gate (A47C||A47E||A480 all zero) holds while waves are alive. play_native now
+   passes the REAL gate inputs live from the image (was a hardcoded (0,0,0)) -- the world scroll
+   pauses during waves and resumes when cleared, the real pacing.
+3. The bar refill at respawn is a BLOCKING setup-time loop in the VM (A97A 1 -> 0x58 within one walk
+   boundary) -- consistent with modeling its fixed point (0x58) in `apply_respawn_seeds`.
+
+`apply_respawn_seeds` now also rewinds the scripts + clears A47E/A480 (no-ops on the cold path);
+play_native's DEATH branch resets the dataclass scroll to the level-start cursor. The respawn probe
+(re-asserted: the RESTARTED level replays its 0x20 wave) PASSES: die -> explode -> respawn (lives=2,
+level restarts) -> the wave returns -> a natural second death -> respawn (lives=1) -> play
+continues. Cold + death probes still PASS; suite green; lint clean.
+
 ## 2026-07-06 - MILESTONE: the NATIVE DEATH->RESPAWN CYCLE -- die, explode, respawn, keep playing, VM-free
 
 Composed the 9908/9773 respawn continuation into play_native: on the DEATH exit, instead of stopping

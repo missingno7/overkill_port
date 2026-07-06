@@ -18,6 +18,7 @@ Known omission (marked, not faked): the ``7524`` companion/flame object
 from __future__ import annotations
 
 from overkill.recovered.adapters.flat_memory import MutFlatMemory
+from overkill.recovered.adapters.level_object_script import rewind_level_scripts_0b3e
 from overkill.recovered.adapters.native_game_state_adapter import read_native_game_state
 from overkill.recovered.adapters.starfield_adapter import DATA_SEGMENT, load_starfield_state
 from overkill.recovered.domain.native_game_state import NativeGameState
@@ -98,6 +99,14 @@ def apply_respawn_seeds(mem) -> None:
     # the health BAR at its post-intro fixed point (AFTER C4DB/C461, which zero it -- see docstring)
     mem.ww(ds, 0xA97A, 0x0058)
     mem.ww(ds, 0xA97C, 0x0001)
+    # the 0B3E script-cursor rewind + the wave-state clear: the real death moment runs 4DBF -> 0B3E
+    # (the level-data initializer -- traced live: the demo's respawns land with the scroll back at
+    # the level start, the six script cursors at their heads, and A47E/A480 zeroed), so a respawned
+    # level REPLAYS its spawn script from the top.  On the cold path these are no-ops (the raw
+    # bundle already holds the heads and zeros).
+    rewind_level_scripts_0b3e(mem)
+    mem.ww(ds, 0xA47E, 0x0000)
+    mem.ww(ds, 0xA480, 0x0000)
 
 
 def build_cold_level_start(exe_image: bytes, level_index: int = 0) -> tuple[NativeGameState, StarfieldState]:

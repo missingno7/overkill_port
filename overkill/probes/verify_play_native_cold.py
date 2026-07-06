@@ -78,7 +78,8 @@ def main(argv) -> int:
                 ref_box_y=game.state.special_pool.y_word(0),
                 a278=0, tile_probe_suppressed=False, tiles=game.tile_context,
             ),
-            scroll_gate=(0, 0, 0),
+            scroll_gate=(walk_image.rw(0x25CC, 0xA47C), walk_image.rw(0x25CC, 0xA47E),
+                         walk_image.rw(0x25CC, 0xA480)),
             run_object_pass=False,
         )
         sp = game.state.special_pool

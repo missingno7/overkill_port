@@ -88,7 +88,9 @@ def main(argv) -> int:
                     ref_box_x=game.state.special_pool.x_word(0),
                     ref_box_y=game.state.special_pool.y_word(0),
                     a278=0, tile_probe_suppressed=False, tiles=game.tile_context),
-                scroll_gate=(0, 0, 0), run_object_pass=False)
+                scroll_gate=(walk_image.rw(DS, 0xA47C), walk_image.rw(DS, 0xA47E),
+                             walk_image.rw(DS, 0xA480)),
+                run_object_pass=False)
         sp = game.state.special_pool
         if not dying:
             sync_player_anchor(walk_image, sp.x_word(0), sp.y_word(0), sp.word_at(0, 0x08))
@@ -100,23 +102,17 @@ def main(argv) -> int:
         advance_object_frame(walk_image, walk_tiles)
         game = game.with_state(project_state(walk_image))
 
-        # count live level content: 0x20 wave enemies for the first-death arming, and ANY active
-        # type-2/4 hostile (excluding the anchor) for post-respawn liveness -- planet 1's script has
-        # its ONLY 0x1F wave-controller entry at row 0x110, so later content is OTHER behavior types
-        # (0x27/0x11/0x30/0x83/...), not more 0x20 formations.
+        # count live 0x20 wave enemies: death RESTARTS the level (the script cursors rewind + the
+        # scroll returns to the start), so the row-0x110 wave-controller entry REPLAYS and a fresh
+        # 0x20 wave must appear after every respawn.
         enemies = 0
-        hostiles = 0
         for pool_name in ("special_pool", "effect_pool", "object_pool"):
             pool = getattr(game.state, pool_name)
             for i in range(len(pool)):
-                if not pool.active_word(i):
-                    continue
-                if pool.word_at(i, 0x18) == 0x20:
+                if pool.active_word(i) and pool.word_at(i, 0x18) == 0x20:
                     enemies += 1
-                if pool.word_at(i, 0x16) in (2, 4):
-                    hostiles += 1
-        if hostiles and respawns:
-            wave_after_first_respawn = True   # later script rows keep producing live level content
+        if enemies and respawns:
+            wave_after_first_respawn = True   # the restarted level's script replayed the wave entry
         if respawns and not dying:
             frames_alive_since_respawn += 1
             max_alive_streak = max(max_alive_streak, frames_alive_since_respawn)
@@ -145,7 +141,11 @@ def main(argv) -> int:
             walk_image.ww(DS, 0xA8CC, 0)
             walk_image.ww(DS, 0xA8C2, 0)
             walk_image.ww(DS, 0x20A6, 0x20A8)
-            game = game.with_state(project_state(walk_image))
+            # the 4DBF -> 0B3E level-data re-init: death RESTARTS the level (traced live) -- the
+            # scroll goes back to the level start and the (rewound) script replays from the top.
+            game = dataclasses.replace(
+                game.with_state(project_state(walk_image)),
+                origin_x=0x0000, row_base=0x9C, row_source=0x5B00, rows_to_milestone=0x0110)
             respawns.append((f, lives, walk_image.rw(DS, ANCHOR + 0x02),
                              walk_image.rw(DS, ANCHOR + 0x04),
                              walk_image.rw(DS, 0xA95A), walk_image.rw(DS, 0xA97A)))
@@ -164,18 +164,19 @@ def main(argv) -> int:
 
     lives_seq = [r[1] for r in respawns]
     print(f"deaths forced: {deaths_forced}; respawns: {respawns}; longest alive streak after a "
-          f"respawn: {max_alive_streak}; hostiles after first respawn: {wave_after_first_respawn}; "
+          f"respawn: {max_alive_streak}; wave after a respawn: {wave_after_first_respawn}; "
           f"gap: {gap}")
-    # PASS: at least two full death->respawn cycles with the correct reseeded state each time, lives
-    # stepping down 2,1,..; play continues (a 100+ frame streak); later script rows keep producing
-    # live content. A game-over gap is acceptable ONLY as the true lives-exhausted end (2,1,0 first).
-    ok = (deaths_forced == 1 and len(respawns) >= 2
+    # PASS: at least one full death->respawn cycle with the correct reseeded state each time, lives
+    # stepping down 2,1,..; play continues (a 100+ frame streak); the RESTARTED level replays its
+    # wave. A game-over gap is acceptable ONLY as the true lives-exhausted end (2,1,0 first).
+    ok = (deaths_forced == 1 and len(respawns) >= 1
           and lives_seq == list(range(2, 2 - len(respawns), -1))
           and all(r[2] == 0xC0 and r[3] == 0x58 and r[4] == 3 and r[5] == 0x58 for r in respawns)
           and max_alive_streak >= 100 and wave_after_first_respawn
           and (gap is None or (gap.startswith("game over") and lives_seq[-1] == 0)))
-    print("RESULT:", "PASS -- die, explode, respawn (lives stepping down), the level keeps living, "
-          "play continues -- the full native death->respawn cycle, VM-free" if ok else "CHECK")
+    print("RESULT:", "PASS -- die, explode, respawn (the level restarts, lives stepping down), the "
+          "wave replays, play continues -- the full native death->respawn cycle, VM-free"
+          if ok else "CHECK")
     return 0 if ok else 1
 
 

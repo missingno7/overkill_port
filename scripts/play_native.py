@@ -478,7 +478,12 @@ def main(argv=None) -> int:
                 source_x=g.state.special_pool.x_word(0), source_y=g.state.special_pool.y_word(0),
                 read_ds_word=lambda off: 0,
                 update_globals=_object_update_globals(g),
-                scroll_gate=(0, 0, 0),
+                # the REAL A66F gate inputs, live from the image (ADR-1): A47E is the walk-owned
+                # active-enemy count, so the world scroll PAUSES while a wave is alive -- the real
+                # game's pacing (the scroll resumes when the wave is cleared). A47C/A480 join in the
+                # moment their stages (the boss script arm / the A480 countdown) go native.
+                scroll_gate=(walk_image.rw(0x25CC, 0xA47C), walk_image.rw(0x25CC, 0xA47E),
+                             walk_image.rw(0x25CC, 0xA480)),
                 # the object pass is run over the DGROUP image below (the full behaviour walk), so skip
                 # NativeGame's dataclass object pass when the image owns the pools -- no double-step.
                 run_object_pass=walk_image is None,
@@ -547,8 +552,14 @@ def main(argv=None) -> int:
                 walk_image.ww(0x25CC, 0xA8CC, 0)
                 walk_image.ww(0x25CC, 0xA8C2, 0)
                 walk_image.ww(0x25CC, 0x20A6, 0x20A8)  # the canned-random ring cursor reset (9792)
-                cell["game"] = g.with_state(project_state(walk_image))
-                print(f"respawn at tick {cell['tick']}: lives={lives}")
+                # The death moment's 4DBF -> 0B3E runs the LEVEL-DATA re-init: traced live, the
+                # demo's respawns land with the scroll back at the LEVEL START -- death restarts
+                # the level (score/lives persist; the script cursors were rewound by the seeds).
+                cell["game"] = dataclasses.replace(
+                    g.with_state(project_state(walk_image)),
+                    origin_x=0x0000, row_base=_COLD_ROW_BASE, row_source=_COLD_ROW_SOURCE,
+                    rows_to_milestone=_COLD_ROWS_TO_MILESTONE)
+                print(f"respawn at tick {cell['tick']}: lives={lives} (level restarts)")
                 return
             raise RecoveryGap(
                 f"gameplay exit {exit_.exit.name} (1010:97B2 -> {exit_.jump_target:#06x})",

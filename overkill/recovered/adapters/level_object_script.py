@@ -45,6 +45,19 @@ CONTROLLER_SPAWN_SCHEDULES = {0x13: 0xA484, 0x15: 0xA4E8, 0x1C: 0xA7A2, 0x1F: 0x
 
 EFFECT_POOL_BASE, EFFECT_POOL_WRAP, EFFECT_SLOTS = 0x23B4, 0x2B5C, 0x23
 
+#: the six per-planet script CURSOR cells (C5F5..C5FF) and the script HEAD each resets to --
+#: exactly the first six writes of ``1010:0B3E`` (the level-data initializer, run at level load AND
+#: at the death moment via ``4DBF``): the cursors REWIND to the heads, so a respawned level replays
+#: its spawn script from the top.
+SCRIPT_CURSOR_HEADS_0B3E = ((0xC5F5, 0xC85C), (0xC5F7, 0xC8D6), (0xC5F9, 0xCA02),
+                            (0xC5FB, 0xCC36), (0xC5FD, 0xCC80), (0xC5FF, 0xCCAA))
+
+
+def rewind_level_scripts_0b3e(mem) -> None:
+    """``1010:0B3E``'s script-cursor rewind: reset all six planets' cursor cells to their heads."""
+    for cell, head in SCRIPT_CURSOR_HEADS_0B3E:
+        mem.ww(DS, cell, head)
+
 
 def _ground_snap_4b4a(mem, rec: int) -> None:
     """``1010:4B4A..4BE6``: snap X/Y to the 16px grid, then drop the object onto the terrain surface
