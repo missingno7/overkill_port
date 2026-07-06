@@ -38,6 +38,16 @@ sprite compositors (`object_sprite_blocks` SKIPS ``anim(+12) != 0`` and ``varian
 records -- the explosion/hit-flash frames are exactly those); (4) the resizable-window crash --
 FIXED (scale to the live window size).
 
+**CORRECTION (same night): +0x0A is a DRAW-LAYER, not a suppression.** The 32CA pool is drawn in
+TWO passes: A891 (cx=0x23) draws the ``+0x0A == 0`` records FIRST, then A8C4 (cx=0x24) draws the
+``+0x0A == 1`` records ON TOP (both through 7596; same BDAC/2350/type-1 skip in each; an A87C
+loop precedes them -- read it).  So the walk-boundary page (what the cache stores) is a
+MID-COMPOSE state -- the +0x0A==0 records were absent from it for PHASE reasons, not eligibility.
+NEXT for the 1:1 instrument: pin the 97B2 stage order (native_app's GAMEPLAY_FRAME_STAGES) to
+learn WHICH passes have run at A9D3, and either (a) move the comparison point to a fully-composed
+phase, or (b) reproduce the exact mid-compose state.  ALSO adopt the two-pass +0x0A layer ORDER
+in the native sprite compose (draw 0-layer under 1-layer) -- ordering affects overlaps.
+
 **THE DRAW-ELIGIBILITY GATE IS FOUND (1010:A8C4..A8F4, the special-pool draw walk)**: per active
 32CA record -- skip when ``[BDAC] != 1 AND [2350] <= 0xB6 AND +0x16 == 1`` (a type-1 late-level
 suppression), then **skip unless ``+0x0A == 1``** (the confirmed gate), else ``call 7596`` (the
