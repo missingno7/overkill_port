@@ -19,6 +19,31 @@
 > work is COMPLETE for L1. Next frontier: play_native integration polish, other planets' controller
 > families (0x1c etc.), the 9734/9902/9908 transition continuations, HUD/menu wiring, audio.
 
+## 2026-07-06 - play_native's gameplay-exit guards read LIVE from the walk image; the death->respawn chain decoded
+
+Wired `detect_gameplay_transition`'s inputs (A47C/A95A/A97A/2326) to LIVE walk-image reads in
+`play_native._advance` (was seeded-static) -- ADR-1: the image is the state. A95A is now genuinely
+walk-owned (the 9E69/9EA3 chains write it natively), so a real in-game death reaches "anchor state
+absent" for real; the other cells take effect the moment their stages go native, no further wiring.
+Cold values verified identical to the old seeds (A95A=3, A47C=0, 2326=0, A97A=0 -- same knife-edge
+as before on A97A, behavior unchanged).
+
+**The full death->respawn chain is now DECODED (investigation, no code)** -- the next campaign-scale
+item, recorded here for the next session:
+1. Death detected (9B61: `A95A==FFFF or A97A==0` -> jmp 9AFF) SKIPS player-move/scroll/fanout but the
+   OBJECT WALK STILL RUNS (proven: the demo shadow stayed byte-exact through the demo's 5 real death
+   beats). The 9AFF tail is ALREADY PURE (`step_death_tail_9aff`): phase 2326==3 -> anchor +08++ ->
+   at 0x0F: anchor deactivates, `call 4DBF` (UNKNOWN -- scope it), A346=1 (+ A342 when A97A==0).
+2. The 97B2 A346 transition -> **9908** (the death continuation): `call C4DB` (RECOVERED:
+   apply_new_game_setup_c4db) + `dec [2358]` lives (`[978D]` = infinite-lives cheat) + a BEFE sound
+   drain + BEFF=2 + `jmp 9773`.
+3. **9773** (the respawn re-entry into the setup tail): `[2358]==FFFF -> jmp 98EB` (game-over flow);
+   else C3A6 (recovered pool seed) -> 77C5(?) -> 99BF(?) -> 6176 (host HUD) -> 9BE2(?) -> A940
+   (recovered) -> `[20A6]=20A8` -> C57C(?) -> B5A9(?) -> `[A8C2]=0` -> 5F43(?) -> (`[2350]==0x9C` ->
+   D305) -> 97B2. The unknowns 77C5/99BF/9BE2/C57C/B5A9/5F43 need scoping -- likely a mix of
+   recovered-under-other-names and host/presentation, exactly the "compositions of recovered pieces"
+   run_status has long predicted for 9908.
+
 ## 2026-07-06 - **MILESTONE: THE ENTIRE DEMO WALK IS NATIVE -- 8294/8294, zero divergence, ZERO GAPS**
 
 Recovered the 9EA3 player-death chain (the LAST gap in the demo): on the A95A life underflow in

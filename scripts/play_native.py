@@ -501,12 +501,16 @@ def main(argv=None) -> int:
         cell["starfield"] = advance_starfield(cell["starfield"])  # the recovered parallax move
         cell["tick"] += 1
         # The 97B2 gameplay-exit boundary: end this level fail-loud if a death / game-over / scripted
-        # transition is detected (recovered + demo-witnessed as detect_gameplay_transition). The anchor
-        # +08 death counter is live (special_pool slot 0); the other inputs are the seeded-static guard
-        # values (see _SeededStart) -- so on a normal capture this never fires, but a real exit stops
-        # the loop instead of running blindly past an unrecovered 9734/9902/9908 continuation.
+        # transition is detected (recovered + demo-witnessed as detect_gameplay_transition). The
+        # trigger cells are read LIVE from the walk image (ADR-1: the image is the state) -- the
+        # 9E69/9EA3 death chain natively writes A95A (FFFF on life exhaustion) and 2384, so a real
+        # in-game death now reaches "anchor state absent" for real. A47C/A97A/2326 are still only
+        # ever written by their VM-owned stages (the A47C script arm, the dying-mode 9B2E flow), so
+        # today they hold their cold values -- live reads make them take effect the moment those
+        # stages go native, with no further wiring. The anchor +08 counter is live (slot 0).
         exit_ = detect_gameplay_transition(
-            a47c=seed.a47c, a95a=seed.a95a, a97a=seed.a97a, v2326=seed.v2326,
+            a47c=walk_image.rw(0x25CC, 0xA47C), a95a=walk_image.rw(0x25CC, 0xA95A),
+            a97a=walk_image.rw(0x25CC, 0xA97A), v2326=walk_image.rw(0x25CC, 0x2326),
             anchor_counter_after_inc=g.state.special_pool.word_at(0, 0x08),
         )
         if exit_ is not None:
