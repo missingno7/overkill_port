@@ -55,7 +55,13 @@ if row <= 0xE52 call **7948** (the 13-TILE ROW LOOP: es=[9592] the plane seg, si
 [A406]=13, per tile ``al = plane[si]`` dispatched through the PLANET-KEYED handler table
 ``[95DE + planet*2]`` writing a 16px cell at ``[A40A] += 0x10``; special tile ids
 0x04/0x07/0x6C/0x6D branch at 7977.. to 7A6E/7A7A/7AAE/7AC4) + call 4A65 (already recovered)
--> jmp **5A7E** (the row -> page blit).  CORRECTION: 7948 is NOT pixels -- it is the
+-> jmp **5A7E** (the row -> page blit).  **THE TILE PIXEL BLIT IS FULLY DECODED (5A7E -> mode-2 body 36A2)**: 13 tiles per row; per tile
+``id = plane[[2350]-relative bx]`` (plane seg [9592]), ``si = CS:[8D92 + (id-1)*2]`` (the tile
+GRAPHICS offset table), source seg = ``[959A]`` (or ``[959C]`` when row_base >= 0xE5F -- a second
+bank), dest = the work page, 16 rows x 4 movsw (16px) with ``di += 0x60`` between rows.  ALL
+inputs exist natively (NativeGame.level.graphics/tile_plane + the CS tables) -- implement
+``render_tile_row`` + the visible-window compose, gate on the pure-VM 1:1 instrument (expect the
+present-500+ diffs to collapse).  CORRECTION: 7948 is NOT pixels -- it is the
 **TILE-CUE OBJECT SPAWNER** (the planet handlers match special tile ids and 7524/81C9-allocate
 records stamping behavior/sprite -- planet-2's 7B06: id 0x5A -> beh 0x2E cell, id ?? -> beh
 0x2A spr 0x1C at x=[A40A], id ?? -> beh 0x8F spr 0xBF...).  TWO consequences: (a) the tile-row
