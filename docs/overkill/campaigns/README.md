@@ -30,7 +30,7 @@
 | Player (move/fire/damage/death) | byte-exact | ~90% | `player.md` |
 | Enemies & waves — L1 | byte-exact | ~80%, wired from snapshot | `enemies_l1.md` |
 | Combat resolution | byte-exact | pieces recovered, unwired | `combat.md` |
-| Scene content (spawn scripts) | byte-exact | walker done; scenery behaviors open | `scene.md` |
+| Scene content (spawn scripts) | byte-exact | **DONE** (2026-07-06): walker + 0x1A/0x19/BB03 native, play_native cold path spawns the wave | `scene.md` |
 | Render | pixel-exact | largely done | `render.md` |
 | Front-end (title/menu/select) | screen-exact | logic recovered, unwired | `frontend.md` |
 | Audio | event-exact | not started | `audio.md` |

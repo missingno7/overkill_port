@@ -4,6 +4,38 @@ Open items the autonomous loop attempted but could not finish byte-exact. Do NOT
 re-attempt these in the loop; they need a reproduction trace and/or gameplay
 context. Each has the analysis already done so a human can pick up fast.
 
+## 2026-07-06 — behavior 0x8C/0x8B (the BB80/BB88 ground-crawler scenery): 79-byte divergence at demo frame 3072
+
+**Attempted + REVERTED** (behavior_walk.py + scenery_behaviors.py reverted to HEAD; the play_native
+cold-wiring slice `f745f6f` is unaffected). The handler RUNS correctly enough to drop 0x8c/0x8b off
+the gap list entirely, but leaves a small, stable per-frame divergence on ONE crawler record.
+
+**Repro:** add the handler back (see the reverted diff / this session's transcript) and run
+`python -m overkill.probes.verify_native_walk_demo "" 20000`. FAIL: `diverged=79`, first at walk
+frame **3072**, cells `DS:2426` (crawler X, effect slot 2 @ base 0x2424, +0x02) `vm=A3/nat=A2`,
+`DS:242C` (that record's sprite, +0x08) `vm=5D/nat=5E..60`, `DS:A438` (AFD8 mirror_x scratch)
+`vm=A2/nat=A1`. **Y (`DS:2428`, +0x04) does NOT diverge** — the discrepancy is purely X + sprite.
+
+**What's decoded (correct, reusable):** the two behaviors are ONE body at 1010:BB8E; 0x8C writes
+`DS:A952=0xFFFF`, 0x8B writes `DS:A952=0x0001` (a sign flag). The body: (1) 1010:BBED terrain-follow
+move — `probe_x = X + A278 - 0x10`, run 5073 (writes `DS:215A`), if bx==FFFF blocked; else pick
+direction (0 when X>=DS:237E, else 4) and probe tile `plane[bx + A952 (- 0xD on the left path)]` via
+505B/C3AA — a class-0 (open) tile ⇒ BLOCKED (no step), else step via the recovered `contact_probe_afd8`;
+A430 is the blocked flag, return ZF=(A430==1). (2) sprite `= 0x61 + 4*A952 + anim + dir`, where
+`anim = DS:233C` ONLY when it moved (A430==0) else 0. (3) shot gate: when `DS:2330 ∈ {0x7F,0x6B,0x57}`,
+fire via 7476 (`_alloc(0x95DA,...)` + `enemy_shot_stamp_7476` + override `+8=3, +4-=8, +2-=8`). Exit
+`jmp BC45` (with_drift=True). All leaf workers (5073/505B/7476/AFD8/BC45) are already recovered.
+
+**The unresolved bug:** at frame 3072 native and VM have IDENTICAL X/Y going in, yet native ends with
+`moved=True` (sprite carries the `DS:233C` anim term, +1..3) where the VM has `moved=False`
+(sprite constant 0x5D = 0x61-4+0+0, i.e. blocked, dir 0), and native X ends 1px behind. Since the
+pre-check inputs are identical on the first divergent frame, the mismatch must be in the AFD8 step
+INPUTS (direction? contact predicate?) or in the pre-probe tile the two sides read — NOT in the
+elif structure. NEEDS a per-frame trace of effect-slot-2 through BOTH the VM and the native walk at
+frame 3072 (dump probe_x, 5073 bx, plane[bx], class, the chosen direction, and AFD8's blocked verdict
+on each side) to isolate. Candidate: BBED may pass a REAL BDD0 contact predicate to AFD8 (the same
+caller-owned predicate the 0x26 recovery needs) rather than the `lambda: False` the BB03 bounce uses.
+
 > TECHNIQUE (2026-07-04, SUPERSEDED same day): free-run timing FAST-FORWARD is now a real primitive --
 > `overkill/timing_fastforward.advance_frames_fast(cpu, waits, on_frame=...)` (verified by
 > `probes/verify_timing_fastforward`). It advances a hooks-cleared raw-bytes runtime by whole `0679`
