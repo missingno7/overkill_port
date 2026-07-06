@@ -4,6 +4,40 @@ Open items the autonomous loop attempted but could not finish byte-exact. Do NOT
 re-attempt these in the loop; they need a reproduction trace and/or gameplay
 context. Each has the analysis already done so a human can pick up fast.
 
+## 2026-07-06 — the L2 scenery batch (0x39/0x3A/0x3B/0x3C/0x3D/0x3E/0x3F/0x8A): attempted as ONE batch, reverted — redo ONE AT A TIME on the 4s cached gate
+
+**Fully decoded, adapters written once (in the session transcript + summarized here), reverted after
+two divergence families.** Lesson: batch-of-8 hides which handler is wrong — the 4-second cached L2
+gate makes one-at-a-time nearly free, so do that.
+
+Decodes (disasm-verified):
+* **0x39 (8A23)**: sprite 0x6E; `i16(x) >= 0x80` (SIGNED jl) -> (x==0x80 exactly: sound 0x0B),
+  dir=2, the AF60 double 2px step (2x `step_operations_for_direction(2,2)`); y > 0xC0 -> BFC7. BC45.
+* **0x3A (8A55)**: sprite = `[96D2 + [233C]*2] + 0xCC`; `i16(x) >= 0x80` -> 5E1B deltas
+  (PERSIST +0x2A/+0x2C) + 5E42 steer (mode = DS:2312). BC45.
+* **0x3B (8A7E)**: sprite = (4D95 canned random & 3) + (0x152 on planets 0/6 else 0xA9); the RING
+  cursor 20A6 advances; x += 2. BC45.
+* **0x3C (8AA4)**: sprite 0xC5 waiting for x == 0xB0 EXACTLY; there: sound 0x1D, +0x18 += 1 (MORPH
+  -> 0x3D), dir=7, falls into the 0x3D body SAME frame.
+* **0x3D (8AC7)**: sprite = `[96D2 + [233C]*2] + 0xC5`, then the 0x33 triple-AFD8 bounce (88CF).
+* **0x3E (8ADD)**: sprite 0x0E; `i16(x) >= 0xA0` -> MORPH +0x18=0x3F + the 74E2 self-retarget
+  (+0x2A/+0x2C) + the 8744 steer tail SAME frame.
+* **0x3F (8AF6)**: `jmp 8744` = the shared steer tail (extract from `_step_ramp_steer_29`:
+  [2312]=2, 5E42 with the RAMP_29 modes, write-backs, [2312]=3, signed-Y-bounds BFC7).
+* **0x8A (8C1F)**: sprite = `[233C] + 0x9D` then the SAME B2AC/B2AF tail as 0x89 (the 232C==0x1F
+  BAE1 emit + the BB03 bounce) — refactor `_step_scenery_89`'s tail into a shared fn.
+
+The two divergence families to solve when re-landing:
+1. **0x8A**: frames 458/472/486/500 — the VM's record (e.g. 2814) gets KILLED by a player shot
+   (HP 3->0, BFC7, score, the shot 2D1C consumed) while the native record survives — same
+   positions, so the 62F6 collision disagreed on something else (candidate eligibility? the emit's
+   95DA cursor shift? per-frame order?). Needs a frame-458 forensic (the cache inspection +
+   write-trap recipe from the crawler debug).
+2. **Persistent 1-byte** at DS:250D from frame 4024 (rec 0x2504's sprite HIGH byte, nat=0x80) —
+   one of the anim-table sprite writes produced a 0x80xx sprite word: check which behavior owns
+   rec 0x2504 at frame 4024 in the cache and whether the [96D2 + clock*2] index needs a mask
+   (the clock cell may exceed the table).
+
 ## 2026-07-06 — RESOLVED: the BDD0 contact predicate is recovered + wired; 0x89 DONE
 
 **FIXED (2026-07-06, same day).** The hypothesis below was correct: the shared root cause was the
