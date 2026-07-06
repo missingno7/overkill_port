@@ -38,11 +38,39 @@ item, recorded here for the next session:
    apply_new_game_setup_c4db) + `dec [2358]` lives (`[978D]` = infinite-lives cheat) + a BEFE sound
    drain + BEFF=2 + `jmp 9773`.
 3. **9773** (the respawn re-entry into the setup tail): `[2358]==FFFF -> jmp 98EB` (game-over flow);
-   else C3A6 (recovered pool seed) -> 77C5(?) -> 99BF(?) -> 6176 (host HUD) -> 9BE2(?) -> A940
-   (recovered) -> `[20A6]=20A8` -> C57C(?) -> B5A9(?) -> `[A8C2]=0` -> 5F43(?) -> (`[2350]==0x9C` ->
-   D305) -> 97B2. The unknowns 77C5/99BF/9BE2/C57C/B5A9/5F43 need scoping -- likely a mix of
-   recovered-under-other-names and host/presentation, exactly the "compositions of recovered pieces"
-   run_status has long predicted for 9908.
+   else C3A6 (recovered pool seed) -> 77C5 -> 99BF -> 6176 (host HUD) -> 9BE2 -> A940 (recovered) ->
+   `[20A6]=20A8` -> C57C -> B5A9 -> `[A8C2]=0` -> 5F43 -> (`[2350]==0x9C` -> D305) -> 97B2.
+
+**ALL SEVEN 9773/9AFF unknowns SCOPED (2026-07-06, disasm-verified) -- the respawn is compose-ready:**
+* **77C5** -- the A97A health-BAR refill tick: gated `[A97C]==1` (a "refilling" flag) AND `[2384]<3`;
+  `A97A++` toward 0x58 (so A97A is the BAR level; "A97A==0" in the death detector = empty bar) + a
+  77F6 draw beat + the mode-1-only 511F pair (Tandy-unreachable, same as 9EC2). Small pure + host.
+* **99BF** -- the COORDINATE-RING init (the long-standing "coordinate rings" Bucket-C gap!): fill the
+  0x30-pair ring at A27A with (anchor_x+8, anchor_y+9), then seed the four ring pointers
+  A33A=A27A / A33C=A2FE / A33E=A2BE / A340=A27E. Pure seed, trivial.
+* **9BE2** = 9CD9 + A031 + (BDAC==0 AND 2350>0xB6 -> 9FAF): **9CD9** writes (anchor_x+8, anchor_y+8)
+  into the ring slot at [A33A] (the ring TICK); **A031** copies the delayed ring entries at
+  [A33C]/[A33E] into the records pointed by A962/A964 -- THE COMPANION-FOLLOW mechanism (the
+  companion trails the player via the ring delay). Both pure + tiny. **9FAF** (boss-region only)
+  still unscoped.
+* **C57C** -- a TANDY NO-OP: palette DAC writes only for cs:[95BC] modes 0 (jmp C565) / 1; mode 2
+  returns untouched. Host/presentation.
+* **B5A9** -- 3 word writes: A8D0=A8D2 (the formation-schedule cursor reset, matching
+  enemy_formation_adapter's note), A8C8=0, A8CC=0. Trivial pure.
+* **5F43** -- the level-MUSIC start: al = 4 (row 0x9C level start) / 5 (row 0xEA0 boss) / the
+  DS:231E[planet] table, then jmp CB1C (the sound/music dispatch -- AUDIO, host/deferred).
+* **4DBF** (the 9AFF death-moment call) -- planet-keyed (a C601-table pointer), a 3x 4DAF loop, then
+  0B3E with A978 saved/restored around it -- shape of the death jingle/text; sub-unknowns 4DAF/0B3E.
+  Only fires ONCE at anchor-deactivate; can stay a declared host boundary initially.
+* **D305** (row-0x9C only) -- unscoped; likely the level-intro presentation.
+
+So the COMPOSE plan for native death->respawn in play_native: on `death_tail_reached` (live A95A/A97A
+reads -- already wired), skip player/scroll/fanout, run `step_death_tail_9aff` (pure, exists) with
+the +08 counter (the explosion anim the renderer already draws), still run the walk; on fire: C4DB
+(recovered) + `2358--` + C3A6 (recovered) + the 99BF ring seed + B5A9/A8C2/20A6 writes + A940
+(recovered) + respawn C461/C42F (recovered) -- audio (5F43) and presentation (6176/C57C/D305/4DBF)
+declared host boundaries. The remaining true unknowns: 9FAF (boss-region), 4DAF/0B3E, D305, and
+where A97C gets SET (the refill trigger).
 
 ## 2026-07-06 - **MILESTONE: THE ENTIRE DEMO WALK IS NATIVE -- 8294/8294, zero divergence, ZERO GAPS**
 
