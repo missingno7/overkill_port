@@ -105,3 +105,29 @@ def step_scenery_emitter_sprite_19(clock_233a: int) -> int:
 def scenery_19_should_emit(gate_232e: int) -> bool:
     """Whether behavior 0x19 emits a C237 child this frame (``DS:232E == 0x3F``)."""
     return (gate_232e & 0xFFFF) == SCENERY_19_EMIT_GATE_232E
+
+
+# 1010:B2A6 (behavior 0x89): the SAME shape as 0x19 -- a sprite ramp + the BAE1 C237 emit (forcing
+# direction=4) + the shared BB03 bounce -- but a DIFFERENT clock/bias (DS:233C + 0x1C) and emit gate
+# (DS:232C == 0x1F).  Reuses 0x19's BAE1 emit and the BB03 bounce verbatim; no terrain-follow.
+SCENERY_89_SPRITE_BIAS = 0x001C
+SCENERY_89_EMIT_GATE_232C = 0x001F
+
+
+@recovered_island(
+    asm=("1010:B2A6..B2B9",),
+    contract="behavior 0x89 (1010:B2A6): sprite = DS:233C + 0x1C, unconditionally; when DS:232C==0x1F, "
+             "emit a C237 child via 1010:BAE1 (the same dir=4 emit 0x19 uses) -- then falls into the "
+             "shared BB03 bounce (jmp BB03) every frame.",
+    status="OBSERVED",
+    merge_target="SceneSystem",
+    unknowns="none -- reuses the recovered BAE1 emit + BB03 bounce; only the clock/bias/gate differ.",
+)
+def step_scenery_emitter_sprite_89(clock_233c: int) -> int:
+    """The pure sprite for behavior 0x89 (``1010:B2A6``): ``DS:233C + 0x1C``."""
+    return (clock_233c + SCENERY_89_SPRITE_BIAS) & 0xFFFF
+
+
+def scenery_89_should_emit(gate_232c: int) -> bool:
+    """Whether behavior 0x89 emits a C237 child this frame (``DS:232C == 0x1F``)."""
+    return (gate_232c & 0xFFFF) == SCENERY_89_EMIT_GATE_232C

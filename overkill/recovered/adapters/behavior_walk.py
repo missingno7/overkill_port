@@ -58,7 +58,9 @@ from overkill.recovered.systems.scenery_behaviors import (
     bb03_bounce_after_step,
     bb03_bounce_boundary,
     scenery_19_should_emit,
+    scenery_89_should_emit,
     step_scenery_emitter_sprite_19,
+    step_scenery_emitter_sprite_89,
     step_scenery_sprite_ramp_1a,
 )
 from overkill.recovered.systems.frame_loop import (
@@ -67,14 +69,18 @@ from overkill.recovered.systems.frame_loop import (
     enemy_spawn_stamp_8209,
 )
 from overkill.recovered.systems.collision import (
+    PLAYER_HAZARD_SCAN_REQUIRED_GATE,
     bec5_candidate_deactivated,
     bec5_moving_object_outcome,
     clamp_postmove_y_bcb1,
     collision_damage_counter_chain_bf25,
     object_overlap_scan_62f6,
     object_postmove_x_bounds_deactivates_bc4b,
+    player_hazard_scan_hit,
     postmove_contact_window_test_aa71,
 )
+from overkill.recovered.domain.object_slots import ObjectSlotRecord
+from overkill.recovered.domain.collision import ProbePoint
 from overkill.recovered.views.object_slots import (
     GAMEPLAY_OBJECT_ALLOCATOR_WRAP_SENTINEL,
     GAMEPLAY_OBJECT_TABLE_BASE,
@@ -208,6 +214,42 @@ def _step_enemy_20(mem, rec: int) -> None:
         mem.ww(DS, off, val)
 
 
+def _read_slot_record(mem, rec: int) -> ObjectSlotRecord:
+    """The 8-field ObjectSlotRecord the BDD0/BDE3 hazard scan reads (from a raw DGROUP slot)."""
+    return ObjectSlotRecord(
+        active_word=mem.rw(DS, rec + 0x00), x_word=mem.rw(DS, rec + 0x02),
+        y_word=mem.rw(DS, rec + 0x04), gate_or_layer=mem.rw(DS, rec + 0x0A),
+        link_key=mem.rw(DS, rec + 0x0E), scan_flag=mem.rw(DS, rec + 0x14),
+        hazard_class=mem.rw(DS, rec + 0x16), logic_id=mem.rw(DS, rec + 0x18))
+
+
+def _bdd0_contact_at(mem, rec: int):
+    """1010:BDD0: the AFD8 contact predicate. Returns a ``contact_at(mirror_dx_x, mirror_dx_y) -> bool``
+    closure the B022 step calls after each 1px move -- the deltas form the ``A438``/``A436`` probe
+    point (this record's own X/Y plus the accumulated step).  If contact, the step is undone.
+
+    BDD0 first guards on the PROBING record's own ``+0x0A`` (``== 1`` -> never contacts), then scans
+    the WHOLE effect pool for an active type-4 hazard record (behavior 0x82..0x94) whose 0x20 box
+    strictly contains the probe point and whose group (``+0x0E``) differs -- the already-recovered
+    ``collision.player_hazard_scan_hit`` predicate, one candidate at a time."""
+    current = _read_slot_record(mem, rec)
+    orig_x, orig_y = current.x_word, current.y_word
+    guarded = current.gate_or_layer == PLAYER_HAZARD_SCAN_REQUIRED_GATE   # BDD0/BDD4: [bp+0A]==1 -> no contact
+
+    def contact_at(mirror_dx_x: int, mirror_dx_y: int) -> bool:
+        if guarded:
+            return False
+        probe = ProbePoint(x_word=(orig_x + mirror_dx_x) & 0xFFFF,
+                           y_word=(orig_y + mirror_dx_y) & 0xFFFF)
+        for i in range(EFFECT_SLOTS):                    # the 0x23 effect-pool records, linearly (BDD9)
+            cand = _read_slot_record(mem, EFFECT_POOL_BASE + i * 0x38)
+            if player_hazard_scan_hit(current, cand, probe):
+                return True
+        return False
+
+    return contact_at
+
+
 def _bb03_bounce(mem, rec: int, tiles: LevelTileContext) -> None:
     direction = mem.rw(DS, rec + 0x06)
     y = mem.rw(DS, rec + 0x04)
@@ -216,7 +258,7 @@ def _bb03_bounce(mem, rec: int, tiles: LevelTileContext) -> None:
         mem.ww(DS, rec + 0x06, flip)
         return
     result = contact_probe_afd8(mem.rw(DS, rec + 0x02), y, direction, mem.rw(DS, 0xA278),
-                                tiles, lambda: False)
+                                tiles, _bdd0_contact_at(mem, rec))
     mem.ww(DS, rec + 0x02, result.x_word)
     mem.ww(DS, rec + 0x04, result.y_word)
     # AFD8's own observable DGROUP writes (the "scratch" cells the ASM itself writes every call,
@@ -245,6 +287,17 @@ def _step_scenery_19(mem, rec: int, tiles: LevelTileContext) -> None:
         saved_dir = mem.rw(DS, rec + 0x06)
         mem.ww(DS, rec + 0x06, SCENERY_19_EMIT_DIRECTION)
         _spawn_child_c237(mem, rec, 0x19)
+        mem.ww(DS, rec + 0x06, saved_dir)
+    _bb03_bounce(mem, rec, tiles)
+
+
+def _step_scenery_89(mem, rec: int, tiles: LevelTileContext) -> None:
+    mem.ww(DS, rec + 0x08, step_scenery_emitter_sprite_89(mem.rw(DS, 0x233C)))
+    if scenery_89_should_emit(mem.rw(DS, 0x232C)):
+        # the SAME BAE1 dir=4 emit as 0x19 (B2B6 call BAE1); parent behavior 0x89 (& 0xF == 9).
+        saved_dir = mem.rw(DS, rec + 0x06)
+        mem.ww(DS, rec + 0x06, SCENERY_19_EMIT_DIRECTION)
+        _spawn_child_c237(mem, rec, 0x89)
         mem.ww(DS, rec + 0x06, saved_dir)
     _bb03_bounce(mem, rec, tiles)
 
@@ -873,6 +926,9 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
         elif beh == 0x19:
             _step_scenery_19(mem, rec, tiles)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # BAF0->BB03 exits jmp BC45 (WITH drift)
+        elif beh == 0x89:
+            _step_scenery_89(mem, rec, tiles)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # B2A6->BB03 exits jmp BC45 (WITH drift)
         else:
             raise RecoveryGap(f"behavior {beh:#04x} (record {rec:04X})",
                               "no native handler registered -- recover it before walking")

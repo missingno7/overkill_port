@@ -4,7 +4,21 @@ Open items the autonomous loop attempted but could not finish byte-exact. Do NOT
 re-attempt these in the loop; they need a reproduction trace and/or gameplay
 context. Each has the analysis already done so a human can pick up fast.
 
-## 2026-07-06 — SHARED AFD8/BB03 "blocked" gap: the missing BDD0 contact predicate (blocks 0x8c/0x8b/0x89, prob. 0x26)
+## 2026-07-06 — RESOLVED: the BDD0 contact predicate is recovered + wired; 0x89 DONE
+
+**FIXED (2026-07-06, same day).** The hypothesis below was correct: the shared root cause was the
+missing BDD0 contact predicate. It turned out to be ALREADY RECOVERED as
+`collision.player_hazard_scan_hit` (+ `is_player_hazard_scan_candidate`) — only the WIRING was missing.
+`contact_at` (the AFD8/B022 caller-owned callback) was changed from no-arg to
+`contact_at(mirror_dx_x, mirror_dx_y)` so it receives the step's A438/A436 probe deltas; a
+`_bdd0_contact_at(mem, rec)` closure in behavior_walk adds them to the object's own X/Y, applies the
+BDD0 `+0x0A==1` guard, and scans the effect pool via the recovered predicate. **0x89 re-added and now
+PASSES the full demo shadow (0 divergence, 8294 frames)** — proving BDD0 correct. AFD8's own oracle gate
+(verify_native_contact_step) + the contact-step unit tests stay green. **The 0x8C/0x8B ground-crawler
+(below) is now re-attemptable** — it hit the same AFD8-blocked mismatch, so re-adding it with the real
+`_bdd0_contact_at` predicate should close it too.
+
+<details><summary>original hypothesis (kept for the record — now confirmed + fixed)</summary>
 
 **The high-leverage root-cause hypothesis** (two independent behaviors now hit the SAME signature —
 `DS:A430` blocked-flag vm=1/nat=0, position 1px behind, and the dependent phase/direction wrong):
@@ -56,7 +70,9 @@ closure `lambda: _bdd0(mem, rec)` that reads them. Verify with `verify_native_co
 own gate) THEN the 0x89/crawler demo frames. This touches the VERIFIED contact_step_b022 interface,
 so it is a focused slice on its own — recover it deliberately, not as a crawler sub-step.
 
-### behavior 0x8C/0x8B (the BB80/BB88 ground-crawler scenery): 79-byte divergence at demo frame 3072
+</details>
+
+### behavior 0x8C/0x8B (the BB80/BB88 ground-crawler scenery): 79-byte divergence at demo frame 3072 — RE-ATTEMPTABLE now BDD0 is wired
 
 **Attempted + REVERTED** (behavior_walk.py + scenery_behaviors.py reverted to HEAD; the play_native
 cold-wiring slice `f745f6f` is unaffected). The handler RUNS correctly enough to drop 0x8c/0x8b off

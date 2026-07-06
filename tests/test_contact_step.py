@@ -11,7 +11,7 @@ def _cls(walls: set[int]):
     return lambda off: 1 if off in walls else 0
 
 
-def _no_contact() -> bool:
+def _no_contact(mirror_dx_x: int = 0, mirror_dx_y: int = 0) -> bool:
     return False
 
 
@@ -67,7 +67,7 @@ def test_step_neg_y_checks_terrain_only_at_a_row_boundary_with_column_straddle()
 
 
 def test_contact_hit_undoes_the_step_and_flags_blocked():
-    out = contact_step_b022(4, ContactStepState(0x30, 0x40, 0x90, 0x3), _cls(set()), lambda: True)
+    out = contact_step_b022(4, ContactStepState(0x30, 0x40, 0x90, 0x3), _cls(set()), lambda *_: True)
     assert out.blocked
     assert (out.x_word, out.y_word, out.sample_215a, out.tile_offset) == (0x30, 0x40, 0x3, 0x90)
     assert out.mirror_dx_x == 0  # the A438 mirror inc is undone too
@@ -80,12 +80,12 @@ def test_contact_probe_afd8_off_map_blocks_without_stepping():
     tiles = LevelTileContext(origin_x_word=0x000F, row_base_word=0x009C,
                              tile_plane=bytes(0x1000), class_table=(0,) * 256)
     # x + a278 - 0x10 lands in the negative-adjusted-X range -> the 5073 off-map early-out
-    r = contact_probe_afd8(0x9000, 0x40, 4, 0x0000, tiles, lambda: False)
+    r = contact_probe_afd8(0x9000, 0x40, 4, 0x0000, tiles, lambda *_: False)
     assert r.blocked and (r.x_word, r.y_word) == (0x9000, 0x40)
     assert (r.snap_x, r.snap_y) == (r.mirror_x, r.mirror_y) == (0x9000, 0x40)
     assert r.tile_offset == 0xFFFF
     # a walkable step: the A278 bias cancels -- the record moves exactly one pixel
-    r2 = contact_probe_afd8(0x30, 0x40, 4, 0x0020, tiles, lambda: False)
+    r2 = contact_probe_afd8(0x30, 0x40, 4, 0x0020, tiles, lambda *_: False)
     assert not r2.blocked and (r2.x_word, r2.y_word) == (0x31, 0x40)
     assert (r2.mirror_x, r2.mirror_y) == (0x31, 0x40) and (r2.snap_x, r2.snap_y) == (0x30, 0x40)
 

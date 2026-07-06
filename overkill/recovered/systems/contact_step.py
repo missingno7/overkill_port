@@ -16,9 +16,11 @@ step is REFUSED (``blocked``); after a step the ``contact_at`` scan may UNDO it 
 (the original pushes the step, runs ``BDD0``, and reverts on carry).
 
 Deliberately caller-owned: the ``tile_class_at(tile_offset) -> int`` read (compose from
-``systems/tilemap.lookup_tile_class_505b`` over the level plane) and the ``contact_at() -> bool``
-scan (the ``BDD0`` walk over the effect pool -- its pure predicate is a separate leaf; the driven
-oracle exercises the no-contact path against the real BDD0 on a cleared pool).  Diagonals COMPOSE
+``systems/tilemap.lookup_tile_class_505b`` over the level plane) and the
+``contact_at(mirror_dx_x, mirror_dx_y) -> bool`` scan (the ``BDD0`` walk over the effect pool -- its
+pure predicate is the recovered ``collision.player_hazard_scan_hit``; the caller adds the deltas to
+the object's own X/Y to form the ``A438``/``A436`` probe point BDD0 reads).  The driven oracle
+exercises the no-contact path against the real BDD0 on a cleared pool.  Diagonals COMPOSE
 the axis handlers exactly like the original (``call axis1`` then fall into axis2): a refused first
 axis still attempts the second, with ``blocked`` accumulating.
 """
@@ -51,7 +53,7 @@ def _step_pos_x(state: ContactStepState, tile_class_at, contact_at) -> ContactSt
             return _blocked(state)
     stepped = dataclasses.replace(state, x_word=(state.x_word + 1) & 0xFFFF,
                                   mirror_dx_x=state.mirror_dx_x + 1)
-    if contact_at():
+    if contact_at(stepped.mirror_dx_x, stepped.mirror_dx_y):  # BDD0 reads A438/A436 (orig + these deltas)
         return _blocked(dataclasses.replace(state))          # undo the step, flag contact
     sample = (state.sample_215a + 1) & SUBTILE_MASK
     off = stepped.tile_offset - (TILE_COLUMN_STRIDE if sample == 0 else 0)
@@ -69,7 +71,7 @@ def _step_neg_x(state: ContactStepState, tile_class_at, contact_at) -> ContactSt
                 return _blocked(state)
     stepped = dataclasses.replace(state, x_word=(state.x_word - 1) & 0xFFFF,
                                   mirror_dx_x=state.mirror_dx_x - 1)
-    if contact_at():
+    if contact_at(stepped.mirror_dx_x, stepped.mirror_dx_y):
         return _blocked(dataclasses.replace(state))
     sample = (state.sample_215a - 1) & SUBTILE_MASK
     off = stepped.tile_offset + (TILE_COLUMN_STRIDE if sample == SUBTILE_MASK else 0)
@@ -86,7 +88,7 @@ def _step_pos_y(state: ContactStepState, tile_class_at, contact_at) -> ContactSt
             return _blocked(state)
     stepped = dataclasses.replace(state, y_word=(state.y_word + 1) & 0xFFFF,
                                   mirror_dx_y=state.mirror_dx_y + 1)
-    if contact_at():
+    if contact_at(stepped.mirror_dx_x, stepped.mirror_dx_y):
         return _blocked(dataclasses.replace(state))
     if (stepped.y_word & SUBTILE_MASK) == 0:                 # crossed a row boundary
         stepped = dataclasses.replace(stepped, tile_offset=stepped.tile_offset + 1)
@@ -104,7 +106,7 @@ def _step_neg_y(state: ContactStepState, tile_class_at, contact_at) -> ContactSt
                 return _blocked(state)
     stepped = dataclasses.replace(state, y_word=(state.y_word - 1) & 0xFFFF,
                                   mirror_dx_y=state.mirror_dx_y - 1)
-    if contact_at():
+    if contact_at(stepped.mirror_dx_x, stepped.mirror_dx_y):
         return _blocked(dataclasses.replace(state))
     if (stepped.y_word & SUBTILE_MASK) == SUBTILE_MASK:      # crossed a row boundary downward
         stepped = dataclasses.replace(stepped, tile_offset=stepped.tile_offset - 1)

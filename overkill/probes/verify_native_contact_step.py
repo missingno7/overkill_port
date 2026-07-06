@@ -125,7 +125,7 @@ def main(argv) -> int:
                             direction,
                             ContactStepState(x, y, off0, sample),
                             tile_class,
-                            lambda: False,
+                            lambda *_: False,
                         )
                         mine = (st.x_word, st.y_word, st.blocked, st.sample_215a,
                                 st.mirror_dx_x & 0xFFFF, st.mirror_dx_y & 0xFFFF)
@@ -174,7 +174,7 @@ def main(argv) -> int:
                     vm = (m.rw(ds, SCRATCH_RECORD + 0x02), m.rw(ds, SCRATCH_RECORD + 0x04),
                           m.rw(ds, 0xA430) != 0, m.rw(ds, 0xA432), m.rw(ds, 0xA434),
                           m.rw(ds, 0xA438), m.rw(ds, 0xA436), m.rw(ds, 0x215A))
-                    r = contact_probe_afd8(x, y, direction, a278, tiles, lambda: False)
+                    r = contact_probe_afd8(x, y, direction, a278, tiles, lambda *_: False)
                     mine = (r.x_word, r.y_word, r.blocked, r.snap_x, r.snap_y,
                             r.mirror_x, r.mirror_y, r.sample_215a)
                     ok = vm == mine

@@ -13,8 +13,28 @@
 > cold-boot probes MUST pass `overkill.launch.build_command_tail("tandy", "pc")`.
 > Suite green: 1225 passed / 23 skipped (2026-07-06). **SCENE.MD CAMPAIGN DONE**: `play_native --level
 > 0` (cold, no snapshot) now spawns/moves a real enemy wave, VM-free (`verify_play_native_cold` PASS).
-> Native actor set: 18 behaviors (0x28 recovered 2026-07-06). Frontier: the 0x8c/0x8b/0x89 scenery
-> cluster (blocked behind one frame-3072 AFD8 trace, see loop_blockers.md), then 0x01-latch9 / death / pickup.
+> Native actor set: 19 behaviors (0x28, 0x89 recovered 2026-07-06; the BDD0 contact predicate is now
+> wired through AFD8). Frontier: the 0x8c/0x8b crawler (re-attemptable now BDD0 is wired), then
+> 0x01-latch9 / player-death / pickup-collect.
+
+## 2026-07-06 - BDD0 contact predicate WIRED into AFD8; behavior 0x89 RECOVERED (the shared blocker, resolved)
+
+Resolved the shared AFD8-blocked mismatch that felled both the 0x8c/0x8b crawler and 0x89 (both had
+`contact_probe_afd8` returning not-blocked where the VM blocks). Root cause was the caller-owned BDD0
+contact predicate, passed as `lambda: False` by every AFD8 caller. **BDD0 was ALREADY RECOVERED** as
+`collision.player_hazard_scan_hit` (+ `is_player_hazard_scan_candidate`, the BDE3 candidate gate) --
+only the WIRING was missing (a check-for-an-existing-mechanism win). Changed the AFD8/B022 `contact_at`
+callback from no-arg to `contact_at(mirror_dx_x, mirror_dx_y)` so it receives the step's A438/A436
+probe deltas; added `_bdd0_contact_at(mem, rec)` in behavior_walk (applies the BDD0 `+0x0A==1` guard,
+adds the deltas to the object's own X/Y, scans the 0x23 effect records via the recovered predicate),
+and threaded it through `_bb03_bounce`. Updated all `contact_at` call sites (the oracle + unit tests)
+to the 2-arg form.
+
+**0x89 re-added and now PASSES the full demo shadow (0 divergence across all 8294 walk frames)** --
+proof the wired BDD0 is byte-exact. AFD8's own driven-oracle gate (verify_native_contact_step: 448
+step cases + 192 full-AFD8 cases, 0 fails) + the contact-step unit tests stay green; free-run 200/0.
+Native actor set now 19 behaviors. 0x89 (was 158 demo hits) off the frontier. **The 0x8c/0x8b crawler
+is now re-attemptable with the same `_bdd0_contact_at` predicate** -- the next slice.
 
 ## 2026-07-06 - behavior 0x28 RECOVERED (the largest truly-open L1 gap); 0x8c/0x8b crawler attempted+reverted
 
