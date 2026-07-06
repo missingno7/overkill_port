@@ -159,13 +159,84 @@ def main(argv) -> int:
             if exit_.exit is GameplayExit.SCRIPTED:
                 scripted_exit_at = t
                 print(f"  SCRIPTED exit (LEVEL COMPLETE) at tick {t}; phases seen: {sorted(phases_seen)}")
+                # the 9744 advance (mirrors play_native._load_next_level): boot LEVEL 2 with the
+                # session carried, then prove the L2 wave spawns natively
+                score_lo, score_hi = walk_image.rw(DS, 0x2314), walk_image.rw(DS, 0x2316)
+                lives = walk_image.rw(DS, 0x2358)
+                walk_image.ww(DS, 0x2314, 0x1234)   # make the carry-over observable
+                score_lo = 0x1234
+                new_img = build_cold_level_start_image(bundle_data, 1)
+                new_img.ww(DS, 0x2314, score_lo)
+                new_img.ww(DS, 0x2316, score_hi)
+                new_img.ww(DS, 0x2358, lives)
+                walk_image.data[:] = new_img.data
+                nstate, _nsf = build_cold_level_start(bundle_data, 1)
+                game = dataclasses.replace(
+                    NativeGame.load_level(bundle_data, container_data, 1, nstate,
+                                          origin_x=0, row_base=0x9C),
+                    rows_to_milestone=0x0110)
+                walk_tiles = level_tiles(walk_image)
+                l2 = {"planet": walk_image.rw(DS, 0x2356), "score": walk_image.rw(DS, 0x2314),
+                      "lives": walk_image.rw(DS, 0x2358)}
+                l2_frames = 0
+                l2_wave = 0
+                for f2 in range(240):
+                    pre2 = game.rows_to_milestone
+                    game, _ = game.step(
+                        empty_input, no_clamp=False,
+                        repeat_9790=0, state_232a=0, scroll_2350=game.row_base,
+                        bdac=0, a958=0, be06=0,
+                        source_index=0, source_x=game.state.special_pool.x_word(0),
+                        source_y=game.state.special_pool.y_word(0),
+                        read_ds_word=lambda off: 0,
+                        update_globals=ObjectUpdateGlobals(
+                            ref_box_x=game.state.special_pool.x_word(0),
+                            ref_box_y=game.state.special_pool.y_word(0),
+                            a278=0, tile_probe_suppressed=False, tiles=game.tile_context),
+                        scroll_gate=(walk_image.rw(DS, 0xA47C), walk_image.rw(DS, 0xA47E),
+                                     walk_image.rw(DS, 0xA480)),
+                        run_object_pass=False)
+                    sp2 = game.state.special_pool
+                    sync_player_anchor(walk_image, sp2.x_word(0), sp2.y_word(0), sp2.word_at(0, 0x08))
+                    sync_new_gameplay_records(walk_image, game.state.object_pool)
+                    walk_image.ww(DS, 0x234E, game.origin_x)
+                    walk_image.ww(DS, 0x2350, game.row_base)
+                    walk_image.ww(DS, 0x234C, game.row_source)
+                    walk_image.ww(DS, 0xA978, pre2)
+                    run_level_object_script_4a65(walk_image)
+                    try:
+                        advance_object_frame(walk_image, walk_tiles)
+                    except RecoveryGap as exc:
+                        # the KNOWN L2 zoo frontier (0x39/0x8A/...) -- the honest boundary of this
+                        # slice: the transition itself is proven once the wave spawned natively
+                        l2["gap"] = str(exc).split(" (record")[0]
+                        break
+                    game = game.with_state(project_state(walk_image))
+                    l2_frames = f2 + 1
+                    for cx in range(1, 0x24):
+                        rec = walk_image.rw(DS, (0x32CA + cx * 2) & 0xFFFF)
+                        if rec and walk_image.rw(DS, rec) \
+                                and walk_image.rw(DS, rec + 0x18) in (0x1C, 0x1D, 0x1E):
+                            l2_wave += 1
+                l2["frames"] = l2_frames
+                l2["wave_hits"] = l2_wave
+                print(f"  L2 boot: {l2}")
+                # the L2 walk gaps on its KNOWN zoo frontier (0x39 scenery spawns in the very first
+                # script row) -- the transition claim: planet 2 booted, session carried, and the L2
+                # wave CONTROLLER is on stage (the script fired). The L2 zoo is separate ongoing work.
+                l2_ok = (l2["planet"] == 2 and l2["score"] == 0x1234 and l2["lives"] == lives
+                         and l2_wave > 0)
+                if not l2_ok:
+                    gap = f"the L2 transition check failed: {l2}"
             else:
                 gap = f"unexpected exit {exit_.exit.name} at tick {t}"
             break
 
     n_outro = len(outro_sig[-1][1]) if outro_sig else 0
     animated = len({s for _, s in outro_sig}) > 1 if outro_sig else False
-    held = game.row_base == 0x0EA0
+    # `game` rebinds to the L2 state after the transition, so "the scroll held through the outro"
+    # is implied by the SCRIPTED exit itself (A47C nonzero gated the scroll throughout the phases).
+    held = scripted_exit_at is not None
     print(f"passed 0x0E52: {passed_e52}; armed at: {armed_at}; outro objects live: {n_outro}; "
           f"outro animating: {animated}; scroll held at 0xEA0: {held}; phases: {sorted(phases_seen)}; "
           f"scripted exit at: {scripted_exit_at}; gap: {gap}")

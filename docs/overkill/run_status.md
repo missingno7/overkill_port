@@ -23,6 +23,19 @@
 > work is COMPLETE for L1. Next frontier: play_native integration polish, other planets' controller
 > families (0x1c etc.), the 9734/9902/9908 transition continuations, HUD/menu wiring, audio.
 
+## 2026-07-06 - MILESTONE: L1 ROLLS INTO L2 -- the 9744 next-level load is native, session carried
+
+play_native's SCRIPTED exit now runs `_load_next_level` instead of stopping: the SAME cold-boot
+machinery reloads the next level (the real 9744 -> 9755 tail's full reload) with the SESSION
+persisting -- score (2314/2316) and lives (2358) carry over (96EE is fresh-session-only and gets
+overwritten). The walk image's BUFFER is replaced in place so every closure keeps its reference;
+the sprite context/starfield/game rebind via the `cell` holder; the walk tiles are computed fresh
+per tick (the level plane can now CHANGE mid-run). `verify_play_native_levelend` PASSES the whole
+chain: scroll the plane -> arm -> outro -> autopilot -> LEVEL COMPLETE -> **planet 2 boots with the
+score/lives carried and the L2 wave controller on stage** -- then the L2 walk gaps on its KNOWN zoo
+frontier (0x39 scenery spawns in L2's very first script row), the honest boundary: **the L2 zoo
+(0x39/0x8A first) is now the direct blocker for continuous L1->L2 play.**
+
 ## 2026-07-06 - MILESTONE: LEVEL COMPLETE fires natively -- the whole outro plays, autopilot and all
 
 The outro PHASES are native (`run_outro_script_99f6` in behavior_walk.py + the pure

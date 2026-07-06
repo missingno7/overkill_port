@@ -429,16 +429,42 @@ def main(argv=None) -> int:
         run_level_end_arm_a680, run_outro_script_99f6,
     )
     from overkill.recovered.adapters.cold_level_start import (  # noqa: E402
-        apply_respawn_seeds, build_cold_level_start_image,
+        apply_respawn_seeds, build_cold_level_start, build_cold_level_start_image,
     )
 
     if args.snapshot:
         walk_image = MutFlatMemory((Path(args.snapshot) / "memory_1mb.bin").read_bytes())
     else:
         walk_image = build_cold_level_start_image(bundle_data, args.level)
-    walk_tiles = level_tiles(walk_image)
 
-    cell = {"game": game, "starfield": starfield, "tick": 0, "walk_gap": None}
+    cell = {"game": game, "starfield": starfield, "tick": 0, "walk_gap": None,
+            "level": args.level, "sprite_ctx": sprite_ctx}
+
+    def _load_next_level() -> None:
+        """The 9744 LEVEL-ADVANCE continuation, natively: the SAME cold-boot machinery reloads the
+        NEXT level (the real 9744 -> 9755 tail does the full reload) with the SESSION persisting --
+        score (2314/2316) and lives (2358) carry over (96EE, which would reset them, is a fresh-
+        session-only step and is overwritten here).  The walk image's BUFFER is replaced in place so
+        every closure keeps its reference."""
+        nxt = (cell["level"] + 1) % 6
+        score_lo = walk_image.rw(0x25CC, 0x2314)
+        score_hi = walk_image.rw(0x25CC, 0x2316)
+        lives = walk_image.rw(0x25CC, 0x2358)
+        new_img = build_cold_level_start_image(bundle_data, nxt)
+        new_img.ww(0x25CC, 0x2314, score_lo)
+        new_img.ww(0x25CC, 0x2316, score_hi)
+        new_img.ww(0x25CC, 0x2358, lives)
+        walk_image.data[:] = new_img.data
+        nstate, nstarfield = build_cold_level_start(bundle_data, nxt)
+        cell["game"] = dataclasses.replace(
+            NativeGame.load_level(bundle_data, container_data, nxt, nstate,
+                                  origin_x=0, row_base=_COLD_ROW_BASE),
+            row_source=_COLD_ROW_SOURCE, rows_to_milestone=_COLD_ROWS_TO_MILESTONE)
+        cell["starfield"] = nstarfield
+        cell["sprite_ctx"] = _build_sprite_context(bundle_data, container_data, cell["game"],
+                                                   seed.half_stride)
+        cell["level"] = nxt
+        print(f"LEVEL COMPLETE -> level {nxt + 1} (score/lives carried, lives={lives})")
 
     def _advance() -> None:
         keys = pygame.key.get_pressed()
@@ -530,7 +556,7 @@ def main(argv=None) -> int:
             walk_image.ww(0x25CC, 0xA978, pre_step_rows_to_milestone)
             try:
                 run_level_object_script_4a65(walk_image)
-                advance_object_frame(walk_image, walk_tiles)
+                advance_object_frame(walk_image, level_tiles(walk_image))
                 # the A90C present-scan's projection: every record's +0x0C screen-di (the sprite
                 # compositor's placement input) -- without it a cold image renders NOTHING.
                 sync_screen_projection(walk_image)
@@ -590,23 +616,21 @@ def main(argv=None) -> int:
                 print(f"respawn at tick {cell['tick']}: lives={lives} (level restarts)")
                 return
             if exit_.exit is GameplayExit.SCRIPTED:
-                raise RecoveryGap(
-                    "LEVEL COMPLETE (the A344 scripted exit -- the outro finished)",
-                    "the 9744 next-level load is the next slice; the loop holds on the completed "
-                    "level rather than running past it")
+                _load_next_level()          # the 9744 advance: the next level boots, session carried
+                return
             raise RecoveryGap(
                 f"gameplay exit {exit_.exit.name} (1010:97B2 -> {exit_.jump_target:#06x})",
                 "the native loop detected a game-over/scripted transition; that target is not "
                 "recovered yet (the native runtime cannot continue past it)")
 
     skeleton = GameplayFrameSkeleton(
-        render=lambda: _render_frame(cell["game"], cell["starfield"], sprite_ctx),
+        render=lambda: _render_frame(cell["game"], cell["starfield"], cell["sprite_ctx"]),
         advance=_advance,
     )
 
     gap: str | None = None
     running = True
-    last_frame = _render_frame(game, starfield, sprite_ctx)
+    last_frame = _render_frame(game, starfield, cell["sprite_ctx"])
     try:
         while running:
             for ev in pygame.event.get():
