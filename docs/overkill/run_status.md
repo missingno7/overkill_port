@@ -68,11 +68,13 @@ catches wrong models in one run.  REMAINING render residue: the <=13-px transien
 sprites -- the explosion/hit-flash compositors) and the fine star-phase.  NEXT: wire the tile
 window + the 7948 tile-cue spawner into play_native (the game gets its terrain + tile-spawned
 actors), then the anim/variant compositors, then extend the 1:1 sweep deeper (the whole demo).
-PLAY_NATIVE WIRING GAP (measured): the runtime ``[959A]`` bank != the raw LEV{n}BLX.BIC asset
-(23693/26240 bytes differ vs level.blocks) -- the 0E9C loader TRANSFORM (map+blocks+graphics ->
-the runtime buffers; flagged 'not modelled yet' in level_assets.py) must be recovered for the
-standalone; the 1:1 probe sidesteps it by reading the live VM's built bank.  The PLANE is fine
-natively (the walk image's plane mutates in place exactly like the VM's -- level_tiles reads it).
+RESOLVED: there is NO loader transform -- the runtime ``[959A]`` bank ==
+``deplanarize_tandy(LEV{planet}BLX.BIC, sprite_mode=False)`` VERBATIM (the earlier mismatch used
+the wrong asset: the L2 demo is PLANET 2 = LEV2BLX, not the level-INDEX name).  play_native's
+tile wiring needs only the correct planet-keyed asset + the walk image's own live plane
+(level_tiles already reads it) + the CS:8D92 table (static, in the bundle).  OPEN: bank 2's
+identity (``[959C]``, used for row_base >= 0xE5F -- the level-intro strip; != LEV2BLX/G2 --
+scan the container for it).  0E9C itself is just three standard asset loads into segments.
 
 **render_tile_row IS RECOVERED -- BYTE-EXACT vs the driven 36A2 on BOTH banks**
 (`native_video/tile_row.py` + `verify_native_tile_row`, the chrome-probe driven-oracle pattern;
