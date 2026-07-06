@@ -23,6 +23,33 @@
 > work is COMPLETE for L1. Next frontier: play_native integration polish, other planets' controller
 > families (0x1c etc.), the 9734/9902/9908 transition continuations, HUD/menu wiring, audio.
 
+## 2026-07-06 - HUD recon (the L1 vertical slice, step 1): the panel anatomy is mapped
+
+The right-third panel (cols 216..319) at level start decomposes into (validated against the L1
+cache frame-0 B800 page as a byte oracle):
+- **already-recovered cell composers, verified pixel-exact in place** (3046/3046 px on frame 0):
+  `compose_status_cells_859e` (the four WEAPON/MISSILES/GADGETS/UPGRADES rows; descriptors
+  SS:9682/968C/9696/96A0, marker [95FA], highlight [BDAC]/[BE16]) + `compose_status_counters_61dc`
+  (the ship-status circle cells + the energy strip; counters 2368..2372, marker A95A/2374).
+  panel_source = the decoded PANEL segment CS:[95B4]; dir_table = CS:0BE4.  PANEL.ENC decodes
+  natively to 51288 bytes of {rows,width} cells (the cell LIBRARY, not a backdrop).
+- **decoded-but-unwired dynamic pieces** (the residue's dynamic part): the 6176 per-frame composite
+  calls 5EDB (status text, composer exists) -> 60F3 -> 61DC (wired above) -> 60E3.  60E3 = the
+  score digits + planet-number draw (bp=235C block, the 2362 planet xlat, via 518C/519A);
+  61C7 = the 2368..2372 counter DECAY beat.  The lives-ships row is A95A-driven.
+- **the static backdrop is CRACKED: it is ONE PANEL CELL.** ``1010:5C9A`` (called at level entry,
+  971D) draws dir-cell **0x25** at ``xy_to_di_5a00(0x1B, 0)`` = di 0x6C (pixel col 216, row 0)
+  through the ``5C46`` progressive-wipe blitter (rows in +2 passes -- the wipe-in effect; the END
+  state equals a plain ``paste_panel_cell``).  Composing backdrop-0x25 + 859E + 61DC on a blank
+  page reproduces the frame-0 panel to ~9.1k exact px of ~11k; the visible remainder is the 60E3
+  dynamic draw (the PLANET digit + score digits via 518C/519A, bp=235C, the 2362 planet xlat) plus
+  per-frame cell states.  The native HUD compose is therefore: paste 0x25 -> 859E cells -> 61DC
+  counters -> 60E3 planet/score digits -> 5EDB text, all from the natively-decoded PANEL.ENC
+  (51288 B of {rows,width} cells) + the CS:0BE4 directory.  (5A00's convention: AL = x cell-col,
+  AH = y scanline.)
+- The dual-page toggle is 511F gated on CS:[95BC]==1; Tandy runs mode 2 (95BC==2, single-page).
+- 9773 confirms: lives==FFFF -> jmp **98EB** (the game-over flow) -- the step-2 decode target.
+
 ## 2026-07-06 - twelve more L2-zoo behaviors native; OWNER REDIRECT: L1 vertical slice first
 
 Landed one-at-a-time on the 4s cached L2 gate (each individually zero-divergence): **0x8F** (the
