@@ -322,6 +322,62 @@ def _run_title_screen(display, pygame, container_data) -> bool:
         clock.tick(30)
 
 
+def _run_level_select(display, pygame, container_data, image, start_beda: int = 0) -> "int | None":
+    """The REAL level-select screen (the D3F0 loop), VM-free: LEVSCR.ENC + the two D4AA cursors
+    (cells from CHOOSE.ENC, xy/pointer tables read from the machine image), driven by the
+    RECOVERED grid handlers (D476/D480/D488/D490) and the D424 fire resolve.
+
+    Returns ``(level_index, difficulty)`` or None if the user quit.  The level index == the grid
+    cell (D424 writes ``2356 = cell``; the 971A start advance makes it planet ``cell+1`` --
+    exactly ``LEVEL_INDEX_TO_PLANET[cell]``).  ``difficulty`` is the second (BEDC) cursor, 0..2
+    (EASIER/NORMAL/HOLY COW!) -- ``DS:BEDC`` is the difficulty global the gameplay's C237 spawn
+    throttle reads; the on-screen "[D]ifficulty" key cycles it.  Movement keys wait for release
+    between steps, like D43B."""
+    import numpy as np
+
+    from overkill.asset_codecs.container import load_container_asset
+    from overkill.asset_codecs.planar import deplanarize_tandy
+    from overkill.native_video.level_select import compose_level_select
+    from overkill.recovered.adapters.level_select_state import read_level_select_tables
+    from overkill.recovered.systems.menu import (
+        resolve_level_select_fire_d424, step_level_select_decrement_d488,
+        step_level_select_increment_d490, step_level_select_page_down_d476,
+        step_level_select_page_up_d480,
+    )
+
+    levscr = decode_fullscreen_image(container_data, "LEVSCR.ENC")
+    choose = np.frombuffer(deplanarize_tandy(load_container_asset(container_data, "CHOOSE.ENC"),
+                                             sprite_mode=False, emit_item_headers=True),
+                           dtype=np.uint8)
+    level_xy, option_xy, _ = read_level_select_tables(image)
+    beda, bedc = start_beda % 6, 0
+    display.set_title("OVERKILL - native (VM-less)  [level select -- arrows = move, "
+                      "Space = start, Esc = back]")
+    clock = pygame.time.Clock()
+    # the D434 dispatch: bit1(Right)->D476 +3, bit2(Left)->D480 -3, bit8(Up)->D488 -1,
+    # bit4(Down)->D490 +1 -- keydown events give the release-wait (D43B) step semantics.
+    steps = {pygame.K_RIGHT: step_level_select_page_down_d476,
+             pygame.K_LEFT: step_level_select_page_up_d480,
+             pygame.K_UP: step_level_select_decrement_d488,
+             pygame.K_DOWN: step_level_select_increment_d490}
+    while True:
+        for ev in pygame.event.get():
+            if ev.type == pygame.QUIT or (ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE):
+                return None
+            if ev.type == pygame.KEYDOWN and ev.key in steps:
+                beda = steps[ev.key](beda).beda
+            elif ev.type == pygame.KEYDOWN and ev.key == pygame.K_d:
+                bedc = (bedc + 1) % 3        # the "[D]ifficulty" key cycles the BEDC cursor
+            elif ev.type == pygame.KEYDOWN and ev.key == pygame.K_SPACE:
+                planet_2356 = resolve_level_select_fire_d424(beda).level
+                # 971A/9744 then advances 2356 by one planet: FFFF->0 (the mothership),
+                # k->k+1 -- which is LEVEL_INDEX_TO_PLANET[cell], so the cell IS the level index.
+                del planet_2356
+                return beda, bedc
+        display.draw(compose_level_select(levscr, choose, level_xy, option_xy, beda, bedc))
+        clock.tick(30)
+
+
 class PygameDisplay:
     """An SDL window blitting scaled (200,320) indexed frames through the Tandy palette."""
 
@@ -344,7 +400,8 @@ class PygameDisplay:
     def draw(self, indices) -> None:
         rgb = self._palette[indices]
         self.pygame.surfarray.blit_array(self._surf, self._np.transpose(rgb, (1, 0, 2)))
-        self.pygame.transform.scale(self._surf, self.size, self.screen)
+        # scale to the CURRENT window size -- the window is RESIZABLE, so self.size may be stale
+        self.pygame.transform.scale(self._surf, self.screen.get_size(), self.screen)
         self.pygame.display.flip()
 
     def set_title(self, text: str) -> None:
@@ -377,6 +434,24 @@ def main(argv=None) -> int:
         raise SystemExit(f"--container {container_path}: not found -- point it at the OVERKILL game data")
     container_data = container_path.read_bytes()
     bundle_data = bundle_path.read_bytes()
+    # Front-end FIRST (like the original 96E0 flow): title -> level select -> the game build for
+    # the PICKED level.  --no-title (and the probes) skip straight to args.level.
+    display = PygameDisplay(scale=args.scale)
+    pygame = display.pygame
+    if not args.no_title:
+        if not _run_title_screen(display, pygame, container_data):
+            display.close()
+            return 0
+        from overkill.recovered.adapters.flat_memory import MutFlatMemory as _MFM
+        picked = _run_level_select(display, pygame, container_data, _MFM(bundle_data),
+                                   start_beda=args.level)
+        if picked is None:
+            display.close()
+            return 0
+        args.level, menu_difficulty = picked
+    else:
+        menu_difficulty = None
+
     # DEFAULT: cold-start the level from the recovered level-start seeds (VM-free, no capture). The
     # --snapshot path stays as a debug override that seeds from a captured VM state instead.
     if args.snapshot:
@@ -395,15 +470,6 @@ def main(argv=None) -> int:
     sprite_ctx = _build_sprite_context(bundle_data, container_data, game, seed.half_stride)
     print(f"cold-loaded LEVEL{args.level + 1}: tile_plane={len(game.level.tile_plane)}B "
           f"blocks={len(game.level.blocks)}B graphics={len(game.level.graphics)}B (VM-free)")
-
-    display = PygameDisplay(scale=args.scale)
-    pygame = display.pygame
-
-    # Front-end: open on the REAL title/options screen (VM-free), like the actual game. Space starts.
-    if not args.no_title:
-        if not _run_title_screen(display, pygame, container_data):
-            display.close()
-            return 0
 
     clock = pygame.time.Clock()
     # The frame runs through the skeleton (overkill.native_app) in the ORIGINAL 97B2 stage order:
@@ -436,6 +502,8 @@ def main(argv=None) -> int:
         walk_image = MutFlatMemory((Path(args.snapshot) / "memory_1mb.bin").read_bytes())
     else:
         walk_image = build_cold_level_start_image(bundle_data, args.level)
+    if menu_difficulty is not None:
+        walk_image.ww(0x25CC, 0xBEDC, menu_difficulty)   # the menu's difficulty pick (DS:BEDC)
 
     # The HUD panel: composed per frame from the walk image's LIVE state cells through the
     # byte-exact-gated compose (verify_native_hud_panel) -- backdrop, chrome, counters, lives,
@@ -502,10 +570,9 @@ def main(argv=None) -> int:
         cell["level"] = nxt
         print(f"LEVEL COMPLETE -> level {nxt + 1} (score/lives carried, lives={lives})")
 
-    def _restart_session() -> None:
-        """The 96E0 continuation after game over: a FRESH session on the start level -- the
+    def _restart_session(lvl: int) -> None:
+        """The 96E0 continuation after game over: a FRESH session on the picked level -- the
         SAME cold-boot machinery, whose 96EE fresh-session init resets score and lives."""
-        lvl = args.level
         new_img = build_cold_level_start_image(bundle_data, lvl)
         walk_image.data[:] = new_img.data
         nstate, nstarfield = build_cold_level_start(bundle_data, lvl)
@@ -709,10 +776,18 @@ def main(argv=None) -> int:
                 display.set_title("OVERKILL - native (VM-less)  GAME OVER")
                 cell["game_over"] -= 1
                 if cell["game_over"] <= 0:
+                    # the 96E0 flow: title -> level select -> a fresh session on the pick
                     if not _run_title_screen(display, pygame, container_data):
                         running = False
                     else:
-                        _restart_session()
+                        picked = _run_level_select(display, pygame, container_data, walk_image,
+                                                   start_beda=cell["level"])
+                        if picked is None:
+                            running = False
+                        else:
+                            lvl, diff = picked
+                            _restart_session(lvl)
+                            walk_image.ww(0x25CC, 0xBEDC, diff)
             elif gap is None:
                 try:
                     last_frame = skeleton.tick()

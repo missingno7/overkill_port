@@ -23,6 +23,24 @@
 > work is COMPLETE for L1. Next frontier: play_native integration polish, other planets' controller
 > families (0x1c etc.), the 9734/9902/9908 transition continuations, HUD/menu wiring, audio.
 
+## 2026-07-07 - THE LEVEL-SELECT MENU IS NATIVE: the L1 VERTICAL SLICE IS COMPLETE
+
+play_native's front-end is now the real game flow: title (OKMENU) -> **the LEVEL-SELECT screen**
+(LEVSCR + the two D4AA cursors from CHOOSE.ENC) -> the picked level boots (game over returns
+title -> menu -> fresh session at the new pick).  `native_video/level_select.py` composes the
+page; the cursor cells come from walking the natively-decoded CHOOSE.ENC (six 33x136 planet-cell
+frames + three 27x40 difficulty cells) -- `verify_native_level_select` pins the walked offsets
+against the live snapshot's runtime-built CS:D37E table (exact), the static DS:BEDE/BEEA xy
+tables against the live ones (exact), the stamp positions, and the D424+9744 cell->planet
+mapping (cell k == level index k, cell 5 == the mothership).  Movement = the RECOVERED
+D476/D480/D488/D490 handlers; fire = the RECOVERED resolve_level_select_fire_d424.  BONUS: the
+second (BEDC) cursor turned out to be the DIFFICULTY selector (EASIER/NORMAL/HOLY COW!) -- BEDC
+is the difficulty global the C237 spawn throttle reads; the menu's D-key cycles it and the pick
+is written into the session image.  **The owner's L1 vertical slice is DONE: cold boot -> title
+-> level select -> L1 with full HUD -> death/respawn -> level end -> L2 -> game over -> title ->
+again, every screen native.**  Next per the plan: OWNER PLAYTEST, then the L2 zoo one-at-a-time
+(0x21 the wave driver first), then L3.
+
 ## 2026-07-07 - menu recon: the LEVEL-SELECT loop + cursor draw are fully mapped (wire next)
 
 The D3F0 level-select loop: per frame -- 0672(?) -> 511F -> **D4AA (the cursor draw)** -> 5160 ->
