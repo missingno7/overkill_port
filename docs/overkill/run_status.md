@@ -23,6 +23,23 @@
 > work is COMPLETE for L1. Next frontier: play_native integration polish, other planets' controller
 > families (0x1c etc.), the 9734/9902/9908 transition continuations, HUD/menu wiring, audio.
 
+## 2026-07-06 - MILESTONE: LEVEL COMPLETE fires natively -- the whole outro plays, autopilot and all
+
+The outro PHASES are native (`run_outro_script_99f6` in behavior_walk.py + the pure
+`outro_autopilot_bits_9ad1`, CACHE-VERIFIED against the L2_full outro's recorded 98BE values):
+phase 1 autopilots the ship to the A358 target (the synthetic 98BE input bits REPLACE the keyboard
+in play_native, exactly as the original's scripted input overrides the poll; the screen-edge clamp
+is OFF during the scripted phases -- the trace shows the fly-off crossing x=0); arrival spawns the
+0x52 outro object ([9788] = its slot) and re-dispatches SAME-frame (the jmp 99F6 tail); phase 2 adds
+the recovered A39A/A39C counters and flies to A35C; phase 3 (the recovered `step_a47c_handler_9a16`)
+holds the fly-off input while the counters settle, then `A47C = 4` -> the detector's SCRIPTED exit.
+play_native reports **LEVEL COMPLETE** (fail-loud hold; the 9744 next-level load is the next slice).
+`verify_play_native_levelend` PASSES end-to-end: scroll the whole plane -> arm -> the four 0x53s
+animate -> the autopilot flies -> SCRIPTED at tick 4593. Both cached shadows + all play_native
+probes green. (Phase 3 completes within the phase-2 tick for an undamaged ship -- the settled-
+counter fixed point -- matching the pure contract; the traced 38-frame phase 3 was a damaged ship
+refilling.)
+
 ## 2026-07-06 - PROCESS BREACH owned + fixed: f1de17d was committed RED (one failing test)
 
 The f1de17d level-end commit went in with `test_native_game_step_scroll_declines_on_milestone...`

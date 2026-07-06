@@ -298,6 +298,28 @@ def scripted_input_prologue_99f6(a47c: int, prev_2380: int):
     return prev_2380 & 0xFFFE, 0x00, (a47c << 1) & 0xFFFF
 
 
+@recovered_island(
+    asm=("1010:9AD1..9AFE",),
+    contract="the A47C-script AUTOPILOT: synthetic 98BE input bits steering the view anchor toward "
+             "a (target_x, target_y) pair -- x: 4 when 237E < target_x else 8; y: |= 1 when "
+             "2380 < target_y else |= 2; 0 bits per axis on equality (0 total = ARRIVED). "
+             "Cache-verified against the L2_full outro (phase 1 shows exactly 98BE=8 while x "
+             "closes on the A358 target with y already equal).",
+    status="OBSERVED",
+    merge_target="PlayerSystem",
+    unknowns="none -- the movement stage's interpretation of the bits is the (already verified) "
+             "player step's own business; this leaf only reproduces 9AD1's bit selection.",
+)
+def outro_autopilot_bits_9ad1(view_x: int, view_y: int, target_x: int, target_y: int) -> int:
+    """The ``1010:9AD1`` scripted-input bits for one frame (0 = arrived at the target)."""
+    bits = 0
+    if (view_x & 0xFFFF) != (target_x & 0xFFFF):
+        bits = 0x04 if (view_x & 0xFFFF) < (target_x & 0xFFFF) else 0x08
+    if (view_y & 0xFFFF) != (target_y & 0xFFFF):
+        bits |= 0x01 if (view_y & 0xFFFF) < (target_y & 0xFFFF) else 0x02
+    return bits
+
+
 def step_scripted_move_counters_9a3e(counter_2384: int, a39c: int, a39a: int):
     """The ``1010:9A3E`` scripted-move coordinate-counter update (the A47C==2 script step's head).
 

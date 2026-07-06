@@ -82,7 +82,10 @@ from overkill.recovered.systems.frame_loop import (
     canned_random_next_4d95,
     enemy_shot_stamp_7476,
     enemy_spawn_stamp_8209,
+    outro_autopilot_bits_9ad1,
     pickup_heal_9d67,
+    step_a47c_handler_9a16,
+    step_scripted_move_counters_9a3e,
 )
 from overkill.recovered.systems.collision import (
     PLAYER_HAZARD_SCAN_REQUIRED_GATE,
@@ -1418,6 +1421,64 @@ def run_level_end_arm_a680(mem) -> None:
             mem.ww(DS, slot + 0x08, spr)
             mem.ww(DS, slot + 0x36, spr)
         si = (si + 6) & 0xFFFF
+
+
+#: the two outro autopilot target pairs (x, y): phase 1 flies to A358, phase 2 to A35C.
+OUTRO_TARGET_A358, OUTRO_TARGET_A35C = 0xA358, 0xA35C
+
+
+def run_outro_script_99f6(mem) -> int:
+    """The ``99F6`` A47C-script dispatch for the LEVEL-END OUTRO phases (1..3), one frame.
+
+    Returns this frame's synthetic 98BE input bits (0 when the script isn't steering) -- the caller
+    feeds them to the player stage IN PLACE of the keyboard, exactly as the original's scripted
+    input overrides the poll.  Phase 1 (``9A78``): autopilot to the A358 target; on arrival
+    ``A47C = 2`` + the A39A/A39C reset + the 0x52 outro-object spawn ([9788] = its slot) and the
+    script RE-DISPATCHES the same frame (the ``jmp 99F6`` tail).  Phase 2 (``9A3E``): the recovered
+    scripted-move counters step, then autopilot to the A35C target; arrival -> ``A47C = 3``, same
+    re-dispatch.  Phase 3 (``9A16``, the recovered pure handler): input := 8 (the fly-off) while the
+    A97C/A95A/A95C counters settle; at the settled state ``A47C = 4`` -- the 9B47 check then raises
+    ``A344`` (the SCRIPTED transition the exit detector already fires on)."""
+    while True:
+        a47c = mem.rw(DS, 0xA47C)
+        if a47c in (1, 2):
+            if a47c == 2:
+                new_c, new_a = step_scripted_move_counters_9a3e(
+                    mem.rw(DS, 0x2384), mem.rw(DS, 0xA39C), mem.rw(DS, 0xA39A))
+                mem.ww(DS, 0xA39C, new_c)
+                mem.ww(DS, 0xA39A, new_a)
+                si = OUTRO_TARGET_A35C
+            else:
+                si = OUTRO_TARGET_A358
+            bits = outro_autopilot_bits_9ad1(
+                mem.rw(DS, 0x237E), mem.rw(DS, 0x2380),
+                mem.rw(DS, si), mem.rw(DS, (si + 2) & 0xFFFF))
+            mem.ww(DS, 0x98BE, bits)
+            if bits:
+                return bits
+            mem.ww(DS, 0xA47C, a47c + 1)                    # 9A86: inc [A47C]
+            if a47c + 1 == 2:                               # 9A8A/9A94: the phase-1 arrival extras
+                mem.ww(DS, 0xA39A, 0)
+                mem.ww(DS, 0xA39C, 0)
+                slot = _alloc(mem, 0x95D8, EFFECT_POOL_BASE, EFFECT_POOL_WRAP, EFFECT_SLOTS)
+                if slot != 0xFFFF:                          # the 0x52 outro object at (0x20, 0x58)
+                    for off, val in ((0x00, 1), (0x16, 4), (0x18, 0x52), (0x14, 2),
+                                     (0x28, 0xFFFF), (0x08, 0x0F), (0x02, 0x20), (0x04, 0x58)):
+                        mem.ww(DS, slot + off, val)
+                    mem.ww(DS, 0x9788, slot)
+            continue                                        # 9ACE/9A91: jmp 99F6 -- re-dispatch
+        if a47c == 3:
+            bits, new_a97c, new_a95a, new_a95c, advanced = step_a47c_handler_9a16(
+                mem.rw(DS, 0xA97A), mem.rw(DS, 0xA97C), mem.rw(DS, 0xA95A), mem.rw(DS, 0xA95C),
+                mem.rw(DS, 0x2384), mem.rw(DS, 0xBDAC), mem.rb(DS, 0x98C0))
+            mem.ww(DS, 0xA97C, new_a97c)
+            mem.ww(DS, 0xA95A, new_a95a)
+            mem.ww(DS, 0xA95C, new_a95c)
+            mem.ww(DS, 0x98BE, bits)
+            if advanced:
+                mem.ww(DS, 0xA47C, 0x0004)                  # -> the 9B47 A344 raise next check
+            return bits
+        return 0
 
 
 def run_behavior_walk_a9d3(mem, tiles: LevelTileContext) -> None:

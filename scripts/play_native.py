@@ -425,7 +425,9 @@ def main(argv=None) -> int:
     )
     from overkill.recovered.adapters.flat_memory import MutFlatMemory  # noqa: E402
     from overkill.recovered.adapters.level_object_script import run_level_object_script_4a65  # noqa: E402
-    from overkill.recovered.adapters.behavior_walk import run_level_end_arm_a680  # noqa: E402
+    from overkill.recovered.adapters.behavior_walk import (  # noqa: E402
+        run_level_end_arm_a680, run_outro_script_99f6,
+    )
     from overkill.recovered.adapters.cold_level_start import (  # noqa: E402
         apply_respawn_seeds, build_cold_level_start_image,
     )
@@ -461,6 +463,16 @@ def main(argv=None) -> int:
         # demo's 5 real death beats).  The post-fire 4DBF call (the death jingle/text) is a declared
         # host boundary -- the loop stops fail-loud at the exit before any continuation anyway.
         dying = death_tail_reached_9aff(walk_image.rw(0x25CC, 0xA95A), walk_image.rw(0x25CC, 0xA97A))
+        # The LEVEL-END OUTRO script (A47C phases 1..3): the recovered autopilot's synthetic input
+        # bits REPLACE the keyboard, exactly as the original's scripted input overrides the poll --
+        # the script flies the ship through the outro, then phase 3 raises A47C=4 -> the SCRIPTED
+        # exit (A344) fires below.
+        if not dying and walk_image.rw(0x25CC, 0xA47C) in (1, 2, 3):
+            outro_bits = run_outro_script_99f6(walk_image)
+            pressed = {sc for sc, mask in ((0x4D, 0x01), (0x4B, 0x02), (0x50, 0x04), (0x48, 0x08))
+                       if outro_bits & mask}
+            frame_input = FrameInput(control_map=DEFAULT_CONTROL_MAP,
+                                     key_state=key_state_from_pressed(pressed))
         if dying:
             tail = step_death_tail_9aff(
                 walk_image.rw(0x25CC, 0xA95A), walk_image.rw(0x25CC, 0xA97A),
@@ -577,6 +589,11 @@ def main(argv=None) -> int:
                     rows_to_milestone=_COLD_ROWS_TO_MILESTONE)
                 print(f"respawn at tick {cell['tick']}: lives={lives} (level restarts)")
                 return
+            if exit_.exit is GameplayExit.SCRIPTED:
+                raise RecoveryGap(
+                    "LEVEL COMPLETE (the A344 scripted exit -- the outro finished)",
+                    "the 9744 next-level load is the next slice; the loop holds on the completed "
+                    "level rather than running past it")
             raise RecoveryGap(
                 f"gameplay exit {exit_.exit.name} (1010:97B2 -> {exit_.jump_target:#06x})",
                 "the native loop detected a game-over/scripted transition; that target is not "

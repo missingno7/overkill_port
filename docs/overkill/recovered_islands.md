@@ -4,7 +4,7 @@
      Source of truth = the @recovered_island metadata on each recovered function.
      tests/test_island_registry.py fails if this file drifts from the code. -->
 
-52 recovered islands (17 OBSERVED, 3 ASM_MATCHED, 32 VERIFIED).
+53 recovered islands (18 OBSERVED, 3 ASM_MATCHED, 32 VERIFIED).
 
 | ASM boundary | Function | Status | Merge target | Contract |
 |---|---|---|---|---|
@@ -26,6 +26,7 @@
 | `1010:8721..8766` | `systems.enemy_behaviors.step_ramp_steer_29` | OBSERVED | EnemyWaveSystem | behavior 0x29 (1010:8721): if sprite != 0xA4, gate on [2328]==7 then ramp sprite += 1 (else no-op this frame); once the ramp reaches 0xA4, retarget (74E2) and steer (5E42, [2312]=2 during the call); then a Y-bounds check (y>0xC0 or y<0) runs the BFC7 death; else BC45. |
 | `1010:8820..8851` | `systems.enemy_behaviors.step_bounce_scanner_2f` | OBSERVED | EnemyWaveSystem | behavior 0x2f (1010:8820): sprite=0x43, then the B729 seek (mode 2, caller-applied via 5DB2); the target X (+0x34) drifts by DS:A278 every frame, and WHEN THE SEEK IS BLOCKED the target Y (+0x32) toggles between 0 and 0xC0 (a vertical patrol bounce); then BC45. |
 | `1010:8851..88A7` | `systems.enemy_behaviors.step_spawner_anim_30` | OBSERVED | EnemyWaveSystem | behavior 0x30 (1010:8851): a [233C]-clocked sprite animation (sprite = table[96D2 + 233C*2] + 0x44) that spawns a C237 child + plays sound 0x0E when its spawn gate fires (planet5: [2326]==3, else [232A]==0xF); the planet-5 branch also freezes (skip anim+spawn) when |[2380]-y| >= 0xC and the sprite is already 0x46. |
+| `1010:9AD1..9AFE` | `systems.frame_loop.outro_autopilot_bits_9ad1` | OBSERVED | PlayerSystem | the A47C-script AUTOPILOT: synthetic 98BE input bits steering the view anchor toward a (target_x, target_y) pair -- x: 4 when 237E < target_x else 8; y: |= 1 when 2380 < target_y else |= 2; 0 bits per axis on equality (0 total = ARRIVED). Cache-verified against the L2_full outro (phase 1 shows exactly 98BE=8 while x closes on the A358 target with y already equal). |
 | `1010:9B6F`, `1010:9B79`, `1010:9B83`, `1010:9B8D` | `systems.movement.step_view_anchor_by_input` | VERIFIED | FrameLoop | 9B2E movement-bits stage: apply held direction input to the view-anchor position via the four A5D1/A5EA/A5F9/A607 axis clamp-steps |
 | `1010:9D73..9D90` | `systems.frame_loop.pickup_heal_9d67` | OBSERVED | PlayerSystem | the kind-2 pickup heal: if A95A != 3, A95A += 1 (one step per collect, A95C untouched); else A95C fills straight to 0x18 (the 9D84 inc-loop's fixed point). The single 9EC2 HUD-energy beat that follows either branch is the caller's. |
 | `1010:9FEA` | `systems.movement.object_child_coord_update_9fea` | VERIFIED | MovementSystem | linked/child object coordinate update: base + table delta + 2x vertical scroll bias, Y clamped 0..00C0 |

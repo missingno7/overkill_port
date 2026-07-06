@@ -35,7 +35,11 @@ def main(argv) -> int:
         advance_object_frame, level_tiles, project_state, sync_new_gameplay_records,
         sync_player_anchor,
     )
-    from overkill.recovered.adapters.behavior_walk import run_level_end_arm_a680
+    from overkill.recovered.adapters.behavior_walk import (
+        run_level_end_arm_a680, run_outro_script_99f6,
+    )
+    from overkill.recovered.domain.frame_loop import GameplayExit
+    from overkill.recovered.systems.frame_loop import detect_gameplay_transition
     from overkill.recovered.adapters.cold_level_start import (
         build_cold_level_start, build_cold_level_start_image,
     )
@@ -45,7 +49,7 @@ def main(argv) -> int:
     from overkill.recovered.domain.object_update import ObjectUpdateGlobals
     from overkill.recovered.systems.input import DEFAULT_CONTROL_MAP, key_state_from_pressed
 
-    bundle_path = Path(argv[0]) if argv else ROOT / DEFAULT_BUNDLE
+    bundle_path = Path(argv[0]) if argv and argv[0] else ROOT / DEFAULT_BUNDLE
     max_ticks = int(argv[1]) if len(argv) > 1 else 6000
     bundle_data = bundle_path.read_bytes()
     container_data = (ROOT / DEFAULT_CONTAINER).read_bytes()
@@ -61,6 +65,8 @@ def main(argv) -> int:
     passed_e52 = False
     armed_at = None
     outro_sig = []          # (tick, tuple of the 0x53 records' sprites)
+    phases_seen: set = set()
+    scripted_exit_at = None
     gap = None
     for t in range(max_ticks):
         pre_rows = game.rows_to_milestone
@@ -80,8 +86,17 @@ def main(argv) -> int:
 
         if armed_at is None:
             clear_field()
+        frame_input = empty_input
+        a47c = walk_image.rw(DS, 0xA47C)
+        if a47c in (1, 2, 3):
+            from overkill.recovered.systems.input import key_state_from_pressed as ksp
+            bits = run_outro_script_99f6(walk_image)
+            phases_seen.add(a47c)
+            pressed = {sc for sc, mask in ((0x4D, 1), (0x4B, 2), (0x50, 4), (0x48, 8))
+                       if bits & mask}
+            frame_input = FrameInput(control_map=DEFAULT_CONTROL_MAP, key_state=ksp(pressed))
         game, _ = game.step(
-            empty_input, no_clamp=False,
+            frame_input, no_clamp=a47c in (1, 2, 3),
             repeat_9790=0, state_232a=0, scroll_2350=game.row_base,
             bdac=0, a958=0, be06=0,
             source_index=0, source_x=game.state.special_pool.x_word(0),
@@ -136,18 +151,32 @@ def main(argv) -> int:
                 if rec and walk_image.rw(DS, rec) and walk_image.rw(DS, rec + 0x18) == 0x53:
                     sprites.append(walk_image.rw(DS, rec + 0x08))
             outro_sig.append((t, tuple(sorted(sprites))))
-            if t - armed_at >= 60:
-                break
+        exit_ = detect_gameplay_transition(
+            a47c=walk_image.rw(DS, 0xA47C), a95a=walk_image.rw(DS, 0xA95A),
+            a97a=walk_image.rw(DS, 0xA97A), v2326=walk_image.rw(DS, 0x2326),
+            anchor_counter_after_inc=game.state.special_pool.word_at(0, 0x08))
+        if exit_ is not None:
+            if exit_.exit is GameplayExit.SCRIPTED:
+                scripted_exit_at = t
+                print(f"  SCRIPTED exit (LEVEL COMPLETE) at tick {t}; phases seen: {sorted(phases_seen)}")
+            else:
+                gap = f"unexpected exit {exit_.exit.name} at tick {t}"
+            break
 
     n_outro = len(outro_sig[-1][1]) if outro_sig else 0
     animated = len({s for _, s in outro_sig}) > 1 if outro_sig else False
     held = game.row_base == 0x0EA0
     print(f"passed 0x0E52: {passed_e52}; armed at: {armed_at}; outro objects live: {n_outro}; "
-          f"outro animating: {animated}; scroll held at 0xEA0: {held}; gap: {gap}")
+          f"outro animating: {animated}; scroll held at 0xEA0: {held}; phases: {sorted(phases_seen)}; "
+          f"scripted exit at: {scripted_exit_at}; gap: {gap}")
+    # phase 3 can complete WITHIN the phase-2 tick (the 99F6 re-dispatch + the settled-counter
+    # fixed point advances it immediately for an undamaged ship), so {1, 2} + the SCRIPTED exit
+    # proves the full chain (the exit REQUIRES A47C == 4, which only phase 3 sets).
     ok = (passed_e52 and armed_at is not None and n_outro == 4 and animated and held
-          and walk_image.rw(DS, 0xA47C) == 1)
-    print("RESULT:", "PASS -- the level scrolls to its end, the outro arms (A47C=1), the four 0x53 "
-          "objects are on stage animating, and the scroll holds -- VM-free" if ok else "CHECK")
+          and phases_seen >= {1, 2} and scripted_exit_at is not None and gap is None)
+    print("RESULT:", "PASS -- the level scrolls to its end, the outro arms, the four 0x53 objects "
+          "animate, the autopilot flies phases 1..3, and the SCRIPTED exit (LEVEL COMPLETE) fires "
+          "-- VM-free" if ok else "CHECK")
     return 0 if ok else 1
 
 
