@@ -1,18 +1,19 @@
-"""THE OWNER'S BAR: the native frame compose vs the VM's OWN page, 1:1, across a played demo.
+"""THE OWNER'S BAR: the native frame compose vs the PURE VM's page, 1:1, across a played demo.
 
-For every cached walk frame (the walk-shadow cache stores the FULL VM machine state), build the
-native frame exactly the way ``play_native`` renders -- the starfield plate (from the pre-state's
-LIVE star records) + the object sprite layer (from the pre-state's own pools and projection
-cells) -- and pixel-diff it against the VM's own present page
-(``render_present_page_indices`` of ``CS:[9598]`` at ``DS:[234C]``) over the playfield region
-``x in [0,208), y in [4,196)``.
+The earlier cache-based form of this probe was INVALID as a render oracle: the walk-shadow cache
+records the HYBRID runtime, whose presentation path is hooked out -- its pages are empty.  This
+form runs the demo through the frame verifier's PURE reference VM (hooks cleared, the ORIGINAL
+A846/5BDC presentation executing) and step-hooks ``1010:5BDC``'s RETURN -- the present-complete
+boundary, where the page was drawn with exactly the projection cells the state still carries
+(perfect phase).  At each sampled present it copies the machine state, composes the native frame
+(live star records + object sprite blocks), and pixel-diffs the playfield region
+``x in [0,208), y in [4,196)`` against the VM's ``CS:[95A4]`` page.
 
-This is a REPORTING probe first: the diff count IS the render TODO list (the missing tile-plane
-layer is expected to dominate; then the skipped anim/variant sprite routines).  The goal
-criterion is diff -> 0, at which point it flips to a hard gate.
+REPORT mode: the diff count is the render TODO list; the goal criterion is 0, then this flips to
+a hard gate.
 
 Usage:
-    python -m overkill.probes.verify_native_frame_1to1 [demo_name] [stride]
+    python -m overkill.probes.verify_native_frame_1to1 [demo_name] [max_frames] [stride]
 """
 from __future__ import annotations
 
@@ -22,71 +23,58 @@ from pathlib import Path
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_DEMO = "demo_cold_start_full_20260705_123645"
-DEFAULT_BUDGET = 20000
+sys.path.insert(0, str(ROOT))
+
+import overkill.frame_verify as fv  # noqa: E402
+from dos_re.cpu import CPU8086  # noqa: E402
+from dos_re.input_demo import InputDemoPlayback  # noqa: E402
+from overkill.frame_verify import FrameVerifyConfig, run_frame_verifier  # noqa: E402
+from overkill.input_waits import pump_demo_frame  # noqa: E402
+
 CS = 0x1010
 DS = 0x25CC
+PRESENT_5BDC = 0x5BDC
+PAGE_SEG_PTR = 0x95A4
 PLAYFIELD = np.s_[4:196, 0:208]
 
 
 def main(argv) -> int:
-    import dataclasses
-
     from overkill.native_game import NativeGame
     from overkill.native_video.frame import SnapshotSprite
-    from overkill.native_video.page_raster import render_present_page_indices
+    from overkill.native_video.page_raster import decode_tandy_b800_indices
     from overkill.native_video.playfield import compose_playfield_indices
     from overkill.native_video.object_sprites import object_sprite_blocks
     from overkill.native_video.starfield_plate import render_starfield_plate
     from overkill.native_walk_frame import project_state
-    from overkill.probes._shadow_cache import (cache_path_for, demo_key, iter_cached_frames,
-                                               load_cache)
+    from overkill.recovered.adapters.cold_level_start import build_cold_level_start
     from overkill.recovered.adapters.flat_memory import MutFlatMemory
     from overkill.recovered.adapters.starfield_adapter import load_starfield_state
     import scripts.play_native as pn
 
-    demo_name = argv[0] if argv and argv[0] else DEFAULT_DEMO
-    stride = int(argv[1]) if len(argv) > 1 else 250
+    demo_name = argv[0] if argv and argv[0] else "demo_cold_start_full_20260705_123645"
+    max_frames = int(argv[1]) if len(argv) > 1 else 1200
+    stride = int(argv[2]) if len(argv) > 2 else 50
 
-    class _Demo:
-        demo_dir = str(ROOT / "artifacts" / "demos" / demo_name)
-
-    cached = load_cache(cache_path_for(_Demo()), demo_key(_Demo()), DEFAULT_BUDGET)
-    if cached is None:
-        print(f"RESULT: SKIP -- no walk-shadow cache for {demo_name}")
-        return 0
+    demo = InputDemoPlayback.load(ROOT / "artifacts" / "demos" / demo_name)
+    snapshot = demo.snapshot_path()
+    video = str(demo.manifest.get("metadata", {}).get("video", "tandy"))
 
     bundle_data = (ROOT / "artifacts" / "static_runtime_bundle" / "memory_1mb.bin").read_bytes()
     container_data = (ROOT / "assets" / "OVERKILL").read_bytes()
     game0 = NativeGame.load_level(bundle_data, container_data, 0,
-                                  __import__("overkill.recovered.adapters.cold_level_start",
-                                             fromlist=["build_cold_level_start"])
-                                  .build_cold_level_start(bundle_data, 0)[0],
+                                  build_cold_level_start(bundle_data, 0)[0],
                                   origin_x=0, row_base=0x9C)
-    del dataclasses
 
-    frames = diff_total = 0
-    worst = (0, -1)
-    # PHASE (the 97B2 stage order): A90C projects AFTER the 5BDC present, so a boundary's page
-    # was drawn with the PREVIOUS tick's +0x0C cells while its records carry the FRESH ones.
-    # Compose from frame i's pre-state and diff against frame i+1's page -- the aligned pair.
-    pending = None      # (i, native_frame) awaiting the NEXT frame's page
-    for i, (pre, post, sp) in enumerate(iter_cached_frames(cached)):
-        image = MutFlatMemory(pre)
+    res = {"presents": 0, "sampled": 0, "diff_total": 0, "worst": (0, -1), "lines": []}
+    pending: dict[int, tuple] = {}
+    orig_step = CPU8086.step
+
+    def _compose_and_diff(cpu) -> None:
+        image = MutFlatMemory(bytes(cpu.mem.data))
         cursor = image.rw(DS, 0x234C)
-        if pending is not None:
-            j, native = pending
-            pending = None
-            pre_np = np.frombuffer(bytes(image.data), dtype=np.uint8)
-            vm = render_present_page_indices(pre_np, image.rw(CS, 0x9598), cursor)
-            d = int((native[PLAYFIELD] != vm[PLAYFIELD]).sum())
-            frames += 1
-            diff_total += d
-            if d > worst[0]:
-                worst = (d, j)
-            print(f"  frame {j:5d} (vs page {i}): playfield diff px = {d}")
-        if i % stride:
-            continue
+        mem_np = np.frombuffer(bytes(image.data), dtype=np.uint8)
+        page_seg = image.rw(CS, PAGE_SEG_PTR)
+        vm = decode_tandy_b800_indices(mem_np[page_seg * 16: page_seg * 16 + 0x10000])
         ctx = pn._build_sprite_context(bundle_data, container_data, game0,
                                        (image.rw(DS, 0x1028) >> 1) & 0xFFFF)
         state = project_state(image)
@@ -95,18 +83,69 @@ def main(argv) -> int:
         for pool in (state.special_pool, state.effect_pool, state.object_pool):
             blocks.extend(object_sprite_blocks(pool, ctx))
         if blocks:
-            sprite = SnapshotSprite(identity=0, sprite_id=0, anim_phase=0, screen_di=0,
-                                    blocks=tuple(blocks))
-            native = compose_playfield_indices(plate, [sprite], cursor)
+            native = compose_playfield_indices(
+                plate, [SnapshotSprite(0, 0, 0, 0, tuple(blocks))], cursor)
         else:
             native = plate
-        pending = (i, native)
-    area = 192 * 208
-    print(f"frames sampled: {frames}; mean diff px/frame: {diff_total // max(1, frames)} "
-          f"of {area}; worst: {worst[0]} at frame {worst[1]}")
-    print("RESULT:", "PASS -- 1:1 with the VM page" if diff_total == 0 else
-          "REPORT -- the diff above is the render TODO list (tiles, anim/variant sprites); "
-          "the goal criterion is 0")
+        d = int((native[PLAYFIELD] != vm[PLAYFIELD]).sum())
+        res["sampled"] += 1
+        res["diff_total"] += d
+        if d > res["worst"][0]:
+            res["worst"] = (d, res["presents"])
+        res["lines"].append(f"  present {res['presents']:5d}: playfield diff px = {d} "
+                            f"(vm nonzero {int((vm[PLAYFIELD] > 0).sum())})")
+
+    def step(self):
+        if getattr(self, "_side", "") == "ref":
+            cs = self.s.cs & 0xFFFF
+            ip = self.s.ip & 0xFFFF
+            key = id(self)
+            if cs == CS and ip == PRESENT_5BDC and key not in pending:
+                ss = self.s.ss & 0xFFFF
+                ret_addr = self.mem.rw(ss, self.s.sp & 0xFFFF)
+                pending[key] = (ret_addr, (self.s.sp + 2) & 0xFFFF)
+            elif key in pending:
+                ret_addr, ret_sp = pending[key]
+                if cs == CS and ip == ret_addr and (self.s.sp & 0xFFFF) == ret_sp:
+                    pending.pop(key)
+                    if res["presents"] % stride == 0:
+                        _compose_and_diff(self)
+                    res["presents"] += 1
+        return orig_step(self)
+
+    CPU8086.step = step
+    orig_load = fv._load_runtime
+    sides = iter(("ref", "cand"))
+
+    def patched_load(exe, assets, snap, tail):
+        rt = orig_load(exe, assets, snap, tail)
+        rt.cpu._side = next(sides)
+        return rt
+
+    fv._load_runtime = patched_load
+    boundary = {"n": 0}
+
+    def pump_inputs(ref_rt, cand_rt):
+        boundary["n"], _ = pump_demo_frame(demo, boundary["n"], (ref_rt, cand_rt), ref_rt.cpu)
+        boundary["n"] += 1
+
+    cfg = FrameVerifyConfig(video=video, source="candidate", max_frames=max_frames,
+                            semantic_state_check=False, stop_on_diff=False, log_every=0)
+    try:
+        run_frame_verifier(exe=ROOT / "assets" / "OVERKILL", assets=ROOT / "assets",
+                           snapshot=str(snapshot), command_tail=b"", config=cfg,
+                           pump_inputs=pump_inputs)
+    finally:
+        fv._load_runtime = orig_load
+        CPU8086.step = orig_step
+
+    for line in res["lines"]:
+        print(line)
+    print(f"presents: {res['presents']}; sampled: {res['sampled']}; "
+          f"mean diff px: {res['diff_total'] // max(1, res['sampled'])} of {192 * 208}; "
+          f"worst: {res['worst'][0]} at present {res['worst'][1]}")
+    print("RESULT:", "PASS -- 1:1 with the pure VM page" if res["diff_total"] == 0 else
+          "REPORT -- the diff is the render TODO list; the goal criterion is 0")
     return 0
 
 

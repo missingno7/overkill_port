@@ -38,6 +38,20 @@ sprite compositors (`object_sprite_blocks` SKIPS ``anim(+12) != 0`` and ``varian
 records -- the explosion/hit-flash frames are exactly those); (4) the resizable-window crash --
 FIXED (scale to the live window size).
 
+**THE PURE-VM 1:1 INSTRUMENT WORKS -- FIRST HONEST NUMBERS (L2 demo, 300 frames, stride 25):
+presents 0 and 25 are PIXEL-PERFECT (diff 0 vs the real VM screen); diffs 55..186 px appear as
+combat heats up (the anim/variant sprite compositors -- explosions/hit-flashes); mean 94 px of
+39936 (~0.24%).**  The rebuilt `verify_native_frame_1to1` step-hooks 5BDC's return on the frame
+verifier's PURE ref VM (original presentation executing) and composes natively from the same
+machine state -- the native render is ~99.75% exact on early-L2 combat; the remaining diff IS
+the anim/variant TODO list + (later, when terrain scrolls in) the tile layer.  DEEP SAMPLE (3000 frames): presents 0/250 still PERFECT; presents 500..1250 diff 3768..8901 px
+of 4473..9267 vm-nonzero -- **the terrain tiles scrolled in at ~present 500 and the missing
+TILE LAYER now dominates everything**.  THE ORDERED RENDER TODO (by measured cost): (1) the
+tile-plane layer (the A781/0E9C row-pull compose; the assets already load --
+NativeGame.level.blocks/tile_plane/graphics); (2) the 75A6 anim sub-handlers (bx = mode*8 +
+anim*2 at 75FA..7605) + the +0x24 OR-variant path (760B) -- the 55..186 px combat residue;
+(3) the star-phase/dying-mode fine residue.  Each lands re-measured on this instrument.
+
 **CRITICAL CORRECTION: the walk cache CANNOT be the 1:1 render oracle.**  The cached pre-states
 come from the HYBRID runtime -- the presentation path (A846/5BDC/...) is HOOKED OUT there, so NO
 page in the cache holds the playfield pixels (B800 playfield = 0 px at every probed frame;
