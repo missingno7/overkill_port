@@ -19,6 +19,7 @@ from overkill.recovered.systems.input import decode_keyboard_input_flags
 from overkill.recovered.adapters.tile_cues import run_tile_cue_row_7948
 from overkill.recovered.adapters.level_object_script import run_level_object_script_4a65
 from overkill.recovered.adapters.behavior_walk import (
+    _alloc, _bd17_deactivate, _rotating_pool_scan_b15a,
     run_behavior_walk_a9d3, run_level_end_arm_a680,
 )
 from overkill.recovered.systems.frame_loop import frame_state_update_a940
@@ -280,10 +281,274 @@ def _step_9b2e(mem) -> None:
         raise RecoveryGap("the 8546 FIRE handler (9B97)",
                           "decode 1010:8546 against the lockstep gate")
     _scroll_a66f(mem)                               # 9BA9
+    _fire_fanout_a067(mem)                          # 9BAC
+    # 9BAF: the [978E]/[98C8] weapon-upgrade apply (9D4D -- native via the walk adapter)
+    if mem.rb(DS, 0x978E) and mem.rb(DS, 0x98C8) == 1:
+        raise RecoveryGap("the 9BAF 9D4D upgrade beat ([978E] with [98C8]==1)",
+                          "the sound-busy-gated apply; wire when a demo exercises it")
+    # 9BC0: [A47C] <= 1 -> A616 (the ship tilt/bank counters)
+    if mem.rw(DS, 0xA47C) <= 1:
+        _tilt_a616(mem)
+    # 9BCA: [A47C] == 0 -> 9CB6; [2350] > 0xB6 -> 9C01; then 9CF1, 9CD9, A031, 9FAF
     raise RecoveryGap(
-        "the A067 fire-path stage (9BAC)",
-        "the next 9B2E interior stage -- decode/wire 1010:A067 against the lockstep gate "
-        "(a067_fire_path exists in systems/action_spawns)")
+        "the 9BCA..9BFA tail stages (9CB6 / 9C01 / 9CF1 / 9CD9 / A031 / 9FAF)",
+        "the remaining 9B2E interior -- decode against the lockstep gate")
+
+
+def _tilt_a616(mem) -> None:
+    """``1010:A616`` -- the ship TILT counters: only past scroll 0xB6.  A648: at y (+04-axis) == 0
+    with the LEFT bit (&2), [A39A] decs to the -8 floor... (the top-edge tilt); then at +04 ==
+    0xB0 with the RIGHT bit (&1), [A39C] incs to 8; else [A39C] decays to 0."""
+    if mem.rw(DS, 0x2350) <= 0x00B6:
+        return
+    anchor = 0x237C
+    bits = mem.rb(DS, 0x98BE)
+    # A648: the top-edge counter [A39A]
+    if mem.rw(DS, anchor + 4) == 0 and (bits & 0x02):
+        if mem.rw(DS, 0xA39A) != 0xFFF8:
+            mem.ww(DS, 0xA39A, (mem.rw(DS, 0xA39A) - 1) & 0xFFFF)
+    else:
+        if mem.rw(DS, 0xA39A) != 0:
+            mem.ww(DS, 0xA39A, (mem.rw(DS, 0xA39A) + 1) & 0xFFFF)
+    # A622: the bottom-edge counter [A39C]
+    if mem.rw(DS, anchor + 4) == 0x00B0 and (bits & 0x01):
+        if mem.rw(DS, 0xA39C) != 8:
+            mem.ww(DS, 0xA39C, (mem.rw(DS, 0xA39C) + 1) & 0xFFFF)
+    else:
+        if mem.rw(DS, 0xA39C) != 0:
+            mem.ww(DS, 0xA39C, (mem.rw(DS, 0xA39C) - 1) & 0xFFFF)
+
+
+# ---------------------------------------------------------------------------------------------
+# The A067 FIRE FAN-OUT (decoded 2026-07-07; the journal carries the per-address map)
+# ---------------------------------------------------------------------------------------------
+
+_GAMEPLAY_POOL_BASE = 0x2B5C
+_GAMEPLAY_POOL_WRAP = 0x32CC
+_GAMEPLAY_SLOTS = 0x22
+_ANCHOR = 0x237C
+
+
+def _alloc_7547(mem) -> int:
+    """``1010:7547`` -- the gameplay alloc WITH the 7550 kill-and-reuse recycle: the plain
+    [95DA]-cursor scan; a full pool takes the first 2B5C record whose type (+0x16) != 1 (pods are
+    never recycled), skipping behaviors 9/0xA, falling back to record 0 -- BD0D-killed, then
+    reused."""
+    slot = _alloc(mem, 0x95DA, _GAMEPLAY_POOL_BASE, _GAMEPLAY_POOL_WRAP, _GAMEPLAY_SLOTS)
+    if slot != 0xFFFF:
+        return slot
+    bx = _GAMEPLAY_POOL_BASE
+    for _ in range(_GAMEPLAY_SLOTS):
+        if (mem.rw(DS, bx + 0x18) not in (9, 0x0A)
+                and mem.rw(DS, bx + 0x16) != 1):
+            break
+        bx += 0x38
+    else:
+        bx = _GAMEPLAY_POOL_BASE
+    _bd17_deactivate(mem, bx)                       # BD0D
+    return bx
+
+
+def _spawn_seed_a4ea(mem) -> int:
+    """``1010:A4EA`` -- the player-shot spawn seed: 7547 alloc + the stamps (active=1, +1E=1,
+    dir 0, sprite 0x32, +14=0, type 2, behavior 2, +1C=FFFF)."""
+    slot = _alloc_7547(mem)
+    mem.ww(DS, slot + 0x00, 1)
+    mem.ww(DS, slot + 0x1E, 1)
+    mem.ww(DS, slot + 0x06, 0)
+    mem.ww(DS, slot + 0x08, 0x0032)
+    mem.ww(DS, slot + 0x14, 0)
+    mem.ww(DS, slot + 0x16, 2)
+    mem.ww(DS, slot + 0x18, 2)
+    mem.ww(DS, slot + 0x1C, 0xFFFF)
+    return slot
+
+
+def _muzzle_project_a1ae(mem, slot: int) -> None:
+    """``1010:A1AE`` -- the anchor muzzle projection: the anchor SPRITE indexes the A3A8 offset
+    pairs; the shot's +02/+04 = offset + the anchor's +02/+04."""
+    si = (0xA3A8 + ((mem.rw(DS, _ANCHOR + 8) << 2) & 0xFFFF)) & 0xFFFF
+    mem.ww(DS, slot + 2, (mem.rw(DS, si) + mem.rw(DS, _ANCHOR + 2)) & 0xFFFF)
+    mem.ww(DS, slot + 4, (mem.rw(DS, (si + 2) & 0xFFFF) + mem.rw(DS, _ANCHOR + 4)) & 0xFFFF)
+
+
+def _anchor_shot_a19f(mem) -> None:
+    """``1010:A19F`` -- one seeded shot at the muzzle."""
+    slot = _spawn_seed_a4ea(mem)
+    _muzzle_project_a1ae(mem, slot)
+
+
+def _anchor_shot_a18a(mem) -> None:
+    """``1010:A18A`` -- the mode-1 anchor shot: A1AB (seed + muzzle) + sprite 0x33 + sound 0x14."""
+    slot = _spawn_seed_a4ea(mem)
+    _muzzle_project_a1ae(mem, slot)
+    mem.ww(DS, slot + 8, 0x0033)
+    if mem.rb(DS, 0x98C0):
+        mem.wb(DS, 0xBEFF, 0x14)
+
+
+def _anchor_shot_a1c8(mem) -> None:
+    """``1010:A1C8`` -- the mode-2 DOUBLE shot: sound 0x15; shot 1 sprite 0x18; shot 2's
+    direction/sprite from the input bits (&2 -> 7/0x1F, else &1 -> 1/0x19, else 0/0x18)."""
+    if mem.rb(DS, 0x98C0):
+        mem.wb(DS, 0xBEFF, 0x15)
+    slot = _spawn_seed_a4ea(mem)
+    mem.ww(DS, slot + 8, 0x0018)
+    _muzzle_project_a1ae(mem, slot)
+    slot = _spawn_seed_a4ea(mem)
+    _muzzle_project_a1ae(mem, slot)
+    bits = mem.rb(DS, 0x98BE)
+    mem.ww(DS, slot + 6, 7)
+    mem.ww(DS, slot + 8, 0x001F)
+    if not (bits & 0x02):
+        mem.ww(DS, slot + 6, 1)
+        mem.ww(DS, slot + 8, 0x0019)
+        if not (bits & 0x01):
+            mem.ww(DS, slot + 6, 0)
+            mem.ww(DS, slot + 8, 0x0018)
+
+
+def _pod_shot_a4d7(mem, si: int) -> int:
+    """``1010:A4D7`` -- the mode-0 pod shot: a seed at the pod's +02 / +04 + 4."""
+    slot = _spawn_seed_a4ea(mem)
+    mem.ww(DS, slot + 2, mem.rw(DS, si + 2))
+    mem.ww(DS, slot + 4, (mem.rw(DS, si + 4) + 4) & 0xFFFF)
+    return slot
+
+
+def _pod_weapon_dispatch_a41a(mem, si: int) -> None:
+    """``1010:A41A`` -- per-pod weapon dispatch: si == FFFF is a no-op; else the [A958] mode
+    through the CS:A42C table."""
+    if si == 0xFFFF:
+        return
+    mode = mem.rw(DS, 0xA958)
+    if mode == 0:
+        _pod_shot_a4d7(mem, si)
+    elif mode == 1:                                 # A490
+        slot = _pod_shot_a4d7(mem, si)
+        mem.ww(DS, slot + 8, 0x0033)
+    elif mode == 2:                                 # A499: the angled shot
+        slot = _spawn_seed_a4ea(mem)
+        mem.ww(DS, slot + 2, mem.rw(DS, si + 2))
+        mem.ww(DS, slot + 4, (mem.rw(DS, si + 4) + 4) & 0xFFFF)
+        d = mem.rw(DS, 0xA3EC)
+        if d == 0xFFFF:
+            d = 7
+            if mem.rw(DS, si + 4) > 0x0058:
+                d = 1
+        mem.ww(DS, slot + 6, d)
+        mem.ww(DS, slot + 8, 0x0019 if d == 1 else 0x001F)
+    elif mode in (3, 4):                            # A464 / A438: the missile PAIR
+        if mem.rw(DS, 0xA3A0) != 0:
+            return
+        mem.ww(DS, 0xA970, (mem.rw(DS, 0xA970) + 2) & 0xFFFF)
+        beh, spr = (7, 0x0037) if mode == 3 else (8, 0x0035)
+        slot = _pod_shot_a4d7(mem, si)
+        mem.ww(DS, slot + 0x18, beh)
+        mem.ww(DS, slot + 8, spr)
+        slot = _pod_shot_a4d7(mem, si)
+        mem.ww(DS, slot + 0x18, beh)
+        mem.ww(DS, slot + 8, spr)
+        mem.ww(DS, slot + 2, (mem.rw(DS, slot + 2) + 8) & 0xFFFF)
+    else:
+        raise RecoveryGap(f"the pod weapon mode {mode} (A42C[{mode}] = 44AF)",
+                          "mode 5's table entry is 44AF -- undecoded")
+
+
+def _fire_fanout_a067(mem) -> None:
+    """``1010:A067`` -- the FIRE fan-out (the journal's decode map, wired image-native)."""
+    if not (mem.rb(DS, 0x98BE) & 0x10):
+        mem.ww(DS, 0xA980, 0)                       # A060: the release latch
+        return
+    if mem.rw(DS, 0xA980) != 0:                     # held: the autofire gates
+        if not (mem.rb(DS, 0x9790) == 1 or mem.rw(DS, 0x232A) == 0x000F):
+            return
+    mem.ww(DS, 0xA980, 1)                           # A084
+    if mem.rw(DS, 0x2350) <= 0x00B6 and mem.rw(DS, 0xBDAC) == 0:
+        if mem.rw(DS, 0xA958) == 2:                 # the EARLY anchor tails
+            _anchor_shot_a1c8(mem)
+        else:
+            _anchor_shot_a19f(mem)
+        return
+    # the FULL fan-out: the held-action counter copy
+    mem.ww(DS, 0xA3A0, mem.rw(DS, 0xA970))
+    mem.ww(DS, 0xA3A2, mem.rw(DS, 0xA972))
+    mem.ww(DS, 0xA3A4, mem.rw(DS, 0xA976))
+    mem.ww(DS, 0xA3A6, mem.rw(DS, 0xA974))
+    if mem.rw(DS, 0xBDAC) == 1:
+        raise RecoveryGap("A067's BDAC==1 render-mode branches (A114-only / A515-only)",
+                          "never taken in gameplay demos")
+    # A515: the tractor-drone launcher
+    if mem.rw(DS, 0xA960) != 0 and mem.rw(DS, 0xA97E) != 1:
+        slot = _alloc_7547(mem)
+        mem.ww(DS, slot + 4, (mem.rw(DS, _ANCHOR + 4) + 0x0A) & 0xFFFF)   # A571
+        mem.ww(DS, slot + 2, (mem.rw(DS, _ANCHOR + 2) + 0x0A) & 0xFFFF)
+        victim = _rotating_pool_scan_b15a(mem)
+        if victim != 0xFFFF:
+            mem.ww(DS, slot + 0x30, victim)
+            mem.ww(DS, slot + 0x00, 1)
+            mem.ww(DS, slot + 0x1E, 1)
+            mem.ww(DS, slot + 0x14, 0)
+            mem.ww(DS, slot + 0x16, 2)
+            mem.ww(DS, slot + 0x18, 0x000A)
+            mem.ww(DS, slot + 0x1C, 1)
+            if mem.rb(DS, 0x98C0):
+                mem.wb(DS, 0xBEFF, 0x11)
+            mem.ww(DS, 0xA97E, (mem.rw(DS, 0xA97E) + 1) & 0xFFFF)
+            mem.ww(DS, 0xA960, (mem.rw(DS, 0xA960) - 1) & 0xFFFF)
+    # A584: the ground-bomb pair (behaviors 0x05 / 0x06)
+    if mem.rw(DS, 0xA95E) != 0 and mem.rw(DS, 0xA3A4) == 0:
+        mem.ww(DS, 0xA976, (mem.rw(DS, 0xA976) + 1) & 0xFFFF)
+        if mem.rb(DS, 0x98C0):
+            mem.wb(DS, 0xBEFF, 0x12)
+        for beh in (5, 6):
+            slot = _spawn_seed_a4ea(mem)
+            mem.ww(DS, slot + 4, (mem.rw(DS, _ANCHOR + 4) + 0x0A) & 0xFFFF)   # A571
+            mem.ww(DS, slot + 2, (mem.rw(DS, _ANCHOR + 2) + 0x0A) & 0xFFFF)
+            mem.ww(DS, slot + 4, mem.rw(DS, slot + 4) & 0xFFFC)
+            mem.ww(DS, slot + 8, 8)
+            mem.ww(DS, slot + 0x18, beh)
+            if beh == 5:
+                mem.ww(DS, 0xA976, (mem.rw(DS, 0xA976) + 1) & 0xFFFF)
+    # A3FF: the A962/A964 pods ([A3EC] = FFFF, with the A378 tail)
+    mem.ww(DS, 0xA3EC, 0xFFFF)
+    for slot_cell in (0xA962, 0xA964):
+        si = mem.rw(DS, slot_cell)
+        _pod_weapon_dispatch_a41a(mem, si)
+        if si != 0xFFFF:
+            raise RecoveryGap("the A378 tail after a live A962/A964 pod fire",
+                              "1010:A378 is undecoded")
+    # A3CA: the A966..A96C pods with alternating [A3EC] bias
+    for slot_cell, bias in ((0xA966, 7), (0xA968, 1), (0xA96A, 7), (0xA96C, 1)):
+        mem.ww(DS, 0xA3EC, bias)
+        _pod_weapon_dispatch_a41a(mem, mem.rw(DS, slot_cell))
+    # A0E8: the anchor-fire dispatcher
+    mode = mem.rw(DS, 0xA958)
+    if mode == 5:
+        raise RecoveryGap("A0E8's mode-5 A2A0 body", "1010:A2A0 is undecoded")
+    if mem.rw(DS, 0xA96E) != 0xFFFF:                # A114: the tracker pod's triple spread
+        if mem.rw(DS, 0xA3A6) == 0:
+            if mem.rb(DS, 0x98C0):
+                mem.wb(DS, 0xBEFF, 0x18)
+            pod = mem.rw(DS, 0xA96E)
+            for dx, dy, d in ((-6, 4, None), (-2, -4, 7), (-2, 0x0C, 1)):
+                mem.ww(DS, 0xA974, (mem.rw(DS, 0xA974) + 1) & 0xFFFF)
+                slot = _spawn_seed_a4ea(mem)        # A175
+                mem.ww(DS, slot + 0x18, 0x000C)
+                mem.ww(DS, slot + 0x1C, 7)
+                mem.ww(DS, slot + 2, (mem.rw(DS, pod + 2) + dx) & 0xFFFF)
+                mem.ww(DS, slot + 4, (mem.rw(DS, pod + 4) + dy) & 0xFFFF)
+                if d is not None:
+                    mem.ww(DS, slot + 6, d)
+    if mode == 0:
+        _anchor_shot_a19f(mem)
+    elif mode == 1:
+        _anchor_shot_a18a(mem)
+    elif mode == 2:
+        _anchor_shot_a1c8(mem)
+    else:
+        raise RecoveryGap(f"the A108 anchor-shot mode {mode} (A337/A2F6)",
+                          "modes 3/4's bodies are undecoded")
 
 
 def _row_pull_a74e(mem) -> None:
