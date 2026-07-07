@@ -46,6 +46,20 @@ The 9B2E interior is where the seams lived — it must be decomposed against the
 ## Non-goals (until the done-condition holds for L1)
 The L4/L5 zoo residue, the planet-0/3/4 wave families, audio, endings, high-score entry.
 
+## REFINED 2026-07-07 (owner reality-check #4)
+The owner playtested play_native: no thrusters, wrong fire origin, fire lost after the intro wave,
+missing/wrong enemies.  ROOT CAUSE: play_native still runs the OLD hybrid loop -- the gate and the
+app are two different programs; nothing verified reaches the player.  The refined order:
+1. **One frame, one truth**: play_native's gameplay loop = `advance_gameplay_frame_97b2` on the
+   image; the keyboard writes the image's DS:98C4 table; render composes from the image.  The
+   dataclass game + sync seams RETIRE.
+2. **`play_native --demo <name> [--mirror]`**: replay a recorded demo through the SAME frame fn in
+   the app; mirror mode diffs the image per frame vs the recorded VM states (+ pixels vs the VM
+   page) and flags divergences live.  Playing demos and checking IS the ongoing reality check.
+3. **Drain the named gaps**: the D50E sound-engine DGROUP model (2202 frames; feeds [98C8]
+   gameplay reads), the 4CED star-list mid-present occupancy (1702 divergences), 77C5 shield bar
+   (266), 9EE4 drain (62), DS:23A0 anchor-variant 1-byte.
+
 ## next
 - Build `verify_native_lockstep` (frame-top snapshot + native-frame diff, frames 0..N growing).
 - First expected divergences: the 9B2E input decode + player step (the dataclass side's logic vs
