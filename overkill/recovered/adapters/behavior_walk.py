@@ -1551,6 +1551,65 @@ def _step_jitter_40(mem, rec: int) -> None:
     mem.ww(DS, rec + 0x02, (mem.rw(DS, rec + 0x02) + 2) & 0xFFFF)
 
 
+def _jitter_axis_96ec(mem, rec: int, delta: int) -> None:
+    """The shared 4D95-picked axis jitter: the draw's low bit picks a cell offset from the
+    ``[96EC]`` pair, and ``delta`` is added to that record cell."""
+    ring = tuple(mem.rw(DS, 0x20A8 + i * 2) for i in range(16))
+    rand, nxt = canned_random_next_4d95(mem.rw(DS, 0x20A6), ring)
+    mem.ww(DS, 0x20A6, nxt)
+    cell = mem.rw(DS, (0x96EC + ((rand & 1) << 1)) & 0xFFFF)
+    mem.ww(DS, (rec + cell) & 0xFFFF, (mem.rw(DS, (rec + cell) & 0xFFFF) + delta) & 0xFFFF)
+
+
+def _step_jitter_emitter_68(mem, rec: int) -> None:
+    """Behavior 0x68 (``1010:8AF9``): the 0x40-family jitter with a planet-keyed anim sprite --
+    ``[96D2 + [233C]*2]`` + 0x24 (planet 4) / 0xA1 (planet 5) / 0x100 (else); the +/-1px 96EC
+    axis jitter; then while signed x >= 0x80, a C237 child on the [232C] == 0x1F tick and
+    x += 2."""
+    anim = mem.rw(DS, (0x96D2 + (mem.rw(DS, 0x233C) & 0xFFFF) * 2) & 0xFFFF)
+    planet = mem.rw(DS, 0x2356)
+    bias = 0x0024 if planet == 4 else (0x00A1 if planet == 5 else 0x0100)
+    mem.ww(DS, rec + 0x08, (anim + bias) & 0xFFFF)
+    _jitter_axis_96ec(mem, rec, ((mem.rw(DS, 0x232E) & 1) << 1) - 1)
+    if i16(mem.rw(DS, rec + 0x02)) < 0x0080:
+        return
+    if mem.rw(DS, 0x232C) == 0x001F:
+        _spawn_child_c237(mem, rec, 0x68)
+    mem.ww(DS, rec + 0x02, (mem.rw(DS, rec + 0x02) + 2) & 0xFFFF)
+
+
+def _step_jitter_creeper_69(mem, rec: int) -> None:
+    """Behavior 0x69 (``1010:8B80``): sprite = ([232A] >> 3) + 0x178 (planet 4) / 0x103 (else);
+    the SAME 96EC axis jitter at +/-4px (the +/-1 shifted left twice); then while signed
+    x <= 0x18, x += 8."""
+    base = 0x0178 if mem.rw(DS, 0x2356) == 4 else 0x0103
+    mem.ww(DS, rec + 0x08, ((mem.rw(DS, 0x232A) >> 3) + base) & 0xFFFF)
+    _jitter_axis_96ec(mem, rec, ((((mem.rw(DS, 0x232E) & 1) << 1) - 1) << 2) & 0xFFFF)
+    if i16(mem.rw(DS, rec + 0x02)) > 0x0018:
+        return
+    mem.ww(DS, rec + 0x02, (mem.rw(DS, rec + 0x02) + 8) & 0xFFFF)
+
+
+def _step_beacon_2d(mem, rec: int) -> None:
+    """Behavior 0x2D (``1010:87AF``): sprite = ``[233C] + 0x93``, then the shared 87B5 beacon
+    tail (x > 0x60 drifts right 4px; else wait for [2330] == 0x7F, dir = 4, ONE C237 child)."""
+    mem.ww(DS, rec + 0x08, (mem.rw(DS, 0x233C) + 0x0093) & 0xFFFF)
+    x = mem.rw(DS, rec + 0x02)
+    if x > 0x0060:
+        mem.ww(DS, rec + 0x02, (x + 4) & 0xFFFF)
+        return
+    if mem.rw(DS, 0x2330) != 0x007F:
+        return
+    mem.ww(DS, rec + 0x06, 0x0004)
+    _spawn_child_c237(mem, rec, 0x2D)
+
+
+def _step_strider_64(mem, rec: int) -> None:
+    """Behavior 0x64 (``1010:F4FE``): x += 2 on planet 4, else x += 4."""
+    step = 2 if mem.rw(DS, 0x2356) == 4 else 4
+    mem.ww(DS, rec + 0x02, (mem.rw(DS, rec + 0x02) + step) & 0xFFFF)
+
+
 def _step_dropper_34(mem, rec: int) -> None:
     """Behavior 0x34 (``1010:88E8``): planet-keyed sprite (``[96DA + [2356]*2]``, minus 1 on the
     upper half y < 0x60); on planets 0/6 only, WAIT for x >= 0x50; then every frame the ``[232E]``
@@ -2807,6 +2866,18 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
         elif beh == 0x40:
             _step_jitter_40(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8B3B exits jmp BC45 (all paths)
+        elif beh == 0x68:
+            _step_jitter_emitter_68(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8AF9's exits are jmp BC45
+        elif beh == 0x69:
+            _step_jitter_creeper_69(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8B80's exits are jmp BC45
+        elif beh == 0x2D:
+            _step_beacon_2d(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # 87AF->87B5 exits jmp BC45
+        elif beh == 0x64:
+            _step_strider_64(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # F4FE exits jmp BC45
         elif beh == 0x42:
             _step_bobber_42(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8BF8 exits jmp BC45 (both paths)
