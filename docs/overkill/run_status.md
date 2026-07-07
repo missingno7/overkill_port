@@ -23,6 +23,29 @@
 > work is COMPLETE for L1. Next frontier: play_native integration polish, other planets' controller
 > families (0x1c etc.), the 9734/9902/9908 transition continuations, HUD/menu wiring, audio.
 
+## 2026-07-07 - LOCKSTEP DAY 1: the gate is live; the frame is assembled; the frontier is the FIRE FAN-OUT
+
+The demo-lockstep instrument works end-to-end (commits 9990bf0/8039655/8ab0ca5): 8293 recorded
+97B2 frames (.lockstepcache, replays in ~2 min), the native frame runs the REAL stage order on the
+image only.  Native so far: the 0162 input poll (from the image's own 98C4 IRQ table), A212's
+empty-list path, the 9AFF death tail, the four move handlers, the WHOLE scroll (A6FE/A74E -- the
+tile cues + level script run INSIDE the row pull; the 0xEA0 arm), the A90C screen-di projection at
+its real position, A940 + the object walk + the 0922 starfield tick, the 5F61 FRAME CLOCK (the
+whole 2324..2340 cascade + A7A0 + the A480 countdown), the ISR's [0054]/D50E effects, the
+073C/77C5 gates.
+
+**The frontier (gate-ranked):**
+1. **The A067 fire fan-out -- 7970 frames.**  The entry gate + path selector + the EARLY tails
+   (A19F/A1C8) are pure already (systems/action_spawns, native_a19f/a1c8_tail in systems/objects);
+   the FULL fan-out (A515/A584/A3FF/A3CA/A0E8, the A3A0 quartet copy) is the recovery.  This is
+   THE next slice.
+2. The D50E/D566 sound-engine DGROUP cells (246 frames; [BEFF] queue + BFAA/BFBA channels).
+3. The death frames' DS:7194-region ring (6 frames; unknown owner -- during the explosion anim).
+4. The death-EXIT frame (1 frame): the VM re-enters 97B2 through the 9908 continuation (lives dec,
+   respawn seeds, the 0B3E level re-init) -- play_native's apply_respawn_seeds path, at the frame
+   position.
+5. The 9EE4 drain beat (1 frame; every 128 frames).
+
 ## 2026-07-07 - RESTRUCTURE: the DEMO LOCKSTEP campaign (owner direction)
 
 The owner stopped the loop: "play_native is just a big pile of stuff glued together; start working
