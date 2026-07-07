@@ -18,7 +18,10 @@ from overkill.recovered.domain.tilemap import LevelTileContext
 from overkill.recovered.systems.input import decode_keyboard_input_flags
 from overkill.recovered.adapters.tile_cues import run_tile_cue_row_7948
 from overkill.recovered.adapters.level_object_script import run_level_object_script_4a65
-from overkill.recovered.adapters.behavior_walk import run_level_end_arm_a680
+from overkill.recovered.adapters.behavior_walk import (
+    run_behavior_walk_a9d3, run_level_end_arm_a680,
+)
+from overkill.recovered.systems.frame_loop import frame_state_update_a940
 
 DS = 0x25CC
 CS = 0x1010
@@ -64,9 +67,141 @@ def advance_gameplay_frame_97b2(mem) -> None:
     # --- stage 6: A90C present-scan (the +0x0C screen-di projection) ---------------------------
     # DGROUP-visible and BEFORE 9B2E in the frame order; native_walk_frame.sync_screen_projection
     # owns the projection math but was verified as a post-walk sync, not at this stage position.
-    # Deferred until frames first COMPLETE (gap frames are never compared); the first completed
-    # frame's +0x0C cells will hold it to the oracle at the right position.
+    # verify_native_screen_di-proven; wired at the REAL stage position (before 9B2E).
+    from overkill.native_walk_frame import sync_screen_projection
+    sync_screen_projection(mem)
     _step_9b2e(mem)
+    # --- the 97CE transition branches: a taken exit leaves the loop (no next 97B2 boundary) ----
+    if mem.rw(DS, 0xA344) == 1 or mem.rw(DS, 0xA342) == 1 or mem.rw(DS, 0xA346) == 1:
+        return
+    # --- stage 9: A940 (frame-state update -> the OBJECT WALK -> the 0922 starfield tick) ------
+    _a940_walk_stage(mem)
+    # --- stage 10: 073C service gate (gated on [9907] == 1; normally an instant ret) -----------
+    if mem.rw(DS, 0x9907) & 0xFF == 1:
+        raise RecoveryGap("the 073C service body ([9907] == 1)", "unrecovered service path")
+    # --- stage 11: the 60A2 stage -- 77C5 (the A97C shield drain) + 5F61 (THE CLOCK TICK) ------
+    if mem.rw(DS, 0xA97C) == 1:
+        raise RecoveryGap("the 77C5 A97C shield-bar body ([A97C] == 1)",
+                          "unrecovered; fires only after a kind-4 pickup")
+    _clock_tick_5f61(mem)
+    # --- the INT8 ISR's per-frame DGROUP effects (two ticks per frame: the [0054] parity pair) -
+    _isr_effects_two_ticks(mem)
+
+
+def _a940_walk_stage(mem) -> None:
+    """Stage 9: ``1010:A940`` (the recovered pure frame-state update), falling through into the
+    OBJECT WALK (A9D3..AA25, native) and the far ``1F8F:0922`` STARFIELD tick (the C6C1 ring:
+    20 + 10 + 10 star words at stride 6, wrap 0xC0, three parity-gated layers; skipped while the
+    player anchor state is FFFF)."""
+    u = frame_state_update_a940(
+        mem.rw(DS, 0xA8CE), mem.rw(DS, 0xA8C8), mem.rw(DS, 0xA8CC),
+        mem.rw(DS, 0x2356), mem.rb(DS, 0x98A8), mem.rw(DS, 0xA8C2))
+    mem.ww(DS, 0xA8CE, u.counter_a8ce)
+    mem.ww(DS, 0xA8C6, u.prev_a8c6)
+    mem.ww(DS, 0xA8CA, u.prev_a8ca)
+    mem.ww(DS, 0xA8CC, u.a8cc_reset)
+    mem.wb(DS, 0x98A8, u.flag_98a8)
+    mem.wb(DS, 0x98A9, u.flag_98a9)
+    run_behavior_walk_a9d3(mem, level_tiles_from_image(mem))
+    # 1F8F:0922 -- the starfield tick
+    if mem.rw(DS, 0xA95A) == 0xFFFF:
+        return
+    parity = (mem.rw(DS, 0xC812) + 1) & 1
+    mem.ww(DS, 0xC812, parity)
+    if parity:
+        return
+    si = 0xC6C1
+    for layer_cells, gate in ((0x14, None), (0x0A, 0xC814), (0x0A, 0xC816)):
+        if gate is not None:
+            g = (mem.rw(DS, gate) + 1) & 1
+            mem.ww(DS, gate, g)
+            if g:
+                return
+        for _ in range(layer_cells):
+            v = (mem.rw(DS, si) + 1) & 0xFFFF
+            mem.ww(DS, si, 0 if v == 0x00C0 else v)
+            si = (si + 6) & 0xFFFF
+
+
+def _clock_tick_5f61(mem) -> None:
+    """``1010:5F61`` (called from the 60A2 stage) -- THE FRAME CLOCK: the A480 countdown's CB1C
+    music beat, the [2328]==7 vertical-delta flip machinery (2342/2344/2346/2348), the [2332]
+    quarter-gated slow clocks (2334/2338/233A/233E/233C/2336 + the A7A0 wave phase), the fast
+    2324..2330 cascade, and the 606F difficulty-paced 9EE4 drain beats."""
+    if mem.rw(DS, 0xA47E) == 0 and mem.rw(DS, 0xA480) != 0:
+        v = (mem.rw(DS, 0xA480) - 1) & 0xFFFF
+        mem.ww(DS, 0xA480, v)
+        if v == 0:                                   # 5F75: the planet-keyed CB1C music beat
+            al = mem.rb(DS, (0x231E + (mem.rb(DS, 0x2356))) & 0xFFFF)
+            if mem.rw(DS, 0x2350) >= 0x0750:
+                al = 6
+            mem.wb(DS, 0x98C2, al)                   # CB1C ([98C1]-gated sound-seg writes: host)
+    if mem.rw(DS, 0x2328) == 7:                      # 5F89
+        if mem.rw(DS, 0x2342) == 0xFFFF:             # 5F90
+            v = (mem.rw(DS, 0x2344) - 1) & 0xFFFF    # 5FAC
+            mem.ww(DS, 0x2344, v)
+            if v == 0:
+                mem.ww(DS, 0x2342, (-mem.rw(DS, 0x2342)) & 0xFFFF)
+                mem.ww(DS, 0x2348, (mem.rw(DS, 0x2348) + 1) & 0xFFFF)
+        else:
+            v = (mem.rw(DS, 0x2344) + 1) & 0xFFFF    # 5F97
+            mem.ww(DS, 0x2344, v)
+            if v == 2:
+                mem.ww(DS, 0x2342, (-mem.rw(DS, 0x2342)) & 0xFFFF)
+                mem.ww(DS, 0x2348, (mem.rw(DS, 0x2348) + 1) & 0xFFFF)
+    mem.ww(DS, 0x2348, mem.rw(DS, 0x2348) & 0x000F)  # 5FBA
+    if mem.rw(DS, 0x2348) == 0:
+        mem.ww(DS, 0x2346, 8)
+        mem.ww(DS, 0x2348, (mem.rw(DS, 0x2348) + 1) & 0xFFFF)
+    quarter = (mem.rw(DS, 0x2332) + 1) & 0x0003      # 5FCB
+    mem.ww(DS, 0x2332, quarter)
+    if quarter == 0:                                 # the slow group + the A7A0 wave phase
+        v = (mem.rw(DS, 0x2334) + 1) & 0xFFFF        # 5FD6 (cmp 0xA reset)
+        mem.ww(DS, 0x2334, 0 if v >= 0x0A else v)
+        v = (mem.rw(DS, 0x2338) + 1) & 0xFFFF
+        mem.ww(DS, 0x2338, 0 if v >= 6 else v)
+        v = (mem.rw(DS, 0x233A) + 1) & 0xFFFF
+        mem.ww(DS, 0x233A, 0 if v >= 5 else v)
+        v = (mem.rw(DS, 0x233E) + 1) & 0xFFFF
+        mem.ww(DS, 0x233E, 0 if v >= 3 else v)
+        mem.ww(DS, 0x233C, (mem.rw(DS, 0x233C) + 1) & 3)
+        mem.ww(DS, 0x2336, (mem.rw(DS, 0x2336) + 1) & 7)
+        mem.ww(DS, 0xA7A0, (mem.rw(DS, 0xA7A0) + 1) & 0xFFFF)   # 602C
+    mem.ww(DS, 0x2324, mem.rw(DS, 0x2324) ^ 1)       # 6030
+    mem.ww(DS, 0x2326, (mem.rw(DS, 0x2326) + 1) & 0x0003)
+    mem.ww(DS, 0x2328, (mem.rw(DS, 0x2328) + 1) & 0x0007)
+    mem.ww(DS, 0x232A, (mem.rw(DS, 0x232A) + 1) & 0x000F)
+    mem.ww(DS, 0x232C, (mem.rw(DS, 0x232C) + 1) & 0x001F)
+    mem.ww(DS, 0x232E, (mem.rw(DS, 0x232E) + 1) & 0x003F)
+    mem.ww(DS, 0x2330, (mem.rw(DS, 0x2330) + 1) & 0x007F)
+    # 606F: the difficulty-paced drain beats
+    gate_hit = (mem.rw(DS, 0x2330) == 0x007F if mem.rw(DS, 0xBEDC) <= 1
+                else mem.rw(DS, 0x232E) == 0x003F)
+    if gate_hit:
+        raise RecoveryGap("the 9EE4 difficulty drain beat (6084)",
+                          "unrecovered; fires every 128 (or 64 on difficulty 2+) frames")
+    if (mem.rw(DS, 0x2384) == 2 and mem.rw(DS, 0x232C) == 0x001F):
+        v = mem.rw(DS, 0x234A) ^ 1                   # 6097
+        mem.ww(DS, 0x234A, v)
+        if v == 0:
+            raise RecoveryGap("the pose-2 9EE4 drain beat (609F)", "unrecovered")
+
+
+def _isr_effects_two_ticks(mem) -> None:
+    """The INT8 ISR's per-frame DGROUP effects.  The game paces on CS:[066B], which the ISR sets
+    every OTHER fire ([0054] parity) -- TWO ISR ticks per frame: [0054] += 2 (mod 4) and two D50E
+    sound-engine steps ([BF00] += 1 & 3 each; the [BEFF] effect-queue consume and the BFAA/BFBA
+    channel steppers are the AUDIO campaign -- fail loud when a sound is actually queued so the
+    gate names the cells)."""
+    mem.wb(DS, 0x0054, (mem.rb(DS, 0x0054) + 2) & 0x03)
+    for _ in range(2):
+        mem.ww(DS, 0xBF00, (mem.rw(DS, 0xBF00) + 1) & 0x0003)
+        if mem.rb(DS, 0xBEFF):
+            raise RecoveryGap("the D566 sound-effect start ([BEFF] queued)",
+                              "the D50E channel machinery is the audio campaign's; fail loud")
+        if mem.rb(DS, 0xBEFE):
+            raise RecoveryGap("the D50E active-channel step ([BEFE] != 0)",
+                              "the BFAA/BFBA channel steppers are the audio campaign's")
 
 
 def _input_poll_0162(mem) -> None:
