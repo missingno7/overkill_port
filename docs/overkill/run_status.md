@@ -57,6 +57,15 @@ if row <= 0xE52 call **7948** (the 13-TILE ROW LOOP: es=[9592] the plane seg, si
 0x04/0x07/0x6C/0x6D branch at 7977.. to 7A6E/7A7A/7AAE/7AC4) + call 4A65 (already recovered)
 -> jmp **5A7E** (the row -> page blit).
 
+## 2026-07-07 - WHOLE-DEMO 1:1 SWEEP: 9 of 12 samples at 0-1 px across all 4500 presents
+
+The full L2 demo (9000 frames, stride 400): presents 0..4400 diff
+0/0/0/1/1/58/1/1430/0/1/0/1 px -- the native render (tiles + stars + sprites) is pixel-exact
+end-to-end EXCEPT the anim/variant sprite transients (the 1430-px sample at present 2800 is a
+busy explosion moment, vm nonzero 18122).  The ONLY remaining render recovery: the 75A6 anim
+sub-handlers (bx = mode*8 + anim*2 -- eight per mode) + the +0x24 OR-variant path (760B), then
+the mean goes to ~0 and the 1:1 flips to a hard gate.
+
 ## 2026-07-07 - the 7948 tile-cue spawner: planet-1's handler mapped (implement next)
 
 Planet 1 (``[95DE+2] = 7977``): tile-id dispatch 0x04/0x07/0x6C/0x6D/0xAC/0xB1/0xC9 -> per-id
