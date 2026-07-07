@@ -36,6 +36,10 @@ machinery), then the 9B2E tail (4FF9 terrain crash + 9E19 cascade, 9C01 edge ass
    (word-packed) -- the STAR RENDERER's DGROUP scratch (the undraw/restore list: screen offsets
    + pixels), written by the present/draw stage, alternating with frame parity.  Find the star
    plotter (5BDC's 4D15-family or A846's head), model its DGROUP writes.
+   FOUND: **1010:4CED** -- si=C6C1, di=C7B1, bp=4D4D/4D51 (per-layer pixel fns), the same
+   20/10/10 layer counts, es=CS:[9598]; 4D15 per star computes the screen cell + pixel and
+   STORES to [di] (the DRAW LIST), FFFF-terminated (4D10).  Decode 4D15..4D51 and add
+   _star_list_4ced at the present-stage position in native_frame.
 1b. (superseded) **The C7B1-region ring** (most diverging frames): 6-stride cells right AFTER my 40-star
    starfield writes end (C6C1+40*6 = C7B1); the values show a ONE-FRAME SKEW (nat@N == vm@N-1)
    -- either the 0922 layer parities are off-phase, the ring is LONGER than 40 entries, or a
