@@ -1,7 +1,7 @@
 """THE DEMO-LOCKSTEP GATE: every 97B2 gameplay frame, the native frame vs the VM, whole-DGROUP.
 
 The campaign instrument (campaigns/demo_lockstep.md): replay a recorded demo through the frame
-verifier's PURE reference VM; at every ``1010:97B2`` frame top, snapshot the machine; when the VM
+verifier's PURE reference VM; at every ``1010:9B2E`` frame boundary (the game-state entry -- AFTER the demo pump, so the input channel is always pre-boundary), snapshot the machine; when the VM
 next returns to 97B2 (one full frame ran), run the NATIVE frame (``native_frame.
 advance_gameplay_frame_97b2``) over the pre-state copy and diff the ENTIRE 64K DGROUP.
 
@@ -37,7 +37,7 @@ from overkill.recovered.adapters.flat_memory import MutFlatMemory  # noqa: E402
 from overkill.recovered.domain.gaps import RecoveryGap  # noqa: E402
 
 CS = 0x1010
-FRAME_TOP = 0x97B2
+FRAME_TOP = 0x9B2E
 DGROUP = 0x25CC
 DEFAULT_DEMO = "demo_cold_start_full_20260705_123645"
 
@@ -48,10 +48,15 @@ DEFAULT_DEMO = "demo_cold_start_full_20260705_123645"
 # silently.
 EXCLUDED_CELLS = {0xA954, 0xA955, 0x230A, 0x230B, 0x230C, 0x230D,
                   0x230E, 0x230F, 0x2310, 0x2311, 0x215A, 0x215B}
+# The EXTERNAL INPUT channel: the demo pump (the INT9 injection) writes the DS:98C4 key-state
+# table and the DS:98C3 last-scancode cell BETWEEN 9B2E boundaries; the game CONSUMES them via
+# the 0162 poll whose output (DS:98BE) and every downstream effect stay fully compared.  The
+# raw channel cells are inputs (device state), not game state.
+EXCLUDED_CELLS |= {0x98C3} | set(range(0x98C4, 0x99C4))
 
 
 def lockstep_cache_path(demo) -> Path:
-    return CACHE_DIR / (Path(demo.demo_dir).name + ".lockstepcache")
+    return CACHE_DIR / (Path(demo.demo_dir).name + ".lockstep9b2e")
 
 
 def _check_frame(pre_full, post_dgroup: bytes, sp: int, stats, gaps: Counter,

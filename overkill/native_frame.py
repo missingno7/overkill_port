@@ -70,10 +70,6 @@ def advance_gameplay_frame_97b2(mem) -> None:
     # --- stage 6: A90C present-scan (the +0x0C screen-di projection) ---------------------------
     # DGROUP-visible and BEFORE 9B2E in the frame order; native_walk_frame.sync_screen_projection
     # owns the projection math but was verified as a post-walk sync, not at this stage position.
-    # verify_native_screen_di-proven; wired at the REAL stage position (before 9B2E).
-    from overkill.native_walk_frame import sync_screen_projection
-    _star_list_4ced(mem)
-    sync_screen_projection(mem)
     _step_9b2e(mem)
     # --- the 97CE transition branches: a taken exit leaves the loop (no next 97B2 boundary) ----
     if mem.rw(DS, 0xA344) == 1 or mem.rw(DS, 0xA342) == 1 or mem.rw(DS, 0xA346) == 1:
@@ -90,6 +86,11 @@ def advance_gameplay_frame_97b2(mem) -> None:
     _clock_tick_5f61(mem)
     # --- the INT8 ISR's per-frame DGROUP effects (two ticks per frame: the [0054] parity pair) -
     _isr_effects_two_ticks(mem)
+    # --- the NEXT frame's present half (the 9B2E boundary cut): the star pass + the A90C
+    # projection run after the loop tail (0672/511F/A846/981F/5BDC) and before the next 9B2E ---
+    from overkill.native_walk_frame import sync_screen_projection
+    _star_list_4ced(mem)
+    sync_screen_projection(mem)
 
 
 def _star_list_4ced(mem) -> None:

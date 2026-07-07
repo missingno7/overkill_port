@@ -23,6 +23,23 @@
 > work is COMPLETE for L1. Next frontier: play_native integration polish, other planets' controller
 > families (0x1c etc.), the 9734/9902/9908 transition continuations, HUD/menu wiring, audio.
 
+## 2026-07-07 - LOCKSTEP: the star list landed (2125); NO SMC (proven); the boundary moves to 9B2E
+
+Commit 85ea529: the 4CED star draw-list is native (diverged 3908 -> 2125).  The owner asked
+whether SELF-MODIFYING CODE could be confusing the recovery: answered empirically -- the CS code
+segment and the 1F8F overlay hash BYTE-IDENTICAL across all 8293 gameplay frames (no SMC, no
+overlay swaps in the gameplay loop; static disasm is sound).  A transient regression (5476) was a
+mis-scoped patch (the frame tail absorbed into the star-list fn), repaired.
+
+The remaining top family was ASYNC INPUT: the demo pump injects key events at the PRESENT
+boundary -- between the 97B2 frame top and the 0162 poll -- so a 97B2-cut frame cannot know keys
+that arrive before the poll.  Redesign (in flight): the lockstep boundary moves to **1010:9B2E**
+(the game-state entry; the pump then always lands between boundaries), the raw input-channel
+cells (98C3 + the 98C4..99C3 key table) are excluded as DEVICE state (the 0162 decode [98BE] and
+every downstream effect stay compared), the native frame reorders to the 9B2E cut (9B2E ->
+transitions -> A940+walk -> clock -> ISR -> the next present's star pass + A90C projection), and
+the cache re-records (.lockstep9b2e).
+
 ## 2026-07-07 - LOCKSTEP: THE WHOLE 9B2E IS NATIVE; 8293/8293 frames RUN end-to-end
 
 Commits 6e46aef + ac3a27b: the A067 fire fan-out (VERIFIED -- zero divergence from the fire
