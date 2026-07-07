@@ -799,6 +799,96 @@ def _steer_5e42_inplace(mem, rec: int) -> None:
     mem.ww(DS, rec + 0x2E, steer.move_step_error)
 
 
+def _triple_afd8_or_die_f194(mem, rec: int, tiles: LevelTileContext) -> None:
+    """``1010:F194`` (= behavior 0x56's whole body): up to THREE AFD8 1px contact-steps in the
+    record's OWN direction; the first BLOCKED step is the full BFC7 death."""
+    for _ in range(3):
+        result = contact_probe_afd8(mem.rw(DS, rec + 0x02), mem.rw(DS, rec + 0x04),
+                                    mem.rw(DS, rec + 0x06), mem.rw(DS, 0xA278),
+                                    tiles, _bdd0_contact_at(mem, rec))
+        mem.ww(DS, rec + 0x02, result.x_word)
+        mem.ww(DS, rec + 0x04, result.y_word)
+        mem.ww(DS, 0xA430, 1 if result.blocked else 0)
+        mem.ww(DS, 0xA432, result.snap_x)
+        mem.ww(DS, 0xA434, result.snap_y)
+        mem.ww(DS, 0xA436, result.mirror_y)
+        mem.ww(DS, 0xA438, result.mirror_x)
+        mem.ww(DS, 0x215A, result.sample_215a)
+        if result.blocked:
+            _bfc7_touch_death(mem, rec)                 # F1A6
+            return
+
+
+def _step_snake_head_54(mem, rec: int, tiles: LevelTileContext) -> None:
+    """Behavior 0x54 (``1010:F185``): wait until x == 0xB0 exactly, then MORPH to 0x56 and fall
+    straight into the F194 triple-AFD8 body this same frame."""
+    if mem.rw(DS, rec + 0x02) != 0x00B0:
+        return
+    mem.ww(DS, rec + 0x18, 0x0056)
+    _triple_afd8_or_die_f194(mem, rec, tiles)
+
+
+def _step_waiter_55(mem, rec: int) -> bool:
+    """Behavior 0x55 (``1010:F1D7``): waiting (dir != 4): sprite 0x73 until x == 0xB0, then
+    dir = 4; flying (dir == 4): sprite = [2328] + 0x77, x += 4.  Returns True on the flying
+    path (the BC4B no-drift exit)."""
+    if mem.rw(DS, rec + 0x06) != 4:
+        mem.ww(DS, rec + 0x08, 0x0073)
+        if mem.rw(DS, rec + 0x02) != 0x00B0:
+            return False
+        mem.ww(DS, rec + 0x06, 0x0004)
+    mem.ww(DS, rec + 0x08, (mem.rw(DS, 0x2328) + 0x0077) & 0xFFFF)
+    mem.ww(DS, rec + 0x02, (mem.rw(DS, rec + 0x02) + 4) & 0xFFFF)
+    return True
+
+
+def _step_launcher_86(mem, rec: int) -> None:
+    """Behavior 0x86 (``1010:F0EE``): sprite from the D202 (dir 6) / D20A (else) anim ring at
+    word index ([232E] >> 4) * 2; on the exact ``[232E] == 0x26`` beat (index 2), an 81F4 spawn
+    at a stamp position, aimed at the player via the 74E2 deltas, sprite 0xCB, behavior 0x60
+    (the 8744 delta steer)."""
+    idx = ((mem.rw(DS, 0x232E) >> 4) << 1) & 0xFFFF
+    si = 0xD202 if mem.rw(DS, rec + 0x06) == 6 else 0xD20A
+    mem.ww(DS, rec + 0x08, mem.rw(DS, (si + idx) & 0xFFFF))
+    if idx != 4 or mem.rw(DS, 0x232E) != 0x0026:
+        return
+    slot = _alloc(mem, 0x95D8, EFFECT_POOL_BASE, EFFECT_POOL_WRAP, EFFECT_SLOTS)    # 81F4
+    if slot == 0xFFFF:
+        return
+    if mem.rb(DS, 0x98C0):
+        mem.wb(DS, 0xBEFF, 0x0B)                        # 81F4's own sound
+    for off, val in enemy_spawn_stamp_8209(mem.rw(DS, rec + 0x02),
+                                           mem.rw(DS, rec + 0x04)).items():
+        mem.ww(DS, slot + off, val)
+    dx, dy = retarget_delta_toward_anchor_74e2(
+        mem.rw(DS, slot + 0x02), mem.rw(DS, slot + 0x04),
+        mem.rw(DS, 0x237E), mem.rw(DS, 0x2380))
+    mem.ww(DS, slot + 0x2A, dx)
+    mem.ww(DS, slot + 0x2C, dy)
+    mem.ww(DS, slot + 0x08, 0x00CB)                     # F12F
+    mem.ww(DS, slot + 0x18, 0x0060)                     # F134: the 8744 steer child
+
+
+def _step_pulser_87(mem, rec: int) -> None:
+    """Behavior 0x87 (``1010:F1AC``): sprite = ``[96C2 + ([232E]>>3)*2] + 0xDD`` (+3 when
+    y >= 0x60), then the shared ``878C`` emit: clock phase ([232E]>>3) == 3 -> ONE C237 child
+    with sprite 0x44 (the pulser-8F tail; the throttled stale-bx artifact writes sprite-base+8)."""
+    phase = (mem.rw(DS, 0x232E) >> 3) & 0xFFFF
+    base = (mem.rw(DS, (0x96C2 + ((phase << 1) & 0xFFFF)) & 0xFFFF) + 0x00DD) & 0xFFFF
+    sprite = base
+    if mem.rw(DS, rec + 0x04) >= 0x0060:
+        sprite = (sprite + 3) & 0xFFFF                  # F1D0 adds in memory -- bx keeps the base
+    mem.ww(DS, rec + 0x08, sprite)
+    if phase != 3:
+        return
+    slot = _spawn_child_c237(mem, rec, 0x87)
+    if slot is None:
+        # throttled: `cmp bx,FFFF; mov [bx+8],44h` runs with the STALE bx = the sprite BASE
+        mem.ww(DS, (base + 8) & 0xFFFF, 0x0044)
+    elif slot != 0xFFFF:
+        mem.ww(DS, slot + 0x08, 0x0044)
+
+
 def _step_formation_14(mem, rec: int, tiles: LevelTileContext) -> None:
     """Behavior 0x14 (``1010:B9F0``) -- the FORMATION FLYER, fully inline (the pure
     ``object_update_b9f0`` omits the caller-owned globals: the [2340]==0x2EF 7476 beat + tick
@@ -2451,6 +2541,21 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
         elif beh == 0x14:
             _step_formation_14(mem, rec, tiles)
             _postmove_bc45(mem, rec, tiles, with_drift=False)   # every B9F0 exit is jmp BC4B
+        elif beh == 0x54:
+            _step_snake_head_54(mem, rec, tiles)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # F185/F194 exit jmp BC45
+        elif beh == 0x55:
+            flying = _step_waiter_55(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=not flying)  # wait: BC45; fly: BC4B
+        elif beh == 0x56:
+            _triple_afd8_or_die_f194(mem, rec, tiles)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # F194's exits are jmp BC45
+        elif beh == 0x86:
+            _step_launcher_86(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # F0EE's exits are jmp BC45
+        elif beh == 0x87:
+            _step_pulser_87(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # 878C's exits are jmp BC45
         elif beh == 0x1C:
             _step_controller_1c(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=False)   # the 8D4F stub exits jmp BC4B
