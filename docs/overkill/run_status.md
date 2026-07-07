@@ -64,7 +64,11 @@ spawn stubs, each = **79A6** (consume the cue: ``plane[si]=1``, ``[si+1]=1``, ``
 ``[si+14]=1`` -- a 2x2 tile clear!) + **7524** (the RECOVERED effect-pool alloc, cursor 95D8) +
 **7A40** (the common position/field stamp -- decode) + behavior stamps (seen: beh 0x48 dir 4;
 beh 0x75 spr 0x24 dir 4; beh 0x72 dir 4) + jmp **81A7** (the shared init tail -- decode).
-IMPLEMENT: ``run_tile_cue_row_7948(image, row_base)`` (13 plane bytes, the planet handler per
+COMMONS DECODED: **7A40** = the stamp {+16=4, +04=[A40A], +00=1, +0A=0, +02=0, +14=2, +24=0,
++20=0x0A (HP 10), +28=FFFF}; **81A7** = the linked-counter tail (when the [81A7-head] gate is
+set: ``bx2=[209A]; inc [bx2]; [bx2+1]=[2070]; +28=[2098]`` -- the 2078 completion-group link;
+read the 81A7..81AF head exactly when implementing).  IMPLEMENT:
+``run_tile_cue_row_7948(image, row_base)`` (13 plane bytes, the planet handler per
 id) wired into play_native's row-pull point (the ``pre_step_row_base != g.row_base`` spot);
 GATE: drive the ORIGINAL 7948 on a snapshot at chosen [A408] rows vs the native fn (the
 chrome/tile-row driven-oracle pattern).  NOTE the cues CONSUME plane tiles (the 2x2 clear
