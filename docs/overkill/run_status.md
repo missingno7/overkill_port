@@ -23,6 +23,24 @@
 > work is COMPLETE for L1. Next frontier: play_native integration polish, other planets' controller
 > families (0x1c etc.), the 9734/9902/9908 transition continuations, HUD/menu wiring, audio.
 
+## 2026-07-07 - LOCKSTEP: THE WHOLE 9B2E IS NATIVE; 8293/8293 frames RUN end-to-end
+
+Commits 6e46aef + ac3a27b: the A067 fire fan-out (VERIFIED -- zero divergence from the fire
+machinery), then the 9B2E tail (4FF9 terrain crash + 9E19 cascade, 9C01 edge assist, the
+9CF1/9CD9 history ring, A031/9FAF pod placement).  The lockstep frame now runs EVERY stage of
+97B2 natively; diverged 5764 -> 3908 after the D50E [BF00] BYTE-inc fix (it was clobbering BF01).
+
+**The divergence frontier (next context):**
+1. **The C7B1-region ring** (most diverging frames): 6-stride cells right AFTER my 40-star
+   starfield writes end (C6C1+40*6 = C7B1); the values show a ONE-FRAME SKEW (nat@N == vm@N-1)
+   -- either the 0922 layer parities are off-phase, the ring is LONGER than 40 entries, or a
+   second writer (the A846/A90C draw-order list?) owns C7B1+.  Drive 1F8F:0922 on a cached frame
+   and compare cell by cell.
+2. The sound-engine cells (2201 gap frames: [BEFF] starts + [BEFE] channel steps -- D566/D5AC).
+3. The 77C5 shield-bar body (266 frames, [A97C]==1 -- after the kind-4 pickup).
+4. The 9EE4 drain beat (62 frames).
+5. The death-anim 7194 ring + the 9908 respawn-continuation frame (from the earlier list).
+
 ## 2026-07-07 - LOCKSTEP DAY 1: the gate is live; the frame is assembled; the frontier is the FIRE FAN-OUT
 
 The demo-lockstep instrument works end-to-end (commits 9990bf0/8039655/8ab0ca5): 8293 recorded
