@@ -44,7 +44,12 @@ behaviors 0x05 then 0x06 (both native crawlers), [A976]++ each, sound 0x12.  Sti
 A3CA/A3FF = the POD-FIRE dispatchers: per pod (A966/A968/A96A/A96C with [A3EC]=7/1 bias;
 A962/A964 with FFFF + an A378 tail), each live pod dispatches by the weapon mode [A958] through
 the CS:A42C jump table (modes 0..5 -- the per-weapon pod-shot spawners; A42C targets + A378 are
-the next decode).  A0E8 remains.  then the EARLY tails wire via native_a19f_tail/native_a1c8_tail (pure, in systems/objects).
+the next decode).  The A42C weapon table (modes 0..5): {A4D7, A490, A499, A464, A438, 44AF}.
+A4D7 (mode 0) = one A4EA-seed shot at the pod's position (+02/+04 from si).  A490 (mode 1) =
+A4D7 + sprite 0x33.  A499 (mode 2) = the ANGLED shot: pos +4 y, dir = [A3EC] (FFFF -> 7, or 1
+when pod y > 0x58), sprite 0x19 (dir 1) / 0x1F.  A438 (mode 4) = [A3A0]-gated PAIR: [A970] += 2,
+two A4D7 spawns re-stamped beh 8 / sprite 0x35, the second +8 x.  A464 (mode 3) = the same with
+beh 7 / sprite 0x37.  Mode 5 = 44AF (no-op).  Every spawn lands on native behaviors.  A0E8 remains.  then the EARLY tails wire via native_a19f_tail/native_a1c8_tail (pure, in systems/objects).
 
 **The frontier (gate-ranked):**
 1. **The A067 fire fan-out -- 7970 frames.**  The entry gate + path selector + the EARLY tails
