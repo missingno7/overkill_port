@@ -57,6 +57,15 @@ if row <= 0xE52 call **7948** (the 13-TILE ROW LOOP: es=[9592] the plane seg, si
 0x04/0x07/0x6C/0x6D branch at 7977.. to 7A6E/7A7A/7AAE/7AC4) + call 4A65 (already recovered)
 -> jmp **5A7E** (the row -> page blit).
 
+## 2026-07-07 - planet 2's tile cues recovered (7B06) -- both planets byte-exact, wired
+
+Planet-2 handler: id 0x30 -> the 0x2A turret spr 0x1C (a DIRECT 7524 alloc + the inline
+7A40-shape stamp, NO consume/leak/+28 write); id 0x5A -> beh 0x2E with ``x -= 6``; id 0xC4 ->
+beh 0x8F spr 0xBF dir 6 (spr 0xC2 dir 2 when the spawned y <= 0x60) -- the latter two via the
+81C9 common.  `verify_native_tile_cues` now drives BOTH planets' snapshots: every sampled cue
+row BYTE-EXACT.  play_native runs the cues on planets 1 and 2.  Remaining: planets 3/4/5/0
+(handlers 7C3F/7CA2/7DC8/7BCB) by the same recipe.
+
 ## 2026-07-07 - **THE NATIVE RENDER IS PIXEL-IDENTICAL: 1:1 MEAN = 0 px (worst 2) whole-demo**
 
 The last residue was the DRAW ORDER: the A846 sequence (the 8D12 pool descending -> the 32CA

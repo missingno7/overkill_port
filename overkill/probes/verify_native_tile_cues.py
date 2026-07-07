@@ -19,8 +19,12 @@ ROOT = Path(__file__).resolve().parents[2]
 CS = 0x1010
 DS = 0x25CC
 RET = 0xFFFF
-SNAP = ROOT / "artifacts" / "demos" / "demo_play_tandy_L1_start_20260618_143947" / "snapshot"
-CUE_IDS = (0x04, 0x07, 0x6C, 0x6D, 0xAC, 0xB1, 0xC9)
+PLANETS = (
+    (1, ROOT / "artifacts" / "demos" / "demo_play_tandy_L1_start_20260618_143947" / "snapshot",
+     (0x04, 0x07, 0x6C, 0x6D, 0xAC, 0xB1, 0xC9)),
+    (2, ROOT / "artifacts" / "demos" / "demo_play_tandy_L2_full_20260617_180221" / "snapshot",
+     (0x30, 0x5A, 0xC4)),
+)
 
 
 def _drive(cpu, entry: int) -> bool:
@@ -38,20 +42,32 @@ def _drive(cpu, entry: int) -> bool:
 
 
 def main(argv) -> int:
+
+    max_rows = int(argv[0]) if argv else 12
+    all_ok = True
+    for planet, SNAP, CUE_IDS in PLANETS:
+        ok = _verify_planet(planet, SNAP, CUE_IDS, max_rows)
+        all_ok &= ok
+    print("RESULT:", "PASS -- run_tile_cue_row_7948 is byte-exact vs the driven 7948 "
+          "for every recovered planet" if all_ok else "FAIL")
+    return 0 if all_ok else 1
+
+
+def _verify_planet(planet, SNAP, CUE_IDS, max_rows) -> bool:
     from overkill.recovered.adapters.flat_memory import MutFlatMemory
     from overkill.recovered.adapters.tile_cues import run_tile_cue_row_7948
     from overkill.runtime import load_overkill_snapshot
 
-    max_rows = int(argv[0]) if argv else 12
+    print(f"-- planet {planet} ({SNAP.parent.name}) --")
     base_state = (SNAP / "memory_1mb.bin").read_bytes()
     img0 = MutFlatMemory(base_state)
-    assert img0.rw(DS, 0x2356) == 1, "the L1 snapshot must be planet 1"
+    assert img0.rw(DS, 0x2356) == planet, "snapshot planet mismatch"
     plane_seg = img0.rw(CS, 0x9592)
     plane = bytes(img0.data[plane_seg * 16: plane_seg * 16 + 3744])
     rows = sorted({(i // 13) * 13 for i, b in enumerate(plane) if b in CUE_IDS})[:max_rows]
     if not rows:
-        print("RESULT: SKIP -- no cue ids in the plane (unexpected)")
-        return 1
+        print("  no cue ids in the plane (unexpected)")
+        return False
 
     ok = True
     for row in rows:
@@ -92,9 +108,7 @@ def main(argv) -> int:
                   f"plane {pl_diff.size}B at {[f'{d:04X}' for d in pl_diff[:6]]}")
         else:
             print(f"row {row:04X} (ids {['%02X' % i for i in ids]}): BYTE-EXACT")
-    print("RESULT:", "PASS -- run_tile_cue_row_7948 is byte-exact vs the driven 7948"
-          if ok else "FAIL")
-    return 0 if ok else 1
+    return ok
 
 
 if __name__ == "__main__":

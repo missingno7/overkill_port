@@ -44,10 +44,10 @@ def run_tile_cue_row_7948(mem, row_base: int, leak_32: int = 0, leak_34: int = 0
     read AND MUTATED through the image's own plane segment (the consume writes), ``[A40A]``
     steps 0x10 per tile.  Fails loud for planets whose handler is not yet recovered."""
     planet = mem.rw(DS, 0x2356)
-    if planet != 1:
+    if planet not in (1, 2):
         raise RecoveryGap(f"tile-cue handler for planet {planet} (DS:[95DE+{planet}*2])",
-                          "only planet 1's 7977 handler is recovered -- decode + drive the "
-                          "others before scrolling their terrain")
+                          "only planets 1 (7977) and 2 (7B06) are recovered -- decode + drive "
+                          "the others before scrolling their terrain")
     plane_seg = mem.rw(CS, 0x9592)
     spawned: list[int] = []
     mem.ww(DS, 0xA408, row_base & 0xFFFF)
@@ -56,7 +56,8 @@ def run_tile_cue_row_7948(mem, row_base: int, leak_32: int = 0, leak_34: int = 0
         tile_id = mem.rb(plane_seg, si)
         y_a40a = (k * 0x10) & 0xFFFF
         mem.ww(DS, 0xA40A, y_a40a)
-        rec = _planet1_cue(mem, plane_seg, si, tile_id, y_a40a, leak_32, leak_34)
+        cue = _planet1_cue if planet == 1 else _planet2_cue
+        rec = cue(mem, plane_seg, si, tile_id, y_a40a, leak_32, leak_34)
         if rec is not None:
             spawned.append(rec)
     mem.ww(DS, 0xA40A, (TILES_PER_ROW * 0x10) & 0xFFFF)   # the loop's final += 0x10
@@ -131,7 +132,7 @@ def _stamp_8209(mem, slot: int, leak_32: int, leak_34: int) -> None:
     mem.ww(DS, slot + 0x24, 0x0000)
 
 
-def _stamp_7a40(mem, slot: int, y_a40a: int) -> None:
+def _stamp_7a40(mem, slot: int, y_a40a: int, write_28: bool = True) -> None:
     mem.ww(DS, slot + 0x16, 0x0004)
     mem.ww(DS, slot + 0x04, y_a40a)
     mem.ww(DS, slot + 0x00, 0x0001)
@@ -140,4 +141,45 @@ def _stamp_7a40(mem, slot: int, y_a40a: int) -> None:
     mem.ww(DS, slot + 0x14, 0x0002)
     mem.ww(DS, slot + 0x24, 0x0000)
     mem.ww(DS, slot + 0x20, 0x000A)
-    mem.ww(DS, slot + 0x28, 0xFFFF)
+    if write_28:
+        mem.ww(DS, slot + 0x28, 0xFFFF)
+
+
+def _planet2_cue(mem, plane_seg: int, si: int, tile_id: int, y_a40a: int,
+                 leak_32: int, leak_34: int) -> "int | None":
+    """Planet 2's ``1010:7B06`` handler: id 0x30 -> the 0x2A turret (a direct 7524 alloc + the
+    inline 7A40-shape stamp, NO consume/leak); id 0x5A -> beh 0x2E with ``x -= 6``; id 0xC4 ->
+    beh 0x8F spr 0xBF dir 6 (spr 0xC2 dir 2 when the spawned ``y <= 0x60``) -- both via the
+    81C9 common (consume + alloc + the 8209 leak stamp + the 81CC overrides)."""
+    if tile_id == 0x30:                          # 7B13
+        slot = _alloc(mem, 0x95D8, EFFECT_POOL_BASE, EFFECT_POOL_WRAP, EFFECT_SLOTS)
+        if slot == 0xFFFF:
+            return None
+        _stamp_7a40(mem, slot, y_a40a, write_28=False)   # 7B1C..: the inline stamp, no +28 write
+        mem.ww(DS, slot + 0x18, 0x002A)
+        mem.ww(DS, slot + 0x08, 0x001C)
+        mem.ww(DS, slot + 0x06, 0x0000)
+        return slot
+    if tile_id not in (0x5A, 0xC4):
+        return None
+    # the 81C9 common: 7E58 consume + 81E9 (alloc + the 8209 block) + the 81CC overrides
+    mem.wb(plane_seg, si, 0x01)
+    slot = _alloc(mem, 0x95D8, EFFECT_POOL_BASE, EFFECT_POOL_WRAP, EFFECT_SLOTS)
+    if slot == 0xFFFF:
+        return None
+    _stamp_8209(mem, slot, leak_32, leak_34)
+    mem.ww(DS, slot + 0x04, y_a40a)
+    mem.ww(DS, slot + 0x02, 0x0010)
+    mem.ww(DS, slot + 0x0A, 0x0000)
+    if tile_id == 0x5A:                          # 7B54
+        mem.ww(DS, slot + 0x18, 0x002E)
+        mem.ww(DS, slot + 0x02, (mem.rw(DS, slot + 0x02) - 6) & 0xFFFF)
+        return slot
+    # 0xC4 (7B64): beh 0x8F spr 0xBF dir 6; y <= 0x60 -> spr 0xC2 dir 2
+    mem.ww(DS, slot + 0x18, 0x008F)
+    mem.ww(DS, slot + 0x08, 0x00BF)
+    mem.ww(DS, slot + 0x06, 0x0006)
+    if mem.rw(DS, slot + 0x04) <= 0x0060:
+        mem.ww(DS, slot + 0x08, 0x00C2)
+        mem.ww(DS, slot + 0x06, 0x0002)
+    return slot
