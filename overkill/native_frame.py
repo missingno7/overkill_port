@@ -72,6 +72,7 @@ def advance_gameplay_frame_97b2(mem) -> None:
     # owns the projection math but was verified as a post-walk sync, not at this stage position.
     # verify_native_screen_di-proven; wired at the REAL stage position (before 9B2E).
     from overkill.native_walk_frame import sync_screen_projection
+    _star_list_4ced(mem)
     sync_screen_projection(mem)
     _step_9b2e(mem)
     # --- the 97CE transition branches: a taken exit leaves the loop (no next 97B2 boundary) ----
@@ -89,6 +90,40 @@ def advance_gameplay_frame_97b2(mem) -> None:
     _clock_tick_5f61(mem)
     # --- the INT8 ISR's per-frame DGROUP effects (two ticks per frame: the [0054] parity pair) -
     _isr_effects_two_ticks(mem)
+
+
+def _star_list_4ced(mem) -> None:
+    """``1010:4CED`` (the present path's star pass): 4D64-undraw the previous C7B1 list from the
+    CS:[9598] strip, then rebuild -- per C6C1-ring star {tick, xoff, px}: cell = DS:[9A08 +
+    tick*2] + [234C] + xoff (arithmetic PROVEN vs the VM list, loop_blockers 2026-07-07); an
+    occupied (tile-lit) cell skips the star; a plotted star writes the strip pixel and appends
+    its cell to the list, FFFF-terminated."""
+    if mem.rw(CS, 0x95BC) == 1:
+        raise RecoveryGap("4CED's video-mode-1 star pass", "Tandy is mode 2")
+    strip_seg = mem.rw(CS, 0x9598)
+    si = 0xC7B1
+    for _ in range(0x28):
+        v = mem.rw(DS, si)
+        si = (si + 2) & 0xFFFF
+        if v == 0xFFFF:
+            break
+        mem.wb(strip_seg, v, 0)                     # 4D64
+    scroll = mem.rw(DS, 0x234C)
+    si = 0xC6C1
+    di = 0xC7B1
+    for count in (0x14, 0x0A, 0x0A):
+        for _ in range(count):
+            tick = mem.rw(DS, si)
+            xoff = mem.rw(DS, (si + 2) & 0xFFFF)
+            px = mem.rb(DS, (si + 4) & 0xFFFF)
+            si = (si + 6) & 0xFFFF
+            bx = (mem.rw(DS, (0x9A08 + ((tick << 1) & 0xFFFF)) & 0xFFFF) + scroll + xoff) & 0xFFFF
+            if mem.rb(strip_seg, bx) != 0:
+                continue
+            mem.wb(strip_seg, bx, px)               # 4D59
+            mem.ww(DS, di, bx)                      # 4D5C
+            di = (di + 2) & 0xFFFF
+    mem.ww(DS, di, 0xFFFF)                          # 4D10
 
 
 def _a940_walk_stage(mem) -> None:
