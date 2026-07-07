@@ -330,6 +330,18 @@ def _step_scenery_19(mem, rec: int, tiles: LevelTileContext) -> None:
     _bb03_bounce(mem, rec, tiles)
 
 
+def _step_scenery_83(mem, rec: int, tiles: LevelTileContext) -> None:
+    """Behavior 0x83 (``1010:89E9``): sprite = ``[233C] + 0x10``, the SAME ``[232E] == 0x3F``
+    BAE1 dir-4 emit gate as 0x19, then the shared BB03 bounce."""
+    mem.ww(DS, rec + 0x08, (mem.rw(DS, 0x233C) + 0x0010) & 0xFFFF)
+    if scenery_19_should_emit(mem.rw(DS, 0x232E)):
+        saved_dir = mem.rw(DS, rec + 0x06)
+        mem.ww(DS, rec + 0x06, SCENERY_19_EMIT_DIRECTION)
+        _spawn_child_c237(mem, rec, 0x83)
+        mem.ww(DS, rec + 0x06, saved_dir)
+    _bb03_bounce(mem, rec, tiles)
+
+
 def _step_scenery_89(mem, rec: int, tiles: LevelTileContext) -> None:
     mem.ww(DS, rec + 0x08, step_scenery_emitter_sprite_89(mem.rw(DS, 0x233C)))
     if scenery_89_should_emit(mem.rw(DS, 0x232C)):
@@ -2321,6 +2333,9 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
         elif beh == 0x19:
             _step_scenery_19(mem, rec, tiles)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # BAF0->BB03 exits jmp BC45 (WITH drift)
+        elif beh == 0x83:
+            _step_scenery_83(mem, rec, tiles)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # 89FC->BB03 exits jmp BC45
         elif beh == 0x89:
             _step_scenery_89(mem, rec, tiles)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # B2A6->BB03 exits jmp BC45 (WITH drift)
