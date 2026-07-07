@@ -118,6 +118,7 @@ from overkill.recovered.systems.objects import (
     child_spawn_sound_c237,
     child_spawn_throttle_c237,
     object_update_ae2c,
+    object_update_ae7d,
     object_update_aed8,
     object_update_af60,
     object_update_b24d,
@@ -1198,6 +1199,29 @@ def _step_bounce_2f(mem, rec: int) -> None:
         mem.ww(DS, rec + off, val)
 
 
+def _step_scroller_05(mem, rec: int, tiles: LevelTileContext) -> None:
+    """Behavior 0x05 (``1010:AE7D``, EFAE logic_id 5) -- the scroll-left GROUND CRAWLER: a thin
+    memory-shaped adapter around the already-VERIFIED whole-AE7D update (``object_update_ae7d``:
+    X -= 4; on a 16px-aligned Y with the render gate clear, the 5073 tile probe (+0xC) class-1
+    check parks it (direction 0), else it climbs (direction 7, Y -= 4); sprite = direction + 8;
+    then the shared AD5A drift + AD60 bounds/tile tail owns active).  ``y == 0`` is the ADC9
+    death (x = FFFF -> the AD60 x<8 bound -> BD17)."""
+    u = object_update_ae7d(
+        mem.rw(DS, rec + 0x02), mem.rw(DS, rec + 0x04), mem.rw(DS, rec + 0x00),
+        mem.rw(DS, rec + 0x16), mem.rw(DS, 0xA278),
+        mem.rw(DS, 0xBDAC) == 0x0001, tiles)
+    if u is None:
+        mem.ww(DS, rec + 0x02, 0xFFFF)   # ADC9
+        _bd17_deactivate(mem, rec)       # -> AD60 x<8 -> BD17
+        return
+    mem.ww(DS, rec + 0x06, u.direction_or_step)
+    mem.ww(DS, rec + 0x08, u.sprite_or_state)
+    mem.ww(DS, rec + 0x02, u.x_word)
+    mem.ww(DS, rec + 0x04, u.y_word)
+    if u.active_word == 0:
+        _bd17_deactivate(mem, rec)   # BD17: clear active + the hazard_class-keyed death side effects
+
+
 def _step_shot_0b(mem, rec: int, tiles: LevelTileContext) -> None:
     table = tuple(mem.rb(DS, (0xA348 + i) & 0xFFFF) for i in range(16))
     u = object_update_b24d(
@@ -1497,9 +1521,37 @@ def _bd17_deactivate(mem, rec: int) -> None:
     if rtype == 1:
         mem.ww(DS, rec + 0x16, 2)      # BD56
         return
-    if beh in (0x05, 0x07, 0x08, 0x0A, 0x0C):
-        raise RecoveryGap(f"BD17 logic-keyed decay beat (behavior {beh:#x})",
-                          "the BDAC/BDB8/BDC4/BD9E A970-family decays are not composed here")
+    if beh in (0x07, 0x08):
+        if mem.rw(DS, 0xA970):                     # BDAC: the saturating family-counter decay
+            mem.ww(DS, 0xA970, mem.rw(DS, 0xA970) - 1)
+        return
+    if beh in (0x05, 0x06):
+        if mem.rw(DS, 0xA976):                     # BDC4
+            mem.ww(DS, 0xA976, mem.rw(DS, 0xA976) - 1)
+        return
+    if beh == 0x0C:
+        if mem.rw(DS, 0xA974):                     # BDB8
+            mem.ww(DS, 0xA974, mem.rw(DS, 0xA974) - 1)
+        return
+    if beh == 0x09:
+        # BD7A: while [A972] != 0, sweep the A3B4 sibling list (max 0x1A words, FFFF ends):
+        # deactivate every listed record and decrement [A972] per entry.
+        if mem.rw(DS, 0xA972) == 0:
+            return
+        si = 0xA3B4
+        for _ in range(0x1A):
+            ptr = mem.rw(DS, si)
+            si = (si + 2) & 0xFFFF
+            if ptr == 0xFFFF:
+                return
+            mem.ww(DS, ptr, 0)
+            mem.ww(DS, 0xA972, (mem.rw(DS, 0xA972) - 1) & 0xFFFF)
+        return
+    if beh == 0x0A:
+        if mem.rw(DS, 0xA97E):                     # BD9E
+            mem.ww(DS, 0xA97E, mem.rw(DS, 0xA97E) - 1)
+        raise RecoveryGap("BD17 behavior-0xA decay's AC19 HUD-chrome redraw (1010:837A + 859E)",
+                          "the full-panel redraw side effect is not composed in the walk")
 
 
 def _player_hit_9e69(mem) -> None:
@@ -1703,6 +1755,8 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
             _step_shot_02(mem, rec, tiles)                      # player shots (AED8's AD60 internal)
         elif beh == 0x04:
             _step_child_04(mem, rec, tiles)                     # C237 children (AF60's AD60 internal)
+        elif beh == 0x05:
+            _step_scroller_05(mem, rec, tiles)                  # AE7D crawler (AD5A/AD60 internal)
         elif beh == 0x01:
             if _step_dying_01(mem, rec):                        # False: the latch-9 morph / BD17 ret
                 _postmove_bc45(mem, rec, tiles, with_drift=True)  # BE43/BEAD/BEC2 exit jmp BC45
@@ -1788,7 +1842,9 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
         elif beh == 0x33:
             _step_bouncer_33(mem, rec, tiles)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # 88CF exits jmp BC45
-        elif beh == 0x35:
+        elif beh in (0x35, 0x22):
+            # the EFC4 table aliases 0x22 (the planet BOSS the 0x21 transform creates) and 0x35
+            # to the SAME B3DF body (zoo-xref-confirmed; the riser docstring names both)
             _step_riser_35(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # B3DF exits jmp BC45 (both paths)
         elif beh == 0x38:
