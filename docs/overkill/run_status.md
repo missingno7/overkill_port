@@ -23,6 +23,29 @@
 > work is COMPLETE for L1. Next frontier: play_native integration polish, other planets' controller
 > families (0x1c etc.), the 9734/9902/9908 transition continuations, HUD/menu wiring, audio.
 
+## 2026-07-07 - OWNER PLAYTEST #3: play_native L1 "isn't working like real gameplay" -- THE INTEGRATION CAMPAIGN
+
+The owner played `play_native` and reports "a lot of inaccuracies" in L1 gameplay.  Root cause
+(confirmed by reading the play_native frame): **the loop is a HYBRID with seams** -- a dataclass-side
+`NativeGame` (`g`) owns the player, scroll, shots and player-vs-enemy contact, the walk image owns
+the enemies, and per-frame sync bridges stitch them (`sync_player_anchor`,
+`sync_new_gameplay_records`, `project_state`).  Every seam can drift from the real 9B2E frame, and
+NONE of the seam code is held to the 1:1 bar the walk is.  Component-verified != integrated.
+
+**THE CAMPAIGN (this supersedes the L4/L5 zoo order; the zoo residue stays on the list):**
+1. **The 1:1 PLAYTHROUGH GATE first**: replay a recorded L1 demo's inputs through play_native's own
+   frame composition (headless) and diff the DGROUP image vs the VM EVERY frame -- the same
+   instrument shape as verify_native_walk_demo but over the WHOLE play_native frame, not just the
+   A9DD walk.  Every user-visible inaccuracy becomes a ranked, fixable divergence.  Existing
+   probes to build from: verify_play_native_cold (drives the composition headless),
+   probes/_harness.run_ref_step_probe (the VM side), the walk shadow-cache pattern.
+2. **Close the seams**: move the player controller (9B2E's input decode + move + fire), the scroll,
+   and the contact onto the walk image natively; retire the dataclass side + the sync bridges one
+   verified slice at a time (ADR-1: the DGROUP image IS the game state).
+
+The L4 zoo residue (0x93/0x81/0x80/0x7D/0x7E/0x7F + the planet-4 wave family) and the L5 first run
+stay queued behind the integration work.
+
 ## 2026-07-07 - **THE L3 WALK IS COMPLETELY DRY: 4370/4370 frames -- ALL THREE DEMOED PLANETS NATIVE**
 
 The whole L3 zoo landed across this run's ticks (commits 0b9caf6..this): the 0x0A tractor, 0x83,
