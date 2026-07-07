@@ -57,6 +57,19 @@ if row <= 0xE52 call **7948** (the 13-TILE ROW LOOP: es=[9592] the plane seg, si
 0x04/0x07/0x6C/0x6D branch at 7977.. to 7A6E/7A7A/7AAE/7AC4) + call 4A65 (already recovered)
 -> jmp **5A7E** (the row -> page blit).
 
+## 2026-07-07 - planet 3's tile cues recovered (7C3F): 28 ids, MECHANICALLY parsed + driven
+
+The stub bodies are so regular a PARSER extracted them (scratchpad stub_parser recipe: call
+81C9/819E + `mov [bx+d8],imm16` writes + the optional y<=0x60 switch); the table lives as
+_PLANET3_CUES data.  NEW COMMONS decoded: the pre-step ``[2070] = [0xC81A + (si & 0x3F)]``
+(the per-column key) + the far ``1F8F:0163`` linked-counter alloc -- WITH the key gate found
+by write-tracing the driven original (``[2070] == 0 -> [209A] = FFFF``, no linked counter for
+key-0 columns); the 819E tail then links or writes ``+28 = FFFF``.  The return-scratch
+exclusion widened to DS:A26A..A277 (planet 3's deeper chains).  **96 cue rows byte-exact
+across planets 1/2/3**; play_native runs cues on all three.  Remaining: planets 4/5 (7CA2/7DC8
+-- run the parser + drive), planet 0 last (overlay machinery); the special planet-3 ids
+0xDF/0xEA/0xEB fail loud (non-stub targets 44AF/AC3C/0375).
+
 ## 2026-07-07 - the L1 demo 1:1 sweep: mean 0 px (worst 3) -- planet 1 pixel-identical too
 
 The L1 demo through the pure-VM instrument: presents 0..1250 diff 0/0/2/3/0/0 px (terrain-heavy

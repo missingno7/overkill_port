@@ -44,10 +44,10 @@ def run_tile_cue_row_7948(mem, row_base: int, leak_32: int = 0, leak_34: int = 0
     read AND MUTATED through the image's own plane segment (the consume writes), ``[A40A]``
     steps 0x10 per tile.  Fails loud for planets whose handler is not yet recovered."""
     planet = mem.rw(DS, 0x2356)
-    if planet not in (1, 2):
+    if planet not in (1, 2, 3):
         raise RecoveryGap(f"tile-cue handler for planet {planet} (DS:[95DE+{planet}*2])",
-                          "only planets 1 (7977) and 2 (7B06) are recovered -- decode + drive "
-                          "the others before scrolling their terrain")
+                          "only planets 1 (7977), 2 (7B06) and 3 (7C3F) are recovered -- decode "
+                          "+ drive the others before scrolling their terrain")
     plane_seg = mem.rw(CS, 0x9592)
     spawned: list[int] = []
     mem.ww(DS, 0xA408, row_base & 0xFFFF)
@@ -56,7 +56,7 @@ def run_tile_cue_row_7948(mem, row_base: int, leak_32: int = 0, leak_34: int = 0
         tile_id = mem.rb(plane_seg, si)
         y_a40a = (k * 0x10) & 0xFFFF
         mem.ww(DS, 0xA40A, y_a40a)
-        cue = _planet1_cue if planet == 1 else _planet2_cue
+        cue = {1: _planet1_cue, 2: _planet2_cue, 3: _planet3_cue}[planet]
         rec = cue(mem, plane_seg, si, tile_id, y_a40a, leak_32, leak_34)
         if rec is not None:
             spawned.append(rec)
@@ -182,4 +182,98 @@ def _planet2_cue(mem, plane_seg: int, si: int, tile_id: int, y_a40a: int,
     if mem.rw(DS, slot + 0x04) <= 0x0060:
         mem.ww(DS, slot + 0x08, 0x00C2)
         mem.ww(DS, slot + 0x06, 0x0002)
+    return slot
+
+
+#: planet 3's parsed cue stubs (the 7C6A jump table, ids 0xCE..0xEB; mechanically parsed from
+#: the stub bodies and pinned by the driven gate): id -> (common, writes, y<=0x60 writes).
+#: common "819E" adds the linked-counter tail over "81C9".
+_PLANET3_CUES = {
+    0xCE: ("81C9", ((0x06, 6), (0x18, 0x86), (0x08, 0xC8)), ((0x08, 0xDA), (0x06, 2))),
+    0xCF: ("81C9", ((0x06, 6), (0x18, 0x86), (0x08, 0xC8)), ((0x08, 0xDA), (0x06, 2))),
+    0xD0: ("81C9", ((0x06, 7), (0x18, 0x54), (0x08, 0xF5)), ((0x06, 1), (0x08, 0xF4))),
+    0xD1: ("81C9", ((0x06, 7), (0x18, 0x54), (0x08, 0xF5)), ((0x06, 1), (0x08, 0xF4))),
+    0xD2: ("81C9", ((0x06, 6), (0x18, 0x87), (0x08, 0xE0)), ((0x06, 2), (0x08, 0xDD))),
+    0xD3: ("81C9", ((0x06, 6), (0x18, 0x87), (0x08, 0xE0)), ((0x06, 2), (0x08, 0xDD))),
+    0xD4: ("81C9", ((0x18, 0x55), (0x08, 0x77)), None),
+    0xD5: ("819E", ((0x18, 0x83),), None),
+    0xD6: ("81C9", ((0x06, 6), (0x18, 0x5F)), ((0x06, 2),)),
+    0xD7: ("81C9", ((0x06, 2), (0x18, 0x63), (0x08, 0xE7)), None),
+    0xD8: ("81C9", ((0x06, 7), (0x18, 0x59), (0x08, 0xE3)), ((0x06, 1),)),
+    0xD9: ("81C9", ((0x18, 0x58), (0x08, 0x99), (0x06, 2)), None),
+    0xDA: ("81C9", ((0x18, 0x57), (0x08, 0x9B), (0x06, 6)), None),
+    0xDB: ("819E", ((0x18, 0x19),), None),
+    0xDC: ("819E", ((0x18, 0x89),), None),
+    0xDD: ("81C9", ((0x18, 0x8C),), None),
+    0xDE: ("81C9", ((0x18, 0x8B),), None),
+    0xE0: ("81C9", ((0x18, 0x4F),), None),
+    0xE1: ("819E", ((0x18, 0x37),), None),
+    0xE2: ("819E", ((0x06, 0), (0x18, 0x2D)), None),
+    0xE3: ("819E", ((0x06, 4), (0x18, 0x5E), (0x08, 0x27)), None),
+    0xE4: ("819E", ((0x06, 4), (0x18, 0x5D), (0x08, 0x77)), None),
+    0xE5: ("81C9", ((0x18, 0x34),), None),
+    0xE6: ("81C9", ((0x18, 0x34),), None),
+    0xE7: ("81C9", ((0x06, 0), (0x18, 0x5B), (0x08, 0x74)), None),
+    0xE8: ("819E", ((0x06, 6), (0x18, 0x47)), None),
+    0xE9: ("819E", ((0x18, 0x35),), None),
+}
+#: planet-3 ids whose targets are NOT the regular stub shape (special machinery) -- fail loud.
+_PLANET3_SPECIAL = {0xDF: 0x44AF, 0xEA: 0xAC3C, 0xEB: 0x0375}
+
+
+def _linked_counter_alloc_1f8f0163(mem) -> None:
+    """The far ``1F8F:0163`` common: when the column key ``[2070]`` is ZERO the alloc SKIPS
+    straight to FFFF (0165: ``cmp [2070],0; jz -> bx=FFFF`` -- key-0 columns get no linked
+    counter); otherwise scan the 16-entry ``2078`` byte-slot table for a free one; ``[2098]`` =
+    the index walked, ``[209A]`` = the slot pointer (FFFF when full)."""
+    if mem.rw(DS, 0x2070) == 0:
+        mem.ww(DS, 0x209A, 0xFFFF)
+        return
+    count = 0
+    ptr = None
+    for idx in range(16):
+        p = 0x2078 + idx * 2
+        if mem.rb(DS, p) == 0:
+            ptr = p
+            break
+        count += 1
+    mem.ww(DS, 0x2098, count)
+    mem.ww(DS, 0x209A, 0xFFFF if ptr is None else ptr)
+
+
+def _planet3_cue(mem, plane_seg: int, si: int, tile_id: int, y_a40a: int,
+                 leak_32: int, leak_34: int) -> "int | None":
+    """Planet 3's ``1010:7C3F`` handler: ids 0xCE..0xEB through the 7C6A jump table.  The head
+    runs a COMMON pre-step for every in-range id: ``[2070] = [0xC81A + (si & 0x3F)]`` (the
+    per-column key) + the ``1F8F:0163`` linked-counter alloc; then the id's stub."""
+    if not (0xCE <= tile_id <= 0xEB):
+        return None
+    if tile_id in _PLANET3_SPECIAL:
+        raise RecoveryGap(f"planet-3 tile cue {tile_id:#04x} -> 1010:{_PLANET3_SPECIAL[tile_id]:04X}",
+                          "a non-stub special cue target -- decode it before this terrain row")
+    mem.ww(DS, 0x2070, mem.rb(DS, (0xC81A + (si & 0x3F)) & 0xFFFF))
+    _linked_counter_alloc_1f8f0163(mem)
+    common, writes, y_writes = _PLANET3_CUES[tile_id]
+    # 81C9/819E: 7E58 consume + 81E9 (alloc + the 8209 block) + the 81CC overrides
+    mem.wb(plane_seg, si, 0x01)
+    slot = _alloc(mem, 0x95D8, EFFECT_POOL_BASE, EFFECT_POOL_WRAP, EFFECT_SLOTS)
+    if slot == 0xFFFF:
+        return None
+    _stamp_8209(mem, slot, leak_32, leak_34)
+    mem.ww(DS, slot + 0x04, y_a40a)
+    mem.ww(DS, slot + 0x02, 0x0010)
+    mem.ww(DS, slot + 0x0A, 0x0000)
+    if common == "819E":                 # the 81A7 linked-counter tail
+        ptr = mem.rw(DS, 0x209A)
+        if ptr != 0xFFFF:
+            mem.wb(DS, ptr, (mem.rb(DS, ptr) + 1) & 0xFF)
+            mem.wb(DS, (ptr + 1) & 0xFFFF, mem.rw(DS, 0x2070) & 0xFF)
+            mem.ww(DS, slot + 0x28, mem.rw(DS, 0x2098))
+        else:
+            mem.ww(DS, slot + 0x28, 0xFFFF)
+    for off, val in writes:
+        mem.ww(DS, slot + off, val)
+    if y_writes is not None and mem.rw(DS, slot + 0x04) <= 0x0060:
+        for off, val in y_writes:
+            mem.ww(DS, slot + off, val)
     return slot

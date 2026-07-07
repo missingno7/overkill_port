@@ -694,7 +694,7 @@ def main(argv=None) -> int:
         # The 8209 +32/+34 caller-frame leak cells get 0 (an open sub-item; none of planet 1's
         # spawned behaviors read them).
         if not dying and g.row_base != pre_step_row_base and pre_step_row_base <= 0x0E52:
-            if walk_image.rw(0x25CC, 0x2356) in (1, 2):
+            if walk_image.rw(0x25CC, 0x2356) in (1, 2, 3):
                 from overkill.recovered.adapters.tile_cues import run_tile_cue_row_7948
                 spawned = run_tile_cue_row_7948(walk_image, pre_step_row_base)
                 if spawned:

@@ -24,6 +24,8 @@ PLANETS = (
      (0x04, 0x07, 0x6C, 0x6D, 0xAC, 0xB1, 0xC9)),
     (2, ROOT / "artifacts" / "demos" / "demo_play_tandy_L2_full_20260617_180221" / "snapshot",
      (0x30, 0x5A, 0xC4)),
+    (3, ROOT / "artifacts" / "demos" / "demo_play_tandy_L3_full_20260617_202520" / "snapshot",
+     tuple(i for i in range(0xCE, 0xEC) if i not in (0xDF, 0xEA, 0xEB))),
 )
 
 
@@ -96,9 +98,10 @@ def _verify_planet(planet, SNAP, CUE_IDS, max_rows) -> bool:
         dg = np.s_[DS * 16: DS * 16 + 0x10000]
         pl = np.s_[plane_seg * 16: plane_seg * 16 + 3744]
         dg_diff = np.flatnonzero(vm[dg] != nb[dg])
-        # DS:A26E..A277 is the 7948 family's hand-rolled return-address scratch (the drive
-        # observed 81EC/81CF/7AF3/796A/FFFF frames there) -- no game-state meaning, excluded
-        dg_diff = dg_diff[(dg_diff < 0xA26E) | (dg_diff > 0xA277)]
+        # DS:A26A..A277 is the 7948 family's hand-rolled return-address scratch (the drive
+        # observed 81EC/81CF/7AF3/796A/FFFF call frames there; planet 3's deeper chains use
+        # two more slots) -- no game-state meaning, excluded
+        dg_diff = dg_diff[(dg_diff < 0xA26A) | (dg_diff > 0xA277)]
         pl_diff = np.flatnonzero(vm[pl] != nb[pl])
         ids = sorted({plane[row + k] for k in range(13)} & set(CUE_IDS))
         if dg_diff.size or pl_diff.size:
