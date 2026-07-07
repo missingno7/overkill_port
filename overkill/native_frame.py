@@ -19,9 +19,11 @@ from overkill.recovered.systems.input import decode_keyboard_input_flags
 from overkill.recovered.adapters.tile_cues import run_tile_cue_row_7948
 from overkill.recovered.adapters.level_object_script import run_level_object_script_4a65
 from overkill.recovered.adapters.behavior_walk import (
-    _alloc, _bd17_deactivate, _rotating_pool_scan_b15a,
+    _alloc, _bd17_deactivate, _rotating_pool_scan_b15a, _shot_hit_9e19,
     run_behavior_walk_a9d3, run_level_end_arm_a680,
 )
+from overkill.recovered.systems.tilemap import compute_tile_probe_5073, lookup_tile_class_byte
+from overkill.recovered.domain.tilemap import TileProbeInput
 from overkill.recovered.systems.frame_loop import frame_state_update_a940
 
 DS = 0x25CC
@@ -196,7 +198,7 @@ def _isr_effects_two_ticks(mem) -> None:
     gate names the cells)."""
     mem.wb(DS, 0x0054, (mem.rb(DS, 0x0054) + 2) & 0x03)
     for _ in range(2):
-        mem.ww(DS, 0xBF00, (mem.rw(DS, 0xBF00) + 1) & 0x0003)
+        mem.wb(DS, 0xBF00, (mem.rb(DS, 0xBF00) + 1) & 0x03)   # fe 06: a BYTE inc
         if mem.rb(DS, 0xBEFF):
             raise RecoveryGap("the D566 sound-effect start ([BEFF] queued)",
                               "the D50E channel machinery is the audio campaign's; fail loud")
@@ -289,10 +291,134 @@ def _step_9b2e(mem) -> None:
     # 9BC0: [A47C] <= 1 -> A616 (the ship tilt/bank counters)
     if mem.rw(DS, 0xA47C) <= 1:
         _tilt_a616(mem)
-    # 9BCA: [A47C] == 0 -> 9CB6; [2350] > 0xB6 -> 9C01; then 9CF1, 9CD9, A031, 9FAF
-    raise RecoveryGap(
-        "the 9BCA..9BFA tail stages (9CB6 / 9C01 / 9CF1 / 9CD9 / A031 / 9FAF)",
-        "the remaining 9B2E interior -- decode against the lockstep gate")
+    # 9BCA: [A47C] == 0 -> 9CB6 (the terrain crash -> the difficulty-scaled 9E19 damage)
+    if mem.rw(DS, 0xA47C) == 0:
+        if _terrain_crash_4ff9(mem):
+            bedc = mem.rw(DS, 0xBEDC)
+            for _ in range(1 if bedc == 0 else (2 if bedc == 1 else 3)):
+                _shot_hit_9e19(mem)
+    # 9BD4: [2350] > 0xB6 -> 9C01 (the edge-assist + the pod axis dispatch)
+    if mem.rw(DS, 0x2350) > 0x00B6:
+        _axis_assist_9c01(mem)
+    _ring_advance_9cf1(mem)                         # 9BDF
+    di = mem.rw(DS, 0xA33A)                         # 9BE2 -> 9CD9: the history-ring write
+    mem.ww(DS, di, (mem.rw(DS, anchor + 2) + 8) & 0xFFFF)
+    mem.ww(DS, (di + 2) & 0xFFFF, (mem.rw(DS, anchor + 4) + 8) & 0xFFFF)
+    _pod_feed_a031(mem)                             # 9BE5
+    if mem.rw(DS, 0xBDAC) != 0 or mem.rw(DS, 0x2350) > 0x00B6:   # 9BE8
+        _pod_tilt_9faf(mem)
+
+
+def _terrain_crash_4ff9(mem) -> bool:
+    """``1010:4FF9`` -- the PLAYER terrain-crash predicate: a dying pose (>= 3) is stc; else the
+    pose-indexed 214E hitbox offset shifts the probe point, the 5073 probe's column (+0xD) --
+    and a second column left when the [215A] sub-tile phase & 0xF > 0xA -- is class-checked
+    (both rows on an unaligned Y).  Pure carry: the anchor's cells are pushed/restored."""
+    pose = mem.rw(DS, _ANCHOR + 8)
+    if pose >= 3:
+        return True
+    si = (0x214E + pose * 4) & 0xFFFF
+    x = (mem.rw(DS, _ANCHOR + 2) + mem.rw(DS, si)) & 0xFFFF
+    y = (mem.rw(DS, _ANCHOR + 4) + mem.rw(DS, (si + 2) & 0xFFFF)) & 0xFFFF
+    tiles = level_tiles_from_image(mem)
+    probe = compute_tile_probe_5073(TileProbeInput(
+        origin_x_word=tiles.origin_x_word, row_base_word=tiles.row_base_word,
+        object_x_word=x, object_y_word=y))
+    bx = (probe.tile_offset_word + 0x0D) & 0xFFFF
+    cols = 1 if (mem.rw(DS, 0x215A) & 0x000F) <= 0x000A else 2
+    for _ in range(cols):
+        if lookup_tile_class_byte(tiles.tile_plane[bx & 0x3FFF], tiles.class_table) != 0:
+            return True
+        if (y & 0x000F) and lookup_tile_class_byte(
+                tiles.tile_plane[(bx + 1) & 0x3FFF], tiles.class_table) != 0:
+            return True
+        bx = (bx - 0x000D) & 0xFFFF
+    return False
+
+
+def _axis_assist_9c01(mem) -> None:
+    """``1010:9C01`` -- the edge-assist + pod axis dispatch: [A360] = 0; the A39E/A39F edge flags
+    (set by the 9FEA pod clamps) auto-nudge the anchor via the doubled A607/A5F9 movers when the
+    matching input bit is released; then the pod counts feed the CS:9C70 axis jump table -- the
+    (0,0) no-pods case is the 44AF ret; live-pod cases are undecoded (fail loud)."""
+    anchor = _ANCHOR
+    mem.ww(DS, 0xA360, 0)
+    bits = mem.rb(DS, 0x98BE)
+    if not (bits & 0x02) and mem.rb(DS, 0xA39E) == 1:
+        for _ in range(2):                          # A607 (the doubled +04 inc, clamp < 0xB0)
+            if mem.rw(DS, anchor + 4) < 0x00B0:
+                mem.ww(DS, anchor + 4, (mem.rw(DS, anchor + 4) + 1) & 0xFFFF)
+        mem.ww(DS, 0xA360, 1)
+    if not (bits & 0x01) and mem.rb(DS, 0xA39F) == 1:
+        for _ in range(2):                          # A5F9 (the doubled +04 dec, clamp != 0)
+            if mem.rw(DS, anchor + 4) != 0:
+                mem.ww(DS, anchor + 4, (mem.rw(DS, anchor + 4) - 1) & 0xFFFF)
+        mem.ww(DS, 0xA360, 1)
+    ah = (mem.rw(DS, 0xA966) != 0xFFFF) + (mem.rw(DS, 0xA96A) != 0xFFFF)
+    al = (mem.rw(DS, 0xA968) != 0xFFFF) + (mem.rw(DS, 0xA96C) != 0xFFFF)
+    if ah or al:
+        raise RecoveryGap(f"the 9C70 axis case (ah={ah}, al={al})",
+                          "the live-pod delayed-coordinate bodies (9C8A..) are undecoded")
+
+
+def _ring_advance_9cf1(mem) -> None:
+    """``1010:9CF1`` -- advance the four A27A..A339 position-history ring cursors
+    ([A33A]/[A33C]/[A33E]/[A340], +4 each, wrapping A33A -> A27A) -- only while the player is
+    MOVING (any direction bit) or the A360 edge-assist nudged."""
+    if not (mem.rb(DS, 0x98BE) & 0x0F) and mem.rw(DS, 0xA360) == 0:
+        return
+    for cell in (0xA33A, 0xA33C, 0xA33E, 0xA340):
+        v = (mem.rw(DS, cell) + 4) & 0xFFFF
+        if v == 0xA33A:
+            v = 0xA27A
+        mem.ww(DS, cell, v)
+
+
+def _pod_feed_a031(mem) -> None:
+    """``1010:A031`` -- the A962/A964 pods take their position from the history ring (the
+    [A33C]/[A33E] delayed cursors) -- the classic trailing-option movement."""
+    for pod_cell, cur_cell in ((0xA962, 0xA33C), (0xA964, 0xA33E)):
+        pod = mem.rw(DS, pod_cell)
+        if pod == 0xFFFF:
+            continue
+        si = mem.rw(DS, cur_cell)
+        mem.ww(DS, pod + 2, mem.rw(DS, si))
+        mem.ww(DS, pod + 4, mem.rw(DS, (si + 2) & 0xFFFF))
+
+
+def _pod_tilt_9faf(mem) -> None:
+    """``1010:9FAF`` -- the A966..A96C pods' tilt-table positions: A39E/A39F cleared, then per
+    pod the pose-indexed offset table (A38C/A374 with [A39A]; A380/A368 with [A39C]) places the
+    pod at anchor + offset (+ 2*the tilt counter on the +04 axis), clamped to [0, 0xC0] with the
+    edge flags set (9FEA)."""
+    mem.wb(DS, 0xA39E, 0)
+    mem.wb(DS, 0xA39F, 0)
+    mem.ww(DS, 0xA398, mem.rw(DS, 0xA39A))
+    _pod_place_9fea(mem, 0xA38C, mem.rw(DS, 0xA96C))
+    _pod_place_9fea(mem, 0xA374, mem.rw(DS, 0xA968))
+    mem.ww(DS, 0xA398, mem.rw(DS, 0xA39C))
+    _pod_place_9fea(mem, 0xA380, mem.rw(DS, 0xA96A))
+    _pod_place_9fea(mem, 0xA368, mem.rw(DS, 0xA966))
+
+
+def _pod_place_9fea(mem, si: int, pod: int) -> None:
+    if pod == 0xFFFF:
+        return
+    si = (si + ((mem.rw(DS, _ANCHOR + 8) << 2) & 0xFFFF)) & 0xFFFF
+    mem.ww(DS, pod + 2, (mem.rw(DS, si) + mem.rw(DS, _ANCHOR + 2)) & 0xFFFF)
+    y = (mem.rw(DS, (si + 2) & 0xFFFF) + mem.rw(DS, _ANCHOR + 4)
+         + 2 * mem.rw(DS, 0xA398)) & 0xFFFF
+    mem.ww(DS, pod + 4, y)
+    if _s16(y) < 0:                                  # A00F (signed)
+        mem.ww(DS, pod + 4, 0)
+        mem.wb(DS, 0xA39E, 1)
+    elif _s16(y) > 0x00C0:                           # A01F (signed)
+        mem.ww(DS, pod + 4, 0x00C0)
+        mem.wb(DS, 0xA39F, 1)
+
+
+def _s16(v: int) -> int:
+    return v - 0x10000 if v & 0x8000 else v
 
 
 def _tilt_a616(mem) -> None:
