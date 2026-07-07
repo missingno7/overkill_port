@@ -61,7 +61,12 @@ def main(argv) -> int:
 
     bundle_data = (ROOT / "artifacts" / "static_runtime_bundle" / "memory_1mb.bin").read_bytes()
     container_data = (ROOT / "assets" / "OVERKILL").read_bytes()
-    game0 = NativeGame.load_level(bundle_data, container_data, 0,
+    # the sprite context's LEVEL bank (G{n}) is PLANET-keyed -- read the demo's planet from its
+    # snapshot so sprite ids >= 0x1C decode from the right bank
+    import struct as _struct
+    demo_planet = _struct.unpack_from(
+        "<H", (Path(str(snapshot)) / "memory_1mb.bin").read_bytes(), DS * 16 + 0x2356)[0]
+    game0 = NativeGame.load_level(bundle_data, container_data, demo_planet,
                                   build_cold_level_start(bundle_data, 0)[0],
                                   origin_x=0, row_base=0x9C)
 

@@ -147,27 +147,37 @@ def object_slots(sprite_id: int, draw_type: int, slot_0c: int, slot_10: int,
     return [SpriteSlot(comp, slot_0c, ctx.compact_bank, off, words, rows)]
 
 
-def _slot_block(slot: SpriteSlot) -> SpriteBlock | None:
+def _slot_block(slot: SpriteSlot, variant: bool = False) -> SpriteBlock | None:
     need = slot.words_per_row * slot.rows * 4
     src = slot.bank[slot.src_off:slot.src_off + need]
     if len(src) < need:
         return None
     tex = decode_masked_sprite(src, slot.words_per_row, slot.rows)
+    if variant:
+        # the 2ECB/2F40 OR-INVERTED compositors (the 7658/7716 variant tables, anim 0):
+        # ``dest |= ~mask`` per word -- the sprite's opaque area saturates to colour 0xF
+        # (the hit-flash whiteout); transparent pixels keep the destination.
+        white = tex.pixels.copy()
+        white[...] = 0x0F
+        return SpriteBlock(slot.di, white, tex.opaque)
     return SpriteBlock(slot.di, tex.pixels, tex.opaque)
 
 
 def object_sprite_blocks(pool, ctx: SpriteDrawContext) -> list[SpriteBlock]:
-    """The drawable sprite blocks for a pool's active, anim-0, non-variant objects.
+    """The drawable sprite blocks for a pool's active, anim-0 objects.
 
-    Objects with ``anim (+12) != 0`` or the ``obj[+24]`` variant flag set are skipped (they select a
-    different / OR-inverted compositor -- documented follow-ups, not faked).
+    The (anim x variant) sub-dispatch, decoded from the 7628/7658 (75A6) and 76E6/7716 (768E)
+    tables: ``anim (+12) != 0`` routes to the ``7688`` NO-DRAW stub in EVERY table (the skip is
+    byte-faithful, not a gap); ``variant (+24) != 0`` (anim 0) draws through the OR-inverted
+    compositors (2ECB/2F40) -- the opaque silhouette saturated to 0xF.
     """
     blocks: list[SpriteBlock] = []
     for i in range(len(pool)):
         if pool.active_word(i) == 0:
             continue
-        if pool.word_at(i, _OFF_ANIM) != 0 or pool.word_at(i, _OFF_VARIANT) != 0:
-            continue
+        if pool.word_at(i, _OFF_ANIM) != 0:
+            continue          # 7688: the no-draw stub for every anim 1..7 table entry
+        variant = pool.word_at(i, _OFF_VARIANT) != 0
         for slot in object_slots(
             pool.word_at(i, _OFF_SPRITE_ID),
             pool.word_at(i, _OFF_DRAW_TYPE),
@@ -175,7 +185,7 @@ def object_sprite_blocks(pool, ctx: SpriteDrawContext) -> list[SpriteBlock]:
             pool.word_at(i, _OFF_SLOT_10),
             ctx,
         ):
-            block = _slot_block(slot)
+            block = _slot_block(slot, variant=variant)
             if block is not None:
                 blocks.append(block)
     return blocks

@@ -57,6 +57,18 @@ if row <= 0xE52 call **7948** (the 13-TILE ROW LOOP: es=[9592] the plane seg, si
 0x04/0x07/0x6C/0x6D branch at 7977.. to 7A6E/7A7A/7AAE/7AC4) + call 4A65 (already recovered)
 -> jmp **5A7E** (the row -> page blit).
 
+## 2026-07-07 - THE 1:1 MEAN FALLS TO 16 px (0.04%): the variant compositor + the anim truth
+
+The (anim x variant) sub-dispatch decoded COMPLETELY: the 7628/7658 (75A6) and 76E6/7716 (768E)
+tables route every ``anim 1..7`` entry to the ``7688`` NO-DRAW stub (``mov ds,[9596]; ret``) --
+**the native anim skip was byte-faithful all along, not a gap**; ``variant != 0`` (anim 0) draws
+the OR-INVERTED compositors (2ECB/2F40: ``dest |= ~mask`` = the opaque silhouette saturated to
+0xF -- the hit-flash whiteout), now implemented in ``object_sprite_blocks``.  ALSO fixed: the
+1:1 probe's sprite context used level 0's G-bank for every demo (the planet-vs-index bug again)
+-- now planet-keyed from the demo snapshot.  WHOLE-DEMO SWEEP: mean **16 px of 39936**, samples
+0/0/0/1/1/58/1/135/0/1/0/1 -- worst 135 at the one busy explosion (residue unattributed; next:
+the frame-2800 fixture attribution: vm-only 38 / nat-only 2 / wrong-color 95).
+
 ## 2026-07-07 - THE PLANET-1 TILE-CUE SPAWNER IS RECOVERED: every cue row byte-exact vs the driven 7948
 
 `adapters/tile_cues.run_tile_cue_row_7948` + `verify_native_tile_cues` (drive the ORIGINAL 7948

@@ -94,13 +94,20 @@ def test_offscreen_and_unknown_drawtype_skip():
     assert object_slots(0x00, 5, 0x0100, OFFSCREEN, ctx) == []     # dtype 5 not a sprite routine
 
 
-def test_object_sprite_blocks_skips_anim_and_variant():
+def test_object_sprite_blocks_anim_skips_variant_whitens():
     # 256-byte 2F81 cell (4 words x 16 rows x 4), fully opaque, data nibble 0x22.
     cell = bytes((0x00, 0x00, 0x22, 0x22)) * (4 * 16)
     ctx = _ctx(wide_bank=cell, table_768e=[0] * 0x100)
     active = _pool(_slot(sprite_id=0, di0c=0x0100, dtype=1))
     assert len(object_sprite_blocks(active, ctx)) == 1
+    # anim 1..7 route to the 7688 NO-DRAW stub in every (anim x variant) sub-table -- skipped.
     for skip in (_slot(sprite_id=0, di0c=0x0100, dtype=1, anim=1),
-                 _slot(sprite_id=0, di0c=0x0100, dtype=1, variant=0xFFFF),
                  _slot(sprite_id=0, di0c=0x0100, dtype=1, active=0)):
         assert object_sprite_blocks(_pool(skip), ctx) == []
+    # variant != 0 (anim 0) draws the OR-INVERTED compositor (2F40): dest |= ~mask -- the
+    # opaque silhouette saturated to colour 0xF (the hit-flash whiteout).
+    flash = object_sprite_blocks(
+        _pool(_slot(sprite_id=0, di0c=0x0100, dtype=1, variant=0xFFFF)), ctx)
+    assert len(flash) == 1
+    assert flash[0].opaque.all()
+    assert (flash[0].pixels == 0x0F).all()
