@@ -120,8 +120,10 @@ def _stamp_8209(mem, slot: int, leak_32: int, leak_34: int) -> None:
     """The 81E9 -> 8209 common stamp.  ``+0x32``/``+0x34`` are the ASM's ``[bp+4]``/``[bp+2]``
     CALLER-FRAME reads (a leak; the caller supplies the frame's live values -- the driven gate
     pins them byte-exact, see verify_native_tile_cues)."""
-    mem.ww(DS, slot + 0x32, leak_32)
+    mem.ww(DS, slot + 0x02, leak_34)     # 8217/821A: [bp+2] -> +02 AND +34 (the frame x)
     mem.ww(DS, slot + 0x34, leak_34)
+    mem.ww(DS, slot + 0x04, leak_32)     # 8220/8223: [bp+4] -> +04 AND +32 (the frame y)
+    mem.ww(DS, slot + 0x32, leak_32)
     mem.ww(DS, slot + 0x28, 0xFFFF)
     mem.ww(DS, slot + 0x00, 0x0001)
     mem.ww(DS, slot + 0x0A, 0x0001)

@@ -57,6 +57,21 @@ if row <= 0xE52 call **7948** (the 13-TILE ROW LOOP: es=[9592] the plane seg, si
 0x04/0x07/0x6C/0x6D branch at 7977.. to 7A6E/7A7A/7AAE/7AC4) + call 4A65 (already recovered)
 -> jmp **5A7E** (the row -> page blit).
 
+## 2026-07-07 - **THE WAVE CHAIN IS NATIVE: 0x21 (driver) -> 0x23 (enemy) -> 0x2C (diver), zero divergence**
+
+The natural-playthrough blocker falls: **0x21** = the B556 dispatch (already pure) + the **B615**
+per-planet spawn body decoded ([2328]==7 cadence, the 81E9/8209 stamp with the DRIVER's own x/y
+as the frame values -- the "leak" is the intended position inherit, the ``A894`` Y-schedule ring
+A896..A8B0, behavior-0x23 spawns, planet-2 ``+0x20=1`` / planets-1/3/5 ``+0x20=FFFF`` +
+``[2340]++&3`` sub-phase) + the pure ``boss_transform_stamp_b58a`` for the >=0xF0 phase; the
+planet-0/3/4 families fail loud.  **0x23** = B690: the B85C seek ([2308]=2, B729 toward its own
+targets, dir=4) until BOTH coords match; arrival = the x-window sound beat + (planet 2) 74E2 +
+MORPH to 0x2C, or the A932/A942 sub-phase sprite/advance tables.  **0x2C** = B70E: anim sprite
+[233C]+0xB9 + the 5E42 steer (no Y-kill).  The completed 8209 stamp (now writing +02/+04 too)
+keeps the tile-cue gate byte-exact.  The L2 walk frontier after this: 0x05 (881!), 0x4E (374),
+0x22 (127 -- the planet BOSS the transform creates), 0x4F/0x48, the decay beats, the 0x06 ADC9
+death, pickups 1/3/4.
+
 ## 2026-07-07 - **THE TILE-CUE SPAWNER IS COMPLETE FOR ALL FIVE PLAYABLE PLANETS (176 rows byte-exact)**
 
 Planets 4 (7CA2) and 5 (7DC8) recovered via the parser: the shared planet-1 stubs (the compare

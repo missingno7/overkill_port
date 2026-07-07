@@ -1004,6 +1004,113 @@ def _step_dropper_34(mem, rec: int) -> None:
     _spawn_child_c237(mem, rec, 0x34)
 
 
+def _step_wave_diver_2c(mem, rec: int) -> None:
+    """Behavior 0x2C (``1010:B70E``) -- the planet-2 wave enemy's MORPH target: sprite =
+    ``[233C] + 0xB9``, then the 5E42 delta steer over the record's own +0x2A/+0x2C deltas
+    (set by the 0x23 arrival's 74E2), ``[2312]`` 2 -> 3 -- the 8744 steer WITHOUT the
+    Y-bounds kill."""
+    mem.ww(DS, rec + 0x08, (mem.rw(DS, 0x233C) + 0x00B9) & 0xFFFF)
+    mem.ww(DS, 0x2312, RAMP_29_STEER_MODE_DURING)
+    table = tuple(mem.rb(DS, (0xA348 + i) & 0xFFFF) for i in range(16))
+    steer = object_delta_steer_5e42(
+        mem.rw(DS, rec + 0x02), mem.rw(DS, rec + 0x04), mem.rw(DS, rec + 0x06),
+        mem.rw(DS, rec + 0x2C), mem.rw(DS, rec + 0x2A), mem.rw(DS, rec + 0x2E),
+        RAMP_29_STEER_MODE_DURING, table)
+    mem.ww(DS, rec + 0x06, steer.direction_or_step)
+    mem.ww(DS, rec + 0x02, steer.x_word)
+    mem.ww(DS, rec + 0x04, steer.y_word)
+    mem.ww(DS, rec + 0x2E, steer.move_step_error)
+    mem.ww(DS, 0x2312, RAMP_29_STEER_MODE_AFTER)
+
+
+def _step_wave_enemy_23(mem, rec: int) -> None:
+    """Behavior 0x23 (``1010:B690``) -- the B615-spawned WAVE ENEMY: while its y/x differ from
+    the ``+0x32``/``+0x34`` targets, the B85C tail ([2308]=2, the B729 seek toward its own
+    targets, dir=4).  ARRIVED: the ``0x1C <= x <= 0x20`` sound-0x1D beat; planet 2 -- a 74E2
+    self-retarget + MORPH to 0x2C; other planets -- the sub-phase (+0x1C) entry of the
+    A932 (or A942 on planets 3/5) table: {cell-ptr, advance} -> sprite = ``[[ptr]]>>1 + 0x80``
+    (0x6D on 3/5), then x and target-x advance together."""
+    if (mem.rw(DS, rec + 0x04) != mem.rw(DS, rec + 0x32)
+            or mem.rw(DS, rec + 0x02) != mem.rw(DS, rec + 0x34)):
+        mem.ww(DS, 0x2308, 0x0002)          # B85C: the mode-2 seek tail
+        _b729_seek(mem, rec)
+        mem.ww(DS, rec + 0x06, 0x0004)
+        return
+    x = mem.rw(DS, rec + 0x02)
+    if 0x001C <= x <= 0x0020 and mem.rb(DS, 0x98C0):
+        mem.wb(DS, 0xBEFF, 0x1D)
+    planet = mem.rw(DS, 0x2356)
+    if planet == 2:
+        dx, dy = retarget_delta_toward_anchor_74e2(
+            x, mem.rw(DS, rec + 0x04), mem.rw(DS, 0x237E), mem.rw(DS, 0x2380))
+        mem.ww(DS, rec + 0x2A, dx)
+        mem.ww(DS, rec + 0x2C, dy)
+        mem.ww(DS, rec + 0x18, 0x002C)      # B706: the morph into 0x2C
+        return
+    base, spr_add = (0xA942, 0x006D) if planet in (3, 5) else (0xA932, 0x0080)
+    si = (base + (mem.rw(DS, rec + 0x1C) * 4)) & 0xFFFF
+    ptr = mem.rw(DS, si)
+    mem.ww(DS, rec + 0x08, ((mem.rw(DS, ptr) >> 1) + spr_add) & 0xFFFF)
+    adv = mem.rw(DS, (si + 2) & 0xFFFF)
+    mem.ww(DS, rec + 0x02, (x + adv) & 0xFFFF)
+    mem.ww(DS, rec + 0x34, (mem.rw(DS, rec + 0x34) + adv) & 0xFFFF)
+
+
+def _step_wave_driver_21(mem, rec: int) -> None:
+    """Behavior 0x21 (``1010:B556``) -- THE WAVE DRIVER, the A7A0-phased family (planets other
+    than 0/3/4; the recovered ``wave_driver_dispatch_b556`` names the branch):
+
+    * ``per_planet`` (A7A0 < 0xC8): the **B615** spawn -- on the ``[2328] == 7`` cadence tick,
+      an 81E9 alloc (the 8209 stamp with the DRIVER's own x/y as the frame values -- here the
+      "leak" is the intended position inherit), the ``A894`` Y-schedule ring (A896..A8B0, wraps)
+      into ``+0x32``, ``+0x34 = 0x10``, behavior ``0x23``; planet 2 adds ``+0x20 = 1``; planets
+      1/3/5 add ``+0x20 = FFFF`` + the ``[2340]++ & 3`` sub-phase into ``+0x1C``;
+    * ``none`` (A7A0 < 0xF0): a pause -- nothing;
+    * ``boss_transform``: the recovered ``boss_transform_stamp_b58a`` record overwrite.
+
+    The planet-0 leader group / planet-3 phase machine / planet-4 family fail loud until their
+    bodies are recovered."""
+    from overkill.recovered.systems.frame_loop import (boss_transform_stamp_b58a,
+                                                       wave_driver_dispatch_b556)
+    from overkill.recovered.adapters.tile_cues import _stamp_8209
+
+    kind = wave_driver_dispatch_b556(mem.rw(DS, 0x2356), mem.rw(DS, 0xA7A0))
+    if kind == "none":
+        return
+    if kind == "boss_transform":
+        for off, val in boss_transform_stamp_b58a(mem.rw(DS, 0x2356)).items():
+            mem.ww(DS, rec + off, val)
+        return
+    if kind != "per_planet":
+        raise RecoveryGap(f"wave-driver branch {kind!r} (behavior 0x21, 1010:B556)",
+                          "the planet-0 leader group / planet-3 phase machine / planet-4 family "
+                          "bodies are not recovered")
+    # B615
+    if mem.rw(DS, 0x2328) != 0x0007:
+        return
+    slot = _alloc(mem, 0x95D8, EFFECT_POOL_BASE, EFFECT_POOL_WRAP, EFFECT_SLOTS)
+    if slot == 0xFFFF:
+        return
+    _stamp_8209(mem, slot, mem.rw(DS, rec + 0x04), mem.rw(DS, rec + 0x02))
+    # B673: the Y-schedule ring
+    si = mem.rw(DS, 0xA894)
+    if si >= 0xA8B2:
+        mem.ww(DS, 0xA894, 0xA896)
+        si = 0xA896
+    mem.ww(DS, slot + 0x32, mem.rw(DS, si))
+    mem.ww(DS, 0xA894, (si + 2) & 0xFFFF)
+    mem.ww(DS, slot + 0x34, 0x0010)
+    mem.ww(DS, slot + 0x18, 0x0023)
+    planet = mem.rw(DS, 0x2356)
+    if planet == 2:
+        mem.ww(DS, slot + 0x20, 0x0001)
+    elif planet in (1, 3, 5):
+        mem.ww(DS, slot + 0x20, 0xFFFF)
+        ax = mem.rw(DS, 0x2340)
+        mem.ww(DS, 0x2340, (ax + 1) & 0xFFFF)
+        mem.ww(DS, slot + 0x1C, ax & 3)
+
+
 def _step_missile_2b(mem, rec: int) -> None:
     """Behavior 0x2B (``1010:8715``): sprite = ``0xA5 + [233C]``, then jmp 8744 -- the shared
     steer tail (0x28's planet-2 child; the sprite base matches the 8676 spawner's 0xA5 stamp)."""
@@ -1705,6 +1812,15 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
         elif beh == 0x3D:
             _step_bounce_sprite_3d(mem, rec, tiles)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8AC7 -> 88CF exits jmp BC45
+        elif beh == 0x21:
+            _step_wave_driver_21(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=False)   # B556's phased paths exit BC4B
+        elif beh == 0x23:
+            _step_wave_enemy_23(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=False)   # B690's paths exit BC4B
+        elif beh == 0x2C:
+            _step_wave_diver_2c(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=False)   # B556's phased paths exit BC4B
         elif beh == 0x2B:
             _step_missile_2b(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8715->8744 exits jmp BC45
