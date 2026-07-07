@@ -23,6 +23,18 @@
 > work is COMPLETE for L1. Next frontier: play_native integration polish, other planets' controller
 > families (0x1c etc.), the 9734/9902/9908 transition continuations, HUD/menu wiring, audio.
 
+## 2026-07-07 - RESTRUCTURE: the DEMO LOCKSTEP campaign (owner direction)
+
+The owner stopped the loop: "play_native is just a big pile of stuff glued together; start working
+systematically from the beginning, gradually, with verified steps against demo."  The integration
+approach is restructured into ONE campaign -- `campaigns/demo_lockstep.md` (now the ACTIVE
+campaign): grow the native frame loop frame-by-frame in LOCKSTEP with a recorded demo, from the
+cold boot forward; the gate (`verify_native_lockstep`, to be built) snapshots the VM at every 97B2
+frame top and diffs the native frame's whole DGROUP + pixels; the first divergent cell names the
+next recovery; image-only (ADR-1), one frame implementation shared by the gate and play_native, no
+sync seams.  The L4/L5 zoo residue is parked.  No code changed in this entry -- the tree is the
+green 0a1e0bb state.
+
 ## 2026-07-07 - OWNER PLAYTEST #3: play_native L1 "isn't working like real gameplay" -- THE INTEGRATION CAMPAIGN
 
 The owner played `play_native` and reports "a lot of inaccuracies" in L1 gameplay.  Root cause

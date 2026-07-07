@@ -26,6 +26,7 @@
 
 | campaign | tier | state | file |
 |---|---|---|---|
+| **DEMO LOCKSTEP (the ACTIVE campaign)** | byte+pixel-exact | opened 2026-07-07 (owner playtest #3) | `demo_lockstep.md` |
 | Spine (mode machine + session) | byte-exact | graph described, not executing | `spine.md` |
 | Player (move/fire/damage/death) | byte-exact | ~90% | `player.md` |
 | Enemies & waves — L1 | byte-exact | ~80%, wired from snapshot | `enemies_l1.md` |
