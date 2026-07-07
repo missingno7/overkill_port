@@ -57,6 +57,19 @@ if row <= 0xE52 call **7948** (the 13-TILE ROW LOOP: es=[9592] the plane seg, si
 0x04/0x07/0x6C/0x6D branch at 7977.. to 7A6E/7A7A/7AAE/7AC4) + call 4A65 (already recovered)
 -> jmp **5A7E** (the row -> page blit).
 
+## 2026-07-07 - THE LEVEL-DATA UNIFICATION LANDS: all six levels byte-exact vs fresh-load snapshots
+
+`build_cold_level_start_image(bundle, idx, container)` now decodes the PLANET's own level data
+INTO the image: the tile-map body -> CS:[9592] (bundle border rows kept), LEV{planet}BLX ->
+CS:[959A] verbatim, the planet's class table -> DS:C3AA.  **`verify_native_cold_level_data`: all
+SIX levels' plane-body/bank/classes byte-exact vs the per-planet fresh-load snapshots.**
+play_native passes the container at every cold build and maps its 0-based index through _PLANET
+(== LEVEL_INDEX_TO_PLANET) into NativeGame.load_level -- the wrong-planet asset bug (LEV{n} is
+planet-keyed) and the stale-bundle-plane inconsistency are both fixed; every play_native gate
+(cold/render/levelend/respawn/gameover) stays green.  NEXT: the tile RENDER wiring into
+play_native's frame (the walk image now carries the right plane+bank; compose_tile_window is
+oracle-proven), then the 7948 tile-cue spawner.
+
 ## 2026-07-07 - THE NATIVE FRAME IS PIXEL-EXACT: 1:1 mean diff = 3 px of 39936 (L2, 1500 presents)
 
 The full native compose -- starfield + THE TERRAIN TILE WINDOW + sprites -- against the pure VM:

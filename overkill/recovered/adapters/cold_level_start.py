@@ -43,22 +43,61 @@ from overkill.recovered.systems.frame_loop import (
 LEVEL_INDEX_TO_PLANET = (1, 2, 3, 4, 5, 0)
 
 
-def build_cold_level_start_image(exe_image: bytes, level_index: int = 0) -> MutFlatMemory:
+def build_cold_level_start_image(exe_image: bytes, level_index: int = 0,
+                                 container: "bytes | None" = None) -> MutFlatMemory:
     """Build the raw seeded DGROUP image (the level-start writes, no projection).
 
     This is the same write sequence :func:`build_cold_level_start` projects through
     :func:`read_native_game_state`; exposed separately so callers that need the LIVE image itself (e.g.
     ``play_native``'s object-behaviour-walk DGROUP, which the level-object-script walker and the
     behaviour walk both mutate in place) can seed it identically instead of re-deriving the writes.
+
+    With ``container`` (the ``assets/OVERKILL`` bytes) the PLANET's level data is decoded INTO the
+    image's own segments -- the tile-map body into ``CS:[9592]`` (keeping the bundle's post-init
+    border rows), the LEV{planet}BLX tile bank into ``CS:[959A]`` (verbatim: proven byte-equal to
+    the VM's runtime bank), and the planet's class table into ``DS:C3AA``.  Without it the image
+    keeps the STATIC BUNDLE's captured level data -- which belongs to whatever level the bundle
+    snapshot had loaded, NOT ``level_index``.
     """
     mem = MutFlatMemory(exe_image)
     # 1) session start (a fresh SESSION only -- the respawn flow re-runs everything BUT this)
     for off, val in new_game_session_init_96ee().items():
         mem.ww(DATA_SEGMENT, off, val)
-    mem.ww(DATA_SEGMENT, 0x2356, LEVEL_INDEX_TO_PLANET[level_index % len(LEVEL_INDEX_TO_PLANET)])
+    planet = LEVEL_INDEX_TO_PLANET[level_index % len(LEVEL_INDEX_TO_PLANET)]
+    mem.ww(DATA_SEGMENT, 0x2356, planet)
+    if container is not None:
+        _load_planet_level_data(mem, exe_image, container, planet)
     # 2..6) the level-start / respawn re-init (shared with the 9908 death->respawn composition)
     apply_respawn_seeds(mem)
     return mem
+
+
+#: the decoded-map body region NOT rewritten by the post-load border init (0BB9..0BD2) -- the
+#: border rows outside it are level-independent and stay as the bundle's post-init capture.
+_MAP_BODY = (12, 3682)
+
+
+def _load_planet_level_data(mem: MutFlatMemory, exe_image: bytes, container: bytes,
+                            planet: int) -> None:
+    """Decode the PLANET's level data into the image's own segments (the 0E9C/0B3E load, natively).
+
+    LEV{n} asset names are PLANET-keyed (pinned by tests/test_level_map_placement.py's fresh-load
+    snapshots, which assert ``DS:2356 == n``); the pre-existing bundle capture is overwritten."""
+    from overkill.asset_codecs.level_assets import decode_level_blocks, decode_level_tile_map
+    from overkill.asset_codecs.native_level import (_read_class_override_pairs,
+                                                    build_level_class_table)
+
+    cs = 0x1010
+    plane_base = mem.rw(cs, 0x9592) * 16
+    tile_map = decode_level_tile_map(container, planet)
+    b0, b1 = _MAP_BODY
+    mem.data[plane_base + b0: plane_base + b1] = tile_map[b0:b1]
+    bank_base = mem.rw(cs, 0x959A) * 16
+    blocks = decode_level_blocks(container, planet)
+    mem.data[bank_base: bank_base + len(blocks)] = blocks
+    classes = build_level_class_table(_read_class_override_pairs(exe_image, planet))
+    base = DATA_SEGMENT * 16 + 0xC3AA
+    mem.data[base: base + len(classes)] = classes
 
 
 def apply_respawn_seeds(mem) -> None:

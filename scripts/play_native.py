@@ -112,6 +112,8 @@ _COLD_ROW_SOURCE = 0x5B00          # DS:234C -- the fixed row-source start (Nati
 _COLD_ROW_BASE = 0x009C            # DS:2350 -- level-load leaves the view row base here: 60C5 sets 0xEA0,
 #                                    then the 16x A781 warm-up scroll settles it to 0x9C (60D5 cmp); this
 #                                    is the frame-0 level-start scroll (row_base=0 underflows the tile probe)
+_PLANET = (1, 2, 3, 4, 5, 0)      # == cold_level_start.LEVEL_INDEX_TO_PLANET: LEV{n} assets are
+#                                    PLANET-keyed; every load below maps the 0-based level index
 _COLD_ROWS_TO_MILESTONE = 0x0110   # DS:A978 at level-start: confirmed empirically for ALL SIX planets --
 #                                    each planet's level-object script's own FIRST entry trigger_row is
 #                                    0x110 (read directly from the cold data: DS:[C5E9+p*2] -> the cursor
@@ -462,7 +464,7 @@ def main(argv=None) -> int:
     # Cold-load the level, then plant the captured live scroll cursor (DS:234C/234E/2350) so the first
     # native frame renders the world + sprites exactly where the VM had them.
     game = dataclasses.replace(
-        NativeGame.load_level(bundle_data, container_data, args.level, seed.state,
+        NativeGame.load_level(bundle_data, container_data, _PLANET[args.level % 6], seed.state,
                               origin_x=seed.origin_x, row_base=seed.row_base),
         row_source=seed.row_source,
         rows_to_milestone=seed.rows_to_milestone,
@@ -501,7 +503,7 @@ def main(argv=None) -> int:
     if args.snapshot:
         walk_image = MutFlatMemory((Path(args.snapshot) / "memory_1mb.bin").read_bytes())
     else:
-        walk_image = build_cold_level_start_image(bundle_data, args.level)
+        walk_image = build_cold_level_start_image(bundle_data, args.level, container_data)
     if menu_difficulty is not None:
         walk_image.ww(0x25CC, 0xBEDC, menu_difficulty)   # the menu's difficulty pick (DS:BEDC)
 
@@ -554,14 +556,14 @@ def main(argv=None) -> int:
         score_lo = walk_image.rw(0x25CC, 0x2314)
         score_hi = walk_image.rw(0x25CC, 0x2316)
         lives = walk_image.rw(0x25CC, 0x2358)
-        new_img = build_cold_level_start_image(bundle_data, nxt)
+        new_img = build_cold_level_start_image(bundle_data, nxt, container_data)
         new_img.ww(0x25CC, 0x2314, score_lo)
         new_img.ww(0x25CC, 0x2316, score_hi)
         new_img.ww(0x25CC, 0x2358, lives)
         walk_image.data[:] = new_img.data
         nstate, nstarfield = build_cold_level_start(bundle_data, nxt)
         cell["game"] = dataclasses.replace(
-            NativeGame.load_level(bundle_data, container_data, nxt, nstate,
+            NativeGame.load_level(bundle_data, container_data, _PLANET[nxt % 6], nstate,
                                   origin_x=0, row_base=_COLD_ROW_BASE),
             row_source=_COLD_ROW_SOURCE, rows_to_milestone=_COLD_ROWS_TO_MILESTONE)
         cell["starfield"] = nstarfield
@@ -573,11 +575,11 @@ def main(argv=None) -> int:
     def _restart_session(lvl: int) -> None:
         """The 96E0 continuation after game over: a FRESH session on the picked level -- the
         SAME cold-boot machinery, whose 96EE fresh-session init resets score and lives."""
-        new_img = build_cold_level_start_image(bundle_data, lvl)
+        new_img = build_cold_level_start_image(bundle_data, lvl, container_data)
         walk_image.data[:] = new_img.data
         nstate, nstarfield = build_cold_level_start(bundle_data, lvl)
         cell["game"] = dataclasses.replace(
-            NativeGame.load_level(bundle_data, container_data, lvl, nstate,
+            NativeGame.load_level(bundle_data, container_data, _PLANET[lvl % 6], nstate,
                                   origin_x=0, row_base=_COLD_ROW_BASE),
             row_source=_COLD_ROW_SOURCE, rows_to_milestone=_COLD_ROWS_TO_MILESTONE)
         cell["starfield"] = nstarfield
