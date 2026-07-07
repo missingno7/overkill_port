@@ -1027,3 +1027,13 @@ original exactly.  The 1px skew was the DEATH-EXIT POSTMOVE distinction: F2BA/F3
 exit `jmp BFC7` (no BC45 drift), while F1A6 (0x54/0x56's F194) exits `call BFC7; jmp BC45`
 (the drift applies after the dying stamp).  Handlers now return died and the dispatch skips
 _postmove_bc45 only for the jmp-BFC7 family.  L3 walk: zero divergence.
+
+## 2026-07-07 — the 4CED star-list native model diverges (attempt reverted)
+Repro: add _star_list_4ced (the journal's decode: undraw the old C7B1 list from the CS:[9598]
+strip, rebuild via bx = [9A08+tick*2]+[234C]+xoff with the occupied-cell skip, write the strip
+pixel + the FFFF-terminated list) at the pre-9B2E position in native_frame and run
+verify_native_lockstep: diverged 3908 -> 5476 (WORSE, same count with/without the undraw — the
+LIST VALUES are wrong, not the occupancy).  Suspects: the 9A08 row table may be CS-resident (I
+read DS), the tick word's scale, the strip seg (9598 vs 9592), or the pass position vs [234C]'s
+update.  Next: drive 1010:4CED on a cached frame pre-state and diff the produced C7B1 list
+word-by-word against the model.
