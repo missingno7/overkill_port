@@ -57,6 +57,19 @@ if row <= 0xE52 call **7948** (the 13-TILE ROW LOOP: es=[9592] the plane seg, si
 0x04/0x07/0x6C/0x6D branch at 7977.. to 7A6E/7A7A/7AAE/7AC4) + call 4A65 (already recovered)
 -> jmp **5A7E** (the row -> page blit).
 
+## 2026-07-07 - THE PLANET-1 TILE-CUE SPAWNER IS RECOVERED: every cue row byte-exact vs the driven 7948
+
+`adapters/tile_cues.run_tile_cue_row_7948` + `verify_native_tile_cues` (drive the ORIGINAL 7948
+on the L1 snapshot per cue row, whole-DGROUP + plane compare): **every cue row in the whole
+planet-1 plane is BYTE-EXACT**, including all 0xC9 deployers and multi-cue rows.  Decode facts
+pinned by the gate: ids 0x04/0x07 (the crawlers) go through 81C9 = 7E58 (consume ``plane[si]=1``)
++ 81CC; ids 0x6C/0x6D/0xAC/0xB1 call 81CC DIRECTLY (no consume); 0xC9 (the deployer) consumes a
+2x2 with ids 26/27/28/29 and uses the 7A40 stamp; the 8209 block's ``+32/+34`` are a CALLER-FRAME
+leak (``[bp+4]/[bp+2]``, supplied per-call; the in-game frame's values are an open sub-item);
+DS:A26E..A277 is the family's return-address scratch (excluded, documented).  [A40A] ends at
+0xD0.  NEXT: wire into play_native's row-pull point (planet 1 only; other planets skip with a
+note until their handlers are decoded).
+
 ## 2026-07-07 - WHOLE-DEMO 1:1 SWEEP: 9 of 12 samples at 0-1 px across all 4500 presents
 
 The full L2 demo (9000 frames, stride 400): presents 0..4400 diff
