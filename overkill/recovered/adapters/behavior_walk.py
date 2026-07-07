@@ -816,27 +816,33 @@ def _afd8_step(mem, rec: int, tiles: LevelTileContext) -> bool:
     return result.blocked
 
 
-def _triple_afd8_or_die_f194(mem, rec: int, tiles: LevelTileContext) -> None:
+def _triple_afd8_or_die_f194(mem, rec: int, tiles: LevelTileContext) -> bool:
     """``1010:F194`` (= behavior 0x56's whole body): up to THREE AFD8 1px contact-steps in the
-    record's OWN direction; the first BLOCKED step is the full BFC7 death."""
+    record's OWN direction; the first BLOCKED step is the full BFC7 death.  UNLIKE the F2BA/
+    F308/F381 ``jmp BFC7`` exits, F1A6 is ``call BFC7`` + ``jmp BC45`` -- the postmove drift
+    still applies after this death (oracle: the L3 frame-2091 0x54 record).  Always returns
+    False (the caller runs the postmove)."""
     for _ in range(3):
         if _afd8_step(mem, rec, tiles):
-            _bfc7_touch_death(mem, rec)                 # F1A6
-            return
+            _bfc7_touch_death(mem, rec)                 # F1A6: call BFC7, then jmp BC45
+            return False
+    return False
 
 
-def _step_riser_57(mem, rec: int, tiles: LevelTileContext) -> None:
+def _step_riser_57(mem, rec: int, tiles: LevelTileContext) -> bool:
     """Behaviors 0x57/0x58 (``1010:F201``, one shared entry): nothing until x >= 0x80; at
     x == 0x80 EXACTLY the sprite ticks +1 (F221); then TWO AFD8 steps -- only the SECOND'S
     blocked flag matters (the first's is overwritten): blocked -> the BFC7 death."""
     x = mem.rw(DS, rec + 0x02)
     if x < 0x0080:
-        return
+        return False
     if x == 0x0080:
         mem.ww(DS, rec + 0x08, (mem.rw(DS, rec + 0x08) + 1) & 0xFFFF)
     _afd8_step(mem, rec, tiles)
     if _afd8_step(mem, rec, tiles):
-        _bfc7_touch_death(mem, rec)
+        _bfc7_touch_death(mem, rec)                     # F21B: jmp BFC7 -- no postmove
+        return True
+    return False
 
 
 def _planet_sprite_f225(mem) -> int:
@@ -849,15 +855,11 @@ def _planet_sprite_f225(mem) -> int:
     return 0x00E3
 
 
-def _step_glider_5a(mem, rec: int, tiles: LevelTileContext) -> None:
+def _step_glider_5a(mem, rec: int, tiles: LevelTileContext) -> bool:
     """Behavior 0x5A (``1010:F268``): the planet-keyed sprite + [2326]; THREE AFD8 steps; a block
     (or leaving 0 < y < 0xC0, signed) flips dir ^= 6 and takes ONE more step -- blocked again is
     the BFC7 death."""
     mem.ww(DS, rec + 0x08, (_planet_sprite_f225(mem) + mem.rw(DS, 0x2326)) & 0xFFFF)
-    raise RecoveryGap(f"behavior 0x5A's multi-step AFD8 walk (record {rec:04X})",
-                      "1px-off divergence on DIAGONAL directions (L3 frames 1366/2225, dir 1) -- "
-                      "the composed diagonal step order vs the native break-at-block differs; "
-                      "see loop_blockers.md")
     flip = False
     for _ in range(3):
         if _afd8_step(mem, rec, tiles):
@@ -866,73 +868,76 @@ def _step_glider_5a(mem, rec: int, tiles: LevelTileContext) -> None:
     if not flip:
         y = _s16(mem.rw(DS, rec + 0x04))
         if 0 < y < 0x00C0:
-            return
+            return False
     mem.ww(DS, rec + 0x06, mem.rw(DS, rec + 0x06) ^ 6)  # F2B1
     if _afd8_step(mem, rec, tiles):
-        _bfc7_touch_death(mem, rec)
+        _bfc7_touch_death(mem, rec)                     # F2BA: jmp BFC7 -- no postmove
+        return True
+    return False
 
 
-def _step_glide_arm_59(mem, rec: int, tiles: LevelTileContext) -> None:
+def _step_glide_arm_59(mem, rec: int, tiles: LevelTileContext) -> bool:
     """Behavior 0x59 (``1010:F225``): the planet-keyed sprite; x <= 0x80 (signed) waits; past it
     the sprite animates (+[2326]); x > 0xC0 MORPHS to 0x5A and runs its body same-frame."""
     mem.ww(DS, rec + 0x08, _planet_sprite_f225(mem))
     if _s16(mem.rw(DS, rec + 0x02)) <= 0x0080:
-        return
+        return False
     mem.ww(DS, rec + 0x08, (_planet_sprite_f225(mem) + mem.rw(DS, 0x2326)) & 0xFFFF)
     if _s16(mem.rw(DS, rec + 0x02)) <= 0x00C0:
-        return
+        return False
     mem.ww(DS, rec + 0x18, 0x005A)                      # F263: the morph
-    _step_glider_5a(mem, rec, tiles)
+    return _step_glider_5a(mem, rec, tiles)
 
 
-def _step_turner_5e(mem, rec: int, tiles: LevelTileContext) -> None:
+def _step_turner_5e(mem, rec: int, tiles: LevelTileContext) -> bool:
     """Behavior 0x5E (``1010:F2EB``): FOUR AFD8 steps (only the last's blocked flag matters);
     blocked: dir 4 -> 5, dir 5 -> 6, anything else -> the BFC7 death."""
     for _ in range(3):
         _afd8_step(mem, rec, tiles)
     if not _afd8_step(mem, rec, tiles):
-        return
+        return False
     d = mem.rw(DS, rec + 0x06)
     if d == 4:
         mem.ww(DS, rec + 0x06, 0x0005)
     elif d == 5:
         mem.ww(DS, rec + 0x06, 0x0006)
     else:
-        _bfc7_touch_death(mem, rec)
+        _bfc7_touch_death(mem, rec)                     # F308: jmp BFC7 -- no postmove
+        return True
+    return False
 
 
-def _step_turner_5f(mem, rec: int, tiles: LevelTileContext) -> None:
+def _step_turner_5f(mem, rec: int, tiles: LevelTileContext) -> bool:
     """Behavior 0x5F (``1010:F34D``): sprite = [2326] + 0xF6; waits while x + y < 0x60; then FOUR
     AFD8 steps (only the last's flag); blocked: dir 6 -> 3, dir 2 -> 5, else the BFC7 death."""
     mem.ww(DS, rec + 0x08, (mem.rw(DS, 0x2326) + 0x00F6) & 0xFFFF)
     if ((mem.rw(DS, rec + 0x02) + mem.rw(DS, rec + 0x04)) & 0xFFFF) < 0x0060:
-        return
-    raise RecoveryGap(f"behavior 0x5F's multi-step AFD8 walk (record {rec:04X})",
-                      "1px-off divergence on DIAGONAL directions (L3 frames 1744/1764, dir 5) -- "
-                      "see loop_blockers.md")
+        return False
     for _ in range(3):
         _afd8_step(mem, rec, tiles)
     if not _afd8_step(mem, rec, tiles):
-        return
+        return False
     d = mem.rw(DS, rec + 0x06)
     if d == 6:
         mem.ww(DS, rec + 0x06, 0x0003)
     elif d == 2:
         mem.ww(DS, rec + 0x06, 0x0005)
     else:
-        _bfc7_touch_death(mem, rec)
+        _bfc7_touch_death(mem, rec)                     # F381: jmp BFC7 -- no postmove
+        return True
+    return False
 
 
 
 
 
-def _step_snake_head_54(mem, rec: int, tiles: LevelTileContext) -> None:
+def _step_snake_head_54(mem, rec: int, tiles: LevelTileContext) -> bool:
     """Behavior 0x54 (``1010:F185``): wait until x == 0xB0 exactly, then MORPH to 0x56 and fall
-    straight into the F194 triple-AFD8 body this same frame."""
+    straight into the F194 triple-AFD8 body this same frame.  Returns died (skip the postmove)."""
     if mem.rw(DS, rec + 0x02) != 0x00B0:
-        return
+        return False
     mem.ww(DS, rec + 0x18, 0x0056)
-    _triple_afd8_or_die_f194(mem, rec, tiles)
+    return _triple_afd8_or_die_f194(mem, rec, tiles)
 
 
 def _step_waiter_55(mem, rec: int) -> bool:
@@ -2649,17 +2654,17 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
             _step_formation_14(mem, rec, tiles)
             _postmove_bc45(mem, rec, tiles, with_drift=False)   # every B9F0 exit is jmp BC4B
         elif beh == 0x54:
-            _step_snake_head_54(mem, rec, tiles)
-            _postmove_bc45(mem, rec, tiles, with_drift=True)    # F185/F194 exit jmp BC45
+            if not _step_snake_head_54(mem, rec, tiles):        # the BFC7 exit skips BC45
+                _postmove_bc45(mem, rec, tiles, with_drift=True)
         elif beh in (0x57, 0x58):
-            _step_riser_57(mem, rec, tiles)
-            _postmove_bc45(mem, rec, tiles, with_drift=True)    # F201's exits are jmp BC45
+            if not _step_riser_57(mem, rec, tiles):             # the BFC7 exit skips BC45
+                _postmove_bc45(mem, rec, tiles, with_drift=True)
         elif beh == 0x59:
-            _step_glide_arm_59(mem, rec, tiles)
-            _postmove_bc45(mem, rec, tiles, with_drift=True)    # F225/F268 exit jmp BC45
+            if not _step_glide_arm_59(mem, rec, tiles):         # the BFC7 exit skips BC45
+                _postmove_bc45(mem, rec, tiles, with_drift=True)
         elif beh == 0x5A:
-            _step_glider_5a(mem, rec, tiles)
-            _postmove_bc45(mem, rec, tiles, with_drift=True)    # F268's exits are jmp BC45
+            if not _step_glider_5a(mem, rec, tiles):            # the BFC7 exit skips BC45
+                _postmove_bc45(mem, rec, tiles, with_drift=True)
         elif beh == 0x5B:
             # 1010:F2C0: x > 0xB0 (signed) MORPHS to 0x5C and runs its body same-frame
             if _s16(mem.rw(DS, rec + 0x02)) > 0x00B0:
@@ -2678,17 +2683,17 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
             mem.ww(DS, rec + 0x02, (mem.rw(DS, rec + 0x02) + 8) & 0xFFFF)
             _postmove_bc45(mem, rec, tiles, with_drift=True)
         elif beh == 0x5E:
-            _step_turner_5e(mem, rec, tiles)
-            _postmove_bc45(mem, rec, tiles, with_drift=True)    # F2EB's exits are jmp BC45
+            if not _step_turner_5e(mem, rec, tiles):            # the BFC7 exit skips BC45
+                _postmove_bc45(mem, rec, tiles, with_drift=True)
         elif beh == 0x5F:
-            _step_turner_5f(mem, rec, tiles)
-            _postmove_bc45(mem, rec, tiles, with_drift=True)    # F34D's exits are jmp BC45
+            if not _step_turner_5f(mem, rec, tiles):            # the BFC7 exit skips BC45
+                _postmove_bc45(mem, rec, tiles, with_drift=True)
         elif beh == 0x55:
             flying = _step_waiter_55(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=not flying)  # wait: BC45; fly: BC4B
         elif beh == 0x56:
-            _triple_afd8_or_die_f194(mem, rec, tiles)
-            _postmove_bc45(mem, rec, tiles, with_drift=True)    # F194's exits are jmp BC45
+            if not _triple_afd8_or_die_f194(mem, rec, tiles):   # the BFC7 exit skips BC45
+                _postmove_bc45(mem, rec, tiles, with_drift=True)
         elif beh == 0x86:
             _step_launcher_86(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # F0EE's exits are jmp BC45

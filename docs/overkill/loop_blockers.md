@@ -1022,3 +1022,8 @@ dispatch, order identical).  Next: log the BDD0 candidate scans (which record, w
 rec 2A0C's step in BOTH the driven-original whole walk (scratchpad/cmp_215a_1366.py drives A9DD)
 and the native walk, and diff the first differing candidate — suspect a hazard-window candidate
 (beh 0x82..0x94, e.g. the 0x86/0x87 launchers) whose position or eligibility differs mid-frame.
+RESOLVED 2026-07-07: NOT a diagonal-step bug -- the pure contact_probe_afd8 matched the
+original exactly.  The 1px skew was the DEATH-EXIT POSTMOVE distinction: F2BA/F308/F381/F21B
+exit `jmp BFC7` (no BC45 drift), while F1A6 (0x54/0x56's F194) exits `call BFC7; jmp BC45`
+(the drift applies after the dying stamp).  Handlers now return died and the dispatch skips
+_postmove_bc45 only for the jmp-BFC7 family.  L3 walk: zero divergence.
