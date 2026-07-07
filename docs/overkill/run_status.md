@@ -56,7 +56,12 @@ shot dispatches by [A958] through the CS:A108 table whose entries include A19F a
 SAME early tails already pure in systems/objects (plus A18A/A137-family variants to decode at
 wiring time).  A4EA = 7547-alloc + the seed stamps (active=1, +1E=1, dir 0, sprite 0x32, +14=0, type 2, beh 2,
 +1C=FFFF -- the pure object_spawn_seed_a4ea).  A175 = A4EA re-stamped beh 0x0C/+1C=7, si=[A96E],
-returns the pod x.  A18A (A108 mode 1) = A1AB + sprite 0x33 + sound 0x14.  Small decodes left at
+returns the pod x.  A18A (A108 mode 1) = A1AB + sprite 0x33 + sound 0x14.  7547 DECODED = the gameplay alloc WITH THE 7550 RECYCLE: the plain [95DA]-cursor scan first
+(7573); a full pool scans 2B5C for the first record with type +0x16 == 1 skipping beh 9/0xA
+(falling back to record 0), BD0D-kills it and returns it -- the "unmodelled 7550 recycle" the
+pure tails mention.  The CS:A108 anchor-shot table = {A19F, A18A, A1C8, A337, A2F6, 44AF}
+(modes 0/2 are the pure tails; A337/A2F6 to decode; 5 = no-op).  Remaining micro-decodes: A1AB,
+A337, A2F6, A2A0, A571's tail bytes.  Small decodes left at
 wiring: 7547 (vs _alloc(95DA)), A1AB, A137-region, A571's tail bytes, A2A0 (mode 5), the full
 CS:A108 table words.  The full fan-out is now mapped end-to-end; NEXT SESSION: wire it into
 native_frame._step_9b2e (replacing the A067 gap) and re-run the lockstep gate.  Every spawn lands on native behaviors.  A0E8 remains.  then the EARLY tails wire via native_a19f_tail/native_a1c8_tail (pure, in systems/objects).
