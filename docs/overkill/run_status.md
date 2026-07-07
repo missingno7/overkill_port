@@ -23,6 +23,26 @@
 > work is COMPLETE for L1. Next frontier: play_native integration polish, other planets' controller
 > families (0x1c etc.), the 9734/9902/9908 transition continuations, HUD/menu wiring, audio.
 
+## 2026-07-07 - **THE L3 WALK IS COMPLETELY DRY: 4370/4370 frames -- ALL THREE DEMOED PLANETS NATIVE**
+
+The whole L3 zoo landed across this run's ticks (commits 0b9caf6..this): the 0x0A tractor, 0x83,
+0x14 (B9F0 inline with its caller-owned globals), the F-range formation family in two batches
+(0x54/0x55/0x56/0x86/0x87 then 0x57/0x58/0x59/0x5B/0x5C/0x5D/0x5E/0x5F), 0x63 (the sprite-keyed
+hatcher), 0x13 (the 1F8F:0432 controller arrival -- schedule +4 + one default 81F4 child), the
+0x03 -> AED8 alias, and the 0x60 -> 8744 alias.
+
+**The load-bearing discovery: the DEATH-EXIT POSTMOVE distinction.**  The F-range family's BFC7
+deaths split two ways: `jmp BFC7` (F2BA/F308/F381/F21B -- NO BC45 postmove/drift) vs `call BFC7;
+jmp BC45` (F1A6 -- the drift still applies after the dying stamp).  The 1px "diagonal" divergence
+was exactly a missed distinction; handlers now return died and the dispatch skips the postmove
+only for the jmp family.  loop_blockers.md carries the full investigation trail (the pure
+contact_probe_afd8 matches the driven original step-for-step).
+
+**L1 8294/8294, L2 6561/6561, L3 4370/4370 -- zero divergence, zero gaps, all three.**
+
+Next: the L4/L5 walk gates (record caches; expect planet-4/5 families), the wave driver's planet
+0/3/4 bodies, the 1:1 frame bar on L3+, play_native wiring for the pods/pickups/weapon scripts.
+
 ## 2026-07-07 - L3 OPENED: the BB03 phase bug fixed, the quick wins landed, the F-range family mapped
 
 The first L3 walk run (demo_play_tandy_L3_full_20260617_202520, cache recorded) surfaced one REAL

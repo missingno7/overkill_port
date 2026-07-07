@@ -614,6 +614,28 @@ def _spawn_enemy_shot_7476(mem, rec: int) -> int:
     return slot
 
 
+def _step_controller_13(mem, rec: int) -> None:
+    """Behavior 0x13 (the 8D4F far ``1F8F:027A`` body, the 0x13 arrival at 1F8F:0432): seek the
+    A482-schedule waypoint (x+0x20/y, 5DB2 mode 3); ON ARRIVAL advance the schedule +4 and 81F4-
+    spawn ONE default child (the plain 8209 stamp -- behavior 0x14) at the controller's position,
+    then A47E++.  ALL paths end in the 0448 tail: sprite = direction + 0x3B."""
+    a482 = mem.rw(DS, 0xA482)
+    target_x = (mem.rw(DS, a482) + 0x20) & 0xFFFF
+    target_y = mem.rw(DS, (a482 + 2) & 0xFFFF)
+    blocked = _apply_seek(mem, rec, target_y, target_x, 3)
+    if blocked:                                     # 02A7 -> 0432: the 0x13 arrival
+        mem.ww(DS, 0xA482, (a482 + 4) & 0xFFFF)
+        slot = _alloc(mem, 0x95D8, EFFECT_POOL_BASE, EFFECT_POOL_WRAP, EFFECT_SLOTS)  # 81F4
+        if slot != 0xFFFF:
+            if mem.rb(DS, 0x98C0):
+                mem.wb(DS, 0xBEFF, 0x0B)
+            for off, val in enemy_spawn_stamp_8209(mem.rw(DS, rec + 0x02),
+                                                   mem.rw(DS, rec + 0x04)).items():
+                mem.ww(DS, slot + off, val)
+            mem.ww(DS, 0xA47E, (mem.rw(DS, 0xA47E) + 1) & 0xFFFF)
+    mem.ww(DS, rec + 0x08, (mem.rw(DS, rec + 0x06) + 0x3B) & 0xFFFF)   # 1F8F:0448
+
+
 def _step_controller_1c(mem, rec: int) -> None:
     """Behavior 0x1C (the planet-2 WAVE CONTROLLER; the shared 8D4F/1F8F:027A body + the 03A6
     arrival): seek the A482-schedule waypoint (x+0x20/y, 5DB2 mode 3); ON ARRIVAL advance the
@@ -929,6 +951,26 @@ def _step_turner_5f(mem, rec: int, tiles: LevelTileContext) -> bool:
 
 
 
+
+
+def _step_hatcher_63(mem, rec: int) -> None:
+    """Behavior 0x63 (``1010:F4B3``): waits left of x 0x50; then a SPRITE-KEYED hatch machine --
+    sprites E7/E8/EA advance +1 on the [2326] == 3 beat; E9 descends 2px/frame to y == 0x60 then
+    advances; any other sprite flies right x += 4."""
+    if mem.rw(DS, rec + 0x02) < 0x0050:
+        return
+    spr = mem.rw(DS, rec + 0x08)
+    if spr in (0x00E7, 0x00E8, 0x00EA):
+        if mem.rw(DS, 0x2326) == 3:
+            mem.ww(DS, rec + 0x08, (spr + 1) & 0xFFFF)
+        return
+    if spr == 0x00E9:
+        y = (mem.rw(DS, rec + 0x04) + 2) & 0xFFFF
+        mem.ww(DS, rec + 0x04, y)
+        if y == 0x0060:
+            mem.ww(DS, rec + 0x08, (spr + 1) & 0xFFFF)
+        return
+    mem.ww(DS, rec + 0x02, (mem.rw(DS, rec + 0x02) + 4) & 0xFFFF)
 
 
 def _step_snake_head_54(mem, rec: int, tiles: LevelTileContext) -> bool:
@@ -2554,8 +2596,9 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
             _postmove_bc45(mem, rec, tiles, with_drift=False)   # every B73E exit is jmp BC4B
         elif beh == 0x0B:
             _step_shot_0b(mem, rec, tiles)                      # B24D's AD5A/AD60 tail is internal
-        elif beh == 0x02:
-            _step_shot_02(mem, rec, tiles)                      # player shots (AED8's AD60 internal)
+        elif beh in (0x02, 0x03):
+            _step_shot_02(mem, rec, tiles)                      # player shots (AED8's AD60 internal;
+            #                                                     EFC4[0x03] aliases the same body)
         elif beh == 0x04:
             _step_child_04(mem, rec, tiles)                     # C237 children (AF60's AD60 internal)
         elif beh == 0x05:
@@ -2685,6 +2728,9 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
         elif beh == 0x5E:
             if not _step_turner_5e(mem, rec, tiles):            # the BFC7 exit skips BC45
                 _postmove_bc45(mem, rec, tiles, with_drift=True)
+        elif beh == 0x63:
+            _step_hatcher_63(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # F4B3's exits are jmp BC45
         elif beh == 0x5F:
             if not _step_turner_5f(mem, rec, tiles):            # the BFC7 exit skips BC45
                 _postmove_bc45(mem, rec, tiles, with_drift=True)
@@ -2700,6 +2746,9 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
         elif beh == 0x87:
             _step_pulser_87(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # 878C's exits are jmp BC45
+        elif beh == 0x13:
+            _step_controller_13(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=False)   # 8D54 exits jmp BC4B
         elif beh == 0x1C:
             _step_controller_1c(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=False)   # the 8D4F stub exits jmp BC4B
