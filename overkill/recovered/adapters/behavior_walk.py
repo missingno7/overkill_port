@@ -786,6 +786,76 @@ def _ad60_tail(mem, rec: int, tiles: LevelTileContext, logic_id: int, *, drift: 
             _bd17_deactivate(mem, rec)
 
 
+def _steer_5e42_inplace(mem, rec: int) -> None:
+    """One 5E42 delta-steer over the record's own +0x2A/+0x2C deltas, written back in place."""
+    table = tuple(mem.rb(DS, (0xA348 + i) & 0xFFFF) for i in range(16))
+    steer = object_delta_steer_5e42(
+        mem.rw(DS, rec + 0x02), mem.rw(DS, rec + 0x04), mem.rw(DS, rec + 0x06),
+        mem.rw(DS, rec + 0x2C), mem.rw(DS, rec + 0x2A), mem.rw(DS, rec + 0x2E),
+        mem.rw(DS, 0x2312), table)
+    mem.ww(DS, rec + 0x06, steer.direction_or_step)
+    mem.ww(DS, rec + 0x02, steer.x_word)
+    mem.ww(DS, rec + 0x04, steer.y_word)
+    mem.ww(DS, rec + 0x2E, steer.move_step_error)
+
+
+def _step_formation_14(mem, rec: int, tiles: LevelTileContext) -> None:
+    """Behavior 0x14 (``1010:B9F0``) -- the FORMATION FLYER, fully inline (the pure
+    ``object_update_b9f0`` omits the caller-owned globals: the [2340]==0x2EF 7476 beat + tick
+    incs, the +0x32/+0x34 in-place target drift, the 5E1B +0x2A/+0x2C persist, and the seek
+    path's 2304/2306/2308 writes).
+
+    [A482] != A4E4 -> just the [233C]+0x1C sprite refresh.  Else: the 2EF spawn beat; targets
+    drift by [2342]/[2346] (target x wraps 0xD0 -> 0x20); REACHED (y+[2342]==ty and x==tx) ->
+    the BA5A player-homing helper (5E1B persist + 5E42 + x += 2) -- throttled by the
+    [2340]&mask==mask tick gate when [A47E] >= 6 (mask 0x7F on difficulty 2, else 0xFF; a match
+    also incs [2340]) -- then the sprite refresh; NOT reached: x <= tx -> the BA73 seek (2px-
+    aligned targets to 2304/2306, own x/y aligned in place, mode 1, 5DB2); x > tx -> one 5E42
+    overshoot step + the [A47E]<6 [232E]==0x3F 7476 beat + the x>0xD0 -> 0x10 wrap."""
+    if mem.rw(DS, 0xA482) != 0xA4E4:
+        mem.ww(DS, rec + 0x08, (mem.rw(DS, 0x233C) + 0x001C) & 0xFFFF)
+        return
+    if mem.rw(DS, 0x2340) == 0x02EF:
+        _spawn_enemy_shot_7476(mem, rec)
+        mem.ww(DS, 0x2340, (mem.rw(DS, 0x2340) + 1) & 0xFFFF)
+    ty = (mem.rw(DS, rec + 0x32) + mem.rw(DS, 0x2342)) & 0xFFFF
+    tx = (mem.rw(DS, rec + 0x34) + mem.rw(DS, 0x2346)) & 0xFFFF
+    if tx > 0x00D0:
+        tx = 0x0020
+    mem.ww(DS, rec + 0x32, ty)
+    mem.ww(DS, rec + 0x34, tx)
+    x = mem.rw(DS, rec + 0x02)
+    y = mem.rw(DS, rec + 0x04)
+    if ((y + mem.rw(DS, 0x2342)) & 0xFFFF) == ty and x == tx:
+        run_helper = True
+        if mem.rw(DS, 0xA47E) >= 6:                     # BA33: the throttle gate
+            mask = 0x7F if mem.rw(DS, 0xBEDC) == 2 else 0xFF
+            if (mem.rw(DS, 0x2340) & mask) == mask:
+                mem.ww(DS, 0x2340, (mem.rw(DS, 0x2340) + 1) & 0xFFFF)
+            else:
+                run_helper = False
+        if run_helper:                                  # BA5A: the player-homing helper
+            deltas = object_delta_5e1b(x, y, mem.rw(DS, 0x237E), mem.rw(DS, 0x2380),
+                                       mem.rw(DS, 0x237C + 0x14))
+            mem.ww(DS, rec + 0x2C, deltas.move_delta_y)
+            mem.ww(DS, rec + 0x2A, deltas.move_delta_x)
+            _steer_5e42_inplace(mem, rec)
+            mem.ww(DS, rec + 0x02, (mem.rw(DS, rec + 0x02) + 2) & 0xFFFF)
+        mem.ww(DS, rec + 0x08, (mem.rw(DS, 0x233C) + 0x001C) & 0xFFFF)   # BA67
+        return
+    if x <= tx:                                         # BA73: the aligned seek (no sprite)
+        mem.ww(DS, rec + 0x04, y & 0xFFFE)
+        mem.ww(DS, rec + 0x02, x & 0xFFFE)
+        _apply_seek(mem, rec, ty & 0xFFFE, tx & 0xFFFE, 1)
+        return
+    _steer_5e42_inplace(mem, rec)                       # BAA1: the overshoot step (no sprite)
+    if mem.rw(DS, 0xA47E) < 6 and mem.rw(DS, 0x232E) == 0x003F:
+        _spawn_enemy_shot_7476(mem, rec)                # BAB2
+    if mem.rw(DS, rec + 0x02) > 0x00D0:
+        mem.ww(DS, rec + 0x02, 0x0010)                  # BABF: the right-edge wrap
+    return
+
+
 def _step_tractor_0a(mem, rec: int, tiles: LevelTileContext) -> None:
     """Behavior 0x0A (``1010:B1B0``) -- the TRACTOR: sprite = [2328] + 0x6D.  Phase 0 (+0x1C != 1):
     a 4px-aligned 5DB2 mode-2 seek toward (player x + 0xA, player y + 0xC); while moving, the AD60
@@ -2378,6 +2448,9 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
             _step_marcher_0c(mem, rec, tiles)                   # AE09 (the AD60 tail is internal)
         elif beh == 0x0A:
             _step_tractor_0a(mem, rec, tiles)                   # B1B0 (the AD5A/AD60 tail internal)
+        elif beh == 0x14:
+            _step_formation_14(mem, rec, tiles)
+            _postmove_bc45(mem, rec, tiles, with_drift=False)   # every B9F0 exit is jmp BC4B
         elif beh == 0x1C:
             _step_controller_1c(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=False)   # the 8D4F stub exits jmp BC4B
