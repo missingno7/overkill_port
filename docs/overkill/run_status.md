@@ -80,9 +80,16 @@ scan the container for it).  0E9C itself is just three standard asset loads into
 ``NativeGame.load_level``/``load_native_level`` (LEV{n} naming) -- if LEV{n} = planet n, then
 --level 0 (planet 1) natively loads LEV0 (the MOTHERSHIP's map/blocks/graphics): wrong terrain
 data + wrong collision plane on every level, invisible so far only because tiles never rendered.
-DECISIVE TEST: decode_level_tile_map(container, planet) vs the fresh-level-load snapshot planes
-(tests/test_level_map_placement.py's fixtures) -- check which ``level`` convention those
-snapshots used; then fix play_native's calls to pass the PLANET (LEVEL_INDEX_TO_PLANET[idx]).**
+DECIDED: **LEV{n} IS PLANET-KEYED** (LEV2MAP matches the planet-2 snapshot plane 957/1000 tail
+vs LEV1MAP's 568).  AND the wiring is worse than one call: the WALK IMAGE's plane comes from
+the STATIC BUNDLE's captured segment (whatever level the bundle snapshot had loaded --
+independent of --level!), while NativeGame.load_level loads LEV{index} -- TWO inconsistent
+plane sources, both potentially wrong.  THE UNIFICATION SLICE (next session, fresh context):
+(1) load_native_level and friends take the PLANET (map play_native's index via
+LEVEL_INDEX_TO_PLANET); (2) build_cold_level_start_image DECODES the planet's map/blocks INTO
+the walk image's CS:[9592]/[959A] segments (replacing the bundle's stale capture); (3) gate:
+per-level cold plane == the fresh-level-load snapshot planes byte-exact, plus the 1:1
+instrument and all play_native probes.**
 
 **render_tile_row IS RECOVERED -- BYTE-EXACT vs the driven 36A2 on BOTH banks**
 (`native_video/tile_row.py` + `verify_native_tile_row`, the chrome-probe driven-oracle pattern;
