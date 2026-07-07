@@ -279,22 +279,28 @@ def _build_sprite_context(bundle_data: bytes, container_data: bytes, game: Nativ
     )
 
 
-def _render_frame(game: NativeGame, starfield: StarfieldState, ctx: SpriteDrawContext):
-    """Render the real recovered playfield: the parallax starfield plate + the object sprite layer.
+def _render_frame(game: NativeGame, starfield: StarfieldState, ctx: SpriteDrawContext,
+                  tile_base=None):
+    """Render the real recovered playfield: terrain + the starfield plate + the sprite layer.
 
-    The background is the byte-exact recovered starfield (``render_starfield_plate``, proven vs the VM)
-    at the game's live present cursor (DS:234C = ``game.row_source``). Over it, the recovered
-    object->sprite bridge (``object_sprite_blocks``) draws every active object -- the player ship (with
-    its exhaust flames), enemies and effects -- each decoded from its real sprite bank at its real
-    destination, proven byte-exact vs the VM's 7596 draw-type dispatch. No placeholder: every pixel is
-    recovered game data. (Objects mid-animation-phase or using the OR-inverted variant are not drawn
-    yet -- documented gaps -- but they are skipped, never faked.)
+    ``tile_base`` (optional) is the composed terrain window (``compose_tile_window``,
+    pixel-exact on the pure-VM 1:1 instrument): the page BASE -- stars fill only unlit pixels
+    (the 4D15 rule), sprites composite on top.  The background is the byte-exact recovered
+    starfield (``render_starfield_plate``, proven vs the VM) at the game's live present cursor
+    (DS:234C = ``game.row_source``). Over it, the recovered object->sprite bridge
+    (``object_sprite_blocks``) draws every active object, proven byte-exact vs the VM's 7596
+    draw-type dispatch. (Objects mid-animation-phase or using the OR-inverted variant are not
+    drawn yet -- documented gaps -- skipped, never faked.)
     """
+    import numpy as np
+
     from overkill.native_video.frame import SnapshotSprite
     from overkill.native_video.playfield import compose_playfield_indices
     from overkill.native_video.starfield_plate import render_starfield_plate
 
     plate = render_starfield_plate(starfield, game.row_source)
+    if tile_base is not None:
+        plate = np.where(tile_base > 0, tile_base, plate)
     blocks: list = []
     for pool in (game.state.special_pool, game.state.effect_pool, game.state.object_pool):
         blocks.extend(object_sprite_blocks(pool, ctx))
@@ -529,6 +535,26 @@ def main(argv=None) -> int:
     def _hud_panel_indices():
         return panel_indices_from_page(compose_hud_panel_from_image(walk_image, **hud_ctx))
 
+    # The TERRAIN: the oracle-proven tile window composed from the walk image's LIVE plane +
+    # the planet's LEV{n}BLX bank (both refreshed by the level-data unification) + the static
+    # CS:8D92 table.  [959C] (rows >= 0xE5F, the level-end strip) still holds the bundle's
+    # capture -- its asset identity is an open journal item.
+    from overkill.native_video.tile_row import BANK2_ROW_BASE, compose_tile_window  # noqa: E402
+    _tile_table = [walk_image.rw(0x1010, (0x8D92 + 2 * k) & 0xFFFF) for k in range(0x100)]
+
+    def _tile_base():
+        g = cell["game"]
+        buf = _np.frombuffer(walk_image.data, dtype=_np.uint8)
+        plane = buf[walk_image.rw(0x1010, 0x9592) * 16:
+                    walk_image.rw(0x1010, 0x9592) * 16 + 0x10000]
+        bank_ptr = 0x959C if g.row_base >= BANK2_ROW_BASE else 0x959A
+        bank = buf[walk_image.rw(0x1010, bank_ptr) * 16:
+                   walk_image.rw(0x1010, bank_ptr) * 16 + 0x10000]
+        tiles = _np.zeros((200, 320), dtype=_np.uint8)
+        compose_tile_window(tiles, plane, g.row_base, _tile_table, bank,
+                            phase_234e=g.origin_x)
+        return tiles
+
     # The 98EB game-over banner: THEND.BIC (byte-matched to the VM's CS:[95B2] segment) -- one
     # {rows,width} cell, drawn by 5C35 at (0, 0x4E) over the playfield.  Decoded once, VM-free.
     _banner_dec = _np.frombuffer(
@@ -752,7 +778,8 @@ def main(argv=None) -> int:
                 "recovered yet (the native runtime cannot continue past it)")
 
     def _render_with_hud():
-        frame = _render_frame(cell["game"], cell["starfield"], cell["sprite_ctx"])
+        frame = _render_frame(cell["game"], cell["starfield"], cell["sprite_ctx"],
+                              tile_base=_tile_base())
         frame[:, PANEL_LEFT_PX:] = _hud_panel_indices()
         return frame
 

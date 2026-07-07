@@ -57,6 +57,16 @@ if row <= 0xE52 call **7948** (the 13-TILE ROW LOOP: es=[9592] the plane seg, si
 0x04/0x07/0x6C/0x6D branch at 7977.. to 7A6E/7A7A/7AAE/7AC4) + call 4A65 (already recovered)
 -> jmp **5A7E** (the row -> page blit).
 
+## 2026-07-07 - PLAY_NATIVE RENDERS TERRAIN: the tile window is wired (the owner's "no tiles" fixed)
+
+`_render_frame` takes an optional ``tile_base`` (the oracle-proven ``compose_tile_window`` over
+the walk image's LIVE plane + the planet's refreshed [959A] bank + the static 8D92 table, phased
+by ``g.origin_x``); tiles are the page base, stars fill unlit pixels, sprites composite on top --
+the identical stack the 1:1 instrument proved pixel-exact (mean 3 px).  Verified: cold/render
+gates green; a cold planet-1 terrain frame renders the real Edrax structures.  CAVEAT journaled:
+``[959C]`` (rows >= 0xE5F, near the level END) still holds the bundle's stale capture -- identify
+its asset.  NEXT: the 7948 tile-cue spawner (terrain actors), the anim/variant compositors.
+
 ## 2026-07-07 - THE LEVEL-DATA UNIFICATION LANDS: all six levels byte-exact vs fresh-load snapshots
 
 `build_cold_level_start_image(bundle, idx, container)` now decodes the PLANET's own level data
