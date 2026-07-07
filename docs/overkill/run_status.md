@@ -57,6 +57,20 @@ if row <= 0xE52 call **7948** (the 13-TILE ROW LOOP: es=[9592] the plane seg, si
 0x04/0x07/0x6C/0x6D branch at 7977.. to 7A6E/7A7A/7AAE/7AC4) + call 4A65 (already recovered)
 -> jmp **5A7E** (the row -> page blit).
 
+## 2026-07-07 - the 7948 tile-cue spawner: planet-1's handler mapped (implement next)
+
+Planet 1 (``[95DE+2] = 7977``): tile-id dispatch 0x04/0x07/0x6C/0x6D/0xAC/0xB1/0xC9 -> per-id
+spawn stubs, each = **79A6** (consume the cue: ``plane[si]=1``, ``[si+1]=1``, ``[si+13]=1``,
+``[si+14]=1`` -- a 2x2 tile clear!) + **7524** (the RECOVERED effect-pool alloc, cursor 95D8) +
+**7A40** (the common position/field stamp -- decode) + behavior stamps (seen: beh 0x48 dir 4;
+beh 0x75 spr 0x24 dir 4; beh 0x72 dir 4) + jmp **81A7** (the shared init tail -- decode).
+IMPLEMENT: ``run_tile_cue_row_7948(image, row_base)`` (13 plane bytes, the planet handler per
+id) wired into play_native's row-pull point (the ``pre_step_row_base != g.row_base`` spot);
+GATE: drive the ORIGINAL 7948 on a snapshot at chosen [A408] rows vs the native fn (the
+chrome/tile-row driven-oracle pattern).  NOTE the cues CONSUME plane tiles (the 2x2 clear
+mutates the plane the RENDER reads -- ordering matters and is already VM-faithful if run at
+the same row-pull point).
+
 ## 2026-07-07 - PLAY_NATIVE RENDERS TERRAIN: the tile window is wired (the owner's "no tiles" fixed)
 
 `_render_frame` takes an optional ``tile_base`` (the oracle-proven ``compose_tile_window`` over
