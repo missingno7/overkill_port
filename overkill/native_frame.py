@@ -16,6 +16,9 @@ from __future__ import annotations
 from overkill.recovered.domain.gaps import RecoveryGap
 from overkill.recovered.domain.tilemap import LevelTileContext
 from overkill.recovered.systems.input import decode_keyboard_input_flags
+from overkill.recovered.adapters.tile_cues import run_tile_cue_row_7948
+from overkill.recovered.adapters.level_object_script import run_level_object_script_4a65
+from overkill.recovered.adapters.behavior_walk import run_level_end_arm_a680
 
 DS = 0x25CC
 CS = 0x1010
@@ -92,6 +95,118 @@ def _step_9b2e(mem) -> None:
                           "run_outro_script_99f6 exists (adapters/behavior_walk) but its exact "
                           "in-frame composition here is unverified -- wire when a demo reaches it")
     mem.ww(DS, 0xA278, 0)                       # 9B55
+    # 9B5B: bp = 237C; A212 -- the sibling-snake mover, gated on the A3B4 list being populated
+    # ([A972] != 0); an empty list is an immediate ret (the normal-L1 path).
+    if mem.rw(DS, 0xA972) != 0:
+        raise RecoveryGap("the A212 sibling-snake mover ([A972] != 0)",
+                          "only the empty-list early-out is wired; decode A212's body when a demo"
+                          " populates the A3B4 list")
+    anchor = 0x237C
+    # 9B61: the death branch -- anchor state absent -> the 9AFF death tail INSTEAD of the whole
+    # player flow.  9AFF: on [2326] == 3 the anchor +08 explosion counter ticks; at 0x0F the
+    # anchor deactivates, 4DBF runs (the death jingle -- a host boundary whose DGROUP effects, if
+    # any, will surface as a divergence on the first death frame), [A346] = 1, and an empty
+    # [A97A] bar also raises [A342] = 1 (game over).
+    if mem.rw(DS, 0xA95A) == 0xFFFF or mem.rw(DS, 0xA97A) == 0:
+        if mem.rw(DS, 0x2326) == 3:
+            counter = (mem.rw(DS, anchor + 0x08) + 1) & 0xFFFF
+            mem.ww(DS, anchor + 0x08, counter)
+            if counter == 0x000F:
+                mem.ww(DS, anchor + 0x00, 0)        # 9B11
+                mem.ww(DS, 0xA346, 1)               # 9B19 (4DBF: host jingle boundary)
+                if mem.rw(DS, 0xA97A) == 0:
+                    mem.ww(DS, 0xA342, 1)           # 9B27
+        return
+    # 9B6F..9B94: the four bit-gated MOVE handlers over the anchor (bp = 237C).  Each body is the
+    # call-$+3 DOUBLING trick (2px/frame); A5D1's [A47C] != 0 alternative is a single unclamped
+    # 1px step.  Clamps: +02 in [0x20, 0xC0]; +04 in [0, 0xB0).
+    bits = mem.rb(DS, 0x98BE)
+    if bits & 0x08:                                 # A5D1
+        if mem.rw(DS, 0xA47C) == 0:
+            for _ in range(2):
+                if mem.rw(DS, anchor + 2) != 0x0020:
+                    mem.ww(DS, anchor + 2, (mem.rw(DS, anchor + 2) - 1) & 0xFFFF)
+        else:
+            mem.ww(DS, anchor + 2, (mem.rw(DS, anchor + 2) - 1) & 0xFFFF)
+    if bits & 0x04:                                 # A5EA
+        for _ in range(2):
+            if mem.rw(DS, anchor + 2) != 0x00C0:
+                mem.ww(DS, anchor + 2, (mem.rw(DS, anchor + 2) + 1) & 0xFFFF)
+    if bits & 0x01:                                 # A607
+        for _ in range(2):
+            if mem.rw(DS, anchor + 4) < 0x00B0:
+                mem.ww(DS, anchor + 4, (mem.rw(DS, anchor + 4) + 1) & 0xFFFF)
+    if bits & 0x02:                                 # A5F9
+        for _ in range(2):
+            if mem.rw(DS, anchor + 4) != 0:
+                mem.ww(DS, anchor + 4, (mem.rw(DS, anchor + 4) - 1) & 0xFFFF)
+    # 9B97: FIRE ([2350] > 0xB6 with bit 0x20) -> 8546
+    if mem.rw(DS, 0x2350) > 0x00B6 and (bits & 0x20):
+        raise RecoveryGap("the 8546 FIRE handler (9B97)",
+                          "decode 1010:8546 against the lockstep gate")
+    _scroll_a66f(mem)                               # 9BA9
     raise RecoveryGap(
-        "the A212 player-record prelude (9B5B: bp=237C, call 1010:A212)",
-        "the next 9B2E interior stage -- decode 1010:A212 against the lockstep gate")
+        "the A067 fire-path stage (9BAC)",
+        "the next 9B2E interior stage -- decode/wire 1010:A067 against the lockstep gate "
+        "(a067_fire_path exists in systems/action_spawns)")
+
+
+def _row_pull_a74e(mem) -> None:
+    """``1010:A74E`` -- the scroll ROW PULL.  A7EB's render half (the 5A7E tile-row strip render
+    and the CS:[9598]-segment strip copy) is VIDEO-side; the DGROUP/logic half is A81B: stash the
+    pulled row in [A408], then for rows <= 0xE52 run THE TILE CUES (7948, native) and THE LEVEL
+    OBJECT SCRIPT (4A65, native -- triggered on the PRE-decrement [A978], which is exactly this
+    call's position in the order).  Back in A74E: the [2350] <= 0xB6 scroll-beat sound, the row
+    advance ([2350] += 0xD, [A978] -= 1), the [A978] == 4 CB1C music beat ([98C2] = 5; the 2032
+    sound-segment writes are a host boundary), and [2354] = 0."""
+    row = mem.rw(DS, 0x2350)
+    if mem.rw(DS, 0x2352) == 1:
+        raise RecoveryGap("the reverse-scroll row pull ([2352] == 1, A81B's bx-0xA9 path)",
+                          "only the forward path is wired")
+    mem.ww(DS, 0xA408, row)                         # A82D
+    if row <= 0x0E52:
+        run_tile_cue_row_7948(mem, row)             # A839
+        run_level_object_script_4a65(mem)           # A83C
+    if row <= 0x00B6 and mem.rb(DS, 0x98C0):        # A751
+        mem.wb(DS, 0xBEFF, 0x07)
+    mem.ww(DS, 0x2350, (row + 0x000D) & 0xFFFF)     # A765
+    mem.ww(DS, 0xA978, (mem.rw(DS, 0xA978) - 1) & 0xFFFF)
+    if mem.rw(DS, 0xA978) == 4:                     # A770 -> CB1C (al = 5)
+        mem.wb(DS, 0x98C2, 0x05)
+    mem.ww(DS, 0x2354, 0)                           # A77A
+
+
+def _scroll_step_a6fe(mem) -> None:
+    """``1010:A6FE`` -- the forward world-scroll step: the [A278] +1 drift bias, [2352] = 0, the
+    row pull when the [234E] phase is at 0, the phase dec (mod 16) with the [2354]-mode row-base
+    advance, and the [234C] row-source step-back (wrapping at CS:[95BE] to CS:[95C0], stride
+    CS:[959E])."""
+    mem.ww(DS, 0xA278, (mem.rw(DS, 0xA278) + 1) & 0xFFFF)
+    mem.ww(DS, 0x2352, 0)
+    if mem.rw(DS, 0x234E) == 0:
+        _row_pull_a74e(mem)
+    phase = (mem.rw(DS, 0x234E) - 1) & 0x000F       # A714/A718
+    mem.ww(DS, 0x234E, phase)
+    if phase == 0 and mem.rw(DS, 0x2354) != 0:      # A71D/A71F
+        mem.ww(DS, 0x2350, (mem.rw(DS, 0x2350) + 0x000D) & 0xFFFF)
+        mem.ww(DS, 0xA978, (mem.rw(DS, 0xA978) - 1) & 0xFFFF)
+    if mem.rw(DS, 0x234C) == mem.rw(CS, 0x95BE):    # A72F -> A746: the row-source wrap
+        mem.ww(DS, 0x234C, mem.rw(CS, 0x95C0))
+    mem.ww(DS, 0x234C, (mem.rw(DS, 0x234C) - mem.rw(CS, 0x959E)) & 0xFFFF)
+
+
+def _scroll_a66f(mem) -> None:
+    """``1010:A66F`` -- the world-scroll stage: gated on [A47C]/[A47E]/[A480] ALL zero (the outro
+    arm / live-wave / countdown holds), one A6FE step; on the [234E] wrap frame, the row-0xE52
+    C591 beat (unrecovered, fail loud) and the row-0xEA0 LEVEL-END ARM (native:
+    run_level_end_arm_a680 -- A47C = 1, the 62AA sweep, the four A3EE outro spawns)."""
+    if mem.rw(DS, 0xA47C) or mem.rw(DS, 0xA47E) or mem.rw(DS, 0xA480):
+        return
+    _scroll_step_a6fe(mem)
+    if mem.rw(DS, 0x234E) != 0:                     # A68A
+        return
+    if mem.rw(DS, 0x2350) == 0x0E52:                # A69D
+        raise RecoveryGap("the C591 row-0xE52 beat (si = A982)",
+                          "unrecovered; fires once per level at the bank-2 boundary row")
+    if mem.rw(DS, 0x2350) == 0x0EA0:                # A6B1
+        run_level_end_arm_a680(mem)
