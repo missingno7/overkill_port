@@ -10,6 +10,11 @@
 > frontier statement at the top of [`run_status.md`](run_status.md)** — when it and §6 disagree,
 > run_status wins. Also read run_status's STANDING MECHANISMS list before building any tooling.
 >
+> **2026-07-07: the ACTIVE campaign is [`campaigns/demo_lockstep.md`](campaigns/demo_lockstep.md)**
+> (per the owner's direction: grow the ONE native 97B2 frame in per-frame lockstep with recorded
+> demos; `verify_native_lockstep` is the gate; play_native then swaps onto the same frame fn).
+> §6's buckets predate it — treat them as background, not the queue.
+>
 > The **lifecycle & vision** (the *why* + the full arc + the equivalence boundaries) is
 > [`game_recovery_lifecycle.md`](game_recovery_lifecycle.md); the OVERKILL restatement is
 > [`native_game_endgame.md`](native_game_endgame.md).

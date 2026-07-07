@@ -26,15 +26,15 @@
 
 | campaign | tier | state | file |
 |---|---|---|---|
-| **DEMO LOCKSTEP (the ACTIVE campaign)** | byte+pixel-exact | opened 2026-07-07 (owner playtest #3) | `demo_lockstep.md` |
-| Spine (mode machine + session) | byte-exact | graph described, not executing | `spine.md` |
-| Player (move/fire/damage/death) | byte-exact | ~90% | `player.md` |
-| Enemies & waves — L1 | byte-exact | ~80%, wired from snapshot | `enemies_l1.md` |
-| Combat resolution | byte-exact | pieces recovered, unwired | `combat.md` |
-| Scene content (spawn scripts) | byte-exact | **DONE** (2026-07-06): walker + 0x1A/0x19/BB03 native, play_native cold path spawns the wave | `scene.md` |
-| Render | pixel-exact | largely done | `render.md` |
+| **DEMO LOCKSTEP (the ACTIVE campaign — all integration flows through it)** | byte+pixel-exact | ~5150/8292 L1 frames byte-exact; frontier in the charter | `demo_lockstep.md` |
+| Spine (mode machine + session) | byte-exact | the gameplay frame is native (native_frame.py); the mode graph around it still hybrid | `spine.md` |
+| Player (move/fire/damage/death) | byte-exact | **native in the lockstep frame** (moves/fire/death verified per-frame) | `player.md` |
+| Enemies & waves — L1..L3 | byte-exact | **DONE for L1/L2/L3 demos** (the walk: zero divergence, zero gaps); L4 residue listed in run_status | `enemies_l1.md` |
+| Combat resolution | byte-exact | native inside the walk (62F6/BEC5/BF25/BFC7 verified) | `combat.md` |
+| Scene content (spawn scripts) | byte-exact | **DONE** + now runs at the REAL position (inside the scroll row pull) | `scene.md` |
+| Render | pixel-exact | composers verified; the star-list mid-present occupancy is the open piece | `render.md` |
 | Front-end (title/menu/select) | screen-exact | logic recovered, unwired | `frontend.md` |
-| Audio | event-exact | not started | `audio.md` |
+| Audio | event-exact | the D50E DGROUP engine is native (lockstep-verified); host sound OUTPUT not started | `audio.md` |
 
 `docs/overkill/depth_recovery_plan.md` is SUPERSEDED by this directory (kept for the state
 analysis). `run_status.md` is a thin JOURNAL (what happened, 5 lines/entry) — campaign charters hold

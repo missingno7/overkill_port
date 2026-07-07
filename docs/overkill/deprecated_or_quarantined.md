@@ -4,6 +4,22 @@ Tracks code, data, and docs that are obsolete, speculative, historical, or mixin
 layers — to be deleted or moved to an explicit evidence/quarantine area rather
 than left mixed with current recovered logic. See `rescue_refactor.md`.
 
+## Doc sweep (2026-07-07, owner-directed)
+
+Eighteen historical plan/report/audit docs were stamped with a SUPERSEDED banner (content kept,
+links intact): next_steps, loop_plan, native_recovery_goal, native_game_endgame, refactor_plan,
+rescue_refactor, architecture_cleanup_plan, render_completion_plan, enhanced_renderer_plan,
+native_background_interpolation_plan, semantic_crystallization_plan, high_level_refactor_audit,
+coastline_report, performance_investigation, hook_naming_audit, native_video_plan,
+render_completeness, runtime_code_staticization (depth_recovery_plan was already marked).
+The live authorities are `campaigns/README.md` -> `campaigns/demo_lockstep.md` (the ACTIVE
+campaign) -> the `run_status.md` TOP HEADER.  Reference docs (design, source_port_methodology,
+game_recovery_lifecycle, recovered_islands, island_truth_tables, hook_inventory, actor_model,
+bootstrap_static_boundary, runtime_findings) stay unbannered -- they document mechanisms, not
+plans.  The clean-process reference this sweep was checked against: `D:\Games\DOS\dos_re`
+(START_HERE/lifecycle/charter) -- its done-definition ("replay the demo corpus with the VM
+disabled; frame-and-state equivalence") IS the demo-lockstep campaign.
+
 ## Status of the inventory (2026-06-19)
 
 A repo-wide mess sweep (this rescue pass + the earlier cleanup) found the code

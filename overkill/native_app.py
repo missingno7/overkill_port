@@ -92,22 +92,22 @@ GAMEPLAY_FRAME_STAGES: tuple[FrameStage, ...] = (
     FrameStage("present_object_scan", "1010:A90C", NATIVE,
                "projection/culling of object screen_di; folded into the native object pass"),
     FrameStage("game_state_controller", "1010:9B2E", NATIVE,
-               "NativeGame.step: input decode + player move + scroll + fan-out (EARLY) + object pass;"
-               " gaps INSIDE it: 99F6 scripted input, A212 chain, FULL fan-out/A970, 9CB6 probe, and"
-               " the OBJECT BEHAVIOR WALK (1010:A9DD..AA2A: per active record of both pools, the AA36"
-               " type dispatch -> EFC4 behavior dispatch -> 149 per-behavior enemy-AI state machines;"
-               " tables cold-load via adapters/behavior_dispatch_adapter + the wave-driver 0x21 top"
-               " dispatch is pure frame_loop.wave_driver_dispatch_b556, but the behavior handler"
-               " bodies are unrecovered -- enemies do not move/spawn/think natively yet)"),
+               "native_frame._step_9b2e (the lockstep frame): the 0162 input poll from the image's"
+               " own INT9 key table, the A212 prelude, the 9AFF death tail, the four move handlers,"
+               " the 8546/A067 fire paths, the A66F scroll (tile cues + the 4A65 level script run"
+               " INSIDE the row pull), the 9D4D upgrade apply, the pod feeder + the walk-adjacent"
+               " stages. The OBJECT BEHAVIOR WALK itself is stage A940's interior (A940 falls"
+               " through into A9D3) and is FULLY NATIVE + demo-dry for L1/L2/L3 (run_behavior_"
+               " walk_a9d3). NOTE: scripts/play_native.py still runs an OLDER hybrid loop -- the"
+               " lockstep charter step 1 swaps it onto this frame."),
     FrameStage("transition_flags", "1010:97CE..97E9: A344->9734, A342->9902, A346->9908", GAP,
                "the gameplay-exit boundary; the DECISION is recovered + demo-witnessed"
-               " (systems/frame_loop.detect_gameplay_transition -> GameplayTransition; A344 scripted /"
-               " A346 death / A342 game-over in 97B2 priority; matched the live verdict incl. 4 real"
-               " DEATH frames) and is now WIRED into play_native -- each frame it fails loud if an exit"
-               " fires (the 9734/9902/9908 targets are unrecovered). PARTIAL: the anchor +08 death"
-               " counter is live, but the other trigger cells (A47C/A95A/A97A/2326) are seeded-static"
-               " because the native loop doesn't run the stages that mutate them yet -- so a REAL death"
-               " isn't detected from native gameplay until that upstream state is native (next slice)"),
+               " (systems/frame_loop.detect_gameplay_transition; A344 scripted / A346 death / A342"
+               " game-over in 97B2 priority). 2026-07-07: in the LOCKSTEP frame the trigger cells"
+               " are LIVE (9AFF writes A344/A342/A346 natively; the frame returns at a taken exit)."
+               " The exit TARGETS' continuations (9734 level-advance / 9902 game-over / 9908 death"
+               " respawn) have play_native-proven native equivalents but are not yet composed into"
+               " the lockstep frame -- exit frames end the comparison window instead"),
     FrameStage("frame_state_update", "1010:A940", NATIVE,
                "the gameplay path (DS:2356 != 5) is composed + produced-vs-VM verified as"
                " systems/frame_loop.frame_state_update_a940 (accumulator shift + scan-entry fork;"

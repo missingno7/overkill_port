@@ -41,29 +41,30 @@ It reads the brief above and works one verified slice at a time.
 - **`domain/` and `systems/` stay VM-free** (no cpu/mem/dos_re/hooks/offsets); enforced by
   `scripts/audit_recovered_layers.py`, `scripts/audit_architecture.py`, `scripts/lint.py`.
 
-## Where things stand (2026-07-04, evening) — INTEGRATION phase
+## Where things stand (2026-07-07) — the DEMO-LOCKSTEP phase
 
-**Leaf recovery is DRY; the port is an integration project.** The whole movement/collision/decision
-surface, the render compose, and the front-end menu LOGIC are pure + verified; what remains is
-wiring recovered pieces into the native runtime plus a few unrecovered subsystems. Pure game-logic
-mass ≈ 32.9%. **The current, single-authority frontier statement lives at the top of
-[`run_status.md`](docs/overkill/run_status.md)** — trust it over any older phrasing (including in
-the `/goal` brief's bucket list, which is updated less often).
+**The operating truth lives in [`campaigns/demo_lockstep.md`](docs/overkill/campaigns/demo_lockstep.md)
+(THE active campaign) and the TOP HEADER of [`run_status.md`](docs/overkill/run_status.md) — trust
+those over anything below or in older docs.**
 
-- **The spine is [`overkill/native_app.py`](overkill/native_app.py)** — the recovered top-level flow,
-  `GAMEPLAY_FRAME_STAGES` (the `1010:97B2` call order, each stage tagged native/host/gap/unmonitored),
-  and `describe_gaps()`. **Read it first for structure.**
-- **`scripts/play_native.py` is the product** (a real VM-less standalone): cold level boot with NO
-  snapshot, the real composed frame (byte-exact vs the VM page), movement + firing. It is not yet a
-  GAME: no enemies, no level end/death, no HUD, no menu flow.
-- **Why no enemies (the key structural fact):** the per-frame object BEHAVIOR WALK
-  (`1010:A9DD..AA2A`) dispatches each active record through the type table (`CS:AA36`, key `+0x16`)
-  then the 149-entry behavior table (`CS:EFC4`, key `+0x18` = `OFF_LOGIC_ID`) into per-behavior
-  state machines (the "zoo") — cold-loadable maps via `adapters/behavior_dispatch_adapter`, handler
-  bodies mostly unrecovered. The wave driver is PLANET-KEYED (`B556`), and the PLAY ORDER is planets
-  1→2→3→4→5→0 (planet 0 = the FINAL mothership/boss level, the `L6_*` demos): the cold-boot FIRST
-  level is planet 1 (the A7A0-phased per-planet family, `L1_*` demos); the `B4A2` leader group is
-  the final level's mothership; the "formation wave" recovery is planet 3's family only.
-- **Genuinely open:** the behavior zoo (start with planet 0's leader group), the `9734/9902/9908`
-  transition continuations (mostly compositions of recovered pieces), the level-select cursor render
-  + menu-flow wiring, HUD wiring, scene-content, endings, audio.
+- **The method** (= `D:\Games\DOS\dos_re`'s canonical done-definition): the native port must replay
+  the demo corpus with the VM disabled and match frame-and-state, byte-exact, every frame.  The
+  instrument is `overkill/probes/verify_native_lockstep.py`: the pure VM is snapshotted at every
+  `1010:9B2E` frame boundary of a recorded demo; the ONE native frame implementation
+  (`overkill/native_frame.py: advance_gameplay_frame_97b2`) runs over the same pre-state; the whole
+  DGROUP is diffed.  The first divergent cell names the next recovery.  No seams, no approximations:
+  unrecovered stages fail loud and are the reported frontier.
+- **The OBJECT WALK (every enemy/actor/pickup state machine) is fully native and dry** for the L1,
+  L2 and L3 demos (zero divergence, zero gaps); L4 has a small named residue.  The lockstep frame
+  additionally owns: input (from the image's own INT9 key table), the player move handlers, the
+  death tail, the A66F scroll (tile cues + the level script run INSIDE the row pull), the A067 fire
+  path, the A940 state update, the 5F61 frame clock, the 0922 starfield and the D50E sound engine.
+- **`scripts/play_native.py` still runs an OLDER hybrid loop** (dataclass game + sync bridges) —
+  the owner's playtests correctly flag it as inaccurate.  Charter step 1 replaces its gameplay loop
+  with the gate-verified frame fn; step 2 adds `--demo <name> --mirror` (replay a recorded demo in
+  the app with live state/pixel divergence flagging).  Until then, play_native is NOT evidence of
+  the port's state — the lockstep gate is.
+- **Genuinely open** (ordered in the charter): the 4CED star-list mid-present occupancy, the 23A0
+  flash decay (recipe journaled), the 77C5 shield body, the 9EE4 drain, the app unification, then
+  the L4/L5 walk residue, transitions/menu/endings, audio (the D50E DGROUP model is done; the host
+  sound output isn't).

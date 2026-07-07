@@ -1,3 +1,9 @@
+> **SUPERSEDED (2026-07-07).** This document is a historical plan/report from an earlier phase.
+> It is NOT the current direction and may contradict the present state.  The live authorities:
+> [`campaigns/README.md`](campaigns/README.md) (the operating model) →
+> [`campaigns/demo_lockstep.md`](campaigns/demo_lockstep.md) (THE active campaign) →
+> the TOP HEADER of [`run_status.md`](run_status.md) (the current frontier).
+
 # OVERKILL source-reconstruction refactor — goal & playbook
 
 > **Not the top-level direction (a sub-means).** The goal + what-to-do-next is the single

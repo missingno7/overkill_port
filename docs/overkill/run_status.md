@@ -15,13 +15,19 @@
 > gitignored, keyed on the demo file sha1 + frame budget)**, `scripts/lindis.py` (encoded targets),
 > `scripts/behavior_zoo_xref.py`; cold-boot probes MUST pass
 > `overkill.launch.build_command_tail("tandy", "pc")`.
-> Suite green: 1225 passed / 23 skipped (2026-07-06). **SCENE.MD CAMPAIGN DONE**: `play_native --level
-> 0` (cold, no snapshot) now spawns/moves a real enemy wave, VM-free (`verify_play_native_cold` PASS).
-> **THE ENTIRE DEMO WALK IS NATIVE (2026-07-06): 8294/8294 frames, ZERO divergence, ZERO gaps.**
-> Every actor/spawn/death/pickup in the whole played L1 demo runs natively byte-exact (23 behaviors +
-> collect + the 9EA3 death chain; BDD0 wired through AFD8). The enemies_l1 + scene campaigns' walk
-> work is COMPLETE for L1. Next frontier: play_native integration polish, other planets' controller
-> families (0x1c etc.), the 9734/9902/9908 transition continuations, HUD/menu wiring, audio.
+> Suite green: 1225 passed / 23 skipped (2026-07-07).
+> **THE ACTIVE CAMPAIGN: [`campaigns/demo_lockstep.md`](campaigns/demo_lockstep.md)** -- grow the
+> ONE native 97B2 frame (`overkill/native_frame.py`) in per-frame lockstep with a recorded demo
+> (`overkill/probes/verify_native_lockstep.py`, cached), then swap play_native onto that same frame
+> fn + add `--demo/--mirror`.  **CURRENT LOCKSTEP STATE (L1 demo, 8292 frames): ~5150 byte-exact,
+> 2810 diverging (bulk = the 4CED star-list mid-present occupancy; + the 23A0 flash decay, journaled
+> with recipe), 328 gapped (77C5 shield body 266, 9EE4 drain 62).**
+> Standing facts: the OBJECT WALK is fully native + dry for L1 (8294/8294), L2 (6561/6561) and L3
+> (4370/4370) demos, zero divergence zero gaps; L4 walk residue: 0x93/0x81/0x80/0x7D/0x7E/0x7F + the
+> planet-4 wave family; the D50E sound engine, the 5F61 frame clock, the A66F scroll (cues+script
+> inside the row pull), the 0162 input poll, the A067 fire path and the 0922 starfield are native in
+> the lockstep frame.  play_native still runs the OLD hybrid loop -- nothing verified reaches the
+> player until charter step 1 (the unification) lands.
 
 ## 2026-07-07 - lockstep: the SOUND ENGINE native (045516c); the 23A0 decay ROOT-CAUSED
 
