@@ -737,6 +737,97 @@ _AF22_MOVE_BY_DIRECTION = (
 )
 
 
+def _rotating_pool_scan_b15a(mem) -> int:
+    """``1010:B15A`` -- the ROTATING victim scan: from the persistent [A43A] cursor over the
+    23B4 pool (wrapping at 2B5C), the first active record with behavior not in {1, 0x26, 0x21,
+    0x22}, x <= 0xE0 (unsigned) and type 4; the cursor advances PAST the hit (or FFFF after 0x23
+    probes)."""
+    bx = mem.rw(DS, 0xA43A)
+    for _ in range(0x23):
+        if bx >= 0x2B5C:
+            mem.ww(DS, 0xA43A, 0x23B4)
+            bx = 0x23B4
+        if (mem.rw(DS, bx) != 0
+                and mem.rw(DS, bx + 0x18) not in (0x01, 0x26, 0x21, 0x22)
+                and mem.rw(DS, bx + 0x02) <= 0x00E0
+                and mem.rw(DS, bx + 0x16) == 4):
+            mem.ww(DS, 0xA43A, (bx + 0x38) & 0xFFFF)
+            return bx
+        bx += 0x38
+    return 0xFFFF
+
+
+def _ad60_tail(mem, rec: int, tiles: LevelTileContext, logic_id: int, *, drift: bool) -> None:
+    """The shared AD5A/AD60 exit: optional A278 drift, then the bounds/tile decision with the
+    BD17 deactivate on either kill path."""
+    if drift:
+        mem.ww(DS, rec + 0x02, (mem.rw(DS, rec + 0x02) + mem.rw(DS, 0xA278)) & 0xFFFF)
+    x = mem.rw(DS, rec + 0x02)
+    y = mem.rw(DS, rec + 0x04)
+    decision = object_bounds_tile_decision_ad60(
+        x, y, mem.rw(DS, rec + 0x16), logic_id,
+        tile_probe_suppressed=mem.rw(DS, 0xBDAC) == 0x0001)
+    if decision.kind == "deactivate":
+        _bd17_deactivate(mem, rec)
+    elif decision.kind == "tile_probe":
+        if object_tile_probe_deactivates_ad60(x, y, tiles):
+            _bd17_deactivate(mem, rec)
+
+
+def _step_tractor_0a(mem, rec: int, tiles: LevelTileContext) -> None:
+    """Behavior 0x0A (``1010:B1B0``) -- the TRACTOR: sprite = [2328] + 0x6D.  Phase 0 (+0x1C != 1):
+    a 4px-aligned 5DB2 mode-2 seek toward (player x + 0xA, player y + 0xC); while moving, the AD60
+    tail; on arrival ([230A] blocked), dec [A97E], the B15A rotating scan LINKS a victim into
+    +0x30 (FFFF -> the ADC9 death), +0x1C = 1, sound 0x11, [A97E]++.  Phase 1: victim inactive /
+    x > 0xDC / dying -> unlatch (+0x1C = 0); else the 5E1B victim deltas (persisted to +0x2A/+0x2C)
+    + the 5E42 steer; phase-1 exits take the AD5A drift."""
+    mem.ww(DS, rec + 0x08, (mem.rw(DS, 0x2328) + 0x006D) & 0xFFFF)
+    if mem.rw(DS, rec + 0x1C) != 1:
+        tx = (mem.rw(DS, 0x237E) + 0x000A) & 0xFFFC     # B1BF..B1DC: masked targets
+        ty = (mem.rw(DS, 0x2380) + 0x000C) & 0xFFFC
+        mem.ww(DS, rec + 0x04, mem.rw(DS, rec + 0x04) & 0xFFFC)
+        mem.ww(DS, rec + 0x02, mem.rw(DS, rec + 0x02) & 0xFFFC)
+        blocked = _apply_seek(mem, rec, ty, tx, 2)
+        if not blocked:
+            _ad60_tail(mem, rec, tiles, 0x000A, drift=False)
+            return
+        if mem.rw(DS, 0xA97E):
+            mem.ww(DS, 0xA97E, mem.rw(DS, 0xA97E) - 1)
+        victim = _rotating_pool_scan_b15a(mem)
+        if victim == 0xFFFF:
+            mem.ww(DS, rec + 0x02, 0xFFFF)              # B209 -> ADC9
+            _bd17_deactivate(mem, rec)
+            return
+        mem.ww(DS, rec + 0x30, victim)
+        mem.ww(DS, rec + 0x1C, 0x0001)
+        if mem.rb(DS, 0x98C0):
+            mem.wb(DS, 0xBEFF, 0x11)
+        mem.ww(DS, 0xA97E, (mem.rw(DS, 0xA97E) + 1) & 0xFFFF)
+        _ad60_tail(mem, rec, tiles, 0x000A, drift=False)
+        return
+    victim = mem.rw(DS, rec + 0x30)
+    if (mem.rw(DS, victim) == 0 or mem.rw(DS, victim + 0x02) > 0x00DC
+            or mem.rw(DS, victim + 0x18) == 1):
+        mem.ww(DS, rec + 0x1C, 0x0000)                  # B245: unlatch
+        _ad60_tail(mem, rec, tiles, 0x000A, drift=True)
+        return
+    deltas = object_delta_5e1b(mem.rw(DS, rec + 0x02), mem.rw(DS, rec + 0x04),
+                               mem.rw(DS, victim + 0x02), mem.rw(DS, victim + 0x04),
+                               mem.rw(DS, victim + 0x14))
+    mem.ww(DS, rec + 0x2C, deltas.move_delta_y)
+    mem.ww(DS, rec + 0x2A, deltas.move_delta_x)
+    table = tuple(mem.rb(DS, (0xA348 + i) & 0xFFFF) for i in range(16))
+    steer = object_delta_steer_5e42(
+        mem.rw(DS, rec + 0x02), mem.rw(DS, rec + 0x04), mem.rw(DS, rec + 0x06),
+        mem.rw(DS, rec + 0x2C), mem.rw(DS, rec + 0x2A), mem.rw(DS, rec + 0x2E),
+        mem.rw(DS, 0x2312), table)
+    mem.ww(DS, rec + 0x06, steer.direction_or_step)
+    mem.ww(DS, rec + 0x02, steer.x_word)
+    mem.ww(DS, rec + 0x04, steer.y_word)
+    mem.ww(DS, rec + 0x2E, steer.move_step_error)
+    _ad60_tail(mem, rec, tiles, 0x000A, drift=True)
+
+
 def _step_marcher_0c(mem, rec: int, tiles: LevelTileContext) -> None:
     """Behavior 0x0C (``1010:AE09``, EFAE logic_id 0xC) -- the 8-way MARCHER: while the +0x1C
     countdown runs it only ticks (the tick reaching 0 re-aims dir = 0 and resumes); at 0 the body
@@ -2270,6 +2361,8 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
             _step_mover_06(mem, rec, tiles)                     # AE2C (recovered whole-slot update)
         elif beh == 0x0C:
             _step_marcher_0c(mem, rec, tiles)                   # AE09 (the AD60 tail is internal)
+        elif beh == 0x0A:
+            _step_tractor_0a(mem, rec, tiles)                   # B1B0 (the AD5A/AD60 tail internal)
         elif beh == 0x1C:
             _step_controller_1c(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=False)   # the 8D4F stub exits jmp BC4B
