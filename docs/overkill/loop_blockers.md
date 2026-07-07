@@ -1003,3 +1003,13 @@ with ``2356 == 5`` (the in-game demo-playback mode), so it's never exercised in 
 ``step_a940_attract_middle`` is correct (matches the original on all branches). If the lifted attract
 branch is ever put on a witnessed path, fix it to match the pure rule (or delegate the lifted adapter
 to ``step_a940_attract_middle`` + ``a940_speed_bucket``). Low priority (attract-only).
+
+## 2026-07-07 — the 0x5A/0x5F diagonal AFD8 multi-step 1px divergence
+Repro: implement F268 (0x5A: 3x AFD8, blocked->dir^=6 + 1 step) / F34D (0x5F: 4x AFD8,
+dir-cycling on block) with `_afd8_step` per step and run
+`python -m overkill.probes.verify_native_walk_demo demo_play_tandy_L3_full_20260617_202520`:
+1-byte x divergences at frames 1366/2225 (0x5A, dir 1) and 1744/1764 (0x5F, dir 5) — native
+x one MORE than the VM. Cardinal-direction records verify fine (0x56/0x57/0x58/0x4E all pass).
+Suspect: the DIAGONAL B022 composition (axis1-then-axis2 with blocked accumulation) interacts
+with the multi-step loop's break-at-block differently than contact_step_b022 models — drive
+1010:F268 on the frame-1366 pre-state (bp=2A0C) and compare step by step.
