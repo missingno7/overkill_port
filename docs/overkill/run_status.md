@@ -31,7 +31,12 @@ machinery), then the 9B2E tail (4FF9 terrain crash + 9E19 cascade, 9C01 edge ass
 97B2 natively; diverged 5764 -> 3908 after the D50E [BF00] BYTE-inc fix (it was clobbering BF01).
 
 **The divergence frontier (next context):**
-1. **The C7B1-region ring** (most diverging frames): 6-stride cells right AFTER my 40-star
+1. SOLVED STRUCTURALLY: at frame 5 the VM ticks exactly my 20 layer-1 stars (C6C1..C733,
+   6-stride -- the 0922 model + parities are CORRECT) and SEPARATELY writes C7B1..C7D2+ DENSELY
+   (word-packed) -- the STAR RENDERER's DGROUP scratch (the undraw/restore list: screen offsets
+   + pixels), written by the present/draw stage, alternating with frame parity.  Find the star
+   plotter (5BDC's 4D15-family or A846's head), model its DGROUP writes.
+1b. (superseded) **The C7B1-region ring** (most diverging frames): 6-stride cells right AFTER my 40-star
    starfield writes end (C6C1+40*6 = C7B1); the values show a ONE-FRAME SKEW (nat@N == vm@N-1)
    -- either the 0922 layer parities are off-phase, the ring is LONGER than 40 entries, or a
    second writer (the A846/A90C draw-order list?) owns C7B1+.  Drive 1F8F:0922 on a cached frame
