@@ -26,6 +26,10 @@ PLANETS = (
      (0x30, 0x5A, 0xC4)),
     (3, ROOT / "artifacts" / "demos" / "demo_play_tandy_L3_full_20260617_202520" / "snapshot",
      tuple(i for i in range(0xCE, 0xEC) if i not in (0xDF, 0xEA, 0xEB))),
+    (4, ROOT / "artifacts" / "demos" / "demo_play_tandy_L4_full_20260618_185155" / "snapshot",
+     (0xAC, 0xB1, 0xC9) + tuple(i for i in range(0xCE, 0xE1))),
+    (5, ROOT / "artifacts" / "demos" / "demo_play_tandy_L5_start_20260618_185923" / "snapshot",
+     (0x30, 0xB6, 0xBA, 0xBB, 0xBC, 0xD2) + tuple(i for i in range(0xD7, 0xF0))),
 )
 
 

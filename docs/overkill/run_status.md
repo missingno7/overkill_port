@@ -57,6 +57,18 @@ if row <= 0xE52 call **7948** (the 13-TILE ROW LOOP: es=[9592] the plane seg, si
 0x04/0x07/0x6C/0x6D branch at 7977.. to 7A6E/7A7A/7AAE/7AC4) + call 4A65 (already recovered)
 -> jmp **5A7E** (the row -> page blit).
 
+## 2026-07-07 - **THE TILE-CUE SPAWNER IS COMPLETE FOR ALL FIVE PLAYABLE PLANETS (176 rows byte-exact)**
+
+Planets 4 (7CA2) and 5 (7DC8) recovered via the parser: the shared planet-1 stubs (the compare
+CHAINS map p4's 0xAC/0xB1/0xC9 and p5's 0xD2/0xD3/0xD7/0xD8 to the 7A6E-family BEFORE their
+sub-tables -- caught by a 1-byte driven diff, beh 0x8C vs 0x8D), the 7D2A/7D4D planet-conditional
+DIVERS (spr 0x17A/0x17B when planet != 4), the 8143 RANDOM-LINK stub (planet 5: a 4D95 draw picks
+the linked-counter variant 1-in-16), the consume-only ids (0xE1/0xE2 -> 7E58), and the 79BA
+link-stamp (2x2 consume + 7A40 + beh 0x48 + the 81A7 tail).  `verify_native_tile_cues` drives
+ALL FIVE planets' snapshots: **176 cue rows byte-exact**.  play_native runs the cues on every
+planet except 0 (the mothership handler fail-louds until its overlay machinery is decoded).
+Dead/garbage table tails (p4 0xE1/0xE2, p5 0xF0/0xF1) fail loud if ever seen.
+
 ## 2026-07-07 - planet 3's tile cues recovered (7C3F): 28 ids, MECHANICALLY parsed + driven
 
 The stub bodies are so regular a PARSER extracted them (scratchpad stub_parser recipe: call

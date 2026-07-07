@@ -44,10 +44,10 @@ def run_tile_cue_row_7948(mem, row_base: int, leak_32: int = 0, leak_34: int = 0
     read AND MUTATED through the image's own plane segment (the consume writes), ``[A40A]``
     steps 0x10 per tile.  Fails loud for planets whose handler is not yet recovered."""
     planet = mem.rw(DS, 0x2356)
-    if planet not in (1, 2, 3):
-        raise RecoveryGap(f"tile-cue handler for planet {planet} (DS:[95DE+{planet}*2])",
-                          "only planets 1 (7977), 2 (7B06) and 3 (7C3F) are recovered -- decode "
-                          "+ drive the others before scrolling their terrain")
+    if planet == 0:
+        raise RecoveryGap("tile-cue handler for planet 0 (1010:7BCB)",
+                          "the mothership's cue handler far-calls deeper overlay machinery -- "
+                          "decode + drive it before scrolling its terrain")
     plane_seg = mem.rw(CS, 0x9592)
     spawned: list[int] = []
     mem.ww(DS, 0xA408, row_base & 0xFFFF)
@@ -56,7 +56,8 @@ def run_tile_cue_row_7948(mem, row_base: int, leak_32: int = 0, leak_34: int = 0
         tile_id = mem.rb(plane_seg, si)
         y_a40a = (k * 0x10) & 0xFFFF
         mem.ww(DS, 0xA40A, y_a40a)
-        cue = {1: _planet1_cue, 2: _planet2_cue, 3: _planet3_cue}[planet]
+        cue = {1: _planet1_cue, 2: _planet2_cue, 3: _planet3_cue,
+               4: _planet4_cue, 5: _planet5_cue}[planet]
         rec = cue(mem, plane_seg, si, tile_id, y_a40a, leak_32, leak_34)
         if rec is not None:
             spawned.append(rec)
@@ -277,3 +278,196 @@ def _planet3_cue(mem, plane_seg: int, si: int, tile_id: int, y_a40a: int,
         for off, val in y_writes:
             mem.ww(DS, slot + off, val)
     return slot
+
+
+#: planets 4/5: parsed like planet 3 (the same stub shapes; pinned by the driven gate).
+_PLANET4_CUES = {
+    0xCE: ("81C9", ((0x18, 0x8C),), None),
+    0xCF: ("81C9", ((0x18, 0x8B),), None),
+    0xD0: ("81C9", ((0x18, 0x58), (0x08, 0x99), (0x06, 2)), None),
+    0xD1: ("81C9", ((0x18, 0x57), (0x08, 0x9B), (0x06, 6)), None),
+    0xD4: ("81C9", ((0x06, 6), (0x18, 0x5F)), ((0x06, 2),)),
+    0xD5: ("819E", ((0x06, 4), (0x18, 0x8A)), None),
+    0xD6: ("81C9", ((0x18, 0x4F),), None),
+    0xD7: ("81C9", ((0x06, 7), (0x18, 0x59), (0x08, 0xE3)), ((0x06, 1),)),
+    0xD8: ("819E", ((0x18, 0x83),), None),
+    0xD9: ("819E", ((0x06, 4), (0x18, 0x5D), (0x08, 0x77)), None),
+    0xDA: ("81C9", ((0x18, 0x38), (0x06, 3)), None),
+    0xDB: ("81C9", ((0x18, 0x38), (0x06, 5)), None),
+    0xDC: ("81C9", ((0x18, 0x34),), None),
+    0xDE: ("81C9", ((0x18, 0x69),), None),
+    0xDF: ("819E", ((0x18, 0x35),), None),
+    0xE0: ("819E", ((0x06, 4), (0x18, 0x5E), (0x08, 0x27)), None),
+}
+_PLANET5_CUES = {
+    0xD7: ("819E", ((0x18, 0x8D),), None),
+    0xD8: ("819E", ((0x18, 0x8E),), None),
+    0xDA: ("81C9", ((0x18, 0x92), (0x08, 0x15A), (0x06, 2)), None),
+    0xDB: ("81C9", ((0x18, 0x92), (0x08, 0x15B), (0x06, 6)), None),
+    0xDE: ("81C9", ((0x06, 6), (0x18, 0x87), (0x08, 0xE0)), ((0x06, 2), (0x08, 0xDD))),
+    0xDF: ("81C9", ((0x06, 6), (0x18, 0x87), (0x08, 0xE0)), ((0x06, 2), (0x08, 0xDD))),
+    0xE0: ("819E", ((0x06, 4), (0x18, 0x5D), (0x08, 0x77)), None),
+    0xE3: ("81C9", ((0x06, 2), (0x18, 0x63), (0x08, 0xE7)), None),
+    0xE4: ("81C9", ((0x08, 0x46), (0x18, 0x30), (0x06, 4)), None),
+    0xE5: ("81C9", ((0x18, 0x58), (0x08, 0x99), (0x06, 2)), None),
+    0xE6: ("81C9", ((0x18, 0x57), (0x08, 0x9B), (0x06, 6)), None),
+    0xE7: ("81C9", ((0x18, 0x19), (0x06, 2)), None),
+    0xE8: ("819E", ((0x18, 0x89),), None),
+    0xE9: ("819E", ((0x06, 6), (0x18, 0x47)), None),
+    0xEA: ("819E", ((0x18, 0x35),), None),
+    0xEC: ("81C9", ((0x18, 0x4F),), None),
+    0xED: ("819E", ((0x18, 0x37),), None),
+    0xEE: ("819E", ((0x06, 0), (0x18, 0x2D)), None),
+    0xEF: ("819E", ((0x06, 4), (0x18, 0x5E), (0x08, 0x27)), None),
+    # the planet-5 inline stubs (7D70/7D86/7D9C/7DB2)
+    0xBA: ("81C9", ((0x06, 0), (0x18, 0x84), (0x08, 0x156)), None),
+    0xBB: ("81C9", ((0x06, 2), (0x18, 0x84), (0x08, 0x157)), None),
+    0xBC: ("81C9", ((0x06, 4), (0x18, 0x84), (0x08, 0x158)), None),
+    0xB6: ("81C9", ((0x06, 6), (0x18, 0x84), (0x08, 0x159)), None),
+}
+#: the 7D2A/7D4D planet-conditional stubs (0x54 divers; the alt sprite when planet != 4).
+_DIVER_STUBS = {0x7D2A: (1, 0x172, 0x17A), 0x7D4D: (7, 0x173, 0x17B)}
+
+
+def _run_cue_common(mem, plane_seg, si, y_a40a, leak_32, leak_34,
+                    common, writes, y_writes) -> "int | None":
+    """The shared 81C9/819E executor (consume + alloc + 8209 + 81CC + optional link + stamps)."""
+    mem.wb(plane_seg, si, 0x01)
+    slot = _alloc(mem, 0x95D8, EFFECT_POOL_BASE, EFFECT_POOL_WRAP, EFFECT_SLOTS)
+    if slot == 0xFFFF:
+        return None
+    _stamp_8209(mem, slot, leak_32, leak_34)
+    mem.ww(DS, slot + 0x04, y_a40a)
+    mem.ww(DS, slot + 0x02, 0x0010)
+    mem.ww(DS, slot + 0x0A, 0x0000)
+    if common == "819E":
+        _link_81a7(mem, slot)
+    for off, val in writes:
+        mem.ww(DS, slot + off, val)
+    if y_writes is not None and mem.rw(DS, slot + 0x04) <= 0x0060:
+        for off, val in y_writes:
+            mem.ww(DS, slot + off, val)
+    return slot
+
+
+def _link_81a7(mem, slot: int) -> None:
+    """The 81A7 linked-counter tail over a fresh slot."""
+    ptr = mem.rw(DS, 0x209A)
+    if ptr != 0xFFFF:
+        mem.wb(DS, ptr, (mem.rb(DS, ptr) + 1) & 0xFF)
+        mem.wb(DS, (ptr + 1) & 0xFFFF, mem.rw(DS, 0x2070) & 0xFF)
+        mem.ww(DS, slot + 0x28, mem.rw(DS, 0x2098))
+    else:
+        mem.ww(DS, slot + 0x28, 0xFFFF)
+
+
+def _pre_step(mem, si) -> None:
+    mem.ww(DS, 0x2070, mem.rb(DS, (0xC81A + (si & 0x3F)) & 0xFFFF))
+    _linked_counter_alloc_1f8f0163(mem)
+
+
+def _diver_stub(mem, plane_seg, si, y_a40a, leak_32, leak_34, addr) -> "int | None":
+    """7D2A/7D4D: 81C9 + dir/beh 0x54/spr, the sprite OVERRIDDEN when planet != 4."""
+    direction, spr, spr_alt = _DIVER_STUBS[addr]
+    writes = ((0x06, direction), (0x18, 0x54),
+              (0x08, spr if mem.rw(DS, 0x2356) == 4 else spr_alt))
+    return _run_cue_common(mem, plane_seg, si, y_a40a, leak_32, leak_34,
+                           "81C9", writes, None)
+
+
+def _random_link_stub_8143(mem, plane_seg, si, y_a40a, leak_32, leak_34) -> "int | None":
+    """8143: on planet 5 a 4D95 draw picks 819E one time in 16 ((rand & 0xF) == 0xF), else
+    81C9; beh 0x68.  The random RING advances."""
+    from overkill.recovered.systems.frame_loop import canned_random_next_4d95
+    common = "81C9"
+    if mem.rw(DS, 0x2356) == 5:
+        ring = tuple(mem.rw(DS, 0x20A8 + i * 2) for i in range(16))
+        rand, nxt = canned_random_next_4d95(mem.rw(DS, 0x20A6), ring)
+        mem.ww(DS, 0x20A6, nxt)
+        if (rand & 0xF) == 0xF:
+            common = "819E"
+    return _run_cue_common(mem, plane_seg, si, y_a40a, leak_32, leak_34,
+                           common, ((0x18, 0x68),), None)
+
+
+def _link_stamp_stub_79ba(mem, plane_seg, si, y_a40a) -> "int | None":
+    """79BA (planet 5's 0xD9): the 79A6 2x2 consume (all 1s) + 7524 + the 7A40 stamp +
+    beh 0x48 dir 4 + the 81A7 LINK tail."""
+    mem.wb(plane_seg, si, 0x01)
+    mem.wb(plane_seg, (si + 1) & 0xFFFF, 0x01)
+    mem.wb(plane_seg, (si + 13) & 0xFFFF, 0x01)
+    mem.wb(plane_seg, (si + 14) & 0xFFFF, 0x01)
+    slot = _alloc(mem, 0x95D8, EFFECT_POOL_BASE, EFFECT_POOL_WRAP, EFFECT_SLOTS)
+    if slot == 0xFFFF:
+        return None
+    _stamp_7a40(mem, slot, y_a40a)
+    mem.ww(DS, slot + 0x18, 0x0048)
+    mem.ww(DS, slot + 0x06, 0x0004)
+    _link_81a7(mem, slot)
+    return slot
+
+
+def _planet4_cue(mem, plane_seg: int, si: int, tile_id: int, y_a40a: int,
+                 leak_32: int, leak_34: int) -> "int | None":
+    """Planet 4's ``1010:7CA2``: the planet-1-shared ids (0xAC/0xB1/0xC9) + the 7CE2 table
+    (ids 0xCE..0xE0; 0xE1/0xE2 target non-code -- fail loud if ever seen)."""
+    if tile_id in (0xAC, 0xB1, 0xC9):
+        return _planet1_cue(mem, plane_seg, si, tile_id, y_a40a, leak_32, leak_34)
+    if not (0xCE <= tile_id <= 0xE2):
+        return None
+    if tile_id in (0xE1, 0xE2):
+        raise RecoveryGap(f"planet-4 tile cue {tile_id:#04x}",
+                          "the 7CE2 table's tail entries point at non-code -- decode before use")
+    _pre_step(mem, si)
+    if tile_id == 0xD2:
+        return _diver_stub(mem, plane_seg, si, y_a40a, leak_32, leak_34, 0x7D2A)
+    if tile_id == 0xD3:
+        return _diver_stub(mem, plane_seg, si, y_a40a, leak_32, leak_34, 0x7D4D)
+    if tile_id == 0xDD:
+        return _random_link_stub_8143(mem, plane_seg, si, y_a40a, leak_32, leak_34)
+    common, writes, y_writes = _PLANET4_CUES[tile_id]
+    return _run_cue_common(mem, plane_seg, si, y_a40a, leak_32, leak_34,
+                           common, writes, y_writes)
+
+
+def _planet5_cue(mem, plane_seg: int, si: int, tile_id: int, y_a40a: int,
+                 leak_32: int, leak_34: int) -> "int | None":
+    """Planet 5's ``1010:7DC8``: 0x30 shared with planet 2; the inline 0xBA/0xBB/0xBC/0xB6
+    stubs; 0xD2 -> the planet-1 0xB1 stub (7AF0); the 7E26 table (ids 0xD7..0xF1; 0xF0/0xF1
+    target non-code -- fail loud)."""
+    if tile_id == 0x30:
+        return _planet2_cue(mem, plane_seg, si, 0x30, y_a40a, leak_32, leak_34)
+    if tile_id in (0xBA, 0xBB, 0xBC, 0xB6):
+        _pre_step(mem, si)
+        common, writes, y_writes = _PLANET5_CUES[tile_id]
+        return _run_cue_common(mem, plane_seg, si, y_a40a, leak_32, leak_34,
+                               common, writes, y_writes)
+    if tile_id == 0xD2:
+        return _planet1_cue(mem, plane_seg, si, 0xB1, y_a40a, leak_32, leak_34)
+    # the compare CHAIN catches these BEFORE the sub-D7 table (whose index-0/1 entries are dead):
+    if tile_id == 0xD7:
+        return _planet1_cue(mem, plane_seg, si, 0x07, y_a40a, leak_32, leak_34)   # 7A7A
+    if tile_id == 0xD8:
+        return _planet1_cue(mem, plane_seg, si, 0x04, y_a40a, leak_32, leak_34)   # 7A6E
+    if tile_id == 0xD3:
+        return _planet1_cue(mem, plane_seg, si, 0xAC, y_a40a, leak_32, leak_34)   # 7ADA
+    if not (0xD7 <= tile_id <= 0xF1):
+        return None
+    if tile_id in (0xF0, 0xF1):
+        raise RecoveryGap(f"planet-5 tile cue {tile_id:#04x}",
+                          "the 7E26 table's tail entries point at non-code -- decode before use")
+    _pre_step(mem, si)
+    if tile_id in (0xE1, 0xE2):                  # 7E58: consume-only, no spawn
+        mem.wb(plane_seg, si, 0x01)
+        return None
+    if tile_id == 0xD9:
+        return _link_stamp_stub_79ba(mem, plane_seg, si, y_a40a)
+    if tile_id == 0xDC:
+        return _diver_stub(mem, plane_seg, si, y_a40a, leak_32, leak_34, 0x7D2A)
+    if tile_id == 0xDD:
+        return _diver_stub(mem, plane_seg, si, y_a40a, leak_32, leak_34, 0x7D4D)
+    if tile_id == 0xEB:
+        return _random_link_stub_8143(mem, plane_seg, si, y_a40a, leak_32, leak_34)
+    common, writes, y_writes = _PLANET5_CUES[tile_id]
+    return _run_cue_common(mem, plane_seg, si, y_a40a, leak_32, leak_34,
+                           common, writes, y_writes)
