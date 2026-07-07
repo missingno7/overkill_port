@@ -54,7 +54,11 @@ fires the A114 TRIPLE SPREAD ([A3A6]-gated, sound 0x18, three A175 spawns at the
 (-6,+4)/(-2,-4,dir 7)/(-2,+0xC,dir 1), [A974]++ each -- the 0x0C family); then the anchor's own
 shot dispatches by [A958] through the CS:A108 table whose entries include A19F and A1C8 -- THE
 SAME early tails already pure in systems/objects (plus A18A/A137-family variants to decode at
-wiring time).  The full fan-out is now mapped end-to-end; NEXT SESSION: wire it into
+wiring time).  A4EA = 7547-alloc + the seed stamps (active=1, +1E=1, dir 0, sprite 0x32, +14=0, type 2, beh 2,
++1C=FFFF -- the pure object_spawn_seed_a4ea).  A175 = A4EA re-stamped beh 0x0C/+1C=7, si=[A96E],
+returns the pod x.  A18A (A108 mode 1) = A1AB + sprite 0x33 + sound 0x14.  Small decodes left at
+wiring: 7547 (vs _alloc(95DA)), A1AB, A137-region, A571's tail bytes, A2A0 (mode 5), the full
+CS:A108 table words.  The full fan-out is now mapped end-to-end; NEXT SESSION: wire it into
 native_frame._step_9b2e (replacing the A067 gap) and re-run the lockstep gate.  Every spawn lands on native behaviors.  A0E8 remains.  then the EARLY tails wire via native_a19f_tail/native_a1c8_tail (pure, in systems/objects).
 
 **The frontier (gate-ranked):**
