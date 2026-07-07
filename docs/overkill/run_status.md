@@ -49,7 +49,13 @@ A4D7 (mode 0) = one A4EA-seed shot at the pod's position (+02/+04 from si).  A49
 A4D7 + sprite 0x33.  A499 (mode 2) = the ANGLED shot: pos +4 y, dir = [A3EC] (FFFF -> 7, or 1
 when pod y > 0x58), sprite 0x19 (dir 1) / 0x1F.  A438 (mode 4) = [A3A0]-gated PAIR: [A970] += 2,
 two A4D7 spawns re-stamped beh 8 / sprite 0x35, the second +8 x.  A464 (mode 3) = the same with
-beh 7 / sprite 0x37.  Mode 5 = 44AF (no-op).  Every spawn lands on native behaviors.  A0E8 remains.  then the EARLY tails wire via native_a19f_tail/native_a1c8_tail (pure, in systems/objects).
+beh 7 / sprite 0x37.  Mode 5 = 44AF (no-op).  A0E8 = the ANCHOR-fire dispatcher: mode 5 first calls A2A0; a live tracker pod ([A96E] != FFFF)
+fires the A114 TRIPLE SPREAD ([A3A6]-gated, sound 0x18, three A175 spawns at the pod with offsets
+(-6,+4)/(-2,-4,dir 7)/(-2,+0xC,dir 1), [A974]++ each -- the 0x0C family); then the anchor's own
+shot dispatches by [A958] through the CS:A108 table whose entries include A19F and A1C8 -- THE
+SAME early tails already pure in systems/objects (plus A18A/A137-family variants to decode at
+wiring time).  The full fan-out is now mapped end-to-end; NEXT SESSION: wire it into
+native_frame._step_9b2e (replacing the A067 gap) and re-run the lockstep gate.  Every spawn lands on native behaviors.  A0E8 remains.  then the EARLY tails wire via native_a19f_tail/native_a1c8_tail (pure, in systems/objects).
 
 **The frontier (gate-ranked):**
 1. **The A067 fire fan-out -- 7970 frames.**  The entry gate + path selector + the EARLY tails
