@@ -687,6 +687,19 @@ def main(argv=None) -> int:
                 and walk_image.rw(0x25CC, 0xA47C) == 0:
             run_level_end_arm_a680(walk_image)
             print(f"level-end arm at tick {cell['tick']}: the outro is on stage (A47C=1)")
+        # THE TILE CUES (A81B -> 7948): each pulled row spawns its terrain actors -- crawlers,
+        # turrets, the deployer.  Runs at the pull's PRE-decrement row (A7D0 pulls THEN subs),
+        # gated like A831 (rows > 0xE52 skip).  Planet 1's handler is driven-oracle-proven
+        # (verify_native_tile_cues); other planets skip with a note until theirs are decoded.
+        # The 8209 +32/+34 caller-frame leak cells get 0 (an open sub-item; none of planet 1's
+        # spawned behaviors read them).
+        if not dying and g.row_base != pre_step_row_base and pre_step_row_base <= 0x0E52:
+            if walk_image.rw(0x25CC, 0x2356) == 1:
+                from overkill.recovered.adapters.tile_cues import run_tile_cue_row_7948
+                spawned = run_tile_cue_row_7948(walk_image, pre_step_row_base)
+                if spawned:
+                    print(f"tile cues at row {pre_step_row_base:#06x}: spawned "
+                          f"{[f'{r:04X}' for r in spawned]}")
         # The native OBJECT FRAME over the image: sync the player anchor + scroll, advance the whole
         # behaviour walk, and project the enemy/effect/shot pools back into g for rendering. Fail-loud
         # on an unrecovered object (holds the last good frame, like a gameplay-stage exception).

@@ -67,8 +67,12 @@ pinned by the gate: ids 0x04/0x07 (the crawlers) go through 81C9 = 7E58 (consume
 2x2 with ids 26/27/28/29 and uses the 7A40 stamp; the 8209 block's ``+32/+34`` are a CALLER-FRAME
 leak (``[bp+4]/[bp+2]``, supplied per-call; the in-game frame's values are an open sub-item);
 DS:A26E..A277 is the family's return-address scratch (excluded, documented).  [A40A] ends at
-0xD0.  NEXT: wire into play_native's row-pull point (planet 1 only; other planets skip with a
-note until their handlers are decoded).
+0xD0.  WIRED into play_native's row-pull point (the row_base-change detection; pre-decrement row,
+the 0xE52 gate; planet 1 only, others skip with a note; the +32/+34 leak cells get 0 -- none
+of planet 1's spawned behaviors read them).  All play_native gates stay green; terrain actors
+now spawn in the cold game as the level scrolls.  REMAINING for the full system: the other five
+planets' handlers (same decode+drive recipe; planet 2's = 7B06, partially decoded), the in-game
++32/+34 frame values, and the deployer-child sub-decodes if the 1:1 flags them.
 
 ## 2026-07-07 - WHOLE-DEMO 1:1 SWEEP: 9 of 12 samples at 0-1 px across all 4500 presents
 
