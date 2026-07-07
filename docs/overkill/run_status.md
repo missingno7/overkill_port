@@ -23,6 +23,23 @@
 > work is COMPLETE for L1. Next frontier: play_native integration polish, other planets' controller
 > families (0x1c etc.), the 9734/9902/9908 transition continuations, HUD/menu wiring, audio.
 
+## 2026-07-07 - lockstep: the SOUND ENGINE native (045516c); the 23A0 decay ROOT-CAUSED
+
+The D50E two-channel sound-bytecode interpreter is DGROUP-exact (2202 gap frames freed, ZERO sound-
+cell divergence -- see the commit).  The DS:23A0 divergence family is root-caused but NOT yet
+implemented: **the A846 draw scan DECREMENTS each drawn record's +0x24 hit-flash cell by 1 per
+COMPOSITOR CALL** (the dec-if-nonzero helper at 1010:25AE / 30FF inside the compositor prologues;
+the anchor's draw-type-2 dual slot -> -2/frame, matching the observed vm-vs-nat one-step lag).  My
+"stage 3 = video-only, no DGROUP writes" assumption was WRONG.  Placement: the decay belongs in the
+native frame's PRESENT half (with the 4CED star pass), stage-3 position.  To implement: replicate
+the A846 iteration (8D12 desc, 32CA +0x0A==0 desc, anchor, 32CA +0x0A==1 desc) over the image and
+dec +0x24 once per DRAWN compositor slot (skip: inactive, the anim 1..7 no-draw stub, the per-slot
+0xFFFF cull) -- the per-slot conditions live in native_video/object_sprites.object_slots.
+Remaining lockstep frontier after that: the 4CED star-list mid-present occupancy (the bulk of the
+2810 diverged), the frame-17 98A5/98A7 pair, the 77C5 shield body (266), the 9EE4 drain (62).
+Then: play_native unification (charter step 1) + --demo/--mirror (step 2).
+
+
 ## 2026-07-07 - LOCKSTEP: the star list landed (2125); NO SMC (proven); the boundary moves to 9B2E
 
 Commit 85ea529: the 4CED star draw-list is native (diverged 3908 -> 2125).  The owner asked
