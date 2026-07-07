@@ -298,12 +298,12 @@ def _render_frame(game: NativeGame, starfield: StarfieldState, ctx: SpriteDrawCo
     from overkill.native_video.playfield import compose_playfield_indices
     from overkill.native_video.starfield_plate import render_starfield_plate
 
+    from overkill.native_video.object_sprites import object_sprite_blocks_a846
     plate = render_starfield_plate(starfield, game.row_source)
     if tile_base is not None:
         plate = np.where(tile_base > 0, tile_base, plate)
-    blocks: list = []
-    for pool in (game.state.special_pool, game.state.effect_pool, game.state.object_pool):
-        blocks.extend(object_sprite_blocks(pool, ctx))
+    blocks = object_sprite_blocks_a846(game.state.special_pool, game.state.effect_pool,
+                                       game.state.object_pool, ctx)
     if not blocks:
         return plate
     sprite = SnapshotSprite(identity=0, sprite_id=0, anim_phase=0, screen_di=0, blocks=tuple(blocks))

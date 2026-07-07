@@ -163,6 +163,41 @@ def _slot_block(slot: SpriteSlot, variant: bool = False) -> SpriteBlock | None:
     return SpriteBlock(slot.di, tex.pixels, tex.opaque)
 
 
+def object_sprite_blocks_a846(special_pool, effect_pool, object_pool,
+                              ctx: SpriteDrawContext) -> list[SpriteBlock]:
+    """The frame's sprite blocks in the ORIGINAL A846 draw order (oracle-fit: the present-2800
+    pure-VM fixture collapses 135 -> 2 px under exactly this order):
+
+    1. the 8D12 pool (``object_pool``), table order DESCENDING (the A879 loop's ``cx = 0x22..1``);
+    2. the 32CA records with draw-layer ``+0x0A == 0`` (``effect_pool``), descending (A891);
+    3. the ANCHOR (``special_pool`` slot 0, 32CA entry 0x24 -- the A8C4 loop's first ``cx``)
+       then the 32CA ``+0x0A == 1`` records descending.
+    """
+    def one(pool, k):
+        class _One:
+            def __len__(self):
+                return len(pool)
+
+            def active_word(self, j):
+                return pool.active_word(j) if j == k else 0
+
+            def word_at(self, j, off):
+                return pool.word_at(j, off)
+        return _One()
+
+    blocks: list[SpriteBlock] = []
+    for k in range(len(object_pool) - 1, -1, -1):
+        if object_pool.active_word(k):
+            blocks.extend(object_sprite_blocks(one(object_pool, k), ctx))
+    for want in (0, 1):
+        if want == 1 and len(special_pool) and special_pool.active_word(0):
+            blocks.extend(object_sprite_blocks(one(special_pool, 0), ctx))
+        for k in range(len(effect_pool) - 1, -1, -1):
+            if effect_pool.active_word(k) and (effect_pool.word_at(k, 0x0A) != 0) == bool(want):
+                blocks.extend(object_sprite_blocks(one(effect_pool, k), ctx))
+    return blocks
+
+
 def object_sprite_blocks(pool, ctx: SpriteDrawContext) -> list[SpriteBlock]:
     """The drawable sprite blocks for a pool's active, anim-0 objects.
 

@@ -43,7 +43,7 @@ def main(argv) -> int:
     from overkill.native_video.frame import SnapshotSprite
     from overkill.native_video.page_raster import decode_tandy_b800_indices
     from overkill.native_video.playfield import compose_playfield_indices
-    from overkill.native_video.object_sprites import object_sprite_blocks
+    from overkill.native_video.object_sprites import object_sprite_blocks_a846
     from overkill.native_video.starfield_plate import render_starfield_plate
     from overkill.native_walk_frame import project_state
     from overkill.recovered.adapters.cold_level_start import build_cold_level_start
@@ -96,9 +96,8 @@ def main(argv) -> int:
         compose_tile_window(tiles, plane, row_base, table, graphics,
                             phase_234e=image.rw(DS, 0x234E))
         plate = np.where(tiles > 0, tiles, plate)
-        blocks = []
-        for pool in (state.special_pool, state.effect_pool, state.object_pool):
-            blocks.extend(object_sprite_blocks(pool, ctx))
+        blocks = object_sprite_blocks_a846(state.special_pool, state.effect_pool,
+                                           state.object_pool, ctx)
         if blocks:
             native = compose_playfield_indices(
                 plate, [SnapshotSprite(0, 0, 0, 0, tuple(blocks))], cursor)

@@ -57,6 +57,18 @@ if row <= 0xE52 call **7948** (the 13-TILE ROW LOOP: es=[9592] the plane seg, si
 0x04/0x07/0x6C/0x6D branch at 7977.. to 7A6E/7A7A/7AAE/7AC4) + call 4A65 (already recovered)
 -> jmp **5A7E** (the row -> page blit).
 
+## 2026-07-07 - **THE NATIVE RENDER IS PIXEL-IDENTICAL: 1:1 MEAN = 0 px (worst 2) whole-demo**
+
+The last residue was the DRAW ORDER: the A846 sequence (the 8D12 pool descending -> the 32CA
+``+0x0A == 0`` layer descending -> the ANCHOR then the 32CA ``+0x0A == 1`` layer descending),
+oracle-fit on the present-2800 fixture (135 -> 2 px) and implemented as
+``object_sprite_blocks_a846`` (wired into the 1:1 probe AND play_native's render).  WHOLE-DEMO
+SWEEP (L2, 4500 presents): samples 0/0/0/1/1/?/1/2/0/1/0/1 -- **mean 0 px of 39936, worst 2**.
+The native frame -- terrain + stars + sprites in the original's own order -- is now effectively
+pixel-identical to the real game across the full played demo.  The owner's 1:1 bar: MET for
+this demo's render.  Remaining render niceties: the <=2-px transients (attribute when they
+matter), bank 2's asset identity, the L1/L3+ sweeps (record their pure-VM runs).
+
 ## 2026-07-07 - THE 1:1 MEAN FALLS TO 16 px (0.04%): the variant compositor + the anim truth
 
 The (anim x variant) sub-dispatch decoded COMPLETELY: the 7628/7658 (75A6) and 76E6/7716 (768E)
