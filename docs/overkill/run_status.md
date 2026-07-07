@@ -41,7 +41,10 @@ anchor +0x0A/+0x0A (A571); the B15A rotating victim scan (native: _rotating_pool
 sound 0x11, [A97E]++, [A960]--.  A584 = the GROUND-BOMB pair: gated on [A95E] != 0 (the 843D action) and [A3A4] == 0 (the copied
 A976 count -- no live bombs); TWO A4EA-seed spawns at anchor+0x0A (A571), each +04 &= ~3, sprite 8,
 behaviors 0x05 then 0x06 (both native crawlers), [A976]++ each, sound 0x12.  Still to decode: A584, A3FF, A3CA, A0E8 (the fan-out siblings),
-then the EARLY tails wire via native_a19f_tail/native_a1c8_tail (pure, in systems/objects).
+A3CA/A3FF = the POD-FIRE dispatchers: per pod (A966/A968/A96A/A96C with [A3EC]=7/1 bias;
+A962/A964 with FFFF + an A378 tail), each live pod dispatches by the weapon mode [A958] through
+the CS:A42C jump table (modes 0..5 -- the per-weapon pod-shot spawners; A42C targets + A378 are
+the next decode).  A0E8 remains.  then the EARLY tails wire via native_a19f_tail/native_a1c8_tail (pure, in systems/objects).
 
 **The frontier (gate-ranked):**
 1. **The A067 fire fan-out -- 7970 frames.**  The entry gate + path selector + the EARLY tails
