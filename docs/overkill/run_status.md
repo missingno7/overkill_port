@@ -34,6 +34,13 @@ its real position, A940 + the object walk + the 0922 starfield tick, the 5F61 FR
 whole 2324..2340 cascade + A7A0 + the A480 countdown), the ISR's [0054]/D50E effects, the
 073C/77C5 gates.
 
+**The A067 FULL fan-out decode (in progress):** A515 = the TRACTOR-DRONE launcher -- gated on
+[A960] != 0 (the weapon-script 844E action stocks it) and [A97E] != 1; 7547 alloc; position =
+anchor +0x0A/+0x0A (A571); the B15A rotating victim scan (native: _rotating_pool_scan_b15a) links
++0x30; stamps active=1, +0x1E=1, +0x14=0, type 2, BEHAVIOR 0x0A (the native tractor), +0x1C=1,
+sound 0x11, [A97E]++, [A960]--.  Still to decode: A584, A3FF, A3CA, A0E8 (the fan-out siblings),
+then the EARLY tails wire via native_a19f_tail/native_a1c8_tail (pure, in systems/objects).
+
 **The frontier (gate-ranked):**
 1. **The A067 fire fan-out -- 7970 frames.**  The entry gate + path selector + the EARLY tails
    (A19F/A1C8) are pure already (systems/action_spawns, native_a19f/a1c8_tail in systems/objects);
