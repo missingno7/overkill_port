@@ -1037,3 +1037,12 @@ LIST VALUES are wrong, not the occupancy).  Suspects: the 9A08 row table may be 
 read DS), the tick word's scale, the strip seg (9598 vs 9592), or the pass position vs [234C]'s
 update.  Next: drive 1010:4CED on a cached frame pre-state and diff the produced C7B1 list
 word-by-word against the model.
+UPDATE (same day): the list ARITHMETIC IS PROVEN CORRECT -- driving the model on the frame-5
+pre-state reproduces the VM's C7B1 list exactly (cell = DS:9A08[tick*2] + [234C] + xoff; the
+9A08 table is DS-resident).  The flaw is the OCCUPANCY INPUT: the real 4CED runs MID-PRESENT --
+tiles redrawn, sprites drawn, the old stars undrawn -- so `strip[bx] != 0` sees THAT strip, not
+the frame-top strip my attempt read (stale stars/sprites -> wrong skips -> reordered lists on
+frames that were otherwise clean).  Fix: the lockstep frame must compose the strip's star-pass
+state natively first (compose_tile_window + object_sprite_blocks_a846 are already verified
+native pieces) or replay the present order 5A7E/A846/4D64/4CED on the strip seg.  This is the
+RENDER-integration slice of the lockstep campaign.
