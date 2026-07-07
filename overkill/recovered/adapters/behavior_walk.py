@@ -512,6 +512,23 @@ def _step_ground_crawler(mem, rec: int, tiles: LevelTileContext, sign: int) -> N
         _spawn_ground_crawler_shot(mem, rec)
 
 
+def _step_burster_49(mem, rec: int) -> None:
+    """Behavior 0x49 (``1010:8C3A``): sprite 0x1D, x += 2; on the ``[232A] == 0xF`` clock beat,
+    an 8-shot RADIAL BURST -- eight 7476 spawns re-stamped to behavior 4 with directions 7..0
+    (a full pool aborts the rest of the burst, the ASM's bx == FFFF early-out)."""
+    mem.ww(DS, rec + 0x08, 0x001D)
+    mem.ww(DS, rec + 0x02, (mem.rw(DS, rec + 0x02) + 2) & 0xFFFF)
+    if mem.rw(DS, 0x232A) != 0x000F:
+        return
+    for cx in range(8, 0, -1):                      # 8C4E: cx = 8 .. 1
+        slot = _spawn_enemy_shot_7476(mem, rec)
+        if slot == 0xFFFF:
+            return
+        mem.ww(DS, slot + 0x18, 0x0004)             # 8C5E
+        mem.ww(DS, slot + 0x06, cx - 1)             # 8C63/8C64: direction 7..0
+    return
+
+
 def _step_climber_morph_4e(mem, rec: int, tiles: LevelTileContext) -> None:
     """Behavior 0x4E (``1010:8CF6``): sprite = ``[96D2 + [233C]*2] + 0xCF`` (the 96D2 anim ring),
     then the ``88BB`` tail: nothing until x == 0x90 exactly; there it MORPHS to behavior 0x33,
@@ -570,17 +587,19 @@ def _step_shooter_48(mem, rec: int) -> None:
     _spawn_enemy_shot_7476(mem, rec)                # 8D41
 
 
-def _spawn_enemy_shot_7476(mem, rec: int) -> None:
-    """``1010:7476`` from a live record: alloc + the recovered shot stamp + the [98C0] sound."""
+def _spawn_enemy_shot_7476(mem, rec: int) -> int:
+    """``1010:7476`` from a live record: alloc + the recovered shot stamp + the [98C0] sound.
+    Returns the spawned slot, or 0xFFFF when the pool is full (the ASM's bx)."""
     slot = _alloc(mem, 0x95DA, GAMEPLAY_POOL_BASE, GAMEPLAY_POOL_WRAP, GAMEPLAY_SLOTS)
     if slot == 0xFFFF:
-        return
+        return 0xFFFF
     stamp = enemy_shot_stamp_7476(mem.rw(DS, rec + 0x02), mem.rw(DS, rec + 0x04),
                                   mem.rw(DS, 0xA8C2) == 1, mem.rw(DS, 0x237E), mem.rw(DS, 0x2380))
     for off, val in stamp.items():
         mem.ww(DS, slot + off, val)
     if mem.rb(DS, 0x98C0):
         mem.wb(DS, 0xBEFF, 0x1A)
+    return slot
 
 
 def _step_controller_1c(mem, rec: int) -> None:
@@ -2078,9 +2097,25 @@ def _postmove_bc45(mem, rec: int, tiles: LevelTileContext, *, with_drift: bool) 
         candidate_logic_id=cand_logic, a8c2_boss_mode=mem.rw(DS, 0xA8C2) == 1,
         candidate_sprite=mem.rw(DS, cand + 0x08))
     if outcome.kind == "owner_or_unclassified":
-        raise RecoveryGap(f"BEC5 owner-link/unclassified collision (record {rec:04X}, "
-                          f"candidate logic {cand_logic:#x})",
-                          "the +0x30 owner-pointer reaction is not recovered")
+        # BF01: the OWNER-LINK reaction -- a candidate whose +0x30 owner pointer is NOT the
+        # scanner is ignored entirely; the scanner hitting its OWN linked candidate clears the
+        # candidate's +0x1C, then boss mode -> the BF25 damage chain, else the scanner dies the
+        # counter:=0 BFC7 death (the same BFB9-normal shape).
+        if mem.rw(DS, cand + 0x30) != rec:
+            return                                  # BF06: not ours -> no reaction at all
+        mem.ww(DS, cand + 0x1C, 0)                  # BF07
+        if mem.rw(DS, 0xA8C2) != 1:
+            mem.ww(DS, rec + 0x20, 0)               # BF13
+            _bfc7_touch_death(mem, rec)
+            return
+        chain = collision_damage_counter_chain_bf25(mem.rw(DS, rec + 0x20), mem.rw(DS, 0xBEDC),
+                                                    True)
+        mem.ww(DS, rec + 0x20, chain.new_counter_20)
+        if chain.died:
+            _bfc7_touch_death(mem, rec)
+        else:
+            mem.ww(DS, rec + 0x24, 0x0005)          # BF52: the survival hit-react variant
+        return
     # the struck candidate's fate (BEC5): variant 2 clears active directly; 5/6 always run BD0D;
     # 7/8/C run BD0D only in A8C2 final-boss mode (else the candidate SURVIVES the hit)
     if bec5_candidate_deactivated(cand_logic, mem.rw(DS, 0xA8C2) == 1):
@@ -2219,6 +2254,9 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
         elif beh == 0x48:
             _step_shooter_48(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8D44 exits jmp BC45
+        elif beh == 0x49:
+            _step_burster_49(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8C6A exits jmp BC45
         elif beh == 0x8F:
             _step_pulser_8f(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8769 exits jmp BC45 (all paths)
@@ -2305,8 +2343,9 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
         elif beh == 0x3E:
             _step_arm_missile_3e(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8ADD exits jmp BC45 (all paths)
-        elif beh == 0x3F:
-            # 1010:8AF6: jmp 8744 -- the whole body IS the shared steer tail
+        elif beh in (0x3F, 0x60):
+            # 1010:8AF6: jmp 8744 -- the whole body IS the shared steer tail; EFC4[0x60] points
+            # STRAIGHT at 8744 (the L3 zoo aliases the same body)
             _steer_missile_tail_8744(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8744 exits jmp BC45 (both paths)
         elif beh == 0x52:

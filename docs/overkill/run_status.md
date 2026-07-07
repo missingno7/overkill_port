@@ -23,6 +23,40 @@
 > work is COMPLETE for L1. Next frontier: play_native integration polish, other planets' controller
 > families (0x1c etc.), the 9734/9902/9908 transition continuations, HUD/menu wiring, audio.
 
+## 2026-07-07 - L3 OPENED: the BB03 phase bug fixed, the quick wins landed, the F-range family mapped
+
+The first L3 walk run (demo_play_tandy_L3_full_20260617_202520, cache recorded) surfaced one REAL
+divergence family + 17 gap behaviors.
+
+**The BB03 coercion fix (325f8b3).** The real BB03 stamps ``+06 = 2`` (BB24) for ANY direction
+other than 6 BEFORE the boundary check and the AFD8 step -- a dir-4-stamped bouncer steps DOWN.
+The old `_bb03_bounce` passed the raw direction through (L1/L2 never spawned a non-2/6 bouncer).
+Six diverging L3 frames -> zero.  Found with the drive-the-original-walk-on-the-cached-frame
+recipe (the flow trace showed B010 -> B0CC, the +Y handler, for a dir-4 record).
+
+**Quick wins (this commit).** 0x60 ALIASES the native 8744 steer tail (EFC4 points straight at
+it).  0x49 (8C3A) = sprite 0x1D, x+=2, and on the [232A]==0xF beat an 8-shot RADIAL BURST (7476
+spawns re-stamped beh 4, directions 7..0; a full pool aborts).  The BEC5 owner-link reaction
+(BF01) = candidate's +0x30 owner != scanner -> NOTHING; own candidate -> clear its +0x1C, boss
+mode -> BF25, else the scanner dies the counter:=0 BFC7 death.  `_spawn_enemy_shot_7476` now
+returns the slot.  L3: zero divergence, all remaining gaps honest.
+
+**The L3 frontier (EFC4 entries mapped):**
+* **The F-range FORMATION family** (~2800 frames): 0x54=F185, 0x57/0x58=F201, 0x59=F225,
+  0x5B=F2C0, 0x5C=F2CF, 0x5D=F2DB, 0x5E=F2EB, 0x5F=F34D, 0x63=F4B3, plus 0x86=F0EE, 0x87=F1AC --
+  the planet-3 snake/segment machine (the B48B/B5D8 wave-driver family's actors).  THE next
+  campaign-sized slice.
+* **0x14 = B9F0**: the pure `object_update_b9f0` movement half EXISTS but the walk needs its
+  caller-owned globals too: the [2340]==0x2EF 7476 spawn beat + tick inc, the target (+32/+34)
+  IN-PLACE delta mutation, the 5E1B move-delta writes (+2A/+2C) -- the pure result omits them.
+* **0x0A = B1B0** (19 frames, decoded): the TRACTOR -- phase 0: 4px-aligned 5DB2 seek toward
+  (player+0xA/+0xC); on arrival the B15A rotating pool scan ([A43A] cursor) links a victim into
+  +0x30, +0x1C=1, sound 0x11, [A97E]++; phase 1: victim gone/x>0xDC/dying -> unlatch, else
+  5E1B+5E42 steer after it; both tails AD5A/AD60.
+* **0x83 = 89E9** (64 frames): undedecoded yet.
+* BF25's boss-mode survival tail (BF5F: the four A8BA..A8C0 records' +0x24=5 flash) is NOT in the
+  fold yet -- unreachable off planet 0; will surface loud there.
+
 ## 2026-07-07 - **THE L2 WALK IS COMPLETELY DRY: 6561/6561 frames, ZERO divergence, ZERO gaps**
 
 The 837A weapon-script scheduler -- the last L2 gap -- is native. The decode: each weapon level's
