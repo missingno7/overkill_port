@@ -67,7 +67,6 @@ from overkill.recovered.systems.scenery_behaviors import (
     GROUND_CRAWLER_RIGHT_DIRECTION,
     SCENERY_19_EMIT_DIRECTION,
     bb03_bounce_after_step,
-    bb03_bounce_boundary,
     ground_crawler_should_spawn,
     ground_crawler_sprite_8b_8c,
     scenery_19_should_emit,
@@ -280,12 +279,23 @@ def _bdd0_contact_at(mem, rec: int):
 
 
 def _bb03_bounce(mem, rec: int, tiles: LevelTileContext) -> None:
-    direction = mem.rw(DS, rec + 0x06)
+    """``1010:BB03`` -- the vertical bounce.  Direction 6 is the UP phase; ANY other direction is
+    COERCED to 2 (BB24 stamps +06 = 2 BEFORE the boundary check and the step -- oracle: the L3
+    frame-475 dir-4-stamped 0x19 record steps DOWN, not +X; L1/L2 never spawned a non-2/6 bouncer
+    so the raw-direction shortcut never showed).  At the boundary (up: y == 0; down: y == 0xC0)
+    flip with NO step; else ONE AFD8 contact-step; a blocked step flips to the opposite phase."""
+    if mem.rw(DS, rec + 0x06) == 6:
+        if mem.rw(DS, rec + 0x04) == 0:                 # BB0E: at the top -> flip down, no step
+            mem.ww(DS, rec + 0x06, 2)
+            return
+        direction = 6
+    else:
+        mem.ww(DS, rec + 0x06, 2)                       # BB24: the down-phase coercion write
+        if mem.rw(DS, rec + 0x04) == 0x00C0:            # BB29: at the bottom -> flip up, no step
+            mem.ww(DS, rec + 0x06, 6)
+            return
+        direction = 2
     y = mem.rw(DS, rec + 0x04)
-    flip = bb03_bounce_boundary(direction, y)
-    if flip is not None:
-        mem.ww(DS, rec + 0x06, flip)
-        return
     result = contact_probe_afd8(mem.rw(DS, rec + 0x02), y, direction, mem.rw(DS, 0xA278),
                                 tiles, _bdd0_contact_at(mem, rec))
     mem.ww(DS, rec + 0x02, result.x_word)
