@@ -57,6 +57,11 @@ if row <= 0xE52 call **7948** (the 13-TILE ROW LOOP: es=[9592] the plane seg, si
 0x04/0x07/0x6C/0x6D branch at 7977.. to 7A6E/7A7A/7AAE/7AC4) + call 4A65 (already recovered)
 -> jmp **5A7E** (the row -> page blit).
 
+## 2026-07-07 - the L1 demo 1:1 sweep: mean 0 px (worst 3) -- planet 1 pixel-identical too
+
+The L1 demo through the pure-VM instrument: presents 0..1250 diff 0/0/2/3/0/0 px (terrain-heavy
+present 750: vm nonzero 16281, diff 3).  The render layers hold across both tested planets.
+
 ## 2026-07-07 - planet 2's tile cues recovered (7B06) -- both planets byte-exact, wired
 
 Planet-2 handler: id 0x30 -> the 0x2A turret spr 0x1C (a DIRECT 7524 alloc + the inline
@@ -64,7 +69,13 @@ Planet-2 handler: id 0x30 -> the 0x2A turret spr 0x1C (a DIRECT 7524 alloc + the
 beh 0x8F spr 0xBF dir 6 (spr 0xC2 dir 2 when the spawned y <= 0x60) -- the latter two via the
 81C9 common.  `verify_native_tile_cues` now drives BOTH planets' snapshots: every sampled cue
 row BYTE-EXACT.  play_native runs the cues on planets 1 and 2.  Remaining: planets 3/4/5/0
-(handlers 7C3F/7CA2/7DC8/7BCB) by the same recipe.
+(handlers 7C3F/7CA2/7DC8/7BCB) by the same recipe.  SIZED: planets 3+ use a JUMP-TABLE dispatch
+(planet 3: ``sub al,0xCE``, 30 ids at the 7C6A table -> ~14 stub targets incl. shared ones like
+7A7A) and a COMMON pre-step now decoded: ``[2070] = [0xC81A + (si & 0x3F)]`` (a per-column key)
++ far ``1F8F:0163`` = the LINKED-COUNTER ALLOCATOR (scan the 16-entry 2078 table for a free
+byte-slot; ``[2098]`` = the index, ``[209A]`` = the pointer, FFFF when full -- feeds the 81A7
+tail).  Planet 3 alone is a full slice (~14 stubs); planet 0 (the mothership) additionally
+far-calls deeper overlay machinery -- defer it last.
 
 ## 2026-07-07 - **THE NATIVE RENDER IS PIXEL-IDENTICAL: 1:1 MEAN = 0 px (worst 2) whole-demo**
 
