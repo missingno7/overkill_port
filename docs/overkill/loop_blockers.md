@@ -1013,3 +1013,12 @@ x one MORE than the VM. Cardinal-direction records verify fine (0x56/0x57/0x58/0
 Suspect: the DIAGONAL B022 composition (axis1-then-axis2 with blocked accumulation) interacts
 with the multi-step loop's break-at-block differently than contact_step_b022 models — drive
 1010:F268 on the frame-1366 pre-state (bp=2A0C) and compare step by step.
+UPDATE 2026-07-07 (investigation state): the pure contact_probe_afd8 EXACTLY matches the
+ISOLATED driven F268 on frame 1366's pre-state (both: steps AC/1F -> AB/20 -> blocked at AB/21,
+flip dir 7, step blocked -> BFC7 death).  But the RECORDED full-frame VM ends x=AC alive, and my
+native full walk ends x=AD -- three different answers, so the discriminator is the MID-FRAME
+BDD0 pool state (records dispatched before 2A0C move first; 215A verified IDENTICAL at 2A0C's
+dispatch, order identical).  Next: log the BDD0 candidate scans (which record, which box) inside
+rec 2A0C's step in BOTH the driven-original whole walk (scratchpad/cmp_215a_1366.py drives A9DD)
+and the native walk, and diff the first differing candidate — suspect a hazard-window candidate
+(beh 0x82..0x94, e.g. the 0x86/0x87 launchers) whose position or eligibility differs mid-frame.
