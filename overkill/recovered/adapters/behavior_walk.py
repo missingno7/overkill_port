@@ -76,7 +76,7 @@ from overkill.recovered.systems.scenery_behaviors import (
     step_scenery_emitter_sprite_89,
     step_scenery_sprite_ramp_1a,
 )
-from overkill.recovered.systems.tilemap import compute_tile_probe_5073
+from overkill.recovered.systems.tilemap import compute_tile_probe_5073, lookup_tile_class_byte
 from overkill.recovered.domain.tilemap import TileProbeInput
 from overkill.recovered.systems.frame_loop import (
     canned_random_next_4d95,
@@ -118,6 +118,8 @@ from overkill.recovered.systems.objects import (
     child_spawn_sound_c237,
     child_spawn_throttle_c237,
     object_update_ae2c,
+    object_bounds_tile_decision_ad60,
+    object_tile_probe_deactivates_ad60,
     object_update_ae7d,
     object_update_aed8,
     object_update_af60,
@@ -361,12 +363,11 @@ def _step_drift_seeker_2e(mem, rec: int) -> bool:
     return False
 
 
-def _step_beacon_46_47(mem, rec: int, beh: int, sprite_add: int) -> None:
-    """Behaviors 0x46 (``1010:8C28``, +0x4B) / 0x47 (``1010:8C31``, +0x51) -- byte-identical apart
-    from the sprite constant: sprite = ``[2338] + add``, then the shared ``87B5`` tail -- x > 0x60
-    (unsigned) drifts right 4px; x <= 0x60 WAITS for ``[2330] == 0x7F``, then dir = 4 and ONE C237
-    child (the child's sprite is left as C237 seeded it)."""
-    mem.ww(DS, rec + 0x08, (mem.rw(DS, 0x2338) + sprite_add) & 0xFFFF)
+def _step_beacon_46(mem, rec: int) -> None:
+    """Behavior 0x46 (``1010:8C28``): sprite = ``[2338] + 0x4B``, then the shared ``87B5`` tail --
+    x > 0x60 (unsigned) drifts right 4px; x <= 0x60 WAITS for ``[2330] == 0x7F``, then dir = 4 and
+    ONE C237 child (the child's sprite is left as C237 seeded it)."""
+    mem.ww(DS, rec + 0x08, (mem.rw(DS, 0x2338) + 0x004B) & 0xFFFF)
     x = mem.rw(DS, rec + 0x02)
     if x > 0x0060:
         mem.ww(DS, rec + 0x02, (x + 4) & 0xFFFF)
@@ -374,7 +375,21 @@ def _step_beacon_46_47(mem, rec: int, beh: int, sprite_add: int) -> None:
     if mem.rw(DS, 0x2330) != 0x007F:
         return
     mem.ww(DS, rec + 0x06, 0x0004)
-    _spawn_child_c237(mem, rec, beh)
+    _spawn_child_c237(mem, rec, 0x46)
+
+
+def _step_bounce_emitter_47(mem, rec: int, tiles: LevelTileContext) -> None:
+    """Behavior 0x47 (``1010:8C31``) -- NOT 0x46's beacon twin (the old decode misread the jmp
+    target; oracle: the L2 walk frame 1389 AFD8 y-step): sprite = ``[2338] + 0x51``, then the
+    shared ``B2AC`` scenery-emitter body -- the ``[232C] == 0x1F`` BAE1 dir-4 C237 emit and the
+    BB03 bounce (the same tail behavior 0x89 enters with its own sprite)."""
+    mem.ww(DS, rec + 0x08, (mem.rw(DS, 0x2338) + 0x0051) & 0xFFFF)
+    if scenery_89_should_emit(mem.rw(DS, 0x232C)):
+        saved_dir = mem.rw(DS, rec + 0x06)
+        mem.ww(DS, rec + 0x06, SCENERY_19_EMIT_DIRECTION)
+        _spawn_child_c237(mem, rec, 0x47)
+        mem.ww(DS, rec + 0x06, saved_dir)
+    _bb03_bounce(mem, rec, tiles)
 
 
 def _step_pulser_8f(mem, rec: int) -> None:
@@ -485,6 +500,64 @@ def _step_ground_crawler(mem, rec: int, tiles: LevelTileContext, sign: int) -> N
         sign, mem.rw(DS, 0x233C), moved, mem.rw(DS, rec + 0x06)))
     if ground_crawler_should_spawn(mem.rw(DS, 0x2330)):
         _spawn_ground_crawler_shot(mem, rec)
+
+
+def _step_climber_morph_4e(mem, rec: int, tiles: LevelTileContext) -> None:
+    """Behavior 0x4E (``1010:8CF6``): sprite = ``[96D2 + [233C]*2] + 0xCF`` (the 96D2 anim ring),
+    then the ``88BB`` tail: nothing until x == 0x90 exactly; there it MORPHS to behavior 0x33,
+    aims dir 7 (up-left) and runs up to THREE AFD8 1px contact-steps -- the first BLOCKED step
+    flips the direction with ``dir ^= 2`` (7 -> 5, up-right) and stops."""
+    anim = mem.rw(DS, (0x96D2 + ((mem.rw(DS, 0x233C) << 1) & 0xFFFF)) & 0xFFFF)
+    mem.ww(DS, rec + 0x08, (anim + 0x00CF) & 0xFFFF)
+    if mem.rw(DS, rec + 0x02) != 0x0090:
+        return
+    mem.ww(DS, rec + 0x18, 0x0033)                  # 88C5: the morph
+    mem.ww(DS, rec + 0x06, 0x0007)
+    for _ in range(3):                              # 88CF/88D4/88D9
+        result = contact_probe_afd8(mem.rw(DS, rec + 0x02), mem.rw(DS, rec + 0x04),
+                                    mem.rw(DS, rec + 0x06), mem.rw(DS, 0xA278),
+                                    tiles, _bdd0_contact_at(mem, rec))
+        mem.ww(DS, rec + 0x02, result.x_word)
+        mem.ww(DS, rec + 0x04, result.y_word)
+        mem.ww(DS, 0xA430, 1 if result.blocked else 0)
+        mem.ww(DS, 0xA432, result.snap_x)
+        mem.ww(DS, 0xA434, result.snap_y)
+        mem.ww(DS, 0xA436, result.mirror_y)
+        mem.ww(DS, 0xA438, result.mirror_x)
+        mem.ww(DS, 0x215A, result.sample_215a)
+        if result.blocked:
+            mem.ww(DS, rec + 0x06, mem.rw(DS, rec + 0x06) ^ 2)   # 88E1
+            return
+    return
+
+
+def _step_strober_4f(mem, rec: int) -> None:
+    """Behavior 0x4F (``1010:8D0A``): sprite = ``(([2328] + rec + [2340]) & 7) + 0x80`` -- the
+    record ADDRESS itself salts the strobe phase -- then x += 4."""
+    spr = ((mem.rw(DS, 0x2328) + rec + mem.rw(DS, 0x2340)) & 7) + 0x0080
+    mem.ww(DS, rec + 0x08, spr)
+    mem.ww(DS, rec + 0x02, (mem.rw(DS, rec + 0x02) + 4) & 0xFFFF)
+
+
+def _step_shooter_48(mem, rec: int) -> None:
+    """Behavior 0x48 (``1010:8D3C``): the far ``1F8F:01C2`` body -- planet 5: a 1px unsigned
+    y-seek toward the player row ``[2380]`` + sprite ``[96D2 + ([2336] & ~1)] + 0x26``; planet 3:
+    sprite 0x1C; else sprite ``([2328] >> 1) + 0x22`` -- then x += 1 and a 7476 enemy shot every
+    frame."""
+    planet = mem.rw(DS, 0x2356)
+    if planet == 5:
+        y = mem.rw(DS, rec + 0x04)
+        py = mem.rw(DS, 0x2380)
+        step = 1 if y < py else (0 if y == py else 0xFFFF)
+        mem.ww(DS, rec + 0x04, (y + step) & 0xFFFF)
+        spr = (mem.rw(DS, (0x96D2 + (mem.rw(DS, 0x2336) & 0xFFFE)) & 0xFFFF) + 0x0026) & 0xFFFF
+    elif planet == 3:
+        spr = 0x001C
+    else:
+        spr = ((mem.rw(DS, 0x2328) >> 1) + 0x0022) & 0xFFFF
+    mem.ww(DS, rec + 0x08, spr)
+    mem.ww(DS, rec + 0x02, (mem.rw(DS, rec + 0x02) + 1) & 0xFFFF)
+    _spawn_enemy_shot_7476(mem, rec)                # 8D41
 
 
 def _spawn_enemy_shot_7476(mem, rec: int) -> None:
@@ -622,6 +695,57 @@ def _step_glitter_3b(mem, rec: int) -> None:
     mem.ww(DS, rec + 0x02, (mem.rw(DS, rec + 0x02) + 2) & 0xFFFF)
 
 
+#: the AF22 8-way move dispatch (CS:AF2C jump table): direction -> (dx, dy), +/-3px steps.
+_AF22_MOVE_BY_DIRECTION = (
+    (-3, 0),    # 0 -> AF49
+    (-3, +3),   # 1 -> AF4E
+    (0, +3),    # 2 -> AF52
+    (+3, +3),   # 3 -> AF3C
+    (+3, 0),    # 4 -> AF40
+    (+3, -3),   # 5 -> AF57
+    (0, -3),    # 6 -> AF5B
+    (-3, -3),   # 7 -> AF45
+)
+
+
+def _step_marcher_0c(mem, rec: int, tiles: LevelTileContext) -> None:
+    """Behavior 0x0C (``1010:AE09``, EFAE logic_id 0xC) -- the 8-way MARCHER: while the +0x1C
+    countdown runs it only ticks (the tick reaching 0 re-aims dir = 0 and resumes); at 0 the body
+    drifts x -= 2 every frame.  sprite = dir + 0x28, then the AF22 8-way +/-3px move over the
+    CS:AF2C table and the shared AD60 bounds/tile tail (NO A278 drift -- AE29 jumps to AD60, not
+    AD5A)."""
+    sub = mem.rw(DS, rec + 0x1C)
+    step_x2 = sub == 0
+    if sub != 0:
+        sub = (sub - 1) & 0xFFFF
+        mem.ww(DS, rec + 0x1C, sub)
+        if sub == 0:                    # AE14: the countdown expiring re-aims left...
+            mem.ww(DS, rec + 0x06, 0)
+            step_x2 = True              # ...and falls into the AE19 x -= 2
+    if step_x2:
+        mem.ww(DS, rec + 0x02, (mem.rw(DS, rec + 0x02) - 2) & 0xFFFF)
+    direction = mem.rw(DS, rec + 0x06)
+    mem.ww(DS, rec + 0x08, (direction + 0x0028) & 0xFFFF)
+    if direction > 7:
+        raise RecoveryGap(f"behavior 0x0C direction {direction:#x} (record {rec:04X})",
+                          "AF22's jump table has 8 entries; an out-of-range direction would "
+                          "jump through arbitrary code")
+    dx, dy = _AF22_MOVE_BY_DIRECTION[direction]
+    mem.ww(DS, rec + 0x02, (mem.rw(DS, rec + 0x02) + dx) & 0xFFFF)
+    mem.ww(DS, rec + 0x04, (mem.rw(DS, rec + 0x04) + dy) & 0xFFFF)
+    # the AD60 tail (no drift)
+    x = mem.rw(DS, rec + 0x02)
+    y = mem.rw(DS, rec + 0x04)
+    decision = object_bounds_tile_decision_ad60(
+        x, y, mem.rw(DS, rec + 0x16), 0x000C,
+        tile_probe_suppressed=mem.rw(DS, 0xBDAC) == 0x0001)
+    if decision.kind == "deactivate":
+        _bd17_deactivate(mem, rec)
+    elif decision.kind == "tile_probe":
+        if object_tile_probe_deactivates_ad60(x, y, tiles):
+            _bd17_deactivate(mem, rec)
+
+
 def _step_mover_06(mem, rec: int, tiles: LevelTileContext) -> None:
     """Behavior 0x06 (``1010:AE2C``, EFAE logic_id 6) -- the recovered whole-slot scroll-left mover
     with the tile-gated down-step (``object_update_ae2c``, produced-vs-VM verified)."""
@@ -629,8 +753,9 @@ def _step_mover_06(mem, rec: int, tiles: LevelTileContext) -> None:
         mem.rw(DS, rec + 0x02), mem.rw(DS, rec + 0x04), mem.rw(DS, rec + 0x00),
         mem.rw(DS, rec + 0x16), mem.rw(DS, 0xA278), mem.rw(DS, 0x2326), False, tiles)
     if u is None:
-        raise RecoveryGap(f"behavior 0x06 ADC9 death (record {rec:04X})",
-                          "object_update_ae2c's y==0xC8 death sub-path is not modeled natively")
+        mem.ww(DS, rec + 0x02, 0xFFFF)   # ADC9 -> AD60's x < 8 bound -> BD17
+        _bd17_deactivate(mem, rec)       # the 0x06 decay (A976) is composed in BD17 now
+        return
     mem.ww(DS, rec + 0x06, u.direction_or_step)
     mem.ww(DS, rec + 0x08, u.sprite_or_state)
     mem.ww(DS, rec + 0x02, u.x_word)
@@ -1340,27 +1465,219 @@ def _hud_energy_beat_9ec2(mem) -> None:
                           " path (mode 2) never takes this branch")
 
 
+def _pod_damage_ac56(mem, rec: int) -> bool:
+    """``1010:AC56`` -- the pod HIT beat shared by the tile crash and the collision sweep: sound
+    0x0E, the +0x24 = 5 hit-flash variant, then damage only when difficulty (DS:BEDC) != 0 or the
+    DS:2324 gate is 1: dec the +0x20 counter; at 0 the flash clears and the pod DIES (returns
+    True = the ASM's stc)."""
+    if mem.rb(DS, 0x98C0):
+        mem.wb(DS, 0xBEFF, 0x0E)
+    mem.ww(DS, rec + 0x24, 0x0005)
+    if mem.rw(DS, 0xBEDC) == 0 and mem.rw(DS, 0x2324) != 1:
+        return False
+    counter = (mem.rw(DS, rec + 0x20) - 1) & 0xFFFF
+    mem.ww(DS, rec + 0x20, counter)
+    if counter != 0:
+        return False
+    mem.ww(DS, rec + 0x24, 0x0000)
+    return True
+
+
+def _pod_tile_crash_ac28(mem, rec: int, tiles: LevelTileContext) -> bool:
+    """``1010:AC28`` -- the pod TILE-CRASH probe: no-op under the DS:A47C script gate or the BDAC
+    render mode; else the 5073 probe at the pod's x/y, class of plane[probe+0xD] != 0 crashes (and
+    on a 16px-UNaligned Y the second row plane[probe+0xE] too).  A crash runs the AC56 damage beat;
+    returns True only when that beat KILLED the pod."""
+    if mem.rw(DS, 0xA47C) != 0 or mem.rw(DS, 0xBDAC) == 1:
+        return False
+    probe = compute_tile_probe_5073(TileProbeInput(
+        origin_x_word=tiles.origin_x_word, row_base_word=tiles.row_base_word,
+        object_x_word=mem.rw(DS, rec + 0x02), object_y_word=mem.rw(DS, rec + 0x04)))
+    raw = tiles.tile_plane[(probe.tile_offset_word + 0x0D) & 0xFFFF]
+    if lookup_tile_class_byte(raw, tiles.class_table) != 0:
+        return _pod_damage_ac56(mem, rec)
+    if mem.rw(DS, rec + 0x04) & 0x000F:
+        raw = tiles.tile_plane[(probe.tile_offset_word + 0x0E) & 0xFFFF]
+        if lookup_tile_class_byte(raw, tiles.class_table) != 0:
+            return _pod_damage_ac56(mem, rec)
+    return False
+
+
+def _s16(v: int) -> int:
+    return v - 0x10000 if v & 0x8000 else v
+
+
+def _pod_collision_sweep_ac81(mem, rec: int) -> tuple[int | None, bool]:
+    """``1010:AC81`` -- the pod-vs-pool collision sweep: over the 0x23 records at DS:23B4 (stride
+    0x38; the player record 237C sits BELOW the base and is excluded), active + behavior != 1 +
+    the +0x14 scan flag == 1, a SIGNED +/-16px box on both axes, and a +0x0E owner-id mismatch.
+    The FIRST hit ends the sweep: type 5 -> the AAD3 pickup collect; type 4 -> the BFC7 touch
+    death on the victim + the AC56 damage beat on the pod.  Returns (the type-4 victim record or
+    None, pod-died)."""
+    if mem.rw(DS, 0xBDAC) == 1:
+        return None, False
+    y = _s16(mem.rw(DS, rec + 0x04))
+    x = _s16(mem.rw(DS, rec + 0x02))
+    bx = 0x23B4
+    for _ in range(0x23):
+        if (mem.rw(DS, bx) != 0 and mem.rw(DS, bx + 0x18) != 1
+                and mem.rw(DS, bx + 0x14) == 1):
+            tx = mem.rw(DS, bx + 0x02)
+            ty = mem.rw(DS, bx + 0x04)
+            if (x <= _s16((tx + 0x10) & 0xFFFF) and x >= _s16((tx - 0x10) & 0xFFFF)
+                    and y <= _s16((ty + 0x10) & 0xFFFF) and y >= _s16((ty - 0x10) & 0xFFFF)
+                    and mem.rw(DS, rec + 0x0E) != mem.rw(DS, bx + 0x0E)):
+                if mem.rw(DS, bx + 0x16) == 5:
+                    _pickup_collect_aad3(mem, bx)   # ACF9: push bp; bp = the pickup; AAD3
+                    return None, False
+                if mem.rw(DS, bx + 0x16) == 4:      # ACE8
+                    _bfc7_touch_death(mem, bx)      # ACEE -> AB99: the victim dies
+                    return bx, _pod_damage_ac56(mem, rec)
+                # a type that is neither 4 nor 5 keeps sweeping (ACD2)
+        bx += 0x38
+    return None, False
+
+
+def _pod_death_abf3(mem, rec: int) -> None:
+    """``1010:ABF3`` -- the pod DYING transform: sound 0x19, behavior := 1 (the dying-anim state),
+    type := 4, +0x22 := 0, sprite := 0, then the AC19 HUD-chrome redraw (837A + 859E -- pure VIDEO
+    work, DGROUP-invisible; the native HUD compose redraws every frame anyway)."""
+    if rec == 0xFFFF:
+        return
+    if mem.rb(DS, 0x98C0):
+        mem.wb(DS, 0xBEFF, 0x19)
+    mem.ww(DS, rec + 0x18, 0x0001)
+    mem.ww(DS, rec + 0x16, 0x0004)
+    mem.ww(DS, rec + 0x22, 0x0000)
+    mem.ww(DS, rec + 0x08, 0x0000)
+
+
+#: the AD1D pod registry: DS slot address -> jumps into the shared AB77 body (order-faithful)
+_POD_SLOTS_AB77 = (0xA966, 0xA968, 0xA96A, 0xA96C)
+
+
+def _step_special_pod_1(mem, rec: int, tiles: LevelTileContext) -> None:
+    """Object type 1 (``1010:AD04`` via AA36[1]) -- the player's POD/ESCORT records, tracked by the
+    DS:A962..A96E slot registry.  Gate: skipped until the scroll progress DS:2350 > 0xB6 (unless
+    the BDAC render mode).  Three families:
+
+    * sprite 0xF (ABCA, slot A96E): repositioned every frame from the A420 per-player-sprite
+      offset table + the player record 237C, then the AC28 tile crash + the AC81 sweep;
+    * slots A966/A968/A96A/A96C (AB77): sprite = [233C]+0x18, the AC28 tile crash + the AC81
+      sweep ([A42C] latches the slot address);
+    * slots A962/A964 (ABA3): sprite = [233C]+0x14, the AC81 sweep only ([A42E] latches).
+
+    Any death clears the registry slot to FFFF and runs the ABF3 dying transform; a player in the
+    dying pose ([2384] >= 3) kills the pod outright."""
+    if mem.rw(DS, 0xBDAC) != 1 and mem.rw(DS, 0x2350) <= 0x00B6:
+        return
+    if mem.rw(DS, rec + 0x08) == 0x000F:                        # ABCA: the A96E tracker pod
+        if mem.rw(DS, 0x2384) >= 3:
+            mem.ww(DS, 0xA96E, 0xFFFF)
+            _pod_death_abf3(mem, rec)
+            return
+        si = ((mem.rw(DS, 0x2384) * 4) + 0xA420) & 0xFFFF       # AB34 (dx=A420)
+        mem.ww(DS, rec + 0x02, (mem.rw(DS, si) + mem.rw(DS, 0x237E)) & 0xFFFF)
+        mem.ww(DS, rec + 0x04, (mem.rw(DS, (si + 2) & 0xFFFF) + mem.rw(DS, 0x2380)) & 0xFFFF)
+        if _pod_tile_crash_ac28(mem, rec, tiles):
+            mem.ww(DS, 0xA96E, 0xFFFF)
+            _pod_death_abf3(mem, rec)
+            return
+        victim, died = _pod_collision_sweep_ac81(mem, rec)
+        if died:
+            mem.ww(DS, 0xA96E, 0xFFFF)                          # ABEA order: clear, AB99, ABF3
+            _bfc7_touch_death(mem, victim)                      # the ABF0 second AB99 beat
+            _pod_death_abf3(mem, rec)
+        return
+    for slot in _POD_SLOTS_AB77:                                # AD1D..AD3E -> AB77
+        if rec == mem.rw(DS, slot):
+            mem.ww(DS, 0xA42C, slot)
+            if mem.rw(DS, 0x2384) >= 3:
+                mem.ww(DS, slot, 0xFFFF)
+                _pod_death_abf3(mem, rec)
+                return
+            mem.ww(DS, rec + 0x08, (mem.rw(DS, 0x233C) + 0x0018) & 0xFFFF)   # AB4F
+            if _pod_tile_crash_ac28(mem, rec, tiles):
+                mem.ww(DS, slot, 0xFFFF)                        # AB8F (tile death skips AB99)
+                _pod_death_abf3(mem, rec)
+                return
+            victim, died = _pod_collision_sweep_ac81(mem, rec)
+            if died:
+                _bfc7_touch_death(mem, victim)                  # AB8C: the second AB99 beat
+                mem.ww(DS, slot, 0xFFFF)
+                _pod_death_abf3(mem, rec)
+            return
+    for slot in (0xA962, 0xA964):                               # AD41..AD56 -> ABA3
+        if rec == mem.rw(DS, slot):
+            mem.ww(DS, 0xA42E, slot)
+            if mem.rw(DS, 0x2384) >= 3:
+                mem.ww(DS, slot, 0xFFFF)
+                _pod_death_abf3(mem, rec)
+                return
+            mem.ww(DS, rec + 0x08, (mem.rw(DS, 0x233C) + 0x0014) & 0xFFFF)   # ABAE
+            victim, died = _pod_collision_sweep_ac81(mem, rec)
+            if died:
+                _bfc7_touch_death(mem, victim)                  # ABBD: the second AB99 beat
+                mem.ww(DS, slot, 0xFFFF)
+                _pod_death_abf3(mem, rec)
+            return
+    return                                                      # AD59: an unregistered type-1 record
+
+
 def _pickup_collect_aad3(mem, rec: int) -> None:
     """``1010:AAD3``: the type-5 pickup COLLECT -- pose gate, sound 7, score +0x20 (5F0D), the
-    ``+0x26``-keyed AB00 kind dispatch (kind 2 = the 9D67 shield/HP heal -- the only demo-witnessed
-    kind), then the BD17 deactivate of the pickup record (the AB0C tail)."""
+    ``+0x26``-keyed AB00 kind dispatch (1 = the 9D4D weapon-level upgrade, 2 = the 9D67 shield/HP
+    heal, 3 = the 62AA smart bomb, 4 = the 9DB9 one-shot A97C flag), then the BD17 deactivate of
+    the pickup record (the AB0C tail).  Kind 0 (44AF) stays a loud gap."""
     if mem.rw(DS, 0x2384) >= 3:             # AAD3's own pose gate (dying pose -> no collect)
         return
     if mem.rb(DS, 0x98C0):
         mem.wb(DS, 0xBEFF, 0x07)            # AAE2: sound 7 (kind 2 then overwrites with 0x1C)
     _score_add_5f0d(mem, 0x20)
     kind = mem.rw(DS, rec + 0x26)
-    if kind != 2:
+    if kind == 2:
+        # 9D67: sound 0x1C + the A95A/A95C heal + ONE 9EC2 HUD-energy beat.
+        if mem.rb(DS, 0x98C0):
+            mem.wb(DS, 0xBEFF, 0x1C)
+        a95a, a95c = pickup_heal_9d67(mem.rw(DS, 0xA95A), mem.rw(DS, 0xA95C))
+        mem.ww(DS, 0xA95A, a95a)
+        mem.ww(DS, 0xA95C, a95c)
+        _hud_energy_beat_9ec2(mem)
+    elif kind == 1:
+        # 9D4D: the WEAPON-LEVEL upgrade -- inc [95FA] mod 4, then the AC19 HUD-chrome redraw
+        # (pure video; the native HUD compose redraws every frame).  The 9D54 spin waits for the
+        # sound IRQ to clear [98C8] -- an async flag the synchronous walk cannot model.
+        if mem.rb(DS, 0x978E) and mem.rb(DS, 0x98C8) == 1:
+            raise RecoveryGap("pickup kind 1's 9D54 sound-flag spin ([978E]!=0 with [98C8]==1)",
+                              "waits on the sound IRQ clearing [98C8] -- not representable in the walk")
+        mem.ww(DS, 0x95FA, (mem.rw(DS, 0x95FA) + 1) & 0x0003)
+        raise RecoveryGap("pickup kind 1's AC19 tail: the 837A weapon-script scheduler",
+                          "837A steps the [95FC + [95FA]*2] weapon-script record (predicate table"
+                          " calls, [95F8] scan counter, [bp+0] state stamps) -- a real DGROUP state"
+                          " machine, not a video redraw; recover it before un-gapping")
+    elif kind == 3:
+        # 62AA: the SMART BOMB -- sound 8, then every active 32CA-table record with x <= 0xE0,
+        # type 4 and behavior not 0/1 dies the FULL BFC7 death (counter := 0 first), in the same
+        # descending table order as the walk itself.
+        if mem.rb(DS, 0x98C0):
+            mem.wb(DS, 0xBEFF, 0x08)
+        for cx in range(EFFECT_SLOTS, 0, -1):
+            victim = mem.rw(DS, (EFFECT_TABLE_32CA + cx * 2) & 0xFFFF)
+            if (mem.rw(DS, victim) != 0 and mem.rw(DS, victim + 0x02) <= 0x00E0
+                    and mem.rw(DS, victim + 0x16) == 4
+                    and mem.rw(DS, victim + 0x18) not in (0, 1)):
+                mem.ww(DS, victim + 0x20, 0)            # 62EE
+                _bfc7_touch_death(mem, victim)
+    elif kind == 4:
+        # 9DB9: the one-shot companion/flag pickup -- inert while [A97A] == 0x58 or already owned
+        # ([A97C] == 1); else (alive pose) set [A97C] = 1 + sound 0x0D (render gate BDAC != 1).
+        if mem.rw(DS, 0xA97A) != 0x0058 and mem.rw(DS, 0xA97C) != 1 and mem.rw(DS, 0x2384) < 3:
+            mem.ww(DS, 0xA97C, 0x0001)
+            if mem.rw(DS, 0xBDAC) != 1 and mem.rb(DS, 0x98C0):
+                mem.wb(DS, 0xBEFF, 0x0D)
+    else:
         raise RecoveryGap(f"pickup kind {kind} collect -- the AB00 index-{kind} entry (record {rec:04X})",
-                          "only kind 2 (1010:9D67, the shield/HP heal) is demo-witnessed + recovered;"
-                          " kinds 0/1/3/4 (AF44/9D4D/62AA/9DB9) are not")
-    # 9D67: sound 0x1C + the A95A/A95C heal + ONE 9EC2 HUD-energy beat.
-    if mem.rb(DS, 0x98C0):
-        mem.wb(DS, 0xBEFF, 0x1C)
-    a95a, a95c = pickup_heal_9d67(mem.rw(DS, 0xA95A), mem.rw(DS, 0xA95C))
-    mem.ww(DS, 0xA95A, a95a)
-    mem.ww(DS, 0xA95C, a95c)
-    _hud_energy_beat_9ec2(mem)
+                          "kind 0 (1010:44AF) is not recovered")
     _bd17_deactivate(mem, rec)              # AB0C: pop bp; jmp BD17 -- the pickup deactivates
 
 
@@ -1692,8 +2009,9 @@ def _postmove_bc45(mem, rec: int, tiles: LevelTileContext, *, with_drift: bool) 
         raise RecoveryGap(f"BEC5 owner-link/unclassified collision (record {rec:04X}, "
                           f"candidate logic {cand_logic:#x})",
                           "the +0x30 owner-pointer reaction is not recovered")
-    # the struck candidate's fate (BEC5): variant 2 clears active directly; 5/6/7/8/C run BD0D
-    if bec5_candidate_deactivated(cand_logic):
+    # the struck candidate's fate (BEC5): variant 2 clears active directly; 5/6 always run BD0D;
+    # 7/8/C run BD0D only in A8C2 final-boss mode (else the candidate SURVIVES the hit)
+    if bec5_candidate_deactivated(cand_logic, mem.rw(DS, 0xA8C2) == 1):
         if cand_logic == 0x0002:
             mem.ww(DS, cand + 0x00, 0)
         else:
@@ -1718,6 +2036,9 @@ def _postmove_bc45(mem, rec: int, tiles: LevelTileContext, *, with_drift: bool) 
 def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
     rtype = mem.rw(DS, rec + 0x16)
     if rtype == 0:
+        return
+    if rtype == 1:
+        _step_special_pod_1(mem, rec, tiles)   # AD04: the pod step is the whole walk (no BC45)
         return
     if rtype == 5:
         _step_pickup_5(mem, rec)
@@ -1811,9 +2132,21 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
         elif beh == 0x2E:
             drift = _step_drift_seeker_2e(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=drift)   # waiting: BC45; seeking: BC4B
-        elif beh in (0x46, 0x47):
-            _step_beacon_46_47(mem, rec, beh, 0x004B if beh == 0x46 else 0x0051)
+        elif beh == 0x46:
+            _step_beacon_46(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # 87B5 exits jmp BC45 (all paths)
+        elif beh == 0x47:
+            _step_bounce_emitter_47(mem, rec, tiles)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8C37->B2AC->BB03 exits jmp BC45
+        elif beh == 0x4E:
+            _step_climber_morph_4e(mem, rec, tiles)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # 88BB's paths all exit jmp BC45
+        elif beh == 0x4F:
+            _step_strober_4f(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8D20 exits jmp BC45
+        elif beh == 0x48:
+            _step_shooter_48(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8D44 exits jmp BC45
         elif beh == 0x8F:
             _step_pulser_8f(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8769 exits jmp BC45 (all paths)
@@ -1825,6 +2158,8 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # BB8E body exits jmp BC45 (WITH drift)
         elif beh == 0x06:
             _step_mover_06(mem, rec, tiles)                     # AE2C (recovered whole-slot update)
+        elif beh == 0x0C:
+            _step_marcher_0c(mem, rec, tiles)                   # AE09 (the AD60 tail is internal)
         elif beh == 0x1C:
             _step_controller_1c(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=False)   # the 8D4F stub exits jmp BC4B

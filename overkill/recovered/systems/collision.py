@@ -455,18 +455,26 @@ COLLISION_VARIANT_SPRITE_2 = 0x0002
 BEC5_DAMAGE_OR_DEATH_VARIANTS = frozenset((0x0005, 0x0006, 0x0007, 0x0008, 0x0009, 0x000C))
 BEC5_SPRITE_VARIANT2 = 0x0002
 BEC5_VARIANT2_ENTER_AT_BF25_SPRITE = 0x0033
-# Candidate logic ids whose BEC5 reaction deactivates the struck candidate: 5/6/7/8/Ch run BD0D
-# (-> BD17, active:=0), variant 2 clears its active word directly.  Variant 9 leaves it alive.
-BEC5_CANDIDATE_DEACTIVATED_VARIANTS = frozenset((0x0002, 0x0005, 0x0006, 0x0007, 0x0008, 0x000C))
+# Candidate logic ids whose BEC5 reaction deactivates the struck candidate.  The BD0D call is
+# NOT uniform (disasm BEC5, oracle-pinned by the L2 walk frame 2754 phantom kill): variants 5/6
+# (BF97) run BD0D BEFORE the A8C2 test -- always killed; variant 2 (BF1B) clears active directly
+# -- always; variants 7/8/Ch (BFB9) reach BD0D only through the BF92 stub taken when A8C2 == 1
+# (final-boss mode) -- in a normal level the candidate SURVIVES and the scanner dies instead.
+BEC5_CANDIDATE_ALWAYS_DEACTIVATED = frozenset((0x0002, 0x0005, 0x0006))
+BEC5_CANDIDATE_BOSS_ONLY_DEACTIVATED = frozenset((0x0007, 0x0008, 0x000C))
 
 
-def bec5_candidate_deactivated(candidate_logic_id: int) -> bool:
+def bec5_candidate_deactivated(candidate_logic_id: int, a8c2_boss_mode: bool) -> bool:
     """Whether the BEC5 reaction deactivates the struck candidate (sets its active word to 0).
 
-    True for the candidate logic ids that run BD0D (5/6/7/8/Ch) or the variant-2 active-clear (2);
-    False for variant 9 (the scanner is hurt but the candidate survives) and any other id.
+    True for variants 2 (the BF1B active-clear) and 5/6 (BF97's unconditional BD0D); for 7/8/Ch
+    (BFB9) only in final-boss mode (the BF92 BD0D stub is gated on ``A8C2 == 1``).  False for
+    variant 9 (the scanner is hurt but the candidate survives) and any other id.
     """
-    return (candidate_logic_id & 0xFFFF) in BEC5_CANDIDATE_DEACTIVATED_VARIANTS
+    lid = candidate_logic_id & 0xFFFF
+    if lid in BEC5_CANDIDATE_ALWAYS_DEACTIVATED:
+        return True
+    return a8c2_boss_mode and lid in BEC5_CANDIDATE_BOSS_ONLY_DEACTIVATED
 
 
 def bec5_moving_object_outcome(
@@ -616,7 +624,7 @@ def resolve_moving_object_collision(
         return MovingObjectCollisionResult(collided=True, unclassified=True,
                                            new_counter_20=scanner_counter_20 & 0xFFFF,
                                            died=False, death_transition=None, hit_index=hit)
-    deactivated = bec5_candidate_deactivated(candidate_logic_id)
+    deactivated = bec5_candidate_deactivated(candidate_logic_id, a8c2_boss_mode)
     if outcome.kind == "instant_death":
         return MovingObjectCollisionResult(
             collided=True, unclassified=False, new_counter_20=0, died=True,

@@ -23,6 +23,63 @@
 > work is COMPLETE for L1. Next frontier: play_native integration polish, other planets' controller
 > families (0x1c etc.), the 9734/9902/9908 transition continuations, HUD/menu wiring, audio.
 
+## 2026-07-07 - **THE L2 WALK IS (almost) DRY: every behavior + type + pickup native, ONE gap left**
+
+Two slices this pass, both gated on the cached L2 walk (zero divergence) + the L1 walk + the suite.
+
+**Slice A (fa03df8): 0x22 + 0x05 + the BD17 decays.** 0x22 (the planet BOSS the 0x21 transform
+creates) ALIASES the native B3DF riser -- EFC4-confirmed, a 2-line dispatch add. 0x05 wires the
+already-verified `object_update_ae7d` whole-slot update (the systems/object_update.py `_advance_ae7d`
+had it all along -- integration, not recovery). BD17's logic-keyed decays decoded + composed:
+A970 (0x07/0x08), A974 (0x0C), A976 (0x05/0x06), A97E (0x0A -- its AC19 tail still gaps), and the
+0x09 A3B4 sibling-list sweep (deactivate every listed record, dec [A972] each).
+
+**Slice B (this commit): the TYPE-1 POD FAMILY + three latent-bug fixes + 0x0C/0x06/0x4E/0x4F/0x48
++ pickups 1/3/4.**
+
+* **Type 1 (`1010:AD04`) = the player's pod/escort records**, registry DS:A962..A96E: the sprite-0xF
+  tracker pod (AB34 repositions from the A420 per-player-sprite offset table + the 237C player
+  record), the four AB77 pods (sprite [233C]+0x18, AC28 tile-crash + AC81 sweep), the two ABA3 pods
+  (sprite [233C]+0x14, sweep only). AC56 = the shared damage beat (sound 0xE, +0x24=5 flash, the
+  BEDC/2324 gate, dec +0x20); AC81 = the signed +/-16px pod-vs-pool sweep (first hit wins: type 5 ->
+  the AAD3 collect, type 4 -> BFC7 on the victim + AC56 on the pod, + the caller's SECOND AB99 beat
+  on a pod death -- byte-faithful); ABF3 = the dying transform (beh:=1, type:=4, sprite:=0).
+* Wiring the pods un-gapped ~2400 previously-gapped frames and EXPOSED three latent bugs, each
+  root-caused with the driven-oracle-at-the-cached-frame recipe (load the shadow-cache pre-state
+  into a hookless VM, drive the original, watch who writes what):
+  1. **BEC5's candidate kill is A8C2-GATED for logic 7/8/0xC** (frame 2754: my walk killed the 0xC
+     record the VM left alive). The truth: variants 2/5/6 always deactivate the struck candidate;
+     7/8/0xC only via the BF92 stub when [A8C2]==1 (final-boss mode); 9 never.
+     `bec5_candidate_deactivated` now takes `a8c2_boss_mode`; tests re-pinned to the ASM.
+  2. **0x47 was misdecoded as 0x46's beacon twin** (frame 1389: an AFD8 y-step the native never
+     did). 8C31 jumps to B2AC (the SCENERY-EMITTER body 0x89 uses: the [232C]==0x1F BAE1 dir-4
+     C237 emit + the BB03 bounce), NOT 87B5. Split into `_step_beacon_46` + `_step_bounce_emitter_47`.
+  3. The walk-frame divergences before these fixes were NOT pod bugs -- the pod slice just unlocked
+     frames the type-1 gap had been hiding.
+* **0x0C (`AE09`)**: the 8-way MARCHER -- +0x1C countdown (expiry re-aims dir 0), x-=2 when idle,
+  sprite dir+0x28, the AF22 8-way +/-3px move (CS:AF2C table), the AD60 tail (NO drift). 1598
+  frames un-gapped.
+* **0x06's ADC9 death**: x=FFFF + BD17 (whose A976 decay is now native). 38 frames.
+* **0x4E (`8CF6`)**: the 96D2-anim sprite + the 88BB tail -- at x==0x90 exactly, MORPH to 0x33,
+  dir 7, up to three AFD8 1px steps, first block flips dir^=2. **0x4F (`8D0A`)**: strobe sprite
+  ((([2328]+rec+[2340])&7)+0x80 -- the record ADDRESS salts the phase), x+=4. **0x48 (`8D3C`)**:
+  the far 1F8F:01C2 body (planet 5: 1px y-seek toward [2380] + 96D2 sprite +0x26; planet 3: 0x1C;
+  else [2328]>>1+0x22), x+=1, a 7476 enemy shot every frame.
+* **Pickups**: kind 1 = the 9D4D weapon-level upgrade (inc [95FA] mod 4) -- but its AC19 tail is
+  the REAL discovery: **837A is NOT a HUD redraw, it is the weapon-script scheduler** (steps the
+  [95FC + [95FA]*2] record through a predicate-call script table; [95F8] is its scan counter) --
+  left as the one loud gap. Kind 3 = the 62AA SMART BOMB (sound 8; every active 32CA record with
+  x<=0xE0, type 4, beh not 0/1 dies the full BFC7 death, descending table order). Kind 4 = the
+  9DB9 one-shot A97C flag pickup (gated on [A97A]!=0x58 + not-owned + alive pose, sound 0xD).
+
+**The L2 walk gate after all of it: ZERO divergence, ONE gap: 11x the 837A weapon-script tail.**
+The L1 walk stays green (zero divergence, zero gaps). The L2 behavior zoo, the type table, and the
+pickup table are DONE apart from 837A.
+
+Next: the 837A weapon-script scheduler (the [95FC] records, their script tables + predicates --
+also unlocks the 0x0A decay's AC19 tail and the pod-death redraw path), then the wave driver's
+remaining planet families (0/3/4), L3/L4/L5 walk gates, the 9734/9902/9908 transitions.
+
 ## 2026-07-07 - OWNER PLAYTEST #2 + the NEW VERIFICATION BAR: 1:1 demo frames, native vs VM page
 
 **Owner findings (all real; the state gates saw none of them):** (1) the player ship and its

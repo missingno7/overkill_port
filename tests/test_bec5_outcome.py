@@ -43,12 +43,23 @@ def test_other_logic_ids_are_unclassified(logic_id):
     assert _out(logic_id, boss=True).kind == "owner_or_unclassified"
 
 
-@pytest.mark.parametrize("logic_id", [0x0002, 0x0005, 0x0006, 0x0007, 0x0008, 0x000C])
-def test_candidate_deactivated_variants(logic_id):
-    assert bec5_candidate_deactivated(logic_id) is True
+@pytest.mark.parametrize("logic_id", [0x0002, 0x0005, 0x0006])
+def test_candidate_always_deactivated_variants(logic_id):
+    # BF1B (2) and BF97 (5/6) kill the candidate regardless of the A8C2 mode.
+    assert bec5_candidate_deactivated(logic_id, False) is True
+    assert bec5_candidate_deactivated(logic_id, True) is True
+
+
+@pytest.mark.parametrize("logic_id", [0x0007, 0x0008, 0x000C])
+def test_candidate_boss_only_deactivated_variants(logic_id):
+    # BFB9's BD0D stub (BF92) is gated on A8C2 == 1: in a normal level the candidate
+    # survives (oracle: the L2 walk frame 2754 -- the 0x31 scanner dies, the 0xC pod lives).
+    assert bec5_candidate_deactivated(logic_id, False) is False
+    assert bec5_candidate_deactivated(logic_id, True) is True
 
 
 @pytest.mark.parametrize("logic_id", [0x0009, 0x0000, 0x0001, 0x0042])
 def test_candidate_not_deactivated_variants(logic_id):
     # Variant 9 hurts the scanner but leaves the candidate alive; other ids are owner-link/no-op.
-    assert bec5_candidate_deactivated(logic_id) is False
+    assert bec5_candidate_deactivated(logic_id, False) is False
+    assert bec5_candidate_deactivated(logic_id, True) is False
