@@ -1465,6 +1465,70 @@ def _hud_energy_beat_9ec2(mem) -> None:
                           " path (mode 2) never takes this branch")
 
 
+#: the 837A weapon-script PREDICATES (1010 addresses -> latch decision).  Each script entry is
+#: {state word, predicate fn, action fn}; 837A calls the predicate and LATCHES the state into the
+#: record's +0 on NZ.  Predicates are read-only: flag helpers (83D7 Z / 83DA NZ), the A958 weapon
+#: mode compares (83DE..83FC, k=0..5), the A95E/A960 one-shot flags, and the pod-registry
+#: free-slot checks (8456/8468/84A2 -- with [2384] pose gates ordered exactly as the ASM
+#: short-circuits them).
+_WEAPON_SCRIPT_PREDICATES = {
+    0x83D7: lambda mem: False,
+    0x83DA: lambda mem: True,
+    0x83DE: lambda mem: mem.rw(DS, 0xA958) != 0,
+    0x83E4: lambda mem: mem.rw(DS, 0xA958) != 1,
+    0x83EA: lambda mem: mem.rw(DS, 0xA958) != 2,
+    0x83F0: lambda mem: mem.rw(DS, 0xA958) != 3,
+    0x83F6: lambda mem: mem.rw(DS, 0xA958) != 4,
+    0x83FC: lambda mem: mem.rw(DS, 0xA958) != 5,
+    0x8437: lambda mem: mem.rw(DS, 0xA95E) != 1,
+    0x8445: lambda mem: mem.rw(DS, 0xA960) == 0,
+    0x8456: lambda mem: mem.rw(DS, 0xA96E) == 0xFFFF,
+    0x8468: lambda mem: (mem.rw(DS, 0xA966) == 0xFFFF or mem.rw(DS, 0xA968) == 0xFFFF
+                         or (mem.rw(DS, 0x2384) != 0
+                             and (mem.rw(DS, 0xA96A) == 0xFFFF or mem.rw(DS, 0xA96C) == 0xFFFF))),
+    0x84A2: lambda mem: (mem.rw(DS, 0x2384) == 2
+                         and (mem.rw(DS, 0xA962) == 0xFFFF or mem.rw(DS, 0xA964) == 0xFFFF)),
+    0x84C9: lambda mem: mem.rw(DS, 0x2384) == 0,
+    0x84F0: lambda mem: mem.rw(DS, 0x2384) != 2,
+}
+
+
+def _weapon_script_tick_837a(mem) -> None:
+    """``1010:837A`` -- the weapon-upgrade SCRIPT SCHEDULER (the first half of the AC19 beat; the
+    859E second half is a pure-video chrome redraw, DGROUP-silent).  While an upgrade is pending
+    ([95FA] != FFFF), walk that level's script record ([95FC + lvl*2]): probe entries from the
+    record's +8 cursor; the first predicate returning NZ LATCHES its state word into +0 (the HUD's
+    offered-upgrade icon) without advancing; a Z advances the cursor (FFFF wraps it); ten probes
+    without a latch ([95F8]) reset the cursor and park the icon at 0x24."""
+    lvl = mem.rw(DS, 0x95FA)
+    if lvl == 0xFFFF:
+        return
+    rec = mem.rw(DS, (0x95FC + ((lvl * 2) & 0xFFFF)) & 0xFFFF)
+    script = mem.rw(DS, rec + 6)
+    mem.ww(DS, 0x95F8, 0)
+    while True:
+        idx = mem.rw(DS, rec + 8)
+        ent = (script + idx * 6) & 0xFFFF
+        fn = mem.rw(DS, (ent + 2) & 0xFFFF)
+        if fn == 0xFFFF:
+            mem.ww(DS, rec + 8, 0)                      # 83D0: wrap
+            continue
+        predicate = _WEAPON_SCRIPT_PREDICATES.get(fn)
+        if predicate is None:
+            raise RecoveryGap(f"837A weapon-script predicate 1010:{fn:04X}",
+                              "an unmapped script fn -- decode it before walking")
+        if predicate(mem):
+            mem.ww(DS, rec + 0, mem.rw(DS, ent))        # 83CA: latch, cursor stays
+            return
+        mem.ww(DS, rec + 8, (idx + 1) & 0xFFFF)
+        scanned = (mem.rw(DS, 0x95F8) + 1) & 0xFFFF
+        mem.ww(DS, 0x95F8, scanned)
+        if scanned >= 0x000A:                           # 83B8
+            mem.ww(DS, rec + 8, 0)
+            mem.ww(DS, rec + 0, 0x0024)
+            return
+
+
 def _pod_damage_ac56(mem, rec: int) -> bool:
     """``1010:AC56`` -- the pod HIT beat shared by the tile crash and the collision sweep: sound
     0x0E, the +0x24 = 5 hit-flash variant, then damage only when difficulty (DS:BEDC) != 0 or the
@@ -1540,8 +1604,8 @@ def _pod_collision_sweep_ac81(mem, rec: int) -> tuple[int | None, bool]:
 
 def _pod_death_abf3(mem, rec: int) -> None:
     """``1010:ABF3`` -- the pod DYING transform: sound 0x19, behavior := 1 (the dying-anim state),
-    type := 4, +0x22 := 0, sprite := 0, then the AC19 HUD-chrome redraw (837A + 859E -- pure VIDEO
-    work, DGROUP-invisible; the native HUD compose redraws every frame anyway)."""
+    type := 4, +0x22 := 0, sprite := 0, then the AC19 beat (the 837A weapon-script tick +
+    the video-only 859E chrome redraw)."""
     if rec == 0xFFFF:
         return
     if mem.rb(DS, 0x98C0):
@@ -1550,6 +1614,7 @@ def _pod_death_abf3(mem, rec: int) -> None:
     mem.ww(DS, rec + 0x16, 0x0004)
     mem.ww(DS, rec + 0x22, 0x0000)
     mem.ww(DS, rec + 0x08, 0x0000)
+    _weapon_script_tick_837a(mem)                       # AC19
 
 
 #: the AD1D pod registry: DS slot address -> jumps into the shared AB77 body (order-faithful)
@@ -1651,10 +1716,7 @@ def _pickup_collect_aad3(mem, rec: int) -> None:
             raise RecoveryGap("pickup kind 1's 9D54 sound-flag spin ([978E]!=0 with [98C8]==1)",
                               "waits on the sound IRQ clearing [98C8] -- not representable in the walk")
         mem.ww(DS, 0x95FA, (mem.rw(DS, 0x95FA) + 1) & 0x0003)
-        raise RecoveryGap("pickup kind 1's AC19 tail: the 837A weapon-script scheduler",
-                          "837A steps the [95FC + [95FA]*2] weapon-script record (predicate table"
-                          " calls, [95F8] scan counter, [bp+0] state stamps) -- a real DGROUP state"
-                          " machine, not a video redraw; recover it before un-gapping")
+        _weapon_script_tick_837a(mem)                   # AC19: 837A + the video-only 859E
     elif kind == 3:
         # 62AA: the SMART BOMB -- sound 8, then every active 32CA-table record with x <= 0xE0,
         # type 4 and behavior not 0/1 dies the FULL BFC7 death (counter := 0 first), in the same
@@ -1867,8 +1929,8 @@ def _bd17_deactivate(mem, rec: int) -> None:
     if beh == 0x0A:
         if mem.rw(DS, 0xA97E):                     # BD9E
             mem.ww(DS, 0xA97E, mem.rw(DS, 0xA97E) - 1)
-        raise RecoveryGap("BD17 behavior-0xA decay's AC19 HUD-chrome redraw (1010:837A + 859E)",
-                          "the full-panel redraw side effect is not composed in the walk")
+        _weapon_script_tick_837a(mem)              # BDA9 -> AC19 (859E is video-only)
+        return
 
 
 def _player_hit_9e69(mem) -> None:

@@ -23,6 +23,25 @@
 > work is COMPLETE for L1. Next frontier: play_native integration polish, other planets' controller
 > families (0x1c etc.), the 9734/9902/9908 transition continuations, HUD/menu wiring, audio.
 
+## 2026-07-07 - **THE L2 WALK IS COMPLETELY DRY: 6561/6561 frames, ZERO divergence, ZERO gaps**
+
+The 837A weapon-script scheduler -- the last L2 gap -- is native. The decode: each weapon level's
+record ([95FC + lvl*2]) carries a 6-byte-entry script {state word, predicate fn, action fn}; 837A
+probes entries from the record's +8 cursor and LATCHES the first NZ predicate's state into +0 (the
+HUD's offered-upgrade icon), Z advances (FFFF wraps), ten fruitless probes ([95F8]) park the icon
+at 0x24.  All 15 witnessed predicates mapped (flag helpers, the [A958] weapon-mode compares k=0..5,
+the [A95E]/[A960] one-shots, the pod-registry free-slot checks with their [2384] pose gates);
+unmapped fns fail loud.  859E (AC19's second half) is proven DGROUP-silent by the frame diffs.
+The tick is wired at all three AC19 sites: the kind-1 pickup, the 0x0A decay, the pod death ABF3.
+
+**Both playable-planet demo walks are now fully native: L1 8294/8294 and L2 6561/6561 frames,
+zero divergence, zero gaps.**  The entire behavior zoo the two demos exercise, both dispatch
+tables, the pod family, the pickup table, and the BD17/BEC5/C054 death machinery run byte-exact.
+
+Next: L3/L4/L5 walk gates (record caches, expect new planet families), the wave driver's planet
+0/3/4 bodies, the 9734/9902/9908 transitions, the 1:1 frame bar on L3+, play_native wiring for
+pods/pickups/weapon scripts (the state machinery is recovered -- the runtime needs to CALL it).
+
 ## 2026-07-07 - **THE L2 WALK IS (almost) DRY: every behavior + type + pickup native, ONE gap left**
 
 Two slices this pass, both gated on the cached L2 walk (zero divergence) + the L1 walk + the suite.
