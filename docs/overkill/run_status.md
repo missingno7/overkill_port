@@ -38,7 +38,13 @@ machinery), then the 9B2E tail (4FF9 terrain crash + 9E19 cascade, 9C01 edge ass
    plotter (5BDC's 4D15-family or A846's head), model its DGROUP writes.
    FOUND: **1010:4CED** -- si=C6C1, di=C7B1, bp=4D4D/4D51 (per-layer pixel fns), the same
    20/10/10 layer counts, es=CS:[9598]; 4D15 per star computes the screen cell + pixel and
-   STORES to [di] (the DRAW LIST), FFFF-terminated (4D10).  Decode 4D15..4D51 and add
+   DECODED IN FULL: the star record = {tick_y word, x_offset word, pixel word}; per star
+   bx = [9A08 + tick*2] + [234C] + x_offset; the occupancy check `es:[bx] != 0` (es = CS:[9598],
+   the render strip; mode 1 also checks rows +26/+52/+78) SKIPS occupied cells; a plotted star
+   writes the pixel to the strip AND `[di] = bx; di += 2` -- the C7B1 list is the plotted stars'
+   SCREEN OFFSETS, FFFF-terminated.  4D64 = the undraw (reads the list, clears the strip; no
+   DGROUP writes).  Native model: rebuild the list at the present stage (write the strip pixels
+   too -- intra-pass occupancy needs them; byte-identical to the renderer's).  Then decode
    _star_list_4ced at the present-stage position in native_frame.
 1b. (superseded) **The C7B1-region ring** (most diverging frames): 6-stride cells right AFTER my 40-star
    starfield writes end (C6C1+40*6 = C7B1); the values show a ONE-FRAME SKEW (nat@N == vm@N-1)
