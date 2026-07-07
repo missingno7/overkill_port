@@ -234,13 +234,101 @@ def _isr_effects_two_ticks(mem) -> None:
     gate names the cells)."""
     mem.wb(DS, 0x0054, (mem.rb(DS, 0x0054) + 2) & 0x03)
     for _ in range(2):
-        mem.wb(DS, 0xBF00, (mem.rb(DS, 0xBF00) + 1) & 0x03)   # fe 06: a BYTE inc
-        if mem.rb(DS, 0xBEFF):
-            raise RecoveryGap("the D566 sound-effect start ([BEFF] queued)",
-                              "the D50E channel machinery is the audio campaign's; fail loud")
-        if mem.rb(DS, 0xBEFE):
-            raise RecoveryGap("the D50E active-channel step ([BEFE] != 0)",
-                              "the BFAA/BFBA channel steppers are the audio campaign's")
+        _sound_engine_tick_d50e(mem)
+
+
+def _sound_period_d61f(mem, ch: int) -> None:
+    """``1010:D61F``: the channel's PIT period (+6) from the DS:BF01 note table (note*2)."""
+    note = mem.rb(DS, ch + 4)
+    mem.ww(DS, ch + 6, mem.rw(DS, (0xBF01 + ((note << 1) & 0xFF)) & 0xFFFF))
+
+
+def _sound_channel_step_d5ac(mem, ch: int) -> None:
+    """``1010:D5AC`` -- one channel's per-tick step of the two-channel SOUND BYTECODE interpreter
+    (channel blocks at DS:BFAA / DS:BFBA: +2 script ptr, +4 note, +5 default duration, +6 PIT
+    period, +8 countdown, +9 status, +0xB note-slide delta, +0xC pitch-slide delta word, +0xE
+    pitch-slide count).  A non-expired countdown runs the two slides; expiry fetches bytecode:
+    notes (< 0x80) commit note+period+status 2; 0xE0+ sets the default duration; 0x80..0x85
+    dispatch the DS:BEF0 op table {stop, rest, slide-down, slide-up, pitch-params, hold}.  The
+    PIT/speaker port writes are host I/O -- DGROUP only here."""
+    bx = mem.rw(DS, ch + 2)
+    cnt = (mem.rb(DS, ch + 8) - 1) & 0xFF
+    mem.wb(DS, ch + 8, cnt)
+    if cnt != 0:
+        delta = mem.rb(DS, ch + 0x0B)               # D612: the note slide
+        if delta:
+            mem.wb(DS, ch + 4, (mem.rb(DS, ch + 4) + delta) & 0xFF)
+            _sound_period_d61f(mem, ch)
+        if mem.rb(DS, ch + 0x0E):                   # D602: the pitch slide
+            mem.wb(DS, ch + 0x0E, (mem.rb(DS, ch + 0x0E) - 1) & 0xFF)
+            mem.ww(DS, ch + 6, (mem.rw(DS, ch + 6) + mem.rw(DS, ch + 0x0C)) & 0xFFFF)
+        return
+    while True:                                     # D5BB: the fetch loop
+        al = mem.rb(DS, bx & 0xFFFF)
+        bx = (bx + 1) & 0xFFFF
+        if al < 0x80:                               # a NOTE
+            mem.wb(DS, ch + 4, al)
+            _sound_period_d61f(mem, ch)
+            mem.wb(DS, ch + 9, 2)
+            break
+        if al >= 0xE0:                              # D5FB: the duration prefix
+            mem.wb(DS, ch + 5, (al - 0xDF) & 0xFF)
+            continue
+        op = al - 0x80                              # the BEF0 op table
+        if op == 0:                                 # D62F: STOP (kills the whole effect; no commit)
+            mem.wb(DS, 0xBEFE, 0)
+            mem.wb(DS, 0xBFB3, 0)
+            mem.wb(DS, 0xBFC3, 0)
+            return
+        if op == 1:                                 # D5D6: REST
+            mem.wb(DS, ch + 9, 0)
+            break
+        if op == 2:                                 # D641: slide down
+            mem.wb(DS, ch + 0x0B, 0xFF)
+            continue
+        if op == 3:                                 # D648: slide up
+            mem.wb(DS, ch + 0x0B, 0x01)
+            continue
+        if op == 4:                                 # D64F: pitch-slide params
+            mem.ww(DS, ch + 0x0C, mem.rw(DS, bx & 0xFFFF))
+            bx = (bx + 2) & 0xFFFF
+            mem.wb(DS, ch + 0x0E, mem.rb(DS, bx & 0xFFFF))
+            bx = (bx + 1) & 0xFFFF
+            continue
+        if op == 5:                                 # D5CC: hold (straight to the commit)
+            break
+        raise RecoveryGap(f"sound opcode {al:#04x} (channel {ch:04X})",
+                          "the BEF0 table's entries 6/7 are unused/garbage in the shipped data")
+    mem.ww(DS, ch + 2, bx)                          # D5CC: commit + reload the countdown
+    mem.wb(DS, ch + 8, mem.rb(DS, ch + 5))
+
+
+def _sound_engine_tick_d50e(mem) -> None:
+    """``1010:D50E`` -- ONE ISR sound tick (DGROUP only; the PIT/speaker port writes are host):
+    the [BF00] beat, the [BEFF] queue -> D566 effect start (priority: a LOWER id preempts, equal
+    restarts, higher is ignored WITHOUT consuming the queue; id >= 0x20 is the STOP command),
+    then both channel steps while an effect is live."""
+    mem.wb(DS, 0xBF00, (mem.rb(DS, 0xBF00) + 1) & 0x03)   # fe 06: a BYTE inc
+    al = mem.rb(DS, 0xBEFF)
+    if al:
+        if al >= 0x20:                              # D62F via D568: the stop command
+            mem.wb(DS, 0xBEFE, 0)
+            mem.wb(DS, 0xBFB3, 0)
+            mem.wb(DS, 0xBFC3, 0)
+        else:
+            cur = mem.rb(DS, 0xBEFE)
+            if not (cur != 0 and al != cur and al > cur):
+                mem.wb(DS, 0xBEFE, al)              # D57C: start the effect
+                si = (0xBFCA + ((al << 2) & 0xFFFF)) & 0xFFFF
+                mem.ww(DS, 0xBFAC, mem.rw(DS, si))
+                mem.ww(DS, 0xBFBC, mem.rw(DS, (si + 2) & 0xFFFF))
+                for cell in (0xBFB5, 0xBFC5, 0xBFB8, 0xBFC8, 0xBEFF):
+                    mem.wb(DS, cell, 0)
+                mem.wb(DS, 0xBFB2, 1)
+                mem.wb(DS, 0xBFC2, 1)
+    if mem.rb(DS, 0xBEFE) != 0:                     # D521 -> the two channel steps
+        _sound_channel_step_d5ac(mem, 0xBFAA)
+        _sound_channel_step_d5ac(mem, 0xBFBA)
 
 
 def _input_poll_0162(mem) -> None:
