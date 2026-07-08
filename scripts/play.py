@@ -270,10 +270,17 @@ def main(argv: list[str] | None = None) -> int:
                         help="raw PSP command-tail override; bypasses --video/--sound")
     launch.add_argument("--snapshot", default=None,
                         help="load a saved snapshot directory")
-    launch.add_argument("--demo", default=None,
-                        help="replay an input demo directory/json; loads its start snapshot unless --snapshot is also given")
+    launch.add_argument("--play-demo", "--demo", dest="demo", default=None, metavar="DIR",
+                        help="replay an input demo directory/json; loads its start snapshot unless "
+                             "--snapshot is also given (--demo is the deprecated alias)")
     launch.add_argument("--demo-continue", action="store_true",
                         help="keep running/verifying after the input demo ends")
+    launch.add_argument("--safe-hooks", action="store_true",
+                        help="standard play.py flag; OVERKILL has no write-set-classified safe-hook "
+                             "tier yet, so this fails loud instead of running something else")
+    launch.add_argument("--headless", action="store_true",
+                        help="standard play.py flag; OVERKILL's threaded viewer has no plain headless "
+                             "run yet (fails loud) — headless verification is --verify-hooks/--verify-frames")
     launch.add_argument("--no-replacements", action="store_true",
                         help="ORACLE mode: run the pure original ASM with no recovered hooks (record "
                              "ground-truth cold-start demos; the reference side of the cold-start verifier)")
@@ -342,6 +349,13 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.verify_frames and (args.verify_hooks or args.verify_hook):
         p.error("choose either --verify-frames or --verify-hooks/--verify-hook, not both")
+    # Standard play.py vocabulary, fail-loud where OVERKILL has no such tier yet
+    # (never silently run something else than what the flag promises).
+    if args.safe_hooks:
+        p.error("--safe-hooks: OVERKILL has no write-set-classified safe-hook tier yet")
+    if args.headless:
+        p.error("--headless: OVERKILL's threaded viewer has no plain headless run yet; "
+                "headless verification is --verify-hooks / --verify-frames")
 
     exe = ROOT / "assets" / "OVERKILL"
     assets = ROOT / "assets"

@@ -490,7 +490,7 @@ def run_sdl_ui(
     pygame.mixer.pre_init(frequency=44100, size=-16, channels=1, buffer=mixer_buffer)
     pygame.init()
     speaker = PcSpeakerAudio(pygame)
-    pygame.display.set_caption(f"OVERKILL (emulated {video.upper()})  -  Q/A/O/P move, Z/Space fire, F11 demo, F12 snapshot")
+    pygame.display.set_caption(f"OVERKILL (emulated {video.upper()})  -  Q/A/O/P move, Z/Space fire, F10 shot, F11 demo, F12 snapshot")
     screen = pygame.display.set_mode((WIDTH * scale, HEIGHT * scale), pygame.RESIZABLE)
     scan = _build_pygame_scan()
     adlib_enabled = getattr(args, "sound", "pc") == "adlib" and getattr(args, "adlib_audio", "auto") != "off"
@@ -545,8 +545,27 @@ def run_sdl_ui(
         if last is not None:
             present(*last)
 
+    def save_screenshot() -> None:
+        """F10: save the last presented frame as a PNG (standard play.py hotkey)."""
+        last = last_present["value"]
+        if last is None:
+            return
+        from datetime import datetime
+        from pathlib import Path
+        snapshot, display_start, video_mode, video_page = last
+        if video_mode is not None and (video_mode & 0xFF) in _TEXT_MODES:
+            surf = render_text_surface(pygame, snapshot, video_mode & 0xFF, video_page & 0xFF)
+        else:
+            surf = pygame.image.frombuffer(decode(snapshot, display_start).tobytes(),
+                                           (WIDTH, HEIGHT), "RGB")
+        out = (Path(getattr(args, "save_snapshot_root", "artifacts"))
+               / f"shot_overkill_{datetime.now():%Y%m%d_%H%M%S}.png")
+        out.parent.mkdir(parents=True, exist_ok=True)
+        pygame.image.save(surf, str(out))
+        print(f"screenshot: {out}")
+
     def caption() -> None:
-        base = f"OVERKILL (emulated {video.upper()})  -  Q/A/O/P move, Z/Space fire, F11 demo, F12 snapshot"
+        base = f"OVERKILL (emulated {video.upper()})  -  Q/A/O/P move, Z/Space fire, F10 shot, F11 demo, F12 snapshot"
         c = counters
         tail = (f"visible={c['visible']['n']} boundaries={c['boundary']['n']} "
                 f"blits={c['blits']['n']} timers={c['timers']['n']} retraces={c['retraces']['n']}")
@@ -578,6 +597,8 @@ def run_sdl_ui(
                         queue_snapshot_save()
                     elif ev.key == pygame.K_F11 and queue_demo_toggle is not None:
                         queue_demo_toggle()
+                    elif ev.key == pygame.K_F10:
+                        save_screenshot()
                     else:
                         sc = scan.get(ev.key)
                         if sc is not None:
