@@ -9,7 +9,7 @@ the hook boundaries.
 
 from __future__ import annotations
 
-from dos_re.cpu import CF, DF, ZF, SF, PF, _PARITY
+from dos_re.cpu import CF, DF, OF
 from overkill.asm import _stosw
 
 
@@ -194,10 +194,12 @@ def _row_4537_core(cpu):
     - each 45CB expansion contributes `_G45CB[byte]` as the next nibble of the
       output word, first byte highest (mask word from 5B98..5B9B when
       CS:[0BD6] != 0, then the visible word from 5B94..5B97);
-    - final flags: AF/OF (and base word) from `CMP CS:[0BD6],0`, then CF from
-      bit15 of CS:[45E4] before the last RCL16 (= bit0 of the word's previous
-      content) and ZF/SF/PF from the final word, exactly as the RCL16 chain
-      leaves them.
+    - final flags: ZF/SF/PF/AF are left by the `CMP CS:[0BD6],0` (result =
+      CS:[0BD6]); the ROL/RCL16 rotate tail that follows touches only CF and OF.
+      CF is the bit rotated out by the last RCL16 (bit15 of its operand, which
+      the hook already tracks as `prev45e4_bit0`), and OF is that 1-bit
+      left-rotate's overflow = msb(operand) XOR msb(result) = CF XOR bit15(w2)
+      (the result word being the final CS:[45E4] == w2).
 
     Verified bit-identical to the interpreted original ASM by the oracle test
     plus a randomized differential fuzz (registers, flags incl. DF, and all
@@ -284,16 +286,19 @@ def _row_4537_core(cpu):
     # times, so the bytes return to their loaded values, not the entry DX.
     s.dx = ((dh << 8) | dl) & 0xFFFF
 
-    cpu.set_sub_flags(bd6, 0, bd6, 16)          # CMP CS:[0BD6],0 -> AF/OF base
-    f = s.flags & ~0x00C5                        # clear CF, PF, ZF, SF
-    if prev45e4_bit0:
+    # CMP CS:[0BD6],0 sets ZF/SF/PF/AF from its result (= CS:[0BD6]) and clears
+    # CF/OF.  The ROL AL / RCL16 CS:[45E4] rotate tail that follows overwrites
+    # ONLY CF and OF (rotates never touch ZF/SF/PF/AF), so those four survive
+    # exactly as the compare left them.
+    cpu.set_sub_flags(bd6, 0, bd6, 16)
+    cf = 1 if prev45e4_bit0 else 0               # CF = bit rotated out by the last RCL16
+    f = s.flags & ~(CF | OF)
+    if cf:
         f |= CF
-    if w2 == 0:
-        f |= ZF
-    if w2 & 0x8000:
-        f |= SF
-    if _PARITY[w2 & 0xFF]:
-        f |= PF
+    # OF of a 1-bit left rotate = msb(operand_before) XOR msb(result).  The
+    # result word is the final CS:[45E4] (== w2) and msb(operand_before) == CF.
+    if cf ^ ((w2 >> 15) & 1):
+        f |= OF
     s.flags = (f | 0x0002) & 0x0FFF
 
 def expand_4plane_row_4537(cpu):
