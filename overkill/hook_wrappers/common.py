@@ -1,4 +1,12 @@
-"""Shared helpers for OVERKILL address-bound hook wrappers."""
+"""Shared helpers for OVERKILL address-bound hook wrappers.
+
+``signature_matches``/``code_matches``/``self_disable_if_patched``/
+``interpret_current_instruction_without_hook`` were promoted verbatim into
+``dos_re.hooks`` (generalized from this exact module); they're re-exported
+here under their historical names/signatures. ``call_hook_like_near_call``
+has no dos_re equivalent (it's a simpler, distinct primitive: push+call with
+no verifier routing) and stays as real local code.
+"""
 
 from __future__ import annotations
 
@@ -6,72 +14,11 @@ from typing import Callable
 
 from dos_re.hooks import (
     call_installed_hook_like_near_call as _call_installed_hook_like_near_call,
+    code_matches,
+    interpret_current_instruction_without_hook,
     jump_installed_hook_boundary as _jump_installed_hook_boundary,
+    self_disable_if_patched,
 )
-
-
-def _signature_matches(live: bytes, expected: bytes | tuple[bytes, ...]) -> bool:
-    variants = expected if isinstance(expected, tuple) else (expected,)
-    return any(live[:len(sig)] == sig for sig in variants)
-
-
-def _all_zero_signature_window(live: bytes, expected: bytes | tuple[bytes, ...]) -> bool:
-    variants = expected if isinstance(expected, tuple) else (expected,)
-    return any(all(b == 0 for b in live[:len(sig)]) for sig in variants)
-
-
-def self_disable_if_patched(cpu, ip: int, expected: bytes | tuple[bytes, ...], name: str) -> bool:
-    """Fail fast when a hook entry no longer matches the lifted ASM bytes.
-
-    OVERKILL patches parts of its live code segment during startup.  A Python
-    replacement bypasses the live bytes at CS:IP, so wrappers that assume a fixed
-    routine shape should refuse to run when the original bytes changed.  Synthetic
-    tests often leave code bytes all zero; that fixture case is treated as
-    "no live signature available" and remains enabled.
-    """
-    cs = cpu.s.cs & 0xFFFF
-    start = ((cs << 4) + (ip & 0xFFFF)) & 0xFFFFF
-    variants = expected if isinstance(expected, tuple) else (expected,)
-    max_len = max(len(sig) for sig in variants)
-    live = bytes(cpu.mem.data[start:start + max_len])
-    if _signature_matches(live, expected) or _all_zero_signature_window(live, expected):
-        return False
-
-    expected_text = " or ".join(sig.hex(" ") for sig in variants)
-    raise RuntimeError(
-        f"OVERKILL hook {name} at {cs:04X}:{ip:04X} saw runtime-patched code; "
-        f"live bytes {live.hex(' ')} != expected {expected_text}"
-    )
-
-
-def code_matches(cpu, off: int, expected: bytes | tuple[bytes, ...]) -> bool:
-    """Return whether live CS:off bytes still match a lifted hook signature."""
-    cs = cpu.s.cs & 0xFFFF
-    variants = expected if isinstance(expected, tuple) else (expected,)
-    return any(
-        all(cpu.mem.rb(cs, (off + i) & 0xFFFF) == b for i, b in enumerate(sig))
-        for sig in variants
-    )
-
-
-def interpret_current_instruction_without_hook(cpu) -> None:
-    """Interpret live ASM once when an overlaid hook signature no longer matches."""
-    key = cpu.addr()
-    fn = cpu.replacement_hooks.pop(key, None)
-    ctx = (
-        cpu.coverage_telemetry.bounded_original(key, "overlaid hook signature mismatch")
-        if cpu.coverage_telemetry is not None
-        else None
-    )
-    try:
-        if ctx is not None:
-            ctx.__enter__()
-        cpu.step()
-    finally:
-        if ctx is not None:
-            ctx.__exit__(None, None, None)
-        if fn is not None:
-            cpu.replacement_hooks[key] = fn
 
 
 def call_hook_like_near_call(cpu, handler: Callable, return_ip: int) -> None:
@@ -88,3 +35,13 @@ def call_installed_hook_like_near_call(cpu, key: tuple[int, int], default_handle
 def jump_installed_hook_boundary(cpu, key: tuple[int, int], default_handler: Callable) -> None:
     """Backward-compatible OVERKILL import path for verifier-visible JMP/fall-through child boundaries."""
     _jump_installed_hook_boundary(cpu, key, default_handler)
+
+
+__all__ = [
+    "call_hook_like_near_call",
+    "call_installed_hook_like_near_call",
+    "jump_installed_hook_boundary",
+    "code_matches",
+    "interpret_current_instruction_without_hook",
+    "self_disable_if_patched",
+]

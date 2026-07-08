@@ -16,7 +16,9 @@ dependencies = []
 overkill = "overkill.cli:main"
 
 [tool.pytest.ini_options]
-pythonpath = ["."]
+# "." for overkill/, "dos_re" for the framework submodule (dos_re/ here is the
+# submodule's own repo root, not the package itself -- that's dos_re/dos_re/).
+pythonpath = [".", "dos_re"]
 
 [project.optional-dependencies]
 viewer = [
@@ -31,7 +33,6 @@ adlib = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["dos_re*", "overkill*", "nuked_opl3*"]
-
-[tool.setuptools.package-data]
-"nuked_opl3" = ["vendor/*.c", "vendor/*.h", "README.md", "LICENSE"]
+# dos_re is an external submodule now (its own package, installed separately
+# via `pip install -e dos_re/`), not part of this project's own sources.
+include = ["overkill*"]

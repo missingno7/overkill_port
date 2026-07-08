@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from dos_re.hooks import registry as _dos_re_hook_registry
 from dos_re.runtime import Runtime, create_runtime as create_dos_runtime
 from dos_re.snapshot import load_snapshot as load_dos_snapshot
 
@@ -29,13 +30,25 @@ def create_overkill_runtime(
     install_replacements: bool = True,
 ) -> Runtime:
     """Boot a fresh OVERKILL runtime.  ``install_replacements=False`` = the pure-ASM oracle
-    (``--no-replacements``): no recovered hooks, the CPU runs the original code verbatim."""
-    return create_dos_runtime(
+    (``--no-replacements``): no recovered hooks, the CPU runs the original code verbatim.
+
+    dos_re's own ``create_runtime`` dropped the all-or-nothing
+    ``install_replacements`` flag in favor of the finer-grained
+    ``DOS_RE_DISABLE_HOOKS`` env var; this reproduces the old OVERKILL-wide
+    switch by uninstalling OVERKILL's own registered hooks after boot.
+    Framework-level hooks (e.g. the native BIOS INT 9 keyboard ISR) are not
+    game replacements and stay installed either way.
+    """
+    rt = create_dos_runtime(
         resolve_overkill_exe_path(exe_path),
         game_root=game_root,
         command_tail=command_tail,
-        install_replacements=install_replacements,
     )
+    if not install_replacements:
+        for key in _dos_re_hook_registry.replacements:
+            rt.cpu.replacement_hooks.pop(key, None)
+            rt.cpu.hook_names.pop(key, None)
+    return rt
 
 
 def load_overkill_snapshot(

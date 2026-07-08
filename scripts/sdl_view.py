@@ -242,7 +242,8 @@ class PcSpeakerAudio:
 
 
 class NukedAdlibAudio:
-    """SDL streaming wrapper around the vendored optional ``nuked_opl3`` package.
+    """SDL streaming wrapper around the optional ``pynuked_opl3`` package
+    (a submodule of dos_re, not vendored directly in this repo).
 
     The VM already runs OVERKILL's original AdLib driver and forwards completed
     YM3812 register writes.  This class only turns that register stream into PCM.
@@ -281,18 +282,18 @@ class NukedAdlibAudio:
         self._channels = int(init[2])
         self._chunk_frames = max(512, int(round(self._rate * max(10.0, float(chunk_ms)) / 1000.0)))
         try:
-            from nuked_opl3 import OPL3  # type: ignore
+            from pynuked_opl3 import OPL3  # type: ignore
 
             self._chip = OPL3(sample_rate=self._rate)
         except Exception as exc:  # noqa: BLE001 - optional extension/import failure
             self._report(
-                "AdLib register stream active, but vendored Nuked-OPL3 is not built/importable: "
+                "AdLib register stream active, but pynuked_opl3 is not built/importable: "
                 f"{type(exc).__name__}: {exc}"
             )
             return
         self._available = True
         self._channel = pygame.mixer.Channel(1)
-        self._report("AdLib audio: vendored Nuked-OPL3 backend active")
+        self._report("AdLib audio: pynuked_opl3 (Nuked-OPL3) backend active")
 
     def write(self, reg: int, value: int) -> None:
         if not self._available or self._chip is None:
@@ -326,7 +327,7 @@ class NukedAdlibAudio:
             return
         self._last_status_underruns = self._underruns
         self._report(
-            f"AdLib audio: vendored Nuked-OPL3 backend active, underruns={self._underruns}, "
+            f"AdLib audio: pynuked_opl3 (Nuked-OPL3) backend active, underruns={self._underruns}, "
             f"chunk={self._chunk_frames * 1000.0 / max(1, self._rate):.0f}ms"
         )
 

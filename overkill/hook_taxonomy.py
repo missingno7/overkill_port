@@ -1,32 +1,16 @@
-"""Hook taxonomy: classify replacement hooks by their *role*, not their address.
+"""OVERKILL's curated hook taxonomy, over the generic ``dos_re.hook_taxonomy`` engine.
 
-The original 8086 ASM (the VM) stays instruction-level snapshotable/stepable as
-the oracle.  The source-port runtime, by contrast, is meant to be *checkpoint*-
-level snapshotable: it resumes only from stable logical boundaries (frame,
-object-update, render, input).  Between two checkpoints, lifted source-like code
-may run as one atomic deterministic chain - it does NOT need to preserve every
-historical CS:IP bounce or support arbitrary mid-chain resume.  A snapshot
-requested mid-chain is deferred to the next checkpoint (or represented as the
-previous checkpoint + deterministic replay).
-
-So a registered hook address is one of four things:
-
-* ``checkpoint``      - a real logical boundary the source-port loop resumes from.
-* ``env_wait``        - a hardware/environment wait the interpreter can't satisfy
-                        natively (PIT/IRQ0 timer, CRTC retrace) and that must stay
-                        a hook even in the oracle reference.
-* ``debug_probe``     - exists only for verification/observation, not behaviour.
-* ``glue``            - accidental ASM-boundary plumbing: behaviours, tails,
-                        helpers, per-object/per-row scan steps.  These are the
-                        collapse target - they should fuse into source-like code
-                        between checkpoints, with correctness protected by the
-                        semantic frame/state verifier, not by their CS:IP.
-
-Curated sets are intentionally small and explicit; everything not named here is
-``glue`` by default (the honest majority).  Refine the curated sets as logical
-boundaries are confirmed; do not pad them.
+The four-category classification (checkpoint / env_wait / debug_probe / glue)
+and its logic were promoted into ``dos_re.hook_taxonomy.HookTaxonomy`` — it
+took no OVERKILL-specific logic, just the curated address sets as constructor
+fields instead of module-level dicts. This module supplies OVERKILL's own
+curated sets (real game knowledge, so it correctly stays here) and keeps the
+original module-level function call signatures so existing call sites don't
+need to change.
 """
 from __future__ import annotations
+
+from dos_re.hook_taxonomy import CATEGORIES, HookTaxonomy
 
 Addr = tuple[int, int]
 
@@ -67,25 +51,24 @@ ENV_WAIT_HOOKS: dict[Addr, str] = {
 # Hooks that exist only to observe/verify, not to produce behaviour.
 DEBUG_PROBE_HOOKS: dict[Addr, str] = {}
 
-CATEGORIES = ("checkpoint", "env_wait", "debug_probe", "glue")
+_TAXONOMY = HookTaxonomy(
+    checkpoints=CHECKPOINT_HOOKS,
+    env_waits=ENV_WAIT_HOOKS,
+    debug_probes=DEBUG_PROBE_HOOKS,
+)
 
 
 def classify_hook(addr: Addr) -> str:
     """Return the taxonomy category for a hook address."""
-    if addr in CHECKPOINT_HOOKS:
-        return "checkpoint"
-    if addr in ENV_WAIT_HOOKS:
-        return "env_wait"
-    if addr in DEBUG_PROBE_HOOKS:
-        return "debug_probe"
-    return "glue"
+    return _TAXONOMY.classify(addr)
 
 
 def classify_registry(replacements) -> dict[str, list[Addr]]:
     """Group an iterable of registered hook addresses by taxonomy category."""
-    out: dict[str, list[Addr]] = {c: [] for c in CATEGORIES}
-    for addr in replacements:
-        out[classify_hook(addr)].append(addr)
-    for cat in out:
-        out[cat].sort()
-    return out
+    return _TAXONOMY.classify_registry(replacements)
+
+
+__all__ = [
+    "CATEGORIES", "CHECKPOINT_HOOKS", "ENV_WAIT_HOOKS", "DEBUG_PROBE_HOOKS",
+    "classify_hook", "classify_registry",
+]

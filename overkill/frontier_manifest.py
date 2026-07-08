@@ -5,33 +5,20 @@ few interpreted addresses from becoming an undifferentiated ``unknown`` bucket:
 each leftover is either a real hook candidate, an intentionally interpreted
 bootstrap fragment, a bounded-original rare branch owned by a larger hook, or a
 harmless scratch/tail address inside an already-lifted block.
+
+``FrontierCategory``/``FrontierEntry`` and the summary/lookup helpers were
+promoted verbatim into ``dos_re.frontier`` (they took no OVERKILL-specific
+logic, just the manifest as a parameter instead of a module import); only the
+25-entry manifest below stayed behind as real game knowledge.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
-from enum import StrEnum
+from dos_re.frontier import FrontierCategory, FrontierEntry
+from dos_re.frontier import by_addr as _by_addr
+from dos_re.frontier import fmt_addr
+from dos_re.frontier import frontier_summary_lines as _frontier_summary_lines
 
 Addr = tuple[int, int]
-
-
-class FrontierCategory(StrEnum):
-    FINAL_ORCHESTRATOR = "final-orchestrator"
-    SAME_IP_LOOP_GATE = "same-ip-loop-gate"
-    DO_NOT_HOOK_BOOTSTRAP = "do-not-hook-bootstrap"
-    BOUNDED_ORIGINAL_RARE_BRANCH = "bounded-original-rare-branch"
-    UNCLASSIFIED_HARMLESS_TAIL = "unclassified-harmless-scratch-tail"
-    HOOK_CANDIDATE = "hook-candidate"
-
-
-@dataclass(frozen=True)
-class FrontierEntry:
-    addr: Addr
-    name: str
-    island: str
-    category: FrontierCategory
-    status: str
-    owner: Addr | None = None
-    notes: str = ""
 
 
 FRONTIER_MANIFEST: tuple[FrontierEntry, ...] = (
@@ -105,19 +92,14 @@ FRONTIER_MANIFEST: tuple[FrontierEntry, ...] = (
 )
 
 
-FRONTIER_BY_ADDR: dict[Addr, FrontierEntry] = {entry.addr: entry for entry in FRONTIER_MANIFEST}
-
-
-def fmt_addr(addr: Addr) -> str:
-    return f"{addr[0]:04X}:{addr[1]:04X}"
+FRONTIER_BY_ADDR: dict[Addr, FrontierEntry] = _by_addr(FRONTIER_MANIFEST)
 
 
 def frontier_summary_lines() -> list[str]:
-    lines = ["== explicit cold-start frontier manifest =="]
-    for entry in FRONTIER_MANIFEST:
-        owner = f" owner={fmt_addr(entry.owner)}" if entry.owner else ""
-        lines.append(
-            f"  - {fmt_addr(entry.addr)} {entry.category.value:<34} "
-            f"{entry.status:<24} {entry.name}{owner}"
-        )
-    return lines
+    return _frontier_summary_lines(FRONTIER_MANIFEST)
+
+
+__all__ = [
+    "FrontierCategory", "FrontierEntry", "fmt_addr",
+    "FRONTIER_MANIFEST", "FRONTIER_BY_ADDR", "frontier_summary_lines",
+]

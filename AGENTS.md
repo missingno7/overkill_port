@@ -240,18 +240,21 @@ refactor in gameplay, collision, rendering, HUD, input, or object runtime.
 ## Repository Layout
 
 ```text
-dos_re/                 reusable DOS reverse-engineering environment
-  cpu.py                dependency-free 8086 interpreter core
-  memory.py             20-bit real-mode memory model
-  mz.py                 MZ EXE parser/loader helpers
-  dos.py                narrow DOS/BIOS/port services
-  hooks.py              generic replacement hook registry
-  interrupts.py         generic interrupt delivery helpers
-  keyboard.py           host input -> emulated keyboard state
-  runtime.py            generic DOS-program runtime wiring
-  snapshot.py           generic memory/state snapshot helpers
-  verification.py       reusable differential hook-verifier engine
-  frame_verify.py       reusable frame comparison/diff artifact engine
+dos_re/                 git submodule: reusable DOS reverse-engineering
+                        environment (https://github.com/missingno7/dos_re).
+                        Not vendored code -- clone with --recurse-submodules,
+                        or `git submodule update --init --recursive`. The
+                        actual package is one level deeper, at dos_re/dos_re/
+                        (cpu.py, memory.py, mz.py, dos.py, hooks.py,
+                        interrupts.py, keyboard.py, runtime.py, snapshot.py,
+                        verification.py, frame_verify.py, checkpoints.py,
+                        hook_taxonomy.py, frontier.py, runtime_code.py, asm.py,
+                        ...). `pip install -e dos_re/` once per environment
+                        makes it (and its own pynuked_opl3/ submodule) directly
+                        importable, which is what actually makes it resolve
+                        for the many standalone scripts/probes -- pytest
+                        resolves it via this repo's pyproject.toml pythonpath
+                        regardless.
 
 overkill/               OVERKILL-specific reverse-engineered game layer
   runtime.py            canonical OVERKILL launch/snapshot wiring
@@ -262,17 +265,17 @@ overkill/               OVERKILL-specific reverse-engineered game layer
   coverage.py           OVERKILL island classifier and dashboard
   bootstrap_boundary.py bootstrap/static-runtime boundary manifest
   static_runtime_bundle.py deterministic initialized-runtime materializer
-  asm.py                shared 8086-style helper functions for lifted code
+  asm.py                re-export of dos_re.asm (promoted there verbatim;
+                        kept only so `from overkill.asm import ...` doesn't break)
+  checkpoints.py        OVERKILL's checkpoint table, over dos_re.checkpoints
+  hook_taxonomy.py       OVERKILL's curated hook taxonomy, over dos_re.hook_taxonomy
+  frontier_manifest.py  OVERKILL's frontier manifest, over dos_re.frontier
+  runtime_code.py       OVERKILL's runtime-code slot table, over dos_re.runtime_code
   asset_codecs/         asset streams, checksum, RLE/LZ, decoded asset table
   file_io/              overlay/container file orchestration
   gameplay/             objects, movement, collision, game-state counters
   rendering/            startup graphics, coordinates, video primitives, layer sprites
   sounds/               timer, PC speaker, AdLib/YM3812 driver behavior
-
-nuked_opl3/             vendored optional Nuked-OPL3 CFFI binding
-  __init__.py           runtime wrapper; importable even before the C extension is built
-  _ffi_build.py         local in-place CFFI build helper
-  vendor/               LGPL Nuked-OPL3 C core
 
 docs/
   README.md             documentation map

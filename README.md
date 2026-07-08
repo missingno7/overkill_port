@@ -90,7 +90,11 @@ commands, and other structures that multiple verified routines already point to.
 ## Repository map
 
 ```text
-dos_re/                     reusable narrow DOS reverse-engineering runtime
+dos_re/                     git submodule: reusable narrow DOS reverse-
+                            engineering runtime (github.com/missingno7/dos_re).
+                            Clone with --recurse-submodules. The package itself
+                            is one level deeper, dos_re/dos_re/ -- also carries
+                            its own pynuked_opl3/ submodule (optional AdLib PCM):
   cpu.py                    dependency-free 8086 interpreter core
   memory.py                 20-bit real-mode memory model
   dos.py                    narrow DOS/BIOS/port services
@@ -116,8 +120,6 @@ overkill/                   OVERKILL-specific game/runtime layer
     adapters/               CPU/memory projection and ASM flag/register glue
     domain/                 pure copied source-like records
     systems/                pure gameplay/system functions
-
-nuked_opl3/                 optional vendored Nuked-OPL3 CFFI binding
 
 docs/                       documentation map, methodology, findings, status
 scripts/                    runners, audits, cleanups, profiling, viewer tools
@@ -180,9 +182,13 @@ behavior.
 
 ## Quick start
 
+`dos_re` is a git submodule, not vendored code -- clone with `--recurse-submodules`,
+or run `git submodule update --init --recursive` afterwards.
+
 ### 1. Install the project
 
 ```bash
+python -m pip install -e dos_re/   # the framework -- makes standalone scripts/probes work
 python -m pip install -e .
 ```
 
@@ -195,8 +201,9 @@ python -m pip install -e .[viewer]
 For audible AdLib/FM output:
 
 ```bash
-python -m pip install -e .[adlib]
-python -m nuked_opl3._ffi_build
+python -m pip install -e dos_re/   # makes both dos_re and pynuked_opl3 importable
+python -m pip install -e .[adlib]  # cffi, for building the extension below
+python -m pynuked_opl3._ffi_build
 ```
 
 Without the compiled AdLib backend, the VM can still model detection and YM3812

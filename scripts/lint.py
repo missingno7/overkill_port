@@ -19,7 +19,13 @@ from dataclasses import dataclass
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-PACKAGE_ROOTS = (ROOT / "dos_re", ROOT / "overkill", ROOT / "nuked_opl3")
+# dos_re/ is now the framework submodule's own repo root, not the package --
+# that's one level deeper, at dos_re/dos_re/. Scanning the submodule root
+# would also sweep in its own tests/tools/examples (dos_re has its own lint
+# for those). nuked_opl3 is no longer vendored here at all -- it's dos_re's
+# own nested submodule (dos_re/pynuked_opl3/); overkill's code that imports
+# it (scripts/sdl_view.py) is checked like any other external import below.
+PACKAGE_ROOTS = (ROOT / "dos_re" / "dos_re", ROOT / "overkill")
 SCRIPTS_ROOT = ROOT / "scripts"
 
 sys.path.insert(0, str(ROOT))
@@ -42,6 +48,11 @@ def _module_name_for_path(path: pathlib.Path) -> str | None:
     if rel.suffix != ".py":
         return None
     parts = list(rel.with_suffix("").parts)
+    # dos_re/ is a submodule -- a full repo root, not the package itself
+    # (that's one level deeper, at dos_re/dos_re/). Collapse the extra
+    # nesting so computed module names match what's actually importable.
+    if len(parts) >= 2 and parts[0] == "dos_re" and parts[1] == "dos_re":
+        parts = parts[1:]
     if parts and parts[-1] == "__init__":
         parts.pop()
     return ".".join(parts)
@@ -79,7 +90,7 @@ def _iter_python_files() -> list[pathlib.Path]:
 
 
 def _internal_roots() -> set[str]:
-    roots = {"dos_re", "overkill", "nuked_opl3"}
+    roots = {"dos_re", "overkill", "pynuked_opl3"}
     roots.update(path.stem for path in SCRIPTS_ROOT.glob("*.py"))
     return roots
 
@@ -146,24 +157,6 @@ def _collect_package_boundary_issues(path: pathlib.Path, tree: ast.AST) -> list[
                     path=path,
                     lineno=lineno,
                     message="dos_re must not import the OVERKILL-specific package",
-                )
-            )
-    return issues
-
-def _collect_vendored_boundary_issues(path: pathlib.Path, tree: ast.AST) -> list[LintIssue]:
-    if not path.is_relative_to(ROOT / "nuked_opl3"):
-        return []
-    issues: list[LintIssue] = []
-    for lineno, target in _collect_resolved_import_targets(path, tree):
-        if target.startswith("<relative-import-error>"):
-            continue
-        if target == "dos_re" or target.startswith("dos_re.") or target == "overkill" or target.startswith("overkill."):
-            issues.append(
-                LintIssue(
-                    kind="package-boundary",
-                    path=path,
-                    lineno=lineno,
-                    message="vendored nuked_opl3 must stay independent of dos_re and overkill",
                 )
             )
     return issues
@@ -288,7 +281,6 @@ def _lint_file(path: pathlib.Path, internal_roots: set[str]) -> list[LintIssue]:
 
     issues.extend(_collect_local_imports_issues(path, tree))
     issues.extend(_collect_package_boundary_issues(path, tree))
-    issues.extend(_collect_vendored_boundary_issues(path, tree))
     issues.extend(_collect_recovered_layer_boundary_issues(path, tree))
     issues.extend(_collect_hardcoded_workspace_path_issues(path, source))
 
@@ -299,7 +291,7 @@ def _lint_file(path: pathlib.Path, internal_roots: set[str]) -> list[LintIssue]:
         root = target.split(".", 1)[0]
         if root not in internal_roots:
             continue
-        if target == "nuked_opl3._opl3_cffi":
+        if target == "pynuked_opl3._opl3_cffi":
             # Generated local CFFI extension; absent until the user builds it.
             continue
         if importlib.util.find_spec(target) is None:
@@ -318,11 +310,6 @@ def _import_first_party_modules() -> list[LintIssue]:
                 module_paths.append((module_name, path))
 
     for module_name, path in sorted(module_paths):
-        if module_name == "nuked_opl3._ffi_build":
-            # Build helper requires optional cffi and a compiler only when AdLib
-            # PCM synthesis is being enabled; syntax/import-target lint above is
-            # enough for normal test runs.
-            continue
         try:
             importlib.import_module(module_name)
         except Exception:
@@ -371,7 +358,9 @@ def _collect_documentation_layout_issues() -> list[LintIssue]:
 
 def _collect_legacy_reference_issues() -> list[LintIssue]:
     issues: list[LintIssue] = []
-    scanned_roots = (ROOT / "README.md", ROOT / "AGENTS.md", ROOT / "docs", ROOT / "dos_re", ROOT / "overkill", ROOT / "scripts", ROOT / "tests", ROOT / "nuked_opl3")
+    # dos_re/dos_re/ (not the whole dos_re/ submodule, which also carries its
+    # own tests/tools/docs -- irrelevant to OVERKILL-specific legacy tokens).
+    scanned_roots = (ROOT / "README.md", ROOT / "AGENTS.md", ROOT / "docs", ROOT / "dos_re" / "dos_re", ROOT / "overkill", ROOT / "scripts", ROOT / "tests")
     forbidden = {
         "from render_cga import": "use scripts/render_frame.py / render_frame module",
         "import render_cga as": "use scripts/render_frame.py / render_frame module",
