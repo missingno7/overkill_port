@@ -44,6 +44,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+# The dos_re submodule's repo root (the package is one level deeper). Without
+# this, running under an interpreter with no pip-editable dos_re install (e.g.
+# PyPy) resolves `dos_re` to the repo dir as a bare namespace package.
+sys.path.insert(0, str(ROOT / "dos_re"))
 
 from dos_re.interrupts import deliver_scancode
 from dos_re.keyboard import KeyDispatcher
