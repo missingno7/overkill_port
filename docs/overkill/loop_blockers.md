@@ -1086,3 +1086,31 @@ Two ways out, both legitimate:
 Prereq to write down before coding: the strip's exact layout (stride/packing) as `5A7E`/`A7EB`
 build it, and the fact that A846's compositors draw into `es = CS:[9598]` (hooks.py:2407/3119 set
 exactly that) -- i.e. sprites land in the SAME strip the star pass probes.
+
+### 2026-07-08 (same day, continued) — the strip is DERIVABLE, so (B) is verifiable per-frame
+
+Geometry nailed down from the image: `DS:9A08` is a scanline table with a **uniform stride of
+0x68 = 104 bytes**, and the strip is 4bpp packed (2 px/byte) -> **104 * 2 = 208 px**, exactly the
+playfield width the 1:1 instrument already uses (`x in [0,208)`).  A star cell is
+`bx = [9A08 + tick*2] + [234C] + xoff`; the ring entries carry `px` in {0x0F, 0xF0, 0x07, 0x70},
+i.e. ONE nibble = one pixel (0xF0 = left pixel of the byte, 0x0F = right).  Occupancy is a whole
+BYTE test (`cmp es:[bx],0`), so a star is plotted only where BOTH pixels of that byte are
+background.
+
+The decisive argument for (B) over (A): **the lockstep gate runs each frame independently from a VM
+pre-state**, so a native strip that is *evolved* across frames (tile rows written at pull time,
+stars drawn/undrawn) can never be reconstructed inside one replayed frame -- option (A)'s recorded
+strip would be needed forever.  But the strip 4CED actually probes is *derivable state*: at that
+instant it holds **tiles + sprites and no stars** (4D64 undraws the previous list immediately
+before the rebuild).  Both are pure functions of DGROUP: tiles from the plane + `[2350]`/`[234E]`
+(`compose_tile_window`, oracle-fit) and sprites from the object pools (`object_sprite_blocks_a846`,
+byte-exact vs 7596).  So the native frame can COMPUTE occupancy from scratch every frame, with no
+cache change and no cross-frame state -- and the produced `C7B1` list is then compared against the
+VM's own, proving the whole composition on 4831 frames at once.
+
+Next concrete step (the slice): a driven-oracle probe `verify_native_star_strip.py` that, on a few
+cached frame pre-states, drives the ORIGINAL `4CED` and compares (a) our derived occupancy byte for
+every one of the 40 ring stars against the VM's `es:[bx]`, and (b) the resulting `C7B1` list.  Get
+that byte-exact FIRST (small, fast, unambiguous), then lift it into `native_frame`'s present half.
+Open sub-questions for that probe to answer: the `xoff` range (observed 0x02..0x1F -- byte column or
+pixel?), and whether the HUD/panel area is excluded from the star band.
