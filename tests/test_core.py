@@ -495,7 +495,12 @@ def test_dos_seeded_psp_resize_and_distinct_allocations():
     dos.interrupt(cpu, 0x21)
     assert not cpu.get_flag(CF)
     assert dos.allocations[0x1000] == 0x22FF
-    assert dos.next_alloc_segment == 0x32FF
+    # Not asserting `next_alloc_segment` here: dos_re's gap-reuse allocator
+    # (2026-07) made it a high-water mark rather than a bump pointer, so a
+    # shrink no longer moves it down -- the freed space becomes a reusable
+    # gap instead. The actual contract (the next AH=48 alloc lands right
+    # after the resized block, and further allocs don't alias) is what the
+    # assertions below verify.
 
     # Subsequent AH=48 allocations must not alias each other.
     cpu.s.ax = 0x4800
