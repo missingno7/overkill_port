@@ -56,12 +56,23 @@ def load_overkill_snapshot(
     snapshot_dir: str | Path,
     *,
     game_root: str | Path | None = None,
+    trace: bool = False,
 ) -> Runtime:
+    """Load a snapshot for oracle/probe work.
+
+    ``trace`` defaults to **False**: ``dos_re``'s ``CPU8086.trace_enabled`` defaults to True, and
+    formatting a trace line on every step costs ~1.7x under CPython and -- far worse -- defeats
+    PyPy's JIT entirely (measured on this repo, 20M-step steady state: 236k instr/s traced vs
+    399k CPython / 16.3M PyPy untraced).  Every probe that loads a snapshot to *drive* the
+    original is an untraced workload; the disassembler (``scripts/lindis.py``) and the zoo xref
+    turn tracing back on explicitly.  Pass ``trace=True`` when you need the trace text.
+    """
     rt = load_dos_snapshot(
         resolve_overkill_exe_path(exe_path),
         snapshot_dir,
         game_root=game_root,
     )
+    rt.cpu.trace_enabled = trace
     repair_object_allocator_cursor(rt)
     return rt
 

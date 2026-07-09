@@ -7,7 +7,7 @@ Hooks are **temporary contact points**, not the architecture. The rescue goal
 is to shrink this list: collapse `glue` into recovered systems, keep only true
 checkpoints/env-waits, and delete probes. See `rescue_refactor.md`.
 
-**333 registered hooks.** All carry a continuation/verifier contract (333/333 in DEFAULT_STOPS).
+**335 registered hooks.** All carry a continuation/verifier contract (335/335 in DEFAULT_STOPS).
 
 ## By role (the headline: glue is the coastline to collapse)
 
@@ -15,14 +15,14 @@ checkpoints/env-waits, and delete probes. See `rescue_refactor.md`.
 |---|---:|---|
 | checkpoint | 12 | KEEP — real logical resume boundary (frame/object-update/render/input). |
 | env_wait | 5 | KEEP — hardware/environment wait the interpreter can't satisfy natively. |
-| glue | 316 | COLLAPSE — accidental ASM-boundary plumbing; thin to adapter, move logic to a recovered system, merge duplicates, then shrink/delete. |
+| glue | 318 | COLLAPSE — accidental ASM-boundary plumbing; thin to adapter, move logic to a recovered system, merge duplicates, then shrink/delete. |
 
 ## By subsystem (merge target + shrinking path)
 
 | Subsystem | Hooks | Roles | Merge target | Shrinking path |
 |---|---:|---|---|---|
 | `gameplay_objects` | 55 | 54 glue, 1 checkpoint | ObjectSystem (recovered/systems/objects) | behaviour bodies -> pure rules; hooks become thin dispatch adapters |
-| `game_state` | 45 | 41 glue, 4 checkpoint | GameStateSystem (recovered/systems) | frame/state update -> pure rules; broad controllers stay frame MAPS |
+| `game_state` | 47 | 43 glue, 4 checkpoint | GameStateSystem (recovered/systems) | frame/state update -> pure rules; broad controllers stay frame MAPS |
 | `layer_sprites` | 45 | 42 glue, 3 checkpoint | RenderBackend (rendering/layer_sprites) | backend: keep isolated |
 | `tandy_renderer` | 38 | 37 glue, 1 checkpoint | RenderBackend (rendering/tandy) | backend: keep isolated |
 | `ega_renderer` | 25 | 23 glue, 1 checkpoint, 1 env_wait | RenderBackend (rendering/ega) | backend: keep isolated |
@@ -131,6 +131,7 @@ checkpoints/env-waits, and delete probes. See `rescue_refactor.md`.
 | `1010:6120` | `overkill_status_row_repeat_6120` | game_state | glue |
 | `1010:613E` | `overkill_status_cursor_advance_613e` | game_state | glue |
 | `1010:615A` | `overkill_status_cursor_retreat_615a` | game_state | glue |
+| `1010:6176` | `overkill_new_game_status_text_setup_6176` | game_state | glue |
 | `1010:61C7` | `overkill_decrement_first_active_counter_61c7` | game_state | glue |
 | `1010:61CA` | `overkill_decrement_first_active_counter_scan_61ca` | game_state | glue |
 | `1010:61DC` | `overkill_status_display_parent_61dc` | game_state | glue |
@@ -140,6 +141,7 @@ checkpoints/env-waits, and delete probes. See `rescue_refactor.md`.
 | `1010:852B` | `overkill_status_cell_seed_852b` | game_state | glue |
 | `1010:859E` | `overkill_status_cell_quad_composite_859e` | game_state | glue |
 | `1010:85D5` | `overkill_status_cell_composite_85d5` | game_state | glue |
+| `1010:9720` | `overkill_new_game_status_setup_9720` | game_state | glue |
 | `1010:99CD` | `overkill_status_coord_list_fill_99cd` | game_state | glue |
 | `1010:9B2E` | `overkill_frame_controller_9b2e` | game_state | glue |
 | `1010:9BFB` | `overkill_frame_axis_count_inc_ah_9bfb` | game_state | glue |

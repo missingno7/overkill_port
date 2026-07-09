@@ -126,11 +126,14 @@ def main(argv) -> int:
             st["pre"] = bytes(m.data)
             st["sp"] = cpu.s.sp & 0xFFFF
 
+        # TRAP: on_ref_step only ever acts at the 9B2E frame boundary; letting the harness make
+        # that check turns ~120M per-instruction callbacks into ~8k.  Identical semantics.
+        trap = frozenset({(CS, FRAME_TOP)})
         if demo.is_cold_start:
-            run_ref_step_probe_cold_start(demo, max_frames, on_ref_step)
+            run_ref_step_probe_cold_start(demo, max_frames, on_ref_step, trap=trap)
         else:
             frames = (demo.end_boundary + 5) if max_frames is None else max_frames
-            run_ref_step_probe(demo, frames, on_ref_step)
+            run_ref_step_probe(demo, frames, on_ref_step, trap=trap)
         if stats["frames"]:
             recorder.save(cache_file)
             print(f"  (recorded {stats['frames']} 97B2 frames -> {cache_file.name})", flush=True)

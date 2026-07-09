@@ -19,6 +19,12 @@ overkill = "overkill.cli:main"
 # "." for overkill/, "dos_re" for the framework submodule (dos_re/ here is the
 # submodule's own repo root, not the package itself -- that's dos_re/dos_re/).
 pythonpath = [".", "dos_re"]
+# THIS repo's suite is tests/ only.  Without this, a bare `pytest` also walks
+# dos_re/tests/ -- and since BOTH are packages literally named `tests`, every
+# import of ours resolves into the submodule's package and the whole collection
+# errors out (144 collection errors).  The framework's own suite is run from
+# dos_re/ itself.  Fast gate: `python -m pytest -q -n auto` (xdist, ~5x).
+testpaths = ["tests"]
 
 [project.optional-dependencies]
 viewer = [

@@ -13,21 +13,59 @@
 > per-frame VM states on first run and replays them in ~40s instead of ~5min -- same states, same
 > comparison; pass `vm` to force the live oracle; caches live in `artifacts/shadow_cache/`,
 > gitignored, keyed on the demo file sha1 + frame budget)**, `scripts/lindis.py` (encoded targets),
-> `scripts/behavior_zoo_xref.py`; cold-boot probes MUST pass
+> `scripts/behavior_zoo_xref.py`; **PERF (2026-07-08, see dos_re/docs/performance.md): suites =
+> `python -m pytest -q -n auto` (xdist, 4m30s -> 54s); long oracle/probe runs = PyPy serial
+> (`pypy -m overkill.probes.X`) -- PyPy is BYTE-FAITHFUL (proved: a full lockstep re-record under
+> PyPy and CPython produce the identical cache sha1 and verdict), 20m14s -> 5m47s on a full
+> cold-start record. `load_overkill_snapshot(trace=False)` is now the DEFAULT: dos_re's
+> `trace_enabled` defaults True and formatting a trace line per instruction costs 1.7x on CPython
+> and DEFEATS PyPy's JIT (236k -> 399k CPython / 16.3M instr/s PyPy untraced). `_harness`'s
+> `trap=` kwarg makes on_ref_step fire only at the addresses a probe acts on (semantics-identical:
+> same cache bytes)**; cold-boot probes MUST pass
 > `overkill.launch.build_command_tail("tandy", "pc")`.
 > Suite green: 1225 passed / 23 skipped (2026-07-07).
 > **THE ACTIVE CAMPAIGN: [`campaigns/demo_lockstep.md`](campaigns/demo_lockstep.md)** -- grow the
 > ONE native 97B2 frame (`overkill/native_frame.py`) in per-frame lockstep with a recorded demo
 > (`overkill/probes/verify_native_lockstep.py`, cached), then swap play_native onto that same frame
-> fn + add `--demo/--mirror`.  **CURRENT LOCKSTEP STATE (L1 demo, 8292 frames): ~5150 byte-exact,
-> 2810 diverging (bulk = the 4CED star-list mid-present occupancy; + the 23A0 flash decay, journaled
-> with recipe), 328 gapped (77C5 shield body 266, 9EE4 drain 62).**
+> fn + add `--demo/--mirror`.  **CURRENT LOCKSTEP STATE (L1 demo, 8292 frames, re-recorded
+> 2026-07-08 on the updated dos_re, verdict confirmed identical under CPython AND PyPy): 1042
+> byte-exact, 7250 diverging.**  (The older "2810 diverging" figure came from a cache recorded
+> before the dos_re CPU/keyboard-fix bumps -- a STALE ORACLE.  Lesson: a shadow cache is only as
+> valid as the dos_re commit that recorded it; re-record after any submodule bump.)
 > Standing facts: the OBJECT WALK is fully native + dry for L1 (8294/8294), L2 (6561/6561) and L3
 > (4370/4370) demos, zero divergence zero gaps; L4 walk residue: 0x93/0x81/0x80/0x7D/0x7E/0x7F + the
 > planet-4 wave family; the D50E sound engine, the 5F61 frame clock, the A66F scroll (cues+script
 > inside the row pull), the 0162 input poll, the A067 fire path and the 0922 starfield are native in
 > the lockstep frame.  play_native still runs the OLD hybrid loop -- nothing verified reaches the
 > player until charter step 1 (the unification) lands.
+
+## 2026-07-08 - VERIFICATION SPEED + a stale-oracle correction (no reconstruction change)
+
+Adopted dos_re's PyPy/xdist fast paths and fixed four things in THIS repo:
+
+* **The commit gate was silently broken.** After the repo moved under `dos_recosystem/`, a bare
+  `pytest` also walked `dos_re/tests/` -- and BOTH are packages literally named `tests`, so all 144
+  of our test modules failed to import (144 collection errors, 0 of our tests run).  Fixed with
+  `testpaths = ["tests"]`.  The suite is 1223 passed / 23 skipped.
+* **`trace_enabled` defaulted True on every snapshot load** -> a trace line formatted per
+  instruction.  `load_overkill_snapshot(trace=False)` is now the default (lindis/zoo_xref opt back
+  in).  Measured, 20M-step steady state: 236k instr/s (traced) -> 399k CPython / **16.3M PyPy**.
+* **`import dos_re` resolved to a bare namespace package** (no editable install), so PyPy couldn't
+  find `dos_re.cpu` at all.  `overkill/__init__.py` now prepends the submodule root once.
+* **`_harness` monkeypatched `CPU8086.step` CLASS-wide**, charging a Python wrapper + callback to
+  every instruction on BOTH runtimes (~120M per cold-start record).  Now the observer is installed
+  on the ref INSTANCE only, with an optional `trap={(cs,ip)}` so the callback fires only where the
+  probe acts.  Proven semantics-identical: the trapped PyPy record reproduces the reference cache's
+  exact sha1.
+* Suites: 4m30s -> **54s** (`-n auto`).  Full cold-start lockstep record: 20m14s -> **5m47s** (PyPy).
+
+**The stale-oracle correction:** re-recording the lockstep cache revealed the true current verdict is
+**7250 diverging / 1042 exact**, not the 2810 reported earlier -- that cache predated the dos_re CPU
++ keyboard-fix bumps.  PyPy and CPython independently produce the identical cache bytes and verdict,
+so the new number is trustworthy.  The reconstruction frontier is unchanged in kind (the 4CED
+star-list occupancy dominates), only larger than believed.  **Never trust a shadow cache across a
+dos_re bump -- re-record.**
+
 
 ## 2026-07-07 - lockstep: the SOUND ENGINE native (045516c); the 23A0 decay ROOT-CAUSED
 

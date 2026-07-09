@@ -47,17 +47,26 @@ def load_demo(demo_name: str | None, default_demo: str) -> InputDemoPlayback:
     return InputDemoPlayback.load(ROOT / "artifacts" / "demos" / (demo_name or default_demo))
 
 
-def run_ref_step_probe(demo: InputDemoPlayback, max_frames: int, on_ref_step: Callable) -> None:
+def run_ref_step_probe(demo: InputDemoPlayback, max_frames: int, on_ref_step: Callable,
+                       *, trap: "frozenset[tuple[int, int]] | None" = None) -> None:
     """Replay ``demo`` through the frame verifier, calling ``on_ref_step(cpu)`` before
     every instruction executed on the ``ref`` (pure-VM oracle) side.
+
+    ``trap`` is a PURE SPEED OPTIMIZATION with identical semantics: pass the ``(cs, ip)`` pairs
+    the callback actually acts on and the harness makes the check itself, so ``on_ref_step`` is
+    *called* only at those addresses instead of once per instruction.  A probe that traps two
+    addresses over a 120M-instruction cold boot goes from 120M Python calls to a few thousand.
+    Omit it and every instruction calls back, exactly as before.
 
     The probe's callback owns all capture/predict/compare; this owns the verifier
     wiring and restores the patched ``CPU8086.step`` / ``fv._load_runtime`` on exit.
     """
-    _run_ref_step_probe(demo, max_frames, on_ref_step, snapshot=str(demo.snapshot_path()))
+    _run_ref_step_probe(demo, max_frames, on_ref_step, snapshot=str(demo.snapshot_path()),
+                        trap=trap)
 
 
-def run_ref_step_probe_cold_start(demo: InputDemoPlayback, max_frames: int | None, on_ref_step: Callable) -> None:
+def run_ref_step_probe_cold_start(demo: InputDemoPlayback, max_frames: int | None, on_ref_step: Callable,
+                                  *, trap: "frozenset[tuple[int, int]] | None" = None) -> None:
     """Like :func:`run_ref_step_probe`, but for a COLD-START demo (no snapshot -- boots both
     sides from power-on).  Needed for front-end/menu probes: the recorded gameplay demos never
     exercise the intro/title/menu, only a cold-start session does.  ``max_frames=None`` uses the
@@ -70,11 +79,13 @@ def run_ref_step_probe_cold_start(demo: InputDemoPlayback, max_frames: int | Non
         raise ValueError("run_ref_step_probe_cold_start requires a cold-start demo (no snapshot)")
     end = demo.end_boundary
     frames = (end + 5) if max_frames is None else max_frames
-    _run_ref_step_probe(demo, frames, on_ref_step, snapshot=None, frame_budget=120_000_000)
+    _run_ref_step_probe(demo, frames, on_ref_step, snapshot=None, frame_budget=120_000_000,
+                        trap=trap)
 
 
 def _run_ref_step_probe(
-    demo: InputDemoPlayback, max_frames: int, on_ref_step: Callable, *, snapshot: str | None, frame_budget: int | None = None
+    demo: InputDemoPlayback, max_frames: int, on_ref_step: Callable, *, snapshot: str | None,
+    frame_budget: int | None = None, trap: "frozenset[tuple[int, int]] | None" = None,
 ) -> None:
     meta = demo.manifest.get("metadata", {})
     video = str(meta.get("video", "tandy"))
@@ -85,18 +96,32 @@ def _run_ref_step_probe(
 
     orig_step = CPU8086.step
 
-    def step(self):
-        if getattr(self, "_side", "") == "ref":
-            on_ref_step(self)
-        return orig_step(self)
+    # The observer is installed on the REF CPU INSTANCE only.  The old form patched
+    # ``CPU8086.step`` for the whole class, so the candidate side paid a Python wrapper + a
+    # ``getattr`` on every instruction too, and no interpreter could keep the hot loop tight
+    # (PyPy's JIT in particular gives up on it).  Same callback, same instructions, same
+    # results -- just not charged to the side that never observes.
+    def _install_observer(cpu) -> None:
+        if trap is None:
+            def step(_cpu=cpu):
+                on_ref_step(_cpu)
+                return orig_step(_cpu)
+        else:
+            def step(_cpu=cpu, _s=cpu.s, _trap=trap):
+                if (_s.cs & 0xFFFF, _s.ip & 0xFFFF) in _trap:
+                    on_ref_step(_cpu)
+                return orig_step(_cpu)
+        cpu.step = step
 
-    CPU8086.step = step
     orig_load = fv._load_runtime
     sides = iter(("ref", "cand"))
 
     def patched_load(exe, assets, snap, tail):
         rt = orig_load(exe, assets, snap, tail)
-        rt.cpu._side = next(sides)
+        side = next(sides)
+        rt.cpu._side = side
+        if side == "ref":
+            _install_observer(rt.cpu)
         return rt
 
     fv._load_runtime = patched_load

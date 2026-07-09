@@ -149,12 +149,14 @@ def main(argv) -> int:
                 recorder.add_frame(pre, post_dgroup, sp)
                 _check_frame(pre, post_dgroup, sp, stats, gaps, first_divs)
 
+        # TRAP (speed only, identical semantics): the callback acts at exactly these two addresses.
+        trap = frozenset({(CS, WALK_ENTRY), (CS, WALK_END)})
         if demo.is_cold_start:
-            run_ref_step_probe_cold_start(demo, max_frames, on_ref_step)
+            run_ref_step_probe_cold_start(demo, max_frames, on_ref_step, trap=trap)
         else:
             # a snapshot-based demo (the L2/L3/L4/L6 recordings): same trap, the snapshot harness
             frames = (demo.end_boundary + 5) if max_frames is None else max_frames
-            run_ref_step_probe(demo, frames, on_ref_step)
+            run_ref_step_probe(demo, frames, on_ref_step, trap=trap)
         if stats["frames"]:
             recorder.save(cache_file)
             print(f"  (recorded {stats['frames']} walk frames -> {cache_file.name}; future runs "
