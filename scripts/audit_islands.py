@@ -10,6 +10,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "dos_re"))  # submodule repo root (no editable install under PyPy)
 
 from overkill.coverage import ISLANDS as COVERAGE_ISLANDS, OverkillCoverageClassifier  # noqa: E402
 from overkill.verification import DEFAULT_STOPS  # noqa: E402

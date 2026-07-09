@@ -22,6 +22,7 @@ from typing import Iterable
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+    sys.path.insert(0, str(ROOT / "dos_re"))  # submodule repo root (no editable install under PyPy)
 
 from overkill.runtime_code import (  # noqa: E402
     RUNTIME_CODE_SLOTS,

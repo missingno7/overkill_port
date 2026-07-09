@@ -16,6 +16,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "dos_re"))  # submodule repo root (no editable install under PyPy)
 
 import overkill.hooks  # noqa: F401,E402 - registers all replacements
 from dos_re.hooks import registry  # noqa: E402

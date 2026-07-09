@@ -2,6 +2,7 @@
 import sys
 from pathlib import Path
 sys.path.insert(0, ".")
+sys.path.insert(0, "dos_re")  # submodule repo root (no editable install under PyPy)
 from dos_re.input_demo import InputDemoPlayback
 from overkill.frame_verify import FrameVerifyConfig, run_frame_verifier
 
