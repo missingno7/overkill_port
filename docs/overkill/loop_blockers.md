@@ -1114,3 +1114,47 @@ every one of the 40 ring stars against the VM's `es:[bx]`, and (b) the resulting
 that byte-exact FIRST (small, fast, unambiguous), then lift it into `native_frame`'s present half.
 Open sub-questions for that probe to answer: the `xoff` range (observed 0x02..0x1F -- byte column or
 pixel?), and whether the HUD/panel area is excluded from the star band.
+
+### 2026-07-08 — TOOLING REGRESSION: `scripts/lindis.py` is broken by the dos_re bump
+
+`lindis` derives each instruction's length by counting `cpu.fetch8()` calls.  dos_re commit
+`a062020` ("cpu: inline modrm/displacement fetches") means step() no longer routes modrm/disp
+bytes through `fetch8`, so the counter reads 1 and lindis advances ONE byte per instruction --
+every listing after the first instruction is garbage (it silently mis-decodes; it does not error).
+Repro: `python scripts/lindis.py artifacts/demos/demo_play_tandy_L2_full_20260617_180221/snapshot
+1010 A846 A890` -> one byte per line.  Workaround used today: dump raw bytes and hand-decode.
+Fix options: (a) length = IP delta when CS is unchanged and the delta is 1..15, with a small
+explicit table for the control-transfer opcodes (E8/E9/EB/70-7F/E0-E3/EA/9A/C2/C3/CA/CB); or
+(b) ask dos_re for a decode-only entry point.  **Until fixed, do not trust lindis listings.**
+
+### 2026-07-08 — the star pass: ORDER CONFIRMED from the call sites (hand-decoded)
+
+* `1010:A876`: `e8 74 a4` = **call 4CED**, placed AFTER A846's per-object sprite loop
+  (`e2 eb` at A874).  So the stars are drawn at the END of the DRAW SCAN.
+* `1010:A93C`: `e8 25 a4` = **call 4D64**, placed AFTER A90C's scan loop.  So the previous frame's
+  stars are UNDRAWN in the PRESENT SCAN, i.e. after the blit.
+
+Therefore, at `4CED` entry the strip contains exactly **tiles + all sprites, and no stars** -- and at
+our 9B2E lockstep boundary it contains the same thing.  That is precisely the derivable state, so
+the model needs no strip recording.
+
+**Model validated (scratch, 3 snapshots):** derive the strip window as
+`pack(compose_tile_window)` + `object_sprite_blocks_a846` rasterized at `di + r*0x68 + c`
+(strip-space; `di` is already cursor-relative), then compare against the VM's strip window
+(`[234C]` is always row-aligned: `scroll % 0x68 == 0`, so window row 0 = `scroll // 0x68`):
+
+| snapshot | tiles only | tiles + sprites |
+|---|---|---|
+| L2 | 0 mismatch (empty sky) | 64 (phantom: sprites not yet in the strip at this capture point) |
+| L3 | 1193 mismatch | **59** |
+| L4 | 0 (empty sky) | 64 (same phantom) |
+
+The residue is a TIMING artifact of comparing at a snapshot's capture boundary rather than at
+4CED.  Do NOT step a bare `cpu.step()` loop to reach 4CED: with no PIT interrupt the game spins in
+its `0679` frame-wait forever (that is why the first attempt "never reached 4CED").
+
+**Next slice (small, now unblocked by the new `trap=` harness kwarg):**
+`verify_native_star_strip.py` -- run a demo through `run_ref_step_probe(..., trap={(0x1010,0x4CED)})`,
+and at each trapped entry compare (a) the derived strip window vs the VM's real strip, byte for
+byte, and (b) after driving 4CED, the produced `C7B1` list.  Byte-exact there == the 4831-frame
+divergence family collapses when lifted into `native_frame`'s present half.
