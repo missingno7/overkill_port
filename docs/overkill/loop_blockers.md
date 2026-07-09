@@ -1046,3 +1046,43 @@ frames that were otherwise clean).  Fix: the lockstep frame must compose the str
 state natively first (compose_tile_window + object_sprite_blocks_a846 are already verified
 native pieces) or replay the present order 5A7E/A846/4D64/4CED on the strip seg.  This is the
 RENDER-integration slice of the lockstep campaign.
+
+## 2026-07-08 — the 4CED star pass: the INSTRUMENT can't feed it (quantified)
+
+Re-measured on the re-recorded (trustworthy) lockstep cache, PyPy, 8292 frames:
+
+| native frame | exact | diverged | gapped |
+|---|---|---|---|
+| with `_star_list_4ced` | 1042 | 7950 | 328 |
+| with the star pass DISABLED | 2733 | 5231 | 328 |
+
+Divergence histogram (star pass off), frames affected per 256-byte region:
+`DS:C7xx 4831` (the star DRAW LIST) then a long tail: `2300xx 488`, `C800xx 330`, `3300xx 293`,
+`3500xx 268`, `6C/6D/56/34/A9/85/88 ~200 each`.
+
+**So the star list alone is 4831 of the 5231 diverging frames — the single dominant item.  Fix it
+and the lockstep frontier drops to ~400 frames of everything else.**
+
+ROOT CAUSE OF THE BLOCK (traced today): `4CED` reads occupancy as `cmp es:[bx],0` with
+`es = CS:[9598]` -- the **tile STRIP segment** (0x35FF in the L2 snapshot; linear 0x35FF0, i.e.
+just ABOVE DGROUP's 0x25CC0..0x35CBF window).  The strip is therefore NOT in DGROUP, and
+`_shadow_cache.iter_cached_frames` rebuilds a replay frame as *frame-0's full image + the rolling
+DGROUP window + the tile plane* -- **the strip is frozen at frame 0**.  The gate physically cannot
+hand the star pass its true input.  (The current `_star_list_4ced` reads that stale strip, which is
+why enabling it ADDS ~2700 divergences: it also writes star pixels into a strip the VM has moved on
+from.)
+
+Two ways out, both legitimate:
+* **(A) instrument**: extend the recorder to store the strip window per frame (dedup like the tile
+  plane).  Costs cache size + a format bump (invalidates the walk caches; a PyPy re-record is now
+  ~6 min, so this is affordable).  Gives ground truth to build against, incrementally.
+* **(B) derive it** (the VM-less end state anyway): compose the strip natively each frame from the
+  already-verified pieces -- `native_video/tile_row.compose_tile_window` (oracle-fit) + the A846
+  sprite draw (`object_sprite_blocks_a846`) -- and run 4CED against that.  Needs no cache change:
+  the produced `C7B1` list is compared against the VM directly, so a correct composition proves
+  itself on 4831 frames at once.
+
+**Chosen: (B), with (A) available if (B)'s first attempt needs a byte-level diff of the strip.**
+Prereq to write down before coding: the strip's exact layout (stride/packing) as `5A7E`/`A7EB`
+build it, and the fact that A846's compositors draw into `es = CS:[9598]` (hooks.py:2407/3119 set
+exactly that) -- i.e. sprites land in the SAME strip the star pass probes.
