@@ -85,8 +85,18 @@ def advance_gameplay_frame_97b2(mem, *, isr_ticks: int = 2, level_bytes: bytes |
     # DGROUP-visible and BEFORE 9B2E in the frame order; native_walk_frame.sync_screen_projection
     # owns the projection math but was verified as a post-walk sync, not at this stage position.
     _step_9b2e(mem, level_bytes)
-    # --- the 97CE transition branches: a taken exit leaves the loop (no next 97B2 boundary) ----
-    if mem.rw(DS, 0xA344) == 1 or mem.rw(DS, 0xA342) == 1 or mem.rw(DS, 0xA346) == 1:
+    # --- the 97CE transition branches, in the original's order ---------------------------------
+    # 97CE: [A344] == 1 -> 9734 (level complete);  97D8: [A342] == 1 -> 9902 (game over);
+    # 97E2: [A346] == 1 -> 9908 (DEATH -> respawn).  Only the respawn is wired; the other two still
+    # leave the loop here, which is why the gate cannot see past them.
+    if mem.rw(DS, 0xA344) == 1 or mem.rw(DS, 0xA342) == 1:
+        return
+    if mem.rw(DS, 0xA346) == 1:
+        # The death frame does NOT run 073C / 60A2 / 0679: 9908's chain re-enters the loop at the
+        # 97B2 head, so the frame's tail is the continuation followed by the ordinary present half.
+        # The ISR ticks are applied INSIDE the continuation (at the 9921 spin), not here.
+        _respawn_continuation_9908(mem, isr_ticks)
+        _present_half(mem)
         return
     # --- stage 9: A940 (frame-state update -> the OBJECT WALK -> the 0922 starfield tick) ------
     _a940_walk_stage(mem)
@@ -98,8 +108,15 @@ def advance_gameplay_frame_97b2(mem, *, isr_ticks: int = 2, level_bytes: bytes |
     _clock_tick_5f61(mem)
     # --- the INT8 ISR's per-frame DGROUP effects (two ticks per frame: the [0054] parity pair) -
     _isr_effects_ticks(mem, isr_ticks)
-    # --- the NEXT frame's present half (the 9B2E boundary cut): the star pass + the A90C
-    # projection run after the loop tail (0672/511F/A846/981F/5BDC) and before the next 9B2E ---
+    # --- the NEXT frame's present half (the 9B2E boundary cut) ---------------------------------
+    _present_half(mem)
+
+
+def _present_half(mem) -> None:
+    """The 97B2 loop head's DGROUP-visible work, up to the next 9B2E boundary.
+
+    Runs after the frame tail on the ordinary path and after the respawn continuation on the death
+    path -- both re-enter the loop at 97B2."""
     from overkill.native_walk_frame import sync_screen_projection
     # The present half, in the original's order: A846 = SAVE-UNDER loops (32CA cx=0x24, then 8D12
     # cx=0x22) -> 4CED (stars) -> the 7596 sprite draws.  A90C then RESTORES the saved background
@@ -669,6 +686,16 @@ def _step_9b2e(mem, level_bytes: bytes | None = None) -> None:
     if mem.rw(DS, 0x2350) > 0x00B6:
         _axis_assist_9c01(mem)
     _ring_advance_9cf1(mem)                         # 9BDF
+    _frame_9be2(mem)                                # 9BE2
+
+
+def _frame_9be2(mem) -> None:
+    """``1010:9BE2`` -- the player's post-move tail: the 9CD9 history-ring write, the A031 pod feed,
+    and the 9FAF pod tilt (gated on [BDAC] or a scrolled-in [2350]).
+
+    Called from two places: the ordinary 9B2E player flow, and the 978C step of the respawn
+    continuation (which is why it lives in its own function rather than inline)."""
+    anchor = _ANCHOR
     di = mem.rw(DS, 0xA33A)                         # 9BE2 -> 9CD9: the history-ring write
     mem.ww(DS, di, (mem.rw(DS, anchor + 2) + 8) & 0xFFFF)
     mem.ww(DS, (di + 2) & 0xFFFF, (mem.rw(DS, anchor + 4) + 8) & 0xFFFF)
@@ -1226,6 +1253,125 @@ def _level_reinit_4dbf(mem, level_bytes: bytes) -> None:
 
     cursor_cell = mem.rw(DS, (SCRIPT_CURSOR_CELL_TABLE_20CA + planet * 2) & 0xFFFF)
     mem.ww(DS, cursor_cell, mem.rw(DS, 0x20C8))            # 4DFB..4E0A
+
+
+#: 99BF seeds the pod history ring at A27A with 0x30 (x, y) pairs and re-heads its four pointers
+POD_RING_BASE = 0xA27A
+POD_RING_PAIRS = 0x30
+POD_RING_HEADS = ((0xA33A, 0xA27A), (0xA33C, 0xA2FE), (0xA33E, 0xA2BE), (0xA340, 0xA27E))
+#: 6176's DGROUP effect, measured over every death window: these six words go to zero
+HUD_RESET_CELLS_6176 = (0x2368, 0x236A, 0x236C, 0x236E, 0x2370, 0x2372)
+#: 5F43 picks a music id by scroll row, else the planet's own from the 231E table
+MUSIC_ROW_TOP, MUSIC_ROW_END = 0x009C, 0x0EA0
+MUSIC_TABLE_231E = 0x231E
+MUSIC_BEAT_CELL = 0x98C2
+
+
+def _new_game_setup_c4db(mem) -> None:
+    """``1010:C4DB`` -- the object/status reset the respawn runs first (9908)."""
+    from overkill.recovered.adapters.cold_level_start import (
+        OBJECT_SEED_COUNT, OBJECT_SEED_SLOT_TABLE_32CA,
+    )
+    from overkill.recovered.systems.frame_loop import apply_new_game_setup_c4db
+
+    table = {cx: mem.rw(DS, (OBJECT_SEED_SLOT_TABLE_32CA + cx * 2) & 0xFFFF)
+             for cx in range(1, OBJECT_SEED_COUNT + 1)}
+    for off, val in apply_new_game_setup_c4db(table).items():
+        mem.ww(DS, off, val)
+
+
+def _gameplay_pool_seed_c3a6(mem) -> None:
+    """``1010:C3A6`` -- the gameplay-pool seed (977D); its own tail is C461 then C42F."""
+    from overkill.recovered.adapters.cold_level_start import (
+        GAMEPLAY_SEED_COUNT, GAMEPLAY_SEED_SLOT_TABLE_8D12, PLAYER_SPAWN_RECORD,
+    )
+    from overkill.recovered.systems.frame_loop import (
+        object_pool_seed_c3b5, player_spawn_record_c42f, respawn_control_reset_c461,
+    )
+
+    table = {cx: mem.rw(DS, (GAMEPLAY_SEED_SLOT_TABLE_8D12 + cx * 2) & 0xFFFF)
+             for cx in range(1, GAMEPLAY_SEED_COUNT + 1)}
+    for rec, fields in object_pool_seed_c3b5(table).items():
+        for fo, val in fields.items():
+            mem.ww(DS, (rec + fo) & 0xFFFF, val)
+    for off, val in respawn_control_reset_c461().items():
+        mem.ww(DS, off, val)
+    for fo, val in player_spawn_record_c42f().items():
+        mem.ww(DS, (PLAYER_SPAWN_RECORD + fo) & 0xFFFF, val)
+
+
+def _pod_ring_seed_99bf(mem) -> None:
+    """``1010:99BF`` -- fill the pod history ring with the spawned player's position, re-head it.
+
+    ``mov bp,237C`` then 0x30 iterations of ``stosw`` pairs: ``[bp+2] + 8`` and ``[bp+4] + 9``.
+    Note the +9 on Y -- the 9CD9 ring write that follows uses +8, which is why exactly one cell
+    (A27C) changes again in the 9BE2 step.
+    """
+    x = (mem.rw(DS, _ANCHOR + 2) + 8) & 0xFFFF
+    y = (mem.rw(DS, _ANCHOR + 4) + 9) & 0xFFFF
+    di = POD_RING_BASE
+    for _ in range(POD_RING_PAIRS):
+        mem.ww(DS, di, x)
+        mem.ww(DS, (di + 2) & 0xFFFF, y)
+        di = (di + 4) & 0xFFFF
+    for cell, head in POD_RING_HEADS:
+        mem.ww(DS, cell, head)
+
+
+def _hud_reset_6176(mem) -> None:
+    """``1010:6176`` -- the score/lives HUD redraw (5EDB + 60F3; its cs:[95BC]==1 branches are the
+    non-Tandy modes).  The drawing is video; its whole DGROUP effect, MEASURED at the call site over
+    every death window (probes/attribute_death_continuation), is that these six words go to zero."""
+    for cell in HUD_RESET_CELLS_6176:
+        mem.ww(DS, cell, 0)
+
+
+def _music_beat_5f43(mem) -> None:
+    """``1010:5F43`` -- choose the music id by scroll row, then fall into CB1C's beat ([98C2])."""
+    row = mem.rw(DS, 0x2350)
+    if row == MUSIC_ROW_TOP:
+        track = 4
+    elif row == MUSIC_ROW_END:
+        track = 5
+    else:
+        track = mem.rb(DS, (MUSIC_TABLE_231E + mem.rb(DS, 0x2356)) & 0xFFFF)
+    mem.wb(DS, MUSIC_BEAT_CELL, track)
+
+
+def _respawn_continuation_9908(mem, isr_ticks: int) -> None:
+    """``1010:9908`` -> ``9773`` -> ``978F`` -- everything the original runs after the 97CE death
+    exit, up to the ordinary 97B2 loop head.
+
+    THE TICK PLACEMENT MATTERS.  ``9921`` spins on ``[BEFE]`` until the death jingle drains, so the
+    frame's timer interrupts fire THERE, and only afterwards does ``992F`` queue sound 2 into
+    ``[BEFF]``.  Running the ticks at the end of the frame instead (where the ordinary path puts
+    them) would let the ISR consume the sound we had just queued.
+
+    ``C57C`` (9798) and ``B5A9`` (979B) are skipped: attribute_death_continuation measured zero
+    DGROUP bytes for both across all seven death windows.  They are video.
+    """
+    _new_game_setup_c4db(mem)                                  # 9908
+    mem.wb(DS, 0x2358, (mem.rb(DS, 0x2358) - 1) & 0xFF)        # 990B: dec BYTE
+    if mem.rb(DS, 0x978D):                                     # 990F
+        mem.ww(DS, 0x2358, (mem.rw(DS, 0x2358) + 1) & 0xFFFF)  # 9916: inc WORD
+    _isr_effects_ticks(mem, isr_ticks)                         # 9921: the spin is where time passes
+    if mem.rb(DS, 0x98C0):                                     # 9928
+        mem.wb(DS, 0xBEFF, 2)                                  # 992F
+    if mem.rw(DS, 0x2358) == 0xFFFF:                           # 9773
+        raise RecoveryGap("the 98EB game-over continuation ([2358] == FFFF)",
+                          "only the respawn path is wired")
+    _gameplay_pool_seed_c3a6(mem)                              # 977D
+    _shield_charge_77c5(mem)                                   # 9780
+    _pod_ring_seed_99bf(mem)                                   # 9783
+    _hud_reset_6176(mem)                                       # 9786
+    _frame_9be2(mem)                                           # 978C (bp = 237C, already the anchor)
+    _a940_walk_stage(mem)                                      # 978F
+    mem.ww(DS, 0x20A6, 0x20A8)                                 # 9792
+    mem.ww(DS, 0xA8C2, 0)                                      # 979E
+    _music_beat_5f43(mem)                                      # 97A4
+    if mem.rw(DS, 0x2350) == MUSIC_ROW_TOP:                    # 97A7 -> D305
+        raise RecoveryGap("the D305 respawn wait loop ([2350] == 0x9C)",
+                          "200 nested mini-frames ([BED8] counts to 0xC8) -- 159 DGROUP bytes")
 
 
 #: A81B's reverse-scroll row offset: `sub bx,0A9` -- 0xA9 == 13 * 0x0D, i.e. thirteen tile rows

@@ -181,9 +181,11 @@ def main(argv) -> int:
         print(f"recovery gaps ({sum(gaps.values())} frames NOT natively runnable yet):")
         for text, n in gaps.most_common():
             print(f"  {n:6d}x {text}")
-    verdict = stats["diverged"] == 0 and stats["frames"] > 0
-    print("RESULT:", ("PASS -- zero divergence on every natively-runnable 97B2 frame"
-                      + (" (with the gap frontier above)" if gaps else ""))
+    # A GAP IS NOT A PASS.  A frame the native runtime refuses to run is unrecovered, exactly like a
+    # frame it runs wrongly; only the failure mode differs.  Requiring gaps == 0 here keeps a
+    # fail-loud RecoveryGap from being mistaken for progress.
+    verdict = stats["diverged"] == 0 and not gaps and stats["frames"] > 0
+    print("RESULT:", ("PASS -- zero divergence and zero gaps on every 97B2 frame")
           if verdict else "FAIL")
     return 0 if verdict else 1
 
