@@ -31,6 +31,10 @@ mirrored fragments into the image; that hybrid was inaccurate in exactly the way
 playtests kept finding (no thrusters, wrong fire origin, dead waves).  It was deleted, not
 repaired -- see docs/overkill/deprecated_or_quarantined.md.
 
+``--snapshot DIR`` starts from a captured memory image.  That image IS the state -- its planet,
+difficulty, score, lives and scroll position all come from it -- so the title/level-select are
+skipped entirely and nothing is written over it.  ``--level`` is ignored in that mode.
+
 Usage:
     python scripts/play_native.py [--level N] [--no-title] [--frames N] [--snapshot DIR]
 """
@@ -338,7 +342,9 @@ def main(argv=None) -> int:
                     help="the static runtime bundle (memory_1mb.bin)")
     ap.add_argument("--container", default=str(DEFAULT_CONTAINER), help="the OVERKILL asset container")
     ap.add_argument("--snapshot", default=None,
-                    help="start from a captured snapshot dir's memory_1mb.bin instead of a cold seed")
+                    help="start from a captured snapshot dir's memory_1mb.bin (it IS the state: its "
+                         "own planet/difficulty/lives are used; the front end is skipped and "
+                         "--level is ignored)")
     ap.add_argument("--scale", type=int, default=3)
     ap.add_argument("--fps", type=int, default=30)
     ap.add_argument("--no-title", action="store_true", help="skip the title + level select")
@@ -355,33 +361,40 @@ def main(argv=None) -> int:
     pygame = display.pygame
     scan_map = _build_scan_map(pygame)
 
-    level = args.level
-    difficulty = 0
-    if not args.no_title and not args.frames:
-        if not _run_title_screen(display, pygame, container_data):
-            display.close()
-            return 0
-        probe_img = build_cold_level_start_image(bundle_data, level, container_data)
-        picked = _run_level_select(display, pygame, container_data, probe_img, start_beda=level)
-        if picked is None:
-            display.close()
-            return 0
-        level, difficulty = picked
-
     if args.snapshot:
+        # A SNAPSHOT IS THE STATE.  It already carries its own planet (DS:2356), difficulty
+        # (DS:BEDC), score, lives and scroll position -- so the front end must not run before it and
+        # must not write over it.  Neither --level nor the level-select pick means anything here.
         img = MutFlatMemory((Path(args.snapshot) / "memory_1mb.bin").read_bytes())
+        origin = f"snapshot {Path(args.snapshot).name}"
     else:
+        level = args.level
+        difficulty = 0
+        if not args.no_title and not args.frames:
+            if not _run_title_screen(display, pygame, container_data):
+                display.close()
+                return 0
+            probe_img = build_cold_level_start_image(bundle_data, level, container_data)
+            picked = _run_level_select(display, pygame, container_data, probe_img, start_beda=level)
+            if picked is None:
+                display.close()
+                return 0
+            level, difficulty = picked
         img = build_cold_level_start_image(bundle_data, level, container_data)
-    img.ww(_DS, 0xBEDC, difficulty)       # the difficulty global (the C237 spawn throttle reads it)
+        img.ww(_DS, 0xBEDC, difficulty)   # the difficulty global (the C237 spawn throttle reads it)
+        origin = f"cold level {level + 1}"
+
     planet = img.rw(_DS, 0x2356)
 
     renderer = ImageRenderer(bundle_data, container_data, img)
     clock = pygame.time.Clock()
-    tick = 0
+    tick = 0          # gameplay frames advanced (frozen once HELD)
+    drawn = 0         # display frames drawn (always advances -- the --frames self-test counts these)
     hold: str | None = None
     running = True
-    print(f"native L{level + 1} (planet {planet}): the gate-verified frame over the image -- "
-          "no VM, no dataclass game")
+    print(f"native: {origin} -- planet {planet}, difficulty {img.rw(_DS, 0xBEDC)}, "
+          f"lives {img.rw(_DS, 0x2358)}, row {img.rw(_DS, 0x2350):#06x}; "
+          "the gate-verified frame over the image -- no VM, no dataclass game")
     try:
         while running:
             for ev in pygame.event.get():
@@ -419,16 +432,19 @@ def main(argv=None) -> int:
             else:
                 display.set_title(f"OVERKILL - native (VM-less)  HELD: {hold[:70]}")
             display.draw(frame)
+            drawn += 1
 
-            if args.frames and tick >= args.frames:
+            # count DRAWN frames, not gameplay ticks: a HELD frame stops advancing `tick`, and an
+            # earlier version looped forever waiting for a counter that could never move.
+            if args.frames and drawn >= args.frames:
                 lit = int((frame > 0).sum())
-                print(f"--frames self-test: ran {tick} frames, last frame {lit} lit px, "
-                      f"hold={hold!r}")
+                print(f"--frames self-test: {tick} gameplay frames, {drawn} drawn, "
+                      f"last frame {lit} lit px, hold={hold!r}")
                 running = False
             clock.tick(args.fps)
     finally:
         display.close()
-    return 1 if (hold and args.frames) else 0
+    return 1 if (hold and args.frames) else 0   # a held gap is a self-test failure
 
 
 if __name__ == "__main__":
