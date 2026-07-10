@@ -322,6 +322,50 @@ def _run_level_select(display, pygame, container_data, image, start_beda: int = 
         clock.tick(30)
 
 
+#: the sound engine's live output, exactly as the ISR at D530..D563 selects it:
+#:   [BFB3] (channel 0 status) != 0 -> program its period [BFB0];  else [BFC3] -> [BFC0];  else off.
+#: freq = the PIT input clock / period.  A pure READ of the D50E engine's verified DGROUP state.
+_PIT_HZ = 1193182.0
+_SND_CH0_STATUS, _SND_CH0_PERIOD = 0xBFB3, 0xBFB0
+_SND_CH1_STATUS, _SND_CH1_PERIOD = 0xBFC3, 0xBFC0
+
+
+def read_speaker(img) -> "tuple[bool, float]":
+    """(enabled, freq) for the host PC-speaker sink, derived from the image's sound-engine cells."""
+    if img.rb(_DS, _SND_CH0_STATUS):
+        period = img.rw(_DS, _SND_CH0_PERIOD)
+    elif img.rb(_DS, _SND_CH1_STATUS):
+        period = img.rw(_DS, _SND_CH1_PERIOD)
+    else:
+        return False, 0.0
+    if period == 0:
+        return False, 0.0
+    return True, _PIT_HZ / period
+
+
+class SpeakerSink:
+    """Drive scripts/sdl_view.PcSpeakerAudio from the image each frame.  Silently no-ops if pygame
+    audio is unavailable (headless, no device) -- audio is never allowed to break gameplay."""
+
+    def __init__(self, pygame) -> None:
+        self._speaker = None
+        try:
+            from sdl_view import PcSpeakerAudio
+            self._speaker = PcSpeakerAudio(pygame)
+        except Exception as exc:  # noqa: BLE001 -- headless / no audio device: run silent
+            print(f"(audio disabled: {type(exc).__name__}: {exc})")
+
+    def update(self, img) -> None:
+        if self._speaker is None:
+            return
+        enabled, freq = read_speaker(img)
+        self._speaker.set(enabled, freq)
+
+    def close(self) -> None:
+        if self._speaker is not None:
+            self._speaker.close()
+
+
 class PygameDisplay:
     """An SDL window blitting scaled (200,320) indexed frames through the Tandy palette."""
 
@@ -370,6 +414,7 @@ def main(argv=None) -> int:
     ap.add_argument("--no-title", action="store_true", help="skip the title + level select")
     ap.add_argument("--frames", type=int, default=0,
                     help="headless self-test: run N gameplay frames then exit (SDL_VIDEODRIVER=dummy)")
+    ap.add_argument("--no-sound", action="store_true", help="disable the PC-speaker audio sink")
     args = ap.parse_args(argv)
 
     from overkill.recovered.adapters.cold_level_start import build_cold_level_start_image
@@ -408,6 +453,7 @@ def main(argv=None) -> int:
 
     level_assets = make_level_assets(container_data, bundle_data)
     renderer = ImageRenderer(bundle_data, container_data, img)
+    speaker = SpeakerSink(pygame) if not args.frames and not args.no_sound else None
     clock = pygame.time.Clock()
     tick = 0          # gameplay frames advanced (frozen once HELD)
     drawn = 0         # display frames drawn (always advances -- the --frames self-test counts these)
@@ -451,6 +497,8 @@ def main(argv=None) -> int:
                                   f"lives={img.rw(_DS, 0x2358)}")
             else:
                 display.set_title(f"OVERKILL - native (VM-less)  HELD: {hold[:70]}")
+            if speaker is not None:
+                speaker.update(img)
             display.draw(frame)
             drawn += 1
 
@@ -463,6 +511,8 @@ def main(argv=None) -> int:
                 running = False
             clock.tick(args.fps)
     finally:
+        if speaker is not None:
+            speaker.close()
         display.close()
     return 1 if (hold and args.frames) else 0   # a held gap is a self-test failure
 
