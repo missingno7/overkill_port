@@ -4,6 +4,43 @@ Open items the autonomous loop attempted but could not finish byte-exact. Do NOT
 re-attempt these in the loop; they need a reproduction trace and/or gameplay
 context. Each has the analysis already done so a human can pick up fast.
 
+## 2026-07-10 (2nd attempt) — 98EB: 3717 → 47 bytes, still reverted; ONE unknown remains
+
+With the zero-fingerprint corrected (the strip scratch is CLEARED, not rendered), the composition
+gets frame 5379 from 3717 diverging bytes to **47**.  Still reverted: a fail-loud gap beats a
+47-byte wrong implementation.  But the remainder is now ONE cell and its derivatives.
+
+**The model that works** (`_game_over_continuation_98eb(mem, level_bytes, pick)`, called from 9773
+when `[2358] == FFFF`; the 9921 spin takes ZERO ticks and 992F is bypassed):
+1. clear the WHOLE strip (`CS:[9598]`, 0xC000 bytes — its low 0x2CD0 alias DGROUP D330..FFFF).
+   Clearing only the alias leaves 72 stale save-under bytes at DS:67CC.., because records whose
+   `di` sits above the alias still read live strip bytes.
+2. `[BEFF] = 5` (57E6), `[2286] = 0x14` (5283 -> 532D's rank), `[98C2] = 2` (96E2 -> CB1C),
+   `[22BF] = 3` (532D bookkeeping).
+3. `new_game_session_init_96ee()` (score/lives/planet/A342), then `[2356] = pick + 1`.
+   **`pick` is USER INPUT** — the level-select cell, living only in the VM's key table during the
+   window.  The demo's one game-over picks cell 0 -> planet 1.
+4. `_level_data_init_0b3e(level_bytes)`, then the PLAQUE loader's own pointers, which overwrite
+   0B3E's: `[21A4] = strip_seg`, `[21A6] = 0`, `[21A8] = 0x1778` (== `len(PLAQ0.ENC)` raw),
+   `[21AA] = 0x144F` (DS:144F = "plaq0.enc").
+5. `[234E] = 0`, `[2350] = 0x9C`, then the C3A6-family setup tail (C3A6, 77C5, 99BF, 6176, 9BE2,
+   A940, `[20A6] = 20A8`, `[A8C2] = 0`, 5F43) and finally `D305` (the plaque fire-wait, carrying
+   all 402 ticks).
+
+**THE ONE UNKNOWN.**  After the fresh level start the VM has `[234C] = 0x1A00` and `[A978] = 0x111`;
+the model leaves `[234C] = 0x0D00` (whatever 4DBF's rewind left) and `[A978] = 0x110`.  ALL 47
+residual bytes derive from that: `DS:234D` itself, the player's `+0x0C` screen-di projections
+(2389/238D), `A278`, `26D1`, and the whole `C7B1..C800` star draw list — every one differs by exactly
+`0x1A00 - 0x0D00 = 0x0D00` (== 32 * 0x68, the strip row stride) in its high byte.
+
+So the last thing to recover is **the level-start WARM-UP scroll** (60C5 sets `[2350] = 0xEA0`, then
+the A781 reverse pulls settle it to 0x9C) and what it leaves in `[234C]`/`[A978]`.  `play_native`'s
+cold seed uses `234C = 0x5B00`, `A978 = 0x110` — a synthetic seed, not the warm-up's real output;
+this is the same constant pair, and it may be wrong there too.  **Measure it**: trap the warm-up on
+a real level start and read `[234C]`/`[A978]` at its exit, rather than assuming either value.
+
+Repro: scratch `p98eb2.py` (the composition) + `pypy -m overkill.probes.inspect_death_windows 5379`.
+
 ## 2026-07-10 — 98EB composition attempt: REVERTED; the alias is a RENDERED high-score screen
 
 Attempted: compose `_game_over_continuation_98eb` from owned pieces (96EE + 0B3E + C3A6-tail + D305)
