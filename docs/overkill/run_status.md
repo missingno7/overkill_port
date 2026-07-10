@@ -59,6 +59,40 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-11 — WINNABLE: THE END (9844) recovered as a front-end transition; the arcade loop closes
+
+The game now plays **start -> all six planets -> beat the mothership -> THE END -> loop back to planet 1**,
+faithfully to the original (an arcade loop; there is no credits-and-stop).  This closes the last gameplay
+piece.
+
+### THE END (1010:9844) is a presentation screen, not a lockstep frame
+Beating the mothership makes 9734 see `DS:2356 == 0` and call 9844.  Evidence (the mothership_end demo +
+DGROUP measurement):
+- 9844 loads and shows the full-screen **WINSCR.ENC** win image (name @ `DS:1440`, len `0x7D04`), waits
+  for FIRE, then falls into 9744 -- advancing `[2356]` 0 -> 1, looping to the first planet.
+- Its ENTIRE gameplay-state footprint is transient loader/text-renderer scratch (`21A8..21AC`,
+  `BED4`/`BED6`) that the next level load overwrites.  So the state continuation IS the already-recovered
+  9744 path; 9844 itself is pure presentation (categorically like the intro/menu/ending screens).
+
+### Recovery + the honest verification ceiling
+- `native_frame`: the planet-0 branch now raises the recognized **`TheEndReached`** (a recovered
+  transition, NOT a `RecoveryGap`) carrying a `resume()` that runs the extracted `_planet_advance_9744`.
+- `play_native`: catches it, presents `WINSCR.ENC` via the existing full-screen codec (`_run_the_end`),
+  and on fire calls `resume()` to load planet 1 and continue the loop.
+- Gate: `verify_native_the_end_9844` -- Part A witnesses the demo loading winscr.enc at the 9734/`[2356]==0`
+  boundary; Part B unit-proves native raises `TheEndReached` and resumes to planet 1.  Plus fast pytest
+  `tests/test_native_the_end.py`.
+- **Ceiling (documented, not hidden):** no recording returns THROUGH the splash -- every demo ends at
+  9844's fire-wait spin (the player never presses fire on tape) -- so the post-fire continuation is not
+  demo-lockstep-gateable end-to-end.  The 9744 state continuation it resumes into is the same code the
+  L5_ending demo gates for the other planets.
+
+### State
+`native_app` skeleton: the old `level0_intro` GAP is now the `the_end` NATIVE stage.  Suite green
+(1272 passed / 32 skipped).  The remaining OPEN items are all FRONT-END/presentation (byte-exact 9844
+WINSCR pixels via 1F8F:0980 if ever desired; the menu/attract logic; audio host output) -- the GAMEPLAY
+is complete and winnable.
+
 ## 2026-07-11 — LANDMARK: all six planets PLAY end to end; only the 9844 victory story remains for the win
 
 The whole GAMEPLAY is now native across every planet -- boot a cold level, play planets 1..5 AND the

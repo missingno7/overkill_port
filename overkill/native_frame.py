@@ -33,6 +33,30 @@ from overkill.recovered.systems.frame_loop import ATTRACT_MODE_2356, frame_state
 DS = 0x25CC
 CS = 0x1010
 
+
+class TheEndReached(Exception):
+    """``1010:9734`` with ``DS:2356 == 0`` -- the mothership (planet 0) has been beaten.
+
+    This is a RECOGNIZED, recovered front-end transition (NOT a :class:`RecoveryGap`).  The original
+    shows THE END (``1010:9844``): a presentation-only splash that loads and displays the full-screen
+    ``WINSCR.ENC`` win image (name @ ``DS:1440``, len ``0x7D04``), waits for FIRE, then clears the screen
+    (5BEE/0747) and FALLS INTO ``9744`` -- advancing ``[2356]`` 0 -> 1 and looping back to the first
+    planet (an arcade loop; there is no credits-and-stop).  9844's entire gameplay-state footprint is
+    transient loader/text-renderer scratch (``21A8..21AC``, ``BED4``/``BED6``) that the next level load
+    overwrites, so the state continuation IS the recovered 9744 path.
+
+    ``native_frame`` is headless, so instead of drawing it raises this carrying :attr:`resume`; the app
+    (``play_native``) presents WINSCR and, on fire, calls ``resume()`` to run the level-1 load and
+    continue the loop.  Demo-witnessed by ``verify_native_the_end_9844`` (the mothership_end demo reaches
+    this boundary and loads winscr.enc); the post-fire continuation is not demo-reachable -- every
+    recording ends at the splash's fire-wait -- which is the honest verification ceiling here.
+    """
+
+    def __init__(self, resume) -> None:
+        super().__init__("THE END (mothership beaten) -- present WINSCR, then resume the arcade loop")
+        self.resume = resume
+
+
 #: optional mid-frame observation hook used ONLY by probes (``native_frame._AT_9BCA = fn``);
 #: it is None in every normal run and costs one ``is not None`` test per frame.
 _AT_9BCA = None
@@ -1944,8 +1968,24 @@ def _level_advance_9734(mem, level_assets) -> None:
     change nothing; 6176 nothing (already zero); 0B3E 61 cells; 0E9C 7; 60AC 10.
     """
     planet = mem.rw(DS, 0x2356)
-    if planet == 0:                                        # 9734 -> 9844
-        raise RecoveryGap("the 9844 planet-0 story intro", "shown before the mothership level")
+    if planet == 0:                                        # 9734 -> 9844 (THE END), then falls to 9744
+        # 9734 with DS:2356 == 0 -> the mothership (planet 0) has been beaten.  The original calls
+        # 9844 (THE END: a presentation-only splash that loads + shows the full-screen WINSCR.ENC win
+        # image, waits for FIRE), then 5BEE/0747 (screen clear), then FALLS INTO 9744 -- advancing
+        # [2356] 0 -> 1 and looping back to the first planet (arcade loop; no credits-and-stop).  9844's
+        # only gameplay-state footprint is transient loader/text scratch (21A8..21AC, BED4/BED6) the next
+        # level load overwrites; the state continuation IS the 9744 path below.  native_frame is headless,
+        # so it raises the recognized THE-END signal carrying the resume; the app presents WINSCR and,
+        # on fire, runs resume() to load level 1 and continue the loop.
+        raise TheEndReached(lambda: _planet_advance_9744(mem, level_assets, 0))
+    _planet_advance_9744(mem, level_assets, planet)
+
+
+def _planet_advance_9744(mem, level_assets, planet: int) -> None:
+    """``1010:9744`` -- advance ``[2356]`` to the next planet and start that level.
+
+    The shared tail both the ordinary level-complete (9734, planet 1..5) and THE END (9844, planet 0
+    beaten) fall into.  ``planet`` is the CURRENT ``[2356]``; 9744 increments it, wrapping 5 -> 0."""
     planet = (planet + 1) & 0xFFFF                         # 9744
     if planet >= PLANET_COUNT:                             # 9748
         planet = 0

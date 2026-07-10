@@ -37,7 +37,7 @@ def test_new_game_setup_bridge_map_is_declared_and_honest():
     # the 971A/9734 -> 9744 -> 97B2 new-game/level-start bridge, in flow order
     assert [s.name for s in NEW_GAME_SETUP_STAGES] == [
         "level_select", "screen_load", "new_game_setup", "countdown_init", "panel_draw",
-        "level0_intro", "level_advance", "setup_tail",
+        "the_end", "level_advance", "setup_tail",
     ]
     assert all(s.status in (NATIVE, HOST, GAP, UNMONITORED) for s in NEW_GAME_SETUP_STAGES)
     assert all(s.asm.startswith("1010:") for s in NEW_GAME_SETUP_STAGES)
@@ -46,9 +46,10 @@ def test_new_game_setup_bridge_map_is_declared_and_honest():
     assert by_name["level_advance"].status == NATIVE       # 9744 six-planet advance recovered
     assert by_name["screen_load"].status == HOST           # 5C9A VGA blit is presentation
     assert by_name["setup_tail"].status == NATIVE          # the 9773 setup tail + level loads, recovered
-    # the newly-declared bridge gaps surface in the honest gap report
+    assert by_name["the_end"].status == NATIVE             # 9844 THE END splash recovered (TheEndReached)
+    # THE END is no longer a gap; it must NOT appear in the honest gap report
     report = "\n".join(describe_gaps())
-    assert "new_game_setup.level0_intro" in report        # the 9844 story screen is still a gap
+    assert "new_game_setup.the_end" not in report
 
 
 def test_planet_video_dispatch_is_six_planets_three_configs():
@@ -104,7 +105,7 @@ def test_gap_boundary_is_declared_and_reported():
     assert by_name["frame_state_update"].status == NATIVE    # A940 gameplay path composed + verified
     assert by_name["conditional_hud_cell"].status == UNMONITORED  # still a truly-unmonitored stage
     report = "\n".join(describe_gaps())
-    for expected in ("level0_intro", "D160", "menu logic"):
+    for expected in ("D160", "menu logic"):
         assert expected in report, expected
 
 

@@ -50,7 +50,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from overkill.native_frame import advance_gameplay_frame_97b2  # noqa: E402
+from overkill.native_frame import advance_gameplay_frame_97b2, TheEndReached  # noqa: E402
 from overkill.native_walk_frame import project_state  # noqa: E402
 from overkill.recovered.adapters.flat_memory import MutFlatMemory  # noqa: E402
 from overkill.recovered.domain.gaps import RecoveryGap  # noqa: E402
@@ -324,6 +324,30 @@ def _run_intro(display, pygame, container_data, per_page_seconds: float = 8.0) -
 def _run_ending(display, pygame, container_data, per_page_seconds: float = 8.0) -> bool:
     """Play the ten-page victory ending (OPAGE1..10)."""
     return _run_story_pages(display, pygame, container_data, _ENDING_PAGES, "ending", per_page_seconds)
+
+
+#: THE END splash asset -- the full-screen win image 1010:9844 loads (name @ DS:1440, len 0x7D04)
+#: and shows when the mothership (planet 0) is beaten, before the arcade loop restarts at planet 1.
+_THE_END_PAGE = "winscr.enc"
+
+
+def _run_the_end(display, pygame, container_data) -> bool:
+    """Present THE END (``1010:9844``): show the full-screen ``WINSCR.ENC`` win image and wait for FIRE.
+
+    The mothership-beaten splash of the original.  Space/fire (or Esc/quit) dismisses it; then the caller
+    resumes the arcade loop at planet 1.  Returns False on window-close so the caller can exit."""
+    img = decode_fullscreen_image(container_data, _THE_END_PAGE)
+    display.set_title("OVERKILL - native (VM-less)  [THE END -- mothership destroyed! Space continues]")
+    clock = pygame.time.Clock()
+    while True:
+        for ev in pygame.event.get():
+            if ev.type == pygame.QUIT:
+                return False
+            if ev.type == pygame.KEYDOWN and ev.key in (pygame.K_SPACE, pygame.K_RETURN,
+                                                        pygame.K_ESCAPE):
+                return True
+        display.draw(img)
+        clock.tick(30)
 
 
 def _replay_demo(display, pygame, bundle_data, container_data, demo_dir: Path,
@@ -673,6 +697,18 @@ def main(argv=None) -> int:
                     # menu_pick is the host input the 98EB game-over restart reads (the level-select
                     # cell for the fresh game); without it, out-of-lives fails loud instead of restarting.
                     advance_gameplay_frame_97b2(img, isr_ticks=2, level_assets=level_assets, menu_pick=0)
+                except TheEndReached as end:
+                    # The mothership was beaten: present THE END (WINSCR.ENC), then -- on fire -- run
+                    # the recovered 9744 continuation to load planet 1 and loop, exactly like the original.
+                    print(f"THE END at tick {tick}: mothership destroyed -- showing WINSCR, then looping")
+                    if not args.frames:
+                        if not _run_the_end(display, pygame, container_data):
+                            running = False
+                    end.resume()
+                    planet = img.rw(_DS, 0x2356)
+                    print(f"  arcade loop -> planet {planet}, lives {img.rw(_DS, 0x2358)}")
+                    tick += 1
+                    continue
                 except RecoveryGap as exc:
                     hold = f"{type(exc).__name__}: {exc}"
                     print(f"HELD at tick {tick}: {hold}")

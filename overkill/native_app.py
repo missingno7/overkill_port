@@ -146,13 +146,18 @@ NEW_GAME_SETUP_STAGES: tuple[FrameStage, ...] = (
     FrameStage("panel_draw", "1010:6176", HOST,
                "HUD/panel draw composite (dual-page gated on CS:95BC) -- presentation"),
     # --- level-end transition prologue (1010:9734, alternate entry) ---
-    FrameStage("level0_intro", "1010:9844 (via 9734, if DS:2356 == 0)", GAP,
-               "the mothership story splash: an INTERACTIVE text screen (5BEE setup, the far text"
-               " renderer 1F8F:0980, 50C9 delays, a 0163 fire-wait) shown only when 9734 re-enters"
-               " with DS:2356 == 0 -- i.e. AFTER the mothership (planet 0) is beaten, then it converges"
-               " at 9744.  NOT on the six-level playthrough path (all six planets play + advance;"
-               " verify_native_level_progression).  Blocked on 1F8F:0980, an unrecovered text renderer"
-               " -- a front-end campaign task"),
+    FrameStage("the_end", "1010:9844 (via 9734, if DS:2356 == 0)", NATIVE,
+               "THE END: the mothership-beaten splash, shown when 9734 re-enters with DS:2356 == 0"
+               " -- i.e. AFTER the mothership (planet 0) is beaten, then it converges at 9744.  It is a"
+               " PRESENTATION-only screen: 5BEE loads + shows the full-screen WINSCR.ENC win image (name"
+               " @ DS:1440, len 0x7D04), waits for FIRE, then falls into 9744 -- looping [2356] 0->1 back"
+               " to the first planet (an arcade loop; no credits-and-stop).  9844's only gameplay-state"
+               " footprint is transient loader/text scratch (21A8..21AC, BED4/BED6) the next level load"
+               " overwrites, so native_frame raises the recognized TheEndReached (carrying the 9744"
+               " resume) and play_native presents WINSCR then continues.  Demo-witnessed:"
+               " verify_native_the_end_9844 (Part A: mothership_end demo loads winscr.enc at the"
+               " boundary; Part B: native raises + resumes to planet 1).  The post-fire continuation is"
+               " not demo-reachable -- every recording ends at the splash's fire-wait -- the honest ceiling"),
     # --- converged per-level setup -> 97B2 ---
     FrameStage("level_advance", "1010:9744", NATIVE,
                "six-planet level-index advance; native form = frame_loop.advance_level_index_9744"
@@ -189,7 +194,7 @@ GAMEPLAY_EXIT_TARGETS: tuple[FrameStage, ...] = (
                "level complete, RECOVERED (2026-07-10) as native_frame._level_advance_9734: advance the"
                " planet (wrap 5->0), load the new planet's map/tile/sprite banks (0B3E/0E9C), the 60AC"
                " scroll warm-up, and the shared setup tail.  Byte-exact (verify_native_level_advance_9734)."
-               " The DS:2356==0 story branch (9844) is a separate front-end GAP -- see level0_intro"),
+               " The DS:2356==0 THE END branch (9844) is a recovered front-end transition -- see the_end"),
     FrameStage("game_over", "1010:9902 -> 98EB (flag A342)", NATIVE,
                "out of lives: 990B's `dec WORD [2358]` wraps 0->FFFF and 9773 branches to 98EB, the"
                " game-over -> title -> fresh-game chain, RECOVERED (2026-07-10) as"
