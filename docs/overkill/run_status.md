@@ -59,6 +59,27 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-10 (late++++) — the 8546 SPECIAL-WEAPON families FILLED (6 of 7), incl. the owner's 8463 gap
+
+Using the new gap-seed workflow + the driven oracle, filled six of the seven weapon-apply handlers the
+owner's playtest surfaced -- the Z/TAB apply now works for every special weapon reachable in the corpus.
+
+* The handlers are LEVELS of the two special weapons (8546 dispatches `call [bx+si*..+4]` on the
+  weapon level [desc+8]); forcing the level in the pure VM's own descriptor reaches each, so ONE demo
+  gates them all: **8463** (the owner's gap -- 9D91 deploy into [A96E]), **84C3** (9F1A deploy into
+  [A962]/[A964]), **84D6/84FD** (flag/sound weapons, [2384]=1/2), **843D/844E** (single-cell flag
+  weapons [A95E]=1 / [A960]=4), **44AF** (no-op ret).  `_apply_upgrade_8546` is now a per-target
+  dispatch over one shared 8572..8596 tail; the proven gun-stub path is unchanged.
+* Gate: `verify_native_special_weapon_apply` 14/14 applies, 0 diverging (commits 779d171, 58ec714,
+  88c4f84).  Gun gate 4/4 + lockstep 8292/8292 unaffected.  Fast units: `tests/test_special_weapon_
+  apply.py` (6).
+* **STILL OPEN: 849D (9F5F)** -- a 4-slot [A966..A96C] orbital deploy whose deploy path is
+  UNEXERCISABLE in the L6 demo (its trackers are occupied, so 9F82 deploys nothing; only [A364]=2 +
+  the tail are observable).  Correctly fail-loud until a free-tracker snapshot exists -- which
+  `play_native`'s gap-snapshot will capture when the owner reaches it.  Characterized in loop_blockers.
+
+The whole gameplay Z/TAB weapon path is now native for every weapon the demos can reach.
+
 ## 2026-07-10 (late+++) — REPRODUCE-AND-FILL: play_native dumps a gap seed; the 8546 weapon families scoped
 
 Owner playtest hit `8546's upgrade handler CS:8463` (collected a special weapon, pressed Z) and asked
