@@ -1464,3 +1464,28 @@ bands from `row_base - s*0x0D`; rendering more bands underflows the plane row (m
 exact).  The right move is to work out which plane row each above-DGROUP strip row actually holds --
 trap `(CS,0xA876)` on a failing frame, read the VM's strip bytes at the failing offsets, and match
 them against `render_tile_row` for candidate plane rows.
+
+### 2026-07-08 (cont.) — MEASURED: the stack ladder does not extend ABOVE the visible window
+
+Trapping `(CS,0xA876)` on the first failing frame (3982: `row_base=0x057C`, `phase=0`,
+`scroll=0x4E00`, `strip_seg=0x32FF`) and matching the VM's strip row against `render_tile_row` for
+every candidate plane row:
+
+    rec=24CC dt=2 slot=0 di=47D8 row=0  ->  t = -16  (one band ABOVE the window)
+    our model: stack row start+t = 0    -> band 0 = plane row 0x057C (row_base)
+    the VM:    that strip row IS band 3 = plane row 0x0555 (row_base - 3*0x0D)   <-- exact match
+
+So `compose_tile_window`'s ladder (`band s = row_base - s*0x0D`, window = `stack[16+phase ...]`) is
+right for the 192 visible rows -- the star gate proves that byte-for-byte -- but it is NOT the strip's
+physical order above the window.  The reason is that `[234C]` steps by `CS:[959E] = 0x68` EVERY frame
+while a band is only WRITTEN every 16th frame (at the pull), so which physical strip row sits above
+the window depends on how many frames have passed since the pull; the ring wraps at
+`0x5480 / 0x68 = 208` rows.  Extending the ladder naively (or mirroring at -0x5480) both got refuted
+by the gate.
+
+**Do not extend the stack.**  The correct model is the ring itself: a strip row is written once per
+pull at `[234C] - 0x680` with the then-current `[2350]`, and thereafter only the cursor moves.  So
+the band living at physical strip row `R` is `row_base - ((R_pull_distance) * 0x0D)`, computable from
+`[234C]`, `[234E]` and the pull cadence.  Derive that mapping (a small amount of algebra against the
+measurement above), or -- simpler and exact -- record the strip's above-DGROUP window in the shadow
+cache so the replay can read it.  These are the last 21 save-buffer frames.
