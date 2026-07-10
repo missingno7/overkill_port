@@ -1444,3 +1444,23 @@ Lockstep after the video model + the 8209 leak fix: **8231 exact / 61 diverging 
 `bp` is still `0x237C` (the anchor record set at 9B5B), so `ss:[bp+2]`/`ss:[bp+4]` ARE the player's
 x and y (trapped `(CS,0x7948)`: bp = 237C on every hit).  Passing zeros had left every cue-spawned
 record with `+0x32/+0x34 = 0`; that was the entire 47-frame "per-record state" family.
+
+### 2026-07-08 (cont.) — REJECTED: reading the ring mirror's source for above-DGROUP strip bytes
+
+The save-under's last save-buffer family (21 frames) comes from reading strip bytes that sit ABOVE
+DGROUP's 64K window, where the replayed bytes are stale.  Tempting idea: A7EB duplicates each pulled
+band at `+0x5480`, so `strip[off] == strip[off - 0x5480]` and the source often IS inside DGROUP.
+
+**It does not hold, and the gate said so.**  Wiring it (guarded on `off >= 0x5480`) gave
+`8106 exact / 186 diverged` versus `8260 / 32` -- strictly worse.  Reason: only the FRESHLY PULLED
+band is mirrored on any given frame; the rest of the duplicate region holds whatever older bands
+were copied there at their own pull times, so the two halves are equal only for the newest band.
+(An earlier, sloppier version of the same idea -- guarding on the PHYSICAL address rather than the
+strip offset -- was catastrophic: 589 exact.  Guard on `off`, not on `phys`, if anyone retries.)
+
+So the remaining 21 frames need the strip's above-DGROUP bytes to be DERIVED correctly, i.e. the
+band ladder for stack rows beyond what `compose_tile_window` renders.  `_terrain_stack` renders 14
+bands from `row_base - s*0x0D`; rendering more bands underflows the plane row (measured: 8096
+exact).  The right move is to work out which plane row each above-DGROUP strip row actually holds --
+trap `(CS,0xA876)` on a failing frame, read the VM's strip bytes at the failing offsets, and match
+them against `render_tile_row` for candidate plane rows.
