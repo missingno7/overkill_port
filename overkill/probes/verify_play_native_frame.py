@@ -35,17 +35,43 @@ DS = 0x25CC
 RIGHT, FIRE = 0x4D, 0x39
 
 
+def _assert_level_banks(img, planet: int, container: bytes) -> None:
+    """The cold seed must place BOTH per-level banks 0E9C loads, not just the tile blocks.
+
+    CS:[959A] = LEV{n}BLX.BIC (tile blocks), CS:[95AE] = G{n}.BIC (the SPRITE bank).  Only level 0's
+    planet matches the static bundle's capture, so a level-0-only check cannot see a stale bank --
+    which is exactly how play_native came to read the wrong segment for its sprite context.
+    """
+    from overkill.asset_codecs.level_assets import decode_level_blocks, decode_level_graphics
+
+    for cell, decode, name in ((0x959A, decode_level_blocks, "LEV{}BLX.BIC"),
+                               (0x95AE, decode_level_graphics, "G{}.BIC")):
+        seg = img.rw(0x1010, cell)
+        want = bytes(decode(container, planet))
+        got = bytes(img.data[seg * 16: seg * 16 + len(want)])
+        if got != want:
+            raise AssertionError(f"CS:[{cell:04X}] is not {name.format(planet)} for planet {planet}")
+
+
 def main(argv) -> int:
     import numpy as np
 
     from overkill.native_frame import advance_gameplay_frame_97b2
-    from overkill.recovered.adapters.cold_level_start import build_cold_level_start_image
+    from overkill.recovered.adapters.cold_level_start import (
+        LEVEL_INDEX_TO_PLANET, build_cold_level_start_image,
+    )
     from overkill.recovered.domain.gaps import RecoveryGap
     from play_native import ImageRenderer, _level_bytes
 
     frames = int(argv[0]) if argv else 700
     bundle = (ROOT / "artifacts" / "static_runtime_bundle" / "memory_1mb.bin").read_bytes()
     container = (ROOT / "assets" / "OVERKILL").read_bytes()
+
+    # every level's banks, not just level 0's (whose planet the bundle was captured on)
+    for lvl in range(len(LEVEL_INDEX_TO_PLANET)):
+        probe = build_cold_level_start_image(bundle, lvl, container)
+        _assert_level_banks(probe, LEVEL_INDEX_TO_PLANET[lvl], container)
+    print(f"cold seed places both per-level banks for all {len(LEVEL_INDEX_TO_PLANET)} levels")
 
     img = build_cold_level_start_image(bundle, 0, container)
     planet = img.rw(DS, 0x2356)
