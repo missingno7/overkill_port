@@ -24,7 +24,29 @@ _planet1_cue uses (7E58 consume + 7524 alloc + 8209 stamp + the 81CC position ov
 
 So _planet0_cue stamps ~16 child behaviours.  RECOVERED already: 0x6B/0x6C/0x6D/0x6E?/0x6F/0x88/0x8E
 (+ 0x8A/0x54/0x34/0x59/0x4F from earlier planets); STILL GAPS the cue can stamp: 0x69/0x6A/0x6E/0x71/
-0x8D (small, same pipeline).  BUILD: _planet0_cue = the 7BCB gate ([A40A]<=0x60 + the 0xBC/0xBB
+0x8D (small, same pipeline).  COMPLETE BUILD SPEC (all decoded 2026-07-10):
+* **spawn 81C9** = plane[si]=1 (7E58 consume) + _alloc(0x95D8, EFFECT_POOL) + _stamp_8209(leak32,leak34)
+  + [slot+4]=y_a40a, [slot+2]=0x10, [slot+0x0A]=0.  (Exactly _planet2_cue's 81C9 common.)
+* **spawn 819E** = 81C9 + the [209A] pool link: if [209A] != FFFF: inc byte[[209A]], byte[[209A]+1] =
+  [2070]; then [slot+0x28] = [2098].
+* **1F8F:0163 slot search** (call before the dispatch, after [2070]=byte[(si&0x3F)+0xC81A]): if
+  [2070] != 0: scan the 16 words at [2078] for a zero BYTE -> [209A]=that ptr (else FFFF), [2098]=index;
+  else [209A]=FFFF.
+* **gate specials** (before the al-=0xE1 path): y_a40a<=0x60 & tile==0xBC -> 7B8B (81C9 spawn, [+4]-=0xC,
+  [+0x32]=[+4], [+6]=2, [+0x18]=0x73, [+8]=0x14C); y_a40a>0x60 & tile==0xBB -> 7BAB (81C9, [+4]+=0xC,
+  [+0x32]=[+4], [+6]=6, [+0x18]=0x74, [+8]=0x14F).
+* **handlers** (tile: spawn; stamps; [Y-branch if [slot+4]<=0x60]): E1/E2 81C9 +6=6 +18=88 +8=FD; Yb
+  +8=FA +6=2 | E4 81C9 +18=69 | E5/E6 81C9 +6=5 +18=6A +8=11E; Yb | E7 81C9 +18=6B | E8 819E +18=6C
+  +8=123 | E9 81C9 +18=6D | EA 819E +6=4 +18=6E | EB 819E +6=4 +18=71 | EC 819E +6=4 +18=6F +8=136 +6=3;
+  Yb | ED 819E +18=8D | EE 819E +18=8E | EF 819E +6=4 +18=8A | F0/F1 81C9 +6=7 +18=54 +8=143; Yb | F2/F3
+  81C9 +18=34 | F4 81C9 +6=7 +18=59 +8=E3; Yb | F6 81C9 +18=4F.  STILL TO DECODE: the 5 Y-branch EXTRA
+  stamp blocks (E5/E6, EC, F0/F1, F4) and the 7 special handlers (E3 8143, F5 7C3A, F7 79F7, F8 79D6,
+  F9 7A92-tail, FA C626, FB 0104).
+* GATE: drive an L6 demo, trap 7BCB + the 7948 loop return 796A, compare native _planet0_cue over the
+  pre-state (like scratchpad/p0cue_oracle.py).  Wire into run_tile_cue_row_7948's per-planet dispatch.
+Then the STAMPED-behaviour gaps 0x69/0x6A/0x71/0x73/0x74/0x8D (small, same pipeline) + the 9844 story.
+
+BUILD: _planet0_cue = the 7BCB gate ([A40A]<=0x60 + the 0xBC/0xBB
 specials 7B8B/7BAB) + the 1F8F:0163 slot-search overlay + this decoded dispatch (spawn + stamps +
 Y-branch); the ~7 special handlers decode individually; gate by extending verify_native_tile_cues to
 planet 0 over an L6 demo.  All the enemy AI is done -- this is the last spawn-plumbing + then 9844.
