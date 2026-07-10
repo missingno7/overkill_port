@@ -1280,8 +1280,29 @@ def _new_game_setup_c4db(mem) -> None:
         mem.ww(DS, off, val)
 
 
+#: C3A6's own head, BEFORE the C3B5 pool loop the recovered systems model: `mov di,2078 ;
+#: mov cx,10 ; xor ax,ax ; rep stosw` -- the 16-word completion-counter table goes to zero.
+COMPLETION_COUNTER_TABLE_2078 = 0x2078
+COMPLETION_COUNTER_WORDS = 0x10
+#: C42F allocates an effect slot through 7524 and stamps it; C461's tail zeroes [2340].
+RESPAWN_EFFECT_FIELDS = ((0x00, 1), (0x14, 1), (0x16, 6))
+
+
 def _gameplay_pool_seed_c3a6(mem) -> None:
-    """``1010:C3A6`` -- the gameplay-pool seed (977D); its own tail is C461 then C42F."""
+    """``1010:C3A6`` -- the gameplay-pool seed (977D); it falls through C42F into C461.
+
+    Three pieces the recovered systems maps do NOT cover, each measured at the call site:
+
+    * C3A6's own head is a ``rep stosw`` over the 16-word completion-counter table at 2078.  The
+      recovered ``object_pool_seed_c3b5`` starts at the C3B5 label, one instruction later.
+    * ``C42F`` calls the 7524 allocator and stamps the slot it gets (``+0 = 1``, ``+0x14 = 1``,
+      ``+0x16 = 6``) -- the player's respawn effect.  Its slot rotates with the allocator cursor
+      (10, 21, 32 across the demo's three non-D305 deaths), so it cannot be a constant.
+    * ``C461``'s tail zeroes ``[2340]``.
+    """
+    from overkill.recovered.adapters.behavior_walk import (
+        EFFECT_POOL_BASE, EFFECT_POOL_WRAP, EFFECT_SLOTS, _alloc,
+    )
     from overkill.recovered.adapters.cold_level_start import (
         GAMEPLAY_SEED_COUNT, GAMEPLAY_SEED_SLOT_TABLE_8D12, PLAYER_SPAWN_RECORD,
     )
@@ -1289,15 +1310,27 @@ def _gameplay_pool_seed_c3a6(mem) -> None:
         object_pool_seed_c3b5, player_spawn_record_c42f, respawn_control_reset_c461,
     )
 
+    for k in range(COMPLETION_COUNTER_WORDS):                       # C3AB: rep stosw
+        mem.ww(DS, (COMPLETION_COUNTER_TABLE_2078 + k * 2) & 0xFFFF, 0)
     table = {cx: mem.rw(DS, (GAMEPLAY_SEED_SLOT_TABLE_8D12 + cx * 2) & 0xFFFF)
              for cx in range(1, GAMEPLAY_SEED_COUNT + 1)}
-    for rec, fields in object_pool_seed_c3b5(table).items():
+    for rec, fields in object_pool_seed_c3b5(table).items():        # C3B5
         for fo, val in fields.items():
             mem.ww(DS, (rec + fo) & 0xFFFF, val)
-    for off, val in respawn_control_reset_c461().items():
-        mem.ww(DS, off, val)
-    for fo, val in player_spawn_record_c42f().items():
+    for fo, val in player_spawn_record_c42f().items():              # C42F
         mem.ww(DS, (PLAYER_SPAWN_RECORD + fo) & 0xFFFF, val)
+    slot = _alloc(mem, 0x95D8, EFFECT_POOL_BASE, EFFECT_POOL_WRAP, EFFECT_SLOTS)   # C450 -> 7524
+    if slot != 0xFFFF:
+        for fo, val in RESPAWN_EFFECT_FIELDS:
+            mem.ww(DS, (slot + fo) & 0xFFFF, val)
+    for off, val in respawn_control_reset_c461().items():           # C462
+        mem.ww(DS, off, val)
+    # Two more cells the recovered C461 map omits, both measured at the call site over every death
+    # window.  [A97C] = 1 ARMS the shield bar, which is why the very next call (77C5, at 9780) ticks
+    # [A97A] from 0 to 1 -- without it the bar stays empty and the respawned player dies instantly.
+    mem.ww(DS, 0xA97C, 1)
+    mem.wb(DS, 0xBEFF, 0x0D)                                        # C4B2 -> 9DB8: the respawn sound
+    mem.ww(DS, 0x2340, 0)                                           # C4D4
 
 
 def _pod_ring_seed_99bf(mem) -> None:
