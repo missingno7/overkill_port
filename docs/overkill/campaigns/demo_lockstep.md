@@ -5,6 +5,110 @@
 > This campaign SUPERSEDES the seam-wiring approach in play_native: no more dataclass-vs-image
 > sync bridges. **THE ACTIVE CAMPAIGN.**
 
+## THE DEATH CONTINUATION — the lockstep gate's entire remaining residue (decoded 2026-07-10)
+
+The gate is at **8285 / 8292 byte-exact, 0 gapped**. All 7 diverging frames are death/respawn
+windows: `4636, 4821, 5018, 5379, 6495, 7143, 7595`. `advance_gameplay_frame_97b2` returns at the
+`97CE` exit; the original runs 418626 more instructions before the next `9B2E`.
+
+Iterate with `pypy -m overkill.probes.inspect_death_windows` (~16 s, 7 windows, byte counts +
+region breakdown). Prove with `pypy -m overkill.probes.verify_native_lockstep "" 20000`.
+Re-derive the call map any time with `pypy -m overkill.probes.map_frame_window 5018`.
+
+### The three `97CE` exits (hand-decoded, verified against the driven map)
+
+    97CE  cmp word [A344],1 ; jnz         -> jmp 9734      (level complete)
+    97D8  cmp word [A342],1 ; jnz         -> jmp 9902      (game over)
+    97E2  cmp word [A346],1 ; jnz         -> jmp 9908      (DEATH -> respawn)
+    97EC  call A940 / 073C / 60A2         (the normal frame tail)
+
+`9902` is `mov word [2358],0` and falls straight into `9908`, so game-over and death share the
+continuation and differ only in `[2358]`.
+
+### `9908` — the respawn continuation
+
+    9908  call C4DB                       ; object/status reset  (recovered: apply_respawn_seeds)
+    990B  dec byte [2358]
+    990F  cmp byte [978D],0 ; jz 991A ; inc word [2358]
+    991A  cmp byte [98C0],0 ; jz 9928
+    9921  cmp byte [BEFE],0 ; jnz 9921    ; SPIN until the death jingle drains  <-- the 402 ticks
+    9928  cmp byte [98C0],0 ; jz 9934
+    992F  mov byte [BEFF],2               ; queue sound 2
+    9934  jmp 9773
+
+    9773  cmp word [2358],FFFF ; jz 98EB  ; (game over proper)
+    977D  call C3A6   (the gameplay-pool seed; its tail is C42F/C461)
+    9780  call 77C5   (the shield/bar tick -- already native: _shield_charge_77c5)
+    9783  call 99BF
+    9786  call 6176
+    9789  mov bp,237C                     ; the player anchor
+    978C  call 9BE2                       ; (-> 9CD9, A031, 9FAF -- all already in _step_9b2e)
+    978F  call A940                       ; + the object walk + the far 1F8F:0922 starfield
+    9792  mov word [20A6],20A8
+    9798  call C57C
+    979B  call B5A9
+    979E  mov word [A8C2],0
+    97A4  call 5F43
+    97A7  cmp word [2350],9C ; jnz 97B2 ; call D305
+    97B2  the ordinary loop head (0672 / 511F / A846 / 981F / 5BDC / A90C) -> next 9B2E
+
+### `4DBF` — the LEVEL RE-INIT, called from the death tail at `9B16` (before `[A346] = 1`)
+
+Not "the death jingle" — an earlier note in `native_frame.py` guessed that and was wrong.
+
+    4DAF  lodsw / mov di,ax               ; a 4-word checkpoint record:
+          lodsw / mov dx,ax               ;   di = row base, dx = script ptr,
+          lodsw / mov [20C8],ax           ;   [20C8] = w2,
+          lodsw / cmp [2350],ax           ;   CF = ([2350] < w3)   <- the `jb` below
+          ret
+
+    4DBF  mov bx,[2356] ; shl bx,1 ; add bx,C601 ; mov si,[bx]    ; per-planet checkpoint table
+    4DCB  mov cx,3
+    4DCE  call 4DAF ; jb 4DD8 ; loop 4DCE ; call 4DAF             ; find the checkpoint for [2350]
+    4DD8  mov si,dx
+    4DDA  push si / push di / push word [A978]
+    4DE0  call 0B3E                       ; THE LEVEL-DATA INIT (see below)
+    4DE3  pop word [A978]                 ; ...restored, so 0B3E's own A978 write is discarded
+    4DE7  pop di / mov [2350],di          ; scroll back to the checkpoint row
+    4DEC  push di / call 4E26 / mov word [2350],0E93 / pop di / pop si
+    4DF8  call 4E0D
+    4DFB  mov bx,[2356] ; shl bx,1 ; add bx,20CA ; mov bx,[bx] ; mov ax,[20C8] ; mov [bx],ax
+    4E0C  ret
+
+    4E0D  push di / push si / call A781 / pop si / pop di         ; pull rows until...
+    4E14  cmp [2350],di ; ja 4E0D
+    4E1A  cmp word [234E],0 ; jnz 4E0D                            ; ...aligned at the checkpoint
+    4E21  mov [A978],si ; ret
+
+    4E26  push ax/bx/cx/dx/di/si/bp/es/ds ; ... (the save-all row render)
+
+### What already exists
+
+* `recovered/adapters/cold_level_start.py: apply_respawn_seeds()` models `C4DB` + `C3A6` +
+  `C461` + `C42F` + the bar reseed + `rewind_level_scripts_0b3e` + `A47E/A480 = 0`. That is the
+  `9908 -> 9773 -> C3A6` half.
+* `_shield_charge_77c5`, `_a940_walk_stage` (A940 + walk + starfield), `_step_9b2e`'s `9BE2`
+  interior (`9CD9`/`A031`/`9FAF`), and the whole present half are already native.
+* `_row_pull_a74e` / `_render_strip_row_a7eb` cover the `A781` row-pull family.
+
+### What is NOT modelled (the actual work, in order)
+
+1. **`0B3E`** — the level-data initializer. Its call map is `0B7F -> C679 -> C7B2/C80B/C85B`, the
+   far `254A:04D7` asset decode, and `C6F9 -> 0248 -> 0624/065C`. **Only its DGROUP effects need to
+   match**: the gate does not diff the tile-plane segment (the cache re-supplies the plane per
+   frame), and the asset decode's bulk lands there. `_load_planet_level_data` already performs the
+   equivalent load. Start by measuring 0B3E's DGROUP write-set with a driven probe rather than
+   reading `C679`.
+2. **`4DBF`'s frame** around it (checkpoint search, `[2350]`, `4E0D`'s row-pull loop, `[20CA]`).
+3. **`9908`**'s own body: `[2358]`, the `[BEFE]` spin (the recorded `isr_ticks` already supplies the
+   right number of sound steps, so the spin is a no-op natively — the sound state converges either
+   way), `[BEFF] = 2`.
+4. **`99BF`, `6176`, `C57C`, `B5A9`, `5F43`, `D305`** — undecoded. `5F43` is near the `5F61` clock
+   tick already native; `C57C`/`B5A9` are called on the normal level-start path too.
+
+Do them as separate gated commits; `inspect_death_windows` gives a 16-second signal, and the frame
+count in `verify_native_lockstep` only moves when a window becomes byte-exact.
+
 ## Tier
 Gameplay = **byte-exact** (whole DGROUP, minus the documented async cells); render = **pixel-exact**
 (the composed playfield + HUD page vs the VM page).
