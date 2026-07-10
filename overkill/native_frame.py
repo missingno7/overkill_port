@@ -47,12 +47,16 @@ def level_tiles_from_image(mem) -> LevelTileContext:
                             tile_plane=plane, class_table=classes)
 
 
-def advance_gameplay_frame_97b2(mem, *, isr_ticks: int = 2) -> None:
+def advance_gameplay_frame_97b2(mem, *, isr_ticks: int = 2, level_bytes: bytes | None = None) -> None:
     """One 97B2 frame over the image, stage by stage.
 
     ``isr_ticks`` is the HOST INPUT for this frame: how many INT8 timer interrupts fired while it
     ran (see :func:`_isr_effects_ticks`).  Steady-state play is 2, which is the default; the lockstep
     gate passes the count it recorded from the original.
+
+    ``level_bytes`` is the OTHER host input: the level map file (``LEV{n}MAP.BIC``) that ``C679``
+    fetches with INT 21h when the player dies and the level re-inits.  It is only read on a death
+    frame; passing ``None`` there fails loud rather than approximating the reload.
 
     Stage map (1010:97B2..981D; video-only stages noted, DGROUP-mutating stages executed or
     fail-loud):
@@ -80,7 +84,7 @@ def advance_gameplay_frame_97b2(mem, *, isr_ticks: int = 2) -> None:
     # --- stage 6: A90C present-scan (the +0x0C screen-di projection) ---------------------------
     # DGROUP-visible and BEFORE 9B2E in the frame order; native_walk_frame.sync_screen_projection
     # owns the projection math but was verified as a post-walk sync, not at this stage position.
-    _step_9b2e(mem)
+    _step_9b2e(mem, level_bytes)
     # --- the 97CE transition branches: a taken exit leaves the loop (no next 97B2 boundary) ----
     if mem.rw(DS, 0xA344) == 1 or mem.rw(DS, 0xA342) == 1 or mem.rw(DS, 0xA346) == 1:
         return
@@ -564,7 +568,7 @@ def _input_poll_0162(mem) -> None:
     mem.wb(DS, 0x98BE, decode_keyboard_input_flags(control_map, key_state))
 
 
-def _step_9b2e(mem) -> None:
+def _step_9b2e(mem, level_bytes: bytes | None = None) -> None:
     """``1010:9B2E`` -- the game-state controller, decomposed stage by stage against the lockstep
     gate (the interior map is in :func:`advance_gameplay_frame_97b2`'s docstring)."""
     mem.ww(DS, 0xA346, 0)                       # 9B2E
@@ -606,7 +610,11 @@ def _step_9b2e(mem) -> None:
             mem.ww(DS, anchor + 0x08, counter)
             if counter == 0x000F:
                 mem.ww(DS, anchor + 0x00, 0)        # 9B11
-                mem.ww(DS, 0xA346, 1)               # 9B19 (4DBF's effects: see the note above)
+                if level_bytes is None:             # 9B16: 4DBF needs the level file (a host input)
+                    raise RecoveryGap("the 4DBF level re-init needs the level map file",
+                                      "pass level_bytes= to advance_gameplay_frame_97b2")
+                _level_reinit_4dbf(mem, level_bytes)   # 9B16
+                mem.ww(DS, 0xA346, 1)               # 9B19
                 if mem.rw(DS, 0xA97A) == 0:
                     mem.ww(DS, 0xA342, 1)           # 9B27
         return

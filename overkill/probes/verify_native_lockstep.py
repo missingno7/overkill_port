@@ -72,6 +72,18 @@ EXCLUDED_CELLS |= {0x98C3} | set(range(0x98C4, 0x99C4))
 INT8_VECTOR = (0x1010, 0x06E5)
 
 
+def level_bytes_for(planet: int, _cache: dict = {}) -> bytes:
+    """The level map file the 4DBF death re-init reloads -- a HOST INPUT (C679 does INT 21h 3Dh).
+
+    Read from the container, which is where the native port gets its assets.  Cached per planet.
+    """
+    if planet not in _cache:
+        from overkill.asset_codecs.level_assets import decode_level_tile_map
+        container = (ROOT / "assets" / "OVERKILL").read_bytes()
+        _cache[planet] = bytes(decode_level_tile_map(container, planet))
+    return _cache[planet]
+
+
 def lockstep_cache_path(demo) -> Path:
     return CACHE_DIR / (Path(demo.demo_dir).name + ".lockstep9b2e")
 
@@ -86,7 +98,8 @@ def _check_frame(pre_full, post_dgroup: bytes, sp: int, isr_ticks: int, stats, g
         print(f"  ..lockstep frame {stats['frames']}: diverged={stats['diverged']} "
               f"distinct-gaps={len(gaps)}", flush=True)
     try:
-        advance_gameplay_frame_97b2(native, isr_ticks=isr_ticks)
+        advance_gameplay_frame_97b2(native, isr_ticks=isr_ticks,
+                                    level_bytes=level_bytes_for(native.rw(DGROUP, 0x2356)))
     except RecoveryGap as gap:
         key = str(gap).split(" (record ")[0]
         gaps[key] += 1
