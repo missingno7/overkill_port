@@ -5,7 +5,69 @@
 > This campaign SUPERSEDES the seam-wiring approach in play_native: no more dataclass-vs-image
 > sync bridges. **THE ACTIVE CAMPAIGN.**
 
+## STEP 1 (THE OWNER'S PRIORITY, 2026-07-10): make play_native the PORT
+
+The owner ran `python scripts/play_native.py` again and saw the same defects as days ago: fake menu,
+no thruster animation, fire leaving the wrong part of the ship, enemies missing / behaving wrongly,
+and no shooting after the intro wave.  **All of it is explained by one fact, and it is not a bug in
+any recovered routine.**
+
+`scripts/play_native.py` keeps a DATACLASS game `g` (`NativeGame` / `NativeGameState`) as the
+AUTHORITY, and merely mirrors state into `walk_image` to run the object walk:
+
+    sync_player_anchor(walk_image, sp.x_word(0), sp.y_word(0), sp.word_at(0, 0x08))
+    sync_new_gameplay_records(walk_image, g.state.object_pool)
+    walk_image.ww(DS, 0x234E, g.origin_x) ; ... 0x2350 ... 0x234C ... 0xA978
+    run_level_object_script_4a65(walk_image)
+    advance_object_frame(walk_image, level_tiles(walk_image))
+    sync_screen_projection(walk_image)
+    g = g.with_state(project_state(walk_image))
+
+So `advance_gameplay_frame_97b2` -- the ONE frame that is byte-exact on 8291/8292 frames of the L1
+demo -- **never executes in the app**.  Symptom by symptom:
+
+* no thrusters -> the player pose/exhaust lives in the image's anchor record (237C +08 etc.), which
+  the dataclass side overwrites every tick via `sync_player_anchor`.
+* fire from the wrong origin -> the dataclass spawns the shot; the image's `8546`/`A067` fire path
+  (which the lockstep gate verifies) is never run.
+* enemies missing / weird / no shooting after the intro wave -> only `advance_object_frame` runs.
+  The 9B2E interior (move handlers, the A940 state update, the 5F61 clock, the wave controller, the
+  A66F scroll with cues+script INSIDE the row pull) is absent, so waves never arm and fire never
+  re-enables.
+
+### The change (bounded, and gated)
+1. DELETE the dataclass game from the gameplay path.  The image IS the game state (ADR-1).  Seed with
+   `build_cold_level_start_image(bundle, level, container)`; step with
+   `advance_gameplay_frame_97b2(img, isr_ticks=2, level_bytes=level_bytes_for(planet))`.
+   Feed input by writing the image's own INT9 key table (DS:98C4..) from pygame, exactly as the demo
+   pump does -- do NOT synthesise `[98BE]`; let `0162` decode it.
+2. RENDER from the image only: `project_state(img)` for the sprite compositor, and the existing
+   `_render_frame` path.  `sync_screen_projection` already runs inside the frame fn's present half.
+3. `--demo <name> --mirror`: replay a recorded demo through the app, stepping the same frame fn, and
+   flag state/pixel divergence live.  This is the owner's "run it against the real game and fix what
+   differs" loop, at the screen.
+4. Gates that must stay green: `verify_play_native_render` (pixel), `verify_native_frame_1to1`
+   (playfield compose, currently 300/300 presents at 0 diff px), and the lockstep gate.
+
+The menu / level-select the owner sees is the front-end gap (`mode.title_menu`, `D390`), separate
+work.  `play_native` should boot straight into a native L1 until it lands.
+
 ## THE LAST GATE ITEM: 98EB, the game-over sequence (frame 5379) -- mapped 2026-07-10
+
+Attribution of its DGROUP effect (checkpoints along the call chain, frame 5379):
+
+    after 5145                        0 bytes
+    after 57E6 (the GAME OVER screen) 6131
+    after the 50C9 delay              0
+    at 96E2 (new-game init)           1
+    after CB1C                        1
+    after 4FC3                        0
+    at D2B8                           11
+    at 0D0E (the asset reload)        4106
+
+So it is two big presentation blocks (57E6's screen render and the 0D0E asset reload) plus a handful
+of state cells.  Confirms it is front-end work.
+
 
 The lockstep gate is at **8291/8292 byte-exact, ZERO divergence, one gap**.  The gap is frame 5379,
 the demo's last life: `[2358]` (lives) hits 0, `990B`'s `dec WORD` wraps it to FFFF, and `9773`
