@@ -80,6 +80,9 @@ EXCLUDED_CELLS |= {0x98BE}
 INT8_VECTOR = (0x1010, 0x06E5)
 
 
+GAME_OVER_MENU_PICK = 0
+
+
 def level_bytes_for(planet: int, _cache: dict = {}) -> bytes:
     """The level map file the 4DBF death re-init reloads -- a HOST INPUT (C679 does INT 21h 3Dh).
 
@@ -107,7 +110,8 @@ def _check_frame(pre_full, post_dgroup: bytes, sp: int, isr_ticks: int, stats, g
               f"distinct-gaps={len(gaps)}", flush=True)
     try:
         advance_gameplay_frame_97b2(native, isr_ticks=isr_ticks,
-                                    level_bytes=level_bytes_for(native.rw(DGROUP, 0x2356)))
+                                    level_bytes=level_bytes_for(native.rw(DGROUP, 0x2356)),
+                                    menu_pick=GAME_OVER_MENU_PICK)
     except RecoveryGap as gap:
         key = str(gap).split(" (record ")[0]
         gaps[key] += 1

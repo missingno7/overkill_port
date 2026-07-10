@@ -69,17 +69,19 @@ def build_cold_level_start_image(exe_image: bytes, level_index: int = 0,
         _load_planet_level_data(mem, exe_image, container, planet)
     # 2..6) the level-start / respawn re-init (shared with the 9908 death->respawn composition)
     apply_respawn_seeds(mem)
-    # 7) the SCROLL CURSOR at its level-post-load values.  The static bundle's capture holds
-    # whatever the snapshot's level had; a seeded cold image must start where a real level load
-    # leaves the cursor, or the first A6FE scroll step wraps DS:234C negative.  These are the
-    # documented level-load constants (60C5 leaves row_base pre-advanced; the pull settles it to
-    # 0x9C; the row source starts at CS:[95C0] = 0x5B00; DS:A978 = 0x110 rows to the first cue --
-    # confirmed empirically for all six planets by the old play_native seeding).
-    mem.ww(DATA_SEGMENT, 0x234C, 0x5B00)     # the row-source cursor
+    # 7) the SCROLL CURSOR.  The static bundle's capture holds whatever the snapshot's level had;
+    # a seeded cold image must start where a real level load leaves the cursor, or the first A6FE
+    # scroll step wraps DS:234C negative.  These are the values 1010:60AC's warm-up leaves -- MEASURED against the VM (it sets
+    # [234C] = CS:[95A2] = 0x680, [2350] = 0EA0, then runs `16 x A781` until [2350] == 9C, then
+    # [A978] -= 3).  An earlier version of this seed asserted 234C = 0x5B00 / A978 = 0x110; 0x5B00
+    # is CS:[95C0], the wrap-TOP, not the band base, and 0x110 was off by one.  The 98EB game-over
+    # composition proved both wrong: every downstream cell (the star draw list, the sprites'
+    # +0x0C screen-di, [A278]) is computed from [234C].
+    mem.ww(DATA_SEGMENT, 0x234C, 0x1A00)     # the row-source cursor, post-warm-up
     mem.ww(DATA_SEGMENT, 0x234E, 0x0000)     # the origin-x phase
     mem.ww(DATA_SEGMENT, 0x2350, 0x009C)     # the view row base
     mem.ww(DATA_SEGMENT, 0x2352, 0x0000)     # forward scroll
-    mem.ww(DATA_SEGMENT, 0xA978, 0x0110)     # rows to the first level-script trigger
+    mem.ww(DATA_SEGMENT, 0xA978, 0x0111)     # rows to the first level-script trigger
     # 8) [BDAC] = 0 -- the render/weapon mode.  The ATTRACT flow sets it to 1 (1010:CF9C) and the
     # attract-exit-into-a-game clears it (1010:D040, `mov word [BDAC],0`); the static bundle's
     # snapshot was captured with the attract value, so a seeded image inherited BDAC = 1 and the

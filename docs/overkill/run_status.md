@@ -28,7 +28,7 @@
 > ONE native 97B2 frame (`overkill/native_frame.py`) in per-frame lockstep with a recorded demo
 > (`overkill/probes/verify_native_lockstep.py`, cached), then swap play_native onto that same frame
 > fn + add `--demo/--mirror`.  **CURRENT LOCKSTEP STATE (L1 demo, 8292 frames, PyPy, 2026-07-10):
-> 8291 byte-exact / 0 DIVERGING / 1 GAPPED.**  Every frame runs natively end-to-end and 99.99% are
+> 8292 byte-exact / 0 DIVERGING / 0 GAPPED -- the gate PASSES.**  Every frame runs natively and 100% are
 > byte-exact across the whole 64K DGROUP.  Their residue is down to 6860 bytes (from 17839) now that
 > `1010:4DBF`, the death LEVEL RE-INIT, is recovered and independently gated by
 > `probes/verify_native_level_reinit_4dbf` (PASS 7/7).  The 7 are EXACTLY the death/respawn windows
@@ -56,6 +56,64 @@
 > inside the row pull), the 0162 input poll, the A067 fire path and the 0922 starfield are native in
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
+
+## 2026-07-10 (final) -- LOCKSTEP GATE: PASS. 8292/8292 BYTE-EXACT, ZERO DIVERGENCE, ZERO GAPS.
+
+    97B2 frames lockstepped: 8292  diverged: 0
+    RESULT: PASS -- zero divergence and zero gaps on every 97B2 frame
+
+The last gap was `98EB` (frame 5379: the demo's last life -> game over -> a fresh game).  It closed
+after correcting a bad measurement of my own and then finding the one routine the composition missed.
+
+**The bad measurement.**  I had reported the 98EB strip scratch as "HISCORE.ENC at 83.7%, a rendered
+screen", and concluded it needed the front-end glyph renderer.  That ratio was ZERO-INFLATED -- it
+counted zero==zero agreements.  Zero-aware it scores 0/1871: **the alias is entirely zero at the
+boundary** (11472 bytes).  The front end draws its screens into the scratch and CLEARS it.  No glyph
+renderer needed.  Correcting that took the composition from 3717 diverging bytes to 47.
+
+**The missing routine: `1010:60AC`**, the LEVEL-START scroll init + warm-up, called at `9770` -- on
+the fresh-game path only.  The respawn path enters at `9773` and SKIPS it, which is exactly why the
+death continuation never needed it and the game-over one does:
+
+    60AC  [234C] = cs:[95A2] (0x680) ; [234E] = 0 ; [2352] = 0 ; [A978] = 0
+    60C5  [2350] = 0EA0
+    60CB  do { 16 x A781 } while [2350] != 9C        ; the reverse-pull warm-up
+    60DD  [A978] -= 3
+
+It is the ONLY producer of the level-start `[234C]`/`[A978]` pair, and every one of the 47 residual
+bytes derived from `[234C]` (the star draw list, the sprites' +0x0C screen-di, `[A278]`) -- each off
+by exactly `0x1A00 - 0x0D00 = 0x0D00`, i.e. `32 * 0x68`, the strip row stride.  47 -> 0.
+
+**It also proved the COLD SEED wrong.**  `build_cold_level_start_image` asserted `[234C] = 0x5B00`
+and `[A978] = 0x110` as "the documented level-load constants".  `0x5B00` is `CS:[95C0]`, the wrap-TOP,
+not the band base (`CS:[95A2] = 0x680`), and `0x110` was off by one.  The warm-up leaves `0x1A00` /
+`0x0111`.  Both corrected; play_native runs on the fixed seed and `verify_play_native_frame` PASSes.
+
+`_game_over_continuation_98eb(mem, level_bytes, pick)`: `[BEFF] = 5` (57E6), `[2286] = 0x14`
+(5283 -> 532D), `[98C2] = 2` (96E2 -> CB1C), `[22BF] = 3`; `new_game_session_init_96ee`;
+`[2356] = pick + 1`; `0B3E`; the plaque loader's own pointers (`[21A4] = strip_seg`,
+`[21A8] = 0x1778 == len(PLAQ0.ENC)`, `[21AA] = 0x144F`); `60AC`; the C3A6-family setup tail; `D305`;
+then clear the WHOLE 0xC000-byte strip -- clearing only the DGROUP alias leaves 72 stale save-under
+bytes at `DS:67CC`, because records whose `di` sits above it still read live strip bytes.
+
+`pick` is the THIRD declared HOST INPUT (with `isr_ticks` and `level_bytes`): the level-select cell,
+which exists only in the VM's key table during the window.  The demo's one game-over picks cell 0.
+
+### Also this session
+* `1010:8546` -- the APPLY-UPGRADE key (Z, or its fixed alias TAB) -- recovered and gated byte-exact
+  7/7 by `verify_native_apply_upgrade_8546`, which SYNTHESISES the oracle the corpus lacks by
+  injecting the keypress into the pure VM's own INT9 key table.  The L1 lockstep demo never holds a
+  powerup, so the gate structurally could not reach it; the owner found it by playing.
+* `play_native` now writes the WHOLE host keyboard into the image's key table, so the game's own
+  CONFIGURABLE control map (`DS:213E`: Z = apply-upgrade, Q/A/O/P = move) decides.  The shell no
+  longer picks which keys the game reads.
+* snapshot / demo-record hotkeys moved to F7/F8 (F11/F12 kept as aliases; Windows reserves F12).
+
+### The L1 GAMEPLAY campaign is COMPLETE.
+Every 97B2 frame of the L1 cold-start demo -- all 8292, including all seven death/respawn windows and
+the game-over -- is byte-exact against the original across the whole 64K DGROUP, with zero declared
+gaps.  Remaining work is OUTSIDE the gameplay frame: boot, the title-menu LOGIC, attract, level
+select, the 9734 level-advance, host audio, and hook retirement.
 
 ## 2026-07-10 (night) — DEEP CLEANUP: play_native IS the verified frame now; the hybrid is deleted
 

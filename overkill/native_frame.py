@@ -47,7 +47,8 @@ def level_tiles_from_image(mem) -> LevelTileContext:
                             tile_plane=plane, class_table=classes)
 
 
-def advance_gameplay_frame_97b2(mem, *, isr_ticks: int = 2, level_bytes: bytes | None = None) -> None:
+def advance_gameplay_frame_97b2(mem, *, isr_ticks: int = 2, level_bytes: bytes | None = None,
+                                menu_pick: int | None = None) -> None:
     """One 97B2 frame over the image, stage by stage.
 
     ``isr_ticks`` is the HOST INPUT for this frame: how many INT8 timer interrupts fired while it
@@ -95,7 +96,7 @@ def advance_gameplay_frame_97b2(mem, *, isr_ticks: int = 2, level_bytes: bytes |
         # The death frame does NOT run 073C / 60A2 / 0679: 9908's chain re-enters the loop at the
         # 97B2 head, so the frame's tail is the continuation followed by the ordinary present half.
         # The ISR ticks are applied INSIDE the continuation (at the 9921 spin), not here.
-        _respawn_continuation_9908(mem, isr_ticks)
+        _respawn_continuation_9908(mem, isr_ticks, level_bytes, menu_pick)
         _present_half(mem)
         return
     # --- stage 9: A940 (frame-state update -> the OBJECT WALK -> the 0922 starfield tick) ------
@@ -1382,7 +1383,8 @@ def _music_beat_5f43(mem) -> None:
     mem.wb(DS, MUSIC_BEAT_CELL, track)
 
 
-def _respawn_continuation_9908(mem, isr_ticks: int) -> None:
+def _respawn_continuation_9908(mem, isr_ticks: int, level_bytes: bytes | None = None,
+                               menu_pick: int | None = None) -> None:
     """``1010:9908`` -> ``9773`` -> ``978F`` -- everything the original runs after the 97CE death
     exit, up to the ordinary 97B2 loop head.
 
@@ -1402,6 +1404,14 @@ def _respawn_continuation_9908(mem, isr_ticks: int) -> None:
     mem.ww(DS, 0x2358, (mem.rw(DS, 0x2358) - 1) & 0xFFFF)      # 990B: dec WORD
     if mem.rb(DS, 0x978D):                                     # 990F
         mem.ww(DS, 0x2358, (mem.rw(DS, 0x2358) + 1) & 0xFFFF)  # 9916: inc WORD
+    if mem.rw(DS, 0x2358) == 0xFFFF:                           # 9773 -> 98EB: OUT OF LIVES
+        # Measured: this window's 9921 spin takes ZERO ticks (they all land in the terminal D305)
+        # and 992F is bypassed -- the rest of the frame is the front-end chain.
+        if level_bytes is None or menu_pick is None:
+            raise RecoveryGap("the 98EB game-over continuation ([2358] == FFFF: out of lives)",
+                              "needs level_bytes + the menu_pick host input")
+        _game_over_continuation_98eb(mem, level_bytes, menu_pick)
+        return
     # WHERE THE TICKS LAND.  Measured: on an ordinary respawn every recorded tick fires in the 9921
     # spin (the death jingle draining).  When D305 will run, the spin takes ZERO ticks and all of
     # them fire inside D305's mini-frames instead.  Getting this wrong reorders the sound engine
@@ -1411,9 +1421,6 @@ def _respawn_continuation_9908(mem, isr_ticks: int) -> None:
         _isr_effects_ticks(mem, isr_ticks)                     # 9921
     if mem.rb(DS, 0x98C0):                                     # 9928
         mem.wb(DS, 0xBEFF, 2)                                  # 992F
-    if mem.rw(DS, 0x2358) == 0xFFFF:                           # 9773
-        raise RecoveryGap("the 98EB game-over continuation ([2358] == FFFF: out of lives)",
-                          "a whole new-game load -- 8.2M instructions, several level files")
     _gameplay_pool_seed_c3a6(mem)                              # 977D
     _shield_charge_77c5(mem)                                   # 9780
     _pod_ring_seed_99bf(mem)                                   # 9783
@@ -1538,6 +1545,110 @@ def _apply_upgrade_8546(mem) -> None:
     # 8585 -> 859E: the HUD redraw is video (measured: zero DGROUP bytes)
     if mem.rw(DS, MARKER_CELL) == 0xFFFF and mem.rb(DS, 0x98C0):   # 8588/858F
         mem.wb(DS, 0xBEFF, UPGRADE_SOUND)                  # 8596
+
+
+#: 98EB draws its front-end screens into the STRIP scratch and CLEARS it before the boundary:
+#: measured, the strip's DGROUP alias is entirely zero at 97B2 (3032 cells go to 0, none nonzero).
+HIGHSCORE_RANK_CELL = 0x2286
+GAME_OVER_SOUND = 0x05
+TITLE_MUSIC = 0x02
+
+
+#: the mission plaque the fresh level shows: DS:144F = "plaq0.enc", 0x1778 raw bytes
+PLAQUE_NAME_PTR = 0x144F
+PLAQUE_FILE_LEN = 0x1778
+#: CS:[9598]'s strip is 0xC000 bytes; its low 0x2CD0 alias DGROUP D330..FFFF
+STRIP_SIZE = 0xC000
+#: 60AC's scroll init: [234C] = CS:[95A2] (0x680 -- the band base, NOT the 0x5B00 wrap-top)
+LEVEL_START_ROW_SOURCE_CELL = 0x95A2
+LEVEL_START_ROW_BASE = 0x0EA0
+WARMUP_BATCH = 0x10
+WARMUP_A978_BIAS = 3
+_WARMUP_LIMIT = 0x2000
+
+
+def _level_start_scroll_60ac(mem) -> None:
+    """``1010:60AC`` -- the LEVEL-START scroll init + warm-up, called at 9770 on the fresh-game path.
+
+    The respawn path enters at 9773 and SKIPS this, which is why the death continuation never needed
+    it and the game-over one does::
+
+        60AC  [234C] = cs:[95A2] (0x680) ; [234E] = 0 ; [2352] = 0 ; [A978] = 0
+        60C5  [2350] = 0EA0
+        60CB  do { 16 x A781 } while [2350] != 9C          ; the reverse-pull warm-up
+        60DD  [A978] -= 3
+
+    This loop is the ONLY producer of the level-start `[234C]` / `[A978]` pair, and every downstream
+    cell (the star draw list, the sprites' +0x0C screen-di, [A278]) derives from `[234C]`.  Do NOT
+    hard-code those: measured here they come out `0x1A00` / `0x0111`, whereas the cold seed in
+    cold_level_start asserted `0x5B00` / `0x0110` -- `0x5B00` is CS:[95C0], the wrap-TOP, not the
+    band base.
+    """
+    mem.ww(DS, 0x234C, mem.rw(CS, LEVEL_START_ROW_SOURCE_CELL))
+    mem.ww(DS, 0x234E, 0)
+    mem.ww(DS, 0x2352, 0)
+    mem.ww(DS, 0xA978, 0)
+    mem.ww(DS, 0x2350, LEVEL_START_ROW_BASE)
+    for _ in range(_WARMUP_LIMIT):
+        for _ in range(WARMUP_BATCH):
+            _row_pull_reverse_a781(mem)
+        if mem.rw(DS, 0x2350) == MUSIC_ROW_TOP:
+            break
+    else:
+        raise RecoveryGap("the 60AC warm-up did not converge",
+                          f"[2350] = {mem.rw(DS, 0x2350):#06x}")
+    mem.ww(DS, 0xA978, (mem.rw(DS, 0xA978) - WARMUP_A978_BIAS) & 0xFFFF)
+
+
+def _game_over_continuation_98eb(mem, level_bytes: bytes, pick: int) -> None:
+    """``1010:98EB`` -- OUT OF LIVES: the game-over screen, the title, and a fresh NEW GAME.
+
+    Per-checkpoint attribution of the window (frame 5379 of the L1 demo):
+      5145 = 0 bytes; 57E6 (the GAME OVER screen) = the strip scratch + [BEFF] = 5; the 50C9 delay
+      = 0; 5283 (the high-score rank) = [2286] = 0x14; 96E2 -> CB1C = [98C2] = 2; the title flow
+      redraws the scratch; 96EE = the session init; the menu pick -> 971A = [2356] = pick + 1;
+      the setup tail (0B3E + C3A6-family) = a fresh level at the top; D305 = the plaque fire-wait,
+      carrying ALL 402 of the window's timer ticks.
+
+    The screens themselves never survive: everything drawn into the strip scratch is cleared before
+    97B2, so no front-end glyph renderer is needed to reproduce the DGROUP.  (An earlier attempt
+    modelled the scratch as raw file bytes and diverged by 7552; the fingerprint that suggested it
+    was zero-inflated.  See loop_blockers.)
+
+    ``pick`` is the level-select cell -- USER INPUT, living only in the VM's key table during the
+    window.  It is supplied, never derived.
+    """
+    strip_seg = mem.rw(CS, 0x9598)
+    mem.wb(DS, 0xBEFF, GAME_OVER_SOUND)                    # 57E6
+    mem.wb(DS, HIGHSCORE_RANK_CELL, 0x14)                  # 5283 -> 532D's rank
+    mem.wb(DS, MUSIC_BEAT_CELL, TITLE_MUSIC)               # 96E2 -> CB1C
+    from overkill.recovered.systems.frame_loop import new_game_session_init_96ee
+    for off, val in new_game_session_init_96ee().items():  # 96EE: score, lives, planet, A342
+        mem.ww(DS, off, val)
+    mem.ww(DS, 0x2356, (pick + 1) & 0xFFFF)                # D424 pick -> the 971A advance
+    _level_data_init_0b3e(mem, level_bytes)                # the setup tail's level reload
+    # the PLAQUE load (0D0E -> C679) runs after 0B3E and leaves its own loader pointers
+    mem.ww(DS, 0x21A4, strip_seg)
+    mem.ww(DS, 0x21A6, 0)
+    mem.ww(DS, 0x21A8, PLAQUE_FILE_LEN)
+    mem.ww(DS, 0x21AA, PLAQUE_NAME_PTR)
+    mem.wb(DS, 0x22BF, 0x03)                               # 532D's high-score bookkeeping
+    _level_start_scroll_60ac(mem)                          # 9770: the fresh level's scroll warm-up
+    _gameplay_pool_seed_c3a6(mem)                          # the 977D-equivalent setup tail
+    _shield_charge_77c5(mem)
+    _pod_ring_seed_99bf(mem)
+    _hud_reset_6176(mem)
+    _frame_9be2(mem)
+    _a940_walk_stage(mem)
+    mem.ww(DS, 0x20A6, 0x20A8)
+    mem.ww(DS, 0xA8C2, 0)
+    _music_beat_5f43(mem)                                  # 97A4
+    _respawn_wait_d305(mem, 0)                             # the plaque fire-wait
+    # The front-end screens AND the warm-up's rendered rows are drawn into the strip scratch and
+    # CLEARED before the boundary: measured, its DGROUP alias is entirely zero at 97B2.  Clear the
+    # WHOLE strip -- a save-under record whose `di` sits above the alias still reads live bytes.
+    for off in range(STRIP_SIZE):
+        mem.wb(strip_seg, off, 0)
 
 
 #: A81B's reverse-scroll row offset: `sub bx,0A9` -- 0xA9 == 13 * 0x0D, i.e. thirteen tile rows
