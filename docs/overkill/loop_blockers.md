@@ -1158,3 +1158,26 @@ its `0679` frame-wait forever (that is why the first attempt "never reached 4CED
 and at each trapped entry compare (a) the derived strip window vs the VM's real strip, byte for
 byte, and (b) after driving 4CED, the produced `C7B1` list.  Byte-exact there == the 4831-frame
 divergence family collapses when lifted into `native_frame`'s present half.
+
+### 2026-07-08 — next lockstep targets (after the star pass + flash decay)
+
+State: 6532 exact / 1432 diverging / 328 gapped (8292-frame L1 demo).
+
+* **`1010:4FF9` (the player terrain-crash predicate) is WRONG in both directions.**  Found via the
+  `DS:A95C` family: with `BEDC == 0` the VM drains 2/frame, we drained 1 -- because `9CB6` is a
+  fall-through CALL CHAIN of four `9E19`s (9CCB/9CCE/9CD1/9CD4) entered by difficulty
+  (0 -> 9CD1 = 2 calls, 1 -> 9CCE = 3, else 4).  Fixed.  What remains: on 7 frames our `4FF9`
+  says crash where the VM says none (frame 4410) and vice versa (frame 3581).  The hand-decode of
+  4FF9's head matches our model (pose >= 3 -> stc; the 214E pose hitbox offset; probe + 0x0D; the
+  `[215A] & 0xF > 0xA` two-column widening), so the bug is in the tail we have NOT decoded past
+  `e8 28 00 / 75 1c / f7 46 04 0f ...`.  **Do this with a driven-oracle probe** (the tile-cue
+  recipe): load a cached pre-state, `bp = 0x237C`, drive the original 4FF9 to its `ret`, read CF,
+  and compare against `_terrain_crash_4ff9` over many frames.  Cheap, definitive.
+* **The `DS:6C94..6CF6` cluster** (249 frames): entries spaced 8 bytes, and there are NO direct
+  writers (`mov [6C94],..` etc. find nothing), so it is written through a pointer / `es:di`.  It is
+  NOT the strip (the L1 strip segment is 0x32FF, so its window starts at `DS:D330`).  Identify it by
+  trapping writes to that range on the ref VM (a `trap=` probe that watches the linear range) and
+  reporting the writing CS:IP.
+* Then: `33xx / 34xx / 35xx` (293 / 217 / 268 frames), `56xx` (222), `85xx` (190), `83xx` (172),
+  `62xx` (171).
+* Still declared gaps: the `77C5` shield body (266 frames) and the `9EE4` drain beat (62).

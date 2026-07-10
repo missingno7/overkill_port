@@ -478,11 +478,14 @@ def _step_9b2e(mem) -> None:
     # 9BC0: [A47C] <= 1 -> A616 (the ship tilt/bank counters)
     if mem.rw(DS, 0xA47C) <= 1:
         _tilt_a616(mem)
-    # 9BCA: [A47C] == 0 -> 9CB6 (the terrain crash -> the difficulty-scaled 9E19 damage)
+    # 9BCA: [A47C] == 0 -> 9CB6 (the terrain crash -> the difficulty-scaled 9E19 damage).
+    # 9CB6 is a fall-through CALL CHAIN of four 9E19s (9CCB/9CCE/9CD1/9CD4) entered by difficulty:
+    # BEDC == 0 jumps to 9CD1 (2 calls), == 1 to 9CCE (3 calls), else starts at 9CCB (4 calls).
+    # Oracle: the lockstep gate's DS:A95C family -- the VM drains 2/frame on difficulty 0, not 1.
     if mem.rw(DS, 0xA47C) == 0:
         if _terrain_crash_4ff9(mem):
             bedc = mem.rw(DS, 0xBEDC)
-            for _ in range(1 if bedc == 0 else (2 if bedc == 1 else 3)):
+            for _ in range(2 if bedc == 0 else (3 if bedc == 1 else 4)):
                 _shot_hit_9e19(mem)
     # 9BD4: [2350] > 0xB6 -> 9C01 (the edge-assist + the pod axis dispatch)
     if mem.rw(DS, 0x2350) > 0x00B6:
