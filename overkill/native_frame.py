@@ -521,7 +521,13 @@ def _terrain_crash_4ff9(mem) -> bool:
         origin_x_word=tiles.origin_x_word, row_base_word=tiles.row_base_word,
         object_x_word=x, object_y_word=y))
     bx = (probe.tile_offset_word + 0x0D) & 0xFFFF
-    cols = 1 if (mem.rw(DS, 0x215A) & 0x000F) <= 0x000A else 2
+    # 5073 STORES its adjusted x (origin_x + object_x) into DS:215A, and 4FF9's next instruction
+    # (`mov ax,[215A]`) reads THAT FRESH VALUE, not the one standing at entry.  Reading the stale
+    # cell made the two-column widening never fire.  Oracle: cold-start frame 3577 -- 215A goes
+    # 0x0070 -> 0x00AF across the 5073 call, and 0xF > 0xA selects cx = 2, which finds the solid
+    # tile the VM crashes on.
+    mem.ww(DS, 0x215A, probe.adjusted_x_word)
+    cols = 1 if (probe.adjusted_x_word & 0x000F) <= 0x000A else 2
     for _ in range(cols):
         if lookup_tile_class_byte(tiles.tile_plane[bx & 0x3FFF], tiles.class_table) != 0:
             return True
