@@ -261,6 +261,94 @@ class ImageRenderer:
         return plate
 
 
+def _run_hiscore_screen(display, pygame, container_data, seconds: float) -> "bool | None":
+    """Show HISCORE.ENC (natively decoded) for `seconds`.  Returns True on Space (start), False on
+    quit, None on timeout (advance the attract cycle)."""
+    img = decode_fullscreen_image(container_data, "HISCORE.ENC")
+    display.set_title("OVERKILL - native (VM-less)  [high scores -- Space = start]")
+    clock = pygame.time.Clock()
+    frames = int(seconds * 30)
+    for _ in range(frames):
+        for ev in pygame.event.get():
+            if ev.type == pygame.QUIT or (ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE):
+                return False
+            if ev.type == pygame.KEYDOWN and ev.key == pygame.K_SPACE:
+                return True
+        display.draw(img)
+        clock.tick(30)
+    return None
+
+
+def _replay_demo(display, pygame, bundle_data, container_data, demo_dir: Path,
+                 seconds: float) -> "bool | None":
+    """The ATTRACT DEMO: replay a recorded gameplay demo through the SAME verified frame + renderer.
+
+    Seeds the image from the demo's own frame-0 snapshot, then each frame writes the demo's recorded
+    INT9 scancodes into the image's key table and runs advance_gameplay_frame_97b2 -- so what plays is
+    the byte-exact native frame driven by the original's recorded input.  (This is charter step 2's
+    --demo replay, reused as the attract sequence's third element.)  Returns True on Space, False on
+    quit, None on timeout / demo end / an unrecovered gap.
+    """
+    import json
+
+    snap = demo_dir / "snapshot" / "memory_1mb.bin"
+    if not snap.is_file():
+        return None
+    img = MutFlatMemory(snap.read_bytes())
+    events = json.loads((demo_dir / "input_demo.json").read_text()).get("events", [])
+    by_boundary: dict[int, list] = {}
+    for e in events:
+        if e.get("kind") == "scan":
+            by_boundary.setdefault(int(e["boundary"]), []).append(int(e["value"]))
+    planet = img.rw(_DS, 0x2356)
+    renderer = ImageRenderer(bundle_data, container_data, img)
+    level_assets = make_level_assets(container_data, bundle_data)
+    display.set_title("OVERKILL - native (VM-less)  [attract demo -- Space = start]")
+    clock = pygame.time.Clock()
+    from overkill.recovered.domain.gaps import RecoveryGap
+    for f in range(int(seconds * 30)):
+        for ev in pygame.event.get():
+            if ev.type == pygame.QUIT or (ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE):
+                return False
+            if ev.type == pygame.KEYDOWN and ev.key == pygame.K_SPACE:
+                return True
+        for sc in by_boundary.get(f, ()):        # make/break codes -> the INT9 table
+            img.wb(_DS, (0x98C4 + (sc & 0x7F)) & 0xFFFF, 0 if (sc & 0x80) else 1)
+        try:
+            advance_gameplay_frame_97b2(img, isr_ticks=2, level_assets=level_assets, menu_pick=0)
+        except RecoveryGap:
+            return None                          # the demo reached an unrecovered edge -- next scene
+        display.draw(renderer.frame())
+        clock.tick(30)
+    return None
+
+
+def _run_attract(display, pygame, bundle_data, container_data) -> "bool | None":
+    """The cold-boot ATTRACT loop: title -> high scores -> a gameplay demo, cycling on idle, until the
+    player presses Space (start a game) or quits.  Mirrors the original's D007 attract sequence with
+    the recovered screens + the byte-exact frame; the exact per-scene timings are host-side."""
+    title = decode_fullscreen_image(container_data, TITLE_OPTIONS)
+    demo_dir = ROOT / "artifacts" / "demos" / "demo_play_tandy_L2_full_20260617_180221"
+    clock = pygame.time.Clock()
+    while True:
+        display.set_title("OVERKILL - native (VM-less)  [title -- Space = start, Esc = quit]")
+        for _ in range(6 * 30):                  # ~6s on the title
+            for ev in pygame.event.get():
+                if ev.type == pygame.QUIT or (ev.type == pygame.KEYDOWN
+                                              and ev.key == pygame.K_ESCAPE):
+                    return False
+                if ev.type == pygame.KEYDOWN and ev.key == pygame.K_SPACE:
+                    return True
+            display.draw(title)
+            clock.tick(30)
+        for scene in (lambda: _run_hiscore_screen(display, pygame, container_data, 5.0),
+                      lambda: _replay_demo(display, pygame, bundle_data, container_data,
+                                           demo_dir, 15.0)):
+            r = scene()
+            if r is not None:
+                return r
+
+
 def _run_title_screen(display, pygame, container_data) -> bool:
     """The REAL title/options image (OKMENU.ENC, natively decoded) with a HOST fire-wait.
 
@@ -415,6 +503,9 @@ def main(argv=None) -> int:
     ap.add_argument("--frames", type=int, default=0,
                     help="headless self-test: run N gameplay frames then exit (SDL_VIDEODRIVER=dummy)")
     ap.add_argument("--no-sound", action="store_true", help="disable the PC-speaker audio sink")
+    ap.add_argument("--demo", default=None,
+                    help="replay a recorded demo through the verified frame + renderer, then exit "
+                         "(charter step 2 -- the attract sequence's demo element, standalone)")
     args = ap.parse_args(argv)
 
     from overkill.recovered.adapters.cold_level_start import build_cold_level_start_image
@@ -426,6 +517,13 @@ def main(argv=None) -> int:
     pygame = display.pygame
     scan_map = _build_scan_map(pygame)
 
+    if args.demo:
+        demo_dir = ROOT / "artifacts" / "demos" / args.demo
+        print(f"replaying demo {args.demo} through the verified frame (Space/Esc to stop)")
+        _replay_demo(display, pygame, bundle_data, container_data, demo_dir, seconds=10_000.0)
+        display.close()
+        return 0
+
     if args.snapshot:
         # A SNAPSHOT IS THE STATE.  It already carries its own planet (DS:2356), difficulty
         # (DS:BEDC), score, lives and scroll position -- so the front end must not run before it and
@@ -436,7 +534,7 @@ def main(argv=None) -> int:
         level = args.level
         difficulty = 0
         if not args.no_title and not args.frames:
-            if not _run_title_screen(display, pygame, container_data):
+            if not _run_attract(display, pygame, bundle_data, container_data):
                 display.close()
                 return 0
             probe_img = build_cold_level_start_image(bundle_data, level, container_data)

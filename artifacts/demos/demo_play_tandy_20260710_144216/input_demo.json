@@ -1,0 +1,103 @@
+{
+  "version": 1,
+  "status": "complete",
+  "created_at": "2026-07-10T14:42:16",
+  "stopped_at": "2026-07-10T14:42:19",
+  "snapshot": "snapshot",
+  "metadata": {
+    "program": "overkill",
+    "video": "tandy",
+    "sound": "pc",
+    "command_tail": "\r\u0002",
+    "no_replacements": false
+  },
+  "start_boundary": 0,
+  "end_boundary": 245,
+  "event_count": 14,
+  "events": [
+    {
+      "boundary": 28,
+      "seq": 0,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 34,
+      "seq": 1,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 44,
+      "seq": 2,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 48,
+      "seq": 3,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 56,
+      "seq": 4,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 58,
+      "seq": 5,
+      "kind": "scan",
+      "value": 75
+    },
+    {
+      "boundary": 62,
+      "seq": 6,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 66,
+      "seq": 7,
+      "kind": "scan",
+      "value": 203
+    },
+    {
+      "boundary": 68,
+      "seq": 8,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 74,
+      "seq": 9,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 79,
+      "seq": 10,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 86,
+      "seq": 11,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 92,
+      "seq": 12,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 98,
+      "seq": 13,
+      "kind": "scan",
+      "value": 185
+    }
+  ]
+}
