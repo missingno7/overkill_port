@@ -4,6 +4,31 @@ Open items the autonomous loop attempted but could not finish byte-exact. Do NOT
 re-attempt these in the loop; they need a reproduction trace and/or gameplay
 context. Each has the analysis already done so a human can pick up fast.
 
+## 2026-07-10 — _planet0_cue: the 23-handler stamp table DECODED (build data ready)
+
+Decoded the 7C08 jump table's handlers (scratchpad/decode_p0_handlers.py; offsets below in HEX).  All
+regular handlers = `call 81C9` (or `819E` = 81C9 + the [209A] pool link) -- the SAME tile-cue spawn
+_planet1_cue uses (7E58 consume + 7524 alloc + 8209 stamp + the 81CC position overrides) -- then a few
+`mov [bx+off],imm` field stamps (+0x18 = child behaviour, +0x08 = sprite, +0x06 = dir), some with a
+`cmp [bx+4],0x60; jbe` Y-branch for an alternate sprite/dir:
+
+  E1/E2 7ED7 81C9: +06=6 +18=88 +08=FD ; Y<=60 -> +08=FA +06=2      E4 8137 81C9: +18=69
+  E5/E6 7F86 81C9: +06=5 +18=6A +08=11E ; Y-branch                  E7 7F5D 81C9: +18=6B
+  E8 7F69 819E: +18=6C +08=123                                      E9 7F7A 81C9: +18=6D
+  EA 7FEA 819E: +06=4 +18=6E                                        EB 7F14 819E: +06=4 +18=71
+  EC 7FFB 819E: +06=4 +18=6F +08=136 +06=3 ; +Y-branch              ED 7AA2 819E: +18=8D
+  EE 7A86 819E: +18=8E                                              EF 7F25 819E: +06=4 +18=8A
+  F0/F1 7FAD 81C9: +06=7 +18=54 +08=143 ; Y-branch                  F2/F3 80EF 81C9: +18=34
+  F4 804C 81C9: +06=7 +18=59 +08=E3 ; Y-branch                      F6 8113 81C9: +18=4F
+  SPECIALS (own shapes): E3 8143, EC-tail, F5 7C3A, F7 79F7, F8 79D6, F9 7A92, FA C626, FB 0104
+
+So _planet0_cue stamps ~16 child behaviours.  RECOVERED already: 0x6B/0x6C/0x6D/0x6E?/0x6F/0x88/0x8E
+(+ 0x8A/0x54/0x34/0x59/0x4F from earlier planets); STILL GAPS the cue can stamp: 0x69/0x6A/0x6E/0x71/
+0x8D (small, same pipeline).  BUILD: _planet0_cue = the 7BCB gate ([A40A]<=0x60 + the 0xBC/0xBB
+specials 7B8B/7BAB) + the 1F8F:0163 slot-search overlay + this decoded dispatch (spawn + stamps +
+Y-branch); the ~7 special handlers decode individually; gate by extending verify_native_tile_cues to
+planet 0 over an L6 demo.  All the enemy AI is done -- this is the last spawn-plumbing + then 9844.
+
 ## 2026-07-10 — mothership behaviors 0x6B/0x6C/0x6D: DONE (byte-exact); 0x6C spawn bug was a decimal-offset misread
 
 FIXED (verify_native_behavior_6bcd 2217/2217, 0 diverging).  The trio share the F55A body (F52A/F554/F53F wrappers): set the
