@@ -929,6 +929,27 @@ def _step_controller_1c(mem, rec: int) -> None:
     mem.ww(DS, rec + 0x08, (mem.rw(DS, rec + 0x06) + 0x3B) & 0xFFFF)
 
 
+def _step_diver_16_17(mem, rec: int) -> None:
+    """Behaviors 0x16/0x17 (1010:B930; 0x15's spawned children): seek MODE 2 on planet 0 (else 1) via
+    B729 toward the record's own +0x32/+0x34 target; sprite = +0x06 (dir) + 0x10D; on arrival (blocked)
+    a +0x1C substate: at 0 -> if [A7A0]==0x31 morph +0x18 to 0x18; else dec +0x1C, and when it reaches 0
+    set +0x34 = 0x20 (or 0x40 for the 0x17 variant).  jmp BC4B tail (no drift)."""
+    mem.ww(DS, 0x2308, 0x0002 if mem.rw(DS, 0x2356) == 0 else 0x0001)   # B930/B93D
+    blocked = _b729_seek(mem, rec)                                       # B729
+    mem.ww(DS, rec + 0x08, (mem.rw(DS, rec + 0x06) + 0x010D) & 0xFFFF)   # B947
+    if not blocked:                                                     # B951
+        return
+    if mem.rw(DS, rec + 0x1C) == 0:                                     # B956
+        if mem.rw(DS, 0xA7A0) == 0x31:                                  # B97A
+            mem.ww(DS, rec + 0x18, 0x18)                                # B984: morph to 0x18
+    else:
+        mem.ww(DS, rec + 0x1C, (mem.rw(DS, rec + 0x1C) - 1) & 0xFFFF)   # B95C
+        if mem.rw(DS, rec + 0x1C) == 0:                                 # B95F
+            mem.ww(DS, rec + 0x34, 0x0020)                             # B964
+            if mem.rw(DS, rec + 0x18) != 0x16:                         # B969: the 0x17 variant
+                mem.ww(DS, rec + 0x34, 0x0040)                        # B972
+
+
 def _step_controller_15(mem, rec: int) -> None:
     """Behavior 0x15 (the shared 8D4F/1F8F:027A body + the 03E6 arrival; a planet-0 wave controller):
     seek the A482 schedule (x+0x20/y, mode 3); ON ARRIVAL advance the schedule +8 and, unless the next
@@ -3143,6 +3164,9 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
         elif beh == 0x15:
             _step_controller_15(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=False)   # the 8D4F stub exits jmp BC4B
+        elif beh in (0x16, 0x17):
+            _step_diver_16_17(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=False)   # B930 exits jmp BC4B
         elif beh == 0x1D:
             _step_formation_1d(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=False)   # B86D exits jmp BC4B
