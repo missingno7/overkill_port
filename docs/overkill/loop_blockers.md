@@ -4,6 +4,27 @@ Open items the autonomous loop attempted but could not finish byte-exact. Do NOT
 re-attempt these in the loop; they need a reproduction trace and/or gameplay
 context. Each has the analysis already done so a human can pick up fast.
 
+## 2026-07-10 — behavior 0x7D / 0x7E: the overlay WAYPOINT-FOLLOWER (1F8F:027A) — reproduced, open
+
+Owner hit `behavior 0x7d (record 23EC) -- no native handler registered` on planet 4 (tick 16, a
+common early enemy).  REPRODUCES from a cold planet-4 seed: `build_cold_level_start_image(bundle, 3,
+container)` then run `advance_gameplay_frame_97b2` -> gap at tick 16.  EFC4[0x7D] = EFC4[0x7E] = the
+step handler `1010:8D4F` = `call far 1F8F:027A ; jmp BC4B` (the postmove BC4B is already recovered via
+`_postmove_bc45(with_drift=True)`).  So the body IS the overlay routine `1F8F:027A` + the postmove.
+
+`1F8F:027A` (disasm) is a MULTI-MODE waypoint/formation follower: reads the waypoint pointer si=[A482],
+lodsw the next point, sets the seek targets [2306]=pt.x+0x20 / [2304]=pt.y / [2308]=3, calls the 5DB2
+seek (via the 8D8B far trampoline, `object_target_seek_step_5db2` -- recovered), checks [230A]
+(blocked), then branches on the record's +0x24 MODE (0x13/0x15/0x1C/0x1F/0x7D) -- each mode advances
+[A482] by 8 and spawns/handles the next waypoint (0x81F4 alloc via 8D8B, stamp +0x34/+0x32 from the
+waypoint list, FFFF-terminated).  It is a whole overlay state machine, not a one-liner.
+
+RECIPE: drive the reproducing planet-4 state one VM frame, trap 8D4F entry + the far-call return 8D54
+and the BC4B postmove for record 23EC, capture the DGROUP delta per mode, implement mode-by-mode in
+behavior_walk's dispatch (add `elif beh in (0x7D, 0x7E):`), gate each mode.  The overlay far-calls
+(1F8F) mean the driven oracle must run the interpreter with the overlay loaded (a demo snapshot that
+reaches planet 4, or load the gap-snapshot image into a dos_re runtime).  A multi-slice recovery.
+
 ## 2026-07-10 — the 8546 SPECIAL-WEAPON apply families — 6 of 7 FILLED; only 849D open
 
 FILLED byte-exact (commits 779d171, 58ec714, +): 44AF (no-op ret), 84C3 (9F1A deploy -> [A962]/
