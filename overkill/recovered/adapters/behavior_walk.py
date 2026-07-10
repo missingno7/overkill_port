@@ -115,10 +115,13 @@ from overkill.recovered.systems.movement import (
 )
 from overkill.recovered.systems.objects import (
     child_spawn_seed_c237,
+    AED8_CONTACT_DEATH_X,
+    AED8_SUBSTATE_SKIP_OVERLAP,
     child_spawn_sound_c237,
     child_spawn_throttle_c237,
     object_update_ae2c,
     object_bounds_tile_decision_ad60,
+    overlap_contact_box_contains,
     object_tile_probe_deactivates_ad60,
     object_update_ae7d,
     object_update_aed8,
@@ -2282,6 +2285,11 @@ def _step_shot_02(mem, rec: int, tiles: LevelTileContext) -> None:
         _bd17_deactivate(mem, rec)   # BD17: clear active + the hazard_class-keyed death side effects
 
 
+#: the AEEE 8-way +/-8px move table (behavior 0x04 on planet 0, direction != 4): dir -> (dx on +0x02,
+#: dy on +0x04).  Decoded from the AF0B/AF10/AF14/AEFE/AF02/AF19/AF1D/AF07 fall-through handlers.
+_AECD_8WAY_STEP_8PX = ((-8, 0), (-8, 8), (0, 8), (8, 8), (8, 0), (8, -8), (0, -8), (-8, -8))
+
+
 def _step_child_04(mem, rec: int, tiles: LevelTileContext) -> None:
     """Behavior 0x04 (``1010:AEBF``, EFAE logic_id 4) -- the C237-spawned child. On the ``planet !=
     0`` path (DS:2356 != 0, always true on L1: 2356==1) AEBF falls straight into AF60 with B250
@@ -2289,10 +2297,26 @@ def _step_child_04(mem, rec: int, tiles: LevelTileContext) -> None:
     shared B250 contact + AD5A/ADC9 -> AD60 tail).  Contact triggers the single 9E19 fan-out
     (logic_id 4 != 3, so exactly one call per contact_fanout_count) exactly like behavior 0x0B's
     shot-hit beat."""
-    if mem.rw(DS, 0x2356) == 0:
-        raise RecoveryGap("behavior 0x04 planet-0 direction dispatch (1010:AECD)",
-                          "the AEE4 8px-step / direction==4 special case is not recovered "
-                          "(only the AF60 double-step path used on planets 1-5)")
+    if mem.rw(DS, 0x2356) == 0 and (mem.rw(DS, rec + 0x06) & 0x7) != 4:
+        # AECD planet-0 dispatch: direction != 4 takes the AEE4 8-way jump table -- a single +/-8px
+        # step per direction, then AEBF's pushed B250 return runs the SAME contact + AD5A drift + AD60
+        # tail the AF60 path uses (direction == 4 falls into AF60 below like planets 1-5).
+        dx, dy = _AECD_8WAY_STEP_8PX[mem.rw(DS, rec + 0x06) & 0x7]
+        x = (mem.rw(DS, rec + 0x02) + dx) & 0xFFFF
+        y = (mem.rw(DS, rec + 0x04) + dy) & 0xFFFF
+        contact = (mem.rw(DS, rec + 0x1E) != AED8_SUBSTATE_SKIP_OVERLAP
+                   and overlap_contact_box_contains(x, y, mem.rw(DS, 0x237E), mem.rw(DS, 0x2380)))
+        final_x = AED8_CONTACT_DEATH_X if contact else (x + mem.rw(DS, 0xA278)) & 0xFFFF   # ADC9/AD5A
+        mem.ww(DS, rec + 0x02, final_x)
+        mem.ww(DS, rec + 0x04, y)
+        decision = object_bounds_tile_decision_ad60(final_x, y, mem.rw(DS, rec + 0x16),
+                                                    mem.rw(DS, rec + 0x18), tile_probe_suppressed=False)
+        if decision.kind == "deactivate" or (decision.kind != "skip"
+                                             and object_tile_probe_deactivates_ad60(final_x, y, tiles)):
+            _bd17_deactivate(mem, rec)
+        if contact:
+            _shot_hit_9e19(mem)
+        return
     u = object_update_af60(
         mem.rw(DS, rec + 0x02), mem.rw(DS, rec + 0x04), mem.rw(DS, rec + 0x06),
         mem.rw(DS, rec + 0x00), mem.rw(DS, rec + 0x1E),
