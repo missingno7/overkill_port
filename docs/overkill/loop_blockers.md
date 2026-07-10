@@ -1369,3 +1369,50 @@ the first field that parts company names the ordering constraint.
 CAVEAT for whoever picks this up: my scratch classifier had an operator-precedence bug
 (`post[c] | (post[c+1] << 8) == 1`), so any "transition vs other" split quoted before this entry is
 unreliable.  The video/non-video split above was re-measured and is sound.
+
+### 2026-07-08 (cont.) — THE VIDEO MODEL, fully specified (the last 1373 frames)
+
+Disassembly + trap evidence give the whole pipeline.  `A846` is three phases, not one:
+
+    A846  loop over 8D12 (cx=0x22):  call 5AC8   -> SAVE-UNDER
+          call 4CED  (A876)                      -> draw the stars into the strip
+          loops at A8BE / A8F1 / A908: call 7596 -> DRAW the sprites into the strip
+    5BDC  blit strip -> B800
+    A90C  loop over 8D12 (cx=0x22) + 32CA (cx=0x24): call 5A92 -> RESTORE the saved background
+          call 4D64  (A93C)                      -> undraw the stars
+
+`5AC8` and `5A92` are jump tables indexed by `[bp+0x14]` (the DRAW TYPE, 1 or 2) plus `3 * mode`
+(`CS:[95BC]`, = 2 for Tandy), i.e. `word [CS:5AE2 + (type + 6)*2]` and `[CS:5AB6 + (type + 6)*2]`:
+
+    draw type 1 -> save 35CC   restore 34D8
+    draw type 2 -> save 356C   restore 34AD   (the player's dual-slot form)
+
+`35CC` decoded:
+
+    call 5A36                 ; project screen_di
+    mov [bp+0Ch],ax           ; store it
+    cmp ax,FFFF / ret         ; culled -> nothing saved
+    add ax,[234C] ; mov [bp+0Ch],ax
+    mov si,ax                 ; SI = source, in the STRIP
+    mov di,[bp+0Eh]           ; DI = this record's SAVE-BUFFER pointer  <-- +0x0E is NOT a link key here
+    mov es,cs:[9596]          ; ES = DGROUP
+    mov ds,cs:[9598]          ; DS = STRIP
+    mov bx,0x60
+    16 x { movsw x4 ; add si,bx }   ; 8 bytes (16 px) per row, source stride 0x68, dest packed
+    mov ds,cs:[9596] ; ret
+
+`34D8` is the mirror (16 rows, `add di,bx`), with `5A92` setting `es = CS:[9598]` (strip),
+`di = [bp+0Ch]`, `si = [bp+0Eh]`.
+
+**Net effect at our 9B2E boundary** (after A90C): the strip holds TILES ONLY (stars undrawn,
+sprites restored) -- which is exactly what `verify_native_star_strip` measured -- and each record's
+save buffer at `[rec+0x0E]` holds the 16x8 block of terrain that was under it THIS frame.  That
+buffer is the entire remaining DGROUP divergence.
+
+**So the native frame can close it without any page emulation:** for each record in the A846 order,
+if its projected `screen_di != FFFF`, copy 16 rows x 8 bytes from the DERIVED terrain window (we
+already build it byte-exact for the star pass) at `screen_di + row*0x68` into DGROUP at
+`[rec+0x0E] + row*8`.  Draw type 2 does it for both slots (`+0x0C` and `+0x10`).
+
+Verify FIRST with a driven-oracle probe (trap `(CS,0xA876)`, i.e. after the save loop, and compare
+every record's saved 128 bytes against ours) before wiring it into `native_frame`.
