@@ -5,6 +5,46 @@
 > This campaign SUPERSEDES the seam-wiring approach in play_native: no more dataclass-vs-image
 > sync bridges. **THE ACTIVE CAMPAIGN.**
 
+## THE LAST GATE ITEM: 98EB, the game-over sequence (frame 5379) -- mapped 2026-07-10
+
+The lockstep gate is at **8291/8292 byte-exact, ZERO divergence, one gap**.  The gap is frame 5379,
+the demo's last life: `[2358]` (lives) hits 0, `990B`'s `dec WORD` wraps it to FFFF, and `9773`
+branches to `98EB` instead of respawning.  8234330 instructions, 255 call edges, 3717 DGROUP cells
+(3156 of them in the strip's alias).
+
+**It is NOT gameplay.**  Driven call map (`map_frame_window 5379`):
+
+    98EB  call 5145                       ; cleanup
+    98EE  call 57E6                       ; the GAME OVER screen  (5800/580B, 58F1 -> 50C9 delay,
+                                          ;  5BEE -> 5145, 5C3C -> 5A00)
+    98F7  call 50C9                       ; delay
+    98FC  call 5283  -> 528F -> 532D
+    96E2  call CB1C ; 96E5 call 4FC3 ; 96E8 call 5145 ; 96EB call 5559   ; the NEW-GAME init
+          5559 -> far 1F8F:0248 and far 1F8F:0980    ; the story/text renderer
+    8D8B -> D2B8 ; D2E3 -> 0CB8 ; 0CF6 -> 526A ; 0D0E -> C679             ; a full asset RELOAD
+          C6D3 -> ECC9 -> ECF2 / ED2E / ED97 / EDE9                       ; the DECOMPRESSOR
+
+Note `ECC9`: this is the real decompressor, reached through `C679`'s `[BB84] != 0` branch at C6B7 --
+the path the ordinary level load never takes (it goes straight to the 3Dh open / 0248 read).  So the
+game-over reload pulls COMPRESSED assets, and `[21A4]` ends at `32FF` (the strip segment) where the
+gameplay `0B3E` leaves `245A` (the plane segment): a different loader, different destination.
+
+Its fingerprint in DGROUP is a session reset + a level reload + D305:
+`2358 0 -> 3` (lives), `2350 -> 9C`, `2352 -> 1` / `2354 -> 1` (the reverse pull ran), `234C`/`234E`
+reset, `2078` cleared, the 2324..2348 clocks reset, 402 ticks (so `D305` ran too).
+
+**Scope honestly.**  This is the same body of work as `mode.game_over_seq` in
+`native_app.describe_gaps()`, and it drags in the front-end: a full-screen text/render path
+(`57E6`, `5559`, `1F8F:0980`), host delays (`50C9`), the music trigger (`CB1C`), and the compressed
+asset loader (`ECC9`).  Recovering it byte-exactly is a FRONT-END campaign, not a gameplay slice.
+Everything reachable in ordinary L1 play is already native and byte-exact.
+
+Two orderings are defensible, and the choice is the owner's:
+ 1. **Unify play_native onto `advance_gameplay_frame_97b2` first** (charter step 1).  Nothing verified
+    reaches the player until this lands, and the frame fn is now proven on every runnable frame.
+ 2. Close `98EB` first, purely to make the gate print PASS.  It buys a green number, not a playable
+    game.
+
 ## THE DEATH CONTINUATION — the lockstep gate's entire remaining residue (decoded 2026-07-10)
 
 The gate is at **8285 / 8292 byte-exact, 0 gapped**. All 7 diverging frames are death/respawn
