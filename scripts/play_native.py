@@ -157,7 +157,9 @@ def build_sprite_context(bundle_data: bytes, container_data: bytes, img) -> Spri
         p = (_CS * 16 + (off & 0xFFFF)) & 0xFFFFF
         return bundle_data[p] | (bundle_data[(p + 1) & 0xFFFFF] << 8)
 
-    bank_seg = img.rw(_CS, 0x959A)
+    # the level SPRITE bank is G{n}.BIC at CS:[95AE] -- NOT the tile-block bank at CS:[959A].
+    # 0E9C loads both; object_sprite_blocks_a846 indexes the sprite one.
+    bank_seg = img.rw(_CS, 0x95AE)
     level_bank = bytes(img.data[bank_seg * 16: bank_seg * 16 + 0x10000])
     return SpriteDrawContext(
         common_bank=shared["MANEXPL.BIC"],

@@ -55,8 +55,9 @@ def build_cold_level_start_image(exe_image: bytes, level_index: int = 0,
 
     With ``container`` (the ``assets/OVERKILL`` bytes) the PLANET's level data is decoded INTO the
     image's own segments -- the tile-map body into ``CS:[9592]`` (keeping the bundle's post-init
-    border rows), the LEV{planet}BLX tile bank into ``CS:[959A]`` (verbatim: proven byte-equal to
-    the VM's runtime bank), and the planet's class table into ``DS:C3AA``.  Without it the image
+    border rows), the LEV{planet}BLX tile bank into ``CS:[959A]``, the G{planet}.BIC SPRITE bank into
+    ``CS:[95AE]`` (both verbatim: proven byte-equal to the VM's runtime banks), and the planet's class
+    table into ``DS:C3AA``.  Without it the image
     keeps the STATIC BUNDLE's captured level data -- which belongs to whatever level the bundle
     snapshot had loaded, NOT ``level_index``.
     """
@@ -103,7 +104,8 @@ def _load_planet_level_data(mem: MutFlatMemory, exe_image: bytes, container: byt
 
     LEV{n} asset names are PLANET-keyed (pinned by tests/test_level_map_placement.py's fresh-load
     snapshots, which assert ``DS:2356 == n``); the pre-existing bundle capture is overwritten."""
-    from overkill.asset_codecs.level_assets import decode_level_blocks, decode_level_tile_map
+    from overkill.asset_codecs.level_assets import (decode_level_blocks, decode_level_graphics,
+                                                    decode_level_tile_map)
     from overkill.asset_codecs.native_level import (_read_class_override_pairs,
                                                     build_level_class_table)
 
@@ -112,9 +114,17 @@ def _load_planet_level_data(mem: MutFlatMemory, exe_image: bytes, container: byt
     tile_map = decode_level_tile_map(container, planet)
     b0, b1 = _MAP_BODY
     mem.data[plane_base + b0: plane_base + b1] = tile_map[b0:b1]
+    # 0E9C loads TWO per-level files, from the (graphics, blocks) pairs at DS:14E8 + planet*4:
+    #   LEV{n}BLX.BIC -> CS:[959A]  (the TILE-BLOCK bank)
+    #   G{n}.BIC      -> CS:[95AE]  (the level SPRITE bank)
+    # Only the first was being placed.  The sprite bank is what object_sprite_blocks_a846 indexes,
+    # so a level's enemies were drawn out of the tile-block bank.
     bank_base = mem.rw(cs, 0x959A) * 16
     blocks = decode_level_blocks(container, planet)
     mem.data[bank_base: bank_base + len(blocks)] = blocks
+    gfx_base = mem.rw(cs, 0x95AE) * 16
+    graphics = decode_level_graphics(container, planet)
+    mem.data[gfx_base: gfx_base + len(graphics)] = graphics
     classes = build_level_class_table(_read_class_override_pairs(exe_image, planet))
     base = DATA_SEGMENT * 16 + 0xC3AA
     mem.data[base: base + len(classes)] = classes
