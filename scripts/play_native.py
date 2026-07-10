@@ -35,6 +35,9 @@ repaired -- see docs/overkill/deprecated_or_quarantined.md.
 difficulty, score, lives and scroll position all come from it -- so the title/level-select are
 skipped entirely and nothing is written over it.  ``--level`` is ignored in that mode.
 
+On a RecoveryGap (an unrecovered path reached during play) the app dumps a --snapshot-loadable image
+of the pre-frame state to artifacts/gap_snapshots/, so the exact gap can be reproduced and filled.
+
 Usage:
     python scripts/play_native.py [--level N] [--no-title] [--frames N] [--snapshot DIR]
 """
@@ -531,6 +534,39 @@ class PygameDisplay:
         self.pygame.quit()
 
 
+def dump_gap_snapshot(pre_frame: bytes, img, exc: RecoveryGap, tick: int) -> Path:
+    """On a RecoveryGap, write a ``--snapshot``-loadable image + gap metadata so the exact state that
+    hit the gap can be reproduced and the gap filled.
+
+    ``pre_frame`` is the image BEFORE the frame that raised (the host input already written into the
+    INT9 table), so re-running one frame over it re-raises the same gap deterministically -- the seed
+    a recovery probe drives.  Named by the gap address + planet + tick so repeated hits don't clobber
+    each other."""
+    import json
+    import re
+
+    msg = str(exc)
+    # prefer an explicit CS:/1010: routine address; else the first bare 4-hex token the message names
+    # (gap messages lead with the routine, e.g. "the 98EB game-over ...", "... CS:8463", "(1010:7BCB)")
+    m = re.search(r"(?:CS:|1010:)([0-9A-Fa-f]{3,4})", msg) or re.search(r"\b([0-9A-Fa-f]{4})\b", msg)
+    addr = m.group(1).upper() if m else "unknown"
+    planet = img.rw(_DS, 0x2356)
+    out = ROOT / "artifacts" / "gap_snapshots" / f"gap_{addr}_p{planet}_t{tick}"
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "memory_1mb.bin").write_bytes(pre_frame)
+    (out / "gap_info.json").write_text(json.dumps({
+        "gap": msg,
+        "address": addr,
+        "tick": tick,
+        "planet": planet,
+        "difficulty": img.rw(_DS, 0xBEDC),
+        "lives": img.rw(_DS, 0x2358),
+        "reproduce": "python scripts/play_native.py --snapshot "
+                     f"artifacts/gap_snapshots/{out.name}",
+    }, indent=2), encoding="utf-8")
+    return out
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--level", type=int, default=0, help="0-based level to cold-load and play")
@@ -612,6 +648,7 @@ def main(argv=None) -> int:
     tick = 0          # gameplay frames advanced (frozen once HELD)
     drawn = 0         # display frames drawn (always advances -- the --frames self-test counts these)
     hold: str | None = None
+    pre_frame = bytearray(len(img.data))   # reused each tick: the clean seed dumped on a gap
     running = True
     print(f"native: {origin} -- planet {planet}, difficulty {img.rw(_DS, 0xBEDC)}, "
           f"lives {img.rw(_DS, 0x2358)}, row {img.rw(_DS, 0x2350):#06x}; "
@@ -629,11 +666,19 @@ def main(argv=None) -> int:
                 pressed = _pressed_scancodes(pygame, pygame.key.get_pressed(), scan_map)
                 for sc in scan_map.values():
                     img.wb(_DS, (0x98C4 + sc) & 0xFFFF, 1 if sc in pressed else 0)
+                # a clean seed of THIS frame's pre-state (input already applied) so a gap can be
+                # reproduced by re-running one frame over it; reused each tick, no per-frame alloc.
+                pre_frame[:] = img.data
                 try:
                     advance_gameplay_frame_97b2(img, isr_ticks=2, level_assets=level_assets)
                 except RecoveryGap as exc:
                     hold = f"{type(exc).__name__}: {exc}"
                     print(f"HELD at tick {tick}: {hold}")
+                    if not args.frames:
+                        snap = dump_gap_snapshot(bytes(pre_frame), img, exc, tick)
+                        print(f"  gap snapshot written -> {snap}")
+                        print(f"  reproduce: python scripts/play_native.py --snapshot "
+                              f"artifacts/gap_snapshots/{snap.name}")
                 tick += 1
                 # The frame OWNS the three exits internally: it sets and consumes A344/A346 within the
                 # same call (9B2E clears them at entry, the loop body re-raises the taken one, and the
