@@ -649,6 +649,35 @@ def _step_morpher_81(mem, rec: int) -> None:
         mem.ww(DS, rec + 0x18, 0x93)              # 046D: morph to behavior 0x93
 
 
+def _step_riser_70(mem, rec: int) -> None:
+    """Behavior 0x70 (1010:F5BF; also 0x6F's fall-through tail): sprite = ([232A]>>2) + 0x133, ONE 2px
+    8-way step (AF63 = step_operations_for_direction(dir, 2)), then a [2328]==7-gated C237 spawn.
+    jmp BC45 tail."""
+    mem.ww(DS, rec + 0x08, ((mem.rw(DS, 0x232A) >> 2) + 0x0133) & 0xFFFF)   # F5BF
+    x, y = mem.rw(DS, rec + 0x02), mem.rw(DS, rec + 0x04)                   # F5CC: AF63 2px step
+    for op in step_operations_for_direction(mem.rw(DS, rec + 0x06) & 0x7, 2):
+        delta = i16(op.delta_word)
+        if op.axis == "x":
+            x = (x + delta) & 0xFFFF
+        else:
+            y = (y + delta) & 0xFFFF
+    mem.ww(DS, rec + 0x02, x)
+    mem.ww(DS, rec + 0x04, y)
+    if mem.rw(DS, 0x2328) == 0x0007:                                        # F5CF
+        _spawn_child_c237(mem, rec, mem.rw(DS, rec + 0x18))
+
+
+def _step_riser_6f(mem, rec: int) -> None:
+    """Behavior 0x6F (1010:F5A3; planet-0 cue spawn): drift while +0x02 < 0x50 OR ([237E]-+0x02) < 0x20;
+    otherwise MORPH to behavior 0x70 (+0x18 = 0x70) and fall through into its body (F5BF)."""
+    if mem.rw(DS, rec + 0x02) < 0x50:                                       # F5A3
+        return
+    if ((mem.rw(DS, 0x237E) - mem.rw(DS, rec + 0x02)) & 0xFFFF) < 0x20:     # F5B5
+        return
+    mem.ww(DS, rec + 0x18, 0x70)                                            # F5BA: morph
+    _step_riser_70(mem, rec)                                                # F5BF fall-through
+
+
 def _step_yseeker_6b6c6d(mem, rec: int, y_target: int, sprite_add: "int | None") -> None:
     """Behaviors 0x6B/0x6C/0x6D (F52A/F554/F53F -> the shared F55A body; planet-0 cue spawns): set the
     shared Y target DS:[D2C2] (0x50/0x60/0x70), 0x6B/0x6D also set sprite = ([232A]>>2) + add; then
@@ -3195,6 +3224,12 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
         elif beh == 0x88:
             _step_shooter_88(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # F16A/F172 exit jmp BC45
+        elif beh == 0x6F:
+            _step_riser_6f(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # F5A9/F5D9 exit jmp BC45
+        elif beh == 0x70:
+            _step_riser_70(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # F5D9 exits jmp BC45
         else:
             raise RecoveryGap(f"behavior {beh:#04x} (record {rec:04X})",
                               "no native handler registered -- recover it before walking")
