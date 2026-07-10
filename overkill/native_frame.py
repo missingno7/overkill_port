@@ -314,7 +314,14 @@ def _a940_walk_stage(mem) -> None:
     mem.wb(DS, 0x98A8, u.flag_98a8)
     mem.wb(DS, 0x98A9, u.flag_98a9)
     run_behavior_walk_a9d3(mem, level_tiles_from_image(mem))
-    # 1F8F:0922 -- the starfield tick
+    _starfield_tick_0922(mem)
+
+
+def _starfield_tick_0922(mem) -> None:
+    """``1F8F:0922`` -- the parallax starfield tick over the DS:C6C1 ring.
+
+    Called from AA25 (the object walk's tail) and directly from D305's mini-frame, which is why it
+    is its own function."""
     if mem.rw(DS, 0xA95A) == 0xFFFF:
         return
     parity = (mem.rw(DS, 0xC812) + 1) & 1
@@ -1330,6 +1337,11 @@ def _gameplay_pool_seed_c3a6(mem) -> None:
     # [A97A] from 0 to 1 -- without it the bar stays empty and the respawned player dies instantly.
     mem.ww(DS, 0xA97C, 1)
     mem.wb(DS, 0xBEFF, 0x0D)                                        # C4B2 -> 9DB8: the respawn sound
+    mem.ww(DS, 0xA980, 0)                                           # C4B5
+    mem.ww(DS, 0x20A6, 0x20A8)                                      # C4B9 (why 9792's mov is a no-op)
+    mem.ww(DS, 0xA47E, 0)                                           # C4C1: the live-wave hold
+    mem.ww(DS, 0xA480, 0)                                           # C4C7: the wave countdown
+    mem.ww(DS, 0xA47C, 0)                                           # C4CD: the outro arm
     mem.ww(DS, 0x2340, 0)                                           # C4D4
 
 
@@ -1391,7 +1403,13 @@ def _respawn_continuation_9908(mem, isr_ticks: int) -> None:
     mem.ww(DS, 0x2358, (mem.rw(DS, 0x2358) - 1) & 0xFFFF)      # 990B: dec WORD
     if mem.rb(DS, 0x978D):                                     # 990F
         mem.ww(DS, 0x2358, (mem.rw(DS, 0x2358) + 1) & 0xFFFF)  # 9916: inc WORD
-    _isr_effects_ticks(mem, isr_ticks)                         # 9921: the spin is where time passes
+    # WHERE THE TICKS LAND.  Measured: on an ordinary respawn every recorded tick fires in the 9921
+    # spin (the death jingle draining).  When D305 will run, the spin takes ZERO ticks and all of
+    # them fire inside D305's mini-frames instead.  Getting this wrong reorders the sound engine
+    # against the [BEFF] queue writes on both sides.
+    runs_d305 = mem.rw(DS, 0x2350) == MUSIC_ROW_TOP
+    if not runs_d305:
+        _isr_effects_ticks(mem, isr_ticks)                     # 9921
     if mem.rb(DS, 0x98C0):                                     # 9928
         mem.wb(DS, 0xBEFF, 2)                                  # 992F
     if mem.rw(DS, 0x2358) == 0xFFFF:                           # 9773
@@ -1406,9 +1424,63 @@ def _respawn_continuation_9908(mem, isr_ticks: int) -> None:
     mem.ww(DS, 0x20A6, 0x20A8)                                 # 9792
     mem.ww(DS, 0xA8C2, 0)                                      # 979E
     _music_beat_5f43(mem)                                      # 97A4
-    if mem.rw(DS, 0x2350) == MUSIC_ROW_TOP:                    # 97A7 -> D305
-        raise RecoveryGap("the D305 respawn wait loop ([2350] == 0x9C)",
-                          "200 nested mini-frames ([BED8] counts to 0xC8) -- 159 DGROUP bytes")
+    if runs_d305:                                              # 97A7 -> D305
+        _respawn_wait_d305(mem, isr_ticks)
+
+
+#: D305's mini-frame loop counts [BED8] up and exits once it EXCEEDS this (so 0xC9 iterations)
+RESPAWN_WAIT_LIMIT = 0x00C8
+#: each mini-frame ends in 0679, the frame wait -- two INT8 ticks, exactly as the ordinary loop does
+RESPAWN_WAIT_TICKS_PER_ITER = 2
+#: 0162's fire bit, tested at D305 / D352 / D35C
+FIRE_BIT = 0x10
+
+
+def _respawn_wait_d305(mem, isr_ticks: int) -> None:
+    """``1010:D305`` -- the post-respawn WAIT, run only from the top-of-level checkpoint ([2350]==9C).
+
+    It is a nested MINI-FRAME LOOP, not a busy-wait: after `call 0162 / test [98BE],10 / jnz D305`
+    (spin while FIRE is still held) it zeroes [BED8] and then repeats a whole reduced frame --
+
+        0672, 511F, 4CED, D367, 4D64, 1F8F:0922, 073C, 60A2 (77C5 + 5F61), 5160, 0679, 50C9
+
+    -- incrementing [BED8] each pass and leaving when [BED8] > 0xC8 or the player presses fire.  The
+    demo never presses, so it runs the full 0xC9 passes; 0xC9 * 2 = 402 timer ticks, which is exactly
+    the tick count the lockstep gate records for these windows.  (An earlier note called this loop
+    input-driven and unbounded.  It is neither.)
+
+    MEASURED: the whole loop's DGROUP footprint is the star draw list (C7B1..C800), the starfield
+    ring (C6C1..C7AB), the 5F61 clock cells (2324..2348 + A7A0), 77C5 refilling the bar (A97A 1 ->
+    0x57, A97C -> 0), the input poll's [98BE], and the sound engine + [0054]/[BF00] from the ticks.
+    0672 / 511F / 5BDC / D367 / 5160 / 50C9 / 4D64 leave DGROUP alone (they are video and host).
+    """
+    _input_poll_0162(mem)                                          # D305
+    if mem.rb(DS, 0x98BE) & FIRE_BIT:
+        raise RecoveryGap("D305 entered with FIRE already held",
+                          "the demo never does; the release spin is unmodelled")
+    expected = (RESPAWN_WAIT_LIMIT + 1) * RESPAWN_WAIT_TICKS_PER_ITER
+    if isr_ticks != expected:
+        raise RecoveryGap(f"D305 expected {expected} timer ticks, the gate recorded {isr_ticks}",
+                          "the loop must have exited early -- fire pressed, or a short frame")
+    mem.ww(DS, 0xBED8, 0)                                          # D312
+    while True:
+        _star_list_4ced(mem)                                       # D31E
+        _starfield_tick_0922(mem)                                  # D332
+        if mem.rw(DS, 0x9907) & 0xFF == 1:                         # D337: 073C
+            raise RecoveryGap("the 073C service body ([9907] == 1)", "unrecovered service path")
+        _shield_charge_77c5(mem)                                   # D33A: 60A2 ->
+        _clock_tick_5f61(mem)                                      #        77C5 + 5F61
+        _isr_effects_ticks(mem, RESPAWN_WAIT_TICKS_PER_ITER)       # D340: 0679, the frame wait
+        mem.ww(DS, 0xBED8, (mem.rw(DS, 0xBED8) + 1) & 0xFFFF)      # D346
+        if mem.rw(DS, 0xBED8) > RESPAWN_WAIT_LIMIT:                # D34A: ja -> D35C
+            break
+        _input_poll_0162(mem)                                      # D352
+        if mem.rb(DS, 0x98BE) & FIRE_BIT:                          # jz D318 -> loop while NOT fire
+            raise RecoveryGap("D305 exited early on FIRE",
+                              "the release spin at D35C is unmodelled")
+    _input_poll_0162(mem)                                          # D35C
+    if mem.rb(DS, 0x98BE) & FIRE_BIT:
+        raise RecoveryGap("D305's D35C release spin (fire held at exit)", "unmodelled")
 
 
 #: A81B's reverse-scroll row offset: `sub bx,0A9` -- 0xA9 == 13 * 0x0D, i.e. thirteen tile rows
