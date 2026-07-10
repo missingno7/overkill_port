@@ -90,7 +90,34 @@ def advance_gameplay_frame_97b2(mem) -> None:
     # projection run after the loop tail (0672/511F/A846/981F/5BDC) and before the next 9B2E ---
     from overkill.native_walk_frame import sync_screen_projection
     _star_list_4ced(mem)
+    _flash_decay_a846(mem)
     sync_screen_projection(mem)
+
+
+#: the player view-anchor record (the only record whose +0x24 flash is DGROUP-visible at DS:23A0)
+ANCHOR = 0x237C
+
+
+def _flash_decay_a846(mem) -> None:
+    """The A846 draw scan's HIT-FLASH decay: each compositor prologue (1010:25AE / 30FF / 4227)
+    runs ``cmp [bp+24h],0 ; jz .. ; dec [bp+24h]`` -- i.e. a drawn record's +0x24 flash counter
+    ticks down ONCE PER DRAWN SLOT, not once per frame.  The player anchor (0x237C, draw type 2)
+    issues TWO slots, so DS:23A0 (= 0x237C + 0x24) decays by 2 per frame while it is on screen;
+    a culled slot (its di cell holds the 0xFFFF off-screen sentinel) issues no compositor call and
+    so does not tick."""
+    flash = mem.rw(DS, ANCHOR + 0x24)
+    if flash == 0:
+        return
+    slots = 0
+    if mem.rw(DS, ANCHOR + 0x0C) != 0xFFFF:
+        slots += 1
+    if mem.rw(DS, ANCHOR + 0x10) != 0xFFFF:
+        slots += 1
+    for _ in range(slots):
+        if flash == 0:
+            break
+        flash -= 1
+    mem.ww(DS, ANCHOR + 0x24, flash)
 
 
 def _star_list_4ced(mem) -> None:
