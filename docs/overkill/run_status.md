@@ -59,6 +59,31 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-10 (late+++++++) — ALL 6 mothership enemy behaviours recovered; only the cue-table plumbing + story remain
+
+The lifter-assisted actor recovery cleared planet 4 (0x7D/0x81/0x93) and has now recovered EVERY enemy
+behaviour the planet-0 (mothership) tile-cues spawn -- byte-exact, each gated over an L6 demo:
+
+* **0x6B/0x6C/0x6D** (verify_native_behavior_6bcd 2217/2217): the F55A Y-seeker trio (+ the 0x6C C237
+  spawn; the bug was a lindis DECIMAL bp-offset misread -- 'bp+24' == +0x18, recorded as a lesson).
+* **0x8E** (verify_native_behavior_8e 1038/1038): the BB48 ground-crawler variant (reuses the recovered
+  crawler helpers, different sprite formula).
+* **0x88** (verify_native_behavior_88 1120/1120): the F13C D212/D21A-table shooter.
+* **0x6F + 0x70** (verify_native_behavior_6f70 475/475): F5A3 morphs to 0x70 and falls into its F5BF
+  body (sprite + the recovered AF63 2px step + a [2328]==7 C237 spawn).
+* 0x68 was already native.
+
+**The mothership's remaining work is now just the CUE-TABLE PLUMBING + the story** -- no more enemy AI:
+1. `_planet0_cue` -- the 7BCB tile-cue: the [A40A]<=0x60 gate + the 0xBC/0xBB specials (7B8B/7BAB), the
+   1F8F:0163 slot-search overlay, and the inline 7C08 jump table -> 23 STAMP handlers (each `call
+   81C9`/`819E` spawn + `mov [bx+off],imm` fields -- they stamp exactly the behaviours just recovered).
+   Recover by driven oracle over an L6 demo (extend verify_native_tile_cues to planet 0).
+2. The 9844 mothership STORY splash (5BEE / the far text renderer 1F8F:0980 / a 0163 fire-wait) for the
+   victory.
+
+Planets 1-5 play; planet 4 is fully playable (3000 frames clean).  The mothership is now the tile-cue
+stamp table + the story -- the last two pieces to a winnable game, both mechanical/bounded.
+
 ## 2026-07-10 (late++++++) — the lifter-assisted actor recovery is PRODUCING: the planet-4 chain 0x7D->0x81->0x93
 
 The owner's actor-recovery strategy is now not just validated but PULLING THE CHAIN.  Each recovered
