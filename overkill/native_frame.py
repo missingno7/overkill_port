@@ -665,10 +665,9 @@ def _step_9b2e(mem, level_bytes: bytes | None = None) -> None:
         for _ in range(2):
             if mem.rw(DS, anchor + 4) != 0:
                 mem.ww(DS, anchor + 4, (mem.rw(DS, anchor + 4) - 1) & 0xFFFF)
-    # 9B97: FIRE ([2350] > 0xB6 with bit 0x20) -> 8546
+    # 9B97: the APPLY-UPGRADE key (TAB, input bit 0x20) with the level scrolled in -> 8546
     if mem.rw(DS, 0x2350) > 0x00B6 and (bits & 0x20):
-        raise RecoveryGap("the 8546 FIRE handler (9B97)",
-                          "decode 1010:8546 against the lockstep gate")
+        _apply_upgrade_8546(mem)
     _scroll_a66f(mem)                               # 9BA9
     _fire_fanout_a067(mem)                          # 9BAC
     # 9BAF: the [978E]/[98C8] weapon-upgrade apply (9D4D -- native via the walk adapter)
@@ -1482,6 +1481,61 @@ def _respawn_wait_d305(mem, isr_ticks: int) -> None:
     _input_poll_0162(mem)                                          # D35C
     if mem.rb(DS, 0x98BE) & FIRE_BIT:
         raise RecoveryGap("D305's D35C release spin (fire held at exit)", "unmodelled")
+
+
+#: 8546's indirect dispatch targets: each stub sets [A958] (the weapon/ship mode) then falls into
+#: 8430, which clears the held marker.  Driven out of the VM with TAB injected -- no demo presses it.
+_UPGRADE_HANDLERS = {0x8412: 2, 0x841A: 3, 0x8422: 4, 0x842A: 5}
+MARKER_CELL = 0x95FA           # the held powerup marker (FFFF = none)
+MARKER_SAVE_CELL = 0x95F6
+MARKER_TABLE_95FC = 0x95FC     # marker -> descriptor pointer
+UPGRADE_SOUND = 0x09
+
+
+def _apply_upgrade_8546(mem) -> None:
+    """``1010:8546`` -- the APPLY-UPGRADE handler (the TAB key, input bit 0x20).
+
+    Reached from 9B97 when ``[2350] > 0xB6`` and the player taps TAB while holding a pickup.  NO
+    RECORDED DEMO EVER PRESSES TAB, so the lockstep gate never exercises this path; the oracle for it
+    was synthesised by injecting the TAB scancode into the pure VM's own INT9 key table at a 9B2E
+    boundary on a demo whose snapshot holds a marker (``probes/verify_native_apply_upgrade_8546``).
+
+        8546  cmp [95FA],FFFF ; jz ret            ; nothing held -> no-op
+        8550  bp = [95FC + marker*2]              ; the descriptor (the same table the HUD reads)
+        855D  si = [bp+6] ; bx = [bp+8] * 6
+        856B  push [95FA] ; call [bx+si+4]        ; -> 8412/841A/8422/842A: [A958] = 2/3/4/5,
+                                                  ;    then 8430: [95FA] = FFFF
+        8572  [95F6] = [95FA] ; pop [95FA]        ; restore the marker across...
+        857C  call 837A                           ; ...the weapon-script tick (recovered)
+        857F  [95FA] = [95F6]                     ; ...then drop it again
+        8585  call 859E                           ; the HUD redraw (85B5/85D5/613E/5A6C: VIDEO, and
+                                                  ;    measured zero DGROUP)
+        8588  [95FA] == FFFF and [98C0] -> [BEFF] = 9      ; the apply sound
+
+    Measured DGROUP effect (marker 0): [A958] 1->2 and [95FA] -> FFFF from the stub; [95F8],
+    [9682] (+0) and [968A] (+8) from 837A; [BEFF] = 9 from the tail.  Seven cells, nothing else.
+    """
+    marker = mem.rw(DS, MARKER_CELL)
+    if marker == 0xFFFF:                                   # 8546: nothing held
+        return
+    desc = mem.rw(DS, (MARKER_TABLE_95FC + marker * 2) & 0xFFFF)   # 8550..855A
+    si = mem.rw(DS, (desc + 6) & 0xFFFF)                   # 855D
+    bx = (mem.rw(DS, (desc + 8) & 0xFFFF) * 6) & 0xFFFF    # 8560..8569
+    target = mem.rw(DS, (bx + si + 4) & 0xFFFF)            # 856F: call [bx+si+4]
+    mode = _UPGRADE_HANDLERS.get(target)
+    if mode is None:
+        raise RecoveryGap(f"8546's upgrade stub CS:{target:04X}",
+                          "only the 8412/841A/8422/842A [A958] stubs are recovered")
+    mem.ww(DS, 0xA958, mode)
+    mem.ww(DS, MARKER_CELL, 0xFFFF)                        # 8430
+    mem.ww(DS, MARKER_SAVE_CELL, mem.rw(DS, MARKER_CELL))  # 8572: [95F6] = FFFF
+    mem.ww(DS, MARKER_CELL, marker)                        # 8578: pop -- restore for 837A
+    from overkill.recovered.adapters.behavior_walk import _weapon_script_tick_837a
+    _weapon_script_tick_837a(mem)                          # 857C
+    mem.ww(DS, MARKER_CELL, mem.rw(DS, MARKER_SAVE_CELL))  # 857F..8582
+    # 8585 -> 859E: the HUD redraw is video (measured: zero DGROUP bytes)
+    if mem.rw(DS, MARKER_CELL) == 0xFFFF and mem.rb(DS, 0x98C0):   # 8588/858F
+        mem.wb(DS, 0xBEFF, UPGRADE_SOUND)                  # 8596
 
 
 #: A81B's reverse-scroll row offset: `sub bx,0A9` -- 0xA9 == 13 * 0x0D, i.e. thirteen tile rows
