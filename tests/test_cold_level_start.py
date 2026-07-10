@@ -40,11 +40,20 @@ def test_cold_level_start_is_a_coherent_frame_zero():
     assert state.special_pool.x_word(0) == 0xC0
     assert state.special_pool.y_word(0) == 0x58
 
-    # a fresh level starts with NO live enemies / effects -- every gameplay + effect slot is free
+    # a fresh level starts with NO live enemies -- every gameplay slot is free
     assert len(state.object_pool) == 34
     assert all(state.object_pool.active_word(i) == 0 for i in range(len(state.object_pool)))
+
+    # ...but exactly ONE effect slot is live: the C450/7524 COMPANION, the ship's flame/exhaust
+    # anchor.  This assertion used to read "every effect slot is free", which was simply wrong --
+    # the ORIGINAL's own level start (the cold-start demo's frame-0 pre-state) holds
+    # slot 0x23B4 with +00=1, +14=1, +16=6, byte-identical to what the seed now writes.
+    # Omitting the companion is why a cold-started level had no thrusters while a snapshot did.
     assert len(state.effect_pool) == 35
-    assert all(state.effect_pool.active_word(i) == 0 for i in range(len(state.effect_pool)))
+    live = [i for i in range(len(state.effect_pool)) if state.effect_pool.active_word(i) != 0]
+    assert live == [0], f"expected only the companion in effect slot 0, got {live}"
+    assert state.effect_pool.word_at(0, 0x14) == 1
+    assert state.effect_pool.word_at(0, 0x16) == 6
 
     # the cold starfield is present + enabled (its own byte-exactness is proven in test_starfield_cold)
     assert len(starfield.stars) == 40

@@ -1490,9 +1490,40 @@ def _respawn_wait_d305(mem, isr_ticks: int) -> None:
         raise RecoveryGap("D305's D35C release spin (fire held at exit)", "unmodelled")
 
 
-#: 8546's indirect dispatch targets: each stub sets [A958] (the weapon/ship mode) then falls into
-#: 8430, which clears the held marker.  Driven out of the VM with TAB injected -- no demo presses it.
-_UPGRADE_HANDLERS = {0x8412: 2, 0x841A: 3, 0x8422: 4, 0x842A: 5}
+#: 8430: the tail every [A958] stub jumps to -- `mov word [95FA],FFFF ; ret` (clear the held marker)
+UPGRADE_STUB_TAIL = 0x8430
+#: an [A958] stub is literally `mov word [A958],imm16` (C7 06 58 A9 ..) then `jmp short 8430`
+_STUB_PREFIX = (0xC7, 0x06, 0x58, 0xA9)
+
+
+def _decode_upgrade_stub(mem, target: int) -> "int | None":
+    """8546's dispatch lands on a weapon-LEVEL stub; decode it rather than tabulate it.
+
+    ``[desc+8]`` is the current weapon level and 837A increments it, so each apply walks the ladder
+    ``8402 -> 840A -> 8412 -> 841A -> 8422 -> 842A`` (``[A958] = 0..5``).  Every rung is the same two
+    instructions::
+
+        C7 06 58 A9 <imm16>     mov word [A958], level
+        EB <rel8>               jmp short 8430        ; -> mov word [95FA],FFFF ; ret
+
+    ...except the LAST rung (842A), which falls through into 8430 with no jump at all.
+
+    Reading the imm16 out of the image covers the whole ladder and cannot drift from it.  The OTHER
+    handlers the 95FC descriptors reach -- 44AF, 8463, 849D, 84C3, 84D6 (the non-gun weapon families)
+    -- do not match this shape, so they fail loud instead of being silently mis-applied.
+    """
+    if tuple(mem.rb(CS, (target + i) & 0xFFFF) for i in range(4)) != _STUB_PREFIX:
+        return None
+    after = (target + 6) & 0xFFFF
+    if after == UPGRADE_STUB_TAIL:
+        pass                                                 # 842A: the last rung FALLS THROUGH
+    elif mem.rb(CS, after) == 0xEB:                          # 8402..8422: `jmp short 8430`
+        rel = mem.rb(CS, (after + 1) & 0xFFFF)
+        if ((after + 2 + ((rel ^ 0x80) - 0x80)) & 0xFFFF) != UPGRADE_STUB_TAIL:
+            return None
+    else:
+        return None
+    return mem.rw(CS, (target + 4) & 0xFFFF)
 MARKER_CELL = 0x95FA           # the held powerup marker (FFFF = none)
 MARKER_SAVE_CELL = 0x95F6
 MARKER_TABLE_95FC = 0x95FC     # marker -> descriptor pointer
@@ -1531,10 +1562,11 @@ def _apply_upgrade_8546(mem) -> None:
     si = mem.rw(DS, (desc + 6) & 0xFFFF)                   # 855D
     bx = (mem.rw(DS, (desc + 8) & 0xFFFF) * 6) & 0xFFFF    # 8560..8569
     target = mem.rw(DS, (bx + si + 4) & 0xFFFF)            # 856F: call [bx+si+4]
-    mode = _UPGRADE_HANDLERS.get(target)
+    mode = _decode_upgrade_stub(mem, target)
     if mode is None:
-        raise RecoveryGap(f"8546's upgrade stub CS:{target:04X}",
-                          "only the 8412/841A/8422/842A [A958] stubs are recovered")
+        raise RecoveryGap(f"8546's upgrade handler CS:{target:04X}",
+                          "not an [A958] level stub -- the 44AF/8463/849D/84C3/84D6 weapon "
+                          "families are unrecovered")
     mem.ww(DS, 0xA958, mode)
     mem.ww(DS, MARKER_CELL, 0xFFFF)                        # 8430
     mem.ww(DS, MARKER_SAVE_CELL, mem.rw(DS, MARKER_CELL))  # 8572: [95F6] = FFFF

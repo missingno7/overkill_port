@@ -12,8 +12,8 @@ level-start sequence into a fresh data image and reads the result back through t
   * player spawn   -- :func:`player_spawn_record_c42f` (record 0x237C active at x=0xC0, y=0x58);
   * starfield      -- :func:`load_starfield_state` (cold static stream).
 
-Known omission (marked, not faked): the ``7524`` companion/flame object
-(:func:`player_companion_spawn_c453`) needs the runtime allocator, so it is not placed here.
+The ``7524`` companion/flame object (:func:`player_companion_spawn_c453`) IS placed: the allocator is
+recovered (``behavior_walk._alloc``), and without it a cold-started level has no ship thrusters.
 """
 from __future__ import annotations
 
@@ -32,6 +32,7 @@ from overkill.recovered.systems.frame_loop import (
     apply_new_game_setup_c4db,
     new_game_session_init_96ee,
     object_pool_seed_c3b5,
+    player_companion_spawn_c453,
     player_spawn_record_c42f,
     respawn_control_reset_c461,
 )
@@ -154,6 +155,18 @@ def apply_respawn_seeds(mem) -> None:
     # player spawn (record 0x237C active at 0xC0/0x58) -- last, over the inactive seed
     for fo, val in player_spawn_record_c42f().items():
         mem.ww(ds, PLAYER_SPAWN_RECORD + fo, val)
+    # C450: the 7524-allocated COMPANION object -- the ship's flame/exhaust anchor.  This used to be
+    # the file's "known omission (marked, not faked): needs the runtime allocator".  It does not: the
+    # allocator is recovered (behavior_walk._alloc, the 7524/7573 cursor scan), and the 9908 respawn
+    # continuation already spawns it this way.  Without it a COLD-started level has NO THRUSTERS,
+    # while any snapshot does -- exactly the difference the owner saw.
+    from overkill.recovered.adapters.behavior_walk import (
+        EFFECT_POOL_BASE, EFFECT_POOL_WRAP, EFFECT_SLOTS, _alloc,
+    )
+    slot = _alloc(mem, 0x95D8, EFFECT_POOL_BASE, EFFECT_POOL_WRAP, EFFECT_SLOTS)
+    if slot != 0xFFFF:
+        for fo, val in player_companion_spawn_c453().items():
+            mem.ww(ds, (slot + fo) & 0xFFFF, val)
     # the health BAR at its post-intro fixed point (AFTER C4DB/C461, which zero it -- see docstring)
     mem.ww(ds, 0xA97A, 0x0058)
     mem.ww(ds, 0xA97C, 0x0001)
