@@ -59,7 +59,7 @@ def main(argv) -> int:
         deplanarize_tandy(load_container_asset((ROOT / "assets" / "OVERKILL").read_bytes(),
                                                "PANEL.ENC"),
                           sprite_mode=False, emit_item_headers=True), dtype=np.uint8)
-    for pre, post, sp in iter_cached_frames(cached):
+    for pre, post, sp, _ticks in iter_cached_frames(cached):
         image = MutFlatMemory(pre)
         # the native decode must byte-equal the VM's decoded panel segment -- assert, don't assume
         seg = image.rw(0x1010, 0x95B4)

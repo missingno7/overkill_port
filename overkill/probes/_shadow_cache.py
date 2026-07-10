@@ -21,7 +21,7 @@ import pickle
 import zlib
 from pathlib import Path
 
-CACHE_FORMAT = 4
+CACHE_FORMAT = 5
 DGROUP = 0x25CC
 CS = 0x1010
 PLANE_SEG_CELL = 0x9592
@@ -86,6 +86,11 @@ class WalkShadowRecorder:
         self.post_deltas: list = []      # DGROUP delta vs this frame's PRE DGROUP
         self.plane_refs: list = []       # index into self.planes
         self.sps: list = []
+        #: per frame, how many INT8 timer interrupts the ORIGINAL took inside that window.  A HOST
+        #: input, not game state (like the key table), and unrecoverable after the fact: [0054] and
+        #: [BF00] are 2-bit counters, so a 1-, 7- or 402-tick window is indistinguishable from a
+        #: 2-tick one in DGROUP.  The native frame replays exactly this many ISR ticks.
+        self.isr_ticks: list = []
         self.planes: list = []           # zlib-compressed plane blobs, dedup'd
         self._plane_index: dict = {}
         self.strip_seg: int | None = None
@@ -94,7 +99,7 @@ class WalkShadowRecorder:
         self._strip_index: dict = {}
         self._last_post_dgroup: bytes | None = None
 
-    def add_frame(self, pre_full: bytes, post_dgroup: bytes, sp: int) -> None:
+    def add_frame(self, pre_full: bytes, post_dgroup: bytes, sp: int, isr_ticks: int = 2) -> None:
         base = DGROUP * 16
         pre_dgroup = pre_full[base:base + 0x10000]
         if self.frame0_full is None:
@@ -122,6 +127,7 @@ class WalkShadowRecorder:
         self.strip_refs.append(sref)
         self.post_deltas.append(_delta(pre_dgroup, post_dgroup))
         self.sps.append(sp)
+        self.isr_ticks.append(isr_ticks)
         self._last_post_dgroup = post_dgroup
 
     def save(self, path: Path) -> None:
@@ -133,6 +139,7 @@ class WalkShadowRecorder:
             "pre_deltas": self.pre_deltas, "post_deltas": self.post_deltas,
             "plane_refs": self.plane_refs, "sps": self.sps, "planes": self.planes,
             "strip_seg": self.strip_seg, "strip_refs": self.strip_refs, "strips": self.strips,
+            "isr_ticks": self.isr_ticks,
         }, protocol=pickle.HIGHEST_PROTOCOL)
         path.write_bytes(zlib.compress(blob, 6))
 
@@ -155,13 +162,15 @@ def load_cache(path: Path, key: str, max_frames):
 
 
 def iter_cached_frames(d):
-    """Yield ``(pre_full_1mb: bytearray, post_dgroup: bytes, sp)`` per cached walk frame.
+    """Yield ``(pre_full_1mb: bytearray, post_dgroup: bytes, sp, isr_ticks)`` per cached walk frame.
 
     ``pre_full_1mb`` is rebuilt as: frame-0's full machine state, with the rolling DGROUP window,
     the current tile plane, and the current tile STRIP overlaid -- everything else the frame reads
     (code, dispatch tables) is static.  The caller may mutate the yielded buffer (a fresh copy per
     frame).  The strip matters because A846's save-under reads it, and most of it lies ABOVE the
     64K DGROUP window.
+
+    ``isr_ticks`` is the recorded host timer-interrupt count for that window (see the recorder).
     """
     base_full = bytearray(zlib.decompress(d["frame0_full"]))
     plane_seg = d["plane_seg"]
@@ -192,5 +201,5 @@ def iter_cached_frames(d):
         pre_full[strip_seg * 16:strip_seg * 16 + STRIP_SIZE] = strip
         post = bytearray(dgroup)
         _apply(post, d["post_deltas"][i])
-        yield pre_full, bytes(post), d["sps"][i]
+        yield pre_full, bytes(post), d["sps"][i], d["isr_ticks"][i]
         dgroup = post

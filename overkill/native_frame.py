@@ -45,8 +45,12 @@ def level_tiles_from_image(mem) -> LevelTileContext:
                             tile_plane=plane, class_table=classes)
 
 
-def advance_gameplay_frame_97b2(mem) -> None:
+def advance_gameplay_frame_97b2(mem, *, isr_ticks: int = 2) -> None:
     """One 97B2 frame over the image, stage by stage.
+
+    ``isr_ticks`` is the HOST INPUT for this frame: how many INT8 timer interrupts fired while it
+    ran (see :func:`_isr_effects_ticks`).  Steady-state play is 2, which is the default; the lockstep
+    gate passes the count it recorded from the original.
 
     Stage map (1010:97B2..981D; video-only stages noted, DGROUP-mutating stages executed or
     fail-loud):
@@ -87,7 +91,7 @@ def advance_gameplay_frame_97b2(mem) -> None:
     _shield_charge_77c5(mem)
     _clock_tick_5f61(mem)
     # --- the INT8 ISR's per-frame DGROUP effects (two ticks per frame: the [0054] parity pair) -
-    _isr_effects_two_ticks(mem)
+    _isr_effects_ticks(mem, isr_ticks)
     # --- the NEXT frame's present half (the 9B2E boundary cut): the star pass + the A90C
     # projection run after the loop tail (0672/511F/A846/981F/5BDC) and before the next 9B2E ---
     from overkill.native_walk_frame import sync_screen_projection
@@ -425,14 +429,27 @@ def _energy_drain_9ee4(mem) -> None:
     _bar_draw_77f6(mem)
 
 
-def _isr_effects_two_ticks(mem) -> None:
-    """The INT8 ISR's per-frame DGROUP effects.  The game paces on CS:[066B], which the ISR sets
-    every OTHER fire ([0054] parity) -- TWO ISR ticks per frame: [0054] += 2 (mod 4) and two D50E
-    sound-engine steps ([BF00] += 1 & 3 each; the [BEFF] effect-queue consume and the BFAA/BFBA
-    channel steppers are the AUDIO campaign -- fail loud when a sound is actually queued so the
-    gate names the cells)."""
-    mem.wb(DS, 0x0054, (mem.rb(DS, 0x0054) + 2) & 0x03)
-    for _ in range(2):
+def _isr_effects_ticks(mem, ticks: int) -> None:
+    """The INT8 ISR's per-frame DGROUP effects: ``ticks`` fires of the timer interrupt.
+
+    Each fire bumps ``[0054]`` (mod 4 -- the parity the game paces on via CS:[066B], which the ISR
+    sets every OTHER fire) and runs one D50E sound-engine step (``[BF00] += 1 & 3``; the [BEFF]
+    effect-queue consume and the BFAA/BFBA channel steppers are the AUDIO campaign -- fail loud when
+    a sound is actually queued so the gate names the cells).
+
+    HOW MANY TICKS is not game state: it is how many timer interrupts the HOST delivered while the
+    frame ran, exactly as the key table is what the HOST's keyboard delivered.  Steady-state play is
+    2 (the frame-wait at 0679 blocks for the pair), and that is the default the native game uses --
+    but driving the original over the cold-start demo shows the true distribution is
+    ``{0: 2, 1: 1, 2: 8284, 7: 1, 402: 4}`` windows: the four 402s are the death/respawn frames,
+    whose 418626-instruction level reload outruns the timer by two hundred ticks.  So the lockstep
+    gate RECORDS the count per window (it traps the INT8 vector 1010:06E5) and passes it here.
+    ``[0054]``/``[BF00]`` are only 2-bit counters, so the count cannot be recovered from DGROUP
+    after the fact -- an earlier hard-coded 2 put frame 4637 (a genuine one-tick window) into
+    divergence, one sound-engine step ahead of the original.
+    """
+    for _ in range(ticks):
+        mem.wb(DS, 0x0054, (mem.rb(DS, 0x0054) + 1) & 0x03)
         _sound_engine_tick_d50e(mem)
 
 

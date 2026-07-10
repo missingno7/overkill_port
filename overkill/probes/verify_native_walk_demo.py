@@ -126,7 +126,7 @@ def main(argv) -> int:
     if cached is not None:
         print(f"  (replaying {cached['frames']} recorded walk frames from {cache_file.name} -- "
               f"same states, same comparison, no VM)", flush=True)
-        for pre_full, post_dgroup, sp in iter_cached_frames(cached):
+        for pre_full, post_dgroup, sp, _ticks in iter_cached_frames(cached):
             _check_frame(pre_full, post_dgroup, sp, stats, gaps, first_divs)
     else:
         recorder = WalkShadowRecorder(key, max_frames)

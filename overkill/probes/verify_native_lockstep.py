@@ -64,12 +64,19 @@ EXCLUDED_CELLS |= {0x215E, 0x2160, 0x2161}
 # raw channel cells are inputs (device state), not game state.
 EXCLUDED_CELLS |= {0x98C3} | set(range(0x98C4, 0x99C4))
 
+#: the INT8 vector (IVT 0000:0020 of every recorded snapshot) -- trapped so the recorder can count
+#: how many timer interrupts the original took inside each window.  That count is the OTHER host
+#: input (with the key table); unlike the key table it cannot be excluded away, because [0054] and
+#: [BF00] are 2-bit counters -- a 1-tick window and a 2-tick window differ in the SOUND state they
+#: leave behind, and that state is game state we want compared.  So we record it and feed it in.
+INT8_VECTOR = (0x1010, 0x06E5)
+
 
 def lockstep_cache_path(demo) -> Path:
     return CACHE_DIR / (Path(demo.demo_dir).name + ".lockstep9b2e")
 
 
-def _check_frame(pre_full, post_dgroup: bytes, sp: int, stats, gaps: Counter,
+def _check_frame(pre_full, post_dgroup: bytes, sp: int, isr_ticks: int, stats, gaps: Counter,
                  first_divs: list) -> None:
     """Run the native frame over one VM pre-state and diff DGROUP against the VM post-state."""
     base = DGROUP * 16
@@ -79,7 +86,7 @@ def _check_frame(pre_full, post_dgroup: bytes, sp: int, stats, gaps: Counter,
         print(f"  ..lockstep frame {stats['frames']}: diverged={stats['diverged']} "
               f"distinct-gaps={len(gaps)}", flush=True)
     try:
-        advance_gameplay_frame_97b2(native)
+        advance_gameplay_frame_97b2(native, isr_ticks=isr_ticks)
     except RecoveryGap as gap:
         key = str(gap).split(" (record ")[0]
         gaps[key] += 1
@@ -116,29 +123,35 @@ def main(argv) -> int:
     if cached is not None:
         print(f"  (replaying {cached['frames']} recorded 97B2 frames from {cache_file.name} -- "
               f"same states, same comparison, no VM)", flush=True)
-        for pre_full, post_dgroup, sp in iter_cached_frames(cached):
-            _check_frame(pre_full, post_dgroup, sp, stats, gaps, first_divs)
+        for pre_full, post_dgroup, sp, isr_ticks in iter_cached_frames(cached):
+            _check_frame(pre_full, post_dgroup, sp, isr_ticks, stats, gaps, first_divs)
     else:
         recorder = WalkShadowRecorder(key, max_frames)
         base = DGROUP * 16
-        st = {"pre": None, "sp": 0}
+        st = {"pre": None, "sp": 0, "ticks": 0}
 
         def on_ref_step(cpu) -> None:
-            if (cpu.s.cs & 0xFFFF) != CS or (cpu.s.ip & 0xFFFF) != FRAME_TOP:
+            cs, ip = cpu.s.cs & 0xFFFF, cpu.s.ip & 0xFFFF
+            if (cs, ip) == INT8_VECTOR:
+                st["ticks"] += 1                    # a timer interrupt fired inside this window
+                return
+            if cs != CS or ip != FRAME_TOP:
                 return
             m = cpu.mem
             if st["pre"] is not None:
                 # one full 97B2 frame ran between the previous hit and this one
-                pre, sp = st["pre"], st["sp"]
+                pre, sp, ticks = st["pre"], st["sp"], st["ticks"]
                 post_dgroup = bytes(m.data[base:base + 0x10000])
-                recorder.add_frame(pre, post_dgroup, sp)
-                _check_frame(pre, post_dgroup, sp, stats, gaps, first_divs)
+                recorder.add_frame(pre, post_dgroup, sp, ticks)
+                _check_frame(pre, post_dgroup, sp, ticks, stats, gaps, first_divs)
             st["pre"] = bytes(m.data)
             st["sp"] = cpu.s.sp & 0xFFFF
+            st["ticks"] = 0
 
-        # TRAP: on_ref_step only ever acts at the 9B2E frame boundary; letting the harness make
-        # that check turns ~120M per-instruction callbacks into ~8k.  Identical semantics.
-        trap = frozenset({(CS, FRAME_TOP)})
+        # TRAP: on_ref_step only ever acts at the 9B2E frame boundary and the INT8 entry; letting
+        # the harness make that check turns ~120M per-instruction callbacks into ~25k.  Identical
+        # semantics.
+        trap = frozenset({(CS, FRAME_TOP), INT8_VECTOR})
         if demo.is_cold_start:
             run_ref_step_probe_cold_start(demo, max_frames, on_ref_step, trap=trap)
         else:
