@@ -851,7 +851,14 @@ def _muzzle_project_a1ae(mem, slot: int) -> None:
 
 
 def _anchor_shot_a19f(mem) -> None:
-    """``1010:A19F`` -- one seeded shot at the muzzle."""
+    """``1010:A19F`` -- one seeded shot at the muzzle, preceded by the [98C0]-gated sound 0x13.
+
+    The routine opens with `cmp [98C0],0 ; jz +5 ; mov [BEFF],13h` (bytes at A19F) before it seeds
+    the shot; we were dropping that queue write, which showed up as DS:BEFF divergence on the
+    frames where the player fires from the early-level anchor path.
+    """
+    if mem.rb(DS, 0x98C0):
+        mem.wb(DS, 0xBEFF, 0x13)
     slot = _spawn_seed_a4ea(mem)
     _muzzle_project_a1ae(mem, slot)
 
