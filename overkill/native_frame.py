@@ -212,30 +212,66 @@ def _save_under_a846(mem) -> None:
                           (dest + SAVE_SLOT2_DEST) & 0xFFFF, rows, row_bytes)
 
 
-#: the player view-anchor record (the only record whose +0x24 flash is DGROUP-visible at DS:23A0)
+#: the player view-anchor record (32CA entry 0x24, one 0x38-stride record before the effect pool)
 ANCHOR = 0x237C
+#: the three object pools A846 draws, in (base, count) form -- the anchor, the gameplay pool
+#: (8D12, cs=0x22 descending) and the effect pool (32CA, cs=0x23).  Draw ORDER differs but the
+#: per-record hit-flash decay is order-independent (each record ticks its own +0x24).
+_FLASH_POOLS = ((ANCHOR, 1), (0x2B5C, 0x22), (0x23B4, 0x23))
+_OBJ_STRIDE = 0x38
+#: record field offsets (mirroring native_video.object_sprites); +0x24 is the hit-flash / OR-invert.
+_F_ACTIVE, _F_SPRITE, _F_SLOT0C, _F_SLOT10, _F_ANIM, _F_DRAWTYPE, _F_FLASH = (
+    0x00, 0x08, 0x0C, 0x10, 0x12, 0x14, 0x24)
+#: frame-table lengths (native_video.object_sprites build_sprite_context): a sprite index at or past
+#: its table length falls off the end (``_table_get`` -> None) and draws NO slot -- the ONLY way the
+#: banks/tables affect the DRAWN-SLOT COUNT, so the count needs these lengths, not the table bytes.
+_LEN_75A6, _LEN_768E, _LEN_7746 = 0x400, 0x100, 0x100
+_THRESHOLD_75A6, _THRESHOLD_768E = 0x1C, 0xFA
+
+
+def _drawn_slot_count(sprite_id: int, draw_type: int, slot_0c: int, slot_10: int) -> int:
+    """How many compositor slots the A846 draw scan issues for one active, anim-0 record -- i.e. how
+    many times its +0x24 hit-flash decrements this frame.  Mirrors native_video.object_slots exactly
+    (draw types 0/1/2 -> 7746/768E/75A6); a value >= a table length or an 0xFFFF-culled destination
+    issues no compositor call and so does not tick."""
+    if draw_type == 2:                                              # 75A6
+        index = sprite_id if sprite_id < _THRESHOLD_75A6 else sprite_id - _THRESHOLD_75A6
+        if index >= _LEN_75A6:
+            return 0
+        return (slot_0c != 0xFFFF) + (slot_10 != 0xFFFF)
+    if draw_type == 1:                                             # 768E
+        if slot_0c == 0xFFFF:
+            return 0
+        index = sprite_id if sprite_id < _THRESHOLD_768E else sprite_id - _THRESHOLD_768E
+        return 0 if index >= _LEN_768E else 1
+    if draw_type == 0:                                             # 7746
+        return 0 if (slot_0c == 0xFFFF or sprite_id >= _LEN_7746) else 1
+    return 0                                                       # draw type >= 3: no sprite routine
 
 
 def _flash_decay_a846(mem) -> None:
     """The A846 draw scan's HIT-FLASH decay: each compositor prologue (1010:25AE / 30FF / 4227)
-    runs ``cmp [bp+24h],0 ; jz .. ; dec [bp+24h]`` -- i.e. a drawn record's +0x24 flash counter
-    ticks down ONCE PER DRAWN SLOT, not once per frame.  The player anchor (0x237C, draw type 2)
-    issues TWO slots, so DS:23A0 (= 0x237C + 0x24) decays by 2 per frame while it is on screen;
-    a culled slot (its di cell holds the 0xFFFF off-screen sentinel) issues no compositor call and
-    so does not tick."""
-    flash = mem.rw(DS, ANCHOR + 0x24)
-    if flash == 0:
-        return
-    slots = 0
-    if mem.rw(DS, ANCHOR + 0x0C) != 0xFFFF:
-        slots += 1
-    if mem.rw(DS, ANCHOR + 0x10) != 0xFFFF:
-        slots += 1
-    for _ in range(slots):
-        if flash == 0:
-            break
-        flash -= 1
-    mem.ww(DS, ANCHOR + 0x24, flash)
+    runs ``cmp [bp+24h],0 ; jz .. ; dec [bp+24h]`` -- a DRAWN record's +0x24 flash counter ticks
+    down ONCE PER DRAWN SLOT, for EVERY drawn record (the player anchor AND every enemy/effect), not
+    just the anchor.  Without this an enemy hit-flash (+0x24, drawn white by the OR-inverted
+    compositor) would never clear and the enemy would stay white -- the demos never set an enemy
+    flash, so the lockstep never exercised it; the driven oracle (inject +0x24 into every record, run
+    one VM frame) confirmed exactly the drawn records tick, by their slot count."""
+    for base, count in _FLASH_POOLS:
+        for i in range(count):
+            rec = (base + i * _OBJ_STRIDE) & 0xFFFF
+            flash = mem.rw(DS, (rec + _F_FLASH) & 0xFFFF)
+            if flash == 0:
+                continue
+            if mem.rw(DS, (rec + _F_ACTIVE) & 0xFFFF) == 0:
+                continue
+            if mem.rw(DS, (rec + _F_ANIM) & 0xFFFF) != 0:
+                continue          # 7688: the anim 1..7 no-draw stub issues no compositor call
+            n = _drawn_slot_count(mem.rw(DS, (rec + _F_SPRITE) & 0xFFFF),
+                                  mem.rw(DS, (rec + _F_DRAWTYPE) & 0xFFFF),
+                                  mem.rw(DS, (rec + _F_SLOT0C) & 0xFFFF),
+                                  mem.rw(DS, (rec + _F_SLOT10) & 0xFFFF))
+            mem.ww(DS, (rec + _F_FLASH) & 0xFFFF, max(0, flash - n))
 
 
 def _star_list_4ced(mem) -> None:
