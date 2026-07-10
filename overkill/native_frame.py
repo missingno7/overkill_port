@@ -94,37 +94,73 @@ def advance_gameplay_frame_97b2(mem) -> None:
 
 
 def _star_list_4ced(mem) -> None:
-    """``1010:4CED`` (the present path's star pass): 4D64-undraw the previous C7B1 list from the
-    CS:[9598] strip, then rebuild -- per C6C1-ring star {tick, xoff, px}: cell = DS:[9A08 +
-    tick*2] + [234C] + xoff (arithmetic PROVEN vs the VM list, loop_blockers 2026-07-07); an
-    occupied (tile-lit) cell skips the star; a plotted star writes the strip pixel and appends
-    its cell to the list, FFFF-terminated."""
+    """``1010:4CED`` -- the star pass, called from A846 (at A876) right after its per-object loop.
+
+    GATE-PROVEN SHAPE (``verify_native_star_strip``: 10/10 strip windows and 10/10 produced lists
+    byte-exact vs the driven VM):
+
+    * the occupancy the pass tests (``cmp es:[bx],0``, ``es = CS:[9598]``) is the **terrain window
+      and nothing else** -- at 4CED the sprites have been erased by A846's own loop and the previous
+      frame's stars were undrawn by ``4D64`` (called from A90C, after the blit).  So it is a pure
+      function of DGROUP: ``compose_tile_window`` packed 2 px/byte at the 0x68 stride.
+    * per ring star (three parallax layers of 20/10/10 at ``DS:C6C1``, 6 bytes each): the cell is
+      ``bx = tick*0x68 + [234C] + xoff``; an OCCUPIED cell skips the star, a free one plots it (so
+      later stars see it) and appends ``bx`` to the ``DS:C7B1`` list, which is FFFF-terminated.
+
+    Only the LIST is persistent state: the star pixels this pass writes into the strip are undrawn
+    again by ``4D64`` before the next 9B2E boundary, so within one lockstep frame their net effect
+    is nil -- writing them here is what made the earlier attempt *add* ~2700 divergences.
+    """
     if mem.rw(CS, 0x95BC) == 1:
         raise RecoveryGap("4CED's video-mode-1 star pass", "Tandy is mode 2")
-    strip_seg = mem.rw(CS, 0x9598)
-    si = 0xC7B1
-    for _ in range(0x28):
-        v = mem.rw(DS, si)
-        si = (si + 2) & 0xFFFF
-        if v == 0xFFFF:
-            break
-        mem.wb(strip_seg, v, 0)                     # 4D64
+
+    window = _terrain_window(mem)
     scroll = mem.rw(DS, 0x234C)
-    si = 0xC6C1
     di = 0xC7B1
+    si = 0xC6C1
     for count in (0x14, 0x0A, 0x0A):
         for _ in range(count):
             tick = mem.rw(DS, si)
             xoff = mem.rw(DS, (si + 2) & 0xFFFF)
             px = mem.rb(DS, (si + 4) & 0xFFFF)
             si = (si + 6) & 0xFFFF
-            bx = (mem.rw(DS, (0x9A08 + ((tick << 1) & 0xFFFF)) & 0xFFFF) + scroll + xoff) & 0xFFFF
-            if mem.rb(strip_seg, bx) != 0:
+            bx = (tick * STRIP_STRIDE + scroll + xoff) & 0xFFFF
+            t, c = divmod(bx - scroll, STRIP_STRIDE)
+            if not (0 <= t < STRIP_ROWS and 0 <= c < STRIP_STRIDE):
                 continue
-            mem.wb(strip_seg, bx, px)               # 4D59
-            mem.ww(DS, di, bx)                      # 4D5C
+            if window[t][c]:
+                continue                       # 4D28: occupied -> skip
+            window[t][c] = px                  # 4D59: plot (later stars see it)
+            mem.ww(DS, di, bx)                 # 4D5C: append
             di = (di + 2) & 0xFFFF
-    mem.ww(DS, di, 0xFFFF)                          # 4D10
+    mem.ww(DS, di, 0xFFFF)                     # 4D10: terminate
+
+
+STRIP_STRIDE = 0x68        # 104 bytes per scanline (208 px, 2 px/byte)
+STRIP_ROWS = 192
+STRIP_TOP_Y = 4
+
+
+def _terrain_window(mem) -> "list[list[int]]":
+    """The (192, 104) packed terrain bytes 4CED probes -- ``compose_tile_window``, nothing else."""
+    import numpy as np
+
+    from overkill.native_video.tile_row import BANK2_ROW_BASE, compose_tile_window
+
+    row_base = mem.rw(DS, 0x2350)
+    mem_np = np.frombuffer(bytes(mem.data), dtype=np.uint8)
+    plane_seg = mem.rw(CS, 0x9592)
+    plane = mem_np[plane_seg * 16: plane_seg * 16 + 0x10000]
+    table = [mem.rw(CS, (0x8D92 + 2 * k) & 0xFFFF) for k in range(0x100)]
+    bank_ptr = 0x959C if row_base >= BANK2_ROW_BASE else 0x959A
+    bank = mem.rw(CS, bank_ptr)
+    graphics = mem_np[bank * 16: bank * 16 + 0x10000]
+    frame = np.zeros((200, 320), dtype=np.uint8)
+    compose_tile_window(frame, plane, row_base, table, graphics, phase_234e=mem.rw(DS, 0x234E))
+    band = frame[STRIP_TOP_Y:STRIP_TOP_Y + STRIP_ROWS, :STRIP_STRIDE * 2].reshape(
+        STRIP_ROWS, STRIP_STRIDE, 2)
+    packed = (band[:, :, 0] << 4) | band[:, :, 1]
+    return packed.tolist()
 
 
 def _a940_walk_stage(mem) -> None:
