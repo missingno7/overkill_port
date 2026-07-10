@@ -55,11 +55,16 @@ LIVES_SHIP_CELL = 0x1E
 LIVES_EMPTY_CELL = 0x1F
 LIVES_MAX = 3
 
-#: the 77F6 energy bar: from (cell-col 0x1D, scanline 0x5F) growing UPWARD, ``[A97A] >> 1``
-#: filled rows (words 0xFFCE @di, 0xC4EE @di+2) then zero rows up to the 0x2C-row column.
+#: the 77F6 energy bar: from (cell-col 0x1D, scanline 0x5F) growing UPWARD, ``[A97A] >> 1`` filled
+#: units (words 0xFFCE @di, 0xC4EE @di+2), then the 789A tail zeroes ``0x2C - (A97A >> 1)`` more.
+#: EACH UNIT SKIPS A SCANLINE: the ASM does the `sub di,0x2000` bank-step (with the `test di,0x6000`
+#: / `add di,0x7F60` wrap) TWICE per unit, so the column paints every OTHER scanline and the gaps
+#: between the bars are the untouched backdrop rows.  Drawing them contiguously -- as this composer
+#: did -- produced a solid meter, which is what the owner saw.
 ENERGY_BAR_X_CELL = 0x1D
 ENERGY_BAR_Y = 0x5F
-ENERGY_BAR_ROWS = 0x2C
+ENERGY_BAR_ROWS = 0x2C          # units, not scanlines: the column spans 2 * 0x2C = 88 scanlines
+ENERGY_BAR_SCANLINE_STEP = 2
 ENERGY_FILL_WORDS = (0xFFCE, 0xC4EE)
 #: the panel's leftmost pixel column (byte col 0x6C * 2 px/byte).
 PANEL_LEFT_PX = 216
@@ -100,13 +105,14 @@ def compose_lives_row_60f3(page: np.ndarray, panel_source: np.ndarray, dir_table
 
 
 def compose_energy_bar_77f6(page: np.ndarray, a97a: int) -> None:
-    """The 77F6 energy column: ``a97a >> 1`` filled rows growing UP from (0x1D, 0x5F), the rest
-    of the 0x2C-row column zeroed (the ASM's 789A empty tail)."""
+    """The 77F6 energy column: ``a97a >> 1`` filled units growing UP from (0x1D, 0x5F), then the
+    789A tail zeroes the remaining ``0x2C - (a97a >> 1)``.  Units are TWO scanlines apart -- the
+    ASM steps ``di`` up a scanline twice per unit -- so the bar has gaps between its bars."""
     filled = (a97a & 0xFFFF) >> 1
     lo, hi = ENERGY_FILL_WORDS[0], ENERGY_FILL_WORDS[1]
     fill = np.array([lo & 0xFF, (lo >> 8) & 0xFF, hi & 0xFF, (hi >> 8) & 0xFF], dtype=np.uint8)
     for k in range(ENERGY_BAR_ROWS):
-        y = ENERGY_BAR_Y - k
+        y = ENERGY_BAR_Y - k * ENERGY_BAR_SCANLINE_STEP
         base = (_row_base(y) + ENERGY_BAR_X_CELL * 4) & 0xFFFF
         page[base: base + 4] = fill if k < filled else 0
 

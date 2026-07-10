@@ -59,7 +59,15 @@ def main(argv) -> int:
         deplanarize_tandy(load_container_asset((ROOT / "assets" / "OVERKILL").read_bytes(),
                                                "PANEL.ENC"),
                           sprite_mode=False, emit_item_headers=True), dtype=np.uint8)
-    for pre, post, sp, _ticks in iter_cached_frames(cached):
+    # FRAME 0 ONLY, and that is not laziness -- it is the only frame where this comparison MEANS
+    # anything.  The original REDRAWS the panel only when 981F runs, so on every other frame the VM's
+    # page is a stale composition from some earlier moment; diffing a freshly composed panel against
+    # it compares two different instants.  (A "widened" version of this gate reported 331/332 frames
+    # diverging and was measuring exactly that staleness.)  The LIVE layers are gated per routine
+    # against the original instead -- see probes/verify_native_energy_bar_77f6.
+    for n, (pre, post, sp, _ticks) in enumerate(iter_cached_frames(cached), start=1):
+        if n != 1:
+            break
         image = MutFlatMemory(pre)
         # the native decode must byte-equal the VM's decoded panel segment -- assert, don't assume
         seg = image.rw(0x1010, 0x95B4)
