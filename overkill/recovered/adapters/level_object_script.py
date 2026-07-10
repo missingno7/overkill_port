@@ -15,7 +15,8 @@ planet+1 or 0x0C when scan != 1, +0x24 = 0), the ``2078`` completion-counter reg
 -- is nonzero; the member count in the low byte, the kind in the high; ``+0x28`` = the slot index,
 consumed by the recovered BFC7 completion-drop), and for CONTROLLER behaviors the ``1F8F:0209``
 init with the behavior's SPAWN schedule (0x1F -> A82E etc. -- distinct from the C054 death-chain
-bases), HP 0x14, ``A47E = 1``, ``A480 = 0x64``.
+bases), HP 0x14, ``A47E = 1``, ``A480 = 0x64``, plus the two calls 0209 makes at its tail:
+``0854`` (the 98A2..98AC controller-counter reset) and ``0918`` (the wave-cursor rewind).
 
 The GROUND-object path (scan == 1 AND gate != 1, ``1010:4B4A..4BE7``): snap X/Y to 16px, then
 search that tile COLUMN of the level plane for the ground surface (the recovered ``5073``-shape
@@ -44,6 +45,43 @@ CONTROLLER_SPAWN_SCHEDULES = {0x13: 0xA484, 0x15: 0xA4E8, 0x1C: 0xA7A2, 0x1F: 0x
                               0x7D: 0xA638, 0x7E: 0xA6F4}
 
 EFFECT_POOL_BASE, EFFECT_POOL_WRAP, EFFECT_SLOTS = 0x23B4, 0x2B5C, 0x23
+
+#: the overlay segment holding the controller/starfield code (``1010:A9B8`` far-calls ``1F8F:081D``)
+OVERLAY_SEG = 0x1F8F
+#: ``1F8F:0920`` -- a CODE-SEGMENT word: the wave-schedule cursor, walked with ``lodsw`` at 08AF
+#: (``mov si,cs:[0920]``) and advanced by ``add word cs:[0920],4`` at 08DE.  ``0918`` rewinds it.
+WAVE_CURSOR_CELL = 0x0920
+WAVE_SCHEDULE_HEAD = 0x9828
+
+
+def _controller_counter_reset_0854(mem) -> None:
+    """``1F8F:0854`` -- the controller COUNTER-BLOCK reset, called from ``0209`` (at 0241).
+
+    The two counters this arms are the pair that paces the wave controller: ``98A5`` (the fast one,
+    reloaded at ``1010:A982..A9B3`` from the 10/6/4/1 speed bucket) and ``98A7`` (the slow one,
+    reloaded by the far ``1F8F:081D`` that A9B8 calls, from the 0x78/0x64/0x50/0x3C/0x28 bucket).
+    Both buckets key off ``[A47E]``, which ``0209`` has just set to 1.  ``98A3``/``98A6`` are their
+    run-length companions; ``98AA``/``98AC`` head an FFFF-terminated list.
+
+    Missing this reset was the lockstep gate's last non-transition divergence: the spawn frame left
+    ``98A5``/``98A7`` at 0, so ``081D``'s ``dec`` underflowed to 0xFF instead of counting 1 -> 0.
+    """
+    for cell in (0x98A2, 0x98A3, 0x98A4, 0x98A6, 0x98A8, 0x98A9):
+        mem.wb(DS, cell, 0)
+    mem.wb(DS, 0x98A5, 1)
+    mem.wb(DS, 0x98A7, 1)
+    mem.ww(DS, 0x98AA, 2)
+    mem.ww(DS, 0x98AC, 0xFFFF)
+
+
+def _wave_cursor_rewind_0918(mem) -> None:
+    """``1F8F:0918`` -- ``mov word [cs:0920], 9828``: rewind the wave-schedule cursor to its head.
+
+    The cursor lives in the OVERLAY'S CODE SEGMENT, not DGROUP, so the DGROUP lockstep gate is blind
+    to it; it is written here because that is what ``0209`` does, and because its consumer (``08AB``,
+    still unrecovered) reads the live value.  Faithful now beats archaeology later.
+    """
+    mem.ww(OVERLAY_SEG, WAVE_CURSOR_CELL, WAVE_SCHEDULE_HEAD)
 
 #: the six per-planet script CURSOR cells (C5F5..C5FF) and the script HEAD each resets to --
 #: exactly the first six writes of ``1010:0B3E`` (the level-data initializer, run at level load AND
@@ -200,6 +238,8 @@ def run_level_object_script_4a65(mem) -> None:
                 mem.ww(DS, 0x2346, 0)
                 mem.ww(DS, 0x2348, 0)
                 mem.ww(DS, 0xA7A0, 0)
+                _controller_counter_reset_0854(mem)
+                _wave_cursor_rewind_0918(mem)
             elif beh == 0x21:
                 raise RecoveryGap("script-spawned wave driver (behavior 0x21)",
                                   "the 4C03 path calls 1F8F:0209 with a leftover-ax schedule")

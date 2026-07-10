@@ -48,6 +48,16 @@ DEFAULT_DEMO = "demo_cold_start_full_20260705_123645"
 # silently.
 EXCLUDED_CELLS = {0xA954, 0xA955, 0x230A, 0x230B, 0x230C, 0x230D,
                   0x230E, 0x230F, 0x2310, 0x2311, 0x215A, 0x215B}
+# The 2150-block DRAW SCRATCH, on the same ground as 215A and with the same kind of proof:
+# ``215E`` (x) and ``2160`` (y*320) are set by the coordinate decoder (2718 / 3322 / 4445, one copy
+# per video mode) off a ``bp`` data pointer and consumed by the 3170 drawer, both inside one present
+# half.  The caller at 5194 runs them once per drawn item, so the value left standing at the 9B2E
+# boundary is just whichever item was drawn last -- and that count varies with culling, which is why
+# the residue flips on 3 frames.  probes/verify_draw_scratch_dead.py drives the ORIGINAL over the
+# whole 8291-frame gameplay span and asserts that every one of the 148616 consumer accesses is
+# preceded, in its own frame, by an absolute write: the residue is dead.  Re-run that gate before
+# trusting this line.
+EXCLUDED_CELLS |= {0x215E, 0x2160, 0x2161}
 # The EXTERNAL INPUT channel: the demo pump (the INT9 injection) writes the DS:98C4 key-state
 # table and the DS:98C3 last-scancode cell BETWEEN 9B2E boundaries; the game CONSUMES them via
 # the 0162 poll whose output (DS:98BE) and every downstream effect stay fully compared.  The
