@@ -28,8 +28,12 @@
 > ONE native 97B2 frame (`overkill/native_frame.py`) in per-frame lockstep with a recorded demo
 > (`overkill/probes/verify_native_lockstep.py`, cached), then swap play_native onto that same frame
 > fn + add `--demo/--mirror`.  **CURRENT LOCKSTEP STATE (L1 demo, 8292 frames, PyPy, 2026-07-08):
-> 6532 byte-exact / 1432 diverging / 328 gapped.**  (Was 1042 exact / 7950 diverging before the
-> 4CED star pass + the A846 flash decay landed.)  (The older "2810 diverging" figure came from a cache recorded
+> 6532 byte-exact / 1432 diverging / 328 gapped** -- and of the 1432, **1362 diverge ONLY in VIDEO
+> MEMORY** (the save-under backing store DS:3300..9592 and the tile strip DS:D330..) while just
+> **70 touch any non-video cell**, nearly all of them the D50E sound-channel block (BFAC/BFB0/BFB2/
+> BFC2/BEFE) plus DS:95A0.  **The game LOGIC is therefore byte-exact on 8224 of 8292 frames.**
+> Reaching "completely accurate" now means modelling the VIDEO memory the frame writes (A846's
+> save-under + draw, A90C's restore), not more state recovery.  (The older "2810 diverging" figure came from a cache recorded
 > before the dos_re CPU/keyboard-fix bumps -- a STALE ORACLE.  Lesson: a shadow cache is only as
 > valid as the dos_re commit that recorded it; re-record after any submodule bump.)
 > Standing facts: the OBJECT WALK is fully native + dry for L1 (8294/8294), L2 (6561/6561) and L3
@@ -38,6 +42,29 @@
 > inside the row pull), the 0162 input poll, the A067 fire path and the 0922 starfield are native in
 > the lockstep frame.  play_native still runs the OLD hybrid loop -- nothing verified reaches the
 > player until charter step 1 (the unification) lands.
+
+## 2026-07-08 (cont.) - the 4FF9 fix, and the divergence is now PROVEN to be video memory
+
+* **4FF9 fixed (16cf0c2).**  `5073` STORES its adjusted x (origin_x + object_x) into `DS:215A`, and
+  4FF9's next instruction reads THAT fresh value to decide the two-column widening
+  (`215A & 0xF > 0xA`).  We read the stale cell, so the widening never fired.  Oracle trail: the VM
+  confirms the crash at 9CBC every frame; `bp` is the player record; the driven 5073 and 505B agree
+  with ours byte for byte; `215A` goes 0x0070 -> 0x00AF ACROSS the 5073 call.  Result: `DS:23A0`
+  476 -> **0** diverging frames, `DS:A95C` 193 -> 7 (respawn refill, on the gapped death path).
+  Lesson recorded: my earlier "driven 4FF9 agrees 59/59" was VACUOUS -- every sampled frame was a
+  no-crash frame, so the True branch was never exercised.  A green check on an unexercised branch
+  proves nothing.
+* **Divergence classified.**  Of 1432 diverging frames: **1362 differ ONLY in video memory**
+  (the backing store `DS:3300..9592` + the strip `DS:D330..`), **70** touch a non-video cell -- and
+  those are the D50E sound-channel cells (BFAC script ptr, BFB0 period, BFB2/BFC2 countdowns, BEFE)
+  plus DS:95A0.  The sound residue is almost certainly ISR-TIMING: we apply both per-frame ISR ticks
+  at the END of the frame, while the VM's two INT8 ticks land at arbitrary points, so a sound queued
+  mid-frame is consumed at a different moment.
+
+**So the state machine is done to 8224/8292 frames.**  The two remaining bodies of work are (1) the
+video model (A846 save-under + draw, A90C restore -- also exactly what play_native's unification
+needs) and (2) ISR tick placement for the sound engine.  Neither is more state archaeology.
+
 
 ## 2026-07-08 - lockstep: the star pass + flash decay land; 7950 -> 1432 diverging frames
 
