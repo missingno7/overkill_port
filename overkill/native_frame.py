@@ -1037,7 +1037,12 @@ def _row_pull_a74e(mem) -> None:
                           "only the forward path is wired")
     mem.ww(DS, 0xA408, row)                         # A82D
     if row <= 0x0E52:
-        run_tile_cue_row_7948(mem, row)             # A839
+        # 8209's "+32/+34 caller-frame leak" is not a leak at all: at the A839 call site bp is
+        # still 0x237C (the anchor record set at 9B5B), so ss:[bp+2] / ss:[bp+4] ARE the player's
+        # x and y.  Measured by trapping (CS,0x7948): bp=237C on every hit.  Passing zeros here
+        # left every cue-spawned record with +0x32/+0x34 = 0.
+        run_tile_cue_row_7948(mem, row,             # A839
+                              leak_32=mem.rw(DS, 0x2380), leak_34=mem.rw(DS, 0x237E))
         run_level_object_script_4a65(mem)           # A83C
     _render_strip_row_a7eb(mem, row)                # A7EB: 5A7E's render + the ring mirror
     if row <= 0x00B6 and mem.rb(DS, 0x98C0):        # A751
