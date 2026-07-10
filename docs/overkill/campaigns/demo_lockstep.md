@@ -96,9 +96,29 @@ Not "the death jingle" — an earlier note in `native_frame.py` guessed that and
 1. **`0B3E`** — the level-data initializer. Its call map is `0B7F -> C679 -> C7B2/C80B/C85B`, the
    far `254A:04D7` asset decode, and `C6F9 -> 0248 -> 0624/065C`. **Only its DGROUP effects need to
    match**: the gate does not diff the tile-plane segment (the cache re-supplies the plane per
-   frame), and the asset decode's bulk lands there. `_load_planet_level_data` already performs the
-   equivalent load. Start by measuring 0B3E's DGROUP write-set with a driven probe rather than
-   reading `C679`.
+   frame), and the asset decode's bulk lands there.
+
+   **MEASURED (2026-07-10, driven at the 0B3E call inside death window 5018, entry `si=00D2`
+   `di=03CF`): the whole of 0B3E touches exactly 24 DGROUP bytes.**
+
+       DS:990C      01 -> 00
+       DS:9911      01 -> 00
+       DS:A256..A259  00 00 03 00 -> D9 05 4A 25     ; a FAR POINTER: 254A:05D9 (the asset overlay)
+       DS:A25B..A269  (15 B, e.g. 06 16 07 00 -> 32 CC 25 02)   ; more far pointers; 25CC = DGROUP
+       DS:A26B      AA -> C3
+       DS:C5F7..C5F8  06 C9 -> D6 C8                 ; the planet's script cursor -> its head C8D6
+
+   So 0B3E is NOT the obstacle it looked like. The A256..A26B block is a small table of far pointers
+   into the decoded level data; `_load_planet_level_data` already performs the equivalent decode, so
+   the work is to make it also publish these pointers. `990C`/`9911` are flags. The C5F7 write is
+   the cursor rewind `rewind_level_scripts_0b3e` already does (only ONE cursor differs here because
+   the other five already stood at their heads — the write-set is a diff, not a write log).
+
+   **4DBF as a whole touches 3457 DGROUP bytes in 498 runs**, the first being `DS:234C..234E`
+   (the scroll). The bulk is the `4E0D` row-pull loop's effects — `A781` re-pulling every row from
+   the checkpoint, which re-runs the level script and re-spawns the objects. Those spawns are why
+   the object pools dominate the diff. `_row_pull_a74e` + the native level-script spawner already
+   own that machinery; wiring them into the `4E0D` loop shape is the slice.
 2. **`4DBF`'s frame** around it (checkpoint search, `[2350]`, `4E0D`'s row-pull loop, `[20CA]`).
 3. **`9908`**'s own body: `[2358]`, the `[BEFE]` spin (the recorded `isr_ticks` already supplies the
    right number of sound steps, so the spin is a no-op natively — the sound state converges either
