@@ -4,6 +4,24 @@ Open items the autonomous loop attempted but could not finish byte-exact. Do NOT
 re-attempt these in the loop; they need a reproduction trace and/or gameplay
 context. Each has the analysis already done so a human can pick up fast.
 
+## 2026-07-10 — the MOTHERSHIP (planet 0): scoped -- the 7BCB tile-cue is a 23-handler stamp campaign
+
+`run_tile_cue_row_7948` gaps for planet 0 at `1010:7BCB`.  SCOPED (disasm): 7BCB gates on `[A40A] <=
+0x60` + the al==0xBC/0xBB special cases (7B8B/7BAB), calls the far `1F8F:0163` slot-search overlay
+(scans the [2078] pool for a free slot, sets [209A]/[209A]=FFFF), then `jmp cs:[bx + 0x7C08]` -- an
+inline 27-entry JUMP TABLE (tile 0xE1..0xFB, 23 distinct handlers in the 0x79xx..0x81xx cue region;
+the lifter REFUSES this indirect jump, so hand-decode like the planet-1..5 cues).  Each handler is a
+STAMP: `call 81C9`/`819E` (the common alloc+8209 spawn), then `mov [bx+off],imm` fields -- e.g. tile
+0xE1/0xE2 -> 7ED7 = spawn, `[bx+0x18]=0x88` (behaviour 0x88), sprite 0xFD/0xFA, dir 6/2 by Y.
+
+This is a WIDE campaign, not one slice: (1) recover `_planet0_cue` = decode the 23 stamp handlers +
+1F8F:0163 + the special cases, gated by extending `verify_native_tile_cues` to planet 0 over an L6
+(planet-0) demo; (2) then recover every NEW behaviour those cues spawn (0x88 and its siblings) via the
+proven capture_pure_vm_snapshot -> liftverify -> transcribe pipeline (the 0x7D/0x81/0x93 recipe); (3)
+then the 9844 story splash (the 5BEE/1F8F:0980 text screen) for the win.  All mechanical with the
+proven tools; just many links.  Planets 1-5 already play; **planet 4 is fully playable (3000 frames
+CLEAN)** after the 0x7D/0x81/0x93 chain -- the mothership is the last playability frontier + the win.
+
 ## 2026-07-10 — behavior 0x93 (planet-4): DONE (byte-exact) -- planet 4 now plays 3000 frames CLEAN
 
 **FILLED** (`verify_native_behavior_93` 2540/2540, 0 diverging): `_step_stepper_93` = the full 54-block
