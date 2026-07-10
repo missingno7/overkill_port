@@ -19,6 +19,17 @@ INIT is small and tractable.
 already recovered (C679 the file loader, 0248/0624/065C the read path, 5145).  This is a bounded
 lifter campaign, not a 1.2M-instruction mystery.
 
+**PROVEN (2026-07-10): the lift loop WORKS on OVERKILL boot code -- 6 ORACLE_PASSING, 0 DIVERGED** on
+the first liftverify pass (e.g. 1010:CE40 verified 12 calls byte-exact vs the interpreted original).
+Every boot routine reached-and-lifted verified exact; none diverged.  Recipe:
+`scripts/make_boot_snapshots.py` writes `boot_entry_snapshot` (1C32:000E, pre-init, for the phase-1
+segment setup that BUILDS the 1010 code segment) and `boot_1010_entry` (first 1010 execution, ~8134
+instr, for the phase-2 table builders); then liftverify replays FORWARD to D007 with the hooks
+installed.  The boot is linear, so one snapshot only reaches routines AFTER it -- full coverage needs
+a snapshot at each routine's entry, or a cold-boot harness that installs all hooks and verifies each
+on first hit (the remaining harness work).  Acceptance test: the CS tables (8D92/9592/9598/C570)
+byte-equal to the bundle.  Snapshots are gitignored (regenerable).
+
 **The cold boot cannot shortcut via static relocation.**  Checked the CS runtime tables the gameplay
 depends on -- 8D92/9192/9392/8F92 (sprite-frame), 9592 (plane seg ptr), 9598 (strip seg), 95A2,
 C570 (the video dispatch) -- against BOTH the raw MZ load module AND the container.  **None is found
