@@ -51,6 +51,20 @@ def test_all_fullscreen_menu_screens_decode():
 
 
 @pytest.mark.skipif(not OVERKILL.is_file(), reason="assets/OVERKILL not present")
+def test_story_intro_and_ending_pages_decode():
+    # The story pages named in the image's own DS:1323 table -- the five IPAGE intro pages and the ten
+    # OPAGE ending pages -- are all full 320x200 screens, so decode_fullscreen_image renders each.
+    # play_native's _run_intro plays IPAGE1..5; this pins that they decode to real, non-blank pages.
+    container = OVERKILL.read_bytes()
+    pages = [f"IPAGE{i}.ENC" for i in range(1, 6)] + [f"OPAGE{i}.ENC" for i in range(1, 11)]
+    for name in pages:
+        img = decode_fullscreen_image(container, name)
+        assert img.shape == (SCREEN_HEIGHT, SCREEN_WIDTH), name
+        assert int(img.max()) <= 15 and int(img.min()) >= 0, name
+        assert img.any(), name                                  # not a blank screen
+
+
+@pytest.mark.skipif(not OVERKILL.is_file(), reason="assets/OVERKILL not present")
 def test_non_fullscreen_dialog_fails_loud():
     # CHOOSE.ENC deplanarizes to a smaller PLACED dialog (per-scene x/y placement not recovered yet):
     # decode_fullscreen_image must raise, not mangle a wrong-sized buffer.

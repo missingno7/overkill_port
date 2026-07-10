@@ -279,6 +279,35 @@ def _run_hiscore_screen(display, pygame, container_data, seconds: float) -> "boo
     return None
 
 
+#: the new-game story intro: the five IPAGE pages, whose names live in the image's own DS:1323 table
+#: (IPAGE1..IPAGE5.ENC, immediately before the OPAGE1..OPAGE10 ending pages).  Each decodes to a
+#: full-screen (200,320) index page through the same native codec as the title screen.
+_INTRO_PAGES = ("IPAGE1.ENC", "IPAGE2.ENC", "IPAGE3.ENC", "IPAGE4.ENC", "IPAGE5.ENC")
+
+
+def _run_intro(display, pygame, container_data, per_page_seconds: float = 8.0) -> bool:
+    """Play the five-page story intro (IPAGE1..5), each advanced by Space/fire or a timeout.
+    Esc/quit skips the rest.  Returns False on window-close (so the caller can exit), else True."""
+    display.set_title("OVERKILL - native (VM-less)  [intro -- Space skips a page, Esc skips all]")
+    clock = pygame.time.Clock()
+    for name in _INTRO_PAGES:
+        img = decode_fullscreen_image(container_data, name)
+        for _ in range(int(per_page_seconds * 30)):
+            advance = False
+            for ev in pygame.event.get():
+                if ev.type == pygame.QUIT:
+                    return False
+                if ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE:
+                    return True
+                if ev.type == pygame.KEYDOWN and ev.key == pygame.K_SPACE:
+                    advance = True
+            if advance:
+                break
+            display.draw(img)
+            clock.tick(30)
+    return True
+
+
 def _replay_demo(display, pygame, bundle_data, container_data, demo_dir: Path,
                  seconds: float) -> "bool | None":
     """The ATTRACT DEMO: replay a recorded gameplay demo through the SAME verified frame + renderer.
@@ -500,6 +529,7 @@ def main(argv=None) -> int:
     ap.add_argument("--scale", type=int, default=3)
     ap.add_argument("--fps", type=int, default=30)
     ap.add_argument("--no-title", action="store_true", help="skip the title + level select")
+    ap.add_argument("--no-intro", action="store_true", help="skip the IPAGE story intro")
     ap.add_argument("--frames", type=int, default=0,
                     help="headless self-test: run N gameplay frames then exit (SDL_VIDEODRIVER=dummy)")
     ap.add_argument("--no-sound", action="store_true", help="disable the PC-speaker audio sink")
@@ -535,6 +565,9 @@ def main(argv=None) -> int:
         difficulty = 0
         if not args.no_title and not args.frames:
             if not _run_attract(display, pygame, bundle_data, container_data):
+                display.close()
+                return 0
+            if not args.no_intro and not _run_intro(display, pygame, container_data):
                 display.close()
                 return 0
             probe_img = build_cold_level_start_image(bundle_data, level, container_data)
