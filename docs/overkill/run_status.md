@@ -28,7 +28,7 @@
 > ONE native 97B2 frame (`overkill/native_frame.py`) in per-frame lockstep with a recorded demo
 > (`overkill/probes/verify_native_lockstep.py`, cached), then swap play_native onto that same frame
 > fn + add `--demo/--mirror`.  **CURRENT LOCKSTEP STATE (L1 demo, 8292 frames, PyPy, 2026-07-10):
-> 8288 byte-exact / 1 diverging / 3 GAPPED.**  Every frame runs natively end-to-end and 99.95% are
+> 8291 byte-exact / 0 DIVERGING / 1 GAPPED.**  Every frame runs natively end-to-end and 99.99% are
 > byte-exact across the whole 64K DGROUP.  Their residue is down to 6860 bytes (from 17839) now that
 > `1010:4DBF`, the death LEVEL RE-INIT, is recovered and independently gated by
 > `probes/verify_native_level_reinit_4dbf` (PASS 7/7).  The 7 are EXACTLY the death/respawn windows
@@ -56,6 +56,54 @@
 > inside the row pull), the 0162 input poll, the A067 fire path and the 0922 starfield are native in
 > the lockstep frame.  play_native still runs the OLD hybrid loop -- nothing verified reaches the
 > player until charter step 1 (the unification) lands.
+
+## 2026-07-10 (late) -- LOCKSTEP: 8291/8292 BYTE-EXACT, ZERO DIVERGENCE, ONE GAP
+
+`427e570` **D305 recovered.**  It is a nested MINI-FRAME LOOP, not a busy-wait: after spinning while
+fire is held it zeroes `[BED8]` and repeats a reduced frame (0672, 511F, 4CED, D367, 4D64, the far
+1F8F:0922, 073C, 60A2 = 77C5 + 5F61, 5160, 0679, 50C9) until `[BED8] > 0xC8`.  The demo never presses
+fire, so it runs 0xC9 passes -- and `0xC9 * 2 = 402`, exactly the tick count the gate records for
+those windows.  Measured before implementing (`attribute_death_continuation`): its whole DGROUP
+footprint is the star list, the starfield ring, the 5F61 clock, 77C5 refilling the bar, `[98BE]`, and
+the sound engine.  0672 / 511F / 5BDC / D367 / 5160 / 50C9 / 4D64 leave DGROUP alone.
+
+**Tick placement INVERTS between the two death shapes**: on an ordinary respawn every recorded tick
+fires in the 9921 jingle spin; when D305 runs, the spin takes ZERO ticks and all 402 fire inside
+D305.  Backwards, and the sound engine reorders against the `[BEFF]` queue writes on both sides.
+
+Also completed C461 from its disassembly at C4B5..C4D4 (`[A980]`, `[20A6] = 20A8`, `[A47E]`,
+`[A480]`, `[A47C]`).  The first three death windows never revealed those -- they already held zero.
+Green on an unexercised branch, caught only because the D305 windows exercise it.
+
+`0704da8` **DS:98BE proved dead and excluded.**  The last two diverging bytes.  D305 polls 0162 0xC9
+times inside one window while the pump rewrites the key table, so the final poll reads a table that
+never exists in the pre-state image.  0162 rebuilds the byte from nothing (eight `rcl byte [98BE],1`
+shift every old bit out through CF, then `or ...,imm` merges the flags), and
+`probes/verify_input_word_dead.py` drives the original over all 8291 frames: 85523 stores, 58473
+consumers, ZERO read-before-poll.  Excluded only then, on the same footing as 98C3 and 215A/215E;
+every downstream effect of the input stays compared.
+
+**A near-miss worth remembering.**  The first version of that proof derived writer addresses from a
+static opcode scan and reported `writes 0` across 8291 frames -- impossible.  The stores are `rcl`
+(opcode D0), which the scan never classified as writes.  A zero write-count is a broken instrument,
+not a discovery, and the tempting move at that moment was to exclude the cell anyway and call the
+gate green.  See `loop_blockers.md`.
+
+### THE LAST FRAME: 98EB, the game-over continuation (frame 5379)
+`[2358]` is the LIFE COUNT and `990B` is `dec WORD` (not byte -- that bug had frame 5379 silently
+taking the respawn path and diverging by 3484 bytes).  At zero it wraps to FFFF and 9773 branches to
+98EB, which reloads the whole game: 8.2M instructions in one window, several `C703` file loads.
+
+Scope, measured from the cache: the VM changes **3717 DGROUP cells**, 3156 of them in the strip's
+alias.  Its fingerprint is a session reset plus a level reload plus D305:
+`2358 0 -> 3` (lives), `2350 -> 9C`, `2352 -> 1` / `2354 -> 1` (the reverse pull ran), `234C/234E`
+reset, `2078` cleared, the 2324..2348 clocks reset, and `21A4 -> 32FF` -- the STRIP segment, where
+4DBF's 0B3E leaves the PLANE segment, so a different loader ran.  402 ticks, i.e. D305 ran too.
+
+So it is plausibly composable from parts we now own -- `_level_reinit_4dbf`, the 9908 continuation,
+`_respawn_wait_d305` -- plus a session init (96EE: score at 2286/22BF/2315, lives) and whatever
+loader writes `[21A4] = 32FF`.  Start by running `map_frame_window 5379` and
+`attribute_death_continuation`-style checkpointing along 98EB.
 
 ## 2026-07-10 (evening) -- the 9908 respawn continuation; 8288/8292 byte-exact, 1 diverged, 3 gapped
 
