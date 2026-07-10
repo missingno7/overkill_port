@@ -141,9 +141,14 @@ def _save_under_a846(mem) -> None:
             t, c = divmod(src - scroll, STRIP_STRIDE)
             r = start + t                   # the block may straddle the visible window's edges
             for j in range(row_bytes):
-                if 0 <= r < n_rows and 0 <= c + j < STRIP_STRIDE:
+                if 0 <= c + j < STRIP_STRIDE and 0 <= r < n_rows:
                     b = stack[r][c + j]
-                else:                       # outside the rendered stack entirely
+                elif 0 <= c + j < STRIP_STRIDE and 0 <= r - STRIP_RING_ROWS < n_rows:
+                    # A7EB mirrors each band to +0x5480 = 208 * 0x68, so strip row r is a duplicate
+                    # of row r - 208.  A save block that runs past the rendered stack lands in that
+                    # duplicate; reading the replayed strip there would use frame-0's stale bytes.
+                    b = stack[r - STRIP_RING_ROWS][c + j]
+                else:
                     b = mem.rb(strip_seg, (src + j) & 0xFFFF)
                 mem.wb(DS, (dest + row * row_bytes + j) & 0xFFFF, b)
 
@@ -1048,6 +1053,8 @@ def _row_pull_a74e(mem) -> None:
 #: [95C2] = 0x5480 (the ring-duplicate offset the band is mirrored to)
 STRIP_BAND_BYTES = 0x0680
 STRIP_MIRROR_OFF = 0x5480
+#: the mirror offset in ROWS: 0x5480 / 0x68 = 208
+STRIP_RING_ROWS = STRIP_MIRROR_OFF // 0x68
 
 
 def _render_strip_row_a7eb(mem, row_base: int) -> None:
