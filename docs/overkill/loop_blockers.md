@@ -14,6 +14,12 @@ the lifter REFUSES this indirect jump, so hand-decode like the planet-1..5 cues)
 STAMP: `call 81C9`/`819E` (the common alloc+8209 spawn), then `mov [bx+off],imm` fields -- e.g. tile
 0xE1/0xE2 -> 7ED7 = spawn, `[bx+0x18]=0x88` (behaviour 0x88), sprite 0xFD/0xFA, dir 6/2 by Y.
 
+DRIVEN (p0cue_oracle over demo_play_tandy_L6_begin, 884 cue fires): the planet-0 cues spawn a BOUNDED
+set of behaviours -- **0x88, 0x8E, 0x6F, 0x6B, 0x6C, 0x6D (gaps) + 0x68 (recovered)**.  Each cue runs
+1F8F:0163 (slot search) then a spawn (81C9/819E) + field stamps (+0x18=behaviour, +0x08=sprite,
++0x06=dir, +0x28=4, +0x14=1, +0x32/+0x34 position).  So the mothership tile-cue = `_planet0_cue` (23
+handlers) + SIX new behaviours, all via the proven pipeline.  Precise, bounded, multi-slice.
+
 This is a WIDE campaign, not one slice: (1) recover `_planet0_cue` = decode the 23 stamp handlers +
 1F8F:0163 + the special cases, gated by extending `verify_native_tile_cues` to planet 0 over an L6
 (planet-0) demo; (2) then recover every NEW behaviour those cues spawn (0x88 and its siblings) via the
