@@ -13,7 +13,7 @@
 > per-frame VM states on first run and replays them in ~40s instead of ~5min -- same states, same
 > comparison; pass `vm` to force the live oracle; caches live in `artifacts/shadow_cache/`,
 > gitignored, keyed on the demo file sha1 + frame budget)**, `scripts/lindis.py` (encoded targets),
-> `scripts/behavior_zoo_xref.py`; **THE DRIVEN ORACLE FOR UNGATED BEHAVIOR (2026-07-10, `probes/verify_native_flash_decay.py`): when a playtest bug is in a path the demo corpus never exercises (lockstep stays green but the behavior is wrong), inject the missing precondition into BOTH the pure VM and the native frame at each 9B2E boundary and diff -- turns an unexercised path into a byte-exact gate that can FAIL**; **THE AUTOMATIC LIFTER (2026-07-10, dos_re 1bfd5fd): `dos_re/tools/liftgen.py` (census: is a routine liftable, and why not) and `dos_re/tools/liftverify.py` (emit a literal ASM->Python hook per entry, install it, run the VM, and differentially verify each call against the interpreted ORIGINAL, writing ORACLE_PASSING/DIVERGED/NOT_REACHED into a proof ledger). USE IT BEFORE HAND-DECODING ANYTHING: `python dos_re/tools/liftverify.py --exe assets/OVERKILL --snapshot DIR --entry 1010:XXXX --steps 3000000 --emit-dir lifted`. It refuses indirect jumps, which is exactly the 4E26 jump-table case a hand-decode got wrong by two bytes. A lifted hook is SCAFFOLDING, not recovered source -- it is a verified starting point to refactor, and the same oracle keeps the refactor honest**; **PERF (2026-07-08, see dos_re/docs/performance.md): suites =
+> `scripts/behavior_zoo_xref.py`; **THE DRIVEN ORACLE FOR UNGATED BEHAVIOR (2026-07-10, `probes/verify_native_flash_decay.py`): when a playtest bug is in a path the demo corpus never exercises (lockstep stays green but the behavior is wrong), inject the missing precondition into BOTH the pure VM and the native frame at each 9B2E boundary and diff -- turns an unexercised path into a byte-exact gate that can FAIL**; **THE GAP SEED (2026-07-10, `play_native.dump_gap_snapshot`): on any RecoveryGap in play, the app dumps a --snapshot-loadable PRE-frame image to artifacts/gap_snapshots/ so the exact gap reproduces with one frame -- the seed a driven oracle then fills**; **THE AUTOMATIC LIFTER (2026-07-10, dos_re 1bfd5fd): `dos_re/tools/liftgen.py` (census: is a routine liftable, and why not) and `dos_re/tools/liftverify.py` (emit a literal ASM->Python hook per entry, install it, run the VM, and differentially verify each call against the interpreted ORIGINAL, writing ORACLE_PASSING/DIVERGED/NOT_REACHED into a proof ledger). USE IT BEFORE HAND-DECODING ANYTHING: `python dos_re/tools/liftverify.py --exe assets/OVERKILL --snapshot DIR --entry 1010:XXXX --steps 3000000 --emit-dir lifted`. It refuses indirect jumps, which is exactly the 4E26 jump-table case a hand-decode got wrong by two bytes. A lifted hook is SCAFFOLDING, not recovered source -- it is a verified starting point to refactor, and the same oracle keeps the refactor honest**; **PERF (2026-07-08, see dos_re/docs/performance.md): suites =
 > `python -m pytest -q -n auto` (xdist, 4m30s -> 54s); long oracle/probe runs = PyPy serial
 > (`pypy -m overkill.probes.X`) -- PyPy is BYTE-FAITHFUL (proved: a full lockstep re-record under
 > PyPy and CPython produce the identical cache sha1 and verdict), 20m14s -> 5m47s on a full
@@ -58,6 +58,31 @@
 > inside the row pull), the 0162 input poll, the A067 fire path and the 0922 starfield are native in
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
+
+## 2026-07-10 (late+++) — REPRODUCE-AND-FILL: play_native dumps a gap seed; the 8546 weapon families scoped
+
+Owner playtest hit `8546's upgrade handler CS:8463` (collected a special weapon, pressed Z) and asked
+that the native game hand back a snapshot to reproduce and fill the gap.
+
+### Landed (commit 73ad82b): the gap-snapshot workflow
+On any RecoveryGap during play, `play_native` now dumps a `--snapshot`-loadable image of the PRE-frame
+state (host input already applied, so re-running ONE frame re-raises the same gap deterministically)
+to `artifacts/gap_snapshots/gap_<addr>_p<planet>_t<tick>/` + a `gap_info.json` (message, address,
+tick, planet, difficulty, lives, the exact reproduce line).  Verified end to end: driving to a gap
+dumps the seed, loading it + one frame re-raises the identical gap.  `dump_gap_snapshot` is a standing
+mechanism -- every future playtest gap becomes a reproducible recovery seed.  Gated:
+`tests/test_gap_snapshot.py` (2).
+
+### Scoped (loop_blockers): the 8546 SPECIAL-WEAPON apply families
+Disassembled the five non-gun weapon handlers the 95FC descriptors reach (the [A958] gun stubs are
+already native): **8463** = `call 9D91; jmp 8430` (deploy a weapon module via the 74FE alloc + stamp,
+tracker [A96E]); **849D** = `call 9F5F; jmp 8430`; **84C3** = `call 9F1A; jmp 8430` (alloc into
+[A962]/[A964]); **84D6** = flag/sound weapon ([BEFE]=0, [BEFF]=6, [2384]=1); **44AF** = bare `ret`
+(apply is a no-op, marker persists).  The deploy machinery (74FE + the A96x trackers) is ALREADY
+modelled VM-era in `overkill/gameplay/action_spawns.py`.  NEXT SLICE (recipe in loop_blockers): use the
+gap snapshot as the driven oracle (inject Z at a 9B2E boundary, one VM frame, diff DGROUP), implement
+per-target in `_apply_upgrade_8546`, gate.  Reachable now in the L6_different_weapons demo: markers
+1/3->44AF, 2->84C3; 8463/849D/84D6 need a reaching snapshot (which the owner can now generate by play).
 
 ## 2026-07-10 (late++) — PLAYTEST bug: enemy hit-flash FIXED byte-exact; level-start plaque diagnosed
 

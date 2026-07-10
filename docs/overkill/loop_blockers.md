@@ -4,6 +4,30 @@ Open items the autonomous loop attempted but could not finish byte-exact. Do NOT
 re-attempt these in the loop; they need a reproduction trace and/or gameplay
 context. Each has the analysis already done so a human can pick up fast.
 
+## 2026-07-10 — the 8546 SPECIAL-WEAPON apply families (8463/849D/84C3/84D6/44AF) — characterized, open
+
+`native_frame._apply_upgrade_8546` handles the `[A958]` gun-LEVEL stubs (mov [A958],imm; jmp 8430)
+but fails loud on the five NON-gun weapon handlers the 95FC descriptors also reach.  Owner hit CS:8463
+in play (collected a special weapon, pressed Z).  Disassembled (lindis, static bundle):
+
+* **8463**: `call 9D91 ; jmp 8430`.  9D91 = if `[A96E]==FFFF`: alloc a record via `74FE` (-> bx),
+  `[A96E]=bx`, stamp `[bx]=1 [bx+20]=1 [bx+22]=1 [bx+8]=0x0F ...` (deploy a persistent weapon module).
+* **849D**: `call 9F5F ; jmp 8430`  (same alloc+stamp shape, different tracker/stamps).
+* **84C3**: `call 9F1A ; jmp 8430`.  9F1A -> 9F20 = alloc into the first free of `[A962]`/`[A964]`,
+  stamp `[bx]=1 [bx+20]=1 [bx+22]=1 [bx+8]=0x14 [bx+32]=0x50 ...`.
+* **84D6**: `mov [BEFE],0 ; if [98C0]: [BEFF]=6 ; [2384]=1 ; jmp 8430`  (a flag/sound weapon, no alloc).
+* **44AF**: bare `ret` -- the apply does NOTHING (marker is NOT cleared, so it persists); only 8546's
+  own 837A tick + tail run.
+
+The `jmp 8430` tail clears the marker ([95FA]=FFFF) so 8546's tail then fires the [BEFF]=9 apply sound;
+44AF (no jmp) leaves the marker set (no sound).  The deploy machinery (74FE alloc + the A962/A964/A96E
+trackers) is ALREADY modelled VM-era in `overkill/gameplay/action_spawns.py` (the A067/A3FF anchor
+spawn) -- reuse that shape.  RECIPE: play to each weapon (or reuse a reaching snapshot) -> the new
+`play_native` gap-snapshot auto-dumps the pre-frame seed -> driven oracle (inject Z at a 9B2E
+boundary, run one VM frame, diff DGROUP) -> implement per-target in `_apply_upgrade_8546` -> gate.
+Reachable markers in `demo_play_tandy_L6_different_weapons_20260618_225615`: 0->8412 (done), 1/3->44AF,
+2->84C3; 8463/849D/84D6 need a snapshot whose descriptors reach them.
+
 ## 2026-07-10 (late) — boot-lift coverage is recursion-bounded at 25/54, not stack-bounded
 
 `scripts/verify_boot_lifts.py` verifies 25 of 54 emitted boot hooks byte-exact over a fresh boot and
