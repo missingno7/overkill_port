@@ -86,7 +86,9 @@ GAMEPLAY_FRAME_STAGES: tuple[FrameStage, ...] = (
     FrameStage("sprite_draw_scan", "1010:A846", NATIVE,
                "the object->sprite draw; native form = object_sprite_blocks (byte-exact vs 7596)"),
     FrameStage("conditional_hud_cell", "1010:981F (if DS:A97A == 0)", UNMONITORED,
-               "draws panel cell 0x29 at (4,0x58)+cursor; DS:A97A not in the native model"),
+               "draws panel cell 0x29 at (4,0x58)+cursor when the energy bar is empty.  MEASURED: "
+               "[A97A] == 0 fires on 0 of the L1 demo's 8292 frames -- the L1 playthrough never "
+               "reaches it (VIDEO-only when it does)"),
     FrameStage("present_blit", "1010:5BDC", NATIVE,
                "playfield compose + present; native form = compose_playfield_indices (byte-exact)"),
     FrameStage("present_object_scan", "1010:A90C", NATIVE,
@@ -112,7 +114,10 @@ GAMEPLAY_FRAME_STAGES: tuple[FrameStage, ...] = (
                " 750/750 A940 frames byte-exact, verify_native_a940). The DS:2356 == 5 attract-mode"
                " middle is ALSO recovered now (step_a940_attract_middle, driven-oracle 8/8) though not"
                " composed into the gameplay-path signature. Output cells not threaded into the loop yet"),
-    FrameStage("service_gate", "1010:073C", GAP, "sound/timer service gate; not recovered -- not run"),
+    FrameStage("service_gate", "1010:073C (if DS:9907 == 1)", GAP,
+               "an INSTANT ret unless [9907] == 1, when it does a video re-init (mode 3 int10, font/"
+               "palette).  MEASURED: [9907] == 1 fires on 0 of the L1 demo's 8292 frames -- correctly "
+               "guarded, never reached in the L1 playthrough (fail-loud if it ever is)"),
     FrameStage("status_text", "1010:60A2", GAP,
                "per-frame status text; hud_text composers exist but are not wired into the standalone"),
     FrameStage("frame_wait", "1010:0679", HOST, "wait-for-timer-tick; the host clock owns cadence"),
