@@ -4,6 +4,30 @@ Open items the autonomous loop attempted but could not finish byte-exact. Do NOT
 re-attempt these in the loop; they need a reproduction trace and/or gameplay
 context. Each has the analysis already done so a human can pick up fast.
 
+## 2026-07-10 — behavior 0x93 (planet-4): LIFTED + fully structurally mapped, a MAJOR handler (next slice)
+
+`EFC4[0x93] = 8D5F -> call far 1F8F:0473 ; then [bp+0x36] >= 0x64 -> BFC7 death ; jmp BC4B`.  It is the
+morph target of 0x81 (planet-4 cold play reaches it at tick 48).  liftverify 1F8F:0473 ORACLE_PASSING
+(4/54 blocks covered), so the emitted transcription is authoritative -- but it is a BIG behaviour:
+**151 instructions / 54 basic blocks**, ~5x the size of 0x7D.  Full structural map (from the lift):
+
+* **0473**: gate on `[A482] == 0xA6F0` (else -> block 51, the no-schedule tail).
+* **047E**: substate `[bp+0x1C]`: if !=0 dec it, on reaching 0 fall through, else -> 51.
+* **048C**: DIRECTION dispatch on `[bp+0x06]` (0/1/7 -> path A block13; 4 -> path B block9; else -> path C block25).
+* **path B (dir 4, block 9)**: FOUR AFD8 contact-steps (`_afd8_step`), then `[bp+2] >= 0xD0` -> death(53), set dir 0.
+* **path A (block13-24)**: THREE AFD8 steps each with `if blocked: call 1F8F:0686`; then `[bp+0x36]=0`,
+  `[bp+6]=0`; `[bp+2] <= 0x20` -> death(53) else set dir 6, and (`[bp+4]` even) dir 2.
+* **1F8F:0686** (the blocked-reaction helper, 9 instr): `inc [bp+0x36]` (the DEATH COUNTER), set dir 7
+  (or 1 if `[bp+4] <= 0x60`); a 069A variant re-seeks (B729 mode 1) and sets `[bp+0x24]=0x80` on block.
+* **path C (block25+)**: sprite = `([232A]>>3) + 0x16A`, an `[98A9]` gate, then dir=4 and 5-6 AFD8
+  steps, more direction reflections (blocks 37-45: dir 4->6->2 cascades), death(53) tails.
+* **block 51/53**: the shared exits (51 = normal done, 53 = death via the 8D5F `[bp+0x36]>=0x64` -> BFC7).
+
+NEXT SLICE (dedicated): transcribe all 54 blocks from the lifted 1F8F:0473 (+ recover 1F8F:0686, small)
+into `_step_stepper_93` reusing `_afd8_step`; gate with `verify_native_behavior_93` over the L4 demo
+(0x93 records) at byte-exact, EXCLUDED_CELLS for the A954/230A seek scratch -- exactly the 0x7D/0x81
+recipe, just a larger body.  Emitted transcription cached at scratchpad/lifted_93.
+
 ## 2026-07-10 — behavior 0x7D / 0x7E: DONE (lifter-recovered); its child 0x81 is the next gap
 
 **FILLED** (byte-exact, `verify_native_behavior_7d` 121/121, 0 diverging): `_step_controller_7d` = the
