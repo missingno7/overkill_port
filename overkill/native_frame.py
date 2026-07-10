@@ -565,16 +565,29 @@ def _step_9b2e(mem) -> None:
     anchor = 0x237C
     # 9B61: the death branch -- anchor state absent -> the 9AFF death tail INSTEAD of the whole
     # player flow.  9AFF: on [2326] == 3 the anchor +08 explosion counter ticks; at 0x0F the
-    # anchor deactivates, 4DBF runs (the death jingle -- a host boundary whose DGROUP effects, if
-    # any, will surface as a divergence on the first death frame), [A346] = 1, and an empty
-    # [A97A] bar also raises [A342] = 1 (game over).
+    # anchor deactivates, 4DBF runs, [A346] = 1, and an empty [A97A] bar also raises [A342] = 1
+    # (game over).
+    #
+    # 4DBF IS THE LEVEL RE-INIT, NOT A JINGLE.  (An earlier note here guessed "the death jingle --
+    # a host boundary"; a coverage map of the death window disproved it.)  Driven at the 5018th
+    # 9B2E boundary of the cold-start demo, the window runs 418626 instructions:
+    #   9B16 -> 4DBF   -> 4DAF, -> 0B3E (the level-data initializer: C679 -> C7B2/C80B/C85B, the
+    #                    far 254A:04D7 asset decode, 0248 -> 0624/065C), -> 4E26, -> 4E0D -> A781
+    #                    (the row-pull chain -> A7EB -> A81B)
+    #   9908  -> C4DB  -> 8517 -> 5A00, 85B5 -> 85D5 -> 613E/5A6C, ...   (the respawn seed)
+    #   978F  -> A940 (+ the object walk + 1F8F:0922), 9798 -> C57C, 979B -> B5A9, 97A4 -> 5F43
+    #   then the ordinary present half (0672/511F/A846/5BDC/A90C) up to the next 9B2E.
+    # So the 7 'death/respawn' frames the lockstep gate still reports are that whole continuation,
+    # which this frame fn returns before by design.  recovered/adapters/cold_level_start.py's
+    # apply_respawn_seeds() already models the 9908 -> C4DB/C3A6/C461/C42F half of it.
+    # Repro: scratch death_window.py, or trap (1010,9B2E) and swap in a full-step logger.
     if mem.rw(DS, 0xA95A) == 0xFFFF or mem.rw(DS, 0xA97A) == 0:
         if mem.rw(DS, 0x2326) == 3:
             counter = (mem.rw(DS, anchor + 0x08) + 1) & 0xFFFF
             mem.ww(DS, anchor + 0x08, counter)
             if counter == 0x000F:
                 mem.ww(DS, anchor + 0x00, 0)        # 9B11
-                mem.ww(DS, 0xA346, 1)               # 9B19 (4DBF: host jingle boundary)
+                mem.ww(DS, 0xA346, 1)               # 9B19 (4DBF's effects: see the note above)
                 if mem.rw(DS, 0xA97A) == 0:
                     mem.ww(DS, 0xA342, 1)           # 9B27
         return
