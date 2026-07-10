@@ -4,19 +4,18 @@ Open items the autonomous loop attempted but could not finish byte-exact. Do NOT
 re-attempt these in the loop; they need a reproduction trace and/or gameplay
 context. Each has the analysis already done so a human can pick up fast.
 
-## 2026-07-10 — mothership behaviors 0x6B/0x6C/0x6D: F55A body recovered, 0x6C C237 spawn diverges (repro)
+## 2026-07-10 — mothership behaviors 0x6B/0x6C/0x6D: DONE (byte-exact); 0x6C spawn bug was a decimal-offset misread
 
-ATTEMPTED + REVERTED (uncommitted).  The trio share the F55A body (F52A/F554/F53F wrappers): set the
+FIXED (verify_native_behavior_6bcd 2217/2217, 0 diverging).  The trio share the F55A body (F52A/F554/F53F wrappers): set the
 Y target DS:[D2C2] = 0x50/0x60/0x70 (0x6B/0x6D also sprite = ([232A]>>2)+0x11F/0x124); once +0x02 >=
 0x40, seek +0x04 toward [D2C2] by +/-2 and inc +0x02; then for the +0x24 == 0x6C variant a C237 child
 spawns -- at +0x04==0x60 gated on [2326]==3, else gated on [232A]==0xF; jmp BC45 tail.  The seek + the
 no-spawn variants matched, but a driven gate (verify_native_behavior_6bcd over demo_play_tandy_L6_begin)
-DIVERGED on the 0x6C C237 spawn: native's DS:[95DA] alloc cursor + DS:A956 throttle lag the VM (native
-spawns FEWER children cumulatively, so later children land in different slots).  The spawn CONDITION
-(F57A/F583/F589/F596) was verified correct against the disasm, so the divergence is in the C237 call
-context for parent 0x6C -- needs a per-step pre-state dump at the first A956-only divergence (step 735,
-rec 2A7C) to pin whether it's the throttle, the child seed, or an earlier cursor drift.  Body + gate
-recipe recorded; a focused re-attempt should dump the divergent pre-state first.
+DIVERGED on the 0x6C C237 spawn: the spawn gate F57A `cmp [bp+24],0x6C` is offset 0x18 (lindis prints bp-offsets in DECIMAL: 24 == 0x18,
+the BEHAVIOUR field), which I first mis-transcribed as +0x24 -- so 0x6C records skipped the spawn and
+the DS:[95DA]/A956 cursors lagged.  LESSON: lindis bp-offsets are DECIMAL; the liftverify emitted hooks
+are HEX.  4 of the 6 mothership behaviours now done (0x68 was already native); remaining: 0x88, 0x8E,
+0x6F, then _planet0_cue + the 9844 story.
 
 ## 2026-07-10 — the MOTHERSHIP (planet 0): scoped -- the 7BCB tile-cue is a 23-handler stamp campaign
 

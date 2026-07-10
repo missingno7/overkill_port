@@ -649,6 +649,32 @@ def _step_morpher_81(mem, rec: int) -> None:
         mem.ww(DS, rec + 0x18, 0x93)              # 046D: morph to behavior 0x93
 
 
+def _step_yseeker_6b6c6d(mem, rec: int, y_target: int, sprite_add: "int | None") -> None:
+    """Behaviors 0x6B/0x6C/0x6D (F52A/F554/F53F -> the shared F55A body; planet-0 cue spawns): set the
+    shared Y target DS:[D2C2] (0x50/0x60/0x70), 0x6B/0x6D also set sprite = ([232A]>>2) + add; then
+    (once +0x02 >= 0x40) seek +0x04 toward [D2C2] by +/-2 and inc +0x02.  ONLY the 0x6C record (+0x18 ==
+    0x6C, F57A) spawns a C237 child -- gated on [2326]==3 at Y==0x60, else on [232A]==0xF.  Tail: jmp
+    BC45.  (F57A reads +0x18, which lindis prints as 'bp+24' in DECIMAL = offset 0x18, not 0x24.)"""
+    mem.ww(DS, 0xD2C2, y_target)                          # F52A/F554/F53F
+    if sprite_add is not None:                            # 6B/6D sprite
+        mem.ww(DS, rec + 0x08, ((mem.rw(DS, 0x232A) >> 2) + sprite_add) & 0xFFFF)
+    if mem.rw(DS, rec + 0x02) < 0x40:                     # F55A: still drifting in
+        return
+    y = mem.rw(DS, rec + 0x04)                            # F563: seek Y toward [D2C2] +/-2
+    if y < y_target:
+        mem.ww(DS, rec + 0x04, (y + 2) & 0xFFFF)
+    elif y > y_target:
+        mem.ww(DS, rec + 0x04, (y - 2) & 0xFFFF)
+    mem.ww(DS, rec + 0x02, (mem.rw(DS, rec + 0x02) + 1) & 0xFFFF)   # F577
+    if mem.rw(DS, rec + 0x18) != 0x6C:                    # F57A: only the 0x6C record spawns
+        return
+    if mem.rw(DS, rec + 0x04) == 0x60:                    # F583
+        if mem.rw(DS, 0x2326) == 3:                       # F596
+            _spawn_child_c237(mem, rec, mem.rw(DS, rec + 0x18))
+    elif mem.rw(DS, 0x232A) == 0x0F:                      # F589
+        _spawn_child_c237(mem, rec, mem.rw(DS, rec + 0x18))
+
+
 def _reflect_0686(mem, rec: int) -> None:
     """1F8F:0686: the blocked-step reaction -- inc the +0x36 death counter, set direction 7 (or 1 when
     the record's Y (+0x04) is <= 0x60)."""
@@ -3130,6 +3156,11 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
             if mem.rw(DS, rec + 0x36) >= 0x64:                  # 8D64: the +0x36 death counter
                 _bfc7_touch_death(mem, rec)                     # 8D6D
             _postmove_bc45(mem, rec, tiles, with_drift=False)   # 8D6A/8D70: jmp BC4B
+        elif beh in (0x6B, 0x6C, 0x6D):
+            _step_yseeker_6b6c6d(mem, rec,
+                                 {0x6B: 0x50, 0x6C: 0x60, 0x6D: 0x70}[beh],
+                                 {0x6B: 0x011F, 0x6D: 0x0124}.get(beh))
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # all paths exit jmp BC45
         else:
             raise RecoveryGap(f"behavior {beh:#04x} (record {rec:04X})",
                               "no native handler registered -- recover it before walking")
