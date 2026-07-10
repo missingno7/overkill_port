@@ -45,10 +45,10 @@ def test_new_game_setup_bridge_map_is_declared_and_honest():
     assert by_name["new_game_setup"].status == NATIVE     # C4DB composed + proven complete
     assert by_name["level_advance"].status == NATIVE       # 9744 six-planet advance recovered
     assert by_name["screen_load"].status == HOST           # 5C9A VGA blit is presentation
-    assert by_name["setup_tail"].status == GAP             # the unrecovered per-level setup remainder
+    assert by_name["setup_tail"].status == NATIVE          # the 9773 setup tail + level loads, recovered
     # the newly-declared bridge gaps surface in the honest gap report
     report = "\n".join(describe_gaps())
-    assert "new_game_setup.setup_tail" in report and "new_game_setup.level0_intro" in report
+    assert "new_game_setup.level0_intro" in report        # the 9844 story screen is still a gap
 
 
 def test_planet_video_dispatch_is_six_planets_three_configs():
@@ -88,22 +88,23 @@ def test_gameplay_exit_targets_are_declared():
     by_name = {s.name: s for s in GAMEPLAY_EXIT_TARGETS}
     assert set(by_name) == {"level_end", "game_over", "death"}
     assert by_name["level_end"].status == NATIVE   # converges at the recovered 9744 level-advance
-    assert by_name["game_over"].status == GAP        # deep BEFF respawn/game-over branch not recovered
-    assert by_name["death"].status == GAP
+    assert by_name["game_over"].status == NATIVE     # 98EB game-over chain recovered + byte-exact
+    assert by_name["death"].status == NATIVE         # 9908 respawn continuation recovered + byte-exact
     assert all(s.asm.startswith("1010:") for s in GAMEPLAY_EXIT_TARGETS)
     report = "\n".join(describe_gaps())
-    assert "gameplay_exit.death" in report and "gameplay_exit.game_over" in report
+    # death + game_over are no longer gaps; they must NOT appear in the gap report
+    assert "gameplay_exit.death" not in report and "gameplay_exit.game_over" not in report
 
 
 def test_gap_boundary_is_declared_and_reported():
     # the known-unrecovered pieces must stay visible: the transition flags + the frame-state update
     by_name = {s.name: s for s in GAMEPLAY_FRAME_STAGES}
-    assert by_name["transition_flags"].status == GAP        # decision recovered + wired fail-loud
+    assert by_name["transition_flags"].status == NATIVE     # exits composed into the frame, byte-exact
     assert by_name["service_gate"].status == GAP             # 073C sound/timer -- not recovered
     assert by_name["frame_state_update"].status == NATIVE    # A940 gameplay path composed + verified
     assert by_name["conditional_hud_cell"].status == UNMONITORED  # still a truly-unmonitored stage
     report = "\n".join(describe_gaps())
-    for expected in ("transition_flags", "Bucket F", "D160", "menu logic"):
+    for expected in ("level0_intro", "D160", "menu logic"):
         assert expected in report, expected
 
 

@@ -100,14 +100,12 @@ GAMEPLAY_FRAME_STAGES: tuple[FrameStage, ...] = (
                " through into A9D3) and is FULLY NATIVE + demo-dry for L1/L2/L3 (run_behavior_"
                " walk_a9d3). NOTE: scripts/play_native.py still runs an OLDER hybrid loop -- the"
                " lockstep charter step 1 swaps it onto this frame."),
-    FrameStage("transition_flags", "1010:97CE..97E9: A344->9734, A342->9902, A346->9908", GAP,
-               "the gameplay-exit boundary; the DECISION is recovered + demo-witnessed"
-               " (systems/frame_loop.detect_gameplay_transition; A344 scripted / A346 death / A342"
-               " game-over in 97B2 priority). 2026-07-07: in the LOCKSTEP frame the trigger cells"
-               " are LIVE (9AFF writes A344/A342/A346 natively; the frame returns at a taken exit)."
-               " The exit TARGETS' continuations (9734 level-advance / 9902 game-over / 9908 death"
-               " respawn) have play_native-proven native equivalents but are not yet composed into"
-               " the lockstep frame -- exit frames end the comparison window instead"),
+    FrameStage("transition_flags", "1010:97CE..97E9: A344->9734, A342->9902, A346->9908", NATIVE,
+               "the gameplay-exit boundary, COMPOSED into the native frame (2026-07-10): A346 death ->"
+               " the 9908 respawn continuation (or 98EB game-over on lives exhausted); A344 ->"
+               " the 9734 level advance.  All byte-exact vs the VM (verify_native_level_reinit_4dbf,"
+               " verify_native_level_advance_9734, and the whole lockstep gate at 8292/8292, 0 gapped)."
+               " Remaining: A342 game-over-flag entry converges into the same 98EB path"),
     FrameStage("frame_state_update", "1010:A940", NATIVE,
                "the gameplay path (DS:2356 != 5) is composed + produced-vs-VM verified as"
                " systems/frame_loop.frame_state_update_a940 (accumulator shift + scan-entry fork;"
@@ -144,16 +142,21 @@ NEW_GAME_SETUP_STAGES: tuple[FrameStage, ...] = (
                "HUD/panel draw composite (dual-page gated on CS:95BC) -- presentation"),
     # --- level-end transition prologue (1010:9734, alternate entry) ---
     FrameStage("level0_intro", "1010:9844 (via 9734, if DS:2356 == 0)", GAP,
-               "level-0 story-intro splash (far-call text 1F8F:0980 + fire-wait) -- not recovered;"
-               " only on the level-end transition entry, not on a fresh new game"),
+               "the mothership story splash: an INTERACTIVE text screen (5BEE setup, the far text"
+               " renderer 1F8F:0980, 50C9 delays, a 0163 fire-wait) shown only when 9734 re-enters"
+               " with DS:2356 == 0 -- i.e. AFTER the mothership (planet 0) is beaten, then it converges"
+               " at 9744.  NOT on the six-level playthrough path (all six planets play + advance;"
+               " verify_native_level_progression).  Blocked on 1F8F:0980, an unrecovered text renderer"
+               " -- a front-end campaign task"),
     # --- converged per-level setup -> 97B2 ---
     FrameStage("level_advance", "1010:9744", NATIVE,
                "six-planet level-index advance; native form = frame_loop.advance_level_index_9744"
                " (DS:2356 0->1->..5->0, driven-oracle 9/9)"),
-    FrameStage("setup_tail", "1010:9755..97B2", GAP,
-               "the remaining per-level setup calls (the 98C0->BEFF gate + 5145/5BCA/0B3E/0E9C/60AC/"
-               "C3A6/77C5/99BF/9BE2/A940/C57C/B5A9/5F43) that lead into the 97B2 gameplay frame loop --"
-               " mostly init/presentation glue, not recovered"),
+    FrameStage("setup_tail", "1010:9755..97B2", NATIVE,
+               "the per-level setup, RECOVERED and composed (2026-07-10) as native_frame's shared"
+               " _level_setup_tail_9773 + the 0B3E/0E9C level loads + 60AC scroll warm-up + D305:"
+               " C3A6/77C5/99BF/6176/9BE2/A940/[20A6]/[A8C2]/5F43.  C57C and B5A9 are video (measured"
+               " zero DGROUP; attribute_death_continuation).  Byte-exact vs the VM"),
 )
 
 #: The DS:2356 per-planet video/palette dispatch (``1010:C565``: ``jmp cs:[2356*2 + 0xC570]``).
@@ -178,16 +181,20 @@ PLANET_VIDEO_HANDLERS: dict[int, str] = {
 #: targets.  These are the level/death/game-over transitions of the top-level mode machine.
 GAMEPLAY_EXIT_TARGETS: tuple[FrameStage, ...] = (
     FrameStage("level_end", "1010:9734 (flag A344)", NATIVE,
-               "scripted / level-end: a story branch (if DS:2356==0) then CONVERGES at the 9744 "
-               "level-advance (NEW_GAME_SETUP_STAGES) -> re-enters the level loop at the next planet"),
-    FrameStage("game_over", "1010:9902 (flag A342)", GAP,
-               "forces the DS:2358 lives/continue counter to 0 (frame_loop.death_continue_counter_update),"
-               " then falls into the death handler; the game-over presentation + return-to-front-end past"
-               " 991A (BEFF mode codes + jmp 9773) is a GAP"),
-    FrameStage("death", "1010:9908 (flag A346)", GAP,
-               "re-seeds the object pool (C4DB) + decrements the DS:2358 lives counter "
-               "(frame_loop.death_continue_counter_update; DS:978D cancels the loss); the respawn-vs-"
-               "game-over branch past 991A (BEFF mode codes + jmp 9773) is a GAP"),
+               "level complete, RECOVERED (2026-07-10) as native_frame._level_advance_9734: advance the"
+               " planet (wrap 5->0), load the new planet's map/tile/sprite banks (0B3E/0E9C), the 60AC"
+               " scroll warm-up, and the shared setup tail.  Byte-exact (verify_native_level_advance_9734)."
+               " The DS:2356==0 story branch (9844) is a separate front-end GAP -- see level0_intro"),
+    FrameStage("game_over", "1010:9902 -> 98EB (flag A342)", NATIVE,
+               "out of lives: 990B's `dec WORD [2358]` wraps 0->FFFF and 9773 branches to 98EB, the"
+               " game-over -> title -> fresh-game chain, RECOVERED (2026-07-10) as"
+               " native_frame._game_over_continuation_98eb.  Byte-exact vs the VM (the whole lockstep"
+               " gate; the last-life frame 5379 is now 0-diverged)"),
+    FrameStage("death", "1010:9908 (flag A346)", NATIVE,
+               "death respawn, RECOVERED (2026-07-10) as native_frame._respawn_continuation_9908:"
+               " C4DB reseed, the 4DBF level re-init, the shared 9773 setup tail, and D305 the"
+               " post-respawn wait.  Byte-exact vs the VM (verify_native_level_reinit_4dbf 7/7 +"
+               " the lockstep gate; all seven death windows 0-diverged)"),
 )
 
 
@@ -246,14 +253,19 @@ APP_MODE_GRAPH: tuple[AppMode, ...] = (
             (ModeEdge("level_setup", "2356++ -> 9744 converge", NATIVE),)),
     AppMode("death", "1010:9908", NATIVE,
             "re-seed (C4DB) + DS:2358 lives-- (death_continue_counter_update); branch at 9773 on the lives"
-            " sentinel",
+            " sentinel.  The respawn continuation is RECOVERED (native_frame._respawn_continuation_9908),"
+            " byte-exact vs the VM",
             (ModeEdge("game_over_seq", "2358 == 0xFFFF", NATIVE),
-             ModeEdge("level_play", "else: respawn re-init (routine bodies GAP)", GAP))),
+             ModeEdge("level_play", "else: the 9773 respawn re-init -> 97B2", NATIVE))),
     AppMode("game_over", "1010:9902", NATIVE,
             "force DS:2358 := 0 (death_continue_counter_update) then fall into the death handler",
             (ModeEdge("death", "-> 9908", NATIVE),)),
-    AppMode("game_over_seq", "1010:98EB", GAP,
-            "game-over presentation tail (cleanup + delay); its body is a GAP",
+    AppMode("game_over_seq", "1010:98EB", NATIVE,
+            "the game-over -> title -> fresh-game chain, RECOVERED (native_frame._game_over_continuation"
+            "_98eb): 96EE session init, the new-planet load, the setup tail, D305.  Byte-exact vs the VM"
+            " (the last-life frame is 0-diverged).  The front-end SCREENS it composes into scratch"
+            " (game-over banner, high-score, title) are cleared before the boundary -- their pixels are"
+            " a front-end-renderer gap, not a state gap",
             (ModeEdge("new_game", "jmp 96E0 (restart)", NATIVE),)),
 )
 
@@ -272,9 +284,9 @@ def describe_gaps() -> list[str]:
             for s in GAMEPLAY_EXIT_TARGETS if s.status in (GAP, UNMONITORED)]
     out.append("attract scene 0: [gap] 1010:D0D1 -> D160 -- special branch not recovered (fail-loud)")
     out.append("attract scene advance: [gap] 1010:D0DB.. -- next-scene entry actions not recovered")
-    out.append("level start state: [gap] Bucket F -- C4DB new-game setup is native"
-               " (apply_new_game_setup_c4db) + level advance (advance_level_index_9744); still GAP:"
-               " the player spawn/starfield init + wiring these into a native cold level-start")
+    # (level start state -- RECOVERED 2026-07-10: build_cold_level_start_image seeds a complete,
+    #  playable cold level 0..5 -- session init, C4DB, the pool seeds, the player spawn, the companion
+    #  (thrusters), both level banks, the scroll warm-up; verify_native_level_progression plays all six.)
     out.append("front-end menu logic: [gap] key-redefine/joystick/menu branches -- title image only")
     return out
 
