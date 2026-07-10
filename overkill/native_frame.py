@@ -141,7 +141,13 @@ def _save_under_a846(mem) -> None:
             t, c = divmod(src - scroll, STRIP_STRIDE)
             r = start + t                   # the block may straddle the visible window's edges
             for j in range(row_bytes):
-                if 0 <= c + j < STRIP_STRIDE and 0 <= r < n_rows:
+                phys = (strip_seg * 16 + ((src + j) & 0xFFFF)) - DS * 16
+                if 0 <= phys < 0x10000:
+                    # The strip's low part lies INSIDE DGROUP, so the frame's own pre-state carries
+                    # it authoritatively -- read it rather than deriving (the derivation is only
+                    # needed for the part of the strip that sits above DGROUP's 64K window).
+                    b = mem.rb(DS, phys)
+                elif 0 <= c + j < STRIP_STRIDE and 0 <= r < n_rows:
                     b = stack[r][c + j]
                 elif 0 <= c + j < STRIP_STRIDE and 0 <= r - STRIP_RING_ROWS < n_rows:
                     # A7EB mirrors each band to +0x5480 = 208 * 0x68, so strip row r is a duplicate
