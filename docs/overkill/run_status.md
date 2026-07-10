@@ -59,6 +59,46 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-10 (late+) — the cold-boot FRONT-END ARC is wired: attract -> intro -> menu -> play
+
+The native app now runs a real front-end arc end to end, all from decoded game data, all gated:
+
+    attract (title <-> hiscore <-> demo)  --[Space]-->  intro (IPAGE1..IPAGE5)  -->
+    level select (recovered D476/D480/D488/D490 + D424)  -->  play (the verified frame)
+
+* **Intro** (commit a5d545b): `_run_intro` plays the five IPAGE story pages named in the image's own
+  DS:1323 table (IPAGE1..IPAGE5.ENC, right before the OPAGE1..OPAGE10 ending pages); each decodes to
+  a full 320x200 index page through the title-screen codec.  Gated by
+  `test_story_intro_and_ending_pages_decode` (all 5 IPAGE + 10 OPAGE decode to real non-blank pages).
+* **Attract + --demo** (49afc30): `_run_attract` cycles title/hiscore/demo; the demo element replays a
+  recorded demo through the ONE verified frame (charter step 2), exposed as `--demo`.
+* **play_native transitions clarified** (325c2b1): confirmed by DRIVING that the frame OWNS the level
+  advance internally -- 9B2E clears A344/A346 at entry, sets+consumes them within the same frame, and
+  runs the recovered 9734 advance / 9908->98EB game-over before returning.  The old post-frame "A344 =
+  declared gap" hold was DEAD (A344 is always 0 after a normal frame) and misreported recovered work;
+  dropped it, kept A342 (standalone game-over, no recovered continuation) as a fail-loud net.  Level
+  progression through all six planets stays green (`verify_native_level_progression`).
+* dos_re bumped to 9230822 (pynuked_opl3 cross-drive cffi fix; liftverify doc: ORACLE_PASSING is a
+  SAMPLE over the calls the run made, not an all-inputs proof -- so the boot-lift counts are sampled
+  coverage, as reported).
+
+### The honest remaining frontier for a COMPLETE cold-booting game
+1. **True cold boot** (MZ entry -> CS constant tables 8D92/9592/9598/C570): the lifter campaign.  25/54
+   emitted boot hooks verified byte-exact over a fresh boot; the ceiling is `verify_boot_lifts`'
+   nested-hook Python recursion (25/54, NOT stack-bounded -- see loop_blockers).  Until these tables
+   are produced natively the front-end is bundle-SEEDED, not cold-BOOTED.
+2. **Faithful attract order**: the D007 scene machine's 19-scene DS:BE18 table draws per-scene GRAPHIC
+   CELLS (word0 ids 2A..3B via the CS:0BE4 panel directory); `_run_attract` (title/hiscore/demo) is an
+   honest interim until that panel-cell scene renderer is recovered.  Rules already native
+   (`verify_native_attract`); the scene->cell DRAW (D0DB entry actions) is the gap.
+3. **Ending (OPAGE1..10) + the 9844 mothership story intro**: both blocked on the far text renderer
+   1F8F:0980; the ending is only reached AFTER planet 0, which stops exactly at 9844.
+
+### Method unchanged
+Drive, don't read: the "hold blocks the advance" hypothesis was DISPROVEN by driving (9B2E clears A344
+before the caller can see it) before any code changed; the D007 `jmp cs:[bx+0xBE1A]` handler table read
+as scattered PSP addresses (a decode trap) while the DS:BE18 scene table read straight is the real one.
+
 ## 2026-07-10 (late) — cold-boot FRONT-END: attract sequence landed; the faithful attract order is a panel-cell campaign
 
 Wired the app's cold-boot front-end from a single title screen to a real ATTRACT LOOP, and pinned the
