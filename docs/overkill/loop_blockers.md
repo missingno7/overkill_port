@@ -1209,3 +1209,33 @@ things to settle FIRST, with a driven-oracle probe rather than by guessing:
    effect must be non-zero (we observe diffs at the 9B2E boundary), so the pairing matters.
 Note `object_sprite_blocks_a846` needs a SpriteDrawContext built from the asset bundle today; for an
 image-only native frame the banks must be read from the image instead.
+
+### 2026-07-08 (cont.) — the DGROUP sprite region is a SAVE-UNDER BACKING STORE
+
+Trapping `5AC8` (A846's loop) and `5A92` (A90C's loop) on the cold-start demo at the first
+diverging frame shows the real shape:
+
+    5AC8: es=B800 di=1210 bp=237C  +16typ=3   <- the PLAYER draws straight to the visible page
+    5AC8: es=25CC di=3554 bp=2654  +16typ=4   <- every other object: es == DS, di ADVANCES
+    5AC8: es=25CC di=6F94 bp=25E4
+    5AC8: es=25CC di=7214 bp=25AC
+    5AC8: es=25CC di=7494 bp=2574
+    5AC8: es=25CC di=7714 bp=24CC   (+0C == FFFF, i.e. culled, and it STILL writes)
+    5A92: es=B800 di=1EA0 bp=237C            <- A90C restores: player -> page
+    5A92: es=32FF di=6156 bp=2654            <- others -> the STRIP
+
+`di` marching 0x3554 -> 0x7714 across objects is not a screen coordinate; it is a cursor into a
+~16 KB DGROUP **backing store**.  So A846 SAVES the background under each sprite into DGROUP (and
+draws), and A90C RESTORES it.  The bytes we see diverging (0x77/0x88/0xF7 -- terrain greys) are
+saved BACKGROUND, not sprite pixels.
+
+**Consequence, stated plainly:** the `6Cxx/6Dxx` families (~470 frames) cannot be closed by
+modelling the sprite blit alone.  They require the native frame to own the PAGE composition (the
+strip + B800 content the save-under copies from), because the saved bytes are a function of what is
+on the page at that instant.  That is the render-integration slice -- the same work the play_native
+unification needs anyway -- not a small fix.  Do NOT attempt it as a patch; scope it as its own
+campaign step, oracle-first (compare the backing store byte-for-byte after A846 on real frames).
+
+Remaining lockstep frontier after that: `33xx/34xx/35xx` (293/217/268 frames -- likely the same
+backing store's lower half), `56xx` (222), `85xx` (190), `83xx` (172), `62xx` (171), the `4FF9`
+predicate (7 frames), and the two declared gaps (77C5 shield body 266, 9EE4 drain 62).
