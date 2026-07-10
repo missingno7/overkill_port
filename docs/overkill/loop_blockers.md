@@ -36,6 +36,16 @@ The right home is liftverify gaining a separate --emit-snapshot vs --run-from (a
 not a script here.  The proof already stands via the direct liftverify run (6 ORACLE_PASSING, 0
 DIVERGED); full coverage is a mechanics follow-up, not a correctness question.
 
+**DONE (2026-07-10, after the dos_re bump to 58a1a51's pluggable cloner): scripts/verify_boot_lifts.py
+is that decoupled harness, and it PASSES -- 54 of 72 boot routines emitted, 25 verified BYTE-EXACT
+over a FRESH boot (MZ entry -> D007), ZERO real divergences.**  1 retired on ASM-oracle timeout
+(too deep to re-interpret), then a clean stop when one lifted hook hit Python recursion depth.  So
+half the boot init is proven native byte-exact end to end.  Remaining to reach 100%: the ~18 refused
+(indirect-jump / region-budget -- need the lifter's jump-table + larger-region support), the 1 deep-
+recursion routine, and lifting the top-level boot orchestration (main from 1C32) so the boot runs
+with NO interpreter at all.  The CS-table acceptance test (8D92/9592/9598/C570 byte-equal to the
+bundle) is the finish line.
+
 BOOT STRUCTURE (traced): the init is a `1010 <-> 254A:04D7` loop -- the game's 1010 code repeatedly
 far-calls the DOS int-21 file-read wrapper at 254A:04D7 (returning to 1010:026F / C6A0) to load its
 assets, then builds the CS tables.  The 6-of-53 verified-in-one-pass is a SNAPSHOT-TIMING artifact,
