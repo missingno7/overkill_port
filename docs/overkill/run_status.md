@@ -28,7 +28,9 @@
 > ONE native 97B2 frame (`overkill/native_frame.py`) in per-frame lockstep with a recorded demo
 > (`overkill/probes/verify_native_lockstep.py`, cached), then swap play_native onto that same frame
 > fn + add `--demo/--mirror`.  **CURRENT LOCKSTEP STATE (L1 demo, 8292 frames, PyPy, 2026-07-10):
-> 8292 byte-exact / 0 DIVERGING / 0 GAPPED -- the gate PASSES.**  Every frame runs natively and 100% are
+> 8292 byte-exact / 0 DIVERGING / 0 GAPPED.  GAMEPLAY IS COMPLETE end-to-end (play/die/respawn/
+> game-over/level-advance, all six planets, with sound); remaining work is the front-end shell
+> (boot, title-menu logic, attract, the 9844 story intro).**  Every frame runs natively and 100% are
 > byte-exact across the whole 64K DGROUP.  Their residue is down to 6860 bytes (from 17839) now that
 > `1010:4DBF`, the death LEVEL RE-INIT, is recovered and independently gated by
 > `probes/verify_native_level_reinit_4dbf` (PASS 7/7).  The 7 are EXACTLY the death/respawn windows
@@ -56,6 +58,59 @@
 > inside the row pull), the 0162 input poll, the A067 fire path and the 0922 starfield are native in
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
+
+## 2026-07-10 (late) — GAMEPLAY COMPLETE end-to-end; remaining work is the front-end shell
+
+The whole GAMEPLAY loop is now native, VM-free, and byte-exact against the original -- boot into a
+level, play all six planets, die, respawn, run out of lives, and advance between levels.  What is
+left is the shell around it (boot, title-menu logic, attract, story screens), scoped below.
+
+### What plays, and what proves it
+* **Lockstep gate: 8292/8292 frames byte-exact, 0 diverged, 0 gapped** across the whole 64K DGROUP
+  (`verify_native_lockstep "" 20000`).
+* **Free-run: 8292/8292** on the frame's OWN carried-forward state, only the key table fed in
+  (`verify_native_freerun`) -- the trajectory holds without per-frame resync.
+* **Level progression: all six planets play + advance** (`verify_native_level_progression`),
+  planets 1->2->3->4->5->0, each with its own G{n}.BIC sprite bank; only the mothership's 9844
+  story intro remains.
+* Per-routine byte-exact gates: `verify_native_level_reinit_4dbf` (7/7), `verify_native_level_
+  advance_9734`, `verify_native_apply_upgrade_8546` (the Z/TAB weapon ladder, 4 rungs),
+  `verify_native_energy_bar_77f6` (12 A97A values), `verify_native_a940_attract` (8/8),
+  `verify_input_word_dead`, `verify_draw_scratch_dead`, `verify_native_hud_panel`.
+* **The app is the frame**: `scripts/play_native.py` runs `advance_gameplay_frame_97b2` over the
+  image (no dataclass game -- the hybrid was deleted), writes the WHOLE host keyboard into the INT9
+  table (the game's configurable map decides), renders from the image, and now has **PC-speaker
+  audio** read from the D50E engine's verified cells.  `verify_play_native_frame` PASS + a per-level
+  bank check for all six levels.
+
+### This session's recoveries (all gated)
+1B1081C..0C44EC9: the tile-strip cache; 1F8F:0209's two calls; the coverage-map probe; the INT8 tick
+model; 4DBF the death level re-init; D305 the respawn wait; 98BE proven dead; 98EB the game-over
+chain; the whole 9908 respawn continuation; the 60AC scroll warm-up (which also fixed a wrong cold
+seed); play_native rebuilt on the verified frame; the Z/TAB apply-upgrade ladder; the thruster
+(companion) cold spawn; the HUD fuel-meter scanline gaps; the G{n}.BIC sprite bank (a bug I had
+introduced); 9734 the level advance; A940's planet-5 attract middle; host audio; and the gap-registry
+reconciliation (21 -> 14, all remaining genuinely front-end).
+
+### The remaining gaps (all front-end / shell) — 14, per describe_gaps()
+* **COLD-BOOT CHAIN** (`254A`.../MZ entry C22:000E -> the 1010:D007 frontier): the game's INIT,
+  **1.25M instructions**, builds every runtime CS table (8D92/9592/9598/C570/...).  Scoped in
+  loop_blockers: nothing is static-relocatable, so it is init-recovery, best driven by the dos_re
+  LIFTER + `--timer-irqs` (af4055a) route by route from C22:000E, CS tables byte-equal to the bundle
+  as the acceptance test.  The DGROUP/asset half is already native (`build_cold_level_start_image` +
+  the codecs); the bundle now supplies only those CS constant tables.
+* **Title-menu LOGIC** (key redefine / options / attract timeout): the screens compose from real
+  assets and the grid cursor runs recovered handlers, but the menu state machine is a gap.
+* **9844 story intro**: the mothership STORY SPLASH -- an interactive text screen (5BEE, the far text
+  renderer 1F8F:0980, 50C9 delays, a 0163 fire-wait) shown only AFTER the mothership is beaten.  Not
+  on the six-level playthrough path; blocked on the unrecovered 1F8F:0980 text renderer.
+* **Attract** (D007 scene machine is native + demo-witnessed; the exit transfer is unpinned),
+  **level select** (D390 loop), **981F** HUD-cell timing, **60A2** status text, **073C** service.
+
+### The method, unchanged
+Drive the original, never read the listing (it was wrong ~every time this session; driving was right).
+Every recovery is gated byte-exact before it lands; a gate is checked that it can FAIL before it is
+trusted; a wrong model is reverted, not patched; the cold-boot init is the lifter's job now.
 
 ## 2026-07-10 (later) -- dos_re bumped to 1bfd5fd: THE AUTOMATIC LIFTER
 

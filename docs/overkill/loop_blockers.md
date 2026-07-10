@@ -4,6 +4,36 @@ Open items the autonomous loop attempted but could not finish byte-exact. Do NOT
 re-attempt these in the loop; they need a reproduction trace and/or gameplay
 context. Each has the analysis already done so a human can pick up fast.
 
+## 2026-07-10 — COLD-BOOT CHAIN scoped: 1.25M-instruction init, nothing static-relocatable
+
+OVERKILL is a PLAIN MZ executable (no LZEXE -- no LZ09/LZ91/LZEXE signature; entry cs:ip = C22:000E,
+0 relocations, load module 50043 bytes).  The "bootstrap" the static bundle captures is the game's
+own INIT, run from the MZ entry to the frontier `1010:D007` (the attract/mode-machine top) --
+**1245977 instructions** (from the bundle manifest's `steps`).
+
+**The cold boot cannot shortcut via static relocation.**  Checked the CS runtime tables the gameplay
+depends on -- 8D92/9192/9392/8F92 (sprite-frame), 9592 (plane seg ptr), 9598 (strip seg), 95A2,
+C570 (the video dispatch) -- against BOTH the raw MZ load module AND the container.  **None is found
+in either.**  The init BUILDS them at runtime; the 50KB load module is smaller than the 64KB runtime
+CS segment precisely because the top ~14KB of tables is init-computed.  So there is no "load the MZ,
+reuse the seeds" slice: native cold boot means recovering the init that produces those tables.
+
+**What already exists that the boot init would otherwise produce:** `build_cold_level_start_image`
+reconstructs a complete, playable level-start DGROUP (all six planets) from the recovered asset
+codecs + the bundle's CODE-segment constants; the asset codecs decode every container asset natively.
+So the DGROUP/asset half is done -- what the bundle still supplies is the CS constant tables the init
+computes.
+
+**The tractable method (not yet started):** the boot init is exactly what the dos_re LIFTER +
+`--timer-irqs` (both landed by af4055a) are for -- literal-lift each init routine, verify it against
+the interpreted original, refactor.  M3 (the AI refactor loop) then turns a passing lift into clean
+recovered source.  This is a multi-session campaign, not a single slice; it should be driven route by
+route from C22:000E, with the CS-table construction as the acceptance criterion (the produced tables
+must byte-equal the bundle's).
+
+Not a blocker to record-and-skip so much as a SCOPE marker: the cold-boot chain is the largest
+remaining piece, and it is init-recovery via the lifter, not a data shortcut.
+
 ## 2026-07-10 (2nd attempt) — 98EB: 3717 → 47 bytes, still reverted; ONE unknown remains
 
 With the zero-fingerprint corrected (the strip scratch is CLEARED, not rendered), the composition
