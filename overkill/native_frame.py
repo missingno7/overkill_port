@@ -1630,6 +1630,32 @@ MARKER_CELL = 0x95FA           # the held powerup marker (FFFF = none)
 MARKER_SAVE_CELL = 0x95F6
 MARKER_TABLE_95FC = 0x95FC     # marker -> descriptor pointer
 UPGRADE_SOUND = 0x09
+#: the special-weapon handlers 8546 dispatches to besides the [A958] gun stubs (loop_blockers
+#: 2026-07-10).  44AF is a bare `ret` (the apply is a no-op and the marker is NOT cleared); 84C3 is
+#: `call 9F1A; jmp 8430` -- deploy a persistent weapon module, then clear the marker.
+_HANDLER_44AF = 0x44AF
+_HANDLER_84C3 = 0x84C3
+
+
+def _deploy_weapon_9f1a(mem) -> None:
+    """``1010:9F1A -> 9F20`` -- deploy a persistent weapon module.  Allocates an effect-pool record
+    (the 7524 allocator, cursor DS:[95D8]) into the FIRST free of the two trackers [A962]/[A964] and
+    stamps it (9F41); if BOTH trackers are occupied it is a no-op (9F40 ret).  Stamp values are read
+    straight from the 9F41 body; the driven oracle (verify_native_special_weapon_apply) confirms the
+    alloc + tracker + stamp byte-exact."""
+    from overkill.recovered.adapters.behavior_walk import (
+        EFFECT_POOL_BASE, EFFECT_POOL_WRAP, EFFECT_SLOTS, _alloc,
+    )
+    for tracker in (0xA962, 0xA964):                       # 9F20 / 9F30
+        if mem.rw(DS, tracker) != 0xFFFF:
+            continue
+        slot = _alloc(mem, 0x95D8, EFFECT_POOL_BASE, EFFECT_POOL_WRAP, EFFECT_SLOTS)   # 74FE
+        if slot == 0xFFFF:
+            return
+        mem.ww(DS, tracker, slot)                          # 9F2A / 9F3A
+        for off, val in ((0x00, 1), (0x0A, 1), (0x08, 0x14), (0x14, 1), (0x16, 1), (0x20, 0x50)):
+            mem.ww(DS, (slot + off) & 0xFFFF, val)         # 9F41..9F59
+        return
 
 
 def _apply_upgrade_8546(mem) -> None:
@@ -1665,13 +1691,20 @@ def _apply_upgrade_8546(mem) -> None:
     bx = (mem.rw(DS, (desc + 8) & 0xFFFF) * 6) & 0xFFFF    # 8560..8569
     target = mem.rw(DS, (bx + si + 4) & 0xFFFF)            # 856F: call [bx+si+4]
     mode = _decode_upgrade_stub(mem, target)
-    if mode is None:
+    if mode is not None:                                  # 8402..842A: the [A958] gun-level stub
+        mem.ww(DS, 0xA958, mode)
+        mem.ww(DS, MARKER_CELL, 0xFFFF)                    # 8430
+    elif target == _HANDLER_84C3:                         # `call 9F1A; jmp 8430`: deploy a module
+        _deploy_weapon_9f1a(mem)
+        mem.ww(DS, MARKER_CELL, 0xFFFF)                    # 8430
+    elif target == _HANDLER_44AF:                         # bare `ret`: no effect, marker NOT cleared
+        pass
+    else:
         raise RecoveryGap(f"8546's upgrade handler CS:{target:04X}",
-                          "not an [A958] level stub -- the 44AF/8463/849D/84C3/84D6 weapon "
-                          "families are unrecovered")
-    mem.ww(DS, 0xA958, mode)
-    mem.ww(DS, MARKER_CELL, 0xFFFF)                        # 8430
-    mem.ww(DS, MARKER_SAVE_CELL, mem.rw(DS, MARKER_CELL))  # 8572: [95F6] = FFFF
+                          "not a recovered weapon handler -- the 8463/849D/84D6 families are still "
+                          "open (loop_blockers 2026-07-10; drive the gap-snapshot oracle to fill)")
+    # --- the shared tail 8572..8596 (the 837A weapon-script tick + the apply sound) ---------------
+    mem.ww(DS, MARKER_SAVE_CELL, mem.rw(DS, MARKER_CELL))  # 8572: [95F6] = [95FA]
     mem.ww(DS, MARKER_CELL, marker)                        # 8578: pop -- restore for 837A
     from overkill.recovered.adapters.behavior_walk import _weapon_script_tick_837a
     _weapon_script_tick_837a(mem)                          # 857C
