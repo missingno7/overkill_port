@@ -982,6 +982,7 @@ def _row_pull_a74e(mem) -> None:
     if row <= 0x0E52:
         run_tile_cue_row_7948(mem, row)             # A839
         run_level_object_script_4a65(mem)           # A83C
+    _render_strip_row_a7eb(mem, row)                # A7EB: 5A7E's render + the ring mirror
     if row <= 0x00B6 and mem.rb(DS, 0x98C0):        # A751
         mem.wb(DS, 0xBEFF, 0x07)
     mem.ww(DS, 0x2350, (row + 0x000D) & 0xFFFF)     # A765
@@ -989,6 +990,48 @@ def _row_pull_a74e(mem) -> None:
     if mem.rw(DS, 0xA978) == 4:                     # A770 -> CB1C (al = 5)
         mem.wb(DS, 0x98C2, 0x05)
     mem.ww(DS, 0x2354, 0)                           # A77A
+
+
+#: A7EB's geometry, from CS: [95BE] = 0x680 (one 16-row band = 16 * 0x68 bytes, contiguous),
+#: [95C2] = 0x5480 (the ring-duplicate offset the band is mirrored to)
+STRIP_BAND_BYTES = 0x0680
+STRIP_MIRROR_OFF = 0x5480
+
+
+def _render_strip_row_a7eb(mem, row_base: int) -> None:
+    """``1010:A7EB``: render the freshly pulled tile row into the STRIP, then mirror it.
+
+    ``di = [234C] - CS:[95BE]`` addresses the band; ``A81B`` runs the cue/script beats and tails
+    into ``5A7E`` -> (video mode 2) ``36A2``, whose pixels are ``render_tile_row``.  Rows are
+    contiguous: the 0x68 stride equals the 104-byte row, so the band is 16 * 0x68 = 0x680 bytes.
+    Then ``rep movsw`` copies that whole band to ``di + CS:[95C2]`` -- the ring duplicate that lets
+    the scroll window slide without wrapping.
+    """
+    import numpy as np
+
+    from overkill.native_video.tile_row import BANK2_ROW_BASE, render_tile_row
+
+    strip_seg = mem.rw(CS, 0x9598)
+    di0 = (mem.rw(DS, 0x234C) - mem.rw(CS, 0x95BE)) & 0xFFFF
+    mem_np = np.frombuffer(bytes(mem.data), dtype=np.uint8)
+    plane_seg = mem.rw(CS, 0x9592)
+    plane = mem_np[plane_seg * 16: plane_seg * 16 + 0x10000]
+    table = [mem.rw(CS, (0x8D92 + 2 * k) & 0xFFFF) for k in range(0x100)]
+    bank_ptr = 0x959C if row_base >= BANK2_ROW_BASE else 0x959A
+    bank = mem.rw(CS, bank_ptr)
+    graphics = mem_np[bank * 16: bank * 16 + 0x10000]
+
+    px = render_tile_row(plane, row_base, table, graphics)[:, :STRIP_STRIDE * 2]
+    pairs = px.reshape(px.shape[0], STRIP_STRIDE, 2)
+    packed = ((pairs[:, :, 0] << 4) | pairs[:, :, 1]).tolist()
+    for r, line in enumerate(packed):                       # 36A2: the band, rows contiguous
+        base = (di0 + r * STRIP_STRIDE) & 0xFFFF
+        for c, b in enumerate(line):
+            mem.wb(strip_seg, (base + c) & 0xFFFF, b)
+    mirror = mem.rw(CS, 0x95C2)                             # A807/A813: the ring duplicate
+    for k in range(STRIP_BAND_BYTES):
+        mem.wb(strip_seg, (di0 + mirror + k) & 0xFFFF,
+               mem.rb(strip_seg, (di0 + k) & 0xFFFF))
 
 
 def _scroll_step_a6fe(mem) -> None:
