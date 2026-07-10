@@ -28,7 +28,7 @@ from overkill.recovered.adapters.behavior_walk import (
 )
 from overkill.recovered.systems.tilemap import compute_tile_probe_5073, lookup_tile_class_byte
 from overkill.recovered.domain.tilemap import TileProbeInput
-from overkill.recovered.systems.frame_loop import frame_state_update_a940
+from overkill.recovered.systems.frame_loop import ATTRACT_MODE_2356, frame_state_update_a940
 
 DS = 0x25CC
 CS = 0x1010
@@ -331,17 +331,59 @@ def _a940_walk_stage(mem) -> None:
     OBJECT WALK (A9D3..AA25, native) and the far ``1F8F:0922`` STARFIELD tick (the C6C1 ring:
     20 + 10 + 10 star words at stride 6, wrap 0xC0, three parity-gated layers; skipped while the
     player anchor state is FFFF)."""
-    u = frame_state_update_a940(
-        mem.rw(DS, 0xA8CE), mem.rw(DS, 0xA8C8), mem.rw(DS, 0xA8CC),
-        mem.rw(DS, 0x2356), mem.rb(DS, 0x98A8), mem.rw(DS, 0xA8C2))
-    mem.ww(DS, 0xA8CE, u.counter_a8ce)
-    mem.ww(DS, 0xA8C6, u.prev_a8c6)
-    mem.ww(DS, 0xA8CA, u.prev_a8ca)
-    mem.ww(DS, 0xA8CC, u.a8cc_reset)
-    mem.wb(DS, 0x98A8, u.flag_98a8)
-    mem.wb(DS, 0x98A9, u.flag_98a9)
+    # A940's DS:2356 == 5 path (planet 5) runs an extra MIDDLE between the accumulator shift and the
+    # scan tail: the 98A2/98A4/98AA/98A5/98A3 attract counters (A960..A9B3) and the far 1F8F:081D
+    # demo-counter tick.  frame_state_update_a940 fails loud on 2356 == 5 (its gameplay signature
+    # doesn't carry the attract inputs), so compose the three recovered pure pieces directly here.
+    if mem.rw(DS, 0x2356) == ATTRACT_MODE_2356:
+        _a940_attract_middle_stage(mem)
+    else:
+        u = frame_state_update_a940(
+            mem.rw(DS, 0xA8CE), mem.rw(DS, 0xA8C8), mem.rw(DS, 0xA8CC),
+            mem.rw(DS, 0x2356), mem.rb(DS, 0x98A8), mem.rw(DS, 0xA8C2))
+        mem.ww(DS, 0xA8CE, u.counter_a8ce)
+        mem.ww(DS, 0xA8C6, u.prev_a8c6)
+        mem.ww(DS, 0xA8CA, u.prev_a8ca)
+        mem.ww(DS, 0xA8CC, u.a8cc_reset)
+        mem.wb(DS, 0x98A8, u.flag_98a8)
+        mem.wb(DS, 0x98A9, u.flag_98a9)
     run_behavior_walk_a9d3(mem, level_tiles_from_image(mem))
     _starfield_tick_0922(mem)
+
+
+def _a940_attract_middle_stage(mem) -> None:
+    """``1010:A940`` on the ``DS:2356 == 5`` (planet 5) path: the accumulator shift, then the attract
+    MIDDLE (the 98A2/98A4/98AA/98A5/98A3 counters + the far 1F8F:081D demo tick), then the scan tail.
+
+    Every piece is a recovered pure function; this only threads the image cells they read/write, in
+    the ASM's order (A940 shift -> A960..A9B3 middle -> A9BC scan).  The 081D far call is
+    unconditional within this path.
+    """
+    from overkill.recovered.systems.frame_loop import (
+        step_a940_attract_middle, step_demo_counter_tick_1f8f_081d,
+        step_frame_accumulator_shift_a940, step_frame_scan_entry_a940_tail,
+    )
+    accum = step_frame_accumulator_shift_a940(              # A940..A959
+        mem.rw(DS, 0xA8CE), mem.rw(DS, 0xA8C8), mem.rw(DS, 0xA8CC))
+    mem.ww(DS, 0xA8CE, accum.counter_a8ce)
+    mem.ww(DS, 0xA8C6, accum.prev_a8c6)
+    mem.ww(DS, 0xA8CA, accum.prev_a8ca)
+    mem.ww(DS, 0xA8CC, 0)                                   # A956: mov word [A8CC],0
+    n98a2, n98a4, n98aa, n98a5, n98a3 = step_a940_attract_middle(   # A960..A9B3
+        mem.rb(DS, 0x98A2), mem.rw(DS, 0x98AA), mem.rb(DS, 0x98A5),
+        mem.rb(DS, 0x98A3), mem.rw(DS, 0xA47E))
+    mem.wb(DS, 0x98A2, n98a2)
+    mem.wb(DS, 0x98A4, n98a4)
+    mem.ww(DS, 0x98AA, n98aa)
+    mem.wb(DS, 0x98A5, n98a5)
+    mem.wb(DS, 0x98A3, n98a3)
+    tick = step_demo_counter_tick_1f8f_081d(               # A9B3: call far 1F8F:081D
+        mem.rb(DS, 0x98A7), mem.rw(DS, 0xA47E), mem.rb(DS, 0x98A6))
+    mem.wb(DS, 0x98A7, tick.counter_98a7)
+    mem.wb(DS, 0x98A6, tick.counter_98a6)
+    scan = step_frame_scan_entry_a940_tail(mem.rb(DS, 0x98A8), mem.rw(DS, 0xA8C2))   # A9BC
+    mem.wb(DS, 0x98A8, scan.flag_98a8)
+    mem.wb(DS, 0x98A9, scan.flag_98a9)
 
 
 def _starfield_tick_0922(mem) -> None:
