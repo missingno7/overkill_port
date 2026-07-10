@@ -1,10 +1,17 @@
-"""Linear disassembler built on the project's own 8086 decoder.
+"""Linear disassembler: static lengths from dos_re.lift, text from the interpreter.
 
-Loads a snapshot memory image, then linearly decodes a CS:offset..offset range
-by executing one instruction at a time on a throwaway runtime and advancing by
-the exact number of *code* bytes the decoder fetched.  Replacement hooks are
-removed so raw original bytes are decoded.  Per-instruction exceptions are
-swallowed so an odd opcode does not stop the sweep.
+Loads a snapshot memory image, then linearly decodes a CS:offset..offset range.
+Instruction LENGTHS come from the framework's static decoder
+(``dos_re.lift.decode``, unit-tested against the interpreter); the
+human-readable text still comes from executing each instruction once on a
+throwaway runtime and capturing what ``execute_opcode`` returns.
+Per-instruction exceptions are swallowed so an odd opcode does not stop the
+sweep (the static length keeps the walk aligned).
+
+History: this tool used to measure lengths by counting ``cpu.fetch8`` calls
+through one step(). The 2026-07-09 interpreter fetch-path inlining silently
+broke that trick (opcode/modrm/displacement bytes no longer route through
+fetch8); same fix as canonical ``dos_re/tools/lindis.py``.
 
 Usage:
     python scripts/lindis.py <snapshot_dir> <CS> <START> <END>
@@ -17,7 +24,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "dos_re"))  # submodule repo root (no editable install under PyPy)
 
+from dos_re.lift.decode import decode_one  # noqa: E402
 from overkill.runtime import load_overkill_snapshot  # noqa: E402
 
 
@@ -33,18 +42,9 @@ def main(argv):
     cpu.replacement_hooks.clear()
     cpu.hook_verifier = None
     cpu.trace_enabled = True
+    cpu.pending_irq = None
 
-    # Count code bytes fetched during one instruction.
-    orig_fetch8 = cpu.fetch8
-    counter = {"n": 0}
-
-    def counting_fetch8():
-        counter["n"] += 1
-        return orig_fetch8()
-
-    cpu.fetch8 = counting_fetch8
-
-    # Capture the asm text the decoder produces, without trace parsing.
+    # Capture the asm text the interpreter produces, without trace parsing.
     orig_exec = cpu.execute_opcode
     last = {"asm": "?"}
 
@@ -54,24 +54,23 @@ def main(argv):
         return res
 
     cpu.execute_opcode = capturing_exec
+    mem = cpu.mem
 
     ip = start
     while ip <= end:
+        inst = decode_one(lambda off: mem.rb(cs, off & 0xFFFF), ip)
         cpu.s.cs = cs
         cpu.s.ip = ip
-        counter["n"] = 0
-        before_ip = ip
         last["asm"] = "?"
-        asm = "?"
         try:
             cpu.step()
-            asm = last["asm"]
+            asm = last["asm"] or inst.mnemonic
         except Exception as exc:  # noqa: BLE001
-            asm = f"<dec-exc {type(exc).__name__}: {exc}>"
-        n = counter["n"] if counter["n"] > 0 else 1
-        raw = bytes(cpu.mem.rb(cs, (before_ip + i) & 0xFFFF) for i in range(n))
-        print(f"{cs:04X}:{before_ip:04X}  {raw.hex():<16}  {asm.strip()}")
-        ip = before_ip + n
+            asm = f"{inst.mnemonic}  <exec-exc {type(exc).__name__}: {exc}>"
+        print(f"{cs:04X}:{ip:04X}  {inst.raw.hex():<16}  {str(asm).strip()}")
+        ip = (ip + inst.length) & 0xFFFF
+
+
 if __name__ == "__main__":
     if len(sys.argv) != 5:
         print(__doc__.strip(), file=sys.stderr)
