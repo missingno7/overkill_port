@@ -636,6 +636,19 @@ def _step_controller_13(mem, rec: int) -> None:
     mem.ww(DS, rec + 0x08, (mem.rw(DS, rec + 0x06) + 0x3B) & 0xFFFF)   # 1F8F:0448
 
 
+def _step_morpher_81(mem, rec: int) -> None:
+    """Behavior 0x81 (8D57 -> 1F8F:0452; the child 0x7D spawns): sprite = 0x16A, seek MODE 1 toward the
+    record's OWN +0x32/+0x34 target (B729); ON BLOCKED (arrival) morph to behavior 0x93.  jmp BC4B tail.
+    Lifter-verified (liftverify 1F8F:0452 ORACLE_PASSING); gated by verify_native_behavior_81."""
+    mem.ww(DS, rec + 0x08, 0x016A)                # 0452
+    mem.ww(DS, 0x2308, 0x0001)                    # 0457: seek mode 1
+    saved_dir = mem.rw(DS, rec + 0x06)            # 045D: push [bp+6]
+    blocked = _b729_seek(mem, rec)                 # 0460..0466: B729 seek (writes +0x06)
+    mem.ww(DS, rec + 0x06, saved_dir)             # 0468: pop [bp+6] -- restore the direction
+    if blocked:                                    # 046B: on blocked ->
+        mem.ww(DS, rec + 0x18, 0x93)              # 046D: morph to behavior 0x93
+
+
 def _step_controller_1c(mem, rec: int) -> None:
     """Behavior 0x1C (the planet-2 WAVE CONTROLLER; the shared 8D4F/1F8F:027A body + the 03A6
     arrival): seek the A482-schedule waypoint (x+0x20/y, 5DB2 mode 3); ON ARRIVAL advance the
@@ -2945,6 +2958,9 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
         elif beh in (0x7D, 0x7E):
             _step_controller_7d(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=False)   # the 8D4F stub exits jmp BC4B
+        elif beh == 0x81:
+            _step_morpher_81(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=False)   # the 8D57 stub exits jmp BC4B
         else:
             raise RecoveryGap(f"behavior {beh:#04x} (record {rec:04X})",
                               "no native handler registered -- recover it before walking")
