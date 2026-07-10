@@ -13,7 +13,7 @@
 > per-frame VM states on first run and replays them in ~40s instead of ~5min -- same states, same
 > comparison; pass `vm` to force the live oracle; caches live in `artifacts/shadow_cache/`,
 > gitignored, keyed on the demo file sha1 + frame budget)**, `scripts/lindis.py` (encoded targets),
-> `scripts/behavior_zoo_xref.py`; **THE DRIVEN ORACLE FOR UNGATED BEHAVIOR (2026-07-10, `probes/verify_native_flash_decay.py`): when a playtest bug is in a path the demo corpus never exercises (lockstep stays green but the behavior is wrong), inject the missing precondition into BOTH the pure VM and the native frame at each 9B2E boundary and diff -- turns an unexercised path into a byte-exact gate that can FAIL**; **THE GAP SEED (2026-07-10, `play_native.dump_gap_snapshot`): on any RecoveryGap in play, the app dumps a --snapshot-loadable PRE-frame image to artifacts/gap_snapshots/ so the exact gap reproduces with one frame -- the seed a driven oracle then fills**; **THE AUTOMATIC LIFTER (2026-07-10, dos_re 1bfd5fd): `dos_re/tools/liftgen.py` (census: is a routine liftable, and why not) and `dos_re/tools/liftverify.py` (emit a literal ASM->Python hook per entry, install it, run the VM, and differentially verify each call against the interpreted ORIGINAL, writing ORACLE_PASSING/DIVERGED/NOT_REACHED into a proof ledger). USE IT BEFORE HAND-DECODING ANYTHING: `python dos_re/tools/liftverify.py --exe assets/OVERKILL --snapshot DIR --entry 1010:XXXX --steps 3000000 --emit-dir lifted`. It refuses indirect jumps, which is exactly the 4E26 jump-table case a hand-decode got wrong by two bytes. A lifted hook is SCAFFOLDING, not recovered source -- it is a verified starting point to refactor, and the same oracle keeps the refactor honest**; **PERF (2026-07-08, see dos_re/docs/performance.md): suites =
+> `scripts/behavior_zoo_xref.py`; **`scripts/capture_pure_vm_snapshot.py` (2026-07-10): dumps a PURE-VM (hooks-stripped) memory+state.json snapshot the first frame boundary a target behaviour (record +0x18) is live -- the enabler for lifter-assisted actor recovery, since the hooked capture_demo_snapshot cannot reach a hooked-over handler (liftverify would report NOT_REACHED)**; **THE DRIVEN ORACLE FOR UNGATED BEHAVIOR (2026-07-10, `probes/verify_native_flash_decay.py`): when a playtest bug is in a path the demo corpus never exercises (lockstep stays green but the behavior is wrong), inject the missing precondition into BOTH the pure VM and the native frame at each 9B2E boundary and diff -- turns an unexercised path into a byte-exact gate that can FAIL**; **THE GAP SEED (2026-07-10, `play_native.dump_gap_snapshot`): on any RecoveryGap in play, the app dumps a --snapshot-loadable PRE-frame image to artifacts/gap_snapshots/ so the exact gap reproduces with one frame -- the seed a driven oracle then fills**; **THE AUTOMATIC LIFTER (2026-07-10, dos_re 1bfd5fd): `dos_re/tools/liftgen.py` (census: is a routine liftable, and why not) and `dos_re/tools/liftverify.py` (emit a literal ASM->Python hook per entry, install it, run the VM, and differentially verify each call against the interpreted ORIGINAL, writing ORACLE_PASSING/DIVERGED/NOT_REACHED into a proof ledger). USE IT BEFORE HAND-DECODING ANYTHING: `python dos_re/tools/liftverify.py --exe assets/OVERKILL --snapshot DIR --entry 1010:XXXX --steps 3000000 --emit-dir lifted`. It refuses indirect jumps, which is exactly the 4E26 jump-table case a hand-decode got wrong by two bytes. A lifted hook is SCAFFOLDING, not recovered source -- it is a verified starting point to refactor, and the same oracle keeps the refactor honest**; **PERF (2026-07-08, see dos_re/docs/performance.md): suites =
 > `python -m pytest -q -n auto` (xdist, 4m30s -> 54s); long oracle/probe runs = PyPy serial
 > (`pypy -m overkill.probes.X`) -- PyPy is BYTE-FAITHFUL (proved: a full lockstep re-record under
 > PyPy and CPython produce the identical cache sha1 and verdict), 20m14s -> 5m47s on a full
@@ -58,6 +58,34 @@
 > inside the row pull), the 0162 input poll, the A067 fire path and the 0922 starfield are native in
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
+
+## 2026-07-10 (late+++++) — ACTOR-MODEL investigation + the lifter-assisted pipeline VALIDATED end-to-end
+
+Owner directive: generalize the enemy zoo into an actor model, evidence-first, lifter-assisted (not a
+premature rewrite).  Delivered the map + proposal AND proved the recovery pipeline works.
+
+### The map + proposal (commit 0213bda): `docs/overkill/actor_model.md` refreshed to the current zoo
+The enemy system IS a data-driven actor model (no bytecode VM): a THREE-level dispatch (AA36 type/
+draw-layer +0x16 -> EFAE/EFC4 behaviour +0x18 -> 1F8F:027A +0x24 mode sub-machine); ~90/146 behaviours
+recovered across 75 handlers; 76/134 handlers are thin stubs over ~20 shared workers (the "instruction
+set": tail/contact/seek/steer/shoot/spawn/retarget/bounce/death/animate/gate/substate).  The Actor is
+the 0x38 record (already a shared view); a Behaviour = a step-list over the closed verb set + a Call()
+escape for the ~10% irregular (bosses, C237 table, L5 zoo).  Per-level data (tile-cue spawn tables,
+A482 waypoint scripts, anim tables) is already data.  Full clusters, first-refactor candidates, and the
+verifier plan are in the doc.
+
+### The lifter pipeline VALIDATED (the owner's core strategy)
+Proved the capture -> liftverify -> refactor loop end to end on the waypoint family: **8D4F and
+1F8F:027A lifted 2 ORACLE_PASSING, 0 DIVERGED**.  The missing enabler was pure-VM snapshot capture --
+`scripts/capture_demo_snapshot.py` replays through the HOOKED runtime, so a behaviour with a native
+hook (or far-called from one, like 8D4F) is intercepted and liftverify reports NOT_REACHED.  NEW
+standing mechanism **`scripts/capture_pure_vm_snapshot.py`**: replays a demo through the PURE ref VM and
+dumps a memory+state.json snapshot the first boundary a target behaviour (+0x18) is LIVE, from which
+liftverify forward-runs straight into the handler.  This makes the remaining ~56 behaviours liftable.
+
+NEXT SLICE (unblocked): capture a snapshot nearer a waypoint ARRIVAL (raise --min-boundary), lift the
+full 1F8F:027A incl. the arrival branch, refactor into the verb set -> fills the 0x7D planet-4 gap AND
+the whole 6-behaviour 8D4F family (0x13/0x15/0x1C/0x1F/0x7D/0x7E) at once.
 
 ## 2026-07-10 (late++++) — the 8546 SPECIAL-WEAPON families FILLED (6 of 7), incl. the owner's 8463 gap
 
