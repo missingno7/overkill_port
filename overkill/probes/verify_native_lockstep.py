@@ -83,6 +83,29 @@ INT8_VECTOR = (0x1010, 0x06E5)
 GAME_OVER_MENU_PICK = 0
 
 
+def level_assets_for(planet: int, _cache: dict = {}):
+    """The per-planet files the original's 0B3E / 0E9C loaders read -- a HOST INPUT.
+
+    Read from the container, cached per planet.  advance_gameplay_frame_97b2 calls this on the death
+    re-init, the game-over, and the level advance; the frame never emulates INT 21h.
+    """
+    if planet not in _cache:
+        from overkill.asset_codecs.level_assets import (decode_level_blocks, decode_level_graphics,
+                                                        decode_level_tile_map)
+        from overkill.asset_codecs.native_level import (_read_class_override_pairs,
+                                                        build_level_class_table)
+        from overkill.native_frame import LevelAssets
+        container = (ROOT / "assets" / "OVERKILL").read_bytes()
+        exe = (ROOT / "artifacts" / "static_runtime_bundle" / "memory_1mb.bin").read_bytes()
+        _cache[planet] = LevelAssets(
+            map_bytes=bytes(decode_level_tile_map(container, planet)),
+            class_table=bytes(build_level_class_table(_read_class_override_pairs(exe, planet))),
+            blocks=bytes(decode_level_blocks(container, planet)),
+            graphics=bytes(decode_level_graphics(container, planet)),
+        )
+    return _cache[planet]
+
+
 def level_bytes_for(planet: int, _cache: dict = {}) -> bytes:
     """The level map file the 4DBF death re-init reloads -- a HOST INPUT (C679 does INT 21h 3Dh).
 
@@ -110,7 +133,7 @@ def _check_frame(pre_full, post_dgroup: bytes, sp: int, isr_ticks: int, stats, g
               f"distinct-gaps={len(gaps)}", flush=True)
     try:
         advance_gameplay_frame_97b2(native, isr_ticks=isr_ticks,
-                                    level_bytes=level_bytes_for(native.rw(DGROUP, 0x2356)),
+                                    level_assets=level_assets_for,
                                     menu_pick=GAME_OVER_MENU_PICK)
     except RecoveryGap as gap:
         key = str(gap).split(" (record ")[0]

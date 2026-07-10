@@ -13,6 +13,8 @@ mask a divergence, one frame implementation shared by the gate and play_native.
 """
 from __future__ import annotations
 
+from typing import NamedTuple
+
 from overkill.recovered.domain.gaps import RecoveryGap
 from overkill.recovered.domain.tilemap import LevelTileContext
 from overkill.recovered.systems.input import decode_keyboard_input_flags
@@ -47,7 +49,22 @@ def level_tiles_from_image(mem) -> LevelTileContext:
                             tile_plane=plane, class_table=classes)
 
 
-def advance_gameplay_frame_97b2(mem, *, isr_ticks: int = 2, level_bytes: bytes | None = None,
+class LevelAssets(NamedTuple):
+    """The per-planet files the original's own loaders read, supplied as a HOST INPUT.
+
+    ``0B3E`` reads ``LEV{n}MAP.BIC`` (and rebuilds the ``DS:C3AA`` class table); ``0E9C`` reads the
+    ``(graphics, blocks)`` pair named by ``DS:[14E8 + planet*4]`` -- ``LEV{n}BLX.BIC`` into the tile
+    bank ``CS:[959A]`` and ``G{n}.BIC`` into the sprite bank ``CS:[95AE]``.  The native frame does not
+    emulate INT 21h: it is handed the bytes, exactly as it is handed the key table and the tick count.
+    """
+
+    map_bytes: bytes        # LEV{n}MAP.BIC, decoded (0x0EA0)
+    class_table: bytes      # 256 bytes -> DS:C3AA
+    blocks: bytes           # LEV{n}BLX.BIC -> CS:[959A]
+    graphics: bytes         # G{n}.BIC      -> CS:[95AE]
+
+
+def advance_gameplay_frame_97b2(mem, *, isr_ticks: int = 2, level_assets=None,
                                 menu_pick: int | None = None) -> None:
     """One 97B2 frame over the image, stage by stage.
 
@@ -55,9 +72,10 @@ def advance_gameplay_frame_97b2(mem, *, isr_ticks: int = 2, level_bytes: bytes |
     ran (see :func:`_isr_effects_ticks`).  Steady-state play is 2, which is the default; the lockstep
     gate passes the count it recorded from the original.
 
-    ``level_bytes`` is the OTHER host input: the level map file (``LEV{n}MAP.BIC``) that ``C679``
-    fetches with INT 21h when the player dies and the level re-inits.  It is only read on a death
-    frame; passing ``None`` there fails loud rather than approximating the reload.
+    ``level_assets`` is the OTHER host input: a callable ``planet -> LevelAssets`` giving the files
+    the original's ``C679``/``0E9C`` loaders fetch with INT 21h.  It is read on a death frame (the
+    4DBF re-init), on a game-over, and on a level advance; passing ``None`` there fails loud rather
+    than approximating the reload.
 
     Stage map (1010:97B2..981D; video-only stages noted, DGROUP-mutating stages executed or
     fail-loud):
@@ -85,18 +103,26 @@ def advance_gameplay_frame_97b2(mem, *, isr_ticks: int = 2, level_bytes: bytes |
     # --- stage 6: A90C present-scan (the +0x0C screen-di projection) ---------------------------
     # DGROUP-visible and BEFORE 9B2E in the frame order; native_walk_frame.sync_screen_projection
     # owns the projection math but was verified as a post-walk sync, not at this stage position.
-    _step_9b2e(mem, level_bytes)
+    _step_9b2e(mem, level_assets)
     # --- the 97CE transition branches, in the original's order ---------------------------------
     # 97CE: [A344] == 1 -> 9734 (level complete);  97D8: [A342] == 1 -> 9902 (game over);
     # 97E2: [A346] == 1 -> 9908 (DEATH -> respawn).  Only the respawn is wired; the other two still
     # leave the loop here, which is why the gate cannot see past them.
-    if mem.rw(DS, 0xA344) == 1 or mem.rw(DS, 0xA342) == 1:
+    if mem.rw(DS, 0xA344) == 1:                      # 97CE: LEVEL COMPLETE -> 9734
+        if level_assets is None:
+            raise RecoveryGap("the 9734 level advance needs the level assets",
+                              "pass level_assets= to advance_gameplay_frame_97b2")
+        mem.ww(DS, 0xA344, 0)
+        _level_advance_9734(mem, level_assets)
+        _present_half(mem)
+        return
+    if mem.rw(DS, 0xA342) == 1:
         return
     if mem.rw(DS, 0xA346) == 1:
         # The death frame does NOT run 073C / 60A2 / 0679: 9908's chain re-enters the loop at the
         # 97B2 head, so the frame's tail is the continuation followed by the ordinary present half.
         # The ISR ticks are applied INSIDE the continuation (at the 9921 spin), not here.
-        _respawn_continuation_9908(mem, isr_ticks, level_bytes, menu_pick)
+        _respawn_continuation_9908(mem, isr_ticks, level_assets, menu_pick)
         _present_half(mem)
         return
     # --- stage 9: A940 (frame-state update -> the OBJECT WALK -> the 0922 starfield tick) ------
@@ -593,7 +619,7 @@ def _input_poll_0162(mem) -> None:
     mem.wb(DS, 0x98BE, decode_keyboard_input_flags(control_map, key_state))
 
 
-def _step_9b2e(mem, level_bytes: bytes | None = None) -> None:
+def _step_9b2e(mem, level_assets=None) -> None:
     """``1010:9B2E`` -- the game-state controller, decomposed stage by stage against the lockstep
     gate (the interior map is in :func:`advance_gameplay_frame_97b2`'s docstring)."""
     mem.ww(DS, 0xA346, 0)                       # 9B2E
@@ -635,10 +661,10 @@ def _step_9b2e(mem, level_bytes: bytes | None = None) -> None:
             mem.ww(DS, anchor + 0x08, counter)
             if counter == 0x000F:
                 mem.ww(DS, anchor + 0x00, 0)        # 9B11
-                if level_bytes is None:             # 9B16: 4DBF needs the level file (a host input)
-                    raise RecoveryGap("the 4DBF level re-init needs the level map file",
-                                      "pass level_bytes= to advance_gameplay_frame_97b2")
-                _level_reinit_4dbf(mem, level_bytes)   # 9B16
+                if level_assets is None:            # 9B16: 4DBF needs the level files (host input)
+                    raise RecoveryGap("the 4DBF level re-init needs the level assets",
+                                      "pass level_assets= to advance_gameplay_frame_97b2")
+                _level_reinit_4dbf(mem, level_assets)  # 9B16
                 mem.ww(DS, 0xA346, 1)               # 9B19
                 if mem.rw(DS, 0xA97A) == 0:
                     mem.ww(DS, 0xA342, 1)           # 9B27
@@ -1185,7 +1211,7 @@ LEVEL_LAST_ROW = 0x0E93
 LEVEL_MAP_BODY = (12, 3682)
 
 
-def _level_data_init_0b3e(mem, level_bytes: bytes) -> None:
+def _level_data_init_0b3e(mem, level_assets) -> None:
     """``1010:0B3E`` -- the LEVEL-DATA INITIALIZER.
 
     Rewinds the six spawn-script cursors to their heads, republishes the level-file pointers, and
@@ -1204,6 +1230,8 @@ def _level_data_init_0b3e(mem, level_bytes: bytes) -> None:
     for cell, head in SCRIPT_CURSOR_HEADS_0B3E:            # 0B3E..0B61
         mem.ww(DS, cell, head)
     planet = mem.rw(DS, 0x2356)
+    assets = level_assets(planet)
+    level_bytes = assets.map_bytes
     mem.ww(DS, 0x21AA, mem.rw(DS, (LEVEL_FILENAME_TABLE_14C0 + planet * 2) & 0xFFFF))   # 0B62
     plane = mem.rw(CS, 0x9592)
     mem.ww(DS, 0x21A4, plane)                              # 0B72
@@ -1221,9 +1249,13 @@ def _level_data_init_0b3e(mem, level_bytes: bytes) -> None:
     mem.ww(DS, 0x21A8, len(level_bytes))                   # C6FC: [21A8] = cs:[0244]
     for i in range(0x80):                                  # 50AB: rep stosb over the INT9 key table
         mem.wb(DS, (0x98C4 + i) & 0xFFFF, 0)
+    # 0B8E: the rep-stosb rebuild of the DS:C3AA tile-class table.  Identical every time WITHIN a
+    # planet (so it never showed in a death-window diff), but the level ADVANCE changes planet.
+    for i, v in enumerate(assets.class_table):
+        mem.wb(DS, (0xC3AA + i) & 0xFFFF, v)
 
 
-def _level_reinit_4dbf(mem, level_bytes: bytes) -> None:
+def _level_reinit_4dbf(mem, level_assets) -> None:
     """``1010:4DBF`` -- the LEVEL RE-INIT the 9AFF death tail calls at ``9B16``.
 
     (An older note in this file called it "the death jingle -- a host boundary".  It is not: it is
@@ -1250,7 +1282,7 @@ def _level_reinit_4dbf(mem, level_bytes: bytes) -> None:
             break
 
     saved_a978 = mem.rw(DS, 0xA978)                        # 4DDC: push [A978]
-    _level_data_init_0b3e(mem, level_bytes)                # 4DE0
+    _level_data_init_0b3e(mem, level_assets)               # 4DE0
     mem.ww(DS, 0xA978, saved_a978)                         # 4DE3: pop [A978]
 
     mem.ww(DS, 0x2350, row_base)                           # 4DE8
@@ -1383,7 +1415,7 @@ def _music_beat_5f43(mem) -> None:
     mem.wb(DS, MUSIC_BEAT_CELL, track)
 
 
-def _respawn_continuation_9908(mem, isr_ticks: int, level_bytes: bytes | None = None,
+def _respawn_continuation_9908(mem, isr_ticks: int, level_assets=None,
                                menu_pick: int | None = None) -> None:
     """``1010:9908`` -> ``9773`` -> ``978F`` -- everything the original runs after the 97CE death
     exit, up to the ordinary 97B2 loop head.
@@ -1407,10 +1439,10 @@ def _respawn_continuation_9908(mem, isr_ticks: int, level_bytes: bytes | None = 
     if mem.rw(DS, 0x2358) == 0xFFFF:                           # 9773 -> 98EB: OUT OF LIVES
         # Measured: this window's 9921 spin takes ZERO ticks (they all land in the terminal D305)
         # and 992F is bypassed -- the rest of the frame is the front-end chain.
-        if level_bytes is None or menu_pick is None:
+        if level_assets is None or menu_pick is None:
             raise RecoveryGap("the 98EB game-over continuation ([2358] == FFFF: out of lives)",
-                              "needs level_bytes + the menu_pick host input")
-        _game_over_continuation_98eb(mem, level_bytes, menu_pick)
+                              "needs level_assets + the menu_pick host input")
+        _game_over_continuation_98eb(mem, level_assets, menu_pick)
         return
     # WHERE THE TICKS LAND.  Measured: on an ordinary respawn every recorded tick fires in the 9921
     # spin (the death jingle draining).  When D305 will run, the spin takes ZERO ticks and all of
@@ -1421,15 +1453,7 @@ def _respawn_continuation_9908(mem, isr_ticks: int, level_bytes: bytes | None = 
         _isr_effects_ticks(mem, isr_ticks)                     # 9921
     if mem.rb(DS, 0x98C0):                                     # 9928
         mem.wb(DS, 0xBEFF, 2)                                  # 992F
-    _gameplay_pool_seed_c3a6(mem)                              # 977D
-    _shield_charge_77c5(mem)                                   # 9780
-    _pod_ring_seed_99bf(mem)                                   # 9783
-    _hud_reset_6176(mem)                                       # 9786
-    _frame_9be2(mem)                                           # 978C (bp = 237C, already the anchor)
-    _a940_walk_stage(mem)                                      # 978F
-    mem.ww(DS, 0x20A6, 0x20A8)                                 # 9792
-    mem.ww(DS, 0xA8C2, 0)                                      # 979E
-    _music_beat_5f43(mem)                                      # 97A4
+    _level_setup_tail_9773(mem)                                # 9773..97A7 (shared with 9734/98EB)
     if runs_d305:                                              # 97A7 -> D305
         _respawn_wait_d305(mem, isr_ticks)
 
@@ -1632,7 +1656,7 @@ def _level_start_scroll_60ac(mem) -> None:
     mem.ww(DS, 0xA978, (mem.rw(DS, 0xA978) - WARMUP_A978_BIAS) & 0xFFFF)
 
 
-def _game_over_continuation_98eb(mem, level_bytes: bytes, pick: int) -> None:
+def _game_over_continuation_98eb(mem, level_assets, pick: int) -> None:
     """``1010:98EB`` -- OUT OF LIVES: the game-over screen, the title, and a fresh NEW GAME.
 
     Per-checkpoint attribution of the window (frame 5379 of the L1 demo):
@@ -1658,7 +1682,7 @@ def _game_over_continuation_98eb(mem, level_bytes: bytes, pick: int) -> None:
     for off, val in new_game_session_init_96ee().items():  # 96EE: score, lives, planet, A342
         mem.ww(DS, off, val)
     mem.ww(DS, 0x2356, (pick + 1) & 0xFFFF)                # D424 pick -> the 971A advance
-    _level_data_init_0b3e(mem, level_bytes)                # the setup tail's level reload
+    _level_data_init_0b3e(mem, level_assets)               # the setup tail's level reload
     # the PLAQUE load (0D0E -> C679) runs after 0B3E and leaves its own loader pointers
     mem.ww(DS, 0x21A4, strip_seg)
     mem.ww(DS, 0x21A6, 0)
@@ -1666,21 +1690,119 @@ def _game_over_continuation_98eb(mem, level_bytes: bytes, pick: int) -> None:
     mem.ww(DS, 0x21AA, PLAQUE_NAME_PTR)
     mem.wb(DS, 0x22BF, 0x03)                               # 532D's high-score bookkeeping
     _level_start_scroll_60ac(mem)                          # 9770: the fresh level's scroll warm-up
-    _gameplay_pool_seed_c3a6(mem)                          # the 977D-equivalent setup tail
-    _shield_charge_77c5(mem)
-    _pod_ring_seed_99bf(mem)
-    _hud_reset_6176(mem)
-    _frame_9be2(mem)
-    _a940_walk_stage(mem)
-    mem.ww(DS, 0x20A6, 0x20A8)
-    mem.ww(DS, 0xA8C2, 0)
-    _music_beat_5f43(mem)                                  # 97A4
+    _level_setup_tail_9773(mem)                            # 9773..97A7 (shared with 9734/9908)
     _respawn_wait_d305(mem, 0)                             # the plaque fire-wait
     # The front-end screens AND the warm-up's rendered rows are drawn into the strip scratch and
     # CLEARED before the boundary: measured, its DGROUP alias is entirely zero at 97B2.  Clear the
     # WHOLE strip -- a save-under record whose `di` sits above the alias still reads live bytes.
     for off in range(STRIP_SIZE):
         mem.wb(strip_seg, off, 0)
+
+
+#: 0E9C's per-planet (graphics, blocks) name pairs: DS:[14E8 + planet*4] -> G{n}.BIC name ptr,
+#: DS:[14EA + planet*4] -> LEV{n}BLX.BIC name ptr.  The banks land in CS:[959A] / CS:[95AE].
+LEVEL_ASSET_NAME_TABLE_14E8 = 0x14E8
+LEVEL_GFX_NAME_CELL = 0x14E6
+TILE_BANK_SEG_CELL = 0x959A
+SPRITE_BANK_SEG_CELL = 0x95AE
+#: 9734: the planet advances and wraps back to 0 (the mothership) after planet 5
+PLANET_COUNT = 6
+LEVEL_COMPLETE_SOUND = 0x04
+
+
+#: 0E9C loads THREE files, and the LAST one's pointers are what survive.  The third is the mission
+#: PLAQUE, named by LEVEL index (the play order 1,2,3,4,5,0), not by planet: planet 0 is the SIXTH
+#: level, so it loads plaq5.enc.  The names sit at DS:144F + level*0x0E and every plaque is 0x1778
+#: raw bytes; DS:21AC ends holding the DOS file handle, which is always 5.
+PLAQUE_NAME_BASE = 0x144F
+PLAQUE_NAME_STRIDE = 0x0E
+PLAQUE_RAW_LEN = 0x1778
+LOADER_DOS_HANDLE = 0x0005
+LEVEL_INDEX_BY_PLANET = (5, 0, 1, 2, 3, 4)   # inverse of LEVEL_INDEX_TO_PLANET = (1,2,3,4,5,0)
+
+
+def _level_load_0e9c(mem, level_assets) -> None:
+    """``1010:0E9C`` -- load the current planet's banks (and the level's mission plaque).
+
+        0E9C  [21A4] = cs:[959A] ; [21A6] = 0
+              si = 14E8 + planet*4 ; [14E6] = [si] (the G{n} name) ; [21AA] = [si+2] (LEV{n}BLX)
+              cs:[0BDE] = that name ; cs:[0BDC] = cs:[959A] ; call 0CC8   -> the TILE bank
+              cs:[0BDE] = [14E6]   ; cs:[0BDC] = cs:[95AE] ; call 0CC8   -> the SPRITE bank
+                                                              call 0CC8   -> the PLAQUE
+
+    Driven (a byte-watch over the whole call): the loader 0CC8 reads each raw file into the STRIP
+    scratch, so it leaves ``[21A4] = cs:[9598]``, ``[21A8]`` = the LAST file's raw length, ``[21AA]``
+    = the LAST file's name pointer and ``[21AC]`` = the DOS handle.  Modelling only the two banks
+    left all four of those wrong -- the 9734 gate named them.
+
+    0CC8 is DOS file I/O -- a host boundary -- so the bytes come from ``level_assets``.
+    """
+    planet = mem.rw(DS, 0x2356)
+    assets = level_assets(planet)
+    mem.ww(DS, 0x21A4, mem.rw(CS, TILE_BANK_SEG_CELL))              # 0EA3
+    mem.ww(DS, 0x21A6, 0)
+    si = (LEVEL_ASSET_NAME_TABLE_14E8 + planet * 4) & 0xFFFF
+    mem.ww(DS, LEVEL_GFX_NAME_CELL, mem.rw(DS, si))                 # 0EB9
+    tile_seg = mem.rw(CS, TILE_BANK_SEG_CELL)
+    for i, v in enumerate(assets.blocks):
+        mem.wb(tile_seg, i & 0xFFFF, v)
+    sprite_seg = mem.rw(CS, SPRITE_BANK_SEG_CELL)
+    for i, v in enumerate(assets.graphics):
+        mem.wb(sprite_seg, i & 0xFFFF, v)
+    # ...and the loader's own end-state, after its third read (the plaque)
+    level_index = LEVEL_INDEX_BY_PLANET[planet % PLANET_COUNT]
+    mem.ww(DS, 0x21A4, mem.rw(CS, 0x9598))                          # 0D00: the strip scratch
+    mem.ww(DS, 0x21A6, 0)
+    mem.ww(DS, 0x21AA, (PLAQUE_NAME_BASE + level_index * PLAQUE_NAME_STRIDE) & 0xFFFF)   # 0D0D
+    mem.ww(DS, 0x21A8, PLAQUE_RAW_LEN)                              # C703
+    mem.ww(DS, 0x21AC, LOADER_DOS_HANDLE)
+
+
+def _level_setup_tail_9773(mem) -> None:
+    """``1010:9773..97A7`` -- the setup tail shared by the respawn (9908), the game-over (98EB) and
+    the level advance (9734): C3A6, 77C5, 99BF, 6176, 9BE2, A940, [20A6], [A8C2], 5F43."""
+    _gameplay_pool_seed_c3a6(mem)                          # 977D
+    _shield_charge_77c5(mem)                               # 9780
+    _pod_ring_seed_99bf(mem)                               # 9783
+    _hud_reset_6176(mem)                                   # 9786
+    _frame_9be2(mem)                                       # 978C
+    _a940_walk_stage(mem)                                  # 978F
+    mem.ww(DS, 0x20A6, 0x20A8)                             # 9792
+    mem.ww(DS, 0xA8C2, 0)                                  # 979E
+    _music_beat_5f43(mem)                                  # 97A4
+
+
+def _level_advance_9734(mem, level_assets) -> None:
+    """``1010:9734`` -- LEVEL COMPLETE: advance the planet and start the next level.
+
+        9734  [2356] == 0 -> the 9844 story intro (planet 0 only; unrecovered)
+        9744  [2356]++ ; if [2356] >= 6 -> [2356] = 0        (planet 5 wraps to the mothership)
+        9755  [98C0] -> [BEFF] = 4                           (the level-complete jingle)
+        9761  call 5145 ; 5BCA ; 6176                        (video; 6176 zeroes 2368..2372)
+        976A  call 0B3E                                      (the NEW planet's map + class table)
+        976D  call 0E9C                                      (the NEW planet's tile + sprite banks)
+        9770  call 60AC                                      (the scroll init + warm-up)
+        9773  ...the shared setup tail, then D305
+
+    Driven attribution (demo_play_tandy_L5_ending, the one recorded level completion): 5145/5BCA
+    change nothing; 6176 nothing (already zero); 0B3E 61 cells; 0E9C 7; 60AC 10.
+    """
+    planet = mem.rw(DS, 0x2356)
+    if planet == 0:                                        # 9734 -> 9844
+        raise RecoveryGap("the 9844 planet-0 story intro", "shown before the mothership level")
+    planet = (planet + 1) & 0xFFFF                         # 9744
+    if planet >= PLANET_COUNT:                             # 9748
+        planet = 0
+    mem.ww(DS, 0x2356, planet)
+    if mem.rb(DS, 0x98C0):                                 # 9755
+        mem.wb(DS, 0xBEFF, LEVEL_COMPLETE_SOUND)           # 975C
+    _hud_reset_6176(mem)                                   # 9767 (5145/5BCA are video)
+    _level_data_init_0b3e(mem, level_assets)               # 976A
+    _level_load_0e9c(mem, level_assets)                    # 976D
+    _level_start_scroll_60ac(mem)                          # 9770
+    _level_setup_tail_9773(mem)
+    if mem.rw(DS, 0x2350) == MUSIC_ROW_TOP:                # 97A7 -> D305
+        _respawn_wait_d305(mem, 0)
 
 
 #: A81B's reverse-scroll row offset: `sub bx,0A9` -- 0xA9 == 13 * 0x0D, i.e. thirteen tile rows

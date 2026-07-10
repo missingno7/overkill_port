@@ -61,7 +61,7 @@ def main(argv) -> int:
         LEVEL_INDEX_TO_PLANET, build_cold_level_start_image,
     )
     from overkill.recovered.domain.gaps import RecoveryGap
-    from play_native import ImageRenderer, _level_bytes
+    from play_native import ImageRenderer, make_level_assets
 
     frames = int(argv[0]) if argv else 700
     bundle = (ROOT / "artifacts" / "static_runtime_bundle" / "memory_1mb.bin").read_bytes()
@@ -74,6 +74,7 @@ def main(argv) -> int:
     print(f"cold seed places both per-level banks for all {len(LEVEL_INDEX_TO_PLANET)} levels")
 
     img = build_cold_level_start_image(bundle, 0, container)
+    level_assets = make_level_assets(container, bundle)
     planet = img.rw(DS, 0x2356)
     renderer = ImageRenderer(bundle, container, img)
 
@@ -97,8 +98,7 @@ def main(argv) -> int:
         if 60 <= f < 64 or 200 <= f < 204:
             img.wb(DS, (0x98C4 + FIRE) & 0xFFFF, 1)
         try:
-            advance_gameplay_frame_97b2(img, isr_ticks=2,
-                                        level_bytes=_level_bytes(container, planet))
+            advance_gameplay_frame_97b2(img, isr_ticks=2, level_assets=level_assets)
         except RecoveryGap as exc:
             gap = f"frame {f}: {exc}"
             break

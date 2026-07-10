@@ -34,7 +34,7 @@ from overkill.native_frame import advance_gameplay_frame_97b2  # noqa: E402
 from overkill.probes._harness import load_demo  # noqa: E402
 from overkill.probes._shadow_cache import demo_key, iter_cached_frames, load_cache  # noqa: E402
 from overkill.probes.verify_native_lockstep import (  # noqa: E402
-    DGROUP, EXCLUDED_CELLS, GAME_OVER_MENU_PICK, level_bytes_for, lockstep_cache_path,
+    DGROUP, EXCLUDED_CELLS, GAME_OVER_MENU_PICK, level_assets_for, lockstep_cache_path,
 )
 from overkill.recovered.adapters.flat_memory import MutFlatMemory  # noqa: E402
 from overkill.recovered.domain.gaps import RecoveryGap  # noqa: E402
@@ -78,7 +78,7 @@ def main(argv) -> int:
         native = MutFlatMemory(pre)
         try:
             advance_gameplay_frame_97b2(native, isr_ticks=ticks,
-                                        level_bytes=level_bytes_for(native.rw(DGROUP, 0x2356)),
+                                        level_assets=level_assets_for,
                                         menu_pick=GAME_OVER_MENU_PICK)
         except RecoveryGap as gap:
             print(f"frame {n:5d}: GAP {gap}")

@@ -117,13 +117,31 @@ def _pressed_scancodes(pygame, keys, scan_map) -> set[int]:
     return {sc for key, sc in scan_map.items() if keys[key]}
 
 
-def _level_bytes(container_data: bytes, planet: int, _cache: dict = {}) -> bytes:
-    """The LEV{n}MAP.BIC file the death re-init (4DBF -> 0B3E -> C679) reloads -- a HOST INPUT,
-    supplied from the container exactly as the lockstep gate supplies it."""
-    if planet not in _cache:
-        from overkill.asset_codecs.level_assets import decode_level_tile_map
-        _cache[planet] = bytes(decode_level_tile_map(container_data, planet))
-    return _cache[planet]
+def make_level_assets(container_data: bytes, bundle_data: bytes):
+    """A planet -> LevelAssets loader: the files 0B3E / 0E9C read with INT 21h.
+
+    A HOST INPUT, supplied from the container exactly as the lockstep gate supplies it.  The frame
+    reads it on a death re-init, a game-over and a level advance -- it never emulates DOS."""
+    from overkill.asset_codecs.level_assets import (decode_level_blocks, decode_level_graphics,
+                                                    decode_level_tile_map)
+    from overkill.asset_codecs.native_level import (_read_class_override_pairs,
+                                                    build_level_class_table)
+    from overkill.native_frame import LevelAssets
+
+    cache: dict = {}
+
+    def loader(planet: int) -> LevelAssets:
+        if planet not in cache:
+            cache[planet] = LevelAssets(
+                map_bytes=bytes(decode_level_tile_map(container_data, planet)),
+                class_table=bytes(build_level_class_table(
+                    _read_class_override_pairs(bundle_data, planet))),
+                blocks=bytes(decode_level_blocks(container_data, planet)),
+                graphics=bytes(decode_level_graphics(container_data, planet)),
+            )
+        return cache[planet]
+
+    return loader
 
 
 def read_starfield(img) -> StarfieldState:
@@ -388,6 +406,7 @@ def main(argv=None) -> int:
 
     planet = img.rw(_DS, 0x2356)
 
+    level_assets = make_level_assets(container_data, bundle_data)
     renderer = ImageRenderer(bundle_data, container_data, img)
     clock = pygame.time.Clock()
     tick = 0          # gameplay frames advanced (frozen once HELD)
@@ -411,8 +430,7 @@ def main(argv=None) -> int:
                 for sc in scan_map.values():
                     img.wb(_DS, (0x98C4 + sc) & 0xFFFF, 1 if sc in pressed else 0)
                 try:
-                    advance_gameplay_frame_97b2(img, isr_ticks=2,
-                                                level_bytes=_level_bytes(container_data, planet))
+                    advance_gameplay_frame_97b2(img, isr_ticks=2, level_assets=level_assets)
                 except RecoveryGap as exc:
                     hold = f"{type(exc).__name__}: {exc}"
                     print(f"HELD at tick {tick}: {hold}")

@@ -66,14 +66,7 @@ def main(argv) -> int:
 
     # The LEVEL FILE is the host input C679 fetches with INT 21h.  Supply it from the container,
     # which is where the native port reads its assets -- do not emulate DOS.
-    from overkill.asset_codecs.level_assets import decode_level_tile_map
-    container = (ROOT / "assets" / "OVERKILL").read_bytes()
-    levels: dict = {}
-
-    def level_bytes(planet: int) -> bytes:
-        if planet not in levels:
-            levels[planet] = bytes(decode_level_tile_map(container, planet))
-        return levels[planet]
+    from overkill.probes.verify_native_lockstep import level_assets_for
 
     demo = load_demo(argv[0] if argv else None, DEFAULT_DEMO)
     base = DGROUP * 16
@@ -97,7 +90,7 @@ def main(argv) -> int:
             res["calls"] += 1
             post = bytes(cpu.mem.data[base:base + 0x10000])
             native = MutFlatMemory(bytearray(pre_full))
-            _level_reinit_4dbf(native, level_bytes(native.rw(DGROUP, 0x2356)))
+            _level_reinit_4dbf(native, level_assets_for)
             nat = bytes(native.data[base:base + 0x10000])
             diffs = _diff(post, nat, sp)
             if diffs:
