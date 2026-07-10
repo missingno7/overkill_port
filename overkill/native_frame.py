@@ -93,9 +93,76 @@ def advance_gameplay_frame_97b2(mem) -> None:
     # --- the NEXT frame's present half (the 9B2E boundary cut): the star pass + the A90C
     # projection run after the loop tail (0672/511F/A846/981F/5BDC) and before the next 9B2E ---
     from overkill.native_walk_frame import sync_screen_projection
+    # The present half, in the original's order: A846 = SAVE-UNDER loops (32CA cx=0x24, then 8D12
+    # cx=0x22) -> 4CED (stars) -> the 7596 sprite draws.  A90C then RESTORES the saved background
+    # and 4D64 undraws the stars, so at the next 9B2E boundary the strip is tiles-only again and
+    # the ONLY persistent DGROUP effect of the whole present half is the save buffers themselves.
+    sync_screen_projection(mem)
+    _save_under_a846(mem)
     _star_list_4ced(mem)
     _flash_decay_a846(mem)
-    sync_screen_projection(mem)
+
+
+#: A846's save loops, in order: the 32CA table (cx = 0x24..1) then the 8D12 table (0x22..1)
+_A846_SAVE_ORDER = ((0x32CA, 0x24), (0x8D12, 0x22))
+#: the 5AC8 jump table (`word [CS:5AE2 + (draw_type + 3*mode)*2]`, mode 2) selects the saver, and
+#: each has its own block geometry (rows, bytes-per-row); the source stride is always 0x68:
+#:   type 0 -> 3657: 8 rows x `movsw x2` (+ add si,0x64) =  4 B/row
+#:   type 1 -> 35CC: 16 rows x `movsw x4` (+ add si,0x60) =  8 B/row
+#:   type 2 -> 356C -> the 35AB helper: 16 rows x `movsw x8` (+ add si,0x58) = 16 B/row, TWO slots,
+#:            the second at `[rec+0x0E] + 0x140` (not packed after the first)
+SAVE_GEOMETRY = {0: (8, 4), 1: (16, 8), 2: (16, 16)}
+SAVE_SLOT2_DEST = 0x140
+
+
+def _save_under_a846(mem) -> None:
+    """``1010:5AC8`` -> ``35CC`` (draw type 1) / ``356C`` (type 2): save the background under each
+    drawn record.
+
+    Per slot: ``si`` = the projected ``+0x0C`` screen di (``[234C]``-relative), ``di`` = the
+    record's SAVE-BUFFER pointer at ``+0x0E``, ``ds`` = the strip, ``es`` = DGROUP; then 16 rows,
+    each ``movsw`` run followed by ``add si,bx`` so the source walks the 0x68 strip stride.  A
+    culled slot (``0xFFFF``) saves nothing.  Type 2 (the player) saves TWO slots -- ``+0x0C`` and
+    ``+0x10`` -- the second at ``+0x0E + 0x140``.
+
+    The source is the strip, which at this instant holds the TERRAIN and nothing else (A90C restored
+    the sprites and 4D64 undrew the stars last frame), so it is the derived terrain window that
+    ``verify_native_star_strip`` proves byte-exact.  Gate-verified against the driven original at
+    ``(CS,0xA876)``.
+    """
+    window = _terrain_window(mem)
+    scroll = mem.rw(DS, 0x234C)
+    strip_seg = mem.rw(CS, 0x9598)
+
+    def save_slot(di: int, dest: int, rows: int, row_bytes: int) -> None:
+        if di == 0xFFFF:
+            return
+        for row in range(rows):
+            src = (di + row * STRIP_STRIDE) & 0xFFFF
+            t, c = divmod(src - scroll, STRIP_STRIDE)
+            for j in range(row_bytes):
+                if 0 <= t < STRIP_ROWS and 0 <= c + j < STRIP_STRIDE:
+                    b = window[t][c + j]
+                else:                       # the block straddles the derived window's edge
+                    b = mem.rb(strip_seg, (src + j) & 0xFFFF)
+                mem.wb(DS, (dest + row * row_bytes + j) & 0xFFFF, b)
+
+    for table, count in _A846_SAVE_ORDER:
+        for k in range(count, 0, -1):
+            rec = mem.rw(DS, (table + k * 2) & 0xFFFF)
+            if not rec or mem.rw(DS, rec) == 0:
+                continue
+            draw_type = mem.rw(DS, rec + 0x14)
+            geom = SAVE_GEOMETRY.get(draw_type)
+            if geom is None:
+                raise RecoveryGap(f"A846 save for draw type {draw_type} (record {rec:04X})",
+                                  "only the 3657/35CC/356C savers (draw types 0/1/2) are decoded")
+            rows, row_bytes = geom
+            dest = mem.rw(DS, rec + 0x0E)
+            save_slot(mem.rw(DS, rec + 0x0C), dest, rows, row_bytes)
+            if draw_type == 2:
+                save_slot(mem.rw(DS, rec + 0x10),
+                          (dest + SAVE_SLOT2_DEST) & 0xFFFF, rows, row_bytes)
 
 
 #: the player view-anchor record (the only record whose +0x24 flash is DGROUP-visible at DS:23A0)
