@@ -33,15 +33,23 @@ TAB_SCANCODE = 0x0F
 DEFAULT_DEMO = "demo_play_tandy_L6_different_weapons_20260618_225615"
 INJECT_AT_FRAME = 6
 STACK_SLACK = 0x100
-#: marker -> the weapon-family handler it dispatches to in this demo's descriptor tables.
-MARKERS = {2: "84C3 (deploy 9F1A)", 1: "44AF (no-op ret)"}
+#: (held marker, forced weapon level [desc+8]) -> the handler it dispatches to.  Forcing the level in
+#: the pure VM's own descriptor is the same kind of synthetic-coverage injection as the held marker:
+#: the game's 8546 dispatch (bx = [desc+8]*6; call [bx+si+4]) then executes the real handler.
+CASES = [
+    (2, 1, "8463 (deploy 9D91 -> [A96E])"),
+    (2, 3, "84C3 (deploy 9F1A -> [A962]/[A964])"),
+    (2, 6, "84D6 (flag weapon, [2384]=1)"),
+    (2, 7, "84FD (flag weapon, [2384]=2)"),
+    (1, 0, "44AF (no-op ret)"),
+]
 
 
 class _Done(Exception):
     pass
 
 
-def _capture(demo, marker, base):
+def _capture(demo, marker, level, base):
     st = {"frame": 0, "pre": None, "sp": 0, "calls": []}
 
     def on_step(cpu):
@@ -54,6 +62,8 @@ def _capture(demo, marker, base):
             if st["frame"] >= INJECT_AT_FRAME:
                 cpu.mem.wb(DS, (0x98C4 + TAB_SCANCODE) & 0xFFFF, 1)
                 cpu.mem.ww(DS, 0x95FA, marker)
+                desc = cpu.mem.rw(DS, (0x95FC + marker * 2) & 0xFFFF)
+                cpu.mem.ww(DS, (desc + 8) & 0xFFFF, level)   # force the weapon level -> target handler
             if st["frame"] > INJECT_AT_FRAME + 30:
                 raise _Done
         elif ip == HANDLER_ENTRY:
@@ -81,10 +91,10 @@ def main(argv) -> int:
     base = DS * 16
     total, bad, verified = 0, 0, 0
 
-    for marker, label in MARKERS.items():
-        calls = _capture(load_demo(demo_name, DEFAULT_DEMO), marker, base)
+    for marker, level, label in CASES:
+        calls = _capture(load_demo(demo_name, DEFAULT_DEMO), marker, level, base)
         if not calls:
-            print(f"  marker {marker} ({label}): 8546 never ran -- skipped (not held in this demo?)")
+            print(f"  {label}: 8546 never ran -- skipped (marker {marker} not held in this demo?)")
             continue
         for i, (pre_full, post, sp) in enumerate(calls, 1):
             total += 1
@@ -92,7 +102,7 @@ def main(argv) -> int:
             try:
                 _apply_upgrade_8546(native)
             except Exception as exc:  # noqa: BLE001
-                print(f"  marker {marker} ({label}) apply #{i}: native REFUSED: {exc}")
+                print(f"  {label} apply #{i}: native REFUSED: {exc}")
                 bad += 1
                 continue
             nat = bytes(native.data[base:base + 0x10000])
@@ -100,15 +110,15 @@ def main(argv) -> int:
             diff = [o for o in range(0x10000) if nat[o] != post[o] and not (lo <= o < sp)]
             verified += 1
             status = "OK" if not diff else f"DIFF ({len(diff)})"
-            print(f"  marker {marker} ({label}) apply #{i}: {status}")
+            print(f"  {label} apply #{i}: {status}")
             for o in diff[:8]:
                 print(f"       DS:{o:04X} vm={post[o]:02X} nat={nat[o]:02X}")
             bad += bool(diff)
 
     print(f"\nspecial-weapon applies verified: {verified}/{total}  diverging: {bad}")
-    ok = bad == 0 and verified >= 2
-    print("RESULT:", "PASS -- the native apply reproduces the 44AF + 84C3 weapon families byte-exact"
-          if ok else "FAIL")
+    ok = bad == 0 and verified >= 8
+    print("RESULT:", "PASS -- the native apply reproduces the 8463/84C3/84D6/84FD/44AF weapon "
+          "families byte-exact" if ok else "FAIL")
     return 0 if ok else 1
 
 

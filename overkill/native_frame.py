@@ -1635,6 +1635,9 @@ UPGRADE_SOUND = 0x09
 #: `call 9F1A; jmp 8430` -- deploy a persistent weapon module, then clear the marker.
 _HANDLER_44AF = 0x44AF
 _HANDLER_84C3 = 0x84C3
+_HANDLER_8463 = 0x8463      # `call 9D91; jmp 8430`: deploy the [A96E] weapon module
+_HANDLER_84D6 = 0x84D6      # inline flag/sound weapon, [2384] = 1, then jmp 8430
+_HANDLER_84FD = 0x84FD      # the level-2 sibling, [2384] = 2
 
 
 def _deploy_weapon_9f1a(mem) -> None:
@@ -1656,6 +1659,33 @@ def _deploy_weapon_9f1a(mem) -> None:
         for off, val in ((0x00, 1), (0x0A, 1), (0x08, 0x14), (0x14, 1), (0x16, 1), (0x20, 0x50)):
             mem.ww(DS, (slot + off) & 0xFFFF, val)         # 9F41..9F59
         return
+
+
+def _deploy_weapon_9d91(mem) -> None:
+    """``1010:9D91`` -- deploy the single-instance weapon module tracked by [A96E].  If [A96E] is
+    already set it is a no-op (9D96); else alloc an effect-pool record (7524, cursor [95D8]),
+    [A96E] = it, and stamp (9DA0: +0=1 +0x14=1 +0x16=1 +8=0x0F +0x20=0x14)."""
+    from overkill.recovered.adapters.behavior_walk import (
+        EFFECT_POOL_BASE, EFFECT_POOL_WRAP, EFFECT_SLOTS, _alloc,
+    )
+    if mem.rw(DS, 0xA96E) != 0xFFFF:                        # 9D91: already deployed -> ret
+        return
+    slot = _alloc(mem, 0x95D8, EFFECT_POOL_BASE, EFFECT_POOL_WRAP, EFFECT_SLOTS)   # 74FE
+    if slot == 0xFFFF:
+        return
+    mem.ww(DS, 0xA96E, slot)                                # 9D9C
+    for off, val in ((0x00, 1), (0x08, 0x0F), (0x14, 1), (0x16, 1), (0x20, 0x14)):
+        mem.ww(DS, (slot + off) & 0xFFFF, val)              # 9DA0..9DB3
+
+
+def _apply_flag_weapon_84d6(mem, flag_2384: int) -> None:
+    """``1010:84D6`` / ``84FD`` -- the flag/sound weapons: [BEFE]=0, the [98C0]-gated [BEFF]=6 chirp,
+    [2384] = 1 (84D6) or 2 (84FD).  ([BEFF] is then overwritten by 8546's own [BEFF]=9 apply sound in
+    the shared tail, so only [BEFE]/[2384] survive -- but this mirrors the ASM faithfully.)"""
+    mem.wb(DS, 0xBEFE, 0)                                   # 84D6/84FD
+    if mem.rb(DS, 0x98C0):
+        mem.wb(DS, 0xBEFF, 6)
+    mem.ww(DS, 0x2384, flag_2384)
 
 
 def _apply_upgrade_8546(mem) -> None:
@@ -1697,12 +1727,21 @@ def _apply_upgrade_8546(mem) -> None:
     elif target == _HANDLER_84C3:                         # `call 9F1A; jmp 8430`: deploy a module
         _deploy_weapon_9f1a(mem)
         mem.ww(DS, MARKER_CELL, 0xFFFF)                    # 8430
+    elif target == _HANDLER_8463:                         # `call 9D91; jmp 8430`: deploy [A96E]
+        _deploy_weapon_9d91(mem)
+        mem.ww(DS, MARKER_CELL, 0xFFFF)                    # 8430
+    elif target == _HANDLER_84D6:                         # inline flag/sound weapon -> jmp 8430
+        _apply_flag_weapon_84d6(mem, 1)
+        mem.ww(DS, MARKER_CELL, 0xFFFF)                    # 8430
+    elif target == _HANDLER_84FD:                         # the level-2 sibling ([2384] = 2)
+        _apply_flag_weapon_84d6(mem, 2)
+        mem.ww(DS, MARKER_CELL, 0xFFFF)                    # 8430
     elif target == _HANDLER_44AF:                         # bare `ret`: no effect, marker NOT cleared
         pass
     else:
         raise RecoveryGap(f"8546's upgrade handler CS:{target:04X}",
-                          "not a recovered weapon handler -- the 8463/849D/84D6 families are still "
-                          "open (loop_blockers 2026-07-10; drive the gap-snapshot oracle to fill)")
+                          "not a recovered weapon handler -- 849D (9F5F) + the 843D/844E families are "
+                          "still open (loop_blockers 2026-07-10; drive the gap-snapshot oracle to fill)")
     # --- the shared tail 8572..8596 (the 837A weapon-script tick + the apply sound) ---------------
     mem.ww(DS, MARKER_SAVE_CELL, mem.rw(DS, MARKER_CELL))  # 8572: [95F6] = [95FA]
     mem.ww(DS, MARKER_CELL, marker)                        # 8578: pop -- restore for 837A
