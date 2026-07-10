@@ -32,6 +32,10 @@ It reads the brief above and works one verified slice at a time.
   patterns that later sessions nearly rebuilt. The standing-mechanisms list at the TOP of
   `run_status.md` is the registry — read it before writing any new tooling, harness, or metadata
   system, and add to it when you land one.
+- **Before hand-decoding a routine, try the AUTOMATIC LIFTER** (`dos_re/tools/liftverify.py`, see the
+  registry): it emits a literal ASM→Python hook and differentially verifies every call against the
+  interpreted original. It refuses the constructs hand-decoding gets wrong (indirect jump tables).
+  A lifted hook is verified *scaffolding to refactor*, never recovered source.
 - **One verified slice = one focused commit + push to `main`** (this repo commits to `main`; small,
   frequent, self-contained).
 - **Never weaken an oracle/test/assertion to make a slice pass.** The byte-exact proof is the value.

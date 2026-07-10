@@ -13,7 +13,7 @@
 > per-frame VM states on first run and replays them in ~40s instead of ~5min -- same states, same
 > comparison; pass `vm` to force the live oracle; caches live in `artifacts/shadow_cache/`,
 > gitignored, keyed on the demo file sha1 + frame budget)**, `scripts/lindis.py` (encoded targets),
-> `scripts/behavior_zoo_xref.py`; **PERF (2026-07-08, see dos_re/docs/performance.md): suites =
+> `scripts/behavior_zoo_xref.py`; **THE AUTOMATIC LIFTER (2026-07-10, dos_re 1bfd5fd): `dos_re/tools/liftgen.py` (census: is a routine liftable, and why not) and `dos_re/tools/liftverify.py` (emit a literal ASM->Python hook per entry, install it, run the VM, and differentially verify each call against the interpreted ORIGINAL, writing ORACLE_PASSING/DIVERGED/NOT_REACHED into a proof ledger). USE IT BEFORE HAND-DECODING ANYTHING: `python dos_re/tools/liftverify.py --exe assets/OVERKILL --snapshot DIR --entry 1010:XXXX --steps 3000000 --emit-dir lifted`. It refuses indirect jumps, which is exactly the 4E26 jump-table case a hand-decode got wrong by two bytes. A lifted hook is SCAFFOLDING, not recovered source -- it is a verified starting point to refactor, and the same oracle keeps the refactor honest**; **PERF (2026-07-08, see dos_re/docs/performance.md): suites =
 > `python -m pytest -q -n auto` (xdist, 4m30s -> 54s); long oracle/probe runs = PyPy serial
 > (`pypy -m overkill.probes.X`) -- PyPy is BYTE-FAITHFUL (proved: a full lockstep re-record under
 > PyPy and CPython produce the identical cache sha1 and verdict), 20m14s -> 5m47s on a full
@@ -56,6 +56,51 @@
 > inside the row pull), the 0162 input poll, the A067 fire path and the 0922 starfield are native in
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
+
+## 2026-07-10 (later) -- dos_re bumped to 1bfd5fd: THE AUTOMATIC LIFTER
+
+`dos_re` gained an automatic ASM->Python lifting pipeline (docs/lifting_design.md; M0 decoder+CFG,
+M1 emitter, M2 in-situ verify + proof ledger).  The bump is PURELY ADDITIVE -- `cpu.py`, `asm.py`,
+`memory.py` and `hooks.py` are untouched -- so the shadow caches stay valid across it.  Confirmed:
+suite 1249 passed and the lockstep gate still reports **8292 frames, 0 diverged, 0 gapped, PASS**.
+
+**What it does.**  `liftverify` emits a literal, per-instruction Python hook for an entry point,
+installs it, runs the VM, and every time the function executes it re-interprets the ORIGINAL ASM from
+the same pre-state to the hook's continuation and diffs the full machine state.  Verdicts land in a
+manifest: `ORACLE_PASSING` / `DIVERGED` / `NOT_REACHED`.  No hand-written continuation metadata.
+
+**Measured on OUR binary, against routines I hand-recovered today (ground truth available):**
+
+    liftgen  1010:8546  LIFTABLE  32 insts, 6 blocks, 2 calls + 1 indirect
+             1010:4DBF  LIFTABLE  30 insts, 5 blocks, 4 calls
+             1010:60AC  LIFTABLE  15 insts, 5 blocks
+             1010:A781  LIFTABLE  25 insts, 10 blocks
+             1010:99BF  LIFTABLE  16 insts, 3 blocks
+             1010:4E26  refused   -- indirect-jump          <-- 5/6 liftable (83%)
+
+    liftverify --entry 1010:4CED --entry 1010:5F61 --entry 1010:99BF
+             PASS 1010:4CED  verified=1  1/1 blk   native=93%
+             PASS 1010:5F61  verified=1  6/25 blk  native=96%  (PARTIAL COVERAGE)
+             notreach 1010:99BF (needs a respawn in the run)
+
+`4CED` is the star pass that cost several cycles to hand-recover.  `4E26` is refused for
+`indirect-jump` -- precisely the `jmp cs:[bx+2]` handler table whose entries a hand-decode put two
+bytes off (4E5D/4E63 instead of 4E5F/4E65), caught only by the driven gate.  **The tool's refusal
+taxonomy points at exactly the constructs where hand-decoding is unreliable.**
+
+**How to use it here (and the discipline).**
+* Run `liftgen` first for a census; run `liftverify` per SLICE (a handful of related entries), not
+  the whole census in one process -- each sampled call re-interprets the original.
+* `NOT_REACHED` means the snapshot never runs it: pick a snapshot where it does.  For paths no demo
+  covers (e.g. the TAB/Z apply-upgrade), the injection trick in
+  `probes/verify_native_apply_upgrade_8546` still applies -- write the key into the VM's INT9 table.
+* **A lifted hook is a LIABILITY, not a recovery.**  It is verified scaffolding to refactor into real
+  recovered Python; our own layer rules (`domain/`+`systems/` stay VM-free, `@recovered_island`,
+  fail-loud gaps) are unchanged, and the metrics must not count a lift as recovered source.
+
+**Where it pays next**: the front-end campaign (boot, the title-menu LOGIC, attract, level select,
+the 9734 level-advance) and the L4/L5 behaviour-walk residue -- all of which are "read the ASM and
+hand-translate" work of exactly the kind that has produced this session's four hand-decode errors.
 
 ## 2026-07-10 (final) -- LOCKSTEP GATE: PASS. 8292/8292 BYTE-EXACT, ZERO DIVERGENCE, ZERO GAPS.
 
