@@ -13,7 +13,7 @@
 > per-frame VM states on first run and replays them in ~40s instead of ~5min -- same states, same
 > comparison; pass `vm` to force the live oracle; caches live in `artifacts/shadow_cache/`,
 > gitignored, keyed on the demo file sha1 + frame budget)**, `scripts/lindis.py` (encoded targets),
-> `scripts/behavior_zoo_xref.py`; **THE AUTOMATIC LIFTER (2026-07-10, dos_re 1bfd5fd): `dos_re/tools/liftgen.py` (census: is a routine liftable, and why not) and `dos_re/tools/liftverify.py` (emit a literal ASM->Python hook per entry, install it, run the VM, and differentially verify each call against the interpreted ORIGINAL, writing ORACLE_PASSING/DIVERGED/NOT_REACHED into a proof ledger). USE IT BEFORE HAND-DECODING ANYTHING: `python dos_re/tools/liftverify.py --exe assets/OVERKILL --snapshot DIR --entry 1010:XXXX --steps 3000000 --emit-dir lifted`. It refuses indirect jumps, which is exactly the 4E26 jump-table case a hand-decode got wrong by two bytes. A lifted hook is SCAFFOLDING, not recovered source -- it is a verified starting point to refactor, and the same oracle keeps the refactor honest**; **PERF (2026-07-08, see dos_re/docs/performance.md): suites =
+> `scripts/behavior_zoo_xref.py`; **THE DRIVEN ORACLE FOR UNGATED BEHAVIOR (2026-07-10, `probes/verify_native_flash_decay.py`): when a playtest bug is in a path the demo corpus never exercises (lockstep stays green but the behavior is wrong), inject the missing precondition into BOTH the pure VM and the native frame at each 9B2E boundary and diff -- turns an unexercised path into a byte-exact gate that can FAIL**; **THE AUTOMATIC LIFTER (2026-07-10, dos_re 1bfd5fd): `dos_re/tools/liftgen.py` (census: is a routine liftable, and why not) and `dos_re/tools/liftverify.py` (emit a literal ASM->Python hook per entry, install it, run the VM, and differentially verify each call against the interpreted ORIGINAL, writing ORACLE_PASSING/DIVERGED/NOT_REACHED into a proof ledger). USE IT BEFORE HAND-DECODING ANYTHING: `python dos_re/tools/liftverify.py --exe assets/OVERKILL --snapshot DIR --entry 1010:XXXX --steps 3000000 --emit-dir lifted`. It refuses indirect jumps, which is exactly the 4E26 jump-table case a hand-decode got wrong by two bytes. A lifted hook is SCAFFOLDING, not recovered source -- it is a verified starting point to refactor, and the same oracle keeps the refactor honest**; **PERF (2026-07-08, see dos_re/docs/performance.md): suites =
 > `python -m pytest -q -n auto` (xdist, 4m30s -> 54s); long oracle/probe runs = PyPy serial
 > (`pypy -m overkill.probes.X`) -- PyPy is BYTE-FAITHFUL (proved: a full lockstep re-record under
 > PyPy and CPython produce the identical cache sha1 and verdict), 20m14s -> 5m47s on a full
@@ -58,6 +58,36 @@
 > inside the row pull), the 0162 input poll, the A067 fire path and the 0922 starfield are native in
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
+
+## 2026-07-10 (late++) — PLAYTEST bug: enemy hit-flash FIXED byte-exact; level-start plaque diagnosed
+
+Owner playtest surfaced two native accuracy bugs.  One is fixed and gated; the other is diagnosed.
+
+### FIXED (commit 66f8cd4): enemies stuck WHITE after being hit
+The A846 draw scan decays EVERY drawn record's +0x24 hit-flash once per drawn slot (each compositor
+prologue's `cmp [bp+24h],0; jz; dec`).  `native_frame._flash_decay_a846` decayed ONLY the player
+anchor (0x237C), so hit enemies -- drawn white by the OR-inverted compositor while +0x24 != 0 -- never
+cleared.  The recorded demos never set an enemy +0x24, so the lockstep gate (8292/8292) never
+exercised it: an UNGATED path was silently wrong.  Fixed by enumerating all three pools A846 draws
+(anchor + 8D12 gameplay + 32CA effect) and decrementing each active, anim-0 record's +0x24 by its
+drawn-slot count; the count is pure arithmetic on the record fields + the constant frame-table lengths
+(0x400/0x100/0x100), so it stays frame-local (mirrors native_video.object_slots, no render-context
+dependency).
+* **New standing mechanism -- the DRIVEN ORACLE for ungated behavior**: `verify_native_flash_decay`
+  injects +0x24 into all 70 records on BOTH the pure VM and the native frame at every 9B2E boundary of
+  a gameplay demo and diffs -- 7070 record-compares, 0 diverged.  This is the pattern for any bug in a
+  path the demo corpus never drives: inject the missing precondition into both sides, diff.  Fast unit
+  tests: `tests/test_flash_decay.py` (7).  Lockstep still 8292/8292 (anchor path unchanged).
+
+### DIAGNOSED, OPEN: missing level-START transition (the mission plaque)
+The per-level mission PLAQUE (`plaq0..plaq5.enc`, named at DS:144F + level*0x0E, 0x1778 raw ->
+6008 deplanarized bytes with item headers) is shown at level start with a fire-wait
+(`_respawn_wait_d305` = "the plaque fire-wait").  The native frame LOADS it (`_level_load_0e9c` leaves
+[21AA] = plaque name ptr) but `play_native` never PRESENTS it before gameplay -- that is the missing
+"level start" sequence the owner sees.  Presenting it faithfully needs the placed-image SCREEN
+PLACEMENT (the item headers give geometry, not x/y) -- the same unrecovered gap as the CHOOSE dialog.
+NEXT SLICE: drive the plaque draw (after 0D0E->C679) to recover its placement, then add a
+`_run_level_plaque` present + D305 fire-wait to play_native's new-game / level-advance path.
 
 ## 2026-07-10 (late+) — the cold-boot FRONT-END ARC is wired: attract -> intro -> menu -> play
 
