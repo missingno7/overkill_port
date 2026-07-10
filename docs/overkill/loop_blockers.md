@@ -1316,3 +1316,26 @@ The first differing input names the stage that corrupted it.
 (2) the D50E channel-step bug (~63 frames -- one frame shows `ch2 +9 status` vm=0 / nat=2, i.e. our
 fetch took the NOTE path where the VM took REST: check the `0x80..0x85` op dispatch and the
 `>= 0xE0` duration prefix against a driven trace of D5AC); (3) the exit continuations (7 frames).
+
+### 2026-07-08 (cont.) — the D50E INTERPRETER is exonerated; the sound residue is an upstream QUEUE difference
+
+Driven-oracle check: load each cached pre-state into a hookless VM, drive the ORIGINAL `1010:D50E`
+TWICE (the proven two ticks per frame), and diff `DS:BEFE..BFD0` against
+`native_frame._sound_engine_tick_d50e` run twice on the same pre-state.
+
+    driven-vs-model: checked=601  mismatching=0
+
+So the bytecode interpreter (op dispatch, the >= 0xE0 duration prefix, note/rest/slide/pitch,
+the BFCA effect seed, the lower-id-preempts priority) is byte-exact, and my previous suspicion
+("our fetch took NOTE where the VM took REST") was WRONG -- that symptom is downstream.
+
+Therefore the ~63 sound-cell frames differ because **a different value stood in `DS:BEFF` when the
+tick ran**: some frame path queues a sound in the VM that our frame does not (or vice versa).  The
+tick placement is already right (all INT8 ticks land at the `0679` frame-wait, after the 60A2 clock
+stage, which is where we run them).
+
+**Next step for this item:** capture `BEFF` immediately BEFORE the ISR ticks on both sides (native:
+the existing `_AT_9BCA`-style debug hook, moved/duplicated just before `_isr_effects_two_ticks`;
+VM: trap `(CS,0x0679)`) and diff.  The first frame where the queued id differs names the missing
+sound-emitting path.  Note the known emitters we gap: `77C5` (shield body) and `9EE4` (drain), and
+the respawn path reached via `9A1B -> 9DB9` (sound 0x0D).
