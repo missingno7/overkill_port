@@ -123,40 +123,22 @@ def _save_under_a846(mem) -> None:
     culled slot (``0xFFFF``) saves nothing.  Type 2 (the player) saves TWO slots -- ``+0x0C`` and
     ``+0x10`` -- the second at ``+0x0E + 0x140``.
 
-    The source is the strip, which at this instant holds the TERRAIN and nothing else (A90C restored
-    the sprites and 4D64 undrew the stars last frame), so it is the derived terrain window that
-    ``verify_native_star_strip`` proves byte-exact.  Gate-verified against the driven original at
-    ``(CS,0xA876)``.
+    The source is simply the STRIP, read as the original reads it.  (An earlier version DERIVED the
+    strip from the tile plane, because the lockstep replay cache did not carry the strip's
+    above-DGROUP bytes; the cache now records the strip, so the frame no longer has to guess.)
+    Gate-verified against the driven original at ``(CS,0xA876)``.
     """
-    stack, start = _terrain_stack(mem)
-    n_rows = len(stack)
-    scroll = mem.rw(DS, 0x234C)
     strip_seg = mem.rw(CS, 0x9598)
 
     def save_slot(di: int, dest: int, rows: int, row_bytes: int) -> None:
+        """35CC/356C/3657: `rep movsw` straight out of the strip, `add si,bx` per row."""
         if di == 0xFFFF:
             return
         for row in range(rows):
             src = (di + row * STRIP_STRIDE) & 0xFFFF
-            t, c = divmod(src - scroll, STRIP_STRIDE)
-            r = start + t                   # the block may straddle the visible window's edges
             for j in range(row_bytes):
-                phys = (strip_seg * 16 + ((src + j) & 0xFFFF)) - DS * 16
-                if 0 <= phys < 0x10000:
-                    # The strip's low part lies INSIDE DGROUP, so the frame's own pre-state carries
-                    # it authoritatively -- read it rather than deriving (the derivation is only
-                    # needed for the part of the strip that sits above DGROUP's 64K window).
-                    b = mem.rb(DS, phys)
-                elif 0 <= c + j < STRIP_STRIDE and 0 <= r < n_rows:
-                    b = stack[r][c + j]
-                elif 0 <= c + j < STRIP_STRIDE and 0 <= r - STRIP_RING_ROWS < n_rows:
-                    # A7EB mirrors each band to +0x5480 = 208 * 0x68, so strip row r is a duplicate
-                    # of row r - 208.  A save block that runs past the rendered stack lands in that
-                    # duplicate; reading the replayed strip there would use frame-0's stale bytes.
-                    b = stack[r - STRIP_RING_ROWS][c + j]
-                else:
-                    b = mem.rb(strip_seg, (src + j) & 0xFFFF)
-                mem.wb(DS, (dest + row * row_bytes + j) & 0xFFFF, b)
+                mem.wb(DS, (dest + row * row_bytes + j) & 0xFFFF,
+                       mem.rb(strip_seg, (src + j) & 0xFFFF))
 
     for table, count in _A846_SAVE_ORDER:
         for k in range(count, 0, -1):

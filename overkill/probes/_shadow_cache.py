@@ -21,11 +21,16 @@ import pickle
 import zlib
 from pathlib import Path
 
-CACHE_FORMAT = 3
+CACHE_FORMAT = 4
 DGROUP = 0x25CC
 CS = 0x1010
 PLANE_SEG_CELL = 0x9592
 PLANE_SIZE = 0x4000
+#: The TILE STRIP (CS:[9598]).  Its low part overlaps DGROUP, but the rest sits above the 64K
+#: window and the A846 save-under reads it, so the replay must carry it too.  Content changes only
+#: at a row pull (the band write + its +0x5480 ring copy), so it dedups almost perfectly.
+STRIP_SEG_CELL = 0x9598
+STRIP_SIZE = 0xC000
 
 ROOT = Path(__file__).resolve().parents[2]
 CACHE_DIR = ROOT / "artifacts" / "shadow_cache"
@@ -83,6 +88,10 @@ class WalkShadowRecorder:
         self.sps: list = []
         self.planes: list = []           # zlib-compressed plane blobs, dedup'd
         self._plane_index: dict = {}
+        self.strip_seg: int | None = None
+        self.strip_refs: list = []       # index into self.strips
+        self.strips: list = []           # zlib-compressed strip blobs, dedup'd
+        self._strip_index: dict = {}
         self._last_post_dgroup: bytes | None = None
 
     def add_frame(self, pre_full: bytes, post_dgroup: bytes, sp: int) -> None:
@@ -91,6 +100,7 @@ class WalkShadowRecorder:
         if self.frame0_full is None:
             self.frame0_full = pre_full
             self.plane_seg = pre_full[CS * 16 + PLANE_SEG_CELL] | (pre_full[CS * 16 + PLANE_SEG_CELL + 1] << 8)
+            self.strip_seg = pre_full[CS * 16 + STRIP_SEG_CELL] | (pre_full[CS * 16 + STRIP_SEG_CELL + 1] << 8)
             self.pre_deltas.append(None)          # frame 0's pre comes from frame0_full
         else:
             self.pre_deltas.append(_delta(self._last_post_dgroup, pre_dgroup))
@@ -102,6 +112,14 @@ class WalkShadowRecorder:
             self.planes.append(zlib.compress(plane, 6))
             self._plane_index[h] = ref
         self.plane_refs.append(ref)
+        strip = pre_full[self.strip_seg * 16:self.strip_seg * 16 + STRIP_SIZE]
+        h = hashlib.sha1(strip).digest()
+        sref = self._strip_index.get(h)
+        if sref is None:
+            sref = len(self.strips)
+            self.strips.append(zlib.compress(strip, 6))
+            self._strip_index[h] = sref
+        self.strip_refs.append(sref)
         self.post_deltas.append(_delta(pre_dgroup, post_dgroup))
         self.sps.append(sp)
         self._last_post_dgroup = post_dgroup
@@ -114,6 +132,7 @@ class WalkShadowRecorder:
             "frame0_full": zlib.compress(self.frame0_full, 6),
             "pre_deltas": self.pre_deltas, "post_deltas": self.post_deltas,
             "plane_refs": self.plane_refs, "sps": self.sps, "planes": self.planes,
+            "strip_seg": self.strip_seg, "strip_refs": self.strip_refs, "strips": self.strips,
         }, protocol=pickle.HIGHEST_PROTOCOL)
         path.write_bytes(zlib.compress(blob, 6))
 
@@ -138,12 +157,17 @@ def load_cache(path: Path, key: str, max_frames):
 def iter_cached_frames(d):
     """Yield ``(pre_full_1mb: bytearray, post_dgroup: bytes, sp)`` per cached walk frame.
 
-    ``pre_full_1mb`` is rebuilt as: frame-0's full machine state, with the rolling DGROUP window and
-    the current tile plane overlaid -- everything else the walk reads (code, dispatch tables) is
-    static.  The caller may mutate the yielded buffer (a fresh copy per frame).
+    ``pre_full_1mb`` is rebuilt as: frame-0's full machine state, with the rolling DGROUP window,
+    the current tile plane, and the current tile STRIP overlaid -- everything else the frame reads
+    (code, dispatch tables) is static.  The caller may mutate the yielded buffer (a fresh copy per
+    frame).  The strip matters because A846's save-under reads it, and most of it lies ABOVE the
+    64K DGROUP window.
     """
     base_full = bytearray(zlib.decompress(d["frame0_full"]))
     plane_seg = d["plane_seg"]
+    strip_seg = d["strip_seg"]
+    strips = d["strips"]
+    strip_cache: dict = {}
     dg_off = DGROUP * 16
     dgroup = bytearray(base_full[dg_off:dg_off + 0x10000])
     planes = d["planes"]
@@ -157,9 +181,15 @@ def iter_cached_frames(d):
         if plane is None:
             plane = zlib.decompress(planes[ref])
             plane_cache = {ref: plane}      # keep only the current plane decompressed
+        sref = d["strip_refs"][i]
+        strip = strip_cache.get(sref)
+        if strip is None:
+            strip = zlib.decompress(strips[sref])
+            strip_cache = {sref: strip}
         pre_full = bytearray(base_full)
         pre_full[dg_off:dg_off + 0x10000] = dgroup
         pre_full[plane_seg * 16:plane_seg * 16 + PLANE_SIZE] = plane
+        pre_full[strip_seg * 16:strip_seg * 16 + STRIP_SIZE] = strip
         post = bytearray(dgroup)
         _apply(post, d["post_deltas"][i])
         yield pre_full, bytes(post), d["sps"][i]
