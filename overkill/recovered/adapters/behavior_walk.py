@@ -675,6 +675,20 @@ def _step_yseeker_6b6c6d(mem, rec: int, y_target: int, sprite_add: "int | None")
         _spawn_child_c237(mem, rec, mem.rw(DS, rec + 0x18))
 
 
+def _step_shooter_88(mem, rec: int) -> None:
+    """Behavior 0x88 (1010:F13C; planet-0 cue spawn): once +0x02 >= 0x80, sprite = a word from the
+    DS:D212 (dir==6) / DS:D21A table indexed by ([232E]>>4)*2; when that index == 4, spawn a C237
+    child.  jmp BC45 tail.  ('bp+24' at F13C's index is DECIMAL -- but here the fields are +0x02/+0x06/
+    +0x08, all single-digit, so no decimal/hex ambiguity.)"""
+    if mem.rw(DS, rec + 0x02) < 0x80:                     # F13C
+        return
+    idx = ((mem.rw(DS, 0x232E) >> 4) << 1) & 0xFFFF       # F146..F152
+    table = 0xD212 if mem.rw(DS, rec + 0x06) == 6 else 0xD21A   # F154/F15D
+    mem.ww(DS, rec + 0x08, mem.rw(DS, (table + idx) & 0xFFFF))  # F162/F164
+    if idx == 0x04:                                       # F167
+        _spawn_child_c237(mem, rec, mem.rw(DS, rec + 0x18))     # F16F
+
+
 def _step_crawler_8e(mem, rec: int, tiles: LevelTileContext) -> None:
     """Behavior 0x8E (1010:BB48; a planet-0 ground-crawler variant): [A952]=1, the BBED terrain-follow
     move, sprite = 0x13A + 3*[A952] + (moved ? [96D2 + [233C]*2] : 0) + (3 if +0x06 != 0), then the
@@ -3178,6 +3192,9 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
         elif beh == 0x8E:
             _step_crawler_8e(mem, rec, tiles)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # BBB2 tail exits jmp BC45
+        elif beh == 0x88:
+            _step_shooter_88(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # F16A/F172 exit jmp BC45
         else:
             raise RecoveryGap(f"behavior {beh:#04x} (record {rec:04X})",
                               "no native handler registered -- recover it before walking")
