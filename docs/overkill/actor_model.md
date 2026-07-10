@@ -187,3 +187,140 @@ Fixing both took the demo from 3 unexplained divergences (614/6037/6897, open si
 session) to **zero divergence across all 8294 walk frames** — proof that this crystallization
 discipline (recover an actor → run the FULL demo → chase every divergence to its root, never explain
 it away) surfaces real bugs that a narrower gate would leave latent indefinitely.
+
+---
+
+## 5. Where the zoo stands (2026-07-10) — the evidence-based map, refreshed
+
+The §4 log above stopped at ~12 handlers; the zoo is now **~90 of 146 behaviour ids recovered across
+75 `_step_*`/`step_*` handlers** in `behavior_walk.py`. The model in §1–3 held up — nothing below
+revises it, this section is the CURRENT map an actor-refactor would start from.
+
+### 5.1 The dispatch is TWO levels, both data tables (confirmed)
+- **Level 1 — TYPE / draw-layer** (`1010:AA2B`, jump table `CS:AA36`, keyed on record **`+0x16`**):
+  8 logic handlers. `_dispatch` (`behavior_walk.py:2620`) mirrors it: type 0 nop, 1 special-pod,
+  5 pickup, 6 companion, and **types 2 & 4 → the EFAE enemy-behaviour dispatch**. (Layer 2/4 → `EFAE`;
+  0 → `BC45` no-op; 3 → `44AF` no-op; 1/5/6/7 → their own logic.)
+- **Level 2 — BEHAVIOUR** (`EFAE` → jump table `CS:EFC4`, keyed on record **`+0x18`**): 146 ids → 134
+  handlers, **6 alias families** (one body, several ids): `8D4F`←{13,15,1C,1F,7D,7E} (waypoint
+  controllers), `BC45`←{00,0D,0E,82} (pure drift), `8676`←{28,2A}, `AED8`←{02,03}, `B3DF`←{22,35},
+  `B930`←{16,17}, `F201`←{57,58}.
+- **Level 3 — MODE sub-machine** (some families): the waypoint controllers far-call `1F8F:027A`, which
+  after the seek dispatches on the record's **`+0x24` mode** (0x13→0432, 0x15→03E6, 0x1C→03A6,
+  0x1F→0368, 0x7D→0309, else→02CB) to an arrival action. This IS a third dispatch level — the closest
+  thing in the ROM to a per-actor "opcode" beyond the cast-list id.
+
+Handlers live in three code regions: **`8xxx`** (65 ids — the generic behaviour segment), **`Axxx–
+Bxxx`** (41 — the movement/seek/collision segment: `AED8`/`AE09`/`B1B0`/`B556`/`BC45`…), **`Fxxx`**
+(39 — the level-specific zoo, mostly L3/L5). Region is a coarse cluster proxy.
+
+### 5.2 The recovered "instruction set" (the true surface — ~20 workers, not 146 handlers)
+`behavior_zoo_xref.py` (re-run 2026-07-10): **76/134 handlers are thin stubs (<0x20 bytes)**. The
+shared workers every handler composes, now all recovered pure functions in `behavior_walk.py`:
+
+| verb | worker(s) | fn | reuse |
+|---|---|---|---|
+| **tail** | BC45 / BC4B postmove (drift, Y-clamp, X-bounds death, 62F6 collision) | `_postmove_bc45` :2523 | ~72 |
+| **contact-step** | AFD8 one contact-step (+ BDD0 predicate) | `_afd8_step` :824 / `_bdd0_contact_at` :254 | 21 |
+| **seek** | 5DB2 toward a target, mode-gated | `_apply_seek` :166 / `_b729_seek` :356 | ~9 |
+| **steer** | 5E42 Bresenham delta-steer | `_steer_5e42_inplace` :811 / `_steer_missile_tail_8744` :1457 | 3+ |
+| **shoot** | 7476 enemy-shot stamp | `_spawn_enemy_shot_7476` :602 | 6 |
+| **spawn(child)** | C237 difficulty-throttled child | `_spawn_child_c237` :1347 | ~10 |
+| **spawn(alloc)** | 7524/81F4 alloc + 8209 stamp | `_alloc` :153 + `enemy_spawn_stamp_8209` | ~8 |
+| **retarget** | 74E2 delta toward anchor (Y+9) | `retarget_delta_toward_anchor_74e2` | 5 |
+| **bounce** | BB03 vertical bounce | `_bb03_bounce` :281 | 6 |
+| **death** | BFC7 touch-death / BD17 deactivate | `_bfc7_touch_death` :2471 / `_bd17_deactivate` :2393 | many |
+| **animate** | sprite = base + table[clock>>shift] | inlined (tables 96D2/96C2/95EA/96AA/96DA/96EC) | pervasive |
+| **gate** | guard on a shared clock/counter/planet | inlined (2324/2328/232C/232E/233C/2356/A7A0/A47E) | pervasive |
+| **substate** | advance +0x1C, branch per state | inlined (0x20 archetype) | few |
+
+An actor handler = `guards → primitive(operands) → tail`. This is already the step language of §2; it
+is now EVIDENCED across 75 handlers, not hypothesised.
+
+### 5.3 Behaviour clusters (for a refactor's grouping)
+**A movement-only** (0x27/0x31/0x4F/0x64/0x3B/0x42/0x52/0x53/0x5C/0x5D) · **B seek/steer movers**
+(0x2F/0x2E/0x3A/0x29/0x3E/0x3F/0x60/0x2B/0x2C/0x0A/0x1E/0x1D) · **C spawn/shoot emitters**
+(0x24/0x25/0x30/0x40/0x68/0x2D/0x46/0x34/0x8F/0x87/0x48/0x49/0x28/0x2A/0x86/0x21/0x1F/0x13/0x1C) ·
+**D contact-reactive** (0x33/0x3D/0x3C/0x4B/0x4E/0x19/0x1A/0x83/0x89/0x8A/0x47/0x54/0x56/0x57/0x58/
+0x59/0x5A/0x5E/0x5F/0x8B/0x8C/0x26) · **E anim/morph state machines** (0x01/0x26 respawn cycle; the
+one-frame morphs 0x3C→3D, 0x4B→33, 0x4D→39, 0x54→56, 0x59→5A, 0x3E→3F, 0x23→2C; 0x63 hatcher) ·
+**F waypoint/formation controllers** (the 8D4F/1F8F:027A family + 0x11/0x12 A43C follower + 0x14
+formation + the seed group 0x41/0x43/0x44/0x45/0x4A/0x51) · **G level/boss special cases** (0x21 boss
+transform, 0x22/0x35 boss riser, planet-gated 0x48/0x59/0x34/…, final-boss A8C2) · **H dispatchers**
+(the AA36/EFC4 tables, the AF22 8-way move table, C237's own jump table, the 837A weapon scheduler).
+
+## 6. The proposal — an Overkill actor architecture (emerge, don't impose)
+
+The recovery has ALREADY produced 4 of the 5 pieces; the proposal is to formalise them, not invent.
+
+### 6.1 The `Actor` (the 0x38 record — already a shared view)
+`views/object_slots.py:ObjectSlotView` is the Actor. Its fields, as a dataclass the interpreter would
+carry: `active(+0), x(+2), y(+4), dir_or_step(+6), sprite(+8), gate_or_layer(+0xA), draw_di(+0xC),
+link_key(+0xE), row_or_phase(+0x12), object_type(+0x16→L1 dispatch), behavior(+0x18→L2 dispatch),
+prev_behavior(+0x1A), substate(+0x1C), solid(+0x1E), counter(+0x20), transition_latch(+0x22),
+mode/variant(+0x24→L3 dispatch), linked_counter(+0x28), move_dx(+0x2A), move_dy(+0x2C),
+step_error(+0x2E), target_ptr(+0x30), target_y(+0x32), target_x(+0x34), waypoint_ptr(+0x36)`.
+**Open field gaps** a full Actor must still name: `+0x10`, `+0x26` (unnamed), and `+0x36` (the
+waypoint cursor — used but unnamed). No new recovery needed, just naming.
+
+### 6.2 The `Behavior` = a step-list over the closed verb set (§5.2)
+Represent each behaviour as an ordered `[Guard? , Action(operands) …] + Tail` — where Action ∈ the
+recovered verbs and operands are ROM-read constants/fields. Irregular handlers (bosses, C237's own
+jump table, the 0x20 dive) keep a `Call(recovered_native_fn)` escape verb (§3.5). The step-list is a
+RE-REPRESENTATION of the recovered handler, legal ONLY because a shadow gate proves it reproduces the
+walk byte-for-byte. Do NOT build the interpreter until ~all handlers carry their §4-style
+decomposition tag — the schema is still emerging (the +0x24 mode sub-machine and the retry-loop of
+0x12 are two control shapes the current verb set doesn't yet name).
+
+### 6.3 Per-level data (already data — just externalise it)
+- **spawn**: the per-planet tile-cue tables (`tile_cues.py:_PLANETn_STAMPS`, tile id → behavior/sprite/
+  dir) — the level's "who appears where."
+- **schedules**: `CONTROLLER_SPAWN_SCHEDULES` / `A482` waypoint streams (`(x,y)` pairs, `(x,y,tx,ty)`
+  quads, FFFF-terminated) — the movement scripts; `_DEATH_NEXT_SCHEDULE` the death re-arm.
+- **anim**: the sprite tables 96D2/96C2/95EA/96AA/96DA/96EC (base + table[clock>>shift]).
+These are the editable "cue sheet + choreography data" of the endgame editor.
+
+### 6.4 What stays special-case (honesty)
+The boss transforms (0x21/0x22/0x35, `boss_transform_stamp_b58a`, final-boss `A8C2`), the C237 parent
+jump table, and the `Fxxx` level-5/L3 zoo tail (0x5B–0x63) are irregular enough to keep as recovered
+native fns behind the `Call` verb rather than forcing them declarative.
+
+## 7. Using the LIFTER to accelerate the remaining zoo (the owner's ask)
+
+The remaining ~56 unrecovered behaviours (and the overlay bodies like `1F8F:027A`) should be lifted,
+not hand-decoded — hand-reading just cost a wrong `0x7D` arrival stamp this session (the lifter's
+literal transcription would not have). The standing pipeline:
+1. **`scripts/capture_demo_snapshot.py --demo <D> --stop-at 1010:<HANDLER> --min-boundary N`** — writes
+   a full `memory_1mb.bin`+`state.json` snapshot the first time the demo REACHES the handler (pick a
+   demo that plays that handler's planet; `L4_full` for the 8D4F waypoint family, `L3_full`/`L5_*` for
+   the Fxxx zoo). liftverify runs FORWARD from the snapshot, so it must be captured where the routine
+   is already live (a start snapshot run idle never reaches it — verified this session).
+2. **`python dos_re/tools/liftverify.py --exe assets/OVERKILL --snapshot <SNAP> --entry 1010:<H>
+   [--entry 1F8F:027A …] --samples 16`** — emits a literal ASM→Python hook per entry and differentially
+   verifies each call against the interpreted original (ORACLE_PASSING / DIVERGED / NOT_REACHED). A
+   PASS is a SAMPLE, not a whole-run proof (retires at `--samples`).
+3. **Read the verified hook as authoritative, refactor into a §5.2 verb composition**, then gate with a
+   per-behaviour driven oracle (below). The lifted hook is scaffolding; the recovered-source island is
+   the deliverable.
+
+## 8. First refactor candidates + the verifier plan
+
+**Best first clusters** (biggest sharing, lowest risk): the **waypoint controller family** (one body
+`8D4F`/`1F8F:027A` serves 6 behaviours 0x13/0x15/0x1C/0x1F/0x7D/0x7E — recover the mode sub-machine
+once, get 6) and the **contact-reactive bouncers** (0x33/0x3D/0x3C/0x4B/0x4E all = `_afd8_step` +
+`_bb03_bounce` + a morph gate — pure re-parameterisation). The **spawn emitters** (C237 family) are
+already largely done.
+
+**Verifiers (the equivalence proofs — never weaken them):**
+- the **walk shadow** `verify_native_lockstep` / `verify_native_walk_demo` (byte-exact whole-DGROUP per
+  frame) remains the ground truth;
+- **per-behaviour driven oracles** for paths the corpus under-exercises — the pattern proven this
+  session (`verify_native_flash_decay`, `verify_native_special_weapon_apply`): inject the precondition
+  into BOTH the pure VM and the native handler at a 9B2E boundary and diff (the driven-oracle pattern
+  in `loop_blockers.md`);
+- a NEW **step-list interpreter equivalence gate** (build only in §6.2's step 4): run the declarative
+  step-list vs the recovered native handler over the demo, require zero divergence before a behaviour
+  is allowed to drop its procedural body.
+
+**North star, unchanged:** script · schedule · cast · vocabulary · state — an editor over a
+byte-exact engine, every layer recovered as data or shadow-gated code, never guessed.
