@@ -37,6 +37,144 @@ TILES_PER_ROW = 13
 ROW_GATE = 0x0E52          # A831: rows above this never run the cue walk
 
 
+def _p0_spawn_81c9(mem, plane_seg: int, si: int, y_a40a: int, leak_32: int, leak_34: int) -> "int | None":
+    """1010:81C9 -- the planet-0 tile-cue spawn: consume plane[si]=1 (7E58), 7524 alloc + the 8209
+    stamp (81E9), then the 81CC position overrides ([+4]=y, [+2]=0x10, [+0x0A]=0).  None if pool full."""
+    mem.wb(plane_seg, si, 0x01)
+    slot = _alloc(mem, 0x95D8, EFFECT_POOL_BASE, EFFECT_POOL_WRAP, EFFECT_SLOTS)
+    if slot == 0xFFFF:
+        return None
+    _stamp_8209(mem, slot, leak_32, leak_34)
+    mem.ww(DS, slot + 0x04, y_a40a)
+    mem.ww(DS, slot + 0x02, 0x0010)
+    mem.ww(DS, slot + 0x0A, 0x0000)
+    return slot
+
+
+def _p0_spawn_819e(mem, plane_seg: int, si: int, y_a40a: int, leak_32: int, leak_34: int) -> "int | None":
+    """1010:819E -- 81C9 + the [209A] pool link: if [209A] != FFFF, inc byte[[209A]] and byte[[209A]+1]
+    = [2070], and [slot+0x28] = [2098]; else [slot+0x28] = FFFF."""
+    slot = _p0_spawn_81c9(mem, plane_seg, si, y_a40a, leak_32, leak_34)
+    if slot is None:
+        return None
+    p209a = mem.rw(DS, 0x209A)
+    if p209a != 0xFFFF:
+        mem.wb(DS, p209a, (mem.rb(DS, p209a) + 1) & 0xFF)
+        mem.wb(DS, (p209a + 1) & 0xFFFF, mem.rb(DS, 0x2070))
+        mem.ww(DS, slot + 0x28, mem.rw(DS, 0x2098))
+    else:
+        mem.ww(DS, slot + 0x28, 0xFFFF)
+    return slot
+
+
+def _p0_slot_search_1f8f_0163(mem) -> None:
+    """1F8F:0163 -- if [2070] != 0, scan the 16 words at [2078] for a zero byte: [209A] = that ptr
+    (else FFFF), [2098] = its index; else [209A] = FFFF."""
+    if mem.rw(DS, 0x2070) == 0:
+        mem.ww(DS, 0x209A, 0xFFFF)
+        return
+    mem.ww(DS, 0x2098, 0)
+    bx, found = 0x2078, 0xFFFF
+    for idx in range(0x10):
+        if mem.rb(DS, bx) == 0:
+            found = bx
+            break
+        bx += 2
+        mem.ww(DS, 0x2098, (idx + 1) & 0xFFFF)
+    mem.ww(DS, 0x209A, found)
+
+
+#: the 7C08 jump-table stamp handlers (decoded): tile -> (spawn, [(off,val)...], y_branch).  The
+#: y_branch (cmp [slot+4],val; jbe) applies its extra stamps when the spawned Y is <= val.
+_P0_REGULAR: dict = {
+    0xE1: ("81c9", [(0x06, 6), (0x18, 0x88), (0x08, 0xFD)], (0x60, [(0x08, 0xFA), (0x06, 2)])),
+    0xE4: ("81c9", [(0x18, 0x69)], None),
+    0xE5: ("81c9", [(0x06, 5), (0x18, 0x6A), (0x08, 0x11E)], (0x60, [(0x06, 3), (0x08, 0x11D)])),
+    0xE7: ("81c9", [(0x18, 0x6B)], None),
+    0xE8: ("819e", [(0x18, 0x6C), (0x08, 0x123)], None),
+    0xE9: ("81c9", [(0x18, 0x6D)], None),
+    0xEA: ("819e", [(0x06, 4), (0x18, 0x6E)], None),
+    0xEB: ("819e", [(0x06, 4), (0x18, 0x71)], None),
+    0xED: ("819e", [(0x18, 0x8D)], None),
+    0xEE: ("819e", [(0x18, 0x8E)], None),
+    0xEF: ("819e", [(0x06, 4), (0x18, 0x8A)], None),
+    0xF0: ("81c9", [(0x06, 7), (0x18, 0x54), (0x08, 0x143)], (0x60, [(0x06, 1), (0x08, 0x144)])),
+    0xF2: ("81c9", [(0x18, 0x34)], None),
+    0xF4: ("81c9", [(0x06, 7), (0x18, 0x59), (0x08, 0xE3)], (0x60, [(0x06, 1)])),
+    0xF6: ("81c9", [(0x18, 0x4F)], None),
+}
+_P0_REGULAR[0xE2] = _P0_REGULAR[0xE1]
+_P0_REGULAR[0xE6] = _P0_REGULAR[0xE5]
+_P0_REGULAR[0xF1] = _P0_REGULAR[0xF0]
+_P0_REGULAR[0xF3] = _P0_REGULAR[0xF2]
+#: the truly-special handlers (own control flow) -- not yet transcribed; fail loud if the demo hits one.
+_P0_SPECIAL_TILES = {0xF5, 0xF7, 0xF8, 0xF9, 0xFA, 0xFB}
+
+
+def _p0_gate_special(mem, plane_seg, si, y_a40a, leak_32, leak_34, dy, direction, beh, sprite):
+    """7B8B (tile 0xBC, y<=0x60) / 7BAB (tile 0xBB, y>0x60): 81C9 spawn, [+4] +/-= 0xC, [+0x32]=[+4],
+    dir/beh/sprite."""
+    slot = _p0_spawn_81c9(mem, plane_seg, si, y_a40a, leak_32, leak_34)
+    if slot is None:
+        return None
+    mem.ww(DS, slot + 0x04, (mem.rw(DS, slot + 0x04) + dy) & 0xFFFF)
+    mem.ww(DS, slot + 0x32, mem.rw(DS, slot + 0x04))
+    mem.ww(DS, slot + 0x06, direction)
+    mem.ww(DS, slot + 0x18, beh)
+    mem.ww(DS, slot + 0x08, sprite)
+    return slot
+
+
+def _planet0_cue(mem, plane_seg: int, si: int, tile_id: int, y_a40a: int,
+                 leak_32: int, leak_34: int) -> "int | None":
+    """Planet 0's ``1010:7BCB`` mothership tile-cue: the [A40A]<=0x60 / 0xBC and >0x60 / 0xBB gate
+    specials (7B8B/7BAB), then the al -= 0xE1 range gate, the [2070]=byte[(si&0x3F)+0xC81A] +
+    1F8F:0163 slot search, and the inline 7C08 jump table of 81C9/819E spawn+stamp handlers."""
+    if y_a40a <= 0x60:
+        if tile_id == 0xBC:                          # 7B8B
+            return _p0_gate_special(mem, plane_seg, si, y_a40a, leak_32, leak_34,
+                                    -0x0C, 2, 0x73, 0x14C)
+    elif tile_id == 0xBB:                            # 7BAB
+        return _p0_gate_special(mem, plane_seg, si, y_a40a, leak_32, leak_34,
+                                0x0C, 6, 0x74, 0x14F)
+    al = (tile_id - 0xE1) & 0xFF                      # 7BDC
+    if al > 0x1A:                                     # 7BDE jns / 7BE1 <= 0x1A
+        return None
+    mem.ww(DS, 0x2070, mem.rb(DS, ((si & 0x3F) + 0xC81A) & 0xFFFF))   # 7BE6
+    _p0_slot_search_1f8f_0163(mem)                   # far 1F8F:0163
+    if tile_id == 0xE3:                              # 8143: on planet 0 (2356 != 5) -> 81C9 + beh 0x68
+        slot = _p0_spawn_81c9(mem, plane_seg, si, y_a40a, leak_32, leak_34)
+        if slot is not None:
+            mem.ww(DS, slot + 0x18, 0x68)
+        return slot
+    if tile_id == 0xEC:                              # 7FFB/8001 (its own Y-branch)
+        slot = _p0_spawn_819e(mem, plane_seg, si, y_a40a, leak_32, leak_34)
+        if slot is None:
+            return None
+        mem.ww(DS, slot + 0x18, 0x6F)
+        mem.ww(DS, slot + 0x08, 0x136)
+        mem.ww(DS, slot + 0x06, 3)
+        mem.ww(DS, slot + 0x04, (mem.rw(DS, slot + 0x04) - 0x10) & 0xFFFF)
+        if mem.rw(DS, slot + 0x04) >= 0x60:          # 8019 jnb
+            mem.ww(DS, slot + 0x06, 5)
+            mem.ww(DS, slot + 0x04, (mem.rw(DS, slot + 0x04) + 0x20) & 0xFFFF)
+        return slot
+    if tile_id in _P0_SPECIAL_TILES:
+        raise RecoveryGap(f"planet-0 tile-cue special handler for tile {tile_id:#04x}",
+                          "the 7C08 special handlers (F5/F7/F8/F9/FA/FB) are not yet transcribed")
+    spawn, stamps, ybr = _P0_REGULAR[tile_id]
+    slot = (_p0_spawn_819e if spawn == "819e" else _p0_spawn_81c9)(
+        mem, plane_seg, si, y_a40a, leak_32, leak_34)
+    if slot is None:
+        return None
+    for off, val in stamps:
+        mem.ww(DS, slot + off, val)
+    if ybr is not None and mem.rw(DS, slot + 0x04) <= ybr[0]:
+        for off, val in ybr[1]:
+            mem.ww(DS, slot + off, val)
+    return slot
+
+
 def run_tile_cue_row_7948(mem, row_base: int, leak_32: int = 0, leak_34: int = 0) -> "list[int]":
     """Walk one pulled plane row's 13 tiles and run the planet's cue handler per id.
 
@@ -44,10 +182,6 @@ def run_tile_cue_row_7948(mem, row_base: int, leak_32: int = 0, leak_34: int = 0
     read AND MUTATED through the image's own plane segment (the consume writes), ``[A40A]``
     steps 0x10 per tile.  Fails loud for planets whose handler is not yet recovered."""
     planet = mem.rw(DS, 0x2356)
-    if planet == 0:
-        raise RecoveryGap("tile-cue handler for planet 0 (1010:7BCB)",
-                          "the mothership's cue handler far-calls deeper overlay machinery -- "
-                          "decode + drive it before scrolling its terrain")
     plane_seg = mem.rw(CS, 0x9592)
     spawned: list[int] = []
     mem.ww(DS, 0xA408, row_base & 0xFFFF)
@@ -56,7 +190,7 @@ def run_tile_cue_row_7948(mem, row_base: int, leak_32: int = 0, leak_34: int = 0
         tile_id = mem.rb(plane_seg, si)
         y_a40a = (k * 0x10) & 0xFFFF
         mem.ww(DS, 0xA40A, y_a40a)
-        cue = {1: _planet1_cue, 2: _planet2_cue, 3: _planet3_cue,
+        cue = {0: _planet0_cue, 1: _planet1_cue, 2: _planet2_cue, 3: _planet3_cue,
                4: _planet4_cue, 5: _planet5_cue}[planet]
         rec = cue(mem, plane_seg, si, tile_id, y_a40a, leak_32, leak_34)
         if rec is not None:
