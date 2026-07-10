@@ -29,6 +29,10 @@ from overkill.recovered.systems.frame_loop import frame_state_update_a940
 DS = 0x25CC
 CS = 0x1010
 
+#: optional mid-frame observation hook used ONLY by probes (``native_frame._AT_9BCA = fn``);
+#: it is None in every normal run and costs one ``is not None`` test per frame.
+_AT_9BCA = None
+
 
 def level_tiles_from_image(mem) -> LevelTileContext:
     """The frame's tile context, read fresh from the image (the plane scrolls in place and the
@@ -478,6 +482,8 @@ def _step_9b2e(mem) -> None:
     # 9BC0: [A47C] <= 1 -> A616 (the ship tilt/bank counters)
     if mem.rw(DS, 0xA47C) <= 1:
         _tilt_a616(mem)
+    if _AT_9BCA is not None:                         # debug observation point (default: disabled)
+        _AT_9BCA(mem)
     # 9BCA: [A47C] == 0 -> 9CB6 (the terrain crash -> the difficulty-scaled 9E19 damage).
     # 9CB6 is a fall-through CALL CHAIN of four 9E19s (9CCB/9CCE/9CD1/9CD4) entered by difficulty:
     # BEDC == 0 jumps to 9CD1 (2 calls), == 1 to 9CCE (3 calls), else starts at 9CCB (4 calls).

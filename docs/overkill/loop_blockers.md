@@ -1260,3 +1260,32 @@ history-ring stages, not in the damage chain.**  Next: trap `(CS,0x9BCA)` on the
 anchor `237E/2380`, `234C/234E/2350`, `215A` against the native frame's values at the same point --
 the first cell that differs names the stage.  (`236E..2372` looks like the 9CD9 history ring, whose
 cursor we may be advancing differently.)
+
+### 2026-07-08 (cont.) — the 23A0 flash: CORRECTED attribution, and the real open question
+
+Instruction-level watch on `DS:23A0` (cold-start demo, frame 3576) gives the ground truth:
+
+    @9E31  23A0: 06 -> 08      (inside 9E19 -- runs TWICE, the two 9CB6 calls at BEDC == 0)
+    @9E31  23A0: 08 -> 08
+    @A85B  23A0: 08 -> 07      (the sprite draw: ONE dec per DRAWN SLOT)
+    @A85B  23A0: 07 -> 06
+
+So a frame where the player is crashing looks like `pre 6 -> set 8 -> dec 2 -> 6` (delta 0), and a
+frame where it is not crashing is `6 -> dec 2 -> 4` (delta 2).  That is exactly the 216/216 split
+observed, and it is NOT a parity.
+
+**CORRECTION to the earlier commit (9e9d38f):** I attributed the dec to the compositor prologues at
+`25AE / 30FF / 4227`.  Trapping those three addresses shows they NEVER EXECUTE on this path -- the
+dec really happens inside the routine reached from `A858 call 5AC8` (its return address is A85B).
+The *model* (one dec per drawn slot, two for the anchor's two slots) is right and measured; the
+cited addresses were not.  The native `_flash_decay_a846` stays as-is.
+
+**The remaining bug is upstream and precise:** at `9BCA` our `_terrain_crash_4ff9` returns False on
+frames 3577-3580 where the VM's returns True, even though a cell-by-cell diff at that exact point
+(`237E/2380/234C/234E/2350/215A/2384/A278/A47E/A33A/98BE`) shows ZERO mismatches, and a driven-oracle
+check of 4FF9 on frame-top states agrees 59/59.  Therefore 4FF9 reads an input we have NOT compared.
+Candidates, in order: the tile PLANE bytes (seg `[9592]` -- the replay overlays it, but check the
+row the probe lands on), the class table at `DS:C3AA`, and `[215A]`'s exact sub-tile phase.
+**Next probe:** at `(CS,0x9BCA)`, dump the 5073 probe's full inputs AND its computed
+`tile_offset`, plus `plane[offset+0xD]` / `plane[offset+0xE]` and their class bytes, from BOTH sides.
+The first differing input names the stage that corrupted it.
