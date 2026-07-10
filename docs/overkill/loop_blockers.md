@@ -4,12 +4,20 @@ Open items the autonomous loop attempted but could not finish byte-exact. Do NOT
 re-attempt these in the loop; they need a reproduction trace and/or gameplay
 context. Each has the analysis already done so a human can pick up fast.
 
-## 2026-07-10 — COLD-BOOT CHAIN scoped: 1.25M-instruction init, nothing static-relocatable
+## 2026-07-10 — COLD-BOOT CHAIN scoped: ~19K-instruction init (72 routines, 74% liftable), nothing static-relocatable
 
 OVERKILL is a PLAIN MZ executable (no LZEXE -- no LZ09/LZ91/LZEXE signature; entry cs:ip = C22:000E,
 0 relocations, load module 50043 bytes).  The "bootstrap" the static bundle captures is the game's
 own INIT, run from the MZ entry to the frontier `1010:D007` (the attract/mode-machine top) --
-**1245977 instructions** (from the bundle manifest's `steps`).
+**CORRECTED (traced, not from the manifest): the init REACHES `1010:D007` in ~18770 instructions
+across 72 distinct 1010: call targets** -- not 1.25M.  (The manifest's 1245977 `steps` counts the
+attract loop spinning at the D007 frontier afterwards; D007 is re-entered many times.)  So the boot
+INIT is small and tractable.
+
+**And 74% of it is AUTOMATICALLY LIFTABLE**: `liftgen` over the 72 init routines reports 53 LIFTABLE,
+19 refused (17 indirect-jump -- jump tables; 6 region-budget -- large; 3 decoder-mismatch).  Many are
+already recovered (C679 the file loader, 0248/0624/065C the read path, 5145).  This is a bounded
+lifter campaign, not a 1.2M-instruction mystery.
 
 **The cold boot cannot shortcut via static relocation.**  Checked the CS runtime tables the gameplay
 depends on -- 8D92/9192/9392/8F92 (sprite-frame), 9592 (plane seg ptr), 9598 (strip seg), 95A2,
