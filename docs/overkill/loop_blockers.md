@@ -1339,3 +1339,33 @@ the existing `_AT_9BCA`-style debug hook, moved/duplicated just before `_isr_eff
 VM: trap `(CS,0x0679)`) and diff.  The first frame where the queued id differs names the missing
 sound-emitting path.  Note the known emitters we gap: `77C5` (shield body) and `9EE4` (drain), and
 the respawn path reached via `9A1B -> 9DB9` (sound 0x0D).
+
+### 2026-07-08 (cont.) — corrected extent + the sound residue is NOT the interpreter and NOT the queue
+
+Two more suspects eliminated by measurement (not by reading code):
+
+* **The queue is identical.**  Capturing `DS:BEFF`/`BEFE` at the exact moment of the tick on both
+  sides (VM: trap `(CS,0x0679)`; native: a spy around `_isr_effects_two_ticks`) gives
+  `frames compared = 2710, differing = 0`.  So no path queues a different sound.
+* **The tick count is 2.**  Per-window ISR-entry counts (ref instance only): `{2: 8284}` with 8
+  outliers (four windows of 402 ticks -- level-load stalls -- plus 0/1/7 once each), and
+  `18558` of `18565` ticks fire while spinning at `0679`.
+
+**Extent correction:** the save-under backing store runs past `0x9592` -- `DS:9598..95A1` hold pixel
+bytes (0x88/0x8F/0xF7), not the CS-side segment cells they resemble.  With the video window taken as
+`DS:3300..95FF` plus the strip `DS:D330..`:
+
+    1432 diverging frames = 1373 video-memory only  +  59 touching sound cells (BFAC/BFB0/BFB2/
+                                                       BFB8/BFC0/BFC2/BEFE)
+
+So the sound residue is a small, isolated family that is neither the D50E interpreter (601/601
+byte-exact vs the driven original) nor the queue nor tick placement.  The remaining hypothesis is
+the ORDER of the two ticks relative to the frame's own sound-cell writes on frames where the game
+starts/stops an effect in the same window (e.g. around death/respawn, where `9A1B -> 9DB9` queues
+0x0D).  **Next:** trap `(CS,0x06E5)` and dump `BEFE/BFAC/BFB0/BFB2` immediately before and after
+each of the two ticks on a diverging frame, and replay our two ticks over the same pre-state --
+the first field that parts company names the ordering constraint.
+
+CAVEAT for whoever picks this up: my scratch classifier had an operator-precedence bug
+(`post[c] | (post[c+1] << 8) == 1`), so any "transition vs other" split quoted before this entry is
+unreliable.  The video/non-video split above was re-measured and is sound.
