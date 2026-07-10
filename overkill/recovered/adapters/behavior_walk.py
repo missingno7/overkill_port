@@ -675,6 +675,20 @@ def _step_yseeker_6b6c6d(mem, rec: int, y_target: int, sprite_add: "int | None")
         _spawn_child_c237(mem, rec, mem.rw(DS, rec + 0x18))
 
 
+def _step_crawler_8e(mem, rec: int, tiles: LevelTileContext) -> None:
+    """Behavior 0x8E (1010:BB48; a planet-0 ground-crawler variant): [A952]=1, the BBED terrain-follow
+    move, sprite = 0x13A + 3*[A952] + (moved ? [96D2 + [233C]*2] : 0) + (3 if +0x06 != 0), then the
+    shared BBB2 tail -- the [2330] in {7F,6B,57}-gated 7476 shot spawn (offset -8,-8, sprite 3)."""
+    mem.ww(DS, 0xA952, 0x0001)                            # BB48
+    moved = _ground_follow_move_bbed(mem, rec, tiles, 0x0001)   # BBED
+    anim = mem.rw(DS, (0x96D2 + (mem.rw(DS, 0x233C) << 1)) & 0xFFFF) if moved else 0
+    sprite = (0x013A + 3 * mem.rw(DS, 0xA952) + anim
+              + (3 if mem.rw(DS, rec + 0x06) != 0 else 0)) & 0xFFFF   # BB60..BB7E
+    mem.ww(DS, rec + 0x08, sprite)                        # BBB2
+    if ground_crawler_should_spawn(mem.rw(DS, 0x2330)):   # BBB5
+        _spawn_ground_crawler_shot(mem, rec)              # BBCA
+
+
 def _reflect_0686(mem, rec: int) -> None:
     """1F8F:0686: the blocked-step reaction -- inc the +0x36 death counter, set direction 7 (or 1 when
     the record's Y (+0x04) is <= 0x60)."""
@@ -3161,6 +3175,9 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
                                  {0x6B: 0x50, 0x6C: 0x60, 0x6D: 0x70}[beh],
                                  {0x6B: 0x011F, 0x6D: 0x0124}.get(beh))
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # all paths exit jmp BC45
+        elif beh == 0x8E:
+            _step_crawler_8e(mem, rec, tiles)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # BBB2 tail exits jmp BC45
         else:
             raise RecoveryGap(f"behavior {beh:#04x} (record {rec:04X})",
                               "no native handler registered -- recover it before walking")
