@@ -30,6 +30,16 @@ a snapshot at each routine's entry, or a cold-boot harness that installs all hoo
 on first hit (the remaining harness work).  Acceptance test: the CS tables (8D92/9592/9598/C570)
 byte-equal to the bundle.  Snapshots are gitignored (regenerable).
 
+BOOT STRUCTURE (traced): the init is a `1010 <-> 254A:04D7` loop -- the game's 1010 code repeatedly
+far-calls the DOS int-21 file-read wrapper at 254A:04D7 (returning to 1010:026F / C6A0) to load its
+assets, then builds the CS tables.  The 6-of-53 verified-in-one-pass is a SNAPSHOT-TIMING artifact,
+not a lifter failure (0 diverged): a single forward run from one snapshot only exercises the routines
+called after that point, and boot routines are one-shot.  The next slice is a cold-boot harness that
+EMITS from a post-init snapshot (correct bytes) but INSTALLS + verifies while running from boot ENTRY,
+so every routine is checked on its own first hit.  liftverify emits+runs from one snapshot, so this
+needs either per-routine snapshots or a small decoupled harness (emit-dir reuse + install_hook_
+verifier from boot entry).
+
 **The cold boot cannot shortcut via static relocation.**  Checked the CS runtime tables the gameplay
 depends on -- 8D92/9192/9392/8F92 (sprite-frame), 9592 (plane seg ptr), 9598 (strip seg), 95A2,
 C570 (the video dispatch) -- against BOTH the raw MZ load module AND the container.  **None is found
