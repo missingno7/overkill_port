@@ -28,20 +28,46 @@
 > ONE native 97B2 frame (`overkill/native_frame.py`) in per-frame lockstep with a recorded demo
 > (`overkill/probes/verify_native_lockstep.py`, cached), then swap play_native onto that same frame
 > fn + add `--demo/--mirror`.  **CURRENT LOCKSTEP STATE (L1 demo, 8292 frames, PyPy, 2026-07-08):
-> 6532 byte-exact / 1432 diverging / 328 gapped** -- and of the 1432, **1362 diverge ONLY in VIDEO
-> MEMORY** (the save-under backing store DS:3300..9592 and the tile strip DS:D330..) while just
-> **70 touch any non-video cell**, nearly all of them the D50E sound-channel block (BFAC/BFB0/BFB2/
-> BFC2/BEFE) plus DS:95A0.  **The game LOGIC is therefore byte-exact on 8224 of 8292 frames.**
-> Reaching "completely accurate" now means modelling the VIDEO memory the frame writes (A846's
-> save-under + draw, A90C's restore), not more state recovery.  (The older "2810 diverging" figure came from a cache recorded
-> before the dos_re CPU/keyboard-fix bumps -- a STALE ORACLE.  Lesson: a shadow cache is only as
-> valid as the dos_re commit that recorded it; re-record after any submodule bump.)
+> 8187 byte-exact / 105 diverging / 0 GAPPED.**  Every frame now runs natively end-to-end; 98.7%
+> are byte-exact across the whole 64K DGROUP.  The 105 break down as: 47 small per-record state
+> cells, 37 save-buffer, 13 sound-channel, 7 death/respawn transition frames (the VM runs the 9908
+> continuation inside the window; the native frame returns at the exit by design), 1 mixed.
 > Standing facts: the OBJECT WALK is fully native + dry for L1 (8294/8294), L2 (6561/6561) and L3
 > (4370/4370) demos, zero divergence zero gaps; L4 walk residue: 0x93/0x81/0x80/0x7D/0x7E/0x7F + the
 > planet-4 wave family; the D50E sound engine, the 5F61 frame clock, the A66F scroll (cues+script
 > inside the row pull), the 0162 input poll, the A067 fire path and the 0922 starfield are native in
 > the lockstep frame.  play_native still runs the OLD hybrid loop -- nothing verified reaches the
 > player until charter step 1 (the unification) lands.
+
+## 2026-07-08 (cont.) - the VIDEO MODEL lands: 0 gapped frames, 8187/8292 byte-exact
+
+Four slices, each decoded then gate-verified (never tuned against the score):
+
+* **A846's SAVE-UNDER** is the entire persistent DGROUP effect of the present half.  A846 saves the
+  background under each record, 4CED draws stars, 7596 draws sprites, 5BDC blits, then A90C restores
+  and 4D64 undraws -- so at the 9B2E boundary the strip is tiles-only again.  5AC8's jump table
+  (`[CS:5AE2 + (draw_type + 3*mode)*2]`) selects the saver; geometry per type (source stride 0x68):
+  type 0 -> 3657 (8 rows x 4 B), type 1 -> 35CC (16 x 8 B), type 2 -> 356C/35AB (16 x 16 B, TWO
+  slots, second at `[rec+0x0E] + 0x140`).  `+0x0E` is the record's save pointer.
+* **The terrain STACK**, not just the window: a save block straddles the visible band, so
+  `_terrain_stack()` exposes all 224 rendered rows; rows past the stack resolve through A7EB's ring
+  mirror (`+0x5480` = 208 rows).
+* **The strip row render + ring mirror** (A7EB) at each row pull.
+* **77C5 (shield charge) + 9EE4 (energy drain)** -- the last two declared gaps.  Their pixels go to
+  B800; the only DGROUP writes are [A97A], [2384], the sound queue, and 77F6's [95DC] = 0x6ED4.
+
+Trajectory on the gate: exact 1042 -> 6532 -> 7853 -> 8133 -> 8187; diverging 7950 -> 1432 -> 159 ->
+105; gapped 328 -> 0.
+
+**Three wrong turns, each caught by measuring rather than arguing** (all recorded in loop_blockers):
+assuming 8 B/row for every draw type (gate went 6532 -> 6017, reverted, then decoded the real
+geometry); treating past-stack rows as blank (8133 -> 8128); rendering extra bands (plane row
+underflows, 8096).  And two call-target arithmetic slips on 77F6's `call` (relative to the NEXT
+instruction) that a driven run corrected in one step.
+
+Remaining 105: 47 small per-record state cells (+0x22/+0x24, +0x2A/+0x2C), 37 save-buffer, 13 sound,
+7 death/respawn transitions (need the 9908 exit continuation), 1 mixed.
+
 
 ## 2026-07-08 (cont.) - the 4FF9 fix, and the divergence is now PROVEN to be video memory
 
