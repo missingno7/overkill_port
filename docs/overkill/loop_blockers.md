@@ -1181,3 +1181,31 @@ State: 6532 exact / 1432 diverging / 328 gapped (8292-frame L1 demo).
 * Then: `33xx / 34xx / 35xx` (293 / 217 / 268 frames), `56xx` (222), `85xx` (190), `83xx` (172),
   `62xx` (171).
 * Still declared gaps: the `77C5` shield body (266 frames) and the `9EE4` drain beat (62).
+
+### 2026-07-08 — IDENTIFIED: the `DS:6Cxx/6Dxx` family is the SPRITE BUFFER (and it lives in DGROUP)
+
+Caught the writer by running the cold-start demo to the first diverging frame (97B2 frame 4205) and
+then single-stepping that one frame with a watch on `DS:6C00..6E00`:
+
+    writer 1010:A85B   (the `call 5AC8` at A858, inside A846's per-object loop)
+    es = 25CC (== DS!)   di = 6D14   ->   linear 02C9D4
+    CS:[9598] strip = 32FF     CS:[95A4] page = B800     CS:[95BC] mode = 2
+
+So **the sprite compositor blits into a DGROUP-resident buffer**, not into the tile strip
+(`CS:[9598]`).  That independently confirms the star gate's finding -- the strip carries TILES only,
+which is exactly why `verify_native_star_strip` passes with a tiles-only model.  The frame's
+composition is therefore: tiles -> the strip; sprites -> a DGROUP buffer around `DS:6C00+`;
+`5BDC` merges both into `B800`.
+
+Consequence for the lockstep gate: that sprite buffer is INSIDE the compared DGROUP window, and the
+native frame never writes it -- hence the `6C00xx 249` + `6D00xx 223` families (~470 frames).
+
+**Next slice**: model A846's blit into DGROUP.  We already own the pieces (`object_sprite_blocks_a846`
+gives per-object blocks with `di`, `pixels`, `opaque`, and the `mask` / `or_inverted` ops).  Two
+things to settle FIRST, with a driven-oracle probe rather than by guessing:
+1. the buffer's row stride (is it the same 0x68 as the strip?) and its extent;
+2. whether `5AC8` (A846's loop) DRAWS the sprites and `5A92` (A90C's loop) ERASES them, or the
+   reverse -- the values written (0x77/0x88/0xF7) look like sprite pixels, but the net per-frame
+   effect must be non-zero (we observe diffs at the 9B2E boundary), so the pairing matters.
+Note `object_sprite_blocks_a846` needs a SpriteDrawContext built from the asset bundle today; for an
+image-only native frame the banks must be read from the image instead.
