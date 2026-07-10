@@ -490,7 +490,7 @@ def run_sdl_ui(
     pygame.mixer.pre_init(frequency=44100, size=-16, channels=1, buffer=mixer_buffer)
     pygame.init()
     speaker = PcSpeakerAudio(pygame)
-    pygame.display.set_caption(f"OVERKILL (emulated {video.upper()})  -  Q/A/O/P move, Z/Space fire, F10 shot, F11 demo, F12 snapshot")
+    pygame.display.set_caption(f"OVERKILL (emulated {video.upper()})  -  Q/A/O/P move, Z/Space fire, F10 shot, F8 demo, F7 snapshot")
     screen = pygame.display.set_mode((WIDTH * scale, HEIGHT * scale), pygame.RESIZABLE)
     scan = _build_pygame_scan()
     adlib_enabled = getattr(args, "sound", "pc") == "adlib" and getattr(args, "adlib_audio", "auto") != "off"
@@ -565,7 +565,7 @@ def run_sdl_ui(
         print(f"screenshot: {out}")
 
     def caption() -> None:
-        base = f"OVERKILL (emulated {video.upper()})  -  Q/A/O/P move, Z/Space fire, F10 shot, F11 demo, F12 snapshot"
+        base = f"OVERKILL (emulated {video.upper()})  -  Q/A/O/P move, Z/Space fire, F10 shot, F8 demo, F7 snapshot"
         c = counters
         tail = (f"visible={c['visible']['n']} boundaries={c['boundary']['n']} "
                 f"blits={c['blits']['n']} timers={c['timers']['n']} retraces={c['retraces']['n']}")
@@ -593,11 +593,18 @@ def run_sdl_ui(
                 elif ev.type in (getattr(pygame, "VIDEOEXPOSE", -1), getattr(pygame, "WINDOWEXPOSED", -2)):
                     redraw_last_present()
                 elif ev.type == pygame.KEYDOWN:
-                    if ev.key == pygame.K_F12:
+                    # F7/F8 are the primary bindings.  F11/F12 are kept as aliases but are
+                    # unreliable hosts: Windows reserves F12 for the debugger and some window
+                    # managers swallow F11 (fullscreen), so a press may never reach SDL at all.
+                    # Every hotkey prints, so "did it fire?" is answerable from the console.
+                    if ev.key in (pygame.K_F7, pygame.K_F12):
+                        print("[hotkey] snapshot requested", flush=True)
                         queue_snapshot_save()
-                    elif ev.key == pygame.K_F11 and queue_demo_toggle is not None:
+                    elif ev.key in (pygame.K_F8, pygame.K_F11) and queue_demo_toggle is not None:
+                        print("[hotkey] demo record toggle", flush=True)
                         queue_demo_toggle()
                     elif ev.key == pygame.K_F10:
+                        print("[hotkey] screenshot", flush=True)
                         save_screenshot()
                     else:
                         sc = scan.get(ev.key)

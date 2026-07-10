@@ -21,9 +21,9 @@ Threading model (CPython GIL keeps this safe):
     wakes the emulator so the next frame can execute; key events go through a
     frame-accurate KeyDispatcher.
 
-Controls: Q/A/O/P move, Z or Space fire (the game's own scheme), F12 saves a
-runtime snapshot.  F11 toggles deterministic input-demo recording: it writes a
-start snapshot and records VM-delivered keyboard events until F11 is pressed
+Controls: Q/A/O/P move, Z or Space fire (the game's own scheme), F7 saves a
+runtime snapshot.  F8 toggles deterministic input-demo recording: it writes a
+start snapshot and records VM-delivered keyboard events until F8 is pressed
 again.  Esc and any other key are forwarded too (full keyboard), in case a screen
 wants them.
 
@@ -291,7 +291,7 @@ def main(argv: list[str] | None = None) -> int:
     launch.add_argument("--record-demo", default=None, metavar="NAME",
                         help="start recording an input demo at launch (boundary 0).  With a fresh boot "
                              "(no --snapshot) this records a COLD-START demo (no start snapshot) -- press "
-                             "F11 or quit to stop; combine with --no-replacements for a pure-ASM oracle demo")
+                             "F8 or quit to stop; combine with --no-replacements for a pure-ASM oracle demo")
 
     viewer = p.add_argument_group("interactive viewer")
     viewer.add_argument("--game-hz", type=float, default=36.4,
@@ -307,11 +307,11 @@ def main(argv: list[str] | None = None) -> int:
     viewer.add_argument("--adlib-chunk-ms", type=float, default=46.0,
                         help="SDL AdLib PCM chunk size in milliseconds")
     viewer.add_argument("--save-snapshot-root", default=str(ROOT / "artifacts"),
-                        help="root directory for F12 runtime snapshots")
+                        help="root directory for F7 runtime snapshots")
     viewer.add_argument("--save-demo-root", default=str(ROOT / "artifacts" / "demos"),
-                        help="root directory for F11 input demos")
+                        help="root directory for F8 input demos")
     viewer.add_argument("--save-repro-root", default=str(ROOT / "artifacts" / "repros"),
-                        help="root directory for F11 demo suffixes, verifier divergence repro demos, and crash snapshots")
+                        help="root directory for F8 demo suffixes, verifier divergence repro demos, and crash snapshots")
     viewer.add_argument("--no-crash-snapshot", action="store_true",
                         help="do not save a repro snapshot under --save-repro-root when gameplay crashes")
 
@@ -532,10 +532,10 @@ def main(argv: list[str] | None = None) -> int:
             dos_key_events.put((scancode, text))
 
         def queue_snapshot_save() -> None:
-            status["text"] = "F12 snapshots are disabled during live frame verification"
+            status["text"] = "F7 snapshots are disabled during live frame verification"
 
         def queue_demo_toggle() -> None:
-            status["text"] = "F11 input-demo recording is disabled during live frame verification"
+            status["text"] = "F8 input-demo recording is disabled during live frame verification"
 
         def verifier_loop() -> None:
             try:
@@ -1297,13 +1297,13 @@ def main(argv: list[str] | None = None) -> int:
                 root=Path(args.save_repro_root),
                 name=f"suffix_play_{args.video}",
                 boundary=boundary["n"],
-                status="interactive F11 demo suffix snapshot",
+                status="interactive F8 demo suffix snapshot",
                 metadata={
                     "program": "overkill",
                     "video": args.video,
                     "sound": args.sound,
                     "command_tail": command_tail.decode("latin1") if isinstance(command_tail, bytes) else str(command_tail),
-                    "created_by": "scripts/play.py F11 while replaying --demo",
+                    "created_by": "scripts/play.py F8 while replaying --demo",
                 },
             )
             status["text"] = f"demo suffix saved: {out}"
@@ -1337,7 +1337,7 @@ def main(argv: list[str] | None = None) -> int:
                     write_snapshot(
                         rt,
                         out,
-                        status="interactive F12 snapshot",
+                        status="interactive F7 snapshot",
                         steps=rt.cpu.instruction_count,
                         trace_tail=(),
                     )

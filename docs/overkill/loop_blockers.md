@@ -19,11 +19,14 @@ worse honesty — so the whole composition was reverted (`git checkout`, tree ba
   alias bytes; D305 = 158 B and ALL 402 ticks; then 0 to the boundary.
 * `[21A8]` at the boundary == 0x1778 == the raw size of PLAQ0.ENC (`load_container_asset`).  The
   plaque read's DGROUP-visible effect is pointers only — its buffer is NOT the alias region.
-* **The final alias fingerprints as HISCORE.ENC at 83.7%** (raw, offset 0; okmenu 46%, thend 43%).
-  The remaining ~16% is the score TABLE rendered over the decoded image — the 532D/5283 family
-  compositing glyphs into the scratch.  So the boundary alias = a RENDERED front-end screen, not a
-  file dump.  Reproducing it byte-exactly requires the front-end glyph/text renderer + the
-  high-score table state — the front-end campaign, not a composition of gameplay pieces.
+* **CORRECTED 2026-07-10 (the first fingerprint was WRONG).**  "83.7% match to HISCORE.ENC" was
+  ZERO-INFLATED: it counted zero==zero agreements.  A zero-aware check (positions where either side
+  is nonzero) scores **0 / 1871**.  The truth is simpler and better: **the strip alias at the 97B2
+  boundary is ENTIRELY ZERO** (11472 bytes, 0 nonzero).  The front-end screens are drawn into the
+  scratch and then CLEARED before the boundary.  So 98EB's alias effect is "zero the strip alias",
+  not "reproduce a rendered screen", and no glyph renderer is needed for the DGROUP compare.
+  My composition diverged by 7552 bytes precisely because it WROTE raw file bytes where the VM
+  leaves zeros.  Lesson: never fingerprint sparse buffers with a plain byte-equality ratio.
 * The window's screen sequence (by alias writers): game-over screen (57E6) → high-score screen
   (with the table drawn) → title flow → plaque read (non-alias) → setup tail → D305 plaque wait.
 * The menu PICK (level-select cell) is USER INPUT that exists only in the VM's key table during the

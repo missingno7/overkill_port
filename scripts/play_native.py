@@ -7,9 +7,11 @@ this script owns NOTHING gameplay-shaped.
 
 What this shell does, and it is all host boundary:
   * a window (pygame) and the Tandy palette blit;
-  * the keyboard: pressed host keys are written into the image's own INT9 key-state table
-    (DS:98C4..), exactly as the IRQ writes it -- the game's 0162 poll decodes DS:98BE from there.
-    The decoded word is NEVER synthesised here;
+  * the keyboard: the WHOLE host keyboard is written into the image's own INT9 key-state table
+    (DS:98C4..), exactly as the IRQ writes it -- the game's 0162 poll then decodes DS:98BE through
+    its OWN configurable control map (DS:213E/2146).  The shell never decides which keys mean what,
+    and never synthesises the decoded word.  Default scheme: Q/A/O/P move, Space fires, Z (or TAB)
+    applies a collected upgrade;
   * frame pacing, and the two host inputs the frame declares: ``isr_ticks`` (2 in steady state --
     the 0679 frame-wait's pair) and ``level_bytes`` (the LEV{n}MAP.BIC file C679 re-reads on death);
   * RENDERING, read back from the image: the tile window from the plane, the starfield plate from
@@ -46,7 +48,6 @@ from overkill.native_walk_frame import project_state  # noqa: E402
 from overkill.recovered.adapters.flat_memory import MutFlatMemory  # noqa: E402
 from overkill.recovered.domain.gaps import RecoveryGap  # noqa: E402
 from overkill.recovered.domain.starfield import STAR_COUNT, Star, StarfieldState  # noqa: E402
-from overkill.recovered.systems.input import FIXED_DIRECTION_KEYS  # noqa: E402
 from overkill.recovered.systems.tandy_screen import (  # noqa: E402
     SCREEN_HEIGHT,
     SCREEN_WIDTH,
@@ -67,21 +68,49 @@ _DS = 0x25CC
 _TABLE_75A6, _TABLE_768E, _TABLE_7746 = 0x9392, 0x9192, 0x8F92
 _SPRITE_CELL_STRIDE_OFF = 0x1028   # ds:[1028] -- 75A6's +10-slot source advance is this >> 1
 
-# Host key -> XT scancode (recovered.systems.input owns which scancodes the game reacts to).
-_HOST_KEY_BY_SCANCODE = {0x48: "K_UP", 0x50: "K_DOWN", 0x4B: "K_LEFT", 0x4D: "K_RIGHT",
-                         0x39: "K_SPACE", 0x0F: "K_TAB"}
-#: every scancode this shell can set -- all cleared in the image's key table each frame
-_ALL_INPUT_SCANCODES = tuple(_HOST_KEY_BY_SCANCODE)
+def _build_scan_map(pygame) -> dict:
+    """Host key -> XT scancode, the FULL keyboard, shared with the VM viewer (scripts/sdl_view).
 
+    THE SHELL MUST NOT DECIDE WHICH KEYS THE GAME READS.  OVERKILL's control map is CONFIGURABLE and
+    lives in the image (``DS:213E``, or ``DS:2146`` when ``[0010] == 2``); ``0162`` packs those eight
+    scancodes MSB-first and ORs in a fixed set.  In this corpus the map is
+    ``[--, --, 2C(Z), 39(Space), 10(Q), 1E(A), 18(O), 19(P)]`` -- so Z is APPLY-UPGRADE (bit 0x20)
+    and Q/A/O/P are the movement keys, none of which a fixed six-key list contains.
 
-def _pressed_scancodes(pygame, keys) -> set[int]:
-    """Host key state -> the XT scancode set the image's key table expects."""
-    out: set[int] = set()
-    for scancode, _mask in FIXED_DIRECTION_KEYS:
-        key_name = _HOST_KEY_BY_SCANCODE.get(scancode)
-        if key_name is not None and keys[getattr(pygame, key_name)]:
-            out.add(scancode)
+    An earlier version of this file wrote only ``FIXED_DIRECTION_KEYS``, so Z, Q, A, O and P were
+    never written into the key table at all: the owner found Z dead and had to press TAB (the fixed
+    alias for the same bit).  Writing the whole keyboard is both simpler and correct -- and it makes
+    an in-game key REDEFINE work the day that screen lands, with no change here.
+    """
+    name_scan = {
+        "escape": 0x01, "-": 0x0C, "=": 0x0D, "backspace": 0x0E, "tab": 0x0F,
+        "[": 0x1A, "]": 0x1B, "return": 0x1C, "enter": 0x1C,
+        "left ctrl": 0x1D, "right ctrl": 0x1D, ";": 0x27, "'": 0x28,
+        "`": 0x29, "left shift": 0x2A, "\\": 0x2B, ",": 0x33, ".": 0x34,
+        "/": 0x35, "right shift": 0x36, "left alt": 0x38, "right alt": 0x38,
+        "space": 0x39, "caps lock": 0x3A,
+        "up": 0x48, "down": 0x50, "left": 0x4B, "right": 0x4D,
+    }
+    for i, ch in enumerate("1234567890"):
+        name_scan[ch] = 0x02 + i
+    for i, ch in enumerate("qwertyuiop"):
+        name_scan[ch] = 0x10 + i
+    for i, ch in enumerate("asdfghjkl"):
+        name_scan[ch] = 0x1E + i
+    for i, ch in enumerate("zxcvbnm"):
+        name_scan[ch] = 0x2C + i
+    out = {}
+    for name, code in name_scan.items():
+        try:
+            out[pygame.key.key_code(name)] = code
+        except (ValueError, AttributeError):
+            continue        # name unknown to this SDL build
     return out
+
+
+def _pressed_scancodes(pygame, keys, scan_map) -> set[int]:
+    """Every host key currently down, as XT scancodes.  The game decides what they mean."""
+    return {sc for key, sc in scan_map.items() if keys[key]}
 
 
 def _level_bytes(container_data: bytes, planet: int, _cache: dict = {}) -> bytes:
@@ -324,6 +353,7 @@ def main(argv=None) -> int:
 
     display = PygameDisplay(scale=args.scale)
     pygame = display.pygame
+    scan_map = _build_scan_map(pygame)
 
     level = args.level
     difficulty = 0
@@ -360,11 +390,11 @@ def main(argv=None) -> int:
                     running = False
 
             if hold is None:
-                # keyboard -> the image's own INT9 key table; 0162 decodes it inside the frame
-                for sc in _ALL_INPUT_SCANCODES:
-                    img.wb(_DS, (0x98C4 + sc) & 0xFFFF, 0)
-                for sc in _pressed_scancodes(pygame, pygame.key.get_pressed()):
-                    img.wb(_DS, (0x98C4 + sc) & 0xFFFF, 1)
+                # keyboard -> the image's own INT9 key table; 0162 decodes it inside the frame,
+                # through the game's OWN (configurable) control map.  We write the raw keyboard.
+                pressed = _pressed_scancodes(pygame, pygame.key.get_pressed(), scan_map)
+                for sc in scan_map.values():
+                    img.wb(_DS, (0x98C4 + sc) & 0xFFFF, 1 if sc in pressed else 0)
                 try:
                     advance_gameplay_frame_97b2(img, isr_ticks=2,
                                                 level_bytes=_level_bytes(container_data, planet))

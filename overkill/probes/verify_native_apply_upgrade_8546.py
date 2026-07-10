@@ -1,8 +1,11 @@
 """Driven-oracle gate for ``1010:8546`` -- the APPLY-UPGRADE handler (the TAB key).
 
-**No recorded demo ever presses TAB**, so the lockstep gate cannot reach this handler and
-``native_frame`` used to fail loud there.  The owner hit it in play_native the moment they picked up
-a powerup and tried to apply it.
+The apply-upgrade BIT (0x20) has two sources: the fixed key TAB (0x0F) and the CONFIGURABLE control
+map's entry 2, which in this corpus is **Z (0x2C)**.  They are aliases for the same action.  The
+demos press Z 40 times across the corpus -- but never in the L1 cold-start demo the lockstep gate
+replays, and that demo never holds a powerup anyway (``[95FA]`` is FFFF on all 8292 frames).  So the
+gate cannot reach this handler, and ``native_frame`` used to fail loud there.  The owner hit it in
+play_native the moment they collected a powerup and tried to apply it.
 
 Rather than lower the bar, this probe SYNTHESISES the missing coverage: it replays a demo whose
 snapshot already holds a powerup marker (``[95FA] != FFFF``), writes the TAB scancode (0x0F -> input

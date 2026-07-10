@@ -1495,9 +1495,11 @@ UPGRADE_SOUND = 0x09
 def _apply_upgrade_8546(mem) -> None:
     """``1010:8546`` -- the APPLY-UPGRADE handler (the TAB key, input bit 0x20).
 
-    Reached from 9B97 when ``[2350] > 0xB6`` and the player taps TAB while holding a pickup.  NO
-    RECORDED DEMO EVER PRESSES TAB, so the lockstep gate never exercises this path; the oracle for it
-    was synthesised by injecting the TAB scancode into the pure VM's own INT9 key table at a 9B2E
+    Reached from 9B97 when ``[2350] > 0xB6`` and input bit 0x20 is set.  TWO keys set that bit: the
+    fixed TAB (0x0F) and the CONFIGURABLE control map's entry 2, which in this corpus is Z (0x2C) --
+    aliases for one action.  The demos press Z 40 times, but never in the L1 cold-start demo the
+    lockstep gate replays (which also never holds a powerup), so the gate cannot reach this handler.
+    The oracle was synthesised by injecting the key into the pure VM's own INT9 key table at a 9B2E
     boundary on a demo whose snapshot holds a marker (``probes/verify_native_apply_upgrade_8546``).
 
         8546  cmp [95FA],FFFF ; jz ret            ; nothing held -> no-op

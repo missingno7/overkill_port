@@ -96,8 +96,8 @@ Its fingerprint in DGROUP is a session reset + a level reload + D305:
 reset, `2078` cleared, the 2324..2348 clocks reset, 402 ticks (so `D305` ran too).
 
 **MEASURED 2026-07-10 (attempt + revert; full detail in loop_blockers):** the strip alias at the
-boundary is HISCORE.ENC (83.7% raw match) with the score TABLE composited over it -- a RENDERED
-screen.  57E6 / the title flow / D305 attribute as 6131 / 4097 / 158 DGROUP bytes; the setup tail
+boundary is ENTIRELY ZERO (11472 bytes, zero nonzero).  An earlier note here claimed it matched
+HISCORE.ENC at 83.7% -- that ratio was zero-inflated and is WRONG (zero-aware: 0/1871).  57E6 / the title flow / D305 attribute as 6131 / 4097 / 158 DGROUP bytes; the setup tail
 (96EE + 0B3E + C3A6-family + the plaq pointers, `[21A8] = len(PLAQ0.ENC) = 0x1778`) is ~209 and all
 composable today.  The ONLY hard residue is the two rendered screens in the alias -- i.e. the
 front-end text/glyph renderer.  The menu PICK is user input (supply it; the demo picks cell 0).
