@@ -1289,3 +1289,30 @@ row the probe lands on), the class table at `DS:C3AA`, and `[215A]`'s exact sub-
 **Next probe:** at `(CS,0x9BCA)`, dump the 5073 probe's full inputs AND its computed
 `tile_offset`, plus `plane[offset+0xD]` / `plane[offset+0xE]` and their class bytes, from BOTH sides.
 The first differing input names the stage that corrupted it.
+
+### 2026-07-08 (cont.) — the FULL divergence accounting (8292-frame L1 demo)
+
+    1432 diverging frames
+      1362  video memory ONLY   (save-under backing store DS:3300..9592, tile strip DS:D330..)
+        70  touch a non-video cell, of which:
+              7  death/respawn TRANSITION frames -- the VM runs the 9908 continuation inside the
+                 window (A95A FFFF -> 3, A97A 0x57 -> 1, 2384 0x0E -> 0); the native frame returns
+                 at the exit by design, so these can only close when the exit continuations land
+             63  the D50E sound-channel block (BFB0/BFB1 period, BFB2/BFB8 counters, BEFE) and a
+                 small DS:959B..95A0 family
+
+**Verified along the way (do not redo):**
+* 2 INT8 ticks per 9B2E frame -- confirmed by the per-frame delta of `[0054]` and `[BF00]` (+/-2,
+  both mod 4).  An earlier count of "4" was an ARTIFACT of patching `CPU8086.step` class-wide, which
+  counts BOTH the ref and cand CPUs.  When instrumenting, patch the ref instance only.
+* All INT8 ticks are delivered while the CPU spins at `1010:0679` (the frame-wait), i.e. after the
+  60A2 clock stage -- which is exactly where `_isr_effects_two_ticks` already runs them.  So the
+  sound residue is a MODEL bug in the D50E interpreter, not tick placement.
+* Sound queue example (frame 4821): the VM has `BEFF = 0x0D` where we have 0.  `mov [BEFF],0Dh`
+  exists only at `9DE4`, inside `9DB9`, whose callers are `9A1B` and `C4B3` -- neither is the AB00
+  pickup table.  That frame is a respawn frame, so the queue came from the respawn path.
+
+**Priority now:** (1) the video model (1362 frames; also unblocks play_native's unification);
+(2) the D50E channel-step bug (~63 frames -- one frame shows `ch2 +9 status` vm=0 / nat=2, i.e. our
+fetch took the NOTE path where the VM took REST: check the `0x80..0x85` op dispatch and the
+`>= 0xE0` duration prefix against a driven trace of D5AC); (3) the exit continuations (7 frames).
