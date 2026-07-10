@@ -929,6 +929,40 @@ def _step_controller_1c(mem, rec: int) -> None:
     mem.ww(DS, rec + 0x08, (mem.rw(DS, rec + 0x06) + 0x3B) & 0xFFFF)
 
 
+def _step_controller_15(mem, rec: int) -> None:
+    """Behavior 0x15 (the shared 8D4F/1F8F:027A body + the 03E6 arrival; a planet-0 wave controller):
+    seek the A482 schedule (x+0x20/y, mode 3); ON ARRIVAL advance the schedule +8 and, unless the next
+    entry is FFFF, 81F4-spawn ONE child with the entry's target pair in +0x34/+0x32, behaviour 0x16 &
+    +0x36 = A5D4 (or 0x17 & A5C4 when the controller's +0x02 != 0x40), +0x1C = 0x14, +0x20 = 3; A47E++.
+    ALL paths end in the 0448 sprite tail."""
+    a482 = mem.rw(DS, 0xA482)
+    target_x = (mem.rw(DS, a482) + 0x20) & 0xFFFF
+    target_y = mem.rw(DS, (a482 + 2) & 0xFFFF)
+    blocked = _apply_seek(mem, rec, target_y, target_x, 3)
+    if blocked:                                          # 03E6
+        mem.ww(DS, 0xA482, (a482 + 8) & 0xFFFF)
+        if mem.rw(DS, (a482 + 4) & 0xFFFF) != 0xFFFF:    # 03EB: schedule not FFFF-ended
+            slot = _alloc(mem, 0x95D8, EFFECT_POOL_BASE, EFFECT_POOL_WRAP, EFFECT_SLOTS)  # 81F4
+            if slot != 0xFFFF:
+                if mem.rb(DS, 0x98C0):
+                    mem.wb(DS, 0xBEFF, 0x0B)
+                for off, val in enemy_spawn_stamp_8209(mem.rw(DS, rec + 0x02),
+                                                       mem.rw(DS, rec + 0x04)).items():
+                    mem.ww(DS, slot + off, val)
+                mem.ww(DS, slot + 0x34, (mem.rw(DS, (a482 + 4) & 0xFFFF) + 0x20) & 0xFFFF)  # 03FD
+                mem.ww(DS, slot + 0x32, mem.rw(DS, (a482 + 6) & 0xFFFF))                    # 0404
+                if mem.rw(DS, rec + 0x02) == 0x40:       # 0412
+                    mem.ww(DS, slot + 0x18, 0x0016)
+                    mem.ww(DS, slot + 0x36, 0xA5D4)
+                else:
+                    mem.ww(DS, slot + 0x18, 0x0017)
+                    mem.ww(DS, slot + 0x36, 0xA5C4)
+                mem.ww(DS, slot + 0x1C, 0x0014)          # 0422
+                mem.ww(DS, slot + 0x20, 0x0003)          # 0427
+                mem.ww(DS, 0xA47E, (mem.rw(DS, 0xA47E) + 1) & 0xFFFF)
+    mem.ww(DS, rec + 0x08, (mem.rw(DS, rec + 0x06) + 0x3B) & 0xFFFF)   # 1F8F:0448
+
+
 def _step_controller_7d(mem, rec: int) -> None:
     """Behavior 0x7D / 0x7E (the shared 8D4F/1F8F:027A body; these ids carry `+0x24` mode 0x7D, so 027A
     takes the ``0309`` arrival branch): seek the A482 schedule (x+0x20/y, 5DB2 mode 3); ON ARRIVAL
@@ -3105,6 +3139,9 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
             _postmove_bc45(mem, rec, tiles, with_drift=False)   # 8D54 exits jmp BC4B
         elif beh == 0x1C:
             _step_controller_1c(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=False)   # the 8D4F stub exits jmp BC4B
+        elif beh == 0x15:
+            _step_controller_15(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=False)   # the 8D4F stub exits jmp BC4B
         elif beh == 0x1D:
             _step_formation_1d(mem, rec)
