@@ -59,6 +59,29 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-11 — LANDMARK: all six planets PLAY end to end; only the 9844 victory story remains for the win
+
+The whole GAMEPLAY is now native across every planet -- boot a cold level, play planets 1..5 AND the
+mothership (planet 0), fight every enemy, die/respawn, and game-over -> restart.  What is left is only
+the VICTORY sequence shown when the mothership is beaten.
+
+### The mothership enemy set + tile-cue, all byte-exact this session
+The lifter-assisted pipeline (capture_pure_vm_snapshot -> liftverify -> transcribe -> driven gate)
+cleared planet 4 (0x7D/0x81/0x93) and then the ENTIRE mothership: `_planet0_cue` (the 7BCB 23-handler
+tile-cue, verify_native_planet0_cue 884/884) and every behaviour it + the level script spawn --
+0x6B/0x6C/0x6D (2217/2217), 0x8E (1038), 0x88 (1120), 0x6F/0x70 (475), 0x15 (transcription+integration),
+0x16/0x17 (1516), 0x18 (612), and 0x04's planet-0 8-way branch (305/305).  Each gate caught real
+transcription bugs (a decimal/hex offset, an inc-in-the-wrong-branch, a throttled-C237 stale bx, an
+off-by-one scroll drift).  **Cold planet-0 play now runs 3000 frames CLEAN** (game-over -> restart at
+tick 1167 once menu_pick is passed -- the "gap" there was a missing host input, not an enemy gap).
+
+### The ONE remaining piece for a WINNABLE game: the 9844 victory story
+Beating the mothership (9734 with DS:2356==0) -> `1010:9844`: a call to 5BEE, the far text renderer
+`1F8F:0980` (ax = BED0; 50 instructions, key-state-aware), a 0x4B-iteration 50C9 delay, a 0162/[98BE]
+bit-0x10 FIRE-WAIT, then a 5A00/5A6C panel draw.  Recover `1F8F:0980` (moderate) + the 9844 flow, then
+present it in play_native on the mothership-beaten path (followed by the already-decoded OPAGE ending).
+That -- and nothing else in gameplay -- is what stands between here and a start-to-victory playthrough.
+
 ## 2026-07-10 (late+++++++) — ALL 6 mothership enemy behaviours recovered; only the cue-table plumbing + story remain
 
 The lifter-assisted actor recovery cleared planet 4 (0x7D/0x81/0x93) and has now recovered EVERY enemy
