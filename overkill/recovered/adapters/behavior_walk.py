@@ -649,6 +649,170 @@ def _step_morpher_81(mem, rec: int) -> None:
         mem.ww(DS, rec + 0x18, 0x93)              # 046D: morph to behavior 0x93
 
 
+def _reflect_0686(mem, rec: int) -> None:
+    """1F8F:0686: the blocked-step reaction -- inc the +0x36 death counter, set direction 7 (or 1 when
+    the record's Y (+0x04) is <= 0x60)."""
+    mem.ww(DS, rec + 0x36, (mem.rw(DS, rec + 0x36) + 1) & 0xFFFF)   # 0686
+    mem.ww(DS, rec + 0x06, 7 if mem.rw(DS, rec + 0x04) > 0x60 else 1)   # 068B/0694
+
+
+def _step_stepper_93(mem, rec: int, tiles: LevelTileContext) -> None:
+    """Behavior 0x93 (8D5F -> 1F8F:0473; the morph target of 0x81): a multi-directional AFD8 stepper
+    gated on the A6F0 schedule, with a +0x1C substate, per-direction step sequences, the 0686 blocked
+    reaction, a [232A]-clocked sprite + [2340]-clocked BAE1 emit / 7476 shot (path C), and a +0x36
+    death counter (the caller kills at >= 0x64).  Faithful transcription of the lifter-verified
+    1F8F:0473 (liftverify ORACLE_PASSING); gated by verify_native_behavior_93 over the L4 demo."""
+    def rw(o):
+        return mem.rw(DS, (rec + o) & 0xFFFF)
+
+    def ww(o, v):
+        mem.ww(DS, (rec + o) & 0xFFFF, v)
+
+    def afd8():
+        return _afd8_step(mem, rec, tiles)
+
+    def emit_bae1():                                    # 1010:BAE1: dir-4 C237 child spawn
+        saved = rw(0x06)
+        ww(0x06, 0x04)
+        _spawn_child_c237(mem, rec, 0x93)
+        ww(0x06, saved)
+
+    bb = 0
+    while True:
+        if bb == 0:                                    # 0473
+            bb = 2 if mem.rw(DS, 0xA482) == 0xA6F0 else 1
+        elif bb in (1, 4):                             # 047B / 0489
+            bb = 51
+        elif bb == 2:                                  # 047E
+            bb = 5 if rw(0x1C) == 0 else 3
+        elif bb == 3:                                  # 0484: dec the substate
+            ww(0x1C, (rw(0x1C) - 1) & 0xFFFF)
+            bb = 5 if rw(0x1C) == 0 else 4
+        elif bb == 5:                                  # 048C: direction dispatch
+            bb = 13 if rw(0x06) == 0 else 6
+        elif bb == 6:                                  # 0492
+            bb = 13 if rw(0x06) == 1 else 7
+        elif bb == 7:                                  # 0498
+            bb = 13 if rw(0x06) == 7 else 8
+        elif bb == 8:                                  # 049E
+            bb = 9 if rw(0x06) == 4 else 25
+        elif bb == 9:                                  # 04A4: dir 4 -> 4x AFD8
+            afd8(); afd8(); afd8()
+            bb = 12 if afd8() else 10
+        elif bb == 10:                                 # 04C6
+            bb = 12 if rw(0x02) >= 0x00D0 else 11
+        elif bb == 11:                                 # 04CD
+            bb = 53
+        elif bb == 12:                                 # 04D0
+            ww(0x06, 0)
+            bb = 13
+        elif bb == 13:                                 # 04D5: AFD8 + 0686 on blocked
+            if afd8():
+                _reflect_0686(mem, rec)                # 04DF: block 14
+            bb = 15
+        elif bb == 15:                                 # 04E2
+            if afd8():
+                _reflect_0686(mem, rec)                # 04EC: block 16
+            bb = 17
+        elif bb == 17:                                 # 04EF
+            last = afd8()
+            if last:
+                _reflect_0686(mem, rec)                # 04F9: block 18
+            bb = 21 if last else 20                    # 04FC
+        elif bb == 20:                                 # 04FE
+            ww(0x36, 0)
+            ww(0x06, 0)
+            bb = 21
+        elif bb == 21:                                 # 0508
+            bb = 23 if rw(0x02) <= 0x0020 else 22
+        elif bb == 22:                                 # 050E
+            bb = 53
+        elif bb == 23:                                 # 0511
+            ww(0x06, 0x06)
+            bb = 25 if (rw(0x04) & 0x02) == 0 else 24  # 0516 test [bp+4],2
+        elif bb == 24:                                 # 051D
+            ww(0x06, 0x02)
+            bb = 25
+        elif bb == 25:                                 # 0522: sprite + [98A9] gate
+            ww(0x08, ((mem.rw(DS, 0x232A) >> 3) + 0x016A) & 0xFFFF)
+            bb = 27 if mem.rb(DS, 0x98A9) == 0 else 26
+        elif bb == 26:                                 # 0538: push dir, dir 4, 5x AFD8, pop dir
+            saved = rw(0x06)
+            ww(0x06, 0x04)
+            for _ in range(5):
+                afd8()
+            ww(0x06, saved)
+            bb = 27
+        elif bb == 27:                                 # 056B: [2340] & 0xFF == 0xFF ?
+            bb = 29 if (mem.rw(DS, 0x2340) & 0xFF) != 0xFF else 28
+        elif bb == 28:                                 # 0576: BAE1 emit + inc [2340]
+            emit_bae1()
+            mem.ww(DS, 0x2340, (mem.rw(DS, 0x2340) + 1) & 0xFFFF)
+            bb = 29
+        elif bb == 29:                                 # 0582
+            bb = 31 if mem.rw(DS, 0x2340) == 0 else 30
+        elif bb == 30:                                 # 0589
+            bb = 32 if mem.rw(DS, 0x2340) != 0x02BD else 31
+        elif bb == 31:                                 # 0591: 7476 shot + inc [2340]
+            _spawn_enemy_shot_7476(mem, rec)
+            mem.ww(DS, 0x2340, (mem.rw(DS, 0x2340) + 1) & 0xFFFF)
+            bb = 32
+        elif bb == 32:                                 # 059D
+            bb = 44 if rw(0x04) == 0 else 33
+        elif bb == 33:                                 # 05A3
+            bb = 37 if rw(0x04) == 0x00C0 else 34
+        elif bb == 34:                                 # 05AA: cmp [bp+6], 6
+            bb = 36 if rw(0x06) == 6 else 35
+        elif bb == 35:                                 # 05B0
+            bb = 45
+        elif bb == 36:                                 # 05B3
+            bb = 38
+        elif bb == 37:                                 # 05B5: dir 4, 5x AFD8
+            ww(0x06, 0x04)
+            for _ in range(5):
+                afd8()
+            bb = 38
+        elif bb == 38:                                 # 05E2: dir 6, AFD8 chain until blocked
+            ww(0x06, 0x06)
+            bb = 43 if afd8() else 39
+        elif bb == 39:                                 # 05F1
+            bb = 43 if afd8() else 40
+        elif bb == 40:                                 # 05FB
+            bb = 43 if afd8() else 41
+        elif bb == 41:                                 # 0605
+            bb = 43 if afd8() else 42
+        elif bb == 42:                                 # 060F
+            bb = 51
+        elif bb == 43:                                 # 0611
+            ww(0x06, 0x02)
+            bb = 51
+        elif bb == 44:                                 # 0618: dir 4, 5x AFD8
+            ww(0x06, 0x04)
+            for _ in range(5):
+                afd8()
+            bb = 45
+        elif bb == 45:                                 # 0645: dir 2, AFD8 chain until blocked
+            ww(0x06, 0x02)
+            bb = 50 if afd8() else 46
+        elif bb == 46:                                 # 0654
+            bb = 50 if afd8() else 47
+        elif bb == 47:                                 # 065E
+            bb = 50 if afd8() else 48
+        elif bb == 48:                                 # 0668
+            bb = 50 if afd8() else 49
+        elif bb == 49:                                 # 0672
+            bb = 51
+        elif bb == 50:                                 # 0674
+            ww(0x06, 0x06)
+            bb = 51
+        elif bb == 51:                                 # 0679: final X-direction
+            if rw(0x02) >= 0x0080:
+                ww(0x06, 0x04)                         # 0680: block 52
+            return                                     # 0685: retf
+        elif bb == 53:                                 # 0685
+            return
+
+
 def _step_controller_1c(mem, rec: int) -> None:
     """Behavior 0x1C (the planet-2 WAVE CONTROLLER; the shared 8D4F/1F8F:027A body + the 03A6
     arrival): seek the A482-schedule waypoint (x+0x20/y, 5DB2 mode 3); ON ARRIVAL advance the
@@ -2961,6 +3125,11 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
         elif beh == 0x81:
             _step_morpher_81(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=False)   # the 8D57 stub exits jmp BC4B
+        elif beh == 0x93:
+            _step_stepper_93(mem, rec, tiles)
+            if mem.rw(DS, rec + 0x36) >= 0x64:                  # 8D64: the +0x36 death counter
+                _bfc7_touch_death(mem, rec)                     # 8D6D
+            _postmove_bc45(mem, rec, tiles, with_drift=False)   # 8D6A/8D70: jmp BC4B
         else:
             raise RecoveryGap(f"behavior {beh:#04x} (record {rec:04X})",
                               "no native handler registered -- recover it before walking")

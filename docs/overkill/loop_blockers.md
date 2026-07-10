@@ -4,7 +4,17 @@ Open items the autonomous loop attempted but could not finish byte-exact. Do NOT
 re-attempt these in the loop; they need a reproduction trace and/or gameplay
 context. Each has the analysis already done so a human can pick up fast.
 
-## 2026-07-10 — behavior 0x93 (planet-4): LIFTED + fully structurally mapped, a MAJOR handler (next slice)
+## 2026-07-10 — behavior 0x93 (planet-4): DONE (byte-exact) -- planet 4 now plays 3000 frames CLEAN
+
+**FILLED** (`verify_native_behavior_93` 2540/2540, 0 diverging): `_step_stepper_93` = the full 54-block
+1F8F:0473 transcription (schedule gate, +0x1C substate, +0x06 direction dispatch, per-direction AFD8
+step chains, the 0686 blocked reaction [inc the +0x36 death counter + reflect dir], the [232A] sprite +
+[2340]-clocked BAE1 emit / 7476 shot, the +0x36>=0x64 death via the 8D5F caller).  Recovered via the
+lifter pipeline; the gate caught the single hand-transcription bug (a `cmp [bp+6],6` misread as ==0).
+The planet-4 chain 0x7D->0x81->0x93 is now fully native: **cold planet-4 play runs 3000 frames with no
+gap** (was tick 16 before 0x7D).
+
+## (superseded) 2026-07-10 — behavior 0x93 (planet-4): LIFTED + mapped
 
 `EFC4[0x93] = 8D5F -> call far 1F8F:0473 ; then [bp+0x36] >= 0x64 -> BFC7 death ; jmp BC4B`.  It is the
 morph target of 0x81 (planet-4 cold play reaches it at tick 48).  liftverify 1F8F:0473 ORACLE_PASSING
