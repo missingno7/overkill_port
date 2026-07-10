@@ -23,21 +23,110 @@
 > `trap=` kwarg makes on_ref_step fire only at the addresses a probe acts on (semantics-identical:
 > same cache bytes)**; cold-boot probes MUST pass
 > `overkill.launch.build_command_tail("tandy", "pc")`.
-> Suite green: 1225 passed / 23 skipped (2026-07-07).
+> Suite green: 1223 passed / 23 skipped (2026-07-10).
 > **THE ACTIVE CAMPAIGN: [`campaigns/demo_lockstep.md`](campaigns/demo_lockstep.md)** -- grow the
 > ONE native 97B2 frame (`overkill/native_frame.py`) in per-frame lockstep with a recorded demo
 > (`overkill/probes/verify_native_lockstep.py`, cached), then swap play_native onto that same frame
-> fn + add `--demo/--mirror`.  **CURRENT LOCKSTEP STATE (L1 demo, 8292 frames, PyPy, 2026-07-08):
-> 8187 byte-exact / 105 diverging / 0 GAPPED.**  Every frame now runs natively end-to-end; 98.7%
-> are byte-exact across the whole 64K DGROUP.  The 105 break down as: 47 small per-record state
-> cells, 37 save-buffer, 13 sound-channel, 7 death/respawn transition frames (the VM runs the 9908
-> continuation inside the window; the native frame returns at the exit by design), 1 mixed.
+> fn + add `--demo/--mirror`.  **CURRENT LOCKSTEP STATE (L1 demo, 8292 frames, PyPy, 2026-07-10):
+> 8285 byte-exact / 7 diverging / 0 GAPPED.**  Every frame runs natively end-to-end and 99.92% are
+> byte-exact across the whole 64K DGROUP.  The 7 are EXACTLY the death/respawn windows
+> (4636/4821/5018/5379/6495/7143/7595): the VM runs a 418626-instruction continuation inside the
+> window (`9B16 -> 4DBF` = the LEVEL RE-INIT, then `9908 -> C4DB`, then the `978F` loop re-entry)
+> which the native frame returns before, by design.  That continuation IS the remaining work; its
+> full call map comes from `overkill/probes/map_frame_window.py` (`pypy -m
+> overkill.probes.map_frame_window 5018`).
+>
+> **RUN THE GATE AS `pypy -m overkill.probes.verify_native_lockstep "" 20000`.** The shadow cache is
+> keyed on an EXACT `max_frames` match and the recorded budget is 20000; a bare invocation misses the
+> cache, re-records the whole demo, and dies on the demo tail (FRAME VERIFY TIMEOUT at ref frame
+> 20639).  A record takes ~8 min under PyPy, a cached replay ~1 min.
+>
+> **Two HOST INPUTS, not game state, are supplied to the frame rather than compared:** the key table
+> (the demo pump's INT9 injection; raw channel cells excluded, every downstream effect compared) and
+> the INT8 TICK COUNT per window (`advance_gameplay_frame_97b2(mem, isr_ticks=...)`, recorded by the
+> gate from the INT8 vector 1010:06E5; true distribution `{0:2, 1:1, 2:8284, 7:1, 402:4}`).  The tick
+> count could NOT be excluded instead: `[0054]`/`[BF00]` are 2-bit counters, so a 1-tick window is
+> indistinguishable from a 2-tick one afterwards, yet leaves different SOUND state -- and that state
+> is compared.
 > Standing facts: the OBJECT WALK is fully native + dry for L1 (8294/8294), L2 (6561/6561) and L3
 > (4370/4370) demos, zero divergence zero gaps; L4 walk residue: 0x93/0x81/0x80/0x7D/0x7E/0x7F + the
 > planet-4 wave family; the D50E sound engine, the 5F61 frame clock, the A66F scroll (cues+script
 > inside the row pull), the 0162 input poll, the A067 fire path and the 0922 starfield are native in
 > the lockstep frame.  play_native still runs the OLD hybrid loop -- nothing verified reaches the
 > player until charter step 1 (the unification) lands.
+
+## 2026-07-10 -- lockstep L1: 32 -> 7 diverging; the residue is exactly the death continuation
+
+Four gated slices, each proved by DRIVING the original rather than reading the listing (the standing
+lesson of this port: a listing shows what CAN run, driving shows what DID).
+
+1. **`1b1081c` -- the shadow cache carries the tile STRIP (format 4); the save-under reads it.**
+   `_save_under_a846` had been DERIVING the strip from the tile plane, because the replay cache did
+   not carry the strip's above-DGROUP bytes.  The derivation is provably wrong above the visible
+   window (`[234C]` steps 0x68 per frame but a band is written only at a row pull, so the physical
+   row above the window depends on frames-since-pull; the ring wraps at 0x5480/0x68 = 208 rows).
+   Two attempts to MODEL that were refuted by the gate (extending the ladder: 8096 exact; mirroring
+   at -0x5480: 8106).  Fixing the INSTRUMENT instead -- record the strip, dedup by sha1 like the
+   plane -- let the save-under become what the original is: a `rep movsw` straight out of the strip.
+   32 -> 11 diverging.
+
+2. **`2f647fa` -- `1F8F:0209`'s two missing calls; the 2150 draw scratch proved dead.**
+   * `215E`/`2160`/`2161` (frames 4822/5019): the coordinate decoder (`2718` x1 / `3322` x4 /
+     `4445` x2, one copy per video mode) writes them off a `bp` data pointer and the `3170` drawer
+     consumes them, both inside one present half; the `5194` caller runs it once per drawn item, so
+     the boundary residue is just whichever item was drawn last, and the item count varies with
+     culling.  New gate `probes/verify_draw_scratch_dead.py` drives the original over the whole
+     8291-frame span and asserts each of the 148616 consumer accesses is preceded, IN ITS OWN FRAME,
+     by an absolute write.  Only then were the cells excluded.  (Static reading could not have
+     settled it: `331B`/`51D0` are `add [2160],imm16` read-modify-writes, and either reaching a
+     stale value would have made the residue load-bearing.)
+   * `98A5`/`98A7` (frame 17): `98A5`'s only writer stores `cl` (0 here) and `98A7` has NO static
+     reference at all, so the write was found by WATCHING THE BYTES: far `1F8F:0854`, called at 0241
+     from the controller init `1F8F:0209` that the level script far-calls at `4C09` for logic ids
+     13/15/1C/1F/7D/7E.  We replayed 0209's ten DGROUP stores but neither of its two tail calls --
+     `0854` (the 98A2..98AC counter-block reset: `98A5`/`98A7` = 1, the fast/slow controller
+     counters reloaded at `A982` and by the far `081D` that A9B8 calls) and `0918`
+     (`mov word [cs:0920],9828`, the wave-schedule cursor rewind -- a CODE-segment word, so no
+     DGROUP gate can see it).  11 -> 8.
+
+3. **`6176495` -- `probes/map_frame_window.py`, and a false note corrected.**  `native_frame` claimed
+   the `4DBF` its death tail calls was "the death jingle -- a host boundary".  It is the LEVEL
+   RE-INIT, and 418626 instructions of real work.  The new probe swaps the trap observer for a full
+   per-instruction logger at the Nth 9B2E boundary and prints every call edge, depth-nested, until
+   the N+1th.  It is the general instrument for "what does the original actually DO in this frame?".
+
+4. **`5e97967` -- the INT8 tick count is a HOST INPUT; record it, feed it in.**
+   `_isr_effects_two_ticks` hard-coded 2.  The true distribution over the demo is
+   `{0:2, 1:1, 2:8284, 7:1, 402:4}` windows (the 402s are the death frames -- their reload outruns
+   the timer).  The lone 1-tick window, frame 4637, was the gate's last non-transition divergence:
+   the native frame had run the D50E sound engine one step ahead of the original.  Excluding
+   `[0054]`/`[BF00]` + the sound cells would have hidden a real bug class, and the count is NOT
+   recoverable from DGROUP after the fact (both are 2-bit counters).  So the gate records it
+   (trapping the INT8 vector) and passes `isr_ticks=` per frame; cache format 4 -> 5.
+   `_isr_effects_ticks` now does one `[0054] += 1 (mod 4)` + one D50E step PER FIRE -- the 7-tick
+   window confirms the per-fire form (2 + 7 = 9 == 1 mod 4, matching the observed -1 delta).  8 -> 7.
+
+**Gate: 8292 frames, 8285 byte-exact, 7 diverged, 0 gapped.**  All 7 are death/respawn windows.
+
+### NEXT: the death continuation (the whole remaining residue)
+Map (`map_frame_window 5018`; 418626 instructions, 111 distinct call edges):
+
+    9B16 -> 4DBF  -> 4DAF, 0B3E (level-data init: C679 -> C7B2/C80B/C85B, the far 254A:04D7 asset
+                     decode, 0248 -> 0624/065C), 4E26, 4E0D -> A781 (row pull) -> A7EB -> A81B
+    9908 -> C4DB  -> 8517 -> 5A00, 85B5 -> 85D5 -> 613E/5A6C          (the respawn seed)
+    978F -> A940 (+ object walk + far 1F8F:0922), 9798 -> C57C, 979B -> B5A9, 97A4 -> 5F43
+    then the ordinary present half (0672/511F/A846/5BDC/A90C) up to the next 9B2E.
+
+`recovered/adapters/cold_level_start.py: apply_respawn_seeds()` already models the
+`9908 -> C4DB / C3A6 / C461 / C42F` half.  The unmodelled half is `4DBF`'s, headed by the `0B3E`
+level-data init.  Only DGROUP effects must match: the asset decode's bulk lands in the tile-plane
+segment, which the gate does not diff (the cache re-supplies the plane per frame).
+
+### Gotchas recorded this pass
+* The lockstep cache is keyed on an EXACT `max_frames`; always pass `"" 20000` (see the header).
+* Cache format 5 invalidates every `.walkcache`; the L1/L2/L3/L4 walk gates re-record on next use.
+* `probes/*.py` must guard execution behind `if __name__ == "__main__"` -- `scripts/lint.py` imports
+  every module, and a module-level demo drive hangs the lint (cost: one 2-minute timeout).
 
 ## 2026-07-08 (cont.) - the VIDEO MODEL lands: 0 gapped frames, 8187/8292 byte-exact
 
