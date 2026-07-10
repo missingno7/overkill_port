@@ -670,7 +670,9 @@ def main(argv=None) -> int:
                 # reproduced by re-running one frame over it; reused each tick, no per-frame alloc.
                 pre_frame[:] = img.data
                 try:
-                    advance_gameplay_frame_97b2(img, isr_ticks=2, level_assets=level_assets)
+                    # menu_pick is the host input the 98EB game-over restart reads (the level-select
+                    # cell for the fresh game); without it, out-of-lives fails loud instead of restarting.
+                    advance_gameplay_frame_97b2(img, isr_ticks=2, level_assets=level_assets, menu_pick=0)
                 except RecoveryGap as exc:
                     hold = f"{type(exc).__name__}: {exc}"
                     print(f"HELD at tick {tick}: {hold}")
