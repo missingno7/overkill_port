@@ -598,10 +598,10 @@ def run_sdl_ui(
                     # managers swallow F11 (fullscreen), so a press may never reach SDL at all.
                     # Every hotkey prints, so "did it fire?" is answerable from the console.
                     if ev.key in (pygame.K_F7, pygame.K_F12):
-                        print("[hotkey] snapshot requested", flush=True)
+                        print("[hotkey] F7 snapshot queued (the emulator thread reports the path)", flush=True)
                         queue_snapshot_save()
                     elif ev.key in (pygame.K_F8, pygame.K_F11) and queue_demo_toggle is not None:
-                        print("[hotkey] demo record toggle", flush=True)
+                        print("[hotkey] F8 demo record toggle queued", flush=True)
                         queue_demo_toggle()
                     elif ev.key == pygame.K_F10:
                         print("[hotkey] screenshot", flush=True)

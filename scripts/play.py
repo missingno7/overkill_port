@@ -1307,12 +1307,15 @@ def main(argv: list[str] | None = None) -> int:
                 },
             )
             status["text"] = f"demo suffix saved: {out}"
+            print(f"[demo] suffix saved: {out}", flush=True)
         elif demo_recorder.active:
             out = demo_recorder.stop(boundary=boundary["n"])
             status["text"] = f"input demo saved: {out}"
+            print(f"[demo] STOPPED, saved: {out}", flush=True)
         else:
             out = demo_recorder.start(rt, boundary=boundary["n"])
             status["text"] = f"input demo recording: {out}"
+            print(f"[demo] RECORDING started (press F8 again to stop): {out}", flush=True)
 
     def sleep_with_async_irqs(cpu, seconds: float = 0.01) -> None:
         deadline = time.perf_counter() + max(0.0, float(seconds))
@@ -1334,14 +1337,23 @@ def main(argv: list[str] | None = None) -> int:
                 except Empty:
                     out = None
                 if out is not None:
-                    write_snapshot(
-                        rt,
-                        out,
-                        status="interactive F7 snapshot",
-                        steps=rt.cpu.instruction_count,
-                        trace_tail=(),
-                    )
-                    status["text"] = f"snapshot saved: {out}"
+                    # The emulator thread does the write.  Report the RESULT on the console: the
+                    # UI thread's "[hotkey] snapshot requested" only proves the key arrived, and
+                    # the success message used to live in the SDL caption, invisible while playing.
+                    try:
+                        write_snapshot(
+                            rt,
+                            out,
+                            status="interactive F7 snapshot",
+                            steps=rt.cpu.instruction_count,
+                            trace_tail=(),
+                        )
+                    except Exception as snap_exc:  # noqa: BLE001 -- report, keep playing
+                        status["text"] = f"snapshot FAILED: {type(snap_exc).__name__}: {snap_exc}"
+                        print(f"[snapshot] FAILED: {type(snap_exc).__name__}: {snap_exc}", flush=True)
+                    else:
+                        status["text"] = f"snapshot saved: {out}"
+                        print(f"[snapshot] saved: {out}", flush=True)
                 # Tandy/CGA gameplay presents the frame before checking some
                 # post-present one-shot keys such as Esc.  If a quick physical
                 # tap is pressed before that presenter and released right after
