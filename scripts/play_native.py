@@ -612,13 +612,16 @@ def main(argv=None) -> int:
                     hold = f"{type(exc).__name__}: {exc}"
                     print(f"HELD at tick {tick}: {hold}")
                 tick += 1
-                # the two exits whose continuations are declared gaps (the frame consumed A346 --
-                # death/respawn -- natively; A344 = level complete -> 9734, A342 = game over -> 9902)
-                if hold is None and img.rw(_DS, 0xA344) == 1:
-                    hold = "level complete: the 9734 next-level continuation is a declared gap"
-                    print(f"HELD at tick {tick}: {hold}")
+                # The frame OWNS the three exits internally: it sets and consumes A344/A346 within the
+                # same call (9B2E clears them at entry, the loop body re-raises the taken one, and the
+                # 97CE/97E2 tail runs the recovered 9734 level-advance / 9908 death-respawn -> 98EB
+                # game-over before returning).  So after a normal frame these flags are already 0; the
+                # only thing the frame leaves for the caller is a RecoveryGap (the mothership's 9844
+                # story intro), handled above.  A342 (game over reached as a *standalone* flag, i.e. NOT
+                # via the death path) has no recovered continuation yet -- keep it as a fail-loud net so
+                # play can never silently freeze on it rather than misreport it as a normal exit.
                 if hold is None and img.rw(_DS, 0xA342) == 1:
-                    hold = "game over: the 9902/98EB continuation is a declared gap"
+                    hold = "standalone game-over flag (A342) with no recovered continuation"
                     print(f"HELD at tick {tick}: {hold}")
 
             frame = renderer.frame()
