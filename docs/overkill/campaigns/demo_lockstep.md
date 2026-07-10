@@ -202,6 +202,73 @@ Not "the death jingle" — an earlier note in `native_frame.py` guessed that and
 4. **`99BF`, `6176`, `C57C`, `B5A9`, `5F43`, `D305`** — undecoded. `5F43` is near the `5F61` clock
    tick already native; `C57C`/`B5A9` are called on the normal level-start path too.
 
+### The 9908 CONTINUATION — measured and decoded (2026-07-10)
+
+`4DBF` is recovered and gated (`probes/verify_native_level_reinit_4dbf`, PASS 7/7) and wired into the
+death tail, taking the seven windows from 17839 to 6860 diverging bytes. What is left is everything
+after the `97CE` exit.
+
+**Do not guess which routines matter — this was measured.** Snapshotting DGROUP at consecutive
+checkpoints along the continuation and diffing neighbours, over all 7 death windows (minus
+`EXCLUDED_CELLS`, minus the stack window), gives bytes-changed per step:
+
+    enter 9908  -> after C4DB                  [95, 33, 33, 55, 52, 51, 56]
+    after C4DB  -> at 9773 (the [2358] fixups, the BEFE spin, [BEFF]=2)
+                                               [15, 2, 2, 3264, 2, 2, 2]
+    at 9773     -> after C3A6                  [84, 26, 25, 33, 84, 84, 49]
+    after C3A6  -> after 77C5                  [1, 1, 1, 1, 1, 1, 1]
+    after 77C5  -> after 99BF                  [102, 102, 96, 101, 102, 100, 101]
+    after 99BF  -> after 6176                  [6, 6, 6, 0, 6, 6, 6]
+    after 6176  -> after 9BE2                  [2, 1, 1, 1, 1, 1, 1]
+    after 9BE2  -> after A940 (+walk+starfield)[38, 48, 6, 48, 27, 6, 48]
+    after A940  -> after [20A6]=20A8           [0 x7]   <- already 20A8; C4DB set it
+    after [20A6]-> after C57C                  [0 x7]   NO-OP for DGROUP
+    after C57C  -> after B5A9                  [0 x7]   NO-OP for DGROUP
+    after B5A9  -> after [A8C2]=0              [0 x7]
+    after [A8C2]-> after 5F43                  [0, 0, 0, 1, 0, 0, 0]
+    after 5F43  -> at the 97B2 loop head       [0, 0, 0, 159, 159, 161, 159]   <- D305
+
+**`C57C` and `B5A9` never touch DGROUP.** They do not need recovering for the lockstep gate at all;
+note that and move on.
+
+Decodes of the rest:
+
+    99BF  mov es,cs:[9596] ; mov di,A27A ; mov cx,30 ; mov bp,237C
+          .loop: ax=[bp+2]+8 ; stosw ; ax=[bp+4]+9 ; stosw ; loop
+          mov word [A33A],A27A / [A33C],A2FE / [A33E],A2BE / [A340],A27E ; ret
+          -- 0x30 copies of (player_x + 8, player_y + 9) into the A27A pod ring, then the four
+             A33A..A340 ring pointers.  ~100 of the 0xC0 bytes actually change.
+
+    6176  call 5EDB ; if cs:[95BC]==1 { call 511F ; call 5EDB ; call 511F } ; call 60F3 ; ...
+          -- mode-1 (non-Tandy) branches are dead here.  6 DGROUP bytes; find them in 5EDB/60F3.
+
+    9BE2  call 9CD9 ; call A031 ; if [BDAC]==0 && [2350]>B6 -> call 9FAF
+          -- exactly the tail _step_9b2e already runs; reuse it.
+
+    5F43  al = 4 if [2350]==9C else 5 if [2350]==0EA0 else [231E + planet] (xlat) ; jmp CB1C
+          -- CB1C is the music-beat trigger ([98C2] = al), which _row_pull_a74e already models.
+             0 bytes on most windows because [98C2] already holds the value.
+
+    D305  call 0162 ; test byte [98BE],10 ; jnz D305        <- wait while FIRE is held
+          call 5BDC ; mov word [BED8],0 ; call 0672 ; call 511F ; call 4CED
+          if cs:[95BC]==1 call 5BDC ; call D367 ; call 4D64 ; call far 1F8F:0922
+          call 073C ; call 60A2 ; call 5160 ; call 0679 ; ...
+          -- a NESTED MINI-FRAME LOOP that spins until the player presses fire.  Runs only when
+             [2350]==9C (the top-of-level checkpoint).  159 DGROUP bytes.  **This, not the 9921
+             `[BEFE]` spin, is where the 402 timer ticks of those windows land.**
+
+Already recovered and directly reusable: `apply_new_game_setup_c4db`, `object_pool_seed_c3b5`,
+`respawn_control_reset_c461`, `player_spawn_record_c42f` (systems), `_shield_charge_77c5`,
+`_a940_walk_stage`, `_step_9b2e`'s 9BE2 tail, and the present half.
+
+**TRAP:** `apply_respawn_seeds()` bundles C4DB + C3A6 + C461 + C42F + a bar reseed + the 0B3E cursor
+rewind. Do NOT reuse it wholesale in the continuation: `0B3E` has already run inside `4DBF` by then,
+and the pieces are called at different points (C4DB at 9908, C3A6 at 977D, with 77C5 after). Split
+them.
+
+Frame 5379 is the outlier: 3264 bytes land in the `after C4DB -> 9773` step for it alone (the strip's
+DGROUP alias). Understand that before trusting a byte-count drop anywhere else.
+
 ### The critical path (revised 2026-07-10, after the C679 decode)
 There is no single blocking routine. `0B3E` reduces to: six cursor heads, `[21AA]`/`[21A4]`/`[21A6]`,
 a level-file load supplied by the host (`[21A8]` = its length, `[21AC]` = a DOS handle that never
