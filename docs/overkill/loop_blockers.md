@@ -30,6 +30,12 @@ a snapshot at each routine's entry, or a cold-boot harness that installs all hoo
 on first hit (the remaining harness work).  Acceptance test: the CS tables (8D92/9592/9598/C570)
 byte-equal to the bundle.  Snapshots are gitignored (regenerable).
 
+A bespoke decoupled harness was ATTEMPTED (emit from the bundle, install + verify over a fresh boot)
+and reverted -- it hit a KeyError inside dos_re's _probe/clone when scanning from a non-live runtime.
+The right home is liftverify gaining a separate --emit-snapshot vs --run-from (a small dos_re change),
+not a script here.  The proof already stands via the direct liftverify run (6 ORACLE_PASSING, 0
+DIVERGED); full coverage is a mechanics follow-up, not a correctness question.
+
 BOOT STRUCTURE (traced): the init is a `1010 <-> 254A:04D7` loop -- the game's 1010 code repeatedly
 far-calls the DOS int-21 file-read wrapper at 254A:04D7 (returning to 1010:026F / C6A0) to load its
 assets, then builds the CS tables.  The 6-of-53 verified-in-one-pass is a SNAPSHOT-TIMING artifact,
