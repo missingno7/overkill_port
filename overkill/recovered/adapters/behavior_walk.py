@@ -669,6 +669,41 @@ def _step_controller_1c(mem, rec: int) -> None:
     mem.ww(DS, rec + 0x08, (mem.rw(DS, rec + 0x06) + 0x3B) & 0xFFFF)
 
 
+def _step_controller_7d(mem, rec: int) -> None:
+    """Behavior 0x7D / 0x7E (the shared 8D4F/1F8F:027A body; these ids carry `+0x24` mode 0x7D, so 027A
+    takes the ``0309`` arrival branch): seek the A482 schedule (x+0x20/y, 5DB2 mode 3); ON ARRIVAL
+    advance the schedule +8 and 81F4-spawn ONE child -- behavior 0x81, +0x1C = 0x19, +0x20 = 5,
+    +0x0A = 0, +0x36 = 0, direction (+0x06) = 6 if the target-Y bit 4 is set else 2 -- with the entry's
+    target pair in +0x34/+0x32, then A47E++.  ALL paths end in the 0448 tail (sprite = dir + 0x3B).
+    Transcription authoritative from the lifter (liftverify 1F8F:027A ORACLE_PASSING via the
+    capture_pure_vm_snapshot pipeline); gated by verify_native_behavior_7d over the L4 demo."""
+    a482 = mem.rw(DS, 0xA482)
+    target_x = (mem.rw(DS, a482) + 0x20) & 0xFFFF
+    target_y = mem.rw(DS, (a482 + 2) & 0xFFFF)
+    blocked = _apply_seek(mem, rec, target_y, target_x, 3)
+    if blocked:                                                # 0309: advance the schedule always
+        mem.ww(DS, 0xA482, (a482 + 8) & 0xFFFF)
+        child_y = mem.rw(DS, (a482 + 6) & 0xFFFF)
+        if mem.rw(DS, (a482 + 4) & 0xFFFF) != 0xFFFF:          # 030E: not FFFF-ended
+            slot = _alloc(mem, 0x95D8, EFFECT_POOL_BASE, EFFECT_POOL_WRAP, EFFECT_SLOTS)  # 81F4
+            if slot != 0xFFFF:
+                if mem.rb(DS, 0x98C0):
+                    mem.wb(DS, 0xBEFF, 0x0B)                    # 81F4's own sound
+                for off, val in enemy_spawn_stamp_8209(mem.rw(DS, rec + 0x02),
+                                                       mem.rw(DS, rec + 0x04)).items():
+                    mem.ww(DS, slot + off, val)
+                mem.ww(DS, slot + 0x34, (mem.rw(DS, (a482 + 4) & 0xFFFF) + 0x20) & 0xFFFF)  # 0326
+                mem.ww(DS, slot + 0x32, child_y)                              # 032D
+                mem.ww(DS, slot + 0x06, 6 if (child_y >> 4) & 1 else 2)       # 0331/0343
+                mem.ww(DS, slot + 0x18, 0x81)                                 # 0348: child behaviour
+                mem.ww(DS, slot + 0x1C, 0x19)                                 # 034D
+                mem.ww(DS, slot + 0x20, 0x05)                                 # 0352
+                mem.ww(DS, slot + 0x0A, 0x00)                                 # 0357
+                mem.ww(DS, slot + 0x36, 0x00)                                 # 035C
+                mem.ww(DS, 0xA47E, (mem.rw(DS, 0xA47E) + 1) & 0xFFFF)         # 0361
+    mem.ww(DS, rec + 0x08, (mem.rw(DS, rec + 0x06) + 0x3B) & 0xFFFF)   # 1F8F:0448
+
+
 def _step_formation_1d(mem, rec: int) -> None:
     """Behavior 0x1D (``1010:B86D``) -- the planet-2 formation enemy, via the ALREADY-RECOVERED
     (BC4B-handoff-verified) ``object_update_b86d``.  Caller-owned extras per the ASM: the A7A0 seek
@@ -2907,6 +2942,9 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
             anim = mem.rw(DS, (0x96D2 + (mem.rw(DS, 0x2328) & 0xFFFE)) & 0xFFFF)
             mem.ww(DS, rec + 0x08, (anim + mem.rw(DS, rec + 0x36)) & 0xFFFF)
             _postmove_bc45(mem, rec, tiles, with_drift=True)
+        elif beh in (0x7D, 0x7E):
+            _step_controller_7d(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=False)   # the 8D4F stub exits jmp BC4B
         else:
             raise RecoveryGap(f"behavior {beh:#04x} (record {rec:04X})",
                               "no native handler registered -- recover it before walking")

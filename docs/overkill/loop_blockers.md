@@ -4,7 +4,19 @@ Open items the autonomous loop attempted but could not finish byte-exact. Do NOT
 re-attempt these in the loop; they need a reproduction trace and/or gameplay
 context. Each has the analysis already done so a human can pick up fast.
 
-## 2026-07-10 — behavior 0x7D / 0x7E: the overlay WAYPOINT-FOLLOWER (1F8F:027A) — reproduced, open
+## 2026-07-10 — behavior 0x7D / 0x7E: DONE (lifter-recovered); its child 0x81 is the next gap
+
+**FILLED** (byte-exact, `verify_native_behavior_7d` 121/121, 0 diverging): `_step_controller_7d` = the
+shared 8D4F/1F8F:027A body's `0309` arrival branch (0x7D-mode): seek the A482 schedule (x+0x20/y, mode
+3), on arrival advance +8 and 81F4-spawn ONE child (behavior 0x81, +0x1C=0x19, +0x20=5, +0x0A=0,
++0x36=0, dir=6 if targetY bit4 else 2), A47E++, 0448 sprite tail.  RECOVERED VIA THE LIFTER PIPELINE:
+capture_pure_vm_snapshot (0x7D live at L4 boundary 120) -> liftverify 1F8F:027A ORACLE_PASSING -> read
+the authoritative 0309 transcription (a hand-read had picked the WRONG 02CB branch; the lifter was
+right).  The gate excludes the A954/230A seek-scratch cells (walk-shadow EXCLUDED_CELLS).  **NEXT: the
+spawned child behavior 0x81** (planet-4 cold play now reaches it at tick 39) -- same pipeline: capture
+a 0x81-live snapshot, liftverify its EFC4[0x81] handler, refactor.
+
+## (superseded) 2026-07-10 — behavior 0x7D / 0x7E: the overlay WAYPOINT-FOLLOWER (1F8F:027A) — reproduced
 
 Owner hit `behavior 0x7d (record 23EC) -- no native handler registered` on planet 4 (tick 16, a
 common early enemy).  REPRODUCES from a cold planet-4 seed: `build_cold_level_start_image(bundle, 3,
