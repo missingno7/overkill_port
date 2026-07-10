@@ -84,9 +84,7 @@ def advance_gameplay_frame_97b2(mem) -> None:
     if mem.rw(DS, 0x9907) & 0xFF == 1:
         raise RecoveryGap("the 073C service body ([9907] == 1)", "unrecovered service path")
     # --- stage 11: the 60A2 stage -- 77C5 (the A97C shield drain) + 5F61 (THE CLOCK TICK) ------
-    if mem.rw(DS, 0xA97C) == 1:
-        raise RecoveryGap("the 77C5 A97C shield-bar body ([A97C] == 1)",
-                          "unrecovered; fires only after a kind-4 pickup")
+    _shield_charge_77c5(mem)
     _clock_tick_5f61(mem)
     # --- the INT8 ISR's per-frame DGROUP effects (two ticks per frame: the [0054] parity pair) -
     _isr_effects_two_ticks(mem)
@@ -371,13 +369,67 @@ def _clock_tick_5f61(mem) -> None:
     gate_hit = (mem.rw(DS, 0x2330) == 0x007F if mem.rw(DS, 0xBEDC) <= 1
                 else mem.rw(DS, 0x232E) == 0x003F)
     if gate_hit:
-        raise RecoveryGap("the 9EE4 difficulty drain beat (6084)",
-                          "unrecovered; fires every 128 (or 64 on difficulty 2+) frames")
+        _energy_drain_9ee4(mem)                      # 6084
     if (mem.rw(DS, 0x2384) == 2 and mem.rw(DS, 0x232C) == 0x001F):
         v = mem.rw(DS, 0x234A) ^ 1                   # 6097
         mem.ww(DS, 0x234A, v)
         if v == 0:
-            raise RecoveryGap("the pose-2 9EE4 drain beat (609F)", "unrecovered")
+            _energy_drain_9ee4(mem)                  # 609F: jmp 9EE4
+
+
+#: 77F6's only DGROUP write: `mov [95DC],di`, with di from the `call 5A00` at 77FA (the rel16 is
+#: relative to the NEXT instruction, 0x77FD).  Driven on the original with `ax = 0x5F1D`:
+#: di = 0x6ED4 -- the energy bar's page origin, and exactly the value the VM holds.  Everything else
+#: 77F6 does is pixels into the visible page (`es = CS:[95A4]` = B800), outside DGROUP.
+BAR_PAGE_DI = 0x6ED4
+
+
+def _bar_draw_77f6(mem) -> None:
+    """``1010:77F6`` -- redraw the energy bar.  DGROUP-visible part only."""
+    mem.ww(DS, 0x95DC, BAR_PAGE_DI)
+    if mem.rw(CS, 0x95BC) == 1:
+        raise RecoveryGap("77E3's mode-1 dual-page bar redraw (511F)", "Tandy is mode 2")
+
+
+def _shield_charge_77c5(mem) -> None:
+    """``1010:77C5`` (the 60A2 stage): while the shield pickup is held (``[A97C] == 1``) and the
+    player is not dying (``[2384] < 3``), the energy bar CHARGES one step per frame.  At full
+    (``[A97A] == 0x58``) the 77B2 tail fires sound 0x0C and clears ``[A97C]`` (the shield is spent);
+    otherwise ``[A97A]`` increments and the bar is redrawn (77DF -> 77F6)."""
+    if mem.rw(DS, 0xA97C) != 1:                      # 77C5
+        return
+    if mem.rw(DS, 0x2384) >= 3:                      # 77CD: dying -> nothing
+        return
+    if mem.rw(DS, 0xA97A) == 0x0058:                 # 77D4 -> 77B2: full
+        if mem.rb(DS, 0x98C0):
+            mem.wb(DS, 0xBEFF, 0x0C)
+        mem.ww(DS, 0xA97C, 0)
+        return
+    mem.ww(DS, 0xA97A, (mem.rw(DS, 0xA97A) + 1) & 0xFFFF)   # 77DB
+    _bar_draw_77f6(mem)                              # 77DF
+
+
+def _energy_drain_9ee4(mem) -> None:
+    """``1010:9EE4`` -- the periodic energy DRAIN (the 606F beats).  An empty bar is a no-op; else
+    ``[A97A]`` decrements.  Still non-zero -> just redraw.  Emptied: the ``[978C]`` cheat refills it
+    to 0x58, otherwise the player enters the dying pose (``[2384] = 3``) with sound 0x19.  All paths
+    tail into the 77DF bar redraw."""
+    a97a = mem.rw(DS, 0xA97A)
+    if a97a == 0:                                    # 9EE4
+        return
+    a97a = (a97a - 1) & 0xFFFF
+    mem.ww(DS, 0xA97A, a97a)
+    if a97a != 0:                                    # 9EF0 -> 77DF
+        _bar_draw_77f6(mem)
+        return
+    if mem.rb(DS, 0x978C) == 1:                      # 9EF5 -> 9F11: the cheat refill
+        mem.ww(DS, 0xA97A, 0x0058)
+        _bar_draw_77f6(mem)
+        return
+    mem.ww(DS, 0x2384, 0x0003)                       # 9EFC: the dying pose
+    if mem.rb(DS, 0x98C0):
+        mem.wb(DS, 0xBEFF, 0x19)
+    _bar_draw_77f6(mem)
 
 
 def _isr_effects_two_ticks(mem) -> None:
