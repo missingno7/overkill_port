@@ -29,7 +29,9 @@
 > (`overkill/probes/verify_native_lockstep.py`, cached), then swap play_native onto that same frame
 > fn + add `--demo/--mirror`.  **CURRENT LOCKSTEP STATE (L1 demo, 8292 frames, PyPy, 2026-07-10):
 > 8285 byte-exact / 7 diverging / 0 GAPPED.**  Every frame runs natively end-to-end and 99.92% are
-> byte-exact across the whole 64K DGROUP.  The 7 are EXACTLY the death/respawn windows
+> byte-exact across the whole 64K DGROUP.  Their residue is down to 6860 bytes (from 17839) now that
+> `1010:4DBF`, the death LEVEL RE-INIT, is recovered and independently gated by
+> `probes/verify_native_level_reinit_4dbf` (PASS 7/7).  The 7 are EXACTLY the death/respawn windows
 > (4636/4821/5018/5379/6495/7143/7595): the VM runs a 418626-instruction continuation inside the
 > window (`9B16 -> 4DBF` = the LEVEL RE-INIT, then `9908 -> C4DB`, then the `978F` loop re-entry)
 > which the native frame returns before, by design.  That continuation IS the remaining work; its
@@ -54,6 +56,63 @@
 > inside the row pull), the 0162 input poll, the A067 fire path and the 0922 starfield are native in
 > the lockstep frame.  play_native still runs the OLD hybrid loop -- nothing verified reaches the
 > player until charter step 1 (the unification) lands.
+
+## 2026-07-10 (later) -- 1010:4DBF recovered and gated; death windows 17839 -> 6860 bytes
+
+`ef93780` **`probes/verify_native_level_reinit_4dbf` -- a driven oracle for the death LEVEL RE-INIT,
+written BEFORE the code.**  It traps 4DBF entry / its 4E0C return on the pure-VM side and diffs all
+64K of DGROUP minus `EXCLUDED_CELLS` and minus a measured 0x100 stack window below `sp` (= A274).
+Both exclusions are load-bearing, and each corresponds to a wrong "recovery" I had already written
+down: without the first, 0B3E's rep-stosb clear of the INT9 key table looks like four invented flags
+at 990C/990F/9911/9914; without the second, the pushes inside the DOS open call look like a 22-byte
+far-pointer struct at A256..A26B.  **PASS 7/7 byte-exact.**
+
+Recovered: `4DBF` (checkpoint pick from `[C601+planet*2]`, `0B3E` with `[A978]` saved across it,
+`4E26`, `4E0D`, `[[20CA+planet*2]] = [20C8]`), `0B3E` (cursor heads, `[21AA]`/`[21A4]`/`[21A6]`, the
+level load, `[21A8]`, the key-table clear), `4E26` (plane-only tile repaint via the CS `(tile,
+handler)` pairs at `[[20D6+planet*2]]`; handlers 4E5F -> 0x28, 4E65 -> 0x01), `A781` (the REVERSE row
+pull) and its `4E0D` loop.
+
+**C679 is NOT a decompressor** -- it is a DOS 3Dh open/read/close of `LEV{n}MAP.BIC`.  So the level
+file is the frame's SECOND declared host input: `advance_gameplay_frame_97b2(mem, isr_ticks=...,
+level_bytes=...)`, read only on a death frame, fail-loud when absent.  `level_bytes_for(planet)` in
+the lockstep gate reads it from the container.  We do not emulate INT 21h.
+
+Three bugs the gate caught that reading could not, all in my own hand-decode:
+* 4E26's jump-table handlers are 4E5F/4E65, not 4E5D/4E63 (off-by-two counting bytes).
+* `A7EB` tails into `A81B`, which BRANCHES ON `[2352]`: the forward path stashes `[A408]` and runs
+  the tile cues + level script; the reverse path does `sub bx,0A9` (thirteen tile rows back) and
+  jumps straight to the 5A7E render -- no cue, no script, no `[A408]`.  Rendering `[2350]` left every
+  non-strip cell exact and every band wrong (7 windows, ~3000 B each).  7 -> 3.
+* `0248` reads the whole 0x0EA0-byte file to plane:0, but `decode_level_tile_map` is only trustworthy
+  over the MAP BODY `[12, 3682)` (cold_level_start's loader says so, test-pinned).  Writing the
+  border bytes corrupted row 0 -- which ONLY the checkpoints that rewind to the top (`di = 0x9C`)
+  ever render.  The gate failed on exactly those three windows and no others.  3 -> 0.
+
+`d7d40db` wired it into the 9AFF death tail at 9B16.  Per-window diverging bytes, before -> after:
+`4636 5337->514`, `4821 3506->617`, `5018 4048->621`, `5379 3717->3914`, `6495 426->409`,
+`7143 417->407`, `7595 388->378`; **TOTAL 17839 -> 6860**.
+
+**Lockstep gate: 8292 frames, 8285 byte-exact, 7 diverged, 0 gapped -- unchanged, by design.**  A
+window cannot go byte-exact until the rest of the continuation lands, because the frame still returns
+at the 97CE exit.
+
+### NEXT (decoded, in order)
+    97CE  [A346]==1 -> jmp 9908
+    9908  call C4DB ; dec byte [2358] ; if [978D]: inc word [2358]
+          if [98C0]: spin `cmp byte [BEFE],0 / jnz`   <- the death jingle; the isr_ticks we already
+                                                         record supply exactly these sound steps,
+                                                         so natively the spin is a no-op
+          if [98C0]: mov byte [BEFF],2 ; jmp 9773
+    9773  if [2358]==FFFF -> 98EB (game over) ; else call C3A6, 77C5, 99BF, 6176
+          mov bp,237C ; call 9BE2
+    978F  call A940 ; mov word [20A6],20A8 ; call C57C ; call B5A9 ; mov word [A8C2],0 ; call 5F43
+          if [2350]==9C: call D305 ; then the ordinary 97B2 present half
+`apply_respawn_seeds()` bundles C4DB + C3A6 + C461 + C42F + a bar reseed + the 0B3E rewind -- do NOT
+reuse it wholesale here: 0B3E has already run, and the pieces must be split (C4DB at 9908, C3A6 at
+977D, with 77C5 after).  `99BF`, `6176`, `C57C`, `B5A9`, `5F43`, `D305` are still undecoded.
+Frame 5379 is the outlier (3357 B still in the strip alias) -- look at it first.
+Iterate with `pypy -m overkill.probes.inspect_death_windows` (~16 s).
 
 ## 2026-07-10 -- lockstep L1: 32 -> 7 diverging; the residue is exactly the death continuation
 
