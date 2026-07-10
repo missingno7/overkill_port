@@ -1416,3 +1416,31 @@ already build it byte-exact for the star pass) at `screen_di + row*0x68` into DG
 
 Verify FIRST with a driven-oracle probe (trap `(CS,0xA876)`, i.e. after the save loop, and compare
 every record's saved 128 bytes against ours) before wiring it into `native_frame`.
+
+### 2026-07-08 (cont.) — the final 61: three named families
+
+Lockstep after the video model + the 8209 leak fix: **8231 exact / 61 diverging / 0 gapped**.
+
+1. **~15 frames: the save-under SOURCE on row-pull frames.**  Ruled out by measurement:
+   * the projection is exact -- our `sync_screen_projection` matches the VM's freshly re-projected
+     `+0x0C`/`+0x10` at `A876` on **33239 records, 0 mismatches** (so it is not a cull difference);
+   * the save geometry is exact (443 records verified earlier).
+   Running our `_save_under_a846` on the VM's own pre-A846 state and diffing `DS:3300..9600` gives
+   **40 mismatching frames out of 3001**, in BOTH directions (`vm=0F nat=00` and `vm=00 nat=77`).
+   So on those frames the strip is not exactly our derived terrain stack.  They are almost certainly
+   the ROW-PULL frames: A7EB writes the new band using the PRE-advance `[2350]`, while
+   `_terrain_stack` renders from the POST-advance `[2350]` with the `[234E]` phase.  **Next:** at
+   `(CS,0xA876)`, dump `[2350]`, `[234E]`, `[2352]` and the first mismatching row for a failing
+   frame; compare against the band A7EB just wrote.
+2. **~31 frames: the D50E sound-channel cells** (BEFE/BFAC/BFB0/BFB2/BFB8/BFC0/BFC2).  Already
+   exonerated: the interpreter is byte-exact vs the driven original (601/601) and the queue is
+   identical at the tick (2710/2710).  The remaining hypothesis is the ORDER of the two ticks
+   relative to the frame's own sound writes when an effect starts/stops in the same window.
+3. **7 frames: death/respawn transitions.**  The VM runs the whole `9908` continuation inside the
+   window (A95A FFFF -> 3, A97A 0x57 -> 1, 2384 0x0E -> 0); the native frame returns at the exit by
+   design.  These close when the exit continuations are composed into the frame.
+
+**Fixed this pass:** 8209's "+32/+34 caller-frame leak" is not a leak -- at the `A839` call site
+`bp` is still `0x237C` (the anchor record set at 9B5B), so `ss:[bp+2]`/`ss:[bp+4]` ARE the player's
+x and y (trapped `(CS,0x7948)`: bp = 237C on every hit).  Passing zeros had left every cue-spawned
+record with `+0x32/+0x34 = 0`; that was the entire 47-frame "per-record state" family.
