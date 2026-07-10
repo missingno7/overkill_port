@@ -27,9 +27,9 @@
 > **THE ACTIVE CAMPAIGN: [`campaigns/demo_lockstep.md`](campaigns/demo_lockstep.md)** -- grow the
 > ONE native 97B2 frame (`overkill/native_frame.py`) in per-frame lockstep with a recorded demo
 > (`overkill/probes/verify_native_lockstep.py`, cached), then swap play_native onto that same frame
-> fn + add `--demo/--mirror`.  **CURRENT LOCKSTEP STATE (L1 demo, 8292 frames, re-recorded
-> 2026-07-08 on the updated dos_re, verdict confirmed identical under CPython AND PyPy): 1042
-> byte-exact, 7250 diverging.**  (The older "2810 diverging" figure came from a cache recorded
+> fn + add `--demo/--mirror`.  **CURRENT LOCKSTEP STATE (L1 demo, 8292 frames, PyPy, 2026-07-08):
+> 6532 byte-exact / 1432 diverging / 328 gapped.**  (Was 1042 exact / 7950 diverging before the
+> 4CED star pass + the A846 flash decay landed.)  (The older "2810 diverging" figure came from a cache recorded
 > before the dos_re CPU/keyboard-fix bumps -- a STALE ORACLE.  Lesson: a shadow cache is only as
 > valid as the dos_re commit that recorded it; re-record after any submodule bump.)
 > Standing facts: the OBJECT WALK is fully native + dry for L1 (8294/8294), L2 (6561/6561) and L3
@@ -38,6 +38,36 @@
 > inside the row pull), the 0162 input poll, the A067 fire path and the 0922 starfield are native in
 > the lockstep frame.  play_native still runs the OLD hybrid loop -- nothing verified reaches the
 > player until charter step 1 (the unification) lands.
+
+## 2026-07-08 - lockstep: the star pass + flash decay land; 7950 -> 1432 diverging frames
+
+Two verified slices, both driven-oracle proven before lifting:
+
+* **4CED star pass** (`verify_native_star_strip`, new gate; PASS 10/10 strips + 10/10 lists).  The
+  occupancy it tests is the TERRAIN WINDOW AND NOTHING ELSE -- 4CED runs from A846 (at A876) after
+  that stage's loop has ERASED the sprites, and the previous stars were undrawn by 4D64 (from A90C,
+  after the blit).  Pure DGROUP: `compose_tile_window` packed 2 px/byte at the 0x68 stride
+  (104 B = 208 px = the playfield width).  Only the `DS:C7B1` LIST persists -- the star pixels are
+  drawn and undrawn inside one 9B2E window, so writing them is what made the old model ADD ~2700
+  divergences.  4831-frame family -> gone.
+* **A846 hit-flash decay**: the compositor prologues (25AE / 30FF / 4227) each do
+  `cmp [bp+24h],0 ; jz ; dec [bp+24h]`, so a drawn record's +0x24 ticks ONCE PER DRAWN SLOT.  The
+  anchor (0x237C, draw type 2) issues two slots -> `DS:23A0` decays by 2/frame while on screen; a
+  culled slot (di == FFFF) issues no compositor call.  476-frame family -> gone.
+
+**THE NEW FRONTIER** (frames affected, from the histogram; scratch: `/tmp/hist.py` pattern --
+replay the cache, bucket diverging offsets):
+`DS:2300xx 488` (mostly 23A0's neighbours? re-measure), `3300xx 293`, `3500xx 268`,
+`6C00xx 249`, `6D00xx 223`, `5600xx 222`, `3400xx 217`, `A900xx 193`, `8500xx 190`, `8300xx 172`,
+`6200xx 171`.  Top single cells: `DS:A95C 193` (written by 9E51/9E57/9E5D dec, 9D8B/9E12 inc,
+9E09/9E63/9EA3/9EDD/C477 set -- the energy/shield chain; note the 9EE4 drain and 77C5 shield body
+are still GAPPED, 62 + 266 frames) and a `DS:6C94..6CF6` cluster spaced 8 bytes (a table of 8-byte
+entries; NOT the strip -- the L1 strip starts at DS:D330).
+
+Instrument note: the L1 strip segment is 0x32FF, i.e. the strip's 192x104 window spans
+`DS:D330..DS:12130` and therefore RUNS PAST the DGROUP window -- part of it is compared, part is
+not.  Keep that in mind before modelling sprite draw/erase into the strip.
+
 
 ## 2026-07-08 - VERIFICATION SPEED + a stale-oracle correction (no reconstruction change)
 
