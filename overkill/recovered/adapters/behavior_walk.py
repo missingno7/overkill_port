@@ -42,6 +42,7 @@ from overkill.recovered.systems.enemy_behaviors import (
     RAMP_29_STEER_MODE_AFTER,
     RAMP_29_STEER_MODE_DURING,
     MORPH_26_RAMP_SOUND,
+    WAYPOINT_FOLLOWER_MAX_RETRIES,
     WAYPOINT_FOLLOWER_TABLE_SEED,
     dying_latch9_morph_be60,
     morph_26_is_finished,
@@ -927,6 +928,41 @@ def _step_controller_1c(mem, rec: int) -> None:
             mem.ww(DS, 0xA47E, (mem.rw(DS, 0xA47E) + 1) & 0xFFFF)
     # 1F8F:0448: the shared en-route/arrival sprite tail
     mem.ww(DS, rec + 0x08, (mem.rw(DS, rec + 0x06) + 0x3B) & 0xFFFF)
+
+
+def _step_waypoint_18(mem, rec: int) -> None:
+    """Behavior 0x18 (1010:B98C; the mothership WAVE ENEMY 0x16/0x17 morph into): a retry-loop waypoint
+    follower over the +0x36 schedule.  Each pass: a [2340]&0x3FF==0x0C-gated 7476 shot (+ inc [2340]);
+    read the next waypoint at +0x36 (FFFF -> reset +0x36 to the word after and loop); else seek toward
+    (x+0x20, y) mode 3, sprite = dir + 0x10D; if NOT blocked -> done; else advance +0x36, a 4D95&7==2
+    -gated C237 child (dir 4), and LOOP.  Fail-loud retry cap (the ASM loops unbounded)."""
+    ring = tuple(mem.rw(DS, (0x20A8 + i * 2) & 0xFFFF) for i in range(16))
+    for _ in range(WAYPOINT_FOLLOWER_MAX_RETRIES):
+        if (mem.rw(DS, 0x2340) & 0x03FF) == 0x000C:                     # B98C/B995: only on the shot beat
+            _spawn_enemy_shot_7476(mem, rec)                            # B997
+            mem.ww(DS, 0x2340, (mem.rw(DS, 0x2340) + 1) & 0xFFFF)      # B99A (skipped when no shot)
+        si = mem.rw(DS, rec + 0x36)                                     # B99E
+        pt0 = mem.rw(DS, si)
+        if pt0 == 0xFFFF:                                              # B9A2 -> B9EA: reset the schedule
+            mem.ww(DS, rec + 0x36, mem.rw(DS, (si + 2) & 0xFFFF))
+            continue
+        blocked = _apply_seek(mem, rec, mem.rw(DS, (si + 2) & 0xFFFF),   # B9A7..B9B7 (5DB2 mode 3)
+                              (pt0 + 0x20) & 0xFFFF, 3)
+        mem.ww(DS, rec + 0x08, (mem.rw(DS, rec + 0x06) + 0x010D) & 0xFFFF)   # B9BA
+        if not blocked:                                                # B9C3
+            return
+        mem.ww(DS, rec + 0x36, (si + 4) & 0xFFFF)                       # B9CD: past the consumed pair
+        rand, nxt = canned_random_next_4d95(mem.rw(DS, 0x20A6), ring)   # B9D0
+        mem.ww(DS, 0x20A6, nxt)
+        if (rand & 0x07) == 0x02:                                      # B9D6
+            slot = _spawn_child_c237(mem, rec, mem.rw(DS, rec + 0x18))  # B9DB
+            if slot is None:                                           # throttled: bx stays 2 (the RNG
+                mem.ww(DS, 0x0008, 0x0004)                             # value) -> B9E3 [bx+6]=[0008]=4
+            elif slot != 0xFFFF:
+                mem.ww(DS, slot + 0x06, 0x0004)                        # B9E3: the spawned child
+            # slot == FFFF (pool full): B9E1 jz B98C -- loop with no write
+    raise RecoveryGap(f"behavior 0x18 waypoint retry loop exceeded {WAYPOINT_FOLLOWER_MAX_RETRIES} "
+                      f"(record {rec:04X})", "the schedule never yielded an unblocked seek")
 
 
 def _step_diver_16_17(mem, rec: int) -> None:
@@ -3167,6 +3203,9 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
         elif beh in (0x16, 0x17):
             _step_diver_16_17(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=False)   # B930 exits jmp BC4B
+        elif beh == 0x18:
+            _step_waypoint_18(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=False)   # B9CA/B9EE loop to BC4B
         elif beh == 0x1D:
             _step_formation_1d(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=False)   # B86D exits jmp BC4B
