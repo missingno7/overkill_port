@@ -4,6 +4,30 @@ Open items the autonomous loop attempted but could not finish byte-exact. Do NOT
 re-attempt these in the loop; they need a reproduction trace and/or gameplay
 context. Each has the analysis already done so a human can pick up fast.
 
+## 2026-07-10 — DS:98BE liveness: my probe was broken, the question is OPEN
+
+The lockstep gate's last 2 diverging bytes are `DS:98BE` on frames 6495 and 7595 — the two windows
+where `D305` runs. `[98BE]` is `0162`'s decoded input word; D305 polls it 0xC9 times, and the demo
+pump rewrites the INT9 key table between INT8 frames, so the final poll reads a table that exists
+only in the VM and never in the pre-state image the native frame is handed.
+
+I tried to justify excluding it by proving the residue DEAD (the same proof shape that retired
+`215A` / `215E`: every consumer preceded, in its own frame, by an absolute write). **The probe
+reported `writes 0` over 8291 frames.** That is impossible — the poll plainly writes the cell — so
+the instrument is wrong, not the claim. The writer addresses were derived from a static opcode scan
+(`88 26 be 98` etc.); a segment/`2E` prefix in front of the store means the real instruction pointer
+is one byte earlier than the scan reports, so the trap never fires.
+
+DO NOT exclude 98BE on the strength of that run. Redo it by finding the writer the way everything
+else in this port gets found — trap `(CS, 0x9B2E)`, single-step one frame, and watch the byte change
+(`probes/map_frame_window.py` has the swap-in-a-full-logger pattern). Then either:
+  * the residue is dead → exclude it with the driven proof recorded, as `215A` was; or
+  * it is live → the key-table SEQUENCE is a third host input (with `isr_ticks` and `level_bytes`)
+    and the shadow cache must record it per window.
+
+A `writes 0` count is a broken probe, not a discovery. Check that the instrument sees what it must
+see before believing what it says about what it doesn't.
+
 ## 2026-07-06 — RESOLVED: the L2 scenery batch (0x39/0x3A/0x3B/0x3C/0x3D/0x3E/0x3F/0x8A) — ALL EIGHT native
 
 **FIXED (2026-07-06, the one-at-a-time re-land).** Neither divergence family was in the eight
