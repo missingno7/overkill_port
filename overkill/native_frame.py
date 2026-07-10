@@ -17,7 +17,9 @@ from overkill.recovered.domain.gaps import RecoveryGap
 from overkill.recovered.domain.tilemap import LevelTileContext
 from overkill.recovered.systems.input import decode_keyboard_input_flags
 from overkill.recovered.adapters.tile_cues import run_tile_cue_row_7948
-from overkill.recovered.adapters.level_object_script import run_level_object_script_4a65
+from overkill.recovered.adapters.level_object_script import (
+    SCRIPT_CURSOR_HEADS_0B3E, run_level_object_script_4a65,
+)
 from overkill.recovered.adapters.behavior_walk import (
     _alloc, _bd17_deactivate, _rotating_pool_scan_b15a, _shot_hit_9e19,
     run_behavior_walk_a9d3, run_level_end_arm_a680,
@@ -1125,6 +1127,197 @@ def _render_strip_row_a7eb(mem, row_base: int) -> None:
     for k in range(STRIP_BAND_BYTES):
         mem.wb(strip_seg, (di0 + mirror + k) & 0xFFFF,
                mem.rb(strip_seg, (di0 + k) & 0xFFFF))
+
+
+#: the per-planet CHECKPOINT table pointer (`[C601 + planet*2]` -> four 4-word records) and the
+#: per-planet SCRIPT-CURSOR cell pointer (`[20CA + planet*2]` -> one of C5F5..C5FF)
+CHECKPOINT_TABLE_C601 = 0xC601
+SCRIPT_CURSOR_CELL_TABLE_20CA = 0x20CA
+#: `[14C0 + planet*2]` -> a DS offset holding the level's filename ("LEV1MAP.BIC" for planet 1)
+LEVEL_FILENAME_TABLE_14C0 = 0x14C0
+#: 4DBF's checkpoint search: up to 3 records inside the `loop`, then one more if none matched
+CHECKPOINT_LOOP_COUNT = 3
+#: the level rewinds from this row (4DF0) back to the checkpoint
+LEVEL_LAST_ROW = 0x0E93
+#: the level file is 0x0EA0 bytes; only this slice is level data (see cold_level_start._MAP_BODY)
+LEVEL_MAP_BODY = (12, 3682)
+
+
+def _level_data_init_0b3e(mem, level_bytes: bytes) -> None:
+    """``1010:0B3E`` -- the LEVEL-DATA INITIALIZER.
+
+    Rewinds the six spawn-script cursors to their heads, republishes the level-file pointers, and
+    loads the level map.
+
+    ``C679``, which it calls, is NOT a decompressor: it is a DOS file load (``mov dx,[21AA]`` = the
+    filename, ``ah=3Dh`` open through the far 254A:04D7 wrapper, ``[21AC]`` = the handle, ``0248``
+    reads, ``[21A8] = cs:[0244]`` = the byte count, ``ah=3Eh`` close).  That is a HOST BOUNDARY, so
+    ``level_bytes`` is supplied by the caller exactly as the key table and the INT8 tick count are,
+    rather than emulating INT 21h.  The bytes land at ``[21A4]:[21A6]`` -- the tile plane, offset 0.
+
+    ``[21AC]`` (the DOS handle) is left alone: the original always gets 5 back and never changes it.
+    The trailing ``rep stosb`` clear of the INT9 key table at 98C4..9943 (via 1010:50AB) is replayed
+    for faithfulness even though the lockstep gate excludes that range as the input channel.
+    """
+    for cell, head in SCRIPT_CURSOR_HEADS_0B3E:            # 0B3E..0B61
+        mem.ww(DS, cell, head)
+    planet = mem.rw(DS, 0x2356)
+    mem.ww(DS, 0x21AA, mem.rw(DS, (LEVEL_FILENAME_TABLE_14C0 + planet * 2) & 0xFFFF))   # 0B62
+    plane = mem.rw(CS, 0x9592)
+    mem.ww(DS, 0x21A4, plane)                              # 0B72
+    mem.ww(DS, 0x21A6, 0)                                  # 0B79
+    mem.ww(DS, 0xBB80, 0)                                  # C679
+    mem.ww(DS, 0xBB82, 0)                                  # C685
+    # 0248 reads the whole 0x0EA0-byte file to plane:0.  We copy only the MAP BODY: the bytes
+    # outside [12, 3682) are the level-independent border rows, and cold_level_start's own loader
+    # (test-pinned by tests/test_level_map_placement.py) does not trust the decoder there either.
+    # Writing them corrupted row 0, which only the checkpoints that rewind to the top (di = 0x9C)
+    # ever render -- the 4DBF gate failed on exactly those three windows and no others.
+    body_start, body_end = LEVEL_MAP_BODY
+    for off in range(body_start, min(body_end, len(level_bytes))):
+        mem.wb(plane, off & 0xFFFF, level_bytes[off])
+    mem.ww(DS, 0x21A8, len(level_bytes))                   # C6FC: [21A8] = cs:[0244]
+    for i in range(0x80):                                  # 50AB: rep stosb over the INT9 key table
+        mem.wb(DS, (0x98C4 + i) & 0xFFFF, 0)
+
+
+def _level_reinit_4dbf(mem, level_bytes: bytes) -> None:
+    """``1010:4DBF`` -- the LEVEL RE-INIT the 9AFF death tail calls at ``9B16``.
+
+    (An older note in this file called it "the death jingle -- a host boundary".  It is not: it is
+    418626 instructions of level reload, and it is why the lockstep gate's last 7 frames diverge.)
+
+    ``[C601 + planet*2]`` names a table of four 4-word records ``(row_base, script_ptr, cursor_value,
+    row_threshold)``.  ``4DAF`` reads one and sets CF from ``cmp [2350], row_threshold``; 4DBF calls
+    it up to three times inside a ``loop`` and once more if none matched, so the chosen checkpoint is
+    the first whose threshold exceeds the current scroll row.  Then: reload the level (``0B3E``, with
+    ``[A978]`` saved across it), drop the scroll to the checkpoint, repaint its tiles (``4E26``),
+    jump to the level's last row and rewind all the way back rendering every row (``4E0D``), and
+    finally re-point the planet's spawn-script cursor at the checkpoint.
+    """
+    planet = mem.rw(DS, 0x2356)
+    si = mem.rw(DS, (CHECKPOINT_TABLE_C601 + planet * 2) & 0xFFFF)
+    row_base = script_ptr = 0
+    for attempt in range(CHECKPOINT_LOOP_COUNT + 1):       # 4DCE: `loop`, then the 4DD5 fall-through
+        row_base = mem.rw(DS, si)                          # 4DAF: four `lodsw`
+        script_ptr = mem.rw(DS, (si + 2) & 0xFFFF)
+        mem.ww(DS, 0x20C8, mem.rw(DS, (si + 4) & 0xFFFF))
+        threshold = mem.rw(DS, (si + 6) & 0xFFFF)
+        si = (si + 8) & 0xFFFF
+        if mem.rw(DS, 0x2350) < threshold:                 # 4DD1: `jb`
+            break
+
+    saved_a978 = mem.rw(DS, 0xA978)                        # 4DDC: push [A978]
+    _level_data_init_0b3e(mem, level_bytes)                # 4DE0
+    mem.ww(DS, 0xA978, saved_a978)                         # 4DE3: pop [A978]
+
+    mem.ww(DS, 0x2350, row_base)                           # 4DE8
+    _plane_repaint_4e26(mem)                               # 4DED
+    mem.ww(DS, 0x2350, LEVEL_LAST_ROW)                     # 4DF0
+    _row_rewind_loop_4e0d(mem, row_base, script_ptr)       # 4DF8
+
+    cursor_cell = mem.rw(DS, (SCRIPT_CURSOR_CELL_TABLE_20CA + planet * 2) & 0xFFFF)
+    mem.ww(DS, cursor_cell, mem.rw(DS, 0x20C8))            # 4DFB..4E0A
+
+
+#: A81B's reverse-scroll row offset: `sub bx,0A9` -- 0xA9 == 13 * 0x0D, i.e. thirteen tile rows
+#: back.  The forward path renders `[2350]`; the reverse path renders the row THIRTEEN behind it,
+#: because the band it is filling is the one about to scroll into view from the other side.
+REVERSE_ROW_LOOKBACK = 0x00A9
+
+
+def _row_render_back_a7d0(mem) -> None:
+    """``1010:A7D0`` -- A781's render half: draw a row into the band, step [2350] BACK, latch [2354].
+
+    The row is NOT ``[2350]``.  ``A7EB`` tails into ``A81B``, which branches on ``[2352]``: the
+    forward path stashes ``[A408]`` and runs the tile cues + level script, but the reverse path
+    (``[2352] == 1``, which only this rewind sets) does ``sub bx,0A9`` and jumps straight to the
+    ``5A7E`` render -- no cue, no script, no ``[A408]``.  Getting this wrong leaves every non-strip
+    cell exact and the rendered bands wrong, which is precisely what the 4DBF gate first reported.
+    """
+    row = (mem.rw(DS, 0x2350) - REVERSE_ROW_LOOKBACK) & 0xFFFF     # A826
+    _render_strip_row_a7eb(mem, row)
+    mem.ww(DS, 0x2350, (mem.rw(DS, 0x2350) - 0x000D) & 0xFFFF)
+    mem.ww(DS, 0xA978, (mem.rw(DS, 0xA978) + 1) & 0xFFFF)
+    mem.ww(DS, 0x2354, 1)
+
+
+def _row_pull_reverse_a781(mem) -> None:
+    """``1010:A781`` -- the REVERSE row pull: A6FE's mirror image, run only by the death re-init.
+
+    It sets ``[2352] = 1`` (the flag :func:`_row_pull_a74e` fails loud on -- the forward pull must
+    never see it), biases ``[A278]`` DOWN, renders + steps the row base back every 16th call, and
+    walks the strip's row source FORWARD (wrapping at CS:[95C0] = 0x5B00 back to CS:[95BE] = 0x680,
+    stride CS:[959E] = 0x68).  Note the ``[2354]`` polarity is inverted vs A6FE: here the extra
+    row-base step is skipped when the latch is 1, because A7D0 has already taken it."""
+    mem.ww(DS, 0x2352, 1)
+    if mem.rw(DS, 0x2350) == 0:                     # A788: nothing left to rewind
+        return
+    mem.ww(DS, 0xA278, (mem.rw(DS, 0xA278) - 1) & 0xFFFF)
+    if mem.rw(DS, 0x234E) == 0:                     # A794
+        _row_render_back_a7d0(mem)
+    phase = (mem.rw(DS, 0x234E) + 1) & 0x000F       # A79E/A7A2
+    mem.ww(DS, 0x234E, phase)
+    if phase == 0 and mem.rw(DS, 0x2354) != 1:      # A7A7/A7AE
+        mem.ww(DS, 0x2350, (mem.rw(DS, 0x2350) - 0x000D) & 0xFFFF)
+        mem.ww(DS, 0xA978, (mem.rw(DS, 0xA978) + 1) & 0xFFFF)
+    if mem.rw(DS, 0x234C) == mem.rw(CS, 0x95C0):    # A7B9 -> A7E3: the row-source wrap
+        mem.ww(DS, 0x234C, mem.rw(CS, 0x95BE))
+    mem.ww(DS, 0x234C, (mem.rw(DS, 0x234C) + mem.rw(CS, 0x959E)) & 0xFFFF)
+
+
+#: 4E0D rewinds at most one level's worth of rows; a runaway means the loop condition is wrong.
+_REWIND_STEP_LIMIT = 0x8000
+
+
+def _row_rewind_loop_4e0d(mem, row_stop: int, script_ptr: int) -> None:
+    """``1010:4E0D`` -- pull rows backwards until the level sits at ``row_stop``, then re-point
+    the scroll's script cursor.  The exit test is ``[2350] <= row_stop AND [234E] == 0``."""
+    for _ in range(_REWIND_STEP_LIMIT):
+        _row_pull_reverse_a781(mem)
+        if mem.rw(DS, 0x2350) <= row_stop and mem.rw(DS, 0x234E) == 0:
+            mem.ww(DS, 0xA978, script_ptr)          # 4E21
+            return
+    raise RecoveryGap("the 4E0D row-rewind loop did not converge",
+                      f"row_stop={row_stop:#06x} [2350]={mem.rw(DS, 0x2350):#06x} "
+                      f"[234E]={mem.rw(DS, 0x234E):#06x}")
+
+
+#: 4E26's two tile-rewrite handlers, by the CS address `jmp cs:[bx+2]` dispatches to:
+#: 4E5F = `mov byte es:[si],28`, 4E65 = `mov byte es:[si],01`.  (Hand-decoding put these at
+#: 4E5D/4E63; the driven gate rejected 4E5F on the first run.  Count the bytes, then check.)
+_REPAINT_HANDLERS = {0x4E5F: 0x28, 0x4E65: 0x01}
+TILE_REPAINT_TABLE_20D6 = 0x20D6
+REPAINT_SPAN = 0x9C
+
+
+def _plane_repaint_4e26(mem) -> None:
+    """``1010:4E26`` -- rewrite the checkpoint's tiles in the PLANE (``es = CS:[9592]``).
+
+    Walks ``0x9C`` plane bytes down from ``[2350] - 1``; each byte is matched against the planet's
+    ``(tile, handler)`` pair list at ``CS:[[20D6 + planet*2]]`` (FFFF-terminated), and a match jumps
+    to a handler that stores 0x28 or 1.  DGROUP is untouched -- but the plane is what the row renders
+    that follow read, so this must run."""
+    plane = mem.rw(CS, 0x9592)
+    planet = mem.rw(DS, 0x2356)
+    table = mem.rw(DS, (TILE_REPAINT_TABLE_20D6 + planet * 2) & 0xFFFF)
+    si = (mem.rw(DS, 0x2350) - 1) & 0xFFFF
+    for _ in range(REPAINT_SPAN):
+        bx = table
+        while True:
+            want = mem.rw(CS, bx)
+            if want == 0xFFFF:
+                break
+            if want == mem.rb(plane, si):
+                handler = mem.rw(CS, (bx + 2) & 0xFFFF)
+                value = _REPAINT_HANDLERS.get(handler)
+                if value is None:
+                    raise RecoveryGap(f"4E26 tile handler CS:{handler:04X}",
+                                      "only the 4E5D (0x28) and 4E63 (0x01) stores are recovered")
+                mem.wb(plane, si, value)
+                break
+            bx = (bx + 4) & 0xFFFF
+        si = (si - 1) & 0xFFFF
 
 
 def _scroll_step_a6fe(mem) -> None:
