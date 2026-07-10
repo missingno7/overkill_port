@@ -130,7 +130,8 @@ def _save_under_a846(mem) -> None:
     ``verify_native_star_strip`` proves byte-exact.  Gate-verified against the driven original at
     ``(CS,0xA876)``.
     """
-    window = _terrain_window(mem)
+    stack, start = _terrain_stack(mem)
+    n_rows = len(stack)
     scroll = mem.rw(DS, 0x234C)
     strip_seg = mem.rw(CS, 0x9598)
 
@@ -140,10 +141,11 @@ def _save_under_a846(mem) -> None:
         for row in range(rows):
             src = (di + row * STRIP_STRIDE) & 0xFFFF
             t, c = divmod(src - scroll, STRIP_STRIDE)
+            r = start + t                   # the block may straddle the visible window's edges
             for j in range(row_bytes):
-                if 0 <= t < STRIP_ROWS and 0 <= c + j < STRIP_STRIDE:
-                    b = window[t][c + j]
-                else:                       # the block straddles the derived window's edge
+                if 0 <= r < n_rows and 0 <= c + j < STRIP_STRIDE:
+                    b = stack[r][c + j]
+                else:                       # outside the rendered stack entirely
                     b = mem.rb(strip_seg, (src + j) & 0xFFFF)
                 mem.wb(DS, (dest + row * row_bytes + j) & 0xFFFF, b)
 
@@ -239,11 +241,23 @@ STRIP_ROWS = 192
 STRIP_TOP_Y = 4
 
 
-def _terrain_window(mem) -> "list[list[int]]":
-    """The (192, 104) packed terrain bytes 4CED probes -- ``compose_tile_window``, nothing else."""
+def _terrain_stack(mem):
+    """The WHOLE packed terrain strip stack, and the visible window's offset into it.
+
+    ``compose_tile_window`` renders 14 bands of 16 scanlines (``row_base``, ``row_base - 0x0D``,
+    ...) and slices the visible 192 rows starting ``16 + phase`` in.  The star pass only needs that
+    window, but A846's save-under reads 16 rows starting at a sprite's own di, which can straddle
+    the window's top or bottom -- and those rows ARE in the stack.  So build the stack once and let
+    callers index it by window-relative row ``t`` (``stack[start + t]``).
+
+    Returns ``(packed_stack, start)`` where ``packed_stack[r][c]`` is the strip byte (2 px) of
+    absolute stack row ``r``.
+    """
     import numpy as np
 
-    from overkill.native_video.tile_row import BANK2_ROW_BASE, compose_tile_window
+    from overkill.native_video.tile_row import (
+        BANK2_ROW_BASE, PLANE_ROW_STRIDE, TILE_ROWS, WINDOW_BANDS, render_tile_row,
+    )
 
     row_base = mem.rw(DS, 0x2350)
     mem_np = np.frombuffer(bytes(mem.data), dtype=np.uint8)
@@ -253,12 +267,18 @@ def _terrain_window(mem) -> "list[list[int]]":
     bank_ptr = 0x959C if row_base >= BANK2_ROW_BASE else 0x959A
     bank = mem.rw(CS, bank_ptr)
     graphics = mem_np[bank * 16: bank * 16 + 0x10000]
-    frame = np.zeros((200, 320), dtype=np.uint8)
-    compose_tile_window(frame, plane, row_base, table, graphics, phase_234e=mem.rw(DS, 0x234E))
-    band = frame[STRIP_TOP_Y:STRIP_TOP_Y + STRIP_ROWS, :STRIP_STRIDE * 2].reshape(
-        STRIP_ROWS, STRIP_STRIDE, 2)
-    packed = (band[:, :, 0] << 4) | band[:, :, 1]
-    return packed.tolist()
+    strips = [render_tile_row(plane, (row_base - s * PLANE_ROW_STRIDE) & 0xFFFF, table, graphics)
+              for s in range(WINDOW_BANDS + 2)]
+    stack = np.concatenate(strips, axis=0)[:, :STRIP_STRIDE * 2]
+    pairs = stack.reshape(stack.shape[0], STRIP_STRIDE, 2)
+    packed = ((pairs[:, :, 0] << 4) | pairs[:, :, 1]).tolist()
+    return packed, TILE_ROWS + (mem.rw(DS, 0x234E) & 0x0F)
+
+
+def _terrain_window(mem) -> "list[list[int]]":
+    """The (192, 104) packed terrain bytes 4CED probes -- the visible slice of the stack."""
+    packed, start = _terrain_stack(mem)
+    return packed[start: start + STRIP_ROWS]
 
 
 def _a940_walk_stage(mem) -> None:
