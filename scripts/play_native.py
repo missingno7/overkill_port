@@ -285,12 +285,17 @@ def _run_hiscore_screen(display, pygame, container_data, seconds: float) -> "boo
 _INTRO_PAGES = ("IPAGE1.ENC", "IPAGE2.ENC", "IPAGE3.ENC", "IPAGE4.ENC", "IPAGE5.ENC")
 
 
-def _run_intro(display, pygame, container_data, per_page_seconds: float = 8.0) -> bool:
-    """Play the five-page story intro (IPAGE1..5), each advanced by Space/fire or a timeout.
+#: the victory ending: the ten OPAGE pages, named in the same DS:1323 table right after the intro.
+_ENDING_PAGES = tuple(f"OPAGE{i}.ENC" for i in range(1, 11))
+
+
+def _run_story_pages(display, pygame, container_data, names, label: str,
+                     per_page_seconds: float = 8.0) -> bool:
+    """Play a sequence of full-screen story pages, each advanced by Space/fire or a timeout.
     Esc/quit skips the rest.  Returns False on window-close (so the caller can exit), else True."""
-    display.set_title("OVERKILL - native (VM-less)  [intro -- Space skips a page, Esc skips all]")
+    display.set_title(f"OVERKILL - native (VM-less)  [{label} -- Space skips a page, Esc skips all]")
     clock = pygame.time.Clock()
-    for name in _INTRO_PAGES:
+    for name in names:
         img = decode_fullscreen_image(container_data, name)
         for _ in range(int(per_page_seconds * 30)):
             advance = False
@@ -306,6 +311,16 @@ def _run_intro(display, pygame, container_data, per_page_seconds: float = 8.0) -
             display.draw(img)
             clock.tick(30)
     return True
+
+
+def _run_intro(display, pygame, container_data, per_page_seconds: float = 8.0) -> bool:
+    """Play the five-page story intro (IPAGE1..5)."""
+    return _run_story_pages(display, pygame, container_data, _INTRO_PAGES, "intro", per_page_seconds)
+
+
+def _run_ending(display, pygame, container_data, per_page_seconds: float = 8.0) -> bool:
+    """Play the ten-page victory ending (OPAGE1..10)."""
+    return _run_story_pages(display, pygame, container_data, _ENDING_PAGES, "ending", per_page_seconds)
 
 
 def _replay_demo(display, pygame, bundle_data, container_data, demo_dir: Path,
@@ -536,6 +551,8 @@ def main(argv=None) -> int:
     ap.add_argument("--demo", default=None,
                     help="replay a recorded demo through the verified frame + renderer, then exit "
                          "(charter step 2 -- the attract sequence's demo element, standalone)")
+    ap.add_argument("--intro", action="store_true", help="view the IPAGE story intro, then exit")
+    ap.add_argument("--ending", action="store_true", help="view the OPAGE victory ending, then exit")
     args = ap.parse_args(argv)
 
     from overkill.recovered.adapters.cold_level_start import build_cold_level_start_image
@@ -546,6 +563,12 @@ def main(argv=None) -> int:
     display = PygameDisplay(scale=args.scale)
     pygame = display.pygame
     scan_map = _build_scan_map(pygame)
+
+    if args.intro or args.ending:
+        run = _run_ending if args.ending else _run_intro
+        run(display, pygame, container_data)
+        display.close()
+        return 0
 
     if args.demo:
         demo_dir = ROOT / "artifacts" / "demos" / args.demo
