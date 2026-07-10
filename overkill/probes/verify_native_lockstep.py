@@ -63,6 +63,14 @@ EXCLUDED_CELLS |= {0x215E, 0x2160, 0x2161}
 # the 0162 poll whose output (DS:98BE) and every downstream effect stay fully compared.  The
 # raw channel cells are inputs (device state), not game state.
 EXCLUDED_CELLS |= {0x98C3} | set(range(0x98C4, 0x99C4))
+# ...and 98BE, the poll's DECODED form, on the same footing and with the same kind of proof.  It only
+# matters because D305 polls 0162 0xC9 times inside ONE window while the pump rewrites the key table,
+# so the final poll reads a table that never exists in the pre-state image.  0162 rebuilds the byte
+# from nothing -- eight `rcl byte [98BE],1` shift every old bit out through CF, then `or ...,imm`
+# merges the flags -- and probes/verify_input_word_dead.py drives the ORIGINAL over all 8291 frames
+# and asserts each of the 58473 consumer accesses follows that frame's own poll.  Zero violations.
+# Every DOWNSTREAM effect of the input (the move handlers, the fire path) stays fully compared.
+EXCLUDED_CELLS |= {0x98BE}
 
 #: the INT8 vector (IVT 0000:0020 of every recorded snapshot) -- trapped so the recorder can count
 #: how many timer interrupts the original took inside each window.  That count is the OTHER host
