@@ -1458,10 +1458,11 @@ def _respawn_wait_d305(mem, isr_ticks: int) -> None:
     if mem.rb(DS, 0x98BE) & FIRE_BIT:
         raise RecoveryGap("D305 entered with FIRE already held",
                           "the demo never does; the release spin is unmodelled")
-    expected = (RESPAWN_WAIT_LIMIT + 1) * RESPAWN_WAIT_TICKS_PER_ITER
-    if isr_ticks != expected:
-        raise RecoveryGap(f"D305 expected {expected} timer ticks, the gate recorded {isr_ticks}",
-                          "the loop must have exited early -- fire pressed, or a short frame")
+    # D305 runs its OWN fixed loop (0xC9 mini-frames of 2 ticks each = 402), so the passed isr_ticks
+    # is not consumed here.  On the lockstep replay it happens to equal 402; in live play it is 2.
+    # It is NOT an input to this loop -- do not assert on it (that coupling failed a cold run at the
+    # first natural death, where the app passes 2 and D305 still owes its own 402).
+    del isr_ticks
     mem.ww(DS, 0xBED8, 0)                                          # D312
     while True:
         _star_list_4ced(mem)                                       # D31E
