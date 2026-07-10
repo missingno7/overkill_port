@@ -95,6 +95,13 @@ Its fingerprint in DGROUP is a session reset + a level reload + D305:
 `2358 0 -> 3` (lives), `2350 -> 9C`, `2352 -> 1` / `2354 -> 1` (the reverse pull ran), `234C`/`234E`
 reset, `2078` cleared, the 2324..2348 clocks reset, 402 ticks (so `D305` ran too).
 
+**MEASURED 2026-07-10 (attempt + revert; full detail in loop_blockers):** the strip alias at the
+boundary is HISCORE.ENC (83.7% raw match) with the score TABLE composited over it -- a RENDERED
+screen.  57E6 / the title flow / D305 attribute as 6131 / 4097 / 158 DGROUP bytes; the setup tail
+(96EE + 0B3E + C3A6-family + the plaq pointers, `[21A8] = len(PLAQ0.ENC) = 0x1778`) is ~209 and all
+composable today.  The ONLY hard residue is the two rendered screens in the alias -- i.e. the
+front-end text/glyph renderer.  The menu PICK is user input (supply it; the demo picks cell 0).
+
 **Scope honestly.**  This is the same body of work as `mode.game_over_seq` in
 `native_app.describe_gaps()`, and it drags in the front-end: a full-screen text/render path
 (`57E6`, `5559`, `1F8F:0980`), host delays (`50C9`), the music trigger (`CB1C`), and the compressed

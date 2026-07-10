@@ -4,6 +4,39 @@ Open items the autonomous loop attempted but could not finish byte-exact. Do NOT
 re-attempt these in the loop; they need a reproduction trace and/or gameplay
 context. Each has the analysis already done so a human can pick up fast.
 
+## 2026-07-10 — 98EB composition attempt: REVERTED; the alias is a RENDERED high-score screen
+
+Attempted: compose `_game_over_continuation_98eb` from owned pieces (96EE + 0B3E + C3A6-tail + D305)
+plus a "file scratch" model of the strip alias (raw OKMENU.ENC then raw PLAQ0.ENC written linearly
+at strip:0).  Result: frame 5379 went from a fail-loud GAP to a 7552-byte DIVERGENCE — strictly
+worse honesty — so the whole composition was reverted (`git checkout`, tree back to 0 B / 1 gap).
+
+**What the measurements established (all banked, do not re-derive):**
+* Per-checkpoint attribution of the window (scratch g98eb2): 5145 = 0 B; 57E6 = 6131 B (6130 in the
+  strip alias) + `[BEFF] = 5`; 50C9 = 0 B and 0 ticks; 5283 = `[2286] = 0x14`; CB1C = `[98C2] = 2`;
+  the title-flow load = 4097 alias bytes + `[21A4] = strip_seg`, `[BB84] = 1`; the setup-tail step =
+  209 B (96EE session + 2350→9C + 2078/2340 clears + `[21AA] = 0x144F` plaq pointers) with **zero**
+  alias bytes; D305 = 158 B and ALL 402 ticks; then 0 to the boundary.
+* `[21A8]` at the boundary == 0x1778 == the raw size of PLAQ0.ENC (`load_container_asset`).  The
+  plaque read's DGROUP-visible effect is pointers only — its buffer is NOT the alias region.
+* **The final alias fingerprints as HISCORE.ENC at 83.7%** (raw, offset 0; okmenu 46%, thend 43%).
+  The remaining ~16% is the score TABLE rendered over the decoded image — the 532D/5283 family
+  compositing glyphs into the scratch.  So the boundary alias = a RENDERED front-end screen, not a
+  file dump.  Reproducing it byte-exactly requires the front-end glyph/text renderer + the
+  high-score table state — the front-end campaign, not a composition of gameplay pieces.
+* The window's screen sequence (by alias writers): game-over screen (57E6) → high-score screen
+  (with the table drawn) → title flow → plaque read (non-alias) → setup tail → D305 plaque wait.
+* The menu PICK (level-select cell) is USER INPUT that exists only in the VM's key table during the
+  window; any native 98EB needs it supplied (the demo's one game-over picks cell 0 → planet 1 →
+  PLAQ0.ENC).
+
+**Repro of the failed model:** scratch `patch98eb.py` (applies the composition), then
+`pypy -m overkill.probes.inspect_death_windows` → frame 5379 = 7552 B, Cxxx+ = 7288.
+**Rule reaffirmed:** a declared gap is worth more than a wrong implementation — do not land a 98EB
+model until the alias bytes match, and fingerprint before modelling (the "raw file scratch" guess
+cost one cycle; `alias_steps.py`'s per-checkpoint capture + a candidate-source match table settled
+it in two).
+
 ## 2026-07-10 — DS:98BE liveness: my probe was broken, the question is OPEN
 
 The lockstep gate's last 2 diverging bytes are `DS:98BE` on frames 6495 and 7595 — the two windows
