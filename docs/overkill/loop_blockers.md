@@ -12,18 +12,22 @@ container)` then run `advance_gameplay_frame_97b2` -> gap at tick 16.  EFC4[0x7D
 step handler `1010:8D4F` = `call far 1F8F:027A ; jmp BC4B` (the postmove BC4B is already recovered via
 `_postmove_bc45(with_drift=True)`).  So the body IS the overlay routine `1F8F:027A` + the postmove.
 
-`1F8F:027A` (disasm) is a MULTI-MODE waypoint/formation follower: reads the waypoint pointer si=[A482],
-lodsw the next point, sets the seek targets [2306]=pt.x+0x20 / [2304]=pt.y / [2308]=3, calls the 5DB2
-seek (via the 8D8B far trampoline, `object_target_seek_step_5db2` -- recovered), checks [230A]
-(blocked), then branches on the record's +0x24 MODE (0x13/0x15/0x1C/0x1F/0x7D) -- each mode advances
-[A482] by 8 and spawns/handles the next waypoint (0x81F4 alloc via 8D8B, stamp +0x34/+0x32 from the
-waypoint list, FFFF-terminated).  It is a whole overlay state machine, not a one-liner.
+`1F8F:027A` is the SAME body already recovered for behaviors 0x13 and 0x1C
+(`behavior_walk._step_controller_13` / `_step_controller_1c`): read the waypoint si=[A482], seek
+targets [2306]=pt.x+0x20 / [2304]=pt.y / [2308]=3, call 5DB2 (`object_target_seek_step_5db2` via
+`_apply_seek`), then on the +0x24-MODE arrival (0x13->0432, 0x15->03E6, 0x1C->03A6, 0x1F->0368,
+0x7D->0309, else->02CB) advance [A482] and 81F4-spawn a child, A47E++, ending at the 0448 sprite tail
+(sprite = direction + 0x3B).
 
-RECIPE: drive the reproducing planet-4 state one VM frame, trap 8D4F entry + the far-call return 8D54
-and the BC4B postmove for record 23EC, capture the DGROUP delta per mode, implement mode-by-mode in
-behavior_walk's dispatch (add `elif beh in (0x7D, 0x7E):`), gate each mode.  The overlay far-calls
-(1F8F) mean the driven oracle must run the interpreter with the overlay loaded (a demo snapshot that
-reaches planet 4, or load the gap-snapshot image into a dos_re runtime).  A multi-slice recovery.
+DRIVEN ORACLE (L4 demo, `demo_play_tandy_L4_full_20260618_185155`, trap 8D4F entry + far-return 8D54):
+**117 of 121 0x7D steps are the SEEK ONLY** (mode 0, not blocked -- reuse the `_step_controller_1c`
+seek verbatim).  The 4 BLOCKED/arrival steps spawn a child, but the captured stamp does NOT match a
+naive read of the 02CB else-branch (child at 2424 gets +0x18=0x81, +0x1C=0x19, +0x14=1, +0x16=4,
++0x20=5, +0x28=FFFF, +0x32/+0x34 position -- not the 0x7F/0x14 the 02CB disasm sets), so the arrival
+path this enemy actually takes must be pinned by DRIVING per step (which +0x24 mode, which arrival
+branch), not read.  NEXT SLICE: add `elif beh in (0x7D, 0x7E):` modelled on `_step_controller_1c`, get
+the seek gating 117/121 immediately, then drive the 4 arrivals to pin the spawn stamp; gate native vs
+the L4-demo VM per 0x7D step.  Scaffolding for the gate is `scratchpad/b7d_oracle.py`.
 
 ## 2026-07-10 — the 8546 SPECIAL-WEAPON apply families — 6 of 7 FILLED; only 849D open
 
