@@ -69,6 +69,23 @@ def build_cold_level_start_image(exe_image: bytes, level_index: int = 0,
         _load_planet_level_data(mem, exe_image, container, planet)
     # 2..6) the level-start / respawn re-init (shared with the 9908 death->respawn composition)
     apply_respawn_seeds(mem)
+    # 7) the SCROLL CURSOR at its level-post-load values.  The static bundle's capture holds
+    # whatever the snapshot's level had; a seeded cold image must start where a real level load
+    # leaves the cursor, or the first A6FE scroll step wraps DS:234C negative.  These are the
+    # documented level-load constants (60C5 leaves row_base pre-advanced; the pull settles it to
+    # 0x9C; the row source starts at CS:[95C0] = 0x5B00; DS:A978 = 0x110 rows to the first cue --
+    # confirmed empirically for all six planets by the old play_native seeding).
+    mem.ww(DATA_SEGMENT, 0x234C, 0x5B00)     # the row-source cursor
+    mem.ww(DATA_SEGMENT, 0x234E, 0x0000)     # the origin-x phase
+    mem.ww(DATA_SEGMENT, 0x2350, 0x009C)     # the view row base
+    mem.ww(DATA_SEGMENT, 0x2352, 0x0000)     # forward scroll
+    mem.ww(DATA_SEGMENT, 0xA978, 0x0110)     # rows to the first level-script trigger
+    # 8) [BDAC] = 0 -- the render/weapon mode.  The ATTRACT flow sets it to 1 (1010:CF9C) and the
+    # attract-exit-into-a-game clears it (1010:D040, `mov word [BDAC],0`); the static bundle's
+    # snapshot was captured with the attract value, so a seeded image inherited BDAC = 1 and the
+    # first held FIRE walked A067 into its BDAC==1 branch (a genuine gap, but not one a fresh game
+    # can reach).  Every mid-play snapshot holds 0.
+    mem.ww(DATA_SEGMENT, 0xBDAC, 0x0000)
     return mem
 
 

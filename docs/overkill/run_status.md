@@ -54,8 +54,44 @@
 > (4370/4370) demos, zero divergence zero gaps; L4 walk residue: 0x93/0x81/0x80/0x7D/0x7E/0x7F + the
 > planet-4 wave family; the D50E sound engine, the 5F61 frame clock, the A66F scroll (cues+script
 > inside the row pull), the 0162 input poll, the A067 fire path and the 0922 starfield are native in
-> the lockstep frame.  play_native still runs the OLD hybrid loop -- nothing verified reaches the
-> player until charter step 1 (the unification) lands.
+> the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
+> deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
+
+## 2026-07-10 (night) — DEEP CLEANUP: play_native IS the verified frame now; the hybrid is deleted
+
+The owner's directive: stop gluing, remove the misleading implementation.  Done as one focused
+rewrite (852 → ~420 lines):
+
+* `scripts/play_native.py` = `build_cold_level_start_image` → per frame: host keys written into the
+  image's own INT9 key table (DS:98C4..; 0162 decodes — the decoded word is never synthesised) →
+  `advance_gameplay_frame_97b2(img, isr_ticks=2, level_bytes=...)` → `ImageRenderer` (tiles from the
+  plane, stars from the image's C6C1 ring, sprites via `project_state` — a render projection, ADR-1
+  — HUD from live cells).  No `NativeGame`, no sync bridges, no dataclass starfield, no exit-time
+  respawn glue (the frame owns death/respawn natively).  A344/A342 exits HOLD fail-loud (9734/98EB
+  are declared gaps).  `--frames N` is a headless self-test.
+* The five probes gating the old wiring (`verify_play_native_cold/death/respawn/levelend/render`)
+  are DELETED with it; `verify_play_native_frame` gates the real wiring: ship visible from frame 2,
+  the wave arrives (274 → 1568 sprite px), a natural death + respawn passes through the native 9908
+  continuation, HUD composed, 700 frames gap-free.  PASS.
+* Two cold-seed bugs surfaced by running the real frame over the cold image, both fixed in
+  `build_cold_level_start_image` (the honest place), not at call sites:
+  - the SCROLL CURSOR: the builder left DS:234C/2350/A978 at the bundle capture's zeros; the frame
+    fn scrolls 234C itself, so the first A6FE step wrapped it negative.  Seeded to the documented
+    level-post-load constants (5B00 / 9C / 110).
+  - `[BDAC] = 1` inherited from the bundle (its snapshot was captured in ATTRACT mode: 1010:CF9C
+    sets 1; the attract-exit-into-a-game clears it at 1010:D040).  A fresh game holds 0; the stale 1
+    sent the first held FIRE into A067's unrecovered BDAC==1 branch.
+* `D305` was decoupled from `isr_ticks` earlier tonight (it runs its own fixed 0xC9-pass loop);
+  that plus these two seed fixes is what lets the frame fn run a live, playable L1 from a cold
+  image: fire works, waves arm, death respawns at the level top.
+
+Deleted-not-repaired is recorded in `deprecated_or_quarantined.md`, including the standing rule:
+NO new dataclass game authority, no second starfield sim, no exit-time glue.  `native_game.py` and
+the sync bridges remain only because tests pin recovered systems through them — deprecated for
+gameplay, retirement is follow-up.
+
+Lockstep gate unchanged: 8292 frames, 0 diverged, 1 gapped (98EB).  Suite 1223 passed; lint 392
+files (5 probe files fewer); both audits green.
 
 ## 2026-07-10 (late) -- LOCKSTEP: 8291/8292 BYTE-EXACT, ZERO DIVERGENCE, ONE GAP
 

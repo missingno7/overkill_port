@@ -4,6 +4,35 @@ Tracks code, data, and docs that are obsolete, speculative, historical, or mixin
 layers — to be deleted or moved to an explicit evidence/quarantine area rather
 than left mixed with current recovered logic. See `rescue_refactor.md`.
 
+## 2026-07-10 — the play_native HYBRID LOOP is deleted (the owner's deep-cleanup directive)
+
+**What was deleted.**  `scripts/play_native.py`'s entire gameplay machinery: the dataclass
+`NativeGame` authority, `_advance`'s `g.step(...)` call with its hand-fed globals
+(`_object_update_globals`, `scroll_gate`, `source_x/source_y`), the per-tick sync bridges
+(`sync_player_anchor`, `sync_new_gameplay_records`, manual `234C/234E/2350/A978` writes), the
+separate dataclass starfield simulation (`advance_starfield` — the image's C6C1 ring is the real
+one and the frame fn ticks it), the death/respawn glue (`apply_respawn_seeds` + hand-rolled B5A9/
+A8C2/20A6 resets at the exit), the `_load_next_level`/`_restart_session` dataclass reloads, and the
+fake game-over banner→title flow.  Also deleted: the five probes that GATED that wiring —
+`verify_play_native_cold/death/respawn/levelend/render` — replaced by ONE probe of the real wiring,
+`verify_play_native_frame`.
+
+**Why.**  The hybrid mirrored fragments of state into the image and back; everything the mirrors
+missed was silently wrong.  The owner's playtests kept finding exactly those gaps (no thrusters,
+wrong fire origin, dead waves, lost fire after the intro), and the follow-up fixes were being
+glued onto the same scaffolding.  The project's whole point is that the ONE lockstep-verified frame
+(`advance_gameplay_frame_97b2`, byte-exact on 8291/8292 L1 demo frames) IS the game; the app is a
+host shell (window, keyboard→INT9 table, palette blit, pacing) plus an image-only renderer.
+
+**What remains quarantined (not deleted this pass).**  `overkill/native_game.py`'s `NativeGame.step`
+path and `native_walk_frame`'s sync bridges still exist because tests and older probes pin recovered
+systems THROUGH them.  They are DEPRECATED FOR GAMEPLAY: no new caller may drive a game with them.
+Retiring them (moving the pinned tests onto image-level checks) is follow-up work.
+
+**Do not resurrect** a dataclass game authority, a second starfield sim, or an exit-time respawn
+glue path.  If play_native misbehaves, the bug is in the frame fn or the seed — fix it there, under
+the lockstep gate.
+
 ## Doc sweep (2026-07-07, owner-directed)
 
 Eighteen historical plan/report/audit docs were stamped with a SUPERSEDED banner (content kept,

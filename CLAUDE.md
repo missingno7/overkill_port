@@ -59,11 +59,11 @@ those over anything below or in older docs.**
   additionally owns: input (from the image's own INT9 key table), the player move handlers, the
   death tail, the A66F scroll (tile cues + the level script run INSIDE the row pull), the A067 fire
   path, the A940 state update, the 5F61 frame clock, the 0922 starfield and the D50E sound engine.
-- **`scripts/play_native.py` still runs an OLDER hybrid loop** (dataclass game + sync bridges) —
-  the owner's playtests correctly flag it as inaccurate.  Charter step 1 replaces its gameplay loop
-  with the gate-verified frame fn; step 2 adds `--demo <name> --mirror` (replay a recorded demo in
-  the app with live state/pixel divergence flagging).  Until then, play_native is NOT evidence of
-  the port's state — the lockstep gate is.
+- **`scripts/play_native.py` runs the gate-verified frame fn over the image** (2026-07-10: the old
+  hybrid loop — dataclass game + sync bridges — is DELETED, see deprecated_or_quarantined.md; never
+  rebuild it).  Charter step 2 is still open: `--demo <name> --mirror` (replay a recorded demo in
+  the app with live state/pixel divergence flagging).  The lockstep gate remains the byte-exact
+  evidence; `verify_play_native_frame` gates the app wiring.
 - **Genuinely open** (ordered in the charter): the 4CED star-list mid-present occupancy, the 23A0
   flash decay (recipe journaled), the 77C5 shield body, the 9EE4 drain, the app unification, then
   the L4/L5 walk residue, transitions/menu/endings, audio (the D50E DGROUP model is done; the host

@@ -46,7 +46,7 @@ demo -- **never executes in the app**.  Symptom by symptom:
 3. `--demo <name> --mirror`: replay a recorded demo through the app, stepping the same frame fn, and
    flag state/pixel divergence live.  This is the owner's "run it against the real game and fix what
    differs" loop, at the screen.
-4. Gates that must stay green: `verify_play_native_render` (pixel), `verify_native_frame_1to1`
+4. Gates that must stay green: `verify_play_native_frame` (the new-wiring headless gate), `verify_native_frame_1to1`
    (playfield compose, currently 300/300 presents at 0 diff px), and the lockstep gate.
 
 The menu / level-select the owner sees is the front-end gap (`mode.title_menu`, `D390`), separate

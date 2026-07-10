@@ -69,7 +69,8 @@ step, not after. A cold `origin_x=0` pulls a row (decrementing `rows_to_mileston
 scroll tick itself, so syncing the POST-step value silently skipped the exact entry the cold seed
 (`0x110`) was built to match -- zero spawns, no exception, easy to miss. Fixed in `_advance()` by
 capturing `rows_to_milestone` before calling `g.step(...)` and syncing that pre-step value.
-(e) **DONE**: `overkill/probes/verify_play_native_cold.py` -- a new headless probe mirroring
+(e) **DONE** (2026-07-10: probe deleted with the hybrid loop it mirrored; superseded by
+`verify_play_native_frame`): `overkill/probes/verify_play_native_cold.py` -- a headless probe mirroring
 `play_native.py`'s exact cold wiring (no pygame), tick-for-tick: cold-seed `NativeGame` +
 `build_cold_level_start_image`, step both in lockstep, census all three pools (controllers/enemies
 live in `special_pool`/`effect_pool`, not just `object_pool`). **PASS** at 200 frames: peak enemies=20,
