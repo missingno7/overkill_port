@@ -28,7 +28,7 @@
 > ONE native 97B2 frame (`overkill/native_frame.py`) in per-frame lockstep with a recorded demo
 > (`overkill/probes/verify_native_lockstep.py`, cached), then swap play_native onto that same frame
 > fn + add `--demo/--mirror`.  **CURRENT LOCKSTEP STATE (L1 demo, 8292 frames, PyPy, 2026-07-10):
-> 8285 byte-exact / 7 diverging / 0 GAPPED.**  Every frame runs natively end-to-end and 99.92% are
+> 8288 byte-exact / 1 diverging / 3 GAPPED.**  Every frame runs natively end-to-end and 99.95% are
 > byte-exact across the whole 64K DGROUP.  Their residue is down to 6860 bytes (from 17839) now that
 > `1010:4DBF`, the death LEVEL RE-INIT, is recovered and independently gated by
 > `probes/verify_native_level_reinit_4dbf` (PASS 7/7).  The 7 are EXACTLY the death/respawn windows
@@ -56,6 +56,49 @@
 > inside the row pull), the 0162 input poll, the A067 fire path and the 0922 starfield are native in
 > the lockstep frame.  play_native still runs the OLD hybrid loop -- nothing verified reaches the
 > player until charter step 1 (the unification) lands.
+
+## 2026-07-10 (evening) -- the 9908 respawn continuation; 8288/8292 byte-exact, 1 diverged, 3 gapped
+
+The divergence loop, run as intended: take the first differing cell, name the routine, implement,
+repeat.  Death-window residue 17839 -> 6860 -> 3748 -> 3484 bytes; frames 4636/4821/5018 are now
+BYTE-EXACT.
+
+* `119901d` the whole 9908 -> 9773 -> 978F chain.  **Tick placement matters**: 9921 spins on [BEFE]
+  until the death jingle drains, so the frame's timer interrupts fire THERE, and only afterwards does
+  992F queue sound 2.  Applying the recorded `isr_ticks` at the frame tail (where the ordinary path
+  puts them) would let the ISR consume the sound we had just queued.  The death path also skips
+  073C/60A2/0679 entirely -- 9908's chain re-enters at 97B2, not 97EC.  `C57C` and `B5A9` are SKIPPED,
+  not stubbed: `attribute_death_continuation` measured zero DGROUP bytes for both.  `6176`'s whole
+  effect is that six words at 2368..2372 go to zero.
+* `a76ba84` the last 107 bytes: **C3A6's HEAD** is a `rep stosw` zeroing the 16-word completion-counter
+  table at 2078 (the recovered `object_pool_seed_c3b5` starts at the C3B5 label, one instruction
+  later); **C42F** calls the 7524 allocator and stamps the slot it gets (+0=1, +0x14=1, +0x16=6) --
+  the slot ROTATES with the cursor (10, 21, 32 across the three deaths), so no constant would do;
+  **C461**'s tail zeroes [2340], sets `[A97C] = 1` and queues sound 0x0D.  `[A97C] = 1` ARMS the bar,
+  which is why the next call (77C5) ticks `[A97A]` 0 -> 1 -- without it the bar stays empty, and an
+  empty bar IS the 9B61 death condition, so the respawned player would die on the spot.
+
+The gate's verdict now requires **gaps == 0 as well as diverged == 0**.  A frame the runtime refuses
+to run is unrecovered exactly like one it runs wrongly; without this a fail-loud RecoveryGap would
+have read as PASS.
+
+### WHAT IS LEFT -- two things, both named
+1. **frame 5379** (3484 B, the only diverging frame).  It starts at `DS:21A4/21A8/21AA` -- 0B3E's
+   level-file pointers -- and 3356 of its bytes are in the STRIP's DGROUP alias (base D330).  The VM
+   leaves `[21A4] = 32FF` (the strip segment) where we leave `245A` (the plane segment 0B3E wrote),
+   so a BLIT ran that we do not model.  `attribute_death_continuation` puts 3264 of those bytes in
+   the `C4DB -> 9773` step -- i.e. inside the 9921 spin, where the only thing running is the INT8
+   ISR, 402 times.  **Hypothesis to test first: the ISR does more than sound + [0054] when it runs
+   many times in a row** (a page flip / strip refresh on some [0054] parity).  Our 2-tick model is
+   right for 8288 frames, so whatever this is only shows at scale.  Do NOT assume; trap 06E5 on 5379
+   and diff.
+2. **frames 6495/7143/7595**: the `D305` wait loop, a fail-loud RecoveryGap.  It is NOT input-driven
+   (an earlier note said so and was wrong): it counts `[BED8]` to `0xC8`, i.e. 200 nested mini-frames
+   of (0672, 4CED, D367, 4D64, the far 1F8F:0922, 073C, 60A2, 5160, 0679, 50C9) at ~2 ticks each --
+   exactly the 402 ticks those windows record.  159 DGROUP bytes.
+
+Iterate with `pypy -m overkill.probes.inspect_death_windows` (~16 s).  Prove with
+`pypy -m overkill.probes.verify_native_lockstep "" 20000`.
 
 ## 2026-07-10 (later) -- 1010:4DBF recovered and gated; death windows 17839 -> 6860 bytes
 
