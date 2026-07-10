@@ -59,6 +59,26 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-10 (late++++++) — the lifter-assisted actor recovery is PRODUCING: the planet-4 chain 0x7D->0x81->0x93
+
+The owner's actor-recovery strategy is now not just validated but PULLING THE CHAIN.  Each recovered
+behaviour unblocks its successor on planet 4, all via the same pipeline (capture_pure_vm_snapshot ->
+liftverify -> refactor the authoritative transcription -> driven gate byte-exact):
+
+* **0x7D / 0x7E** DONE (commit 035eb46): the 8D4F/1F8F:027A waypoint follower, 0309 arrival, spawns a
+  child 0x81.  `verify_native_behavior_7d` 121/121, 0 diverging.  (A hand-read had the WRONG arrival
+  branch; the lifter was right -- the strategy's whole point.)
+* **0x81** DONE (commit b8028a9): 8D57/1F8F:0452 -- sprite 0x16A, B729 seek mode 1 with a +0x06
+  save/restore around it, morphs to 0x93 on blocked.  `verify_native_behavior_81` 387/387, 0 diverging.
+* **0x93** LIFTED + VERIFIED, teed up: EFC4[0x93]=8D5F/1F8F:0473 (liftverify ORACLE_PASSING).  It is a
+  BIG behaviour -- 151 instructions / 54 basic blocks: a +0x1C substate counter, a [bp+6] direction
+  dispatch, four AFD8 contact-steps per direction, and a [bp+54]>=0x64 death (BFC7).  The next slice
+  is a careful 54-block refactor against a fresh gate (verify_native_behavior_93), not a tail-end rush.
+
+Planet-4 cold play now runs to tick 48 (was tick 16 before 0x7D).  The remaining planet-4 gap chain is
+the 0x93 mover; the pipeline that recovers it is proven and repeatable.  Standing enabler:
+`scripts/capture_pure_vm_snapshot.py`; per-behaviour gates: `verify_native_behavior_7d` / `_81`.
+
 ## 2026-07-10 (late+++++) — ACTOR-MODEL investigation + the lifter-assisted pipeline VALIDATED end-to-end
 
 Owner directive: generalize the enemy zoo into an actor model, evidence-first, lifter-assisted (not a
