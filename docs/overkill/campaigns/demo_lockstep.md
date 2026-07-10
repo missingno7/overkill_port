@@ -111,11 +111,43 @@ Not "the death jingle" — an earlier note in `native_frame.py` guessed that and
    * `A256..A26B` is NOT state — it is **STACK**. `sp` at the `0B3E` call is `A26C`, and the writes
      come from `push` instructions at `254A:04D7..04D9`. An early probe that diffed raw DGROUP
      without the gate's `sp` exclusion made it look like a 22-byte pointer struct. It is not.
-   * `21A4` = `CS:[9592]` (derivable), `21A6` = 0, `21AA` = `[0x14C0 + planet*2]` (a DGROUP table).
-   * `21A8` (= 0x0EA0 for planet 1) and the `990C/990F/9911/9914` flags are produced INSIDE `C679`
-     and are the only genuinely unrecovered cells. `C679` runs 44720 instructions and decompresses
-     the level from the resident `254A` overlay into the plane, so it can be recovered natively
-     over the image (it needs no container/disk). **This is the one real blocker.**
+   * `21A4` = `CS:[9592]` (derivable), `21A6` = 0, `21AA` = `[0x14C0 + planet*2]` (a DGROUP table
+     of FILENAME pointers).
+   * **`990C/990F/9911/9914` ARE NOT STATE.** They sit inside the INT9 key table, which the gate
+     already excludes as the input channel. `1010:50AB` is
+     `mov es,cs:[9596] / mov di,98C4 / xor al,al / mov cx,80 / rep stosb` -- 0B3E clears the 0x80-byte
+     key table at `98C4..9943`. They only ever appeared because the measuring probe diffed raw DGROUP
+     without `EXCLUDED_CELLS`. (Second time that mistake bit this investigation; the first was the
+     `sp` window and `A256`.)
+   * **`C679` IS NOT A DECOMPRESSOR.** It is the level FILE LOADER, and it is a HOST BOUNDARY:
+
+         C679  mov word [BB80],0 ; call C7B2 ; jnz .. ; mov word [BB82],0 ; call C80B ; call C85B
+         C693  mov dx,[21AA]              ; -> the level filename
+               xor al,al ; mov ah,3D ; call far 254A:04D7      ; DOS 3Dh OPEN
+         C6A0  mov [21AC],ax              ; the DOS file HANDLE (always 5 here)
+         C6AC  mov ah,19 ; int 21h        ; (retry path: get default drive, prompt for disk)
+         C6DC  mov bx,[21AC] ; mov ah,3E ; int 21h              ; CLOSE
+         C6F9  call 0248 ; mov ax,cs:[0244] ; mov [21A8],ax     ; [21A8] = bytes read
+
+     So the native port does not emulate it: it reads the level from the container, exactly as
+     `_load_planet_level_data` already does. The level file is a **host input**, on the same footing
+     as the key table and `isr_ticks`.
+
+   * **The STRIP aliases DGROUP, and that is the bulk of the death diff.** In the cold-start demo
+     `strip_seg = 0x32FF` -> `0x32FF0`, which is DGROUP offset **`0xD330`**; 11472 bytes of the strip
+     ARE DGROUP cells. So the `Cxxx+` thousands (`DS:D9B0`, `DS:DA09`, ...) are the rows `A7EB`
+     renders during `4E0D`'s reverse pulls -- packed 2px/byte pixels, which is exactly what those
+     `66->00 / F7->00` values look like. Implement `A781`'s render and they resolve.
+     (The plane window also overlaps DGROUP -- `plane_seg = 0x245A`, offsets >= `0x1720` alias it --
+     but the MAP BODY is plane offsets 12..3682, well below `0x1720`, so the map itself never lands
+     in DGROUP. Do not confuse the two: an earlier draft of this section did.)
+   * The map body changes by only 0..10 bytes across a death window: the reload restores the pristine
+     file over the handful of tiles `4E26` had rewritten. It still has to be right, because `A7EB`
+     reads it to render.
+
+   Consequence: `advance_gameplay_frame_97b2` needs the level bytes the way it needs `isr_ticks` --
+   supplied, not emulated. Give it an optional loader (the gate passes one built from
+   `assets/OVERKILL`); `[21A8]` is then just the length it returns.
    * `C3AA` is rebuilt identically every time, so it never shows in a diff — do not "optimise" it
      away without checking a level change.
 
@@ -170,12 +202,24 @@ Not "the death jingle" — an earlier note in `native_frame.py` guessed that and
 4. **`99BF`, `6176`, `C57C`, `B5A9`, `5F43`, `D305`** — undecoded. `5F43` is near the `5F61` clock
    tick already native; `C57C`/`B5A9` are called on the normal level-start path too.
 
-### The critical path
-Everything above is mechanical EXCEPT `C679`. Recover it first (driven oracle over the 7 windows:
-it must reproduce `[21A8]` and the `990C/990F/9911/9914` flags, and leave the plane byte-identical),
-then `4DBF` and the rest fall out. `probes/verify_native_level_reinit_4dbf` (to be written) should
-trap `4DBF` entry / `4E0C` return and diff DGROUP minus the stack below `sp` — a 7-sample driven
-gate that can go green well before the full lockstep window does.
+### The critical path (revised 2026-07-10, after the C679 decode)
+There is no single blocking routine. `0B3E` reduces to: six cursor heads, `[21AA]`/`[21A4]`/`[21A6]`,
+a level-file load supplied by the host (`[21A8]` = its length, `[21AC]` = a DOS handle that never
+changes), the plane written from those bytes, and a `C3AA` rebuild that is a no-op. `4E26` is
+plane-only. `A781` and `4E0D` are decoded above. So `4DBF` is fully expressible TODAY.
+
+Order of work:
+1. `probes/verify_native_level_reinit_4dbf` -- trap `4DBF` entry / `4E0C` return, diff DGROUP minus
+   `EXCLUDED_CELLS` and minus the stack below `sp`. A 7-sample driven gate that goes green well
+   before the full lockstep window does. **Write the gate before the code.**
+2. `_row_pull_reverse_a781` + `_row_rewind_loop_4e0d` + `_plane_repaint_4e26` + `_level_data_init_0b3e`
+   (with the host level loader) + `_level_reinit_4dbf`. Call it from the 9AFF death tail at `9B16`.
+3. Then the `9908` continuation and the `978F` prologue: `99BF`, `6176`, `C57C`, `B5A9`, `5F43`,
+   `D305` are still undecoded -- map them with `map_frame_window 5018` and decode as needed.
+
+Two probe mistakes to not repeat: a raw DGROUP diff must apply BOTH `EXCLUDED_CELLS` and the
+`sp - 0x60 <= o < sp` stack window, or dead stack (`A256..A26B`) and the excluded key table
+(`990C..9914`) masquerade as recovered state.
 
 Do them as separate gated commits; `inspect_death_windows` gives a 16-second signal, and the frame
 count in `verify_native_lockstep` only moves when a window becomes byte-exact.
