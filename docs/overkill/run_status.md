@@ -59,6 +59,48 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-10 (late) — cold-boot FRONT-END: attract sequence landed; the faithful attract order is a panel-cell campaign
+
+Wired the app's cold-boot front-end from a single title screen to a real ATTRACT LOOP, and pinned the
+evidence for what a *faithful* attract will need (so the next pass doesn't guess).
+
+### Landed + gated (commit 49afc30)
+* `scripts/play_native.py`: `_run_attract` cycles the OKMENU title (~6s) -> the HISCORE screen (~5s)
+  -> a demo replay (~15s), Space starts the game -- matching the original's title<->hiscore<->demo
+  attract cadence, all from real decoded assets.
+* The demo element is charter step 2 (`_replay_demo`, exposed as `--demo <name>`): it seeds a
+  MutFlatMemory from a recorded demo's snapshot, feeds the recorded scancodes into the image's own
+  INT9 key table each frame, runs the ONE verified frame (`advance_gameplay_frame_97b2`) over it, and
+  renders from the image -- the attract demo is the real port playing itself, not a canned animation.
+* Gates: `verify_play_native_frame` PASS; headless `--frames 200` draws all 200; the attract demo
+  replays 90 frames with no gap; full suite 1254 passed / 32 skipped.
+
+### Evidence pinned for the FAITHFUL attract (next campaign, not yet native)
+The real attract is NOT title/hiscore/demo -- that is a coarse stand-in.  Driven from the bundle: the
+`D007`/`D04D` scene machine steps a **19-scene** table (DS:BE06 scene id 0x00..0x12, DS:BE08 countdown
+reload 0x64 = 100 frames/scene, auto-advance, autofire for scenes >= 8 per the recovered
+systems/attract rules).  Each scene draws a pre-loaded GRAPHIC CELL, it does NOT re-open a file:
+
+    scene->word0 (DS:BE18, 6-byte entries): 2A 2D 30 33 30 36 2B 2E 2D 31 34 37 3B 2C 2F 32 35 38 39
+
+word0 (0x2A..0x3B) indexes the panel-cell path (the DS:BE18 descriptor's word links into the CS:0BE4
+panel-cell directory, stride 0x90).  Scenes 0x10 and 0x12 carry FFFF terminal markers.  So a faithful
+native attract needs the panel-cell graphic renderer recovered (the CS:0BE4 directory + the per-scene
+cell draw) -- a real recovery with a witness (the `demo_cold_start_wait_synthetic` scene-transition
+demo covers the whole 0x0..0x12 range).  That is the next front-end campaign; the current
+`_run_attract` is the honest interim.
+
+### Boot-lift coverage is recursion-bounded at 25/54 (see loop_blockers)
+Confirmed `scripts/verify_boot_lifts.py` = 25/54 byte-exact, 0 real divergences, and that the ceiling
+is the harness's nested-hook Python recursion (raising the limit ran 4x more instructions but verified
+the SAME 25).  The fix is to run only the outermost hook as Python and let nested CALLs interpret --
+deferred; logged in loop_blockers.  dos_re confirmed at 58a1a51.
+
+### The method, unchanged
+Drive the original, never read the listing (the D007 `jmp cs:[bx+0xBE1A]` "handler table" read as
+scattered PSP-range addresses -- a decode trap; the DS:BE18 scene table, read straight, is the real
+structure).  Every recovery gated byte-exact before it lands.
+
 ## 2026-07-10 (late) — GAMEPLAY COMPLETE end-to-end; remaining work is the front-end shell
 
 The whole GAMEPLAY loop is now native, VM-free, and byte-exact against the original -- boot into a

@@ -4,6 +4,22 @@ Open items the autonomous loop attempted but could not finish byte-exact. Do NOT
 re-attempt these in the loop; they need a reproduction trace and/or gameplay
 context. Each has the analysis already done so a human can pick up fast.
 
+## 2026-07-10 (late) — boot-lift coverage is recursion-bounded at 25/54, not stack-bounded
+
+`scripts/verify_boot_lifts.py` verifies 25 of 54 emitted boot hooks byte-exact over a fresh boot and
+stops on a Python `RecursionError` (a lifted hook calling a nested lifted hook — the emitted body
+Python-calls sub-hooks, so the Python stack mirrors the ASM call depth, which is unbounded in the
+boot's asset-load loop).  Raising `sys.setrecursionlimit` to 200000 on a 250 MiB-stack CPython thread
+(the max valid `threading.stack_size` is <256 MiB) ran **4× more instructions (9437 → 37865) but
+verified the SAME 25 routines** — the extra depth is loop re-entry of already-counted routines, then
+the same recursion blow-up.  So the ceiling is the harness's hook-nesting design, NOT the recursion
+limit.  The real fix is to stop Python-recursing on nested hooks: run only the OUTERMOST hooked
+routine as a Python hook and let its nested CALLs fall through to the interpreter (they were already
+verified on their own first top-level hit earlier in the boot).  That is a `verify_boot_lifts` /
+dos_re verifier change, deferred — 25/54 stands as the current gated coverage.  Scratch repro:
+`sys.setrecursionlimit(200_000); threading.stack_size(250*1024*1024)` then `verify_boot_lifts.main([])`
+in a thread.  No repo change was made.
+
 ## 2026-07-10 — COLD-BOOT CHAIN scoped: ~19K-instruction init (72 routines, 74% liftable), nothing static-relocatable
 
 OVERKILL is a PLAIN MZ executable (no LZEXE -- no LZ09/LZ91/LZEXE signature; entry cs:ip = C22:000E,
