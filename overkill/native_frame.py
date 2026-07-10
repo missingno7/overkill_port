@@ -1058,8 +1058,12 @@ def _row_pull_a74e(mem) -> None:
     sound-segment writes are a host boundary), and [2354] = 0."""
     row = mem.rw(DS, 0x2350)
     if mem.rw(DS, 0x2352) == 1:
-        raise RecoveryGap("the reverse-scroll row pull ([2352] == 1, A81B's bx-0xA9 path)",
-                          "only the forward path is wired")
+        # [2352] == 1 is set by A781, the REVERSE row pull, which only the DEATH RE-INIT (4DBF ->
+        # 4E0D) runs: it rewinds the level from row 0x0E93 back to the checkpoint, rendering every
+        # row on the way.  A781 is decoded in campaigns/demo_lockstep.md; it is blocked only on
+        # C679 (the level decompressor 0B3E calls).  This gap is that continuation, not a stray flag.
+        raise RecoveryGap("the reverse-scroll row pull ([2352] == 1, A781 via the 4DBF death "
+                          "re-init)", "only the forward path is wired")
     mem.ww(DS, 0xA408, row)                         # A82D
     if row <= 0x0E52:
         # 8209's "+32/+34 caller-frame leak" is not a leak at all: at the A839 call site bp is
