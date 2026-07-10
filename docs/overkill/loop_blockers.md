@@ -1239,3 +1239,24 @@ campaign step, oracle-first (compare the backing store byte-for-byte after A846 
 Remaining lockstep frontier after that: `33xx/34xx/35xx` (293/217/268 frames -- likely the same
 backing store's lower half), `56xx` (222), `85xx` (190), `83xx` (172), `62xx` (171), the `4FF9`
 predicate (7 frames), and the two declared gaps (77C5 shield body 266, 9EE4 drain 62).
+
+### 2026-07-08 (cont.) — `4FF9` is CORRECT; the A95C symptom is an UPSTREAM (scroll) divergence
+
+Driven-oracle check (load each cached pre-state into a hookless VM, `bp = 0x237C`, drive `4FF9` to
+its `ret`, read CF; compare with `_terrain_crash_4ff9`): **agree 59 / disagree 0** over sampled
+frames 3000..5200.  So the predicate itself is right and is no longer a suspect.
+
+What the A95C frames actually show (e.g. frames 3577-3580):
+
+    DS:23A0  pre=06  vm=06  nat=04      <- the VM ran 9E19 (sets 23A0 = 8) and then A846 decayed 2
+                                           back to 6; we did NOT run 9E19, so we only decayed 6 -> 4
+    DS:236E/2370/2372  vm advanced, nat == pre
+    DS:234C / 234E / 2350  diverge on the same ~7 frames
+
+`4FF9` is called at `9BCA`, i.e. AFTER the move handlers and the `A66F` scroll.  Our predicate is
+fed the state our own upstream stages produced, so a small scroll/anchor difference flips the crash
+verdict, which then cascades into `9E19` -> `A95C` and `23A0`.  **The real bug is in the scroll /
+history-ring stages, not in the damage chain.**  Next: trap `(CS,0x9BCA)` on the ref VM and diff the
+anchor `237E/2380`, `234C/234E/2350`, `215A` against the native frame's values at the same point --
+the first cell that differs names the stage.  (`236E..2372` looks like the 9CD9 history ring, whose
+cursor we may be advancing differently.)
