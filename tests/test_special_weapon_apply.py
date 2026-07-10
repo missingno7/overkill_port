@@ -73,6 +73,12 @@ def test_9d91_deploys_into_a96e_and_is_single_instance():
     assert mem.rw(DS, 0xA96E) == slot
 
 
+def test_flag_cell_weapons_set_one_cell():
+    from overkill.native_frame import _FLAG_CELL_WEAPONS
+    assert _FLAG_CELL_WEAPONS[0x843D] == (0xA95E, 1)      # 843D: [A95E] = 1
+    assert _FLAG_CELL_WEAPONS[0x844E] == (0xA960, 4)      # 844E: [A960] = 4
+
+
 def test_flag_weapon_sets_2384_and_the_gated_chirp():
     mem = MutFlatMemory(bytes(0x100000))
     mem.wb(DS, 0x98C0, 1)                     # [98C0] != 0 -> the chirp fires

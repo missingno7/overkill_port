@@ -4,7 +4,19 @@ Open items the autonomous loop attempted but could not finish byte-exact. Do NOT
 re-attempt these in the loop; they need a reproduction trace and/or gameplay
 context. Each has the analysis already done so a human can pick up fast.
 
-## 2026-07-10 — the 8546 SPECIAL-WEAPON apply families (8463/849D/84C3/84D6/44AF) — characterized, open
+## 2026-07-10 — the 8546 SPECIAL-WEAPON apply families — 6 of 7 FILLED; only 849D open
+
+FILLED byte-exact (commits 779d171, 58ec714, +): 44AF (no-op ret), 84C3 (9F1A deploy -> [A962]/
+[A964]), 8463 (9D91 deploy -> [A96E]), 84D6/84FD (flag/sound weapons, [2384]=1/2), 843D/844E (single-
+cell flag weapons [A95E]=1 / [A960]=4).  All gated by `verify_native_special_weapon_apply` (14/14, 0
+diverging) -- the handlers are LEVELS of the two special weapons (the ladder dispatches on [desc+8]),
+so forcing the level in the pure VM's descriptor reaches each.  **STILL OPEN: 849D (9F5F)** -- a
+4-slot orbital deploy: `[A364]=2; for bx in [A966,A968,A96A,A96C]: 9F82(bx)` where 9F82 = alloc 74FE +
+the 9F41 stamp + `[bx+8]=0x18 [bx+0x0A]=1`, stores the slot into the [A966..] tracker, calls 9FAF
+([A39E]=0 ...), and `dec [A364]`.  Reachable as marker 1 lvl 6 / marker 2 lvl 2 in the L6 demo; fill
+with the same level-forced oracle (add `(2, 2, "849D")` to `verify_native_special_weapon_apply.CASES`).
+
+## OLD (superseded) — the 8546 families characterization
 
 `native_frame._apply_upgrade_8546` handles the `[A958]` gun-LEVEL stubs (mov [A958],imm; jmp 8430)
 but fails loud on the five NON-gun weapon handlers the 95FC descriptors also reach.  Owner hit CS:8463

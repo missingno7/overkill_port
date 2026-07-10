@@ -41,6 +41,8 @@ CASES = [
     (2, 3, "84C3 (deploy 9F1A -> [A962]/[A964])"),
     (2, 6, "84D6 (flag weapon, [2384]=1)"),
     (2, 7, "84FD (flag weapon, [2384]=2)"),
+    (1, 1, "843D (flag cell [A95E]=1)"),
+    (1, 2, "844E (flag cell [A960]=4)"),
     (1, 0, "44AF (no-op ret)"),
 ]
 
@@ -116,9 +118,9 @@ def main(argv) -> int:
             bad += bool(diff)
 
     print(f"\nspecial-weapon applies verified: {verified}/{total}  diverging: {bad}")
-    ok = bad == 0 and verified >= 8
-    print("RESULT:", "PASS -- the native apply reproduces the 8463/84C3/84D6/84FD/44AF weapon "
-          "families byte-exact" if ok else "FAIL")
+    ok = bad == 0 and verified >= 12
+    print("RESULT:", "PASS -- the native apply reproduces the 8463/84C3/84D6/84FD/843D/844E/44AF "
+          "weapon families byte-exact (only 849D remains)" if ok else "FAIL")
     return 0 if ok else 1
 
 

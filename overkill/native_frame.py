@@ -1638,6 +1638,8 @@ _HANDLER_84C3 = 0x84C3
 _HANDLER_8463 = 0x8463      # `call 9D91; jmp 8430`: deploy the [A96E] weapon module
 _HANDLER_84D6 = 0x84D6      # inline flag/sound weapon, [2384] = 1, then jmp 8430
 _HANDLER_84FD = 0x84FD      # the level-2 sibling, [2384] = 2
+#: single-cell flag weapons: 843D sets [A95E]=1, 844E sets [A960]=4, then jmp 8430.
+_FLAG_CELL_WEAPONS = {0x843D: (0xA95E, 1), 0x844E: (0xA960, 4)}
 
 
 def _deploy_weapon_9f1a(mem) -> None:
@@ -1736,12 +1738,16 @@ def _apply_upgrade_8546(mem) -> None:
     elif target == _HANDLER_84FD:                         # the level-2 sibling ([2384] = 2)
         _apply_flag_weapon_84d6(mem, 2)
         mem.ww(DS, MARKER_CELL, 0xFFFF)                    # 8430
+    elif target in _FLAG_CELL_WEAPONS:                    # 843D/844E: one cell set, then jmp 8430
+        cell, val = _FLAG_CELL_WEAPONS[target]
+        mem.ww(DS, cell, val)
+        mem.ww(DS, MARKER_CELL, 0xFFFF)                    # 8430
     elif target == _HANDLER_44AF:                         # bare `ret`: no effect, marker NOT cleared
         pass
     else:
         raise RecoveryGap(f"8546's upgrade handler CS:{target:04X}",
-                          "not a recovered weapon handler -- 849D (9F5F) + the 843D/844E families are "
-                          "still open (loop_blockers 2026-07-10; drive the gap-snapshot oracle to fill)")
+                          "not a recovered weapon handler -- only 849D (9F5F, the 4-slot orbital "
+                          "deploy) is still open (loop_blockers 2026-07-10; drive its gap-snapshot oracle)")
     # --- the shared tail 8572..8596 (the 837A weapon-script tick + the apply sound) ---------------
     mem.ww(DS, MARKER_SAVE_CELL, mem.rw(DS, MARKER_CELL))  # 8572: [95F6] = [95FA]
     mem.ww(DS, MARKER_CELL, marker)                        # 8578: pop -- restore for 837A
