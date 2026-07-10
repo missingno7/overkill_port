@@ -1384,15 +1384,19 @@ def _respawn_continuation_9908(mem, isr_ticks: int) -> None:
     DGROUP bytes for both across all seven death windows.  They are video.
     """
     _new_game_setup_c4db(mem)                                  # 9908
-    mem.wb(DS, 0x2358, (mem.rb(DS, 0x2358) - 1) & 0xFF)        # 990B: dec BYTE
+    # 990B is `ff 0e 58 23` -- DEC WORD, not dec byte.  [2358] is the LIFE COUNT: at zero it wraps to
+    # FFFF and 9773 takes the game-over branch to 98EB instead of respawning.  Decrementing only the
+    # low byte made frame 5379 (the demo's last life) silently take the respawn path, and it diverged
+    # by 3484 bytes instead of failing loud.
+    mem.ww(DS, 0x2358, (mem.rw(DS, 0x2358) - 1) & 0xFFFF)      # 990B: dec WORD
     if mem.rb(DS, 0x978D):                                     # 990F
         mem.ww(DS, 0x2358, (mem.rw(DS, 0x2358) + 1) & 0xFFFF)  # 9916: inc WORD
     _isr_effects_ticks(mem, isr_ticks)                         # 9921: the spin is where time passes
     if mem.rb(DS, 0x98C0):                                     # 9928
         mem.wb(DS, 0xBEFF, 2)                                  # 992F
     if mem.rw(DS, 0x2358) == 0xFFFF:                           # 9773
-        raise RecoveryGap("the 98EB game-over continuation ([2358] == FFFF)",
-                          "only the respawn path is wired")
+        raise RecoveryGap("the 98EB game-over continuation ([2358] == FFFF: out of lives)",
+                          "a whole new-game load -- 8.2M instructions, several level files")
     _gameplay_pool_seed_c3a6(mem)                              # 977D
     _shield_charge_77c5(mem)                                   # 9780
     _pod_ring_seed_99bf(mem)                                   # 9783
