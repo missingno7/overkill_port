@@ -19,10 +19,12 @@ Usage:  python scripts/actor_quantization_report.py
 from __future__ import annotations
 
 import ast
+import sys
 from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
 WALK = ROOT / "overkill" / "recovered" / "adapters" / "behavior_walk.py"
 
 #: the CLOSED verb vocabulary -- worker fn -> verb name (docs/overkill/actor_model.md §5.2).
@@ -118,13 +120,21 @@ def main() -> int:
         verb_use.update(verbs)
         escape_callees.update(unknown)
 
+    # behaviours ALREADY expressed as verified (shadow-gated) step-lists in the interpreter
+    from overkill.recovered.adapters import actor_steps
+    done_ids = set()
+    for attr in ("BOUNCE_BEHAVIORS", "CONTROLLER_BEHAVIORS", "SHOOTER_BEHAVIORS", "SPAWNER_BEHAVIORS"):
+        done_ids |= set(getattr(actor_steps, attr, {}))
+
     total = len(rows)
     quantizable = buckets["STUB"] + buckets["PURE"] + buckets["CHAIN"]
     print(f"=== ACTOR QUANTIZATION COVERAGE: {total} recovered handlers ===\n")
     for k in ("STUB", "PURE", "CHAIN", "CONTROL", "ESCAPE"):
         print(f"  {k:8} {buckets[k]:3d}  ({100*buckets[k]/total:4.1f}%)")
     with_control = quantizable + buckets["CONTROL"]
-    print(f"\n  QUANTIZABLE TODAY (STUB+PURE+CHAIN): {quantizable}/{total} = "
+    print(f"\n  ALREADY EXPRESSED as verified (shadow-gated) step-lists: {len(done_ids)} behaviour ids "
+          f"-> {', '.join(f'{i:#04x}' for i in sorted(done_ids))}")
+    print(f"  QUANTIZABLE TODAY (STUB+PURE+CHAIN): {quantizable}/{total} = "
           f"{100*quantizable/total:.1f}%")
     print(f"  QUANTIZABLE after 1-2 CONTROL verbs (+substate/mode/loop): {with_control}/{total} = "
           f"{100*with_control/total:.1f}%")
