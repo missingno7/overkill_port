@@ -1,0 +1,159 @@
+{
+  "version": 1,
+  "status": "complete",
+  "created_at": "2026-07-11T20:24:56",
+  "stopped_at": "2026-07-11T20:25:09",
+  "snapshot": "snapshot",
+  "metadata": {
+    "program": "overkill",
+    "video": "tandy",
+    "sound": "adlib",
+    "command_tail": "\r\u0002A",
+    "no_replacements": false
+  },
+  "start_boundary": 0,
+  "end_boundary": 357,
+  "event_count": 22,
+  "events": [
+    {
+      "boundary": 24,
+      "seq": 0,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 27,
+      "seq": 1,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 125,
+      "seq": 2,
+      "kind": "dos_key",
+      "value": 12909,
+      "scancode": 50,
+      "text": "m"
+    },
+    {
+      "boundary": 126,
+      "seq": 3,
+      "kind": "scan",
+      "value": 50
+    },
+    {
+      "boundary": 126,
+      "seq": 4,
+      "kind": "scan",
+      "value": 215
+    },
+    {
+      "boundary": 131,
+      "seq": 5,
+      "kind": "scan",
+      "value": 178
+    },
+    {
+      "boundary": 167,
+      "seq": 6,
+      "kind": "dos_key",
+      "value": 12909,
+      "scancode": 50,
+      "text": "m"
+    },
+    {
+      "boundary": 168,
+      "seq": 7,
+      "kind": "scan",
+      "value": 50
+    },
+    {
+      "boundary": 176,
+      "seq": 8,
+      "kind": "scan",
+      "value": 178
+    },
+    {
+      "boundary": 234,
+      "seq": 9,
+      "kind": "dos_key",
+      "value": 12909,
+      "scancode": 50,
+      "text": "m"
+    },
+    {
+      "boundary": 235,
+      "seq": 10,
+      "kind": "scan",
+      "value": 50
+    },
+    {
+      "boundary": 240,
+      "seq": 11,
+      "kind": "scan",
+      "value": 178
+    },
+    {
+      "boundary": 344,
+      "seq": 12,
+      "kind": "dos_key",
+      "value": 9322,
+      "scancode": 36,
+      "text": "j"
+    },
+    {
+      "boundary": 345,
+      "seq": 13,
+      "kind": "scan",
+      "value": 36
+    },
+    {
+      "boundary": 357,
+      "seq": 14,
+      "kind": "scan",
+      "value": 164
+    },
+    {
+      "boundary": 357,
+      "seq": 15,
+      "kind": "scan",
+      "value": 37
+    },
+    {
+      "boundary": 357,
+      "seq": 16,
+      "kind": "scan",
+      "value": 165
+    },
+    {
+      "boundary": 357,
+      "seq": 17,
+      "kind": "scan",
+      "value": 37
+    },
+    {
+      "boundary": 357,
+      "seq": 18,
+      "kind": "scan",
+      "value": 165
+    },
+    {
+      "boundary": 357,
+      "seq": 19,
+      "kind": "scan",
+      "value": 30
+    },
+    {
+      "boundary": 357,
+      "seq": 20,
+      "kind": "scan",
+      "value": 158
+    },
+    {
+      "boundary": 357,
+      "seq": 21,
+      "kind": "scan",
+      "value": 215
+    }
+  ]
+}

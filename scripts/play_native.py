@@ -481,7 +481,63 @@ _MENU_SOUND_MODE_CELL = 0x22B5  # [22B5]: sound mode 0..3 (Music/fx/both/none), 
 _MENU_ATTRACT_IDLE_FRAMES = 300
 
 
-def _run_title_menu(display, pygame, bundle_data, container_data) -> "tuple[int, int] | None":
+#: 558B 'r' REDEFINE KEYS -- the six remappable actions in the original's capture order (5732: the
+#: prompts si=0x50..0x55 store into di=2142,2143,2144,2145,2141,2140), with the control-map cell each
+#: writes.  The map is DS:213E..2145; 0162 packs it MSB-first (Q/A/O/P movement, Space fire, Z special
+#: -- see overkill.recovered.systems.input.DEFAULT_CONTROL_MAP).
+_REDEFINE_SLOTS = (("UP", 0x2142), ("DOWN", 0x2143), ("LEFT", 0x2144),
+                   ("RIGHT", 0x2145), ("FIRE", 0x2141), ("SPECIAL (apply upgrade)", 0x2140))
+
+
+def _draw_menu_text_overlay(display, pygame, base_frame, lines) -> None:
+    """Draw ``base_frame`` (the title) then blit centered text ``lines`` (``(text, rgb)``) over it."""
+    display.draw(base_frame)
+    font = pygame.font.SysFont("monospace", 20, bold=True)
+    w, h = display.screen.get_width(), display.screen.get_height()
+    y = h // 2 - len(lines) * 18
+    for text, color in lines:
+        surf = font.render(text, True, color)
+        rect = surf.get_rect(center=(w // 2, y))
+        display.screen.fill((0, 0, 0), rect.inflate(16, 8))     # a readable backdrop
+        display.screen.blit(surf, rect)
+        y += 36
+    pygame.display.flip()
+
+
+def _run_redefine_keys(display, pygame, container_data, scan_map) -> "dict | bool | None":
+    """558B 'r' -- REDEFINE KEYS.  Capture a new key for each of the six game actions and return
+    ``{cell_offset: scancode}`` for DS:[2140-2145].  The original shows the BEC4 controls page through
+    ``1F8F:0980`` and captures via ``5797`` (skipping F9/F10/Esc, beeping on each); here we prompt over
+    the title and map each host key to its XT scancode via ``scan_map`` (a key absent from the XT map is
+    skipped, mirroring the original's ignore-list).  Returns the map on success, ``None`` on Esc-cancel
+    (keep the current bindings), or ``False`` on window-close."""
+    title = decode_fullscreen_image(container_data, TITLE_OPTIONS)
+    clock = pygame.time.Clock()
+    result: dict = {}
+    for label, cell in _REDEFINE_SLOTS:
+        _draw_menu_text_overlay(display, pygame, title, [
+            ("REDEFINE KEYS", (255, 220, 0)),
+            (f"press a key for  {label}", (255, 255, 255)),
+            ("(Esc cancels)", (150, 150, 150)),
+        ])
+        captured = None
+        while captured is None:
+            for ev in pygame.event.get():
+                if ev.type == pygame.QUIT:
+                    return False
+                if ev.type == pygame.KEYDOWN:
+                    if ev.key == pygame.K_ESCAPE:
+                        return None                       # cancel -> keep the current map
+                    sc = scan_map.get(ev.key)
+                    if sc is not None:                    # ignore keys with no XT scancode
+                        captured = sc
+            clock.tick(60)
+        result[cell] = captured
+    return result
+
+
+def _run_title_menu(display, pygame, bundle_data, container_data,
+                    scan_map) -> "tuple[int, int, dict] | None":
     """The faithful cold-start MENU -- the original's ``1010:558B`` option dispatch over ``OKMENU.ENC``.
 
     Recovered from 558B: **M** cycles the sound mode (``[22B5]`` inc & 3 -- Music/fx/both/none),
@@ -499,9 +555,10 @@ def _run_title_menu(display, pygame, bundle_data, container_data) -> "tuple[int,
     title = decode_fullscreen_image(container_data, TITLE_OPTIONS)
     clock = pygame.time.Clock()
     sound_mode, control = 0, 0
+    key_overrides: dict = {}          # 'r' REDEFINE KEYS: control-map cell -> scancode
     idle = 0
     display.set_title("OVERKILL - native (VM-less)  "
-                      "[menu -- M sound, K/J/A control, Space = start, Esc = quit]")
+                      "[menu -- M sound, K/A control, R redefine, Space = start, Esc = quit]")
     while True:
         for ev in pygame.event.get():
             if ev.type == pygame.QUIT or (ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE):
@@ -509,13 +566,20 @@ def _run_title_menu(display, pygame, bundle_data, container_data) -> "tuple[int,
             if ev.type == pygame.KEYDOWN:
                 idle = 0
                 if ev.key in (pygame.K_SPACE, pygame.K_RETURN):
-                    return sound_mode, control
+                    return sound_mode, control, key_overrides
                 if ev.key == pygame.K_m:                       # 56E1: inc [22B5] ; and 3
                     sound_mode = (sound_mode + 1) & 3
                 elif ev.key == pygame.K_k:                     # 563D: [0010] = 0 (keyboard, map 213E)
                     control = 0
                 elif ev.key == pygame.K_a:                     # 56B2: [0010] = 2 (amstrad, map 2146)
                     control = 2
+                elif ev.key == pygame.K_r:                     # 5732: R -> redefine the six game keys
+                    ov = _run_redefine_keys(display, pygame, container_data, scan_map)
+                    if ov is False:
+                        return None                            # window-close during capture
+                    if ov:                                     # None = Esc-cancel (keep current map)
+                        key_overrides.update(ov)
+                        control = 0                            # 578E: R forces keyboard mode ([0010]=0)
                 elif ev.key == pygame.K_i:                     # 55C4: I -> BE92, the INSTRUCTIONS pages
                     if not _run_instructions(display, pygame, container_data):
                         return None
@@ -529,7 +593,7 @@ def _run_title_menu(display, pygame, bundle_data, container_data) -> "tuple[int,
             if r is False:
                 return None
             if r is True:
-                return sound_mode, control
+                return sound_mode, control, key_overrides
             idle = 0
         display.draw(title)
         clock.tick(30)
@@ -872,9 +936,9 @@ def main(argv=None) -> int:
     else:
         level = args.level
         difficulty = 0
-        menu_choice: "tuple[int, int] | None" = None
+        menu_choice: "tuple[int, int, dict] | None" = None
         if not args.no_title and not args.frames:
-            menu_choice = _run_title_menu(display, pygame, bundle_data, container_data)
+            menu_choice = _run_title_menu(display, pygame, bundle_data, container_data, scan_map)
             if menu_choice is None:
                 display.close()
                 return 0
@@ -893,6 +957,8 @@ def main(argv=None) -> int:
         if menu_choice is not None:       # apply the 558B menu selections onto the game image
             img.ww(_DS, _MENU_SOUND_MODE_CELL, menu_choice[0])
             img.ww(_DS, _MENU_CONTROL_CELL, menu_choice[1])
+            for cell, scancode in menu_choice[2].items():   # 'r' REDEFINE KEYS -> the control map
+                img.wb(_DS, cell, scancode)
         origin = f"cold level {level + 1}"
 
     planet = img.rw(_DS, 0x2356)

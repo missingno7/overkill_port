@@ -45,7 +45,11 @@ new game.
 
 ## Next slices (in order)
 1. **Menu (558B):** ✅ DONE (2026-07-11, `_run_title_menu`): M sound-mode, K/A control, idle→attract,
-   FIRE→start; J/O/I declined/omitted (see below).  `tests/test_native_menu.py`.
+   FIRE→start; **R REDEFINE KEYS** (2026-07-11, `_run_redefine_keys`: captures six keys into the control
+   map DS:[2140-2145] + forces keyboard mode, mirroring 5732/5797); I/O instructions/ordering pages; J
+   declined (keyboard-only).  `tests/test_native_menu.py`.  **STILL MISSING: the F9 BOSS KEY (1010:075F
+   -- text mode 3 + a fake DOS screen at B800, restored on keypress); global, checked in the menu loop
+   at [9907].  Next front-end slice.**
 2. **The shared TEXT-PAGE renderer (`1010:D2B8`):** the menu's **O/I** ordering/instructions screens
    AND **THE END** all render text through `1F8F:0980` — which is only a scrollable page VIEWER (up/down
    scroll + exit) that calls `1010:8D8B(ax=D2B8)` → **`1010:D2B8`**, the real font/glyph page renderer.

@@ -63,6 +63,23 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-11 — FRONT-END: menu REDEFINE KEYS ('r') recovered; boss-key (F9) diagnosed
+
+The owner's menu demo (`demo_play_tandy_20260711_202523`: m m m m, r, space) showed the native menu
+missing features.  Decoded the full 558B key dispatch -- keys by scancode at `0x98C4+sc`: k(563D)/
+j(5669)/a(56B2)/**r(5732)**/m(56E1)/o(5621)/i(562C)/Esc(5D14)/**F9→075F**.  Two were missing:
+- **'r' REDEFINE KEYS (5732)** -- shows the BEC4 controls page (1F8F:0980) and captures six keys via
+  5797 (skips F9/F10/Esc, beeps each) into the control map DS:[2142,2143,2144,2145,2141,2140] = the
+  six remappable slots of the eight-cell map at DS:213E (Q/A/O/P move, Space fire, Z special; the two
+  fixed cells 213E/213F stay 0), then forces keyboard mode [0010]=0.  RECOVERED into play_native:
+  `_run_redefine_keys` prompts over the title and maps each host key to its XT scancode via the shared
+  `scan_map`, and `_run_title_menu` writes the captures into the image's control map (which 0162's
+  decode reads).  Test: the redefine cells feed the input decode (a redefined key sets its action bit).
+- **F9 BOSS KEY (075F)** -- switches to text mode 3 and paints a fake DOS screen at B800; DIAGNOSED,
+  not yet ported (a text-mode screen restore) -- the next front-end slice.
+
+Suite 1393 passed / 35 skipped.
+
 ## 2026-07-11 — AUDIO: the VM-free driver PLAYS (audible WAV render) + smoke-verified over real bytecode
 
 The VM-free AdLib driver now produces AUDIBLE music.  `scripts/render_native_music.py` (new tool)

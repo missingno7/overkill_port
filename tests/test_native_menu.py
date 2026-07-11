@@ -47,6 +47,23 @@ def test_supported_menu_choices_play(sound_mode, control):
     assert img.rw(DS, SOUND_MODE_CELL) == sound_mode
 
 
+def test_redefine_keys_cells_feed_the_input_decode():
+    """558B 'r' REDEFINE KEYS writes DS:[2140-2145]; those are exactly the remappable slots of the
+    eight-cell control map at DS:213E that 0162 packs, so a redefined key sets its action's bit."""
+    from scripts.play_native import _REDEFINE_SLOTS
+    from overkill.recovered.systems.input import (
+        DEFAULT_CONTROL_MAP, pack_control_map_bits, key_state_from_pressed)
+    base = 0x213E
+    for _label, cell in _REDEFINE_SLOTS:
+        idx = cell - base
+        assert 2 <= idx <= 7                          # the six remappable slots (0/1 stay fixed)
+        new_sc = 0x2D                                 # 'x' -- absent from the default map
+        cmap = list(DEFAULT_CONTROL_MAP)
+        cmap[idx] = new_sc
+        bit = pack_control_map_bits(cmap, key_state_from_pressed({new_sc}))
+        assert bit == (1 << (7 - idx))                # MSB-first: the redefined key sets its own bit
+
+
 @pytest.mark.skipif(not _HAVE, reason="bundle / container not present")
 def test_joystick_mode_fail_louds_so_the_menu_declines_j():
     img, level_assets = _cold(0, 1)                  # [0010] == 1 -> 0162's unsupported joystick mode
