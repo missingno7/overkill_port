@@ -323,6 +323,36 @@ byte-identical to the hand-written handler.  It does NOT yet touch the walk (the
 bodies); promoting a behaviour to its step-list still waits on §6.2 step 4 (the whole zoo tagged) +
 the demo-level shadow gate, so the schema keeps emerging rather than being frozen on 3 handlers.
 
+## 7.6 QUANTIZATION COVERAGE (2026-07-11) — the exact ledger
+
+`scripts/actor_quantization_report.py` statically decomposes every recovered `_step_*` handler into
+the §5.2 verb set and classifies how it quantizes.  Over the **86 recovered handlers**:
+
+| class | count | % | meaning |
+|---|---|---|---|
+| STUB | 1 | 1% | tiny body -> a one-verb step-list |
+| PURE | 40 | 47% | all callees are verbs + simple control -> a step-list TODAY |
+| CHAIN | 23 | 27% | also calls another handler (morph / fall-through) -> compose two step-lists |
+| CONTROL | 14 | 16% | verbs known but heavy inline control the vocab doesn't NAME yet |
+| ESCAPE | 8 | 9% | bespoke -- keep behind a `Call` verb |
+
+- **Quantizable TODAY (STUB+PURE+CHAIN): 64/86 = 74%.**
+- **After 1–2 CONTROL verbs (a `substate`/`+0x24 mode`/retry-loop verb): 78/86 = 91%.**  The CONTROL
+  set is almost entirely the waypoint/formation family (`_step_controller_1c/15/7d`, `_step_waypoint_18`,
+  `_step_diver_16_17`, `_step_formation_14`, `_step_marcher_0c`, `_step_dropper_34`, `_step_child_04`,
+  `_step_stepper_93`, `_step_glider_5a`, `_step_turner_5f`, `_step_hatcher_63`, `_step_yseeker_6b6c6d`)
+  — exactly the `1F8F:027A` `+0x24` mode sub-machine §5.1/§6.2 already flagged.  Add that one control
+  verb and the whole family quantizes.
+- **Genuine `Call` ESCAPE floor: 8/86 = 9%** — the bosses (`_step_wave_driver_21`, `boss_transform_
+  stamp_b58a`, `wave_driver_dispatch_b556`), the pods/pickups (`_step_special_pod_1`, `_step_pickup_5`,
+  the `_pod_*` sweeps), the `0x26` morph state machine, and `_step_dying_01`.  These stay recovered
+  native fns behind the escape verb — the honest irregular tail, matching §6.4.
+
+**Verb reuse** (handlers touching each verb): spawn 30, death 15, seek 14, shoot 10, contact 10,
+steer 8, guard 7, move 7, bounce 6, random 5, retarget 5, update 4, sprite 3, tile-gate 3, reflect 1.
+So the answer to "can we quantize the zoo": **~74% is a step-list today, ~91% with one control verb,
+with a deliberate ~9% `Call` escape** — a measured reduction, every promotion shadow-gated (§7.5).
+
 ## 8. First refactor candidates + the verifier plan
 
 **Best first clusters** (biggest sharing, lowest risk): the **waypoint controller family** (one body
