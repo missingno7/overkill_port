@@ -29,6 +29,30 @@ def test_plaque_placement_matches_d367():
     assert (PLAQUE_X_PX, PLAQUE_Y) == (0x03 * 8, 0x47)
 
 
+ROOT_BUNDLE = ROOT / "artifacts" / "static_runtime_bundle" / "memory_1mb.bin"
+DS = 0x25CC
+
+
+@pytest.mark.skipif(not (CONTAINER.exists() and ROOT_BUNDLE.is_file()),
+                    reason="container / bundle not present")
+def test_level_start_refuel_fills_the_bar():
+    """The plaque get-ready runs the 77C5 refuel: [A97A] climbs 0 -> 0x58 while [A97C] is armed,
+    then the charge flag clears at full -- the fuel indicator rising the original shows here."""
+    from overkill.native_frame import _shield_charge_77c5
+    from overkill.recovered.adapters.cold_level_start import build_cold_level_start_image
+
+    img = build_cold_level_start_image(ROOT_BUNDLE.read_bytes(), 0, CONTAINER.read_bytes())
+    img.ww(DS, 0xA97A, 0x0000)          # C4DB/C495: empty
+    img.ww(DS, 0xA97C, 0x0001)          # armed
+    seen = []
+    for _ in range(0x60):
+        _shield_charge_77c5(img)
+        seen.append(img.rw(DS, 0xA97A))
+    assert seen[0] == 1 and max(seen) == 0x58            # filled to full
+    assert seen == sorted(seen)                          # monotonically rising
+    assert img.rw(DS, 0xA97C) == 0                       # charge cleared at full
+
+
 @pytest.mark.skipif(not CONTAINER.exists(), reason="OVERKILL container not present")
 @pytest.mark.parametrize("level_index", range(6))
 def test_every_level_plaque_decodes_and_composes(level_index):

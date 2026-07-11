@@ -460,12 +460,24 @@ def _run_level_start_plaque(display, pygame, container_data, img, renderer, leve
     Esc/quit aborts (returns False so the caller exits).
 
     The background animates exactly as D305's wait does: it ticks the starfield (0922) + star list
-    (4CED) + clock (5F61) each frame, which is part of the real level-start, then gameplay continues
-    from that advanced state (no lockstep involved -- this is the front-end interlude)."""
-    from overkill.native_frame import _clock_tick_5f61, _star_list_4ced, _starfield_tick_0922
+    (4CED) + clock (5F61) each frame, AND runs the REFUEL -- the 77C5 energy-bar charge (``[A97A]``
+    0 -> 0x58, one step per frame while ``[A97C] == 1``, with the queued sound played through the ISR
+    effects), which is the fuel indicator rising on the HUD that the original shows here.  The
+    cold-start image hands over with the bar already full (``[A97A] = 0x58``); to replay the animation
+    we reset it to empty + re-arm the charge (exactly C4DB's ``[A97A] = 0`` + the A47C-script arm that
+    sets ``[A97C] = 1`` and queues sound 0x0D), then let 77C5 fill it.  Gameplay continues from the
+    advanced state (no lockstep involved -- this is the front-end interlude); if fire is pressed before
+    the bar is full, the frame's own 77C5 finishes it in-game."""
+    from overkill.native_frame import (
+        _clock_tick_5f61, _isr_effects_ticks, _shield_charge_77c5, _star_list_4ced,
+        _starfield_tick_0922,
+    )
     from overkill.native_video.plaque import compose_plaque, decode_plaque_cell
 
     plaque = decode_plaque_cell(container_data, level_index)
+    img.ww(_DS, 0xA97A, 0x0000)      # C4DB/C495: the bar starts EMPTY
+    img.ww(_DS, 0xA97C, 0x0001)      # 9DD0: the charge is armed (77C5 will fill it)
+    img.wb(_DS, 0xBEFF, 0x0D)        # 9DB9: queue the refuel sound
     display.set_title("OVERKILL - native (VM-less)  [mission briefing -- Space = launch, Esc = quit]")
     clock = pygame.time.Clock()
     while True:
@@ -476,7 +488,9 @@ def _run_level_start_plaque(display, pygame, container_data, img, renderer, leve
                 return True
         _star_list_4ced(img)
         _starfield_tick_0922(img)
+        _shield_charge_77c5(img)     # 77C5: the fuel/energy bar refuel (A97A 0 -> 0x58 + sound)
         _clock_tick_5f61(img)
+        _isr_effects_ticks(img, 2)   # play the queued sound (0x0D refuel, 0x0C at full)
         display.draw(compose_plaque(renderer.frame(), plaque))
         clock.tick(30)
 
