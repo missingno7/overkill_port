@@ -469,7 +469,8 @@ def _run_screen_squeeze(display, pygame, frame, *, opening: bool) -> bool:
     return True
 
 
-def _run_level_start_plaque(display, pygame, container_data, img, renderer, level_index: int) -> bool:
+def _run_level_start_plaque(display, pygame, container_data, img, renderer, level_index: int,
+                            speaker=None) -> bool:
     """The level-start MISSION PLAQUE (``1010:D305``/``D367``): the ``plaq{level}.enc`` briefing cell
     overlaid on the level's initial screen (animated starfield + HUD), held until FIRE -- what the
     original shows between level-select and the first gameplay frame.  Space/fire starts the level;
@@ -509,7 +510,9 @@ def _run_level_start_plaque(display, pygame, container_data, img, renderer, leve
         _starfield_tick_0922(img)
         _shield_charge_77c5(img)     # 77C5: the fuel/energy bar refuel (A97A 0 -> 0x58 + sound)
         _clock_tick_5f61(img)
-        _isr_effects_ticks(img, 2)   # play the queued sound (0x0D refuel, 0x0C at full)
+        _isr_effects_ticks(img, 2)   # advance the sound engine on the queued sound (0x0D, 0x0C at full)
+        if speaker is not None:
+            speaker.update(img)      # play it to the host as the bar fills
         display.draw(compose_plaque(renderer.frame(), plaque))
         clock.tick(30)
 
@@ -750,14 +753,15 @@ def main(argv=None) -> int:
 
     level_assets = make_level_assets(container_data, bundle_data)
     renderer = ImageRenderer(bundle_data, container_data, img)
+    speaker = SpeakerSink(pygame) if not args.frames and not args.no_sound else None
     if plaque_level is not None:
         # 1010:D305/D367: the level-start "get ready" screen -- the mission briefing plaque over the
         # animated starfield + HUD, held until FIRE, exactly as the original shows between level-select
-        # and the first gameplay frame.
-        if not _run_level_start_plaque(display, pygame, container_data, img, renderer, plaque_level):
+        # and the first gameplay frame.  The speaker plays the refuel sound as the fuel bar fills.
+        if not _run_level_start_plaque(display, pygame, container_data, img, renderer, plaque_level,
+                                       speaker):
             display.close()
             return 0
-    speaker = SpeakerSink(pygame) if not args.frames and not args.no_sound else None
     clock = pygame.time.Clock()
     tick = 0          # gameplay frames advanced (frozen once HELD)
     drawn = 0         # display frames drawn (always advances -- the --frames self-test counts these)
