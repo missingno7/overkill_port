@@ -63,6 +63,26 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-11 — VERIFIED: native follows the owner's game-over demo; drift is timer-only + INT21 block
+
+Ran the lockstep gate on the owner's `demo_play_tandy_20260711_120636` (level-select -> game -> death ->
+game over, AdLib).  Result over its 688 gameplay frames: **every object, the player, the death, all
+byte-exact -- the ONLY divergences (3, at frames 172/341/503) are the on-screen level-timer cells
+`2324..2330`.**  Root cause pinned: `_clock_tick_5f61` increments the 2324..2330 cascade once per call,
+and native calls it once/frame (frame-locked), but the AdLib-recorded VM is ISR-tick-locked and AdLib
+reprograms the PIT to fractionally above 2 ticks/frame, so the VM's timer gains ~1 tick per ~170 frames.
+This is a TIMER-DISPLAY drift only -- it does not touch gameplay, and it does not occur in actual play
+(host-clock paced) or in PC-speaker demos (0-divergence).  A precise fix = the AdLib PIT tick model
+(part of the audio-timing work); the timer cells could also be added to the AdLib-demo EXCLUDED set.
+
+The full-demo run also CONFIRMS the owner's game-over bug at its source: the ref VM itself TIMES OUT at
+frame ~2242 (`1010:32DC`) -- the high-score screen blocking on `INT 21h AH=07` console input the replay
+can't feed, which is exactly why the recording ended there.  play_native's `_run_highscore_entry` owns
+that screen (types the name via the host, draws it on-screen with the recovered DS:1816 glyph font, then
+restarts), so the native port does not hang where the VM does.
+
+Suite green.
+
 ## 2026-07-11 — GAME OVER: the high-score name entry now responds (INT 21h input path recovered)
 
 Owner playtest bug: after game over you could not type your name / accept the high-score screen -- it
@@ -80,7 +100,8 @@ and shows the level-start plaque.  `tests/test_native_game_over_signal.py` pins 
 
 ALSO recorded (verification of the owner's demo `demo_play_tandy_20260711_120636`): the lockstep
 diverges from that demo at frame 172 on the 5F61 CLOCK cells (DS:2324-2330) because the demo is AdLib
-(`A`) and the AdLib driver reprograms the PIT faster, so its ISR/clock rate differs from
+(`
+A`) and the AdLib driver reprograms the PIT faster, so its ISR/clock rate differs from
 native_frame's PC-speaker `isr_ticks=2` -- a timing-model gap for AdLib-recorded demos, logged for the
 audio work.  Suite green (1299 passed / 33 skipped).
 
