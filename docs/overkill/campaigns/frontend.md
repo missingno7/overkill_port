@@ -79,7 +79,14 @@ VM-less port skips it (it starts from the recovered image, not the packed exe).
   counts `[237E]` (the player view-anchor) down toward 0x60, runs the `9BE2` object-chain pre-update
   (bp=237C), reloads the scene countdown `[BE08]=0x32`, and its sub-branches spawn via `7524` / emit
   sound.  So scene 0 initialises the self-playing attract game; recoverable but it composes the object
-  system (9BE2/7524), not the cell blit.  Remaining gap: the `D0DB` per-scene ENTRY-DRAW actions.
+  system (9BE2/7524), not the cell blit -- RECOVERED as `native_frame.attract_scene0_setup_d160`.
+- **`D0DB` per-scene entry-draws DECODED (2026-07-11):** on each scene advance it reloads `[BE08]=0x64`
+  + `inc [BE06]` (the advance -- already done by `attract_frame_step`), conditionally runs the `859E`
+  panel compose (descriptor word1 != FFFF -> `[95FA]`/`[BE16]`), then a per-scene JUMP TABLE
+  (`D10B: jmp cs:[bx-12014]`) to small entry actions -- flag sets (`[A958]`/`[A95E]`/`[A960]`) + an
+  `81F4` spawn.  The attract runs WITHOUT these (scenes render + the game plays); they are per-scene
+  state polish, and the jump table wants the lifter's indirect-jump treatment.  This is the last
+  cold-boot piece; every other part is recovered + wired into play_native.
 - **Cell directory:** RESOLVED -- populated in the bundle (see step 1).
 
 **Menu (`558B`)** -- the option dispatch (M/K/A/I/O + idle + fire) is recovered and already in
