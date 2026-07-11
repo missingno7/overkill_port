@@ -75,8 +75,12 @@ VM-less port skips it (it starts from the recovered image, not the packed exe).
   panel-cell directory (a cell drawn each frame at cursor (0x1F,0x18)).  Scenes 0..7 are cell screens
   (100 frames each); scenes >= 8 are the auto-fire GAMEPLAY demo (the attract plays the game via the
   `BE0A` mod-0x14 fire cycle on ticks 0x0F/0x11/0x13, `A067` fanout, BP=237C); scene 0x13 is terminal.
-- **GAPS:** scene 0's `D160` special branch, the `D0DB` per-scene ENTRY-DRAW actions, and the `CS:0BE4`
-  cell directory (empty in the `boot_1010_entry` snapshot -- populated only during a real boot).
+- **Scene 0 (`D160`) decoded (2026-07-11):** it is the attract's GAMEPLAY-SETUP, not a screen -- it
+  counts `[237E]` (the player view-anchor) down toward 0x60, runs the `9BE2` object-chain pre-update
+  (bp=237C), reloads the scene countdown `[BE08]=0x32`, and its sub-branches spawn via `7524` / emit
+  sound.  So scene 0 initialises the self-playing attract game; recoverable but it composes the object
+  system (9BE2/7524), not the cell blit.  Remaining gap: the `D0DB` per-scene ENTRY-DRAW actions.
+- **Cell directory:** RESOLVED -- populated in the bundle (see step 1).
 
 **Menu (`558B`)** -- the option dispatch (M/K/A/I/O + idle + fire) is recovered and already in
 play_native; `NativeFrontEnd` carries the 558B idle + D390 level-select decisions.
