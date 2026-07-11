@@ -83,6 +83,22 @@ justifies it -- kills the A97C/0054 divergences); (2) the death/respawn frame-cl
 FRONT-END intro + attract-demonstration fidelity (the big uncovered span).  The demo is also the proper
 COLD adlib AUDIO oracle, but the music starts after ~frame 600 (the early intro is near-silent).
 
+## 2026-07-11 — TOOLING: bump the dos_re submodule (9230822 -> d9c3249, framework promotions)
+
+Bumped the `dos_re` submodule to the major update; the full OVERKILL suite stays green (1396 passed).
+Notably, this update PROMOTED two tools OUT OF OVERKILL into the framework (OVERKILL is dos_re's
+"first completed port"): `dos_re.tick_demo` (the game-tick-keyed equivalence engine -- the canonical
+form of our `verify_native_lockstep`, with `TickDemo.suffix`/`replay_to` for resume-before-divergence
+repros) and `dos_re.coverage` (the native-% collector).  So we already follow the rules -- they came
+from here.  Genuinely NEW + useful to us:
+- **`dos_re/tools/check_doc_links.py`** -- a mechanical broken-relative-link check over all .md files.
+  Ran it: fixed 4 ASM-notation false-positives (`cs:[95C0](5B00)` -> `cs:[95C0] (5B00)`, and a
+  `[0x234C](cursor)`, which markdown mis-parsed as links); all 70 md files now resolve clean.  Worth
+  adding to the pre-commit audit set (`python dos_re/tools/check_doc_links.py .`).
+- **`docs/agent_toolbox.md`** -- a task->tool->command routing index for the framework (good orientation
+  for a fresh session).  Also new upstream: `overlay_menu.py` (an in-game settings-menu widget) and
+  `tick_demo_info.py` (inspect a tick recording).
+
 ## 2026-07-11 — AUDIO: menu/attract music + the page-request TIMELINE (game->driver interface probed)
 
 Probed the game->driver music-page interface by polling seg-2032 [0009] (active page) over the owner's

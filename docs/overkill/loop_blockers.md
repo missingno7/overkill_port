@@ -790,7 +790,7 @@ pixels** (`4D2C jne`), so a fixed watched byte is usually never written. Routine
 up by `4CED`: stream `DS:0xC6C1`, list `DS:0xC7B1`, `bp=0x4D4D`), **move `4C76`** (advances the stream
 per a video-mode jump table `cs:[0x4C8A+[95BC]*2]`, Tandy=shr1, parallax tables `DS:0xC803/C807/C80F` +
 wrap counter `DS:0xC818`). A star is 3 words `{row, dx, color}`; page offset = `row*0x68 +
-DS:[0x234C](cursor) + dx` (base table `DS:0x9A08 = row*0x68`; page row stride `0x68`=208px; present 3354
+DS:[0x234C] (cursor) + dx` (base table `DS:0x9A08 = row*0x68`; page row stride `0x68`=208px; present 3354
 does the Tandy bank interleave). New-star ring `DS:0x20A8..0x20C7` via ptr `DS:0x20A6` (`4D95`);
 level→initial-stream `DS:0xC601[level]`. Tables are DS-relative (DS=0x25CC). **Next: recover
 erase/move/plot as pure systems; verify produced-vs-VM byte-exact (step-hook `4D64/4D15/4C76`); per-level

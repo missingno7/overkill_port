@@ -292,8 +292,8 @@ Not "the death jingle" — an earlier note in `native_frame.py` guessed that and
            + inc word [234E] ; and word [234E],0F ; jnz ++
                cmp word [2354],1 ; jz ++
                sub word [2350],0D ; inc word [A978]
-          ++ cmp [234C],cs:[95C0](5B00) ; jne + ; mov ax,cs:[95BE](0680) ; mov [234C],ax
-           + add [234C],cs:[959E](0068)
+          ++ cmp [234C],cs:[95C0] (5B00) ; jne + ; mov ax,cs:[95BE] (0680) ; mov [234C],ax
+           + add [234C],cs:[959E] (0068)
              pop bp ; ret
 
        4E0D  do { push di/si ; call A781 ; pop si/di }
