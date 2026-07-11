@@ -241,15 +241,19 @@ class ImageRenderer:
                             phase_234e=img.rw(_DS, 0x234E))
         return tiles
 
-    def frame(self):
-        """One composed (200, 320) indexed frame: terrain -> stars in unlit pixels -> sprites -> HUD."""
+    def frame(self, *, stars: bool = True):
+        """One composed (200, 320) indexed frame: terrain -> stars in unlit pixels -> sprites -> HUD.
+
+        ``stars=False`` starts from a black playfield (no starfield) -- the level-start unsqueeze blits
+        the static page, which has no per-frame starfield yet, so the transition shows no stars."""
         from overkill.native_video.frame import SnapshotSprite
         from overkill.native_video.playfield import compose_playfield_indices
         from overkill.native_video.starfield_plate import render_starfield_plate
 
         img, np = self._img, self._np
         row_source = img.rw(_DS, 0x234C)
-        plate = render_starfield_plate(read_starfield(img), row_source)
+        plate = (render_starfield_plate(read_starfield(img), row_source) if stars
+                 else np.zeros((200, 320), dtype=np.uint8))
         tiles = self._tile_base()
         plate = np.where(tiles > 0, tiles, plate)
         state = project_state(img)     # ADR-1: a render projection of the image's pools
@@ -440,7 +444,8 @@ def _run_title_menu(display, pygame, bundle_data, container_data) -> "tuple[int,
                 # J (joystick, [0010]==1) is declined: play_native is keyboard-only (0162 fail-louds)
         idle += 1
         if idle >= _MENU_ATTRACT_IDLE_FRAMES:                  # 558B idle timeout -> the attract
-            for scene in (lambda: _run_hiscore_screen(display, pygame, container_data, 5.0),
+            for scene in (lambda: None if _run_intro(display, pygame, container_data) else False,
+                          lambda: _run_hiscore_screen(display, pygame, container_data, 5.0),
                           lambda: _replay_demo(display, pygame, bundle_data, container_data,
                                                demo_dir, 15.0)):
                 r = scene()
@@ -495,8 +500,9 @@ def _run_level_start_plaque(display, pygame, container_data, img, renderer, leve
     img.ww(_DS, 0xA97A, 0x0000)      # C4DB/C495: the bar starts EMPTY
     img.ww(_DS, 0xA97C, 0x0001)      # 9DD0: the charge is armed (77C5 will fill it)
     img.wb(_DS, 0xBEFF, 0x0D)        # 9DB9: queue the refuel sound
-    # 5C46: the level screen UNSQUEEZES in (a thin centre band -> full) before the briefing.
-    if not _run_screen_squeeze(display, pygame, renderer.frame(), opening=True):
+    # 5C46: the level screen UNSQUEEZES in (a thin centre band -> full) before the briefing.  The
+    # blitted page has no per-frame starfield yet, so the transition shows NO stars (stars=False).
+    if not _run_screen_squeeze(display, pygame, renderer.frame(stars=False), opening=True):
         return False
     display.set_title("OVERKILL - native (VM-less)  [mission briefing -- Space = launch, Esc = quit]")
     clock = pygame.time.Clock()
@@ -732,9 +738,9 @@ def main(argv=None) -> int:
             if menu_choice is None:
                 display.close()
                 return 0
-            if not args.no_intro and not _run_intro(display, pygame, container_data):
-                display.close()
-                return 0
+            # 558B FIRE goes straight to the level-select (971A -> D390); the IPAGE story intro is NOT
+            # on the start path (it never loads there -- confirmed by the cold-start asset trace), it is
+            # part of the ATTRACT (menu idle), so play_native shows it there, not before level-select.
             probe_img = build_cold_level_start_image(bundle_data, level, container_data)
             picked = _run_level_select(display, pygame, container_data, probe_img, start_beda=level)
             if picked is None:
