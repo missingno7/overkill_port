@@ -63,6 +63,25 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-11 — AUDIO: VM-free AdLib driver, the 2032:0409 page gate / pattern loader
+
+Continuing the owner's VM-FREE AdLib driver recovery (segment 2032 as pure Python, verified vs the
+`render_demo_music.py` OPL oracle).  Transcribed the **page gate / pattern loader `2032:0409`** into
+`overkill/native_audio/adlib.py` -- the music-page dispatcher the tick spine calls every tick:
+- `_page_gate_0409` -- latches a pending page ([0008] request -> [005F]), no-ops when nothing pends
+  (the common per-tick case), STOPS on page > 0x0A (the `0291` silence), else LOADS the page.
+- `_sequencer_silence_0291` -- key-off all nine channels + clear [0008]/[0009].
+- `_init_table_04a4` -- the 04B1 operator-level reset table (0-word terminated).
+- the load body -- 04A4 reset + nine key-offs, then the `0947[page]` descriptor sets the tick-divider
+  reload [000C], the channel count [0060] and each channel's bytecode pointer, then arms the card (BD/08).
+
+Verified: 5 new tests (structural for each helper + a **differential** one that seeds the real
+`demo_play_tandy_20260711_120636` segment-2032 image, reloads its own active page, and asserts the
+descriptor-derived scalars reproduce what the VM had loaded -- [000C]=6, [0060]=9, [0009]=2 -- plus the
+operator-reset/key-off/arm writes).  The last VM-coupled driver piece is the `00CD` bytecode sequencer
+(its command-advance path); the instrument/note/mod callees are already lifted, awaiting transcription.
+Suite 1371 passed / 33 skipped.
+
 ## 2026-07-11 — GAMEPLAY: the behavior-gap census + the drift-only behaviors (0x00/0x0D/0x0E/0x82)
 
 Censused the whole `CS:EFC4` behavior table (keyed on record +0x18) against the `_dispatch`

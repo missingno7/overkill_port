@@ -73,8 +73,18 @@ principle), verified against the `render_demo_music.py` oracle.  Scaffolding lan
 **Slice order (each: transcribe from the lifted hook, diff OPL vs the oracle, commit):**
 1. `2032:0557` write leaf ✅ (done).
 2. `2032:0579` PIT delay (host no-op) + `2032:04E9` detect (init path).
-3. `2032:0063` tick spine -> `2032:00CD` channel tick (the 9-channel loop).
-4. `2032:0181` set-instrument + `2032:024F` note/frequency (the F-num/block + operator regs).
-5. `2032:02C9`/`02F6` channel mod A/B + helpers `0244`/`02AA`, `0409` page gate.
+3. `2032:0063` tick spine ✅ (done) + `2032:0409` page gate / pattern loader ✅ (done 2026-07-11:
+   the full loader -- `0291` sequencer-silence + `04A4` operator-reset + the page-descriptor load that
+   sets `[000C]`/`[0060]` and each channel's bytecode pointer + the BD/08 arm; tested structurally +
+   differentially vs the `demo_play_tandy_20260711_120636` snapshot's own active page).
+4. `2032:00CD` per-channel bytecode sequencer -- the last VM-coupled piece.  The lifted
+   `run_adlib_channel_tick_2032_00cd` fast-paths the idle case and defers the command-advance path
+   (`00F7` loop) to the interpreter; transcribe that command loop, dispatching to the ALREADY-lifted
+   `0181` set-instrument, `024F` note/frequency, `0244`/`02AA` helpers and `02C9`/`02F6` mod A/B
+   (transcribe each from the lifted hook onto `AdlibDriver.ram`).
+5. THE ORACLE GATE: seed `AdlibDriver` from an AdLib snapshot's segment 2032, run `tick_2032_0063`
+   the right number of times per present-frame over an AdLib demo, and diff its `(reg,val)` stream
+   against `render_demo_music.py`'s per-frame VM capture -- byte-exact.  (Resolve the ticks-per-frame
+   and the game->driver input-cell interface here.)
 6. Wire `AdlibDriver` into play_native each frame over the D50E sound state -> `AdlibSpeakerSink`/
    `pynuked_opl3`; full-demo OPL diff vs the oracle must be zero.
