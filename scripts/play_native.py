@@ -50,7 +50,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from overkill.native_frame import advance_gameplay_frame_97b2, TheEndReached  # noqa: E402
+from overkill.native_frame import (  # noqa: E402
+    advance_gameplay_frame_97b2, GameOverReached, TheEndReached,
+)
 from overkill.native_walk_frame import project_state  # noqa: E402
 from overkill.recovered.adapters.flat_memory import MutFlatMemory  # noqa: E402
 from overkill.recovered.domain.gaps import RecoveryGap  # noqa: E402
@@ -266,6 +268,49 @@ class ImageRenderer:
         plate[:, self._panel_left:] = self._panel_indices_from_page(
             self._compose_hud(img, **self._hud_ctx))
         return plate
+
+
+def _run_highscore_entry(display, pygame, container_data) -> "str | None":
+    """The game-over HIGH-SCORE NAME ENTRY over HISCORE.ENC.
+
+    The original (``532D`` -> ``5497``) reads the name through **DOS ``INT 21h AH=07``** (console
+    STDIN) -- an input path neither the VM-less frame nor the scancode key table feeds, which is why
+    the screen ignored every key and the game hung there.  play_native owns it: type a name (letters,
+    Backspace), Enter to accept, Esc to quit.  Returns the name, or None to quit.  (The typed name is
+    echoed in the window title; drawing it onto the HISCORE page needs the D2B8 text renderer, scoped
+    separately in the front-end campaign.)"""
+    bg = decode_fullscreen_image(container_data, "HISCORE.ENC")
+    clock = pygame.time.Clock()
+    name = ""
+
+    def show():
+        display.set_title(f"OVERKILL - GAME OVER / HIGH SCORE  [enter name: {name}_   "
+                          "Enter = accept, Esc = quit]")
+
+    show()
+    while True:
+        for ev in pygame.event.get():
+            if ev.type == pygame.QUIT or (ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE):
+                return None
+            if ev.type == pygame.KEYDOWN:
+                if ev.key in (pygame.K_RETURN, pygame.K_KP_ENTER):     # 5497: al==0Dh -> accept
+                    return name
+                if ev.key == pygame.K_BACKSPACE:                       # 5497: al==08h -> delete
+                    name = name[:-1]
+                    show()
+                elif ev.unicode and ev.unicode.isprintable() and len(name) < 10:
+                    name += ev.unicode.upper()
+                    show()
+        display.draw(bg)
+        clock.tick(30)
+
+
+def _run_game_over(display, pygame, bundle_data, container_data, img, speaker) -> "int | None":
+    """Game-over screen chain: the high-score NAME ENTRY, then restart.  Returns the level pick for
+    the 98EB restart (0 -> level 1), or None to quit."""
+    if _run_highscore_entry(display, pygame, container_data) is None:
+        return None
+    return 0        # the fresh game restarts at level 1 (98EB does [2356] = pick + 1)
 
 
 def _run_hiscore_screen(display, pygame, container_data, seconds: float) -> "bool | None":
@@ -801,9 +846,25 @@ def main(argv=None) -> int:
                 # reproduced by re-running one frame over it; reused each tick, no per-frame alloc.
                 pre_frame[:] = img.data
                 try:
-                    # menu_pick is the host input the 98EB game-over restart reads (the level-select
-                    # cell for the fresh game); without it, out-of-lives fails loud instead of restarting.
-                    advance_gameplay_frame_97b2(img, isr_ticks=2, level_assets=level_assets, menu_pick=0)
+                    # menu_pick=None makes out-of-lives raise GameOverReached instead of restarting
+                    # silently, so the app can present the (real, input-driven) high-score entry +
+                    # new-game level-select -- the frame reads DOS INT 21h for the name, which nothing
+                    # feeds VM-less, so play_native owns that screen.  (--frames self-test auto-restarts.)
+                    advance_gameplay_frame_97b2(img, isr_ticks=2, level_assets=level_assets,
+                                                menu_pick=(0 if args.frames else None))
+                except GameOverReached as over:
+                    print(f"GAME OVER at tick {tick}: high-score entry, then restart")
+                    pick = _run_game_over(display, pygame, bundle_data, container_data, img, speaker)
+                    if pick is None:
+                        running = False
+                    else:
+                        over.resume(pick)
+                        plaque_level = pick
+                        if not _run_level_start_plaque(display, pygame, container_data, img, renderer,
+                                                       pick, speaker):
+                            running = False
+                    tick += 1
+                    continue
                 except TheEndReached as end:
                     # The mothership was beaten: present THE END (WINSCR.ENC), then -- on fire -- run
                     # the recovered 9744 continuation to load planet 1 and loop, exactly like the original.

@@ -57,6 +57,25 @@ class TheEndReached(Exception):
         self.resume = resume
 
 
+class GameOverReached(Exception):
+    """``DS:2358 == 0xFFFF`` (out of lives) -- the game-over -> high-score -> restart chain.
+
+    native_frame models ``98EB`` as pure STATE (its front-end screens are drawn into scratch and
+    cleared before the boundary), but the interactive HIGH-SCORE NAME ENTRY (``532D`` -> ``5497``)
+    reads characters through **DOS ``INT 21h AH=07``** (console STDIN) -- a path the VM-less frame and
+    the scancode key-table input do NOT feed, so it never responds to keys.  It is a front-end screen
+    the app must present itself.
+
+    Raised ONLY when the caller passes ``menu_pick=None`` (play_native): the app shows the high-score
+    entry + the new-game level-select, then calls ``resume(pick)`` to run the 98EB restart with the
+    chosen level.  The lockstep passes a real ``menu_pick`` and keeps 98EB inline + byte-exact.
+    """
+
+    def __init__(self, resume) -> None:
+        super().__init__("GAME OVER -- present the high-score entry, then resume the restart")
+        self.resume = resume
+
+
 #: optional mid-frame observation hook used ONLY by probes (``native_frame._AT_9BCA = fn``);
 #: it is None in every normal run and costs one ``is not None`` test per frame.
 _AT_9BCA = None
@@ -1541,9 +1560,13 @@ def _respawn_continuation_9908(mem, isr_ticks: int, level_assets=None,
     if mem.rw(DS, 0x2358) == 0xFFFF:                           # 9773 -> 98EB: OUT OF LIVES
         # Measured: this window's 9921 spin takes ZERO ticks (they all land in the terminal D305)
         # and 992F is bypassed -- the rest of the frame is the front-end chain.
-        if level_assets is None or menu_pick is None:
+        if level_assets is None:
             raise RecoveryGap("the 98EB game-over continuation ([2358] == FFFF: out of lives)",
-                              "needs level_assets + the menu_pick host input")
+                              "needs level_assets")
+        if menu_pick is None:
+            # the app presents the high-score entry + new-game level-select, then resumes the restart
+            raise GameOverReached(
+                lambda pick: _game_over_continuation_98eb(mem, level_assets, pick))
         _game_over_continuation_98eb(mem, level_assets, menu_pick)
         return
     # WHERE THE TICKS LAND.  Measured: on an ordinary respawn every recorded tick fires in the 9921

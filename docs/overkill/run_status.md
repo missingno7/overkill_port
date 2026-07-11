@@ -63,6 +63,27 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-11 — GAME OVER: the high-score name entry now responds (INT 21h input path recovered)
+
+Owner playtest bug: after game over you could not type your name / accept the high-score screen -- it
+ignored every key.  ROOT CAUSE found: the name entry (`532D` -> `5497`) reads characters through DOS
+`INT 21h AH=07` (console STDIN), a path NEITHER the VM-less frame NOR the scancode key table
+(`[98C4+sc]`) feeds -- and native_frame's `_game_over_continuation_98eb` models the whole screen as
+scratch state (skips the interactive entry), so play_native never ran it.
+
+Fix: native_frame raises the recognized `GameOverReached` on out-of-lives WHEN `menu_pick=None`
+(play_native), carrying `resume(pick)` = the 98EB restart.  The lockstep passes a real `menu_pick` and
+keeps 98EB inline + byte-exact (verify_play_native_gameover still PASS).  play_native passes
+`menu_pick=None`, catches it, and runs `_run_highscore_entry` (type a name -- letters/Backspace, Enter
+accepts, echoed in the title until the D2B8 text renderer lands), then `resume(0)` restarts to level 1
+and shows the level-start plaque.  `tests/test_native_game_over_signal.py` pins both `menu_pick` paths.
+
+ALSO recorded (verification of the owner's demo `demo_play_tandy_20260711_120636`): the lockstep
+diverges from that demo at frame 172 on the 5F61 CLOCK cells (DS:2324-2330) because the demo is AdLib
+(`A`) and the AdLib driver reprograms the PIT faster, so its ISR/clock rate differs from
+native_frame's PC-speaker `isr_ticks=2` -- a timing-model gap for AdLib-recorded demos, logged for the
+audio work.  Suite green (1299 passed / 33 skipped).
+
 ## 2026-07-11 — FRONT-END: the level-start transition (squeeze) + the HUD refuel animation
 
 Owner playtest: the level-select -> level entry was missing the original's screen squeeze/unsqueeze and
