@@ -394,46 +394,61 @@ def _replay_demo(display, pygame, bundle_data, container_data, demo_dir: Path,
     return None
 
 
-def _run_attract(display, pygame, bundle_data, container_data) -> "bool | None":
-    """The cold-boot ATTRACT loop: title -> high scores -> a gameplay demo, cycling on idle, until the
-    player presses Space (start a game) or quits.  Mirrors the original's D007 attract sequence with
-    the recovered screens + the byte-exact frame; the exact per-scene timings are host-side."""
+#: the menu's state cells the original's 558B dispatch writes (see docs/overkill/campaigns/frontend.md):
+_MENU_CONTROL_CELL = 0x0010     # [0010]: control method -- K -> 0 (keyboard), J -> 1, A -> 2 (amstrad)
+_MENU_SOUND_MODE_CELL = 0x22B5  # [22B5]: sound mode 0..3 (Music/fx/both/none), M cycles it (inc & 3)
+#: 558B idles ~750 of its own ticks before rolling the attract; ~10 s at the app's 30 fps.
+_MENU_ATTRACT_IDLE_FRAMES = 300
+
+
+def _run_title_menu(display, pygame, bundle_data, container_data) -> "tuple[int, int] | None":
+    """The faithful cold-start MENU -- the original's ``1010:558B`` option dispatch over ``OKMENU.ENC``.
+
+    Recovered from 558B: **M** cycles the sound mode (``[22B5]`` inc & 3 -- Music/fx/both/none),
+    **K/A** pick the control method (``[0010]`` = 0 keyboard / 2 amstrad -- both are keyboard maps
+    0162 decodes, 213E vs the alternate 2146), an idle timeout rolls the **attract** (high scores +
+    a byte-exact gameplay demo, the "demo after intro"), and **FIRE/Space** starts.  Returns
+    ``(sound_mode, control)`` to start, or ``None`` to quit.
+
+    **J** (joystick, ``[0010] == 1``) is offered by the original but play_native is keyboard-only and
+    0162 fail-louds on that mode, so J is declined here rather than starting an unplayable session.
+    558B's **I**/**O** instructions/ordering screens render text through the far renderer
+    ``1F8F:0980``, which is not recovered yet, so they are omitted rather than faked -- see
+    docs/overkill/campaigns/frontend.md.
+    """
     title = decode_fullscreen_image(container_data, TITLE_OPTIONS)
     demo_dir = ROOT / "artifacts" / "demos" / "demo_play_tandy_L2_full_20260617_180221"
     clock = pygame.time.Clock()
-    while True:
-        display.set_title("OVERKILL - native (VM-less)  [title -- Space = start, Esc = quit]")
-        for _ in range(6 * 30):                  # ~6s on the title
-            for ev in pygame.event.get():
-                if ev.type == pygame.QUIT or (ev.type == pygame.KEYDOWN
-                                              and ev.key == pygame.K_ESCAPE):
-                    return False
-                if ev.type == pygame.KEYDOWN and ev.key == pygame.K_SPACE:
-                    return True
-            display.draw(title)
-            clock.tick(30)
-        for scene in (lambda: _run_hiscore_screen(display, pygame, container_data, 5.0),
-                      lambda: _replay_demo(display, pygame, bundle_data, container_data,
-                                           demo_dir, 15.0)):
-            r = scene()
-            if r is not None:
-                return r
-
-
-def _run_title_screen(display, pygame, container_data) -> bool:
-    """The REAL title/options image (OKMENU.ENC, natively decoded) with a HOST fire-wait.
-
-    The original's menu LOGIC (key redefine, joystick, options) is a declared gap -- this shows the
-    recovered screen and waits for Space/Esc, nothing more.  Returns True to start a game."""
-    title = decode_fullscreen_image(container_data, TITLE_OPTIONS)
-    display.set_title("OVERKILL - native (VM-less)  [title -- Space = start, Esc = quit]")
-    clock = pygame.time.Clock()
+    sound_mode, control = 0, 0
+    idle = 0
+    display.set_title("OVERKILL - native (VM-less)  "
+                      "[menu -- M sound, K/J/A control, Space = start, Esc = quit]")
     while True:
         for ev in pygame.event.get():
             if ev.type == pygame.QUIT or (ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE):
-                return False
-            if ev.type == pygame.KEYDOWN and ev.key == pygame.K_SPACE:
-                return True
+                return None
+            if ev.type == pygame.KEYDOWN:
+                idle = 0
+                if ev.key in (pygame.K_SPACE, pygame.K_RETURN):
+                    return sound_mode, control
+                if ev.key == pygame.K_m:                       # 56E1: inc [22B5] ; and 3
+                    sound_mode = (sound_mode + 1) & 3
+                elif ev.key == pygame.K_k:                     # 563D: [0010] = 0 (keyboard, map 213E)
+                    control = 0
+                elif ev.key == pygame.K_a:                     # 56B2: [0010] = 2 (amstrad, map 2146)
+                    control = 2
+                # J (joystick, [0010]==1) is declined: play_native is keyboard-only (0162 fail-louds)
+        idle += 1
+        if idle >= _MENU_ATTRACT_IDLE_FRAMES:                  # 558B idle timeout -> the attract
+            for scene in (lambda: _run_hiscore_screen(display, pygame, container_data, 5.0),
+                          lambda: _replay_demo(display, pygame, bundle_data, container_data,
+                                               demo_dir, 15.0)):
+                r = scene()
+                if r is False:
+                    return None
+                if r is True:
+                    return sound_mode, control
+            idle = 0
         display.draw(title)
         clock.tick(30)
 
@@ -675,8 +690,10 @@ def main(argv=None) -> int:
     else:
         level = args.level
         difficulty = 0
+        menu_choice: "tuple[int, int] | None" = None
         if not args.no_title and not args.frames:
-            if not _run_attract(display, pygame, bundle_data, container_data):
+            menu_choice = _run_title_menu(display, pygame, bundle_data, container_data)
+            if menu_choice is None:
                 display.close()
                 return 0
             if not args.no_intro and not _run_intro(display, pygame, container_data):
@@ -691,6 +708,9 @@ def main(argv=None) -> int:
             plaque_level = level          # went through the front end -> show the mission plaque
         img = build_cold_level_start_image(bundle_data, level, container_data)
         img.ww(_DS, 0xBEDC, difficulty)   # the difficulty global (the C237 spawn throttle reads it)
+        if menu_choice is not None:       # apply the 558B menu selections onto the game image
+            img.ww(_DS, _MENU_SOUND_MODE_CELL, menu_choice[0])
+            img.ww(_DS, _MENU_CONTROL_CELL, menu_choice[1])
         origin = f"cold level {level + 1}"
 
     planet = img.rw(_DS, 0x2356)

@@ -63,6 +63,30 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-11 — FRONT-END: the real menu (558B) is now interactive in play_native
+
+Recovered the cold-start menu's option dispatch (`1010:558B`) and wired it into play_native, replacing
+the static OKMENU fire-wait.  558B checks the "shortcut" key cells in order and dispatches:
+- **M** (`[98F6]`) -> 56E1: `inc [22B5] ; and 3` -- cycle the sound mode (Music/fx/both/none).
+- **K** (`[98E9]`) -> 563D: `[0010] = 0` (keyboard map 213E);  **A** (`[98E2]`) -> 56B2: `[0010] = 2`
+  (the "amstrad" ALTERNATE KEYBOARD map 2146 -- both are keyboard paths 0162 decodes).
+- **J** (`[98E8]`) -> joystick (`[0010] == 1`), which 0162 fail-louds; play_native is keyboard-only so
+  the menu declines J rather than starting an unplayable session.
+- **O**/**I** -> ordering/instructions text via the far renderer `1F8F:0980` (unrecovered -> omitted,
+  not faked).
+- **idle >= 750 ticks** -> CBE8, the ATTRACT (high scores + a byte-exact gameplay demo -- the
+  "demo after intro").
+- **FIRE** -> start.
+
+`play_native._run_title_menu` implements this (M sound-mode cycle, K/A control, idle->attract,
+Space->start), and `main()` applies the selections onto the game image (`[22B5]`, `[0010]`).  The old
+`_run_attract`/`_run_title_screen` stubs are deleted.  `tests/test_native_menu.py` (10) proves the
+supported choices (sound 0..3, control 0/2) play and that control==1 (joystick) fail-louds (why J is
+declined).  Suite green (1289 passed / 32 skipped).
+
+Front-end remaining: the O/I text screens (need 1F8F:0980), the attract driven by the recovered
+D007/D04D scene machine, the intro order/trigger, and inter-screen palette fades.
+
 ## 2026-07-11 — FRONT-END: the level-start mission PLAQUE, the "missing screen" between select and play
 
 Owner playtest: "even when I select level there is a missing screen and animation between the actual
