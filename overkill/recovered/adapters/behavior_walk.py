@@ -3432,6 +3432,10 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
         elif beh == 0x70:
             _step_riser_70(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # F5D9 exits jmp BC45
+        elif beh in (0x00, 0x0D, 0x0E, 0x82):
+            # the EFC4 table points these straight at BC45 -- there is NO per-behavior body, the
+            # handler IS the drift postmove.  Dispatching them = the plain drift (with_drift=True).
+            _postmove_bc45(mem, rec, tiles, with_drift=True)
         else:
             raise RecoveryGap(f"behavior {beh:#04x} (record {rec:04X})",
                               "no native handler registered -- recover it before walking")

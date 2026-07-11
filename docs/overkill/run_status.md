@@ -63,6 +63,23 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-11 — GAMEPLAY: the behavior-gap census + the drift-only behaviors (0x00/0x0D/0x0E/0x82)
+
+Censused the whole `CS:EFC4` behavior table (keyed on record +0x18) against the `_dispatch`
+registrations to map the ENTIRE remaining gap surface (the finite set of behaviors the demo corpus
+never exercises).  **Registered-through-dict/set dispatch is easy to miss** — e.g. 0x41/0x43/0x44/
+0x45/0x4A/0x51 are all handled via `_WAYPOINT_SEED_BY_BEHAVIOR` (each seeds its own +0x36 schedule
+and runs the shared B2C8 follower).  Landed the trivial tail: 0x00/0x0D/0x0E/0x82 point straight at
+BC45 — no per-behavior body — so they dispatch as the plain drift postmove (provably correct).
+
+**Remaining genuinely-unregistered behaviors (the finite gap set to recover as play surfaces them):**
+- `0x07/0x08/0x09/0x0F -> ADxx` — sprite/step tweaks funnelling into the shared `AD60` mover+cull
+  body (branches to the `BD17` despawn); wants a careful witnessed recovery (AD60 first).
+- `0x1B -> BAC7`, `0x50 -> D281`.
+- the high-ID cluster `0x61/0x62/0x65/0x66/0x67/0x6A/0x6E/0x71..0x79/0x7A/0x7B/0x7C/0x7F/0x80/0x84/
+  0x85/0x8D/0x92` (F3xx..F7xx + 87xx/8Dxx) — almost certainly planet-4-6 / boss-specific; surface
+  them by walking those planets, recover each against its `1010:XXXX` handler like 0x10/0x36/0x37.
+
 ## 2026-07-11 — GAMEPLAY: recover the planet-1 enemy cascade (behaviors 0x10, 0x36, 0x37)
 
 The owner's cold-play hit a chain of RecoveryGaps on planet 1 — enemies the demo corpus never
