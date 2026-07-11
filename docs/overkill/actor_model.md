@@ -303,6 +303,26 @@ literal transcription would not have). The standing pipeline:
    per-behaviour driven oracle (below). The lifted hook is scaffolding; the recovered-source island is
    the deliverable.
 
+## 7.5 SPIKE LANDED (2026-07-11): the step-list interpreter, proven on the bounce cluster
+
+The §6.2 interpreter now has a first CONCRETE, verified realization -- not the production engine, a
+scoped spike to validate the verb set + the equivalence-gate method before committing to the zoo:
+
+- `overkill/recovered/adapters/actor_steps.py`: a `Step` verb set (`SetSprite`, `SetSpriteAnim`,
+  `GuardXEq`, `SoundGated`, `MorphBehavior`, `SetDir`, `TripleBounce`) -- each a thin wrapper over an
+  already-recovered worker, no new semantics -- and `run_actor_steps` (stop early on a failed guard).
+- The 88CF triple-AFD8 bouncer cluster expressed as DATA step-lists (`BOUNCE_BEHAVIORS`): `0x33 =
+  [TripleBounce]`, `0x3D = [Anim, TripleBounce]`, `0x3C = [SetSprite, Guard(x==0xB0), Sound, Morph,
+  SetDir, Anim, TripleBounce]` -- exactly the "guards -> primitive -> tail" shape of §5.2.
+- `tests/test_actor_steps.py`: the EQUIVALENCE GATE -- each step-list vs its native `_step_*` handler
+  over a spread of record pre-states (the guard boundary, sound gate on/off, anim phases, directions),
+  whole-DGROUP diff = 0.  18/18 green.
+
+This demonstrates the model's core claim end to end: a behaviour as data over a shared interpreter is
+byte-identical to the hand-written handler.  It does NOT yet touch the walk (the handlers keep their
+bodies); promoting a behaviour to its step-list still waits on §6.2 step 4 (the whole zoo tagged) +
+the demo-level shadow gate, so the schema keeps emerging rather than being frozen on 3 handlers.
+
 ## 8. First refactor candidates + the verifier plan
 
 **Best first clusters** (biggest sharing, lowest risk): the **waypoint controller family** (one body
