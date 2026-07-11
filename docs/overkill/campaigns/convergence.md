@@ -64,6 +64,15 @@ the original's title/attract, menus natively, and plays — every screen recover
   same way, point the builder at it instead of `exe_image`, gate the blank-base cold image byte-exact
   vs the bundle (`verify_native_cold_level_data`), then delete `--bundle`.
 
+**Level-ROM enumerated (2026-07-11): 384 bytes in 2 ranges** — `DS:C4AA..C5E8` (319 B: the 6-level
+class-override pointer table + its `FF`-terminated pair lists) and `DS:D1BC..D1FC` (65 B: the tile-plane
+footer).  So the COMPLETE exe dependency for BUILD + GAMEPLAY = `native_rom` (~580 CS bytes) + level-ROM
+(384 DGROUP bytes) = **~964 bytes of byte-verifiable tables** (plus the container banks, already
+asset-derived, and the post-init tile-plane BORDER ROWS `cold_level_start` keeps — the one remaining
+item to enumerate).  The exe-derived 1.3 MB bundle is ~99.9% dead weight for the gameplay engine.  Slice
+B is now purely mechanical: extract those ~964 bytes + the border rows into recovered data, rewire the
+builder to read them instead of `exe_image`, gate byte-exact, drop `--bundle`.
+
 ## First slice
 Slice B's equivalence gate is the highest-leverage start: prove the cold image can be built WITHOUT the
 bundle by diffing an asset+ROM-built image against the bundle-seeded one, which produces the exact list
