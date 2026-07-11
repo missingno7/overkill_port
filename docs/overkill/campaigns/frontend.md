@@ -82,8 +82,10 @@ VM-less port skips it (it starts from the recovered image, not the packed exe).
 play_native; `NativeFrontEnd` carries the 558B idle + D390 level-select decisions.
 
 ### Recovery order (each shadow-gated)
-1. **Capture a POPULATED attract snapshot** (run the VM to the attract via `scripts/play.py`/a cold
-   demo, dump memory) so `CS:0BE4` + the scene descriptors are live -- the enabler the boot snapshot lacks.
+1. ~~Capture a populated attract snapshot~~ **RESOLVED (2026-07-11): the `static_runtime_bundle`
+   already has `CS:0BE4` populated** (the 16-entry cell directory, offsets at 0x90 stride) + the `BE18`
+   scene descriptors -- no fresh snapshot needed; the scene-cell render builds straight from the bundle
+   (or, post-convergence, from `native_rom`).  The `boot_1010_entry` snapshot was just pre-panel-load.
 2. **Recover the scene-cell render** (the descriptor -> `CS:0BE4` cell -> the (0x1F,0x18) blit) so
    scenes 0..7 draw natively; reuse the panel-cell machinery.
 3. **Wire `attract_frame_step` as the driver**: run it per frame, draw the scene cell (2), and for
