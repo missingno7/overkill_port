@@ -87,5 +87,14 @@ principle), verified against the `render_demo_music.py` oracle.  Scaffolding lan
    the right number of times per present-frame over an AdLib demo, and diff its `(reg,val)` stream
    against `render_demo_music.py`'s per-frame VM capture -- byte-exact.  (Resolve the ticks-per-frame
    and the game->driver input-cell interface here.)
+   **CRITICAL (2026-07-11): use a COLD-START adlib demo, NOT a snapshot-replay one.**  Capturing the
+   menu demo `demo_play_tandy_20260711_202523` (snapshot-based) yielded only the frame-0
+   `emit_current` register dump (124 writes) and then ZERO writes for 280 frames -- the frame
+   verifier's snapshot-replay path does NOT fire the timer ISR that ticks `2032:0063`, so the driver
+   never runs.  A COLD demo (is_cold, boots from the command tail) DOES fire the ISR (the campaign's
+   earlier 40s cold render was full music).  The VM-free driver, seeded from either snapshot (both have
+   page 2 active + all channels live), correctly plays continuous music -- so the mismatch was the
+   oracle capture method, not the driver.  Build the gate on a cold adlib demo and count its
+   `2032:0063` calls per present-frame to pin the tempo.
 6. Wire `AdlibDriver` into play_native each frame over the D50E sound state -> `AdlibSpeakerSink`/
    `pynuked_opl3`; full-demo OPL diff vs the oracle must be zero.
