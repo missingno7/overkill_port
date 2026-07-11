@@ -63,6 +63,26 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-11 — COVERAGE: the owner's cold-start-intro demo lockstepped (719 frames, 6 known-open divergences)
+
+The owner recorded `demo_cold_start_intro_20260711_203259` (cold, adlib, 8852 frames: ~6174 of
+automatic intro+attract, then m m m m + space to start, then their playthrough) to surface native
+gaps.  Ran `verify_native_lockstep` over it:
+- **Front-end (frames 0..~6281): ZERO 97B2 gameplay frames** -- the whole intro + attract runs the
+  front-end machine, which the 97B2 lockstep does not cover.  The "demonstration of all upgrades and
+  weapons" the owner refers to lives HERE (the attract), so it is a FRONT-END fidelity item, not a
+  gameplay-frame one.
+- **Gameplay (the playthrough): 719 frames lockstepped, 6 diverged, 0 gaps (no unrecovered behaviors).**
+  All six divergences are in ALREADY-KNOWN-OPEN mechanics: `A97C`/`0054` = the **77C5 shield body**
+  (genuinely open; the demo picks up a shield) + its sound tick; the `2324..2336` frame-clock counters
+  reset to 0 in native on 4 isolated frames = the death/respawn-window timing residue (14E6/21AA/22BF
+  ride along on one).  So native replays the owner's playthrough ~99% byte-exact with no new gaps.
+
+NEXT (owner's "replay this complete vmlessly exactly"): (1) recover the **77C5 shield body** (this demo
+justifies it -- kills the A97C/0054 divergences); (2) the death/respawn frame-clock residue; (3) the
+FRONT-END intro + attract-demonstration fidelity (the big uncovered span).  The demo is also the proper
+COLD adlib AUDIO oracle, but the music starts after ~frame 600 (the early intro is near-silent).
+
 ## 2026-07-11 — FRONT-END: menu REDEFINE KEYS ('r') recovered; boss-key (F9) diagnosed
 
 The owner's menu demo (`demo_play_tandy_20260711_202523`: m m m m, r, space) showed the native menu
