@@ -364,6 +364,17 @@ on-arrival gate), and the generic field/branch verbs `IfFieldZero` / `DecFieldTh
 not hypothesised — the waypoint/formation family's remaining members are now mechanical step-list
 transcriptions over this same vocabulary, each shadow-gated.
 
+**Projectiles = actors; shoot = the spawn verb, shot TYPE = its operand (2026-07-11).**  A shot is
+another object record with its own behaviour/sprite/velocity, so it is already in the model.  The base
+`7476` bullet is one template (type 2, behaviour `0x0B`, sprite `0x31`, player-aimed via the `74E2`
+deltas); variants re-stamp the spawned slot (the 0x49 burster = an 8-shot RADIAL of behaviour-`0x04`
+bullets; the 0x86 launcher = a homing behaviour-`0x60`; the crawler = a sprite override).  The emit
+verbs `Shoot` (single aimed `0x0B`) and `ShootRadial(behavior, count)` capture this; `_step_burster_49`
+is a step-list (`SHOOTER_BEHAVIORS`, `[SetSprite, AddX, OnClockBeat(232A==F, ShootRadial(0x04, 8))]`)
+gated byte-exact (32/32).  So the projectile TYPE is a data operand, and *which enemy fires what* is
+step-list data + the `C237` parent-keyed child table (the enemy->child map -- data, kept behind the
+`Call` escape for now).  Movement-only actors simply carry no emit verb.
+
 ## 8. First refactor candidates + the verifier plan
 
 **Best first clusters** (biggest sharing, lowest risk): the **waypoint controller family** (one body

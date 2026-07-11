@@ -12,12 +12,14 @@ import pytest
 from overkill.recovered.adapters.actor_steps import (
     BOUNCE_BEHAVIORS,
     CONTROLLER_BEHAVIORS,
+    SHOOTER_BEHAVIORS,
     run_actor_steps,
 )
 from overkill.recovered.adapters.behavior_walk import (
     DS,
     _step_bounce_sprite_3d,
     _step_bouncer_33,
+    _step_burster_49,
     _step_diver_16_17,
     _step_lurker_3c,
 )
@@ -122,4 +124,33 @@ def test_diver_step_list_matches_native(beh, state):
     b = bytes(step.data[BASE:BASE + 0x10000])
     diff = [o for o in range(0x10000) if a[o] != b[o]]
     assert not diff, (f"diver {beh:#04x} state {state}: diverges at "
+                      + ", ".join(f"{o:04X}(nat={a[o]:02X}/step={b[o]:02X})" for o in diff[:8]))
+
+
+def _seed_shooter(x, y, beat232a, cursor95da) -> MutFlatMemory:
+    mem = MutFlatMemory(bytes(0x100000))
+    mem.ww(DS, REC + 0x00, 1)
+    mem.ww(DS, REC + 0x02, x)
+    mem.ww(DS, REC + 0x04, y)
+    mem.ww(DS, REC + 0x06, 0)
+    mem.ww(DS, 0x232A, beat232a)     # the [232A]==0xF radial-burst beat
+    mem.ww(DS, 0x95DA, cursor95da)   # the gameplay-pool alloc cursor the 7476 shot uses
+    mem.ww(DS, 0x237E, 0x60)         # player view-anchor x/y (the shot aim deltas)
+    mem.ww(DS, 0x2380, 0x50)
+    mem.ww(DS, 0xA8C2, 0)
+    return mem
+
+
+@pytest.mark.parametrize("beat", [0x0F, 0x0E])   # 0x0F fires the 8-shot radial; 0x0E does not
+def test_radial_burster_step_list_matches_native(beat):
+    native = _seed_shooter(0x40, 0x50, beat, 0)
+    _step_burster_49(native, REC)
+
+    step = _seed_shooter(0x40, 0x50, beat, 0)
+    run_actor_steps(SHOOTER_BEHAVIORS[0x49], step, REC, _tiles())
+
+    a = bytes(native.data[BASE:BASE + 0x10000])
+    b = bytes(step.data[BASE:BASE + 0x10000])
+    diff = [o for o in range(0x10000) if a[o] != b[o]]
+    assert not diff, ("radial burster: diverges at "
                       + ", ".join(f"{o:04X}(nat={a[o]:02X}/step={b[o]:02X})" for o in diff[:8]))

@@ -19,7 +19,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from overkill.recovered.adapters.behavior_walk import DS, _b729_seek, _bdd0_contact_at
+from overkill.recovered.adapters.behavior_walk import (
+    DS,
+    _b729_seek,
+    _bdd0_contact_at,
+    _spawn_enemy_shot_7476,
+)
 from overkill.recovered.domain.tilemap import LevelTileContext
 from overkill.recovered.systems.contact_step import contact_probe_afd8
 
@@ -218,6 +223,55 @@ class DecFieldThen(Step):
             run_actor_steps(self.when_zero, mem, rec, tiles, ctx)
 
 
+# --- emit verbs: a PROJECTILE is another actor; "shoot" is the spawn verb, the shot TYPE its operand -
+# (docs/overkill/actor_model.md §5.2 shoot -- the 7476 base bullet is behaviour 0x0B player-aimed;
+#  variants re-stamp the spawned slot's behaviour/direction, e.g. the 8-shot radial -> behaviour 0x04.)
+
+@dataclass(frozen=True)
+class AddX(Step):
+    """``[rec+2] += delta`` -- horizontal drift."""
+    delta: int
+
+    def run(self, mem, rec, tiles, ctx):
+        mem.ww(DS, (rec + 0x02) & 0xFFFF, (mem.rw(DS, (rec + 0x02) & 0xFFFF) + self.delta) & 0xFFFF)
+
+
+@dataclass(frozen=True)
+class OnClockBeat(Step):
+    """Run the sub-list only on the shared-clock beat ``[addr] == value`` (else fall through)."""
+    addr: int
+    value: int
+    steps: tuple
+
+    def run(self, mem, rec, tiles, ctx):
+        if mem.rw(DS, self.addr) == self.value:
+            run_actor_steps(self.steps, mem, rec, tiles, ctx)
+
+
+class Shoot(Step):
+    """Fire ONE base enemy bullet (``7476``): behaviour ``0x0B``, sprite ``0x31``, player-aimed -- the
+    common shot template.  A no-op when the gameplay pool is full."""
+
+    def run(self, mem, rec, tiles, ctx):
+        _spawn_enemy_shot_7476(mem, rec)
+
+
+@dataclass(frozen=True)
+class ShootRadial(Step):
+    """Fire a RADIAL burst -- ``count`` base ``7476`` bullets re-stamped to ``behavior`` with
+    directions ``count-1 .. 0`` (the 0x49 spread; a full pool aborts the rest)."""
+    behavior: int
+    count: int
+
+    def run(self, mem, rec, tiles, ctx):
+        for cx in range(self.count, 0, -1):
+            slot = _spawn_enemy_shot_7476(mem, rec)
+            if slot == 0xFFFF:
+                return
+            mem.ww(DS, slot + 0x18, self.behavior)
+            mem.ww(DS, slot + 0x06, cx - 1)
+
+
 def run_actor_steps(steps, mem, rec: int, tiles: LevelTileContext, ctx: "dict | None" = None) -> None:
     """Run a behaviour's step-list over the actor record -- stop early on a failed guard.  ``ctx``
     carries cross-step state (e.g. the last Seek's ``arrived`` flag the WhenArrived verb reads)."""
@@ -254,3 +308,14 @@ _DIVER_16_17 = (
     )),
 )
 CONTROLLER_BEHAVIORS = {0x16: _DIVER_16_17, 0x17: _DIVER_16_17}
+
+#: SHOOTERS -- a projectile is another actor, so "shoot" is the spawn verb and the shot TYPE is its
+#: operand.  The 0x49 burster is the clean demonstration: sprite/drift, then on the [232A]==0xF beat an
+#: 8-shot RADIAL of behaviour-0x04 bullets (vs the Shoot() verb's single behaviour-0x0B aimed bullet).
+#: Gated vs _step_burster_49 (tests/test_actor_steps.py).
+_BURSTER_49 = (
+    SetSprite(0x1D),
+    AddX(2),
+    OnClockBeat(0x232A, 0x0F, (ShootRadial(behavior=0x04, count=8),)),
+)
+SHOOTER_BEHAVIORS = {0x49: _BURSTER_49}
