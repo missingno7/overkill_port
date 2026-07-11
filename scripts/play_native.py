@@ -270,32 +270,44 @@ class ImageRenderer:
         return plate
 
 
-#: the high-score name-entry prompt line, drawn with the game's own DS:1816 glyph font (index space).
-_HISCORE_NAME_XY = (0x40, 0x10)          # (sy, sx): under the "High Scores" title, left column
-_HISCORE_NAME_COLOR = 0x0E               # yellow, matching the title
+#: the high-score TABLE layout (index space), drawn with the game's own DS:1816 glyph font.
+_HISCORE_TABLE_XY = (0x2C, 0x10)         # (sy, sx): under the "High Scores" title, left column
+_HISCORE_TABLE_COLOR = 0x0E             # yellow, matching the title
+_HISCORE_ROW_H = 0x0E                    # px per table row
 _HISCORE_NAME_MAX = 10
 
 
 def _run_highscore_entry(display, pygame, container_data, img) -> "str | None":
-    """The game-over HIGH-SCORE NAME ENTRY over HISCORE.ENC.
+    """The game-over HIGH-SCORE screen (``532D`` -> ``5497``): the real table + interactive NAME ENTRY.
 
-    The original (``532D`` -> ``5497``) reads the name through **DOS ``INT 21h AH=07``** (console
-    STDIN) -- an input path neither the VM-less frame nor the scancode key table feeds, which is why
-    the screen ignored every key and the game hung there.  play_native owns it: type a name (letters,
-    Backspace), Enter to accept, Esc to quit.  Returns the name, or None to quit.  The typed name is
-    drawn ON-SCREEN through the game's own recovered glyph font (the ``3153`` index-space char path,
-    :mod:`overkill.native_video.hud_glyph`) -- the same font the HUD score line uses."""
+    The original reads the name through **DOS ``INT 21h AH=07``** (console STDIN) -- an input path
+    neither the VM-less frame nor the scancode key table feeds, which is why the screen ignored every
+    key and the game hung there.  play_native owns it: it reads the 8-entry table at ``DS:21D8``,
+    finds the player's rank from their score (``DS:2314``), and draws the whole table with the player's
+    new entry inserted at its rank -- the name typed live (letters, Backspace) in the game's own
+    recovered glyph font (the ``3153`` index-space path).  Enter accepts, Esc quits.  Returns the name,
+    or None to quit.  (If the score does not make the table, the table is shown and Enter/Esc dismiss.)"""
     import numpy as np
 
-    from overkill.native_video.hud_glyph import draw_glyph_string, read_glyph_font
+    from overkill.native_video.highscore import (
+        PLAYER_SCORE_CELL, compose_table, player_rank, read_table,
+    )
+    from overkill.native_video.hud_glyph import read_glyph_font
 
+    mem = np.frombuffer(img.data, dtype=np.uint8)
     bg = decode_fullscreen_image(container_data, "HISCORE.ENC")
-    font = read_glyph_font(np.frombuffer(img.data, dtype=np.uint8), _DS)
+    font = read_glyph_font(mem, _DS)
+    table = read_table(mem, _DS)
+    player_score = bytes(mem[_DS * 16 + PLAYER_SCORE_CELL:_DS * 16 + PLAYER_SCORE_CELL + 4])
+    rank = player_rank(table, player_score)
+    made_table = rank < len(table)
     clock = pygame.time.Clock()
-    display.set_title("OVERKILL - GAME OVER / HIGH SCORE  [type your name, Enter = accept, Esc = quit]")
+    display.set_title("OVERKILL - GAME OVER / HIGH SCORE  "
+                      + ("[type your name, Enter = accept, Esc = quit]" if made_table
+                         else "[Enter / Esc to continue]"))
     name = ""
     blink = 0
-    sy, sx = _HISCORE_NAME_XY
+    sy, sx = _HISCORE_TABLE_XY
     while True:
         for ev in pygame.event.get():
             if ev.type == pygame.QUIT or (ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE):
@@ -303,14 +315,17 @@ def _run_highscore_entry(display, pygame, container_data, img) -> "str | None":
             if ev.type == pygame.KEYDOWN:
                 if ev.key in (pygame.K_RETURN, pygame.K_KP_ENTER):     # 5497: al==0Dh -> accept
                     return name
+                if not made_table:
+                    continue
                 if ev.key == pygame.K_BACKSPACE:                       # 5497: al==08h -> delete
                     name = name[:-1]
                 elif ev.unicode and ev.unicode.isprintable() and len(name) < _HISCORE_NAME_MAX:
                     name += ev.unicode.upper()
-        frame = bg.copy()
-        caret = "_" if (blink // 15) % 2 == 0 else " "
-        text = f"NAME: {name}{caret}"
-        draw_glyph_string(frame, sy, sx, [ord(c) for c in text], font, _HISCORE_NAME_COLOR)
+        frame = compose_table(bg, font, table, sy=sy, sx=sx, color=_HISCORE_TABLE_COLOR,
+                              row_h=_HISCORE_ROW_H,
+                              editing_rank=rank if made_table else None,
+                              editing_name=name, editing_score=player_score,
+                              caret=(blink // 15) % 2 == 0)
         display.draw(frame)
         blink += 1
         clock.tick(30)
