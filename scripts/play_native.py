@@ -453,6 +453,22 @@ def _run_title_menu(display, pygame, bundle_data, container_data) -> "tuple[int,
         clock.tick(30)
 
 
+def _run_screen_squeeze(display, pygame, frame, *, opening: bool) -> bool:
+    """Play the original's vertical screen SQUEEZE (1010:5C46 opening / 5960 closing): the ``(200,320)``
+    index ``frame`` scaled from a thin centre band to full height (opening) or full to a band (closing),
+    stepped at the retrace cadence.  Returns False on window-close."""
+    from overkill.native_video.transition import squeeze_heights, vertical_squeeze_frame
+
+    clock = pygame.time.Clock()
+    for h in squeeze_heights(opening=opening):
+        for ev in pygame.event.get():
+            if ev.type == pygame.QUIT:
+                return False
+        display.draw(vertical_squeeze_frame(frame, h))
+        clock.tick(60)                    # 5C46 steps [5901] += 2 per retrace (~60 Hz)
+    return True
+
+
 def _run_level_start_plaque(display, pygame, container_data, img, renderer, level_index: int) -> bool:
     """The level-start MISSION PLAQUE (``1010:D305``/``D367``): the ``plaq{level}.enc`` briefing cell
     overlaid on the level's initial screen (animated starfield + HUD), held until FIRE -- what the
@@ -478,6 +494,9 @@ def _run_level_start_plaque(display, pygame, container_data, img, renderer, leve
     img.ww(_DS, 0xA97A, 0x0000)      # C4DB/C495: the bar starts EMPTY
     img.ww(_DS, 0xA97C, 0x0001)      # 9DD0: the charge is armed (77C5 will fill it)
     img.wb(_DS, 0xBEFF, 0x0D)        # 9DB9: queue the refuel sound
+    # 5C46: the level screen UNSQUEEZES in (a thin centre band -> full) before the briefing.
+    if not _run_screen_squeeze(display, pygame, renderer.frame(), opening=True):
+        return False
     display.set_title("OVERKILL - native (VM-less)  [mission briefing -- Space = launch, Esc = quit]")
     clock = pygame.time.Clock()
     while True:

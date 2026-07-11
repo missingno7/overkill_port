@@ -63,6 +63,26 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-11 — FRONT-END: the level-start transition (squeeze) + the HUD refuel animation
+
+Owner playtest: the level-select -> level entry was missing the original's screen squeeze/unsqueeze and
+the HUD refuel animation.  Both recovered + wired into play_native's level-start (`_run_level_start_plaque`):
+
+- **REFUEL** (`1000c0a`): the get-ready refuels the energy/fuel bar.  C4DB zeroes `[A97A]`, the A47C
+  script arms `[A97C]=1` and queues sound 0x0D (9DB9), then D305's per-frame **77C5** tick fills
+  `[A97A]` 0 -> 0x58 (sound 0x0C at full).  The cold image short-circuits it (sets 0x58 directly), so
+  the plaque now resets it empty + re-arms and ticks 77C5 + the ISR effects so the fuel indicator
+  climbs on the HUD with its sound.  Self-finishing in-game if fire is pressed early.
+- **UNSQUEEZE** (`1010:5C46`, called from 5C9A <- 971D the level-start): the level screen draws with a
+  growing vertical extent `[5901]` (6 -> full height, +2/retrace) -- it opens from a thin centre band.
+  `overkill/native_video/transition.py: vertical_squeeze_frame` reproduces it (centred vertical scale);
+  `play_native._run_screen_squeeze` plays it entering the level, before the briefing.
+
+Tests: `tests/test_native_transition.py` (4, the centred band + the 5901 cadence),
+`tests/test_native_plaque.py` (the 77C5 refuel fills 0->0x58).  Suite green (1294 passed / 32 skipped).
+The squeeze-OUT (5960, callers 5940/5945) is a separate wrapper not yet tied to the level-select exit --
+left unwired rather than guessed.
+
 ## 2026-07-11 — FRONT-END: the real menu (558B) is now interactive in play_native
 
 Recovered the cold-start menu's option dispatch (`1010:558B`) and wired it into play_native, replacing
