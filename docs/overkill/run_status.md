@@ -63,6 +63,26 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-11 — AUDIO: VM-free AdLib driver LOGIC COMPLETE (the 2032:00F7 command loop + 024F/0181)
+
+Transcribed the LAST driver piece -- the per-channel bytecode COMMAND advance `2032:00F7`
+(`_command_advance_00f7`) -- so the whole segment-2032 AdLib driver logic is now pure Python:
+- note-on -> `_note_frequency_024f` (F-num table lookup + A0/B0 emit) and `_set_instrument_0181` (the
+  9 operator regs + the two 0x40 level regs from the 0869 instrument records), both transcribed from
+  the interpreter-verified lifted hooks;
+- the note-duration band 0xE0..0xFF, the 0x8E..0x9F silence, and the FULL `0355` indirect jump table
+  for cmds 0x80..0x8D (block advance/loop via 0371, re-key 0x81, hold 0x82, key-off 0x85, the
+  accumulator 0x86/0x87/0x8D and modulation-parameter 0x8A/0x8B/0x8C setters, the 0x84 transpose, the
+  0x88 operator-level, the 0x89 bytecode jump) -- the jump table the automatic lifter refuses, decoded
+  by hand from the disasm.
+
+25 tests in test_native_adlib (structural per-command + note-on/instrument register-order checks +
+the differential page-load vs the real snapshot); caught the `[+0x1C]` delta / `[+0x1D]` enable byte
+OVERLAP in the mod-param path.  Suite 1386 passed / 33 skipped.  **REMAINING for audible music: the
+ORACLE GATE (diff the driver's OPL stream vs render_demo_music.py's VM capture over an AdLib demo --
+resolves ticks-per-present-frame + the game->driver input cells) then the play_native wiring ->
+pynuked_opl3.**  The driver logic is done; verification + host wiring are what's left.
+
 ## 2026-07-11 — AUDIO: VM-free AdLib driver, the 2032:00CD channel tick (idle + modulation)
 
 Transcribed the per-channel bytecode sequencer `2032:00CD`'s idle + MODULATION path onto

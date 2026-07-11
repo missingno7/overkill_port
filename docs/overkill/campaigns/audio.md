@@ -77,13 +77,12 @@ principle), verified against the `render_demo_music.py` oracle.  Scaffolding lan
    the full loader -- `0291` sequencer-silence + `04A4` operator-reset + the page-descriptor load that
    sets `[000C]`/`[0060]` and each channel's bytecode pointer + the BD/08 arm; tested structurally +
    differentially vs the `demo_play_tandy_20260711_120636` snapshot's own active page).
-4. `2032:00CD` per-channel bytecode sequencer.  DONE (2026-07-11) for the idle + MODULATION path:
-   `_channel_tick_00cd` (the pause/active/divider gating), the accumulator `0244`, the key-on
-   look-ahead `02AA`, and the pitch-mod helpers `02C9`/`02F6` (+ the shared `_apply_frequency_modulation`
-   F-num rescale) are transcribed onto `AdlibDriver.ram` + tested.  REMAINING: the bytecode COMMAND
-   advance `00F7` (reached when the channel countdown `[+0x01]` hits 0) -- note-on, set-instrument
-   `0181`, note/frequency `024F`, and the `0355` INDIRECT JUMP TABLE for commands 0x80..0x8D (0181/024F
-   are already lifted; the jump table is the piece the lifter refuses and needs a careful hand decode).
+4. `2032:00CD` per-channel bytecode sequencer.  DONE (2026-07-11): the idle + MODULATION path
+   (`_channel_tick_00cd` + `0244`/`02AA`/`02C9`/`02F6`) AND the bytecode COMMAND advance `00F7`
+   (`_command_advance_00f7`): note-on -> note/frequency `024F`, set-instrument `0181`, the note-duration
+   0xE0..0xFF band, the 0x8E..0x9F silence, and the FULL `0355` jump table for cmds 0x80..0x8D (block
+   advance/loop, re-key, hold, key-off, accumulator/modulation param setters, bytecode jumps).  The
+   whole segment-2032 driver LOGIC is transcribed onto `AdlibDriver.ram` + tested (25 tests).
 5. THE ORACLE GATE: seed `AdlibDriver` from an AdLib snapshot's segment 2032, run `tick_2032_0063`
    the right number of times per present-frame over an AdLib demo, and diff its `(reg,val)` stream
    against `render_demo_music.py`'s per-frame VM capture -- byte-exact.  (Resolve the ticks-per-frame

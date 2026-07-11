@@ -15,12 +15,13 @@ whose ``2032:0557`` matches ``SIG_ADLIB_WRITE_2032_0557``).  A tick reads the ga
 queue the D50E engine fills) and appends the frame's YM3812 ``(reg, val)`` writes to :attr:`writes`,
 which the host feeds to ``pynuked_opl3``.
 
-RECOVERY STATUS: the leaf ``2032:0557`` (register write), the tick spine ``2032:0063``, the page gate /
-pattern loader ``2032:0409`` (+ ``0291``/``04A4``) and the per-channel tick ``2032:00CD``'s idle +
-MODULATION path (the accumulator ``0244``, key-on look-ahead ``02AA``, pitch-mod ``02C9``/``02F6``) are
-transcribed + tested below.  The remaining slice is the bytecode COMMAND advance ``2032:00F7`` -- the
-note-on / set-instrument ``0181`` / note-frequency ``024F`` dispatch, including the ``0355`` indirect
-jump table -- see docs/overkill/campaigns/audio.md for the ordered plan and the oracle gate.
+RECOVERY STATUS: the driver LOGIC is fully transcribed + tested below -- the write leaf ``2032:0557``,
+the tick spine ``2032:0063``, the page gate / pattern loader ``2032:0409`` (+ ``0291``/``04A4``), the
+per-channel tick ``2032:00CD`` (idle + the ``0244``/``02AA``/``02C9``/``02F6`` modulation helpers) and
+the bytecode COMMAND advance ``2032:00F7`` (note-on + note/frequency ``024F`` + set-instrument ``0181``
++ the full ``0355`` jump table for cmds 0x80..0x8D).  REMAINING (see docs/overkill/campaigns/audio.md):
+the ORACLE GATE (diff the driver's OPL stream vs ``render_demo_music.py``'s VM capture, resolving the
+ticks-per-frame + game->driver cell interface) and wiring it into play_native -> ``pynuked_opl3``.
 """
 from __future__ import annotations
 
@@ -202,10 +203,174 @@ class AdlibDriver:
         self._channel_mod_b_02f6(di)                     # 00F3 call 02F6
 
     def _command_advance_00f7(self, di: int, bx: int) -> None:
-        """``2032:00F7`` -- the per-channel bytecode COMMAND loop (note-on, set-instrument ``0181``,
-        note/frequency ``024F``, the ``0355`` command jump table for 0x80..0x8D).  NEXT SLICE: it wraps
-        the indirect jump table the lifter refuses, so it needs a careful hand transcription."""
-        raise NotImplementedError("2032:00F7 bytecode command advance -- next AdLib recovery slice")
+        """``2032:00F7`` -- the per-channel bytecode COMMAND loop.  Reads command bytes from ``bx`` and
+        executes them until a TERMINAL one ends the tick (note-on, hold 0x82, key-off 0x85, silence
+        0x83/0x8E..0x9F, or a page-change latch).  Command encoding:
+
+        * ``< 0x80``      -- a NOTE: key-off the old note ([di+0x08]), play it (``024F``), reload the
+          channel countdown ([di+0x01] <- [di+0x11]); terminal.
+        * ``0xE0..0xFF``  -- set the note duration [di+0x11] = cmd - 0xDF; continue.
+        * ``0xA0..0xDF``  -- set instrument cmd (``0181``); continue.
+        * ``0x8E..0x9F``  -- silence all (``0291``); terminal.
+        * ``0x80..0x8D``  -- the ``0355`` jump table (block advance/loop, re-key, hold, key-off, the
+          accumulator/modulation parameter setters, bytecode jumps); each continues or is terminal.
+
+        Transcribed from the disassembly (the ``0355`` indirect jump table the lifter refuses)."""
+        ram = self.ram
+        di &= 0xFFFF
+        for _ in range(0x4000):          # a generous guard: well-formed data always hits a terminal cmd
+            al = ram[bx & 0xFFFF]                                    # 00F7
+            bx = (bx + 1) & 0xFFFF                                   # 00F9
+            if al < 0x80:                                           # 00FC (NOTE-ON)
+                ram[di] = al                                        # 00FE
+                w = self._rw(di + CH_KEYOFF)                        # 0100 key-off the old note
+                self.write_opl_2032_0557(w & 0xFF, w >> 8)          # 0103
+                self._note_frequency_024f(di)                      # 0106 play the new note
+                self._ww(di + CH_BYTECODE_CUR, bx)                 # 0109
+                ram[(di + CH_DELAY) & 0xFFFF] = ram[(di + 0x11) & 0xFFFF]   # 010C/010F reload countdown
+                return
+            if al >= 0xE0:                                          # 011D -> 0135 (set duration)
+                ram[(di + 0x11) & 0xFFFF] = (al - 0xDF) & 0xFF
+                continue
+            if al >= 0xA0:                                          # 0121 -> 0181 (set instrument)
+                self._set_instrument_0181(di, al)
+                continue
+            if al > 0x8D:                                           # 0127 -> 0291 (0x8E..0x9F silence)
+                self._sequencer_silence_0291()
+                return
+            # 0x80..0x8D: the 0355 jump table
+            if al == 0x80:                                          # 0382 block advance / loop
+                if ram[PAGE_REQUEST] != 0:
+                    ram[PAGE_PENDING] = ram[PAGE_REQUEST]
+                    return
+                blk = self._rw(di + CH_BYTECODE_PTR)
+                nxt = self._rw(blk)
+                blk = (blk + 2) & 0xFFFF
+                if nxt == 0:                                        # 0371 end-of-list -> follow loop ptr
+                    lp = self._rw(blk)
+                    nxt = self._rw(lp)
+                    blk = (lp + 2) & 0xFFFF
+                self._ww(di + CH_BYTECODE_PTR, blk)
+                self._ww(di + CH_BYTECODE_CUR, nxt)
+                bx = nxt
+                continue
+            if al == 0x81:                                          # 0113 re-key then the 0109 hold tail
+                w = self._rw(di + CH_KEYOFF)
+                self.write_opl_2032_0557(w & 0xFF, w >> 8)
+                self._ww(di + CH_BYTECODE_CUR, bx)
+                ram[(di + CH_DELAY) & 0xFFFF] = ram[(di + 0x11) & 0xFFFF]
+                return
+            if al == 0x82:                                          # 0109 hold/rest
+                self._ww(di + CH_BYTECODE_CUR, bx)
+                ram[(di + CH_DELAY) & 0xFFFF] = ram[(di + 0x11) & 0xFFFF]
+                return
+            if al == 0x83:                                          # 0291 silence
+                self._sequencer_silence_0291()
+                return
+            if al == 0x84:                                          # 03A1 set [di+0x12] (transpose)
+                ram[(di + 0x12) & 0xFFFF] = ram[bx & 0xFFFF]
+                bx = (bx + 1) & 0xFFFF
+                continue
+            if al == 0x85:                                          # 03AA key-off + deactivate
+                w = self._rw(di + CH_KEYOFF)
+                self.write_opl_2032_0557(w & 0xFF, w >> 8)
+                ram[(di + CH_ACTIVE) & 0xFFFF] = 0
+                return
+            if al == 0x86:                                          # 03B6 accumulator delta = +1
+                ram[(di + 0x13) & 0xFFFF] = 0x01
+                continue
+            if al == 0x87:                                          # 03BD accumulator delta = -1
+                ram[(di + 0x13) & 0xFFFF] = 0xFF
+                continue
+            if al == 0x88:                                          # 013C operator-1 level from stream
+                lvl_idx = ram[bx & 0xFFFF]
+                bx = (bx + 1) & 0xFFFF
+                ram[(di + 0x0E) & 0xFFFF] = lvl_idx
+                si = self._rw(di + 0x02)
+                base = ram[((lvl_idx & 0x7F) + 0x06C9) & 0xFFFF]
+                ksl = (ram[(si + 0x0C) & 0xFFFF] << 2) & 0xC0
+                self.write_opl_2032_0557((0x40 + ram[(di + 0x06) & 0xFFFF]) & 0xFF, (base | ksl) & 0xFF)
+                continue
+            if al == 0x89:                                          # 03CB jump bytecode ptr + latch page
+                bx = self._rw(bx)
+                ram[PAGE_PENDING] = ram[PAGE_REQUEST]
+                continue
+            if al == 0x8A:                                          # 03D6 set mod-B params
+                self._ww(di + 0x16, self._rw(bx)); bx = (bx + 2) & 0xFFFF
+                self._ww(di + 0x18, self._rw(bx)); bx = (bx + 2) & 0xFFFF
+                continue
+            if al == 0x8B:                                          # 03E7 set mod-A params
+                self._ww(di + 0x1A, self._rw(bx)); bx = (bx + 2) & 0xFFFF
+                self._ww(di + 0x1C, self._rw(bx)); bx = (bx + 2) & 0xFFFF
+                ram[(di + 0x1D) & 0xFFFF] = ram[bx & 0xFFFF]; bx = (bx + 1) & 0xFFFF
+                continue
+            if al == 0x8C:                                          # 03FE clear mod-A
+                ram[(di + 0x1D) & 0xFFFF] = 0
+                self._ww(di + 0x1A, 0)
+                continue
+            if al == 0x8D:                                          # 03C4 clear accumulator delta
+                ram[(di + 0x13) & 0xFFFF] = 0
+                continue
+        raise RuntimeError("2032:00F7 command loop did not terminate -- malformed bytecode?")
+
+    def _note_frequency_024f(self, di: int) -> None:
+        """``2032:024F`` -- play the channel's current note: look the note (``[di] + [di+0x12]``
+        transpose) up in the F-number table at ``07A9``, add the mod-A base ``[di+0x1A]``, store the
+        F-num in ``[di+0x14]`` and emit the A0 (F-num low) + B0 (key-on | block | F-num high) pair for
+        the voice ``[di+0x07]``, block bits coming from ``[note+0x0749]``.  Reloads the mod-A counter
+        ``[di+0x1E]`` from the enable ``[di+0x1D]``.  Transcribed from the lifted, verified hook."""
+        ram = self.ram
+        note = (ram[di & 0xFFFF] + ram[(di + 0x12) & 0xFFFF]) & 0xFF
+        block = ram[(note + 0x0749) & 0xFFFF]                       # per-note block/KSL byte
+        fnum = (self._rw(0x07A9 + ((note << 1) & 0xFF)) + self._rw(di + 0x1A)) & 0xFFFF
+        self._ww(di + 0x14, fnum)
+        voice = ram[(di + 0x07) & 0xFFFF]
+        self.write_opl_2032_0557((voice | 0xA0) & 0xFF, fnum & 0xFF)               # A0: F-num low
+        b0 = (((fnum >> 8) | block) & 0xFF)
+        self._ww(di + CH_KEYOFF, (b0 << 8) | ((voice | 0xB0) & 0xFF))
+        self.write_opl_2032_0557((voice | 0xB0) & 0xFF, (b0 | 0x20) & 0xFF)        # B0: key-on|blk|hi
+        ram[(di + 0x1E) & 0xFFFF] = ram[(di + 0x1D) & 0xFFFF]
+
+    #: 2032:0181 operator-register program: (register base + operator slot, instrument-table offset).
+    _INSTRUMENT_OP_REGS = ((0x60, 0), (0x60, 1), (0x80, 2), (0x80, 3),
+                           (0xE0, 6), (0xE0, 7), (0xC0, 9), (0x20, 4), (0x20, 5))
+
+    def _set_instrument_0181(self, di: int, cmd: int) -> None:
+        """``2032:0181`` -- load instrument ``cmd - 0xA0`` for the channel: program the two operators'
+        AM/VIB (0x20), attack/decay (0x60), sustain/release (0x80), waveform (0xE0), feedback/algo
+        (0xC0) and level (0x40) registers from the 16-byte instrument record at ``0869 + inst*16``, with
+        the operator slots ``dl``/``dh`` = ``[di+0x05]`` and the voice ``[di+0x07]``.  A no-op if the
+        instrument is already loaded (``[di+0x04]``).  Transcribed from the lifted, verified hook."""
+        ram = self.ram
+        inst = (cmd - 0xA0) & 0xFF
+        if inst == ram[(di + 0x04) & 0xFFFF]:            # already loaded -> 00F7
+            return
+        ram[(di + 0x04) & 0xFFFF] = inst
+        idx = (inst << 1) & 0xFF                          # the original's 8-bit-then-16-bit shl chain
+        idx = (idx << 1) & 0xFF
+        idx = (idx << 1) & 0xFFFF
+        idx = (idx << 1) & 0xFFFF
+        si = (0x0869 + idx) & 0xFFFF
+        self._ww(di + 0x02, si)
+        dx = self._rw(di + 0x05)
+        dl, dh = dx & 0xFF, (dx >> 8) & 0xFF
+        voice = ram[(di + 0x07) & 0xFFFF]
+        for reg_base, value_off in self._INSTRUMENT_OP_REGS:
+            reg = (reg_base + (voice if reg_base == 0xC0 else (dl if value_off in (0, 2, 6, 4) else dh)))
+            self.write_opl_2032_0557(reg & 0xFF, ram[(si + value_off) & 0xFFFF])
+        # operator-1 level (0x40+dl): KSL from [si+0x0A]&0x7F table + level bits from [si+0x0C]<<2
+        lvl1 = ram[((ram[(si + 0x0A) & 0xFFFF] & 0x7F) + 0x06C9) & 0xFFFF]
+        ksl = ((ram[(si + 0x0C) & 0xFFFF] << 2) & 0xC0)
+        self.write_opl_2032_0557((0x40 + dl) & 0xFF, (lvl1 | ksl) & 0xFF)
+        # operator-2 level (0x40+dh): [si+0x0B] (also cached in [di+0x0E]); KSL via a rotate-right-2
+        b = ram[(si + 0x0B) & 0xFFFF]
+        ram[(di + 0x0E) & 0xFFFF] = b
+        lvl2 = ram[((b & 0x7F) + 0x06C9) & 0xFFFF]
+        r = ram[(si + 0x0C) & 0xFFFF]
+        r = ((r >> 1) | ((r & 1) << 7)) & 0xFF
+        r = ((r >> 1) | ((r & 1) << 7)) & 0xFF
+        self.write_opl_2032_0557((0x40 + dh) & 0xFF, (lvl2 | (r & 0xC0)) & 0xFF)
+        ram[(di + 0x12) & 0xFFFF] = ram[(si + 0x08) & 0xFFFF]
 
     def _channel_helper_0244(self, di: int) -> None:
         """``2032:0244`` -- the per-channel accumulator: ``[di] += [di+0x13]`` (a no-op when the delta

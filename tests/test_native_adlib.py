@@ -5,7 +5,7 @@ from overkill.native_audio.adlib import AdlibDriver, OPL_BASE_PORT_CELL
 
 
 def _driver(base: int = 0x388) -> AdlibDriver:
-    ram = bytearray(0x800)   # covers the nine channel states (0x05A9 + 9*0x20)
+    ram = bytearray(0x1000)  # covers the channel states + the F-num/KSL/instrument tables (07A9/06C9/0869)
     ram[OPL_BASE_PORT_CELL] = base & 0xFF
     ram[OPL_BASE_PORT_CELL + 1] = (base >> 8) & 0xFF
     return AdlibDriver(ram)
@@ -206,16 +206,16 @@ def test_channel_tick_countdown_only_when_no_helpers_armed():
     assert d.drain() == []                         # all helpers disabled -> no writes
 
 
-def test_channel_tick_countdown_zero_defers_to_command_advance():
+def test_channel_tick_countdown_zero_enters_command_advance():
     from overkill.native_audio.adlib import TICK_DIVIDER, CH_DELAY
     d = _one_channel_driver()
     d.ram[TICK_DIVIDER] = 0
-    d.ram[d.di + CH_DELAY] = 1                     # -> 0 -> the (not-yet-recovered) command advance
-    try:
-        d._channel_tick_00cd(d.di)
-    except NotImplementedError:
-        return
-    raise AssertionError("expected the 00F7 command-advance slice to fail loud")
+    d.ram[d.di + CH_DELAY] = 1                     # -> 0 -> the 00F7 command advance
+    d.ram[0x0400] = 0x82                           # a HOLD command at the channel's bytecode pointer
+    d._ww(d.di + 0x0C, 0x0400)
+    d.ram[d.di + 0x11] = 7                         # default duration
+    d._channel_tick_00cd(d.di)
+    assert d.ram[d.di + CH_DELAY] == 7             # the hold reloaded the countdown -> command ran
 
 
 def test_mod_a_02c9_applies_frequency_modulation():
@@ -264,6 +264,100 @@ def test_mod_a_02c9_disabled_is_noop():
     d.ram[d.di + 0x1D] = 0                         # disabled
     d._channel_mod_a_02c9(d.di)
     assert d.drain() == []
+
+
+def test_note_frequency_024f_emits_a0_b0_and_reloads_mod_counter():
+    d = _one_channel_driver()
+    di = d.di
+    note = 0x10
+    d.ram[di] = note                              # current note
+    d.ram[di + 0x12] = 0                          # no transpose
+    d.ram[di + 0x07] = 0                          # voice 0 -> regs 0xA0 / 0xB0
+    d._ww(di + 0x1A, 0)                           # mod-A base 0
+    d._ww(0x07A9 + (note << 1), 0x0100)           # F-num table entry for this note
+    d.ram[0x0749 + note] = 0x07                   # block byte for this note
+    d.ram[di + 0x1D] = 0x03                       # mod-A enable -> reloads [di+0x1E]
+    d._note_frequency_024f(di)
+    assert d.drain() == [(0xA0, 0x00), (0xB0, 0x27)]   # F-num low 0x00 ; key-on(0x20)|block 0x07
+    assert d._rw(di + 0x14) == 0x0100                  # F-num stored
+    assert d._rw(di + 0x08) == 0x07B0                  # B0 word latched
+    assert d.ram[di + 0x1E] == 0x03                    # mod-A counter reloaded from enable
+
+
+def test_set_instrument_0181_noop_when_already_loaded():
+    d = _one_channel_driver()
+    di = d.di
+    d.ram[di + 0x04] = (0xA5 - 0xA0) & 0xFF       # instrument 5 already loaded
+    d._set_instrument_0181(di, 0xA5)
+    assert d.drain() == []                         # already loaded -> no writes
+
+
+def test_set_instrument_0181_programs_operator_registers():
+    from overkill.native_audio.adlib import CH_KEYOFF
+    d = _one_channel_driver()
+    di = d.di
+    d.ram[di + 0x04] = 0xFF                        # no instrument loaded yet
+    d._ww(di + 0x05, 0x0300)                       # operator slots dl=0x00, dh=0x03
+    d.ram[di + 0x07] = 0                           # voice 0
+    d._set_instrument_0181(di, 0xA1)              # load instrument 1
+    regs = [r for (r, _v) in d.drain()]
+    # the nine operator regs (0x60/0x80/0xE0 for both ops, 0xC0 for the voice, 0x20 for both ops)
+    # plus the two 0x40 level regs -- for dl=0, dh=3, voice=0
+    assert regs == [0x60, 0x63, 0x80, 0x83, 0xE0, 0xE3, 0xC0, 0x20, 0x23, 0x40, 0x43]
+    assert d.ram[di + 0x04] == 1                   # instrument latched
+
+
+# --- 2032:00F7 bytecode command loop ---------------------------------------------------------------
+
+def _stream_driver(stream, at=0x0400):
+    """A one-channel driver with `stream` bytes laid at `at`; returns (driver, di, at)."""
+    d = _one_channel_driver()
+    d.ram[at:at + len(stream)] = bytes(stream)
+    return d, d.di, at
+
+
+def test_command_loop_set_duration_then_note_on():
+    # 0xE8 -> duration = 0xE8-0xDF = 9 ; then note 0x10 plays and reloads the countdown.
+    d, di, at = _stream_driver([0xE8, 0x10])
+    d.ram[di + 0x12] = 0
+    d.ram[di + 0x07] = 0
+    d._ww(di + 0x1A, 0)
+    d._ww(0x07A9 + (0x10 << 1), 0x0100)
+    d.ram[0x0749 + 0x10] = 0x07
+    d._command_advance_00f7(di, at)
+    assert d.ram[di + 0x11] == 9                       # duration set
+    assert d.ram[di + 0x01] == 9              # countdown reloaded on the note
+    assert d.drain()[-2:] == [(0xA0, 0x00), (0xB0, 0x27)]   # 024F played the note
+    assert d._rw(di + 0x0C) == at + 2                  # bytecode pointer saved past the note
+
+
+def test_command_loop_hold_0x82_is_terminal():
+    d, di, at = _stream_driver([0x86, 0x82])           # accumulator=+1, then HOLD (terminal)
+    d.ram[di + 0x11] = 4
+    d._command_advance_00f7(di, at)
+    assert d.ram[di + 0x13] == 0x01                    # 0x86 set the accumulator delta
+    assert d.ram[di + 0x01] == 4              # hold reloaded the countdown
+    assert d._rw(di + 0x0C) == at + 2                  # pointer saved past the 0x82
+    assert d.drain() == []                             # a hold emits nothing
+
+
+def test_command_loop_key_off_0x85_deactivates():
+    from overkill.native_audio.adlib import CH_ACTIVE
+    d, di, at = _stream_driver([0x85])
+    d._ww(di + 0x08, 0x02B0)                            # the key word
+    d._command_advance_00f7(di, at)
+    assert d.drain() == [(0xB0, 0x02)]                 # key-off emitted
+    assert d.ram[di + CH_ACTIVE] == 0                  # channel deactivated
+
+
+def test_command_loop_mod_param_setters_then_hold():
+    # 0x8B sets mod-A params (2 words + enable byte), then 0x82 ends.
+    d, di, at = _stream_driver([0x8B, 0x11, 0x22, 0x33, 0x44, 0x55, 0x82])
+    d._command_advance_00f7(di, at)
+    assert d._rw(di + 0x1A) == 0x2211                  # first word [0x1A]
+    assert d.ram[di + 0x1C] == 0x33                    # second word low [0x1C]
+    assert d.ram[di + 0x1D] == 0x55                    # enable byte [0x1D] (overlaps the word's high)
+    assert d._rw(di + 0x0C) == at + 7                  # pointer past all 6 operand bytes + the 0x82
 
 
 def test_channel_helper_0244_accumulates():
