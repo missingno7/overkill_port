@@ -62,6 +62,14 @@ the frame depends on only **16,409 bytes** of the 1.3 MB bundle — **536 in the
 (the embedded constants/tables), ~3,780 in the initial DGROUP, and ~12,093 in "other segments" which
 are the tile-map / tile-block / sprite banks the CONTAINER already loads (asset-derived, not exe).  So
 the genuinely exe-embedded ROM to recover for slice A is on the order of a few KB of tables + constants,
-NOT a megabyte.  Convergence is very tractable; the bundle is ~98.4% dead weight for gameplay.  (Next:
-split "other segments" by CS:[9592]/[959A]/[95AE] to confirm they equal the container banks byte-for-
-byte, then enumerate the 536 CS bytes + the DGROUP tables into a `native_rom` module.)
+NOT a megabyte.  Convergence is very tractable; the bundle is ~98.4% dead weight for gameplay.
+
+**The 536 CS bytes are 5 ranges (enumerated 2026-07-11):** `8D92..8F91` (512 B — the tile-block lookup
+table `table_8d92`), `9592`/`9598..959F` (the tile/block/sprite SEGMENT POINTERS), `95BC..95C3` (the
+video-mode flag + the A6FE row-source stride/wrap constants), and `EE6C..EE79` (14 B, a small lookup).
+The behaviour dispatch (`AA36`/`EFC4`) and the anim rings are NOT here -- they are already Python /
+DGROUP.  So slice A for gameplay = lift those 5 ranges + the DGROUP initial tables (`96D2`… anim,
+`1816` font, `C3AA` class, `21D8` hi-scores, the `144F/14C0` name tables) into a byte-verified
+`native_rom` module, then slice B rebuilds the cold image from `native_rom` + init + container with the
+existing `verify_native_cold_level_data` as the equivalence gate.  A few KB of tables stands between
+here and dropping `--bundle`.
