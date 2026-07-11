@@ -73,3 +73,14 @@ DGROUP.  So slice A for gameplay = lift those 5 ranges + the DGROUP initial tabl
 `native_rom` module, then slice B rebuilds the cold image from `native_rom` + init + container with the
 existing `verify_native_cold_level_data` as the equivalence gate.  A few KB of tables stands between
 here and dropping `--bundle`.
+
+**Refinement (2026-07-11) — the rb/rw count is a LOWER BOUND; validated the DGROUP reduction.** Zeroing
+the whole 64 KB CS segment except the 5 rb/rw ranges and running 600 frames leaves the **DGROUP
+game-logic state byte-exact (0 divergence)** — so the recovered init + those 5 ranges fully determine
+the game state.  BUT 239 bank bytes diverged, because the frame also reads CS tables via DIRECT
+`mem.data[seg*16:…]` SLICES (the tile plane `CS:[9592]`, the sprite banks `CS:[95AE]`, the glyph font)
+that bypass the `rb/rw` tracker.  So the true CS footprint = the 5 rb/rw ranges + those slice-read
+graphics tables (mostly the container-loaded banks, already asset-derived, + the embedded font/tile
+tables).  Next: extend `measure_rom_footprint.py` to trap the slice reads too, then the footprint is
+complete and slice A can enumerate the exact `native_rom` set.  The headline holds: the game STATE is
+fully reducible; the remainder is bounded graphics tables, most already in the container.
