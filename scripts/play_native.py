@@ -438,6 +438,34 @@ def _run_title_screen(display, pygame, container_data) -> bool:
         clock.tick(30)
 
 
+def _run_level_start_plaque(display, pygame, container_data, img, renderer, level_index: int) -> bool:
+    """The level-start MISSION PLAQUE (``1010:D305``/``D367``): the ``plaq{level}.enc`` briefing cell
+    overlaid on the level's initial screen (animated starfield + HUD), held until FIRE -- what the
+    original shows between level-select and the first gameplay frame.  Space/fire starts the level;
+    Esc/quit aborts (returns False so the caller exits).
+
+    The background animates exactly as D305's wait does: it ticks the starfield (0922) + star list
+    (4CED) + clock (5F61) each frame, which is part of the real level-start, then gameplay continues
+    from that advanced state (no lockstep involved -- this is the front-end interlude)."""
+    from overkill.native_frame import _clock_tick_5f61, _star_list_4ced, _starfield_tick_0922
+    from overkill.native_video.plaque import compose_plaque, decode_plaque_cell
+
+    plaque = decode_plaque_cell(container_data, level_index)
+    display.set_title("OVERKILL - native (VM-less)  [mission briefing -- Space = launch, Esc = quit]")
+    clock = pygame.time.Clock()
+    while True:
+        for ev in pygame.event.get():
+            if ev.type == pygame.QUIT or (ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE):
+                return False
+            if ev.type == pygame.KEYDOWN and ev.key in (pygame.K_SPACE, pygame.K_RETURN):
+                return True
+        _star_list_4ced(img)
+        _starfield_tick_0922(img)
+        _clock_tick_5f61(img)
+        display.draw(compose_plaque(renderer.frame(), plaque))
+        clock.tick(30)
+
+
 def _run_level_select(display, pygame, container_data, image, start_beda: int = 0):
     """The REAL level-select screen: LEVSCR/CHOOSE composes + the RECOVERED grid handlers
     (D476/D480/D488/D490) and the D424 fire resolve.  Returns ``(level_index, difficulty)`` or
@@ -637,6 +665,7 @@ def main(argv=None) -> int:
         display.close()
         return 0
 
+    plaque_level: "int | None" = None    # the level whose mission plaque to show at start (cold play only)
     if args.snapshot:
         # A SNAPSHOT IS THE STATE.  It already carries its own planet (DS:2356), difficulty
         # (DS:BEDC), score, lives and scroll position -- so the front end must not run before it and
@@ -659,6 +688,7 @@ def main(argv=None) -> int:
                 display.close()
                 return 0
             level, difficulty = picked
+            plaque_level = level          # went through the front end -> show the mission plaque
         img = build_cold_level_start_image(bundle_data, level, container_data)
         img.ww(_DS, 0xBEDC, difficulty)   # the difficulty global (the C237 spawn throttle reads it)
         origin = f"cold level {level + 1}"
@@ -667,6 +697,13 @@ def main(argv=None) -> int:
 
     level_assets = make_level_assets(container_data, bundle_data)
     renderer = ImageRenderer(bundle_data, container_data, img)
+    if plaque_level is not None:
+        # 1010:D305/D367: the level-start "get ready" screen -- the mission briefing plaque over the
+        # animated starfield + HUD, held until FIRE, exactly as the original shows between level-select
+        # and the first gameplay frame.
+        if not _run_level_start_plaque(display, pygame, container_data, img, renderer, plaque_level):
+            display.close()
+            return 0
     speaker = SpeakerSink(pygame) if not args.frames and not args.no_sound else None
     clock = pygame.time.Clock()
     tick = 0          # gameplay frames advanced (frozen once HELD)

@@ -63,6 +63,35 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-11 — FRONT-END: the level-start mission PLAQUE, the "missing screen" between select and play
+
+Owner playtest: "even when I select level there is a missing screen and animation between the actual
+level start."  Traced the e2e cold-start demo (`demo_cold_start_full`, C679 file-open trap) to get the
+EXACT screen order:
+
+    boot (shared sprite/font banks) -> intro (96C5) -> title/menu (OKMENU.ENC, CE40/558B)
+      -> level-select (LEVSCR + CHOOSE, D390/D424) -> level data (LEV{n}MAP/BLX + G{n})
+      -> **PLAQUE (plaq{level}.enc)** -> gameplay
+
+The `plaq{level}.enc` load right before gameplay is the missing screen: the mission BRIEFING plaque
+(planet name + number + icon + a one-line description), blitted by `1010:D367` (`mov ah,47h; mov al,03h;
+call 5A00` then `5A6C` cell copy from `cs:[95B6]`) at pixel (24, 0x47), held by the `D305` level-start
+"get ready" wait until FIRE.  play_native jumped straight from level-select into gameplay, skipping it.
+
+Recovered:
+- `overkill/native_video/plaque.py`: `decode_plaque_cell` (the plaqN.enc placed cell, same rows/width
+  format as the CHOOSE level-select cells) + `compose_plaque` (overlay at the pinned D367 position).
+- `play_native._run_level_start_plaque`: shows the plaque over the level's initial frame with the
+  starfield/star-list/clock ticking (faithful to D305's animated wait), held until fire, then gameplay.
+- Wired between level-select and the gameplay loop (cold-play path only; snapshot/`--frames` skip it).
+- `tests/test_native_plaque.py` (7): every level's plaque decodes + composes at (24,0x47); placement
+  pinned to the D367 disasm.  Proof render: `artifacts/plaque_all_levels.png` (all six briefings:
+  EDRAX/GALLIFREY/HOTH/VOLTAIR/PAX VERDE/-unknown- mothership).
+
+Suite green (1279 passed / 32 skipped).  Remaining front-end fidelity: the intro/menu/attract are
+functional app-layer screens with real assets but not byte-exact-native LOGIC; the plaque uses the real
+asset + the real D367 placement.
+
 ## 2026-07-11 — WINNABLE: THE END (9844) recovered as a front-end transition; the arcade loop closes
 
 The game now plays **start -> all six planets -> beat the mothership -> THE END -> loop back to planet 1**,
