@@ -23,6 +23,7 @@ from overkill.recovered.adapters.behavior_walk import (
     DS,
     _b729_seek,
     _bdd0_contact_at,
+    _spawn_child_c237,
     _spawn_enemy_shot_7476,
 )
 from overkill.recovered.domain.tilemap import LevelTileContext
@@ -272,6 +273,27 @@ class ShootRadial(Step):
             mem.ww(DS, slot + 0x06, cx - 1)
 
 
+@dataclass(frozen=True)
+class SpawnChild(Step):
+    """Spawn the difficulty-throttled ``C237`` child -- the default template (type 2, behaviour 0x04,
+    sprite 0x30, parent+4px, parent's dir) with the parent-nibble spawn sound -- then override its
+    sprite.  ``sprite=None`` keeps the default 0x30.  Parent is the record's own ``+0x18`` behaviour.
+
+    Reproduces the caller's throttled artifact: when the spawn is throttled (no slot) the sprite write
+    lands on the stale dispatch bx = ``(parent_beh<<1)+8`` (an oracle-traced quirk, not a real child)."""
+    sprite: "int | None" = None
+
+    def run(self, mem, rec, tiles, ctx):
+        parent_beh = mem.rw(DS, (rec + 0x18) & 0xFFFF)
+        result = _spawn_child_c237(mem, rec, parent_beh)
+        if self.sprite is None:
+            return
+        if result is None:                                   # throttled: the stale-bx artifact write
+            mem.ww(DS, ((parent_beh << 1) + 8) & 0xFFFF, self.sprite)
+        elif result != 0xFFFF:
+            mem.ww(DS, (result + 0x08) & 0xFFFF, self.sprite)
+
+
 def run_actor_steps(steps, mem, rec: int, tiles: LevelTileContext, ctx: "dict | None" = None) -> None:
     """Run a behaviour's step-list over the actor record -- stop early on a failed guard.  ``ctx``
     carries cross-step state (e.g. the last Seek's ``arrived`` flag the WhenArrived verb reads)."""
@@ -319,3 +341,11 @@ _BURSTER_49 = (
     OnClockBeat(0x232A, 0x0F, (ShootRadial(behavior=0x04, count=8),)),
 )
 SHOOTER_BEHAVIORS = {0x49: _BURSTER_49}
+
+#: CHILD SPAWNERS -- the C237 parent-keyed child as data: the same OnClockBeat(232C==0x1F) + SpawnChild
+#: shape, differing only by the child SPRITE operand (the enemy->child mapping).  0x24 -> 0x1E,
+#: 0x25 -> 0x1A.  Gated vs _step_spawn_child_sprite (tests/test_actor_steps.py).
+SPAWNER_BEHAVIORS = {
+    0x24: (OnClockBeat(0x232C, 0x1F, (SpawnChild(sprite=0x1E),)),),
+    0x25: (OnClockBeat(0x232C, 0x1F, (SpawnChild(sprite=0x1A),)),),
+}

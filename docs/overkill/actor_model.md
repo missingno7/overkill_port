@@ -375,6 +375,15 @@ gated byte-exact (32/32).  So the projectile TYPE is a data operand, and *which 
 step-list data + the `C237` parent-keyed child table (the enemy->child map -- data, kept behind the
 `Call` escape for now).  Movement-only actors simply carry no emit verb.
 
+**C237 child spawn folded to data (2026-07-11).**  The last escape-classified emitter is now
+declarative.  `_spawn_child_c237` produces a default child (type 2, behaviour `0x04`, sprite `0x30`,
+parent+4px) with a parent-nibble spawn-sound table (already recovered data); callers only override the
+child sprite.  The `SpawnChild(sprite)` verb captures that (including the throttled stale-bx artifact),
+so the child spawners are `[OnClockBeat(232C==0x1F, SpawnChild(sprite))]` differing only by the sprite
+operand -- the enemy->child map as data: `SPAWNER_BEHAVIORS` 0x24 -> 0x1E, 0x25 -> 0x1A, gated
+byte-exact across fire/off-beat and the difficulty-throttle paths (`tests/test_actor_steps.py`, 42/42).
+The verb set now has FOUR families proven end to end -- action, control, emit(shoot), emit(spawn-child).
+
 ## 8. First refactor candidates + the verifier plan
 
 **Best first clusters** (biggest sharing, lowest risk): the **waypoint controller family** (one body

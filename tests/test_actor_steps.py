@@ -13,6 +13,7 @@ from overkill.recovered.adapters.actor_steps import (
     BOUNCE_BEHAVIORS,
     CONTROLLER_BEHAVIORS,
     SHOOTER_BEHAVIORS,
+    SPAWNER_BEHAVIORS,
     run_actor_steps,
 )
 from overkill.recovered.adapters.behavior_walk import (
@@ -22,6 +23,7 @@ from overkill.recovered.adapters.behavior_walk import (
     _step_burster_49,
     _step_diver_16_17,
     _step_lurker_3c,
+    _step_spawn_child_sprite,
 )
 from overkill.recovered.adapters.flat_memory import MutFlatMemory
 from overkill.recovered.domain.tilemap import LevelTileContext
@@ -153,4 +155,41 @@ def test_radial_burster_step_list_matches_native(beat):
     b = bytes(step.data[BASE:BASE + 0x10000])
     diff = [o for o in range(0x10000) if a[o] != b[o]]
     assert not diff, ("radial burster: diverges at "
+                      + ", ".join(f"{o:04X}(nat={a[o]:02X}/step={b[o]:02X})" for o in diff[:8]))
+
+
+_SPAWNER_SPRITE = {0x24: 0x1E, 0x25: 0x1A}
+
+
+def _seed_spawner(beh, beat232c, bedc, a956, cursor95da) -> MutFlatMemory:
+    mem = MutFlatMemory(bytes(0x100000))
+    mem.ww(DS, REC + 0x00, 1)
+    mem.ww(DS, REC + 0x02, 0x50)
+    mem.ww(DS, REC + 0x04, 0x40)
+    mem.ww(DS, REC + 0x06, 3)
+    mem.ww(DS, REC + 0x18, beh)
+    mem.ww(DS, 0x232C, beat232c)     # 0x1F fires the C237 child
+    mem.ww(DS, 0xBEDC, bedc)         # difficulty -> the child-spawn throttle
+    mem.wb(DS, 0xA956, a956)         # the BYTE throttle counter
+    mem.ww(DS, 0x95DA, cursor95da)   # the gameplay-pool alloc cursor
+    mem.wb(DS, 0x98C0, 1)            # sound enabled
+    return mem
+
+
+@pytest.mark.parametrize("beh", sorted(SPAWNER_BEHAVIORS))
+@pytest.mark.parametrize("beat,bedc,a956", [
+    (0x1F, 0, 0), (0x1F, 1, 0), (0x1F, 2, 0), (0x1F, 0, 3),   # fire, various throttle/difficulty
+    (0x1E, 0, 0),                                             # off-beat: no spawn
+])
+def test_child_spawner_step_list_matches_native(beh, beat, bedc, a956):
+    native = _seed_spawner(beh, beat, bedc, a956, 0)
+    _step_spawn_child_sprite(native, REC, beh, _SPAWNER_SPRITE[beh])
+
+    step = _seed_spawner(beh, beat, bedc, a956, 0)
+    run_actor_steps(SPAWNER_BEHAVIORS[beh], step, REC, _tiles())
+
+    a = bytes(native.data[BASE:BASE + 0x10000])
+    b = bytes(step.data[BASE:BASE + 0x10000])
+    diff = [o for o in range(0x10000) if a[o] != b[o]]
+    assert not diff, (f"spawner {beh:#04x} beat={beat:#x} bedc={bedc}: diverges at "
                       + ", ".join(f"{o:04X}(nat={a[o]:02X}/step={b[o]:02X})" for o in diff[:8]))
