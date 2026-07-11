@@ -1667,6 +1667,13 @@ def _step_riser_35(mem, rec: int) -> None:
     mem.ww(DS, rec + 0x02, x)
     if x < 0x00A0:
         return
+    _riser_death_burst_b3f9(mem, rec)
+
+
+def _riser_death_burst_b3f9(mem, rec: int) -> None:
+    """B3F9: the shared riser TERMINAL beat -- the full BFC7 touch-death, then the B402 8-way radial
+    burst of behavior-3 children (directions 7..0, sprites 0x0F..0x08, spawned at (x+d, y+d) with
+    d = 0xC when +0x14 == 2 else 4).  Shared by 0x35/0x22 (B3DF) and 0x36 (B3CC)."""
     _bfc7_touch_death(mem, rec)
     # B402: the 8-way radial burst
     d = 0x000C if mem.rw(DS, rec + 0x14) == 2 else 0x0004
@@ -1689,6 +1696,43 @@ def _step_riser_35(mem, rec: int) -> None:
         mem.ww(DS, slot + 0x16, 2)
         mem.ww(DS, slot + 0x18, 3)
         mem.ww(DS, slot + 0x1C, 0xFFFF)
+
+
+def _step_riser_36(mem, rec: int) -> None:
+    """Behavior 0x36 (``1010:B3CC``): sprite = the B3BF worker, then x += 2 (a FIXED step -- no
+    planet-0 extra, unlike 0x35); at x >= 0xA0 the SAME B3F9 death + 8-way radial burst as 0x35."""
+    mem.ww(DS, rec + 0x08, ((((mem.rw(DS, 0x2342) + 1) & 0xFFFF) >> 1) + 0x0071) & 0xFFFF)  # B3CC->B3BF
+    x = (mem.rw(DS, rec + 0x02) + 2) & 0xFFFF                                                # B3CF
+    mem.ww(DS, rec + 0x02, x)
+    if x < 0x00A0:                                                                           # B3D3
+        return
+    _riser_death_burst_b3f9(mem, rec)                                                        # B3DD->B3F9
+
+
+def _step_patroller_37(mem, rec: int) -> None:
+    """Behavior 0x37 (``1010:8982``): a horizontal patroller.  Sprite = [233C] + 0xB5.  Speed ([96EA])
+    ramps by row: 1 at y == 0x60, 3 at y == 0x50 / 0x70, else 5.  dir 4 moves right (x += speed; at
+    x >= 0x90 a C237 child spawns THEN dir flips to 0); any other dir moves left (dir flips to 4 FIRST,
+    THEN x <= 8 spawns a C237 child).  Both bounce compares are UNSIGNED word compares, and the child
+    seed reads +0x06 -- so the set/spawn order matters (both paths seed the child with dir 4)."""
+    mem.ww(DS, rec + 0x08, (mem.rw(DS, 0x233C) + 0x00B5) & 0xFFFF)      # 8982: sprite
+    y = mem.rw(DS, rec + 0x04)
+    speed = 1 if y == 0x0060 else (3 if y in (0x0050, 0x0070) else 5)   # 898B/8997/89A9 -> [96EA]
+    mem.ww(DS, 0x96EA, speed)
+    if mem.rw(DS, rec + 0x06) == 0x0004:                                # 89B2: dir 4 -> moving right
+        x = (mem.rw(DS, rec + 0x02) + speed) & 0xFFFF                   # 89D1
+        mem.ww(DS, rec + 0x02, x)
+        if x < 0x0090:                                                  # 89D4 (jnb -> bounce)
+            return
+        _spawn_child_c237(mem, rec, 0x37)                              # 89DE: spawn (child sees dir 4)
+        mem.ww(DS, rec + 0x06, 0x0000)                                 # 89E1: then dir -> 0
+    else:                                                              # moving left
+        x = (mem.rw(DS, rec + 0x02) - speed) & 0xFFFF                  # 89B8/89BA: neg + add
+        mem.ww(DS, rec + 0x02, x)
+        if x > 0x0008:                                                 # 89BD (jbe -> bounce)
+            return
+        mem.ww(DS, rec + 0x06, 0x0004)                                # 89C6: dir -> 4 FIRST
+        _spawn_child_c237(mem, rec, 0x37)                             # 89CB: then spawn (child sees dir 4)
 
 
 def _step_edge_runner_38(mem, rec: int) -> None:
@@ -1824,6 +1868,16 @@ def _step_waypoint_11(mem, rec: int) -> None:
     mem.ww(DS, rec + 0x36, WAYPOINT_FOLLOWER_TABLE_SEED)   # B2C3: seed the waypoint pointer
     mem.ww(DS, rec + 0x18, 0x0012)                          # B2C8: retag the record as 0x12
     _step_waypoint_12(mem, rec)                             # falls straight into 0x12's body
+
+
+#: behavior 0x10's own waypoint schedule (B2BC seeds A45C; 0x11 seeds A43C, one entry earlier)
+WAYPOINT_FOLLOWER_TABLE_SEED_10 = 0xA45C
+
+
+def _step_waypoint_10(mem, rec: int) -> None:
+    mem.ww(DS, rec + 0x36, WAYPOINT_FOLLOWER_TABLE_SEED_10)  # B2BC: seed 0x10's waypoint schedule
+    mem.ww(DS, rec + 0x18, 0x0012)                          # B2C8: retag the record as 0x12
+    _step_waypoint_12(mem, rec)                             # the shared follower body
 
 
 #: the 8BC8..8BF5 waypoint-seed stubs (byte-identical apart from the table pointer): each seeds
@@ -3114,6 +3168,9 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
         elif beh in (0x90, 0x91):
             _step_anim_spawner_90_91(mem, rec, beh)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8282/8291 exit jmp BC45
+        elif beh == 0x10:
+            _step_waypoint_10(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=False)   # B2BC->B2CD exits jmp BC4B
         elif beh == 0x11:
             _step_waypoint_11(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=False)   # B2C3->B2CD exits jmp BC4B
@@ -3264,6 +3321,12 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
             # to the SAME B3DF body (zoo-xref-confirmed; the riser docstring names both)
             _step_riser_35(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # B3DF exits jmp BC45 (both paths)
+        elif beh == 0x36:
+            _step_riser_36(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # B3CC exits jmp BC45 (both paths)
+        elif beh == 0x37:
+            _step_patroller_37(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8982 exits jmp BC45 (all paths)
         elif beh == 0x38:
             _step_edge_runner_38(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # 89FF exits jmp BC45

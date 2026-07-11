@@ -63,6 +63,24 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-11 — GAMEPLAY: recover the planet-1 enemy cascade (behaviors 0x10, 0x36, 0x37)
+
+The owner's cold-play hit a chain of RecoveryGaps on planet 1 — enemies the demo corpus never
+exercises, so lockstep stayed green while play fail-loud stalled.  Walking two gap snapshots forward
+30s each (`play_native --snapshot ... --frames 900`) surfaced them in order and each was recovered
+against its `1010:XXXX` handler:
+- **0x10** (`B2BC`) — a waypoint follower identical to 0x11 but seeding +0x36 with the A45C schedule
+  (vs A43C); retags to 0x12 and runs the shared follower body.
+- **0x36** (`B3CC`) — a riser variant: sprite = the B3BF worker, x += 2 (fixed, no planet-0 branch);
+  at x >= 0xA0 the SAME B3F9 death + 8-way radial burst as 0x35 (the burst tail extracted to the
+  shared `_riser_death_burst_b3f9`).
+- **0x37** (`8982`) — a horizontal patroller: sprite = [233C]+0xB5, row-ramped speed (1/3/5), bounces
+  x<=8 / x>=0x90 spawning a C237 child at each turn (set/spawn order preserved so the child seeds dir 4).
+
+Verified: both gap snapshots (gap_2A44, gap_26FC) now play a full 900 frames clean (hold=None); the
+L1/L2/L3 byte-exact corpus + behavior-dispatch tests stay green; full suite 1366 passed / 33 skipped.
+(0x32 landed just before this in a303d5f.)
+
 ## 2026-07-11 — VERIFIED: native follows the owner's game-over demo; drift is timer-only + INT21 block
 
 Ran the lockstep gate on the owner's `demo_play_tandy_20260711_120636` (level-select -> game -> death ->
