@@ -56,3 +56,12 @@ Slice B's equivalence gate is the highest-leverage start: prove the cold image c
 bundle by diffing an asset+ROM-built image against the bundle-seeded one, which produces the exact list
 of bundle bytes still unaccounted for — i.e. the precise remaining "recovered ROM" work for slice A.
 That converts "converge to assets-only" from a wish into a measured, shrinking byte-count.
+
+**MEASURED (2026-07-11, `scripts/measure_rom_footprint.py`, 600 gameplay frames, read-before-write):**
+the frame depends on only **16,409 bytes** of the 1.3 MB bundle — **536 in the CS code+data segment**
+(the embedded constants/tables), ~3,780 in the initial DGROUP, and ~12,093 in "other segments" which
+are the tile-map / tile-block / sprite banks the CONTAINER already loads (asset-derived, not exe).  So
+the genuinely exe-embedded ROM to recover for slice A is on the order of a few KB of tables + constants,
+NOT a megabyte.  Convergence is very tractable; the bundle is ~98.4% dead weight for gameplay.  (Next:
+split "other segments" by CS:[9592]/[959A]/[95AE] to confirm they equal the container banks byte-for-
+byte, then enumerate the 536 CS bytes + the DGROUP tables into a `native_rom` module.)
