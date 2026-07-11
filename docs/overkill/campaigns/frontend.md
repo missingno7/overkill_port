@@ -59,3 +59,37 @@ new game.
 
 **State (2026-07-05, superseded above):** full-screen images decode byte-exact; menu logic pure
 (systems/menu); nothing wired beyond the title splash.
+
+## Slice C — the native cold boot (decoded 2026-07-11)
+
+Recovering play_native's cold boot so it runs the ORIGINAL front-end (not the host-loop stand-in).
+What's recovered vs the gaps, from the disassembly:
+
+**Boot (`1010:0D42`)** = the shared-startup-asset loads: it loads a fixed list of banks (filename ptrs
+`1298/12A4/12B0/12BD/12DA/12E8`) into the segments `CS:[95A8/95AA/95AC/95A6/95B2/95B4]` via `0CD8/0CB8`.
+This is DATA (already `load_shared_startup_assets`); the LZEXE unpack before it is exe-only and the
+VM-less port skips it (it starts from the recovered image, not the packed exe).
+
+**Attract (`1010:D007`/`D04D`)** -- the scene machine, `attract_frame_step` recovered + demo-witnessed:
+- `DS:BE06` scene id -> a 6-byte descriptor at `DS:BE18 + scene*6`; word0 links into the `CS:0BE4`
+  panel-cell directory (a cell drawn each frame at cursor (0x1F,0x18)).  Scenes 0..7 are cell screens
+  (100 frames each); scenes >= 8 are the auto-fire GAMEPLAY demo (the attract plays the game via the
+  `BE0A` mod-0x14 fire cycle on ticks 0x0F/0x11/0x13, `A067` fanout, BP=237C); scene 0x13 is terminal.
+- **GAPS:** scene 0's `D160` special branch, the `D0DB` per-scene ENTRY-DRAW actions, and the `CS:0BE4`
+  cell directory (empty in the `boot_1010_entry` snapshot -- populated only during a real boot).
+
+**Menu (`558B`)** -- the option dispatch (M/K/A/I/O + idle + fire) is recovered and already in
+play_native; `NativeFrontEnd` carries the 558B idle + D390 level-select decisions.
+
+### Recovery order (each shadow-gated)
+1. **Capture a POPULATED attract snapshot** (run the VM to the attract via `scripts/play.py`/a cold
+   demo, dump memory) so `CS:0BE4` + the scene descriptors are live -- the enabler the boot snapshot lacks.
+2. **Recover the scene-cell render** (the descriptor -> `CS:0BE4` cell -> the (0x1F,0x18) blit) so
+   scenes 0..7 draw natively; reuse the panel-cell machinery.
+3. **Wire `attract_frame_step` as the driver**: run it per frame, draw the scene cell (2), and for
+   scenes >= 8 run the NATIVE frame with the recovered auto-fire injection -- the game playing itself,
+   VM-free.  Recover scene 0's `D160` + the `D0DB` entry draws to close the gaps.
+4. **Compose boot -> attract -> 558B menu -> level-select** into a `NativeColdBoot` driver play_native
+   runs instead of `_run_title_menu`.  Then the "fake menu" is gone.
+
+Until then: the authentic front-end is the reference VM (`python scripts/play.py --video tandy`).
