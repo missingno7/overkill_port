@@ -270,24 +270,32 @@ class ImageRenderer:
         return plate
 
 
-def _run_highscore_entry(display, pygame, container_data) -> "str | None":
+#: the high-score name-entry prompt line, drawn with the game's own DS:1816 glyph font (index space).
+_HISCORE_NAME_XY = (0x40, 0x10)          # (sy, sx): under the "High Scores" title, left column
+_HISCORE_NAME_COLOR = 0x0E               # yellow, matching the title
+_HISCORE_NAME_MAX = 10
+
+
+def _run_highscore_entry(display, pygame, container_data, img) -> "str | None":
     """The game-over HIGH-SCORE NAME ENTRY over HISCORE.ENC.
 
     The original (``532D`` -> ``5497``) reads the name through **DOS ``INT 21h AH=07``** (console
     STDIN) -- an input path neither the VM-less frame nor the scancode key table feeds, which is why
     the screen ignored every key and the game hung there.  play_native owns it: type a name (letters,
-    Backspace), Enter to accept, Esc to quit.  Returns the name, or None to quit.  (The typed name is
-    echoed in the window title; drawing it onto the HISCORE page needs the D2B8 text renderer, scoped
-    separately in the front-end campaign.)"""
+    Backspace), Enter to accept, Esc to quit.  Returns the name, or None to quit.  The typed name is
+    drawn ON-SCREEN through the game's own recovered glyph font (the ``3153`` index-space char path,
+    :mod:`overkill.native_video.hud_glyph`) -- the same font the HUD score line uses."""
+    import numpy as np
+
+    from overkill.native_video.hud_glyph import draw_glyph_string, read_glyph_font
+
     bg = decode_fullscreen_image(container_data, "HISCORE.ENC")
+    font = read_glyph_font(np.frombuffer(img.data, dtype=np.uint8), _DS)
     clock = pygame.time.Clock()
+    display.set_title("OVERKILL - GAME OVER / HIGH SCORE  [type your name, Enter = accept, Esc = quit]")
     name = ""
-
-    def show():
-        display.set_title(f"OVERKILL - GAME OVER / HIGH SCORE  [enter name: {name}_   "
-                          "Enter = accept, Esc = quit]")
-
-    show()
+    blink = 0
+    sy, sx = _HISCORE_NAME_XY
     while True:
         for ev in pygame.event.get():
             if ev.type == pygame.QUIT or (ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE):
@@ -297,18 +305,21 @@ def _run_highscore_entry(display, pygame, container_data) -> "str | None":
                     return name
                 if ev.key == pygame.K_BACKSPACE:                       # 5497: al==08h -> delete
                     name = name[:-1]
-                    show()
-                elif ev.unicode and ev.unicode.isprintable() and len(name) < 10:
+                elif ev.unicode and ev.unicode.isprintable() and len(name) < _HISCORE_NAME_MAX:
                     name += ev.unicode.upper()
-                    show()
-        display.draw(bg)
+        frame = bg.copy()
+        caret = "_" if (blink // 15) % 2 == 0 else " "
+        text = f"NAME: {name}{caret}"
+        draw_glyph_string(frame, sy, sx, [ord(c) for c in text], font, _HISCORE_NAME_COLOR)
+        display.draw(frame)
+        blink += 1
         clock.tick(30)
 
 
 def _run_game_over(display, pygame, bundle_data, container_data, img, speaker) -> "int | None":
     """Game-over screen chain: the high-score NAME ENTRY, then restart.  Returns the level pick for
     the 98EB restart (0 -> level 1), or None to quit."""
-    if _run_highscore_entry(display, pygame, container_data) is None:
+    if _run_highscore_entry(display, pygame, container_data, img) is None:
         return None
     return 0        # the fresh game restarts at level 1 (98EB does [2356] = pick + 1)
 
