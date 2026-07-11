@@ -497,7 +497,6 @@ def _run_title_menu(display, pygame, bundle_data, container_data) -> "tuple[int,
     docs/overkill/campaigns/frontend.md.
     """
     title = decode_fullscreen_image(container_data, TITLE_OPTIONS)
-    demo_dir = ROOT / "artifacts" / "demos" / "demo_play_tandy_L2_full_20260617_180221"
     clock = pygame.time.Clock()
     sound_mode, control = 0, 0
     idle = 0
@@ -526,16 +525,66 @@ def _run_title_menu(display, pygame, bundle_data, container_data) -> "tuple[int,
                 # J (joystick, [0010]==1) is declined: play_native is keyboard-only (0162 fail-louds)
         idle += 1
         if idle >= _MENU_ATTRACT_IDLE_FRAMES:                  # 558B idle timeout -> the attract (5604)
-            for scene in (lambda: _run_hiscore_screen(display, pygame, container_data, 5.0),
-                          lambda: _replay_demo(display, pygame, bundle_data, container_data,
-                                               demo_dir, 15.0)):
-                r = scene()
-                if r is False:
-                    return None
-                if r is True:
-                    return sound_mode, control
+            r = _run_native_attract(display, pygame, bundle_data, container_data)
+            if r is False:
+                return None
+            if r is True:
+                return sound_mode, control
             idle = 0
         display.draw(title)
+        clock.tick(30)
+
+
+#: the FIRE scancode (space) the attract's auto-fire injects into the image's INT9 key table.
+_ATTRACT_FIRE_SCANCODE = 0x39
+
+
+def _run_native_attract(display, pygame, bundle_data, container_data) -> "bool | None":
+    """The cold-boot ATTRACT (1010:D007), driven by the recovered scene machine -- the game plays
+    ITSELF.  `NativeAttract` sequences the scenes; each frame the caller runs the recovered action:
+    scene 0 the D160 scroll-in setup, scenes 1..7 draw the scene cell over the live frame, scenes >= 8
+    run the native frame with the scripted auto-fire.  Returns True on Space (start a game), False on
+    quit, None when the attract ends (back to the menu)."""
+    from overkill.native_attract import NativeAttract
+    from overkill.native_frame import attract_scene0_setup_d160
+    from overkill.native_video.attract import compose_scene
+
+    img = build_cold_level_start_image(bundle_data, 0, container_data)
+    renderer = ImageRenderer(bundle_data, container_data, img)
+    level_assets = make_level_assets(container_data, bundle_data)
+    driver = NativeAttract.start()
+    setup_done = False
+    clock = pygame.time.Clock()
+    display.set_title("OVERKILL - native (VM-less)  [attract -- Space = start, Esc = quit]")
+    while True:
+        fire = anykey = False
+        for ev in pygame.event.get():
+            if ev.type == pygame.QUIT:
+                return False
+            if ev.type == pygame.KEYDOWN:
+                anykey = True
+                if ev.key in (pygame.K_SPACE, pygame.K_RETURN):
+                    fire = True
+                elif ev.key == pygame.K_ESCAPE:
+                    return None
+        driver, action = driver.step(fire_pressed=fire, any_key=anykey, setup_done=setup_done)
+        setup_done = False
+        if action.kind == "exit":
+            return True if fire else None
+        try:
+            if action.kind == "scene0_setup":
+                setup_done = attract_scene0_setup_d160(img)          # the D160 scroll-in
+                frame = renderer.frame()
+            elif action.kind == "gameplay":                          # scenes >= 8: the game plays itself
+                img.wb(_DS, (0x98C4 + _ATTRACT_FIRE_SCANCODE) & 0xFFFF, 1 if action.injected_fire else 0)
+                advance_gameplay_frame_97b2(img, isr_ticks=2, level_assets=level_assets, menu_pick=0)
+                frame = renderer.frame()
+            else:                                                    # draw_cell (scenes 1..7)
+                advance_gameplay_frame_97b2(img, isr_ticks=2, level_assets=level_assets, menu_pick=0)
+                frame = compose_scene(renderer.frame(), img, action.scene)
+        except RecoveryGap:
+            return None                                              # an unrecovered attract edge -> menu
+        display.draw(frame)
         clock.tick(30)
 
 
