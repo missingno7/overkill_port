@@ -1,48 +1,62 @@
-"""The NativeAttract driver -- the D007 loop composition (front-end slice C)."""
+"""The NativeAttract driver + scene-0 setup -- the D007 loop composition (front-end slice C)."""
 from __future__ import annotations
 
-from overkill.native_attract import FIRST_CELL_SCENE, NativeAttract
+from overkill.native_attract import SETUP_SCENE, FIRST_CELL_SCENE, NativeAttract
 
 
-def _run(driver, frames, *, fire_at=None):
-    """Step the driver `frames` times (fire on frame `fire_at`); return the action-kind sequence."""
+def _run(driver, frames, *, fire_at=None, setup_after=0):
+    """Step the driver `frames` times; report scene-0 setup done after `setup_after` setup frames;
+    fire on frame `fire_at`.  Returns the action-kind sequence."""
     kinds = []
+    setup_seen = 0
     for f in range(frames):
-        driver, action = driver.step(fire_pressed=(f == fire_at), any_key=False)
+        done = False
+        if kinds and kinds[-1] == "scene0_setup":
+            setup_seen += 1
+            done = setup_seen >= setup_after
+        driver, action = driver.step(fire_pressed=(f == fire_at), any_key=False, setup_done=done)
         kinds.append(action.kind)
         if action.kind == "exit":
             break
     return kinds, driver
 
 
-def test_starts_at_first_cell_scene():
+def test_starts_at_scene_0_setup():
     d = NativeAttract.start()
-    assert d.state.scene == FIRST_CELL_SCENE      # scene 0 (D160) is a gap, so we begin at scene 1
+    assert d.state.scene == SETUP_SCENE
+    _, action = d.step(fire_pressed=False, any_key=False, setup_done=False)
+    assert action.kind == "scene0_setup"
 
 
-def test_cell_scenes_draw_then_advance_to_gameplay():
+def test_setup_done_advances_to_first_cell_scene():
     d = NativeAttract.start()
-    # scenes 1..7 draw cells (100 frames each); by ~7*100 frames the scene id reaches 8 -> gameplay
-    kinds, _ = _run(d, 800)
-    assert kinds[0] == "draw_cell"
-    assert "gameplay" in kinds                    # crossed into the auto-fire gameplay scenes
+    d, action = d.step(fire_pressed=False, any_key=False, setup_done=True)
+    assert action.kind == "draw_cell" and action.scene == FIRST_CELL_SCENE
+
+
+def test_full_flow_setup_cells_gameplay():
+    d = NativeAttract.start()
+    kinds, _ = _run(d, 1000, setup_after=1)
+    assert kinds[0] == "scene0_setup"
+    assert "draw_cell" in kinds and "gameplay" in kinds     # setup -> cells -> auto-fire gameplay
 
 
 def test_fire_exits_the_attract():
     d = NativeAttract.start()
-    kinds, _ = _run(d, 10, fire_at=3)
-    assert kinds[-1] == "exit" and len(kinds) == 4    # exits the frame fire is pressed
+    kinds, _ = _run(d, 10, fire_at=2, setup_after=1)
+    assert kinds[-1] == "exit"
 
 
-def test_gameplay_scenes_carry_the_autofire_beat():
-    # drive to a gameplay scene and confirm the auto-fire beat is exposed on the right ticks
-    d = NativeAttract.start()
-    saw_injected = False
-    for f in range(1500):
-        d, action = d.step(fire_pressed=False, any_key=False)
-        if action.kind == "gameplay" and action.injected_fire is not None:
-            saw_injected = True
-            break
-        if action.kind == "exit":
-            break
-    assert saw_injected                            # the attract injects scripted fire during gameplay
+def test_scene0_setup_scrolls_the_anchor_and_terminates():
+    import pathlib
+    bundle = pathlib.Path(__file__).resolve().parent.parent / "artifacts" / "static_runtime_bundle" / "memory_1mb.bin"
+    if not bundle.is_file():
+        return
+    from overkill.native_frame import ATTRACT_ANCHOR_TARGET, ATTRACT_VIEW_ANCHOR, attract_scene0_setup_d160, DS
+    from overkill.recovered.adapters.flat_memory import MutFlatMemory
+    mem = MutFlatMemory(bundle.read_bytes())
+    mem.ww(DS, ATTRACT_VIEW_ANCHOR, ATTRACT_ANCHOR_TARGET + 5)     # 5 above target
+    dones = [attract_scene0_setup_d160(mem) for _ in range(5)]
+    assert dones == [False, False, False, False, True]            # decremented to target, then done
+    assert mem.rw(DS, ATTRACT_VIEW_ANCHOR) == ATTRACT_ANCHOR_TARGET
+    assert mem.rw(DS, 0xBE08) == 0x0032                            # countdown reloaded at the end

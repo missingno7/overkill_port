@@ -858,6 +858,29 @@ def _frame_9be2(mem) -> None:
         _pod_tilt_9faf(mem)
 
 
+#: attract scene 0 (D160): the view anchor scrolls in to this before the scene machine proceeds.
+ATTRACT_VIEW_ANCHOR = 0x237E
+ATTRACT_ANCHOR_TARGET = 0x0060
+
+
+def attract_scene0_setup_d160(mem) -> bool:
+    """``1010:D160`` -- attract SCENE 0: the scroll-in that sets up the self-playing attract game.
+
+    While the view anchor ``[237E]`` is above ``0x60``, decrement it and run the 9BE2 object-chain
+    pre-update (the original sets ``bp=237C``; the recovered :func:`_frame_9be2` reads the anchor record
+    directly), reloading the scene countdown ``[BE08]=0x32`` when it reaches ``0x60``.  Returns True once
+    the anchor is at ``0x60`` (setup done -> the scene machine advances to scene 1).  Called once per
+    attract frame while the driver is in scene 0."""
+    if mem.rw(DS, ATTRACT_VIEW_ANCHOR) == ATTRACT_ANCHOR_TARGET:          # D160: already set up
+        return True
+    mem.ww(DS, ATTRACT_VIEW_ANCHOR, (mem.rw(DS, ATTRACT_VIEW_ANCHOR) - 1) & 0xFFFF)   # D16A
+    _frame_9be2(mem)                                                     # D171: the 9BE2 chain
+    if mem.rw(DS, ATTRACT_VIEW_ANCHOR) == ATTRACT_ANCHOR_TARGET:         # D174
+        mem.ww(DS, 0xBE08, 0x0032)                                       # D17C: reload the countdown
+        return True
+    return False
+
+
 def _terrain_crash_4ff9(mem) -> bool:
     """``1010:4FF9`` -- the PLAYER terrain-crash predicate: a dying pose (>= 3) is stc; else the
     pose-indexed 214E hitbox offset shifts the probe point, the 5073 probe's column (+0xD) --
