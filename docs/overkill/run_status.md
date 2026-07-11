@@ -63,6 +63,21 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-11 — AUDIO: the VM-free driver PLAYS (audible WAV render) + smoke-verified over real bytecode
+
+The VM-free AdLib driver now produces AUDIBLE music.  `scripts/render_native_music.py` (new tool)
+seeds `AdlibDriver` from an AdLib snapshot's segment 2032 and synthesizes ITS `(reg,val)` stream
+through the same `pynuked_opl3` path as the oracle (`render_demo_music.py`) -- the driver's own
+bytecode loop keeps the page playing, so no game input is needed.  A 12s render is 43% peak / 98%
+non-silent, touching the F-num/block (A0-B8) + operator (0x20-0x55) registers.  Separately, a 2000-tick
+smoke run over the real snapshot ran CLEAN (no crash / no runaway loop), 3776 writes across 168 beat
+ticks -- strong evidence the full command sequencer is correct.
+
+REMAINING: (1) the BYTE-EXACT oracle gate -- diff the VM-free stream vs `render_demo_music.py`'s VM
+capture over an AdLib demo (this also calibrates ticks-per-present-frame, currently a
+`--ticks-per-frame` knob, and pins the game->driver input cells); (2) wire `AdlibDriver` into
+play_native each frame over the D50E sound state -> `AdlibSpeakerSink`.
+
 ## 2026-07-11 — AUDIO: VM-free AdLib driver LOGIC COMPLETE (the 2032:00F7 command loop + 024F/0181)
 
 Transcribed the LAST driver piece -- the per-channel bytecode COMMAND advance `2032:00F7`
