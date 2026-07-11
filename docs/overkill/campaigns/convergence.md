@@ -51,6 +51,19 @@ deep sub-thread; until it lands, the attract may replay a recorded demo through 
 **Done when:** `python scripts/play_native.py --container assets/OVERKILL` (no bundle, no exe) cold-boots
 the original's title/attract, menus natively, and plays — every screen recovered or a fail-loud gap.
 
+### Slice A DONE + slice B scope pinned (2026-07-11)
+- **A landed:** `native_rom` (`overkill/recovered/adapters/native_rom.py`) = the ~580 CS bytes the FRAME
+  reads; `tests/test_native_rom.py` gates the reduced-code-segment cold image byte-exact (DGROUP).
+- **B scope:** building the cold image over a BLANK base (native_rom + init + container, no bundle)
+  fails because the BUILDER reads more exe tables than the frame — `asset_codecs/native_level.py` reads
+  the per-level CLASS-OVERRIDE table (a pointer table at `_CLASS_PTR_TABLE_OFFSET` + `FF`-terminated
+  index/class pairs) and the TILE-PLANE FOOTER (`_FOOTER_OFFSET`) straight from the exe image, and
+  `cold_level_start` keeps the bundle's post-init border rows.  So the full recovered-ROM set =
+  native_rom (frame) + this "level ROM" (builder): the class-override table, the footer, the
+  `144F/14C0` name tables.  All bounded, all byte-verifiable.  Slice B = extract that level-ROM the
+  same way, point the builder at it instead of `exe_image`, gate the blank-base cold image byte-exact
+  vs the bundle (`verify_native_cold_level_data`), then delete `--bundle`.
+
 ## First slice
 Slice B's equivalence gate is the highest-leverage start: prove the cold image can be built WITHOUT the
 bundle by diffing an asset+ROM-built image against the bundle-seeded one, which produces the exact list
