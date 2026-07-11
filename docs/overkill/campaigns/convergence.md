@@ -77,11 +77,16 @@ builder to read them instead of `exe_image`, gate byte-exact, drop `--bundle`.
 `cold_level_start` keeps the exe's post-init tile-plane BORDER (the container level map fills the
 interior; the border tiles come from the exe).  So the COMPLETE byte-exact exe dependency for build +
 gameplay = `native_rom` (580 B) + level-ROM (384 B) + the tile-plane border (~10 KB) ≈ **11 KB of the
-1.3 MB bundle**.  Open question worth one probe before extracting: are the border rows a repeated
-constant tile (derivable, ~0 bytes) or genuine per-level data — the top ranges (`+1772..3033` = 6.3 KB)
-suggest a mix.  Either way slice B extracts ≤11 KB of byte-verified `native_rom`/level-ROM/border data,
-points the builder + `native_level` at it instead of `exe_image`, and the bundle is gone.  The headline
-stands: the VM-less engine needs ~11 KB of recovered tables + the container, not a 1.3 MB exe image.
+1.3 MB bundle**.  Settled by probe: the border is a **single SHARED CONSTANT** — the 9,925-byte diff is byte-identical
+across all 6 levels (`same_as_prev=True` for levels 1–5), i.e. one fixed level-frame border, NOT
+per-level data.  So slice B extracts it ONCE.  **Final recovered-ROM set = `native_rom` (580 B) +
+level-ROM (384 B) + the shared border constant (9,925 B) = ~10.9 KB, flat, extract-once,
+byte-verified.**  Slice B is then: extract those three into a `recovered_rom` provider, point
+`cold_level_start`/`native_level` at it instead of `exe_image`, gate the blank-base cold image
+byte-exact vs the bundle for all 6 levels, and drop `--bundle`.  The headline is now exact: the VM-less
+engine needs **~10.9 KB of recovered tables + the container**, not the 1.3 MB exe image (99.2% dead
+weight).  The one shared border blob is the bulk; whether it ships as recovered data or is further
+reduced (it is one constant) is an extraction detail, not a recovery unknown.
 
 ## First slice
 Slice B's equivalence gate is the highest-leverage start: prove the cold image can be built WITHOUT the
