@@ -86,8 +86,13 @@ play_native; `NativeFrontEnd` carries the 558B idle + D390 level-select decision
    already has `CS:0BE4` populated** (the 16-entry cell directory, offsets at 0x90 stride) + the `BE18`
    scene descriptors -- no fresh snapshot needed; the scene-cell render builds straight from the bundle
    (or, post-convergence, from `native_rom`).  The `boot_1010_entry` snapshot was just pre-panel-load.
-2. **Recover the scene-cell render** (the descriptor -> `CS:0BE4` cell -> the (0x1F,0x18) blit) so
-   scenes 0..7 draw natively; reuse the panel-cell machinery.
+2. **Scene-cell render -- fully decoded (2026-07-11), ready to build.**  `D04D` draws each scene's
+   cell: `5A00` sets the cursor to `(al=0x1F, ah=0x18)`; `cellid = [DS:BE18 + scene*6]` (descriptor
+   word0); `offset = CS:[0BE4 + cellid*2]` (the directory lookup); then `5A6C` blits the cell from the
+   `CS:[95B4]` bank at the cursor.  This is EXACTLY the 5A00/5A6C cell blit play_native already runs for
+   the plaque + the level-select cursors -- so the render is a mechanical compose: read the `[95B4]`
+   bank, look the cell up through the directory, blit it, drive the scene id/countdown with
+   `attract_frame_step`.  No new decode work; the structure is complete.
 3. **Wire `attract_frame_step` as the driver**: run it per frame, draw the scene cell (2), and for
    scenes >= 8 run the NATIVE frame with the recovered auto-fire injection -- the game playing itself,
    VM-free.  Recover scene 0's `D160` + the `D0DB` entry draws to close the gaps.
