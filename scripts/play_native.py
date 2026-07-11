@@ -331,21 +331,24 @@ def _run_hiscore_screen(display, pygame, container_data, seconds: float) -> "boo
     return None
 
 
-#: the new-game story intro: the five IPAGE pages, whose names live in the image's own DS:1323 table
-#: (IPAGE1..IPAGE5.ENC, immediately before the OPAGE1..OPAGE10 ending pages).  Each decodes to a
-#: full-screen (200,320) index page through the same native codec as the title screen.
-_INTRO_PAGES = ("IPAGE1.ENC", "IPAGE2.ENC", "IPAGE3.ENC", "IPAGE4.ENC", "IPAGE5.ENC")
+#: The menu's INSTRUCTIONS screen (558B 'I' -> BE92): five IPAGE pages.  These are NOT a story intro
+#: -- 1F8F:0980 pages through the descriptor at DS:BE92, whose entries are the DS:1323 filename
+#: pointers IPAGE1..IPAGE5.ENC (D2B8 just loads + blits each ENC, no glyph renderer).  Each decodes to
+#: a full-screen (200,320) page through the same native codec as the title screen.
+_INSTRUCTIONS_PAGES = ("IPAGE1.ENC", "IPAGE2.ENC", "IPAGE3.ENC", "IPAGE4.ENC", "IPAGE5.ENC")
 
 
-#: the victory ending: the ten OPAGE pages, named in the same DS:1323 table right after the intro.
-_ENDING_PAGES = tuple(f"OPAGE{i}.ENC" for i in range(1, 11))
+#: The menu's ORDERING screen (558B 'O' -> BEA0): ten OPAGE pages (this is shareware -- how to order
+#: the full game).  These are NOT the victory ending; the win screen is WINSCR.ENC (see _run_the_end).
+_ORDERING_PAGES = tuple(f"OPAGE{i}.ENC" for i in range(1, 11))
 
 
 def _run_story_pages(display, pygame, container_data, names, label: str,
                      per_page_seconds: float = 8.0) -> bool:
-    """Play a sequence of full-screen story pages, each advanced by Space/fire or a timeout.
-    Esc/quit skips the rest.  Returns False on window-close (so the caller can exit), else True."""
-    display.set_title(f"OVERKILL - native (VM-less)  [{label} -- Space skips a page, Esc skips all]")
+    """Page through a sequence of full-screen ENC pages (the 1F8F:0980 viewer: each page is loaded +
+    blitted by D2B8), each advanced by Space or a timeout.  Esc/quit exits.  Returns False on
+    window-close (so the caller can exit), else True."""
+    display.set_title(f"OVERKILL - native (VM-less)  [{label} -- Space = next page, Esc = back]")
     clock = pygame.time.Clock()
     for name in names:
         img = decode_fullscreen_image(container_data, name)
@@ -365,14 +368,16 @@ def _run_story_pages(display, pygame, container_data, names, label: str,
     return True
 
 
-def _run_intro(display, pygame, container_data, per_page_seconds: float = 8.0) -> bool:
-    """Play the five-page story intro (IPAGE1..5)."""
-    return _run_story_pages(display, pygame, container_data, _INTRO_PAGES, "intro", per_page_seconds)
+def _run_instructions(display, pygame, container_data, per_page_seconds: float = 8.0) -> bool:
+    """The menu 'I' INSTRUCTIONS screen (IPAGE1..5)."""
+    return _run_story_pages(display, pygame, container_data, _INSTRUCTIONS_PAGES, "instructions",
+                            per_page_seconds)
 
 
-def _run_ending(display, pygame, container_data, per_page_seconds: float = 8.0) -> bool:
-    """Play the ten-page victory ending (OPAGE1..10)."""
-    return _run_story_pages(display, pygame, container_data, _ENDING_PAGES, "ending", per_page_seconds)
+def _run_ordering(display, pygame, container_data, per_page_seconds: float = 8.0) -> bool:
+    """The menu 'O' ORDERING screen (OPAGE1..10 -- shareware order info, not the victory ending)."""
+    return _run_story_pages(display, pygame, container_data, _ORDERING_PAGES, "ordering",
+                            per_page_seconds)
 
 
 #: THE END splash asset -- the full-screen win image 1010:9844 loads (name @ DS:1440, len 0x7D04)
@@ -486,11 +491,16 @@ def _run_title_menu(display, pygame, bundle_data, container_data) -> "tuple[int,
                     control = 0
                 elif ev.key == pygame.K_a:                     # 56B2: [0010] = 2 (amstrad, map 2146)
                     control = 2
+                elif ev.key == pygame.K_i:                     # 55C4: I -> BE92, the INSTRUCTIONS pages
+                    if not _run_instructions(display, pygame, container_data):
+                        return None
+                elif ev.key == pygame.K_o:                     # 55BD: O -> BEA0, the ORDERING pages
+                    if not _run_ordering(display, pygame, container_data):
+                        return None
                 # J (joystick, [0010]==1) is declined: play_native is keyboard-only (0162 fail-louds)
         idle += 1
-        if idle >= _MENU_ATTRACT_IDLE_FRAMES:                  # 558B idle timeout -> the attract
-            for scene in (lambda: None if _run_intro(display, pygame, container_data) else False,
-                          lambda: _run_hiscore_screen(display, pygame, container_data, 5.0),
+        if idle >= _MENU_ATTRACT_IDLE_FRAMES:                  # 558B idle timeout -> the attract (5604)
+            for scene in (lambda: _run_hiscore_screen(display, pygame, container_data, 5.0),
                           lambda: _replay_demo(display, pygame, bundle_data, container_data,
                                                demo_dir, 15.0)):
                 r = scene()
@@ -741,15 +751,18 @@ def main(argv=None) -> int:
     ap.add_argument("--scale", type=int, default=3)
     ap.add_argument("--fps", type=int, default=30)
     ap.add_argument("--no-title", action="store_true", help="skip the title + level select")
-    ap.add_argument("--no-intro", action="store_true", help="skip the IPAGE story intro")
+    ap.add_argument("--no-intro", action="store_true",
+                    help="(deprecated no-op: the IPAGE pages are the menu's INSTRUCTIONS, not an intro)")
     ap.add_argument("--frames", type=int, default=0,
                     help="headless self-test: run N gameplay frames then exit (SDL_VIDEODRIVER=dummy)")
     ap.add_argument("--no-sound", action="store_true", help="disable the PC-speaker audio sink")
     ap.add_argument("--demo", default=None,
                     help="replay a recorded demo through the verified frame + renderer, then exit "
                          "(charter step 2 -- the attract sequence's demo element, standalone)")
-    ap.add_argument("--intro", action="store_true", help="view the IPAGE story intro, then exit")
-    ap.add_argument("--ending", action="store_true", help="view the OPAGE victory ending, then exit")
+    ap.add_argument("--instructions", "--intro", dest="instructions", action="store_true",
+                    help="view the menu's INSTRUCTIONS screen (IPAGE1..5), then exit")
+    ap.add_argument("--ordering", "--ending", dest="ordering", action="store_true",
+                    help="view the menu's ORDERING screen (OPAGE1..10, shareware order info), then exit")
     args = ap.parse_args(argv)
 
     from overkill.recovered.adapters.cold_level_start import build_cold_level_start_image
@@ -761,8 +774,8 @@ def main(argv=None) -> int:
     pygame = display.pygame
     scan_map = _build_scan_map(pygame)
 
-    if args.intro or args.ending:
-        run = _run_ending if args.ending else _run_intro
+    if args.instructions or args.ordering:
+        run = _run_ordering if args.ordering else _run_instructions
         run(display, pygame, container_data)
         display.close()
         return 0
