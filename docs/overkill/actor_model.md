@@ -353,6 +353,17 @@ steer 8, guard 7, move 7, bounce 6, random 5, retarget 5, update 4, sprite 3, ti
 So the answer to "can we quantize the zoo": **~74% is a step-list today, ~91% with one control verb,
 with a deliberate ~9% `Call` escape** — a measured reduction, every promotion shadow-gated (§7.5).
 
+**Control-verb slice landed (2026-07-11):** the "one control verb" is now demonstrated.
+`actor_steps.py` adds the seek->arrival->substate primitives the CONTROL bucket named —
+`SetSeekMode2308`, `SeekB729` (records `arrived`), `SpriteFromDir`, `WhenArrived` (the shared
+on-arrival gate), and the generic field/branch verbs `IfFieldZero` / `DecFieldThen` /
+`GuardGlobalEq` / `GuardFieldNe` / `SetField` / `MorphTo` (all reused across the family).  The
+0x16/0x17 diver (`_step_diver_16_17`, a CONTROL-class handler) is expressed as a step-list with them
+(`CONTROLLER_BEHAVIORS`) and gated byte-exact vs the native handler over arrival / substate-countdown /
+0x16-vs-0x17 / planet states (`tests/test_actor_steps.py`, 30/30).  So the control verbs are proven,
+not hypothesised — the waypoint/formation family's remaining members are now mechanical step-list
+transcriptions over this same vocabulary, each shadow-gated.
+
 ## 8. First refactor candidates + the verifier plan
 
 **Best first clusters** (biggest sharing, lowest risk): the **waypoint controller family** (one body

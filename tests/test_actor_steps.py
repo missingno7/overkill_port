@@ -9,11 +9,16 @@ from __future__ import annotations
 
 import pytest
 
-from overkill.recovered.adapters.actor_steps import BOUNCE_BEHAVIORS, run_actor_steps
+from overkill.recovered.adapters.actor_steps import (
+    BOUNCE_BEHAVIORS,
+    CONTROLLER_BEHAVIORS,
+    run_actor_steps,
+)
 from overkill.recovered.adapters.behavior_walk import (
     DS,
     _step_bounce_sprite_3d,
     _step_bouncer_33,
+    _step_diver_16_17,
     _step_lurker_3c,
 )
 from overkill.recovered.adapters.flat_memory import MutFlatMemory
@@ -73,4 +78,48 @@ def test_step_list_matches_native_handler(beh, state):
     b = bytes(step_mem.data[BASE:BASE + 0x10000])
     diff = [o for o in range(0x10000) if a[o] != b[o]]
     assert not diff, (f"beh {beh:#04x} state {state}: step-list diverges at "
+                      + ", ".join(f"{o:04X}(nat={a[o]:02X}/step={b[o]:02X})" for o in diff[:8]))
+
+
+def _seed_diver(px, py, tx, ty, sub, beh, a7a0, planet) -> MutFlatMemory:
+    mem = MutFlatMemory(bytes(0x100000))
+    mem.ww(DS, REC + 0x00, 1)
+    mem.ww(DS, REC + 0x02, px)
+    mem.ww(DS, REC + 0x04, py)
+    mem.ww(DS, REC + 0x06, 3)          # direction
+    mem.ww(DS, REC + 0x18, beh)        # 0x16 or 0x17
+    mem.ww(DS, REC + 0x1C, sub)        # the arrival substate counter
+    mem.ww(DS, REC + 0x32, ty)         # own target (B729 seeks +0x32/+0x34)
+    mem.ww(DS, REC + 0x34, tx)
+    mem.ww(DS, 0x2356, planet)
+    mem.ww(DS, 0xA7A0, a7a0)
+    return mem
+
+
+# states exercising: on-target arrival (px==tx,py==ty), the +0x1C==0 A7A0 morph gate, the countdown
+# reaching/not reaching 0, the 0x16 vs 0x17 variant, planet 0 vs not.
+_DIVER_STATES = [
+    (0x40, 0x40, 0x40, 0x40, 0, 0x16, 0x31, 0),   # arrived, +0x1C==0, A7A0==0x31 -> morph 0x18
+    (0x40, 0x40, 0x40, 0x40, 0, 0x16, 0x20, 0),   # arrived, +0x1C==0, A7A0!=0x31 -> no morph
+    (0x40, 0x40, 0x40, 0x40, 1, 0x16, 0x00, 0),   # arrived, +0x1C 1->0 -> +0x34=0x20 (0x16 variant)
+    (0x40, 0x40, 0x40, 0x40, 1, 0x17, 0x00, 1),   # arrived, +0x1C 1->0, 0x17 variant -> +0x34=0x40
+    (0x40, 0x40, 0x40, 0x40, 5, 0x17, 0x00, 1),   # arrived, +0x1C 5->4 (no zero)
+    (0x20, 0x30, 0x80, 0x90, 3, 0x16, 0x00, 0),   # far from target (may not arrive) -- equivalence still
+]
+
+
+@pytest.mark.parametrize("beh", sorted(CONTROLLER_BEHAVIORS))
+@pytest.mark.parametrize("state", _DIVER_STATES)
+def test_diver_step_list_matches_native(beh, state):
+    px, py, tx, ty, sub, _behstate, a7a0, planet = state
+    native = _seed_diver(px, py, tx, ty, sub, beh, a7a0, planet)
+    _step_diver_16_17(native, REC)
+
+    step = _seed_diver(px, py, tx, ty, sub, beh, a7a0, planet)
+    run_actor_steps(CONTROLLER_BEHAVIORS[beh], step, REC, _tiles())
+
+    a = bytes(native.data[BASE:BASE + 0x10000])
+    b = bytes(step.data[BASE:BASE + 0x10000])
+    diff = [o for o in range(0x10000) if a[o] != b[o]]
+    assert not diff, (f"diver {beh:#04x} state {state}: diverges at "
                       + ", ".join(f"{o:04X}(nat={a[o]:02X}/step={b[o]:02X})" for o in diff[:8]))
