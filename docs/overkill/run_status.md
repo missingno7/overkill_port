@@ -28,9 +28,13 @@
 > ONE native 97B2 frame (`overkill/native_frame.py`) in per-frame lockstep with a recorded demo
 > (`overkill/probes/verify_native_lockstep.py`, cached), then swap play_native onto that same frame
 > fn + add `--demo/--mirror`.  **CURRENT LOCKSTEP STATE (L1 demo, 8292 frames, PyPy, 2026-07-10):
-> 8292 byte-exact / 0 DIVERGING / 0 GAPPED.  GAMEPLAY IS COMPLETE end-to-end (play/die/respawn/
-> game-over/level-advance, all six planets, with sound); remaining work is the front-end shell
-> (boot, title-menu logic, attract, the 9844 story intro).**  Every frame runs natively and 100% are
+> 8292 byte-exact / 0 DIVERGING / 0 GAPPED.  GAMEPLAY IS COMPLETE AND THE GAME IS WINNABLE end-to-end
+> (cold boot -> all six planets -> beat the mothership -> THE END (9844 WINSCR splash, recovered as the
+> `TheEndReached` front-end transition, 2026-07-11) -> arcade-loop back to planet 1; play/die/respawn/
+> game-over/restart, HUD+score, PC-speaker sound).  Remaining work is FRONT-END FIDELITY ONLY: byte-exact
+> boot/title-menu/attract LOGIC (play_native drives functional app-layer versions from recovered
+> decisions + real decoded assets), byte-exact 9844 pixels via 1F8F:0980 (the real WINSCR asset is
+> shown), and Tandy 3-voice audio.**  Every frame runs natively and 100% are
 > byte-exact across the whole 64K DGROUP.  Their residue is down to 6860 bytes (from 17839) now that
 > `1010:4DBF`, the death LEVEL RE-INIT, is recovered and independently gated by
 > `probes/verify_native_level_reinit_4dbf` (PASS 7/7).  The 7 are EXACTLY the death/respawn windows
