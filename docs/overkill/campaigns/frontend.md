@@ -44,12 +44,17 @@ boot: LZEXE unpack -> video init -> load shared banks (1X1/2X2/2X2C/MANEXPL/THEN
 new game.
 
 ## Next slices (in order)
-1. **Menu (CE97 + 558B):** compose the real menu screen (cells from CS:0C92) + wire 558B navigation, so
-   the menu is the original's, not a static OKMENU fire-wait.
-2. **Attract:** drive `_run_attract` from the recovered `attract_frame_step` scene machine (order +
-   timing + the demo scenes), looping to the menu on start — the faithful "demo after intro".
-3. **Intro:** confirm the IPAGE order/trigger vs the original.
-4. **Transitions:** the inter-screen palette fades (C57C/5BDC) the original does, which play_native
+1. **Menu (558B):** ✅ DONE (2026-07-11, `_run_title_menu`): M sound-mode, K/A control, idle→attract,
+   FIRE→start; J/O/I declined/omitted (see below).  `tests/test_native_menu.py`.
+2. **The shared TEXT-PAGE renderer (`1010:D2B8`):** the menu's **O/I** ordering/instructions screens
+   AND **THE END** all render text through `1F8F:0980` — which is only a scrollable page VIEWER (up/down
+   scroll + exit) that calls `1010:8D8B(ax=D2B8)` → **`1010:D2B8`**, the real font/glyph page renderer.
+   Recovering D2B8 (+ 8D8B's `call ax` dispatch) unblocks the I/O menu screens and makes THE END's
+   pixels byte-exact in one go.  Substantial (glyph render + page layout); highest shared value.
+3. **Attract:** functional now (menu idle → high scores + a byte-exact gameplay demo).  Fidelity slice:
+   drive it from the recovered `attract_frame_step` (D007/D04D) scene order/timing.
+4. **Intro:** confirm the IPAGE order/trigger vs the original.
+5. **Transitions:** the inter-screen palette fades (C57C/5BDC) the original does, which play_native
    hard-cuts.
 
 **State (2026-07-05, superseded above):** full-screen images decode byte-exact; menu logic pure
