@@ -52,3 +52,29 @@ sound state native_frame maintains:
 
 Until the co-processor lands, `render_demo_music.py` produces the reference music per demo (and can
 back an attract-mode music bed).  PC-speaker SFX already play live via `SpeakerSink`.
+
+## DECISION (2026-07-11): VM-FREE DRIVER RECOVERY (owner's call)
+
+Not a shadow VM -- recover the segment-2032 AdLib driver as pure Python (true to the VM-less
+principle), verified against the `render_demo_music.py` oracle.  Scaffolding landed:
+`overkill/native_audio/adlib.py` (`AdlibDriver`: the segment-2032 state image + the emitted YM3812
+`(reg,val)` stream) with the leaf `2032:0557` (register write) transcribed + unit-tested
+(`tests/test_native_adlib.py`).
+
+**Enablers confirmed:**
+- The driver code is NOT in `boot_1010_entry` (that image is PC-speaker; 2032:0557 is zeros).  Seed
+  the driver state from an **AdLib** snapshot -- `demo_play_tandy_20260711_120636/snapshot` has it
+  (2032:0557 == `SIG_ADLIB_WRITE_2032_0557`).
+- `overkill/sounds/adlib_driver.py` is the LIFTED reference (VM-coupled hooks, interpreter-verified) --
+  transcribe each to operate on `AdlibDriver.ram`/DGROUP instead of `cpu`.
+- Oracle = `render_demo_music.py`'s per-frame VM OPL capture; the gate diffs the VM-free driver's
+  `(reg,val)` stream against it over an AdLib demo.
+
+**Slice order (each: transcribe from the lifted hook, diff OPL vs the oracle, commit):**
+1. `2032:0557` write leaf ✅ (done).
+2. `2032:0579` PIT delay (host no-op) + `2032:04E9` detect (init path).
+3. `2032:0063` tick spine -> `2032:00CD` channel tick (the 9-channel loop).
+4. `2032:0181` set-instrument + `2032:024F` note/frequency (the F-num/block + operator regs).
+5. `2032:02C9`/`02F6` channel mod A/B + helpers `0244`/`02AA`, `0409` page gate.
+6. Wire `AdlibDriver` into play_native each frame over the D50E sound state -> `AdlibSpeakerSink`/
+   `pynuked_opl3`; full-demo OPL diff vs the oracle must be zero.
