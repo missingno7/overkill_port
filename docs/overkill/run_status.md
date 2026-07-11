@@ -63,6 +63,21 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-11 — AUDIO: VM-free AdLib driver, the 2032:00CD channel tick (idle + modulation)
+
+Transcribed the per-channel bytecode sequencer `2032:00CD`'s idle + MODULATION path onto
+`AdlibDriver.ram` (from the interpreter-verified lifted hooks): `_channel_tick_00cd` (pause [005F] /
+active [+0x10] / divider [000D] gating + the beat-tick countdown [+0x01]), the accumulator `0244`, the
+key-on look-ahead `02AA`, and the two pitch-modulation helpers `02C9`/`02F6` sharing
+`_apply_frequency_modulation` (the F-num +/- delta with the 0x01F6..0x03EC octave rescale, emitting the
+A0/B0 register pair).  8 new tests (18 total in test_native_adlib), incl. the mod-A/mod-B apply math and
+the two-phase mod-B delay; caught a real subtlety -- the mod-A delta WORD [+0x1C] and its enable byte
+[+0x1D] intentionally overlap.  Suite 1379 passed / 33 skipped.
+
+The ONLY remaining driver piece is the bytecode COMMAND advance `2032:00F7` (note-on + set-instrument
+0181 + note/frequency 024F + the 0355 indirect jump table for cmds 0x80..0x8D); 0181/024F are already
+lifted, the jump table wants a careful hand decode.  Then the oracle gate + the play_native wiring.
+
 ## 2026-07-11 — AUDIO: VM-free AdLib driver, the 2032:0409 page gate / pattern loader
 
 Continuing the owner's VM-FREE AdLib driver recovery (segment 2032 as pure Python, verified vs the

@@ -172,3 +172,108 @@ def test_page_gate_loads_active_page_matching_the_real_snapshot_descriptor():
     writes = d.drain()
     assert (0x40, 0x7F) in writes                 # the 04A4 operator reset ran
     assert writes[-2:] == [(0xBD, 0x00), (0x08, 0x00)]   # the card arm closes the load
+
+
+# --- 2032:00CD per-channel tick: the idle + modulation path -----------------------------------------
+
+def _one_channel_driver():
+    from overkill.native_audio.adlib import CHANNEL_STATE_BASE, CH_ACTIVE
+    d = _driver()
+    d.di = CHANNEL_STATE_BASE
+    d.ram[d.di + CH_ACTIVE] = 1                    # channel active by default
+    return d
+
+
+def test_channel_tick_skips_paused_and_inactive():
+    from overkill.native_audio.adlib import PAGE_PENDING, CH_ACTIVE
+    d = _one_channel_driver()
+    d.ram[PAGE_PENDING] = 1                        # global pause -> no-op
+    d._channel_tick_00cd(d.di)
+    assert d.drain() == []
+    d.ram[PAGE_PENDING] = 0
+    d.ram[d.di + CH_ACTIVE] = 0                    # inactive -> no-op
+    d._channel_tick_00cd(d.di)
+    assert d.drain() == []
+
+
+def test_channel_tick_countdown_only_when_no_helpers_armed():
+    from overkill.native_audio.adlib import TICK_DIVIDER, CH_DELAY
+    d = _one_channel_driver()
+    d.ram[TICK_DIVIDER] = 0                        # a beat tick -> decrement the channel countdown
+    d.ram[d.di + CH_DELAY] = 3
+    d._channel_tick_00cd(d.di)
+    assert d.ram[d.di + CH_DELAY] == 2             # decremented, still non-zero
+    assert d.drain() == []                         # all helpers disabled -> no writes
+
+
+def test_channel_tick_countdown_zero_defers_to_command_advance():
+    from overkill.native_audio.adlib import TICK_DIVIDER, CH_DELAY
+    d = _one_channel_driver()
+    d.ram[TICK_DIVIDER] = 0
+    d.ram[d.di + CH_DELAY] = 1                     # -> 0 -> the (not-yet-recovered) command advance
+    try:
+        d._channel_tick_00cd(d.di)
+    except NotImplementedError:
+        return
+    raise AssertionError("expected the 00F7 command-advance slice to fail loud")
+
+
+def test_mod_a_02c9_applies_frequency_modulation():
+    # The mod-A delta is the WORD [+0x1C]; its high byte [+0x1D] doubles as the enable (they overlap
+    # in the driver).  delta = 0x0100 -> enable byte [+0x1D] = 1 AND a +0x0100 F-num step.
+    d = _one_channel_driver()
+    di = d.di
+    d._ww(di + 0x1C, 0x0100)                       # delta 0x0100 (enable byte [+0x1D] = 1)
+    d.ram[di + 0x1E] = 2                           # countdown 2 -> 1 (non-zero) -> apply
+    d.ram[di + 0x07] = 0                           # voice 0 -> regs 0xA0 / 0xB0
+    d._ww(di + 0x14, 0x0200)                       # current F-num (0x200 + 0x100 = 0x300, no rescale)
+    d._ww(di + 0x08, 0x0000)                       # key word (block bits from high byte)
+    d._channel_mod_a_02c9(di)
+    assert d.drain() == [(0xA0, 0x00), (0xB0, 0x23)]   # F-num low 0x00 ; key-on(0x20)|block 0x03
+    assert d._rw(di + 0x14) == 0x0300                  # F-num latched back
+    assert d._rw(di + 0x08) == 0x03B0                  # B0 word latched (reg 0xB0 in low byte)
+
+
+def test_mod_b_02f6_second_phase_applies():
+    # first phase [+0x18]==0 -> skip; second phase [+0x19]=2 decrements and applies the [+0x16] delta.
+    d = _one_channel_driver()
+    di = d.di
+    d.ram[di + 0x18] = 0                           # first phase already elapsed
+    d.ram[di + 0x19] = 2                           # second phase ticks
+    d.ram[di + 0x07] = 0
+    d._ww(di + 0x16, 0x0100)                       # mod-B delta 0x0100
+    d._ww(di + 0x14, 0x0200)                       # F-num 0x200 -> 0x300
+    d._ww(di + 0x08, 0x0000)
+    d._channel_mod_b_02f6(di)
+    assert d.ram[di + 0x19] == 1                    # second-phase counter decremented
+    assert d.drain() == [(0xA0, 0x00), (0xB0, 0x23)]
+    assert d._rw(di + 0x14) == 0x0300
+
+
+def test_mod_b_02f6_first_phase_holds():
+    d = _one_channel_driver()
+    di = d.di
+    d.ram[di + 0x18] = 3                           # first phase still counting down (3 -> 2, non-zero)
+    d.ram[di + 0x19] = 2
+    d._channel_mod_b_02f6(di)
+    assert d.ram[di + 0x18] == 2 and d.drain() == []   # held: decremented, no writes
+
+
+def test_mod_a_02c9_disabled_is_noop():
+    d = _one_channel_driver()
+    d.ram[d.di + 0x1D] = 0                         # disabled
+    d._channel_mod_a_02c9(d.di)
+    assert d.drain() == []
+
+
+def test_channel_helper_0244_accumulates():
+    from overkill.native_audio.adlib import CH_DELAY
+    d = _one_channel_driver()
+    di = d.di
+    d.ram[di + 0x13] = 5
+    d.ram[di] = 10
+    d._channel_helper_0244(di)
+    assert d.ram[di] == 15
+    d.ram[di + 0x13] = 0                           # zero delta -> no-op
+    d._channel_helper_0244(di)
+    assert d.ram[di] == 15

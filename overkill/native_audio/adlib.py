@@ -15,11 +15,12 @@ whose ``2032:0557`` matches ``SIG_ADLIB_WRITE_2032_0557``).  A tick reads the ga
 queue the D50E engine fills) and appends the frame's YM3812 ``(reg, val)`` writes to :attr:`writes`,
 which the host feeds to ``pynuked_opl3``.
 
-RECOVERY STATUS: the leaf ``2032:0557`` (register write), the tick spine ``2032:0063`` and the page
-gate / pattern loader ``2032:0409`` (with its ``0291`` sequencer-silence + ``04A4`` operator-reset
-helpers) are transcribed + tested below.  The remaining slice is the per-channel bytecode sequencer
-``2032:00CD`` and its command callees (set-instrument 0181, note/frequency 024F, mod A/B 02C9/02F6,
-helpers 0244/02AA) -- see docs/overkill/campaigns/audio.md for the ordered plan and the oracle gate.
+RECOVERY STATUS: the leaf ``2032:0557`` (register write), the tick spine ``2032:0063``, the page gate /
+pattern loader ``2032:0409`` (+ ``0291``/``04A4``) and the per-channel tick ``2032:00CD``'s idle +
+MODULATION path (the accumulator ``0244``, key-on look-ahead ``02AA``, pitch-mod ``02C9``/``02F6``) are
+transcribed + tested below.  The remaining slice is the bytecode COMMAND advance ``2032:00F7`` -- the
+note-on / set-instrument ``0181`` / note-frequency ``024F`` dispatch, including the ``0355`` indirect
+jump table -- see docs/overkill/campaigns/audio.md for the ordered plan and the oracle gate.
 """
 from __future__ import annotations
 
@@ -172,9 +173,119 @@ class AdlibDriver:
         self.write_opl_2032_0557(0x08, 0x00)               # 049D/04A0 ax=0008
 
     def _channel_tick_00cd(self, state_off: int) -> None:
-        """``2032:00CD`` -- advance ONE channel's sequencer and emit its YM3812 writes (via
-        :meth:`write_opl_2032_0557`).  The driver's core; NEXT SLICE (not yet transcribed)."""
-        raise NotImplementedError("2032:00CD channel tick -- next AdLib recovery slice")
+        """``2032:00CD`` -- advance ONE channel's sequencer for this tick and emit its YM3812 writes.
+
+        Transcribed from the interpreter-verified lifted hook.  Skips paused ([005F]) / inactive
+        ([+0x10]==0) channels.  When the global divider ``[000D]`` is non-zero the channel only runs
+        pitch modulation (``02C9``/``02F6``).  On a beat tick (``[000D]==0``) it decrements the channel
+        countdown ``[+0x01]``: at zero it ADVANCES the bytecode command (``00F7`` -- the next slice),
+        otherwise it runs the accumulator (``0244``), the key-on look-ahead (``02AA``) and both
+        modulation helpers."""
+        ram = self.ram
+        di = state_off & 0xFFFF
+        if ram[PAGE_PENDING] != 0:                       # 00CD cmp [005F],0 ; jnz RET
+            return
+        if ram[(di + CH_ACTIVE) & 0xFFFF] == 0:          # 00D4/00D7 or al,al ; jz RET
+            return
+        bx = self._rw(di + CH_BYTECODE_CUR)              # 00DB mov bx,[di+0x0C]
+        if ram[TICK_DIVIDER] != 0:                       # 00DE cmp [000D],0 ; jnz 00F0
+            self._channel_mod_a_02c9(di)                 # 00F0 call 02C9
+            self._channel_mod_b_02f6(di)                 # 00F3 call 02F6
+            return
+        ram[(di + CH_DELAY) & 0xFFFF] = (ram[(di + CH_DELAY) & 0xFFFF] - 1) & 0xFF   # 00E5 dec [di+1]
+        if ram[(di + CH_DELAY) & 0xFFFF] == 0:           # 00E8 jz 00F7
+            self._command_advance_00f7(di, bx)
+            return
+        self._channel_helper_0244(di)                    # 00EA call 0244
+        self._channel_helper_02aa(di, bx)                # 00ED call 02AA
+        self._channel_mod_a_02c9(di)                     # 00F0 call 02C9
+        self._channel_mod_b_02f6(di)                     # 00F3 call 02F6
+
+    def _command_advance_00f7(self, di: int, bx: int) -> None:
+        """``2032:00F7`` -- the per-channel bytecode COMMAND loop (note-on, set-instrument ``0181``,
+        note/frequency ``024F``, the ``0355`` command jump table for 0x80..0x8D).  NEXT SLICE: it wraps
+        the indirect jump table the lifter refuses, so it needs a careful hand transcription."""
+        raise NotImplementedError("2032:00F7 bytecode command advance -- next AdLib recovery slice")
+
+    def _channel_helper_0244(self, di: int) -> None:
+        """``2032:0244`` -- the per-channel accumulator: ``[di] += [di+0x13]`` (a no-op when the delta
+        byte ``[di+0x13]`` is zero)."""
+        value = self.ram[(di + 0x13) & 0xFFFF]
+        if value == 0:
+            return
+        base = self.ram[di & 0xFFFF]
+        self.ram[di & 0xFFFF] = (base + value) & 0xFF
+
+    def _channel_helper_02aa(self, di: int, bx: int) -> None:
+        """``2032:02AA`` -- the pending-note / key-on look-ahead: unless the stream byte at ``bx`` is a
+        0x82 hold, when the referenced voice's note-state ``[si+0x0E]`` equals the channel delay
+        ``[di+0x01]`` it re-emits the channel's key word ``[di+0x08]`` and clears the accumulator delta
+        ``[di+0x13]``."""
+        ram = self.ram
+        if ram[bx & 0xFFFF] == 0x82:                     # 02AA cmp [bx],82h ; jz RET
+            return
+        si = self._rw(di + 0x02)                         # 02AF mov si,[di+2]
+        note_state = ram[(si + 0x0E) & 0xFFFF]           # 02B2 mov al,[si+14]
+        if note_state == 0:                              # 02B5 or al,al ; jz RET
+            return
+        if note_state != ram[(di + CH_DELAY) & 0xFFFF]:  # 02B9 cmp al,[di+1] ; jnz RET
+            return
+        w = self._rw(di + CH_KEYOFF)                     # 02BE mov ax,[di+8] ; call 0557
+        self.write_opl_2032_0557(w & 0xFF, w >> 8)
+        ram[(di + 0x13) & 0xFFFF] = 0                    # 02C4 mov [di+19],0
+
+    def _apply_frequency_modulation(self, di: int, ax: int, cx: int, delta_off: int) -> None:
+        """The shared ``02C9``/``02F6`` body: add the per-channel delta ``[di+delta_off]`` to the F-num
+        ``ax``, rescale it into the 0x01F6..0x03EC octave band (adjusting the block in ``cx`` high by
+        +/-4), store it back to ``[di+0x14]`` and emit the A0 (F-num low) + B0 (key-on/block/F-num high)
+        writes for the channel's voice ``[di+0x07]``, latching the B0 word into ``[di+0x08]``."""
+        ram = self.ram
+        ax = (ax + self._rw(di + delta_off)) & 0xFFFF
+        ax = (((ax >> 8) & 0x03) << 8) | (ax & 0xFF)
+        if ax > 0x03EC:
+            ax >>= 1
+            cx = (cx & 0x00FF) | ((((cx >> 8) + 0x04) & 0xFF) << 8)
+        elif ax <= 0x01F6:
+            ax = (ax << 1) & 0xFFFF
+            cx = (cx & 0x00FF) | ((((cx >> 8) - 0x04) & 0xFF) << 8)
+        ax = (((ax >> 8) & 0x03) << 8) | (ax & 0xFF)
+        self._ww(di + 0x14, ax)
+        voice = ram[(di + 0x07) & 0xFFFF]
+        self.write_opl_2032_0557((voice + 0xA0) & 0xFF, ax & 0xFF)         # A0: F-num low
+        ah = (((ax >> 8) & 0xFF) | ((cx >> 8) & 0xFF)) & 0xFF
+        self._ww(di + CH_KEYOFF, (ah << 8) | ((voice + 0xB0) & 0xFF))
+        self.write_opl_2032_0557((voice + 0xB0) & 0xFF, (ah | 0x20) & 0xFF)  # B0: key-on/block/F-num hi
+
+    def _channel_mod_a_02c9(self, di: int) -> None:
+        """``2032:02C9`` -- primary pitch modulation: gated by the enable byte ``[di+0x1D]`` and the
+        countdown ``[di+0x1E]``; while the countdown ticks down it applies the ``[di+0x1C]`` delta."""
+        ram = self.ram
+        if ram[(di + 0x1D) & 0xFFFF] == 0:               # 02C9 cmp 0,[di+1D] ; jz RET
+            return
+        if ram[(di + 0x1E) & 0xFFFF] == 0:               # cmp 0,[di+1E] ; jz RET
+            return
+        ram[(di + 0x1E) & 0xFFFF] = (ram[(di + 0x1E) & 0xFFFF] - 1) & 0xFF   # dec [di+1E]
+        if ram[(di + 0x1E) & 0xFFFF] == 0:               # jz RET
+            return
+        cx = self._rw(di + CH_KEYOFF)
+        cx = (cx & 0x00FF) | (((cx >> 8) & 0x1C) << 8)
+        self._apply_frequency_modulation(di, self._rw(di + 0x14), cx, 0x1C)
+
+    def _channel_mod_b_02f6(self, di: int) -> None:
+        """``2032:02F6`` -- secondary pitch modulation: a two-phase delay (``[di+0x18]`` then
+        ``[di+0x19]``); when the second phase ticks it applies the ``[di+0x16]`` delta."""
+        ram = self.ram
+        first = ram[(di + 0x18) & 0xFFFF]                # 02F6 cmp 0,[di+18]
+        if first != 0:
+            first = ram[(di + 0x18) & 0xFFFF] = (first - 1) & 0xFF   # dec [di+18]
+            if first != 0:
+                return
+        if ram[(di + 0x19) & 0xFFFF] == 0:               # cmp 0,[di+19] ; jz RET
+            return
+        ram[(di + 0x19) & 0xFFFF] = (ram[(di + 0x19) & 0xFFFF] - 1) & 0xFF   # dec [di+19]
+        cx = self._rw(di + CH_KEYOFF)
+        cx = (cx & 0x00FF) | (((cx >> 8) & 0x1C) << 8)
+        self._apply_frequency_modulation(di, self._rw(di + 0x14), cx, 0x16)
 
     def drain(self) -> "list[tuple[int, int]]":
         """Take the accumulated ``(reg, val)`` writes since the last drain (for the host OPL sink)."""
