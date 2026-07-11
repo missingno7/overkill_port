@@ -83,6 +83,21 @@ justifies it -- kills the A97C/0054 divergences); (2) the death/respawn frame-cl
 FRONT-END intro + attract-demonstration fidelity (the big uncovered span).  The demo is also the proper
 COLD adlib AUDIO oracle, but the music starts after ~frame 600 (the early intro is near-silent).
 
+## 2026-07-11 — AUDIO: LIVE music in play_native (the VM-free driver -> pynuked_opl3 mixer)
+
+Wired the recovered VM-free AdLib driver into play_native as `AdlibMusicSink` -- the last audio step.
+Each present-frame it ticks the segment-2032 `AdlibDriver` `ticks_per_frame` (=2, the timer-ISR ticks
+per frame) and synthesizes the YM3812 stream through `pynuked_opl3` into a pygame mixer channel (ch 2;
+the PC-speaker sink keeps its own).  It runs over a COPY of the image's segment 2032; `request_page(n)`
+writes `[0008]` (the game->driver request).  The cold image has no page loaded ([0009]=0), so play_native
+requests `--music-page` (default 2, the gameplay tune) at start -- verified: a cold image + page-2
+request emits 699 OPL writes over 300 ticks and marks [0009]=2.  So play_native now has LIVE in-game
+music, no VM.  Suite 1396 passed.
+
+OPEN (journaled in campaigns/audio.md): the game->driver page interface (per-screen/level tunes, so
+menu/intro/level music is exact -- currently one --music-page), and the byte-exact oracle gate to pin
+`ticks_per_frame` + prove the stream against a COLD adlib demo.
+
 ## 2026-07-11 — FRONT-END: the F9 BOSS KEY recovered (the "SNAFU V4.2" decoy screen)
 
 Ported the F9 boss key (1010:075F) into play_native.  075F switches to text mode 3 and paints an

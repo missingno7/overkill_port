@@ -844,6 +844,81 @@ class SpeakerSink:
             self._speaker.close()
 
 
+class AdlibMusicSink:
+    """Live OPL3 MUSIC from the recovered VM-free AdLib driver.  Each present-frame it ticks the
+    segment-2032 ``AdlibDriver`` (``ticks_per_frame`` = the timer-ISR ticks the driver runs per frame)
+    and synthesizes the emitted YM3812 register stream through Nuked-OPL3 into a pygame mixer channel --
+    the native counterpart of dos_re's ``AdlibSpeakerSink``, driven by the port's own driver, no VM.
+    Silently no-ops if the mixer or ``pynuked_opl3`` is unavailable (audio never breaks gameplay)."""
+
+    def __init__(self, pygame, seg2032_image, *, present_hz: int, ticks_per_frame: int = 2) -> None:
+        self._pygame = pygame
+        self.available = False
+        self._ticks = ticks_per_frame
+        try:
+            import numpy as np
+            from overkill.native_audio.adlib import AdlibDriver
+            from pynuked_opl3 import OPL3
+        except Exception as exc:  # noqa: BLE001
+            print(f"(music disabled: {type(exc).__name__}: {exc})")
+            return
+        self._np = np
+        self.driver = AdlibDriver(seg2032_image)
+        if not pygame.mixer.get_init():
+            try:
+                pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
+            except Exception as exc:  # noqa: BLE001 -- headless / no device
+                print(f"(music disabled: no mixer: {exc})")
+                return
+        rate, _size, channels = pygame.mixer.get_init()
+        self._rate, self._channels = int(rate), int(channels)
+        self._chunk = max(256, self._rate // max(1, present_hz))
+        self._lead = int(self._rate * 0.10)
+        self._buf = np.zeros((0, self._channels), dtype=np.int16)
+        self._started = False
+        if pygame.mixer.get_num_channels() < 3:
+            pygame.mixer.set_num_channels(3)
+        self._channel = pygame.mixer.Channel(2)          # ch 2: the PC-speaker sink keeps its own
+        self._opl = OPL3(sample_rate=self._rate)
+        self.available = True
+
+    def request_page(self, page: int) -> None:
+        """Queue a music-page (re)load -- the game->driver ``[0008]`` request the tune plays from."""
+        if self.available:
+            self.driver.ram[0x0008] = page & 0xFF
+
+    def pump(self) -> None:
+        """Advance the driver one present-frame and feed its audio to the mixer.  Call once per frame."""
+        if not self.available:
+            return
+        np = self._np
+        for _ in range(self._ticks):
+            self.driver.tick_2032_0063()
+        for reg, val in self.driver.drain():
+            self._opl.write(reg, val)
+        pcm = np.frombuffer(self._opl.generate_stereo(self._chunk), dtype="<i2").reshape(-1, 2)
+        out = pcm if self._channels > 1 else pcm[:, :1]
+        self._buf = np.concatenate([self._buf, out])
+        if not self._started:
+            if len(self._buf) >= self._lead:
+                self._channel.play(self._next_sound())
+                self._started = True
+            return
+        if not self._channel.get_busy():
+            self._started = False
+            return
+        if self._channel.get_queue() is None and len(self._buf) >= self._chunk:
+            self._channel.queue(self._next_sound())
+
+    def _next_sound(self):
+        chunk, self._buf = self._buf[:self._chunk], self._buf[self._chunk:]
+        arr = chunk if self._channels > 1 else chunk.reshape(-1)
+        return self._pygame.sndarray.make_sound(self._np.ascontiguousarray(arr))
+
+    def close(self) -> None:
+        pass
+
+
 class PygameDisplay:
     """An SDL window blitting scaled (200,320) indexed frames through the Tandy palette."""
 
@@ -927,7 +1002,10 @@ def main(argv=None) -> int:
                     help="(deprecated no-op: the IPAGE pages are the menu's INSTRUCTIONS, not an intro)")
     ap.add_argument("--frames", type=int, default=0,
                     help="headless self-test: run N gameplay frames then exit (SDL_VIDEODRIVER=dummy)")
-    ap.add_argument("--no-sound", action="store_true", help="disable the PC-speaker audio sink")
+    ap.add_argument("--no-sound", action="store_true", help="disable the PC-speaker + music audio")
+    ap.add_argument("--music-page", type=int, default=2,
+                    help="the AdLib music page to play (the game->driver [0008] request; 2 = the "
+                         "gameplay tune observed in the demo corpus)")
     ap.add_argument("--demo", default=None,
                     help="replay a recorded demo through the verified frame + renderer, then exit "
                          "(charter step 2 -- the attract sequence's demo element, standalone)")
@@ -999,6 +1077,12 @@ def main(argv=None) -> int:
     level_assets = make_level_assets(container_data, bundle_data)
     renderer = ImageRenderer(bundle_data, container_data, img)
     speaker = SpeakerSink(pygame) if not args.frames and not args.no_sound else None
+    # Live OPL3 MUSIC via the recovered VM-free AdLib driver, over a copy of the image's segment 2032.
+    music = None
+    if not args.frames and not args.no_sound:
+        seg2032 = bytearray(img.data[0x2032 * 16:0x2032 * 16 + 0x10000])
+        music = AdlibMusicSink(pygame, seg2032, present_hz=args.fps)
+        music.request_page(args.music_page)     # queue the tune (the game->driver [0008] request)
     if plaque_level is not None:
         # 1010:D305/D367: the level-start "get ready" screen -- the mission briefing plaque over the
         # animated starfield + HUD, held until FIRE, exactly as the original shows between level-select
@@ -1097,6 +1181,8 @@ def main(argv=None) -> int:
                 display.set_title(f"OVERKILL - native (VM-less)  HELD: {hold[:70]}")
             if speaker is not None:
                 speaker.update(img)
+            if music is not None:
+                music.pump()             # advance + play one frame of the VM-free AdLib music
             display.draw(frame)
             drawn += 1
 
@@ -1111,6 +1197,8 @@ def main(argv=None) -> int:
     finally:
         if speaker is not None:
             speaker.close()
+        if music is not None:
+            music.close()
         display.close()
     return 1 if (hold and args.frames) else 0   # a held gap is a self-test failure
 

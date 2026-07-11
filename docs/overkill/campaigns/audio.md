@@ -96,5 +96,12 @@ principle), verified against the `render_demo_music.py` oracle.  Scaffolding lan
    page 2 active + all channels live), correctly plays continuous music -- so the mismatch was the
    oracle capture method, not the driver.  Build the gate on a cold adlib demo and count its
    `2032:0063` calls per present-frame to pin the tempo.
-6. Wire `AdlibDriver` into play_native each frame over the D50E sound state -> `AdlibSpeakerSink`/
-   `pynuked_opl3`; full-demo OPL diff vs the oracle must be zero.
+6. Wire `AdlibDriver` into play_native.  DONE (2026-07-11): `AdlibMusicSink` (scripts/play_native.py)
+   ticks the VM-free driver `--music-page`-requested + `ticks_per_frame` (=2, the timer-ISR ticks/frame)
+   per present-frame and synthesizes its YM3812 stream through `pynuked_opl3` into a pygame mixer
+   channel (the native counterpart of dos_re's `AdlibSpeakerSink`).  It runs over a COPY of the image's
+   segment 2032; `request_page(n)` sets `[0008]` (the game->driver page request) -- the cold image has
+   no page ([0009]=0) so play_native requests page 2 (the gameplay tune) at start.  **STILL OPEN:** the
+   real game->driver page interface (which tune each screen/level requests, so menu/intro/per-level
+   music is right -- currently a single `--music-page`), and the byte-exact ORACLE GATE (step 5) to
+   prove the stream + pin `ticks_per_frame`.
