@@ -1620,6 +1620,18 @@ def _step_bouncer_33(mem, rec: int, tiles: LevelTileContext) -> None:
             return
 
 
+def _step_bouncer_32(mem, rec: int, tiles: LevelTileContext) -> None:
+    """Behavior 0x32 (``1010:88B6``): sprite 0x24, DRIFTING (jmp BC45) until ``x == 0x90`` EXACTLY;
+    there it latches ``+0x24 = 0x33`` and ``dir = 7`` and runs the ``88CF`` triple-AFD8 bounce body
+    (the same one 0x33 uses).  All paths exit through the BC45 postmove."""
+    mem.ww(DS, rec + 0x08, 0x0024)                     # 88B6
+    if mem.rw(DS, rec + 0x02) != 0x0090:               # 88BB: not at x == 0x90 yet -> just drift
+        return
+    mem.ww(DS, rec + 0x24, 0x0033)                     # 88C5
+    mem.ww(DS, rec + 0x06, 0x0007)                     # 88CA: dir = 7
+    _step_bouncer_33(mem, rec, tiles)                  # 88CF: the triple-AFD8 bounce
+
+
 def _step_bounce_sprite_3d(mem, rec: int, tiles: LevelTileContext) -> None:
     """Behavior 0x3D (``1010:8AC7``): sprite = ``[96D2 + [233C]*2] + 0xC5``, then jmp 88CF --
     the SAME triple-AFD8 bounce body 0x33 uses."""
@@ -3241,6 +3253,9 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
             mem.ww(DS, rec + 0x08, 0x002E)
             mem.ww(DS, rec + 0x02, (mem.rw(DS, rec + 0x02) + 3) & 0xFFFF)
             _postmove_bc45(mem, rec, tiles, with_drift=True)
+        elif beh == 0x32:
+            _step_bouncer_32(mem, rec, tiles)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # 88B6's paths all exit jmp BC45
         elif beh == 0x33:
             _step_bouncer_33(mem, rec, tiles)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # 88CF exits jmp BC45
