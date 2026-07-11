@@ -499,13 +499,15 @@ def _run_level_start_plaque(display, pygame, container_data, img, renderer, leve
     plaque = decode_plaque_cell(container_data, level_index)
     img.ww(_DS, 0xA97A, 0x0000)      # C4DB/C495: the bar starts EMPTY
     img.ww(_DS, 0xA97C, 0x0001)      # 9DD0: the charge is armed (77C5 will fill it)
-    img.wb(_DS, 0xBEFF, 0x0D)        # 9DB9: queue the refuel sound
     # 5C46: the level screen UNSQUEEZES in (a thin centre band -> full) before the briefing.  The
     # blitted page has no per-frame starfield yet, so the transition shows NO stars (stars=False).
     if not _run_screen_squeeze(display, pygame, renderer.frame(stars=False), opening=True):
         return False
+    img.wb(_DS, 0xBEFF, 0x04)        # 9755: the level-start JINGLE plays right after the unsqueeze
     display.set_title("OVERKILL - native (VM-less)  [mission briefing -- Space = launch, Esc = quit]")
     clock = pygame.time.Clock()
+    frame_n = 0
+    refuel_started = False
     while True:
         for ev in pygame.event.get():
             if ev.type == pygame.QUIT or (ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE):
@@ -514,13 +516,18 @@ def _run_level_start_plaque(display, pygame, container_data, img, renderer, leve
                 return True
         _star_list_4ced(img)
         _starfield_tick_0922(img)
-        _shield_charge_77c5(img)     # 77C5: the fuel/energy bar refuel (A97A 0 -> 0x58 + sound)
+        # once the jingle has played, the refuel glissando (0x0D, 9DB9) sounds as the bar fills
+        if not refuel_started and frame_n >= 40 and img.rw(_DS, 0xA97A) < 0x58:
+            img.wb(_DS, 0xBEFF, 0x0D)
+            refuel_started = True
+        _shield_charge_77c5(img)     # 77C5: the fuel/energy bar refuel (A97A 0 -> 0x58, 0x0C at full)
         _clock_tick_5f61(img)
-        _isr_effects_ticks(img, 2)   # advance the sound engine on the queued sound (0x0D, 0x0C at full)
+        _isr_effects_ticks(img, 2)   # advance the sound engine on the queued sounds
         if speaker is not None:
-            speaker.update(img)      # play it to the host as the bar fills
+            speaker.update(img)      # play them to the host (jingle, then the refuel, as the bar fills)
         display.draw(compose_plaque(renderer.frame(), plaque))
         clock.tick(30)
+        frame_n += 1
 
 
 def _run_level_select(display, pygame, container_data, image, start_beda: int = 0):
