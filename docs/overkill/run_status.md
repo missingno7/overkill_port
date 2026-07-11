@@ -83,6 +83,20 @@ justifies it -- kills the A97C/0054 divergences); (2) the death/respawn frame-cl
 FRONT-END intro + attract-demonstration fidelity (the big uncovered span).  The demo is also the proper
 COLD adlib AUDIO oracle, but the music starts after ~frame 600 (the early intro is near-silent).
 
+## 2026-07-11 — AUDIO: menu/attract music + the page-request TIMELINE (game->driver interface probed)
+
+Probed the game->driver music-page interface by polling seg-2032 [0009] (active page) over the owner's
+cold-start-intro demo: **page 0 (silent) from boot through the intro, page 2 loads at frame 2248 (the
+menu/attract tune), page 0xFF (stop, >0x0A) at frame 6176 when the game starts.**  So the MENU/ATTRACT
+and planet-1 GAMEPLAY share page 2; the boot/intro is deliberately silent.  Acted on it: moved the
+`AdlibMusicSink` creation to BEFORE the front end and threaded it through `_run_title_menu` +
+`_run_native_attract` (one sink, its own copy of seg 2032, plays continuously menu -> level-select ->
+gameplay).  So play_native now has MENU + attract music too, not just gameplay.  Suite 1396 passed.
+
+STILL OPEN: the per-LEVEL page mapping (planets 2..6 may request different tunes at level start -- the
+demo only covers planet 1 = page 2), the exact request TRIGGERS (so the intro stays silent + the tune
+starts/stops at the right screen transitions), and the byte-exact oracle gate to pin `ticks_per_frame`.
+
 ## 2026-07-11 — AUDIO: LIVE music in play_native (the VM-free driver -> pynuked_opl3 mixer)
 
 Wired the recovered VM-free AdLib driver into play_native as `AdlibMusicSink` -- the last audio step.

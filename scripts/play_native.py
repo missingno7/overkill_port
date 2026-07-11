@@ -567,7 +567,7 @@ def _run_boss_key(display, pygame, bundle_data) -> bool:
 
 
 def _run_title_menu(display, pygame, bundle_data, container_data,
-                    scan_map) -> "tuple[int, int, dict] | None":
+                    scan_map, music=None) -> "tuple[int, int, dict] | None":
     """The faithful cold-start MENU -- the original's ``1010:558B`` option dispatch over ``OKMENU.ENC``.
 
     Recovered from 558B: **M** cycles the sound mode (``[22B5]`` inc & 3 -- Music/fx/both/none),
@@ -622,13 +622,15 @@ def _run_title_menu(display, pygame, bundle_data, container_data,
                 # J (joystick, [0010]==1) is declined: play_native is keyboard-only (0162 fail-louds)
         idle += 1
         if idle >= _MENU_ATTRACT_IDLE_FRAMES:                  # 558B idle timeout -> the attract (5604)
-            r = _run_native_attract(display, pygame, bundle_data, container_data)
+            r = _run_native_attract(display, pygame, bundle_data, container_data, music)
             if r is False:
                 return None
             if r is True:
                 return sound_mode, control, key_overrides
             idle = 0
         display.draw(title)
+        if music is not None:
+            music.pump()                                       # the menu tune (page 2) plays here
         clock.tick(30)
 
 
@@ -636,7 +638,7 @@ def _run_title_menu(display, pygame, bundle_data, container_data,
 _ATTRACT_FIRE_SCANCODE = 0x39
 
 
-def _run_native_attract(display, pygame, bundle_data, container_data) -> "bool | None":
+def _run_native_attract(display, pygame, bundle_data, container_data, music=None) -> "bool | None":
     """The cold-boot ATTRACT (1010:D007), driven by the recovered scene machine -- the game plays
     ITSELF.  `NativeAttract` sequences the scenes; each frame the caller runs the recovered action:
     scene 0 the D160 scroll-in setup, scenes 1..7 draw the scene cell over the live frame, scenes >= 8
@@ -682,6 +684,8 @@ def _run_native_attract(display, pygame, bundle_data, container_data) -> "bool |
         except RecoveryGap:
             return None                                              # an unrecovered attract edge -> menu
         display.draw(frame)
+        if music is not None:
+            music.pump()                                            # keep the tune playing in the attract
         clock.tick(30)
 
 
@@ -1037,6 +1041,16 @@ def main(argv=None) -> int:
         display.close()
         return 0
 
+    # Live OPL3 MUSIC via the recovered VM-free AdLib driver -- created BEFORE the front end so the
+    # MENU + ATTRACT play the tune too (the VM loads page 2 for the menu/attract AND planet-1 gameplay;
+    # the boot/intro is silent, page 0).  The sink runs over its own copy of segment 2032, independent
+    # of the game image, so one sink plays continuously across menu -> level select -> gameplay.
+    music = None
+    if not args.frames and not args.no_sound:
+        music = AdlibMusicSink(pygame, bytearray(bundle_data[0x2032 * 16:0x2032 * 16 + 0x10000]),
+                               present_hz=args.fps)
+        music.request_page(args.music_page)     # the game->driver [0008] page request
+
     plaque_level: "int | None" = None    # the level whose mission plaque to show at start (cold play only)
     if args.snapshot:
         # A SNAPSHOT IS THE STATE.  It already carries its own planet (DS:2356), difficulty
@@ -1049,7 +1063,7 @@ def main(argv=None) -> int:
         difficulty = 0
         menu_choice: "tuple[int, int, dict] | None" = None
         if not args.no_title and not args.frames:
-            menu_choice = _run_title_menu(display, pygame, bundle_data, container_data, scan_map)
+            menu_choice = _run_title_menu(display, pygame, bundle_data, container_data, scan_map, music)
             if menu_choice is None:
                 display.close()
                 return 0
@@ -1077,12 +1091,6 @@ def main(argv=None) -> int:
     level_assets = make_level_assets(container_data, bundle_data)
     renderer = ImageRenderer(bundle_data, container_data, img)
     speaker = SpeakerSink(pygame) if not args.frames and not args.no_sound else None
-    # Live OPL3 MUSIC via the recovered VM-free AdLib driver, over a copy of the image's segment 2032.
-    music = None
-    if not args.frames and not args.no_sound:
-        seg2032 = bytearray(img.data[0x2032 * 16:0x2032 * 16 + 0x10000])
-        music = AdlibMusicSink(pygame, seg2032, present_hz=args.fps)
-        music.request_page(args.music_page)     # queue the tune (the game->driver [0008] request)
     if plaque_level is not None:
         # 1010:D305/D367: the level-start "get ready" screen -- the mission briefing plaque over the
         # animated starfield + HUD, held until FIRE, exactly as the original shows between level-select
