@@ -73,6 +73,16 @@ item to enumerate).  The exe-derived 1.3 MB bundle is ~99.9% dead weight for the
 B is now purely mechanical: extract those ~964 bytes + the border rows into recovered data, rewire the
 builder to read them instead of `exe_image`, gate byte-exact, drop `--bundle`.
 
+**Border rows measured (2026-07-11): ~10 KB, 40 ranges in the tile-plane segment** (`CS:[9592]`).
+`cold_level_start` keeps the exe's post-init tile-plane BORDER (the container level map fills the
+interior; the border tiles come from the exe).  So the COMPLETE byte-exact exe dependency for build +
+gameplay = `native_rom` (580 B) + level-ROM (384 B) + the tile-plane border (~10 KB) ≈ **11 KB of the
+1.3 MB bundle**.  Open question worth one probe before extracting: are the border rows a repeated
+constant tile (derivable, ~0 bytes) or genuine per-level data — the top ranges (`+1772..3033` = 6.3 KB)
+suggest a mix.  Either way slice B extracts ≤11 KB of byte-verified `native_rom`/level-ROM/border data,
+points the builder + `native_level` at it instead of `exe_image`, and the bundle is gone.  The headline
+stands: the VM-less engine needs ~11 KB of recovered tables + the container, not a 1.3 MB exe image.
+
 ## First slice
 Slice B's equivalence gate is the highest-leverage start: prove the cold image can be built WITHOUT the
 bundle by diffing an asset+ROM-built image against the bundle-seeded one, which produces the exact list
