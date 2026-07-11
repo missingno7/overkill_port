@@ -536,6 +536,36 @@ def _run_redefine_keys(display, pygame, container_data, scan_map) -> "dict | boo
     return result
 
 
+def _run_boss_key(display, pygame, bundle_data) -> bool:
+    """F9 BOSS KEY (``1010:075F``): paint the fake "SNAFU V4.2" file-manager decoy screen (read straight
+    from the image's text segment) and freeze until any key -- the original's hide-the-game panic
+    button.  Returns ``False`` on window-close, ``True`` to resume."""
+    from overkill.native_video.boss_key import read_boss_screen, cell_colors, COLS, ROWS
+    cells = read_boss_screen(bundle_data)
+    screen = display.screen
+    w, h = screen.get_size()
+    cw, chh = max(1, w // COLS), max(1, h // ROWS)
+    font = pygame.font.SysFont("monospace", chh)
+    screen.fill((0, 0, 0))
+    for i, (ch, attr) in enumerate(cells):
+        fg, bg = cell_colors(attr)
+        r, c = divmod(i, COLS)
+        x, y = c * cw, r * chh
+        if bg != (0, 0, 0):
+            screen.fill(bg, (x, y, cw, chh))
+        if ch not in (0, 32):
+            screen.blit(font.render(bytes([ch]).decode("cp437", errors="replace"), True, fg, bg), (x, y))
+    pygame.display.flip()
+    clock = pygame.time.Clock()
+    while True:                              # 075F waits for a keypress before restoring
+        for ev in pygame.event.get():
+            if ev.type == pygame.QUIT:
+                return False
+            if ev.type == pygame.KEYDOWN:
+                return True
+        clock.tick(30)
+
+
 def _run_title_menu(display, pygame, bundle_data, container_data,
                     scan_map) -> "tuple[int, int, dict] | None":
     """The faithful cold-start MENU -- the original's ``1010:558B`` option dispatch over ``OKMENU.ENC``.
@@ -573,6 +603,9 @@ def _run_title_menu(display, pygame, bundle_data, container_data,
                     control = 0
                 elif ev.key == pygame.K_a:                     # 56B2: [0010] = 2 (amstrad, map 2146)
                     control = 2
+                elif ev.key == pygame.K_F9:                    # 075F: the boss key (also polled here)
+                    if not _run_boss_key(display, pygame, bundle_data):
+                        return None
                 elif ev.key == pygame.K_r:                     # 5732: R -> redefine the six game keys
                     ov = _run_redefine_keys(display, pygame, container_data, scan_map)
                     if ov is False:
@@ -989,6 +1022,9 @@ def main(argv=None) -> int:
                 if ev.type == pygame.QUIT or (ev.type == pygame.KEYDOWN
                                               and ev.key == pygame.K_ESCAPE):
                     running = False
+                elif ev.type == pygame.KEYDOWN and ev.key == pygame.K_F9:   # 075F: the boss key
+                    if not _run_boss_key(display, pygame, bundle_data):
+                        running = False
 
             if hold is None:
                 # keyboard -> the image's own INT9 key table; 0162 decodes it inside the frame,

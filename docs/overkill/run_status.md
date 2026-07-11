@@ -83,6 +83,21 @@ justifies it -- kills the A97C/0054 divergences); (2) the death/respawn frame-cl
 FRONT-END intro + attract-demonstration fidelity (the big uncovered span).  The demo is also the proper
 COLD adlib AUDIO oracle, but the music starts after ~frame 600 (the early intro is near-silent).
 
+## 2026-07-11 — FRONT-END: the F9 BOSS KEY recovered (the "SNAFU V4.2" decoy screen)
+
+Ported the F9 boss key (1010:075F) into play_native.  075F switches to text mode 3 and paints an
+80x25 char/attr fake file-manager screen ("SNAFU V4.2" -- a Norton/XTree-style decoy with fake files
++ a File-Descriptor/Justify/Ramdisk settings block + F1..F6 legend) from the image's text segment
+(CS:[9596] = 0x25CC, offset 0x0056), then waits for a keypress to restore.  `native_video/boss_key.py`
+reads the exact cells from the runtime image; `_run_boss_key` renders them with the CGA text palette
+and is wired into BOTH the gameplay event loop and the menu loop.  3 tests (the SNAFU decode + the
+attribute-colour mapping).  Suite 1396 passed.
+
+NOTE on the shield residue: chased the lockstep A97C divergence -- it is a subtle 1-frame timing
+offset in the 77C5 refill / 9EE4 drain interaction (both act on [A97A]) at the shield SPEND, in the
+already-known-open 77C5 mechanic; <1% of frames, no gap.  Left as a documented timing residue rather
+than sinking deep frame-ordering effort for marginal gain.
+
 ## 2026-07-11 — FRONT-END: menu REDEFINE KEYS ('r') recovered; boss-key (F9) diagnosed
 
 The owner's menu demo (`demo_play_tandy_20260711_202523`: m m m m, r, space) showed the native menu
