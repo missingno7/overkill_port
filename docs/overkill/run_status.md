@@ -136,13 +136,23 @@ where input lands AFTER the attract loops back (55F1), not before.
 **CORRECTION (2026-07-12, raw CS:IP capture):** the ~2340-frame "intro" (f=197..2537) is NOT separate
 IPAGE story pages -- the VM spins the WHOLE time at `1010:CD68`, which is INSIDE `CC4F` (the D007
 attract's display loop), scene [BE06]=0.  `[237E]` only scrolls 0xC0->0x60 (~96 frames), so it is not
-the scene-0 D160 scroll either.  It is the attract's INITIAL display phase (CC4F walks 5 function
-pointers at `[BD81]`; a retrace-gated 50C9 loop at CD40..CD68) -- a title/high-score-style screen shown
-for ~40s BEFORE the cell/gameplay demo scenes 1..19 begin at f=2538.  play_native's `NativeAttract`
-jumps scene-0-setup -> scene 1 quickly, so it SKIPS this initial CC4F display phase.  So the "intro"
-recovery target is the attract's initial CC4F display (the 5 `BD81` display functions + their timing),
-NOT an IPAGE page sequence -- and the menu render (`verify_native_front_end_image`, byte-exact) + menu
-decisions (`verify_native_front_end_forward`) are already verified, so the menu is grounded.
+the scene-0 D160 scroll either.  It is the attract's INITIAL display phase (a retrace-gated 50C9 loop at CD40..CD68) -- a
+title/high-score-style screen shown for ~40s BEFORE the cell/gameplay demo scenes 1..19 begin at
+f=2538.  play_native's `NativeAttract` jumps scene-0-setup -> scene 1 quickly, so it SKIPS this initial
+CC4F display phase.
+
+**CC4F decoded (2026-07-12):** it is a 5-CELL COMPOSED SCREEN, not function pointers.  `CC4F` sets
+`[BD9A]=BD81`, `cx=5`, then per cell reads a 4-byte descriptor from the `[BD81]` stream (`lodsb`x4:
+-> [BD96], [BD95] cell id, cx=count, [BD9C]), calls `5A24` (the blit-setup play_native already uses for
+the plaque / level-select cursors / scene cells) and blits via the `CS:[95BC]` video-mode jump
+(`CC9E`).  So the initial display is the SAME cell-blit mechanism as the attract scenes -- recoverable
+as a compose of 5 cells from the `BD81` descriptor table.  BLOCKER: `BD81` is populated at RUNTIME (the
+static bundle's values are stale), so faithfully recovering it needs a RUNTIME attract snapshot at the
+CD68 phase (capture the live `BD81` descriptors + the `CS:[95B8]` cell bank) -- that snapshot is the
+next concrete step, then the 5-cell compose falls out of the existing blit path.
+
+The menu render (`verify_native_front_end_image`, byte-exact) + menu decisions
+(`verify_native_front_end_forward`) are already verified, so the menu is grounded.
 
 **GROUNDED FIX #1 -- the attract scene DURATIONS (2026-07-12):** a raw per-frame capture
 (`probe_coldstart_frontend --raw`) around the scene 2->3 transition showed the attract runs TWO
