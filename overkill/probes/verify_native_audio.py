@@ -99,22 +99,60 @@ def clean_window(demo_name: str, max_frames: int, seed_at: int = 2):
     return matched, None, None
 
 
+def per_tick(demo_name: str, max_frames: int):
+    """The STRONGEST form: at every 2032:0063 tick entry snapshot seg-2032, run ONE VM-free tick from
+    that exact image, and diff its writes against the VM's writes for that tick.  Because each tick is
+    seeded independently from the true pre-tick state, this verifies the driver over the WHOLE demo --
+    music AND SFX AND page changes (all of which reach the driver as seg-2032 cells the snapshot
+    captures) -- with no forward drift.  Returns ``(ticks_checked, first_bad)`` where ``first_bad`` is
+    ``(tick_index, vm_writes, predicted_writes)`` or ``None`` if every tick matched."""
+    demo = load_demo(demo_name, demo_name)
+    base = SEG_2032 << 4
+    st = {"pred": None, "vm": [], "tick": 0, "bad": None}
+
+    def on_ref(cpu):
+        s = cpu.s
+        addr = (s.cs & 0xFFFF, s.ip & 0xFFFF)
+        if addr == OPL_WRITE:
+            ax = s.ax & 0xFFFF
+            st["vm"].append((ax & 0xFF, (ax >> 8) & 0xFF))
+            return
+        # DRIVER_TICK entry: close the previous tick, then predict this one from the live image.
+        if st["pred"] is not None and st["bad"] is None and st["vm"] != st["pred"]:
+            st["bad"] = (st["tick"] - 1, list(st["vm"]), st["pred"])
+        st["vm"] = []
+        st["tick"] += 1
+        drv = AdlibDriver(bytes(cpu.mem.data[base:base + 0x10000]))
+        drv.tick_2032_0063()
+        st["pred"] = drv.drain()
+
+    run_ref_step_probe(demo, max_frames, on_ref, trap=frozenset({DRIVER_TICK, OPL_WRITE}))
+    # the final tick's writes trail the last entry with no next entry to close it -> left unchecked.
+    return max(0, st["tick"] - 1), st["bad"]
+
+
 def main(argv) -> int:
     demo = argv[0] if argv else "demo_play_tandy_L2_full_20260617_180221"
     max_frames = int(argv[1]) if len(argv) > 1 else 600
     seed_at = int(argv[2]) if len(argv) > 2 else 2
-    print(f"audio oracle: {demo} (seed@{seed_at}, {max_frames} present-frames)")
+    print(f"audio oracle: {demo} ({max_frames} present-frames)")
+
+    # 1) FORWARD from a seed -- proves the music tick + reads the tempo, until the first game event.
     matched, diverge, detail = clean_window(demo, max_frames, seed_at)
-    print(f"byte-exact music window: {matched} gameplay-frames from frame {seed_at + 1}")
-    if diverge is None:
-        print("RESULT: PASS -- byte-exact for the whole captured span (no game event hit)")
+    print(f"\n[forward]  byte-exact music window: {matched} gameplay-frames from frame {seed_at + 1}"
+          + ("  (whole span, no game event hit)" if diverge is None
+             else f"  -> game SFX/page event at frame {diverge}"))
+
+    # 2) PER-TICK -- seeds each tick from the true image, so it proves the driver over the WHOLE demo.
+    ticks, bad = per_tick(demo, max_frames)
+    if bad is None:
+        print(f"[per-tick] {ticks} ticks byte-exact (music + SFX + page changes)")
+        print("\nRESULT: PASS -- the VM-free AdLib driver reproduces the VM's OPL stream byte-exact")
         return 0
-    got, exp = detail
-    print(f"first divergence at frame {diverge}: VM-free {len(got)} writes vs VM {len(exp)} writes")
-    print("  (a large VM-side burst here is the game triggering SFX / a page change -- the music-only")
-    print("   isolation boundary; a driver bug would instead diverge on a small mismatch mid-window)")
-    print(f"RESULT: byte-exact music proven over {matched} frames, then the game event at {diverge}")
-    return 0
+    idx, vm, pred = bad
+    print(f"[per-tick] DIVERGE at tick {idx}: VM {vm[:8]} ({len(vm)}) vs VM-free {pred[:8]} ({len(pred)})")
+    print("\nRESULT: FAIL -- a per-tick mismatch is a real driver-recovery frontier")
+    return 1
 
 
 if __name__ == "__main__":
