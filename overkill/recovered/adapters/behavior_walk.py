@@ -1829,6 +1829,19 @@ def _step_formation_78(mem, rec: int) -> None:
     _formation_position_f779(mem, rec, 0xD2CC)                        # F771
 
 
+def _step_bouncer_6e(mem, rec: int, tiles: LevelTileContext) -> None:
+    """Behavior 0x6E (``1010:F31B``): sprite = ``[0x96D2 + [233C]*2] + 0x128`` (the mod clock anim);
+    takes TWO AFD8 contact-steps in its direction, and on a block toggles direction between 4 and 2 (a
+    horizontal bounce); else drifts."""
+    anim = mem.rw(DS, (0x96D2 + (mem.rw(DS, 0x233C) & 0xFFFF) * 2) & 0xFFFF)   # F31B..F321
+    mem.ww(DS, rec + 0x08, (anim + 0x0128) & 0xFFFF)                          # F325/F329
+    _afd8_step(mem, rec, tiles)                                              # F32C
+    blocked = _afd8_step(mem, rec, tiles)                                    # F32F (its ZF drives F332)
+    if not blocked:                                                          # F332 jnz -> bounce
+        return
+    mem.ww(DS, rec + 0x06, 0x0002 if mem.rw(DS, rec + 0x06) == 0x0004 else 0x0004)  # F337/F33D/F345
+
+
 def _step_mover_shooter_72(mem, rec: int) -> None:
     """Behavior 0x72 (``1010:F5DC``): sprite = ``([2328] >> 1) + 0x1C`` (the mod-8 clock animation);
     drifts right (x += 1) and fires a 7476 enemy shot on every [2324] parity beat (== 1)."""
@@ -3539,6 +3552,9 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
         elif beh == 0x71:
             _step_hover_shooter_71(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # 87C5/87D0/87D7 exit jmp BC45
+        elif beh == 0x6E:
+            _step_bouncer_6e(mem, rec, tiles)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # F334/F342/F34A exit jmp BC45
         elif beh == 0x72:
             _step_mover_shooter_72(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # F5F4 exits jmp BC45
