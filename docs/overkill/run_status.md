@@ -83,6 +83,19 @@ justifies it -- kills the A97C/0054 divergences); (2) the death/respawn frame-cl
 FRONT-END intro + attract-demonstration fidelity (the big uncovered span).  The demo is also the proper
 COLD adlib AUDIO oracle, but the music starts after ~frame 600 (the early intro is near-silent).
 
+## 2026-07-12 — GAMEPLAY: recover the 1F8F-overlay behavior 0x7b (the overlay IS decodable)
+
+The `8D4x` behaviors far-call into the `1F8F` overlay segment, which I'd flagged as needing "overlay
+decoding" -- but the overlay IS present + decodable in the static bundle.  Recovered **0x7B**
+(`1F8F:025E`, via `8D47`): sprite 0x15C; drift while (signed) x < 0x90; at x >= 0x90 retag to 0x7C (the
+recovered diver) + the 74E2 self-retarget (deltas toward the 237E/2380 anchor -> +0x2A/+0x2C).  It
+composes the already-recovered `retarget_delta_toward_anchor_74e2` + 0x7C, exactly matching an existing
+in-tree pattern.  Corpus/dispatch green; suite 1397.
+
+The other two remain a bigger pair: **0x7F** (`1F8F:069A`: sprite 0x162 + the `B729` seek, retag to
+0x80 when it doesn't arrive) needs 0x80, and **0x80** (`1F8F:06B5`) is complex (branches to `1F8F:081C`,
+reads [A482]/[98A3]/[98AA]/+0x1C/+0x32) -- recover them together when play surfaces one.
+
 ## 2026-07-12 — GAMEPLAY: recover behaviors 0x7a + 0x7c (planet-5 divers)
 
 Owner hit behavior 0x7a on planet 5; recovered `_step_diver_7a` (sprite = base + [2326] clock

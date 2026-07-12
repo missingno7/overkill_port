@@ -1750,6 +1750,22 @@ def _step_patroller_37(mem, rec: int) -> None:
         _spawn_child_c237(mem, rec, 0x37)                             # 89CB: then spawn (child sees dir 4)
 
 
+def _step_diver_intro_7b(mem, rec: int) -> None:
+    """Behavior 0x7B (``1F8F:025E`` -- the overlay far-call from ``1010:8D47``): sprite = 0x15C; while
+    (SIGNED) x < 0x90 it just drifts; at x >= 0x90 it RETAGS to 0x7C (the diver) and runs the 74E2
+    self-retarget (deltas toward the anchor 237E/2380 persisted to +0x2A/+0x2C), so the next frame the
+    0x7C diver steers by them."""
+    mem.ww(DS, rec + 0x08, 0x015C)                       # 025E: sprite
+    if i16(mem.rw(DS, rec + 0x02)) < 0x0090:             # 0263: x < 0x90 -> drift
+        return
+    mem.ww(DS, rec + 0x18, 0x007C)                       # 026A: retag as 0x7C
+    dx, dy = retarget_delta_toward_anchor_74e2(           # 026F..0274: call 74E2
+        mem.rw(DS, rec + 0x02), mem.rw(DS, rec + 0x04),
+        mem.rw(DS, 0x237E), mem.rw(DS, 0x2380))
+    mem.ww(DS, rec + 0x2A, dx)
+    mem.ww(DS, rec + 0x2C, dy)
+
+
 def _step_edge_runner_38(mem, rec: int) -> None:
     """Behavior 0x38 (``1010:89FF``): direction snaps to 3 at y == 0 / 5 at y == 0xC0 (else keeps),
     sprite = 0x6E, then ONE 2px 8-way step (the AF63 single-step -- half of the recovered AF60
@@ -3422,6 +3438,9 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
         elif beh == 0x7A:
             _step_diver_7a(mem, rec, 0x0020)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8760/8766 exit jmp BC45
+        elif beh == 0x7B:
+            _step_diver_intro_7b(mem, rec)                     # 1F8F:025E overlay -> retag 0x7C
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8D47 exits jmp BC45
         elif beh == 0x7C:
             _step_diver_7a(mem, rec, 0x015C)                    # 8707: same body, sprite base 0x15C
             _postmove_bc45(mem, rec, tiles, with_drift=True)
