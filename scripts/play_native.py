@@ -890,8 +890,15 @@ class AdlibMusicSink:
                 return
         rate, _size, channels = pygame.mixer.get_init()
         self._rate, self._channels = int(rate), int(channels)
-        self._chunk = max(256, self._rate // max(1, present_hz))
-        self._lead = int(self._rate * 0.10)
+        self._present_hz = max(1, present_hz)
+        # the driver's ISR tick rate: ticks/frame * frames/sec.  Music tempo + audio are advanced by
+        # REAL elapsed time (below), so a slow frame (many enemies) catches up instead of dragging.
+        self._isr_hz = self._present_hz * max(1, ticks_per_frame)
+        self._last_ms = None
+        self._tick_accum = 0.0
+        self._samp_accum = 0.0
+        self._chunk = max(256, self._rate // 20)         # ~50ms chunks: play+queue = ~100ms of slack
+        self._lead = int(self._rate * 0.12)              # build ~120ms before starting playback
         self._buf = np.zeros((0, self._channels), dtype=np.int16)
         self._started = False
         if pygame.mixer.get_num_channels() < 3:
@@ -918,17 +925,30 @@ class AdlibMusicSink:
         self.driver.ram[0x0008] = page & 0xFF
 
     def pump(self) -> None:
-        """Advance the driver one present-frame and feed its audio to the mixer.  Call once per frame."""
+        """Advance the driver + feed its audio to the mixer, paced by REAL elapsed time so the tempo and
+        the audio stay real-time no matter how slow the frame rendered.  Call once per frame."""
         if not self.available:
             return
         np = self._np
-        for _ in range(self._ticks):
+        now = self._pygame.time.get_ticks()
+        if self._last_ms is None:
+            elapsed = 1000.0 / self._present_hz          # first frame: one nominal period
+        else:
+            elapsed = min(now - self._last_ms, 100)      # cap a catch-up burst (a long stall) at 100ms
+        self._last_ms = now
+        # tick the driver + generate samples proportional to elapsed wall-clock time (fractions carried)
+        self._tick_accum += self._isr_hz * elapsed / 1000.0
+        ticks = int(self._tick_accum); self._tick_accum -= ticks
+        self._samp_accum += self._rate * elapsed / 1000.0
+        nsamp = int(self._samp_accum); self._samp_accum -= nsamp
+        for _ in range(ticks):
             self.driver.tick_2032_0063()
         for reg, val in self.driver.drain():
             self._opl.write(reg, val)
-        pcm = np.frombuffer(self._opl.generate_stereo(self._chunk), dtype="<i2").reshape(-1, 2)
-        out = pcm if self._channels > 1 else pcm[:, :1]
-        self._buf = np.concatenate([self._buf, out])
+        if nsamp > 0:
+            pcm = np.frombuffer(self._opl.generate_stereo(nsamp), dtype="<i2").reshape(-1, 2)
+            out = pcm if self._channels > 1 else pcm[:, :1]
+            self._buf = np.concatenate([self._buf, out])
         if not self._started:
             if len(self._buf) >= self._lead:
                 self._channel.play(self._next_sound())
