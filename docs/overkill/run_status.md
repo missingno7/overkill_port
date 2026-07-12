@@ -83,6 +83,16 @@ justifies it -- kills the A97C/0054 divergences); (2) the death/respawn frame-cl
 FRONT-END intro + attract-demonstration fidelity (the big uncovered span).  The demo is also the proper
 COLD adlib AUDIO oracle, but the music starts after ~frame 600 (the early intro is near-silent).
 
+## 2026-07-12 — GAMEPLAY: recover behaviors 0x7a + 0x7c (planet-5 divers)
+
+Owner hit behavior 0x7a on planet 5; recovered `_step_diver_7a` (sprite = base + [2326] clock
+animation, steer mode [2312]=2, one 5E42 delta-steer, [2312]=3, off-screen vertical death) and its
+twin 0x7c (`8707`, identical body, sprite base 0x15C vs 0x20).  Verified: the gap snapshot plays 900
+frames clean; corpus/dispatch green; suite 1396.  NOTE on the remaining F-cluster: the adjacent
+`8D4x` behaviors (0x7B->8D47, 0x7F->8D73, 0x80->8D7B, and the 0x7D/0x7E 8D4F path) are FAR-CALLS into
+the OVERLAY segment `1F8F:XXXX` -- they need overlay decoding, not a quick disasm, so they stay in the
+gap set until surfaced by play (then recover the overlay routine).
+
 ## 2026-07-12 — FRONT-END: GROUND IT (owner: stop guessing, verify cold-start replay byte-exact)
 
 Owner feedback, correct and important: play_native's front end (menu marker, attract) is host-loop code

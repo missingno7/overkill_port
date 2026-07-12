@@ -1210,12 +1210,13 @@ def _steer_5e42_inplace(mem, rec: int) -> None:
     mem.ww(DS, rec + 0x2E, steer.move_step_error)
 
 
-def _step_diver_7a(mem, rec: int) -> None:
-    """Behavior 0x7A (``1010:870C``): sprite = ``0x20 + [2326]`` (the mod-4 clock animation); set the
-    steer mode ``[2312] = 2``, run ONE 5E42 delta-steer over the record's own +0x2A/+0x2C deltas, then
-    leave ``[2312] = 3``.  DIES (the BFC7 touch-death) if it has left the play area vertically -- y (as
-    SIGNED) > 0xC0 or < 0 -- otherwise it drifts (BC45)."""
-    mem.ww(DS, rec + 0x08, (0x0020 + mem.rw(DS, 0x2326)) & 0xFFFF)   # 870C: animated sprite
+def _step_diver_7a(mem, rec: int, sprite_base: int = 0x0020) -> None:
+    """Behavior 0x7A (``1010:870C``, base 0x20) / 0x7C (``1010:8707``, base 0x15C): sprite =
+    ``sprite_base + [2326]`` (the mod-4 clock animation); then the shared 8744 body -- set the steer
+    mode ``[2312] = 2``, run ONE 5E42 delta-steer over the record's own +0x2A/+0x2C deltas, leave
+    ``[2312] = 3``, and DIE (the BFC7 touch-death) if it has left the play area vertically -- y (as
+    SIGNED) > 0xC0 or < 0 -- otherwise drift (BC45)."""
+    mem.ww(DS, rec + 0x08, (sprite_base + mem.rw(DS, 0x2326)) & 0xFFFF)   # 870C / 8707: animated sprite
     mem.ww(DS, 0x2312, 0x0002)                                       # 8744
     _steer_5e42_inplace(mem, rec)                                    # 874A: call 5E42 (mode 2)
     mem.ww(DS, 0x2312, 0x0003)                                       # 874D
@@ -3419,8 +3420,11 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
             mem.ww(DS, rec + 0x08, (anim + mem.rw(DS, rec + 0x36)) & 0xFFFF)
             _postmove_bc45(mem, rec, tiles, with_drift=True)
         elif beh == 0x7A:
-            _step_diver_7a(mem, rec)
+            _step_diver_7a(mem, rec, 0x0020)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8760/8766 exit jmp BC45
+        elif beh == 0x7C:
+            _step_diver_7a(mem, rec, 0x015C)                    # 8707: same body, sprite base 0x15C
+            _postmove_bc45(mem, rec, tiles, with_drift=True)
         elif beh in (0x7D, 0x7E):
             _step_controller_7d(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=False)   # the 8D4F stub exits jmp BC4B
