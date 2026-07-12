@@ -83,6 +83,26 @@ justifies it -- kills the A97C/0054 divergences); (2) the death/respawn frame-cl
 FRONT-END intro + attract-demonstration fidelity (the big uncovered span).  The demo is also the proper
 COLD adlib AUDIO oracle, but the music starts after ~frame 600 (the early intro is near-silent).
 
+## 2026-07-12 — FRONT-END: attract-initial DECODED TO DATA (BLUEBITS + the 1816 glyph table)
+
+Three unblocking facts for the attract-initial display (the ~23s cold-boot screen the gate reports
+missing), all correcting the earlier "stale bank / runtime-only" reading:
+- **`CS:[95B8]` = BLUEBITS.BIC** -- identified by content-comparing the bundle's bank segment against
+  `load_shared_startup_assets` (prefix-match).  It is one of the eight boot-loaded shared assets and
+  ALREADY decodes VM-free from the container (directory mode).  Not stale, not runtime-only.
+- **The `5A24` tandy path (`1010:312D`) is a GLYPH RENDERER, not the scene-cell blit**: `si =
+  id*8 + DS:0x1816` -- an 8x8 FONT table (cell 0x40 = `7c c6 de d6 de c0 7c 00`, literally the ASCII
+  '@' bitmap); each row byte expands through the `DS:0x1514` color LUT (`bx = pixelbyte*4 + 0x1514`)
+  AND-masked with the color nibble from `[215C]`, written planar (di += 0x2000 banks).  Both tables are
+  DGROUP data, present in the bundle.
+- The CC4F descriptor stream (5 entries x 4 bytes: position?, id, count, arg) drives that renderer plus
+  `5A6C` blits from the BLUEBITS bank (`CD40: mov ds,[95B8]; call 5A6C`) in the CD68 retrace loop.
+
+So the initial display is a compose of BLUEBITS cells + 1816 glyphs at descriptor positions -- ALL the
+data decodes VM-free today.  Remaining: decode CC59..CD68's position math + the 5A6C source-offset
+chain, compose, wire behind the gate.  (The 1816 glyph table is likely also the `1F8F:0980` text-page
+renderer's font -- recovering it may unlock the I/O menu pages + THE END text for free.)
+
 ## 2026-07-12 — FRONT-END: THE LOCKSTEP GATE LANDS (`overkill/probes/verify_native_frontend.py`)
 
 Built the front-end lockstep gate on `dos_re.frontend_timeline` (+ the new 21x rasterizer bump,
