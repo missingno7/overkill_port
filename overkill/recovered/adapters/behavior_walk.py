@@ -1829,6 +1829,18 @@ def _step_formation_78(mem, rec: int) -> None:
     _formation_position_f779(mem, rec, 0xD2CC)                        # F771
 
 
+def _step_diver_6a(mem, rec: int, tiles: LevelTileContext) -> None:
+    """Behavior 0x6A (``1010:F175``): while x != 0x50 it drifts; at x == 0x50 it retags to 0x56 and
+    takes up to THREE AFD8 contact-steps in its direction, dying (BFC7) on the first blocked step."""
+    if mem.rw(DS, rec + 0x02) != 0x0050:                # F175
+        return
+    mem.ww(DS, rec + 0x18, 0x0056)                      # F17E: retag as 0x56
+    for _ in range(3):                                  # F194/F199/F19E
+        if _afd8_step(mem, rec, tiles):                 # F197/F19C/F1A1 jnz -> die
+            _bfc7_touch_death(mem, rec)                 # F1A6
+            return
+
+
 def _step_bouncer_1b(mem, rec: int, tiles: LevelTileContext) -> None:
     """Behavior 0x1B (``1010:BAC7``): sprite = ``([2338] >> 1) + 0x27``; a VERTICAL bouncer between the
     top (y == 0) and bottom (y == 0xC0).  Moving up (dir 6) bounces to down (dir 2) at y == 0 or on a
@@ -3589,6 +3601,9 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
         elif beh == 0x65:
             _step_morphing_shooter_65(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # F49D/F4A7/F4B0 exit jmp BC45
+        elif beh == 0x6A:
+            _step_diver_6a(mem, rec, tiles)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # F17B/F1A3/F1A9 exit jmp BC45
         elif beh == 0x6E:
             _step_bouncer_6e(mem, rec, tiles)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # F334/F342/F34A exit jmp BC45
