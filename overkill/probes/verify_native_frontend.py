@@ -44,12 +44,19 @@ def vm_timeline(demo_name: str, max_frames: int) -> "list[FrameRecord]":
     return [FrameRecord(r["f"], classify_screen(r), "") for r in rows]
 
 
+#: play_native's app loop runs at 30 fps while the VM's present boundary is the ~60 Hz retrace, so ONE
+#: native app frame spans TWO VM boundaries.  The timelines must share a clock for durations to compare:
+#: the native side emits this many records per app frame (the wall-clock-equivalent boundary count).
+BOUNDARIES_PER_APP_FRAME = 2
+
+
 def native_timeline(max_frames: int) -> "list[FrameRecord]":
     """The CANDIDATE: play_native's cold-boot decision flow, driven headless on the same screen ids.
 
     Mirrors the app's flow faithfully -- the title/menu loop (idle to the attract timeout), then the
     ``NativeAttract`` machine (scene-0 setup, the cell scenes, the auto-fire gameplay scenes, terminal
-    back to the menu).  No rendering: the SEQUENCE gate compares screen order/durations only."""
+    back to the menu).  No rendering: the SEQUENCE gate compares screen order/durations only.  Each app
+    frame emits ``BOUNDARIES_PER_APP_FRAME`` records so durations are in VM-boundary units."""
     from overkill.native_attract import NativeAttract
 
     records: "list[FrameRecord]" = []
@@ -57,8 +64,9 @@ def native_timeline(max_frames: int) -> "list[FrameRecord]":
 
     def emit(screen: str) -> None:
         nonlocal f
-        records.append(FrameRecord(f, screen, ""))
-        f += 1
+        for _ in range(BOUNDARIES_PER_APP_FRAME):
+            records.append(FrameRecord(f, screen, ""))
+            f += 1
 
     # play_native cold boot: the title/menu screen until the idle timeout rolls the attract.
     for _ in range(MENU_IDLE_FRAMES):
