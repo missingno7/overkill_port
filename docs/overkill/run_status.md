@@ -169,6 +169,17 @@ the initial display's cell format/positioning is the MODE-SPECIFIC blit, not the
 decode of `5A24`'s Tandy path (`[95BC]=2`) -- a bigger slice than the scene-cell compose.  All the
 pointers are captured; the next session starts from the runtime bank + `5A24`.
 
+**CONFIRMED DEEP (2026-07-12, `--dump-at` cell headers):** captured the live cell headers from the
+runtime bank 0x76FE (`5A24` tandy target = `1010:312D`).  cell 0x01 @0x0090 hdr `00 00 00 80`, cell
+0x15 @0x0d20 hdr `88 88 88 88`, ... -- these are RAW PIXEL bytes, NOT the scene-cell rows/width header,
+so `cell_indices` cannot decode them.  The initial-display cell geometry is ENCODED IN THE DESCRIPTOR
+(byte0->[BD96], byte2->count/cx, byte3->[BD9C]) and blitted by `5A24`'s mode-specific path (312D), a
+raw-pixel copy -- a distinct format from the scene cells.  CONCLUSION: the attract initial-display
+recovery is a genuine multi-layer slice (runtime bank + 312D raw-pixel blit + descriptor geometry) for a
+~40s title/high-score screen; it is fully characterized + all data captured, deferred as its own focused
+effort.  The rest of the cold boot (menu render + decisions verified; attract machine/content/timing
+grounded) stands.
+
 The menu render (`verify_native_front_end_image`, byte-exact) + menu decisions
 (`verify_native_front_end_forward`) are already verified, so the menu is grounded.
 

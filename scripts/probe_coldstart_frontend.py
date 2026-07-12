@@ -56,11 +56,18 @@ def capture(demo_name: str, max_frames: int, dump_at: "int | None" = None):
             if cur["f"] == cur.get("dump_at"):
                 cs = rt.cpu.s.cs & 0xFFFF
                 bd81 = bytes(rt.cpu.mem.rb(ds, (0xBD81 + i) & 0xFFFF) for i in range(24))
+                bank = rt.cpu.mem.rw(cs, 0x95B8)
+                cells = {}
+                for cid in (0x01, 0x15, 0x16, 0x02, 0x40):
+                    off = rt.cpu.mem.rw(cs, (0x0BE4 + cid * 2) & 0xFFFF)
+                    hdr = bytes(rt.cpu.mem.rb(bank, (off + i) & 0xFFFF) for i in range(6))
+                    cells[f"{cid:#04x}"] = f"off={off:#06x} hdr={hdr.hex()}"
                 cur["dump"] = {
                     "BD81": bd81.hex(),
-                    "95B8_cellbank": rt.cpu.mem.rw(cs, 0x95B8),
+                    "95B8_cellbank": bank,
                     "95BC_videomode": rt.cpu.mem.rw(cs, 0x95BC),
                     "BD9A": rt.cpu.mem.rw(ds, 0xBD9A), "BDA0": rt.cpu.mem.rw(ds, 0xBDA0),
+                    **{f"cell{k}": v for k, v in cells.items()},
                 }
             rows.append({
                 "f": cur["f"],
