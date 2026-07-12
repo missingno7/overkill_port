@@ -1766,6 +1766,20 @@ def _step_diver_intro_7b(mem, rec: int) -> None:
     mem.ww(DS, rec + 0x2C, dy)
 
 
+def _step_hover_shooter_71(mem, rec: int) -> None:
+    """Behavior 0x71 (``1010:87A7``): sprite = ``0x12B + [2336]`` (the mod-8 clock animation).  While
+    (UNSIGNED) x > 0x60 it drifts inward (x += 4); once x <= 0x60 it holds and, on the ``[2330]`` clock
+    beat (== 0x7F), faces right (dir 4) and spawns a C237 child."""
+    mem.ww(DS, rec + 0x08, (0x012B + mem.rw(DS, 0x2336)) & 0xFFFF)       # 87A7: animated sprite
+    if mem.rw(DS, rec + 0x02) > 0x0060:                                  # 87B8 (ja, UNSIGNED)
+        mem.ww(DS, rec + 0x02, (mem.rw(DS, rec + 0x02) + 4) & 0xFFFF)    # 87D3
+        return
+    if mem.rw(DS, 0x2330) != 0x007F:                                     # 87BE
+        return
+    mem.ww(DS, rec + 0x06, 0x0004)                                       # 87C8: face right
+    _spawn_child_c237(mem, rec, 0x71)                                    # 87CD: spawn the C237 child
+
+
 def _step_edge_runner_38(mem, rec: int) -> None:
     """Behavior 0x38 (``1010:89FF``): direction snaps to 3 at y == 0 / 5 at y == 0xC0 (else keeps),
     sprite = 0x6E, then ONE 2px 8-way step (the AF63 single-step -- half of the recovered AF60
@@ -3435,6 +3449,9 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
             anim = mem.rw(DS, (0x96D2 + (mem.rw(DS, 0x2328) & 0xFFFE)) & 0xFFFF)
             mem.ww(DS, rec + 0x08, (anim + mem.rw(DS, rec + 0x36)) & 0xFFFF)
             _postmove_bc45(mem, rec, tiles, with_drift=True)
+        elif beh == 0x71:
+            _step_hover_shooter_71(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # 87C5/87D0/87D7 exit jmp BC45
         elif beh == 0x7A:
             _step_diver_7a(mem, rec, 0x0020)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8760/8766 exit jmp BC45
