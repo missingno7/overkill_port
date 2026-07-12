@@ -46,7 +46,9 @@ def main(argv=None) -> int:
     ap.add_argument("--snapshot", type=Path, default=DEFAULT_SNAPSHOT, help="an AdLib-booted snapshot dir")
     ap.add_argument("--seconds", type=float, default=10.0, help="seconds of music to render")
     ap.add_argument("--ticks-per-frame", type=int, default=1,
-                    help="driver ISR ticks per present-frame (the music tempo; tune to match the VM)")
+                    help="driver ISR ticks per present-frame (the music tempo). The audio oracle gate "
+                         "(overkill.probes.verify_native_audio) fixed this at 1/present-frame == 2 per "
+                         "30fps gameplay-frame, byte-exact vs the VM; the default 60fps here wants 1.")
     ap.add_argument("--out", type=Path, default=None)
     ap.add_argument("--rate", type=int, default=44100)
     ap.add_argument("--fps", type=int, default=60)

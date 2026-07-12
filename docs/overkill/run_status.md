@@ -13,7 +13,7 @@
 > per-frame VM states on first run and replays them in ~40s instead of ~5min -- same states, same
 > comparison; pass `vm` to force the live oracle; caches live in `artifacts/shadow_cache/`,
 > gitignored, keyed on the demo file sha1 + frame budget)**, `scripts/lindis.py` (encoded targets),
-> `scripts/behavior_zoo_xref.py`; **`scripts/capture_pure_vm_snapshot.py` (2026-07-10): dumps a PURE-VM (hooks-stripped) memory+state.json snapshot the first frame boundary a target behaviour (record +0x18) is live -- the enabler for lifter-assisted actor recovery, since the hooked capture_demo_snapshot cannot reach a hooked-over handler (liftverify would report NOT_REACHED)**; **THE DRIVEN ORACLE FOR UNGATED BEHAVIOR (2026-07-10, `probes/verify_native_flash_decay.py`): when a playtest bug is in a path the demo corpus never exercises (lockstep stays green but the behavior is wrong), inject the missing precondition into BOTH the pure VM and the native frame at each 9B2E boundary and diff -- turns an unexercised path into a byte-exact gate that can FAIL**; **THE GAP SEED (2026-07-10, `play_native.dump_gap_snapshot`): on any RecoveryGap in play, the app dumps a --snapshot-loadable PRE-frame image to artifacts/gap_snapshots/ so the exact gap reproduces with one frame -- the seed a driven oracle then fills**; **THE AUTOMATIC LIFTER (2026-07-10, dos_re 1bfd5fd): `dos_re/tools/liftgen.py` (census: is a routine liftable, and why not) and `dos_re/tools/liftverify.py` (emit a literal ASM->Python hook per entry, install it, run the VM, and differentially verify each call against the interpreted ORIGINAL, writing ORACLE_PASSING/DIVERGED/NOT_REACHED into a proof ledger). USE IT BEFORE HAND-DECODING ANYTHING: `python dos_re/tools/liftverify.py --exe assets/OVERKILL --snapshot DIR --entry 1010:XXXX --steps 3000000 --emit-dir lifted`. It refuses indirect jumps, which is exactly the 4E26 jump-table case a hand-decode got wrong by two bytes. A lifted hook is SCAFFOLDING, not recovered source -- it is a verified starting point to refactor, and the same oracle keeps the refactor honest**; **PERF (2026-07-08, see dos_re/docs/performance.md): suites =
+> `scripts/behavior_zoo_xref.py`; **`scripts/capture_pure_vm_snapshot.py` (2026-07-10): dumps a PURE-VM (hooks-stripped) memory+state.json snapshot the first frame boundary a target behaviour (record +0x18) is live -- the enabler for lifter-assisted actor recovery, since the hooked capture_demo_snapshot cannot reach a hooked-over handler (liftverify would report NOT_REACHED)**; **THE DRIVEN ORACLE FOR UNGATED BEHAVIOR (2026-07-10, `probes/verify_native_flash_decay.py`): when a playtest bug is in a path the demo corpus never exercises (lockstep stays green but the behavior is wrong), inject the missing precondition into BOTH the pure VM and the native frame at each 9B2E boundary and diff -- turns an unexercised path into a byte-exact gate that can FAIL**; **THE GAP SEED (2026-07-10, `play_native.dump_gap_snapshot`): on any RecoveryGap in play, the app dumps a --snapshot-loadable PRE-frame image to artifacts/gap_snapshots/ so the exact gap reproduces with one frame -- the seed a driven oracle then fills**; **THE AUDIO ORACLE GATE (2026-07-12, `probes/verify_native_audio.py`): seeds the VM-free AdLib driver (`native_audio.adlib.AdlibDriver`) from the VM's own seg-2032 and replays it FORWARD in lockstep with the ref VM, diffing the YM3812 writes -- the audio counterpart of the 9B2E gameplay lockstep. It TRAPS (2032:0063 tick, 2032:0557 write leaf, 1010:9B2E frame tail) to read per-frame (tick-count, writes), which also fixed the music TEMPO at 2 driver ticks/gameplay-frame (was guessed). Byte-exact proven over clean single-page music windows (L2/L3); the forward sim is music-only, so it diverges at the first game SFX/page event -- `clean_window` reports that span**; **THE AUTOMATIC LIFTER (2026-07-10, dos_re 1bfd5fd): `dos_re/tools/liftgen.py` (census: is a routine liftable, and why not) and `dos_re/tools/liftverify.py` (emit a literal ASM->Python hook per entry, install it, run the VM, and differentially verify each call against the interpreted ORIGINAL, writing ORACLE_PASSING/DIVERGED/NOT_REACHED into a proof ledger). USE IT BEFORE HAND-DECODING ANYTHING: `python dos_re/tools/liftverify.py --exe assets/OVERKILL --snapshot DIR --entry 1010:XXXX --steps 3000000 --emit-dir lifted`. It refuses indirect jumps, which is exactly the 4E26 jump-table case a hand-decode got wrong by two bytes. A lifted hook is SCAFFOLDING, not recovered source -- it is a verified starting point to refactor, and the same oracle keeps the refactor honest**; **PERF (2026-07-08, see dos_re/docs/performance.md): suites =
 > `python -m pytest -q -n auto` (xdist, 4m30s -> 54s); long oracle/probe runs = PyPy serial
 > (`pypy -m overkill.probes.X`) -- PyPy is BYTE-FAITHFUL (proved: a full lockstep re-record under
 > PyPy and CPython produce the identical cache sha1 and verdict), 20m14s -> 5m47s on a full
@@ -62,6 +62,30 @@
 > inside the row pull), the 0162 input poll, the A067 fire path and the 0922 starfield are native in
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
+
+## 2026-07-12 — AUDIO: the VM-free AdLib driver proven BYTE-EXACT vs the VM (oracle gate landed)
+
+Built the audio counterpart of the 9B2E gameplay lockstep: `overkill/probes/verify_native_audio.py`
+seeds `native_audio.adlib.AdlibDriver` from the VM's own seg-2032 image and replays it FORWARD in
+lockstep with the reference VM, diffing the YM3812 register writes frame by frame.  It TRAPS the tick
+entry (2032:0063), the write leaf (2032:0557, AL=reg/AH=val) and the 1010:9B2E frame tail on the pure
+ref VM (the driver runs interpreted there -- no replacement hook fires -- so counting needs the trap,
+not `set_adlib_callback`).
+
+Results:
+- **The recovered `tick_2032_0063` spine is byte-exact** (the 0409 page gate, the nine 00CD channel
+  ticks, 024F note/frequency, 0181 instrument select, 02C9/02F6 modulation): zero write divergence over
+  clean single-page music windows on L2 (frames [2,309)) and L3 (frames [2,240)) -- two different song
+  pages.
+- **The music TEMPO is now MEASURED, not guessed: 2 driver ticks per 30fps gameplay-frame** (== 1 per
+  60Hz present-frame).  `render_native_music`'s `--ticks-per-frame` note updated accordingly.
+- The forward sim is MUSIC-ONLY (the game triggers SFX / page changes by writing driver cells
+  mid-frame, which a seed-and-replay can't see), so it stays byte-exact across a steady window and then
+  diverges at the first game event -- a 154-write operator-level burst on L2 at gameplay-frame 309.
+  `clean_window` reports that span; a real driver bug would instead diverge on a small mid-window
+  mismatch.  Registered in the standing-mechanisms header; locked into the suite as
+  `tests/test_native_audio_oracle.py` (a 130-frame window, 6s).  Charter audio item "the host sound
+  output" remains; the DGROUP model + now the driver tick are both proven.
 
 ## 2026-07-11 — COVERAGE: the owner's cold-start-intro demo lockstepped (719 frames, 6 known-open divergences)
 
