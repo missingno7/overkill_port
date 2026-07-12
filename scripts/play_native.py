@@ -54,6 +54,7 @@ from overkill.native_frame import (  # noqa: E402
     advance_gameplay_frame_97b2, GameOverReached, TheEndReached,
 )
 from overkill.native_walk_frame import project_state  # noqa: E402
+from overkill.recovered.adapters.cold_level_start import build_cold_level_start_image  # noqa: E402
 from overkill.recovered.adapters.flat_memory import MutFlatMemory  # noqa: E402
 from overkill.recovered.domain.gaps import RecoveryGap  # noqa: E402
 from overkill.recovered.domain.starfield import STAR_COUNT, Star, StarfieldState  # noqa: E402
@@ -1018,8 +1019,6 @@ def main(argv=None) -> int:
     ap.add_argument("--ordering", "--ending", dest="ordering", action="store_true",
                     help="view the menu's ORDERING screen (OPAGE1..10, shareware order info), then exit")
     args = ap.parse_args(argv)
-
-    from overkill.recovered.adapters.cold_level_start import build_cold_level_start_image
 
     bundle_data = Path(args.bundle).read_bytes()
     container_data = Path(args.container).read_bytes()
