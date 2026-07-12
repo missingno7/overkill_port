@@ -1059,10 +1059,15 @@ def main(argv=None) -> int:
     ap.add_argument("--demo", default=None,
                     help="replay a recorded demo through the verified frame + renderer, then exit "
                          "(charter step 2 -- the attract sequence's demo element, standalone)")
-    ap.add_argument("--instructions", "--intro", dest="instructions", action="store_true",
-                    help="view the menu's INSTRUCTIONS screen (IPAGE1..5), then exit")
-    ap.add_argument("--ordering", "--ending", dest="ordering", action="store_true",
-                    help="view the menu's ORDERING screen (OPAGE1..10, shareware order info), then exit")
+    ap.add_argument("--instructions", dest="instructions", action="store_true",
+                    help="the menu 'I' INSTRUCTIONS screen (IPAGE1..5 story/help pages), then exit")
+    ap.add_argument("--ordering", dest="ordering", action="store_true",
+                    help="the menu 'O' ORDERING screen (OPAGE1..10, shareware order info), then exit")
+    ap.add_argument("--ending", dest="ending", action="store_true",
+                    help="THE END victory screen (WINSCR.ENC, shown when the mothership is beaten), then exit")
+    ap.add_argument("--intro", dest="intro", action="store_true",
+                    help="the cold-boot INTRO/ATTRACT sequence (there is no separate intro asset -- the "
+                         "original's cold-boot intro IS the attract), then exit")
     args = ap.parse_args(argv)
 
     bundle_data = Path(args.bundle).read_bytes()
@@ -1075,6 +1080,21 @@ def main(argv=None) -> int:
     if args.instructions or args.ordering:
         run = _run_ordering if args.ordering else _run_instructions
         run(display, pygame, container_data)
+        display.close()
+        return 0
+
+    if args.ending:                       # THE END (WINSCR.ENC) -- the victory screen, NOT the OPAGE ordering
+        _run_the_end(display, pygame, container_data)
+        display.close()
+        return 0
+
+    if args.intro:                        # the cold-boot INTRO == the attract (title + scenes + demo)
+        music = None
+        if not args.no_sound:
+            music = AdlibMusicSink(pygame, bytearray(bundle_data[0x2032 * 16:0x2032 * 16 + 0x10000]),
+                                   present_hz=args.fps)
+            music.request_page(args.music_page)
+        _run_native_attract(display, pygame, bundle_data, container_data, music)
         display.close()
         return 0
 
