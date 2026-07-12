@@ -1861,6 +1861,18 @@ def _step_bouncer_6e(mem, rec: int, tiles: LevelTileContext) -> None:
     mem.ww(DS, rec + 0x06, 0x0002 if mem.rw(DS, rec + 0x06) == 0x0004 else 0x0004)  # F337/F33D/F345
 
 
+def _step_morphing_shooter_65(mem, rec: int) -> None:
+    """Behavior 0x65 (``1010:F492``): drifts right (x += 4); on the [2326] == 3 beat, while the sprite
+    has not yet reached 0xEB it advances the sprite by one and fires a 7476 enemy shot (then holds)."""
+    mem.ww(DS, rec + 0x02, (mem.rw(DS, rec + 0x02) + 4) & 0xFFFF)   # F492
+    if mem.rw(DS, 0x2326) != 0x0003:                               # F496
+        return
+    if mem.rw(DS, rec + 0x08) == 0x00EB:                           # F4A0: fully morphed -> just drift
+        return
+    mem.ww(DS, rec + 0x08, (mem.rw(DS, rec + 0x08) + 1) & 0xFFFF)  # F4AA: advance the sprite
+    _spawn_enemy_shot_7476(mem, rec)                               # F4AD
+
+
 def _step_mover_shooter_72(mem, rec: int) -> None:
     """Behavior 0x72 (``1010:F5DC``): sprite = ``([2328] >> 1) + 0x1C`` (the mod-8 clock animation);
     drifts right (x += 1) and fires a 7476 enemy shot on every [2324] parity beat (== 1)."""
@@ -3574,6 +3586,9 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
         elif beh == 0x1B:
             _step_bouncer_1b(mem, rec, tiles)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # BB19/BB21/BB35/BB3D exit jmp BC45
+        elif beh == 0x65:
+            _step_morphing_shooter_65(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # F49D/F4A7/F4B0 exit jmp BC45
         elif beh == 0x6E:
             _step_bouncer_6e(mem, rec, tiles)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # F334/F342/F34A exit jmp BC45
