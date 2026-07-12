@@ -83,6 +83,28 @@ justifies it -- kills the A97C/0054 divergences); (2) the death/respawn frame-cl
 FRONT-END intro + attract-demonstration fidelity (the big uncovered span).  The demo is also the proper
 COLD adlib AUDIO oracle, but the music starts after ~frame 600 (the early intro is near-silent).
 
+## 2026-07-12 — FRONT-END: THE LOCKSTEP GATE LANDS (`overkill/probes/verify_native_frontend.py`)
+
+Built the front-end lockstep gate on `dos_re.frontend_timeline` (+ the new 21x rasterizer bump,
+1b73073 -> 7a4f7d8): the VM side replays the cold demo and classifies every present-frame to a coarse
+screen id; the NATIVE side drives play_native's actual cold-boot decision flow headless (the menu loop
+-> the `NativeAttract` machine) on the SAME ids; `diff_sequence` compares order + durations.  The probe
+reports the first divergence as the FRONTIER (like verify_native_lockstep does for gameplay).
+
+**First run -- the honest full picture (RESULT: FAIL, the frontier):**
+- VM:     `boot -> menu x99 -> 5C x97 -> 96 x250 -> attract:initial x1400 -> CF x400 -> D0 x291 ->
+  scene-1 x200 -> scene-2 x200 -> scene-3 x100 -> ...`
+- NATIVE: `menu x300 -> scene0-setup x96 -> scene-1 x101 -> scene-2 x100 -> scene-3 x50 -> ...`
+- Divergences, in order: (1) the boot frame + the VM's menu-first 99f/5C/96 phases; (2) the MISSING
+  attract:initial (~1400f) + CF (~400f) + D0 (~291f) screens; (3) **the scene durations are HALF the
+  VM's** -- the D04D machine runs TWO present boundaries per tick (D013+D028, found earlier via --raw),
+  so a 100-tick scene shows for 200 present-frames; NativeAttract advances one countdown per frame ->
+  every scene displays half as long as the original.  Fix: pace the native attract at 2 present-frames
+  per machine tick (or halve the app's tick rate through the attract).
+
+The gate turns every one of these from a doc note into a reported, re-checkable fact; as each piece is
+recovered the FAIL moves down the list, and PASS = the cold-boot screens are proven.
+
 ## 2026-07-12 — TOOLING/FRONT-END: unify onto dos_re.frontend_timeline (the front-end lockstep framework)
 
 The dos_re bump (d9c3249 -> 1b73073) brings `dos_re.frontend_timeline` -- the promoted, GENERALIZED
