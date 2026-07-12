@@ -1829,6 +1829,25 @@ def _step_formation_78(mem, rec: int) -> None:
     _formation_position_f779(mem, rec, 0xD2CC)                        # F771
 
 
+def _step_bouncer_1b(mem, rec: int, tiles: LevelTileContext) -> None:
+    """Behavior 0x1B (``1010:BAC7``): sprite = ``([2338] >> 1) + 0x27``; a VERTICAL bouncer between the
+    top (y == 0) and bottom (y == 0xC0).  Moving up (dir 6) bounces to down (dir 2) at y == 0 or on a
+    block; moving down (else -> dir 2) bounces to up (dir 6) at y == 0xC0 or on a block; else drifts."""
+    mem.ww(DS, rec + 0x08, ((mem.rw(DS, 0x2338) >> 1) + 0x0027) & 0xFFFF)   # BAC7
+    if mem.rw(DS, rec + 0x06) == 0x0006:                # BB03: moving up
+        mem.ww(DS, rec + 0x06, 0x0006)                  # BB09
+        if mem.rw(DS, rec + 0x04) == 0x0000:            # BB0E: hit the top
+            mem.ww(DS, rec + 0x06, 0x0002)              # BB1C: bounce down
+        elif _afd8_step(mem, rec, tiles):               # BB14/BB17: blocked -> bounce
+            mem.ww(DS, rec + 0x06, 0x0002)              # BB1C
+    else:                                               # BB24: moving down
+        mem.ww(DS, rec + 0x06, 0x0002)                  # BB24
+        if mem.rw(DS, rec + 0x04) == 0x00C0:            # BB29: hit the bottom
+            mem.ww(DS, rec + 0x06, 0x0006)              # BB38: bounce up
+        elif _afd8_step(mem, rec, tiles):               # BB30/BB33: blocked -> bounce
+            mem.ww(DS, rec + 0x06, 0x0006)              # BB38
+
+
 def _step_bouncer_6e(mem, rec: int, tiles: LevelTileContext) -> None:
     """Behavior 0x6E (``1010:F31B``): sprite = ``[0x96D2 + [233C]*2] + 0x128`` (the mod clock anim);
     takes TWO AFD8 contact-steps in its direction, and on a block toggles direction between 4 and 2 (a
@@ -3552,6 +3571,9 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
         elif beh == 0x71:
             _step_hover_shooter_71(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # 87C5/87D0/87D7 exit jmp BC45
+        elif beh == 0x1B:
+            _step_bouncer_1b(mem, rec, tiles)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # BB19/BB21/BB35/BB3D exit jmp BC45
         elif beh == 0x6E:
             _step_bouncer_6e(mem, rec, tiles)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # F334/F342/F34A exit jmp BC45
