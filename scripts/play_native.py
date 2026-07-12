@@ -630,30 +630,10 @@ def _run_title_menu(display, pygame, bundle_data, container_data,
             if r is True:
                 return sound_mode, control, key_overrides
             idle = 0
-        _draw_menu_selection(display, pygame, title, sound_mode, control)
+        display.draw(title)              # TODO: the real 558B marker (CE97/CB1C), verified -- not an overlay
         if music is not None:
             music.pump()                                       # the menu tune (page 2) plays here
         clock.tick(30)
-
-
-#: 558B sound modes ([22B5] 0..3) and control methods ([0010]) as labels, for the on-screen marker.
-_SOUND_MODE_LABELS = ("MUSIC", "FX", "BOTH", "NONE")
-_CONTROL_LABELS = {0: "KEYBOARD", 2: "AMSTRAD"}
-
-
-def _draw_menu_selection(display, pygame, title, sound_mode: int, control: int) -> None:
-    """Draw the OKMENU title with the CURRENT selections marked -- the original highlights the active
-    SOUND ([22B5]) and CONTROL ([0010]) options; play_native shows them as a labelled row + the option
-    lists with the active entry bracketed, so the user can see what is selected (M / K / A cycle them)."""
-    sound_row = "  ".join(f"[{o}]" if i == sound_mode else f" {o} "
-                          for i, o in enumerate(_SOUND_MODE_LABELS))
-    ctrl_opts = ("KEYBOARD", "AMSTRAD")
-    ctrl_active = 0 if control == 0 else 1
-    ctrl_row = "  ".join(f"[{o}]" if i == ctrl_active else f" {o} " for i, o in enumerate(ctrl_opts))
-    _draw_menu_text_overlay(display, pygame, title, [
-        (f"SOUND (M):  {sound_row}", (255, 220, 0)),
-        (f"CONTROL:    {ctrl_row}", (120, 220, 255)),
-    ], anchor="bottom")
 
 
 #: the FIRE scancode (space) the attract's auto-fire injects into the image's INT9 key table.

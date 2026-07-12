@@ -83,6 +83,37 @@ justifies it -- kills the A97C/0054 divergences); (2) the death/respawn frame-cl
 FRONT-END intro + attract-demonstration fidelity (the big uncovered span).  The demo is also the proper
 COLD adlib AUDIO oracle, but the music starts after ~frame 600 (the early intro is near-silent).
 
+## 2026-07-12 — FRONT-END: GROUND IT (owner: stop guessing, verify cold-start replay byte-exact)
+
+Owner feedback, correct and important: play_native's front end (menu marker, attract) is host-loop code
+verified against NOTHING -- it guesses the flow and drifts.  The menu "selection markers" I added were a
+FAKE text overlay, not the real 558B/CE97 marker; the attract host-loop invents scene timing.  This is
+the opposite of the gameplay path, which is byte-exact demo-lockstepped.  The fix is to hold the front
+end to the SAME bar: replay a cold-start demo and prove native reproduces it byte-for-byte.
+
+Done this pass (the honesty reset + the first grounded step):
+- REMOVED the fake menu overlay (`_draw_menu_selection`); the real marker (CE97 compose / CB1C redraw)
+  is a recovery item, done VERIFIED, not faked.
+- New instrument `scripts/probe_coldstart_frontend.py`: replays a cold-start demo through the PURE ref
+  VM and records the front-end state at every present boundary -- attract scene `[BE06]`, countdown
+  `[BE08]`, START flag `[98C3]`, and CS:IP.  This is the GROUND TRUTH the native front end must match.
+
+**KEY BLOCKER FOUND (the first thing to nail):** the frame-verifier's present-boundary count does NOT
+align 1:1 with the demo's recording boundaries.  The probe reaches the game-start path (`1010:96C8`) at
+present-frame ~197, yet the demo's first key event is at recording boundary 6174 -- because the menu
+IDLE is a BOUNDARY-LESS input-wait loop (`overkill/input_waits.py`), so the frame verifier does not
+count those frames while the demo recorder inserted synthetic boundaries for them.  A front-end lockstep
+must reconcile these two clocks first (the gameplay 9B2E lockstep sidesteps it -- 97B2 frames always
+produce a boundary).  THIS is the next concrete task -- not more front-end guessing.
+
+Plan (the FRONT-END demo-lockstep campaign, mirroring demo_lockstep for gameplay):
+1. Reconcile the present/retrace boundary clock with the demo's recording boundaries (the idle-loop
+   synthetic-boundary mapping) so a front-end frame can be snapshotted + replayed deterministically.
+2. Recover the CC04 front-end loop body as ONE native front-end frame (compose CE97 menu + the D007
+   attract scene machine + the 558B start/idle decision), verified byte-exact at the boundary.
+3. Swap play_native's `_run_title_menu`/`_run_native_attract` host loops onto that verified frame.
+Only then are the real menu marker + the accurate attract GROUNDED (they fall out of the verified frame).
+
 ## 2026-07-11 — FRONT-END/AUDIO: fix the attract crash, per-level music, menu selection markers
 
 Three owner-reported issues from playing native:
