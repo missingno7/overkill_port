@@ -90,11 +90,14 @@ missing), all correcting the earlier "stale bank / runtime-only" reading:
 - **`CS:[95B8]` = BLUEBITS.BIC** -- identified by content-comparing the bundle's bank segment against
   `load_shared_startup_assets` (prefix-match).  It is one of the eight boot-loaded shared assets and
   ALREADY decodes VM-free from the container (directory mode).  Not stale, not runtime-only.
-- **The `5A24` tandy path (`1010:312D`) is a GLYPH RENDERER, not the scene-cell blit**: `si =
-  id*8 + DS:0x1816` -- an 8x8 FONT table (cell 0x40 = `7c c6 de d6 de c0 7c 00`, literally the ASCII
-  '@' bitmap); each row byte expands through the `DS:0x1514` color LUT (`bx = pixelbyte*4 + 0x1514`)
-  AND-masked with the color nibble from `[215C]`, written planar (di += 0x2000 banks).  Both tables are
-  DGROUP data, present in the bundle.
+- **The `5A24` tandy entry (`1010:312D`) is the CURSOR/ADDRESS computation** (row-table at
+  `DS:[0x9EE8]`-ish + column -> DI; `312D..3152`), NOT a renderer.  The GLYPH RENDERER is its
+  NEIGHBOUR at `1010:3153/3161`: `si = char*8 + DS:0x1816` -- an 8x8 FONT table (char 0x40 =
+  `7c c6 de d6 de c0 7c 00`, literally the ASCII '@' bitmap); each row byte expands through the
+  `DS:0x1514` color LUT (`bx = pixelbyte*4 + 0x1514`) AND-masked with the color nibble from `[215C]`,
+  written planar (di += 0x2000 banks).  Both tables are DGROUP data, present in the bundle.  (Mode-2
+  dispatch map for the 5Axx family: 5A24->312D cursor, 5A3B->30D2, 5A4E->3097, 5A5A->30B4 cell-copy,
+  5A6C->5A78.)
 - The CC4F descriptor stream (5 entries x 4 bytes: position?, id, count, arg) drives that renderer plus
   `5A6C` blits from the BLUEBITS bank (`CD40: mov ds,[95B8]; call 5A6C`) in the CD68 retrace loop.
 
