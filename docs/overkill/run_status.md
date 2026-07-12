@@ -133,10 +133,25 @@ So the two concrete divergences behind the owner's report: (1) **play_native SKI
 host-loop guess rather than the `D028` machine walking scenes 1->19 (the demonstration).  The menu is
 where input lands AFTER the attract loops back (55F1), not before.
 
+**DESIGN FINDING (2026-07-12, `scripts/probe_frontend_writeset.py`):** the front-end lockstep can NOT
+mirror the gameplay one (a DGROUP diff).  Over 199 intro frames (boundaries 220..420, all at the
+`96C8` retrace-delay loop `call 50C9; loop`, scene 0) the DGROUP had **ZERO changed cells** -- the
+intro renders to VIDEO RAM (B800/the Tandy bank) and just waits for retrace; its DGROUP is static.  So
+gameplay's "diff the whole DGROUP at 9B2E" approach captures nothing for the render-heavy front-end
+phases.  The front-end phases decompose into:
+- **intro + attract CELL scenes (1..7) + menu** -- render to the FRAMEBUFFER; DGROUP is ~static (just
+  the scene/delay control cells).  Their lockstep must diff the framebuffer + those few control cells.
+- **the attract GAMEPLAY demo (scenes >= 8)** -- runs the 97B2 game with auto-fire, so its DGROUP
+  state IS the gameplay state the EXISTING 97B2 lockstep already covers (reuse it there).
+So the native front end is mostly RECOVERED PIECES (page decode, cell blit, 97B2, the witnessed D007
+attract machine + 558B menu) wired by a DECISION sequence; the lockstep must verify that DECISION
+sequence + the rendered framebuffer, not a monolithic DGROUP frame.
+
 Plan (the FRONT-END demo-lockstep campaign, mirroring demo_lockstep for gameplay):
-1. ~~Capture the full front-end ground-truth timeline~~ DONE (table above).  NB: the front-end frame
-   boundary is the retrace wait (50C9) INSIDE the CC04 cycle's delays (CE40) -- not one clean per-call
-   frame like 97B2, so the native front-end must reproduce state at retrace-boundary granularity.
+1. ~~Capture the full front-end ground-truth timeline + the per-frame write-set~~ DONE (table above +
+   the design finding).  NB: the front-end boundary is the retrace wait (50C9) INSIDE the CC04 cycle's
+   delays (CE40); the visible work is in the FRAMEBUFFER, so the lockstep diffs framebuffer + control
+   cells (intro/cell/menu) and reuses the 97B2 DGROUP lockstep for the attract gameplay demo.
 2. Recover the CC04 front-end loop body as ONE native front-end frame (compose CE97 menu + the D007
    attract scene machine + the 558B start/idle decision), verified byte-exact at the boundary.
 3. Swap play_native's `_run_title_menu`/`_run_native_attract` host loops onto that verified frame.
