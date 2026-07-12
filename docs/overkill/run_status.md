@@ -159,6 +159,16 @@ recovery (next slice): decode those cells from bank 0x76FE at the descriptor pos
 initial screen, and wire play_native's attract to show it for the ~40s before scene 1 -- then verify the
 composed framebuffer against the VM at the CD68 phase.
 
+**RECOVERY IS DEEPER THAN THE SCENE CELLS (2026-07-12):** tried decoding the six cell ids via the
+scene-cell path (`CS:[0BE4+id*2]` directory -> `cell_indices`) from the static bundle's `[95B8]` bank
+(0x79FE) -- ALL failed (div-by-zero / bad reshape).  Two reasons: (1) the static bundle's `[95B8]` bank
+is STALE (0x79FE) vs the runtime 0x76FE, so it lacks the initial-display cells; (2) `CC4F`/`5A24`
+resolves + blits the cell through the `CS:[95BC]` VIDEO-MODE dispatch (`5A24: jmp cs:[bx+23088]`), so
+the initial display's cell format/positioning is the MODE-SPECIFIC blit, not the simple scene-cell
+`cell_indices`.  So the recovery needs BOTH a runtime attract snapshot's cell BANK (0x76FE) data AND a
+decode of `5A24`'s Tandy path (`[95BC]=2`) -- a bigger slice than the scene-cell compose.  All the
+pointers are captured; the next session starts from the runtime bank + `5A24`.
+
 The menu render (`verify_native_front_end_image`, byte-exact) + menu decisions
 (`verify_native_front_end_forward`) are already verified, so the menu is grounded.
 
