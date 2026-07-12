@@ -169,10 +169,19 @@ Cleared a batch of the planet-4-6 F-cluster gaps, each composed from already-rec
 - **0x76/0x77/0x78/0x79** (F758..F776): a 2x2 FORMATION locked to the [A8B8]/[A8B6] anchor via the
   D2Cx offset tables (0/32 grid); 0x78 also fires a 7476 shot on the [2330] clock.
 
-Census now: **24 -> down to ~17** genuinely-unregistered behaviors.  Remaining tractable-ish:
-0x72 (F5DC, +7476), the F779-family neighbours, 0x1B/0x50/0x8D.  Still deferred (need more work /
-witnesses): the ADxx AD60 movers (0x07/08/09/0F), the indirect-jump 0x84 (F669), the 0x7F/0x80 overlay
-pair (0x80 complex), 0x75 (needs the unrecovered C21D 3-way shot).
+Census now: **35 -> down to 12** genuinely-unregistered behaviors after this session's sweep (also
+added 0x72 mover-shooter, 0x66/0x67 waypoint-seeds, 0x6E/0x1B bouncers, 0x65 morphing-shooter, 0x6A
+diver, 0x50 seeker).  The remaining 12 are the HARD TAIL, each needing more than a hand-decode+compose:
+- **ADxx movers 0x07/08/09/0F** -> the shared `AD60` cull+scan body (5073/505B tile probes).
+- **0x61/0x62 pair** -- 0x61 is a clean 5DB2 seek but retags to 0x62, which is COMPLEX (anchor-follow +
+  [A47E] y-grid align + morph-to-0x61 + retag-to-0x65 on a 4D95 random + C237/7476 spawns); they cycle,
+  so both are needed together -- a lifter/witness job.
+- **0x8D** (BB40) -- a tile-SCAN (5073/505B probe loop).
+- **0x84** (F669) -- an INDIRECT JUMP TABLE (the construct the lifter refuses).
+- **0x7F/0x80** (1F8F overlay pair) -- 0x80 is complex/multi-branch.
+- **0x75** (F729) -- needs the unrecovered C21D 3-way shot.
+- **0x92** (F6F0) -- a 4px-grid alignment mover.
+These are best surfaced by play (capture_pure_vm_snapshot + liftverify) rather than speculative decode.
 
 ## 2026-07-12 — GAMEPLAY: recover the 1F8F-overlay behavior 0x7b (the overlay IS decodable)
 
