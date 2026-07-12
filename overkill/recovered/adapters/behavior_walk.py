@@ -1829,6 +1829,15 @@ def _step_formation_78(mem, rec: int) -> None:
     _formation_position_f779(mem, rec, 0xD2CC)                        # F771
 
 
+def _step_mover_shooter_72(mem, rec: int) -> None:
+    """Behavior 0x72 (``1010:F5DC``): sprite = ``([2328] >> 1) + 0x1C`` (the mod-8 clock animation);
+    drifts right (x += 1) and fires a 7476 enemy shot on every [2324] parity beat (== 1)."""
+    mem.ww(DS, rec + 0x08, ((mem.rw(DS, 0x2328) >> 1) + 0x001C) & 0xFFFF)   # F5DC
+    mem.ww(DS, rec + 0x02, (mem.rw(DS, rec + 0x02) + 1) & 0xFFFF)           # F5E7
+    if mem.rw(DS, 0x2324) == 0x0001:                                        # F5EA
+        _spawn_enemy_shot_7476(mem, rec)                                    # F5F1
+
+
 def _step_hover_shooter_71(mem, rec: int) -> None:
     """Behavior 0x71 (``1010:87A7``): sprite = ``0x12B + [2336]`` (the mod-8 clock animation).  While
     (UNSIGNED) x > 0x60 it drifts inward (x += 4); once x <= 0x60 it holds and, on the ``[2330]`` clock
@@ -3515,6 +3524,9 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
         elif beh == 0x71:
             _step_hover_shooter_71(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # 87C5/87D0/87D7 exit jmp BC45
+        elif beh == 0x72:
+            _step_mover_shooter_72(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # F5F4 exits jmp BC45
         elif beh == 0x73:
             _step_faller_73(mem, rec, tiles)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # F660/F666 exit jmp BC45
