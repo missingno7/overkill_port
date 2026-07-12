@@ -1804,6 +1804,31 @@ def _step_faller_74(mem, rec: int, tiles: LevelTileContext) -> None:
     _faller_tail_f639(mem, rec, tiles)
 
 
+#: the D2Cx formation-offset tables (behaviors 0x76..0x79): a 2x2 grid of (x_off, y_off) each ADDED to
+#: the [A8B8]/[A8B6] anchor -- a formation of four locked to one moving anchor.
+_FORMATION_TABLE = {0x76: 0xD2C4, 0x77: 0xD2C8, 0x78: 0xD2CC, 0x79: 0xD2D0}
+
+
+def _formation_position_f779(mem, rec: int, table_off: int) -> None:
+    """The F779 tail (behaviors 0x76..0x79): x = ``[table] + [A8B8]`` (clamped to >= 0 signed), y =
+    ``[table+2] + [A8B6]`` -- the record sits at its D2Cx offset from the [A8B8]/[A8B6] formation anchor."""
+    x = (mem.rw(DS, table_off) + mem.rw(DS, 0xA8B8)) & 0xFFFF          # F779/F77A
+    if i16(x) < 0:                                                     # F781 (jge -> keep; else 0)
+        x = 0
+    mem.ww(DS, rec + 0x02, x)                                          # F77E/F787
+    mem.ww(DS, rec + 0x04,
+           (mem.rw(DS, (table_off + 2) & 0xFFFF) + mem.rw(DS, 0xA8B6)) & 0xFFFF)   # F78C/F78D
+
+
+def _step_formation_78(mem, rec: int) -> None:
+    """Behavior 0x78 (``1010:F762``): faces right (dir 4); on the [2330] clock (<= 0xF) spawns a 7476
+    enemy shot; then positions from the D2CC formation offset (32, 0)."""
+    mem.ww(DS, rec + 0x06, 0x0004)                                    # F762: dir 4
+    if mem.rw(DS, 0x2330) <= 0x000F:                                  # F767 (ja skips the shot)
+        _spawn_enemy_shot_7476(mem, rec)                              # F76E
+    _formation_position_f779(mem, rec, 0xD2CC)                        # F771
+
+
 def _step_hover_shooter_71(mem, rec: int) -> None:
     """Behavior 0x71 (``1010:87A7``): sprite = ``0x12B + [2336]`` (the mod-8 clock animation).  While
     (UNSIGNED) x > 0x60 it drifts inward (x += 4); once x <= 0x60 it holds and, on the ``[2330]`` clock
@@ -3498,6 +3523,12 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
             _postmove_bc45(mem, rec, tiles, with_drift=True)
         elif beh == 0x85:
             _faller_tail_f639(mem, rec, tiles)                 # F639 IS 0x85's whole handler
+            _postmove_bc45(mem, rec, tiles, with_drift=True)
+        elif beh in (0x76, 0x77, 0x79):
+            _formation_position_f779(mem, rec, _FORMATION_TABLE[beh])   # F758/F75D/F776 -> F779 tail
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # F794 exits jmp BC45
+        elif beh == 0x78:
+            _step_formation_78(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=True)
         elif beh == 0x7A:
             _step_diver_7a(mem, rec, 0x0020)

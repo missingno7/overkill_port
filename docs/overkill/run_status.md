@@ -83,6 +83,20 @@ justifies it -- kills the A97C/0054 divergences); (2) the death/respawn frame-cl
 FRONT-END intro + attract-demonstration fidelity (the big uncovered span).  The demo is also the proper
 COLD adlib AUDIO oracle, but the music starts after ~frame 600 (the early intro is near-silent).
 
+## 2026-07-12 — GAMEPLAY: F-cluster behavior sweep (0x71, 0x73/0x74/0x85, 0x76-0x79)
+
+Cleared a batch of the planet-4-6 F-cluster gaps, each composed from already-recovered primitives:
+- **0x71** (87A7) hover-shooter: 0x12B+[2336] anim, drift inward, C237 child on the [2330] beat.
+- **0x73/0x74** (F5F7/F619) fallers + **0x85** (F639) = their shared tail: die at the y-boundary else
+  4x AFD8 contact-steps, die if blocked (`_faller_tail_f639`).
+- **0x76/0x77/0x78/0x79** (F758..F776): a 2x2 FORMATION locked to the [A8B8]/[A8B6] anchor via the
+  D2Cx offset tables (0/32 grid); 0x78 also fires a 7476 shot on the [2330] clock.
+
+Census now: **24 -> down to ~17** genuinely-unregistered behaviors.  Remaining tractable-ish:
+0x72 (F5DC, +7476), the F779-family neighbours, 0x1B/0x50/0x8D.  Still deferred (need more work /
+witnesses): the ADxx AD60 movers (0x07/08/09/0F), the indirect-jump 0x84 (F669), the 0x7F/0x80 overlay
+pair (0x80 complex), 0x75 (needs the unrecovered C21D 3-way shot).
+
 ## 2026-07-12 — GAMEPLAY: recover the 1F8F-overlay behavior 0x7b (the overlay IS decodable)
 
 The `8D4x` behaviors far-call into the `1F8F` overlay segment, which I'd flagged as needing "overlay
