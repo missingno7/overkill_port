@@ -107,9 +107,26 @@ it is a front-end address I misidentified.  So there is no boundary blocker; the
 gameplay).  The front-end scene machine `[BE06]` also stayed 0 for the first 350 frames -- the attract
 scenes start deeper in, so the ground-truth capture must run the full ~6200 front-end frames.
 
+**GROUND TRUTH captured** (`scripts/probe_coldstart_frontend.py` over the full demo, per demo boundary):
+
+| frames | phase | addr | notes |
+|---|---|---|---|
+| 1..~196 | boot + intro setup | `58F4` | scene [BE06]=0 |
+| ~197..2537 | **INTRO pages** (~2340 frames) | `96C8` | scene 0 -- the IPAGE story the cold start shows |
+| 2538..5938 | **ATTRACT** scenes `0x01`->`0x13` | `D028` | the D007 scene machine; scenes >=8 are the weapon/upgrade gameplay DEMO |
+| 5939..6175 | attract ends -> back to menu | | scene stays 0x13 (terminal) |
+| 6176 | `m` pressed at the menu | `55F1` | [98C3]=0x32 |
+| 6283 | `space` -> level-select | `D390` | [98C3]=0x39 |
+
+So the two concrete divergences behind the owner's report: (1) **play_native SKIPS the ~2500-frame INTRO**
+(it opens on the menu; the real cold start shows the IPAGE intro first), and (2) the attract is a
+host-loop guess rather than the `D028` machine walking scenes 1->19 (the demonstration).  The menu is
+where input lands AFTER the attract loops back (55F1), not before.
+
 Plan (the FRONT-END demo-lockstep campaign, mirroring demo_lockstep for gameplay):
-1. Capture the full front-end ground-truth timeline (intro -> menu -> attract -> the weapon/upgrade
-   demonstration) from the pure VM -- what native must reproduce, per boundary.
+1. ~~Capture the full front-end ground-truth timeline~~ DONE (table above).  NB: the front-end frame
+   boundary is the retrace wait (50C9) INSIDE the CC04 cycle's delays (CE40) -- not one clean per-call
+   frame like 97B2, so the native front-end must reproduce state at retrace-boundary granularity.
 2. Recover the CC04 front-end loop body as ONE native front-end frame (compose CE97 menu + the D007
    attract scene machine + the 558B start/idle decision), verified byte-exact at the boundary.
 3. Swap play_native's `_run_title_menu`/`_run_native_attract` host loops onto that verified frame.
