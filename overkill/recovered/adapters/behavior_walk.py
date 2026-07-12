@@ -1766,6 +1766,44 @@ def _step_diver_intro_7b(mem, rec: int) -> None:
     mem.ww(DS, rec + 0x2C, dy)
 
 
+def _faller_tail_f639(mem, rec: int, tiles: LevelTileContext) -> None:
+    """The shared F639 tail (behaviors 0x73/0x74's move + behavior 0x85 wholesale): DIES (BFC7) at the
+    travel boundary (dir 2 at y == 0xC0, dir 6 at y == 0); otherwise takes FOUR AFD8 contact-steps in
+    the record's own direction and dies if the last is blocked."""
+    direction = mem.rw(DS, rec + 0x06)
+    y = mem.rw(DS, rec + 0x04)
+    if (direction == 0x0002 and y == 0x00C0) or (direction == 0x0006 and y == 0x0000):  # F639..F650
+        _bfc7_touch_death(mem, rec)
+        return
+    blocked = False
+    for _ in range(4):                                   # F652..F65B: four AFD8 contact-steps
+        blocked = _afd8_step(mem, rec, tiles)
+    if blocked:                                          # F65E jnz F663
+        _bfc7_touch_death(mem, rec)
+
+
+def _step_faller_73(mem, rec: int, tiles: LevelTileContext) -> None:
+    """Behavior 0x73 (``1010:F5F7``): drifts until x >= 0x80, then heads DOWN (dir 2) with sprite =
+    ``[0x96D2 + [233C]*2] + 0x14C`` (the mod clock animation) and runs the shared F639 faller tail."""
+    if mem.rw(DS, rec + 0x02) < 0x0080:                  # F5F7 (jnb -> x >= 0x80 continues)
+        return
+    mem.ww(DS, rec + 0x06, 0x0002)                       # F601: dir 2 (down)
+    anim = mem.rw(DS, (0x96D2 + (mem.rw(DS, 0x233C) & 0xFFFF) * 2) & 0xFFFF)   # F606
+    mem.ww(DS, rec + 0x08, (anim + 0x014C) & 0xFFFF)     # F610/F614: sprite
+    _faller_tail_f639(mem, rec, tiles)                   # F617 jmp F639
+
+
+def _step_faller_74(mem, rec: int, tiles: LevelTileContext) -> None:
+    """Behavior 0x74 (``1010:F619``): 0x73's twin -- drifts until x >= 0x90, then heads UP (dir 6) with
+    sprite = ``[0x96D2 + [233C]*2] + 0x14F`` and the same shared F639 faller tail."""
+    if mem.rw(DS, rec + 0x02) < 0x0090:                  # F619
+        return
+    mem.ww(DS, rec + 0x06, 0x0006)                       # F623: dir 6 (up)
+    anim = mem.rw(DS, (0x96D2 + (mem.rw(DS, 0x233C) & 0xFFFF) * 2) & 0xFFFF)   # F628
+    mem.ww(DS, rec + 0x08, (anim + 0x014F) & 0xFFFF)     # F632: sprite
+    _faller_tail_f639(mem, rec, tiles)
+
+
 def _step_hover_shooter_71(mem, rec: int) -> None:
     """Behavior 0x71 (``1010:87A7``): sprite = ``0x12B + [2336]`` (the mod-8 clock animation).  While
     (UNSIGNED) x > 0x60 it drifts inward (x += 4); once x <= 0x60 it holds and, on the ``[2330]`` clock
@@ -3452,6 +3490,15 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
         elif beh == 0x71:
             _step_hover_shooter_71(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # 87C5/87D0/87D7 exit jmp BC45
+        elif beh == 0x73:
+            _step_faller_73(mem, rec, tiles)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # F660/F666 exit jmp BC45
+        elif beh == 0x74:
+            _step_faller_74(mem, rec, tiles)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)
+        elif beh == 0x85:
+            _faller_tail_f639(mem, rec, tiles)                 # F639 IS 0x85's whole handler
+            _postmove_bc45(mem, rec, tiles, with_drift=True)
         elif beh == 0x7A:
             _step_diver_7a(mem, rec, 0x0020)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # 8760/8766 exit jmp BC45
