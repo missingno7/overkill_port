@@ -1926,6 +1926,33 @@ def _step_morphing_shooter_65(mem, rec: int) -> None:
     _spawn_enemy_shot_7476(mem, rec)                               # F4AD
 
 
+def _spawn_child_92(mem, rec: int, bx: int) -> int:
+    """F71B: a C237 spawn then stamp the child's sprite +0x08 = 0x44.  ``bx`` threads the ASM register:
+    C237 sets it to the child slot on a spawn (or 0xFFFF pool-full) and leaves it STALE on a throttle;
+    the ``cmp bx,FFFF`` gate then stamps ``[bx+8]`` (a throttle writes an artifact).  Returns bx."""
+    result = _spawn_child_c237(mem, rec, 0x92)
+    if result is not None:                                  # C237 spawned / pool-full -> bx = slot
+        bx = result
+    if bx != 0xFFFF:                                        # F71E cmp bx,FFFF ; jnz F723
+        mem.ww(DS, (bx + 0x08) & 0xFFFF, 0x0044)            # F723: child sprite
+    return bx
+
+
+def _step_spawner_92(mem, rec: int) -> None:
+    """Behavior 0x92 (``1010:F6F0``): once the object's aligned x (``(x + 0x14) & ~3``) matches the
+    aligned anchor ``[237E] & ~3``, it spawns TWO C237 children -- 4px left then 4px right (x restored)
+    -- each stamped sprite 0x44; otherwise it drifts."""
+    x0 = mem.rw(DS, rec + 0x02)
+    bx = (x0 + 0x14) & 0xFFFC                               # F6F0..F6F6
+    if bx != (mem.rw(DS, 0x237E) & 0xFFFC):                 # F6F9..F701
+        return
+    mem.ww(DS, rec + 0x02, (x0 - 0x0004) & 0xFFFF)          # F706
+    bx = _spawn_child_92(mem, rec, bx)                      # F70A
+    mem.ww(DS, rec + 0x02, (mem.rw(DS, rec + 0x02) + 0x0008) & 0xFFFF)   # F70D
+    _spawn_child_92(mem, rec, bx)                           # F711
+    mem.ww(DS, rec + 0x02, (mem.rw(DS, rec + 0x02) - 0x0004) & 0xFFFF)   # F714
+
+
 def _step_mover_shooter_72(mem, rec: int) -> None:
     """Behavior 0x72 (``1010:F5DC``): sprite = ``([2328] >> 1) + 0x1C`` (the mod-8 clock animation);
     drifts right (x += 1) and fires a 7476 enemy shot on every [2324] parity beat (== 1)."""
@@ -3653,6 +3680,9 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
         elif beh == 0x72:
             _step_mover_shooter_72(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # F5F4 exits jmp BC45
+        elif beh == 0x92:
+            _step_spawner_92(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # F703/F718 exit jmp BC45
         elif beh == 0x73:
             _step_faller_73(mem, rec, tiles)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # F660/F666 exit jmp BC45
