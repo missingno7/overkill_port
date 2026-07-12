@@ -146,10 +146,18 @@ CC4F display phase.
 -> [BD96], [BD95] cell id, cx=count, [BD9C]), calls `5A24` (the blit-setup play_native already uses for
 the plaque / level-select cursors / scene cells) and blits via the `CS:[95BC]` video-mode jump
 (`CC9E`).  So the initial display is the SAME cell-blit mechanism as the attract scenes -- recoverable
-as a compose of 5 cells from the `BD81` descriptor table.  BLOCKER: `BD81` is populated at RUNTIME (the
-static bundle's values are stale), so faithfully recovering it needs a RUNTIME attract snapshot at the
-CD68 phase (capture the live `BD81` descriptors + the `CS:[95B8]` cell bank) -- that snapshot is the
-next concrete step, then the 5-cell compose falls out of the existing blit path.
+as a compose of 5 cells from the `BD81` descriptor table.  `BD81` is populated at RUNTIME (the static bundle is
+stale), so `scripts/probe_coldstart_frontend.py --dump-at F` was added to capture it live.
+
+**CAPTURED (2026-07-12, `--dump-at 1000`):** the live `[BD81]` descriptor stream (4 bytes each, the
+CC4F `lodsb`x4: byte0->[BD96], byte1->[BD95]=CELL ID, byte2->cx count, byte3->[BD9C]) is
+`b0 01 02 13 | 88 15 07 10 | 08 01 0f 14 | 30 16 06 10 | 80 02 06 13 | 05 40 90 72` -> cells
+**0x01, 0x15, 0x01, 0x16, 0x02, 0x40**; the cell bank is `CS:[95B8]=0x76FE` (NOT the scene cells'
+`[95B4]`), video mode `[95BC]=2`.  `BDA0=3` mid-phase = cycling through them.  So the initial display is
+a compose of those ~6 cells from bank 0x76FE via the existing `5A24`/`CS:[95BC]` blit path.  REMAINING
+recovery (next slice): decode those cells from bank 0x76FE at the descriptor positions, compose the
+initial screen, and wire play_native's attract to show it for the ~40s before scene 1 -- then verify the
+composed framebuffer against the VM at the CD68 phase.
 
 The menu render (`verify_native_front_end_image`, byte-exact) + menu decisions
 (`verify_native_front_end_forward`) are already verified, so the menu is grounded.

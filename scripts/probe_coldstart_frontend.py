@@ -26,7 +26,7 @@ from overkill.probes._harness import load_demo  # noqa: E402
 from overkill.input_waits import pump_demo_frame  # noqa: E402
 
 
-def capture(demo_name: str, max_frames: int) -> "list[dict]":
+def capture(demo_name: str, max_frames: int, dump_at: "int | None" = None):
     """Replay the cold-start demo through the ref VM; per present-frame record the front-end state."""
     demo = load_demo(demo_name, demo_name)
     meta = demo.manifest.get("metadata", {})
@@ -35,7 +35,7 @@ def capture(demo_name: str, max_frames: int) -> "list[dict]":
     tail = str(meta.get("command_tail", "")) if is_cold else b""
 
     rows: "list[dict]" = []
-    cur = {"f": 0, "ref": None}
+    cur = {"f": 0, "ref": None, "dump_at": dump_at, "dump": None}
     orig_load = fv._load_runtime
     sides = iter(("ref", "cand"))
 
@@ -53,6 +53,15 @@ def capture(demo_name: str, max_frames: int) -> "list[dict]":
             ds = rt.cpu.s.ds & 0xFFFF
             def rb(o):
                 return rt.cpu.mem.rb(ds, o & 0xFFFF)
+            if cur["f"] == cur.get("dump_at"):
+                cs = rt.cpu.s.cs & 0xFFFF
+                bd81 = bytes(rt.cpu.mem.rb(ds, (0xBD81 + i) & 0xFFFF) for i in range(24))
+                cur["dump"] = {
+                    "BD81": bd81.hex(),
+                    "95B8_cellbank": rt.cpu.mem.rw(cs, 0x95B8),
+                    "95BC_videomode": rt.cpu.mem.rw(cs, 0x95BC),
+                    "BD9A": rt.cpu.mem.rw(ds, 0xBD9A), "BDA0": rt.cpu.mem.rw(ds, 0xBDA0),
+                }
             rows.append({
                 "f": cur["f"],
                 "cs_ip": f"{rt.cpu.s.cs:04X}:{rt.cpu.s.ip:04X}",
@@ -73,7 +82,7 @@ def capture(demo_name: str, max_frames: int) -> "list[dict]":
                            command_tail=tail, config=cfg, pump_inputs=pump)
     finally:
         fv._load_runtime = orig_load
-    return rows
+    return rows, cur.get("dump")
 
 
 def _phase(row) -> str:
@@ -88,8 +97,15 @@ def main(argv=None) -> int:
     ap.add_argument("--frames", type=int, default=400)
     ap.add_argument("--raw", type=int, default=0, metavar="START",
                     help="print EVERY frame in [START, START+40) raw (to see the exact countdown)")
+    ap.add_argument("--dump-at", type=int, default=None, metavar="F",
+                    help="dump the live BD81 attract-display descriptors + cell bank at frame F")
     args = ap.parse_args(argv)
-    rows = capture(args.demo, args.frames)
+    rows, dump = capture(args.demo, args.frames, dump_at=args.dump_at)
+    if dump is not None:
+        print(f"live attract-display state at frame {args.dump_at}:")
+        for k, v in dump.items():
+            print(f"  {k} = {v if isinstance(v, str) else hex(v)}")
+        return 0
     if args.raw:
         print(f"raw frames {args.raw}..{args.raw + 40}:")
         for r in rows:
