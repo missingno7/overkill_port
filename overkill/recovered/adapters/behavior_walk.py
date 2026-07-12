@@ -1829,6 +1829,19 @@ def _step_formation_78(mem, rec: int) -> None:
     _formation_position_f779(mem, rec, 0xD2CC)                        # F771
 
 
+def _step_seeker_50(mem, rec: int) -> None:
+    """Behavior 0x50 (``1010:D281``): seek the record's own +0x32/+0x34 target via the 5DB2 seek
+    (mode 1); on ARRIVAL (the seek's returned flag -- the recovered `[230A]` proxy) it DEACTIVATES the
+    record (type +0x16 = 1) and fires sound 0x0E.  Returns directly (no BC45 postmove)."""
+    arrived = _apply_seek(mem, rec, mem.rw(DS, rec + 0x32), mem.rw(DS, rec + 0x34), 0x0001)  # D281..D293
+    mem.ww(DS, 0x2308, 0x0002)                          # D296
+    if not arrived:                                     # D29C: [230A] == 0 -> not there yet
+        return
+    mem.ww(DS, rec + 0x16, 0x0001)                      # D2A4: deactivate
+    if mem.rw(DS, 0x98C0) != 0:                          # D2A9
+        mem.wb(DS, 0xBEFF, 0x0E)                         # D2B0: arrival sound
+
+
 def _step_diver_6a(mem, rec: int, tiles: LevelTileContext) -> None:
     """Behavior 0x6A (``1010:F175``): while x != 0x50 it drifts; at x == 0x50 it retags to 0x56 and
     takes up to THREE AFD8 contact-steps in its direction, dying (BFC7) on the first blocked step."""
@@ -3598,6 +3611,8 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
         elif beh == 0x1B:
             _step_bouncer_1b(mem, rec, tiles)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # BB19/BB21/BB35/BB3D exit jmp BC45
+        elif beh == 0x50:
+            _step_seeker_50(mem, rec)                           # D281: rets directly, no BC45 postmove
         elif beh == 0x65:
             _step_morphing_shooter_65(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # F49D/F4A7/F4B0 exit jmp BC45
