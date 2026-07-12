@@ -63,6 +63,32 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-12 — FRONT-END: CE97 "decoded" RETRACTED; a real joystick-calibration screen discovered instead
+
+Follow-up to the entry directly below.  Tried to ground the CE97 menu-compose reading (below) against
+the VM directly before building anything -- it did NOT hold up:
+- The `static_runtime_bundle`'s `[9598]` segment (CE97's claimed target) is **entirely zero** -- its
+  capture point (`1010:D007`) is BEFORE CE97 ever runs, so `DS:0x7D00` was never the oracle it looked
+  like from the disassembly alone.
+- Trapped the VM directly at CE97's return address (`1010:CC12`, ~16.7K steps into a fresh boot, <2s):
+  `CS:[9598]` there holds 13,562 nonzero px that do NOT match `OKMENU.ENC` (44,405/64,000 differ) -- not
+  blank, not the expected composed page.  The segment-role reading from static disassembly alone was
+  wrong or incomplete.  **CE97 has NO verified oracle yet; nothing was built against the retracted
+  reading.**  campaigns/frontend.md corrected in place (marked RETRACTED, not deleted, so the false
+  trail isn't retraced).
+- **Real finding instead:** capturing `demo_cold_start_intro`'s live B800 framebuffer (mode-aware -- the
+  front end runs in **CGA mode 4** at present-frame 447+, a 2bpp/2-bank layout, NOT the Tandy 4bpp/
+  4-bank layout every existing decode assumed) shows a **joystick calibration screen** (matches the
+  container's `CALIB.ENC`: "Joystick Calibration -- Move stick to upper left and push FIRE") running
+  for the entire rest of the captured span (6280+ frames).  This is a real, previously undocumented,
+  entirely-unhandled front-end screen -- likely most of what the owner saw as "~6174 frames of automatic
+  intro+attract".  `classify_screen` missed it (address-only, blind to video mode).  Scoped as a new
+  gap in campaigns/frontend.md; not attempted this pass (needs a CGA mode-4 decoder, none exists yet,
+  plus the calibration logic itself).
+- Lesson applied: the CLI flag fix + the ground-truth screen-sequence probe (below) are solid, evidence-
+  backed wins and stay.  The CE97 "fully decoded" claim was premature (disassembly-only, never checked
+  against the VM) and is now honestly marked open rather than left to mislead the next pass.
+
 ## 2026-07-12 — FRONT-END: cold-boot ground truth confirmed + CE97 menu compose decoded (owner: "start identically")
 
 Owner playtest: play_native "starts at inaccurate menu"; `--intro` showed instructions, `--ending`

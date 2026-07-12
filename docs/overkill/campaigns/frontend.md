@@ -40,20 +40,38 @@ boot: LZEXE unpack -> video init -> load shared banks (1X1/2X2/2X2C/MANEXPL/THEN
   IPAGE1..5 are the menu's INSTRUCTIONS (`--instructions`), reached only from 558B 'I'.
 - **title/menu** — `OKMENU.ENC` background + **CE97 composes menu cells** + **558B menu-idle**
   navigation (recovered, `systems/menu` + `native_front_end`).  play_native: `_run_title_menu` shows
-  only the static OKMENU with a fire-wait — MISSING the composed menu cells.  **GAP (decoded, ready to
-  build).**  **CE97 fully decoded (2026-07-12):**
-  - target page `es = CS:[9598]` (the work page); each cell offset = `CS:[0C92 + cellid*2]` in the
-    `CS:[95B8]` bank (= BLUEBITS, 0x79FE in the bundle); the cell format is the SHARED rows/width block
-    (`native_video.attract.cell_indices` / `decode_scene_cell` -- REUSE it, just swap directory 0C92 for
-    0BE4 and bank 95B8 for 95B4).
-  - draw order: cell **0x0F** at `5A24(ax=0)` (the TITLE, top-left); then a loop `cx=0x12` (18x) of cell
-    **0x10** at `5A24(al=0, ah=10*cl)` (cl = 18..1 -> rows 180..10: the stacked menu-option bars); then
-    cell **0x11** at `5A24(al=0, ah=0xBE)` (bottom); finally `rep movsb 0x7D00` copies `CS:[9598]` ->
-    `CS:[9596]:0x7D00` (the visible page; `CS:[9596]=DS` in the bundle, so the composed menu lands at
-    `DS:0x7D00`, which the bundle already carries -- a candidate byte-exact ORACLE).
-  - REMAINING to build the accurate menu: decode `5A24`'s cursor math (al/ah -> DI: cell-grid vs pixel),
-    compose over OKMENU, and gate byte-exact vs `DS:0x7D00` (confirm that page IS the menu, not the
-    attract-initial), then render it in `_run_title_menu` instead of the raw OKMENU.
+  only the static OKMENU with a fire-wait — MISSING the composed menu cells.  **GAP, still open.**
+  **RETRACTED (2026-07-12):** an earlier pass this session called CE97 "fully decoded, ready to build"
+  from the static disassembly alone (cells 0x0F/0x10x18/0x11 via `CS:[9598]` work page + `CS:[0C92]`
+  directory + `CS:[95B8]` bank, landing at `DS:0x7D00`).  Grounding it against the VM directly
+  CONTRADICTED that reading: (1) the `static_runtime_bundle`'s `[9598]` segment is entirely ZERO --
+  the bundle's capture point (`1010:D007`) is BEFORE the compose ever runs, so `DS:0x7D00` in the
+  bundle is not the composed-menu oracle it looked like; (2) live-VM capture at the CE97 RETURN address
+  (`1010:CC12`, trapped directly, ~16.7K steps into a fresh boot) shows `CS:[9598]` holding only 13,562
+  nonzero pixels that do NOT match `OKMENU.ENC` (44,405/64,000 px differ) -- so the segment's content at
+  that instant is neither blank nor the expected composed page, meaning the disassembly-only reading of
+  which segment holds what, and when it becomes the final visible page, is not yet resolved. **No
+  verified oracle for the composed menu exists yet.** Do not build against the retracted reading; the
+  next attempt needs the VM's B800 physical page decoded READING THE ACTIVE VIDEO MODE (see the
+  calibration-screen finding below -- a plain always-mode-9 decode is not safe to assume), likely via a
+  trap on the actual PRESENT/page-flip call rather than CE97's own return.
+- **NEW FINDING (2026-07-12): a JOYSTICK CALIBRATION screen exists and is completely unhandled.** The
+  container has a `CALIB.ENC` asset (`native_video.front_end.decode_fullscreen_image` renders it
+  cleanly: "Joystick Calibration -- Move stick to upper left and push FIRE", matches a standard
+  early-90s DOS calibration screen).  Live-VM capture of `demo_cold_start_intro` shows the front end
+  switching **from text mode to CGA MODE 4** (2bpp, 2 interlaced 8000-byte banks -- NOT the Tandy 16-
+  color 4bpp/4-bank layout `decode_tandy_b800_indices` assumes) at present-frame 447, then displaying a
+  calibration-grid pattern (a moving-crosshair grid, the classic joystick-range visualization) for the
+  ENTIRE rest of the captured span (present-frame 6280+, i.e. most of the owner's observed
+  "~6174 frames of automatic intro+attract" -- much of that is actually this calibration loop, not
+  attract).  This was invisible to `classify_screen` (address-range-only, blind to video mode) and to
+  `verify_native_front_end_image`'s no-input free-run (which reaches mode 9 quickly, so likely takes a
+  no-joystick-detected path that skips calibration).  **play_native has zero handling for this screen**
+  -- not rendered, not skipped, not documented before now.  Whether real players usually see it (i.e.
+  whether it is gated on joystick presence, which dos_re's unmodeled-port-read policy would report as
+  absent) is still open.  Recovering it needs: the CGA mode-4 decode (none exists in the codebase yet),
+  the calibration screen's own logic (grid/crosshair drawing, joystick-poll, skip condition), and the
+  transition points into/out of it -- a real, scoped, but non-trivial next slice.
 - **attract** — the `D007`/`D04D` scene machine (scenes 0x0..0x12, incl. the gameplay DEMO at 0x8..0x12
   with auto-fire).  Rules recovered + demo-witnessed (`systems/attract`); scene-0 `D160` + the `D0DB`
   scene-entry actions + the per-scene CONTENT (which asset/demo each scene shows) are gaps.  play_native:
