@@ -169,10 +169,11 @@ Cleared a batch of the planet-4-6 F-cluster gaps, each composed from already-rec
 - **0x76/0x77/0x78/0x79** (F758..F776): a 2x2 FORMATION locked to the [A8B8]/[A8B6] anchor via the
   D2Cx offset tables (0/32 grid); 0x78 also fires a 7476 shot on the [2330] clock.
 
-Census now: **35 -> down to 12** genuinely-unregistered behaviors after this session's sweep (also
+Census now: **35 -> down to 8** genuinely-unregistered behaviors after this session's sweep (also
 added 0x72 mover-shooter, 0x66/0x67 waypoint-seeds, 0x6E/0x1B bouncers, 0x65 morphing-shooter, 0x6A
-diver, 0x50 seeker).  The remaining 12 are the HARD TAIL, each needing more than a hand-decode+compose:
-- **ADxx movers 0x07/08/09/0F** -> the shared `AD60` cull+scan body (5073/505B tile probes).
+diver, 0x50 seeker, and the **ADxx movers 0x07/08/09/0F** -- these turned out RECOVERABLE via the
+already-recovered `_ad60_tail` (bounds cull + 5073/505B tile-probe despawn): each is a small sprite/x
+tweak then `_ad60_tail(logic_id=beh, drift=False)`).  The remaining 8 are the HARD TAIL:
 - **0x61/0x62 pair** -- 0x61 is a clean 5DB2 seek but retags to 0x62, which is COMPLEX (anchor-follow +
   [A47E] y-grid align + morph-to-0x61 + retag-to-0x65 on a 4D95 random + C237/7476 spawns); they cycle,
   so both are needed together -- a lifter/witness job.

@@ -1197,6 +1197,34 @@ def _ad60_tail(mem, rec: int, tiles: LevelTileContext, logic_id: int, *, drift: 
             _bd17_deactivate(mem, rec)
 
 
+def _step_ad60_mover_07(mem, rec: int, tiles: LevelTileContext) -> None:
+    """Behavior 0x07 (``1010:ADDF``): sprite = ``[2326] + 0x5A``; drift left (x -= 3); then the shared
+    AD60 bounds/tile despawn tail (logic 0x07 -> bounds-cull only)."""
+    mem.ww(DS, rec + 0x08, (mem.rw(DS, 0x2326) + 0x005A) & 0xFFFF)   # ADDF..ADE5
+    mem.ww(DS, rec + 0x02, (mem.rw(DS, rec + 0x02) - 0x0003) & 0xFFFF)  # ADE8
+    _ad60_tail(mem, rec, tiles, 0x07, drift=False)
+
+
+def _step_ad60_mover_08(mem, rec: int, tiles: LevelTileContext) -> None:
+    """Behavior 0x08 (``1010:ADD9``): drift left (x -= 0x10); then the AD60 tail (logic 0x08 -> the
+    tile-probe despawn path)."""
+    mem.ww(DS, rec + 0x02, (mem.rw(DS, rec + 0x02) - 0x0010) & 0xFFFF)  # ADD9
+    _ad60_tail(mem, rec, tiles, 0x08, drift=False)
+
+
+def _step_ad60_mover_09(mem, rec: int, tiles: LevelTileContext) -> None:
+    """Behavior 0x09 (``1010:ADEF``): no per-behavior tweak; just the AD60 tail (logic 0x09 ->
+    tile-probe despawn)."""
+    _ad60_tail(mem, rec, tiles, 0x09, drift=False)
+
+
+def _step_ad60_mover_0f(mem, rec: int, tiles: LevelTileContext) -> None:
+    """Behavior 0x0F (``1010:ADF2``): sprite = ``[232A] >> 1``; then the AD60 tail (logic 0x0F ->
+    bounds-cull only)."""
+    mem.ww(DS, rec + 0x08, (mem.rw(DS, 0x232A) >> 1) & 0xFFFF)       # ADF2..ADFA
+    _ad60_tail(mem, rec, tiles, 0x0F, drift=False)
+
+
 def _steer_5e42_inplace(mem, rec: int) -> None:
     """One 5E42 delta-steer over the record's own +0x2A/+0x2C deltas, written back in place."""
     table = tuple(mem.rb(DS, (0xA348 + i) & 0xFFFF) for i in range(16))
@@ -3681,6 +3709,14 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
             # the EFC4 table points these straight at BC45 -- there is NO per-behavior body, the
             # handler IS the drift postmove.  Dispatching them = the plain drift (with_drift=True).
             _postmove_bc45(mem, rec, tiles, with_drift=True)
+        elif beh == 0x07:
+            _step_ad60_mover_07(mem, rec, tiles)               # ADDF -> AD60 (rets directly, no BC45)
+        elif beh == 0x08:
+            _step_ad60_mover_08(mem, rec, tiles)               # ADD9 -> AD60
+        elif beh == 0x09:
+            _step_ad60_mover_09(mem, rec, tiles)               # ADEF -> AD60
+        elif beh == 0x0F:
+            _step_ad60_mover_0f(mem, rec, tiles)               # ADF2 -> AD60
         else:
             raise RecoveryGap(f"behavior {beh:#04x} (record {rec:04X})",
                               "no native handler registered -- recover it before walking")
