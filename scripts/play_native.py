@@ -490,18 +490,19 @@ _REDEFINE_SLOTS = (("UP", 0x2142), ("DOWN", 0x2143), ("LEFT", 0x2144),
                    ("RIGHT", 0x2145), ("FIRE", 0x2141), ("SPECIAL (apply upgrade)", 0x2140))
 
 
-def _draw_menu_text_overlay(display, pygame, base_frame, lines) -> None:
-    """Draw ``base_frame`` (the title) then blit centered text ``lines`` (``(text, rgb)``) over it."""
+def _draw_menu_text_overlay(display, pygame, base_frame, lines, anchor: str = "center") -> None:
+    """Draw ``base_frame`` (the title) then blit centered text ``lines`` (``(text, rgb)``) over it.
+    ``anchor`` = "center" (default) or "bottom" (a settings row that doesn't cover the menu art)."""
     display.draw(base_frame)
-    font = pygame.font.SysFont("monospace", 20, bold=True)
+    font = pygame.font.SysFont("monospace", 18, bold=True)
     w, h = display.screen.get_width(), display.screen.get_height()
-    y = h // 2 - len(lines) * 18
+    y = (h - int(h * 0.16)) if anchor == "bottom" else (h // 2 - len(lines) * 18)
     for text, color in lines:
         surf = font.render(text, True, color)
         rect = surf.get_rect(center=(w // 2, y))
         display.screen.fill((0, 0, 0), rect.inflate(16, 8))     # a readable backdrop
         display.screen.blit(surf, rect)
-        y += 36
+        y += 30
     pygame.display.flip()
 
 
@@ -629,10 +630,30 @@ def _run_title_menu(display, pygame, bundle_data, container_data,
             if r is True:
                 return sound_mode, control, key_overrides
             idle = 0
-        display.draw(title)
+        _draw_menu_selection(display, pygame, title, sound_mode, control)
         if music is not None:
             music.pump()                                       # the menu tune (page 2) plays here
         clock.tick(30)
+
+
+#: 558B sound modes ([22B5] 0..3) and control methods ([0010]) as labels, for the on-screen marker.
+_SOUND_MODE_LABELS = ("MUSIC", "FX", "BOTH", "NONE")
+_CONTROL_LABELS = {0: "KEYBOARD", 2: "AMSTRAD"}
+
+
+def _draw_menu_selection(display, pygame, title, sound_mode: int, control: int) -> None:
+    """Draw the OKMENU title with the CURRENT selections marked -- the original highlights the active
+    SOUND ([22B5]) and CONTROL ([0010]) options; play_native shows them as a labelled row + the option
+    lists with the active entry bracketed, so the user can see what is selected (M / K / A cycle them)."""
+    sound_row = "  ".join(f"[{o}]" if i == sound_mode else f" {o} "
+                          for i, o in enumerate(_SOUND_MODE_LABELS))
+    ctrl_opts = ("KEYBOARD", "AMSTRAD")
+    ctrl_active = 0 if control == 0 else 1
+    ctrl_row = "  ".join(f"[{o}]" if i == ctrl_active else f" {o} " for i, o in enumerate(ctrl_opts))
+    _draw_menu_text_overlay(display, pygame, title, [
+        (f"SOUND (M):  {sound_row}", (255, 220, 0)),
+        (f"CONTROL:    {ctrl_row}", (120, 220, 255)),
+    ], anchor="bottom")
 
 
 #: the FIRE scancode (space) the attract's auto-fire injects into the image's INT9 key table.
@@ -849,6 +870,18 @@ class SpeakerSink:
             self._speaker.close()
 
 
+def _music_page_for(img) -> int:
+    """The ``1010:5F61`` music selector: the song is ``DS:[0x231E + [2356]]`` (the per-planet table
+    indexed by the current planet), overridden to page 6 (the boss/end tune) once the world scroll
+    ``[2350] >= 0x0750``.  This is the game-state -> AdLib page mapping the native music sink follows,
+    so each level plays its own song instead of the menu tune (page 2)."""
+    idx = img.rb(_DS, 0x2356)
+    song = img.rb(_DS, (0x231E + idx) & 0xFFFF)
+    if img.rw(_DS, 0x2350) >= 0x0750:
+        song = 6
+    return song
+
+
 class AdlibMusicSink:
     """Live OPL3 MUSIC from the recovered VM-free AdLib driver.  Each present-frame it ticks the
     segment-2032 ``AdlibDriver`` (``ticks_per_frame`` = the timer-ISR ticks the driver runs per frame)
@@ -890,7 +923,19 @@ class AdlibMusicSink:
     def request_page(self, page: int) -> None:
         """Queue a music-page (re)load -- the game->driver ``[0008]`` request the tune plays from."""
         if self.available:
+            self._song = page & 0xFF
             self.driver.ram[0x0008] = page & 0xFF
+
+    def set_song(self, page: int) -> None:
+        """Switch music to ``page`` (the 5F61 per-level selection).  Unlike :meth:`request_page` this
+        FORCES the page gate to pick it up by clearing the active-page latch ``[0009]`` -- the game
+        changes songs by stopping first, so a mid-song request otherwise no-ops (0409 only reloads
+        ``[0008]`` when ``[0009] == 0``).  A no-op when the song is already selected."""
+        if not self.available or page == getattr(self, "_song", None):
+            return
+        self._song = page & 0xFF
+        self.driver.ram[0x0009] = 0                  # clear the latch so 0409 reloads the new page
+        self.driver.ram[0x0008] = page & 0xFF
 
     def pump(self) -> None:
         """Advance the driver one present-frame and feed its audio to the mixer.  Call once per frame."""
@@ -1189,6 +1234,8 @@ def main(argv=None) -> int:
             if speaker is not None:
                 speaker.update(img)
             if music is not None:
+                if hold is None:
+                    music.set_song(_music_page_for(img))   # 5F61: follow the per-level song selection
                 music.pump()             # advance + play one frame of the VM-free AdLib music
             display.draw(frame)
             drawn += 1

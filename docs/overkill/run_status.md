@@ -83,6 +83,27 @@ justifies it -- kills the A97C/0054 divergences); (2) the death/respawn frame-cl
 FRONT-END intro + attract-demonstration fidelity (the big uncovered span).  The demo is also the proper
 COLD adlib AUDIO oracle, but the music starts after ~frame 600 (the early intro is near-silent).
 
+## 2026-07-11 — FRONT-END/AUDIO: fix the attract crash, per-level music, menu selection markers
+
+Three owner-reported issues from playing native:
+- **CRASH** (menu idle -> attract): `NameError: build_cold_level_start_image` -- it was imported inside
+  `main()` but `_run_native_attract` (module-level) uses it.  Hoisted the import to module scope.
+- **WRONG MUSIC** (level 1 played the menu/intro tune): the `AdlibMusicSink` was seeded once with a
+  fixed page (2 = menu) and never followed the game's per-level song selection.  Recovered the
+  `1010:5F61` selector: the song is `DS:[0x231E + [2356]]` (the per-planet table -- planets 1..6 map to
+  songs 1/3/7/9/10/8 as `[2356]` cycles 1,2,3,4,5,0), overridden to page 6 once the world scroll
+  `[2350] >= 0x0750` (the end-of-level tune).  Added `AdlibMusicSink.set_song` (forces the 0409 gate to
+  reload by clearing the active latch `[0009]`, since the game changes songs by stopping first) +
+  `_music_page_for(img)`, and the gameplay loop now follows it each frame.  Verified against the real
+  DGROUP (DS=0x25CC, NOT 0x1F8F): cold levels 1..6 -> songs 1/3/7/9/10/8; a mid-level snapshot ([2350]
+  past 0x750) -> song 6.
+- **MENU not marked**: added `_draw_menu_selection` -- a labelled SOUND (M) row (MUSIC/FX/BOTH/NONE) +
+  CONTROL row (KEYBOARD/AMSTRAD) drawn under the title with the active option bracketed, so the current
+  selection is visible.  (The pixel-exact CB1C/CE97 marker recovery is still a separate item.)
+
+Still OPEN: the music LAGS (a sink tempo/buffering item -- ticks_per_frame / real-time sync); the
+pixel-exact menu marker.  Suite 1396 passed.
+
 ## 2026-07-11 — TOOLING: bump the dos_re submodule (9230822 -> d9c3249, framework promotions)
 
 Bumped the `dos_re` submodule to the major update; the full OVERKILL suite stays green (1396 passed).
