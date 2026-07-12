@@ -23,7 +23,7 @@ _HAVE = (ROOT / "assets" / "OVERKILL").exists() and (ROOT / "artifacts" / "demos
 def test_vmfree_driver_byte_exact_per_tick():
     """The strongest form: at every 2032:0063 tick entry the VM-free driver, seeded from the true
     seg-2032 image, reproduces the VM's OPL writes byte-exact.  (A short window here for suite speed;
-    the standalone probe proves the full L1-L4 demos, SFX and page changes included.)"""
+    the standalone probe proves the full L1-L6 demos, SFX and page changes included.)"""
     from overkill.probes.verify_native_audio import per_tick
 
     ticks, bad = per_tick(_DEMO, 130)
