@@ -98,17 +98,18 @@ Done this pass (the honesty reset + the first grounded step):
   VM and records the front-end state at every present boundary -- attract scene `[BE06]`, countdown
   `[BE08]`, START flag `[98C3]`, and CS:IP.  This is the GROUND TRUTH the native front end must match.
 
-**KEY BLOCKER FOUND (the first thing to nail):** the frame-verifier's present-boundary count does NOT
-align 1:1 with the demo's recording boundaries.  The probe reaches the game-start path (`1010:96C8`) at
-present-frame ~197, yet the demo's first key event is at recording boundary 6174 -- because the menu
-IDLE is a BOUNDARY-LESS input-wait loop (`overkill/input_waits.py`), so the frame verifier does not
-count those frames while the demo recorder inserted synthetic boundaries for them.  A front-end lockstep
-must reconcile these two clocks first (the gameplay 9B2E lockstep sidesteps it -- 97B2 frames always
-produce a boundary).  THIS is the next concrete task -- not more front-end guessing.
+**Correction (first-pass misread):** the demo boundary DOES align -- `_run_ref_step_probe`'s
+`boundary["n"]` is incremented per `pump_demo_frame` call (once per frame-verifier boundary, idle-loop
+synthetic boundaries included), so present-frame `f` IS the demo boundary.  The `1010:96C8` seen at
+`f=197` is NOT game-start (the 9B2E lockstep confirmed ZERO gameplay frames through demo-frame 6000) --
+it is a front-end address I misidentified.  So there is no boundary blocker; the real gap is simply that
+**no native FRONT-END frame exists** to lockstep at those boundaries (the 97B2 native frame only covers
+gameplay).  The front-end scene machine `[BE06]` also stayed 0 for the first 350 frames -- the attract
+scenes start deeper in, so the ground-truth capture must run the full ~6200 front-end frames.
 
 Plan (the FRONT-END demo-lockstep campaign, mirroring demo_lockstep for gameplay):
-1. Reconcile the present/retrace boundary clock with the demo's recording boundaries (the idle-loop
-   synthetic-boundary mapping) so a front-end frame can be snapshotted + replayed deterministically.
+1. Capture the full front-end ground-truth timeline (intro -> menu -> attract -> the weapon/upgrade
+   demonstration) from the pure VM -- what native must reproduce, per boundary.
 2. Recover the CC04 front-end loop body as ONE native front-end frame (compose CE97 menu + the D007
    attract scene machine + the 558B start/idle decision), verified byte-exact at the boundary.
 3. Swap play_native's `_run_title_menu`/`_run_native_attract` host loops onto that verified frame.
