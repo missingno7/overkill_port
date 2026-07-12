@@ -169,20 +169,19 @@ Cleared a batch of the planet-4-6 F-cluster gaps, each composed from already-rec
 - **0x76/0x77/0x78/0x79** (F758..F776): a 2x2 FORMATION locked to the [A8B8]/[A8B6] anchor via the
   D2Cx offset tables (0/32 grid); 0x78 also fires a 7476 shot on the [2330] clock.
 
-Census now: **35 -> down to 8** genuinely-unregistered behaviors after this session's sweep (also
-added 0x72 mover-shooter, 0x66/0x67 waypoint-seeds, 0x6E/0x1B bouncers, 0x65 morphing-shooter, 0x6A
-diver, 0x50 seeker, and the **ADxx movers 0x07/08/09/0F** -- these turned out RECOVERABLE via the
-already-recovered `_ad60_tail` (bounds cull + 5073/505B tile-probe despawn): each is a small sprite/x
-tweak then `_ad60_tail(logic_id=beh, drift=False)`).  The remaining 8 are the HARD TAIL:
+Census now: **35 -> down to 6** genuinely-unregistered behaviors after this session's sweep -- added
+0x72 mover-shooter, 0x66/0x67 waypoint-seeds, 0x6E/0x1B bouncers, 0x65 morphing-shooter, 0x6A diver,
+0x50 seeker, the **ADxx movers 0x07/08/09/0F** (via the recovered `_ad60_tail`), **0x92** grid-twin
+spawner (threading the C237 stale-bx faithfully), and **0x75** 3-way shooter (with the **C21D** bare
+shot spawn, composed from `child_spawn_seed_c237`/`child_spawn_sound_c237` at +0xC).
+
+The remaining **6** are the genuinely HARD TAIL, each needing the lifter+witness or a multi-part decode:
 - **0x61/0x62 pair** -- 0x61 is a clean 5DB2 seek but retags to 0x62, which is COMPLEX (anchor-follow +
-  [A47E] y-grid align + morph-to-0x61 + retag-to-0x65 on a 4D95 random + C237/7476 spawns); they cycle,
-  so both are needed together -- a lifter/witness job.
-- **0x8D** (BB40) -- a tile-SCAN (5073/505B probe loop).
+  [A47E] y-grid align + morph-to-0x61 + retag-to-0x65 on a 4D95 random + C237/7476 spawns); they cycle.
+- **0x8D** (BB40) -- the `BBED` tile-SCAN movement loop (5073/505B + AFD8 + a sprite formula + gated 7476).
 - **0x84** (F669) -- an INDIRECT JUMP TABLE (the construct the lifter refuses).
 - **0x7F/0x80** (1F8F overlay pair) -- 0x80 is complex/multi-branch.
-- **0x75** (F729) -- needs the unrecovered C21D 3-way shot.
-- **0x92** (F6F0) -- a 4px-grid alignment mover.
-These are best surfaced by play (capture_pure_vm_snapshot + liftverify) rather than speculative decode.
+Best surfaced by play (capture_pure_vm_snapshot + liftverify) rather than speculative hand-decode.
 
 ## 2026-07-12 — GAMEPLAY: recover the 1F8F-overlay behavior 0x7b (the overlay IS decodable)
 
