@@ -1926,6 +1926,37 @@ def _step_morphing_shooter_65(mem, rec: int) -> None:
     _spawn_enemy_shot_7476(mem, rec)                               # F4AD
 
 
+def _spawn_shot_c21d(mem, rec: int, parent_beh: int) -> int:
+    """``1010:C21D``: alloc a shot slot (7573 -- NO difficulty throttle, unlike C237), seed the shared
+    C277 child template but at +0xC from the parent (vs C237's +4) and fire the C277 spawn sound.
+    Returns the slot (or 0xFFFF on a full pool)."""
+    slot = _alloc(mem, 0x95DA, GAMEPLAY_POOL_BASE, GAMEPLAY_POOL_WRAP, GAMEPLAY_SLOTS)   # C21D: 7573
+    if slot == 0xFFFF:
+        return 0xFFFF
+    # child_spawn_seed_c237 lands the child at +4; pass parent+8 so it ends up at +0xC (C21D/C277).
+    for off, val in child_spawn_seed_c237((mem.rw(DS, rec + 0x02) + 8) & 0xFFFF,
+                                          (mem.rw(DS, rec + 0x04) + 8) & 0xFFFF,
+                                          mem.rw(DS, rec + 0x06)).items():
+        mem.ww(DS, slot + off, val)
+    sound = child_spawn_sound_c237(parent_beh, mem.rw(DS, slot + 0x02), mem.rw(DS, rec + 0x02))
+    if sound is not None and mem.rb(DS, 0x98C0):
+        mem.wb(DS, 0xBEFF, sound)
+    return slot
+
+
+def _step_triple_shooter_75(mem, rec: int) -> None:
+    """Behavior 0x75 (``1010:F729``): drifts right (x += 2); on the [2326] == 3 beat it fires a 3-way
+    burst -- three C21D shots in directions 5, 3, 4 -- restoring its own direction after."""
+    mem.ww(DS, rec + 0x02, (mem.rw(DS, rec + 0x02) + 2) & 0xFFFF)   # F729
+    if mem.rw(DS, 0x2326) != 0x0003:                               # F72D
+        return
+    saved_dir = mem.rw(DS, rec + 0x06)                             # F737: push dir
+    for direction in (0x0005, 0x0003, 0x0004):                    # F73A/F742/F74A
+        mem.ww(DS, rec + 0x06, direction)
+        _spawn_shot_c21d(mem, rec, 0x75)                          # F73F/F747/F74F: call C21D
+    mem.ww(DS, rec + 0x06, saved_dir)                             # F752: pop dir
+
+
 def _spawn_child_92(mem, rec: int, bx: int) -> int:
     """F71B: a C237 spawn then stamp the child's sprite +0x08 = 0x44.  ``bx`` threads the ASM register:
     C237 sets it to the child slot on a spawn (or 0xFFFF pool-full) and leaves it STALE on a throttle;
@@ -3680,6 +3711,9 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
         elif beh == 0x72:
             _step_mover_shooter_72(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # F5F4 exits jmp BC45
+        elif beh == 0x75:
+            _step_triple_shooter_75(mem, rec)
+            _postmove_bc45(mem, rec, tiles, with_drift=True)    # F734/F755 exit jmp BC45
         elif beh == 0x92:
             _step_spawner_92(mem, rec)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # F703/F718 exit jmp BC45
