@@ -83,6 +83,30 @@ justifies it -- kills the A97C/0054 divergences); (2) the death/respawn frame-cl
 FRONT-END intro + attract-demonstration fidelity (the big uncovered span).  The demo is also the proper
 COLD adlib AUDIO oracle, but the music starts after ~frame 600 (the early intro is near-silent).
 
+## 2026-07-12 — TOOLING/FRONT-END: unify onto dos_re.frontend_timeline (the front-end lockstep framework)
+
+The dos_re bump (d9c3249 -> 1b73073) brings `dos_re.frontend_timeline` -- the promoted, GENERALIZED
+form of our own `scripts/probe_coldstart_frontend.py` (the module docstring cites it), from pre2_port's
+menu verification.  It is the front-end analogue of the tick demo: a per-PRESENT-FRAME timeline with
+`capture` + `collapse` (run-length screen SEQUENCE) + `diff_sequence` (screen ORDER + per-run durations,
+tolerance) + `diff_pixels` (byte-exact per-frame RGB).  This is EXACTLY the front-end lockstep we were
+designing ad-hoc (the "diff framebuffer + control cells" finding) -- now a canonical framework.
+
+Unified our VM ground-truth prober onto it: `probe_coldstart_frontend --sequence` classifies each VM
+present-frame to a coarse SCREEN id (boot / attract:initial / attract:scene-N / menu / gameplay) and
+emits the run-length SEQUENCE via `frontend_timeline.collapse`/`format_sequence`.  Suite stays green
+(1397); frontend_timeline's own 6 tests pass.
+
+**NEXT (the real prize -- the front-end lockstep, following pre2_port's `verify_native_frontend.py`):**
+add `overkill/probes/verify_native_frontend.py` that captures BOTH sides on the SAME screen ids -- the VM
+(replay the cold demo, render the B800 framebuffer) and the NATIVE front end (drive the menu + the
+`NativeAttract` scene generator, render each) -- then `diff_sequence(collapse(vm), collapse(native),
+duration_tolerance=2)` (+ opt-in `diff_pixels`).  The oracle trick (toolbox 12b): capture the VM's
+per-frame keyboard scancode flags and INJECT them into the native side so the candidate makes the VM's
+choices.  This will prove the cold-boot screens byte-for-byte AND flag exactly what native skips (the
+attract-initial display) as a "missing screen" -- backing this session's front-end findings with the
+canonical gate.
+
 ## 2026-07-12 — GAMEPLAY: F-cluster behavior sweep (0x71, 0x73/0x74/0x85, 0x76-0x79)
 
 Cleared a batch of the planet-4-6 F-cluster gaps, each composed from already-recovered primitives:

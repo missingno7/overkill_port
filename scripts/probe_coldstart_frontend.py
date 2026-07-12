@@ -24,6 +24,26 @@ import overkill.frame_verify as fv  # noqa: E402
 from overkill.frame_verify import FrameVerifyConfig, run_frame_verifier  # noqa: E402
 from overkill.probes._harness import load_demo  # noqa: E402
 from overkill.input_waits import pump_demo_frame  # noqa: E402
+from dos_re.frontend_timeline import FrameRecord, collapse, format_sequence  # noqa: E402
+
+
+def classify_screen(row) -> str:
+    """A COARSE logical screen id for one VM present-frame (the `dos_re.frontend_timeline` witness): the
+    cold-boot phase, from the CS:IP + attract scene [BE06].  A proxy for the framebuffer fingerprint --
+    enough to prove the SCREEN ORDER (which screen, in what order) the native front end must reproduce."""
+    cs, ip = row["cs_ip"].split(":")
+    ipv = int(ip, 16)
+    if cs != "1010":
+        return "boot"
+    if 0x9740 <= ipv <= 0x9C50:            # the 97B2 top .. 9B2E boundary gameplay frame
+        return "gameplay"
+    if row["scene_BE06"]:
+        return f"attract:scene-{row['scene_BE06']:#04x}"
+    if 0xCC00 <= ipv <= 0xCEFF:            # CC04/CC4F/CD68/CE.. -- the attract initial display
+        return "attract:initial"
+    if 0x5500 <= ipv <= 0x5C50:            # 558B menu / 5C04 compose
+        return "menu"
+    return f"front-end@{ip[:2]}xx"
 
 
 def capture(demo_name: str, max_frames: int, dump_at: "int | None" = None):
@@ -106,12 +126,21 @@ def main(argv=None) -> int:
                     help="print EVERY frame in [START, START+40) raw (to see the exact countdown)")
     ap.add_argument("--dump-at", type=int, default=None, metavar="F",
                     help="dump the live BD81 attract-display descriptors + cell bank at frame F")
+    ap.add_argument("--sequence", action="store_true",
+                    help="emit the coarse SCREEN sequence via dos_re.frontend_timeline (the front-end "
+                         "lockstep witness -- the ground truth the native front end must reproduce)")
     args = ap.parse_args(argv)
     rows, dump = capture(args.demo, args.frames, dump_at=args.dump_at)
     if dump is not None:
         print(f"live attract-display state at frame {args.dump_at}:")
         for k, v in dump.items():
             print(f"  {k} = {v if isinstance(v, str) else hex(v)}")
+        return 0
+    if args.sequence:
+        records = [FrameRecord(r["f"], classify_screen(r), "") for r in rows]
+        runs = collapse(records)
+        print(f"cold-boot SCREEN sequence ({len(records)} frames -> {len(runs)} screens):")
+        print("  " + format_sequence(runs))
         return 0
     if args.raw:
         print(f"raw frames {args.raw}..{args.raw + 40}:")
