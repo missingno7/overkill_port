@@ -41,6 +41,24 @@ def test_full_flow_setup_cells_gameplay():
     assert "draw_cell" in kinds and "gameplay" in kinds     # setup -> cells -> auto-fire gameplay
 
 
+def test_scene_3_and_5_countdown_override():
+    """The D0DB per-scene tail (D183) reloads [BE08]=0x32 for scenes 3 and 5 -- half the default 0x64 --
+    so they display for half as long; the native attract must apply it to match the cold-start demo."""
+    from overkill.recovered.domain.attract import AttractSceneState
+    # scene 2 with countdown 1: the next step advances to scene 3, which OVERRIDES the countdown to 0x32
+    d = NativeAttract(AttractSceneState(scene=2, countdown=1, autofire_tick=0))
+    d2, _ = d.step(fire_pressed=False, any_key=False)
+    assert d2.state.scene == 3 and d2.state.countdown == 0x32
+    # scene 4 -> 5 also overrides
+    d = NativeAttract(AttractSceneState(scene=4, countdown=1, autofire_tick=0))
+    d2, _ = d.step(fire_pressed=False, any_key=False)
+    assert d2.state.scene == 5 and d2.state.countdown == 0x32
+    # a non-overriding scene (1 -> 2) keeps the default 0x64 reload
+    d = NativeAttract(AttractSceneState(scene=1, countdown=1, autofire_tick=0))
+    d2, _ = d.step(fire_pressed=False, any_key=False)
+    assert d2.state.scene == 2 and d2.state.countdown == 0x64
+
+
 def test_fire_exits_the_attract():
     d = NativeAttract.start()
     kinds, _ = _run(d, 10, fire_at=2, setup_after=1)

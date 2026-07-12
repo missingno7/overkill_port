@@ -133,6 +133,19 @@ So the two concrete divergences behind the owner's report: (1) **play_native SKI
 host-loop guess rather than the `D028` machine walking scenes 1->19 (the demonstration).  The menu is
 where input lands AFTER the attract loops back (55F1), not before.
 
+**GROUNDED FIX #1 -- the attract scene DURATIONS (2026-07-12):** a raw per-frame capture
+(`probe_coldstart_frontend --raw`) around the scene 2->3 transition showed the attract runs TWO
+present/retrace boundaries per D04D scene-machine tick (`D013` + `D028` alternating), the countdown
+`[BE08]` decrements once per tick, and scene 3 starts at count **50, not 100**.  `D0DB` reloads
+`[BE08]=0x64` for every scene, but the per-scene entry tail (the `D10B` jump table -- a declared gap in
+`systems/attract`) OVERRIDES it: scenes 3 and 5 (handler `1010:D183`) do `mov [BE08],0x32`, so they
+display half as long.  play_native's `NativeAttract` used the constant 0x64 for all scenes -> wrong
+durations = part of "the attract plays incorrectly".  FIXED: `_SCENE_COUNTDOWN_OVERRIDE = {3:0x32,
+5:0x32}` applied on scene advance (tested; the other cell scenes and 44AF default keep 0x64).  Verified
+the override addresses vs the raw ground truth.  The attract CONTENT path is already grounded
+(`native_video/attract.compose_scene` renders the descriptor's cell per scene); the scene MACHINE is
+witness-verified -- so the attract logic + content + timing are now all grounded.  Suite 1397.
+
 **DESIGN FINDING (2026-07-12, `scripts/probe_frontend_writeset.py`):** the front-end lockstep can NOT
 mirror the gameplay one (a DGROUP diff).  Over 199 intro frames (boundaries 220..420, all at the
 `96C8` retrace-delay loop `call 50C9; loop`, scene 0) the DGROUP had **ZERO changed cells** -- the

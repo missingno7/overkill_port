@@ -86,8 +86,16 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("demo")
     ap.add_argument("--frames", type=int, default=400)
+    ap.add_argument("--raw", type=int, default=0, metavar="START",
+                    help="print EVERY frame in [START, START+40) raw (to see the exact countdown)")
     args = ap.parse_args(argv)
     rows = capture(args.demo, args.frames)
+    if args.raw:
+        print(f"raw frames {args.raw}..{args.raw + 40}:")
+        for r in rows:
+            if args.raw <= r["f"] < args.raw + 40:
+                print(f"  f={r['f']:5d}  scene={r['scene_BE06']:#04x}  count={r['count_BE08']:3d}  @ {r['cs_ip']}")
+        return 0
     # compress into runs of (scene, start-flag) so the timeline is readable
     print(f"captured {len(rows)} present-frames")
     prev = None

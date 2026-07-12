@@ -31,6 +31,10 @@ FIRST_CELL_SCENE = 1
 LAST_CELL_SCENE = 7
 SCENE_COUNTDOWN_START = 0x64
 
+#: D0DB's per-scene entry tail (1010:D10B jump table) overrides the countdown for a few scenes: scenes
+#: 3 and 5 (handler 1010:D183) reload [BE08]=0x32 (half the default 0x64), so they display half as long.
+_SCENE_COUNTDOWN_OVERRIDE = {0x03: 0x32, 0x05: 0x32}
+
 
 @dataclass(frozen=True)
 class AttractAction:
@@ -67,7 +71,17 @@ class NativeAttract:
                                                   countdown=SCENE_COUNTDOWN_START, autofire_tick=0))
             return nxt, AttractAction("draw_cell", scene=FIRST_CELL_SCENE)
         adv = attract_frame_step(self.state)          # advance the recovered scene machine
-        nxt = NativeAttract(adv.state)
+        new_state = adv.state
+        if adv.scene_advanced:
+            # D0DB's per-scene entry tail (a declared gap in systems/attract) OVERRIDES the countdown
+            # for a few scenes via the D10B jump table: scenes 3 and 5 (handler 1010:D183) reload
+            # [BE08]=0x32 (50) instead of the default 0x64, so they show for half as long.  Applying it
+            # here is what makes the attract scene DURATIONS match the cold-start demo (ground truth).
+            override = _SCENE_COUNTDOWN_OVERRIDE.get(new_state.scene)
+            if override is not None:
+                new_state = AttractSceneState(scene=new_state.scene, countdown=override,
+                                              autofire_tick=new_state.autofire_tick)
+        nxt = NativeAttract(new_state)
         if scene >= 8:
             return nxt, AttractAction("gameplay", scene=scene, injected_fire=adv.injected_input)
         return nxt, AttractAction("draw_cell", scene=scene)
