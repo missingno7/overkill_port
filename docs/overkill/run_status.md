@@ -63,6 +63,26 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-12 — FRONT-END: cold-boot ground truth confirmed + CE97 menu compose decoded (owner: "start identically")
+
+Owner playtest: play_native "starts at inaccurate menu"; `--intro` showed instructions, `--ending`
+showed ordering info.  Grounded it (no guessing):
+- **Container dump: NO standalone intro/title asset** (58 assets; no TITLE/INTRO/LOGO.ENC).  So the
+  cold-boot "intro" IS the attract; IPAGE1..5 are the menu 'I' INSTRUCTIONS only.  **THE END** =
+  `WINSCR.ENC` (victory), distinct from the OPAGE ordering pages.
+- **Cold-boot sequence probe** (`probe_coldstart_frontend --sequence`, first 1400 frames):
+  `boot -> menu -> front-end@5Cxx -> front-end@96xx -> attract:initial` (953+ frames) -- straight into
+  the CC04 front-end loop (menu compose + CC4F attract cycling), no separate intro.
+- **CLI FIXED + pushed:** `--intro` -> the attract, `--ending` -> THE END (WINSCR); `--instructions`
+  (IPAGE) / `--ordering` (OPAGE) kept as their own flags.  (Was: --intro=instructions, --ending=ordering.)
+- **CE97 menu compose fully DECODED** (see campaigns/frontend.md): title cell 0x0F + 18x menu-bar cell
+  0x10 (rows 10*cl) + cell 0x11, all from the `CS:[95B8]` (BLUEBITS) bank via the `CS:[0C92]` directory
+  in the SHARED cell format (`native_video.attract.cell_indices` reuses directly), composed into
+  `CS:[9598]` then copied to `CS:[9596]:0x7D00` (= `DS:0x7D00`, present in the bundle -- a candidate
+  byte-exact oracle).  The accurate-menu recovery is now a scoped slice: decode 5A24's cursor math,
+  compose over OKMENU, gate byte-exact vs DS:0x7D00, render it in `_run_title_menu`.  This is the core
+  of the owner's "start identically" ask (front-end campaign slice C, the menu piece).
+
 ## 2026-07-12 — AUDIO: the VM-free AdLib driver proven BYTE-EXACT vs the VM (oracle gate landed)
 
 Built the audio counterpart of the 9B2E gameplay lockstep: `overkill/probes/verify_native_audio.py`

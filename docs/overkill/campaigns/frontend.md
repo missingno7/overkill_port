@@ -24,13 +24,36 @@ boot: LZEXE unpack -> video init -> load shared banks (1X1/2X2/2X2C/MANEXPL/THEN
        -> level data (LEV{n}MAP/BLX + G{n}) -> plaq{n}.enc PLAQUE -> 97B2 gameplay
 ```
 
+**Ground truth confirmed (2026-07-12, owner playtest + container dump + cold-boot sequence probe):**
+- There is **NO standalone intro/title asset** in the container (58 assets; no TITLE/INTRO/LOGO.ENC --
+  only `LOGO.BIC` 7377 B).  The cold-boot "intro" the owner expects IS the ATTRACT.  So `IPAGE1..5` are
+  the menu 'I' INSTRUCTIONS only, NOT a cold-start story intro (correcting the older bullet below).
+- The cold-boot screen sequence (probe, first 1400 frames of `demo_cold_start_intro`):
+  `boot -> menu -> front-end@5Cxx -> front-end@96xx -> attract:initial` (953+ frames) -- i.e. straight
+  into the **CC04 front-end loop** (menu compose + the CC4F attract cycling), no separate intro screen.
+- **play_native CLI fixed (2026-07-12):** `--intro`/`--ending` were aliased BACKWARDS to
+  instructions/ordering; now `--ending` -> THE END (WINSCR.ENC) and `--intro` -> the attract; the
+  IPAGE/OPAGE screens keep `--instructions`/`--ordering`.
+
 **Screens + who owns them:**
-- **intro** — IPAGE1..5 story pages (the recorded demo skips them via the `\r` command tail; the real
-  cold start shows them).  play_native: `_run_intro` (present) — verify order/trigger.
-- **title/menu** — `OKMENU.ENC` background + **CE97 composes menu cells** (title cell 0x0F, an 18-cell
-  block, 0x10, 0x11 from the CS:0C92 table via 5A24 blit-setup + 5A5A cell-copy) + **558B menu-idle**
-  navigation (recovered, `systems/menu` + `native_front_end`).  play_native: `_run_title_screen` shows
-  only the static OKMENU with a fire-wait — MISSING the composed menu cells + navigation.  **GAP.**
+- **intro** — SUPERSEDED: there is no separate intro; the cold-boot intro is the attract (above).
+  IPAGE1..5 are the menu's INSTRUCTIONS (`--instructions`), reached only from 558B 'I'.
+- **title/menu** — `OKMENU.ENC` background + **CE97 composes menu cells** + **558B menu-idle**
+  navigation (recovered, `systems/menu` + `native_front_end`).  play_native: `_run_title_menu` shows
+  only the static OKMENU with a fire-wait — MISSING the composed menu cells.  **GAP (decoded, ready to
+  build).**  **CE97 fully decoded (2026-07-12):**
+  - target page `es = CS:[9598]` (the work page); each cell offset = `CS:[0C92 + cellid*2]` in the
+    `CS:[95B8]` bank (= BLUEBITS, 0x79FE in the bundle); the cell format is the SHARED rows/width block
+    (`native_video.attract.cell_indices` / `decode_scene_cell` -- REUSE it, just swap directory 0C92 for
+    0BE4 and bank 95B8 for 95B4).
+  - draw order: cell **0x0F** at `5A24(ax=0)` (the TITLE, top-left); then a loop `cx=0x12` (18x) of cell
+    **0x10** at `5A24(al=0, ah=10*cl)` (cl = 18..1 -> rows 180..10: the stacked menu-option bars); then
+    cell **0x11** at `5A24(al=0, ah=0xBE)` (bottom); finally `rep movsb 0x7D00` copies `CS:[9598]` ->
+    `CS:[9596]:0x7D00` (the visible page; `CS:[9596]=DS` in the bundle, so the composed menu lands at
+    `DS:0x7D00`, which the bundle already carries -- a candidate byte-exact ORACLE).
+  - REMAINING to build the accurate menu: decode `5A24`'s cursor math (al/ah -> DI: cell-grid vs pixel),
+    compose over OKMENU, and gate byte-exact vs `DS:0x7D00` (confirm that page IS the menu, not the
+    attract-initial), then render it in `_run_title_menu` instead of the raw OKMENU.
 - **attract** — the `D007`/`D04D` scene machine (scenes 0x0..0x12, incl. the gameplay DEMO at 0x8..0x12
   with auto-fire).  Rules recovered + demo-witnessed (`systems/attract`); scene-0 `D160` + the `D0DB`
   scene-entry actions + the per-scene CONTENT (which asset/demo each scene shows) are gaps.  play_native:
