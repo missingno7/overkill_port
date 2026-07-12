@@ -2009,6 +2009,18 @@ def _step_waypoint_seed(mem, rec: int, beh: int) -> None:
     _step_waypoint_12(mem, rec)
 
 
+#: 0x66/0x67 (F510/F51D): the same B2C8 waypoint follower, but seeding their own +0x36 table AND
+#: presetting +0x20 = 0x14 (a per-follower field) before the follower runs.
+_WAYPOINT_SEED_20_BY_BEHAVIOR = {0x66: 0xD222, 0x67: 0xD272}
+
+
+def _step_waypoint_seed_20(mem, rec: int, beh: int) -> None:
+    mem.ww(DS, rec + 0x36, _WAYPOINT_SEED_20_BY_BEHAVIOR[beh])   # F510/F51D
+    mem.ww(DS, rec + 0x20, 0x0014)                              # F515/F522
+    mem.ww(DS, rec + 0x18, 0x0012)                             # B2C8: retag the record as 0x12
+    _step_waypoint_12(mem, rec)
+
+
 def _step_ramp_steer_29(mem, rec: int) -> None:
     r = step_ramp_steer_29(sprite=mem.rw(DS, rec + 0x08), gate_2328=mem.rw(DS, 0x2328))
     if not r.fired:
@@ -3297,6 +3309,9 @@ def _dispatch(mem, rec: int, tiles: LevelTileContext) -> None:
         elif beh in _WAYPOINT_SEED_BY_BEHAVIOR:
             _step_waypoint_seed(mem, rec, beh)
             _postmove_bc45(mem, rec, tiles, with_drift=False)   # 8BC8.. -> B2C8 exits jmp BC4B
+        elif beh in _WAYPOINT_SEED_20_BY_BEHAVIOR:
+            _step_waypoint_seed_20(mem, rec, beh)               # F510/F51D -> B2C8
+            _postmove_bc45(mem, rec, tiles, with_drift=False)
         elif beh == 0x1A:
             _step_scenery_1a(mem, rec, tiles)
             _postmove_bc45(mem, rec, tiles, with_drift=True)    # BAD4->BB03 exits jmp BC45 (WITH drift)
