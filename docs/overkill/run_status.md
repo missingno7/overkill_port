@@ -102,9 +102,17 @@ missing), all correcting the earlier "stale bank / runtime-only" reading:
   `5A6C` blits from the BLUEBITS bank (`CD40: mov ds,[95B8]; call 5A6C`) in the CD68 retrace loop.
 
 So the initial display is a compose of BLUEBITS cells + 1816 glyphs at descriptor positions -- ALL the
-data decodes VM-free today.  Remaining: decode CC59..CD68's position math + the 5A6C source-offset
-chain, compose, wire behind the gate.  (The 1816 glyph table is likely also the `1F8F:0980` text-page
-renderer's font -- recovering it may unlock the I/O menu pages + THE END text for free.)
+data decodes VM-free today.  (The 1816 glyph table is likely also the `1F8F:0980` text-page renderer's
+font -- recovering it may unlock the I/O menu pages + THE END text for free.)
+
+**CC4F is a SAVE-UNDER DISPLAY, not a fresh render (2026-07-12):** the CC59..CD68 loop copies a
+pre-rendered screen region from the save-under buffer at `di + 0x7D00` to the visible page (`CC8A:
+si=di; si+=0x7D00`), dirty-tracking via `dl` (CCAD.. `cmp ax,es:[di]; jz; mov [di],ax`), stride 0x50/
+0xA0/0x28 per video mode.  So the initial-display CONTENT (the BLUEBITS cells + glyphs) is rendered ONCE
+into that save-under buffer during the attract SETUP (the D0DB scene-0 entry / 859E panel compose), and
+CC4F merely re-displays it each retrace.  RECOVERY TARGET therefore moves upstream to the buffer-FILL
+(the setup-time glyph/cell render at the descriptor positions) -- deepest remaining front-end layer; the
+gate reports it as the missing `attract:initial` screen until then.
 
 ## 2026-07-12 — FRONT-END: THE LOCKSTEP GATE LANDS (`overkill/probes/verify_native_frontend.py`)
 
