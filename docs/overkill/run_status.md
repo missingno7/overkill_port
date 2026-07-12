@@ -114,7 +114,7 @@ repros) and `dos_re.coverage` (the native-% collector).  So we already follow th
 from here.  Genuinely NEW + useful to us:
 - **`dos_re/tools/check_doc_links.py`** -- a mechanical broken-relative-link check over all .md files.
   Ran it: fixed 4 ASM-notation false-positives (`cs:[95C0](5B00)` -> `cs:[95C0] (5B00)`, and a
-  `[0x234C](cursor)`, which markdown mis-parsed as links); all 70 md files now resolve clean.  Worth
+  `[0x234C]` `(cursor)`, which markdown mis-parsed as links); all 70 md files now resolve clean.  Worth
   adding to the pre-commit audit set (`python dos_re/tools/check_doc_links.py .`).
 - **`docs/agent_toolbox.md`** -- a task->tool->command routing index for the framework (good orientation
   for a fresh session).  Also new upstream: `overlay_menu.py` (an in-game settings-menu widget) and
