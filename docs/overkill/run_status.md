@@ -63,6 +63,37 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-13 — FRONT-END: ROOT CAUSE FOUND — the intro is BIOS mode 4 + the Tandy VIDEO ARRAY (port 0x3DE) is UNEMULATED
+
+The single thing that explains ALL the front-end confusion this session (CGA vs Tandy, the garbled
+split-images, the mode flip-flopping, nothing lining up):
+
+1. **The cold-boot intro runs in BIOS video mode 4**, and its framebuffer is **2bpp CGA layout** --
+   `dos.video_mode == 4` across the whole intro window (~430..733), the B800 data decodes COHERENTLY as
+   CGA-4 (2bpp) and GARBLES as a split double-image under the Tandy 4bpp decoder.  The intro is a
+   DIFFERENT video regime from gameplay (Tandy mode 9, 4bpp/16-colour).  So every tool built for
+   mode-9 Tandy (my `decode_tandy_b800` captures, the player's Tandy present hook, `compose_blueprint`
+   which is a mode-9 16-colour BLUEBITS compose) MIS-HANDLES the intro -- that is why nothing matched.
+
+2. **The game programs the Tandy VIDEO ARRAY (port 0x3DE), which dos_re does NOT emulate at all.**
+   Confirmed statically: `mov dx,0x3DE ; out 0x3DE,al` at `CS:5118` (writes video-array register 2 =
+   border, via the 0x3DA-index / 0x3DE-data protocol); a grep of the ENTIRE dos_re for `0x3DE` finds NO
+   handler.  dos_re handles 0x3DA READS (retrace status -- the front end polls it at C9F1/CA02/CA15) but
+   drops the video-array WRITES.  So the Tandy video-array state (border, and the mechanism a Tandy title
+   would use for its palette) is silently lost -- dos_re CANNOT render these screens the way real Tandy
+   (what the owner sees) does.
+
+**What this unblocks (the fix path):**
+- Capture/decode the intro as **CGA mode 4 (2bpp)**, NOT Tandy -- the "garble" was a bpp mismatch, not a
+  bug.  `dos.video_mode` is the authoritative mode selector per frame; the front end switches 3->4->9.
+- Treat the intro as its OWN mode-4 sequence (un-squeeze image -> grid), separate from the mode-9
+  BLUEBITS `compose_blueprint` (which is a different screen/mode).
+- To make the COLOURS match what the owner sees, **dos_re must emulate port 0x3DE (the Tandy video
+  array)** -- a submodule change.  Open question this doesn't settle: whether the owner's "16 colours"
+  for the intro comes from a video-array 16-colour extension dos_re is dropping, or whether the intro is
+  genuinely 4-colour and "16" refers to the gameplay/menu; the data in dos_re says mode-4 2bpp, so
+  confirming against real Tandy / `play.py --video tandy` is the tie-breaker.
+
 ## 2026-07-13 — FRONT-END: the intro is animated (CONFIRMED); a CGA-mode-4 detour RETRACTED — the game is TANDY 16-colour
 
 **Retraction (owner correction):** an intermediate reading this session claimed the blueprint intro
