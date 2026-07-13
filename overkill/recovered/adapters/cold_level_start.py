@@ -106,8 +106,8 @@ def _load_planet_level_data(mem: MutFlatMemory, exe_image: bytes, container: byt
     snapshots, which assert ``DS:2356 == n``); the pre-existing bundle capture is overwritten."""
     from overkill.asset_codecs.level_assets import (decode_level_blocks, decode_level_graphics,
                                                     decode_level_tile_map)
-    from overkill.asset_codecs.native_level import (_read_class_override_pairs,
-                                                    build_level_class_table)
+    from overkill.asset_codecs.native_level import build_level_class_table
+    from overkill.recovered.adapters.level_rom import class_override_pairs_from_rom, extract_level_rom
 
     cs = 0x1010
     plane_base = mem.rw(cs, 0x9592) * 16
@@ -125,7 +125,11 @@ def _load_planet_level_data(mem: MutFlatMemory, exe_image: bytes, container: byt
     gfx_base = mem.rw(cs, 0x95AE) * 16
     graphics = decode_level_graphics(container, planet)
     mem.data[gfx_base: gfx_base + len(graphics)] = graphics
-    classes = build_level_class_table(_read_class_override_pairs(exe_image, planet))
+    # CONVERGENCE slice B (docs/overkill/campaigns/convergence.md): the class-override read is the
+    # pure level_rom decoder over the 384-byte extracted ROM, not a raw exe_image byte-read -- proven
+    # byte-identical to the old exe-based path for every level (tests/test_level_rom.py).
+    level_rom = extract_level_rom(exe_image)
+    classes = build_level_class_table(class_override_pairs_from_rom(level_rom, planet))
     base = DATA_SEGMENT * 16 + 0xC3AA
     mem.data[base: base + len(classes)] = classes
 

@@ -111,6 +111,22 @@ DGROUP.  So slice A for gameplay = lift those 5 ranges + the DGROUP initial tabl
 existing `verify_native_cold_level_data` as the equivalence gate.  A few KB of tables stands between
 here and dropping `--bundle`.
 
+**Slice B started (2026-07-13) — the level-ROM (384 B) extracted + WIRED into the live path.**
+`overkill/recovered/adapters/level_rom.py`: `extract_level_rom` copies the two measured ranges
+(`DS:C4AA..C5E8` the class-override table + all 6 levels' pair lists, `DS:D1BC..D1FC` the tile-plane
+footer) out of any data-segment-shaped image; `class_override_pairs_from_rom`/`footer_from_rom` decode
+straight from the compact 384-byte blob (no exe_image, no 1 MB scratch buffer).
+`asset_codecs.native_level.load_native_level_from_rom` reproduces `load_native_level`'s output
+BYTE-IDENTICAL for every level from the ROM + container alone (`tests/test_level_rom.py`, 2 tests).
+**Wired into the real cold-start path**: `cold_level_start._load_planet_level_data` now decodes the
+class table via `class_override_pairs_from_rom(extract_level_rom(exe_image), planet)` instead of the
+raw exe_image byte-walk — full suite green (1405), including the lockstep/gameplay gates that exercise
+this path every level.  Still reads the 384 bytes out of the bundle (not yet exe-free): the remaining
+Slice B work is the ~9,925-byte shared tile-plane BORDER constant (extract once, same pattern) + a
+blank-base builder that assembles the cold image from native_rom + level_rom + the border constant +
+the container instead of `MutFlatMemory(exe_image)`, gated byte-exact vs the bundle-seeded image
+(`verify_native_cold_level_data`) — then `--bundle` drops.
+
 **Refinement (2026-07-11) — the rb/rw count is a LOWER BOUND; validated the DGROUP reduction.** Zeroing
 the whole 64 KB CS segment except the 5 rb/rw ranges and running 600 frames leaves the **DGROUP
 game-logic state byte-exact (0 divergence)** — so the recovered init + those 5 ranges fully determine
