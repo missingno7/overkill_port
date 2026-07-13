@@ -342,8 +342,10 @@ def _run_game_over(display, pygame, bundle_data, container_data, img, speaker) -
 
 
 def _run_hiscore_screen(display, pygame, container_data, seconds: float) -> "bool | None":
-    """Show HISCORE.ENC (natively decoded) for `seconds`.  Returns True on Space (start), False on
-    quit, None on timeout (advance the attract cycle)."""
+    """Show HISCORE.ENC (natively decoded, PROVEN byte-exact vs the VM's high-scores screen) as one
+    beat of the cold-boot attract rotation.  Returns True on Space/Return (start a game), False on
+    quit/Esc, None on timeout OR any other key (break the attract back to the interactive menu, exactly
+    as the original attract does)."""
     img = decode_fullscreen_image(container_data, "HISCORE.ENC")
     display.set_title("OVERKILL - native (VM-less)  [high scores -- Space = start]")
     clock = pygame.time.Clock()
@@ -352,8 +354,10 @@ def _run_hiscore_screen(display, pygame, container_data, seconds: float) -> "boo
         for ev in pygame.event.get():
             if ev.type == pygame.QUIT or (ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE):
                 return False
-            if ev.type == pygame.KEYDOWN and ev.key == pygame.K_SPACE:
-                return True
+            if ev.type == pygame.KEYDOWN:
+                if ev.key in (pygame.K_SPACE, pygame.K_RETURN):
+                    return True
+                return None                          # any other key -> back to the interactive menu
         display.draw(img)
         clock.tick(30)
     return None
@@ -634,11 +638,19 @@ def _run_title_menu(display, pygame, bundle_data, container_data,
                 # J (joystick, [0010]==1) is declined: play_native is keyboard-only (0162 fail-louds)
         idle += 1
         if idle >= _MENU_ATTRACT_IDLE_FRAMES:                  # 558B idle timeout -> the attract (5604)
-            r = _run_native_attract(display, pygame, bundle_data, container_data, music)
-            if r is False:
-                return None
-            if r is True:
-                return sound_mode, control, key_overrides
+            # The attract ROTATION the original cycles on idle: the self-playing gameplay demo (D007),
+            # then the HIGH-SCORES screen (HISCORE.ENC -- proven byte-exact vs the VM), then back to
+            # the interactive menu.  FIRE/Space during any beat starts a game; any other key breaks
+            # back to the menu (each beat returns True=start / False=quit / None=advance).
+            for attract_beat in (
+                lambda: _run_native_attract(display, pygame, bundle_data, container_data, music),
+                lambda: _run_hiscore_screen(display, pygame, container_data, seconds=5.0),
+            ):
+                r = attract_beat()
+                if r is False:
+                    return None
+                if r is True:
+                    return sound_mode, control, key_overrides
             idle = 0
         # the VM's own selection-highlight mechanism (measured: the selected words' white text
         # recolors 15->12, byte-exact 276/276 for the boot default) -- see native_video.front_end.

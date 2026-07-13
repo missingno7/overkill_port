@@ -25,6 +25,10 @@ OVERKILL = pathlib.Path(__file__).resolve().parent.parent / "assets" / "OVERKILL
 # sha256[:16] of the decoded (200,320) title-screen indices -- pins the whole render byte-exact so a
 # codec regression can't silently change the picture.
 _TITLE_SHA16 = "c706277b3f8fc9b0"
+# HISCORE.ENC decoded indices -- PROVEN byte-exact vs the VM's cold-boot high-scores screen
+# (diff 0/64000 against the frontend_intro snapshot's B800, 2026-07-13); pinned so the attract's
+# high-scores beat can't regress.
+_HISCORE_SHA16 = "023ad6d080eb5559"
 
 
 @pytest.mark.skipif(not OVERKILL.is_file(), reason="assets/OVERKILL not present")
@@ -35,6 +39,15 @@ def test_title_options_decodes_to_a_full_320x200_screen():
     assert int(img.max()) <= 15 and int(img.min()) >= 0     # 4-bit palette indices
     assert img.any()                                        # not a blank screen
     assert hashlib.sha256(img.tobytes()).hexdigest()[:16] == _TITLE_SHA16
+
+
+@pytest.mark.skipif(not OVERKILL.is_file(), reason="assets/OVERKILL not present")
+def test_hiscore_decodes_byte_exact_to_the_vm_high_scores_screen():
+    """HISCORE.ENC is the cold-boot attract's high-scores beat; its native decode was diffed 0/64000
+    against the VM's actual high-scores B800 (see run_status 2026-07-13).  Pin the render byte-exact."""
+    img = decode_fullscreen_image(OVERKILL.read_bytes(), "HISCORE.ENC")
+    assert img.shape == (SCREEN_HEIGHT, SCREEN_WIDTH)
+    assert hashlib.sha256(img.tobytes()).hexdigest()[:16] == _HISCORE_SHA16
 
 
 @pytest.mark.skipif(not OVERKILL.is_file(), reason="assets/OVERKILL not present")
