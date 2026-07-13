@@ -55,6 +55,24 @@ boot: LZEXE unpack -> video init -> load shared banks (1X1/2X2/2X2C/MANEXPL/THEN
   next attempt needs the VM's B800 physical page decoded READING THE ACTIVE VIDEO MODE (see the
   calibration-screen finding below -- a plain always-mode-9 decode is not safe to assume), likely via a
   trap on the actual PRESENT/page-flip call rather than CE97's own return.
+  **Second attempt (2026-07-13) ALSO failed to converge** and is the reason to stop guessing step
+  counts entirely: a joystick-free cold free-run (`build_command_tail`, no demo) settles by ~1.38M raw
+  steps into a repeating menu<->attract cycle, all in video_mode=9 (no CGA-4 seen on this path, so
+  calibration is plausibly gated on joystick presence). A raw-byte B800 nonzero count recurred
+  IDENTICALLY (6728) at IP=558B every ~22K-step cycle, which looked like a strong "freshly composed
+  menu" signal -- but a full decode+diff at that exact step (1,400,000) showed near-TOTAL divergence
+  from OKMENU (43,622/64,000 px, damage from row 0), not the clean cell-band pattern expected. The
+  numeric coincidence in raw bytes did not mean the same visual content -- IP+byte-count is not a
+  reliable "this is the composed menu" signal. **Each cold-boot capture costs ~9 minutes** (millions of
+  raw interpreted instructions, no snapshot to start from), so step-count guessing does not converge in
+  reasonable time and was abandoned rather than continued blindly.
+  **What the next attempt needs instead of guessing:** either (a) a disassembly-driven, structurally-
+  certain marker for "the composed menu, not attract/hiscore/calibration, is the CURRENT visible
+  screen" (trace 558B/D007/CC04's real relationship fully -- what makes the loop show menu vs cycle
+  attract -- rather than trapping a single address and hoping), or (b) a one-time reusable
+  cold-boot-to-front-end SNAPSHOT (the same reason gameplay demos are fast to probe: they start from a
+  captured snapshot, not power-on) so repeated front-end probing stops paying the ~9-minute boot cost
+  every attempt.
 - **NEW FINDING (2026-07-12): a JOYSTICK CALIBRATION screen exists and is completely unhandled.** The
   container has a `CALIB.ENC` asset (`native_video.front_end.decode_fullscreen_image` renders it
   cleanly: "Joystick Calibration -- Move stick to upper left and push FIRE", matches a standard
