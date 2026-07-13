@@ -24,6 +24,29 @@ boot: LZEXE unpack -> video init -> load shared banks (1X1/2X2/2X2C/MANEXPL/THEN
        -> level data (LEV{n}MAP/BLX + G{n}) -> plaq{n}.enc PLAQUE -> 97B2 gameplay
 ```
 
+**THE REAL COLD-BOOT SCREENS, SEEN (2026-07-13, `trace_frontend_flow` to hit the right moment + a
+mode-9 B800 decode at the peak-content frame of each scene -- ground truth, captured not guessed):**
+- **Scene 0 is a BLUEPRINT / INTRO screen, NOT the OKMENU title.**  The B800 aperture at scene 0's
+  richest frame (nz=16827, mode 9) is a coherent 14-colour screen: cyan+yellow **ship SCHEMATICS** (line-
+  art, not a bitmap blit) on a **grid** background with several lines of small font text (a stardate/
+  briefing).  It differs from `OKMENU.ENC` by 44,593/64,000 px -- i.e. the cold boot does NOT open on
+  OKMENU.  **play_native draws OKMENU immediately, so its very first screen is wrong** -- this is the
+  "inaccurate menu" the owner sees.  (The grid I earlier mistook for "calibration" is this screen's
+  background, and the off-screen `[9598]` work page is its pre-present buffer.)
+- **Scenes 1..0x12 are the SELF-PLAYING GAMEPLAY DEMO** (the "demonstration of all upgrades and
+  weapons"): captured cleanly in mode 9 -- the ship, starfield, full HUD, cycling weapons (scene 1
+  "Scout"/FIREHOSE, scene 0x10 "Ring Laser"/RINGLAS with drone upgrades, enemies).  These render
+  through the ALREADY-RECOVERED native gameplay frame, so play_native CAN draw them (it runs the native
+  frame for attract scenes >= 8; but note the capture shows scenes 1..7 are ALSO gameplay here, not the
+  static "cell screens" the NativeAttract classification assumes -- a discrepancy to resolve).
+- So the real flow is: boot -> **scene-0 blueprint/intro** -> **attract gameplay demo (scenes 1..0x12)**
+  -> scene 0x13 terminal -> (fire) level-select.  What still needs NATIVE rendering: the scene-0
+  blueprint screen (a vector/line-art + grid + font-text compose -- a distinct render system from both
+  the bitmap menu compose and the gameplay frame) and the OKMENU-options menu compose (CE97, page
+  format still uncracked).  The gameplay-demo half already renders.
+- The reference captures live in `artifacts/_fe/` (scene_01/10 = the real attract; real_menu = the
+  scene-0 blueprint; L_b800 = the bundle's terminal HUD) -- kept as the recovery oracle, not committed.
+
 **Ground truth confirmed (2026-07-12, owner playtest + container dump + cold-boot sequence probe):**
 - There is **NO standalone intro/title asset** in the container (58 assets; no TITLE/INTRO/LOGO.ENC --
   only `LOGO.BIC` 7377 B).  The cold-boot "intro" the owner expects IS the ATTRACT.  So `IPAGE1..5` are
