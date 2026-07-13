@@ -40,10 +40,27 @@ mode-9 B800 decode at the peak-content frame of each scene -- ground truth, capt
   frame for attract scenes >= 8; but note the capture shows scenes 1..7 are ALSO gameplay here, not the
   static "cell screens" the NativeAttract classification assumes -- a discrepancy to resolve).
 - So the real flow is: boot -> **scene-0 blueprint/intro** -> **attract gameplay demo (scenes 1..0x12)**
-  -> scene 0x13 terminal -> (fire) level-select.  What still needs NATIVE rendering: the scene-0
-  blueprint screen (a vector/line-art + grid + font-text compose -- a distinct render system from both
-  the bitmap menu compose and the gameplay frame) and the OKMENU-options menu compose (CE97, page
-  format still uncracked).  The gameplay-demo half already renders.
+  -> scene 0x13 terminal -> (fire) level-select.  The gameplay-demo half already renders.
+- **CE97 CRACKED (2026-07-13) -- it composes the blueprint GRID, byte-exact.**  Long mislabelled the
+  "OKMENU menu compose"; it actually builds the scene-0 blueprint screen's **grid background** from the
+  **BLUEBITS** cell bank (`CS:[95B8]`) via the `CS:[0C92]` directory: cell 0x0F (top border, row 0),
+  cell 0x10 (a grid row) blitted 18x at rows 10..180, cell 0x11 (bottom border, row 190) -- 20 stacked
+  10-row `cell_indices` strips = the full 320x200 grid.  Recovered as
+  `overkill/native_video/blueprint.py:compose_ce97_grid`, **verified diff 0/64000 vs the VM's own CE97
+  output**, locked by `tests/test_blueprint_grid.py`.  (This grid is exactly the "grid" earlier misread
+  as calibration -- it is the blueprint background, composed by CE97.)
+- **Asset trace (C679 file-open, scene 0):** the boot loads the shared assets 1X1/2X2/2X2C/MANEXPL/
+  THEND/PANEL/BLUEBITS/SHIP/WINDOW, then the only scene-0 draw is CE97 (the grid) + the attract.
+  **WINDOW.BIC decodes to a full-screen TITLE SPLASH art** (a space scene: planets, nebula, a pilot at
+  a window) -- a separate cold-boot intro screen.  SHIP.BIC is a small 16-row sprite (the gameplay
+  ship), not the blueprint schematics.
+- **STILL OPEN for the blueprint:** its ship-SCHEMATIC line-art + the briefing TEXT are NOT drawn by
+  CE97 (which only does the grid) and were not seen in the scene-0 draw trace -- so they come from a
+  routine drawn elsewhere (a boot title sequence before the CC04 loop, or the attract path), OR the
+  captured "ships" were a leftover on B800 from a prior title screen (e.g. WINDOW) that the grid
+  overlaid.  Next: trap the boot's pre-CC04 draws + the font glyph renderer to locate the ship/text
+  layer and the WINDOW title screen's place in the sequence.  Also still open: the OKMENU-options menu
+  (M/K/A/I/O) -- where it actually shows in the flow is now itself unconfirmed (CE97 is NOT it).
 - The reference captures live in `artifacts/_fe/` (scene_01/10 = the real attract; real_menu = the
   scene-0 blueprint; L_b800 = the bundle's terminal HUD) -- kept as the recovery oracle, not committed.
 
