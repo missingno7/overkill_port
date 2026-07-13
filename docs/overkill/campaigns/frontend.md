@@ -51,28 +51,31 @@ boot: LZEXE unpack -> video init -> load shared banks (1X1/2X2/2X2C/MANEXPL/THEN
        -> level data (LEV{n}MAP/BLX + G{n}) -> plaq{n}.enc PLAQUE -> 97B2 gameplay
 ```
 
-**COLD-BOOT SCREEN ORDER (owner correction 2026-07-13) — play_native's flow is still WRONG:**
-1. **Screen 1: a full-screen COSMIC TITLE/SPLASH image** (SEEN 2026-07-13, correctly decoded CGA-4 at
-   present-frame ~446): a starfield + nebula scene with a stylised figure/ship silhouette, CGA
-   cyan/magenta/white.  It UN-SQUEEZES open (`5C46`).  play_native SKIPS this entirely (it has
-   `_run_screen_squeeze` but never runs it at cold boot).  Source asset not yet pinned (LOGO.BIC decodes
-   to only 8708 B, too small for a 320x200 screen -- likely composed or a different asset; ID pending).
-2. **Screen 2: the BLUEPRINT / grid intro**, ANIMATED (progressive reveal: grid+title, spec text, ships).
-   **This is CGA mode 4 (4-colour), NOT the mode-9 16-colour compose** (see the SETTLED root-cause entry
-   in run_status 2026-07-13).  play_native draws it with `compose_blueprint` (mode-9 16-colour) as its
-   FIRST screen -- wrong MODE and wrong FLOW POSITION (screen 1 missing before it).
-3. then the game reads its video type (CS:9600, from the command tail) -> switches to Tandy mode 9 ->
-   the attract cycling / menu (16-colour).
-**UNRESOLVED — the intro's video representation (do not trust any single hand-decode):** present-frame
-captures over the blueprint window (~430..733) read `dos.video_mode == 4` and their B800 decodes
-COHERENTLY as CGA-4 (2bpp) but GARBLES as a split double-image under the Tandy (4bpp) decoder — while
-the earlier draw-event `trace_frontend_flow` capture read the SAME blueprint cleanly as mode-9 Tandy
-(14 colours).  These two facts conflict and were NOT reconciled by hand-decoding memory (the whole
-back-and-forth this session traces to this).  The correct way to settle it is NOT another manual B800
-decode: render the cold boot with dos_re's ACTUAL player (`python scripts/play.py --video tandy` — what
-the owner literally sees), and/or capture a reusable cold-boot-to-front-end SNAPSHOT so front-end
-probing stops paying the ~10-min boot cost per attempt. Until then, the exact per-frame pixels of the
-intro are not reliably known; the STRUCTURE (un-squeeze image, then animated blueprint) is per the owner.
+**THE COLD-BOOT SCREEN ORDER — MEASURED (2026-07-13, correct command tail, real per-present-frame
+pacing; supersedes every earlier CGA-4/splash reading in this doc and run_status):**
+
+The mode-4 confusion is fully RESOLVED: the game reads its VIDEO TYPE from the PSP COMMAND LINE
+(PSP:82 selector 0=CGA/1=EGA/2=Tandy, PSP:83 sound — `overkill/launch.py build_command_tail`; the cold
+demo's tail `'\r\x02A'` = Tandy+AdLib).  The earlier CGA-4 captures came from booting with an EMPTY
+tail, which *selects* the CGA path — an artifact, not the game's flow.  With the correct tail the
+ENTIRE front-end runs Tandy mode 9 (16-colour), matching what the owner sees.
+
+1. text mode 3 until **f447 -> mode 9**; the first graphics screen is the **BLUEPRINT GRID** (pops
+   fully-formed: grid + border + coded bottom text, nz=13953), then the yellow wireframe-ship + text
+   REVEAL animates (~1 element per ~30 present frames, nz -> ~18494).  There is NO splash screen
+   before it — over 200+ captured attract cycles no screen exists between the blueprint's ~18.5k px
+   and the menu's 39.8k px.  (The "cosmic title/splash" of retracted entries = the HIGH-SCORES art.)
+2. -> **SHIP SHOWCASE** (squeeze-in from nz~2298, then the upgrade progression builds: Scout ->
+   Fighter -> weapon labels, "demonstration of all upgrades").
+3. -> **MENU** (OKMENU + the SELECTION HIGHLIGHTS -- see below).
+4. -> **HIGH SCORES** (the cosmic planet+cyborg art) -> blank -> the cycle repeats from 1.
+
+**The menu delta is MEASURED: live VM menu vs raw `OKMENU.ENC` = 276 px in exactly two bands**
+(y65..73 x77..130 = the orange "Keyboard" control-selection highlight; y122..128 x161..182 = the
+orange "both" sound-selection highlight).  The current-selection indicators are ALL that
+play_native's menu is missing pixel-wise — recovering that draw (state -> two text highlights) plus
+the reveal sequencing above is the concrete work; gate it with the 4-gate `frontend_timeline`
+machinery (screen order + decision-state witness), not pixel-diff guessing.
 
 **THE REAL COLD-BOOT SCREENS, SEEN (2026-07-13, `trace_frontend_flow` to hit the right moment + a
 mode-9 B800 decode at the peak-content frame of each scene -- ground truth, captured not guessed):**

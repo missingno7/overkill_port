@@ -42,6 +42,13 @@ from dos_re.snapshot import write_snapshot  # noqa: E402
 
 def make(demo_name: str, target_frame: int, out_dir: str) -> None:
     demo = load_demo(demo_name, demo_name)
+    meta = demo.manifest.get("metadata", {})
+    video = str(meta.get("video", "tandy"))
+    # THE COMMAND TAIL IS PART OF THE BOOT.  A cold start must replay the demo's recorded tail
+    # (it answers the game's startup prompts -- video/sound selection); booting with an empty tail
+    # sends the game down a DIFFERENT path (e.g. CGA mode 4 instead of Tandy mode 9) and every
+    # capture from such a snapshot is an artifact.  Mirrors run_ref_step_probe_cold_start.
+    tail = str(meta.get("command_tail", ""))
     cur = {"f": 0, "rt": None, "saved": False}
     orig = fv._load_runtime
     sides = iter(("ref", "cand"))
@@ -65,12 +72,12 @@ def make(demo_name: str, target_frame: int, out_dir: str) -> None:
         pump_demo_frame(demo, f, (ref, cand), ref.cpu)
         cur["f"] = f + 1
 
-    cfg = FrameVerifyConfig(video="tandy", source="candidate", max_frames=target_frame + 2,
+    cfg = FrameVerifyConfig(video=video, source="candidate", max_frames=target_frame + 2,
                             semantic_state_check=False, stop_on_diff=False, log_every=0,
                             frame_budget=200_000_000)
     try:
         run_frame_verifier(exe=str(ROOT / "assets" / "OVERKILL"), assets=str(ROOT / "assets"),
-                           snapshot=None, command_tail=b"", config=cfg, pump_inputs=pump)
+                           snapshot=None, command_tail=tail, config=cfg, pump_inputs=pump)
     finally:
         fv._load_runtime = orig
     if not cur["saved"]:
