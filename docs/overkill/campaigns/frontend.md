@@ -25,13 +25,17 @@ boot: LZEXE unpack -> video init -> load shared banks (1X1/2X2/2X2C/MANEXPL/THEN
 ```
 
 **COLD-BOOT SCREEN ORDER (owner correction 2026-07-13) — play_native's flow is still WRONG:**
-1. **Screen 1: a full-screen image that UN-SQUEEZES open** (the `5C46` opening squeeze — the image
-   expands vertically from a squeezed line to full screen).  play_native SKIPS this entirely (it has
-   `_run_screen_squeeze` but does not run it at cold boot).  [What image un-squeezes: capture pending.]
-2. **Screen 2: the BLUEPRINT / grid intro** (below), ANIMATED (progressive reveal), Tandy 16-colour.
-   play_native draws it STATIC (`compose_blueprint`, one shot) and as its FIRST screen — so both the
-   missing screen 1 and the static (not animated) screen 2 are wrong.
-3. then the attract cycling / menu.
+1. **Screen 1: a full-screen COSMIC TITLE/SPLASH image** (SEEN 2026-07-13, correctly decoded CGA-4 at
+   present-frame ~446): a starfield + nebula scene with a stylised figure/ship silhouette, CGA
+   cyan/magenta/white.  It UN-SQUEEZES open (`5C46`).  play_native SKIPS this entirely (it has
+   `_run_screen_squeeze` but never runs it at cold boot).  Source asset not yet pinned (LOGO.BIC decodes
+   to only 8708 B, too small for a 320x200 screen -- likely composed or a different asset; ID pending).
+2. **Screen 2: the BLUEPRINT / grid intro**, ANIMATED (progressive reveal: grid+title, spec text, ships).
+   **This is CGA mode 4 (4-colour), NOT the mode-9 16-colour compose** (see the SETTLED root-cause entry
+   in run_status 2026-07-13).  play_native draws it with `compose_blueprint` (mode-9 16-colour) as its
+   FIRST screen -- wrong MODE and wrong FLOW POSITION (screen 1 missing before it).
+3. then the game reads its video type (CS:9600, from the command tail) -> switches to Tandy mode 9 ->
+   the attract cycling / menu (16-colour).
 **UNRESOLVED — the intro's video representation (do not trust any single hand-decode):** present-frame
 captures over the blueprint window (~430..733) read `dos.video_mode == 4` and their B800 decodes
 COHERENTLY as CGA-4 (2bpp) but GARBLES as a split double-image under the Tandy (4bpp) decoder — while
