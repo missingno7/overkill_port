@@ -17,8 +17,8 @@ from pathlib import Path
 from typing import Callable
 
 import overkill.frame_verify as fv
-from dos_re.cpu import CPU8086
 from dos_re.input_demo import InputDemoPlayback
+from dos_re.step_probe import install_step_observer
 from overkill.frame_verify import FrameVerifyConfig, run_frame_verifier
 from overkill.input_waits import pump_demo_frame
 
@@ -59,7 +59,8 @@ def run_ref_step_probe(demo: InputDemoPlayback, max_frames: int, on_ref_step: Ca
     Omit it and every instruction calls back, exactly as before.
 
     The probe's callback owns all capture/predict/compare; this owns the verifier
-    wiring and restores the patched ``CPU8086.step`` / ``fv._load_runtime`` on exit.
+    wiring (the observer itself is ``dos_re.step_probe``, promoted from this harness) and
+    restores the patched ``fv._load_runtime`` on exit.
     """
     _run_ref_step_probe(demo, max_frames, on_ref_step, snapshot=str(demo.snapshot_path()),
                         trap=trap)
@@ -94,25 +95,6 @@ def _run_ref_step_probe(
     # already encodes that state in the snapshot, so an empty tail is fine (and always was).
     command_tail = str(meta.get("command_tail", "")) if snapshot is None else b""
 
-    orig_step = CPU8086.step
-
-    # The observer is installed on the REF CPU INSTANCE only.  The old form patched
-    # ``CPU8086.step`` for the whole class, so the candidate side paid a Python wrapper + a
-    # ``getattr`` on every instruction too, and no interpreter could keep the hot loop tight
-    # (PyPy's JIT in particular gives up on it).  Same callback, same instructions, same
-    # results -- just not charged to the side that never observes.
-    def _install_observer(cpu) -> None:
-        if trap is None:
-            def step(_cpu=cpu):
-                on_ref_step(_cpu)
-                return orig_step(_cpu)
-        else:
-            def step(_cpu=cpu, _s=cpu.s, _trap=trap):
-                if (_s.cs & 0xFFFF, _s.ip & 0xFFFF) in _trap:
-                    on_ref_step(_cpu)
-                return orig_step(_cpu)
-        cpu.step = step
-
     orig_load = fv._load_runtime
     sides = iter(("ref", "cand"))
 
@@ -121,7 +103,11 @@ def _run_ref_step_probe(
         side = next(sides)
         rt.cpu._side = side
         if side == "ref":
-            _install_observer(rt.cpu)
+            # The PROMOTED primitive (dos_re.step_probe, generalized from this harness): the
+            # observer lives on the REF CPU INSTANCE only (the candidate side stays JIT-hot) and
+            # the trap's address check runs inside the closure.  The runtimes are discarded after
+            # the run, so no uninstall is needed.
+            install_step_observer(rt.cpu, on_ref_step, trap=trap)
         return rt
 
     fv._load_runtime = patched_load
@@ -139,4 +125,3 @@ def _run_ref_step_probe(
                            snapshot=snapshot, command_tail=command_tail, config=cfg, pump_inputs=pump_inputs)
     finally:
         fv._load_runtime = orig_load
-        CPU8086.step = orig_step
