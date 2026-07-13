@@ -63,6 +63,26 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-13 — FRONT-END: the BLUEPRINT intro DECODED (CC4F/CE5F recipe) -- grid + 15 cells, ANIMATED
+
+The blueprint was the big remaining intro gap (a static ~88% guess).  Traced the front-end loop and
+CRACKED the actual mechanism (no more guessing):
+- **CC04 loop:** compose grid (CE97) -> delay -> set `[BD98]=BD54` (a RECIPE table) -> CE5F+CC4F x3 ->
+  delay -> repeat.  **CE5F walks the recipe: 5 cells per call x 3 calls = 15 cells**, each a 3-byte
+  `(row, col, cell_id)` triple blit at `x=col*8, y=row` from the `CS:[95B8]` BLUEBITS bank via the
+  `CS:[0C92]` directory -- the SAME cell machinery as the menu (CE97) and redefine (553D).  The 15
+  cells (0x00..0x0E) = 3 ship schematics + briefing text; **revealed 5 per beat IS the animation.**
+- The full-screen GRID under them = CE97's `0x0F` + 18x `0x10` + `0x11` strips (already byte-exact).
+- **VERIFIED: grid + all 15 recipe cells == the VM's blueprint with ZERO under-draw** (the residual
+  was purely the mid-reveal animation phase -- all over-draw of not-yet-revealed cells).
+`native_video.blueprint` now READS the recipe from the game's own `DS:BD54` table
+(`read_blueprint_recipe`) instead of a hardcoded 10-cell guess that was MISSING beat 3
+(0x02/0x05/0x08/0x0B/0x0E); `compose_blueprint(mem, cells_revealed)` drives the reveal (grid/+5/+10/+15;
+nz 16827 at +5 == the VM's early frame).  `_run_blueprint_intro` now ANIMATES it beat-by-beat.  This
+also gives the general front-end model: the intro/menu "text" is pre-rendered CELLS composed from
+recipe tables, not live fonts -- so the SHIP SHOWCASE + any remaining screens are the same pattern.
+Suite 1415.
+
 ## 2026-07-13 — FRONT-END: the REDEFINE-KEYS screen is REAL now (cell render, BYTE-EXACT), not a font overlay
 
 Owner: "Redefine keys menu is another fake thing" + a real demo (`demo_play_tandy_20260713_220651`).
