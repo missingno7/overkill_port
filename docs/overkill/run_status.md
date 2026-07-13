@@ -63,6 +63,22 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-13 — PROMOTED TO dos_re: step_probe (the trapped step observer) + toolbox 12c (the audio proof)
+
+Synergy pass over dos_re (bumped 7a4f7d8 -> 20631cd, 45 commits -- the new PM-layer demo-determinism
+work + the render_frame numpy fast path).  Promoted TWO of this port's generic pieces upstream:
+- **`dos_re.step_probe`** -- the trapped per-instance step observer from `probes/_harness.py`
+  (two-address cold-boot probe: 120M Python calls -> a few thousand; candidate side stays JIT-hot).
+  `_harness.py` now imports it (dogfooded; audio oracle test green over the real VM).  7 tests upstream.
+- **Toolbox 12c "Prove the VM-less AUDIO driver"** -- the forward + per-tick two-gate proof from
+  `verify_native_audio` (validated here: ~700 ticks x 6 songs, zero divergence), plus the 12b addendum
+  with the two front-end iteration gotchas (snapshot-before-the-screens; retrace-poll pacing defeats
+  timer-wait fast-forward -- raw-step instead).
+NOT promoted (checked, deliberately): `_shadow_cache.py` (the pattern is generic, the code is OVERKILL
+DGROUP/plane-specific -- a doc candidate later), `make_frontend_snapshot.py` (thin over dos_re's own
+`write_snapshot`; the know-how went into 12b instead).  Deterministic menu/demo replay itself already
+lives in dos_re (`input_demo`, and now the PM `pm_input_demo` twin).
+
 ## 2026-07-13 — FRONT-END: reusable cold-boot snapshot (kills the ~10-min boot cost) + screen-1 title art SEEN
 
 Built `scripts/make_frontend_snapshot.py` (standing mechanism): runs the cold boot ONCE, writes a
