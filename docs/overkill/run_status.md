@@ -173,6 +173,29 @@ cells are attract-cycle-only content, drawn through the already-verified 5A24/CE
 part of this reveal.  So the native reveal target is this smaller, text-only end state (its own oracle,
 capturable directly at f570), not a partial draw of `compose_blueprint`.
 
+## 2026-07-14 — FRONT-END: `1010:CC4F` LANDED, byte-exact -- the cold-boot char-writer's dirty-cell presenter chain is now 100% pure recovered code
+
+Closes the lift opened by the entries below.  `overkill/hooks.py` now registers
+`overkill_dirty_cell_presenter_scene_setup_cc4f` (`1010:CC4F`): reads one 4-byte entry from the recipe
+table at `DS:[BD9A]=BD81h`, seeds `BD96`/`BD95`/`CX`/`BD9C`, advances the pointer, sets `BDA0=5`, and
+falls through into the already-registered `CC7F` hook via `jump_installed_hook_boundary`.  Gated by a
+new probe (`probes/verify_native_cc4f_scene_setup.py`, `run_frame_verifier(..., stop_on_diff=True)`):
+**PASS, 0 divergence** on `demo_cold_start_intro_20260711_203259` (600 frames, spans the whole title +
+grid + typewriter window) and `demo_cold_start_full_20260705_123645` (700 frames, independent corpus).
+Added the required `HookStop`/island metadata so `test_hook_oracle_static_audit_passes` and the
+classification audit stay green.  Full suite: 1415 passed / 36 skipped, unchanged.
+
+**So every routine the cold-boot blueprint char-writer touches
+(`CC4F/5A24/5A00/5A6C/CCAA/CCF0/CCC4/CD68/CD7E/CDAA/306F`) is now pure recovered Python, verified
+byte-exact.**  What's still needed is WIRING, not lifting: a native per-frame driver that calls this
+chain against a `MutFlatMemory` cold-boot image (seeded from a captured snapshot with the work buffer's
+pre-rendered content already present, per the mechanism this pass grounded) the way `compose_blueprint`
+already reuses `cell_indices`/5A24 geometry, then hooking that into `_run_blueprint_intro` ahead of the
+already-identified title-splash screen (still unattributed -- its source is the other open piece from
+the entries below).  The reveal's own target end-state is captured and locked
+(`artifacts/intro_frame_dump/f0570_segB800.png`, `nz=15240` at `f570`, distinct from
+`compose_blueprint`'s attract-cycle `nz=22368` -- see the addendum below).
+
 ## 2026-07-13 — FRONT-END: the COLD-BOOT INTRO grounded -- a TITLE-SPLASH screen + a CHAR-WRITING blueprint (owner)
 
 Owner: the blueprint "is not static... text writing animation with sound", and there is "one missing
