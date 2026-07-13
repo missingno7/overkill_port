@@ -63,6 +63,33 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-13 — FRONT-END: the COLD-BOOT INTRO grounded -- a TITLE-SPLASH screen + a CHAR-WRITING blueprint (owner)
+
+Owner: the blueprint "is not static... text writing animation with sound", and there is "one missing
+screen before that blueprint... we must get to it through code."  Both CONFIRMED by capturing the real
+cold boot (`demo_cold_start_intro`, per-present-frame f405..520, ref side, with a 2032:0557 AdLib
+counter) -- grounded, not guessed:
+- **The missing screen (reached via the boot code, not a plain asset):** a FULL-SCREEN cosmic
+  TITLE/SPLASH image (a figure viewing a planet/nebula vista) held ~40 present-frames (f405..446)
+  BEFORE the blueprint.  Decoded correctly from the frontend_intro snapshot's B800 as Tandy mode-9
+  (nz=14054).  It is NOT any full-screen `.ENC` (checked all vs the capture, none match) -- so it is a
+  `.BIC` decode or a code composition the boot draws; identifying its source is the open piece.
+  (Distinct from HISCORE.ENC's cosmic art -- no score text.)
+- **The blueprint is CHAR-WRITTEN, not the 3-beat cell reveal:** from f447 the blueprint's nz grows
+  ~12 px/present-frame (f447 13953 -> f517 14815, still climbing) -- i.e. ~1 glyph per frame, a
+  TYPEWRITER text-writing animation of the briefing text.  My committed `compose_blueprint` recipe
+  reveal (grid,+5,+10,+15) is the ATTRACT-CYCLE blueprint (the steady-state loop only ever shows
+  ~5-10 cells, nz 16827..17772, verified from the snapshot) -- CORRECT for the attract, but the
+  COLD-BOOT intro is this finer char-by-char write, which is still OPEN.
+- **The intro sound is PC SPEAKER, not AdLib:** adlib/frame == 0 for the ENTIRE intro (f405..520);
+  the per-char typewriter beep is the speaker (port 0x61/PIT 0x42), a separate lift.
+
+NEXT (the owner's "lift what is missing, verify against an oracle"): (1) identify the title-splash
+source (`.BIC`/compose) + render it; (2) LIFT the cold-boot blueprint char-writer + its speaker beep
+via `liftverify` against the cold-boot oracle, and replay it frame-by-frame; both wired into
+`_run_blueprint_intro` ahead of the menu.  This pass GROUNDED what is missing (the required first step
+of a lift); the routines themselves are the follow-up.
+
 ## 2026-07-13 — FRONT-END: the BLUEPRINT intro DECODED (CC4F/CE5F recipe) -- grid + 15 cells, ANIMATED
 
 The blueprint was the big remaining intro gap (a static ~88% guess).  Traced the front-end loop and
