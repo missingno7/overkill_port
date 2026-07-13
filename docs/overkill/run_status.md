@@ -63,6 +63,33 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-13 — FRONT-END: a CORRECT sub-frame flow instrument (control-flow, not pixels); calibration claim retracted
+
+Owner: "we need a correct way to verify [the cold boot] on sub-frame level, so we are not guessing from
+pixels but see the real intro/menu flow."  Built exactly that: `overkill/probes/trace_frontend_flow.py`
+traps the front-end draw/flow routines (CE97 compose, CC4F attract, D04D scene-draw, 3354 present, 971A
+start, D390 level-select, D305 plaque, 9844 THE END) over a cold-start demo and emits the run-length-
+compressed `(video_mode, scene[BE06], start[98C3])` timeline -- every transition a real control-flow
+event, no pixel decode.  Structural facts established (all VM-grounded):
+- **The front end has NO 1010:0679 gameplay frame wait** -- so `advance_frames_fast` (keyed on 0679)
+  can never advance it (that is why every fast-forward attempt stalled).  The front end is the CC04
+  loop: CE97 composes the menu, CC4F runs the D007/D04D scene machine advancing DS:BE06 0->0x13 with a
+  per-scene countdown DS:BE08, until 0162 (the input poll) sets DS:98C3=0x39 -> 971A start -> D390.
+- **The bundle is a D007 snapshot** and loads+steps directly (~8K steps/s, no front-end accel hooks) --
+  fast front-end iteration without the ~9-min cold boot -- but it is at scene 0x13 (terminal), so it
+  only shows the end-state loop.
+- **The real flow (traced over `demo_cold_start_intro`):** mode 3 boot asset-loads -> **mode 9** scene 0
+  (setup+compose) -> attract scenes 1..0x12 (~300 draw-frames each) -> scene 0x13 START (98C3=0x39) ->
+  level-select.  **Scenes 3 and 5 run HALF (~150 frames, cd 1..50)** -- CONFIRMS the recovered
+  `attract_frame_step` + the D183 [BE08]=0x32 countdown override against the real VM flow.
+- **RETRACTED: the "CGA mode-4 joystick-calibration screen".**  With the correct draw-event `dos.video_
+  mode` read the whole attract is mode 9, no mode-4 phase -- the earlier calibration claim was a THIRD
+  pixel-misread (the mode-4 "grid" was the attract self-playing demo decoded wrong).  No mode-4 decoder
+  or calibration screen is needed for the cold-boot flow.  frontend.md corrected.
+The instrument is the deliverable: the front-end flow is now VERIFIABLE at sub-frame granularity from
+the game's own control flow.  Next: use it to drive the accurate-menu (CE97) recovery with a real
+present/page-flip oracle, and to gate a native cold-boot mode machine against this timeline.
+
 ## 2026-07-12 — FRONT-END: CE97 "decoded" RETRACTED; a real joystick-calibration screen discovered instead
 
 Follow-up to the entry directly below.  Tried to ground the CE97 menu-compose reading (below) against

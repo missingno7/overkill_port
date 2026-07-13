@@ -73,23 +73,40 @@ boot: LZEXE unpack -> video init -> load shared banks (1X1/2X2/2X2C/MANEXPL/THEN
   cold-boot-to-front-end SNAPSHOT (the same reason gameplay demos are fast to probe: they start from a
   captured snapshot, not power-on) so repeated front-end probing stops paying the ~9-minute boot cost
   every attempt.
-- **NEW FINDING (2026-07-12): a JOYSTICK CALIBRATION screen exists and is completely unhandled.** The
-  container has a `CALIB.ENC` asset (`native_video.front_end.decode_fullscreen_image` renders it
-  cleanly: "Joystick Calibration -- Move stick to upper left and push FIRE", matches a standard
-  early-90s DOS calibration screen).  Live-VM capture of `demo_cold_start_intro` shows the front end
-  switching **from text mode to CGA MODE 4** (2bpp, 2 interlaced 8000-byte banks -- NOT the Tandy 16-
-  color 4bpp/4-bank layout `decode_tandy_b800_indices` assumes) at present-frame 447, then displaying a
-  calibration-grid pattern (a moving-crosshair grid, the classic joystick-range visualization) for the
-  ENTIRE rest of the captured span (present-frame 6280+, i.e. most of the owner's observed
-  "~6174 frames of automatic intro+attract" -- much of that is actually this calibration loop, not
-  attract).  This was invisible to `classify_screen` (address-range-only, blind to video mode) and to
-  `verify_native_front_end_image`'s no-input free-run (which reaches mode 9 quickly, so likely takes a
-  no-joystick-detected path that skips calibration).  **play_native has zero handling for this screen**
-  -- not rendered, not skipped, not documented before now.  Whether real players usually see it (i.e.
-  whether it is gated on joystick presence, which dos_re's unmodeled-port-read policy would report as
-  absent) is still open.  Recovering it needs: the CGA mode-4 decode (none exists in the codebase yet),
-  the calibration screen's own logic (grid/crosshair drawing, joystick-poll, skip condition), and the
-  transition points into/out of it -- a real, scoped, but non-trivial next slice.
+- **THE CORRECT INSTRUMENT (2026-07-13, owner: "verify on sub-frame level, not guessing from pixels"):
+  `overkill/probes/trace_frontend_flow.py`.**  Instead of sampling a decoded framebuffer at a guessed
+  step count, it reads the game's OWN control flow: it traps the front-end draw/flow routines (CE97
+  menu-compose, CC4F attract, D04D scene-draw, 3354 present, 971A start, D390 level-select, D305 plaque,
+  9844 THE END) and emits the RUN-LENGTH-COMPRESSED timeline of `(video_mode, scene [BE06], start
+  [98C3])` over a cold-start demo (through the frame verifier, so the real IRQ0 is delivered at boot/
+  pacing waits -- no faked timing).  Each transition is a real control-flow event, not a pixel guess.
+  Key structural facts it established (all VM-grounded):
+  - The front end has **NO 1010:0679 gameplay frame wait** -- so `advance_frames_fast` (keyed on 0679)
+    can never advance it (every attempt stalled).  The front end is the **CC04 loop**: `CE97` composes
+    the menu, then `CC4F` runs the `D007`/`D04D` attract scene machine, which advances `DS:BE06` 0->0x13
+    with a per-scene countdown `DS:BE08`, until `0162` (the input poll: reads the INT9 key table into
+    `DS:98BE`, fire bit 0x10) sets the START flag `DS:98C3=0x39` -> `971A` start -> `D390` level-select.
+  - The **bundle (`static_runtime_bundle`) is a D007 snapshot** and loads+steps directly (~8K steps/s,
+    no acceleration hooks on the front end) -- so front-end iteration no longer needs the ~9-min cold
+    boot; BUT it is captured at scene **0x13 (terminal)**, so from it you only see the end-state
+    menu<->attract loop, not the full sequence.
+  - **The real flow (traced over `demo_cold_start_intro`, VM-grounded):** boot asset-loads -> scene 0
+    (setup + menu compose) -> attract scenes **1,2,...,0x12 each ~300 draw-frames** -> scene 0x13
+    (START pressed, `98C3=0x39`) -> level-select.  **Scenes 3 and 5 run ~150 frames (HALF)** -- this
+    directly CONFIRMS the recovered `attract_frame_step` + the D183 `[BE08]=0x32` countdown override
+    against the real VM flow.
+- **CALIBRATION claim (2026-07-12) RETRACTED (2026-07-13) -- it was a third pixel-misread.**  The
+  `trace_frontend_flow` run with the CORRECT `dos.video_mode` read shows the cold boot is **mode 3
+  (boot text) -> mode 9 (Tandy 16-color) for the ENTIRE attract (scenes 0..0x13)** -- there is NO CGA
+  mode-4 phase in this demo's front-end at all.  So the earlier "front end switches to CGA mode 4 and
+  shows a joystick-calibration grid for most of the cold boot" was wrong on both counts: the mode was
+  misidentified (an earlier mode-transition probe reported mode 4, contradicted here by the draw-event-
+  accurate read; the source of that stale "4" is not pinned down but the attract-in-mode-9 result is the
+  internally-consistent, corroborated one), and the "calibration grid" was the **attract self-playing
+  demo** (starfield/objects) in mode 9 decoded through a wrong assumption.  `CALIB.ENC` is a real asset
+  but there is no evidence it is shown on the normal cold-boot path.  **Do not build a mode-4 decoder or
+  a calibration screen** -- neither is needed for the observed flow.  (Open, low-priority: whether a
+  calibration screen exists at all on some joystick-config path -- but it is NOT in the cold-boot flow.)
 - **attract** — the `D007`/`D04D` scene machine (scenes 0x0..0x12, incl. the gameplay DEMO at 0x8..0x12
   with auto-fire).  Rules recovered + demo-witnessed (`systems/attract`); scene-0 `D160` + the `D0DB`
   scene-entry actions + the per-scene CONTENT (which asset/demo each scene shows) are gaps.  play_native:
