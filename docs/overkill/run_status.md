@@ -79,6 +79,21 @@ DGROUP/plane-specific -- a doc candidate later), `make_frontend_snapshot.py` (th
 `write_snapshot`; the know-how went into 12b instead).  Deterministic menu/demo replay itself already
 lives in dos_re (`input_demo`, and now the PM `pm_input_demo` twin).
 
+## 2026-07-13 — FRONT-END: the menu SELECTION HIGHLIGHTS landed (the VM's own 15->12 recolor, byte-proven)
+
+The measured mechanism became the native compose: `native_video.front_end.apply_menu_selection_highlights`
+recolors the selected control/sound option's white text (15) to orange (12) inside the words' OKMENU
+regions — keyboard (186 px) and both (90 px) are VM-WITNESSED byte-exact (the word-cluster sums match
+the measured live-menu diffs exactly); joystick/amstrad + music/fx/none are the same rows' word
+geometry from the image itself.  play_native's menu now draws the composed frame (boot default
+keyboard+both, matching the VM's [98C2]=2) and recomposes on M/K/A/R — the raw-OKMENU draw + its TODO
+are gone.  2 tests lock the witnessed constants + per-state counts.  Suite 1403.
+Also measured on the way (probe, snapshot + deliver_scancode + the CBE0 [0054]-tick wait serviced by
+`deliver_overkill_timer_irq0`): pressing a key during the attract EXITS the cycle (any-key), so the
+other sound states aren't reachable by injection there — the word-geometry + two-witness anchoring is
+the honest basis; the owner's menu-interaction demo (m m m m) can byte-witness the remaining states
+later via lockstep replay if wanted.
+
 ## 2026-07-13 — FRONT-END: the CGA-4 claim RETRACTED (it was an empty-command-tail artifact); the TRUE Tandy flow measured
 
 **RETRACTION of the two entries below** ("root cause SETTLED -- boot intro is CGA mode 4" and
