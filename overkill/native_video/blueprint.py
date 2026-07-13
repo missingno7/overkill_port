@@ -13,8 +13,10 @@ through the `CS:[0C92]` cell directory in the shared rows/width cell format (`le
   * cell 0x10  -> rows  10..189 (a grid row, blitted 18x at rows 10,20,..,180: 5A24 ah=10*cl, cl=18..1),
   * cell 0x11  -> rows 190..199 (the bottom border, 5A24 ah=0xBE).
 
-This is the grid LAYER only.  The blueprint's ship schematics (SHIP.BIC) and the briefing text (font)
-are separate layers, not yet recovered -- so this does not yet draw the whole screen.
+CE97 draws the grid LAYER only; the boot then overlays the ship schematics + text (all also BLUEBITS
+cells) -- :func:`compose_blueprint` draws the WHOLE screen.  The blit position math is the tandy `5A24`
+handler `1010:312D`: ``di = row_table[row] + col*4`` over a 2px/byte page, so a cell lands at pixel
+``x = col*8, y = row`` (the grid confirms it byte-exact; :func:`compose_ce97_grid`).
 """
 from __future__ import annotations
 
@@ -30,6 +32,18 @@ GRID_ROW_CELL = 0x10             # the repeated grid-row cell
 TOP_CELL = 0x0F                  # top border cell (row 0)
 BOTTOM_CELL = 0x11               # bottom border cell (row 190)
 CELL_ROWS = 10                   # each CE97 cell is a 10-row strip
+
+#: The full cold-boot blueprint compose, ``(cell_id, col, row)`` in blit order -- traced from the VM's
+#: 5A24/5A5A cell blits over boot->scene-1 (`trace_frontend_flow` + a 5A5A trap).  The CE97 grid, then
+#: the boot's ship-SCHEMATIC + briefing-TEXT overlay (each ship is a 2-colour-pass pair; the text lines
+#: 0x0C/0x0D are pre-rendered cells, not live font).  ``col`` is the 5A24 column (pixel x = col*8).
+BLUEPRINT_RECIPE: tuple[tuple[int, int, int], ...] = (
+    (TOP_CELL, 0, 0),
+    *tuple((GRID_ROW_CELL, 0, r) for r in range(180, 0, -10)),
+    (BOTTOM_CELL, 0, 190),
+    (0x00, 7, 31), (0x03, 23, 57), (0x06, 7, 137), (0x09, 21, 141), (0x0C, 1, 182),
+    (0x01, 4, 24), (0x04, 23, 53), (0x07, 4, 133), (0x0A, 21, 141), (0x0D, 1, 182),
+)
 
 
 def compose_ce97_grid(mem) -> np.ndarray:
@@ -54,4 +68,28 @@ def compose_ce97_grid(mem) -> np.ndarray:
     return out
 
 
-__all__ = ["compose_ce97_grid"]
+def compose_blueprint(mem) -> np.ndarray:
+    """The FULL cold-boot blueprint/intro screen -> a ``(200,320)`` 4-bit index frame, composed from the
+    BLUEBITS cells per :data:`BLUEPRINT_RECIPE` (grid + ship schematics + briefing text) at ``x=col*8,
+    y=row``, transparent-blitted (index 0 = keep the layer below).  Structurally + visually exact vs the
+    VM's own composed page; a ~7% byte residual remains (the exact blit opacity where ship cells cross
+    the grid -- the VM's page has nz 16827, this has 19698), tracked as a follow-up polish.  ``mem`` is
+    the cold image with BLUEBITS at ``CS:[95B8]``."""
+    bank_seg = mem.rw(CS, BLUEBITS_BANK_PTR)
+    base = bank_seg * 16
+    bank = np.frombuffer(bytes(mem.data[base:base + 0x10000]), dtype=np.uint8)
+    out = np.zeros((SCREEN_H, SCREEN_W), dtype=np.uint8)
+    for cell_id, col, row in BLUEPRINT_RECIPE:
+        c = cell_indices(bank, mem.rw(CS, (CELL_DIRECTORY + cell_id * 2) & 0xFFFF))
+        h, w = c.shape
+        x = col * 8
+        y_end, x_end = min(SCREEN_H, row + h), min(SCREEN_W, x + w)
+        if y_end <= row or x_end <= x:
+            continue
+        sub = c[:y_end - row, :x_end - x]
+        m = sub != 0
+        out[row:y_end, x:x_end][m] = sub[m]
+    return out
+
+
+__all__ = ["compose_ce97_grid", "compose_blueprint", "BLUEPRINT_RECIPE"]

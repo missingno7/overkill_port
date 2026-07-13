@@ -22,6 +22,12 @@ _GRID_SHA = "895a49ce2cb42f18"
 _GRID_NZ = 13953
 
 
+#: the full blueprint compose (grid + ships + text) -- structurally/visually verified vs the VM, a
+#: stable-regression reference (a ~7% byte residual vs the VM page remains, tracked in the campaign doc).
+_BLUEPRINT_SHA = "bc89c4176a824880"
+_BLUEPRINT_NZ = 19698
+
+
 @pytest.mark.skipif(not _BUNDLE.is_file(), reason="needs the static_runtime_bundle (BLUEBITS bank)")
 def test_ce97_grid_matches_verified_reference():
     from overkill.native_video.blueprint import compose_ce97_grid
@@ -31,3 +37,14 @@ def test_ce97_grid_matches_verified_reference():
     assert grid.shape == (200, 320)
     assert int(np.count_nonzero(grid)) == _GRID_NZ
     assert hashlib.sha256(grid.tobytes()).hexdigest()[:16] == _GRID_SHA
+
+
+@pytest.mark.skipif(not _BUNDLE.is_file(), reason="needs the static_runtime_bundle (BLUEBITS bank)")
+def test_full_blueprint_compose_is_stable():
+    from overkill.native_video.blueprint import compose_blueprint
+    from overkill.recovered.adapters.flat_memory import MutFlatMemory
+
+    bp = compose_blueprint(MutFlatMemory(_BUNDLE.read_bytes()))
+    assert bp.shape == (200, 320)
+    assert int(np.count_nonzero(bp)) == _BLUEPRINT_NZ
+    assert hashlib.sha256(bp.tobytes()).hexdigest()[:16] == _BLUEPRINT_SHA

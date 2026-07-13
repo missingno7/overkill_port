@@ -54,13 +54,21 @@ mode-9 B800 decode at the peak-content frame of each scene -- ground truth, capt
   **WINDOW.BIC decodes to a full-screen TITLE SPLASH art** (a space scene: planets, nebula, a pilot at
   a window) -- a separate cold-boot intro screen.  SHIP.BIC is a small 16-row sprite (the gameplay
   ship), not the blueprint schematics.
-- **STILL OPEN for the blueprint:** its ship-SCHEMATIC line-art + the briefing TEXT are NOT drawn by
-  CE97 (which only does the grid) and were not seen in the scene-0 draw trace -- so they come from a
-  routine drawn elsewhere (a boot title sequence before the CC04 loop, or the attract path), OR the
-  captured "ships" were a leftover on B800 from a prior title screen (e.g. WINDOW) that the grid
-  overlaid.  Next: trap the boot's pre-CC04 draws + the font glyph renderer to locate the ship/text
-  layer and the WINDOW title screen's place in the sequence.  Also still open: the OKMENU-options menu
-  (M/K/A/I/O) -- where it actually shows in the flow is now itself unconfirmed (CE97 is NOT it).
+- **BLUEPRINT FULLY COMPOSED (2026-07-13).**  Decoding the whole BLUEBITS cell directory (via 0C92 +
+  `cell_indices`) showed the ships + text are ALSO BLUEBITS cells: cells 0x01-0x0B are ship SCHEMATICS
+  (cell 0x02 = the detailed yellow ship), cells 0x0C-0x0E are pre-rendered TEXT strips (NOT live font --
+  which is why no glyph renderer fired).  A 5A24/5A5A blit trace over boot->scene-1 gave the exact
+  compose recipe (30 blits): the CE97 grid, then the ship/text overlay in two colour-passes
+  (00,03,06,09,0C then 01,04,07,0A,0D) at their positions.  The `5A24` tandy handler `1010:312D` gives
+  the placement: ``di = row_table[row] + col*4`` over a 2px/byte page -> pixel ``x = col*8, y = row``.
+  Recovered as `native_video.blueprint.compose_blueprint` (+ `BLUEPRINT_RECIPE`); it reproduces the
+  screen VISUALLY + structurally (matches the VM's captured page layout exactly).  A ~7% byte residual
+  vs the VM page remains (the exact blit opacity where ship cells cross the grid: VM page nz 16827 vs
+  this 19698) -- tracked as a polish item; the CE97 grid half is separately byte-exact (diff 0/64000).
+  Locked by `tests/test_blueprint_grid.py`.  **Wired into play_native**: `_run_blueprint_intro` shows it
+  as the cold-boot first screen (before the menu), so play_native now opens on the real intro, not
+  OKMENU.  Still open: the ~7% opacity polish; the WINDOW.BIC title-splash's place in the boot sequence;
+  and where the OKMENU-options menu (M/K/A/I/O) actually shows (CE97 is NOT it).
 - The reference captures live in `artifacts/_fe/` (scene_01/10 = the real attract; real_menu = the
   scene-0 blueprint; L_b800 = the bundle's terminal HUD) -- kept as the recovery oracle, not committed.
 

@@ -640,6 +640,30 @@ def _run_title_menu(display, pygame, bundle_data, container_data,
 _ATTRACT_FIRE_SCANCODE = 0x39
 
 
+def _run_blueprint_intro(display, pygame, bundle_data, container_data,
+                         max_frames: int = 300) -> bool:
+    """The cold-boot BLUEPRINT / intro screen -- the REAL first screen the original shows (NOT OKMENU).
+
+    `1010:CE97` composes the grid background and the boot overlays the ship-schematic + briefing-text
+    cells, all from the BLUEBITS bank (`native_video.blueprint.compose_blueprint`, grounded against the
+    VM).  Held until FIRE/Space/any-key (or `max_frames` at 30fps).  Returns False on window-close/Esc."""
+    from overkill.native_video.blueprint import compose_blueprint
+
+    img = build_cold_level_start_image(bundle_data, 0, container_data)
+    frame = compose_blueprint(img)
+    clock = pygame.time.Clock()
+    display.set_title("OVERKILL - native (VM-less)  [intro -- Space/any key to continue]")
+    for _ in range(max_frames):
+        for ev in pygame.event.get():
+            if ev.type == pygame.QUIT or (ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE):
+                return False
+            if ev.type == pygame.KEYDOWN:
+                return True                       # any key advances to the menu/attract
+        display.draw(frame)
+        clock.tick(30)
+    return True
+
+
 def _run_native_attract(display, pygame, bundle_data, container_data, music=None) -> "bool | None":
     """The cold-boot ATTRACT (1010:D007), driven by the recovered scene machine -- the game plays
     ITSELF.  `NativeAttract` sequences the scenes; each frame the caller runs the recovered action:
@@ -1127,6 +1151,11 @@ def main(argv=None) -> int:
         difficulty = 0
         menu_choice: "tuple[int, int, dict] | None" = None
         if not args.no_title and not args.frames:
+            # The real cold boot opens on the BLUEPRINT/intro screen (CE97 grid + BLUEBITS ship
+            # schematics + text), NOT OKMENU -- show it first, as the original does.
+            if not _run_blueprint_intro(display, pygame, bundle_data, container_data):
+                display.close()
+                return 0
             menu_choice = _run_title_menu(display, pygame, bundle_data, container_data, scan_map, music)
             if menu_choice is None:
                 display.close()
