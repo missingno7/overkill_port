@@ -63,6 +63,29 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-13 — FRONT-END: high-scores beat wired into the attract (BYTE-EXACT); blueprint measured at 97%
+
+Owner: "menu intro flow is still not wired into native."  The cold-boot flow WAS partially wired
+(`_run_blueprint_intro` -> `_run_title_menu` -> level-select, with `_run_native_attract` on menu
+idle), but the attract rotation was missing the HIGH-SCORES screen.  Fixed + measured:
+- **HIGH SCORES: `HISCORE.ENC` decodes BYTE-EXACT to the VM's cold-boot high-scores B800 (diff
+  0/64000**, verified against the frontend_intro snapshot).  Wired `_run_hiscore_screen` into the
+  menu-idle attract rotation (demo -> high scores -> back to menu); it returns to the menu on any
+  non-start key like the demo beat, FIRE/Space starts from either.  sha-locked in
+  `test_front_end_image` (`023ad6d080eb5559`).  Suite 1410.
+- **BLUEPRINT: `compose_blueprint` measured 97.0% vs the VM (diff 1926/64000)**, and the diff is
+  **100% OVER-DRAW** (zero under-draw, zero recolor) -- every pixel the VM draws, the native compose
+  draws IDENTICALLY (right color, right position); the native static compose (nz=19698) is a strict
+  SUPERSET of the VM reveal frame (peak nz~18494).  So the residual is the animation phase (the
+  blueprint reveals element-by-element via CC4F's display list; a single static compose = the full
+  end-state) plus ~1200 genuine peak over-draw in the ship (rows 30-100) + briefing-text (rows
+  130-188) regions.  Closing it needs the CC4F display-list decode (the animated reveal) -- the
+  scoped-but-hard item; the STATIC blueprint is already a faithful 97%-superset, good enough to ship
+  as the intro screen meanwhile.
+Remaining front-end fidelity (all need the CC4F display-list interpreter decode): the blueprint's
+animated reveal + its ~1200px peak over-draw, and the SHIP SHOWCASE (Scout->Fighter->weapons; it is
+the D007 gameplay demo, partly covered by `_run_native_attract`).
+
 ## 2026-07-13 — GAMEPLAY: the 6 hard-tail behaviors GROUNDED via liftgen/liftverify (no more guessing)
 
 Ran `liftgen` census + `liftverify` (play-witness snapshots found via a fast trap-based behavior
