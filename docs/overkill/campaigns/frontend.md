@@ -70,12 +70,15 @@ ENTIRE front-end runs Tandy mode 9 (16-colour), matching what the owner sees.
 3. -> **MENU** (OKMENU + the SELECTION HIGHLIGHTS -- see below).
 4. -> **HIGH SCORES** (the cosmic planet+cyborg art) -> blank -> the cycle repeats from 1.
 
-**The menu delta is MEASURED: live VM menu vs raw `OKMENU.ENC` = 276 px in exactly two bands**
-(y65..73 x77..130 = the orange "Keyboard" control-selection highlight; y122..128 x161..182 = the
-orange "both" sound-selection highlight).  The current-selection indicators are ALL that
-play_native's menu is missing pixel-wise — recovering that draw (state -> two text highlights) plus
-the reveal sequencing above is the concrete work; gate it with the 4-gate `frontend_timeline`
-machinery (screen order + decision-state witness), not pixel-diff guessing.
+**The menu delta is MEASURED and its MECHANISM settled: live VM menu vs raw `OKMENU.ENC` = 276 px in
+exactly two bands** (y65..73 x77..130 = "Keyboard"; y122..128 x161..182 = "both"), and every one of
+the 276 differing pixels is exactly **index 15 -> 12** (white -> orange).  So the selection highlight
+is a pure RECOLOR of OKMENU's own text pixels over the selected word — no new glyphs, no cells.  The
+native menu fix is therefore: recolor 15->12 inside the selected control-option's and sound-option's
+word regions (the other states' regions measure the same way — drive the VM snapshot or the
+menu-interaction demo through the other selections), byte-compare 276/276.  That plus the reveal
+sequencing above is the concrete work; gate it with the 4-gate `frontend_timeline` machinery (screen
+order + decision-state witness), not pixel-diff guessing.
 
 **THE REAL COLD-BOOT SCREENS, SEEN (2026-07-13, `trace_frontend_flow` to hit the right moment + a
 mode-9 B800 decode at the peak-content frame of each scene -- ground truth, captured not guessed):**
