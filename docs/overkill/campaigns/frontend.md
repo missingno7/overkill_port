@@ -7,6 +7,33 @@ transition matching the original — replacing play_native's app-layer approxima
 **Done when:** play_native cold-starts through the original's real flow, driven by the recovered
 decisions, matched to the cold-start demo.
 
+## dos_re synergy (2026-07-13, bumped 7a4f7d8 -> e19bb1a) — the 4-GATE proof replaces pixel-diff guessing
+
+`dos_re.frontend_timeline` gained a VALIDATED methodology (docs/agent_toolbox.md 12b; all 4 gates PASS
+on another port's real cold-start demo) that is a direct, better replacement for the pixel-diff guessing
+this campaign has been stuck on:
+- **`filter_runs(runs, ignore=...)`** — drops transient transition states (a black "loading" frame mid
+  image-copy, "other" mid mode-switch, "blanked" during a palette load) and merges the adjacent
+  same-screen runs they split. This is EXACTLY the CGA-mode-4-vs-Tandy-mode-9 misread noise that broke
+  the earlier oracle attempts (a wrong-mode decode looks like a distinct garbled "screen" but is really
+  a transition artifact of the SAME screen).
+- **The 4 gates**: [1] `diff_sequence` on the filtered screen ORDER (cadence-free — no shared frame
+  clock needed, which is why the wall-clock-paced retrace-poll intro never needed pixel-cadence
+  matching in the first place); [2] `pack_fields`/`diff_fields` — a WITNESS of adapter-declared
+  decision-state (chosen level, input source, lives, ...) byte-compared at every screen transition;
+  [3] `diff_offsets` — the entry-state OWNERSHIP split (which DGROUP bytes a VM-less front end
+  legitimately differs on); [4] `spread_beyond` — INERTNESS, proving those owned bytes never leak into
+  gameplay by dual-replaying the same demo from both entry states.
+- **Causal input**: `input_segments`/`SegmentedInput` deliver the VM's captured per-frame input
+  PER-SCREEN (not by absolute frame index), so a keypress lands on the same screen at the same relative
+  moment regardless of cadence — the correct answer to "the front end has no shared frame clock with a
+  native replay," which is the same retrace-polling pacing problem `make_frontend_snapshot.py` (below)
+  had to raw-step around.
+- **Not yet wired here**: we still only import `collapse`/`diff_sequence` in
+  `overkill/probes/verify_native_frontend.py`. Adopting `filter_runs` + the WITNESS gate is the next
+  concrete step to make that gate trustworthy instead of pixel-guessed — likely the highest-leverage
+  unblock for this campaign's stalled oracle work below.
+
 ## The exact cold-start flow (mapped 2026-07-11)
 
 Traced from `demo_cold_start_full` (the C679 file-open trap gives the asset order) + disassembly:
