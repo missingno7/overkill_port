@@ -63,6 +63,45 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-14 — HANDOFF (session end): the VM SIDE is done -- next is the PURE (VM-less) reimplementation
+
+Owner: "continue lifting what is remaining... so you can plug it into native and verify it" -- the
+LIFTING (shadow -> verified hook, per CLAUDE.md's 3-stage recipe) is now complete for the WHOLE
+cold-boot blueprint reveal chain: **`1010:CE13` also LANDED this session** (commit `8a26bd0`, after
+`CC4F` below), byte-exact-verified against both cold-start demos.  `CE13` is the `CC7F` row-loop's
+exit continuation and turned out to own TWO more loop levels: a MIDDLE loop (`jmp CC76`, re-runs the
+row-scan for the next Y-band, `BD96 += 8` each pass) and an OUTER loop (`jmp CC58`, reads the next
+sequential 4-byte entry from the `BD81` table -- confirmed genuinely 5*4=20 bytes, matching `CC55`'s
+`mov cx,5`) with paced `CE40` waits between passes.  That is the actual source of the ~90-frame
+typewriter cadence this investigation kept re-deriving by inference from f478..570.  So EVERY routine
+the reveal touches (`CC4F/CC58/CC76/CC7F/CE13/CCC4/CD68/CDAA/306F/5A24/5A00/5A6C`) is pure recovered
+Python, hook-verified.
+
+**The remaining stage is "pure system"**: a VM-less reimplementation `_run_blueprint_intro` can call --
+not started, but fully scoped from this session's decode work:
+
+- **New pure primitives needed** (home: `overkill/rendering/rasterizer.py`, Tandy-only scope matches
+  its existing docstring) -- each a small, already-understood port of a hook already read in full this
+  session: `xy_to_di_tandy` (port of `coordinate_ax_to_di_from_mode_dispatch` restricted to Tandy's
+  `x_shift=2`, mode fixed), `detect_and_copy_dirty_cell_tandy` (port of `CCC4`'s 8-row compare+copy,
+  returns a dirty flag), `present_changed_cell_tandy` (port of `CDAA`), `copy_rect_to_tandy_video`
+  (port of `306F`'s header-driven rect copy -- reads height/width from its own `si`).
+- **Segment roles, confirmed from the hook reads**: `TANDY_VIDEO_SEGMENT_OFF=CS:[95A4]` is the TRUE
+  visible B800; `CS:[9598]` is the shadow/staged buffer CCC4 compares within (both its `si`/`di` live
+  in this ONE segment, strided `0xA0`/row) and CDAA reads its present-source from.
+- **The driver shape**: a generator/stepper yielding once per middle-loop ROW (up to 5 outer x up to
+  19 rows ~= the ~90-frame span this session measured) is the natural per-display-frame pacing unit for
+  `_run_blueprint_intro` -- `CE40`'s real retrace-wait COUNTS (10 between most outer passes, 80 at the
+  end) don't need literal replication, just comparable total pacing.
+- **Verification plan**: differentially test the pure driver against the ALREADY-VM-VERIFIED hook chain
+  (construct a plain `dos_re.cpu.CPU8086(mem=...)` -- a real, lightweight dataclass needing only `mem`,
+  no VM/interpreter loop, no ports/DOS layer -- call `overkill_dirty_cell_presenter_scene_setup_cc4f(cpu)`
+  to completion, then compare final DGROUP+B800 bytes against the pure driver's result from the same
+  starting snapshot).  This is a legitimate oracle (the hook chain is itself VM-verified) and avoids
+  re-running the slow full demo replay for every iteration of the pure port.
+- Separately still open: the title-splash screen's source (f405..446, "through code", matches no
+  `.ENC`) -- untouched this session; see the entries below for what's already ruled out.
+
 ## 2026-07-14 — FRONT-END: the blueprint char-writer MECHANISM FOUND -- a REVEAL of a pre-rendered work-buffer cell, not live glyph drawing (owner: "lift what is missing, verify against oracle")
 
 Continuing the 2026-07-13 blocker (the char-writer is a distinct code path a free-run snapshot never
