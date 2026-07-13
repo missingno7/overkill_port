@@ -24,6 +24,25 @@ boot: LZEXE unpack -> video init -> load shared banks (1X1/2X2/2X2C/MANEXPL/THEN
        -> level data (LEV{n}MAP/BLX + G{n}) -> plaq{n}.enc PLAQUE -> 97B2 gameplay
 ```
 
+**COLD-BOOT SCREEN ORDER (owner correction 2026-07-13) — play_native's flow is still WRONG:**
+1. **Screen 1: a full-screen image that UN-SQUEEZES open** (the `5C46` opening squeeze — the image
+   expands vertically from a squeezed line to full screen).  play_native SKIPS this entirely (it has
+   `_run_screen_squeeze` but does not run it at cold boot).  [What image un-squeezes: capture pending.]
+2. **Screen 2: the BLUEPRINT / grid intro** (below), ANIMATED (progressive reveal), Tandy 16-colour.
+   play_native draws it STATIC (`compose_blueprint`, one shot) and as its FIRST screen — so both the
+   missing screen 1 and the static (not animated) screen 2 are wrong.
+3. then the attract cycling / menu.
+**UNRESOLVED — the intro's video representation (do not trust any single hand-decode):** present-frame
+captures over the blueprint window (~430..733) read `dos.video_mode == 4` and their B800 decodes
+COHERENTLY as CGA-4 (2bpp) but GARBLES as a split double-image under the Tandy (4bpp) decoder — while
+the earlier draw-event `trace_frontend_flow` capture read the SAME blueprint cleanly as mode-9 Tandy
+(14 colours).  These two facts conflict and were NOT reconciled by hand-decoding memory (the whole
+back-and-forth this session traces to this).  The correct way to settle it is NOT another manual B800
+decode: render the cold boot with dos_re's ACTUAL player (`python scripts/play.py --video tandy` — what
+the owner literally sees), and/or capture a reusable cold-boot-to-front-end SNAPSHOT so front-end
+probing stops paying the ~10-min boot cost per attempt. Until then, the exact per-frame pixels of the
+intro are not reliably known; the STRUCTURE (un-squeeze image, then animated blueprint) is per the owner.
+
 **THE REAL COLD-BOOT SCREENS, SEEN (2026-07-13, `trace_frontend_flow` to hit the right moment + a
 mode-9 B800 decode at the peak-content frame of each scene -- ground truth, captured not guessed):**
 - **Scene 0 is a BLUEPRINT / INTRO screen, NOT the OKMENU title.**  The B800 aperture at scene 0's
