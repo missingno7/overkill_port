@@ -63,6 +63,24 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-13 — FRONT-END: reusable cold-boot snapshot (kills the ~10-min boot cost) + screen-1 title art SEEN
+
+Built `scripts/make_frontend_snapshot.py` (standing mechanism): runs the cold boot ONCE, writes a
+loadable snapshot at a target present-frame (default f410, just before the graphics intro) to
+`artifacts/frontend_intro_snapshot/` (gitignored, game-derived).  A front-end probe then loads it
+INSTANTLY (`load_overkill_snapshot`, 0.02s) instead of re-running the ~10-min boot every time.  KEY
+gotcha found the hard way: the intro paces via RETRACE POLLING (`in al,0x3DA`), NOT the `1010:0679`
+timer wait -- so `advance_frames_fast` and the `CS:066B` flag-poke both STALL/no-op here; you must
+RAW-STEP (`cpu.step()`), which advances because dos_re toggles the 0x3DA retrace bit (~50k steps/s on
+PyPy; ~0.9M steps reaches the composed blueprint).  Sample B800 as CGA mode 4 (`decode_cga4`) to watch
+the reveal.
+
+Also SEEN (correctly, via this snapshot + the CGA-4 decoder): the cold-boot flow is TITLE ART (a
+full-screen cosmic/starfield splash, screen 1, un-squeezes) -> the CGA mode-4 GRID/BLUEPRINT (screen 2,
+animated reveal to the compose end state) -> [game reads video type] -> Tandy mode-9 attract/menu.
+play_native skips screen 1 and renders screen 2 in the wrong mode.  Next: pin screen-1's source asset
+and reproduce both screens as CGA mode-4, proved against the demo via the snapshot.
+
 ## 2026-07-13 — FRONT-END: ROOT CAUSE SETTLED DEFINITIVELY — the boot intro is CGA mode 4 because it runs BEFORE the game reads its Tandy video-type
 
 Chased this all the way down (disasm + a definitive per-frame VM capture of `[95BC]` + `video_mode` +
