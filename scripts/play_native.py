@@ -875,15 +875,17 @@ class SpeakerSink:
 
 
 def _music_page_for(img) -> int:
-    """The ``1010:5F61`` music selector: the song is ``DS:[0x231E + [2356]]`` (the per-planet table
-    indexed by the current planet), overridden to page 6 (the boss/end tune) once the world scroll
-    ``[2350] >= 0x0750``.  This is the game-state -> AdLib page mapping the native music sink follows,
-    so each level plays its own song instead of the menu tune (page 2)."""
-    idx = img.rb(_DS, 0x2356)
-    song = img.rb(_DS, (0x231E + idx) & 0xFFFF)
-    if img.rw(_DS, 0x2350) >= 0x0750:
-        song = 6
-    return song
+    """The current music page = ``DS:[98C2]``, the song the native frame's ``1010:5F61``
+    (``native_frame._clock_tick_5f61``) has ALREADY selected -- read it, do NOT recompute.
+
+    5F61 re-selects the song ONLY on the gated A480 beat (``[A47E]==0`` and ``[A480]`` decrementing to
+    0), then stamps ``[98C2]`` (CB1C's first store).  It IS where the per-planet table
+    (``[0x231E + [2356]]``) and the ``[2350] >= 0x0750`` boss-page-6 override live -- but gated.  The
+    old version here recomputed that override EVERY frame, so it forced the boss/end tune (page 6) the
+    instant the world scroll passed 0x0750 -- e.g. mid-planet-1 -- even though the real 5F61 had not
+    re-selected (A480 not on its beat) and ``[98C2]`` still held the planet song.  Following ``[98C2]``
+    is the gated truth the driver's own CB1C would request."""
+    return img.rb(_DS, 0x98C2)
 
 
 class AdlibMusicSink:

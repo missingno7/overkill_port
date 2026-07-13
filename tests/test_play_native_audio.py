@@ -38,6 +38,20 @@ def test_channel0_frequency():
     assert round(freq) == 193      # 1193182 / 0x182C
 
 
+def test_music_page_follows_gated_5f61_selection_not_scroll_override():
+    """Regression (owner playtest): the boss/end tune (page 6) wrongly started mid-planet-1.  Cause:
+    _music_page_for recomputed the 5F61 ``[2350] >= 0x0750`` boss override EVERY frame, but the real
+    5F61 re-selects only on the gated A480 beat and had left ``[98C2]`` at the planet-1 song.  The fix
+    reads that gated ``[98C2]``; with the scroll well past 0x0750 it must still yield the planet song, 1."""
+    import play_native as pn
+
+    img = _img()
+    img.wb(DS, 0x98C2, 1)          # the native 5F61's gated selection: the planet-1 song
+    img.ww(DS, 0x2350, 0x0C98)     # world scroll far past 0x0750 -- the OLD ungated code returned 6 here
+    img.wb(DS, 0x2356, 1)          # planet 1
+    assert pn._music_page_for(img) == 1
+
+
 def test_channel0_wins_over_channel1():
     import play_native as pn
 
