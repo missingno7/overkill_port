@@ -74,3 +74,4 @@ artifacts/boot_lifts/
 artifacts/*.wav
 artifacts/frontend_intro_snapshot/
 artifacts/intro_frame_dump/
+artifacts/idle_boot_capture*/

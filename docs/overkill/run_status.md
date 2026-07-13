@@ -173,6 +173,28 @@ cells are attract-cycle-only content, drawn through the already-verified 5A24/CE
 part of this reveal.  So the native reveal target is this smaller, text-only end state (its own oracle,
 capturable directly at f570), not a partial draw of `compose_blueprint`.
 
+## 2026-07-14 — FRONT-END: CONFIRMED -- `play_native.py` with ZERO input reaches the WHOLE sequence (owner: "reachable by just launching and waiting")
+
+Owner pointed out the whole intro/menu/attract sequence is reachable in the real game just by
+launching and idling -- no special demo needed.  Built `scripts/capture_idle_boot.py` to test exactly
+that against the NATIVE port: launches `PygameDisplay` under `SDL_VIDEODRIVER=dummy` (no real input
+backend, so `pygame.event.get()` naturally returns nothing -- literally "doing nothing"), runs
+`_run_blueprint_intro` then `_run_title_menu` unmodified, and saves a screenshot every N presented
+frames.  **Confirmed end to end**: blueprint intro (~230 frames) -> menu idles out at the real
+`_MENU_ATTRACT_IDLE_FRAMES=300` timeout -> the self-playing gameplay attract kicks in automatically,
+HUD/starfield/everything rendering correctly (`artifacts/idle_boot_capture2/f00600.png`) -- exactly the
+owner's claim, and now a standing, reusable "launch and wait" test tool (no demo authoring needed).
+
+**This also directly confirms the CURRENT GAP visually**: `_run_blueprint_intro` still runs the OLD
+implementation (`compose_blueprint`'s grid + 5/10/15-cell attract recipe) -- `artifacts/idle_boot_capture/f00120.png`
+shows the 3 ship-schematic cells the 2026-07-14 addendum above already proved do NOT belong in the real
+cold-boot screen (the true cold-boot end state is text-only, `nz=15240` at `f570`, no ship art).  So the
+native intro currently shows the WRONG blueprint variant; `CC4F` is landed and byte-exact but not yet
+wired to replace this.  Wiring needs either a CPU-shim (`cpu.s`/`push`/`pop`) to drive the hook chain
+headless, or a pure-Python re-implementation of the same semantics directly against `MutFlatMemory`
+(the `compose_blueprint`/`compose_ce97_grid` style already used elsewhere in `native_video/`) -- neither
+done yet; this is the next concrete slice.
+
 ## 2026-07-14 — FRONT-END: `1010:CC4F` LANDED, byte-exact -- the cold-boot char-writer's dirty-cell presenter chain is now 100% pure recovered code
 
 Closes the lift opened by the entries below.  `overkill/hooks.py` now registers
