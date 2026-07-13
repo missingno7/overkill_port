@@ -83,6 +83,17 @@ So ~290 present-frames of reveal.  The oracle is now correct + reusable; the fai
 (replay this frame sequence in `_run_blueprint_intro`, prove frame-by-frame vs the demo) is the next
 slice — and it is now unblocked because the capture is finally decoding the real screen.
 
+**The static compose CONTENT is verified correct (good news):** rendering `compose_blueprint(cold_img)`
+shows the COMPLETE blueprint — all three ship schematics + the spec text + the title bar + the grid,
+matching the VM's layout (the captured f733 was just MID-animation, not the final frame, so the reveal
+runs past 733).  So the cell RECIPE for the end state is right; the animation is "reveal these cells
+progressively in the observed order".  **Two open items remain:** (1) the compose uses 16-colour cell
+indices (0,8,10,11,14,15) but the intro DISPLAYS in CGA mode 4 (4 colours) — the index->CGA palette
+mapping the present applies is unresolved (needs the VM's actual FINAL displayed frame, past 733, in
+both decodes); (2) the exact per-frame reveal timing (typed-text cadence + ship-draw order) for the
+byte-exact frame-by-frame proof.  Neither is a blocker to an ANIMATED (vs static) intro; both are needed
+for the strict frame-by-frame proof.
+
 ## 2026-07-13 — FRONT-END: a CORRECT sub-frame flow instrument (control-flow, not pixels); calibration claim retracted
 
 Owner: "we need a correct way to verify [the cold boot] on sub-frame level, so we are not guessing from
