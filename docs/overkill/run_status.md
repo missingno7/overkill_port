@@ -132,13 +132,34 @@ reached via raw interpreted ASM from `1010:CC4F` (the attract-scene player, per 
 `FLOW_ROUTINES`), which is NOT YET decoded.  Ran the liftgen census per standing discipline before
 planning a hand-decode: `python dos_re/tools/liftgen.py --exe assets/OVERKILL --snapshot
 artifacts/frontend_intro_snapshot --entry 1010:CC4F --game-root assets` -> **REFUSED, indirect-jump**
-(29 insts, 1 block, 1 call) -- CC4F itself dispatches through a jump table (almost certainly the same
-`DS:[BE06]` attract-scene-id dispatch `trace_frontend_flow` already treats as the scene selector), so
-it needs the SAME careful hand-decode-with-oracle-verification the project's other jump-table routines
-got (e.g. 4E26), not a naive lift.  That is the concrete next step: hand-decode CC4F's scene dispatch
-(or the specific scene arm that sets up `BD95`/`CX` for the cold-boot char-write scene) and verify it
-against the demo-paced oracle this pass already built (`witness_cdaa_presenter.py` gives the exact
-target `(si,di,cx)` sequence to match).  Everything downstream of that call is already usable as-is.
+(29 insts, 1 block, 1 call).
+
+**Then disassembled it directly to see the real shape (`python scripts/lindis.py
+artifacts/frontend_intro_snapshot 1010 CC4F CC7F`) -- the "indirect-jump" refusal is a FALSE LEAD: CC4F
+itself has ZERO branches.**  liftgen's static scan starts at CC4F and walks forward through its 18
+straight-line instructions, right into `CC7F`'s bytes (they are CONTIGUOUS, no CALL/JMP between them --
+`CC7F: push cx` is literally CC7F's own hook's first line) and hits CC7F's OWN mode-dispatch jump table
+there (already correctly handled as a Python if/elif in the existing hook) -- liftgen can't know that
+boundary is already a registered hook, so it reports the refusal against CC4F's entry point.  CC4F
+itself is trivial: read ONE 4-byte entry from a recipe table seeded at `DS:[BD9A]=BD81h` (the same
+sequential-pointer-advance shape as `read_blueprint_recipe`'s BD54 table) -- `BD96=al` (byte),
+`BD95=al` (byte -- `a2 95bd` is `MOV moffs8,AL`), `cx=al` zero-extended, `BD9C=ax` (word, `a3 9cbd`) --
+save the advanced pointer back to `BD9A`, set `BDA0=5` (a shared threshold `CD37`/`CD68` already check),
+push `cx` and `word ptr [BD95]` (`ff 36 95 bd` -- a WORD push despite BD95 only ever being byte-written
+here), set `cx=[BD9C]`, then fall straight into the ALREADY-REGISTERED `CC7F` hook -- so
+`jump_installed_hook_boundary` (the existing "verifier-visible fall-through" primitive, already used
+for CC7F's own mode-dispatch tail) is the right delegation primitive, not a new CALL simulation.
+
+**The one open detail before landing this as a hook:** `push word ptr [BD95]` reads BOTH bytes of
+`BD95`, but CC4F only ever writes the LOW byte (into `BD96`... `BD95` gets its own separate byte write
+at `CC66`); the HIGH byte of the `BD95` word is never written by this function, so it's either a caller
+invariant (always 0, since an 8-bit cell id needs no high byte) or carries meaning from an earlier
+untraced write -- must be CONFIRMED against the oracle (install the hook on the candidate side, replay
+the cold-start demo through `run_frame_verifier` with `stop_on_diff=True`, and check the first
+divergence) before trusting it, never assumed.  Once that one byte is confirmed this is a ~20-line
+direct port (mirroring `read_blueprint_recipe`'s pattern) delegating everything else to code already
+proven correct -- the smallest possible next slice, and `witness_cdaa_presenter.py` already gives the
+exact target `(si,di,cx)` sequence to match it against.
 
 **Addendum, same pass: the cold-boot typed screen and the attract-cycle `compose_blueprint` are
 DISTINCT end states, not the same content at two paces.**  Checked directly
