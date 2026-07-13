@@ -182,6 +182,18 @@ cold-start demo) instead of the bundle, which is the correct oracle this compari
 Until that's done, `--bundle` stays; the gate is not closed, but it has narrowed to one well-understood,
 correctly-diagnosed question rather than an unknown pile of missing bytes.
 
+**Attempted verification (2026-07-13), INCONCLUSIVE -- do not trust either number yet.** Tried to find
+the exact present-frame window where the menu becomes interactive (to inject an immediate FIRE press
+before the attract could run any gameplay, giving a genuinely attract-free VM oracle for the disputed
+fields). Two measurements CONTRADICTED each other: a per-present-frame video-mode trace found text
+mode (mode 3) until frame 447 with the FIRST graphics content only appearing then (the blueprint, not
+a menu); `probe_coldstart_frontend --sequence` on the SAME demo classified frames 1-99 as "menu" (by
+CS:IP range 0x5500-0x5C50) -- impossible if the screen is still text-mode.  This means
+`classify_screen`'s IP-range heuristic is triggering on code execution in that range for a reason
+UNRELATED to a visually-drawn menu (an early boot-time call through the same address range, most
+likely), not that the menu is genuinely shown from frame 1.  Not resolved -- needs a proper trace of
+WHAT reaches 558B-range code that early, not another timing guess.  Left open rather than forced.
+
 **Refinement (2026-07-11) — the rb/rw count is a LOWER BOUND; validated the DGROUP reduction.** Zeroing
 the whole 64 KB CS segment except the 5 rb/rw ranges and running 600 frames leaves the **DGROUP
 game-logic state byte-exact (0 divergence)** — so the recovered init + those 5 ranges fully determine
