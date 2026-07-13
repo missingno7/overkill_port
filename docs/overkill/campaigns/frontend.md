@@ -69,6 +69,21 @@ mode-9 B800 decode at the peak-content frame of each scene -- ground truth, capt
   as the cold-boot first screen (before the menu), so play_native now opens on the real intro, not
   OKMENU.  Still open: the ~7% opacity polish; the WINDOW.BIC title-splash's place in the boot sequence;
   and where the OKMENU-options menu (M/K/A/I/O) actually shows (CE97 is NOT it).
+- **THE BLUEPRINT IS ANIMATED, not one static image (2026-07-13, owner feedback + blit-timing trace).**
+  `compose_blueprint` draws all 30 cells at once (the END STATE); the original reveals it over time with
+  sounds.  Traced structure (5A5A blit trap over the cold boot, with instruction-gap timing):
+  - **Grid** (cells 0F/10/11) drawn first by CE97 in one tight burst (~112 instr/cell = one frame).
+  - **Ships + text** drawn by the `1010:CE5F` loop (returns via CE8E), which reads a DATA TABLE at
+    `DS:[BD98]`: each entry is 3 bytes `(row, col, cell_id)`; it draws 5 cells per call, advancing
+    `[BD98]` by 15.  Called TWICE: **pass 1** (cells 00,03,06,09,0C -- one colour layer of the 5
+    ships/text) drawn in ~one frame, then a **~140,490-instruction gap (~20 front-end frames)**, then
+    **pass 2** (cells 01,04,07,0A,0D -- the second layer).  So the visible animation is a layer-by-layer
+    reveal over ~20+ frames; 5A5A blits to `CS:[9598]` at `di+0x7D00`.
+  - **OPEN (the faithful+provable intro):** recover the ANIMATION PARENT (who calls CE5F, the per-frame
+    pacing, the delay gate between the two passes, and the SOUND triggers during the reveal), reproduce
+    it frame-by-frame in `_run_blueprint_intro`, and PROVE it frame-by-frame (B800 + audio) against
+    `demo_cold_start_intro` (the owner's cold-start demo IS the oracle).  The static `compose_blueprint`
+    is only the end frame -- do NOT present it as the faithful intro.
 - The reference captures live in `artifacts/_fe/` (scene_01/10 = the real attract; real_menu = the
   scene-0 blueprint; L_b800 = the bundle's terminal HUD) -- kept as the recovery oracle, not committed.
 

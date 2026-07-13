@@ -69,12 +69,17 @@ def compose_ce97_grid(mem) -> np.ndarray:
 
 
 def compose_blueprint(mem) -> np.ndarray:
-    """The FULL cold-boot blueprint/intro screen -> a ``(200,320)`` 4-bit index frame, composed from the
-    BLUEBITS cells per :data:`BLUEPRINT_RECIPE` (grid + ship schematics + briefing text) at ``x=col*8,
-    y=row``, transparent-blitted (index 0 = keep the layer below).  Structurally + visually exact vs the
-    VM's own composed page; a ~7% byte residual remains (the exact blit opacity where ship cells cross
-    the grid -- the VM's page has nz 16827, this has 19698), tracked as a follow-up polish.  ``mem`` is
-    the cold image with BLUEBITS at ``CS:[95B8]``."""
+    """The FINAL FRAME of the cold-boot blueprint screen (all 30 cells at once) -> a ``(200,320)`` 4-bit
+    index frame.  **NOT the faithful intro:** the original ANIMATES this -- CE97 draws the grid, then the
+    ``CE5F`` loop draws the ships/text from the ``[BD98]`` table (``row,col,cell_id`` x10) in TWO passes
+    of 5 cells with a ~20-front-end-frame delay between the layers, plus sounds.  This function draws the
+    whole thing in one shot (the end state), which is why it looks static.  Recovering the animation
+    (per-frame timing + the delay gate + the sound triggers) and proving it frame-by-frame against
+    ``demo_cold_start_intro`` is the open work (see docs/overkill/campaigns/frontend.md).
+
+    Composed from the BLUEBITS cells per :data:`BLUEPRINT_RECIPE` at ``x=col*8, y=row``, transparent-
+    blitted; visually/structurally exact vs the VM's composed page with a ~7% byte residual (blit
+    opacity where ship cells cross the grid).  ``mem`` is the cold image with BLUEBITS at ``CS:[95B8]``."""
     bank_seg = mem.rw(CS, BLUEBITS_BANK_PTR)
     base = bank_seg * 16
     bank = np.frombuffer(bytes(mem.data[base:base + 0x10000]), dtype=np.uint8)
