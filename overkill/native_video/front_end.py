@@ -49,6 +49,41 @@ def _chunky_to_indices(chunky: bytes, width: int, height: int) -> np.ndarray:
     return out
 
 
+#: The menu SELECTION-HIGHLIGHT mechanism (measured against the live VM, 2026-07-13): the original
+#: recolors the selected option's own white text pixels to orange -- index 15 -> 12 -- inside the
+#: word's region.  Nothing else changes: the whole live-menu-vs-OKMENU delta is exactly this recolor
+#: (276 px for the boot default keyboard+both, every one 15->12).  The regions below are the words'
+#: OKMENU geometry (inclusive y0,y1,x0,x1 spans of their white text runs); the two boot-default
+#: regions are VM-WITNESSED byte-exact (keyboard: 186 px, both: 90 px -- the cluster sums match the
+#: witnessed diffs exactly), the rest are the same rows' word runs from the image itself.
+MENU_TEXT_COLOR = 15
+MENU_HIGHLIGHT_COLOR = 12
+#: control-method regions by the 558B ``[0010]`` value (0=keyboard, 1=joystick, 2=amstrad).
+MENU_CONTROL_HIGHLIGHT = {
+    0: (65, 73, 77, 130),      # "eyboard"          -- VM-witnessed (186 px, all 15->12)
+    1: (83, 91, 79, 127),      # "oystick"          -- OKMENU word geometry
+    2: (65, 73, 170, 249),     # "mstrad joystick"  -- OKMENU word geometry
+}
+#: sound-mode regions by the 558B ``[22B5] & 3`` value (0=music, 1=fx, 2=both, 3=none).
+MENU_SOUND_HIGHLIGHT = {
+    0: (122, 128, 91, 111),    # "usic" (after the boxed M) -- OKMENU word geometry
+    1: (122, 128, 129, 139),   # "fx"                       -- OKMENU word geometry
+    2: (122, 128, 161, 182),   # "both"             -- VM-witnessed (90 px, all 15->12)
+    3: (122, 128, 202, 224),   # "none"                     -- OKMENU word geometry
+}
+
+
+def apply_menu_selection_highlights(indices: np.ndarray, control: int, sound_mode: int) -> np.ndarray:
+    """Recolor the CURRENT menu selections exactly as the original does: the selected control
+    option's and sound option's white text (15) turns orange (12) inside the word's region.
+    Returns a copy; ``indices`` is the decoded OKMENU screen."""
+    out = indices.copy()
+    for y0, y1, x0, x1 in (MENU_CONTROL_HIGHLIGHT[control], MENU_SOUND_HIGHLIGHT[sound_mode & 3]):
+        region = out[y0:y1 + 1, x0:x1 + 1]
+        region[region == MENU_TEXT_COLOR] = MENU_HIGHLIGHT_COLOR
+    return out
+
+
 def decode_fullscreen_image(container_data, name: str) -> np.ndarray:
     """Decode a FULL-SCREEN (320x200) front-end image to ``(200,320)`` 4-bit indices, VM-free.
 

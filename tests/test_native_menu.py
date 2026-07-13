@@ -69,3 +69,48 @@ def test_joystick_mode_fail_louds_so_the_menu_declines_j():
     img, level_assets = _cold(0, 1)                  # [0010] == 1 -> 0162's unsupported joystick mode
     with pytest.raises(RecoveryGap):
         advance_gameplay_frame_97b2(img, isr_ticks=2, level_assets=level_assets, menu_pick=0)
+
+
+# ---- the menu SELECTION HIGHLIGHTS (the 15->12 recolor, VM-measured 2026-07-13) ----
+
+@pytest.mark.skipif(not _HAVE, reason="bundle / container not present")
+def test_menu_highlight_boot_default_matches_the_vm_witness():
+    """The boot-default compose (keyboard + both) must recolor EXACTLY the VM-witnessed delta:
+    276 px total (186 in the Keyboard word, 90 in the both word), every one 15 -> 12 -- the whole
+    measured live-menu-vs-OKMENU difference."""
+    import numpy as np
+    from overkill.native_video.front_end import (
+        MENU_HIGHLIGHT_COLOR, MENU_TEXT_COLOR, apply_menu_selection_highlights,
+        decode_fullscreen_image)
+    ok = decode_fullscreen_image(CONTAINER.read_bytes(), "OKMENU.ENC")
+    out = apply_menu_selection_highlights(ok, control=0, sound_mode=2)
+    d = out != ok
+    assert int(d.sum()) == 276
+    ys, xs = np.where(d)
+    assert all(ok[y, x] == MENU_TEXT_COLOR and out[y, x] == MENU_HIGHLIGHT_COLOR
+               for y, x in zip(ys, xs))
+    in_kbd = (ys >= 65) & (ys <= 73) & (xs >= 77) & (xs <= 130)
+    in_both = (ys >= 122) & (ys <= 128) & (xs >= 161) & (xs <= 182)
+    assert int(in_kbd.sum()) == 186 and int(in_both.sum()) == 90
+    assert int((in_kbd | in_both).sum()) == 276          # nothing outside the two witnessed bands
+
+
+@pytest.mark.skipif(not _HAVE, reason="bundle / container not present")
+def test_menu_highlight_states_recolor_only_their_own_word():
+    """Every control/sound state recolors only white pixels inside its own word region (the counts
+    are the words' OKMENU text geometry, locked as regressions; keyboard/both are the VM witness)."""
+    from overkill.native_video.front_end import (
+        MENU_CONTROL_HIGHLIGHT, MENU_SOUND_HIGHLIGHT, apply_menu_selection_highlights,
+        decode_fullscreen_image)
+    ok = decode_fullscreen_image(CONTAINER.read_bytes(), "OKMENU.ENC")
+    control_px = {0: 186, 1: 71, 2: 276}                 # keyboard / joystick / amstrad words
+    sound_px = {0: 69, 1: 36, 2: 90, 3: 85}              # music / fx / both / none words
+    for control, cn in control_px.items():
+        for sound, sn in sound_px.items():
+            out = apply_menu_selection_highlights(ok, control=control, sound_mode=sound)
+            d = out != ok
+            assert int(d.sum()) == cn + sn, (control, sound)
+            y0, y1, x0, x1 = MENU_CONTROL_HIGHLIGHT[control]
+            assert int(d[y0:y1 + 1, x0:x1 + 1].sum()) == cn
+            y0, y1, x0, x1 = MENU_SOUND_HIGHLIGHT[sound]
+            assert int(d[y0:y1 + 1, x0:x1 + 1].sum()) == sn

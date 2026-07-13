@@ -63,7 +63,8 @@ from overkill.recovered.systems.tandy_screen import (  # noqa: E402
     SCREEN_WIDTH,
     TANDY_PALETTE_RGB,
 )
-from overkill.native_video.front_end import TITLE_OPTIONS, decode_fullscreen_image  # noqa: E402
+from overkill.native_video.front_end import (TITLE_OPTIONS, apply_menu_selection_highlights,  # noqa: E402
+                                              decode_fullscreen_image)
 from overkill.native_video.object_sprites import (  # noqa: E402
     SpriteDrawContext,
     object_sprite_blocks_a846,
@@ -586,7 +587,8 @@ def _run_title_menu(display, pygame, bundle_data, container_data,
     """
     title = decode_fullscreen_image(container_data, TITLE_OPTIONS)
     clock = pygame.time.Clock()
-    sound_mode, control = 0, 0
+    sound_mode, control = 2, 0        # the boot defaults the VM shows highlighted: keyboard + both
+    composed = apply_menu_selection_highlights(title, control=control, sound_mode=sound_mode)
     key_overrides: dict = {}          # 'r' REDEFINE KEYS: control-map cell -> scancode
     idle = 0
     display.set_title("OVERKILL - native (VM-less)  "
@@ -601,10 +603,16 @@ def _run_title_menu(display, pygame, bundle_data, container_data,
                     return sound_mode, control, key_overrides
                 if ev.key == pygame.K_m:                       # 56E1: inc [22B5] ; and 3
                     sound_mode = (sound_mode + 1) & 3
+                    composed = apply_menu_selection_highlights(title, control=control,
+                                                               sound_mode=sound_mode)
                 elif ev.key == pygame.K_k:                     # 563D: [0010] = 0 (keyboard, map 213E)
                     control = 0
+                    composed = apply_menu_selection_highlights(title, control=control,
+                                                               sound_mode=sound_mode)
                 elif ev.key == pygame.K_a:                     # 56B2: [0010] = 2 (amstrad, map 2146)
                     control = 2
+                    composed = apply_menu_selection_highlights(title, control=control,
+                                                               sound_mode=sound_mode)
                 elif ev.key == pygame.K_F9:                    # 075F: the boss key (also polled here)
                     if not _run_boss_key(display, pygame, bundle_data):
                         return None
@@ -615,6 +623,8 @@ def _run_title_menu(display, pygame, bundle_data, container_data,
                     if ov:                                     # None = Esc-cancel (keep current map)
                         key_overrides.update(ov)
                         control = 0                            # 578E: R forces keyboard mode ([0010]=0)
+                        composed = apply_menu_selection_highlights(title, control=control,
+                                                                   sound_mode=sound_mode)
                 elif ev.key == pygame.K_i:                     # 55C4: I -> BE92, the INSTRUCTIONS pages
                     if not _run_instructions(display, pygame, container_data):
                         return None
@@ -630,7 +640,9 @@ def _run_title_menu(display, pygame, bundle_data, container_data,
             if r is True:
                 return sound_mode, control, key_overrides
             idle = 0
-        display.draw(title)              # TODO: the real 558B marker (CE97/CB1C), verified -- not an overlay
+        # the VM's own selection-highlight mechanism (measured: the selected words' white text
+        # recolors 15->12, byte-exact 276/276 for the boot default) -- see native_video.front_end.
+        display.draw(composed)
         if music is not None:
             music.pump()                                       # the menu tune (page 2) plays here
         clock.tick(30)
