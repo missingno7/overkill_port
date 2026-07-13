@@ -17,6 +17,7 @@ recovered (``behavior_walk._alloc``), and without it a cold-started level has no
 """
 from __future__ import annotations
 
+from overkill.recovered.adapters.behavior_walk import EFFECT_POOL_BASE
 from overkill.recovered.adapters.flat_memory import MutFlatMemory
 from overkill.recovered.adapters.level_object_script import rewind_level_scripts_0b3e
 from overkill.recovered.adapters.native_game_state_adapter import read_native_game_state
@@ -67,6 +68,15 @@ def build_cold_level_start_image(exe_image: bytes, level_index: int = 0,
     mem.ww(DATA_SEGMENT, 0x2356, planet)
     if container is not None:
         _load_planet_level_data(mem, exe_image, container, planet)
+    # 1b) the EFFECT-POOL allocator cursor (DS:0x95D8, the 7524 scan the companion/flame spawn and
+    # every in-play spawn-effect call use -- behavior_walk._alloc).  A fresh SESSION has no prior
+    # allocator history to inherit (unlike the 9908 death->respawn re-init, which correctly reuses
+    # whatever an ONGOING game already left there); a cold image must seed it to the pool base or the
+    # first _alloc call scans from garbage/zero and silently writes outside the pool.  CONVERGENCE
+    # slice B (docs/overkill/campaigns/convergence.md): found via the blank-base equivalence gate --
+    # the exe-derived bundle happens to already hold EFFECT_POOL_BASE here, which is what a genuinely
+    # fresh cursor looks like, not a coincidence to extract.
+    mem.ww(DATA_SEGMENT, 0x95D8, EFFECT_POOL_BASE)
     # 2..6) the level-start / respawn re-init (shared with the 9908 death->respawn composition)
     apply_respawn_seeds(mem)
     # 7) the SCROLL CURSOR.  The static bundle's capture holds whatever the snapshot's level had;

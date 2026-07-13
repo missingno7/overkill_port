@@ -151,15 +151,36 @@ to the live tables for every entry (`tests/test_seed_slot_tables.py`).  `frame_l
 start) both now COMPUTE these tables instead of reading them -- a real simplification, not just a ROM
 extraction.  Suite 1409.
 
-**The blank-base equivalence gate (the doc's own "highest-leverage start") is IN PROGRESS, not done.**
-Building a fully blank 1 MB image + `native_rom` + `level_rom` + `plane_rom` + the (now-computed)
-seed tables + the recovered init + container, then comparing `read_native_game_state` against the
-bundle-seeded build, found (in order, each fixed): the object-pool table (8D12, now computed), then
-an `effect_pool` divergence (record 0 holds non-zero coordinate-like fields the current recovered
-init does not produce) -- **still OPEN**, the next residual the gate names.  This IS the mechanism
-working as designed (each fix narrows the gate to the next real gap); it has not yet converged to
-zero.  Do not attempt `--bundle` removal until the gate is clean for all 6 levels, static AND after a
-gameplay run.
+**The blank-base equivalence gate found the object-pool table gap (fixed) + a SUBTLER, more important
+finding: the bundle's own reference is contaminated, not just the blank base incomplete.**
+
+Fix #3, landed: `DS:0x95D8` (the `7524` allocator's scan cursor for the effect pool -- every
+spawn-effect call site in `behavior_walk.py` reads it) was never seeded by the recovered cold-start
+init at all; a blank base leaves it 0, so the companion/flame-anchor spawn's allocator scan corrupts
+(writes outside the pool). The bundle happens to hold `EFFECT_POOL_BASE` (0x23B4) there -- confirmed
+NOT a coincidence (a fresh scan naturally starts at the pool base) -- so `build_cold_level_start_image`
+now seeds it explicitly before the companion spawn. `frame_loop.py`'s OWN death-respawn path
+(`native_frame.py`'s 9908 handling) does NOT need this: an ongoing game already has a valid cursor
+from prior play, only a genuinely fresh session has none.
+
+**Residual (still open, and NOT a simple missing byte): after this fix, the allocator picks the
+CORRECT slot in both builds, but three of that slot's fields (`+0x02`/`+0x04`/`+0x08`, x/y/counter-
+shaped) still differ -- ref carries VM-witnessed values, blank-base is zero.**  Traced to the ASM
+itself: `1010:C453..C460` (the companion stamp) writes only `+0x00/+0x14/+0x16`; `1010:7524` (the
+allocator) only ever writes the SUCCESSFUL cursor back to `[95D8]`.  NEITHER touches `+0x02/+0x04/
++0x08` -- so those fields are genuinely never explicitly initialized by the game's own code, for ANY
+of the 36 pool slots.  **The bundle's non-zero values there are therefore its OWN residue from the
+attract loop's self-playing gameplay demo (which the bundle was captured AFTER running through, at
+`1010:D007`) -- not a "true cold boot" value.**  A real DOS EXE's uninitialized data segment is
+zero-filled by the loader, so a genuinely fresh boot (no attract first) would ALSO read zero there --
+meaning the blank-base build is arguably the MORE faithful one for this field, and the bundle (used as
+`exe_image` by every existing test/gate) has quietly been a "warm, post-attract" cold-start reference,
+not a pristine one, this whole project.  **Do not patch this by extracting the bundle's garbage as
+more ROM bytes** -- that would enshrine contamination as data.  The right next step is verifying a
+blank-base cold image against a REAL VM TRUE cold boot (power-on, no attract cycling first, via a
+cold-start demo) instead of the bundle, which is the correct oracle this comparison actually needs.
+Until that's done, `--bundle` stays; the gate is not closed, but it has narrowed to one well-understood,
+correctly-diagnosed question rather than an unknown pile of missing bytes.
 
 **Refinement (2026-07-11) — the rb/rw count is a LOWER BOUND; validated the DGROUP reduction.** Zeroing
 the whole 64 KB CS segment except the 5 rb/rw ranges and running 600 frames leaves the **DGROUP
