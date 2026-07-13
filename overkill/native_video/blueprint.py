@@ -69,13 +69,17 @@ def compose_ce97_grid(mem) -> np.ndarray:
 
 
 def compose_blueprint(mem) -> np.ndarray:
-    """The FINAL FRAME of the cold-boot blueprint screen (all 30 cells at once) -> a ``(200,320)`` 4-bit
-    index frame.  **NOT the faithful intro:** the original ANIMATES this -- CE97 draws the grid, then the
-    ``CE5F`` loop draws the ships/text from the ``[BD98]`` table (``row,col,cell_id`` x10) in TWO passes
-    of 5 cells with a ~20-front-end-frame delay between the layers, plus sounds.  This function draws the
-    whole thing in one shot (the end state), which is why it looks static.  Recovering the animation
-    (per-frame timing + the delay gate + the sound triggers) and proving it frame-by-frame against
-    ``demo_cold_start_intro`` is the open work (see docs/overkill/campaigns/frontend.md).
+    """The FINAL FRAME of the cold-boot blueprint screen (all cells at once) -> a ``(200,320)`` 4-bit
+    index frame.  **NOT the faithful intro:** the original ANIMATES a progressive reveal.  The real
+    animation (captured correctly 2026-07-13 via `scripts/capture_intro_frames.py`, decoding the intro
+    in its true **CGA mode 4** -- earlier Tandy-mode decodes garbled it and produced a WRONG "2 passes /
+    20-frame-delay" model, now retracted): over present-frames ~447..733 of `demo_cold_start_intro`,
+    (1) the grid + bottom title bar appear, (2) the spec TEXT block is TYPED OUT line by line with a
+    white plotter cursor, then (3) the ship schematics are drawn -- ~290 present-frames of reveal.  This
+    function draws the end state in one shot (why it looks static).  Recovering the exact per-frame draw
+    mechanism (is the text live-typed or cell-revealed? the CE5F/[BD98] draw order + timing + sounds)
+    and proving it frame-by-frame against the (now correctly-decoded) demo is the open work; the
+    BLUEPRINT_RECIPE cell list below was traced under the wrong mode and needs re-verification.
 
     Composed from the BLUEBITS cells per :data:`BLUEPRINT_RECIPE` at ``x=col*8, y=row``, transparent-
     blitted; visually/structurally exact vs the VM's composed page with a ~7% byte residual (blit
