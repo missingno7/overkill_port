@@ -107,6 +107,39 @@ seeded from a captured cold-boot snapshot of the fully-pre-rendered work buffer.
 `_run_blueprint_intro`; this pass grounded the mechanism and ruled out two wrong candidates, both
 required before any lift.
 
+**Further update, same pass: the WHOLE presenter pipeline is a GENERIC DIRTY-CELL SCANNER, and every
+piece of it is already pure recovered code.**  Read the full `1010:CC7F` row-loop hook
+(`overkill/hooks.py:2380-2521`, `overkill_dirty_cell_presenter_row_cc7f` + its dispatch tail) end to
+end: per cell it (1) calls the already-recovered `5A24` to convert cell index `DS:[BD95]` to a screen
+position, stores that DI at `DS:[BD9E]`; (2) sets `si = di`, `si += 0x7D00` -- so the "new/staged"
+content and the "currently presented" content live at a FIXED OFFSET APART within the SAME logical
+buffer, not two unrelated segments; (3) dispatches by video mode to the already-recovered
+`overkill_dirty_copy_mode3_ccc4` (Tandy) which compares 8 rows x 2 words between the staged offset and
+the presented offset and copies+flags-dirty (`DL=1`) only what differs; (4) if dirty, draws the moving
+"cursor" -- a SPECIFIC, GENERIC cell (**cell id `0x12`**, from the SAME `CS:[0C92]` directory /
+`CS:[95B8]` BLUEBITS bank `compose_ce97_grid`/`compose_blueprint` already use) at the current position
+via `5A00`+`5A6C` (both already recovered), then presents the changed cell to visible B800 via
+`CD68`/`changed_dword_present_8rows_cdaa` (already recovered, confirmed above).  **So the "typewriter"
+is not a text-specific effect at all -- it is an ENGINE-GENERIC incremental dirty-rectangle presenter
+that happens to reveal pre-rendered text as it sweeps.**  Every routine in this chain
+(5A24/5A00/5A6C/CCAA/CCF0/CCC4/CD68/CD7E/CDAA/306F) is ALREADY pure recovered Python -- zero new ASM
+decode required to replay it.
+
+**The one piece still genuinely unrecovered: the per-frame OUTER driver that calls `CC7F` once/frame
+with a starting `DS:[BD95]` cell index and a row-count `CX`.**  No hook or lifted routine calls `CC7F`
+(`grep -n "0xCC7F" overkill/hooks.py` finds only its own definition and internal loop-back) -- it is
+reached via raw interpreted ASM from `1010:CC4F` (the attract-scene player, per `trace_frontend_flow`'s
+`FLOW_ROUTINES`), which is NOT YET decoded.  Ran the liftgen census per standing discipline before
+planning a hand-decode: `python dos_re/tools/liftgen.py --exe assets/OVERKILL --snapshot
+artifacts/frontend_intro_snapshot --entry 1010:CC4F --game-root assets` -> **REFUSED, indirect-jump**
+(29 insts, 1 block, 1 call) -- CC4F itself dispatches through a jump table (almost certainly the same
+`DS:[BE06]` attract-scene-id dispatch `trace_frontend_flow` already treats as the scene selector), so
+it needs the SAME careful hand-decode-with-oracle-verification the project's other jump-table routines
+got (e.g. 4E26), not a naive lift.  That is the concrete next step: hand-decode CC4F's scene dispatch
+(or the specific scene arm that sets up `BD95`/`CX` for the cold-boot char-write scene) and verify it
+against the demo-paced oracle this pass already built (`witness_cdaa_presenter.py` gives the exact
+target `(si,di,cx)` sequence to match).  Everything downstream of that call is already usable as-is.
+
 **Addendum, same pass: the cold-boot typed screen and the attract-cycle `compose_blueprint` are
 DISTINCT end states, not the same content at two paces.**  Checked directly
 (`scripts/check_charwrite_final_matches_blueprint.py`): the char-writer's reveal plateaus at `nz=15240`
