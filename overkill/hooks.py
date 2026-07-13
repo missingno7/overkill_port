@@ -2369,6 +2369,71 @@ def _finish_dirty_cell_presenter_row_loop_ce07(cpu) -> None:
     cpu.s.ip = 0xCC7F if cpu.s.cx != 0 else 0xCE13
 
 
+def _run_dirty_cell_presenter_scene_setup_cc4f(cpu) -> None:
+    """Lift OVERKILL 1010:CC4F, the per-call setup that seeds one dirty-cell presenter pass.
+
+    Reads ONE 4-byte entry from the recipe table at ``DS:[BD9A]`` (seeded from ``BD81h`` -- the
+    same sequential-pointer-advance shape as the blueprint's own BD54 recipe,
+    :func:`overkill.native_video.blueprint.read_blueprint_recipe`): the first two bytes land at
+    ``BD96``/``BD95`` (adjacent cells later read back together as one packed word -- ``BD96`` is the
+    high byte, ``BD95`` the low byte -- by CC7F's own ``mov ax,[BD95]``), a third byte becomes the
+    outer ``CX`` pushed for CC7F, a fourth becomes ``BD9C`` (the row count CC7F's dispatch actually
+    uses).  Advances the recipe pointer, sets the shared threshold ``BDA0=5``, then falls straight
+    through into the already-registered CC7F row-loop hook (no CALL/JMP between them in the original
+    -- ``CC7F: push cx`` is literally that hook's first line).
+    """
+    if _self_disable_if_patched(cpu, 0xCC4F, _SIG_CC4F, "overkill_dirty_cell_presenter_scene_setup_cc4f"):
+        return
+
+    s = cpu.s
+    mem = cpu.mem
+    ds = s.ds & 0xFFFF
+
+    mem.ww(ds, 0xBD9A, 0xBD81)
+    s.cx = 0x0005
+    cpu.push(s.cx)
+    mem.ww(ds, 0xBDA0, s.cx)
+
+    si = mem.rw(ds, 0xBD9A) & 0xFFFF
+    s.si = si
+
+    al = mem.rb(ds, si)
+    si = (si + 1) & 0xFFFF
+    s.ax = (s.ax & 0xFF00) | al
+    mem.wb(ds, 0xBD96, al)
+
+    al = mem.rb(ds, si)
+    si = (si + 1) & 0xFFFF
+    s.ax = (s.ax & 0xFF00) | al
+    mem.wb(ds, 0xBD95, al)
+
+    al = mem.rb(ds, si)
+    si = (si + 1) & 0xFFFF
+    s.ax = al & 0xFF                    # XOR AH,AH
+    cpu.set_logic_flags(0, 8)
+    s.cx = s.ax & 0xFFFF                # MOV CX,AX
+
+    al = mem.rb(ds, si)
+    si = (si + 1) & 0xFFFF
+    s.ax = al & 0xFF                    # LODSB only touches AL; AH is still 0 from above
+    mem.ww(ds, 0xBD9C, s.ax & 0xFFFF)
+
+    mem.ww(ds, 0xBD9A, si)
+    s.si = si
+
+    cpu.push(s.cx)
+    cpu.push(mem.rw(ds, 0xBD95))
+    s.cx = mem.rw(ds, 0xBD9C)
+
+    _jump_installed_hook_boundary(cpu, (0x1010, 0xCC7F), overkill_dirty_cell_presenter_row_cc7f)
+
+
+@registry.replace(0x1010, 0xCC4F, "overkill_dirty_cell_presenter_scene_setup_cc4f")
+def overkill_dirty_cell_presenter_scene_setup_cc4f(cpu):
+    """Hook wrapper for OVERKILL 1010:CC4F dirty-cell presenter scene setup."""
+    _run_dirty_cell_presenter_scene_setup_cc4f(cpu)
+
+
 def _run_dirty_cell_presenter_row_cc7f_once(cpu) -> None:
     if _self_disable_if_patched(cpu, 0xCC7F, _SIG_CC7F, "overkill_dirty_cell_presenter_row_cc7f"):
         return

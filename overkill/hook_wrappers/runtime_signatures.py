@@ -117,6 +117,9 @@ _SIG_CCAA = bytes.fromhex("b9 08 00 26 8b 04 26 3b 05 74 05 b2 01 26 89 05")
 _SIG_CCC4 = bytes.fromhex("b9 08 00 26 8b 04 26 3b 05 74 05 b2 01 26 89 05")
 _SIG_CCF0 = bytes.fromhex("b9 20 00 26 8a 04 26 3a 05 74 05 b2 01 26 88 05")
 _SIG_CC7F = bytes.fromhex("51 a1 95 bd e8 9e 8d 89 3e 9e bd 8b f7 81 c6 00 7d 32 d2 2e 8e 06 98 95")
+_SIG_CC4F = bytes.fromhex(
+    "c7 06 9a bd 81 bd b9 05 00 51 89 0e a0 bd 8b 36 9a bd ac a2 96 bd ac a2 "
+    "95 bd ac 32 e4 8b c8 ac a3 9c bd 89 36 9a bd 51 ff 36 95 bd 8b 0e 9c bd")
 _SIG_CD68 = bytes.fromhex("5f 8b 36 9e bd 2e 8e 06 a4 95 2e 8e 1e 98 95 2e 8b 1e bc 95")
 _SIG_CE40 = bytes.fromhex("80 3e c3 98 00 74 01 c3 51 e8 16 33 59 f6 06 be 98 10")
 _SIG_CF78 = bytes.fromhex("e8 4e 81 51 e8 e3 31 59 f6 06 be 98 10 75 10 80")
