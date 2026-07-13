@@ -70,6 +70,27 @@ ENTIRE front-end runs Tandy mode 9 (16-colour), matching what the owner sees.
 3. -> **MENU** (OKMENU + the SELECTION HIGHLIGHTS -- see below).
 4. -> **HIGH SCORES** (the cosmic planet+cyborg art) -> blank -> the cycle repeats from 1.
 
+**The blueprint/showcase phase is NOT the D007 scene machine (2026-07-13, per-present-frame trace,
+verified not guessed):** over the whole 304-frame window (f447..750) covering both the blueprint
+reveal and the ship showcase, `DS:[BE06]` (the D007 scene id) stays **0** the entire time.  So this
+content is drawn by a DIFFERENT mechanism: the `CC04` front-end loop's OWN `CC4F`/`CC5D` routine, a
+scripted DISPLAY-LIST INTERPRETER walking a record table at `[BD9A]` (seeded from `[BD81]`) — each
+record is a 4-byte tuple (2 position bytes + a count byte + a zero-extended value byte) consumed via
+`lodsb`x4, positioned via the recovered `5A24` cursor call, then flushed through a dirty-rect
+compare/copy against a save-under mirror at `di+0x7D00`.  `D007`/scenes 0-7 (cell screens) and 8+
+(the self-playing gameplay demo) is a LATER, separate phase entered only after this scripted sequence
+finishes.  **Blocker resolved:** `liftgen` census refuses `CC4F` on one indirect jump (`1010:CC9E jmp
+cs:[bx+0CCA4h]`, `bx=[95BC]<<1`, `[95BC]`=the video-mode selector) — but the live table has only 3
+entries (`CCA4`→`CCAA`, `CCA6`→`CCF0`, `CCA8`→`CCC4`) and **for our video mode (`[95BC]=2`, Tandy) it
+resolves to `CCC4`, a straight-line 8-iteration dirty-rect compare/copy with NO further indirect
+jumps.**  So the mode-9 path is fully liftable/hand-decodable once treated as a resolved jump — the
+remaining unknowns are the record-walk's record-TYPE dispatch (not yet located: `CC58..CC7B` reads the
+record and calls the cursor-setup + dirty-flush, but the actual glyph/ship-graphic DRAW call is not
+yet found in this trace) and the opcode set the display list uses.  Scope for the next slice: locate
+the draw call (likely just past `CD08`, the dirty-flush's return target) and decode the record-type
+dispatch; a multi-step recovery, not a quick finish — use `liftgen`/`liftverify` on the resolved
+straight-line path once the entry range is pinned.
+
 **The menu delta is MEASURED and its MECHANISM settled: live VM menu vs raw `OKMENU.ENC` = 276 px in
 exactly two bands** (y65..73 x77..130 = "Keyboard"; y122..128 x161..182 = "both"), and every one of
 the 276 differing pixels is exactly **index 15 -> 12** (white -> orange).  So the selection highlight
