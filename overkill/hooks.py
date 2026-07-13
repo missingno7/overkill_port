@@ -2369,28 +2369,39 @@ def _finish_dirty_cell_presenter_row_loop_ce07(cpu) -> None:
     cpu.s.ip = 0xCC7F if cpu.s.cx != 0 else 0xCE13
 
 
-def _run_dirty_cell_presenter_scene_setup_cc4f(cpu) -> None:
-    """Lift OVERKILL 1010:CC4F, the per-call setup that seeds one dirty-cell presenter pass.
-
-    Reads ONE 4-byte entry from the recipe table at ``DS:[BD9A]`` (seeded from ``BD81h`` -- the
-    same sequential-pointer-advance shape as the blueprint's own BD54 recipe,
-    :func:`overkill.native_video.blueprint.read_blueprint_recipe`): the first two bytes land at
-    ``BD96``/``BD95`` (adjacent cells later read back together as one packed word -- ``BD96`` is the
-    high byte, ``BD95`` the low byte -- by CC7F's own ``mov ax,[BD95]``), a third byte becomes the
-    outer ``CX`` pushed for CC7F, a fourth becomes ``BD9C`` (the row count CC7F's dispatch actually
-    uses).  Advances the recipe pointer, sets the shared threshold ``BDA0=5``, then falls straight
-    through into the already-registered CC7F row-loop hook (no CALL/JMP between them in the original
-    -- ``CC7F: push cx`` is literally that hook's first line).
+def _run_dirty_cell_presenter_middle_loop_entry_cc76(cpu) -> None:
+    """Lift OVERKILL 1010:CC76, the middle-loop re-entry shared by CC4F's tail and CE13's
+    ``jmp CC76``: push the CURRENT ``CX`` (the middle/Y-band counter), push the current
+    ``DS:[BD95]`` word (the X-position + BD96 Y-band, saved so CE13 can restore it), load
+    ``CX=[BD9C]`` (the row count), and fall through into the already-registered CC7F row-loop.
     """
-    if _self_disable_if_patched(cpu, 0xCC4F, _SIG_CC4F, "overkill_dirty_cell_presenter_scene_setup_cc4f"):
-        return
-
     s = cpu.s
     mem = cpu.mem
     ds = s.ds & 0xFFFF
 
-    mem.ww(ds, 0xBD9A, 0xBD81)
-    s.cx = 0x0005
+    cpu.push(s.cx)
+    cpu.push(mem.rw(ds, 0xBD95))
+    s.cx = mem.rw(ds, 0xBD9C)
+
+    _jump_installed_hook_boundary(cpu, (0x1010, 0xCC7F), overkill_dirty_cell_presenter_row_cc7f)
+
+
+def _run_dirty_cell_presenter_outer_loop_entry_cc58(cpu) -> None:
+    """Lift OVERKILL 1010:CC58, the outer-loop body shared by CC4F (which seeds ``DS:[BD9A]=BD81h``
+    first) and CE13's ``jmp CC58`` (which reuses ``BD9A`` wherever the PREVIOUS pass advanced it --
+    the outer loop's 5 passes read 5 sequential 4-byte entries from the BD81 table, confirmed by the
+    table's own length).  Reads ONE 4-byte entry: the first two bytes land at ``BD96``/``BD95``
+    (adjacent cells CC7F later reads back together as one packed word via ``mov ax,[BD95]``), a third
+    byte becomes the middle-loop ``CX`` (pushed by CC76), a fourth becomes ``BD9C`` (the row count
+    CC7F's dispatch actually uses).  Advances the recipe pointer, sets the shared threshold
+    ``BDA0=CX`` (this pass's outer counter -- only ``5`` on the very first pass), then falls through
+    into :func:`_run_dirty_cell_presenter_middle_loop_entry_cc76` (no CALL/JMP in the original --
+    ``CC76: push cx`` is literally that entry's first line).
+    """
+    s = cpu.s
+    mem = cpu.mem
+    ds = s.ds & 0xFFFF
+
     cpu.push(s.cx)
     mem.ww(ds, 0xBDA0, s.cx)
 
@@ -2421,11 +2432,22 @@ def _run_dirty_cell_presenter_scene_setup_cc4f(cpu) -> None:
     mem.ww(ds, 0xBD9A, si)
     s.si = si
 
-    cpu.push(s.cx)
-    cpu.push(mem.rw(ds, 0xBD95))
-    s.cx = mem.rw(ds, 0xBD9C)
+    _run_dirty_cell_presenter_middle_loop_entry_cc76(cpu)
 
-    _jump_installed_hook_boundary(cpu, (0x1010, 0xCC7F), overkill_dirty_cell_presenter_row_cc7f)
+
+def _run_dirty_cell_presenter_scene_setup_cc4f(cpu) -> None:
+    """Lift OVERKILL 1010:CC4F, the ONE-TIME scene entry: seed ``DS:[BD9A]=BD81h`` (the recipe
+    table CE13's outer loop reads 5 sequential entries from), then fall through into
+    :func:`_run_dirty_cell_presenter_outer_loop_entry_cc58`.
+    """
+    if _self_disable_if_patched(cpu, 0xCC4F, _SIG_CC4F, "overkill_dirty_cell_presenter_scene_setup_cc4f"):
+        return
+
+    mem = cpu.mem
+    ds = cpu.s.ds & 0xFFFF
+    mem.ww(ds, 0xBD9A, 0xBD81)
+    cpu.s.cx = 0x0005
+    _run_dirty_cell_presenter_outer_loop_entry_cc58(cpu)
 
 
 @registry.replace(0x1010, 0xCC4F, "overkill_dirty_cell_presenter_scene_setup_cc4f")
@@ -2723,6 +2745,66 @@ def overkill_dirty_cell_presenter_row_cc7f(cpu):
         if cpu.s.ip == 0xCC7F:
             continue
         return
+
+
+def _run_dirty_cell_presenter_loop_tail_ce13(cpu) -> None:
+    """Lift OVERKILL 1010:CE13, the CC7F row-loop's exit continuation -- the middle/outer loop
+    levels CC7F's own row-loop sits inside.
+
+    Unwinds CC76's pushes (restores ``DS:[BD95:BD96]`` to the pre-row-loop value via a WORD pop --
+    BD95 is the low byte, BD96 the high -- then bumps BD96 by 8 for the next Y-band) and either
+    repeats the middle pass (``jmp CC76``, when the middle counter CC76 pushed is still nonzero after
+    decrementing) or falls to the outer-loop tail: an optional paced 10-retrace wait (only when
+    ``DS:[BDA0] != 5`` -- true after the FIRST outer pass, since ``CC58`` sets BDA0 to THIS pass's
+    outer counter every pass and only that first counter value is 5), then either the next outer pass
+    (``jmp CC58``, reading the next sequential ``BD81`` recipe entry) or a final paced 80-retrace wait
+    before returning to the scene's original caller.  The BD81 table is exactly 5*4=20 bytes (verified
+    against the static bundle) -- CC55's ``mov cx,5`` outer count.
+    """
+    if _self_disable_if_patched(cpu, 0xCE13, _SIG_CE13, "overkill_dirty_cell_presenter_loop_tail_ce13"):
+        return
+
+    s = cpu.s
+    mem = cpu.mem
+    ds = s.ds & 0xFFFF
+
+    mem.ww(ds, 0xBD95, cpu.pop() & 0xFFFF)      # POP DS:[BD95] -- a WORD pop (BD95 low, BD96 high)
+    _add_mem_byte(cpu, ds, 0xBD96, 8)           # ADD BYTE DS:[BD96],8
+
+    s.cx = cpu.pop()                            # POP CX (the middle-loop counter CC76 pushed)
+    s.cx = (s.cx - 1) & 0xFFFF                  # LOOP does not alter flags.
+    if s.cx != 0:
+        _run_dirty_cell_presenter_middle_loop_entry_cc76(cpu)
+        return
+
+    bda0 = mem.rw(ds, 0xBDA0)
+    _cmp_word(cpu, bda0, 5)
+    if bda0 != 5:
+        s.cx = 0x000A
+        _call_installed_hook_like_near_call(
+            cpu, (0x1010, 0xCE40), overkill_menu_transition_input_wait_ce40, 0xCE31)
+        if s.ip != 0xCE31:
+            raise RuntimeError(f"CE40 returned to unexpected IP {s.ip:04X} inside CE13 presenter tail")
+
+    s.cx = cpu.pop()                            # POP CX (the outer-loop counter CC58/CC4F pushed)
+    s.cx = (s.cx - 1) & 0xFFFF
+    if s.cx != 0:
+        _run_dirty_cell_presenter_outer_loop_entry_cc58(cpu)
+        return
+
+    s.cx = 0x0050
+    _call_installed_hook_like_near_call(
+        cpu, (0x1010, 0xCE40), overkill_menu_transition_input_wait_ce40, 0xCE3F)
+    if s.ip != 0xCE3F:
+        raise RuntimeError(f"CE40 returned to unexpected IP {s.ip:04X} inside CE13 presenter tail")
+    s.ip = cpu.pop()
+
+
+@registry.replace(0x1010, 0xCE13, "overkill_dirty_cell_presenter_loop_tail_ce13")
+def overkill_dirty_cell_presenter_loop_tail_ce13(cpu):
+    """Hook wrapper for OVERKILL 1010:CE13 dirty-cell presenter loop tail."""
+    _run_dirty_cell_presenter_loop_tail_ce13(cpu)
+
 
 @registry.replace(0x1010, 0xCCAA, "overkill_dirty_copy_mode1_ccaa")
 def overkill_dirty_copy_mode1_ccaa(cpu):
