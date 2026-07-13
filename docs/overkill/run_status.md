@@ -90,6 +90,23 @@ via `liftverify` against the cold-boot oracle, and replay it frame-by-frame; bot
 `_run_blueprint_intro` ahead of the menu.  This pass GROUNDED what is missing (the required first step
 of a lift); the routines themselves are the follow-up.
 
+**Update (2026-07-13, owner confirmed PC speaker): the beep IS the already-recovered D50E engine.**
+Tracing the intro with `dos.set_speaker_callback` (logging each speaker event's cs:ip): the ON events
+split into (a) `2032:0584/058D` -- the AdLib DRIVER's own PIT/speaker DELAY writes inside its 0557
+write leaf, NOT beeps (noise), and (b) **`1010:D55F/D565` -- the D50E PC-speaker sound engine's ISR
+output** (`native_audio`/`read_speaker`, ALREADY recovered).  So the typewriter beep is a sound QUEUED
+to D50E per char; reproducing the char-writing then running D50E gives the sound for free -- no new
+sound lift, just the trigger.
+**BLOCKER found: the cold-boot char-writer is a distinct code path the snapshot FREE-RUN does not
+take.**  Free-running `frontend_intro_snapshot` (f410) goes straight into the steady ATTRACT cycle
+(`D007`/`CE5F` fast cell blits + `558B`) -- the char-by-char intro never runs (it is cold-boot-only,
+paced by the demo's present-frame timing).  So the char-writer canNOT be isolated/lifted from a
+free-run snapshot; it needs a DEMO-PACED capture at f447 (the char-writing start) -- e.g. a snapshot
+saved on the demo path at f447, or a `run_ref_step_probe` trap over the demo's f447..~600 span.  The
+likely char-writer is the shared far text renderer `1F8F:0980 -> 1010:D2B8` (also the open unblock for
+the instructions/ordering pages + THE END, per campaigns/frontend.md); confirming + lifting it against
+that demo-paced oracle is the focused next step.
+
 ## 2026-07-13 — FRONT-END: the BLUEPRINT intro DECODED (CC4F/CE5F recipe) -- grid + 15 cells, ANIMATED
 
 The blueprint was the big remaining intro gap (a static ~88% guess).  Traced the front-end loop and
