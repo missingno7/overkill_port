@@ -38,6 +38,7 @@ STACK_SLACK = 0x100
 #: the game's 8546 dispatch (bx = [desc+8]*6; call [bx+si+4]) then executes the real handler.
 CASES = [
     (2, 1, "8463 (deploy 9D91 -> [A96E])"),
+    (2, 2, "849D (deploy 9F5F -> the 4-slot orbital A966..A96C)"),
     (2, 3, "84C3 (deploy 9F1A -> [A962]/[A964])"),
     (2, 6, "84D6 (flag weapon, [2384]=1)"),
     (2, 7, "84FD (flag weapon, [2384]=2)"),
@@ -119,8 +120,8 @@ def main(argv) -> int:
 
     print(f"\nspecial-weapon applies verified: {verified}/{total}  diverging: {bad}")
     ok = bad == 0 and verified >= 12
-    print("RESULT:", "PASS -- the native apply reproduces the 8463/84C3/84D6/84FD/843D/844E/44AF "
-          "weapon families byte-exact (only 849D remains)" if ok else "FAIL")
+    print("RESULT:", "PASS -- the native apply reproduces ALL 8546 special-weapon families byte-exact "
+          "(8463/849D/84C3/84D6/84FD/843D/844E/44AF)" if ok else "FAIL")
     return 0 if ok else 1
 
 

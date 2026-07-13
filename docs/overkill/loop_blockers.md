@@ -159,17 +159,20 @@ branch), not read.  NEXT SLICE: add `elif beh in (0x7D, 0x7E):` modelled on `_st
 the seek gating 117/121 immediately, then drive the 4 arrivals to pin the spawn stamp; gate native vs
 the L4-demo VM per 0x7D step.  Scaffolding for the gate is `scratchpad/b7d_oracle.py`.
 
-## 2026-07-10 — the 8546 SPECIAL-WEAPON apply families — 6 of 7 FILLED; only 849D open
+## 2026-07-10 — the 8546 SPECIAL-WEAPON apply families — ALL 7 FILLED (849D CLOSED 2026-07-13)
 
 FILLED byte-exact (commits 779d171, 58ec714, +): 44AF (no-op ret), 84C3 (9F1A deploy -> [A962]/
 [A964]), 8463 (9D91 deploy -> [A96E]), 84D6/84FD (flag/sound weapons, [2384]=1/2), 843D/844E (single-
-cell flag weapons [A95E]=1 / [A960]=4).  All gated by `verify_native_special_weapon_apply` (14/14, 0
-diverging) -- the handlers are LEVELS of the two special weapons (the ladder dispatches on [desc+8]),
-so forcing the level in the pure VM's descriptor reaches each.  **STILL OPEN: 849D (9F5F)** -- a
-4-slot orbital deploy: `[A364]=2; for bx in [A966,A968,A96A,A96C]: 9F82(bx)` where 9F82 = alloc 74FE +
-the 9F41 stamp + `[bx+8]=0x18 [bx+0x0A]=1`, stores the slot into the [A966..] tracker, calls 9FAF
-([A39E]=0 ...), and `dec [A364]`.  Reachable as marker 1 lvl 6 / marker 2 lvl 2 in the L6 demo; fill
-with the same level-forced oracle (add `(2, 2, "849D")` to `verify_native_special_weapon_apply.CASES`).
+cell flag weapons [A95E]=1 / [A960]=4).  All gated by `verify_native_special_weapon_apply` -- the
+handlers are LEVELS of the two special weapons (the ladder dispatches on [desc+8]), so forcing the
+level in the pure VM's descriptor reaches each.  **849D (9F5F) NOW CLOSED (2026-07-13):** the 4-slot
+orbital deploy -- `[A364]=2; for bx in [A966,A968,A96A,A96C]: 9F82(bx)` where 9F82 = alloc 74FE (=7524)
++ the 9F41 stamp + `[bx+8]=0x18`, links the record into the slot, calls 9FAF (_pod_tilt_9faf), and
+`dec [A364]` (the jz after the A968/A96A slots stops it after 2 fills).  Recovered as
+`native_frame._deploy_orbital_9f5f`, wired into `_apply_upgrade_8546`, and VERIFIED byte-exact by the
+`(2, 2, "849D")` case in `verify_native_special_weapon_apply` (16/16, 0 diverging).  The owner's
+`gap_849D_p1_t4131` snapshot no longer reproduces the gap.  **The entire 8546 special-weapon apply is
+now recovered; the RecoveryGap only fires on a genuinely new dispatch target.**
 
 ## OLD (superseded) — the 8546 families characterization
 

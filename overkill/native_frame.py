@@ -1708,6 +1708,7 @@ _HANDLER_84C3 = 0x84C3
 _HANDLER_8463 = 0x8463      # `call 9D91; jmp 8430`: deploy the [A96E] weapon module
 _HANDLER_84D6 = 0x84D6      # inline flag/sound weapon, [2384] = 1, then jmp 8430
 _HANDLER_84FD = 0x84FD      # the level-2 sibling, [2384] = 2
+_HANDLER_849D = 0x849D      # `call 9F5F; jmp 8430`: the 4-slot orbital deploy
 #: single-cell flag weapons: 843D sets [A95E]=1, 844E sets [A960]=4, then jmp 8430.
 _FLAG_CELL_WEAPONS = {0x843D: (0xA95E, 1), 0x844E: (0xA960, 4)}
 
@@ -1748,6 +1749,37 @@ def _deploy_weapon_9d91(mem) -> None:
     mem.ww(DS, 0xA96E, slot)                                # 9D9C
     for off, val in ((0x00, 1), (0x08, 0x0F), (0x14, 1), (0x16, 1), (0x20, 0x14)):
         mem.ww(DS, (slot + off) & 0xFFFF, val)              # 9DA0..9DB3
+
+
+def _deploy_orbital_9f5f(mem) -> None:
+    """``1010:9F5F`` -- deploy the 4-SLOT ORBITAL: fill up to 2 empty pod slots
+    (``A966/A968/A96A/A96C``) with fresh effect-pool records, ``[A364]=2`` the deploy budget.
+
+    Per empty slot (``9F82``: occupied slots are skipped): alloc a pool record (74FE -> the 7524
+    allocator, cursor ``[95D8]``), stamp it (``9F41``: +0=1 +0x14=1 +0x16=1 +8=0x14 +0x20=0x50 +0x0A=1)
+    then override +8=0x18, link the record into the slot cell, and run the ``9FAF`` pod tilt; each fill
+    decrements ``[A364]`` and the ``jz`` after the A968/A96A slots stops the walk once it hits 0 -- so
+    at most two pods deploy.  Sibling of ``9F1A``/``9D91``; verified byte-exact by
+    ``probes/verify_native_special_weapon_apply`` (the ``(2, 2, "849D")`` case)."""
+    from overkill.recovered.adapters.behavior_walk import (
+        EFFECT_POOL_BASE, EFFECT_POOL_WRAP, EFFECT_SLOTS, _alloc,
+    )
+    mem.ww(DS, 0xA364, 2)                                       # 9F5F
+    for idx, slot_cell in enumerate((0xA966, 0xA968, 0xA96A, 0xA96C)):
+        if mem.rw(DS, slot_cell) != 0xFFFF:                    # 9F82: slot occupied -> skip (ZF=NZ)
+            continue
+        mem.ww(DS, 0xA366, slot_cell)                          # 9F88: save the slot pointer
+        slot = _alloc(mem, 0x95D8, EFFECT_POOL_BASE, EFFECT_POOL_WRAP, EFFECT_SLOTS)   # 9F90: 74FE
+        for off, val in ((0x00, 1), (0x14, 1), (0x16, 1), (0x08, 0x14), (0x20, 0x50), (0x0A, 1)):
+            mem.ww(DS, (slot + off) & 0xFFFF, val)             # 9F93: 9F41 stamp
+        mem.ww(DS, (slot + 0x08) & 0xFFFF, 0x18)               # 9F96: override +8
+        mem.ww(DS, (slot + 0x0A) & 0xFFFF, 1)                  # 9F9B
+        mem.ww(DS, mem.rw(DS, 0xA366), slot)                  # 9FA0: [slot_cell] = the new record
+        _pod_tilt_9faf(mem)                                    # 9FA6: 9FAF pod tilt
+        budget = (mem.rw(DS, 0xA364) - 1) & 0xFFFF             # 9FAA: dec [A364]
+        mem.ww(DS, 0xA364, budget)
+        if idx in (1, 2) and budget == 0:                     # the jz 9F81 after the A968 / A96A slots
+            break
 
 
 def _apply_flag_weapon_84d6(mem, flag_2384: int) -> None:
@@ -1802,6 +1834,9 @@ def _apply_upgrade_8546(mem) -> None:
     elif target == _HANDLER_8463:                         # `call 9D91; jmp 8430`: deploy [A96E]
         _deploy_weapon_9d91(mem)
         mem.ww(DS, MARKER_CELL, 0xFFFF)                    # 8430
+    elif target == _HANDLER_849D:                         # `call 9F5F; jmp 8430`: the 4-slot orbital
+        _deploy_orbital_9f5f(mem)
+        mem.ww(DS, MARKER_CELL, 0xFFFF)                    # 8430
     elif target == _HANDLER_84D6:                         # inline flag/sound weapon -> jmp 8430
         _apply_flag_weapon_84d6(mem, 1)
         mem.ww(DS, MARKER_CELL, 0xFFFF)                    # 8430
@@ -1816,8 +1851,10 @@ def _apply_upgrade_8546(mem) -> None:
         pass
     else:
         raise RecoveryGap(f"8546's upgrade handler CS:{target:04X}",
-                          "not a recovered weapon handler -- only 849D (9F5F, the 4-slot orbital "
-                          "deploy) is still open (loop_blockers 2026-07-10; drive its gap-snapshot oracle)")
+                          "not a recovered weapon handler -- the 8546 special-weapon families "
+                          "(8463/849D/84C3/84D6/84FD/843D/844E/44AF) are all recovered, so this is a "
+                          "genuinely new target; capture its gap snapshot and drive the level-forced "
+                          "oracle (verify_native_special_weapon_apply)")
     # --- the shared tail 8572..8596 (the 837A weapon-script tick + the apply sound) ---------------
     mem.ww(DS, MARKER_SAVE_CELL, mem.rw(DS, MARKER_CELL))  # 8572: [95F6] = [95FA]
     mem.ww(DS, MARKER_CELL, marker)                        # 8578: pop -- restore for 837A
