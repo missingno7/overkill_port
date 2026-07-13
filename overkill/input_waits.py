@@ -189,6 +189,40 @@ def all_keys_release_wait(cpu: CPU8086) -> bool:
     return _all_keys_release_wait_spinning(cpu.mem, cpu.s.ds & 0xFFFF)
 
 
+# 1010:5797 -- the REDEFINE-KEYS per-slot capture: two boundary-less busy-waits with no
+# timer/retrace/present in between, so a demo replaying the redefine screen deadlocks unless each is
+# treated as a boundary where the recorded press/release is pumped one event at a time.
+#   57AB: cmp [98C3],0 ; jz 57AB   -- wait for a valid key PRESS (the loop also skips F9/F10/Esc)
+#   57E0: cmp [bx],0 ; jnz 57E0    -- wait for THAT key's RELEASE (bx = 98C4 + scancode)
+# (Witnessed as a frame-verify TIMEOUT at 57E0 replaying demo_play_tandy_20260713_220651.)
+_REDEF_PRESS_WAIT_HEAD = 0x57AB
+_REDEF_PRESS_WAIT_SIG = bytes.fromhex("803ec3980074f9")     # cmp [98C3],0 ; jz 57AB
+_REDEF_RELEASE_WAIT_HEAD = 0x57E0
+_REDEF_RELEASE_WAIT_SIG = bytes.fromhex("803f0075fb")       # cmp [bx],0 ; jnz 57E0
+_REDEF_PRESS_LATCH = 0x98C3
+#: the press loop spins while [98C3] holds none / an ignored key (F9/F10/Esc).
+_REDEF_IGNORED_LATCH = (0x00, 0x43, 0x44, 0x01)
+
+
+def redefine_key_wait(cpu: CPU8086) -> bool:
+    """True while the redefine capture (1010:5797) spins on a key PRESS (57AB) or that key's RELEASE
+    (57E0).  Fires only at each loop head (ref/candidate lockstep) and only while genuinely spinning,
+    exactly like :func:`all_keys_release_wait`; the demo's press/release is pumped one event at a time
+    here so replay does not deadlock in the redefine screen."""
+    cs, ip = cpu.addr()
+    if cs != 0x1010:
+        return False
+    mem = cpu.mem
+    ds = cpu.s.ds & 0xFFFF
+    if ip == _REDEF_PRESS_WAIT_HEAD \
+            and mem.block(0x1010, _REDEF_PRESS_WAIT_HEAD, 7) == _REDEF_PRESS_WAIT_SIG:
+        return mem.rb(ds, _REDEF_PRESS_LATCH) in _REDEF_IGNORED_LATCH
+    if ip == _REDEF_RELEASE_WAIT_HEAD \
+            and mem.block(0x1010, _REDEF_RELEASE_WAIT_HEAD, 5) == _REDEF_RELEASE_WAIT_SIG:
+        return mem.rb(ds, cpu.s.bx & 0xFFFF) != 0            # still held -> spinning for release
+    return False
+
+
 # CBDD..CBE5: `mov al,[54]; cmp al,[54]; je $-6` -- the CBD5 frame-tick wait.
 _FRAME_TICK_WAIT_SIG = bytes.fromhex("a0 54 00 3a 06 54 00 74 fa")
 
@@ -262,6 +296,9 @@ def frame_verify_input_wait(cpu: CPU8086) -> tuple[str, Addr] | None:
         return None
     if cs != 0x1010:
         return None
+    # the redefine-keys press (57AB) / release (57E0) busy-waits -- fire at each head only.
+    if ip in (_REDEF_PRESS_WAIT_HEAD, _REDEF_RELEASE_WAIT_HEAD) and redefine_key_wait(cpu):
+        return "wait", (0x1010, ip)
     if _is_input_wait_head(mem, ip) and _input_wait_spinning(mem, ds, ip):
         return "wait", (0x1010, ip)
     if _flag_poll_spin(mem, ds, ip):  # 2-instruction [98xx] flag-poll spin (e.g. D434)
@@ -314,7 +351,7 @@ def pump_demo_frame(demo, boundary_n: int, runtimes: Sequence, cpu: CPU8086) -> 
     approximate selector replacement hooks are removed) so this sub-frame delivery
     keeps the verifier's reference and candidate in lockstep.
     """
-    if title_fire_release_wait(cpu) or all_keys_release_wait(cpu):
+    if title_fire_release_wait(cpu) or all_keys_release_wait(cpu) or redefine_key_wait(cpu):
         return boundary_n, demo.apply_to_runtimes(boundary_n, runtimes, single=True)
     if _on_input_select_screen(cpu):
         return boundary_n, 0

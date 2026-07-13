@@ -64,7 +64,7 @@ from overkill.recovered.systems.tandy_screen import (  # noqa: E402
     TANDY_PALETTE_RGB,
 )
 from overkill.native_video.front_end import (TITLE_OPTIONS, apply_menu_selection_highlights,  # noqa: E402
-                                              decode_fullscreen_image)
+                                              compose_redefine_screen, decode_fullscreen_image)
 from overkill.native_video.object_sprites import (  # noqa: E402
     SpriteDrawContext,
     object_sprite_blocks_a846,
@@ -495,51 +495,38 @@ _REDEFINE_SLOTS = (("UP", 0x2142), ("DOWN", 0x2143), ("LEFT", 0x2144),
                    ("RIGHT", 0x2145), ("FIRE", 0x2141), ("SPECIAL (apply upgrade)", 0x2140))
 
 
-def _draw_menu_text_overlay(display, pygame, base_frame, lines, anchor: str = "center") -> None:
-    """Draw ``base_frame`` (the title) then blit centered text ``lines`` (``(text, rgb)``) over it.
-    ``anchor`` = "center" (default) or "bottom" (a settings row that doesn't cover the menu art)."""
-    display.draw(base_frame)
-    font = pygame.font.SysFont("monospace", 18, bold=True)
-    w, h = display.screen.get_width(), display.screen.get_height()
-    y = (h - int(h * 0.16)) if anchor == "bottom" else (h // 2 - len(lines) * 18)
-    for text, color in lines:
-        surf = font.render(text, True, color)
-        rect = surf.get_rect(center=(w // 2, y))
-        display.screen.fill((0, 0, 0), rect.inflate(16, 8))     # a readable backdrop
-        display.screen.blit(surf, rect)
-        y += 30
-    pygame.display.flip()
+#: 5797 ignores these scancodes as bindings (Esc, F9, F10) -- can't be bound, don't cancel.
+_REDEFINE_IGNORED_SCANCODES = frozenset({0x01, 0x43, 0x44})
 
 
-def _run_redefine_keys(display, pygame, container_data, scan_map) -> "dict | bool | None":
-    """558B 'r' -- REDEFINE KEYS.  Capture a new key for each of the six game actions and return
-    ``{cell_offset: scancode}`` for DS:[2140-2145].  The original shows the BEC4 controls page through
-    ``1F8F:0980`` and captures via ``5797`` (skipping F9/F10/Esc, beeping on each); here we prompt over
-    the title and map each host key to its XT scancode via ``scan_map`` (a key absent from the XT map is
-    skipped, mirroring the original's ignore-list).  Returns the map on success, ``None`` on Esc-cancel
-    (keep the current bindings), or ``False`` on window-close."""
-    title = decode_fullscreen_image(container_data, TITLE_OPTIONS)
+def _run_redefine_keys(display, pygame, bundle_data, container_data, scan_map) -> "dict | bool":
+    """558B 'r' -- REDEFINE KEYS, drawn EXACTLY as the original (1010:5732): the ``REDEF.ENC`` controls
+    page, then a "Press key for <action>" prompt CELL per slot (0x50..0x55) blit stacked -- the real
+    cell render (`native_video.front_end.compose_redefine_screen`, proven byte-exact vs the VM), NOT a
+    font overlay.  Captures a key for each of the six actions (5797 ignores Esc/F9/F10, exactly as the
+    original -- there is no cancel), storing the XT scancode into DS:[2140-2145] (+ 2148 = special,
+    per 5788).  Returns ``{cell_offset: scancode}`` on completion, or ``False`` on window-close."""
+    image = build_cold_level_start_image(bundle_data, 0, container_data)
     clock = pygame.time.Clock()
     result: dict = {}
-    for label, cell in _REDEFINE_SLOTS:
-        _draw_menu_text_overlay(display, pygame, title, [
-            ("REDEFINE KEYS", (255, 220, 0)),
-            (f"press a key for  {label}", (255, 255, 255)),
-            ("(Esc cancels)", (150, 150, 150)),
-        ])
+    display.set_title("OVERKILL - native (VM-less)  [redefine keys -- press a key for each action]")
+    for i, (_label, cell) in enumerate(_REDEFINE_SLOTS):
+        frame = compose_redefine_screen(image, container_data, prompts_shown=i + 1)
         captured = None
         while captured is None:
             for ev in pygame.event.get():
                 if ev.type == pygame.QUIT:
                     return False
                 if ev.type == pygame.KEYDOWN:
-                    if ev.key == pygame.K_ESCAPE:
-                        return None                       # cancel -> keep the current map
                     sc = scan_map.get(ev.key)
-                    if sc is not None:                    # ignore keys with no XT scancode
-                        captured = sc
-            clock.tick(60)
+                    if sc is None or sc in _REDEFINE_IGNORED_SCANCODES:
+                        continue                          # not in the XT map / a 5797-ignored key
+                    captured = sc
+                    break
+            display.draw(frame)
+            clock.tick(30)
         result[cell] = captured
+    result[0x2148] = result[0x2140]                       # 5788: [2148] = [2140] (special alias)
     return result
 
 
@@ -621,14 +608,13 @@ def _run_title_menu(display, pygame, bundle_data, container_data,
                     if not _run_boss_key(display, pygame, bundle_data):
                         return None
                 elif ev.key == pygame.K_r:                     # 5732: R -> redefine the six game keys
-                    ov = _run_redefine_keys(display, pygame, container_data, scan_map)
+                    ov = _run_redefine_keys(display, pygame, bundle_data, container_data, scan_map)
                     if ov is False:
                         return None                            # window-close during capture
-                    if ov:                                     # None = Esc-cancel (keep current map)
-                        key_overrides.update(ov)
-                        control = 0                            # 578E: R forces keyboard mode ([0010]=0)
-                        composed = apply_menu_selection_highlights(title, control=control,
-                                                                   sound_mode=sound_mode)
+                    key_overrides.update(ov)                   # the six captured keys (all required)
+                    control = 0                                # 578E: R forces keyboard mode ([0010]=0)
+                    composed = apply_menu_selection_highlights(title, control=control,
+                                                               sound_mode=sound_mode)
                 elif ev.key == pygame.K_i:                     # 55C4: I -> BE92, the INSTRUCTIONS pages
                     if not _run_instructions(display, pygame, container_data):
                         return None

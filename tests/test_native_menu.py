@@ -114,3 +114,29 @@ def test_menu_highlight_states_recolor_only_their_own_word():
             assert int(d[y0:y1 + 1, x0:x1 + 1].sum()) == cn
             y0, y1, x0, x1 = MENU_SOUND_HIGHLIGHT[sound]
             assert int(d[y0:y1 + 1, x0:x1 + 1].sum()) == sn
+
+
+# ---- the REDEFINE-KEYS screen (the real cell render, byte-exact vs the VM 2026-07-13) ----
+
+@pytest.mark.skipif(not _HAVE, reason="bundle / container not present")
+def test_redefine_screen_is_the_real_cell_render_not_a_font_overlay():
+    """The redefine screen is REDEF.ENC + the "Press key for <action>" prompt CELLS (0x50..0x55) blit
+    stacked by 553D's 5A00/5A6C -- proven byte-exact vs the VM (REDEF.ENC + cell 0x50 = the VM's screen,
+    diff 0/64000).  Locks the structural facts + the first-prompt render sha."""
+    import hashlib
+    import numpy as np
+    from overkill.recovered.adapters.cold_level_start import build_cold_level_start_image
+    from overkill.native_video.front_end import compose_redefine_screen, decode_fullscreen_image
+
+    bundle = BUNDLE.read_bytes()
+    container = CONTAINER.read_bytes()
+    img = build_cold_level_start_image(bundle, 0, container)
+    redef = decode_fullscreen_image(container, "REDEF.ENC")
+
+    assert np.array_equal(compose_redefine_screen(img, container, 0), redef)   # no prompts = the page
+    one = compose_redefine_screen(img, container, 1)
+    # the first prompt adds exactly cell 0x50 (735 px) -- the measured VM-vs-REDEF delta
+    assert int((one != redef).sum()) == 735
+    assert hashlib.sha256(one.tobytes()).hexdigest()[:16] == "994f21ca2ad27a7a"
+    # the six prompts stack (sum of the six cells' pixel counts), none overwriting the page elsewhere
+    assert int((compose_redefine_screen(img, container, 6) != redef).sum()) == 4302

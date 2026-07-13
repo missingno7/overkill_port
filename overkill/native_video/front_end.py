@@ -19,10 +19,44 @@ import numpy as np
 
 from overkill.asset_codecs.container import load_container_asset
 from overkill.asset_codecs.planar import deplanarize_tandy
+from overkill.native_video.level_select import cell_indices
 
 SCREEN_WIDTH = 320
 SCREEN_HEIGHT = 200
 _BYTES_PER_ROW = SCREEN_WIDTH // 2   # 160: 2 pixels per byte (4bpp packed)
+
+CS_SEGMENT = 0x1010
+#: the shared cell DIRECTORY + BANK the 5A00/5A6C blit reads (same as the attract scene cells):
+#: cell offset = CS:[0BE4 + id*2] in the CS:[95B4] bank.
+CELL_DIRECTORY = 0x0BE4
+CELL_BANK_SEG_CELL = 0x95B4
+
+#: REDEFINE KEYS (1010:5732).  The BEC4 controls page IS ``REDEF.ENC`` (proven byte-exact: REDEF.ENC +
+#: the prompt cell = the VM's redefine screen, diff 0/64000).  Each of the six slots blits a pre-drawn
+#: "Press key for <action>" CELL (ids 0x50..0x55) via 553D's 5A00/5A6C -- NOT font text -- at column 1
+#: (x = 1*8) and row ``[22CA]`` which starts 0x3F and steps +0x17 per slot, so the prompts STACK.
+REDEFINE_PROMPT_CELL_IDS = (0x50, 0x51, 0x52, 0x53, 0x54, 0x55)   # Up/Down/Left/Right/Fire/Special
+REDEFINE_PROMPT_ROW0 = 0x3F
+REDEFINE_PROMPT_ROW_STEP = 0x17
+REDEFINE_PROMPT_COL_PX = 1 * 8
+
+
+def compose_redefine_screen(image, container_data, prompts_shown: int) -> np.ndarray:
+    """The REDEFINE-KEYS screen as the original draws it: ``REDEF.ENC`` (the BEC4 controls page) with
+    the first ``prompts_shown`` "Press key for <action>" prompt cells (0x50..) blit stacked, exactly as
+    553D's 5A00/5A6C place them.  ``image`` is a live cold image (for the CS:[0BE4]/CS:[95B4] cell
+    directory + bank).  Proven byte-exact vs the VM for the first prompt (tests/test_native_menu)."""
+    out = decode_fullscreen_image(container_data, "REDEF.ENC").copy()
+    bank_seg = image.rw(CS_SEGMENT, CELL_BANK_SEG_CELL)
+    bank = np.frombuffer(bytes(image.data[bank_seg * 16: bank_seg * 16 + 0x10000]), dtype=np.uint8)
+    for i in range(min(prompts_shown, len(REDEFINE_PROMPT_CELL_IDS))):
+        cid = REDEFINE_PROMPT_CELL_IDS[i]
+        cell = cell_indices(bank, image.rw(CS_SEGMENT, (CELL_DIRECTORY + cid * 2) & 0xFFFF))
+        y = REDEFINE_PROMPT_ROW0 + i * REDEFINE_PROMPT_ROW_STEP
+        x = REDEFINE_PROMPT_COL_PX
+        h, w = cell.shape
+        out[y:y + h, x:x + w] = cell[:max(0, SCREEN_HEIGHT - y), :max(0, SCREEN_WIDTH - x)]
+    return out
 
 # The container names of the front-end images (all the same {rows,stride}+4-plane form).
 # FULL-SCREEN (320x200) menu screens: OKMENU (title/options, byte-exact vs the VM) plus HISCORE / LEVSCR
