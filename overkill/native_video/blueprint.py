@@ -70,16 +70,17 @@ def compose_ce97_grid(mem) -> np.ndarray:
 
 def compose_blueprint(mem) -> np.ndarray:
     """The FINAL FRAME of the cold-boot blueprint screen (all cells at once) -> a ``(200,320)`` 4-bit
-    index frame.  **NOT the faithful intro:** the original ANIMATES a progressive reveal.  The real
-    animation (captured correctly 2026-07-13 via `scripts/capture_intro_frames.py`, decoding the intro
-    in its true **CGA mode 4** -- earlier Tandy-mode decodes garbled it and produced a WRONG "2 passes /
-    20-frame-delay" model, now retracted): over present-frames ~447..733 of `demo_cold_start_intro`,
-    (1) the grid + bottom title bar appear, (2) the spec TEXT block is TYPED OUT line by line with a
-    white plotter cursor, then (3) the ship schematics are drawn -- ~290 present-frames of reveal.  This
-    function draws the end state in one shot (why it looks static).  Recovering the exact per-frame draw
-    mechanism (is the text live-typed or cell-revealed? the CE5F/[BD98] draw order + timing + sounds)
-    and proving it frame-by-frame against the (now correctly-decoded) demo is the open work; the
-    BLUEPRINT_RECIPE cell list below was traced under the wrong mode and needs re-verification.
+    index frame (TANDY 16-colour: this port runs `video=tandy`, so the intro renders in 16 colours --
+    an intermediate "CGA mode 4" reading this session was RETRACTED, see run_status 2026-07-13).  The
+    content is CORRECT + verified (`compose_ce97_grid` byte-exact vs the VM's CE97, diff 0/64000; the
+    full compose renders the complete blueprint -- 3 ship schematics + spec text + title + grid).
+
+    **NOT the faithful intro:** the original ANIMATES a progressive reveal -- the drawn content builds up
+    frame over frame (grid + title, then the spec text, then the ships) over a few hundred present-frames
+    of `demo_cold_start_intro`, ending at THIS end state.  This function draws it all in one shot (why it
+    looks static).  Recovering the per-frame draw order + timing (+ sounds) and proving it frame-by-frame
+    against the demo -- via the byte-exact-vs-VM COMPOSE-PAGE (16-colour) oracle, NOT a raw-B800 decode --
+    then replaying it in `_run_blueprint_intro` is the open work (see docs/overkill/campaigns/frontend.md).
 
     Composed from the BLUEBITS cells per :data:`BLUEPRINT_RECIPE` at ``x=col*8, y=row``, transparent-
     blitted; visually/structurally exact vs the VM's composed page with a ~7% byte residual (blit

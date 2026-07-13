@@ -1,12 +1,18 @@
 """Capture the cold-boot BLUEPRINT INTRO frame-by-frame from the reference VM -- the ORACLE for
 proving play_native's intro animation faithful.
 
-The intro is the animated blueprint-drafting screen: the magenta grid + title bar appear, then the
-spec text is TYPED OUT line by line (a white "plotter" cursor marks the write position), then the ship
-schematics are drawn -- a progressive reveal over ~290 present-frames.  It runs in **CGA mode 4** (NOT
-Tandy mode 9 -- decoding it as Tandy garbles it into a split double-image, which misled several earlier
-investigations).  This tool decodes each present-frame with the decoder matching that frame's
-``dos.video_mode`` (CGA-4 vs Tandy-9), so the captured frames are actually correct.
+The intro is the animated blueprint-drafting screen: the grid + title bar appear, then the spec text,
+then the ship schematics -- a progressive reveal that ends at the full `native_video.blueprint`
+compose.  This port runs `video=tandy`, so the intro renders in **TANDY 16-colour**; test against
+Tandy, not CGA.
+
+CAVEAT (see run_status 2026-07-13): the `dos.video_mode` reads 4 during the intro, but a raw-B800
+Tandy decode of those frames GARBLES (the intro's live B800 is not in the mode-9 bank layout), and the
+CGA-4 branch below is a DEAD END for this port (it renders the wrong-colour, wrong-content screen).
+The correct oracle is the byte-exact-vs-VM COMPOSE-PAGE (16-colour) comparison used to verify the grid
+(`tests/test_blueprint_grid` / the campaign doc), NOT this raw-B800 capture.  This tool is kept for the
+per-frame nz TIMELINE (which shows the reveal building up) but its pixels are only reliable for
+mode-9 (Tandy) screens.
 
 Usage:
     python scripts/capture_intro_frames.py [LO] [HI] [--demo NAME] [--out DIR]

@@ -63,36 +63,27 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
-## 2026-07-13 — FRONT-END: the blueprint intro CORRECTLY decoded at last — it is CGA mode 4, an ANIMATED reveal (mode error was the root of all prior confusion)
+## 2026-07-13 — FRONT-END: the intro is animated (CONFIRMED); a CGA-mode-4 detour RETRACTED — the game is TANDY 16-colour
 
-The single fact that unravels the whole front-end mess: **the cold-boot blueprint intro runs in CGA
-mode 4, NOT Tandy mode 9.**  Every earlier capture hand-decoded B800 with a fixed Tandy decoder, which
-garbles a mode-4 frame into a split double-image — that is what produced the phantom "calibration
-screen", the "grid vs blueprint" confusion, and repeated non-convergence.  Fixed by decoding each
-present-frame with the decoder matching that frame's `dos.video_mode` (new reusable oracle tool
-`scripts/capture_intro_frames.py`, using the port's own CGA/Tandy decoders from `render_frame`).
+**Retraction (owner correction):** an intermediate reading this session claimed the blueprint intro
+"runs in CGA mode 4" after a raw-B800 Tandy decode garbled it.  That was WRONG.  The game/demos run in
+**TANDY 16-colour** (`video=tandy`); the intro must be tested against the Tandy render, not CGA.  The
+already-committed `compose_blueprint` (16-colour, indices 0/8/10/11/14/15) is the CORRECT content and is
+verified: `compose_ce97_grid` is byte-exact vs the VM's CE97 (diff 0/64000, `tests/test_blueprint_grid`)
+and `compose_blueprint` renders the complete, correct blueprint (3 ship schematics + spec text + title +
+grid — confirmed by eye).  The `dos.video_mode==4` the game sets during the intro does NOT mean CGA-4
+display under Tandy; raw B800 Tandy-decoding it garbles because the intro's live B800 is not in the
+mode-9 bank layout — the correct oracle is the byte-exact-vs-VM COMPOSE-PAGE comparison used for the
+grid, NOT a raw-B800 decode.  `scripts/capture_intro_frames.py`'s CGA branch is a dead-end for this port
+and should not be trusted; keep the Tandy path.
 
-Captured over `demo_cold_start_intro`, present-frames 447..733 (the graphics front end; boot is mode-3
-text before ~447).  The intro is a **progressive blueprint-drafting animation** (confirming the owner's
-"it is animated, not one image"): nz climbs steadily 13953 -> 16759 as it draws:
-1. **f447**: the magenta grid + ruler border + the bottom TITLE bar ("7927-03 IAXO-3C630 1-VIA-R 1").
-2. **f447..~557**: the spec TEXT block is TYPED OUT line by line — a white "plotter" cursor marks the
-   current write position (a terminal-typing effect).
-3. **~557..733**: the cyan SHIP schematics are drawn in.
-So ~290 present-frames of reveal.  The oracle is now correct + reusable; the faithful reproduction
-(replay this frame sequence in `_run_blueprint_intro`, prove frame-by-frame vs the demo) is the next
-slice — and it is now unblocked because the capture is finally decoding the real screen.
-
-**The static compose CONTENT is verified correct (good news):** rendering `compose_blueprint(cold_img)`
-shows the COMPLETE blueprint — all three ship schematics + the spec text + the title bar + the grid,
-matching the VM's layout (the captured f733 was just MID-animation, not the final frame, so the reveal
-runs past 733).  So the cell RECIPE for the end state is right; the animation is "reveal these cells
-progressively in the observed order".  **Two open items remain:** (1) the compose uses 16-colour cell
-indices (0,8,10,11,14,15) but the intro DISPLAYS in CGA mode 4 (4 colours) — the index->CGA palette
-mapping the present applies is unresolved (needs the VM's actual FINAL displayed frame, past 733, in
-both decodes); (2) the exact per-frame reveal timing (typed-text cadence + ship-draw order) for the
-byte-exact frame-by-frame proof.  Neither is a blocker to an ANIMATED (vs static) intro; both are needed
-for the strict frame-by-frame proof.
+**What IS solid + confirmed:** the intro is ANIMATED (owner: "it is animated, not one image"): over the
+graphics front end the drawn content builds up progressively (nz climbs frame over frame) — the grid +
+title, then the spec text, then the ships — a reveal over a few hundred present-frames, ending at the
+full `compose_blueprint`.  So the END-STATE content is done + verified; the OPEN work is the reveal
+ANIMATION: recover the per-frame draw order + timing (+ sounds) and prove it frame-by-frame against
+`demo_cold_start_intro` using the compose-page (16-colour) oracle, then replay it in `_run_blueprint_intro`
+instead of drawing the end state in one shot.
 
 ## 2026-07-13 — FRONT-END: a CORRECT sub-frame flow instrument (control-flow, not pixels); calibration claim retracted
 
