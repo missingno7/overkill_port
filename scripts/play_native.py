@@ -651,26 +651,32 @@ _ATTRACT_FIRE_SCANCODE = 0x39
 
 
 def _run_blueprint_intro(display, pygame, bundle_data, container_data,
-                         max_frames: int = 300) -> bool:
-    """The cold-boot BLUEPRINT / intro screen -- the REAL first screen the original shows (NOT OKMENU).
+                         beat_frames: int = 55, hold_frames: int = 90) -> bool:
+    """The cold-boot BLUEPRINT / intro screen, ANIMATED as the original reveals it (NOT a static frame).
 
-    `1010:CE97` composes the grid background and the boot overlays the ship-schematic + briefing-text
-    cells, all from the BLUEBITS bank (`native_video.blueprint.compose_blueprint`, grounded against the
-    VM).  Held until FIRE/Space/any-key (or `max_frames` at 30fps).  Returns False on window-close/Esc."""
-    from overkill.native_video.blueprint import compose_blueprint
+    `1010:CE97` draws the grid; then the CE5F recipe (`DS:BD54`, `native_video.blueprint`) reveals the
+    ship-schematic + briefing-text overlay cells 5 PER BEAT over 3 beats (grid -> +5 -> +10 -> +15),
+    all BLUEBITS cells -- the grid + all 15 == the VM's blueprint (0 under-draw).  Each beat holds
+    `beat_frames`, the full frame holds `hold_frames`.  Any key advances; returns False on close/Esc."""
+    from overkill.native_video.blueprint import (BLUEPRINT_RECIPE_ENTRIES, BLUEPRINT_REVEAL_PER_BEAT,
+                                                 compose_blueprint)
 
     img = build_cold_level_start_image(bundle_data, 0, container_data)
-    frame = compose_blueprint(img)
+    # the reveal steps: 0 (grid only), 5, 10, 15 cells -- one frame per beat, then the full hold.
+    steps = list(range(0, BLUEPRINT_RECIPE_ENTRIES + 1, BLUEPRINT_REVEAL_PER_BEAT))
+    schedule = [(compose_blueprint(img, n), beat_frames) for n in steps]
+    schedule[-1] = (schedule[-1][0], hold_frames)                 # hold the completed blueprint longer
     clock = pygame.time.Clock()
     display.set_title("OVERKILL - native (VM-less)  [intro -- Space/any key to continue]")
-    for _ in range(max_frames):
-        for ev in pygame.event.get():
-            if ev.type == pygame.QUIT or (ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE):
-                return False
-            if ev.type == pygame.KEYDOWN:
-                return True                       # any key advances to the menu/attract
-        display.draw(frame)
-        clock.tick(30)
+    for frame, dwell in schedule:
+        for _ in range(dwell):
+            for ev in pygame.event.get():
+                if ev.type == pygame.QUIT or (ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE):
+                    return False
+                if ev.type == pygame.KEYDOWN:
+                    return True                   # any key advances to the menu/attract
+            display.draw(frame)
+            clock.tick(30)
     return True
 
 

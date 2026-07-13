@@ -33,17 +33,30 @@ TOP_CELL = 0x0F                  # top border cell (row 0)
 BOTTOM_CELL = 0x11               # bottom border cell (row 190)
 CELL_ROWS = 10                   # each CE97 cell is a 10-row strip
 
-#: The full cold-boot blueprint compose, ``(cell_id, col, row)`` in blit order -- traced from the VM's
-#: 5A24/5A5A cell blits over boot->scene-1 (`trace_frontend_flow` + a 5A5A trap).  The CE97 grid, then
-#: the boot's ship-SCHEMATIC + briefing-TEXT overlay (each ship is a 2-colour-pass pair; the text lines
-#: 0x0C/0x0D are pre-rendered cells, not live font).  ``col`` is the 5A24 column (pixel x = col*8).
-BLUEPRINT_RECIPE: tuple[tuple[int, int, int], ...] = (
-    (TOP_CELL, 0, 0),
-    *tuple((GRID_ROW_CELL, 0, r) for r in range(180, 0, -10)),
-    (BOTTOM_CELL, 0, 190),
-    (0x00, 7, 31), (0x03, 23, 57), (0x06, 7, 137), (0x09, 21, 141), (0x0C, 1, 182),
-    (0x01, 4, 24), (0x04, 23, 53), (0x07, 4, 133), (0x0A, 21, 141), (0x0D, 1, 182),
-)
+DATA_SEGMENT = 0x25CC            # DGROUP: the recipe table lives here
+#: The blueprint's cell OVERLAY is not a hardcoded list -- the game reads it from a RECIPE TABLE.
+#: CC22 sets ``[BD98] = BD54`` and CE5F walks it: 5 entries per call x 3 calls = 15 cells, each a
+#: 3-byte ``(row, col, cell_id)`` triple, blit at ``x = col*8, y = row`` over the grid.  The 15 cells
+#: (0x00..0x0E) are the 3 ship schematics + the briefing text, revealed 5 per beat (the animation).
+#: (An earlier hardcoded 10-cell guess was MISSING beat 3 -- cells 0x02/0x05/0x08/0x0B/0x0E; reading
+#: the real table fixes it.  With the grid, grid + all 15 == the VM's blueprint, 0 under-draw.)
+BLUEPRINT_RECIPE_PTR = 0xBD54
+BLUEPRINT_RECIPE_ENTRIES = 15
+BLUEPRINT_REVEAL_PER_BEAT = 5    # CE5F draws 5 cells per call (3 beats -> 5,10,15 revealed)
+
+
+def read_blueprint_recipe(mem) -> "list[tuple[int, int, int]]":
+    """The 15-cell blueprint overlay recipe, read from the game's own table at ``DS:BD54`` (the source
+    CE5F walks) -- ``(cell_id, col, row)`` in draw/reveal order."""
+    out = []
+    p = BLUEPRINT_RECIPE_PTR
+    for _ in range(BLUEPRINT_RECIPE_ENTRIES):
+        row = mem.rb(DATA_SEGMENT, p & 0xFFFF)
+        col = mem.rb(DATA_SEGMENT, (p + 1) & 0xFFFF)
+        cell_id = mem.rb(DATA_SEGMENT, (p + 2) & 0xFFFF)
+        out.append((cell_id, col, row))
+        p += 3
+    return out
 
 
 def compose_ce97_grid(mem) -> np.ndarray:
@@ -68,28 +81,22 @@ def compose_ce97_grid(mem) -> np.ndarray:
     return out
 
 
-def compose_blueprint(mem) -> np.ndarray:
-    """The FINAL FRAME of the cold-boot blueprint screen (all cells at once) -> a ``(200,320)`` 4-bit
-    index frame (TANDY 16-colour: this port runs `video=tandy`, so the intro renders in 16 colours --
-    an intermediate "CGA mode 4" reading this session was RETRACTED, see run_status 2026-07-13).  The
-    content is CORRECT + verified (`compose_ce97_grid` byte-exact vs the VM's CE97, diff 0/64000; the
-    full compose renders the complete blueprint -- 3 ship schematics + spec text + title + grid).
+def compose_blueprint(mem, cells_revealed: "int | None" = None) -> np.ndarray:
+    """The cold-boot blueprint screen -> a ``(200,320)`` 4-bit index frame (TANDY 16-colour).  The CE97
+    GRID (`compose_ce97_grid`, byte-exact vs the VM), then the first ``cells_revealed`` overlay cells
+    from the game's own recipe (`read_blueprint_recipe`, at DS:BD54) transparent-blit over it.
 
-    **NOT the faithful intro:** the original ANIMATES a progressive reveal -- the drawn content builds up
-    frame over frame (grid + title, then the spec text, then the ships) over a few hundred present-frames
-    of `demo_cold_start_intro`, ending at THIS end state.  This function draws it all in one shot (why it
-    looks static).  Recovering the per-frame draw order + timing (+ sounds) and proving it frame-by-frame
-    against the demo -- via the byte-exact-vs-VM COMPOSE-PAGE (16-colour) oracle, NOT a raw-B800 decode --
-    then replaying it in `_run_blueprint_intro` is the open work (see docs/overkill/campaigns/frontend.md).
-
-    Composed from the BLUEBITS cells per :data:`BLUEPRINT_RECIPE` at ``x=col*8, y=row``, transparent-
-    blitted; visually/structurally exact vs the VM's composed page with a ~7% byte residual (blit
-    opacity where ship cells cross the grid).  ``mem`` is the cold image with BLUEBITS at ``CS:[95B8]``."""
+    ``cells_revealed`` drives the ANIMATION exactly as the original does: the reveal builds 5 cells per
+    beat (`BLUEPRINT_REVEAL_PER_BEAT`), so 5 -> 10 -> 15 are the three reveal steps; ``None`` = all 15
+    (the final frame).  Grid + all 15 == the VM's composed blueprint with ZERO under-draw (verified);
+    the per-frame reveal is what `_run_blueprint_intro` replays for the faithful intro."""
+    n = BLUEPRINT_RECIPE_ENTRIES if cells_revealed is None else max(0, min(cells_revealed,
+                                                                           BLUEPRINT_RECIPE_ENTRIES))
     bank_seg = mem.rw(CS, BLUEBITS_BANK_PTR)
     base = bank_seg * 16
     bank = np.frombuffer(bytes(mem.data[base:base + 0x10000]), dtype=np.uint8)
-    out = np.zeros((SCREEN_H, SCREEN_W), dtype=np.uint8)
-    for cell_id, col, row in BLUEPRINT_RECIPE:
+    out = compose_ce97_grid(mem)                                 # the grid LAYER first (byte-exact)
+    for cell_id, col, row in read_blueprint_recipe(mem)[:n]:     # then the revealed overlay cells
         c = cell_indices(bank, mem.rw(CS, (CELL_DIRECTORY + cell_id * 2) & 0xFFFF))
         h, w = c.shape
         x = col * 8
@@ -102,4 +109,5 @@ def compose_blueprint(mem) -> np.ndarray:
     return out
 
 
-__all__ = ["compose_ce97_grid", "compose_blueprint", "BLUEPRINT_RECIPE"]
+__all__ = ["compose_ce97_grid", "compose_blueprint", "read_blueprint_recipe",
+           "BLUEPRINT_REVEAL_PER_BEAT", "BLUEPRINT_RECIPE_ENTRIES"]
