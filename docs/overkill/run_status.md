@@ -63,6 +63,24 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-13 — GAMEPLAY: the 6 hard-tail behaviors GROUNDED via liftgen/liftverify (no more guessing)
+
+Ran `liftgen` census + `liftverify` (play-witness snapshots found via a fast trap-based behavior
+census over L4-L6 demos, using the promoted `dos_re.step_probe`) against all 6 remaining
+unregistered behaviors, replacing the old "needs the lifter or a multi-part decode" guess with real
+results:
+- **0x7F/0x80 -- LIFTABLE, ORACLE_PASSING** (5 calls verified, 0 divergences), but only 27% block
+  coverage in the one snapshot found -- genuinely tractable, needs more coverage before trusting/
+  wiring, NOT integrated yet (fail-loud discipline: partial-coverage scaffolding stays out of the
+  live dispatch).
+- **0x8D -- LIFTABLE per census, but `liftverify` DIVERGED on the first real call** -- the naive lift
+  is WRONG here (a genuine trap the oracle caught); needs hand-decode, not a re-lift.
+- **0x61/0x62 -- REFUSED (region-budget)**, **0x84 -- REFUSED (indirect-jump)**: confirmed, matching
+  the earlier documented notes.
+No behaviors newly recovered this pass (correctly conservative: 27% coverage and a diverged lift are
+both NOT safe to wire in), but the whole hard-tail census is now evidence-based instead of guessed,
+with reproduction commands for the next session.  Suite unchanged (1409 green).
+
 ## 2026-07-13 — PROMOTED TO dos_re: step_probe (the trapped step observer) + toolbox 12c (the audio proof)
 
 Synergy pass over dos_re (bumped 7a4f7d8 -> 20631cd, 45 commits -- the new PM-layer demo-determinism
@@ -439,10 +457,31 @@ shot spawn, composed from `child_spawn_seed_c237`/`child_spawn_sound_c237` at +0
 The remaining **6** are the genuinely HARD TAIL, each needing the lifter+witness or a multi-part decode:
 - **0x61/0x62 pair** -- 0x61 is a clean 5DB2 seek but retags to 0x62, which is COMPLEX (anchor-follow +
   [A47E] y-grid align + morph-to-0x61 + retag-to-0x65 on a 4D95 random + C237/7476 spawns); they cycle.
+  **`liftgen` census (2026-07-13): REFUSED, "region-budget"** (the call graph the static census walks
+  from F394/F3BB is too large for the tool's budget) -- needs a multi-part hand-decode, not a lift.
 - **0x8D** (BB40) -- the `BBED` tile-SCAN movement loop (5073/505B + AFD8 + a sprite formula + gated 7476).
-- **0x84** (F669) -- an INDIRECT JUMP TABLE (the construct the lifter refuses).
-- **0x7F/0x80** (1F8F overlay pair) -- 0x80 is complex/multi-branch.
-Best surfaced by play (capture_pure_vm_snapshot + liftverify) rather than speculative hand-decode.
+  **`liftgen` census: LIFTABLE (138 insts, 65 blocks, 8 calls). `liftverify` (2026-07-13, play-witness
+  `demo_play_tandy_L6_continue_20260618_225731` boundary 635): DIVERGED on the FIRST call** (1/65
+  blocks, a memory diff at the class-table/ES-segment area) -- the naive ASM->Python translation gets
+  this one WRONG in a way the oracle catches immediately.  Do not re-lift blindly; needs a real
+  hand-decode with the SAME oracle keeping it honest.
+- **0x84** (F669) -- an INDIRECT JUMP TABLE (the construct the lifter refuses).  Confirmed again via
+  `liftgen` census (2026-07-13): refused, `indirect-jump`.
+- **0x7F/0x80** (1F8F overlay pair) -- 0x80 is complex/multi-branch.  **`liftgen` census (2026-07-13):
+  BOTH LIFTABLE** (105 insts, 55 blocks, 6 calls each, no indirect jumps/ints).  **`liftverify`
+  (play-witness `demo_play_tandy_L5_start_20260618_185923` boundary 1): BOTH ORACLE_PASSING** --
+  0x7F verified=1 call, 0x80 verified=5 calls, 0 divergences, but **only PARTIAL COVERAGE (15/55
+  blocks, ~27%)** in this one snapshot.  Genuinely tractable via the lifter, but NOT wired into
+  `behavior_walk.py`'s dispatch yet -- per the toolbox's own rule ("a hook can pass here and still
+  differ on an unsampled deeper path"), 27% coverage is not enough to trust blind; needs more
+  play-witness samples (a longer/different demo where these behaviors run longer) to push coverage up,
+  THEN a refactor into clean domain code (a lifted hook is scaffolding, never the final recovered
+  source).  Reproduce: `python dos_re/tools/liftverify.py --exe assets/OVERKILL --snapshot
+  artifacts/hard_tail_snaps/snap_7f_80 --entry 1010:8D73 --entry 1010:8D7B --steps 3000000
+  --emit-dir <dir>` (snapshot dir is gitignored, regenerate via `capture_pure_vm_snapshot.py` with the
+  demo+boundary above if missing).
+Best surfaced by play (capture_pure_vm_snapshot + liftverify) rather than speculative hand-decode --
+now DONE for all 6: the census above is grounded in real liftgen/liftverify runs, not guesses.
 
 ## 2026-07-12 — GAMEPLAY: recover the 1F8F-overlay behavior 0x7b (the overlay IS decodable)
 
