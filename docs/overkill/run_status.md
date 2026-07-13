@@ -63,6 +63,50 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-14 — FRONT-END: the blueprint char-writer MECHANISM FOUND -- a REVEAL of a pre-rendered work-buffer cell, not live glyph drawing (owner: "lift what is missing, verify against oracle")
+
+Continuing the 2026-07-13 blocker (the char-writer is a distinct code path a free-run snapshot never
+takes).  Built a demo-paced witness toolkit instead of a free-run snapshot -- `probes/witness_all_hooks_window.py`
+sweeps EVERY currently-hooked routine over a present-frame window of a COLD-START demo (real command
+tail, real timing, via `probes._harness.run_ref_step_probe_cold_start`) and reports which fire and how
+often; `probes/witness_intro_charwriter.py` and (removed after use) a D2B8/1F8F:0980 far-renderer trace
+each RULED OUT a candidate with a hard zero-hit result instead of a guess (the already-recovered
+518C/519A/3153 text path never fires in this window; neither does the D2B8 far-renderer census hit
+earlier). `scripts/dump_intro_frames.py` renders any traced present-frame's B800 (or another segment)
+straight to PNG via the existing `render_frame.py` Tandy decoder, so the reveal could be SEEN, not
+inferred from register dumps -- committed to `artifacts/intro_frame_dump/` (gitignored, regenerate on
+demand).
+
+**The mechanism, GROUNDED (not guessed), confirmed by both instrumentation and rendered pixels:**
+1. The full briefing text is pre-rendered ONCE into a hidden Tandy interlaced WORK BUFFER (segment
+   `32FF` in this capture -- a shared scratch plane, not blueprint-dedicated) before the reveal begins.
+   `probes/witness_cdaa_presenter.py` proves this directly: the ALREADY-RECOVERED presenter
+   `changed_dword_present_8rows_cdaa` (1010:CDAA, `overkill/rendering/tandy.py`) fires ~1/frame from
+   f478 onward, reading a **real, per-frame-VARYING** 4-byte x 8-row cell from `DS:32FF:[si]` (si
+   advancing by exactly +4/frame, i.e. one glyph-cell) and copying it to `ES:B800:[di]` -- the varying
+   source bytes (e.g. f494 `008ff0f0 00800000 00800000 008f00f0` vs f495 `0ff0f00f 00008000 00008000
+   ff0ff000`) are genuine pre-existing glyph pixel data, not synthesized per call.
+2. `1010:306F` (`copy_rect_to_tandy_video_306f`, ALSO already recovered) fires once per frame with a
+   FIXED source (`DS:B018`, header `height=8 width=1`, payload 32 bytes of solid `0xFF`) at the growing
+   destination -- this is the REVEAL CURSOR (the solid white square visible at the typing position in
+   every rendered frame), not a glyph draw.
+3. Visually confirmed byte-for-byte from the ref VM at `f477` (grid + the fixed ID text
+   `7927-03 1AXO-3C680 1-VIP-R 1` + the cursor square first appearing), `f500`/`f520`/`f550` (one/two/
+   three lines of readable briefing text with the cursor trailing the last-revealed cell) -- see
+   `artifacts/intro_frame_dump/` (regenerate: `pypy scripts/dump_intro_frames.py
+   demo_cold_start_intro_20260711_203259 --frames 446,460,477,500,520,550`).
+
+**So "lifting" this is NOT decoding a mystery ASM routine -- both the presenter (CDAA) and the cursor
+stamp (306F) are ALREADY pure recovered code.** What remains: (a) find where/when the FULL text gets
+pre-rendered into the work buffer in the first place (the f477 burst of ~50 `306F` calls with a growing
+DI is the likely candidate -- its `ES` target at that moment needs checking against `TANDY_VIDEO_SEGMENT_OFF`
+to confirm it points at the hidden work segment, not B800, during that specific burst), and (b) wire a
+native per-frame reveal that calls the existing `changed_dword_present_8rows_cdaa` + `copy_rect_to_tandy_video_306f`
+against a `MutFlatMemory` image the way `compose_blueprint` already reuses `cell_indices`/5A24 geometry,
+seeded from a captured cold-boot snapshot of the fully-pre-rendered work buffer.  NOT yet wired into
+`_run_blueprint_intro`; this pass grounded the mechanism and ruled out two wrong candidates, both
+required before any lift.
+
 ## 2026-07-13 — FRONT-END: the COLD-BOOT INTRO grounded -- a TITLE-SPLASH screen + a CHAR-WRITING blueprint (owner)
 
 Owner: the blueprint "is not static... text writing animation with sound", and there is "one missing

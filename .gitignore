@@ -73,3 +73,4 @@ artifacts/boot_init_snapshot/
 artifacts/boot_lifts/
 artifacts/*.wav
 artifacts/frontend_intro_snapshot/
+artifacts/intro_frame_dump/
