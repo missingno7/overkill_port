@@ -632,6 +632,28 @@ GAMEPLAY_SEED_FB_STEP = 0x0040           # per-slot back-buffer pointer stride
 GAMEPLAY_SEED_COUNT = 0x22               # 34 gameplay/enemy slots seeded
 
 
+def object_seed_slot_table_32ca() -> dict:
+    """The ``DS:0x32CA`` slot table, computed ARITHMETICALLY instead of read as exe-derived data.
+
+    CONVERGENCE slice B (docs/overkill/campaigns/convergence.md): this compiler-emitted literal table
+    was believed to need extraction from the exe like the level/plane ROMs, but it is exactly
+    ``cx=1..35 -> POOL_BASE_EFFECT + (cx-1)*OBJECT_RECORD_STRIDE`` (the effect-table records) with
+    ``cx=36 -> POOL_BASE_SPECIAL`` (the view-anchor/player record) -- verified byte-identical to the
+    live table for all 36 entries.  Zero exe bytes needed."""
+    table = {cx: (POOL_BASE_EFFECT + (cx - 1) * OBJECT_RECORD_STRIDE) & 0xFFFF
+             for cx in range(1, OBJECT_SEED_COUNT)}
+    table[OBJECT_SEED_COUNT] = POOL_BASE_SPECIAL
+    return table
+
+
+def gameplay_seed_slot_table_8d12() -> dict:
+    """The ``DS:0x8D12`` slot table, computed ARITHMETICALLY instead of read as exe-derived data:
+    ``cx=1..34 -> POOL_BASE_GAMEPLAY + (cx-1)*OBJECT_RECORD_STRIDE`` -- verified byte-identical to the
+    live table for all 34 entries.  See :func:`object_seed_slot_table_32ca`; zero exe bytes needed."""
+    return {cx: (POOL_BASE_GAMEPLAY + (cx - 1) * OBJECT_RECORD_STRIDE) & 0xFFFF
+            for cx in range(1, GAMEPLAY_SEED_COUNT + 1)}
+
+
 def object_pool_seed_c3b5(slot_ptr_table) -> dict:
     """The ``1010:C3B5`` GAMEPLAY object-pool seed loop (``C3BF..C3E5``; the first pool re-init in the
     respawn/level-start routine ``C3A6``).

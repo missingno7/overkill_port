@@ -24,14 +24,12 @@ from overkill.recovered.adapters.starfield_adapter import DATA_SEGMENT, load_sta
 from overkill.recovered.domain.native_game_state import NativeGameState
 from overkill.recovered.domain.starfield import StarfieldState
 from overkill.recovered.systems.frame_loop import (
-    GAMEPLAY_SEED_COUNT,
-    GAMEPLAY_SEED_SLOT_TABLE_8D12,
-    OBJECT_SEED_COUNT,
-    OBJECT_SEED_SLOT_TABLE_32CA,
     PLAYER_SPAWN_RECORD,
     apply_new_game_setup_c4db,
+    gameplay_seed_slot_table_8d12,
     new_game_session_init_96ee,
     object_pool_seed_c3b5,
+    object_seed_slot_table_32ca,
     player_companion_spawn_c453,
     player_spawn_record_c42f,
     respawn_control_reset_c461,
@@ -155,13 +153,12 @@ def apply_respawn_seeds(mem) -> None:
             mem.ww(ds, off, val)
 
     # C4DB new-game setup (special + effect seed + control reset) via the DS:0x32CA table
-    table_32ca = {cx: mem.rw(ds, OBJECT_SEED_SLOT_TABLE_32CA + cx * 2)
-                  for cx in range(1, OBJECT_SEED_COUNT + 1)}
-    write_map(apply_new_game_setup_c4db(table_32ca))
-    # C3A6 gameplay-pool seed via the DS:0x8D12 table
-    table_8d12 = {cx: mem.rw(ds, GAMEPLAY_SEED_SLOT_TABLE_8D12 + cx * 2)
-                  for cx in range(1, GAMEPLAY_SEED_COUNT + 1)}
-    for rec, fields in object_pool_seed_c3b5(table_8d12).items():
+    # CONVERGENCE slice B (docs/overkill/campaigns/convergence.md): both slot tables are computed
+    # arithmetically, not read from the image -- verified byte-identical to the exe's stored tables
+    # for every entry (tests/test_seed_slot_tables.py).  Zero exe bytes needed for either.
+    write_map(apply_new_game_setup_c4db(object_seed_slot_table_32ca()))
+    # C3A6 gameplay-pool seed via the (computed) DS:0x8D12 table
+    for rec, fields in object_pool_seed_c3b5(gameplay_seed_slot_table_8d12()).items():
         for fo, val in fields.items():
             mem.ww(ds, rec + fo, val)
     # respawn / level-start control reset

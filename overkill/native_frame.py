@@ -1452,14 +1452,11 @@ MUSIC_BEAT_CELL = 0x98C2
 
 def _new_game_setup_c4db(mem) -> None:
     """``1010:C4DB`` -- the object/status reset the respawn runs first (9908)."""
-    from overkill.recovered.adapters.cold_level_start import (
-        OBJECT_SEED_COUNT, OBJECT_SEED_SLOT_TABLE_32CA,
+    from overkill.recovered.systems.frame_loop import (
+        apply_new_game_setup_c4db, object_seed_slot_table_32ca,
     )
-    from overkill.recovered.systems.frame_loop import apply_new_game_setup_c4db
 
-    table = {cx: mem.rw(DS, (OBJECT_SEED_SLOT_TABLE_32CA + cx * 2) & 0xFFFF)
-             for cx in range(1, OBJECT_SEED_COUNT + 1)}
-    for off, val in apply_new_game_setup_c4db(table).items():
+    for off, val in apply_new_game_setup_c4db(object_seed_slot_table_32ca()).items():
         mem.ww(DS, off, val)
 
 
@@ -1486,18 +1483,15 @@ def _gameplay_pool_seed_c3a6(mem) -> None:
     from overkill.recovered.adapters.behavior_walk import (
         EFFECT_POOL_BASE, EFFECT_POOL_WRAP, EFFECT_SLOTS, _alloc,
     )
-    from overkill.recovered.adapters.cold_level_start import (
-        GAMEPLAY_SEED_COUNT, GAMEPLAY_SEED_SLOT_TABLE_8D12, PLAYER_SPAWN_RECORD,
-    )
+    from overkill.recovered.adapters.cold_level_start import PLAYER_SPAWN_RECORD
     from overkill.recovered.systems.frame_loop import (
-        object_pool_seed_c3b5, player_spawn_record_c42f, respawn_control_reset_c461,
+        gameplay_seed_slot_table_8d12, object_pool_seed_c3b5, player_spawn_record_c42f,
+        respawn_control_reset_c461,
     )
 
     for k in range(COMPLETION_COUNTER_WORDS):                       # C3AB: rep stosw
         mem.ww(DS, (COMPLETION_COUNTER_TABLE_2078 + k * 2) & 0xFFFF, 0)
-    table = {cx: mem.rw(DS, (GAMEPLAY_SEED_SLOT_TABLE_8D12 + cx * 2) & 0xFFFF)
-             for cx in range(1, GAMEPLAY_SEED_COUNT + 1)}
-    for rec, fields in object_pool_seed_c3b5(table).items():        # C3B5
+    for rec, fields in object_pool_seed_c3b5(gameplay_seed_slot_table_8d12()).items():  # C3B5
         for fo, val in fields.items():
             mem.ww(DS, (rec + fo) & 0xFFFF, val)
     for fo, val in player_spawn_record_c42f().items():              # C42F

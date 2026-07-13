@@ -127,6 +127,40 @@ blank-base builder that assembles the cold image from native_rom + level_rom + t
 the container instead of `MutFlatMemory(exe_image)`, gated byte-exact vs the bundle-seeded image
 (`verify_native_cold_level_data`) — then `--bundle` drops.
 
+**Slice B continued (2026-07-13) — the ~9,925-byte border estimate was WRONG (cruder methodology);
+the real number is 347 bytes, and TWO more "ROM" tables turned out to need ZERO bytes.**
+
+The earlier ~9,925-byte border figure came from a raw content-diff against a blank baseline -- the
+same overcounting trap the CS-segment investigation already burned once ("239 bank bytes diverged...
+does not affect game logic").  The RIGHT measurement (read-before-write over 3,000 gameplay frames on
+each of the 6 levels, scoped to the tile-plane segment outside the map body) gives **347 bytes across
+111 small runs**, plateauing quickly (300 frames already found 259-279 of the 347).  Extracted into
+`overkill/recovered/adapters/plane_rom.py` (`extract_plane_rom`/`apply_plane_rom`,
+`tests/test_plane_rom.py`) -- **NOT YET WIRED** into the live path (needs the same blank-base
+equivalence gate below to close first).  Every byte matches across all 6 levels except ONE
+(`0x3A76`), which is exactly the level's own PLANET id -- already computed, not real per-level data.
+
+**Two more tables turned out to be ARITHMETIC, not data -- better than extraction, zero exe bytes:**
+chasing the blank-base equivalence gate (below) surfaced that `DS:0x32CA` (the C4DB new-game object
+seed's slot table, 36 entries) and `DS:0x8D12` (the C3A6 gameplay-pool seed's slot table, 34 entries)
+-- both previously read as exe-derived words -- are exactly `POOL_BASE_EFFECT/POOL_BASE_GAMEPLAY +
+i*OBJECT_RECORD_STRIDE` (a compiler-emitted literal for a trivial sequence).  Verified byte-identical
+to the live tables for every entry (`tests/test_seed_slot_tables.py`).  `frame_loop.py` gained
+`object_seed_slot_table_32ca()`/`gameplay_seed_slot_table_8d12()`; `cold_level_start.py` AND
+`native_frame.py`'s `9908` respawn path (the SAME seed re-runs on every in-game death, not just cold
+start) both now COMPUTE these tables instead of reading them -- a real simplification, not just a ROM
+extraction.  Suite 1409.
+
+**The blank-base equivalence gate (the doc's own "highest-leverage start") is IN PROGRESS, not done.**
+Building a fully blank 1 MB image + `native_rom` + `level_rom` + `plane_rom` + the (now-computed)
+seed tables + the recovered init + container, then comparing `read_native_game_state` against the
+bundle-seeded build, found (in order, each fixed): the object-pool table (8D12, now computed), then
+an `effect_pool` divergence (record 0 holds non-zero coordinate-like fields the current recovered
+init does not produce) -- **still OPEN**, the next residual the gate names.  This IS the mechanism
+working as designed (each fix narrows the gate to the next real gap); it has not yet converged to
+zero.  Do not attempt `--bundle` removal until the gate is clean for all 6 levels, static AND after a
+gameplay run.
+
 **Refinement (2026-07-11) — the rb/rw count is a LOWER BOUND; validated the DGROUP reduction.** Zeroing
 the whole 64 KB CS segment except the 5 rb/rw ranges and running 600 frames leaves the **DGROUP
 game-logic state byte-exact (0 divergence)** — so the recovered init + those 5 ranges fully determine
