@@ -63,6 +63,26 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-13 — FRONT-END: the blueprint intro CORRECTLY decoded at last — it is CGA mode 4, an ANIMATED reveal (mode error was the root of all prior confusion)
+
+The single fact that unravels the whole front-end mess: **the cold-boot blueprint intro runs in CGA
+mode 4, NOT Tandy mode 9.**  Every earlier capture hand-decoded B800 with a fixed Tandy decoder, which
+garbles a mode-4 frame into a split double-image — that is what produced the phantom "calibration
+screen", the "grid vs blueprint" confusion, and repeated non-convergence.  Fixed by decoding each
+present-frame with the decoder matching that frame's `dos.video_mode` (new reusable oracle tool
+`scripts/capture_intro_frames.py`, using the port's own CGA/Tandy decoders from `render_frame`).
+
+Captured over `demo_cold_start_intro`, present-frames 447..733 (the graphics front end; boot is mode-3
+text before ~447).  The intro is a **progressive blueprint-drafting animation** (confirming the owner's
+"it is animated, not one image"): nz climbs steadily 13953 -> 16759 as it draws:
+1. **f447**: the magenta grid + ruler border + the bottom TITLE bar ("7927-03 IAXO-3C630 1-VIA-R 1").
+2. **f447..~557**: the spec TEXT block is TYPED OUT line by line — a white "plotter" cursor marks the
+   current write position (a terminal-typing effect).
+3. **~557..733**: the cyan SHIP schematics are drawn in.
+So ~290 present-frames of reveal.  The oracle is now correct + reusable; the faithful reproduction
+(replay this frame sequence in `_run_blueprint_intro`, prove frame-by-frame vs the demo) is the next
+slice — and it is now unblocked because the capture is finally decoding the real screen.
+
 ## 2026-07-13 — FRONT-END: a CORRECT sub-frame flow instrument (control-flow, not pixels); calibration claim retracted
 
 Owner: "we need a correct way to verify [the cold boot] on sub-frame level, so we are not guessing from
