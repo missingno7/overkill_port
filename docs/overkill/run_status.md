@@ -63,6 +63,36 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-13 — FRONT-END: ROOT CAUSE SETTLED DEFINITIVELY — the boot intro is CGA mode 4 because it runs BEFORE the game reads its Tandy video-type
+
+Chased this all the way down (disasm + a definitive per-frame VM capture of `[95BC]` + `video_mode` +
+both framebuffer decodes).  The conclusion, with no ambiguity left:
+
+- **The blueprint intro is displayed in CGA mode 4 (4-colour, 2bpp).**  During the intro (present-frames
+  ~447..733): `video_mode == 4`, `CS:[95BC] == 0` (the game's video-type flag: 1=CGA, 2=Tandy), and the
+  B800 aperture decodes COHERENTLY as CGA-4 (nz climbs 14.5k->16.6k with the reveal) while the Tandy
+  4bpp decode stays garbled -- i.e. the data is genuinely 2bpp.  The "Tandy garble" all session was a
+  bit-depth mismatch, nothing more.
+- **Why `[95BC]==0` during the intro:** `[95BC]` is written EXACTLY ONCE, at `CS:9600`, which reads the
+  video type from the COMMAND-LINE TAIL (`PSP:0x82`).  The cold demo's tail is `\r\x02A` -> byte `0x02`
+  -> `[95BC]=2` (Tandy).  But that routine runs AFTER the intro (the intro shows `[95BC]==0`, the attract
+  at D007 shows `[95BC]==2`, mode 9).  **So the game draws the boot intro BEFORE it reads its video type
+  and switches to Tandy.**  The intro is CGA mode 4 by the game's own sequencing; the Tandy 16-colour
+  regime (mode 9) is the ATTRACT/gameplay, after the intro.
+- **The Tandy video array (0x3DE) is a RED HERRING for this:** the one 0x3DE write (CS:5118, index 2)
+  sets the BORDER colour only -- the parallel EGA path (0x3C0, index 0x11) also just sets the border.
+  There is no video-array palette/mode load.  So emulating 0x3DE would fix the border and NOTHING ELSE;
+  it is NOT the fix.  (It is still a real dos_re gap, but low-value.)
+
+**So the actual bug in play_native's intro:** it renders the intro via `compose_blueprint` -- a mode-9,
+16-colour BLUEBITS compose -- but the real boot intro is a CGA MODE-4 (4-colour) screen.  Wrong video
+mode.  The fix path: render the intro as its own CGA mode-4 sequence (the un-squeeze image, then the
+progressive grid/ship reveal) in 4 colours, decoded/proved with the CGA-4 decoder (`decode_cga4` in
+`scripts/capture_intro_frames.py`), NOT the mode-9 compose.  OPEN for the owner to confirm: this data
+says the intro is 4-colour CGA (the 16-colour expectation matches the attract/gameplay); if the real
+Tandy shows the intro in 16 colours, that would mean the game sets its video type earlier on real
+hardware than the recorded demo does -- worth a `play.py --video tandy` check.
+
 ## 2026-07-13 — FRONT-END: ROOT CAUSE FOUND — the intro is BIOS mode 4 + the Tandy VIDEO ARRAY (port 0x3DE) is UNEMULATED
 
 The single thing that explains ALL the front-end confusion this session (CGA vs Tandy, the garbled
