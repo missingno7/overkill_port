@@ -63,6 +63,27 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-13 — FRONT-END: the REDEFINE-KEYS screen is REAL now (cell render, BYTE-EXACT), not a font overlay
+
+Owner: "Redefine keys menu is another fake thing" + a real demo (`demo_play_tandy_20260713_220651`).
+Grounded it fully:
+- The screen = `REDEF.ENC` (the BEC4 controls page, ship art included) + a "Press key for <action>"
+  prompt CELL per slot.  `553D` looks the cell up in the SAME `CS:[0BE4]` directory / `CS:[95B4]` bank
+  as the attract scene cells and blits via 5A00/5A6C at col 1, row `[22CA]` (0x3F, +0x17 per slot ->
+  the six prompts STACK).  **PROVEN BYTE-EXACT: REDEF.ENC + cell 0x50 == the VM's redefine screen,
+  diff 0/64000.**  `native_video.front_end.compose_redefine_screen` renders it; the fake pygame-font
+  `_draw_menu_text_overlay` is DELETED.  Keys ignore Esc/F9/F10 exactly as 5797 (no cancel),
+  `[2148]=[2140]` per 5788.  sha-locked in `test_native_menu`.
+- The demo also exposed a demo-replay gap: 5797's press (`57AB`) + release (`57E0`) busy-waits were
+  not recognized input-wait boundaries, so replay TIMED OUT in the redefine screen.  Added
+  `input_waits.redefine_key_wait` (detector + single-event pump); the demo now replays BYTE-EXACT
+  through the native runtime (`test_demo_replay_equivalence`, previously failing).  Demo committed as
+  the corpus oracle.  Suite 1414.
+
+The cell-lookup pattern (`553D` = attract's cell blit) means the front-end's TEXT is mostly
+pre-rendered CELLS, not a live font -- the same mechanism likely renders the CE97 menu labels; a lead
+for the CC4F blueprint/showcase decode.
+
 ## 2026-07-13 — FRONT-END: high-scores beat wired into the attract (BYTE-EXACT); blueprint measured at 97%
 
 Owner: "menu intro flow is still not wired into native."  The cold-boot flow WAS partially wired
