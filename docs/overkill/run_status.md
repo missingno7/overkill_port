@@ -107,6 +107,18 @@ seeded from a captured cold-boot snapshot of the fully-pre-rendered work buffer.
 `_run_blueprint_intro`; this pass grounded the mechanism and ruled out two wrong candidates, both
 required before any lift.
 
+**Addendum, same pass: the cold-boot typed screen and the attract-cycle `compose_blueprint` are
+DISTINCT end states, not the same content at two paces.**  Checked directly
+(`scripts/check_charwrite_final_matches_blueprint.py`): the char-writer's reveal plateaus at `nz=15240`
+by `f570` (identical at `f571`, i.e. genuinely finished, not still climbing) and the menu-transition
+burst (`5A24`/`CCC4` x27/frame) starts at `f572` -- but `compose_blueprint` (grid + all 15 recipe cells)
+is `nz=22368`, and the two frames differ in **8270/64000 pixels**.  Rendered `f570` (see
+`artifacts/intro_frame_dump/f0570_segB800.png`) shows the grid + ID text + all FOUR paragraph lines with
+**no ship-schematic art** -- the cold-boot intro shows a TEXT-ONLY blueprint variant; the ship line-art
+cells are attract-cycle-only content, drawn through the already-verified 5A24/CE5F cell-recipe path, not
+part of this reveal.  So the native reveal target is this smaller, text-only end state (its own oracle,
+capturable directly at f570), not a partial draw of `compose_blueprint`.
+
 ## 2026-07-13 — FRONT-END: the COLD-BOOT INTRO grounded -- a TITLE-SPLASH screen + a CHAR-WRITING blueprint (owner)
 
 Owner: the blueprint "is not static... text writing animation with sound", and there is "one missing
