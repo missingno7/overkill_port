@@ -918,7 +918,9 @@ class AdlibMusicSink:
         try:
             import numpy as np
             from overkill.native_audio.adlib import AdlibDriver
-            from pynuked_opl3 import OPL3
+            from dos_re.audio_sink import load_opl3
+
+            OPL3, _opl_label = load_opl3()  # C accelerator when built, else the pure-Python core
         except Exception as exc:  # noqa: BLE001
             print(f"(music disabled: {type(exc).__name__}: {exc})")
             return

@@ -76,8 +76,9 @@ def capture_opl_writes(demo_name: str, max_frames: int) -> "list[list[tuple[int,
 
 def render_wav(writes, out_path: Path, rate: int, fps: int) -> float:
     """Synthesize the per-frame OPL writes through Nuked-OPL3 into a stereo WAV; return seconds."""
-    from pynuked_opl3 import OPL3
+    from dos_re.audio_sink import load_opl3
 
+    OPL3, _label = load_opl3()  # offline render: either backend, byte-identical output
     opl = OPL3(sample_rate=rate)
     n = rate // fps
     pcm = bytearray()

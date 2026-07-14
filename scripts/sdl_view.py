@@ -281,19 +281,13 @@ class NukedAdlibAudio:
         self._rate = int(init[0])
         self._channels = int(init[2])
         self._chunk_frames = max(512, int(round(self._rate * max(10.0, float(chunk_ms)) / 1000.0)))
-        try:
-            from pynuked_opl3 import OPL3  # type: ignore
+        from dos_re.audio_sink import load_opl3  # C accelerator when built, else the canonical pure-Python core
 
-            self._chip = OPL3(sample_rate=self._rate)
-        except Exception as exc:  # noqa: BLE001 - optional extension/import failure
-            self._report(
-                "AdLib register stream active, but pynuked_opl3 is not built/importable: "
-                f"{type(exc).__name__}: {exc}"
-            )
-            return
+        opl_cls, label = load_opl3()
+        self._chip = opl_cls(sample_rate=self._rate)
         self._available = True
         self._channel = pygame.mixer.Channel(1)
-        self._report("AdLib audio: pynuked_opl3 (Nuked-OPL3) backend active")
+        self._report(f"AdLib audio: Nuked-OPL3 backend active ({label})")
 
     def write(self, reg: int, value: int) -> None:
         if not self._available or self._chip is None:
