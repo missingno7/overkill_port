@@ -242,8 +242,9 @@ class PcSpeakerAudio:
 
 
 class NukedAdlibAudio:
-    """SDL streaming wrapper around the optional ``pynuked_opl3`` package
-    (a submodule of dos_re, not vendored directly in this repo).
+    """SDL streaming wrapper around ``dos_re.audio_sink.load_opl3``'s OPL3 backend: the vendored
+    ``pynuked_opl3`` cffi build (bit-exact) when compiled, else ``dos_re.opl3_fast`` (numpy
+    approximate, no build step needed -- the everyday default).
 
     The VM already runs OVERKILL's original AdLib driver and forwards completed
     YM3812 register writes.  This class only turns that register stream into PCM.
@@ -281,13 +282,14 @@ class NukedAdlibAudio:
         self._rate = int(init[0])
         self._channels = int(init[2])
         self._chunk_frames = max(512, int(round(self._rate * max(10.0, float(chunk_ms)) / 1000.0)))
-        from dos_re.audio_sink import load_opl3  # C accelerator when built, else the canonical pure-Python core
+        from dos_re.audio_sink import load_opl3  # nuked-opl3-c when built, else opl3-fast (no build needed)
 
         opl_cls, label = load_opl3()
         self._chip = opl_cls(sample_rate=self._rate)
         self._available = True
         self._channel = pygame.mixer.Channel(1)
-        self._report(f"AdLib audio: Nuked-OPL3 backend active ({label})")
+        self._opl_label = label
+        self._report(f"AdLib audio: {label} backend active")
 
     def write(self, reg: int, value: int) -> None:
         if not self._available or self._chip is None:
@@ -321,7 +323,7 @@ class NukedAdlibAudio:
             return
         self._last_status_underruns = self._underruns
         self._report(
-            f"AdLib audio: pynuked_opl3 (Nuked-OPL3) backend active, underruns={self._underruns}, "
+            f"AdLib audio: {self._opl_label} backend active, underruns={self._underruns}, "
             f"chunk={self._chunk_frames * 1000.0 / max(1, self._rate):.0f}ms"
         )
 

@@ -3,9 +3,10 @@
 The game drives an AdLib/YM3812 music+SFX driver (the loaded module at segment 2032, register writes
 through ports 388h/389h).  dos_re intercepts those port writes and exposes them via
 ``dos.set_adlib_callback``; this tool replays a demo through the reference VM, captures the per-frame
-OPL register stream, and synthesizes it through dos_re's Nuked-OPL3 backend (``pynuked_opl3``) into a
-stereo WAV -- the same register stream + synth path the live viewer's ``AdlibSpeakerSink`` uses, just
-rendered offline so it can be inspected / attached.
+OPL register stream, and synthesizes it through dos_re's OPL3 backend (``dos_re.audio_sink.load_opl3``:
+the vendored ``pynuked_opl3`` cffi build when compiled, else ``dos_re.opl3_fast`` -- a numpy approximate
+synth, no build step needed, the everyday default) into a stereo WAV -- the same register stream + synth
+path the live viewer's ``AdlibSpeakerSink`` uses, just rendered offline so it can be inspected / attached.
 
 This is the AUDIO oracle: it produces the byte-faithful reference music for a demo, which the live
 play_native sound path is verified against.  (play_native's own live music runs the driver over its
@@ -75,10 +76,13 @@ def capture_opl_writes(demo_name: str, max_frames: int) -> "list[list[tuple[int,
 
 
 def render_wav(writes, out_path: Path, rate: int, fps: int) -> float:
-    """Synthesize the per-frame OPL writes through Nuked-OPL3 into a stereo WAV; return seconds."""
+    """Synthesize the per-frame OPL writes into a stereo WAV; return seconds."""
     from dos_re.audio_sink import load_opl3
 
-    OPL3, _label = load_opl3()  # offline render: either backend, byte-identical output
+    # nuked-opl3-c (bit-exact) when the vendored cffi build is compiled, else opl3-fast (numpy
+    # approximate, no build required, perceptually indistinguishable in blind A/B -- see
+    # dos_re.opl3_fast's module docstring) -- NOT byte-identical between the two backends.
+    OPL3, _label = load_opl3()
     opl = OPL3(sample_rate=rate)
     n = rate // fps
     pcm = bytearray()

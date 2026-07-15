@@ -303,7 +303,8 @@ def main(argv: list[str] | None = None) -> int:
     viewer.add_argument("--scale", type=int, default=2,
                         help="SDL viewer pixel scale")
     viewer.add_argument("--adlib-audio", choices=("auto", "off"), default="auto",
-                        help="when --sound adlib is active, stream OPL writes through optional pynuked_opl3")
+                        help="when --sound adlib is active, stream OPL writes through dos_re's OPL3 "
+                             "backend (opl3-fast by default, no build needed)")
     viewer.add_argument("--adlib-chunk-ms", type=float, default=46.0,
                         help="SDL AdLib PCM chunk size in milliseconds")
     viewer.add_argument("--save-snapshot-root", default=str(ROOT / "artifacts"),

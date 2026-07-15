@@ -8,18 +8,26 @@ Third-party code lives outside both first-party role packages:
 - `pynuked_opl3` is optional third-party audio synthesis support -- `dos_re`'s
   own submodule (`dos_re/pynuked_opl3/`), not vendored here at all.
 
-## `pynuked_opl3`
+## OPL3 synthesis: `dos_re.audio_sink.load_opl3()`
 
-`pynuked_opl3` is a CFFI binding around the Nuked-OPL3 Yamaha OPL2/OPL3
-emulator.  It is used only by the SDL viewer to turn the YM3812 register stream
-emitted by OVERKILL's original AdLib driver into audible PCM.
+Every audio-producing call site (the SDL viewer, `play_native`'s native music sink,
+`scripts/render_demo_music.py`) gets its OPL3 backend through this ONE function --
+never import `pynuked_opl3` or `dos_re.opl3_fast` directly. It picks between two backends,
+same choice on every interpreter:
 
-The VM and the game logic do not depend on the compiled extension.  Without it,
-`--sound adlib` still runs the original driver, models AdLib detection, records
-and forwards register writes, and remains deterministic; only audible FM output
-is unavailable.
+- **`opl3-fast`** (`dos_re.opl3_fast`) -- a numpy approximate synth, ~50x real-time on
+  CPython. **No build step; this is the everyday default.** Perceptually indistinguishable
+  from the exact chip on real game music in blind A/B (calibration + evidence in its module
+  docstring/tests).
+- **`nuked-opl3-c`** (`pynuked_opl3`) -- a CFFI binding around the Nuked-OPL3 Yamaha
+  OPL2/OPL3 emulator, bit-exact, native speed. Only used when its extension happens to be
+  compiled; this is what shipped releases bundle.
 
-Build the extension in place when audio synthesis is desired:
+The VM and the game logic do not depend on either backend being built: `--sound adlib`
+always runs the original driver, models AdLib detection, records and forwards register
+writes, and remains deterministic -- audible FM output works out of the box via opl3-fast.
+
+Build the `pynuked_opl3` extension only if you specifically want bit-exact synthesis:
 
 ```bash
 python -m pip install -e dos_re/  # makes both dos_re and pynuked_opl3 importable

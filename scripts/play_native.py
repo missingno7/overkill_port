@@ -907,9 +907,11 @@ def _music_page_for(img) -> int:
 class AdlibMusicSink:
     """Live OPL3 MUSIC from the recovered VM-free AdLib driver.  Each present-frame it ticks the
     segment-2032 ``AdlibDriver`` (``ticks_per_frame`` = the timer-ISR ticks the driver runs per frame)
-    and synthesizes the emitted YM3812 register stream through Nuked-OPL3 into a pygame mixer channel --
-    the native counterpart of dos_re's ``AdlibSpeakerSink``, driven by the port's own driver, no VM.
-    Silently no-ops if the mixer or ``pynuked_opl3`` is unavailable (audio never breaks gameplay)."""
+    and synthesizes the emitted YM3812 register stream through ``dos_re.audio_sink.load_opl3``'s
+    backend (opl3-fast by default -- no build step needed; nuked-opl3-c when the vendored cffi build
+    is compiled) into a pygame mixer channel -- the native counterpart of dos_re's ``AdlibSpeakerSink``,
+    driven by the port's own driver, no VM.  Silently no-ops if the mixer is unavailable (audio never
+    breaks gameplay)."""
 
     def __init__(self, pygame, seg2032_image, *, present_hz: int, ticks_per_frame: int = 2) -> None:
         self._pygame = pygame
@@ -920,7 +922,10 @@ class AdlibMusicSink:
             from overkill.native_audio.adlib import AdlibDriver
             from dos_re.audio_sink import load_opl3
 
-            OPL3, _opl_label = load_opl3()  # C accelerator when built, else the pure-Python core
+            # nuked-opl3-c (bit-exact) when the vendored cffi build is compiled, else opl3-fast
+            # (dos_re.opl3_fast: numpy approximate synth, ~50x real-time, NO build step needed --
+            # the everyday default; perceptually indistinguishable from the exact chip in blind A/B).
+            OPL3, _opl_label = load_opl3()
         except Exception as exc:  # noqa: BLE001
             print(f"(music disabled: {type(exc).__name__}: {exc})")
             return
