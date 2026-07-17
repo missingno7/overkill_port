@@ -63,6 +63,35 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-17e — GAMEPLAY runtime closure measured (228/250) + the lift is now ORACLE-VALIDATED (not just structural)
+
+Shifted from "how many functions emit" to the manifest's REAL M3 metric + the authoritative gate.
+No dos_re change this pass (ran its tools); full write-up in
+[`vmless_cpuless_assessment.md`](vmless_cpuless_assessment.md).
+
+- **Runtime closure = the real M3 metric.** `cpuless_closure.py` from the gameplay root `1010:97B2`:
+  **250 reachable, 228 promoted, a 22-fn frontier** gated on ~6 real root gaps (tail-dispatch x3
+  `4E26/580B/CC4F`, sp-as-data `0111`, SMC `0248`, vectored-int `C85B`). KEY: most tail-dispatch fns
+  (CC7F/CD68 presenter, 5827 EGA, etc.) are NOT on the gameplay path -- the remaining gameplay work is
+  far smaller than the whole-census 451/512 implied. Wired as stage 4 of `probe_vmless_cpuless.py`.
+- **ORACLE VALIDATION (liftverify, the M2 byte-exact gate) -- first CORRECTNESS check, not structural.**
+  A slice of hot gameplay fns (0162 input poll, 5A00 coord helper, 0672/073C/511F/5160) verified
+  **BYTE-EXACT vs the interpreted oracle** -- the automatic lift is provably correct on overkill's real
+  running code. It also caught **1010:0679 DIVERGED** = the gameplay frame TIMER WAIT (`cmp cs:[066B],0;
+  jz 0679; ret`), a timing-dependent spin a plain lift can't freeze. Not a bug -- the manifest's env-wait
+  frontier, matching overkill's own input_waits.py.
+- **Env-wait recovery fact:** `artifacts/lift_keep_interpreted.txt` (0679 + 50C9 retrace), threaded
+  through irgen as platform_effect=env_wait; the runtime installer keeps them interpreted until modelled
+  as scheduler-yield boundaries.
+
+**The TAIL-DISPATCH gap, now understood precisely:** the 3 gameplay ones (4E26/580B/CC4F) are
+INTRA-FUNCTION jump tables (`push <param>; jmp cs:[table+mode*2]` -> landing blocks inside the SAME
+function that pop the param), which the depth walk refuses as depth-0 tail exits. Fix = teach the
+depth/CFG passes to follow known intra-function dispatch landings at the current depth (evidence-gated).
+NEXT: that capability (3 gameplay fns), then the specialized 0111/0248/C85B, then stand up the standalone
+`acceptance_cpuless` demo-oracle gate (the liftverify slice is the M2 down-payment). Shipped runtime
+untouched; no generated output hand-edited.
+
 ## 2026-07-17d — DAA opcode lifted: VMless wall RESTORED + CPUless 438->451; 3rd dos_re capability
 
 Smallest next win from the work-list, done. dos_re `ca50aee`: **DAA (opcode 0x27)** now lifts to both
