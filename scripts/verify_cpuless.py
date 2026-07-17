@@ -132,8 +132,124 @@ def verify_one(base: bytes, cs: int, ip: int, ss: int, sp0: int, adapter, trials
     return "PASS", f"{trials} trials byte-exact"
 
 
+def _plat_free(f, fns, seen=None) -> bool:
+    """True if this fn AND its transitive near/far callees use no INT/port (so a
+    fresh CPU with no DOS layer runs the adapter faithfully)."""
+    if seen is None:
+        seen = set()
+    a = f
+    if a in seen:
+        return True
+    seen.add(a)
+    rec = fns.get(a)
+    if rec is None:
+        return True                # not in IR: an external boundary, treated as leaf
+    if rec.get("ints"):
+        return False
+    for blk in rec.get("blocks", ()):
+        for i in blk["instructions"]:
+            if i.get("op") in (0xE4, 0xE5, 0xE6, 0xE7, 0xEC, 0xED, 0xEE, 0xEF):
+                return False        # port I/O
+    cs = a.split(":")[0]
+    for t in rec.get("calls_near", ()):
+        if not _plat_free(f"{cs}:{t}", fns, seen):
+            return False
+    for s, o in rec.get("calls_far", ()):
+        if not _plat_free(f"{s}:{o}", fns, seen):
+            return False
+    return True
+
+
+def verify_demo(demo_name: str, adapter_pkg: str, fns: dict, want: "set[str]", limit: int):
+    """DEMO-DRIVEN differential: validate each promoted fn from its REAL execution
+    state (the manifest's demo differential).  Replays the demo through the ref VM;
+    at each fn's first entry captures (mem, regs), lets the ref run the fn to its
+    return (= the oracle result), runs the adapter from the same pre-state, and
+    diffs.  Real states run the real path -- no random wandering, so INCONCLUSIVE
+    collapses and the coverage is the actual gameplay code."""
+    import importlib
+    from overkill.probes._harness import load_demo, run_ref_step_probe, run_ref_step_probe_cold_start
+    from dos_re.x86 import UnsupportedInstruction
+    demo = load_demo(demo_name, demo_name)
+    entries = {(int(a.split(":")[0], 16), int(a.split(":")[1], 16)) for a in want}
+    results: dict = {}
+
+    def _adapter_for(cs, ip):
+        stem = f"lifted_{cs:04x}_{ip:04x}"
+        try:
+            return getattr(importlib.import_module(f"{adapter_pkg}.{stem}"), stem)
+        except Exception:  # noqa: BLE001
+            return None
+
+    def on_ref(cpu):
+        cs, ip = cpu.s.cs & 0xFFFF, cpu.s.ip & 0xFFFF
+        key = f"{cs:04X}:{ip:04X}"
+        if (cs, ip) not in entries or key in results or len(results) >= limit:
+            return
+        adapter = _adapter_for(cs, ip)
+        if adapter is None:
+            results[key] = ("SKIP", "no adapter")
+            return
+        # capture the REAL pre-state (mem + regs); the fn is plat-free, so a fresh
+        # interpreter clone runs its real path to the real return with no DOS layer.
+        pre_mem = bytes(cpu.mem.data)
+        regs = {r: getattr(cpu.s, r) & 0xFFFF for r in
+                ("ax", "bx", "cx", "dx", "si", "di", "bp", "sp", "cs", "ds", "es", "ss", "ip")}
+        regs["flags"] = cpu.s.flags
+        ret, esp = cpu.mem.rw(cpu.s.ss & 0xFFFF, cpu.s.sp & 0xFFFF), cpu.s.sp & 0xFFFF
+        ic = _make_cpu(pre_mem, regs)
+        try:
+            for _ in range(500000):
+                if (ic.s.cs & 0xFFFF) == cs and (ic.s.ip & 0xFFFF) == ret \
+                        and ((ic.s.sp - esp) & 0xFFFF) in (2, 4, 6, 8):
+                    break
+                ic.step()
+            else:
+                results[key] = ("INCONCLUSIVE", "interp did not return in budget")
+                return
+        except (UnsupportedInstruction, Exception):  # noqa: BLE001
+            results[key] = ("INCONCLUSIVE", "interp faulted")
+            return
+        ac = _make_cpu(pre_mem, regs)
+        try:
+            adapter(ac)
+        except Exception as exc:  # noqa: BLE001
+            results[key] = ("DIVERGED", f"adapter raised {type(exc).__name__}: {str(exc)[:60]}")
+            return
+        diffs = _cmp_states(_snap(ic), pre_mem, ac)
+        results[key] = ("PASS", "byte-exact @ real state") if not diffs \
+            else ("DIVERGED", "; ".join(diffs[:5]))
+
+    trap = frozenset((0x1010, ip) for cs, ip in entries if cs == 0x1010)
+    if demo.is_cold_start:
+        run_ref_step_probe_cold_start(demo, None, on_ref, trap=trap)
+    else:
+        run_ref_step_probe(demo, demo.end_boundary + 5, on_ref, trap=trap)
+    return results
+
+
+def _snap(cpu):
+    return {r: getattr(cpu.s, r) & 0xFFFF for r in _W + ("ip",)}, bytes(cpu.mem.data)
+
+
+def _cmp_states(interp, pre_mem, adapter_cpu) -> "list[str]":
+    iregs, imem = interp
+    diffs = []
+    for r in _W + ("ip",):
+        if iregs[r] != (getattr(adapter_cpu.s, r) & 0xFFFF):
+            diffs.append(f"{r}: interp={iregs[r]:04X} adapter={getattr(adapter_cpu.s, r) & 0xFFFF:04X}")
+    if imem != bytes(adapter_cpu.mem.data):
+        for i in range(len(imem)):
+            if imem[i] != adapter_cpu.mem.data[i]:
+                diffs.append(f"mem[{i:06X}]: interp={imem[i]:02X} adapter={adapter_cpu.mem.data[i]:02X}")
+                if sum(1 for d in diffs if d.startswith("mem")) >= 4:
+                    break
+    return diffs
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--demo", default="", help="run the DEMO-DRIVEN differential over this demo (real states)")
     ap.add_argument("--snapshot",
                     default=str(ROOT / "artifacts" / "demos" / "demo_play_tandy_L1_start_20260618_143947" / "snapshot"))
     ap.add_argument("--ir", default=str(ROOT / "artifacts" / "recovery_ir_closed.json"))
@@ -145,18 +261,35 @@ def main(argv=None) -> int:
 
     ir = json.loads(Path(args.ir).read_text())
     fns = ir["functions"]
-    rt = load_overkill_snapshot(ROOT / "assets" / "OVERKILL", args.snapshot, game_root=ROOT / "assets")
-    base = bytes(rt.cpu.mem.data)
-    ss, sp0 = rt.cpu.s.ss & 0xFFFF, 0x7F00
 
     if args.entries.startswith("@"):
         want = [ln.strip() for ln in Path(args.entries[1:]).read_text().splitlines() if ln.strip()]
     elif args.entries:
         want = args.entries.split(",")
-    else:  # all near-ret, no-int, no dynamic transfer, 1010 segment (differential-eligible)
+    else:  # near-ret, plat-free (no int/port in the fn or its callees), 1010 segment
         want = [a for a, f in fns.items()
-                if f.get("liftable") and f.get("exits") == ["ret"] and not f.get("ints")
-                and not _has_dynamic(f) and a.startswith("1010:")]
+                if f.get("liftable") and f.get("exits") == ["ret"]
+                and _plat_free(a, fns) and a.startswith("1010:")]
+
+    # DEMO-DRIVEN mode: validate from real execution states (no random wandering).
+    if args.demo:
+        results = verify_demo(args.demo, args.adapter_pkg, fns, set(want), args.limit)
+        tally = {"PASS": 0, "DIVERGED": 0, "INCONCLUSIVE": 0, "SKIP": 0}
+        diverged = []
+        for key, (verdict, detail) in sorted(results.items()):
+            tally[verdict] = tally.get(verdict, 0) + 1
+            print(f"  {verdict:12s} {key}  {detail}")
+            if verdict == "DIVERGED":
+                diverged.append(key)
+        print(f"\n{tally['PASS']} PASS, {tally['DIVERGED']} DIVERGED, {tally.get('INCONCLUSIVE',0)} INCONCLUSIVE, "
+              f"{tally.get('SKIP',0)} skipped  (demo-driven, real states)")
+        if diverged:
+            print("DIVERGED:", " ".join(diverged))
+        return 1 if diverged else 0
+
+    rt = load_overkill_snapshot(ROOT / "assets" / "OVERKILL", args.snapshot, game_root=ROOT / "assets")
+    base = bytes(rt.cpu.mem.data)
+    ss, sp0 = rt.cpu.s.ss & 0xFFFF, 0x7F00
     want = want[:args.limit]
 
     tally = {"PASS": 0, "DIVERGED": 0, "INCONCLUSIVE": 0, "SKIP": 0}

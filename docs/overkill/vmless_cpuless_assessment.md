@@ -217,6 +217,18 @@ needed to land the deep tail-dispatch/sp-as-data capabilities *safely*. Build or
 boundary scheduler → dispatch/HANDLERS registries + per-site dyn-evidence → replay the demo standalone
 vs the oracle, masked byte-exact per boundary. Then the deep gaps land with a real gate under them.
 
+**DEMO-DRIVEN differential caught a real codegen bug in the object walk (2026-07-17i).**
+`scripts/verify_cpuless.py --demo` validates each fn from its REAL execution state (replays the demo,
+captures each fn's live pre-state, diffs the adapter vs the ref VM's actual run) — no random wandering,
+so it exercises the dynamic-dispatch fns the random mode filtered out. It immediately caught **13
+object-walk/behavior dispatchers** (`A940` & callees) raising `NameError: name 'cs' is not defined`:
+the dispatch-SELECTOR read `mov reg, cs:[bx+disp]` bypasses the ABI input pass, so `cs` was neither
+param nor local. **Fixed upstream (dos_re `300c24d`):** CS is the function's fixed code segment — a
+compile-time constant, never a runtime input; `register_effects` never adds it, `emit_recovered` always
+materialises `cs = 0x<seg>` as a local. **After: 58 PASS / 0 DIVERGED byte-exact from real states.** A
+silent correctness bug that "555 promotable" hid — exactly what the function differential is for. The
+demo-driven differential is now the primary correctness gate (candidate to generalize into dos_re).
+
 **The CPUless HARD WALL + the correctness gate + graph completion (2026-07-17g).**
 - **CPUless recovered-purity wall INSTALLED + HOLDS** (`dos_re/tools/lint_cpuless.py`, wired as probe
   stage 5): a static AST proof that **every** recovered module imports nothing but sibling recovered
