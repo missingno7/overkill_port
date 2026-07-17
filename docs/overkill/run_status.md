@@ -63,6 +63,31 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-18a — NEW CAMPAIGN: CPUless app unification (mirror lemmings_port) + corpus committed as runtime source
+
+Owner set the real goal: **play_native should be the ENTIRE game, CPUless** — boot → menu → level →
+gameplay → ending, no CPU carrier at runtime — by FILLING play_native's front-end GAPs with the lifted
+CPUless methods (hand-recovered gameplay becomes a native OVERRIDE; the generated corpus is the default
+for everything else). Follow `D:\Games\DOS\dos_recosystem\lemmings_port` (already at full-CPUless).
+Full blueprint + ordered slices: [`campaigns/cpuless_app.md`](campaigns/cpuless_app.md) — THE active campaign.
+
+**Critical-path finding:** the front-end/menu closure `1010:CC04` is 23/27 already CPUless and needs
+only a VIDEO shim (INT 10h + ports); its ONLY blockers are `CC04`'s cascade on the three tail-dispatch
+fns `CC4F/CCC4/CDA7`. So the **tail-dispatch capability is the exact unblock for a native menu**. Boot
+bootstrap `254A:04D7` = 2 fns (INT 21h); `level_select D390` = 70/77 (needs DOS file-I/O).
+
+**Mechanism (from lemmings, verified by reading the reference):** recovered fns are pure
+`func(mem, plat, *regs)` and run over play_native's `MutFlatMemory` UNMODIFIED (rb/rw/ww/wb matches).
+Native overrides drop in at the same identity via `sys.modules` aliasing (`native/loader.py`) before the
+recovered root imports. A hard import guard forbids the CPU carrier/adapters at runtime. The runner boots
+from a data-only boot image (state.json+memory_1mb.bin), EXE-free.
+
+**Slice 1 DONE (this pass):** `overkill/cpuless_recovered/` un-ignored and COMMITTED as runtime source
+(561 promoted fns + support; adapters stay gitignored) + README pinning the contract + the campaign doc.
+Corpus regenerated fresh: VMless wall HOLDS, CPUless recovered-purity wall HOLDS, 561/626. No imported
+code changed. **next: slice 2 — the runner skeleton (`scripts/play_cpuless.py` + import guard +
+`_load_recovered` + boot-image builder) proving a tiny root runs standalone byte-exact vs the VM.**
+
 ## 2026-07-17m — register-indirect target resolver PROMOTED into dos_re proper (shared, interpreter-cross-checked)
 
 The near-indirect target resolver (turn a trapped `jmp/call [ea]` or register-indirect `call ax` into
