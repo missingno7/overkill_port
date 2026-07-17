@@ -39,6 +39,18 @@ CPUless **561/626** · recovered-purity wall **HOLDS**. **View B:** 561 auto-cpu
 28 blocked-shape (capability queue: tail-dispatch 16, boundary-head 10, sp-as-data 2) · 4 likely-data;
 429/626 reachable from the runtime roots (197 unobserved, not dead).
 
+### Register-indirect resolution promoted into dos_re proper (2026-07-17l)
+
+The near-indirect target resolver — the interpreter-faithful EA computation that turns a trapped
+`jmp/call [ea]` **or** register-indirect `call ax` into its concrete `CS:IP` target — now lives in
+`dos_re/dos_re/lift/dispatch.py` (`resolve_near_indirect_target(state, mem, inst)`), a PURE function
+(no CPU-state mutation, unlike `decode_ea` which fetches the displacement). It is the single source
+of truth every port's dispatch-capture probe shares; `scripts/capture_indirect_sites.py` now imports
+it instead of a private copy. Covered by `dos_re/tests/test_lift_dispatch.py` — 7 tests that
+CROSS-CHECK the resolver against the interpreter (`step()` and require the predicted target to equal
+where the CPU lands) across register-indirect, `[disp16]`, `[bx+table]`, BP→SS-default, and
+seg-override forms. This is the reusable half of the "capture↔close fixpoint" graph-completeness work.
+
 ### The memoryless-bridge metadata (step 6 prep, 2026-07-17l)
 
 View B now carries, for **every** discovered function, the machine-readable ABI record the

@@ -63,6 +63,24 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-17m — register-indirect target resolver PROMOTED into dos_re proper (shared, interpreter-cross-checked)
+
+The near-indirect target resolver (turn a trapped `jmp/call [ea]` or register-indirect `call ax` into
+its concrete `CS:IP`) now lives in **`dos_re/dos_re/lift/dispatch.py`** —
+`resolve_near_indirect_target(state, mem, inst)`, a PURE function (no CPU-state mutation, unlike
+`decode_ea` which fetches the disp). It is the single source of truth every port's dispatch-capture
+probe shares; `scripts/capture_indirect_sites.py` now imports it and its private copy is deleted. This
+is the reusable half of the capture↔close graph-completeness work the owner flagged as "exactly the
+kind of generic improvement we want in dos_re."
+
+- **dos_re test** `tests/test_lift_dispatch.py` (7): CROSS-CHECKS the resolver against the interpreter
+  — predict the target, `step()`, require equality — across register-indirect, `[disp16]`,
+  `[bx+table]` (the video-mode jump-table idiom), BP→SS-default, seg-override, and no-ModRM forms.
+- **Equivalence proven**: regenerated `indirect_sites.json` (both demos through the ref VM) is
+  BYTE-IDENTICAL to the pre-refactor evidence — a pure refactor, zero behavioral change.
+- Gates: dos_re suite green (683 passed), overkill suite unchanged, both walls HOLD. dos_re commit
+  pushed to dos_re main.
+
 ## 2026-07-17l — MEMORYLESS-BRIDGE METADATA on view B (all 626 fns) + tail-dispatch design spec
 
 Step-6 prep + step-4 scoping (per the endgame sequence in
