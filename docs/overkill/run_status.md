@@ -63,6 +63,30 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-17h — dos_re capability: INT 13h disk-int = fail-loud platform effect (C85B promotes); frame-loop needs 3 gaps
+
+Owner: "next best steps towards full cpuless, improving dos_re lifting ability along the way." Landed a
+clean generic capability + mapped exactly what the frame loop needs.
+
+- **dos_re `489188a`: INT 13h (disk BIOS) is now a PLATFORM effect, not a `vectored-int-call` refusal.**
+  A function whose disk int sits on a dead/guarded path (copy protection, absent-media save) promotes on
+  its live paths; `plat.intr(0x13)` fails loud if ever reached -- exactly what the interpreter does (it
+  can't run 0x13 either, so any path reaching it already crashes the oracle). Generic (all disk-using DOS
+  games inherit it); +1 test; dos_re suite 650 green. On overkill: **C85B promotes; gameplay closure
+  228 -> 229, frontier 22 -> 21**; wall HOLDS; differential 0 DIVERGED (no regression).
+- **GAMEPLAY-FRONTIER LEVERAGE ANALYSIS** (per-fn dependency; a `contains-call` fn unblocks only when ALL
+  its real-gap deps clear): **9B2E (-> the frame loop, via 4DBF level-reinit -> the file/disk I/O cluster)
+  needs ALL THREE of SMC 0248 + tail-dispatch + vectored-int C85B**; the 7-fn 0Bxx/0Cxx/C679/D390 I/O
+  cluster needs 0248 + C85B. No single fix opens the frame loop -- C85B (done) is one of three.
+
+**Remaining for the frame loop (9B2E):** (1) SMC `0248` -- a stale-snapshot decode-ALIGNMENT issue
+(the snapshot bytes decode to different lengths than the interpreter executes; overkill-specific, needs a
+pre-patch code-authority snapshot or a hand-hook, NOT a generic capability); (2) the TAIL-DISPATCH
+depth-walk capability (intra-function jump tables: `push param; jmp cs:[table]` -> in-scan landings that
+pop the param; `_check_stack_depths` must follow them at the jmp's depth d, not refuse -- the generic
+capability, now gateable by verify_cpuless); (3) the `97B2` boundary-head (waits on 9B2E). NEXT: the
+tail-dispatch capability (generic, validatable) and/or the 0248 snapshot fix. Shipped runtime untouched.
+
 ## 2026-07-17g — the CPULESS HARD WALL installed (recovered code is provably pure) + correctness differential + graph completed (512->619)
 
 Owner: "make sure it's really fully cpuless, install a hard wall so it never touches cpu when running."
