@@ -63,6 +63,25 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-17d — DAA opcode lifted: VMless wall RESTORED + CPUless 438->451; 3rd dos_re capability
+
+Smallest next win from the work-list, done. dos_re `ca50aee`: **DAA (opcode 0x27)** now lifts to both
+emitters (it was decoded + interpreted but not lifted -- VMless fell back to interp_one = the one wall
+violation; CPUless refused unanalyzed-opcode-27). `CPU8086.daa()` is the single source of truth
+(interpreter calls it, VMless emits `cpu.daa()`); CPUless gets register_effects + the flag-def/flag-read
+tables + an inline flag-exact `_translate`, tested vs the interpreter across ALL 1024 (AL,CF,AF) inputs.
+- **On overkill's closed 512-fn graph: VMless wall HOLDS again; CPUless 438 -> 451; cascade 44 -> 31.**
+- The dos_re bump also carried another port's sp-as-data `mov sp,bp` fix (`7a9a65e`) -- shared-toolchain
+  dividend from keeping dos_re synced (overkill's remaining sp-as-data 0111/065C are a different pattern).
+
+**Running scorecard (VMless / CPUless of 512):** 508 / 451, wall HOLDS. Remaining hard frontier:
+- **§B tail-dispatch (13 fns): nonzero-depth (4E26 580B 5827 AAD3 AED8 CC4F CC7F CD68) + unbalanced-stack
+  (CCAA CCC4 CCF0 CD8D CDAA)** -- video-mode JMP-table dispatchers at nonzero/unbalanced depth. THE DEEPEST
+  gap and NEXT UP; it gates 9B2E -> the frame loop (the 10 boundary-head-on-transfer fns).
+- smaller: sp-as-data (0111/065C), vectored-int-call (C85B), the 4 SMC/LZEXE census entries.
+Then stand up the standalone `acceptance_cpuless` demo-oracle gate = M3 real. Shipped runtime untouched;
+no generated output hand-edited; suites green (dos_re 648, overkill sanity green).
+
 ## 2026-07-17c — CPUless: CENSUS CLOSURE is the dominant lever (204->438 promotable); + 2nd dos_re capability (boundary-head-on-call)
 
 Continued the automatic-lifting push. Two things landed; full write-up +
