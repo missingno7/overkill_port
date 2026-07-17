@@ -81,10 +81,22 @@ the exact unblock for a fully-CPUless native menu.** Boot bootstrap `254A:04D7` 
 8. **Walls green + retire** — static+dynamic no-carrier checks pass on the whole run.
 
 ## next
-- slice 2b: `scripts/play_cpuless.py` (import-guard wall + main loop) + `build_cpuless_boot_image.py`
-  + `overkill/native/loader.py`; boot a tiny root standalone byte-exact vs the VM.
+- **NOTE (scoping correction):** do NOT target the boot bootstrap `254A:04D7` for the first standalone
+  run — it makes 11 INT 21h calls (the full C-runtime startup: version, memory alloc, file setup). That
+  DOS surface is exactly what the data-only boot image BYPASSES (lemmings boots from a post-startup
+  snapshot, not by running the C-startup standalone). The boot image is `make_frontend_snapshot.py`'s
+  post-startup capture (or a new `build_cpuless_boot_image.py`).
+- The visible milestone (boot-image → MENU, standalone) needs BOTH remaining enablers, neither a quick
+  win: (a) the **video platform shim** (INT 10h + video ports on the host framebuffer), and (b) the
+  **tail-dispatch capability** (dos_re) — the CC04 menu closure's only blockers are `CC4F/CCC4/CDA7`.
+  slice 2b-2 = whichever of these is tackled first (they converge on the menu).
+- then: `scripts/play_cpuless.py` main loop over the boot image; `overkill/native/loader.py` (hot-leaf overrides).
 
 ## Status log (newest first)
+- **2026-07-18** slice 2b-1 DONE (f22e9f6): the import WALL — `install_import_guard()` +
+  `scripts/check_cpuless_wall.py` (dynamic subprocess) prove BOTH the manual gameplay layer and the
+  generated corpus run carrier-free; ADR-2 (coarse override seam) recorded. `tests/test_cpuless_wall.py`
+  (4 pass).
 - **2026-07-18** slice 2a DONE (0ded6f3): `overkill/cpuless_host.py` `run_recovered` runs the committed
   corpus over a flat image (frame clock proven); `tests/test_cpuless_host.py` gates completeness +
   composition + fail-loud (5 pass).

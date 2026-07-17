@@ -63,6 +63,29 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-18b — cpuless_app: the host core + the import WALL (CPUless now a PROVEN property)
+
+Continued the cpuless_app campaign (mirror lemmings). Two slices landed:
+- **2a (0ded6f3):** `overkill/cpuless_host.py` — `run_recovered(key, mem, plat)` runs the committed
+  corpus over play_native's own `MutFlatMemory` (rb/rw/ww/wb matches — recovered fns need NO
+  adaptation); `FailLoudPlatform` (honest device model, fails loud never VM-fallback). Gate
+  `tests/test_cpuless_host.py` (5): corpus is a closed importable package, composition, fail-loud.
+- **2b-1 (f22e9f6):** the import WALL — `install_import_guard()` (resolves relative imports before
+  matching, the blind spot lemmings hit) + `scripts/check_cpuless_wall.py` (dynamic subprocess) prove
+  BOTH the manual gameplay layer (`native_frame` imports carrier-free) and the generated corpus
+  (`run_recovered` runs carrier-free) touch no CPU carrier. `tests/test_cpuless_wall.py` (4). **ADR-2:
+  the override seam is COARSE** (gameplay frame = primary seam; fine sys.modules aliasing for hot leaves
+  only; manual = readable replacement, generated kept as differential oracle).
+
+**Key findings:** (1) play_native loads its image with a RAW `MutFlatMemory(read_bytes())` — no VM, no
+`load_overkill_snapshot` — and its only dos_re import is `audio_sink`; so play_native is very likely
+ALREADY a carrier-free CPUless gameplay runtime (proving it by running frames under the wall is the next
+tangible milestone). (2) The boot image already exists: `artifacts/frontend_intro_snapshot/`
+(state.json+memory_1mb.bin, lemmings format). (3) SCOPING FIX: do NOT run the boot bootstrap `254A:04D7`
+standalone — 11 INT 21h calls (C-runtime startup); that DOS surface is exactly what the boot image
+bypasses. **next: prove gameplay EXECUTES carrier-free under the wall (artifact-gated), then the two
+menu enablers — video shim + tail-dispatch.**
+
 ## 2026-07-18a — NEW CAMPAIGN: CPUless app unification (mirror lemmings_port) + corpus committed as runtime source
 
 Owner set the real goal: **play_native should be the ENTIRE game, CPUless** — boot → menu → level →
