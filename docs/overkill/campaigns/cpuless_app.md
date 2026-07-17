@@ -93,6 +93,11 @@ the exact unblock for a fully-CPUless native menu.** Boot bootstrap `254A:04D7` 
 - then: `scripts/play_cpuless.py` main loop over the boot image; `overkill/native/loader.py` (hot-leaf overrides).
 
 ## Status log (newest first)
+- **2026-07-18** slice 2b-1b DONE (f2a1cbb): **gameplay EXECUTES carrier-free** — 5 real
+  `advance_gameplay_frame_97b2` frames over a demo image under the armed wall, zero carrier modules.
+  The unified CPUless runtime PLAYS with no interpreter. `overkill/cpuless_runtime.py` holds the
+  carrier-free host inputs (`level_assets_for` via pure `asset_codecs`; the probe's copy was entangled
+  with the VM import). Gameplay stage is artifact-gated (skips without game data).
 - **2026-07-18** slice 2b-1 DONE (f22e9f6): the import WALL — `install_import_guard()` +
   `scripts/check_cpuless_wall.py` (dynamic subprocess) prove BOTH the manual gameplay layer and the
   generated corpus run carrier-free; ADR-2 (coarse override seam) recorded. `tests/test_cpuless_wall.py`
