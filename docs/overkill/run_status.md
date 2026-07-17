@@ -63,6 +63,37 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-17b — VMless: the OVERKILL GAMEPLAY MAIN LOOP now auto-lifts (322->332); first dos_re lifter capability driven upstream FROM overkill
+
+Owner: "use this approach to seal play_native gaps AND test/harden dos_re against overkill, improve the
+dos_re lifters, byproduct = complete play_native." Executed step A of the work-list in
+[`vmless_cpuless_assessment.md`](vmless_cpuless_assessment.md) and it produced the intended shape --
+overkill surfaced a real dos_re lifter gap, the fix went UPSTREAM (not a local patch), and overkill's
+VMless coverage jumped.
+
+- **The gap:** the 10 `no-exit` census entries `1010:96C5..9928` are ONE strongly-connected gameplay
+  main loop -- an infinite `jmp` cycle that yields one frame at the 9B2E boundary instead of returning.
+  `cfg.scan_function` refused it `no-exit` BEFORE the boundary-head machinery in `emit.py` ever ran, so
+  the game's own core loop was structurally unliftable. Every DOS game has this loop; the Lemmings
+  pilot's must have differed in shape. This is a genuine, reusable scanner limitation.
+- **The dos_re fix (upstream, commit `a2ca7aa`, bumped here):** a function whose only terminating
+  construct is a declared boundary head is a liftable COROUTINE, not a dead end. `scan_function` takes
+  `boundary_heads`; `FunctionScan.liftable = exits OR boundary_heads`; the IR re-elaborator recovers
+  heads from the record's own `boundary_effect` marks (IR stays the single source of truth). Opt-in +
+  byte-identical without heads; 2 regression tests; dos_re suite 635->637 green.
+- **The overkill recovery fact:** [`artifacts/lift_boundary_heads.txt`](../../artifacts/lift_boundary_heads.txt)
+  = one head, `1010:97CB` (the `call 9B2E` per-frame boundary, the SAME one the demo-lockstep gate
+  snapshots at). All 10 entries verified to scan into the loop and reach it.
+- **Result: VMless 322/335 -> 332/335, wall still HOLDS.** Emitted `1010:97b2` is a proper coroutine
+  (`cpu.boundary_hook(...,0x97CB,0x97CE)` + `RESUME_ENTRIES`). Full overkill suite green (1415).
+  `scripts/probe_vmless_cpuless.py` threads the fact through all 3 stages; re-run for the scorecard.
+- **NEXT gap surfaced (precise):** the CPUless de-carrier refuses the same 10 with `boundary-head-on-
+  transfer` -- `emit_cpuless.py:846` accepts a head only on a SEQ, not the frame-boundary CALL (the
+  VMless emitter accepts CALL). This is the next upstream capability; NOT worked around by moving the
+  head (97CB is the correct boundary). CPUless stays 204 until it lands. Then §B tail-dispatch (4),
+  §C census hygiene (3: LZEXE boot loops + the 3EFC SMC copier), then the standalone `acceptance_cpuless`
+  demo-oracle gate. Shipped runtime untouched; no generated output hand-edited.
+
 ## 2026-07-17 — DOS_RE 2.0 PIPELINE MEASURED ON OVERKILL: 322/335 VMless (wall HOLDS), 204/335 CPUless, automatically
 
 Owner: "check if we can use that automatic lifting to get to full vmless then cpuless, see what is
