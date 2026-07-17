@@ -31,14 +31,20 @@ from dos_re.lift.decode import decode_one  # noqa: E402
 _EA_REGS = (("bx", "si"), ("bx", "di"), ("bp", "si"), ("bp", "di"),
             ("si",), ("di",), ("bp",), ("bx",))
 _SEG_OVERRIDE = {0x26: "es", 0x2E: "cs", 0x36: "ss", 0x3E: "ds"}
+_W16 = ("ax", "cx", "dx", "bx", "sp", "bp", "si", "di")
 
 
 def _near_indirect_target(cpu, inst) -> "str | None":
-    """The near jmp/call [mem] target the interpreter would take, as 'CS:IP'."""
-    if inst.modrm is None or (inst.modrm >> 6) == 3:
-        return None                                   # register-indirect: caller reads the reg
+    """The near jmp/call target the interpreter would take, as 'CS:IP'.  Handles
+    both memory-indirect (`call [bx+d]`) and REGISTER-indirect (`call ax`) -- the
+    latter is a computed function pointer whose target IS the register value, and
+    is just as much a dispatch that the CPUless registry must resolve."""
+    if inst.modrm is None:
+        return None
     s = cpu.s
     mod, rm = inst.modrm >> 6, inst.modrm & 7
+    if mod == 3:                                       # register-indirect: target = the reg
+        return f"{s.cs & 0xFFFF:04X}:{getattr(s, _W16[rm]) & 0xFFFF:04X}"
     seg = next((_SEG_OVERRIDE[p] for p in inst.prefixes if p in _SEG_OVERRIDE), None)
     if mod == 0 and rm == 6:                           # direct [disp16]
         ea = (inst.disp or 0) & 0xFFFF

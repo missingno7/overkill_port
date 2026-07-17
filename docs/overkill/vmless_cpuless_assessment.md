@@ -217,6 +217,16 @@ needed to land the deep tail-dispatch/sp-as-data capabilities *safely*. Build or
 boundary scheduler → dispatch/HANDLERS registries + per-site dyn-evidence → replay the demo standalone
 vs the oracle, masked byte-exact per boundary. Then the deep gaps land with a real gate under them.
 
+**Broad demo-driven validation + REGISTER-indirect dispatch capture (2026-07-17j).**
+Running the demo-driven differential over the whole plat-free set: **L1 gameplay 161 PASS / 0 DIVERGED**;
+**cold-start 286 PASS / 1 DIVERGED**.  The one divergence was another graph-completeness gap:
+`837A`'s `call ax` (a REGISTER-indirect computed function pointer) dispatched to `83D7`, which was never
+in the graph — `scripts/capture_indirect_sites.py` only computed MEMORY-indirect targets and skipped
+register-indirect ones.  Fixed: the capture now reads the register value for a `mod==3` indirect
+(`call ax` → the target IS `ax`).  Re-capture → re-close: census **619 → 625**, CPUless **555 → 560**,
+`83D7` promoted.  The demo-driven differential is proving itself the right gate — each pass either
+validates byte-exact or names a concrete completeness gap.
+
 **DEMO-DRIVEN differential caught a real codegen bug in the object walk (2026-07-17i).**
 `scripts/verify_cpuless.py --demo` validates each fn from its REAL execution state (replays the demo,
 captures each fn's live pre-state, diffs the adapter vs the ref VM's actual run) — no random wandering,
