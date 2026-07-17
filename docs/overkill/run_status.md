@@ -63,6 +63,41 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-17c — CPUless: CENSUS CLOSURE is the dominant lever (204->438 promotable); + 2nd dos_re capability (boundary-head-on-call)
+
+Continued the automatic-lifting push. Two things landed; full write-up +
+ordered work-list in [`vmless_cpuless_assessment.md`](vmless_cpuless_assessment.md). Reproduce:
+`python scripts/probe_vmless_cpuless.py` (now closes the census first, then measures).
+
+1. **dos_re capability #2 (commit `13ce724`, bumped here):** a boundary head may sit on a COMPOSED
+   CALL, not only a SEQ (`emit_cpuless.py` `boundary-head-on-transfer`). The VMless emitter already
+   accepted a CALL head; the CPUless de-carrier didn't, so the top-of-DAG frame loop could never
+   promote. +3 tests. NOTE: the frame loop is top-of-DAG (its boundary is `call 9B2E`), so it still
+   waits on 9B2E's subtree (blocked by §B tail-dispatch) -- the capability is done, the demo waits.
+
+2. **CENSUS CLOSURE (`scripts/close_census.py`) -- the big one.** The dominant CPUless blocker was NOT
+   a lifter gap: the observed-execution census (335) MISSED 177 statically-reachable functions (e.g.
+   50C9 -> C9F1/CA02, never listed), so every caller of a missing callee refused `contains-call` (~110
+   of the 114 cascade). close_census.py closes the static call graph to a fixpoint (seed -> irgen ->
+   add every near/far call target -> repeat): 335 -> 512 entries. **Result: VMless 332->508 liftable,
+   CPUless 204->438 promotable, cascade 114->44.** This is the 2.0 principle -- discover the reachable
+   graph, don't depend on observation coverage. Candidate to promote into dos_re proper.
+
+**Honestly surfaced the real remaining gaps** (observation coverage had hidden them):
+- **§D2 `5F0D` = DAA (opcode 0x27)** -- the ONE VMless-wall violation on the closed graph (interp_one
+  fallback, 4 sites) + `unanalyzed-opcode-27`. Interpreter implements it (cpu.py:1323); neither emitter
+  does. SMALLEST NEXT WIN: port flag-exact DAA (+DAS/AAA/AAS) into both emitters + register_effects with
+  an emitted-vs-interp test -> restores the wall + promotes 5F0D.
+- **§B tail-dispatch (12 fns): `nonzero-depth` (4E26 580B 5827 AED8 CC4F CC7F CD68) + `unbalanced-stack`
+  (CCAA CCC4 CCF0 CD8D CDAA)** -- video-mode JMP-table dispatchers reached at nonzero/unbalanced depth.
+  The DEEPEST gap; gates 9B2E -> the frame loop. Model a jump-table tail dispatch at statically-known
+  nonzero depth (stack discipline, not sp-as-data).
+- smaller: sp-as-data (0111/065C), vectored-int-call (C85B), the SMC/LZEXE census entries.
+
+Ordered next steps: DAA (smallest) -> tail-dispatch (deepest, unblocks the frame loop) -> the small
+roots -> stand up the standalone `acceptance_cpuless` demo-oracle gate (the lockstep with the CPU
+carrier removed) = M3 real. Shipped runtime untouched; no generated output hand-edited; suite green.
+
 ## 2026-07-17b — VMless: the OVERKILL GAMEPLAY MAIN LOOP now auto-lifts (322->332); first dos_re lifter capability driven upstream FROM overkill
 
 Owner: "use this approach to seal play_native gaps AND test/harden dos_re against overkill, improve the
