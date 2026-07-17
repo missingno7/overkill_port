@@ -93,7 +93,10 @@ artifacts/liftverify_slice.txt
 artifacts/liftverify_emit/
 artifacts/indirect_sites.json
 artifacts/cpuless_promote_census_dyn.json
-overkill/cpuless_recovered/
+# overkill/cpuless_recovered/ is NO LONGER ignored -- it is COMMITTED runtime source:
+# the generated CPUless corpus play_cpuless imports as the game's default implementations
+# (mirrors lemmings/recovered/; see docs/overkill/campaigns/cpuless_app.md). Regenerate with
+# scripts/probe_vmless_cpuless.py; the CPU-ABI *adapters* stay disposable (verification-only).
 overkill/cpuless_adapters/
 artifacts/verify_*.txt
 artifacts/cpuless_census_view.json
