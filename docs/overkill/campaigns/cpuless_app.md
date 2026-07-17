@@ -80,19 +80,26 @@ the exact unblock for a fully-CPUless native menu.** Boot bootstrap `254A:04D7` 
 7. **Gameplay as a native override** — express `native_frame` at the frame root; compose. → full game.
 8. **Walls green + retire** — static+dynamic no-carrier checks pass on the whole run.
 
-## next
-- **NOTE (scoping correction):** do NOT target the boot bootstrap `254A:04D7` for the first standalone
-  run — it makes 11 INT 21h calls (the full C-runtime startup: version, memory alloc, file setup). That
-  DOS surface is exactly what the data-only boot image BYPASSES (lemmings boots from a post-startup
-  snapshot, not by running the C-startup standalone). The boot image is `make_frontend_snapshot.py`'s
-  post-startup capture (or a new `build_cpuless_boot_image.py`).
-- The visible milestone (boot-image → MENU, standalone) needs BOTH remaining enablers, neither a quick
-  win: (a) the **video platform shim** (INT 10h + video ports on the host framebuffer), and (b) the
-  **tail-dispatch capability** (dos_re) — the CC04 menu closure's only blockers are `CC4F/CCC4/CDA7`.
-  slice 2b-2 = whichever of these is tackled first (they converge on the menu).
-- then: `scripts/play_cpuless.py` main loop over the boot image; `overkill/native/loader.py` (hot-leaf overrides).
+## next — the FRONT-END (the remaining half; gameplay is done + playable standalone)
+
+The standalone runner PLAYS gameplay carrier-free (`scripts/play_cpuless.py`). The remaining work is
+boot → title/menu → level-load, which converges on two enablers (neither a quick win, both needed for a
+visible native menu):
+- (a) the **video platform shim** — a `CPUlessPlatformRuntime`/`FailLoudPlatform` upgrade servicing the
+  front-end's INT 10h + video ports on the host framebuffer (makes the front-end RENDERABLE);
+- (b) the **tail-dispatch capability** (dos_re) — the `CC04` menu closure is 23/27 CPUless; its only
+  blockers are `CC4F/CCC4/CDA7` (makes the menu logic PROMOTABLE).
+Then wire the front-end into `play_cpuless` over the existing boot image
+(`artifacts/frontend_intro_snapshot/`), composing generated front-end + the native gameplay override.
+- SCOPING: do NOT run the boot bootstrap `254A:04D7` standalone (11 INT 21h C-startup calls — the boot
+  image bypasses exactly that DOS surface).
+- later: `overkill/native/loader.py` (fine sys.modules aliasing for hot-leaf overrides, per ADR-2).
 
 ## Status log (newest first)
+- **2026-07-18** slice 2b-2 DONE (e152d54): **`scripts/play_cpuless.py` — the standalone runner PLAYS
+  gameplay** carrier-free with the wall armed (`--frames 5` renders 5 frames, exit 0, zero carrier).
+  Thin wall-armed wrapper over play_native (proven carrier-free). `tests/test_play_cpuless.py`
+  (artifact-gated subprocess). GAMEPLAY HALF DONE; remaining = front-end.
 - **2026-07-18** slice 2b-1b DONE (f2a1cbb): **gameplay EXECUTES carrier-free** — 5 real
   `advance_gameplay_frame_97b2` frames over a demo image under the armed wall, zero carrier modules.
   The unified CPUless runtime PLAYS with no interpreter. `overkill/cpuless_runtime.py` holds the
