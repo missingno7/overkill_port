@@ -93,3 +93,5 @@ artifacts/liftverify_slice.txt
 artifacts/liftverify_emit/
 artifacts/indirect_sites.json
 artifacts/cpuless_promote_census_dyn.json
+overkill/cpuless_recovered/
+overkill/cpuless_adapters/

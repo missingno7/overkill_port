@@ -9,12 +9,14 @@ gitignored + regeneratable). **Reference:** [`dos_re/docs/dos_re_2.0.md`](../../
 The dos_re 2.0 automatic pipeline runs on OVERKILL's binary **with no hand-lifting**. Three passes so
 far, each driving a real dos_re capability and/or a recovery fact:
 
-| stage | initial (07-17) | + boundary-head (07-17b) | + closure (07-17c) | + DAA (07-17d) |
+| stage | initial (07-17) | + closure (07-17c) | + DAA (07-17d) | + dispatch-closure (07-17g) |
 |---|---|---|---|---|
-| census entries | 335 | 335 | 512 | **512** |
-| **VMless liftable** (M2) | 322 / 335 | 332 / 335 | 508 / 512 | **508 / 512** |
-| **VMless wall** | HOLDS | HOLDS | 1 violation (`5F0D`) | **HOLDS** |
-| **CPUless promotable** (M3) | 204 / 335 | 204 / 335 | 438 / 512 | **451 / 512** |
+| census entries | 335 | 512 | 512 | **619** |
+| **VMless liftable** (M2) | 322 / 335 | 508 / 512 | 508 / 512 | **615 / 619** |
+| **VMless wall** | HOLDS | 1 violation | HOLDS | **HOLDS** |
+| **CPUless recovered-purity wall** | — | — | — | **HOLDS** (AST-proven) |
+| **CPUless promotable** (M3) | 204 / 335 | 438 / 512 | 451 / 512 | **554 / 619** |
+| **recovered fns proven byte-exact** | — | — | — | **29 PASS / 0 DIVERGED** |
 
 The **census closure** (pass 3) is the dominant lever: the observed-execution entry list missed 177
 statically-reachable functions, and every caller of a missing callee refused `contains-call`. Closing
@@ -200,6 +202,25 @@ byte-exact *together* over the demo (reaching the `notreach` set), and (2) gives
 needed to land the deep tail-dispatch/sp-as-data capabilities *safely*. Build order: platform runtime +
 boundary scheduler → dispatch/HANDLERS registries + per-site dyn-evidence → replay the demo standalone
 vs the oracle, masked byte-exact per boundary. Then the deep gaps land with a real gate under them.
+
+**The CPUless HARD WALL + the correctness gate + graph completion (2026-07-17g).**
+- **CPUless recovered-purity wall INSTALLED + HOLDS** (`dos_re/tools/lint_cpuless.py`, wired as probe
+  stage 5): a static AST proof that **every** recovered module imports nothing but sibling recovered
+  modules — never the CPU carrier, the interpreter, the lifted graph, or the adapters. The recovered
+  *code* is provably cpuless. (The *runner-closure* half of the wall waits on a `play_cpuless.py`.)
+- **Correctness gate built: the per-function DIFFERENTIAL** ([`scripts/verify_cpuless.py`](../../scripts/verify_cpuless.py)) —
+  the manifest's "function differential" dos_re lacked. It runs the generated CPU-ABI adapter (which calls
+  the pure recovered body) vs INTERPRETING the original bytes, over randomized state, and diffs the full
+  register file + memory. **29 PASS byte-exact / 0 DIVERGED** on the pure-compute set — the first proof
+  the recovered functions *compute* what the CPU does, not merely emit. (Random state → many INCONCLUSIVE
+  wanderings; reaching those needs demo-captured pre-states, i.e. the standalone. Candidate to generalize
+  into dos_re.)
+- **Graph completed via DYNAMIC-DISPATCH closure.** The differential exposed that `close_census.py`
+  followed only near/far CALL targets, so dispatch-only targets (`5A00 → 3103`, the whole `AFxx`
+  handler cluster) were missing from the graph entirely. Feeding the captured `indirect_sites.json`
+  targets into the closure took the census **512 → 619**, VMless **508 → 615**, CPUless **451 → 554**,
+  and the Tandy coordinate/handler targets (`3103`, `30D2`, …) are now promoted (the EGA-only `32AC` is
+  dead in Tandy, never observed — correctly absent).
 
 **Groundwork landed (2026-07-17f): per-site dynamic-dispatch evidence.**
 [`scripts/capture_indirect_sites.py`](../../scripts/capture_indirect_sites.py) runs the demo(s) through

@@ -58,10 +58,15 @@ def main(argv=None) -> int:
 
     ir = ART / "recovery_ir_closed.json"    # the STATICALLY-CLOSED graph (stage 0 below)
     vmless = ART / "vmless_emit"
-    rec = ART / "cpuless_recovered"
-    adp = ART / "cpuless_adapters"
+    # recovered/adapters emit into an IMPORTABLE package (overkill.cpuless_*) so
+    # the CPUless wall (lint_cpuless) and the differential (verify_cpuless) can
+    # AST-check and import them.
+    rec = ROOT / "overkill" / "cpuless_recovered"
+    adp = ROOT / "overkill" / "cpuless_adapters"
     rec.mkdir(parents=True, exist_ok=True)
     adp.mkdir(parents=True, exist_ok=True)
+    (rec / "__init__.py").touch()
+    (adp / "__init__.py").touch()
     # The boundary-head fact is threaded through ALL stages: irgen marks the
     # yield site, liftemit emits the boundary event + ResumePoint, and the
     # promoter carries it into the CPUless ABI analysis.
@@ -100,8 +105,18 @@ def main(argv=None) -> int:
     closure = _run([str(DOS_RE / "tools" / "cpuless_closure.py"), "--ir", str(ir),
                     "--recovered-dir", str(rec),
                     "--census", str(ART / "cpuless_promote_census.json"),
+                    *(["--dyn-evidence", str(dyn)] if dyn.is_file() else []),
                     "--roots", args.roots, "--out", str(ART / "cpuless_closure.json")],
                    "cpuless_closure -> gameplay runtime closure")
+
+    # Stage 5 -- THE CPULESS WALL: static AST proof the recovered corpus imports
+    # nothing but sibling recovered modules -- never the CPU/interpreter/adapters
+    # (docs/dos_re_2.0.md §1a). The hard wall on the recovered code.
+    wallout = _run([str(DOS_RE / "tools" / "lint_cpuless.py"), "--repo-root", str(ROOT),
+                    "--recovered-root", "overkill/cpuless_recovered",
+                    "--recovered-prefix", "overkill.cpuless_recovered",
+                    "--local-prefix", "overkill", "--local-prefix", "dos_re"],
+                   "lint_cpuless -> CPUless recovered-purity wall")
 
     # ---- scorecard ----
     ir_doc = json.loads(ir.read_text())
@@ -125,6 +140,8 @@ def main(argv=None) -> int:
         m = _re.search(r"(\d+) interp_one fallback call site", emit)
         wall = f"VIOLATED ({m.group(1)} interp_one site(s))" if m else "NOT CONFIRMED"
     print(f"  VMless wall (no interp_one)    {wall}")
+    cwall = "HOLDS" if "PASS -- no path" in wallout else "VIOLATED"
+    print(f"  CPUless recovered-purity wall  {cwall}  (recovered code touches no CPU)")
     print(f"  CPUless promotable (M3)        {promotable}/{total}  (whole census)")
     try:
         cl = json.loads((ART / "cpuless_closure.json").read_text())

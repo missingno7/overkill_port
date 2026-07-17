@@ -33,7 +33,7 @@ ART = ROOT / "artifacts"
 PY = sys.executable
 
 
-def _targets(ir: dict) -> "set[str]":
+def _targets(ir: dict, dyn: "dict | None" = None) -> "set[str]":
     present = set(ir["functions"])
     out: set[str] = set(present)
     for a, f in ir["functions"].items():
@@ -42,6 +42,14 @@ def _targets(ir: dict) -> "set[str]":
             out.add(f"{cs}:{t}")
         for s, o in f.get("calls_far", ()):
             out.add(f"{s}:{o}")
+    # DYNAMIC-DISPATCH targets (jmp/call cs:[table]) are unreachable by the
+    # static call graph -- but the demo OBSERVES every one they take
+    # (capture_indirect_sites.py). Following them closes the graph over the
+    # video-mode dispatchers + their mode-specific render/handler targets
+    # (e.g. 5A00 -> 3103); without this the standalone hits UnknownDispatchTarget.
+    if dyn:
+        for _site, tgts in dyn.items():
+            out.update(tgts)
     return out
 
 
@@ -71,11 +79,14 @@ def main(argv=None) -> int:
     ap.add_argument("--keep-interpreted", default=str(ART / "lift_keep_interpreted.txt"))
     ap.add_argument("--out-entries", default=str(ART / "lift_census_entries_closed.txt"))
     ap.add_argument("--out-ir", default=str(ART / "recovery_ir_closed.json"))
+    ap.add_argument("--dyn-evidence", default=str(ART / "indirect_sites.json"),
+                    help="captured indirect-dispatch targets to also close over (capture_indirect_sites.py)")
     ap.add_argument("--max-rounds", type=int, default=12)
     args = ap.parse_args(argv)
 
     heads = args.boundary_heads if Path(args.boundary_heads).is_file() else None
     keep = args.keep_interpreted if Path(args.keep_interpreted).is_file() else None
+    dyn = json.loads(Path(args.dyn_evidence).read_text()) if Path(args.dyn_evidence).is_file() else None
     entries = {ln.strip() for ln in Path(args.seed).read_text().splitlines()
                if ln.strip() and not ln.startswith("#")}
     out_entries = Path(args.out_entries)
@@ -83,7 +94,7 @@ def main(argv=None) -> int:
     for rnd in range(1, args.max_rounds + 1):
         out_entries.write_text("".join(f"{e}\n" for e in sorted(entries)))
         ir = _run_irgen(args.snapshot, out_entries, heads, keep, Path(args.out_ir))
-        discovered = _targets(ir)
+        discovered = _targets(ir, dyn)
         new = discovered - entries
         liftable = sum(1 for f in ir["functions"].values() if f.get("liftable", True))
         print(f"round {rnd}: entries={len(entries)} liftable={liftable}/{len(ir['functions'])} "
