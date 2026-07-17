@@ -63,6 +63,31 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-17i — DEMO-DRIVEN differential caught a real codegen bug in the OBJECT WALK; fixed in dos_re
+
+Owner: "next best steps towards full cpuless, improving dos_re lifting ability." Built the proper
+correctness gate and it immediately paid off -- caught a silent bug that "555 promotable" hid.
+
+- **`scripts/verify_cpuless.py --demo`: the DEMO-DRIVEN differential.** Validates each recovered fn from
+  its REAL execution state (replay the demo, capture each fn's live pre-state, run the fn to its real
+  return on the ref VM = the oracle, run the adapter from the same pre-state, diff full regfile+memory).
+  No random-state wandering, so it exercises the DYNAMIC-DISPATCH fns the random mode filtered out.
+- **It caught 13 object-walk/behavior dispatchers (A940 & its callees) raising `NameError: name 'cs'`.**
+  The dynamic-dispatch SELECTOR read `mov reg, cs:[bx+disp]` (the video-mode / behavior jump tables)
+  bypasses the ABI input pass, so `cs` was neither param nor local -> NameError the instant the fn ran.
+  Structural promotion ("555 promotable") never noticed -- only running the code did.
+- **Fixed in dos_re (bumped to `300c24d`):** CS is the fn's fixed code segment -- a compile-time
+  CONSTANT, never a runtime input (the ABI carries ds/es/ss, not cs). register_effects never adds cs;
+  emit_recovered always materialises `cs = 0x<seg>` as a local. +1 test; dos_re suite 651 green. Bump
+  also carries an upstream bp-scratch frame fix (55298b6). **After: 58 PASS / 0 DIVERGED byte-exact from
+  REAL gameplay states** (was 13 DIVERGED). Promotable unchanged (555) -- the value is CORRECTNESS, not
+  count: 13 fns that silently NameError'd now compute byte-exact.
+
+This is the session's lesson: the demo-driven differential is now the PRIMARY correctness gate, and it
+is what makes the deep frontier capabilities (tail-dispatch, sp-as-data) landable safely. NEXT: continue
+using it as the gate while tackling the tail-dispatch (stack-arg dispatch composition) and the 0248 SMC
+snapshot; both remain deep. Shipped runtime untouched; no generated output hand-edited.
+
 ## 2026-07-17h — dos_re capability: INT 13h disk-int = fail-loud platform effect (C85B promotes); frame-loop needs 3 gaps
 
 Owner: "next best steps towards full cpuless, improving dos_re lifting ability along the way." Landed a
