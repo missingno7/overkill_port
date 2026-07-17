@@ -4,6 +4,20 @@ Open items the autonomous loop attempted but could not finish byte-exact. Do NOT
 re-attempt these in the loop; they need a reproduction trace and/or gameplay
 context. Each has the analysis already done so a human can pick up fast.
 
+## 2026-07-17 — PRE-EXISTING RED: test_native_page_raster median 0.9439 < 0.95 (corpus-drift, NOT a code regression)
+
+`tests/test_native_page_raster.py::test_render_present_page_matches_framebuffer_on_corpus` fails:
+`assert median >= 0.95` gets `0.9439`. Confirmed pre-existing and orthogonal — it fails identically on
+a clean tree (`git stash`), and the only commit touching it is `d0f1f3e` (front-end rasterizer, Stages
+0–2). The median is computed over the LOCAL, gitignored demo corpus (`artifacts/demos/**/snapshot/`);
+the local corpus now includes 0710-era demos the 0.95 threshold was never tuned against, so the median
+is a function of which snapshots happen to be present, not of the rasterizer code. The two hard
+`exact >= 2` gates still pass. Repro: `python -m pytest tests/test_native_page_raster.py -q`. Do NOT
+weaken the threshold to hide it; the fix is either re-tuning against a pinned corpus subset or a small
+present-skew correction in the rasterizer — front-end-campaign work, not the CPUless/dos_re frontier.
+The 2026-07-17l tooling/doc commit is isolated from rendering (green in isolation) and neither
+introduces nor masks this red.
+
 ## 2026-07-10 — _planet0_cue: the 23-handler stamp table DECODED (build data ready)
 
 Decoded the 7C08 jump table's handlers (scratchpad/decode_p0_handlers.py; offsets below in HEX).  All

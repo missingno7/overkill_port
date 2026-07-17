@@ -31,11 +31,79 @@ from __future__ import annotations
 
 import argparse
 import json
-from collections import Counter, defaultdict
+import sys
+from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 ART = ROOT / "artifacts"
+sys.path.insert(0, str(ROOT / "dos_re"))
+
+from dos_re.lift.cpuless import register_effects  # noqa: E402
+from dos_re.lift.ir import scan_from_ir_record  # noqa: E402
+
+#: registers we report as ABI channels (word file + segments); AL/AH etc. are
+#: normalised to the word register by ``register_effects`` already.
+_REGS = ("ax", "bx", "cx", "dx", "si", "di", "bp", "sp", "ds", "es", "ss", "cs")
+#: moffs opcodes (mov AL/AX <-> [disp]) -- a direct global cell with no ModRM.
+_MOFFS = (0xA0, 0xA1, 0xA2, 0xA3)
+
+
+def _direct_cell(inst) -> "tuple[str, int] | None":
+    """The (segment, offset) of a DIRECT global-memory operand, or None.
+
+    A ``mod==0, rm==6`` ModRM or a moffs opcode names a compile-time-fixed cell
+    -- the global-state dependency the memoryless stage must bind.  Base/index
+    forms ([bx+si], [bp+k], ...) are computed and excluded here (they are the
+    array/struct accesses, not fixed globals)."""
+    seg = getattr(inst, "seg_override", None)
+    if inst.op in _MOFFS and inst.imm is not None:   # mov AL/AX <-> [addr]: addr is the immediate
+        return (seg or "ds", inst.imm & 0xFFFF)
+    if inst.mod == 0 and inst.rm == 6 and inst.disp is not None:
+        return (seg or "ds", inst.disp & 0xFFFF)
+    return None
+
+
+def abi_metadata(scan, dyn: dict, cs: str) -> dict:
+    """Aggregate per-function ABI/side-effect metadata from ``register_effects``.
+
+    This is the machine-readable seed the memoryless (DOS-layout-less) stage
+    consumes: which register channels the function may read/write, whether it
+    touches memory/ports, which fixed global cells it depends on, its interrupt
+    side effects, and its indirect-dispatch callees (from observed evidence).
+    ``reads``/``writes`` are MAY sets (union over all paths), not strict
+    live-in -- the promoter computes the strict contract for auto-cpuless fns;
+    this covers every discovered function uniformly, promotable or not."""
+    reads: set = set()
+    writes: set = set()
+    g_read: set = set()
+    g_write: set = set()
+    mem_r = mem_w = port = uses_frame = False
+    ind_targets: set = set()
+    for ip, inst in scan.insts.items():
+        e = register_effects(inst)
+        reads |= {r for r in e.reads if r in _REGS}
+        writes |= {w for w in e.writes if w in _REGS}
+        mem_r = mem_r or e.mem_read
+        mem_w = mem_w or e.mem_write
+        port = port or e.port_io
+        uses_frame = uses_frame or e.frame_establish
+        cell = _direct_cell(inst)
+        if cell is not None:
+            (g_write if e.mem_write else g_read).add(cell)
+        ind_targets |= set(dyn.get(f"{cs}:{ip:04X}", ()))
+    fmt = lambda cells: sorted(f"{s}:{o:04X}" for s, o in cells)  # noqa: E731
+    return {
+        "regs_read": sorted(reads),
+        "regs_written": sorted(writes),
+        "reads_mem": mem_r,
+        "writes_mem": mem_w,
+        "port_io": port,
+        "uses_bp_frame": uses_frame,
+        "global_reads": fmt(g_read),
+        "global_writes": fmt(g_write),
+        "callees_indirect": sorted(ind_targets),
+    }
 
 _SHAPE = {"sp-as-data", "tail-dispatch-at-nonzero-depth", "tail-dispatch-with-unbalanced-stack",
           "boundary-head-on-transfer", "mixed-return-kinds", "cs-or-ss-mutation",
@@ -71,7 +139,7 @@ def reachable_from(ir: dict, roots: "list[str]", dyn: dict) -> "set[str]":
     return seen
 
 
-def classify(ir: dict, census: dict, reached: "set[str]", manual: "set[str]") -> dict:
+def classify(ir: dict, census: dict, reached: "set[str]", manual: "set[str]", dyn: dict) -> dict:
     fns = ir["functions"]
     prom = set(census.get("promotable", [])) if isinstance(census.get("promotable"), list) else set()
     refused = census.get("refused", {})
@@ -106,7 +174,7 @@ def classify(ir: dict, census: dict, reached: "set[str]", manual: "set[str]") ->
                 cat, detail = "blocked-cascade", r
             elif r:
                 cat, detail = "blocked-shape", r
-        out[a] = {
+        rec = {
             "class": cat, "detail": detail,
             "observed_reachable": a in reached,
             "exits": f.get("exits", []),
@@ -115,6 +183,11 @@ def classify(ir: dict, census: dict, reached: "set[str]", manual: "set[str]") ->
             "ints": f.get("ints", []),
             "ir_refusals": ir_ref,
         }
+        try:
+            rec["abi"] = abi_metadata(scan_from_ir_record(f), dyn, cs)
+        except Exception as exc:  # a decode-garbage record -- record the gap, don't crash the census
+            rec["abi"] = {"error": f"{type(exc).__name__}: {exc}"}
+        out[a] = rec
     return out
 
 
@@ -139,7 +212,7 @@ def main(argv=None) -> int:
     if mp.is_file():
         manual = {ln.strip() for ln in mp.read_text().splitlines() if ln.strip() and not ln.startswith("#")}
 
-    view = classify(ir, census, reached, manual)
+    view = classify(ir, census, reached, manual, dyn)
     Path(args.out).write_text(json.dumps(view, indent=1))
 
     by_cat = Counter(v["class"] for v in view.values())
@@ -168,7 +241,13 @@ def main(argv=None) -> int:
         rch = sum(1 for v in view.values() if v["class"] == cat and v["observed_reachable"])
         if tot:
             print(f"    {cat:18s} {tot:3d} total  {rch:3d} reached")
-    print(f"\n  wrote per-function metadata -> {args.out}")
+    # ABI-metadata coverage (the memoryless-bridge seed): how many carry a clean record.
+    abi_ok = sum(1 for v in view.values() if "error" not in v.get("abi", {"error": 1}))
+    g_dep = sum(1 for v in view.values()
+                if v.get("abi", {}).get("global_reads") or v.get("abi", {}).get("global_writes"))
+    print(f"\n  ABI metadata: {abi_ok}/{len(view)} functions carry a clean per-fn record "
+          f"(regs r/w, mem, ports, global cells, indirect callees); {g_dep} touch fixed global cells")
+    print(f"  wrote per-function metadata -> {args.out}")
     return 0
 
 

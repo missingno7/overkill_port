@@ -39,6 +39,46 @@ CPUless **561/626** · recovered-purity wall **HOLDS**. **View B:** 561 auto-cpu
 28 blocked-shape (capability queue: tail-dispatch 16, boundary-head 10, sp-as-data 2) · 4 likely-data;
 429/626 reachable from the runtime roots (197 unobserved, not dead).
 
+### The memoryless-bridge metadata (step 6 prep, 2026-07-17l)
+
+View B now carries, for **every** discovered function, the machine-readable ABI record the
+DOS-layout-less stage consumes (`abi` in `cpuless_census_view.json`, from `register_effects` over the
+reconstructed scan): `regs_read` / `regs_written` (MAY sets — the promoter computes the strict live-in
+for auto-cpuless fns; this covers all 626 uniformly), `reads_mem`/`writes_mem`/`port_io`,
+`global_reads`/`global_writes` (the **fixed DGROUP cells** each function depends on — `seg:offset` of
+every direct `mod0/rm6` + moffs operand, the discrete global-state edges the memory-authority migration
+must bind), `uses_bp_frame`, and `callees_indirect` (observed-dispatch targets). **622/626** carry a
+clean record (the 4 gaps are the non-liftable `likely-data` — they fail loud with the decode reason,
+never a silent zero); **480** touch fixed global cells. Spot-checks confirm fidelity: `5827` reads
+`cs:95BC` (the video-mode selector) with indirect callee `587E`; `C85B` flags ints 13h+21h; `5F61`
+names its frame-clock cells (`ds:2324‥2342`).
+
+### Tail-dispatch capability — evidence-backed design (the next generic pass, step 4)
+
+The 16 tail-dispatch refusals are **two distinct compiler shapes**, not one, and the fix differs. The
+evidence key is the *jmp IP* (`indirect_sites.json`), not the function entry:
+
+1. **Intra-function computed goto** (e.g. `4E26` @ `4E56`: a `jmp rm16` inside a loop, with a normal
+   `ret` tail). The refusal `tail-dispatch-at-nonzero-depth` misfires because `_check_stack_depths`
+   treats *any* `JMP_IND` as a tail exit demanding depth 0. Correct model: when the jmp's evidence
+   targets are all **within the function's own IP range**, it is an internal multi-way branch at the
+   jmp's depth — follow the landings as internal edges, don't refuse. **Gating rule (non-negotiable,
+   per the manifest's no-guess-on-indirect-tables law):** only with *observed* targets. `4E56` has
+   **no evidence** (demos never hit it) → it MUST stay refused (fail-loud, a coverage work item), never
+   statically guessed.
+2. **Tail-call to a separate stack-arg-consuming function** (`5827` @ `582F`: `push cx; mov bx,cs:[95BC];
+   jmp cs:[bx+table]` → `587E`, a *separate* function that pops the pushed `cx` and rets to `5827`'s
+   caller). Refusal `tail-dispatch-with-unbalanced-stack`. Correct model: a `JMP_IND` at depth *d* whose
+   evidence callees each consume *d* bytes composes as a tail call — the dispatcher's live-out is the
+   callee's, and the pushed args are the callee's stack parameters (the manifest's stack-arg ABI). The
+   handlers (`587E`, …) themselves promote as stack-arg functions.
+
+Both need the per-site targets threaded from `indirect_sites.json` through `cfg`/promoter/emitter (a
+multi-part `dos_re` change spanning cfg-scan, depth-walk, flag-pass, emit) and validation via the
+demo-driven differential (`verify_cpuless.py --demo`). **9 of 16 are observed-reachable**, so this
+serves BOTH criteria. Scoped as its own focused pass; not attempted blind. Functions without dispatch
+evidence stay measurable coverage items.
+
 ## TL;DR (historical passes)
 
 The dos_re 2.0 automatic pipeline runs on OVERKILL's binary **with no hand-lifting**. Three passes so

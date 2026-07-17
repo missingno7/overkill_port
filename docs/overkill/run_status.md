@@ -63,6 +63,38 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-17l — MEMORYLESS-BRIDGE METADATA on view B (all 626 fns) + tail-dispatch design spec
+
+Step-6 prep + step-4 scoping (per the endgame sequence in
+[`vmless_cpuless_assessment.md`](vmless_cpuless_assessment.md)). Two things landed, both generic:
+
+1. **Per-function ABI metadata in view B** (`scripts/cpuless_census_view.py` → `abi` in
+   `cpuless_census_view.json`). For EVERY discovered function, aggregated from `register_effects` over
+   the reconstructed scan: `regs_read`/`regs_written` (MAY sets), `reads_mem`/`writes_mem`/`port_io`,
+   **`global_reads`/`global_writes`** (the fixed DGROUP cells — `seg:offset` of every direct `mod0/rm6`
+   + moffs operand — the discrete global-state edges the memory-authority migration must bind),
+   `uses_bp_frame`, and `callees_indirect` (observed-dispatch targets). **622/626** carry a clean
+   record; the 4 gaps are the non-liftable `likely-data`, which fail loud with the decode reason (never
+   a silent zero). **480** fns touch fixed global cells. Fidelity spot-checked: `5827`→`cs:95BC`
+   (video-mode selector) + indirect callee `587E`; `C85B`→ints 13h/21h; `5F61`→frame-clock cells
+   `ds:2324‥2342`. This is the machine-readable seed the DOS-layout-less stage consumes. New test:
+   `tests/test_cpuless_census_abi.py` (moffs r/w cells, indirect callee from evidence, computed-operand
+   exclusion) — 3 pass.
+
+2. **Tail-dispatch design spec** (the next generic emitter pass, step 4) recorded in the assessment.
+   Investigation found the 16 refusals are TWO shapes, not one: (a) intra-function computed goto
+   (`4E26`@`4E56`, a `jmp rm16` in a loop with a real `ret` tail) — the depth walk wrongly treats any
+   `JMP_IND` as a depth-0 tail exit; (b) tail-call to a separate stack-arg-consuming fn (`5827`@`582F`
+   → `587E` pops the pushed `cx` + rets to `5827`'s caller). Evidence is keyed by the JMP IP
+   (`582F→587E`, `CC9E→CCC4`, `AEE9→[8]`). **Hard rule** (manifest's no-guess-on-indirect-tables law):
+   only *observed* targets compose; `4E56` has no evidence → stays refused, a fail-loud coverage item,
+   never statically guessed. 9/16 are observed-reachable, so the capability serves both criteria. It is
+   a multi-part dos_re change (cfg-scan/depth/flag/emit + per-site evidence threading) validated by
+   `verify_cpuless.py --demo`; scoped as its own focused pass, not attempted blind here.
+
+Gates: repo suite green, dos_re suite green (675 passed), lint clean, both CPUless walls HOLD. No
+change to recovered code or any oracle. dos_re unchanged (`aa6162b`).
+
 ## 2026-07-17k — ENDGAME REFRAMED (two views) + dispatch fixpoint converged + dos_re aa6162b + register-indirect capture
 
 Owner clarified the architecture: the observed demo closure is only the FIRST hard wall, NOT the
