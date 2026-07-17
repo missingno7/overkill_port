@@ -63,6 +63,40 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-17 — DOS_RE 2.0 PIPELINE MEASURED ON OVERKILL: 322/335 VMless (wall HOLDS), 204/335 CPUless, automatically
+
+Owner: "check if we can use that automatic lifting to get to full vmless then cpuless, see what is
+missing; read the dos_re 2.0 manifest, apply the principles." Bumped dos_re to 480f622 (the M3 CPUless
+de-carrier: 52->109 promotable) and RAN the 2.0 automatic pipeline over OVERKILL's binary end to end,
+no hand-lifting. Full write-up: [`vmless_cpuless_assessment.md`](vmless_cpuless_assessment.md).
+Reproduce: `python scripts/probe_vmless_cpuless.py` (all artifacts gitignored + regeneratable).
+
+**Scorecard (irgen -> liftemit -> cpuless_promote, straight off the EXE):**
+- VMless liftable (M2 corpus): **322/335**; **VMless wall HOLDS** (zero interp_one sites in the corpus).
+- CPUless promotable (M3): **204/335** (promotion fixpoint, 4 rounds).
+- So the recovery MACHINE already lifts the overwhelming majority of overkill automatically -- this is
+  the manifest's thesis validated on a SECOND game (Lemmings was the pilot); overkill is now a
+  training/validation corpus, and the frontier below is the concrete work-list, not a wall.
+
+**The 17-function HARD frontier (real gaps; the other 114 refusals are the DAG cascade downstream):**
+- **A. 10 `no-exit` boundary seams** (`96C5 96C8 9720 97B2 986E 989E 98D8 9908 9921 9928` = the whole
+  gameplay-frame-loop region): they run to a boundary/wait instead of `ret`. NOT a capability gap -- a
+  recovery FACT overkill ALREADY owns (input_waits.py + the 9B2E boundary). Feed `--boundary-heads`
+  (irgen/liftemit/promote all accept it) -> they get a modelled exit + resume and join the graph.
+- **B. 4 `tail-dispatch-at-nonzero-depth`** (`4E26 5827 CC7F CD68`, all video-mode JMP-table
+  dispatchers; CC7F/CD68 are last session's blueprint-presenter loop, 4E26 the loading tile-remap).
+  This is the ONE genuine dos_re CAPABILITY gap -> the upstream contribution to make ("improve the
+  machine with our code"): model a jump-table tail dispatch at statically-known nonzero depth in
+  `lift/cpuless.py`+`emit_cpuless.py` (stack discipline, like the Borland idiom already handled).
+- **C. 3 misdecode/census-hygiene** (`3EFC` garbage-from-offset; `1C43:0069`/`23AD:0069` foreign
+  overlay segments). Prune from the census or annotate as overlay/`code_as_data` facts.
+
+**Recommended order (each = one regen + a scorecard delta): C (cheap) -> A (biggest unlock) -> B
+(upstream capability) -> re-measure -> stand up the CPUless demo-oracle acceptance gate (the existing
+lockstep with the CPU carrier removed).** This is a PARALLEL automatic track; the shipped runtime is
+untouched (`play_native` still runs the hand-recovered `native_frame.py` lockstep). Nothing hand-edits
+generated output. Suite unaffected (docs/tooling only); lint green (493 files).
+
 ## 2026-07-14 — HANDOFF (session end): the VM SIDE is done -- next is the PURE (VM-less) reimplementation
 
 Owner: "continue lifting what is remaining... so you can plug it into native and verify it" -- the

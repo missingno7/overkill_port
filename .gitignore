@@ -75,3 +75,12 @@ artifacts/*.wav
 artifacts/frontend_intro_snapshot/
 artifacts/intro_frame_dump/
 artifacts/idle_boot_capture*/
+
+# DOS_RE 2.0 pipeline output -- all regeneratable from the binary + IR + facts
+# (scripts/probe_vmless_cpuless.py). Disposable per dos_re_2.0.md Principle 6.
+artifacts/recovery_ir.json
+artifacts/vmless_emit/
+artifacts/cpuless_recovered/
+artifacts/cpuless_adapters/
+artifacts/cpuless_census.json
+artifacts/cpuless_promote_census.json
