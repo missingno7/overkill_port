@@ -87,3 +87,7 @@ artifacts/cpuless_promote_census.json
 artifacts/recovery_ir_closed.json
 artifacts/lift_census_entries_closed.txt
 artifacts/cpuless_promote_census_closed.json
+artifacts/cpuless_closure.json
+artifacts/cpuless_closure_gameplay.json
+artifacts/liftverify_slice.txt
+artifacts/liftverify_emit/

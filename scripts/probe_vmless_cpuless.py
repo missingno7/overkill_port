@@ -50,6 +50,8 @@ def main(argv=None) -> int:
     ap.add_argument("--entries", default=str(DEFAULT_ENTRIES))
     ap.add_argument("--boundary-heads", default=str(DEFAULT_BOUNDARY_HEADS),
                     help="scheduler-yield head facts (the main-loop frame boundary); empty to disable")
+    ap.add_argument("--roots", default="1010:97B2",
+                    help="runtime-closure roots (CS:IP,...); default the gameplay frame 1010:97B2")
     ap.add_argument("--keep-going", action="store_true",
                     help="run every stage even if an earlier one reports refusals")
     args = ap.parse_args(argv)
@@ -88,6 +90,15 @@ def main(argv=None) -> int:
                  "--census-out", str(ART / "cpuless_promote_census.json"), "--apply"],
                 "cpuless_promote -> CPUless graph")
 
+    # Stage 4 -- RUNTIME CLOSURE from the gameplay root: the real M3 metric
+    # (docs/dos_re_2.0.md M3 -- "completion measured by the required RUNTIME
+    # CLOSURE from the declared roots, not all named functions promoted").
+    closure = _run([str(DOS_RE / "tools" / "cpuless_closure.py"), "--ir", str(ir),
+                    "--recovered-dir", str(rec),
+                    "--census", str(ART / "cpuless_promote_census.json"),
+                    "--roots", args.roots, "--out", str(ART / "cpuless_closure.json")],
+                   "cpuless_closure -> gameplay runtime closure")
+
     # ---- scorecard ----
     ir_doc = json.loads(ir.read_text())
     fns = ir_doc["functions"]
@@ -110,7 +121,16 @@ def main(argv=None) -> int:
         m = _re.search(r"(\d+) interp_one fallback call site", emit)
         wall = f"VIOLATED ({m.group(1)} interp_one site(s))" if m else "NOT CONFIRMED"
     print(f"  VMless wall (no interp_one)    {wall}")
-    print(f"  CPUless promotable (M3)        {promotable}/{total}")
+    print(f"  CPUless promotable (M3)        {promotable}/{total}  (whole census)")
+    try:
+        cl = json.loads((ART / "cpuless_closure.json").read_text())
+        reached = len(cl.get("reached", []))
+        pr = len(cl.get("promoted_reached", []))
+        fr = cl.get("frontier", {})
+        print(f"  CPUless GAMEPLAY closure       {pr}/{reached} reached from {args.roots} "
+              f"({'COMPLETE' if cl.get('closure_complete') else str(len(fr)) + ' frontier'})")
+    except Exception:  # noqa: BLE001
+        pass
     print("\n  frontier (the automatic-recovery work-list):")
     for reason, items in sorted(refused.items(), key=lambda kv: -(len(kv[1]) if isinstance(kv[1], list) else kv[1])):
         n = len(items) if isinstance(items, list) else items

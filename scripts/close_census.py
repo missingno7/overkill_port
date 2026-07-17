@@ -45,13 +45,16 @@ def _targets(ir: dict) -> "set[str]":
     return out
 
 
-def _run_irgen(snapshot: str, entries: Path, heads: "str | None", out_ir: Path) -> dict:
+def _run_irgen(snapshot: str, entries: Path, heads: "str | None",
+               keep: "str | None", out_ir: Path) -> dict:
     argv = [PY, str(DOS_RE / "tools" / "irgen.py"),
             "--exe", str(ROOT / "assets" / "OVERKILL"), "--snapshot", snapshot,
             "--game-root", str(ROOT / "assets"), "--entries-file", str(entries),
             "--out", str(out_ir)]
     if heads:
         argv += ["--boundary-heads", f"@{heads}"]
+    if keep:
+        argv += ["--keep-interpreted", f"@{keep}"]
     proc = subprocess.run(argv, cwd=str(ROOT), capture_output=True, text=True)
     if proc.returncode != 0:
         sys.stderr.write(proc.stdout + proc.stderr)
@@ -65,19 +68,21 @@ def main(argv=None) -> int:
                     default=str(ART / "demos" / "demo_play_tandy_L1_start_20260618_143947" / "snapshot"))
     ap.add_argument("--seed", default=str(ART / "lift_census_entries.txt"))
     ap.add_argument("--boundary-heads", default=str(ART / "lift_boundary_heads.txt"))
+    ap.add_argument("--keep-interpreted", default=str(ART / "lift_keep_interpreted.txt"))
     ap.add_argument("--out-entries", default=str(ART / "lift_census_entries_closed.txt"))
     ap.add_argument("--out-ir", default=str(ART / "recovery_ir_closed.json"))
     ap.add_argument("--max-rounds", type=int, default=12)
     args = ap.parse_args(argv)
 
     heads = args.boundary_heads if Path(args.boundary_heads).is_file() else None
+    keep = args.keep_interpreted if Path(args.keep_interpreted).is_file() else None
     entries = {ln.strip() for ln in Path(args.seed).read_text().splitlines()
                if ln.strip() and not ln.startswith("#")}
     out_entries = Path(args.out_entries)
 
     for rnd in range(1, args.max_rounds + 1):
         out_entries.write_text("".join(f"{e}\n" for e in sorted(entries)))
-        ir = _run_irgen(args.snapshot, out_entries, heads, Path(args.out_ir))
+        ir = _run_irgen(args.snapshot, out_entries, heads, keep, Path(args.out_ir))
         discovered = _targets(ir)
         new = discovered - entries
         liftable = sum(1 for f in ir["functions"].values() if f.get("liftable", True))

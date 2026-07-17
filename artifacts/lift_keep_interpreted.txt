@@ -1,0 +1,19 @@
+# OVERKILL keep-interpreted (env-wait) recovery facts (DOS_RE 2.0 §3a, §1a).
+#
+# Busy-wait spin loops whose exit depends on an ASYNCHRONOUS event (a timer/
+# keyboard IRQ setting a flag, a CRT retrace bit toggling).  A plain lift of the
+# spin freezes an iteration count that is really timing-dependent -- liftverify
+# proves it DIVERGES against the interpreted oracle (2026-07-17e: 1010:0679
+# flagged DIVERGED, the timer wait).  They are the manifest's enumerated,
+# fail-loud env-wait FRONTIER: kept interpreted (tagged env_wait in the IR) until
+# modelled as an explicit scheduler-yield boundary in the standalone runtime.
+#
+# overkill already treats both as wait boundaries (overkill/input_waits.py).
+#
+# 1010:0679 -- the GAMEPLAY FRAME timer wait: `cmp cs:[066B],0; jz 0679; ret`,
+#              spins until the timer ISR sets 066B (one frame). Called first in
+#              the 97B2 frame loop.
+# 1010:50C9 -- the VGA/CRT RETRACE wait (`in al,0x3DA; test; jnz`), the front-end
+#              pacing spin.
+1010:0679
+1010:50C9

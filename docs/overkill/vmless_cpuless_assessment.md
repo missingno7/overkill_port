@@ -22,12 +22,21 @@ the static call graph to a fixpoint ([`scripts/close_census.py`](../../scripts/c
 CPUless from 204 to **438** and collapsed the cascade from 114 to 44 — and honestly surfaced the real
 remaining gaps (a DAA opcode, more tail-dispatch variants) that observation coverage had hidden.
 
+**The real M3 metric is the RUNTIME CLOSURE from the gameplay root, not the whole-census count**
+(manifest M3). From `1010:97B2`: **250 functions reachable, 228 promoted, a 22-function frontier**
+gated on just **~6 real root gaps** — most tail-dispatch functions (presenter/loader) aren't even on
+the gameplay path. **And the automatic lift is now oracle-VALIDATED, not just structural:** `liftverify`
+proved a slice of hot gameplay functions (input poll `0162`, coord helper `5A00`, …) **byte-exact vs the
+interpreted oracle**, and caught `0679` (the frame timer wait) DIVERGING — correctly, it's an env-wait
+(§E), which matches overkill's own `input_waits.py`.
+
 This validates the manifest's core claim on a *second* game: overkill is a training/validation corpus
-for the recovery machine, and has already driven **two dos_re lifter capabilities upstream** (§A, §B′)
-plus the census-closure pipeline step, with the next gaps (§B, §D) precisely characterized.
+for the recovery machine, has driven **three dos_re lifter capabilities upstream** (§A, §B′, §D2) plus
+the census-closure pipeline step, and now has an oracle-validation loop.
 
 **Reproduce the whole thing:** `python scripts/probe_vmless_cpuless.py` (closes the census, emits the
-VMless corpus, runs the CPUless promoter, prints the scorecard). All artifacts gitignored + regenerated.
+VMless corpus, runs the CPUless promoter, measures the gameplay runtime closure, prints the scorecard).
+All artifacts gitignored + regenerated.
 
 This is a completely different track from the existing `native_frame.py` demo-lockstep (which
 hand-recovers the 97B2 gameplay frame as one pure function). The 2.0 pipeline is the *automatic* route
@@ -127,31 +136,42 @@ it. overkill is the corpus that surfaced it.
   hooks guard on `_code_matches`, so the snapshot bytes are one patched variant. **Fix:** `desmc-candidate`
   emit or hand-hook, not a frozen lift.
 
-## The 31-function cascade
+### E. Env-wait spin loops — `0679` / `50C9` (oracle-caught; recovery fact recorded, 2026-07-17e)
+
+`liftverify` (the M2 byte-exact gate) proved a hot-gameplay slice correct against the oracle AND flagged
+`1010:0679` **DIVERGED** — the gameplay frame timer wait (`cmp cs:[066B],0; jz 0679; ret`, spins until
+the timer ISR sets `066B`). A plain lift freezes a timing-dependent iteration count; this is the
+manifest's env-wait FRONTIER, not a lifter bug. Recorded as a recovery fact
+([`artifacts/lift_keep_interpreted.txt`](../../artifacts/lift_keep_interpreted.txt): `0679` + the `50C9`
+retrace wait, matching `input_waits.py`), threaded through irgen as `platform_effect=env_wait`. The
+runtime installer keeps them interpreted (the enumerated fail-loud frontier) until they are modelled as
+explicit scheduler-yield boundaries in the standalone runtime.
+
+## The cascade & the GAMEPLAY closure
 
 `refused: contains-call` = would promote but a (transitive) callee is still unpromoted — the DAG shadow
-of the hard frontier, not an independent gap. Swept 114 → 44 (closure) → **31** (DAA). The rest bottoms
-out on §B tail-dispatch (which gates `9B2E` → the frame loop) and the handful of `sp-as-data` /
-`vectored-int-call` roots. Re-run `scripts/probe_vmless_cpuless.py` after each capability to watch it
-shrink — measured, not predicted.
+of the hard frontier. Whole-census: 114 → 44 (closure) → **31** (DAA). But the metric that matters is the
+**gameplay runtime closure** (`scripts/probe_vmless_cpuless.py` stage 4, root `1010:97B2`): **228 / 250
+reached-and-promoted**, a **22-function frontier**, of which the real root gaps are only:
+`tail-dispatch` ×3 (`4E26 580B CC4F`), `sp-as-data` ×1 (`0111`), `ir-not-liftable` ×1 (`0248`, SMC),
+`vectored-int-call` ×1 (`C85B`) — plus `97B2`/`9B2E` waiting on them and a 15-fn cascade below.
 
 ## Current scorecard & remaining order
 
-VMless **508 / 512** (wall HOLDS) · CPUless **451 / 512**. Remaining, each = one regen + a scorecard
-delta:
+VMless **508 / 512** (wall HOLDS) · CPUless whole-census **451 / 512** · **gameplay closure 228 / 250**.
+Landed: **(A)** boundary-head loop `a2ca7aa` · **(B′)** boundary-head-on-call `13ce724` · **(D)** census
+closure · **(D2)** DAA `ca50aee` · **(E)** env-wait fact + oracle-validation loop. Remaining, ordered by
+gameplay-path leverage:
 
-1. ✅ **Boundary-head loop (A)** — dos_re `a2ca7aa` + the boundary-head fact.
-2. ✅ **Boundary-head-on-transfer (B′)** — dos_re `13ce724` (waits on §B to demonstrate on the frame loop).
-3. ✅ **Census closure (D)** — `scripts/close_census.py`; the dominant lever (204 → 438).
-4. ✅ **DAA opcode (D2)** — dos_re `ca50aee`; restored the wall, 438 → 451.
-5. **Tail-dispatch nonzero-depth / unbalanced-stack (B)** — the deepest gap (13 fns); gates `9B2E` →
-   the frame loop. Model a jump-table tail dispatch at statically-known nonzero depth. **Next up.**
-6. **`sp-as-data` (`0111`/`065C`), `vectored-int-call` (`C85B`), the SMC/LZEXE census entries (C)** —
-   smaller focused items. (A sibling `sp-as-data` `mov sp,bp` case was already fixed upstream by another
-   port, dos_re `7a9a65e` — the shared-toolchain dividend.)
-7. **Re-measure**, then stand up the standalone CPUless runtime against the demo oracle
-   (`acceptance_cpuless` pattern) — the byte-exact gate that makes M3 real (the lockstep, CPU-carrier
-   removed).
+1. **Tail-dispatch on the gameplay path (B, 3 fns: `4E26 580B CC4F`)** — these are **intra-function
+   jump tables** (`push <param>; jmp cs:[table+mode*2]` → landing blocks *inside the same function*
+   that pop the param), which the depth walk refuses as depth-0 tail exits. Needs the depth/CFG passes
+   to follow known intra-function dispatch landings at the current depth (evidence-gated). Deepest, but
+   only 3 are on the gameplay path.
+2. **`sp-as-data` `0111` (an ISR: pusha/…/iret), `ir-not-liftable` `0248` (SMC), `vectored-int-call`
+   `C85B` (a disk `int 13h` path, likely dead)** — specialized, one at a time.
+3. **Stand up the standalone `acceptance_cpuless` demo-oracle gate** — the byte-exact gate that makes M3
+   real (the lockstep, CPU-carrier removed). The `liftverify` slice is the M2 down-payment on this.
 
 ## What this does NOT change today
 
