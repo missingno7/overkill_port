@@ -184,17 +184,31 @@ standalone demo-oracle run**, so rushing any of them risks a silently-wrong de-c
   external depth-0 arrivals). Deep; correctness needs the standalone.
 - **`sp-as-data 0111`** — a `ret` function whose `jnz;jmp 0001` tail makes its scan span a *second*
   function (`0001`); the shared-tail depth is what trips `sp-as-data`.
-- **`vectored-int-call C85B`** — contains `int 13h` (disk), which the interpreter itself doesn't
-  implement → a dead path in gameplay; needs dead-path handling, not plain lifting.
-- **`ir-not-liftable 0248 / 3EFC`** — runtime-patched (SMC) with *decode-level* garbage in the snapshot
-  (not operand-immediate patches), so the new de-SMC promotion (`268eea9`) doesn't apply.
+- **`vectored-int-call C85B`** — ✅ RESOLVED (dos_re `489188a`): `int 13h` (disk BIOS, a dead
+  copy-protection path) now joins `PLATFORM_INT`; the function promotes on its live paths and
+  `plat.intr(0x13)` fails loud if ever reached (matching the interpreter, which can't run it either).
+  Generic — every DOS game with disk save/load/copy-protection inherits it. +1 test.
+- **`ir-not-liftable 0248 / 3EFC`** — runtime-patched (SMC): the snapshot bytes decode to different
+  *lengths* than the interpreter executes (`decoder-mismatch`, not operand-immediate patches), so the
+  de-SMC promotion (`268eea9`) doesn't apply. Needs a **pre-patch code-authority snapshot** for these
+  regions or a hand-hook — an overkill-specific recovery-facts issue, not a generic capability.
+
+### GAMEPLAY-FRONTIER LEVERAGE (2026-07-17h) — why the frame loop needs 3 gaps at once
+
+Per-function dependency analysis of the 21-fn gameplay frontier (each `contains-call` fn unblocks only
+when ALL its real-gap deps clear): **`9B2E` (→ the frame loop, via `4DBF` level re-init → the file/disk
+I/O cluster) depends on ALL THREE of SMC `0248` + tail-dispatch + vectored-int `C85B`**; the 7-fn
+`0Bxx/0Cxx/C679/D390` I/O cluster depends on `0248` + `C85B`. So no single fix opens the frame loop —
+`C85B` (done) is one of three. Remaining for `9B2E`: the `0248` SMC snapshot + the tail-dispatch
+depth-walk capability + the `97B2` boundary-head (which itself waits on `9B2E`).
 
 ## Current scorecard & remaining order
 
-VMless **508 / 512** (wall HOLDS) · CPUless whole-census **451 / 512** · **gameplay closure 228 / 250,
-12 of the reached hot fns proven byte-exact.** Landed: **(A)** boundary-head loop `a2ca7aa` · **(B′)**
-boundary-head-on-call `13ce724` · **(D)** census closure · **(D2)** DAA `ca50aee` · **(E)** env-wait
-fact + oracle-validation loop.
+VMless **615 / 619** (wall HOLDS) · CPUless whole-census **555 / 619** · **gameplay closure 229 / 250**
+(frontier 21) · recovered-purity wall HOLDS · 29 hot fns proven byte-exact (0 DIVERGED). Landed dos_re
+capabilities: **(A)** boundary-head loop `a2ca7aa` · **(B′)** boundary-head-on-call `13ce724` · **(D2)**
+DAA `ca50aee` · **(INT13)** disk-int platform effect `489188a`; plus the census closure, dispatch
+closure, env-wait fact, the CPUless wall + the `verify_cpuless` differential.
 
 **Next = the standalone `acceptance_cpuless` demo-oracle gate**, not more isolated de-carrier surgery.
 It is the enabler, not just the finish line: it (1) validates the 228 promoted gameplay functions
