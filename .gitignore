@@ -96,3 +96,5 @@ artifacts/cpuless_promote_census_dyn.json
 overkill/cpuless_recovered/
 overkill/cpuless_adapters/
 artifacts/verify_*.txt
+artifacts/cpuless_census_view.json
+artifacts/viewA_differential.txt

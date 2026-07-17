@@ -4,7 +4,42 @@
 gitignored + regeneratable). **Reference:** [`dos_re/docs/dos_re_2.0.md`](../../dos_re/docs/dos_re_2.0.md),
 [`recovery_ir.md`](../../dos_re/docs/recovery_ir.md), [`migration_1.0_to_2.0.md`](../../dos_re/docs/migration_1.0_to_2.0.md).
 
-## TL;DR
+## The endgame (owner-clarified 2026-07-17k) — NOT just the observed closure
+
+The observed demo closure (view A) proves ONE exercised product path is fully CPUless. It is the finite
+path to the first hard wall — **not** the completion criterion. The real endgame is a **fully classified,
+preferably fully CPUless binary** that materially expands `dos_re` and provides complete evidence for the
+memoryless conversion. The desired model:
+
+- every discovered function has a generated CPUless identity; the generated implementation is the DEFAULT;
+- a manual body may OVERRIDE at the same address (`impl = manual_overrides.get(addr, generated[addr])`) —
+  same identity, recorded reason, generated version kept for differential; NOT a separate carrier-touching
+  adapter world;
+- generated + manual compose directly in ONE CPUless call graph; never a silent interpreter fallback;
+  unsupported functions fail loud and stay measurable work items.
+
+**Two views are maintained** (`scripts/probe_vmless_cpuless.py` + `verify_cpuless.py --demo` = A;
+`scripts/cpuless_census_view.py` = B):
+
+- **A. Observed runtime closure** — functions executed by each demo, byte-exact PASS/DIVERGED/INCONCLUSIVE,
+  closure completeness, hard CPUless wall. The strongest *behavioral* correctness gate.
+- **B. Binary-wide CPUless census** — EVERY discovered function classified (auto-cpuless / manual-override /
+  platform-replacement / blocked-shape / blocked-dispatch / blocked-cascade / boundary-loop / likely-data /
+  unclassified) with per-fn metadata (exits, direct/indirect callees, refusal, reachability). *Not observed
+  ≠ dead.* Next capabilities are chosen by BOTH: observed-closure unblock AND whole-binary unblock +
+  `dos_re` reusability, preferring generic emitter/analysis (frame-shape, control-flow, indirect-dispatch,
+  register-indirect capture, resume-address closure, call composition) over per-game glue.
+
+Sequence: (1) ✅ dispatch capture↔close fixpoint; (2) ✅ latest `dos_re`; (3) close the observed wall +
+`play_cpuless.py` [next]; (4) keep expanding GENERIC CPUless support binary-wide; (5) complete binary-wide
+classification; (6) ABI recovery + memory-authority migration (the per-fn metadata is the bridge).
+
+**Latest (dos_re `aa6162b`, converged graph):** census **626** · VMless **622/626** (wall HOLDS) ·
+CPUless **561/626** · recovered-purity wall **HOLDS**. **View B:** 561 auto-cpuless · 33 blocked-cascade ·
+28 blocked-shape (capability queue: tail-dispatch 16, boundary-head 10, sp-as-data 2) · 4 likely-data;
+429/626 reachable from the runtime roots (197 unobserved, not dead).
+
+## TL;DR (historical passes)
 
 The dos_re 2.0 automatic pipeline runs on OVERKILL's binary **with no hand-lifting**. Three passes so
 far, each driving a real dos_re capability and/or a recovery fact:
