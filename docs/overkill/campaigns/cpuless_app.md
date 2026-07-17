@@ -44,11 +44,14 @@ the exact unblock for a fully-CPUless native menu.** Boot bootstrap `254A:04D7` 
 
 ## Slices (ordered; one verified commit each)
 
-1. **[DONE-when-committed] Foundation** — un-ignore + commit `overkill/cpuless_recovered/` (regenerated
-   fresh, walls HOLD, 561/626); + this campaign doc. The runtime-source substrate.
-2. **Runner skeleton** — `scripts/play_cpuless.py` (import guard + `_load_recovered` + boot-image
-   loader) + `overkill/native/loader.py` + `scripts/build_cpuless_boot_image.py`. Prove a tiny root
-   (`254A:04D7` or a memory-only fn) runs standalone from the boot image, byte-exact vs the VM.
+1. **[DONE 2026-07-18, e5fed92] Foundation** — un-ignored + committed `overkill/cpuless_recovered/`
+   (561 fns, walls HOLD) + README + this campaign doc. The runtime-source substrate.
+2. **Runner skeleton** — *2a [DONE 2026-07-18, 0ded6f3]:* `overkill/cpuless_host.py` —
+   `run_recovered(key, mem, plat)` imports the committed corpus + runs the composed graph;
+   `FailLoudPlatform`; `load_recovered` fail-loud on the frontier. Gated by `tests/test_cpuless_host.py`
+   (corpus is a closed importable package; composition over a flat image; fail-loud). *2b [next]:*
+   `scripts/play_cpuless.py` (the import-guard wall + main loop) + `scripts/build_cpuless_boot_image.py`
+   (data-only boot image) + `overkill/native/loader.py`; boot a tiny root standalone, byte-exact vs VM.
 3. **Video platform shim** — `CPUlessPlatformRuntime` video (INT 10h + ports) on the host framebuffer.
 4. **Tail-dispatch capability (dos_re)** — unblock `CC4F/CCC4/CDA7/CC04`; menu closure → 100% CPUless.
 5. **Wire the menu** — boot → title/menu in a native window.
@@ -57,8 +60,12 @@ the exact unblock for a fully-CPUless native menu.** Boot bootstrap `254A:04D7` 
 8. **Walls green + retire** — static+dynamic no-carrier checks pass on the whole run.
 
 ## next
-- slice 2: the runner skeleton + boot-image builder.
+- slice 2b: `scripts/play_cpuless.py` (import-guard wall + main loop) + `build_cpuless_boot_image.py`
+  + `overkill/native/loader.py`; boot a tiny root standalone byte-exact vs the VM.
 
 ## Status log (newest first)
-- **2026-07-18** opened. Blueprint mapped from lemmings. Corpus regenerated (561/626, walls HOLD).
-  Slice 1 (commit the corpus) in progress.
+- **2026-07-18** slice 2a DONE (0ded6f3): `overkill/cpuless_host.py` `run_recovered` runs the committed
+  corpus over a flat image (frame clock proven); `tests/test_cpuless_host.py` gates completeness +
+  composition + fail-loud (5 pass).
+- **2026-07-18** slice 1 DONE (e5fed92): corpus committed as runtime source; campaign opened; blueprint
+  mapped from lemmings; corpus regenerated (561/626, walls HOLD).
