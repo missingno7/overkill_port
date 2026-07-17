@@ -14,7 +14,50 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from overkill.cpuless_host import FailLoudPlatform
+
 ROOT = Path(__file__).resolve().parent.parent
+
+#: The CGA/Tandy video-register block (3D0h-3DFh). These are WRITE-ONLY hardware registers
+#: (mode control 3D8h, colour select 3D9h, CRTC 3D4/5h, ...): a write has NO effect on the
+#: DGROUP image (the host renderer owns the actual display), so the standalone platform records
+#: the value for a renderer and returns. This is correct by the hardware definition, independent
+#: of the BIOS -- unlike INT 10h, which must be ported byte-faithfully (the next slice).
+_CGA_TANDY_PORTS = range(0x3D0, 0x3E0)
+#: CGA/Tandy status register (3DAh): bit0 = display-enable/retrace-in-progress, bit3 = vertical
+#: retrace. The front-end paces on a `in 3DAh` poll; front-end tier is SCREEN-EXACT, so a toggle
+#: that always eventually presents "retrace ready" is faithful enough to let the poll make progress.
+_CGA_STATUS = 0x3DA
+
+
+class OverkillPlatform(FailLoudPlatform):
+    """The standalone CPUless game's device model (carrier-free; grows toward the front-end).
+
+    Today: the CGA/Tandy VIDEO PORTS the front-end drives -- write-only mode/colour registers
+    (recorded, no DGROUP effect) and the 3DAh retrace poll. INT 10h and every other service still
+    FAIL LOUD (inherited) until ported + verified against the dos_re oracle. Recorded writes live in
+    :attr:`video_ports` so a host renderer can read the selected mode/palette."""
+
+    def __init__(self) -> None:
+        self.video_ports: dict[int, int] = {}
+        self._retrace = 0
+
+    def outp(self, port: int, value: int, width: int, cost: int) -> None:
+        p = port & 0xFFFF
+        if p in _CGA_TANDY_PORTS:          # write-only video register: record, no memory effect
+            self.video_ports[p] = value & 0xFF
+            return
+        super().outp(port, value, width, cost)    # everything else fails loud
+
+    def inp(self, port: int, width: int, cost: int) -> int:
+        p = port & 0xFFFF
+        if p == _CGA_STATUS:               # retrace poll: toggle so a wait-loop always progresses
+            self._retrace ^= 0x09          # bit0 (display enable) + bit3 (vertical retrace)
+            return self._retrace
+        return super().inp(port, width, cost)     # everything else fails loud
+
+
+
 
 #: Where the OVERKILL asset container and the static DGROUP bundle live (original-game bytes; never
 #: packaged). A host that keeps them elsewhere overrides these before the first level load.

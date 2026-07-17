@@ -80,6 +80,26 @@ the exact unblock for a fully-CPUless native menu.** Boot bootstrap `254A:04D7` 
 7. **Gameplay as a native override** — express `native_frame` at the frame root; compose. → full game.
 8. **Walls green + retire** — static+dynamic no-carrier checks pass on the whole run.
 
+## Front-end platform surface (SCOPED 2026-07-18, ready for the video-shim slice)
+
+The `CC04` menu closure's exact platform surface (from the committed recovered modules):
+- **INT 10h AH=0Bh** (set CGA palette; `4F57` calls it with `BH=01, BL=00`). Its full register return
+  is CONSUMED downstream, so the shim must be VM-FAITHFUL, not a no-op. dos_re's handler is
+  `dos.py:int10` (the `ah == 0x0B` branch = palette/DAC control).
+- **CGA/Tandy port writes** `0x3D8` (mode control), `0x3D9` (color select), + a computed port in the
+  `0x3D0–0x3DF` block. WRITE-ONLY registers — no DGROUP effect (the host renderer owns the display),
+  so the shim RECORDS them for the renderer.
+- **`in 0x3DA`** retrace polling (the front-end paces on it, not the timer) — a wait-loop input.
+
+**Verification approach (mandatory — this repo's bar is verified slices):** a faithful shim cannot CALL
+dos_re's BIOS (that is the carrier). It must PORT the behavior carrier-free and verify byte-exact
+against dos_re's `int10`/port handling as an OFFLINE ORACLE. So the first video-shim slice is a harness
+that runs a promoted front-end fn (e.g. `4F57`) BOTH via the VM oracle and via `run_recovered` +
+`OverkillPlatform`, and diffs — then `OverkillPlatform` (a carrier-free `FailLoudPlatform` subclass in
+`cpuless_runtime.py`) is grown to make it pass, one INT/port at a time. NOTE: the retrace `in 0x3DA` is
+front-end tier = SCREEN-EXACT (a retrace-ready toggle is faithful enough); the INT 10h palette return is
+what must be byte-faithful.
+
 ## next — the FRONT-END (the remaining half; gameplay is done + playable standalone)
 
 The standalone runner PLAYS gameplay carrier-free (`scripts/play_cpuless.py`). The remaining work is
