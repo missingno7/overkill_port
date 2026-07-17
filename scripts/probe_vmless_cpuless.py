@@ -30,6 +30,7 @@ PY = sys.executable
 
 DEFAULT_SNAPSHOT = ART / "demos" / "demo_play_tandy_L1_start_20260618_143947" / "snapshot"
 DEFAULT_ENTRIES = ART / "lift_census_entries.txt"
+DEFAULT_BOUNDARY_HEADS = ART / "lift_boundary_heads.txt"
 
 
 def _run(argv: "list[str]", label: str) -> str:
@@ -47,6 +48,8 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--snapshot", default=str(DEFAULT_SNAPSHOT))
     ap.add_argument("--entries", default=str(DEFAULT_ENTRIES))
+    ap.add_argument("--boundary-heads", default=str(DEFAULT_BOUNDARY_HEADS),
+                    help="scheduler-yield head facts (the main-loop frame boundary); empty to disable")
     ap.add_argument("--keep-going", action="store_true",
                     help="run every stage even if an earlier one reports refusals")
     args = ap.parse_args(argv)
@@ -57,20 +60,27 @@ def main(argv=None) -> int:
     adp = ART / "cpuless_adapters"
     rec.mkdir(parents=True, exist_ok=True)
     adp.mkdir(parents=True, exist_ok=True)
+    # The boundary-head fact is threaded through ALL THREE stages: irgen marks
+    # the yield site, liftemit emits the boundary event + ResumePoint, and the
+    # promoter carries it into the CPUless ABI analysis.
+    heads = args.boundary_heads if args.boundary_heads and Path(args.boundary_heads).is_file() else None
+    heads_arg = ["--boundary-heads", f"@{heads}"] if heads else []
+    heads_plain = ["--boundary-heads", heads] if heads else []  # promoter takes a bare path
 
     # Stage 1 -- recovery IR (docs/recovery_ir.md).
     _run([str(DOS_RE / "tools" / "irgen.py"), "--exe", str(ROOT / "assets" / "OVERKILL"),
           "--snapshot", args.snapshot, "--game-root", str(ROOT / "assets"),
-          "--entries-file", args.entries, "--out", str(ir)], "irgen -> recovery IR")
+          "--entries-file", args.entries, *heads_arg, "--out", str(ir)], "irgen -> recovery IR")
 
     # Stage 2 -- VMless emit + wall check.
     emit = _run([str(DOS_RE / "tools" / "liftemit.py"), "--from-ir", str(ir),
-                 "--emit-dir", str(vmless), "--require-vmless-wall"], "liftemit -> VMless corpus")
+                 *heads_arg, "--emit-dir", str(vmless), "--require-vmless-wall"],
+                "liftemit -> VMless corpus")
 
     # Stage 3 -- CPUless promotion (the de-carrier fixpoint).
     prom = _run([str(DOS_RE / "tools" / "cpuless_promote.py"), "--ir", str(ir),
                  "--recovered-dir", str(rec), "--adapter-dir", str(adp),
-                 "--import-base", "overkill.cpuless_recovered",
+                 "--import-base", "overkill.cpuless_recovered", *heads_plain,
                  "--census-out", str(ART / "cpuless_promote_census.json"), "--apply"],
                 "cpuless_promote -> CPUless graph")
 
@@ -98,7 +108,8 @@ def main(argv=None) -> int:
         print(f"    {reason:32s} {n}")
     print("\n  the HARD frontier (real capability/fact gaps, not cascade):")
     hard = list(refused.get("ir-not-liftable", [])) + \
-        list(refused.get("tail-dispatch-at-nonzero-depth", []))
+        list(refused.get("tail-dispatch-at-nonzero-depth", [])) + \
+        list(refused.get("boundary-head-on-transfer", []))
     for a in hard:
         print(f"    {a}")
     print("\n  (contains-call refusals are a CASCADE downstream of the hard frontier;")

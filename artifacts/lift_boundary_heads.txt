@@ -1,0 +1,17 @@
+# OVERKILL boundary-head recovery facts (DOS_RE 2.0, docs/dos_re_2.0.md §6a).
+#
+# A boundary head is a scheduler-yield point: the address where a top-level
+# loop yields one frame to the host instead of returning. Declaring it lets the
+# CFG scanner treat the game's own infinite main loop as a liftable coroutine
+# (cfg.scan_function) and the emitter turn the site into a boundary event +
+# ResumePoint (emit.py), rather than refusing the loop `no-exit`.
+#
+# Evidence: all 10 no-exit census entries in the 96C5..9928 gameplay-loop region
+# scan into the SAME strongly-connected loop and every one reaches the frame
+# boundary call below (verified: scripts/probe_vmless_cpuless.py + the CFG scan).
+# This is the same boundary the demo-lockstep gate snapshots at (1010:9B2E).
+#
+# 1010:97CB -- `call 9B2E`, the per-frame boundary of the gameplay main loop
+#              (1010:97B2). One frame == one traversal from the resume point
+#              back to this call. Gives all 10 no-exit entries a modelled exit.
+1010:97CB
