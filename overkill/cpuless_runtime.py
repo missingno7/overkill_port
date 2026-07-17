@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from overkill.cpuless_host import FailLoudPlatform
+from overkill.cpuless_host import CpuStandaloneWitness, FailLoudPlatform
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -28,6 +28,14 @@ _CGA_TANDY_PORTS = range(0x3D0, 0x3E0)
 #: retrace. The front-end paces on a `in 3DAh` poll; front-end tier is SCREEN-EXACT, so a toggle
 #: that always eventually presents "retrace ready" is faithful enough to let the poll make progress.
 _CGA_STATUS = 0x3DA
+
+#: INT 10h AH values dos_re's int10 (dos.py) treats as a pure NO-OP -- registers + memory unchanged
+#: (`if ah in (0x01, 0x0B, 0x12): return`). AH=0Bh (set CGA palette) is the one the front-end's 4F57
+#: calls; the actual colour goes through the 3D9h port write. Kept byte-faithful + verified against
+#: the dos_re oracle in tests/test_overkill_platform_int10.py. Other AH values fail loud until ported.
+_INT10_NOOP_AH = frozenset({0x01, 0x0B, 0x12})
+#: the register channels the platform intr contract echoes back (the VMless adapter's INT_REGS).
+_INT_REGS = ("ax", "bx", "cx", "dx", "si", "di", "bp", "ds", "es")
 
 
 class OverkillPlatform(FailLoudPlatform):
@@ -55,6 +63,19 @@ class OverkillPlatform(FailLoudPlatform):
             self._retrace ^= 0x09          # bit0 (display enable) + bit3 (vertical retrace)
             return self._retrace
         return super().inp(port, width, cost)     # everything else fails loud
+
+    def intr(self, num: int, regs: dict, cost: int) -> dict:
+        if (num & 0xFF) == 0x10:
+            ah = (regs.get("ax", 0) >> 8) & 0xFF
+            if ah in _INT10_NOOP_AH:       # dos_re int10 no-op: registers + memory unchanged
+                out = {r: regs.get(r, 0) & 0xFFFF for r in _INT_REGS}
+                out["flags"] = regs.get("_flags", 0) & 0xFFFF
+                out["halted"] = False
+                return out
+            raise CpuStandaloneWitness(
+                f"INT 10h AH={ah:02X}h not yet ported to OverkillPlatform (front-end frontier) -- "
+                f"port it byte-faithfully against the dos_re int10 oracle before running this path")
+        return super().intr(num, regs, cost)      # every other INT fails loud
 
 
 
