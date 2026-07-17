@@ -9,12 +9,12 @@ gitignored + regeneratable). **Reference:** [`dos_re/docs/dos_re_2.0.md`](../../
 The dos_re 2.0 automatic pipeline runs on OVERKILL's binary **with no hand-lifting**. Three passes so
 far, each driving a real dos_re capability and/or a recovery fact:
 
-| stage | initial (07-17) | + boundary-head (07-17b) | + census closure (07-17c) |
-|---|---|---|---|
-| census entries | 335 | 335 | **512** (static closure) |
-| **VMless liftable** (M2) | 322 / 335 | 332 / 335 | **508 / 512** |
-| **VMless wall** | HOLDS | HOLDS | 1 violation (`5F0D`, DAA — §D) |
-| **CPUless promotable** (M3) | 204 / 335 | 204 / 335 | **438 / 512** |
+| stage | initial (07-17) | + boundary-head (07-17b) | + closure (07-17c) | + DAA (07-17d) |
+|---|---|---|---|---|
+| census entries | 335 | 335 | 512 | **512** |
+| **VMless liftable** (M2) | 322 / 335 | 332 / 335 | 508 / 512 | **508 / 512** |
+| **VMless wall** | HOLDS | HOLDS | 1 violation (`5F0D`) | **HOLDS** |
+| **CPUless promotable** (M3) | 204 / 335 | 204 / 335 | 438 / 512 | **451 / 512** |
 
 The **census closure** (pass 3) is the dominant lever: the observed-execution entry list missed 177
 statically-reachable functions, and every caller of a missing callee refused `contains-call`. Closing
@@ -90,14 +90,16 @@ teach `lift/cpuless.py`+`lift/emit_cpuless.py` to model a jump-table tail dispat
 nonzero depth (it is stack discipline — the depth is known — not `sp`-as-data). This is the deepest of
 the remaining gaps and gates `9B2E` → the frame loop; a focused capability + test, all games inherit it.
 
-### D2. Unhandled BCD/misc opcodes — `5F0D` (DAA), the one VMless-WALL violation
+### D2. DAA opcode — ✅ RESOLVED (2026-07-17d)
 
-The closure surfaced `1010:5F0D`, which uses `0x27` **DAA** (decimal-adjust after BCD add — score/BCD
-code). The interpreter implements it (`cpu.py:1323`) and the decoder names it, but neither emitter
-lifts it: VMless falls back to `interp_one` (**the sole wall violation on the closed graph, 4 sites**)
-and CPUless refuses `unanalyzed-opcode-27`. Clean, well-scoped fix: port the interpreter's flag-exact
-DAA into `register_effects` + both emitters (and its siblings DAS/AAA/AAS while there), with an
-emitted-vs-interpreter test. Restores the wall AND promotes `5F0D`.
+`1010:5F0D` uses `0x27` **DAA** (decimal-adjust after BCD add — score/BCD code). It was decoded +
+interpreted but not lifted: VMless fell back to `interp_one` (the sole wall violation) and CPUless
+refused `unanalyzed-opcode-27`. Fixed upstream (dos_re `ca50aee`): `CPU8086.daa()` is the single source
+of truth (interpreter calls it, VMless emits `cpu.daa()`); CPUless gets `register_effects` (reads/writes
+AX), the flag-def + flag-read tables, and an inline flag-exact `_translate` — tested against the
+interpreter across **all 1024 (AL, CF, AF) inputs**. **Result: VMless wall HOLDS again; CPUless 438 →
+451.** (Only DAA was needed; DAS/AAA/AAS aren't in the interpreter — the game doesn't use them, so they
+stay fail-loud.)
 
 ### B. Tail-dispatch-at-nonzero-depth — 4 functions (a genuine dos_re CAPABILITY gap)
 
@@ -125,28 +127,28 @@ it. overkill is the corpus that surfaced it.
   hooks guard on `_code_matches`, so the snapshot bytes are one patched variant. **Fix:** `desmc-candidate`
   emit or hand-hook, not a frozen lift.
 
-## The 44-function cascade
+## The 31-function cascade
 
-`refused: contains-call` = would promote but a (transitive) callee is still unpromoted. It is the DAG
-shadow of the hard frontier, not an independent gap. The census closure already swept it from 114 to
-44; the rest bottoms out on §B tail-dispatch (which gates `9B2E` → the frame loop), §D2 DAA, and the
-handful of `sp-as-data` / `vectored-int-call` roots. Re-run `scripts/probe_vmless_cpuless.py` after each
-capability lands to watch it shrink — measured, not predicted.
+`refused: contains-call` = would promote but a (transitive) callee is still unpromoted — the DAG shadow
+of the hard frontier, not an independent gap. Swept 114 → 44 (closure) → **31** (DAA). The rest bottoms
+out on §B tail-dispatch (which gates `9B2E` → the frame loop) and the handful of `sp-as-data` /
+`vectored-int-call` roots. Re-run `scripts/probe_vmless_cpuless.py` after each capability to watch it
+shrink — measured, not predicted.
 
 ## Current scorecard & remaining order
 
-VMless **508 / 512** (1 wall violation: `5F0D`) · CPUless **438 / 512**. Remaining, each = one regen +
-a scorecard delta:
+VMless **508 / 512** (wall HOLDS) · CPUless **451 / 512**. Remaining, each = one regen + a scorecard
+delta:
 
-1. ✅ **Boundary-head loop capability (A)** — dos_re `a2ca7aa` + the boundary-head fact.
+1. ✅ **Boundary-head loop (A)** — dos_re `a2ca7aa` + the boundary-head fact.
 2. ✅ **Boundary-head-on-transfer (B′)** — dos_re `13ce724` (waits on §B to demonstrate on the frame loop).
-3. ✅ **Census closure (D)** — `scripts/close_census.py`; the dominant lever (204 → 438 CPUless).
-4. **DAA/BCD opcodes (D2)** — port flag-exact DAA (+DAS/AAA/AAS) into both emitters + `register_effects`.
-   Restores the VMless wall and promotes `5F0D`. Smallest next win.
-5. **Tail-dispatch nonzero-depth / unbalanced-stack (B)** — the deepest gap; gates `9B2E` → the frame
-   loop. Model a jump-table tail dispatch at statically-known nonzero depth.
-6. **`sp-as-data` (0111/065C), `vectored-int-call` (C85B), the SMC/LZEXE census entries (C)** — smaller
-   focused items.
+3. ✅ **Census closure (D)** — `scripts/close_census.py`; the dominant lever (204 → 438).
+4. ✅ **DAA opcode (D2)** — dos_re `ca50aee`; restored the wall, 438 → 451.
+5. **Tail-dispatch nonzero-depth / unbalanced-stack (B)** — the deepest gap (13 fns); gates `9B2E` →
+   the frame loop. Model a jump-table tail dispatch at statically-known nonzero depth. **Next up.**
+6. **`sp-as-data` (`0111`/`065C`), `vectored-int-call` (`C85B`), the SMC/LZEXE census entries (C)** —
+   smaller focused items. (A sibling `sp-as-data` `mov sp,bp` case was already fixed upstream by another
+   port, dos_re `7a9a65e` — the shared-toolchain dividend.)
 7. **Re-measure**, then stand up the standalone CPUless runtime against the demo oracle
    (`acceptance_cpuless` pattern) — the byte-exact gate that makes M3 real (the lockstep, CPU-carrier
    removed).
