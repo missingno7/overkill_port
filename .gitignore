@@ -84,3 +84,6 @@ artifacts/cpuless_recovered/
 artifacts/cpuless_adapters/
 artifacts/cpuless_census.json
 artifacts/cpuless_promote_census.json
+artifacts/recovery_ir_closed.json
+artifacts/lift_census_entries_closed.txt
+artifacts/cpuless_promote_census_closed.json

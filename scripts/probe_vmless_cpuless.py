@@ -54,23 +54,27 @@ def main(argv=None) -> int:
                     help="run every stage even if an earlier one reports refusals")
     args = ap.parse_args(argv)
 
-    ir = ART / "recovery_ir.json"
+    ir = ART / "recovery_ir_closed.json"    # the STATICALLY-CLOSED graph (stage 0 below)
     vmless = ART / "vmless_emit"
     rec = ART / "cpuless_recovered"
     adp = ART / "cpuless_adapters"
     rec.mkdir(parents=True, exist_ok=True)
     adp.mkdir(parents=True, exist_ok=True)
-    # The boundary-head fact is threaded through ALL THREE stages: irgen marks
-    # the yield site, liftemit emits the boundary event + ResumePoint, and the
+    # The boundary-head fact is threaded through ALL stages: irgen marks the
+    # yield site, liftemit emits the boundary event + ResumePoint, and the
     # promoter carries it into the CPUless ABI analysis.
     heads = args.boundary_heads if args.boundary_heads and Path(args.boundary_heads).is_file() else None
     heads_arg = ["--boundary-heads", f"@{heads}"] if heads else []
     heads_plain = ["--boundary-heads", heads] if heads else []  # promoter takes a bare path
 
-    # Stage 1 -- recovery IR (docs/recovery_ir.md).
-    _run([str(DOS_RE / "tools" / "irgen.py"), "--exe", str(ROOT / "assets" / "OVERKILL"),
-          "--snapshot", args.snapshot, "--game-root", str(ROOT / "assets"),
-          "--entries-file", args.entries, *heads_arg, "--out", str(ir)], "irgen -> recovery IR")
+    # Stage 0 -- CLOSE THE CENSUS: the observed-execution entry list misses
+    # statically-reachable callees, which is the dominant `contains-call` blocker.
+    # close_census.py runs irgen to a fixpoint over the discovered call graph and
+    # writes the closed IR that every later stage consumes (docs: dos_re_2.0.md
+    # -- "discover the reachable graph, don't depend on observation coverage").
+    _run([str(ROOT / "scripts" / "close_census.py"), "--snapshot", args.snapshot,
+          "--seed", args.entries, "--out-ir", str(ir),
+          *(["--boundary-heads", heads] if heads else [])], "close_census -> closed recovery IR")
 
     # Stage 2 -- VMless emit + wall check.
     emit = _run([str(DOS_RE / "tools" / "liftemit.py"), "--from-ir", str(ir),
@@ -99,21 +103,24 @@ def main(argv=None) -> int:
     print("=" * 64)
     print(f"  census entries                 {total}")
     print(f"  VMless liftable (M2 corpus)    {liftable}/{total}")
-    wall = "HOLDS" if "VMless wall: HOLDS" in emit else "NOT CONFIRMED"
+    if "VMless wall: HOLDS" in emit:
+        wall = "HOLDS"
+    else:
+        import re as _re
+        m = _re.search(r"(\d+) interp_one fallback call site", emit)
+        wall = f"VIOLATED ({m.group(1)} interp_one site(s))" if m else "NOT CONFIRMED"
     print(f"  VMless wall (no interp_one)    {wall}")
     print(f"  CPUless promotable (M3)        {promotable}/{total}")
     print("\n  frontier (the automatic-recovery work-list):")
-    for reason, items in refused.items():
+    for reason, items in sorted(refused.items(), key=lambda kv: -(len(kv[1]) if isinstance(kv[1], list) else kv[1])):
         n = len(items) if isinstance(items, list) else items
-        print(f"    {reason:32s} {n}")
-    print("\n  the HARD frontier (real capability/fact gaps, not cascade):")
-    hard = list(refused.get("ir-not-liftable", [])) + \
-        list(refused.get("tail-dispatch-at-nonzero-depth", [])) + \
-        list(refused.get("boundary-head-on-transfer", []))
-    for a in hard:
-        print(f"    {a}")
-    print("\n  (contains-call refusals are a CASCADE downstream of the hard frontier;")
-    print("   the fixpoint sweeps them in as the hard gaps close.)")
+        print(f"    {reason:36s} {n}")
+    print("\n  the HARD frontier (real capability/fact gaps -- everything except the")
+    print("  contains-call cascade, which the fixpoint sweeps in as these close):")
+    for reason, items in refused.items():
+        if reason == "contains-call" or not isinstance(items, list):
+            continue
+        print(f"    [{reason}] {' '.join(items)}")
     return 0
 
 
