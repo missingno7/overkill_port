@@ -19,6 +19,8 @@ from __future__ import annotations
 import struct
 from dataclasses import dataclass
 
+from overkill.recovered.adapters.level_rom import class_override_pairs_from_rom, footer_from_rom
+
 from .level_assets import (
     TILE_PLANE_FOOTER_SIZE,
     build_level_class_table,
@@ -87,8 +89,6 @@ def load_native_level_from_rom(level_rom: bytes, container, level: int) -> Nativ
     384-byte :mod:`overkill.recovered.adapters.level_rom` blob instead of the 1 MB exe image -- no
     ``exe_image``, no data-segment-shaped scratch buffer.  Byte-identical to ``load_native_level`` fed
     the exe the ROM was extracted from (see ``tests/test_level_rom.py``)."""
-    from overkill.recovered.adapters.level_rom import class_override_pairs_from_rom, footer_from_rom
-
     footer = footer_from_rom(level_rom)
     tile_plane = finalize_level_tile_plane(decode_level_tile_map(container, level), footer)
     class_table = build_level_class_table(class_override_pairs_from_rom(level_rom, level))

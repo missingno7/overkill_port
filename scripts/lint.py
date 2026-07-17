@@ -22,14 +22,20 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 # dos_re/ is now the framework submodule's own repo root, not the package --
 # that's one level deeper, at dos_re/dos_re/. Scanning the submodule root
 # would also sweep in its own tests/tools/examples (dos_re has its own lint
-# for those). nuked_opl3 is no longer vendored here at all -- it's dos_re's
-# own nested submodule (dos_re/pynuked_opl3/); overkill's code that imports
-# it (scripts/sdl_view.py) is checked like any other external import below.
+# for those). pynuked_opl3 is not vendored here and is no longer even a dos_re
+# submodule: it is an EXTERNAL, opt-in accuracy package (DOSRE_OPL3_BACKEND=nuked),
+# so it is checked like any other external import below -- see dos_re.audio_sink.
 PACKAGE_ROOTS = (ROOT / "dos_re" / "dos_re", ROOT / "overkill")
 SCRIPTS_ROOT = ROOT / "scripts"
 
+# dos_re/ MUST come first: `pip install -e` of a dos_re from a SIBLING port
+# (e.g. ancient_port) registers a global `dos_re` distribution, and without this
+# entry `import dos_re.x` silently resolves to THAT checkout instead of this
+# repo's submodule -- so lint would import a different revision than the one it
+# is scanning (and than the tests, which all insert this path themselves).
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(SCRIPTS_ROOT))
+sys.path.insert(0, str(ROOT / "dos_re"))
 
 
 @dataclass
@@ -90,7 +96,9 @@ def _iter_python_files() -> list[pathlib.Path]:
 
 
 def _internal_roots() -> set[str]:
-    roots = {"dos_re", "overkill", "pynuked_opl3"}
+    # pynuked_opl3 is NOT internal: it is an external, opt-in accuracy package
+    # (see dos_re.audio_sink.load_opl3) that is not expected to be installed.
+    roots = {"dos_re", "overkill"}
     roots.update(path.stem for path in SCRIPTS_ROOT.glob("*.py"))
     return roots
 
@@ -290,9 +298,6 @@ def _lint_file(path: pathlib.Path, internal_roots: set[str]) -> list[LintIssue]:
             continue
         root = target.split(".", 1)[0]
         if root not in internal_roots:
-            continue
-        if target == "pynuked_opl3._opl3_cffi":
-            # Generated local CFFI extension; absent until the user builds it.
             continue
         if importlib.util.find_spec(target) is None:
             issues.append(LintIssue("missing-import", path, lineno, f"cannot resolve import target {target!r}"))
