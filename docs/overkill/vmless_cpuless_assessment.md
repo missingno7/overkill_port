@@ -156,22 +156,51 @@ reached-and-promoted**, a **22-function frontier**, of which the real root gaps 
 `tail-dispatch` ×3 (`4E26 580B CC4F`), `sp-as-data` ×1 (`0111`), `ir-not-liftable` ×1 (`0248`, SMC),
 `vectored-int-call` ×1 (`C85B`) — plus `97B2`/`9B2E` waiting on them and a 15-fn cascade below.
 
+## Oracle validation (the M2 down-payment) — 2026-07-17f
+
+`liftverify` (the byte-exact M2 gate) over a 40-function hot-gameplay slice from the L1 snapshot:
+**12 ORACLE_PASSING** (byte-exact vs the interpreted oracle: `0162 0672 073C 4CED 4D15 4D64 4FF9 505B
+5073 511F 5160 518C`), **1 DIVERGED** (`0679`, the env-wait — §E, correctly), 0 INCONCLUSIVE, the rest
+`notreach` (an idle level-start forward run doesn't exercise event-driven paths — unproven, not
+disproven). **Finding: every gameplay function that actually executes verifies byte-exact — the
+automatic lift is provably correct on real running code, not just structurally emittable.** Reaching the
+`notreach` set needs a demo-DRIVEN run (the standalone/acceptance harness), not a static snapshot.
+
+## The remaining gaps are all deep — the enabler is the acceptance harness
+
+Every one of the ~6 gameplay-frontier root gaps was investigated this pass and is genuinely
+non-trivial; none is a clean drop-in, and — critically — **none can be validated correct without a
+standalone demo-oracle run**, so rushing any of them risks a silently-wrong de-carrier:
+
+- **Tail-dispatch `4E26 580B CC4F` (intra-function jump tables).** Confirmed by reading the table:
+  `5827`'s `jmp cs:[bx+5834]` (bx = `CS:[95BC]`*2, the video mode) lands at `583A`/`5852`/`587E` — three
+  mode-specific blocks *inside the function*, each popping the pushed param. `_gate_dyn_evidence`
+  already accepts intra-function jump-table landings, **but `_check_stack_depths` seeds every dispatch
+  target at depth 0 (the external-arrival model) and refuses the `JMP_IND` at nonzero depth** — the
+  landings are actually reached at the jmp's depth *d*. The fix must thread per-site evidence through
+  the depth walk + flag pass + seeding to follow intra-function landings at depth *d* (distinct from
+  external depth-0 arrivals). Deep; correctness needs the standalone.
+- **`sp-as-data 0111`** — a `ret` function whose `jnz;jmp 0001` tail makes its scan span a *second*
+  function (`0001`); the shared-tail depth is what trips `sp-as-data`.
+- **`vectored-int-call C85B`** — contains `int 13h` (disk), which the interpreter itself doesn't
+  implement → a dead path in gameplay; needs dead-path handling, not plain lifting.
+- **`ir-not-liftable 0248 / 3EFC`** — runtime-patched (SMC) with *decode-level* garbage in the snapshot
+  (not operand-immediate patches), so the new de-SMC promotion (`268eea9`) doesn't apply.
+
 ## Current scorecard & remaining order
 
-VMless **508 / 512** (wall HOLDS) · CPUless whole-census **451 / 512** · **gameplay closure 228 / 250**.
-Landed: **(A)** boundary-head loop `a2ca7aa` · **(B′)** boundary-head-on-call `13ce724` · **(D)** census
-closure · **(D2)** DAA `ca50aee` · **(E)** env-wait fact + oracle-validation loop. Remaining, ordered by
-gameplay-path leverage:
+VMless **508 / 512** (wall HOLDS) · CPUless whole-census **451 / 512** · **gameplay closure 228 / 250,
+12 of the reached hot fns proven byte-exact.** Landed: **(A)** boundary-head loop `a2ca7aa` · **(B′)**
+boundary-head-on-call `13ce724` · **(D)** census closure · **(D2)** DAA `ca50aee` · **(E)** env-wait
+fact + oracle-validation loop.
 
-1. **Tail-dispatch on the gameplay path (B, 3 fns: `4E26 580B CC4F`)** — these are **intra-function
-   jump tables** (`push <param>; jmp cs:[table+mode*2]` → landing blocks *inside the same function*
-   that pop the param), which the depth walk refuses as depth-0 tail exits. Needs the depth/CFG passes
-   to follow known intra-function dispatch landings at the current depth (evidence-gated). Deepest, but
-   only 3 are on the gameplay path.
-2. **`sp-as-data` `0111` (an ISR: pusha/…/iret), `ir-not-liftable` `0248` (SMC), `vectored-int-call`
-   `C85B` (a disk `int 13h` path, likely dead)** — specialized, one at a time.
-3. **Stand up the standalone `acceptance_cpuless` demo-oracle gate** — the byte-exact gate that makes M3
-   real (the lockstep, CPU-carrier removed). The `liftverify` slice is the M2 down-payment on this.
+**Next = the standalone `acceptance_cpuless` demo-oracle gate**, not more isolated de-carrier surgery.
+It is the enabler, not just the finish line: it (1) validates the 228 promoted gameplay functions
+byte-exact *together* over the demo (reaching the `notreach` set), and (2) gives the correctness gate
+needed to land the deep tail-dispatch/sp-as-data capabilities *safely*. Build order: platform runtime +
+boundary scheduler → dispatch/HANDLERS registries + per-site dyn-evidence (a probe over the demo) →
+replay the demo standalone vs the oracle, masked byte-exact per boundary. Then the deep gaps land with a
+real gate under them.
 
 ## What this does NOT change today
 
