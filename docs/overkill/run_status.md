@@ -63,6 +63,36 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-17g — the CPULESS HARD WALL installed (recovered code is provably pure) + correctness differential + graph completed (512->619)
+
+Owner: "make sure it's really fully cpuless, install a hard wall so it never touches cpu when running."
+Three landed (no dos_re change; used its tools + built port tooling). Detail in
+[`vmless_cpuless_assessment.md`](vmless_cpuless_assessment.md).
+
+1. **THE CPULESS HARD WALL -- installed + HOLDS.** `dos_re/tools/lint_cpuless.py` (probe stage 5): a
+   static AST proof that EVERY recovered module imports nothing but sibling recovered modules -- never
+   dos_re.cpu, the interpreter, the lifted graph, or the CPU-ABI adapters. The recovered CODE is provably
+   cpuless. (The runner-closure half of the wall waits on a play_cpuless.py runner.)
+2. **THE CORRECTNESS GATE -- `scripts/verify_cpuless.py`** (the per-function differential the manifest
+   names but dos_re lacked). Runs the generated adapter (which calls the pure recovered body) vs
+   INTERPRETING the original bytes over randomized state; diffs the full register file + memory.
+   **29 PASS byte-exact / 0 DIVERGED** -- first proof the recovered fns COMPUTE what the CPU does, not
+   just emit. (This was THE missing thing: structural promotion != correctness.)
+3. **GRAPH COMPLETED via dynamic-dispatch closure.** The differential exposed that close_census followed
+   only near/far CALLs, so dispatch-only targets (5A00 -> 3103 Tandy coord render, the AFxx handler
+   cluster) were MISSING from the graph. Feeding the captured indirect_sites.json into the closure:
+   **census 512 -> 619, VMless 508 -> 615, CPUless 451 -> 554**; 3103/30D2 now promoted (EGA-only 32AC
+   dead in Tandy, correctly absent). Recovered/adapters now emit to an importable package
+   (overkill.cpuless_*) so the wall + differential can AST-check + import them.
+
+**HONEST STATUS -- NOT fully cpuless yet:** (a) gameplay runtime closure still 228/250 (22-fn frontier:
+the deep tail-dispatch/sp-as-data/SMC gaps + cascade), so a running standalone would still need
+CPU-carrier adapters for those; (b) no standalone `play_cpuless.py` runner yet, so the RUNNER-CLOSURE
+half of the wall isn't installed. What IS proven: the recovered code is pure (wall HOLDS) and 29 fns are
+byte-exact. NEXT: (1) build play_cpuless.py + install the runner-closure wall; (2) the deep tail-dispatch
+depth-walk capability (now with verify_cpuless as the gate under it); (3) close the gameplay frontier.
+Shipped runtime untouched; no generated output hand-edited; lint green (1402 files).
+
 ## 2026-07-17f — oracle-validation extended (12 gameplay fns byte-exact) + dyn-dispatch evidence groundwork; tail-dispatch confirmed a DEPTH-WALK capability
 
 Validation + acceptance-harness groundwork (no dos_re change; ran its tools). Full detail in
