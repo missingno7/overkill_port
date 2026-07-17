@@ -28,11 +28,11 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 PACKAGE_ROOTS = (ROOT / "dos_re" / "dos_re", ROOT / "overkill")
 SCRIPTS_ROOT = ROOT / "scripts"
 
-# dos_re/ MUST come first: `pip install -e` of a dos_re from a SIBLING port
-# (e.g. ancient_port) registers a global `dos_re` distribution, and without this
-# entry `import dos_re.x` silently resolves to THAT checkout instead of this
-# repo's submodule -- so lint would import a different revision than the one it
-# is scanning (and than the tests, which all insert this path themselves).
+# dos_re/ MUST come first: `pip install -e` of a dos_re checkout from ANY other
+# project registers a global `dos_re` distribution, and without this entry
+# `import dos_re.x` silently resolves to THAT checkout instead of this repo's
+# submodule -- so lint would import a different revision than the one it is
+# scanning (and than the tests, which all insert this path themselves).
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(SCRIPTS_ROOT))
 sys.path.insert(0, str(ROOT / "dos_re"))
