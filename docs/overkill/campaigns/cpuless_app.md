@@ -17,6 +17,27 @@ drop-in at the SAME identity (kept honest by a differential test), never a separ
 This is the "app unification" open item. Today `play_native` runs gameplay natively but the front-end
 stages are fail-loud GAPs (see `native_app.describe_gaps`). We fill them with lifted CPUless methods.
 
+## ADR-2 — the override seam is COARSE (owner-confirmed 2026-07-18)
+
+The manual readable port and the generated corpus are **two different decompositions**: the generated
+corpus is keyed by machine address (`func_<cs>_<ip>`, shaped like the call graph); the manual code is
+organized by GAME SEMANTICS (`native_frame`, `domain/`, `systems/`, object-record views) and verified
+by whole-DGROUP frame lockstep, not per-function. Therefore **manual overrides land at clean ABI /
+semantic boundaries, never per-machine-address**:
+
+- the **gameplay frame boundary (`97B2`/`9B2E`) is the primary seam** — gameplay is ONE coarse manual
+  override (`native_frame`), everything outside it (boot, menu, front-end, transitions) is generated;
+- fine-grained `sys.modules` aliasing (lemmings `native/loader.py`) is reserved for hot LEAF functions
+  (performance), not for re-expressing the semantic port as address chunks — doing that would re-shred
+  the readable code and pit two decompositions against the same DGROUP.
+
+**"Manual patches generated" = a readable REPLACEMENT that grows at coarse boundaries, with the
+generated version retained as its differential oracle** (byte-exact drop-in; a changed observable is a
+broken override). Every layer keeps a byte-exact oracle: generated vs VM (`verify_cpuless`), override
+vs generated (drop-in differential), whole run vs VM (lockstep). Caveats kept honest: "generated fills
+the gaps" = the PROMOTED gaps (frontier still fails loud); "cold boot" = from a data-only boot image
+(VM-free), not necessarily re-running LZEXE natively.
+
 ## The blueprint (mapped from lemmings → overkill)
 
 | lemmings | overkill | role |
