@@ -198,9 +198,19 @@ fact + oracle-validation loop.
 It is the enabler, not just the finish line: it (1) validates the 228 promoted gameplay functions
 byte-exact *together* over the demo (reaching the `notreach` set), and (2) gives the correctness gate
 needed to land the deep tail-dispatch/sp-as-data capabilities *safely*. Build order: platform runtime +
-boundary scheduler → dispatch/HANDLERS registries + per-site dyn-evidence (a probe over the demo) →
-replay the demo standalone vs the oracle, masked byte-exact per boundary. Then the deep gaps land with a
-real gate under them.
+boundary scheduler → dispatch/HANDLERS registries + per-site dyn-evidence → replay the demo standalone
+vs the oracle, masked byte-exact per boundary. Then the deep gaps land with a real gate under them.
+
+**Groundwork landed (2026-07-17f): per-site dynamic-dispatch evidence.**
+[`scripts/capture_indirect_sites.py`](../../scripts/capture_indirect_sites.py) runs the demo(s) through
+the ref VM, traps all 87 near-indirect sites in the graph, and records each resolved target →
+`indirect_sites.json` (the `--dyn-evidence` input the promoter's DISPATCH registry *and* the future
+standalone runtime consume; wired into the probe's promote stage, used when present). Two findings:
+(1) it lifted the resolved dispatch registry 393 → 406 selectors; (2) it **empirically confirmed the
+tail-dispatch gap is a depth-walk CAPABILITY, not an evidence gap** — feeding the evidence left the
+count at 451 (the `tail-dispatch-at-nonzero-depth` refusal fires in `_check_stack_depths` *before*
+dispatch resolution). It also showed several dispatch sites (e.g. `5827`'s EGA path) are **never taken
+in Tandy gameplay** — dead selectors that promote optimistically.
 
 ## What this does NOT change today
 

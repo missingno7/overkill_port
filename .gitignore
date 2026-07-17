@@ -91,3 +91,5 @@ artifacts/cpuless_closure.json
 artifacts/cpuless_closure_gameplay.json
 artifacts/liftverify_slice.txt
 artifacts/liftverify_emit/
+artifacts/indirect_sites.json
+artifacts/cpuless_promote_census_dyn.json

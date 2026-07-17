@@ -83,10 +83,14 @@ def main(argv=None) -> int:
                  *heads_arg, "--emit-dir", str(vmless), "--require-vmless-wall"],
                 "liftemit -> VMless corpus")
 
-    # Stage 3 -- CPUless promotion (the de-carrier fixpoint).
+    # Stage 3 -- CPUless promotion (the de-carrier fixpoint).  Uses captured
+    # per-site dynamic-dispatch evidence when present (scripts/capture_indirect_
+    # sites.py) so the DISPATCH registry resolves observed indirect targets.
+    dyn = ART / "indirect_sites.json"
+    dyn_arg = ["--dyn-evidence", str(dyn)] if dyn.is_file() else []
     prom = _run([str(DOS_RE / "tools" / "cpuless_promote.py"), "--ir", str(ir),
                  "--recovered-dir", str(rec), "--adapter-dir", str(adp),
-                 "--import-base", "overkill.cpuless_recovered", *heads_plain,
+                 "--import-base", "overkill.cpuless_recovered", *heads_plain, *dyn_arg,
                  "--census-out", str(ART / "cpuless_promote_census.json"), "--apply"],
                 "cpuless_promote -> CPUless graph")
 
