@@ -116,6 +116,14 @@ Then wire the front-end into `play_cpuless` over the existing boot image
 - later: `overkill/native/loader.py` (fine sys.modules aliasing for hot-leaf overrides, per ADR-2).
 
 ## Status log (newest first)
+- **2026-07-18** slice 3b DONE (e3e36a2): `OverkillPlatform.intr(INT 10h AH=0Bh)` ported + verified
+  BYTE-FAITHFUL against the dos_re `int10` oracle (a no-op there; the colour goes via the 3D9h port);
+  unported AH values fail loud. Reusable oracle harness (`test_overkill_platform_int10.py`) grows the
+  platform one INT/AH at a time. **Demonstrated:** the front-end fn `4F57` (closure = 2 fns, both
+  promoted, only INT 10h) now RUNS STANDALONE under the wall via `run_recovered + OverkillPlatform`,
+  carrier-free — the first generated FRONT-END code in the standalone runtime. (It took a trivial path
+  with synthetic zero regs; exercising the real video branch + a byte-exact vs-VM diff needs 4F57's
+  captured entry state from a live front-end call — next.)
 - **2026-07-18** slice 3a DONE (12a88a9): started the device model — `OverkillPlatform` (video-port
   half: CGA/Tandy write-only registers recorded, 3DAh retrace toggle; INT 10h + rest fail loud) + the
   front-end platform surface SCOPED. `tests/test_overkill_platform.py` (3). **next slice 3b: the INT 10h
