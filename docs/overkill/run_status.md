@@ -63,6 +63,39 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-17k — ENDGAME REFRAMED (two views) + dispatch fixpoint converged + dos_re aa6162b + register-indirect capture
+
+Owner clarified the architecture: the observed demo closure is only the FIRST hard wall, NOT the
+endgame. The endgame is a FULLY CLASSIFIED, preferably fully CPUless BINARY that materially expands
+dos_re and gives complete evidence for the memoryless conversion. Model: every discovered fn has a
+generated CPUless identity (the DEFAULT); a manual body OVERRIDES at the same address (kept for
+differential); one composed graph; no silent fallback; unsupported = loud, measurable work items.
+Two views maintained. Full write-up: [`vmless_cpuless_assessment.md`](vmless_cpuless_assessment.md).
+
+Done this pass:
+- **REGISTER-INDIRECT dispatch capture** (`capture_indirect_sites.py`): `call ax`/`jmp bx` computed
+  pointers now record the register value as the target (was memory-indirect only). Found by the
+  demo-driven differential (837A -> 83D7 UnknownDispatchTarget on cold-start).
+- **DISPATCH capture<->close FIXPOINT** (`scripts/close_dispatch_fixpoint.py`, generic -- owner wants
+  it in dos_re): alternates capture+close because each close adds fns whose own dispatch sites the prior
+  capture never trapped. **CONVERGED at 626 entries** -- no missing dispatch targets on the demos.
+- **Bumped dos_re 300c24d -> aa6162b** (8 cpuless commits). On overkill: census 626, VMless 622/626,
+  CPUless 561/626, both walls HOLD.
+- **VIEW B = the BINARY-WIDE census** (`scripts/cpuless_census_view.py`): every discovered fn classified
+  + per-fn metadata (exits, near/far + indirect callees, refusal, root-reachability). **561 auto-cpuless,
+  33 blocked-cascade, 28 blocked-shape (queue: tail-dispatch 16, boundary-head 10, sp-as-data 2), 4
+  likely-data; 429/626 reachable from runtime roots (197 UNOBSERVED, not dead).**
+- **VIEW A (behavioral):** demo-driven differential over the converged graph -- L1 gameplay **161 PASS /
+  0 DIVERGED**; cold-start **292 PASS / 0 DIVERGED** (453 distinct fns byte-exact across both demos, 0
+  divergences). The dispatch convergence + register-indirect capture + cs codegen fix all validated.
+
+NEXT (owner sequence): (3) close the observed CPUless wall + build `play_cpuless.py` (the runner-closure
+wall, the other half of the hard wall); (4) keep expanding GENERIC CPUless support binary-wide -- the
+capability queue is tail-dispatch (stack-arg dispatch composition, 16 fns, the biggest generic win) >
+boundary-head cascade > sp-as-data; (5) complete binary-wide classification; (6) ABI recovery +
+memoryless. Also: promote the register-indirect capture + fixpoint into dos_re proper (generic). Shipped
+runtime untouched.
+
 ## 2026-07-17i — DEMO-DRIVEN differential caught a real codegen bug in the OBJECT WALK; fixed in dos_re
 
 Owner: "next best steps towards full cpuless, improving dos_re lifting ability." Built the proper
