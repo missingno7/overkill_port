@@ -116,6 +116,10 @@ Then wire the front-end into `play_cpuless` over the existing boot image
 - later: `overkill/native/loader.py` (fine sys.modules aliasing for hot-leaf overrides, per ADR-2).
 
 ## Status log (newest first)
+- **2026-07-18** slice 3a DONE (12a88a9): started the device model — `OverkillPlatform` (video-port
+  half: CGA/Tandy write-only registers recorded, 3DAh retrace toggle; INT 10h + rest fail loud) + the
+  front-end platform surface SCOPED. `tests/test_overkill_platform.py` (3). **next slice 3b: the INT 10h
+  AH=0Bh byte-faithful port + a VM-oracle diff harness (run `4F57` via VM vs run_recovered+platform).**
 - **2026-07-18** slice 2b-2 DONE (e152d54): **`scripts/play_cpuless.py` — the standalone runner PLAYS
   gameplay** carrier-free with the wall armed (`--frames 5` renders 5 frames, exit 0, zero carrier).
   Thin wall-armed wrapper over play_native (proven carrier-free). `tests/test_play_cpuless.py`
