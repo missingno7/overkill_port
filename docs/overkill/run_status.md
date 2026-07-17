@@ -63,6 +63,33 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-17f — oracle-validation extended (12 gameplay fns byte-exact) + dyn-dispatch evidence groundwork; tail-dispatch confirmed a DEPTH-WALK capability
+
+Validation + acceptance-harness groundwork (no dos_re change; ran its tools). Full detail in
+[`vmless_cpuless_assessment.md`](vmless_cpuless_assessment.md).
+
+- **Oracle validation extended (6 -> 12 byte-exact).** liftverify over a 40-fn hot-gameplay slice:
+  **12 ORACLE_PASSING** (0162 0672 073C 4CED 4D15 4D64 4FF9 505B 5073 511F 5160 518C), 1 DIVERGED (0679,
+  the env-wait, correctly), rest notreach (idle level-start doesn't exercise event paths). Finding:
+  every gameplay fn that actually RUNS verifies byte-exact -- the automatic lift is correct on real code.
+- **Every remaining gameplay-frontier gap investigated + scoped** (all deep, none clean, none
+  validatable without a standalone): tail-dispatch (intra-function jump tables), sp-as-data 0111
+  (tail-jmp shares a scan with fn 0001), vectored-int C85B (dead int-13h disk path), SMC 0248/3EFC
+  (decode-level, de-SMC doesn't apply).
+- **Dyn-dispatch evidence captured (`scripts/capture_indirect_sites.py`)** -- 1st acceptance-harness
+  piece: traps all 87 near-indirect sites over the demo, records resolved targets -> indirect_sites.json
+  (--dyn-evidence for the DISPATCH registry + future standalone). Registry 393 -> 406 selectors; several
+  sites (5827 EGA) DEAD in Tandy gameplay. **EMPIRICALLY CONFIRMED the tail-dispatch gap is a depth-walk
+  CAPABILITY, not evidence**: feeding the evidence left CPUless 451/512 unchanged (the
+  tail-dispatch-at-nonzero-depth refusal fires in _check_stack_depths BEFORE dispatch resolution).
+
+**Decision recorded:** the next step is BUILDING THE STANDALONE acceptance_cpuless demo-oracle gate --
+the ENABLER that validates the 228 promoted fns together (reaching the notreach set) AND gives the
+correctness gate to land the deep de-carrier capabilities safely -- NOT more isolated de-carrier surgery
+without a gate under it. Build order: platform runtime + boundary scheduler -> dispatch/HANDLERS
+registries (evidence now captured) -> replay the demo standalone vs oracle, byte-exact per boundary.
+Shipped runtime untouched; no generated output hand-edited.
+
 ## 2026-07-17e — GAMEPLAY runtime closure measured (228/250) + the lift is now ORACLE-VALIDATED (not just structural)
 
 Shifted from "how many functions emit" to the manifest's REAL M3 metric + the authoritative gate.
