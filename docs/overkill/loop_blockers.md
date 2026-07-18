@@ -1994,3 +1994,36 @@ the band living at physical strip row `R` is `row_base - ((R_pull_distance) * 0x
 `[234C]`, `[234E]` and the pull cadence.  Derive that mapping (a small amount of algebra against the
 measurement above), or -- simpler and exact -- record the strip's above-DGROUP window in the shadow
 cache so the replay can read it.  These are the last 21 save-buffer frames.
+
+### 2026-07-18k — the cold-start differential cannot consume a cold-start demo (clock + corpus)
+
+Do not retry "wire `demo_coldspine_20260718_211150` into `verify_cpuless_coldstart.py`" as a single
+step. Two independent walls, both measured (full write-up: `run_status.md` 2026-07-18k).
+
+**Wall 1 — the corpus cannot cold boot.** Cold entry is `1C32:000E` (the LZEXE stub), not
+`1010:96C8`:
+
+    pypy3 -u -c "import sys;sys.path[:0]=['.','dos_re'];\
+    from overkill.runtime import create_overkill_runtime;from overkill.launch import build_command_tail;\
+    rt=create_overkill_runtime('assets/OVERKILL',game_root='assets',command_tail=build_command_tail('tandy','adlib'));\
+    print('%04X:%04X'%(rt.cpu.s.cs&0xFFFF,rt.cpu.s.ip&0xFFFF))"
+    # -> 1C32:000E   ; and segment 1C32 has 0 census entries and 0 corpus modules
+
+**Wall 2 — the clocks are different rates, not offset.** The recorder counts SIX boundary sources
+(present 3354 ∪ timer 0679 ∪ retrace 50C9 ∪ nine wall-clock `is_*_wait()` detectors ∪ CRC-gated
+direct publish ∪ stall recovery); the differential cuts at `0679` only. Measured on this demo's exact
+config, the first 2600 cold boundaries are `{retrace 2246, present 177, timer 177}` — `0679` is 1 in
+14.7 and screen-dependent. **Do not derive a scale factor**; it does not exist (the older demos
+measured `{2: 1199 frames, 1838: 1 frame}`).
+
+**The trap that cost the most time here:** hooking `1010:96C8` to count boundaries before the
+snapshot start HANGS with no output. OVERKILL already registers
+`overkill_intro_retrace_delay_loop_tail_96c8` there, and calling the previous hook from a wrapper
+re-enters an intro delay loop. Count that offset some other way. Related: a backgrounded Bash task
+writes its output file only at process exit, so an empty log is NOT evidence of a hang — check the
+process (`ps -W | grep pypy`) before concluding either way.
+
+**The next slice is Wall 2, and it is cheap:** declare `1010:C9FC` (the real retrace poll,
+`in al,3DA ; test al,8 ; jz self`, block 0 of `func_1010_ca02`) as a boundary head — measured FREE
+(623/626 liftable, identical to baseline; only `C9F1` and `CA02` change). Declaring the `50C9` THUNK
+instead regresses 623 → 585 and is already documented as refuted in `lift_boundary_heads.txt`.

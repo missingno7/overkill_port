@@ -1,0 +1,835 @@
+{
+  "version": 2,
+  "status": "complete",
+  "created_at": "2026-07-18T21:11:50",
+  "stopped_at": "2026-07-18T21:12:41",
+  "snapshot": null,
+  "metadata": {
+    "program": "overkill",
+    "video": "tandy",
+    "sound": "adlib",
+    "command_tail": "\r\u0002A",
+    "no_replacements": false
+  },
+  "start_boundary": 0,
+  "end_boundary": 2497,
+  "event_count": 133,
+  "events": [
+    {
+      "boundary": 997,
+      "seq": 0,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 1001,
+      "seq": 1,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 1074,
+      "seq": 2,
+      "kind": "dos_key",
+      "value": 12909,
+      "scancode": 50,
+      "text": "m"
+    },
+    {
+      "boundary": 1075,
+      "seq": 3,
+      "kind": "scan",
+      "value": 50
+    },
+    {
+      "boundary": 1077,
+      "seq": 4,
+      "kind": "scan",
+      "value": 178
+    },
+    {
+      "boundary": 1091,
+      "seq": 5,
+      "kind": "dos_key",
+      "value": 12909,
+      "scancode": 50,
+      "text": "m"
+    },
+    {
+      "boundary": 1092,
+      "seq": 6,
+      "kind": "scan",
+      "value": 50
+    },
+    {
+      "boundary": 1099,
+      "seq": 7,
+      "kind": "scan",
+      "value": 178
+    },
+    {
+      "boundary": 1115,
+      "seq": 8,
+      "kind": "dos_key",
+      "value": 12909,
+      "scancode": 50,
+      "text": "m"
+    },
+    {
+      "boundary": 1116,
+      "seq": 9,
+      "kind": "scan",
+      "value": 50
+    },
+    {
+      "boundary": 1119,
+      "seq": 10,
+      "kind": "scan",
+      "value": 178
+    },
+    {
+      "boundary": 1130,
+      "seq": 11,
+      "kind": "dos_key",
+      "value": 12909,
+      "scancode": 50,
+      "text": "m"
+    },
+    {
+      "boundary": 1131,
+      "seq": 12,
+      "kind": "scan",
+      "value": 50
+    },
+    {
+      "boundary": 1136,
+      "seq": 13,
+      "kind": "scan",
+      "value": 178
+    },
+    {
+      "boundary": 1172,
+      "seq": 14,
+      "kind": "dos_key",
+      "value": 5993,
+      "scancode": 23,
+      "text": "i"
+    },
+    {
+      "boundary": 1173,
+      "seq": 15,
+      "kind": "scan",
+      "value": 23
+    },
+    {
+      "boundary": 1174,
+      "seq": 16,
+      "kind": "scan",
+      "value": 151
+    },
+    {
+      "boundary": 1211,
+      "seq": 17,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 1217,
+      "seq": 18,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 1222,
+      "seq": 19,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 1227,
+      "seq": 20,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 1229,
+      "seq": 21,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 1233,
+      "seq": 22,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 1235,
+      "seq": 23,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 1235,
+      "seq": 24,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 1295,
+      "seq": 25,
+      "kind": "scan",
+      "value": 1
+    },
+    {
+      "boundary": 1295,
+      "seq": 26,
+      "kind": "scan",
+      "value": 129
+    },
+    {
+      "boundary": 1317,
+      "seq": 27,
+      "kind": "dos_key",
+      "value": 6255,
+      "scancode": 24,
+      "text": "o"
+    },
+    {
+      "boundary": 1318,
+      "seq": 28,
+      "kind": "scan",
+      "value": 24
+    },
+    {
+      "boundary": 1319,
+      "seq": 29,
+      "kind": "scan",
+      "value": 152
+    },
+    {
+      "boundary": 1348,
+      "seq": 30,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 1363,
+      "seq": 31,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 1364,
+      "seq": 32,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 1365,
+      "seq": 33,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 1369,
+      "seq": 34,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 1370,
+      "seq": 35,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 1373,
+      "seq": 36,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 1375,
+      "seq": 37,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 1378,
+      "seq": 38,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 1380,
+      "seq": 39,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 1382,
+      "seq": 40,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 1390,
+      "seq": 41,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 1392,
+      "seq": 42,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 1394,
+      "seq": 43,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 1424,
+      "seq": 44,
+      "kind": "scan",
+      "value": 1
+    },
+    {
+      "boundary": 1424,
+      "seq": 45,
+      "kind": "scan",
+      "value": 129
+    },
+    {
+      "boundary": 1475,
+      "seq": 46,
+      "kind": "dos_key",
+      "value": 9579,
+      "scancode": 37,
+      "text": "k"
+    },
+    {
+      "boundary": 1476,
+      "seq": 47,
+      "kind": "scan",
+      "value": 37
+    },
+    {
+      "boundary": 1481,
+      "seq": 48,
+      "kind": "scan",
+      "value": 165
+    },
+    {
+      "boundary": 1535,
+      "seq": 49,
+      "kind": "dos_key",
+      "value": 4978,
+      "scancode": 19,
+      "text": "r"
+    },
+    {
+      "boundary": 1536,
+      "seq": 50,
+      "kind": "scan",
+      "value": 19
+    },
+    {
+      "boundary": 1541,
+      "seq": 51,
+      "kind": "scan",
+      "value": 147
+    },
+    {
+      "boundary": 1585,
+      "seq": 52,
+      "kind": "scan",
+      "value": 72
+    },
+    {
+      "boundary": 1585,
+      "seq": 53,
+      "kind": "scan",
+      "value": 80
+    },
+    {
+      "boundary": 1585,
+      "seq": 54,
+      "kind": "scan",
+      "value": 200
+    },
+    {
+      "boundary": 1585,
+      "seq": 55,
+      "kind": "scan",
+      "value": 208
+    },
+    {
+      "boundary": 1611,
+      "seq": 56,
+      "kind": "scan",
+      "value": 80
+    },
+    {
+      "boundary": 1620,
+      "seq": 57,
+      "kind": "scan",
+      "value": 208
+    },
+    {
+      "boundary": 1644,
+      "seq": 58,
+      "kind": "scan",
+      "value": 75
+    },
+    {
+      "boundary": 1644,
+      "seq": 59,
+      "kind": "scan",
+      "value": 203
+    },
+    {
+      "boundary": 1668,
+      "seq": 60,
+      "kind": "scan",
+      "value": 77
+    },
+    {
+      "boundary": 1674,
+      "seq": 61,
+      "kind": "scan",
+      "value": 205
+    },
+    {
+      "boundary": 1726,
+      "seq": 62,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 1726,
+      "seq": 63,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 1818,
+      "seq": 64,
+      "kind": "scan",
+      "value": 44
+    },
+    {
+      "boundary": 1823,
+      "seq": 65,
+      "kind": "scan",
+      "value": 172
+    },
+    {
+      "boundary": 1859,
+      "seq": 66,
+      "kind": "dos_key",
+      "value": 14624,
+      "scancode": 57,
+      "text": " "
+    },
+    {
+      "boundary": 1860,
+      "seq": 67,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 1862,
+      "seq": 68,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 1897,
+      "seq": 69,
+      "kind": "scan",
+      "value": 32
+    },
+    {
+      "boundary": 1903,
+      "seq": 70,
+      "kind": "scan",
+      "value": 160
+    },
+    {
+      "boundary": 1909,
+      "seq": 71,
+      "kind": "scan",
+      "value": 32
+    },
+    {
+      "boundary": 1915,
+      "seq": 72,
+      "kind": "scan",
+      "value": 160
+    },
+    {
+      "boundary": 1941,
+      "seq": 73,
+      "kind": "scan",
+      "value": 80
+    },
+    {
+      "boundary": 1948,
+      "seq": 74,
+      "kind": "scan",
+      "value": 208
+    },
+    {
+      "boundary": 1955,
+      "seq": 75,
+      "kind": "scan",
+      "value": 80
+    },
+    {
+      "boundary": 1962,
+      "seq": 76,
+      "kind": "scan",
+      "value": 208
+    },
+    {
+      "boundary": 1964,
+      "seq": 77,
+      "kind": "scan",
+      "value": 77
+    },
+    {
+      "boundary": 1971,
+      "seq": 78,
+      "kind": "scan",
+      "value": 205
+    },
+    {
+      "boundary": 1976,
+      "seq": 79,
+      "kind": "scan",
+      "value": 72
+    },
+    {
+      "boundary": 1982,
+      "seq": 80,
+      "kind": "scan",
+      "value": 200
+    },
+    {
+      "boundary": 1987,
+      "seq": 81,
+      "kind": "scan",
+      "value": 75
+    },
+    {
+      "boundary": 1995,
+      "seq": 82,
+      "kind": "scan",
+      "value": 203
+    },
+    {
+      "boundary": 1999,
+      "seq": 83,
+      "kind": "scan",
+      "value": 77
+    },
+    {
+      "boundary": 2006,
+      "seq": 84,
+      "kind": "scan",
+      "value": 205
+    },
+    {
+      "boundary": 2009,
+      "seq": 85,
+      "kind": "scan",
+      "value": 72
+    },
+    {
+      "boundary": 2017,
+      "seq": 86,
+      "kind": "scan",
+      "value": 200
+    },
+    {
+      "boundary": 2019,
+      "seq": 87,
+      "kind": "scan",
+      "value": 75
+    },
+    {
+      "boundary": 2025,
+      "seq": 88,
+      "kind": "scan",
+      "value": 203
+    },
+    {
+      "boundary": 2028,
+      "seq": 89,
+      "kind": "scan",
+      "value": 75
+    },
+    {
+      "boundary": 2033,
+      "seq": 90,
+      "kind": "scan",
+      "value": 203
+    },
+    {
+      "boundary": 2073,
+      "seq": 91,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 2082,
+      "seq": 92,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 2204,
+      "seq": 93,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 2209,
+      "seq": 94,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 2242,
+      "seq": 95,
+      "kind": "scan",
+      "value": 72
+    },
+    {
+      "boundary": 2245,
+      "seq": 96,
+      "kind": "scan",
+      "value": 77
+    },
+    {
+      "boundary": 2255,
+      "seq": 97,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 2263,
+      "seq": 98,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 2269,
+      "seq": 99,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 2273,
+      "seq": 100,
+      "kind": "scan",
+      "value": 200
+    },
+    {
+      "boundary": 2275,
+      "seq": 101,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 2281,
+      "seq": 102,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 2285,
+      "seq": 103,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 2291,
+      "seq": 104,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 2293,
+      "seq": 105,
+      "kind": "scan",
+      "value": 72
+    },
+    {
+      "boundary": 2297,
+      "seq": 106,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 2301,
+      "seq": 107,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 2305,
+      "seq": 108,
+      "kind": "scan",
+      "value": 200
+    },
+    {
+      "boundary": 2309,
+      "seq": 109,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 2313,
+      "seq": 110,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 2319,
+      "seq": 111,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 2324,
+      "seq": 112,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 2327,
+      "seq": 113,
+      "kind": "scan",
+      "value": 75
+    },
+    {
+      "boundary": 2331,
+      "seq": 114,
+      "kind": "scan",
+      "value": 205
+    },
+    {
+      "boundary": 2333,
+      "seq": 115,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 2337,
+      "seq": 116,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 2343,
+      "seq": 117,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 2348,
+      "seq": 118,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 2355,
+      "seq": 119,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 2360,
+      "seq": 120,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 2367,
+      "seq": 121,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 2371,
+      "seq": 122,
+      "kind": "scan",
+      "value": 72
+    },
+    {
+      "boundary": 2375,
+      "seq": 123,
+      "kind": "scan",
+      "value": 57
+    },
+    {
+      "boundary": 2381,
+      "seq": 124,
+      "kind": "scan",
+      "value": 185
+    },
+    {
+      "boundary": 2385,
+      "seq": 125,
+      "kind": "scan",
+      "value": 203
+    },
+    {
+      "boundary": 2386,
+      "seq": 126,
+      "kind": "scan",
+      "value": 77
+    },
+    {
+      "boundary": 2419,
+      "seq": 127,
+      "kind": "scan",
+      "value": 205
+    },
+    {
+      "boundary": 2421,
+      "seq": 128,
+      "kind": "scan",
+      "value": 75
+    },
+    {
+      "boundary": 2441,
+      "seq": 129,
+      "kind": "scan",
+      "value": 200
+    },
+    {
+      "boundary": 2443,
+      "seq": 130,
+      "kind": "scan",
+      "value": 203
+    },
+    {
+      "boundary": 2452,
+      "seq": 131,
+      "kind": "scan",
+      "value": 80
+    },
+    {
+      "boundary": 2479,
+      "seq": 132,
+      "kind": "scan",
+      "value": 208
+    }
+  ]
+}

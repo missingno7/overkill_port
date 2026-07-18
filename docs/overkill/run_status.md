@@ -69,6 +69,80 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-18k — the COLD SPINE demo: characterised, and the differential CANNOT yet consume it (measured)
+
+Owner recorded a TRUE cold-start demo with real input:
+`artifacts/demos/demo_coldspine_20260718_211150` (now tracked). Goal was to run the cold-start
+CPUless differential over its 133 events. **Not reached.** Everything below is measured; no code was
+changed (so nothing to revert), because step 1 was "characterise before changing anything" and the
+characterisation is what killed the plan.
+
+**THE DEMO.** 133 events = 124 `scan` + 9 `dos_key`; boundaries 997..2479, `end_boundary` 2497,
+`snapshot: None`, 51 s wall clock. Config `tandy`/`adlib`/tail `\r\x02A` — confirmed identical to
+`build_command_tail("tandy", "adlib")`, so it differs from the two older 2026-07-18 demos in BOTH
+sound and tail and no oracle built for those transfers to this one.
+
+**COLD ENTRY IS `1C32:000E`**, measured two independent ways: booting the container reports it, and
+`artifacts/frontend_intro_snapshot/state.json` independently records `entry_cs=7218 (0x1C32)
+entry_ip=14 (0x000E)`. It is the LZEXE stub — NOT `1010:96C8`, and NOT `254A:04D7`.
+
+**OPTION (a), A TRUE COLD BOOT IN THE DIFFERENTIAL, IS NOT REACHABLE.** Segment `1C32` has **zero**
+entries in `artifacts/cpuless_census.json` (335 entries, segments 1010/1B65/1C43/1F8F/23AD/254A) and
+**zero** modules in `overkill/cpuless_recovered/` (628 modules: 1010×571, 1b65×1, 1f8f×25, 2032×20,
+254a×6). The corpus cannot run the decompressor that produces the program it lifts. So the honest end
+state stays blocked, and it is blocked at the CORPUS, not at the demo.
+
+**THE RECORDER'S BOUNDARY RULE IS NOT "0679 + 50C9"** — that long-repeated description is wrong, and
+it is why every previous clock reconciliation failed. `scripts/play.py` increments `boundary["n"]`
+from SIX classes of source: `present` (1010:3354), `timer` (0679) and `retrace` (50C9) via
+`stop_cpu_burst`, PLUS nine wall-clock `is_*_wait()` detectors (each paced by
+`sleep_with_async_irqs(cpu, 0.01)`), PLUS a CRC-gated "direct video publish", PLUS a "demo stall
+recovery" that advances the counter purely so a gated event can land. Three of those six are not
+functions of VM state.
+
+**MEASURED COMPOSITION (pure VM, this demo's exact config).** First 2600 cold-boot boundaries =
+`{retrace 2246, present 177, timer 177}`. So `0679` — the ONE head the differential cuts frames at —
+is ~1 in every 14.7 recorder boundaries, and the ratio is screen-dependent, matching the previously
+measured non-proportional `{2: 1199 frames, 1838: 1 frame}`. No constant offset or scale exists;
+re-indexing the events by a derived factor would be fabrication and was not done.
+
+**THE FIRST COLD BOUNDARY IS `retrace at 1010:58F4`** (measured, at `dos.video_mode == 3`). That
+retires a documented mystery: `verify_cpuless_coldstart.py`'s docstring calls `1010:58F4` an
+inexplicable "mid-function RESUME" that the older demos start at. It is not arbitrary — it is
+BOUNDARY 1 of a cold boot, the return site of the first `call 50C9`.
+
+**THE CLOCK IS MOSTLY VM-DERIVED, WITH REAL FREEZES.** Median key press→release hold is 6 boundaries
+≈ 100 ms ⇒ the dominant rate is the 60 Hz retrace pacer, consistent with retrace being 86% of
+boundaries. But SIX boundaries carry multiple events, including full press+release pairs at ONE index
+(1235, 1295, 1424, 1585, 1644, 1726) — the counter is genuinely FROZEN there, so in those regions the
+recorded index carries ORDER ONLY and no timing. Any replay must deliver those by the wait-detector /
+one-event-at-a-time rule (`overkill/input_waits.py: pump_demo_frame`), not by index.
+
+**THE UNBLOCK, MEASURED AND FREE: declare `1010:C9FC` as a boundary head.** `lift_boundary_heads.txt`
+records that declaring the `50C9` THUNK regresses promotable 623 → 585 (it lands on a transfer), and
+says the head must instead go at "the real polling site inside C9F1/CA02". That site is
+`1010:C9FC` — `in al,dx (3DA) ; test al,8 ; jz self`, block 0 of `func_1010_ca02`. Measured with
+`scripts/close_census.py` against a reproduced baseline:
+
+    baseline heads (as shipped): CLOSED 626 entries, liftable 623/626
+    heads + 1010:C9FC:           CLOSED 626 entries, liftable 623/626   <-- IDENTICAL
+
+and the head lands SURGICALLY: exactly two IR functions change, `1010:C9F1` and `1010:CA02` (the two
+containing the poll site), both gain a boundary representation, both stay liftable, refusal buckets
+unchanged (3 structural). **So the retrace boundary can be declared at zero corpus cost.** That is
+the concrete next slice: declare it, regenerate, then cut the differential's frame at the recorder's
+own rule (present ∪ timer ∪ retrace) instead of `0679`-only, which is the fix AT THE SOURCE rather
+than a fudge factor.
+
+**WHAT IS STILL UNKNOWN** (do not assume): the boundary offset from cold entry to the
+`frontend_intro_snapshot` start at `1010:96C8` was NOT measured — the snapshot records no boundary
+count, and hooking `96C8` to count them HANGS, because OVERKILL already has a replacement there named
+`overkill_intro_retrace_delay_loop_tail_96c8` and re-entering it re-enters a delay loop. Until that
+offset is measured, fallback (b) — aligning the demo into the snapshot start — has no sound basis and
+was NOT fabricated.
+
+Suites at the time of writing: overkill 1474 passed / 38 skipped, lint 1749 files.
+
 ## 2026-07-18h — dos_re BUG: the IP-delta probe corrupted the code it measured (false decoder-mismatch)
 
 Chased "is `1010:0248` a real joint, or did the decoder fail to see bone there?" to the bottom. It was
