@@ -385,6 +385,55 @@ is DEMO BREADTH, not more promotion** — every new promotion without a demo tha
 unproven surface rather than shrinking it. This is the figure to quote for correctness; "591/626
 promoted, walls HOLD" is a structural claim and says nothing about these 477.
 
+## 2026-07-18g — CORRECTION + MINIMISATION: the island set is FOUR, not ten (fewer islands promote MORE)
+
+The 2026-07-18f entry claimed the ten seeded functions were "every one an INT 21h / INT 10h function,
+i.e. exactly the surface a VM-less port must own". **That was wrong**, and checking the IR before
+writing bodies caught it. Only FOUR of the ten perform any interrupt:
+
+| addr | insts | ints | what it actually is |
+|---|---|---|---|
+| `1010:065C` | 14 | 21h | **DOS CLOSE FILE** — `mov bx,cs:[0240]; mov ah,3Eh; int 21h` |
+| `1010:0624` | 27 | 21h | **buffered byte READ** — refills a 512-byte buffer at `DS:0410` via `AH=3Fh`, returns the next byte, bumps the pointer `[0610]` |
+| `1010:C679` | 136 | 10h, 21h | game code containing DOS+video calls (far-calls `254A:04D7`, `1F8F:01AD`) |
+| `1010:5559` | 248 | 10h, 21h | game code containing DOS+video calls (3 far calls) |
+
+The other six are ORDINARY GAME CODE with `ints: []` that merely *call* those primitives:
+`0615` (read a 16-bit LE word = two `0624` calls), `0324`, `0367`, `03A8` (file-format readers), and
+`0011`/`0030` (JOYSTICK CALIBRATION — `0030` reads min/max and computes four centres as
+`((max-min)>>1)+min`; nothing to do with DOS at all).
+
+**Overriding them was actively harmful.** Re-measured with only the genuine platform functions seeded:
+
+| seeded islands | promotable | top level |
+|---|---|---|
+| the 10 from 18f | 611 | 10/10 |
+| **`065C 0624 C679 5559` (4)** | **614** | **10/10** |
+| `065C 0624 0111` (3) | 596 | 0/10 |
+| `065C 0624` (2) | 595 | 0/10 |
+
+**FEWER, more correct islands promote MORE** (614 vs 611): the six non-platform functions promote
+GENERATIVELY once the primitives exist, instead of being replaced by hand-written bodies. This is the
+"don't override what the general machinery can handle" rule paying out in a directly measurable way,
+and it is the number to defend — every function moved from island to generated is manual surface
+deleted and proof standard raised.
+
+**Why it does not shrink below four:** `C679` is blocked by `1010:0248`, class `likely-data`
+(`decoder-mismatch` x3) — bytes the decoder cannot read as code, so `C679` cannot promote
+generatively; `5559` is blocked through `0011`'s chain. `0248` has no ABI in the census, so it cannot
+even be contract-seeded. **Open question worth answering before writing any body:** is `C679`'s call
+to `0248` runtime-DEAD? If it is, the correct fix is a recovery FACT (the pipeline's `--observed`
+already turns runtime-dead near calls into fail-loud stubs), not a 136-instruction hand-written
+override — and the island set would drop to `065C` + `0624` + whatever `5559` truly needs. That is
+the difference between two thin, obviously-correct DOS primitives and two large hand-transcribed
+game functions, so it is worth resolving FIRST.
+
+**Status of the requested slice:** the target set is now identified and minimised, and the two small
+primitives (`065C`, `0624`) are fully understood at instruction level and ready to implement. The
+faithful bodies + shadow evidence + measured virtual-time contracts are NOT yet written; they are the
+next slice, and deliberately not half-landed here.
+
+
 ## 2026-07-18f — PROVEN BY EXPERIMENT: only the DOS/BIOS SURFACE gates the top level
 
 Ran the promotion as a DIAGNOSTIC (no `--apply`, census to scratch, committed corpus untouched),
