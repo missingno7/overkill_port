@@ -2023,7 +2023,29 @@ re-enters an intro delay loop. Count that offset some other way. Related: a back
 writes its output file only at process exit, so an empty log is NOT evidence of a hang — check the
 process (`ps -W | grep pypy`) before concluding either way.
 
-**The next slice is Wall 2, and it is cheap:** declare `1010:C9FC` (the real retrace poll,
-`in al,3DA ; test al,8 ; jz self`, block 0 of `func_1010_ca02`) as a boundary head — measured FREE
-(623/626 liftable, identical to baseline; only `C9F1` and `CA02` change). Declaring the `50C9` THUNK
-instead regresses 623 → 585 and is already documented as refuted in `lift_boundary_heads.txt`.
+**The next slice is Wall 2:** declare `1010:C9FC` (the real retrace poll,
+`in al,3DA ; test al,8 ; jz self`, block 0 of `func_1010_ca02`) as a boundary head. Declaring the
+`50C9` THUNK instead regresses 623 → 585 and is already documented as refuted in
+`lift_boundary_heads.txt`.
+
+> **CORRECTED 2026-07-18m — this slice is NOT "cheap"/"FREE" as first written here.** 623/626
+> liftable is unchanged, but **the liftable count does not price a head declaration**. Regenerating
+> the real corpus grows PARKING **20 → 42**: 22 functions lose their CPU-ABI adapters, six of which
+> (`58DF, 50C9, 5C46, 5C74, CE40, CE5C`) carry INCONCLUSIVE verdicts in
+> `verify_ledger_coldstart.json` and become permanently unprovable by the per-function differential
+> while parked. No PASS verdict is lost, so no PROVEN coverage is destroyed — but it is a real
+> reduction in verifiable surface. **NOT LANDED**; see `run_status.md` 2026-07-18m.
+>
+> **The general trap, worth remembering:** `close_census.py`'s liftable count and
+> `cpuless_promote.py --apply`'s parking count are DIFFERENT cost functions. Quote the second before
+> calling a head declaration free. And always run the ungated control — regenerating with the
+> SHIPPED heads must reproduce the committed corpus byte-identically (it does: 625 modules) — before
+> trusting any diff against it.
+
+**Wall 2 is otherwise in better shape than feared: the recorded boundary index IS reproducible from
+VM state.** A 48x host-speed spread (2.9 s → 141.3 s) yields a byte-identical 16426-boundary stream,
+even though the wall-clock `AsyncTimerIrqDriver` delivered 47 vs 8652 real IRQ0 ISR executions across
+those arms. A boundary is a CALL, and the call count is control-flow determined. **The owner does not
+need to re-record.** Proven for classes present/timer/retrace over the first 16426 cold boundaries;
+the `is_*_wait()` detector class was not exercised (that window carries no input) — re-run the A/B
+with input before treating it as proven.

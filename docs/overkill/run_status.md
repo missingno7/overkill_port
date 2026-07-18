@@ -69,6 +69,83 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-18m — THE BOUNDARY INDEX IS REPRODUCIBLE FROM VM STATE (measured) — the demo is usable as-is
+
+Two results, one good and one a correction of my own 2026-07-18k claim.
+
+### 1. THE RECORDER'S BOUNDARY INDEX IS DETERMINISTIC. **The owner does NOT need to re-record.**
+
+The worry was that `scripts/play.py` counts boundaries from sources that depend on host wall clock,
+which would make the recorded indices unreproducible. Measured per class:
+
+| # | class | depends only on VM state? | basis |
+|---|-------|---------------------------|-------|
+| 1 | `present` (1010:3354) | YES | one CALL = one boundary |
+| 2 | `timer` (1010:0679) | YES | one CALL = one boundary |
+| 3 | `retrace` (1010:50C9) | YES | one CALL = one boundary |
+| 4 | nine `is_*_wait()` detectors | YES | detection reads CS:IP + memory only; the `sleep(0.01)` paces the HOST and does not participate in counting; the increment is one per `DEFAULT_CPU_CHUNK_STEPS`=1000 step chunk, a step count |
+| 5 | CRC-gated direct publish | YES | gated on B800 actually changing, plus a `DEFAULT_FRAME_BUDGET`=6,000,000 STEP budget |
+| 6 | demo stall recovery | N/A — **cannot fire while recording** | the branch requires `demo_playback is not None`, and `demo_playback` is set ONLY by `--demo`. A `--record-demo` run has it `None`. |
+
+**THE EMPIRICAL TEST (this beats the code reading).** Cold boot, this demo's exact config, boundary
+stream captured as a kind sequence. Ungated control FIRST:
+
+    UNGATED CONTROL, two identical fast arms:
+      [fastA] 6.9s  boundaries=16426 {retrace 8906, present 3760, timer 3760}
+      [fastB] 2.9s  boundaries=16426 {retrace 8906, present 3760, timer 3760}   IDENTICAL
+    ARM B, deliberately slowed host (0.4 ms per retrace):
+      [slow] 141.3s boundaries=16426 {retrace 8906, present 3760, timer 3760}   IDENTICAL to fast
+    ARM C, async IRQ driver OFF:
+      identical again (16426)
+
+A **48x wall-clock spread (2.9 s -> 141.3 s) produces a BYTE-IDENTICAL boundary stream.**
+
+**AND THE ASYNC IRQ VECTOR WAS GENUINELY EXERCISED, not inert** — this is the part that makes the
+result meaningful rather than a null test. `AsyncTimerIrqDriver.poll()` schedules on
+`time.perf_counter()` and each delivery runs the REAL `1010:06E5` ISR, which does
+`inc byte cs:[066B]` — host time mutating VM state. Measured deliveries in the same window:
+
+    [fast] polls=8906  IF-set-at-poll=8906  ASYNC IRQ TICKS DELIVERED=47
+    [slow] polls=8906  IF-set-at-poll=8906  ASYNC IRQ TICKS DELIVERED=8652     (184x more)
+
+So the mechanism most likely to break determinism injected **184x more ISR executions** on the slow
+arm and the boundary stream did not move. **Why it is robust:** a boundary is a CALL to
+0679/50C9/3354, and the CALL COUNT is control-flow determined. Extra IRQ0 ticks only make each
+0679 spin exit sooner — one call is still one boundary, whether it spun once or a thousand times.
+
+**Consequence: the differential can ADOPT the recorder's clock rather than the reverse, and
+`demo_coldspine_20260718_211150` is usable as recorded.**
+
+**STATED NARROWLY.** Classes 1-3 and robustness to the async-IRQ vector are proven EMPIRICALLY over
+the first 16426 cold boundaries. Classes 4 and 5 are argued from code reading plus their step-count
+budgets and were NOT exercised in that window (it carries no input, so no wait detector fired). The
+demo's own event region is exactly where class 4 lives, so the next agent should re-run this A/B WITH
+input delivered before treating classes 4-5 as proven.
+
+### 2. CORRECTION: declaring `1010:C9FC` is NOT free. Parking grows 20 -> 42.
+
+2026-07-18k above claims the head is "MEASURED AND FREE" on the strength of 623/626 liftable being
+unchanged. **That count does not price the declaration, and I published it too early.** Regenerating
+the ACTUAL corpus (`dos_re/tools/cpuless_promote.py --apply`) shows the real cost. Ungated control
+first — regenerating with the SHIPPED heads reproduces the committed corpus **byte-identically** (625
+modules), so the harness is faithful. Then:
+
+    heads as shipped:  STANDALONE-ONLY (parking; no adapter installed): 20
+    heads + 1010:C9FC: STANDALONE-ONLY (parking; no adapter installed): 42
+
+**+22 functions lose their CPU-ABI adapters:** `0011, 0030, 0136, 50C9, 587E, 58DF, 5C35, 5C46, 5C74,
+5C9A, 9844, C9F1, CA02, CC04, CCAA, CCC4, CCF0, CD8D, CDA7, CDAA, CE40, CE5C`. Checked against the
+repo's own acceptance standard (the 0679 fact's "does it appear in a verification ledger?"): six of
+the 22 carry verdicts in `verify_ledger_coldstart.json` — `58DF, 50C9, 5C46, 5C74, CE40, CE5C` — and
+**all six are INCONCLUSIVE, none PASS**. So no PROVEN coverage is destroyed, but those six become
+permanently unprovable by the per-function differential while parked, which is a real reduction in
+verifiable surface, not zero cost.
+
+**NOT LANDED.** The declaration was authorised on the "free" premise that this measurement refutes,
+so it is left unapplied for a deliberate decision. The IR-level result stands and is still the right
+address (only `C9F1`/`CA02` change in the IR; the `50C9` THUNK regresses 623 -> 585 and remains
+refuted). Scratch corpora exist but nothing in the working tree was modified.
+
 ## 2026-07-18k — the COLD SPINE demo: characterised, and the differential CANNOT yet consume it (measured)
 
 Owner recorded a TRUE cold-start demo with real input:
@@ -117,6 +194,11 @@ boundaries. But SIX boundaries carry multiple events, including full press+relea
 (1235, 1295, 1424, 1585, 1644, 1726) — the counter is genuinely FROZEN there, so in those regions the
 recorded index carries ORDER ONLY and no timing. Any replay must deliver those by the wait-detector /
 one-event-at-a-time rule (`overkill/input_waits.py: pump_demo_frame`), not by index.
+
+> **CORRECTION (2026-07-18m, below): the "MEASURED AND FREE" claim in the next paragraph is WRONG.**
+> 623/626 liftable is unchanged, but that count does not price the declaration. Regenerating the
+> actual corpus grows PARKING 20 -> 42: twenty-two functions lose their CPU-ABI adapters. Read
+> 2026-07-18m before acting on this paragraph.
 
 **THE UNBLOCK, MEASURED AND FREE: declare `1010:C9FC` as a boundary head.** `lift_boundary_heads.txt`
 records that declaring the `50C9` THUNK regresses promotable 623 → 585 (it lands on a transfer), and
