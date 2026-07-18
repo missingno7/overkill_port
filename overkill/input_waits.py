@@ -206,10 +206,65 @@ _OVERLAY_MENU_WAIT_SIG = bytes.fromhex("80 3e 0f 99 01 74 47")   # cmp [990F],1 
 _OVERLAY_MENU_FLAGS = (0x990F, 0x990C, 0x990D, 0x98D2, 0x9911,
                        0x9914, 0x9915, 0x98FD, 0x98E0, 0x98C5)
 
+# DISASSEMBLED (scripts/lindis.py over artifacts/overlay_menu_wedge_snapshot, 1F8F:0989..0A30).
+# The chain is ten `cmp [flag],1 ; jz handler` pairs, and the flags are NOT interchangeable:
+#
+#   099B 990F / 09A2 990C / 09A9 990D / 09B0 98D2   -> 09E9   (move UP)
+#   09B7 9911 / 09BE 9914 / 09C5 9915 / 09CC 98FD / 09D3 98E0 -> 0A03   (move DOWN)
+#   09DA 98C5: `jnz -> 099B` (loops back); if SET, falls to 09E1 and leaves the scan chain
+#   09E8 ret far -- the only exit
+#
+#   09E9: cmp [BED4],0000h ; jz 099B   -- UP waits iff the cursor is ALREADY AT THE TOP
+#   0A03: si=[BED6]; bx=([BED4]+1)*2 ; cmp [bx+si],FFFFh ; jz 099B
+#                                     -- DOWN waits iff the NEXT entry is the FFFF terminator
+#
+# Each handler's ACTING path (09F0.. / 0A13..) does `mov cx,5 ; mov ax,50C9h ;
+# call far 1010:8D8B ; loop` -- five RETRACE waits, which DO produce boundaries -- then
+# dec/inc [BED4] and `jmp 0989`.  So the loop is boundary-less ONLY on the loop-back paths,
+# which is exactly what makes the wait/act distinction the right one to encode.
+#
+# The two handlers are structurally symmetric but their loop-back CONDITIONS are unrelated
+# (index==0 vs next-entry==FFFF), so "any set flag means waiting" and "09E9 mirrors 0A03" are
+# both wrong.  This is why 09E9 was disassembled rather than assumed.
+_OVERLAY_MENU_UP_FLAGS = (0x990F, 0x990C, 0x990D, 0x98D2)        # -> 09E9
+_OVERLAY_MENU_DOWN_FLAGS = (0x9911, 0x9914, 0x9915, 0x98FD, 0x98E0)  # -> 0A03
+_OVERLAY_MENU_EXIT_FLAG = 0x98C5                                  # -> 09E1 release wait, then ret
+_OVERLAY_MENU_INDEX = 0xBED4                                      # cursor index
+_OVERLAY_MENU_TABLE = 0xBED6                                      # entry-table base
+_OVERLAY_MENU_TERMINATOR = 0xFFFF
+
 
 def _overlay_menu_key_wait_spinning(mem, ds: int) -> bool:
-    """True while NO watched menu flag is set -- i.e. the loop is genuinely waiting."""
-    return all(mem.rb(ds, off) != 1 for off in _OVERLAY_MENU_FLAGS)
+    """True while the scan chain provably RETURNS TO ITS HEAD -- i.e. is genuinely waiting.
+
+    Three measured states, in the chain's own test order (UP is tested before DOWN, so UP wins
+    if both are somehow set):
+
+      * no navigation flag set          -> the chain falls through 09DA's `jnz 099B` and loops;
+      * an UP flag set, cursor at 0     -> 09E9 takes `jz 099B`;
+      * a DOWN flag set, next == FFFF   -> 0A03 takes `jz 099B`.
+
+    Anything else ACTS (five retrace waits, then dec/inc the cursor and `jmp 0989`), producing
+    real boundaries -- so it must NOT be reported as a wait, or input would be injected where the
+    game is not sampling.
+
+    NB the 98C5 EXIT flag is deliberately NOT treated as a nav wait: when set, control leaves the
+    scan chain for the 09E1 release spin (`cmp [98C5],1 ; jz 09E1`) and then `ret far`.  That spin
+    is its own boundary-less wait at a DIFFERENT head (09E1) and is not handled here; it has not
+    been observed to wedge, and inventing a head for it unmeasured is the mistake this comment
+    exists to prevent.
+    """
+    if mem.rb(ds, _OVERLAY_MENU_EXIT_FLAG) == 1:
+        return False
+    up = any(mem.rb(ds, off) == 1 for off in _OVERLAY_MENU_UP_FLAGS)
+    down = any(mem.rb(ds, off) == 1 for off in _OVERLAY_MENU_DOWN_FLAGS)
+    if not up and not down:
+        return True
+    index = mem.rw(ds, _OVERLAY_MENU_INDEX)
+    if up:
+        return index == 0                                     # 09E9: cmp [BED4],0 ; jz 099B
+    table = mem.rw(ds, _OVERLAY_MENU_TABLE)                   # 0A03: cmp [bx+si],FFFF ; jz 099B
+    return mem.rw(ds, (table + ((index + 1) * 2)) & 0xFFFF) == _OVERLAY_MENU_TERMINATOR
 
 
 def _overlay_menu_key_wait_at(cpu: CPU8086, *, head_only: bool) -> bool:
@@ -224,6 +279,39 @@ def _overlay_menu_key_wait_at(cpu: CPU8086, *, head_only: bool) -> bool:
     if mem.block(cs, _OVERLAY_MENU_WAIT_HEAD, 7) != _OVERLAY_MENU_WAIT_SIG:
         return False
     return _overlay_menu_key_wait_spinning(mem, cpu.s.ds & 0xFFFF)
+
+
+# 1F8F:09E1..09E6 -- the overlay menu's EXIT-KEY RELEASE spin, reached when 98C5 is set and the
+# scan chain above falls out of its `jnz 099B`:
+#     09E1  cmp ds:[98C5],01h
+#     09E6  jz -> 09E1          ; spin WHILE the exit key is still held
+#     09E8  ret far             ; the loop's only exit
+# Two instructions, no timer/retrace/presenter call, so it is boundary-less like the scan chain --
+# the same shape as redefine_key_wait's release half.  OBSERVED to wedge demo replay at frame 1296
+# (after the scan-chain clause cleared the frame-1236 wedge), which is what promoted it from
+# "decoded but unexercised" to a handled head.
+_OVERLAY_MENU_EXIT_RELEASE_HEAD = 0x09E1
+_OVERLAY_MENU_EXIT_RELEASE_LAST = 0x09E6
+_OVERLAY_MENU_EXIT_RELEASE_SIG = bytes.fromhex("80 3e c5 98 01 74 f9")   # cmp [98C5],1 ; jz 09E1
+
+
+def _overlay_menu_exit_release_wait_at(cpu: CPU8086, *, head_only: bool) -> bool:
+    cs, ip = cpu.addr()
+    if head_only:
+        if ip != _OVERLAY_MENU_EXIT_RELEASE_HEAD:
+            return False
+    elif not (_OVERLAY_MENU_EXIT_RELEASE_HEAD <= ip <= _OVERLAY_MENU_EXIT_RELEASE_LAST):
+        return False
+    mem = cpu.mem
+    if mem.block(cs, _OVERLAY_MENU_EXIT_RELEASE_HEAD, 7) != _OVERLAY_MENU_EXIT_RELEASE_SIG:
+        return False
+    # spinning == the key is STILL HELD; once the release lands the `jz` falls through to `ret far`.
+    return mem.rb(cpu.s.ds & 0xFFFF, _OVERLAY_MENU_EXIT_FLAG) == 1
+
+
+def overlay_menu_exit_release_wait(cpu: CPU8086) -> bool:
+    """True while the overlay menu spins at 09E1 waiting for the EXIT key to be released."""
+    return _overlay_menu_exit_release_wait_at(cpu, head_only=False)
 
 
 def overlay_menu_key_wait(cpu: CPU8086) -> bool:
@@ -341,6 +429,9 @@ def frame_verify_input_wait(cpu: CPU8086) -> tuple[str, Addr] | None:
     # segment-agnostic (signature-identified), so it also composes if an overlay loads elsewhere.
     if _overlay_menu_key_wait_at(cpu, head_only=True):
         return "wait", (cs, _OVERLAY_MENU_WAIT_HEAD)
+    # ...and its EXIT-KEY RELEASE spin, which the scan chain falls into when 98C5 is set.
+    if _overlay_menu_exit_release_wait_at(cpu, head_only=True):
+        return "wait", (cs, _OVERLAY_MENU_EXIT_RELEASE_HEAD)
     # The overlay-segment all-keys-released wait: fire only at its 024B head
     # (every-step lockstep, same as the selector idle loop below).
     if cs == _ALL_KEYS_RELEASE_WAIT_CS:
@@ -407,7 +498,7 @@ def pump_demo_frame(demo, boundary_n: int, runtimes: Sequence, cpu: CPU8086) -> 
     keeps the verifier's reference and candidate in lockstep.
     """
     if title_fire_release_wait(cpu) or all_keys_release_wait(cpu) or redefine_key_wait(cpu) \
-            or overlay_menu_key_wait(cpu):
+            or overlay_menu_key_wait(cpu) or overlay_menu_exit_release_wait(cpu):
         return boundary_n, demo.apply_to_runtimes(boundary_n, runtimes, single=True)
     if _on_input_select_screen(cpu):
         return boundary_n, 0
