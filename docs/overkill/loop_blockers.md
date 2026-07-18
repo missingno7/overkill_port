@@ -2263,3 +2263,56 @@ different paths, so the composition is not comparable frame-for-frame either.)
 **NOT ATTEMPTED HERE.** Option 1 needs the C9FC decision reversed; option 2 is a real design. Both
 are decisions rather than measurements, so this stops at the fork. Nothing was built on top of an
 impossible mapping, and no divergence is claimed.
+
+### 2026-07-18t — OPTION 2 VALIDATED: the two clocks agree, and the counters are behaviour-neutral
+
+Counting recorder-rule boundaries LIVE on both sides works. Three results, in the order they must be
+established (each is a precondition for trusting the next):
+
+**1. THE COUNTERS ARE BEHAVIOUR-NEUTRAL, and they were provably LIVE.** The 9000-frame attract
+differential still PASSES byte-identically from frame 0 with the counting shadows installed:
+
+    [coldstart] PASS -- 9000 frames from a COLD START: Tandy video plane, CRTC registers and
+                video ports identical to the ASM oracle, NO CPU, candidate entered ONCE
+    EXIT CODE: 0
+    counter totals: {'retrace': 15156, 'present': 9000}
+
+The totals matter as much as the PASS: a neutrality gate that passes because the instrument was
+INERT proves nothing (this repo has been burned by exactly that -- a call count reading 0 and
+meaning nothing). 15156 + 9000 recorded calls show the shadows were genuinely in the path.
+
+**2. THE ORACLE AND THE CANDIDATE COUNT THE SAME BOUNDARIES, FRAME FOR FRAME** (attract path, zero
+input, 300 frames, two INDEPENDENT counting methods):
+
+    ORACLE    (cs:ip address arrivals) : {retrace 1836, present 300, timer 600}
+    CANDIDATE (corpus's own calls)     : {retrace 1836, present 300, timer 600}
+    IDENTICAL on all 300 frames
+
+Two independently-counted streams agreeing is what makes the mapping EXACT rather than assumed. No
+scale factor, no fitted constant.
+
+**3. THE CORRECTION THAT MADE IT AGREE -- found by measurement, and a trap worth keeping.** Counting
+`1010:0679` by CORPUS CALL gives exactly HALF the oracle's count (candidate 1/frame vs oracle
+2/frame, on every frame):
+
+    FIRST DISAGREEMENT at frame 0:
+        oracle    : {retrace 1836, present 1, timer 2}
+        candidate : {retrace 1836, present 1, timer 1}
+
+Because the generated body's INTERNAL poll loop (`while True: ... bb == ...`) re-arrives at the head
+WITHOUT a new call, so a call count is the wrong event. This is the same hazard as the
+`func_1010_bd17` note above, in a new guise: a corpus function's call count is not its arrival count.
+**`0679` must be counted via `plat.boundary` HEAD ARRIVALS** (the driver's boundary callback already
+fires once per poll pass -- that is exactly how its "park on the 2nd pass" logic works), while
+`50C9`/`3354` are counted correctly by call. With that, the streams agree exactly.
+
+**MECHANISM (no new capability):** `cpuless_overrides.install_overrides` shadowing, with each
+override delegating to `generated(addr)` and returning its result UNTOUCHED -- host-side observation
+of the corpus's own control flow, not a new boundary head, so the C9FC decision stays declined.
+`OVERRIDES` is empty in the shipped tree, so counting entries displace nothing.
+
+**STILL OPEN:** wiring this into `scripts/verify_cpuless_coldstart.py` as the shipped clock, then
+delivering the 133 events at matched recorder-rule boundary indices through the recovered INT 09h
+ISR, then the spine run. NOT attempted here; no divergence is claimed. Note the validation above is
+the ATTRACT path (zero input) -- the counts are NOT yet shown to agree once input drives the run onto
+the gameplay path, and that is the next thing to establish, not to assume.
