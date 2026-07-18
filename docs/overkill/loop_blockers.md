@@ -2368,3 +2368,78 @@ half-measure worth taking.
 sides -- counters behaviour-neutral (9000-frame differential PASS, counters provably live) and the
 oracle/candidate boundary counts IDENTICAL frame-for-frame over 300 attract frames. That half needs no
 rework once the ISR is promotable.
+
+### 2026-07-18v — DIAGNOSIS: `mixed-return-kinds` on 4ED2 is CORRECT. Do NOT relax it.
+
+Disassembled and read the IR before proposing any dos_re change. **The check is right and the
+refusal is honest**; what is wrong is that the scanned "function" is not the ISR.
+
+**THE ISR ITSELF IS TINY AND CLEAN** (`scripts/lindis.py artifacts/frontend_intro_snapshot 1010 4ED2 4F40`):
+
+    4ED2  push ax/bx/cx/dx/di/si/bp/es/ds ; mov ds,cs:[9596]
+    4EE0  in al,60h ; mov bl,al ; in al,61h ; or al,80h ; out 61h ; xchg ; out 61h   (ack the 8042)
+    4EF4  mov bx,98C4h                       ; the INT 9 key-state table
+    4EF7  test al,80h ; jnz 4F22             ; release -> clear the byte
+    4EFB  mov [98C3],al ; add bx,ax ; mov [bx],1
+    4F03  cmp bx,98F1h ; jnz 4F29            ; ONE specific key...
+    4F09  cmp [98FC],1 ; jnz 4F29            ; ...and one mode flag
+    4F10  mov al,61h ; out 20h               ; EOI
+    4F14  pop ds/es/bp/si/di/dx/cx/bx/ax     ; FULL restore
+    4F1D  jmp near 5D14                      ; <-- TAIL JMP, registers already restored
+    4F22  and al,7Fh ; add bx,ax ; mov [bx],0
+    4F29  mov al,61h ; out 20h ; pop x9
+    4F36  iret                               ; the normal exit
+
+**THE SCAN ABSORBS A FOREIGN ROUTINE THROUGH THAT TAIL.** IR for `1010:4ED2`: 25 blocks spanning
+`4ED2..5E1A` (**0xF48 bytes**). Only **6** of the 25 are the ISR (`4ED2..4F36`); the other **19** are
+`1010:5D14`'s body, which contributes the extra exits:
+
+    exits: ['iret', 'jmp_ind', 'ret']
+      iret     4F36                     -- the ISR's own exit
+      jmp_ind  5DFD (`jmp cs:[bx+5E0C]`, a jump table)   } both inside 5D14's body
+      ret      5E14                                       }
+
+**WHY `1010:06E5` PROMOTES AND `4ED2` DOES NOT** — the single most informative comparison, and the
+shapes differ exactly here:
+
+    1010:06E5 (INT 08h, PROMOTES): exits ['iret','jmp_ind']   7 blocks, span 06E5..0732 (0x4D bytes)
+    1010:4ED2 (INT 09h, REFUSES) : exits ['iret','jmp_ind','ret']  25 blocks, span 4ED2..5E1A (0xF48)
+
+`06E5`'s second exit is the ISR CHAIN — an `FF /5` far indirect jmp through the saved vector, which
+`_is_isr_chain` RECOGNISES and which TERMINATES the scan. So 06E5 stays a homogeneous interrupt
+contract. `4ED2`'s second exit is a NEAR jmp into ordinary code, which the scan correctly FOLLOWS as
+a tail — and swallows 5D14 whole. So the two exits it ends up with, `iret` and `ret`, are two
+genuinely incompatible ABIs (IRET pops FLAGS as well as CS:IP) in one function. **The refusal is
+sound; relaxing it would be exactly the hidden unsoundness to avoid.**
+
+**5D14 IS A JUMP-ONLY SHARED CONTINUATION, NEVER CALLED:**
+
+    functions that CALL 5D14 : NONE
+    blocks that JUMP to 5D14 : 1010:4ED2 @4F1D, 1010:5559 @55D2, 1010:558B @55D2
+    1010:5D14 as its own entry (shipped or seeded closed set): NO
+
+So 5D14 is inlined into THREE functions. `5559`/`558B` absorb it too and promote FINE — because
+their own exit is `ret`, so `ret + ret + jmp_ind` is homogeneous. Only the ISR mixes kinds. That is
+why this surfaces on exactly one address.
+
+**CLASSIFICATION: the SCAN BOUNDARY, not the exit check** — the third case, with the
+manufactured-return fix as precedent (a `scan_function` stopping in the wrong place made a downstream
+check fire on the wrong thing). The tight, general fix is to REPRESENT 5D14 as a shared tail
+continuation — its own recovered function that the three tail-jumpers TRANSFER to — so 4ED2 keeps a
+clean `iret` contract and 5D14 keeps its own `ret` contract, instead of one function carrying both.
+
+**THIS IS BIGGER THAN ONE SLICE, so it stops here** (per the standing instruction that a precise
+"here is the construct and why it needs X" beats a rushed representation). Two things are genuinely
+unresolved and must be measured, not assumed, before any code is written:
+
+1. **What does the ISR path through 5D14 actually do with the IRET frame?** At 4F1D all registers are
+   restored and the stack top is the CPU-pushed IP/CS/FLAGS. If that path ever reached 5E14's `ret`
+   it would pop the frame's IP and leave CS/FLAGS stacked — not an interrupt return. So either the
+   ISR path always leaves via the jump table / a DOS terminate (5D14 does `sti`, silences the
+   speaker, restores mode 3 and prints via INT 21h AH=09 — it reads as the QUIT/abort path), or the
+   construct is stranger than it looks. Establish which by RUNNING it, not by reading.
+2. **Splitting 5D14 out changes `5559` and `558B` too** (both currently inline it), so it is a
+   corpus-wide change that needs the same before/after cost measurement as C9FC —
+   promotable AND parking, plus the ledger check.
+
+Until then steps 2-3 stay blocked and no spine divergence is claimed.
