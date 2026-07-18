@@ -46,9 +46,24 @@ class OverkillPlatform(FailLoudPlatform):
     FAIL LOUD (inherited) until ported + verified against the dos_re oracle. Recorded writes live in
     :attr:`video_ports` so a host renderer can read the selected mode/palette."""
 
-    def __init__(self) -> None:
+    def __init__(self, on_boundary=None) -> None:
         self.video_ports: dict[int, int] = {}
         self._retrace = 0
+        #: host callback invoked at a SCHEDULER YIELD (see :meth:`boundary`), or None to just count.
+        self._on_boundary = on_boundary
+        #: yields seen, per kind -- the front-end's frame clock when the host does not pace it.
+        self.boundaries: dict[str, int] = {}
+
+    def boundary(self, kind: str = "timer") -> None:
+        """A SCHEDULER YIELD: recovered code is blocking on something only the environment can
+        supply (a timer tick, a retrace).  A CPUless build has no interrupt to deliver it, so the
+        env-wait override (``overkill.cpuless_overrides``) hands control here instead of spinning.
+
+        The host uses it to pace the frame, present, and pump input -- i.e. it is where the wall
+        clock and the player re-enter a program that has no CPU underneath it."""
+        self.boundaries[kind] = self.boundaries.get(kind, 0) + 1
+        if self._on_boundary is not None:
+            self._on_boundary(kind)
 
     def outp(self, port: int, value: int, width: int, cost: int) -> None:
         p = port & 0xFFFF

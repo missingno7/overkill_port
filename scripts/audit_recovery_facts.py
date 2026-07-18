@@ -31,12 +31,18 @@ ART = ROOT / "artifacts"
 #: acknowledged debt with an owner, not an exemption: the audit fails if one is fixed but still listed.
 KNOWN_VIOLATIONS = {
     "keep-interpreted-promoted:1010:0679":
-        "env-wait (gameplay frame timer spin) is promoted although declared keep-interpreted. "
-        "Fix = model it as a plat.boundary scheduler yield; measured cost + 3-step plan recorded in "
-        "docs/overkill/campaigns/cpuless_app.md (2026-07-18 env-wait finding).",
+        "env-wait (frame timer spin) is promoted although declared keep-interpreted. MITIGATED at "
+        "RUNTIME (2026-07-18d): overkill/cpuless_overrides.py patches it with a scheduler yield to "
+        "OverkillPlatform.boundary() that supplies the tick the absent INT 8 handler owed, then "
+        "delegates to the generated body. The PIPELINE-level violation stands (promotion still "
+        "ignores the fact file); it stops mattering once the emitter models env-waits as boundaries.",
     "keep-interpreted-promoted:1010:50C9":
-        "env-wait (front-end CRT retrace spin) is promoted although declared keep-interpreted. "
-        "Same fix/plan as 0679; this one is also the likely reason the front-end loop cannot animate.",
+        "env-wait (CRT retrace spin) is promoted although declared keep-interpreted. Satisfied at "
+        "runtime by OverkillPlatform.inp() toggling 3DAh, so the spin terminates. CORRECTION "
+        "(2026-07-18d): the earlier note here claimed this was 'likely why the front-end cannot "
+        "animate' -- measured false. A 400-boundary probe showed the CC04 front-end never reaches "
+        "0679 at all and paces purely on this retrace; the flow does not advance because the corpus "
+        "has NO TOP LEVEL (1010:96C8 refuses 'no-exit'), not because of an env-wait.",
 }
 
 

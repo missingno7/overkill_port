@@ -384,3 +384,85 @@ One ledger alone reads 8.1%; adding the second demo doubled it. **So the lever o
 is DEMO BREADTH, not more promotion** — every new promotion without a demo that reaches it grows the
 unproven surface rather than shrinking it. This is the figure to quote for correctness; "591/626
 promoted, walls HOLD" is a structural claim and says nothing about these 477.
+
+## 2026-07-18d — ROOT CAUSE: the corpus has NO TOP LEVEL, because the lifter refuses `no-exit` regions
+
+Owner report: "play_cpuless starts from a not-correct intro animation instead of the real starting
+point and many things are incorrectly connected together". Investigated instead of patched, and the
+cause is structural, not sloppiness.
+
+**THE GAME'S TOP LEVEL IS `1010:96C5`/`1010:96C8`.** From the lift census call graph it calls
+`CBE8` (the front-end/menu), `D390` (level select) AND `9B2E`/`97B2` (gameplay) — i.e. it *is* the
+main loop that sequences the whole game. It matches the cold-start ground-truth table, which
+recorded `96C8` as the address for the long front-end phase. (The 2026-07-12 note calling `96C8` "a
+front-end address I misidentified" was itself wrong — it is the sequencer.)
+
+**Why it is not in the corpus:**
+
+    1010:96C8  liftable=False  refusal = {'reason': 'no-exit',
+                                          'detail': 'no ret/retf/iret/far-jmp reachable'}
+
+A game main loop never returns — "no exit" is its DEFINING property, not a defect. `97B2` and
+`96C5` refuse for exactly the same reason. So the lifter structurally cannot emit any top level,
+for this or any other DOS game.
+
+**That hole is the origin of the whole flow problem.** With no generated top level, something had
+to supply the sequencing, so it was hand-written into the runner: `--no-title`, `--level N`,
+`--instructions`, `--ordering` are flags standing in for the original's decision sequence, plus the
+`_run_title_menu` / `_run_native_attract` host loops. Every screen is individually fine; the wiring
+BETWEEN screens was invented rather than recovered. And `play_cpuless --menu` entered at `CC04`,
+which is three levels below the real root (`96C8` -> `CBE8` -> `CC04`) and does not even import
+`d007` — so it contains no attract scene machine and can never advance the flow.
+
+**Corrections to two earlier beliefs** (both measured this pass):
+- `CC04` is NOT the front-end root. `CBE8` calls it; `96C5`/`96C8` call `CBE8`.
+- The env-wait `1010:0679` is NOT on the `CC04` path at all (a probe over 400 boundaries never
+  reached it) — the CC04 front-end paces on RETRACE, which the platform already satisfies. `0679`
+  is called by `D007` (the attract scene machine) and by `96C8`, i.e. it blocks the REAL flow, not
+  the one we were entering. This also means the "env-wait is why the front-end cannot animate"
+  hypothesis was aimed at the wrong path.
+
+**Landed this pass — THE STITCH (`overkill/cpuless_overrides.py`):** the mechanism that lets the
+generated corpus own the flow while manual code patches addresses inside it. Generated modules bind
+callees at IMPORT time (`from ...func_1010_cc4f import func_1010_cc4f`), so there is no per-call
+resolver; the only seam is the module object, and `install_overrides(plat)` shadows `sys.modules`
+before the corpus loads. Dynamic transfers route through `_dyncall` -> `DISPATCH`, which imports by
+module name, so the same shadow serves them too. Invariants: an override must match the generated
+contract; an override naming an address the corpus lacks raises `LookupError` (the guard against a
+regeneration silently orphaning a manual patch); and the generated function stays reachable via
+`generated(addr)` as its differential oracle, so an override that only ADDS an effect delegates to
+it. `1010:0679` is the model — it yields to the new `OverkillPlatform.boundary()` scheduler hook,
+supplies the tick the absent INT 8 handler owed, then calls the generated body so the returned
+flags cannot drift. 7 tests.
+
+**THE NEXT SLICE, and it is a generic dos_re capability:** teach the lifter to emit `no-exit`
+top-level regions. A region with no reachable return is a `while True:` whose only exits are the
+host boundaries it yields at — which is precisely the contract `plat.boundary` now provides. Every
+DOS game has one; refusing it means no port can ever get its flow from the original code, which is
+the single thing standing between this port and a real cold start. Promote it upstream.
+
+Then: enter at `96C8`, observe `[BE06]`/`[98C3]`, delete the flag-as-flow interface, and gate the
+sequence against the `probe_coldstart_frontend.py` ground-truth timeline.
+
+**SUITE BUG FOUND + FIXED THE SAME PASS (2026-07-18d) — a LEAKED IMPORT GUARD, 239 red tests.** The
+suite was red at 239 failed / 1206 passed on a CLEAN tree (so not caused by this pass's work, and the
+earlier "1436 green" claim did not hold). Cause: `tests/test_cpuless_frontend_matches_native.py`
+called `install_import_guard()` bare. That guard replaces `builtins.__import__` PROCESS-GLOBALLY, so
+from that test onward every test legitimately needing the interpreter died with a
+`CpuStandaloneWitness` raised nowhere near the culprit — and since each failing test PASSES in
+isolation, it presents exactly like corpus drift. That is the second time this session a pollution
+bug was first misread as drift.
+
+Fixed at three levels, weakest to strongest:
+1. the test uses the scoped form;
+2. dos_re gains `uninstall_import_guard()` + an `import_guard()` CONTEXT MANAGER (promoted upstream —
+   every port has this hazard). Teardown reads the displaced `__import__` off an attribute of the
+   installed guard rather than a side stack, so a caller restoring by hand (the older try/finally
+   idiom, still used by `test_cpuless_wall`) cannot desynchronise it and nesting unwinds correctly.
+   The first stack-based implementation DID desync against that existing caller and its test caught
+   it — kept as `test_nested_guards_unwind_in_order`;
+3. `tests/conftest.py` gains an autouse RATCHET that fails the *individual* test that leaks a guard,
+   naming it, and repairs `__import__` so the rest of the session is unaffected.
+
+Suite: **1445 passed, 0 failed, 36 skipped**.
+
