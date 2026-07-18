@@ -385,6 +385,51 @@ is DEMO BREADTH, not more promotion** — every new promotion without a demo tha
 unproven surface rather than shrinking it. This is the figure to quote for correctness; "591/626
 promoted, walls HOLD" is a structural claim and says nothing about these 477.
 
+## 2026-07-18e — THE UNLOCK IS ONE OVERRIDE AT THE DOS-I/O SEAM (`1010:0B3E`)
+
+Traced the blocker chain behind the missing top level to its leaves, and the answer is much smaller
+and much better-placed than expected.
+
+    boundary head 1010:97CB (`call 9B2E`) composes only if 9B2E is a composed callee
+      9B2E   liftable=True, 74 insts, exits=['ret'], NO refusals of its own
+        blocked solely by -> 4DBF  (level re-init)
+          blocked solely by -> 0B3E (per-level ASSET LOADER)
+            subtree: C679, 0615, 0624, 065C (sp-as-data), 0248 (likely-data)
+
+Simulated providing `1010:0B3E`: **the entire blocked cascade under `9B2E` clears.** So one provided
+function turns `9B2E` promotable, which composes the boundary head, which lifts all ten top-level
+entries (`96C5 96C8 97B2 9720 986E 989E 98D8 9908 9921 9928`) as boundary-delimited coroutines — i.e.
+the corpus gains the TOP LEVEL, and with it a cold-start flow that is oracle-comparable end to end.
+
+**And `0B3E` is exactly the right seam — it is already ours.** It is the loader whose original does
+INT 21h file reads; this port has supplied the decoded bytes natively since the beginning
+(`cpuless_runtime.level_assets_for`, whose docstring already says "the original's 0B3E / 0E9C loaders
+do INT 21h file reads; the native port hands the decoded bytes in instead"). This is not a manual
+reimplementation competing with generated code — it is the host boundary a VM-less port must own, and
+the one place where "the port provides it" is the correct answer rather than a shortcut.
+
+**NO NEW CAPABILITY NEEDED — dos_re already has the build-time seam.** `dos_re/tools/cpuless_promote.py`
+takes `--overrides`: "AUTHORITATIVE OVERRIDES (the unified override-graph seam): seed each override's
+callee contract so callers compose it exactly like a generated callee (impl = overrides.get(addr,
+generated[addr]))". Each entry declares a `CalleeContract` plus a VIRTUAL-TIME contract
+(`static` / `model` = exact, `island` = one dispatch step, not virtual-time-exact and the default).
+skyroads_port consumes the same mechanism through `skyroads/recovered_overrides/func_CCCC_IIII.py`
++ `_override_keys()`. So this is the general DOS_RE 2.0 shape, already used by a sibling port.
+
+**IMPORTANT DISTINCTION this pass clarified:** THE STITCH (`cpuless_overrides.py`, runtime
+`sys.modules` shadowing) can NOT unblock promotion — it substitutes a body at run time, while the
+emitter refuses `9B2E` at BUILD time because no `func_1010_0b3e` module exists at all. The two seams
+are complementary: `--overrides` makes the frame COMPOSE around port-provided code; the stitch
+replaces an already-generated body at run time. `0B3E` needs the former.
+
+**Virtual time is the open risk.** A hand-supplied `0B3E` is not instruction-exact, so it must declare
+its contract honestly. `island` (the default) is NOT virtual-time-exact, and cost accumulates into
+the caller's `_cost`, which anchors platform effects and where demo input lands — so an `island`
+declaration here could perturb the gameplay lockstep. Preferred: `static` with a measured
+per-invocation instruction count, or `model`. MEASURE IT AGAINST THE VM BEFORE DECLARING; a guessed
+cost is exactly the kind of quiet approximation this project forbids.
+
+
 ## 2026-07-18d — ROOT CAUSE: the corpus has NO TOP LEVEL, because the lifter refuses `no-exit` regions
 
 Owner report: "play_cpuless starts from a not-correct intro animation instead of the real starting
