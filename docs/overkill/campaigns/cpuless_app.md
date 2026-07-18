@@ -13,6 +13,24 @@
 > `artifacts/boot_entry_snapshot` with `steps=0`. The cold root the CPUless corpus now actually
 > drives is the game top level `1010:96C8`, over the snapshot recorded at it.
 
+## 2026-07-18k -- DEMO INPUT REPLAY IS BLOCKED ON A RECORDING, and that is measured
+
+Attempted task 4 (wire demo input replay). It cannot be done with the demos that exist, and the
+reason is measurable rather than a judgement call -- see `loop_blockers.md` for the numbers:
+
+* `1010:58F4`, where BOTH 2026-07-18 demos start, gets **ZERO hits over 1200 differential frames**
+  from the cold snapshot (control: 0679 2400 hits, 50C9 1836 hits in the same run). The demos are
+  not a later point of this run; they are a different run. There is nothing to align to.
+* The demo boundary clock counts `0679` AND `50C9`; the differential cuts only on `0679`. Over 1200
+  frames the demo-boundaries-per-frame distribution is `{2: 1199 frames, 1838: 1 frame}` -- the
+  retrace-paced intro collapses into ONE differential frame. No constant offset or scale exists.
+
+So the honest answer is the one the brief anticipated: **a new cold demo must be recorded from
+`1010:96C8`**. `--record-demo` lives only in the pygame viewer (`player.py:626`/`:659`, both inside
+`run_view`), so it needs a human at the keyboard -- there is no headless recording path to drive.
+
+Not fabricating an alignment was the whole point; the measurement is the deliverable.
+
 ## 2026-07-18j -- FIXED. The frontier moves 870 -> past 4000, and the fix costs nothing
 
 The manufactured-return defect diagnosed in 2026-07-18i is repaired in dos_re (`f23b0fb` +

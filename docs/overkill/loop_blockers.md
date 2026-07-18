@@ -1,5 +1,43 @@
 # Loop blockers — divergences/targets that need the user (or better tooling)
 
+## 2026-07-18 — NEEDS THE OWNER: demo input replay needs a NEWLY RECORDED cold demo
+
+**Measured, not assumed.** Task: deliver the spine demo's 24 input events into the cold-start CPUless
+differential. It cannot be done with the demos that exist, and no alignment can be derived from
+evidence. Two independent measurements say so, both on the ORACLE run from
+`artifacts/frontend_intro_snapshot` (the image the differential starts both machines from):
+
+1. **`1010:58F4` IS NOT ON THIS PATH AT ALL.** Both 2026-07-18 demos record their start state there.
+   Trapping that address over **1200 differential frames: ZERO hits** (control instrument in the same
+   run: `1010:0679` 2400 hits, `1010:50C9` 1836 hits, so the trap is live). The demos describe a
+   different run, not a later point of this one. There is nothing to align TO.
+
+2. **THE TWO CLOCKS ARE NOT PROPORTIONAL.** `dos_re.player` counts a demo boundary at BOTH
+   `1010:0679` and `1010:50C9` (`scripts/play.py:748` — deliberately: the intro paces on retrace and
+   would otherwise fast-forward invisibly). The differential cuts a frame only at the 2nd pass of
+   `1010:0679`. Demo-boundaries per differential frame over 1200 frames: **1199 frames have 2, and
+   ONE frame has 1838** — the whole retrace-paced intro sits inside a single differential frame. So
+   no constant offset or scale maps demo boundary -> differential frame. Any such mapping would be
+   fabricated, which is exactly the failure mode to avoid.
+
+**What is needed:** a demo recorded from the state the CPUless corpus actually enters
+(`1010:96C8`, i.e. the `frontend_intro_snapshot` image), so its boundary indices are on the
+differential's own clock.
+
+**Why an agent cannot produce it:** `--record-demo` is reachable ONLY from the pygame viewer
+(`dos_re/dos_re/player.py:626` and `:659`, both inside `run_view`). Recording requires a human
+pressing keys. There is no headless/scripted recording path.
+
+    python scripts/play.py --video tandy --snapshot artifacts/frontend_intro_snapshot         --record-demo cold_96c8   # then play the spine path: SPACE, m x4, SPACE, ENTER
+
+**A sound fallback that needs no recording** (not built): drive BOTH machines in
+`verify_cpuless_coldstart.py` from a SYNTHETIC input schedule of the harness's own choosing,
+delivered at the same differential frame index to each side (the driver already has the
+`supply_input` seam; the oracle side would write the image's own INT9 key table). That proves the
+input path is wired and faithful without inventing an alignment, because there is no recorded demo
+to align to. It does NOT prove the owner's spine path — only a real recording does.
+
+
 ## 2026-07-18 — RESOLVED: dos_re `emit_cpuless` dropped a MANUFACTURED RETURN (`push addr ; jmp indirect`)
 
 **FIXED** in dos_re `f23b0fb` + `47ca790`; the differential passes 4000 frames from cold. Kept here
