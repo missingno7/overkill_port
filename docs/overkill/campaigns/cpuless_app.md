@@ -385,6 +385,57 @@ is DEMO BREADTH, not more promotion** — every new promotion without a demo tha
 unproven surface rather than shrinking it. This is the figure to quote for correctness; "591/626
 promoted, walls HOLD" is a structural claim and says nothing about these 477.
 
+## 2026-07-18f — PROVEN BY EXPERIMENT: only the DOS/BIOS SURFACE gates the top level
+
+Ran the promotion as a DIAGNOSTIC (no `--apply`, census to scratch, committed corpus untouched),
+seeding `--overrides` with contracts for the DOS/BIOS boundary functions and nothing else. Result:
+
+| provided | promotable | `contains-call` | `boundary-head-on-transfer` | top level |
+|---|---|---|---|---|
+| nothing (committed) | 591 | 19 | 10 | refused |
+| `C679` | 600 | 19 | **0** | refused (`contains-call`) |
+| `C679` + `065C` | 600 | 18 | 0 | refused |
+| **the 10 DOS/BIOS fns** | **611** | **0** | **0** | **ALL TEN PROMOTE** |
+
+Seeded set: `C679 065C 5559 0011 0030 0324 0367 03A8 0615 0624` — every one an INT 21h / INT 10h
+function, i.e. exactly the surface a VM-less port must own by definition.
+
+**ALL TEN top-level entries promote** (`96C5 96C8 97B2 9720 986E 989E 98D8 9908 9921 9928`), and with
+them the whole flow: `CBE8` (front-end), `CC04`, `D007` (the attract scene machine), `D390` (LEVEL
+SELECT), `558B` (the menu start/idle decision), `9B2E`, `4DBF`. `contains-call` goes from 19 to
+**zero**. What remains is 4 `ir-not-liftable` (`0248` likely-data, `3EFC`, two far-segment entries)
+and 1 `sp-as-data` (`0111`) — none of them in the top level's closure.
+
+**THE HEADLINE: no game logic blocks the top level. Only the DOS surface does.** Every piece of
+OVERKILL's own code already promotes; the frame is missing purely because the port has not yet
+supplied INT 21h/INT 10h as composed callees. That reframes the remaining work from "recover more of
+the game" to "own the DOS boundary properly" — which is a bounded, well-understood job, and the same
+one the from-EXE cold boot needs anyway (`254A:04D7` = 11 INT 21h C-startup calls).
+
+It also confirms the boundary-head chain end to end: providing `C679` alone eliminated
+`boundary-head-on-transfer` entirely (10 -> 0), i.e. `9B2E` became a composed callee and the declared
+head `97CB` composed, exactly as predicted. The refusal then MOVED to `contains-call` rather than
+disappearing, which is why the intermediate runs still showed the top level refused — worth noting,
+because a single refusal-bucket count would have read as "no progress" when the real blocker had
+changed class.
+
+Reproduce:
+
+    python dos_re/tools/cpuless_promote.py --ir artifacts/recovery_ir_closed.json       --recovered-dir <scratch>/rec --adapter-dir <scratch>/adp       --import-base overkill.cpuless_recovered       --boundary-heads artifacts/lift_boundary_heads.txt       --dyn-evidence artifacts/indirect_sites.json --absorb-dispatch-arms       --overrides <scratch>/ovr_dossurface.json --census-out <scratch>/census.json
+
+**WHAT THIS IS NOT.** The diagnostic seeded CONTRACTS with no bodies and a placeholder `island`
+virtual-time. It proves the promotion graph unlocks; it proves nothing about correctness. To land it:
+1. faithful bodies for the 10 DOS/BIOS functions (file I/O + the INT 10h video calls). The port
+   already owns the asset side natively (`cpuless_runtime.level_assets_for`), so much of the file I/O
+   is answering from decoded bytes rather than emulating DOS;
+2. a MEASURED virtual-time contract per function (`static` with a counted cost, or `model`) — the
+   `island` default is NOT virtual-time-exact and `cost` anchors platform effects and demo-input
+   landing, so guessing here could perturb the gameplay lockstep;
+3. `--overrides` wired into `scripts/probe_vmless_cpuless.py`, regenerate, then verify the frame
+   against the oracle across a cold start (skyroads' `verify_cpuless.py` does exactly this: 672
+   frames byte-exact).
+
+
 ## 2026-07-18e — THE UNLOCK IS ONE OVERRIDE AT THE DOS-I/O SEAM (`1010:0B3E`)
 
 Traced the blocker chain behind the missing top level to its leaves, and the answer is much smaller
