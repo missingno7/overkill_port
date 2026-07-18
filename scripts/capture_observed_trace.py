@@ -12,6 +12,28 @@ Both are the honest kind of evidence: they do not assume the dead path is imposs
 that this demo never took it, and the emitted code FAILS LOUD if it ever is taken. That is the
 opposite of a fallback.
 
+MEASURED: `--observed` REGRESSES this port's promotion, and NOT because of coverage
+-----------------------------------------------------------------------------------
+    no --observed                      591 promotable, contains-call 20
+    --observed, 1 demo  (36% covered)  571 promotable, contains-call 40
+    --observed, 3 demos (59% covered)  571 promotable, contains-call 40   <- byte-identical
+
+Doubling address coverage changed NOTHING -- the two censuses are identical. So the first
+explanation ("one demo is not enough, union will fix it") was WRONG, and is recorded here as the
+falsified hypothesis it was.
+
+The real mechanism is that dead-exit marking is SUBTRACTIVE. 168 functions have EVERY `ret`
+unexecuted across the union; each loses its exit ABI. For a function whose only live exit is a
+platform effect that is the intended win -- but where it removes ABI a caller needed, the caller
+refuses `contains-call` and the loss cascades. Net: 20 promotable functions lost, 0 gained, every
+one of them refused transitively (`contains-call`), including `D007` (the attract machine) and
+`CBE8` (the front end) whose OWN entries and returns both demonstrably executed.
+
+More demos of the same kind cannot fix this: the `1F8F` sound-driver segment shows only 18 executed
+addresses across all three recordings, so its functions stay all-exits-dead no matter how much
+gameplay is recorded. `--observed` therefore stays OUT of the pipeline until the subtractive case is
+handled (a dead exit should not be able to strip an ABI a live caller depends on).
+
 WHY A TRAP SET, NOT A FULL TRACE
 --------------------------------
 `--observed`'s schema is per-address, but it only ever asks about two address classes: function
@@ -55,10 +77,11 @@ def trap_addresses(ir: dict) -> "tuple[frozenset, dict]":
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--demo", action="append", default=None,
-                    help="repeatable -- evidence is UNIONED across demos. One demo's coverage is "
-                         "NOT enough: a path this demo skipped is not a dead path, and marking it "
-                         "dead REGRESSES promotion (measured: 591 -> 571 promotable, contains-call "
-                         "20 -> 40, from the spine demo alone at 36% address coverage).")
+                    help="repeatable -- evidence is UNIONED across demos. NOTE the measured result "
+                         "below: more coverage did NOT help. --observed regresses promotion "
+                         "(591 -> 571, contains-call 20 -> 40) IDENTICALLY at 36%% and at 59%% "
+                         "address coverage, because dead-exit marking is SUBTRACTIVE, not a "
+                         "coverage shortfall. See the module docstring.")
     ap.add_argument("--ir", default=str(DEFAULT_IR))
     ap.add_argument("--out", default=str(ROOT / "artifacts" / "observed.json"))
     ap.add_argument("--max-frames", type=int, default=None)

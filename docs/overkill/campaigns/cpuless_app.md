@@ -385,6 +385,41 @@ is DEMO BREADTH, not more promotion** — every new promotion without a demo tha
 unproven surface rather than shrinking it. This is the figure to quote for correctness; "591/626
 promoted, walls HOLD" is a structural claim and says nothing about these 477.
 
+### CORRECTION (2026-07-18m) — the `--observed` regression is NOT a coverage shortfall
+
+The 18k entry above explained the `--observed` regression as thin coverage and predicted that
+unioning demos would fix it. **Measured, and the prediction was wrong.** Adding the attract demo
+(11257 boundaries, the single biggest contributor at +539 addresses) and a gameplay demo took address
+coverage from 36% to 59% — and produced a **byte-identical census**:
+
+| evidence | coverage | promotable | contains-call |
+|---|---|---|---|
+| none | — | 591 | 20 |
+| spine demo | 36% | 571 | 40 |
+| spine + attract + gameplay | **59%** | **571** | **40** |
+
+**The real mechanism: dead-exit marking is SUBTRACTIVE.** 168 functions have EVERY `ret` unexecuted
+across the union, so each loses its exit ABI. Where a function's only live exit is a platform effect
+that is the intended win — but where the marking removes ABI a caller depended on, the caller refuses
+`contains-call` and the loss cascades. Net **20 lost, 0 gained**, and every one of the 20 refused
+TRANSITIVELY: `D007` (the attract machine) and `CBE8` (the front end) are among them despite their own
+entry and return both demonstrably executing, and their own would-be stub-target lists being empty.
+
+More demos of the same kind cannot repair it: the `1F8F` sound-driver segment shows only **18**
+executed addresses across all three recordings, so its functions stay all-exits-dead regardless of how
+much gameplay is recorded.
+
+So `--observed` stays out of the pipeline for a sharper reason than "not enough demos": a dead exit
+must not be able to strip an ABI that a LIVE caller still depends on. That is the fix, and it is a
+dos_re-level change, not a coverage exercise.
+
+**Kept as negative evidence, deliberately:** the falsified hypothesis is recorded in the tool's own
+module docstring next to the numbers that killed it, because "union more demos" is the obvious next
+move and someone will otherwise spend a day on it. This is the second time this campaign that a
+plausible coverage story survived one measurement and died on the second — the first being the
+promotion count that looked like progress while growing the UNPROVEN surface.
+
+
 ## 2026-07-18l — the ATTRACT demo, and the NON-LOCAL-EXIT design (ready to implement)
 
 Owner supplied a second spine demo, `artifacts/demos/demo_play_tandy_20260718_135013`: **11257
