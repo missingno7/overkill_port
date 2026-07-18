@@ -101,3 +101,6 @@ overkill/cpuless_adapters/
 artifacts/verify_*.txt
 artifacts/cpuless_census_view.json
 artifacts/viewA_differential.txt
+
+# M3b ABI-recovered pipeline output (regeneratable: tools/contract_census.py + abi_promote.py)
+artifacts/abi/

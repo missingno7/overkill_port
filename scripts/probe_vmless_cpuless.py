@@ -96,6 +96,12 @@ def main(argv=None) -> int:
     prom = _run([str(DOS_RE / "tools" / "cpuless_promote.py"), "--ir", str(ir),
                  "--recovered-dir", str(rec), "--adapter-dir", str(adp),
                  "--import-base", "overkill.cpuless_recovered", *heads_plain, *dyn_arg,
+                 # DISPATCH-ARM ABSORPTION: a switch arm reached only through a
+                 # container's near jump table is an ALTERNATE ENTRY of that
+                 # container, not a standalone function.  Absorbing it makes the
+                 # jump table an INTRA-FUNCTION landing (_LOCAL block goto), so a
+                 # tail-dispatch loop ITERATES instead of recursing through _dyn.
+                 "--absorb-dispatch-arms",
                  "--census-out", str(ART / "cpuless_promote_census.json"), "--apply"],
                 "cpuless_promote -> CPUless graph")
 
