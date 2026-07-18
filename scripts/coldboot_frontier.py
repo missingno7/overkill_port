@@ -48,8 +48,9 @@ def main(argv=None) -> int:
                     help="initial DS/ES (default: the root's own segment)")
     args = ap.parse_args(argv)
 
+    from dos_re.lift.platform import CPUlessPlatformRuntime
+
     from overkill.cpuless_host import install_import_guard, run_deep, run_recovered
-    from overkill.cpuless_runtime import OverkillPlatform
     from overkill.recovered.adapters.flat_memory import MutFlatMemory
 
     image = pathlib.Path(args.image)
@@ -61,7 +62,13 @@ def main(argv=None) -> int:
     seg = int(args.root.split(":")[0], 16)
     ds = args.ds if args.ds is not None else seg
     img = MutFlatMemory(image.read_bytes())
-    plat = OverkillPlatform()
+    # THE SHARED DEVICE MODEL, not the port's hand-rolled one. CPUlessPlatformRuntime owns a
+    # dos_re DOSMachine (pure hardware; no instruction execution), so INT 21h/10h and the ports are
+    # serviced by the framework's real DOS model over the game's own files. Writing INT 21h handlers
+    # in the port would be DOS recreated unnecessarily -- and the framework's version already carries
+    # details learned the hard way, e.g. allocating the LOWEST free file handle rather than a
+    # monotonic counter, because a game indexing a fixed-size per-handle table overruns it otherwise.
+    plat = CPUlessPlatformRuntime(img, ROOT / "assets")
 
     print(f"cold boot: {args.root} over {image.name} (ds={ds:04X}) -- wall ARMED")
     install_import_guard()

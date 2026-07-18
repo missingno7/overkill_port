@@ -385,6 +385,54 @@ is DEMO BREADTH, not more promotion** — every new promotion without a demo tha
 unproven surface rather than shrinking it. This is the figure to quote for correctness; "591/626
 promoted, walls HOLD" is a structural claim and says nothing about these 477.
 
+## 2026-07-18j — FRONTIER 1 CLEARED: the boot root RUNS. Frontier 2 = a longjmp the lifter can't model
+
+Cold-boot forward, second iteration. Frontier 1 was `INT 21h AH=3Dh` (open file) at
+`func_254a_04d7.py:78`. **Repaired by DELETING port code, not writing any:** swapped the hand-rolled
+`OverkillPlatform` for the framework's `dos_re.lift.platform.CPUlessPlatformRuntime`, which owns a
+`DOSMachine` (pure hardware, no instruction execution) and services INT 21h/10h and ports over the
+game's own files.
+
+    BOOT ROOT RAN TO COMPLETION: {'ax': 2, 'bx': 5, 'ds': 0x254A, ...}
+
+`bx = 5` is the DOS file handle — dos_re's lowest-free-handle allocator, the exact detail its source
+documents as learned from a real per-handle-table overrun. Not one line of INT 21h was written in the
+port. This is the standing rule paying out twice in two passes: first "fewer islands promote more",
+now "the general machinery already had it".
+
+**Frontier 2, in execution order:** `1010:96C8` — the game's top level — has no recovered module. Its
+blocker chain bottoms out at `1010:065C`, refused **`sp-as-data`**. Decoded:
+
+    065C: mov bx, cs:[0240]    ; the file handle
+          mov ah, 3Eh          ; DOS CLOSE FILE
+          int 21h
+          jnb 066A             ; ok -> ret
+          jmp 02B2             ; error -> the abort path
+    02B2: push ax / call 065C / pop ax
+          mov bx, 25CC / mov ds, bx      ; restore the data segment
+          mov sp, cs:[0242]              ; <-- RESTORE A SAVED STACK POINTER
+          stc
+          ret                            ; returns on the RESTORED stack
+
+That is a **C-runtime fatal-abort longjmp**: on a DOS error it unwinds to a stack pointer saved at
+`cs:[0242]` and returns to whoever saved it — not to `065C`'s caller. The IR finds the function
+liftable (`refusals: []`); the refusal is raised later by the CPUless emitter, where SP must be a
+tracked value and here it becomes an arbitrary word from memory.
+
+**THE GENERAL FIX (dos_re, not a local patch).** This shape is not an OVERKILL quirk — every DOS C
+runtime has a fatal-error path that restores a saved SP and returns. Refusing it costs the whole
+function, and here transitively the entire game main loop. A non-local exit maps naturally onto a
+**structured Python exception**: emit "restore SP from memory, then ret" as a raised
+`NonLocalExit`-style witness carrying the saved-SP cell, caught at the recovered program root (or at a
+matching setjmp site), instead of trying to model an unknowable stack pointer. That keeps the emitted
+code honest — the abort really is non-local — and turns a hard refusal into a modelled control-flow
+edge for every future game.
+
+Deliberately NOT attempted as a local workaround (declaring `065C` an override would hide a general
+autolifter limitation behind a port-specific island, and it is the third such limitation this
+campaign has found: unconsumed boundary-head facts, the corrupting IP-delta probe, now this).
+
+
 ## 2026-07-18i — METHOD CHANGE: cold-boot forward, first divergence IS the frontier
 
 Adopting the owner's method: grow ONE continuous oracle-proven path from startup rather than a
