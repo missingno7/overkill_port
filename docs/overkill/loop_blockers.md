@@ -2316,3 +2316,55 @@ delivering the 133 events at matched recorder-rule boundary indices through the 
 ISR, then the spine run. NOT attempted here; no divergence is claimed. Note the validation above is
 the ATTRACT path (zero input) -- the counts are NOT yet shown to agree once input drives the run onto
 the gameplay path, and that is the next thing to establish, not to assume.
+
+### 2026-07-18u — STEP 2 IS BLOCKED IN dos_re: the INT 09h ISR is NOT PROMOTABLE (mixed-return-kinds)
+
+Delivering demo input "through the game's own recovered INT 09h ISR" cannot be done on the CANDIDATE
+side, because that ISR is not in the corpus and cannot currently be put there.
+
+**MEASURED, in order:**
+
+    INT 09h vector in artifacts/frontend_intro_snapshot -> 1010:4ED2
+      (INT 08h -> 1010:06E5, which IS promoted; that is why the timer path works and this one does not)
+
+    1010:4ED2 in the 626-entry closed set?      NO
+    a corpus module func_1010_4ed2.py?          NO
+    a BLOCK `# 1010:4ED2` in any module?        NO   (the only hit is `dx = 0x4ED2` in
+                                                      func_1010_4e9f -- a DATA constant, the address
+                                                      being written into the vector, not code)
+
+**WHY THE CLOSURE NEVER FINDS IT:** the closure follows call/jump edges, and this address is only
+ever an immediate loaded into a register and installed as an interrupt vector. There is no static
+edge to discover, so no amount of re-closing reaches it. It has to be SEEDED.
+
+**SEEDING IT IS FREE BUT DOES NOT HELP.** Adding `1010:4ED2` to `artifacts/lift_census_entries.txt`
+and re-closing:
+
+    baseline: CLOSED 626 entries, liftable 623/626
+    + 4ED2:   CLOSED 627 entries, liftable 624/627     -- it LIFTS, and pulls in no new callees
+
+but promotion refuses it, and the corpus is byte-unchanged otherwise:
+
+    promotable 623 (UNCHANGED)      parking 20 (UNCHANGED)      func_1010_4ed2.py NOT generated
+    refused: ir-not-liftable    -> ['1010:3EFC', '1C43:0069', '23AD:0069']
+    refused: mixed-return-kinds -> ['1010:4ED2']            <-- NEW bucket, exactly this address
+
+**CLASSIFICATION: (b) a dos_re capability gap, not OVERKILL stitching.** `mixed-return-kinds` is the
+promoter declining a function whose exits are not all the same kind — expected for an interrupt
+handler, which ends in `IRET` but can also reach a `RET`/chain path (OVERKILL's ISR chains the
+original BIOS handler, the same shape `1010:06E5` has for INT 08h). Per the charter this must be
+fixed GENERALLY in dos_re, never as a hidden OVERKILL exception.
+
+**SO THE ORDER OF WORK IS:** dos_re must represent mixed IRET/RET exits (or the promoter must model
+an IRET contract for a seeded vector handler) BEFORE the spine differential can deliver input to the
+candidate. Until then, steps 2-3 are blocked and NO spine divergence can be produced honestly -- the
+candidate would have no way to observe a keypress at all.
+
+**NOT A BLOCKER FOR THE ORACLE SIDE**, which runs the interpreted ISR from the vector as usual; but a
+differential that delivers input to only one machine is not a differential, so this is not a
+half-measure worth taking.
+
+**WHAT IS ALREADY DONE AND STILL STANDS** (2026-07-18t): the recorder-rule clock is validated on both
+sides -- counters behaviour-neutral (9000-frame differential PASS, counters provably live) and the
+oracle/candidate boundary counts IDENTICAL frame-for-frame over 300 attract frames. That half needs no
+rework once the ISR is promotable.

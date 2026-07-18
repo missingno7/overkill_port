@@ -13,6 +13,22 @@
 > per-frame VM states on first run and replays them in ~40s instead of ~5min -- same states, same
 > comparison; pass `vm` to force the live oracle; caches live in `artifacts/shadow_cache/`,
 > gitignored, keyed on the demo file sha1 + frame budget)**, `scripts/lindis.py` (encoded targets), **`scripts/audit_recovery_facts.py` (2026-07-18): every declared RECOVERY FACT (`artifacts/lift_*.txt`) must have a visible CONSEQUENCE in the generated census -- checks OUTCOMES, not pipeline source text, so it survives a pipeline rewrite. A RATCHET: known violations are listed with their reason, and it fails on a NEW violation OR on a listed one that has been fixed. Exists because lift_keep_interpreted.txt was silently ignored for weeks and two known-divergent env-waits got promoted**; **`scripts/cpuless_verification_coverage.py` + `verify_cpuless.py --ledger` (2026-07-18): promotion is STRUCTURAL, correctness is a per-function differential -- quote the PROVEN fraction, not the promotion count. Measured 2026-07-18 over BOTH demo ledgers (L1 gameplay + cold-start): promoted 591, verified PASS 96, DIVERGED 0, INCONCLUSIVE 18, NEVER EXERCISED 477 = **16.2% proven**. NB a single ledger read 8.1% -- each demo roughly DOUBLES coverage, so DEMO BREADTH is the lever on the unproven surface, not more promotion**; 
+> **A CORPUS FUNCTION'S CALL COUNT IS NOT ITS ARRIVAL COUNT — COMPARE STREAMS, NOT SUMS
+> (2026-07-18t).** A generated body is a `while True:` block dispatcher, so control RE-ARRIVES at an
+> address inside it without a new CALL: an internal poll/spin loop iterates many times per call.
+> Counting calls therefore UNDER-counts arrivals by whatever the loop does internally, and inlining
+> makes it worse (a near-JMP target is emitted as a BLOCK inside its callers — `func_1010_bd17` is
+> inlined into ~29 functions, so its call count reads 0 and means NOTHING). Measured instance: the
+> candidate's CALL count for `1010:0679` is exactly HALF the oracle's cs:ip ARRIVAL count, on every
+> frame. The fix is to count the event the corpus actually emits per arrival — for a declared head
+> that is `plat.boundary` (fires once per poll pass), not the function call; `50C9`/`3354` are
+> counted correctly by call because control enters them once per arrival.
+> **THE METHOD THAT CAUGHT IT MATTERS MORE THAN THE INSTANCE:** a FRAME-FOR-FRAME comparison of two
+> independently-counted streams. A totals-only or windowed-aggregate check would have accepted a
+> uniform ×2 correction that was perfect on the calibration path and wrong in mechanism — and a
+> fitted constant that works on the calibration set is the failure mode this project keeps hitting.
+> Corollary already paid for elsewhere: when instrumenting, always report the INSTRUMENT'S OWN
+> TOTALS beside the verdict, because a gate that passes with an INERT instrument proves nothing;
 > **THE LIFTABLE COUNT IS NOT THE COST OF A BOUNDARY HEAD (2026-07-18m) — `close_census.py`'s
 > `liftable=N/M` and `cpuless_promote.py --apply`'s PARKING count are DIFFERENT COST FUNCTIONS, and
 > only the second prices a head.** Measured on `1010:C9FC`: liftable is UNCHANGED at 623/626 with
