@@ -250,3 +250,15 @@ cycles. Recorded so it is never mistaken for a solution.
 
 **Next:** present that rendered video memory through play_native's renderer to get a VISIBLE native
 menu, then drive input into it.
+
+## 2026-07-18 — `play_cpuless --menu`: the CPUless FRONT-END is on screen
+
+`scripts/play_cpuless.py --menu` runs the front-end root `1010:CC04` from the GENERATED corpus over the
+data-only boot image under the armed wall, then presents what it drew into B800 through the native Tandy
+renderer (`decode_tandy_b800_indices` -> `PygameDisplay`). 18556 lit pixels, no CPU, no interpreter.
+Gated by `tests/test_play_cpuless_menu.py` (headless, artifact-gated on the boot image).
+
+**Both halves of the unification now RUN:** gameplay via the manual override (`--frames`), the front-end
+via the generated corpus (`--menu`). What remains to join them into one cold-booting app: drive INPUT
+into the menu (it currently runs to completion and returns rather than waiting on keys), then follow the
+menu's own exit into level-load + gameplay.
