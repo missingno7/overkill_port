@@ -36,17 +36,19 @@ _FIRE = 0x39            # the scancode the front-end loop breaks out on
 @pytest.mark.skipif(not BOOT_IMAGE.is_file(),
                     reason="no front-end boot image -- this cross-validation is artifact-gated")
 def test_cpuless_frontend_frame_matches_hand_recovered_blueprint():
-    from overkill.cpuless_host import install_import_guard, run_deep, run_recovered
+    from overkill.cpuless_host import import_guard, run_deep, run_recovered
     from overkill.cpuless_runtime import OverkillPlatform
     from overkill.native_video.blueprint import compose_blueprint
     from overkill.native_video.page_raster import decode_tandy_b800_indices
     from overkill.recovered.adapters.flat_memory import MutFlatMemory
 
-    install_import_guard()
     img = MutFlatMemory(BOOT_IMAGE.read_bytes())
     img.wb(_DS, (_KEY_TABLE + _FIRE) & 0xFFFF, 1)          # hold fire: the loop runs the reveal + exits
-    run_deep(run_recovered, "1010:CC04", img, OverkillPlatform(),
-             ds=_DS, es=_DS, ss=0x2000, sp=0x1000)
+    # SCOPED: the guard is process-global, so arming it bare here armed it for the whole pytest
+    # session -- every later test needing the interpreter then died with a CpuStandaloneWitness.
+    with import_guard():
+        run_deep(run_recovered, "1010:CC04", img, OverkillPlatform(),
+                 ds=_DS, es=_DS, ss=0x2000, sp=0x1000)
 
     generated = decode_tandy_b800_indices(np.frombuffer(bytes(img.data), dtype=np.uint8), 0xB8000)
     manual = compose_blueprint(img, 5)                     # the +5-cells reveal beat
