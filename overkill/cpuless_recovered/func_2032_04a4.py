@@ -35,7 +35,7 @@ def func_2032_04a4(mem, plat, *, _base=0, _df=0, bx=0, ds=0, dx=0, sp=0, ss=0):
         if bb == 1:  # 2032:04A8
             sp = (sp - 2) & 0xFFFF
             mem.ww(ss, sp, 0x04AB)
-            _o, _c = func_2032_0557(mem, plat, _base=_base + _cost, ax=ax, bx=bx, ds=ds, dx=dx, sp=sp, ss=ss)
+            _o, _c = func_2032_0557(mem, plat, _base=_base + _cost + 1, ax=ax, bx=bx, ds=ds, dx=dx, sp=sp, ss=ss)
             ax = _o['ax']
             bx = _o['bx']
             dx = _o['dx']

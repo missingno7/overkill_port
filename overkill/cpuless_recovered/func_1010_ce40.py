@@ -49,7 +49,7 @@ def func_1010_ce40(mem, plat, *, _base=0, ax=0, bx=0, cx=0, di=0, ds=0, dx=0, si
             mem.ww(ss, sp, cx)
             sp = (sp - 2) & 0xFFFF
             mem.ww(ss, sp, 0xCE4C)
-            _o, _c = func_1010_0162(mem, plat, _base=_base + _cost + 1, ax=ax, bx=bx, di=di, ds=ds, dx=dx, sp=sp, ss=ss)
+            _o, _c = func_1010_0162(mem, plat, _base=_base + _cost + 2, ax=ax, bx=bx, di=di, ds=ds, dx=dx, sp=sp, ss=ss)
             ax = _o['ax']
             bx = _o['bx']
             cx = _o['cx']
@@ -93,7 +93,7 @@ def func_1010_ce40(mem, plat, *, _base=0, ax=0, bx=0, cx=0, di=0, ds=0, dx=0, si
         if bb == 4:  # 1010:CE59
             sp = (sp - 2) & 0xFFFF
             mem.ww(ss, sp, 0xCE5C)
-            _o, _c = func_1010_50c9(mem, plat, _base=_base + _cost, ax=ax, sp=sp, ss=ss)
+            _o, _c = func_1010_50c9(mem, plat, _base=_base + _cost + 1, ax=ax, sp=sp, ss=ss)
             ax = _o['ax']
             dx = _o['dx']
             _gm = _c['fmask']

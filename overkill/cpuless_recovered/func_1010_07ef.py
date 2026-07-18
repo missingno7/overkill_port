@@ -43,7 +43,7 @@ def func_1010_07ef(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, bx=0, 
         if bb == 0:  # 1010:07EF
             sp = (sp - 2) & 0xFFFF
             mem.ww(ss, sp, 0x07F2)
-            _o, _c = func_1010_5145(mem, plat, _base=_base + _cost, ax=ax, bx=bx, dx=dx, ss=ss)
+            _o, _c = func_1010_5145(mem, plat, _base=_base + _cost + 1, ax=ax, bx=bx, dx=dx, ss=ss)
             ax = _o['ax']
             bx = _o['bx']
             dx = _o['dx']
@@ -64,7 +64,7 @@ def func_1010_07ef(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, bx=0, 
             ax = 0x1B
             sp = (sp - 2) & 0xFFFF
             mem.ww(ss, sp, 0x07F8)
-            _o, _c = func_1010_5a00(mem, plat, _base=_base + _cost + 2, _df=(1 if df else 0), _flags_in=((_flags_in & ~_fmask) | (((0x1 if cf else 0) | (0x4 if pf else 0) | (0x10 if af else 0) | (0x40 if zf else 0) | (0x80 if sf else 0) | (0x800 if of else 0) | (0x400 if df else 0) | (0x200 if intf else 0)) & _fmask)), ax=ax, bp=bp, cx=cx, di=di, ds=ds, dx=dx, es=es, si=si, sp=sp, ss=ss)
+            _o, _c = func_1010_5a00(mem, plat, _base=_base + _cost + 3, _df=(1 if df else 0), _flags_in=((_flags_in & ~_fmask) | (((0x1 if cf else 0) | (0x4 if pf else 0) | (0x10 if af else 0) | (0x40 if zf else 0) | (0x80 if sf else 0) | (0x800 if of else 0) | (0x400 if df else 0) | (0x200 if intf else 0)) & _fmask)), ax=ax, bp=bp, cx=cx, di=di, ds=ds, dx=dx, es=es, si=si, sp=sp, ss=ss)
             ax = _o['ax']
             bp = _o['bp']
             bx = _o['bx']
@@ -180,7 +180,7 @@ def func_1010_07ef(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, bx=0, 
             ds = mem.rw(cs, 0x9596)
             sp = (sp - 2) & 0xFFFF
             mem.ww(ss, sp, 0x084B)
-            _o, _c = func_1010_5cb7(mem, plat, _base=_base + _cost + 22, _df=(1 if df else 0), ax=ax, cx=cx, di=di, ds=ds, dx=dx, es=es, si=si, sp=sp, ss=ss)
+            _o, _c = func_1010_5cb7(mem, plat, _base=_base + _cost + 23, _df=(1 if df else 0), ax=ax, cx=cx, di=di, ds=ds, dx=dx, es=es, si=si, sp=sp, ss=ss)
             ax = _o['ax']
             cx = _o['cx']
             di = _o['di']

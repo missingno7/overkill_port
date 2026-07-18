@@ -41,7 +41,7 @@ def func_1010_5bee(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, bx=0, 
         if bb == 0:  # 1010:5BEE
             sp = (sp - 2) & 0xFFFF
             mem.ww(ss, sp, 0x5BF1)
-            _o, _c = func_1010_5145(mem, plat, _base=_base + _cost, ax=ax, bx=bx, dx=dx, ss=ss)
+            _o, _c = func_1010_5145(mem, plat, _base=_base + _cost + 1, ax=ax, bx=bx, dx=dx, ss=ss)
             ax = _o['ax']
             bx = _o['bx']
             dx = _o['dx']

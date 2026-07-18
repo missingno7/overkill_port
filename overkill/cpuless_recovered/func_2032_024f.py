@@ -113,7 +113,7 @@ def func_2032_024f(mem, plat, *, _base=0, _df=0, ax=0, bx=0, di=0, ds=0, dx=0, s
             ax = (ax & 0xFF00) | ((_t) & 0xFF)
             sp = (sp - 2) & 0xFFFF
             mem.ww(ss, sp, 0x0279)
-            _o, _c = func_2032_0557(mem, plat, _base=_base + _cost + 18, ax=ax, bx=bx, ds=ds, dx=dx, sp=sp, ss=ss)
+            _o, _c = func_2032_0557(mem, plat, _base=_base + _cost + 19, ax=ax, bx=bx, ds=ds, dx=dx, sp=sp, ss=ss)
             ax = _o['ax']
             bx = _o['bx']
             dx = _o['dx']
@@ -153,7 +153,7 @@ def func_2032_024f(mem, plat, *, _base=0, _df=0, ax=0, bx=0, di=0, ds=0, dx=0, s
             ax = (ax & 0x00FF) | (((_t) & 0xFF) << 8)
             sp = (sp - 2) & 0xFFFF
             mem.ww(ss, sp, 0x0288)
-            _o, _c = func_2032_0557(mem, plat, _base=_base + _cost + 24, ax=ax, bx=bx, ds=ds, dx=dx, sp=sp, ss=ss)
+            _o, _c = func_2032_0557(mem, plat, _base=_base + _cost + 25, ax=ax, bx=bx, ds=ds, dx=dx, sp=sp, ss=ss)
             ax = _o['ax']
             bx = _o['bx']
             dx = _o['dx']

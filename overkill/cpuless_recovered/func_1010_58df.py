@@ -90,7 +90,7 @@ def func_1010_58df(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, cx=0, 
             sp = (sp + 2) & 0xFFFF
             sp = (sp - 2) & 0xFFFF
             mem.ww(ss, sp, 0x58F4)
-            _o, _c = func_1010_50c9(mem, plat, _base=_base + _cost + 5, ax=ax, sp=sp, ss=ss)
+            _o, _c = func_1010_50c9(mem, plat, _base=_base + _cost + 6, ax=ax, sp=sp, ss=ss)
             ax = _o['ax']
             dx = _o['dx']
             _gm = _c['fmask']

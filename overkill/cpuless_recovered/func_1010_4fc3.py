@@ -54,7 +54,7 @@ def func_1010_4fc3(mem, plat, *, _base=0, _flags_in=2, ax=0, bp=0, bx=0, cx=0, d
         if bb == 2:  # 1010:4FCC
             sp = (sp - 2) & 0xFFFF
             mem.ww(ss, sp, 0x4FCF)
-            _o, _c = func_1010_4f8c(mem, plat, _base=_base + _cost, ss=ss)
+            _o, _c = func_1010_4f8c(mem, plat, _base=_base + _cost + 1, ss=ss)
             ax = _o['ax']
             dx = _o['dx']
             es = _o['es']

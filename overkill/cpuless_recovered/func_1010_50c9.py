@@ -31,7 +31,7 @@ def func_1010_50c9(mem, plat, *, _base=0, ax=0, sp=0, ss=0):
         if bb == 1:  # 1010:C9EA
             sp = (sp - 2) & 0xFFFF
             mem.ww(ss, sp, 0xC9ED)
-            _o, _c = func_1010_c9f1(mem, plat, _base=_base + _cost, ax=ax, ss=ss)
+            _o, _c = func_1010_c9f1(mem, plat, _base=_base + _cost + 1, ax=ax, ss=ss)
             ax = _o['ax']
             dx = _o['dx']
             _gm = _c['fmask']
@@ -50,7 +50,7 @@ def func_1010_50c9(mem, plat, *, _base=0, ax=0, sp=0, ss=0):
             sp = (sp + 2) & 0xFFFF
             sp = (sp - 2) & 0xFFFF
             mem.ww(ss, sp, 0xC9F0)
-            _o, _c = func_1010_ca02(mem, plat, _base=_base + _cost + 1, ax=ax, ss=ss)
+            _o, _c = func_1010_ca02(mem, plat, _base=_base + _cost + 2, ax=ax, ss=ss)
             ax = _o['ax']
             dx = _o['dx']
             _gm = _c['fmask']

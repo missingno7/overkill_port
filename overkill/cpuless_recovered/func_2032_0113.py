@@ -33,7 +33,7 @@ def func_2032_0113(mem, plat, *, _base=0, bx=0, di=0, ds=0, dx=0, sp=0, ss=0):
             ax = mem.rw(ds, ((di + 8) & 0xFFFF))
             sp = (sp - 2) & 0xFFFF
             mem.ww(ss, sp, 0x0119)
-            _o, _c = func_2032_0557(mem, plat, _base=_base + _cost + 1, ax=ax, bx=bx, ds=ds, dx=dx, sp=sp, ss=ss)
+            _o, _c = func_2032_0557(mem, plat, _base=_base + _cost + 2, ax=ax, bx=bx, ds=ds, dx=dx, sp=sp, ss=ss)
             ax = _o['ax']
             bx = _o['bx']
             dx = _o['dx']

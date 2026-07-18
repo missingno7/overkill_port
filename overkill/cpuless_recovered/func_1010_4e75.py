@@ -60,7 +60,7 @@ def func_1010_4e75(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bx=0, cx=0, 
         if bb == 2:  # 1010:4E82
             sp = (sp - 2) & 0xFFFF
             mem.ww(ss, sp, 0x4E85)
-            _o, _c = func_1010_518c(mem, plat, _base=_base + _cost, _df=(1 if df else 0), _flags_in=((_flags_in & ~_fmask) | (((0x1 if cf else 0) | (0x4 if pf else 0) | (0x10 if af else 0) | (0x40 if zf else 0) | (0x80 if sf else 0) | (0x800 if of else 0) | (0x400 if df else 0) | (0x200 if intf else 0)) & _fmask)), ax=ax, bp=bp, bx=bx, cx=cx, di=di, ds=ds, dx=dx, es=es, si=si, sp=sp, ss=ss)
+            _o, _c = func_1010_518c(mem, plat, _base=_base + _cost + 1, _df=(1 if df else 0), _flags_in=((_flags_in & ~_fmask) | (((0x1 if cf else 0) | (0x4 if pf else 0) | (0x10 if af else 0) | (0x40 if zf else 0) | (0x80 if sf else 0) | (0x800 if of else 0) | (0x400 if df else 0) | (0x200 if intf else 0)) & _fmask)), ax=ax, bp=bp, bx=bx, cx=cx, di=di, ds=ds, dx=dx, es=es, si=si, sp=sp, ss=ss)
             ax = _o['ax']
             bp = _o['bp']
             bx = _o['bx']
@@ -90,7 +90,7 @@ def func_1010_4e75(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bx=0, cx=0, 
         if bb == 3:  # 1010:4E85
             sp = (sp - 2) & 0xFFFF
             mem.ww(ss, sp, 0x4E88)
-            _o, _c = func_1010_0162(mem, plat, _base=_base + _cost, ax=ax, bx=bx, di=di, ds=ds, dx=dx, sp=sp, ss=ss)
+            _o, _c = func_1010_0162(mem, plat, _base=_base + _cost + 1, ax=ax, bx=bx, di=di, ds=ds, dx=dx, sp=sp, ss=ss)
             ax = _o['ax']
             bx = _o['bx']
             cx = _o['cx']
@@ -131,7 +131,7 @@ def func_1010_4e75(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bx=0, cx=0, 
         if bb == 4:  # 1010:4E8F
             sp = (sp - 2) & 0xFFFF
             mem.ww(ss, sp, 0x4E92)
-            _o, _c = func_1010_0162(mem, plat, _base=_base + _cost, ax=ax, bx=bx, di=di, ds=ds, dx=dx, sp=sp, ss=ss)
+            _o, _c = func_1010_0162(mem, plat, _base=_base + _cost + 1, ax=ax, bx=bx, di=di, ds=ds, dx=dx, sp=sp, ss=ss)
             ax = _o['ax']
             bx = _o['bx']
             cx = _o['cx']
@@ -197,7 +197,7 @@ def func_1010_4e75(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bx=0, cx=0, 
         if bb == 8:  # 1010:5194
             sp = (sp - 2) & 0xFFFF
             mem.ww(ss, sp, 0x5197)
-            _o, _c = func_1010_519a(mem, plat, _base=_base + _cost, _df=(1 if df else 0), _flags_in=((_flags_in & ~_fmask) | (((0x1 if cf else 0) | (0x4 if pf else 0) | (0x10 if af else 0) | (0x40 if zf else 0) | (0x80 if sf else 0) | (0x800 if of else 0) | (0x400 if df else 0) | (0x200 if intf else 0)) & _fmask)), ax=ax, bp=bp, bx=bx, cx=cx, di=di, ds=ds, dx=dx, si=si, sp=sp, ss=ss)
+            _o, _c = func_1010_519a(mem, plat, _base=_base + _cost + 1, _df=(1 if df else 0), _flags_in=((_flags_in & ~_fmask) | (((0x1 if cf else 0) | (0x4 if pf else 0) | (0x10 if af else 0) | (0x40 if zf else 0) | (0x80 if sf else 0) | (0x800 if of else 0) | (0x400 if df else 0) | (0x200 if intf else 0)) & _fmask)), ax=ax, bp=bp, bx=bx, cx=cx, di=di, ds=ds, dx=dx, si=si, sp=sp, ss=ss)
             ax = _o['ax']
             bp = _o['bp']
             bx = _o['bx']

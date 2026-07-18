@@ -33,7 +33,7 @@ def func_2032_0557(mem, plat, *, _base=0, ax=0, bx=0, ds=0, dx=0, sp=0, ss=0):
             bx = 0x1FFC
             sp = (sp - 2) & 0xFFFF
             mem.ww(ss, sp, 0x0564)
-            _o, _c = func_2032_0579(mem, plat, _base=_base + _cost + 5, ax=ax, bx=bx, sp=sp, ss=ss)
+            _o, _c = func_2032_0579(mem, plat, _base=_base + _cost + 6, ax=ax, bx=bx, sp=sp, ss=ss)
             ax = _o['ax']
             _gm = _c['fmask']
             if _gm:
@@ -62,7 +62,7 @@ def func_2032_0557(mem, plat, *, _base=0, ax=0, bx=0, ds=0, dx=0, sp=0, ss=0):
             bx = 0x1FEC
             sp = (sp - 2) & 0xFFFF
             mem.ww(ss, sp, 0x056E)
-            _o, _c = func_2032_0579(mem, plat, _base=_base + _cost + 10, ax=ax, bx=bx, sp=sp, ss=ss)
+            _o, _c = func_2032_0579(mem, plat, _base=_base + _cost + 11, ax=ax, bx=bx, sp=sp, ss=ss)
             ax = _o['ax']
             _gm = _c['fmask']
             if _gm:
