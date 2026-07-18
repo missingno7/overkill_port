@@ -2117,3 +2117,55 @@ the real blocker is elsewhere; if it is a wait-for-release, the spin condition n
 for the held-key state. Those two call for opposite fixes, and this repo's record is that every
 forward inference from partial instrumentation was wrong. Disassemble 1F8F:09E9..0A11 (scripts/lindis.py)
 or trap the flag write before touching the predicate.
+
+### 2026-07-18q — FORK RESOLVED: the 98FD path is a WAIT, and the held key is a NEVER-DELIVERED RELEASE
+
+Read the program instead of guessing. Trace of one full iteration at the wedge (frame 1236,
+`1F8F:09A2`), plus a write trap and the INT 9 key-state table:
+
+    1F8F:099B  cmp ds:[990F],01h
+    1F8F:09A0  jz -> 1F8F:09E9   not
+    ... (ten `cmp [flag],1 ; jz handler` pairs; 990F/990C/990D/98D2 -> 09E9,
+         9911/9914/9915/98FD -> 0A03) ...
+    1F8F:09CC  cmp ds:[98FD],01h
+    1F8F:09D1  jz -> 1F8F:0A03   TAKEN
+    1F8F:0A03  mov si,ds:[BED6]        ; menu table base
+    1F8F:0A07  mov bx,ds:[BED4]        ; current index
+    1F8F:0A0B  inc bx
+    1F8F:0A0C  shl bx,1                ; next entry, word-sized
+    1F8F:0A0E  cmp ds:[bx+si],FFFFh    ; is the NEXT entry the list terminator?
+    1F8F:0A11  jz -> 1F8F:099B  TAKEN  ; yes -> BACK TO THE HEAD
+
+    writes to DS:98FD observed: 0  (over 400,000 steps -- nothing clears it)
+    current DS:98FD = 1
+    key-state table DS:98C4+57 (space=57) = 1     <-- SPACE IS STILL HELD
+
+**It is the WAIT horn, not the menu-ACTION horn.** The `98FD` branch does not act and exit: it tests
+whether the next menu entry is the `FFFF` terminator and, because it is, jumps straight back to the
+head without clearing `98FD`. So the loop is unbounded while the flag stays set, and the flag stays
+set because the KEY IS STILL HELD.
+
+**AND THIS CONNECTS TO THE FROZEN BOUNDARIES.** `DS:98C4+57 == 1` is the INT 9 key-state entry for
+SPACE. The demo's pending events are `(1235, scan 57)` press and `(1235, scan 185)` release --
+BOTH at boundary 1235, one of the six FROZEN boundaries measured in 18k. `apply_to_runtimes` is
+monotonic (`_index` only advances), so the release is still PENDING; it is simply never delivered,
+because delivery only happens when a boundary fires, and the predicate declines to call this a
+boundary. Deadlock: **the loop waits for a release that is queued behind a boundary the loop itself
+prevents.**
+
+**SO THE SPIN CONDITION IS AN INCOMPLETE MODEL, and that is a PRE-EXISTING hole** inherited verbatim
+from play.py (`all(flag != 1)`). The program says the loop is ALSO waiting when a flag is set and the
+next entry is the terminator. It never showed up interactively because SDL delivers a real key-up
+asynchronously rather than gating it on the boundary counter -- i.e. only demo replay can expose it.
+
+**THE FIX IS NOT "widen the range".** The flag-set case is a wait ONLY when the next-entry test would
+loop back; if the next entry is not `FFFF` the loop genuinely moves the selection and exits, and
+firing there would inject input where the game is not sampling -- exactly what the head-only and
+spinning guards exist to prevent. The correct predicate models the program:
+
+    waiting  ==  (no watched flag set)                              # the existing clause
+             OR  (a watched flag set AND its handler loops back)    # the missing clause
+
+**STILL TO MEASURE before implementing:** the `09E9` handler (taken by 990F/990C/990D/98D2) was NOT
+traced -- only `0A03` was, because 98FD is the flag that happened to be set. Disassemble `1F8F:09E9`
+and confirm its loop-back condition before writing the second clause; do not assume it mirrors 0A03.
