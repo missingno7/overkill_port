@@ -65,12 +65,21 @@ def test_run_recovered_composes_over_a_flat_image():
 
 
 def test_unpromoted_function_fails_loud():
-    # 1010:97B2 is the gameplay frame root -- still on the CPUless frontier
-    # (boundary-head-on-transfer), so it has no recovered module. (The tail-dispatch
-    # functions that used to sit here are now promoted by the frameless stack-arg
-    # capability, so they no longer serve as a frontier example.)
+    # 1010:3EFC is the frontier example: the lifter refuses it at DECODE time
+    # ("unsupported-opcode: grp5 invalid /r bytes=fff9" in recovery_ir.json's
+    # `unsupported` list), so it never reaches promotion and has no recovered module.
+    #
+    # Why this one: it is a STRUCTURAL refusal, not a capability gap. The previous
+    # example here (1010:97B2, the gameplay frame root) was a boundary-head-on-transfer
+    # refusal -- a missing-capability frontier -- and setjmp/longjmp representation
+    # promoted it, invalidating the premise. A byte sequence that is not a decodable
+    # instruction cannot be promoted by adding a lifting capability, so it stays
+    # unpromoted for a structural reason and keeps this gate meaningful.
+    #
+    # The PROPERTY under test is unchanged: an address with no recovered module must
+    # raise CpuStandaloneWitness, never silently fall back.
     with pytest.raises(CpuStandaloneWitness):
-        load_recovered("1010:97B2")
+        load_recovered("1010:3EFC")
 
 
 def test_fail_loud_platform_raises_on_every_effect():

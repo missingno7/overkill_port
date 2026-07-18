@@ -21,11 +21,19 @@ Usage:  python scripts/audit_recovery_facts.py
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 ART = ROOT / "artifacts"
+
+#: the committed CPUless corpus -- the generated runtime source the port actually ships.
+CORPUS = ROOT / "overkill" / "cpuless_recovered"
+
+#: an emitted boundary observation: ``plat.boundary(0x1010, 0x97CB, 0x97CE, {...}, ...)``.
+#: Group 1/2 are the head CS:IP the emitter was told to yield at (emit_cpuless._emit_boundary).
+_BOUNDARY_CALL = re.compile(r"\bplat\.boundary\(\s*0x([0-9A-Fa-f]{1,4})\s*,\s*0x([0-9A-Fa-f]{1,4})\s*,")
 
 #: violation-key -> why it is tolerated *for now* and where the fix is tracked.  A violation here is an
 #: acknowledged debt with an owner, not an exemption: the audit fails if one is fixed but still listed.
@@ -41,8 +49,12 @@ KNOWN_VIOLATIONS = {
         "runtime by OverkillPlatform.inp() toggling 3DAh, so the spin terminates. CORRECTION "
         "(2026-07-18d): the earlier note here claimed this was 'likely why the front-end cannot "
         "animate' -- measured false. A 400-boundary probe showed the CC04 front-end never reaches "
-        "0679 at all and paces purely on this retrace; the flow does not advance because the corpus "
-        "has NO TOP LEVEL (1010:96C8 refuses 'no-exit'), not because of an env-wait.",
+        "0679 at all and paces purely on this retrace, so the env-wait was never the blocker. "
+        "UPDATE (2026-07-18e): that note also blamed a missing top level ('1010:96C8 refuses "
+        "no-exit') -- no longer true. dos_re can now represent setjmp/longjmp, 96C8 promotes with "
+        "ZERO overrides, and the runtime closure from 1010:97B2 is 253/253 with an empty frontier. "
+        "The corpus HAS a top level; what remains here is only the PIPELINE-level violation "
+        "(promotion still ignores the keep-interpreted fact file).",
 }
 
 
@@ -83,14 +95,35 @@ def audit() -> "tuple[dict, list[str]]":
     # FACT 2 -- boundary heads.  Consequence: the OWNING function must be recognised as boundary-
     # carrying, i.e. it must not be silently promoted as an ordinary function while its head is
     # declared a scheduler yield.  A declared head that leaves no trace anywhere is a dead fact.
+    #
+    # The signal must be POSITIVE and must hold in BOTH outcomes a consumed head can have:
+    #
+    #   * COMPOSED -- the head lifts, and emit_cpuless plants a `plat.boundary(cs, ip, ...)`
+    #     observation at that exact address in the generated module.  The head address is
+    #     literally present in the emitted corpus.
+    #   * REFUSED  -- the head is reached on a transfer the emitter cannot model, so the owning
+    #     function lands in the census's `boundary-head-on-transfer` bucket.
+    #
+    # Either one proves the pipeline READ the fact and acted on it.  (The earlier check keyed only
+    # on the refusal bucket, which inverted the meaning: once setjmp/longjmp representation let all
+    # ten gameplay-loop entries compose, the bucket emptied and the audit read that SUCCESS as an
+    # unconsumed fact.  An empty refusal bucket is the desired outcome, not evidence of a dead fact.)
     heads = _addrs(ART / "lift_boundary_heads.txt")
     notes.append(f"boundary-heads: {len(heads)} declared")
     refused = census.get("refused", {})
     boundary_refused = {a.upper() for a in refused.get("boundary-head-on-transfer", [])}
-    if heads and not boundary_refused:
-        violations["boundary-heads-no-effect"] = (
-            f"{len(heads)} boundary head(s) declared but no function is recorded as "
-            f"boundary-head-on-transfer -- the fact file appears unconsumed")
+    emitted = set()
+    for src in sorted(CORPUS.glob("func_*.py")):
+        for cs, ip in _BOUNDARY_CALL.findall(src.read_text(encoding="utf-8")):
+            emitted.add(f"{int(cs, 16):04X}:{int(ip, 16):04X}")
+    notes.append(f"boundary-heads: {len(emitted)} observed in the emitted corpus, "
+                 f"{len(boundary_refused)} refused boundary-head-on-transfer")
+    for a in heads:
+        if a not in emitted and not boundary_refused:
+            violations[f"boundary-head-no-effect:{a}"] = (
+                f"{a} is declared a boundary head but no emitted module carries a "
+                f"plat.boundary() observation at it and nothing is refused "
+                f"boundary-head-on-transfer -- the declared fact had no effect on the pipeline")
 
     return violations, notes
 
