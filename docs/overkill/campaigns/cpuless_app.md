@@ -385,6 +385,58 @@ is DEMO BREADTH, not more promotion** — every new promotion without a demo tha
 unproven surface rather than shrinking it. This is the figure to quote for correctness; "591/626
 promoted, walls HOLD" is a structural claim and says nothing about these 477.
 
+## 2026-07-18h — THE JOINT WASN'T REAL: the IP-delta probe was corrupting the code it measured
+
+Followed the skin/skeleton question "is `0248` actually a joint, or did the decoder just fail to see
+bone there?" all the way down. It was not a joint. It was a **dos_re bug**, now fixed upstream
+(dos_re `612cb2f`).
+
+**The chain of reasoning, because the wrong turns are instructive:**
+1. `0248` refused `decoder-mismatch` at three sites, each reporting `interpreter-delta=3` against
+   static lengths of 5, 2 and 2. A CONSTANT 3 across three different instructions is the tell.
+2. Hypothesis: self-modifying code, fix = `--desmc`. **Falsified** — the bytes are identical in all
+   three snapshots (frontend, static bundle, and the census's own L1 demo snapshot).
+3. Hypothesis: the probe is broken. Probing those addresses directly gave the CORRECT 2/5/2, so it
+   did not reproduce in isolation — but it reproduced exactly inside the real scan.
+4. Instrumented the scan to dump the clone's memory AT PROBE TIME: the region read
+   `3D FF 3D FF ...`. `3D` is `cmp ax,imm16` — **three bytes**. There was the constant 3.
+
+**The bug:** the probe executes each candidate instruction for real, at a forced IP, with whatever
+registers the previous probe step left behind. The registers are meaningless (only the LENGTH is
+wanted) but the execution is not — a store with an unrelated base writes to a real address, and when
+that lands in the CODE SEGMENT every later probe decodes the overwritten bytes. `decoder-mismatch` is
+a FATAL refusal, so a stray write inside a diagnostic silently condemned a real function.
+
+**How far it cascaded:** `0248` blocked `C679`, which blocked `4DBF`, which blocked `9B2E` — the
+callee the top-level frame loop composes its boundary head through. So a probe artifact was
+transitively why OVERKILL's entire main loop could not be promoted. This is the third capability-level
+problem this campaign found by asking "why is this refused?" instead of working around the refusal.
+
+**The fix** (`dos_re/lift/probe.py`, the single shared `make_ip_delta_probe`): restore the code
+segment after every step — slice compare + assign, so the no-write case costs one memcmp. `liftgen`
+and `irgen` had INDEPENDENT copies of the buggy probe; both now delegate. Registers and non-code
+memory are deliberately left alone: they cannot change how a later instruction decodes. 5 tests,
+including one pinning the hazard with `restore=False` so the restore cannot be optimised away.
+
+**Effect after regenerating the pipeline:**
+- `0248` now lifts cleanly, and its scan grows **74 -> 175 instructions** — the corruption was
+  truncating the walk as well as mismeasuring it;
+- `C679` (136 insts) and `5559` (248 insts) are now **LIFTABLE**, so neither needs a hand-written
+  body: the island set loses its two large game functions;
+- `ir-not-liftable` 4 -> 3; the committed corpus regenerated **byte-identical** (591 promotable), so
+  the fix changed no emitted code, only what the frontier says is possible.
+
+**Where the frontier now honestly sits.** `0248`'s remaining blockers are the genuine DOS surface:
+`0615`/`0624`/`065C` and the far call **`254A:04D7`** (the C-startup bootstrap, 11 INT 21h calls) —
+the same DOS surface a from-EXE cold boot needs. So the island set is converging on exactly what a
+VM-less port must own, with no game logic in it.
+
+**NOT yet working:** seeding `254A:04D7` as an override did not unblock (`594` promotable, slightly
+worse than seeding the two near primitives alone at `595`), so the FAR-call override contract is
+mis-specified — `ret_kind`/key-format for a far callee needs checking against `_read_overrides`
+before the next attempt. That is the next concrete step, ahead of writing any body.
+
+
 ## 2026-07-18g — CORRECTION + MINIMISATION: the island set is FOUR, not ten (fewer islands promote MORE)
 
 The 2026-07-18f entry claimed the ten seeded functions were "every one an INT 21h / INT 10h function,

@@ -63,6 +63,45 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-18h — dos_re BUG: the IP-delta probe corrupted the code it measured (false decoder-mismatch)
+
+Chased "is `1010:0248` a real joint, or did the decoder fail to see bone there?" to the bottom. It was
+a **dos_re bug**, fixed upstream (dos_re `612cb2f`, now on `abi-recovered`).
+
+The IP-delta probe executes each candidate instruction for real, at a forced IP, with whatever
+registers the previous probe step left behind. The registers are meaningless (only the LENGTH is
+wanted); the execution is not. A store with an unrelated base writes to a real address, and when that
+lands in the CODE SEGMENT every later probe decodes the overwritten bytes. `decoder-mismatch` is a
+FATAL refusal, so a stray write inside a diagnostic silently condemned a real function.
+
+The tell was `interpreter-delta=3` reported for three instructions whose static lengths were 5, 2 and
+2 — a CONSTANT. Instrumenting the scan to dump the clone's memory at probe time showed the region
+reading `3D FF 3D FF ...`; `3D` is `cmp ax,imm16`, three bytes. Two hypotheses died first: it is not
+self-modifying code (bytes identical in all three snapshots, so `--desmc` was the wrong answer), and
+it does not reproduce when probing those addresses in isolation — only inside the full scan.
+
+Fix: `dos_re/lift/probe.py`, one shared `make_ip_delta_probe`, restoring the code segment after every
+step (slice compare + assign; the no-write case costs one memcmp). `liftgen` and `irgen` had
+independent copies of the buggy probe; both now delegate. 5 tests, one pinning the hazard with
+`restore=False`.
+
+**Effect:** `0248` lifts cleanly and its scan grows **74 -> 175 instructions** (the corruption was
+truncating the walk too); `C679` (136 insts) and `5559` (248 insts) are now LIFTABLE, so the island
+set loses both large game functions — no hand-written body needed for either. `ir-not-liftable`
+4 -> 3. The committed corpus regenerated **byte-identical** (591 promotable): the fix changed no
+emitted code, only what the frontier says is possible. dos_re 782 green.
+
+**How far it had cascaded:** `0248` blocked `C679` -> `4DBF` -> `9B2E`, the callee the top-level frame
+loop composes its boundary head through. A probe artifact was transitively why the game's entire main
+loop could not be promoted. Third capability-level problem this campaign found by asking "why is this
+refused?" rather than working around the refusal.
+
+**Frontier now:** `0248`'s remaining blockers are the genuine DOS surface — `0615`/`0624`/`065C` and
+the far call `254A:04D7` (C-startup, 11 INT 21h calls). No game logic left in the island set. NEXT:
+seeding `254A:04D7` as an override does not yet unblock (594 vs 595 for the two near primitives), so
+the FAR-call override contract is mis-specified — check `ret_kind`/key format against
+`_read_overrides` before writing any body.
+
 ## 2026-07-18d — ROOT CAUSE of the "wrong flow": the corpus has NO TOP LEVEL (+ a 239-test suite bug)
 
 Owner: "play_cpuless starts from a not-correct intro animation instead of the real starting point and
