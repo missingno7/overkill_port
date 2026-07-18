@@ -364,3 +364,23 @@ IMPLEMENT `plat.boundary` (advance the host's time base and resume), which does 
 
 This is also the likely reason the front-end cannot animate: its pacing wait is a frozen lift rather
 than a yield the host services.
+
+## 2026-07-18 — VERIFICATION COVERAGE measured: 16.2% of the promoted corpus is proven
+
+New standing mechanism (`verify_cpuless.py --ledger` + `scripts/cpuless_verification_coverage.py`).
+Promotion is STRUCTURAL; correctness is a per-function differential that only reaches what a demo runs.
+Unioned over both demo ledgers:
+
+| | |
+|---|---|
+| promoted | 591 |
+| verified PASS (byte-exact, real states) | **96** |
+| DIVERGED | 0 |
+| INCONCLUSIVE | 18 |
+| **NEVER EXERCISED** | **477** |
+| **proven fraction** | **16.2%** |
+
+One ledger alone reads 8.1%; adding the second demo doubled it. **So the lever on the unproven surface
+is DEMO BREADTH, not more promotion** — every new promotion without a demo that reaches it grows the
+unproven surface rather than shrinking it. This is the figure to quote for correctness; "591/626
+promoted, walls HOLD" is a structural claim and says nothing about these 477.
