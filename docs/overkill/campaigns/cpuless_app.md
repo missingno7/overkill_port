@@ -385,6 +385,52 @@ is DEMO BREADTH, not more promotion** — every new promotion without a demo tha
 unproven surface rather than shrinking it. This is the figure to quote for correctness; "591/626
 promoted, walls HOLD" is a structural claim and says nothing about these 477.
 
+## 2026-07-18k — THE SPINE DEMO + a NEGATIVE result: `--observed` on one demo REGRESSES promotion
+
+Owner supplied the spine demo `artifacts/demos/demo_play_tandy_20260718_134524` — recording started at
+the first visible frame, then intro -> menu -> level select -> first level. 946 boundaries, 24 events.
+Its start state is `CS:IP = 1010:58F4`, which is exactly the ground-truth timeline's "boot + intro
+setup" address, and the event list reads as the spine: SPACE at b=466 (skip attract), `m` x4 at
+b=602..644 (menu), SPACE at b=651 (select), ENTER at b=717, SPACE at b=750/871. This is the
+authoritative path the CPUless build has to reproduce.
+
+**New instrument: `scripts/capture_observed_trace.py`.** Replays a demo through the pure-VM oracle and
+records which addresses actually execute, for `cpuless_promote --observed` (a never-executed near CALL
+becomes a fail-loud stub; a never-executed `ret` becomes a DEAD EXIT that does not constrain the exit
+ABI). It TRAPS only the addresses `--observed` can act on — every function entry and every return site
+— because the schema never asks about anything else; a full per-instruction callback over a spine demo
+would be tens of millions of Python calls for the same information.
+
+Spine demo: `FRAME VERIFY OK frames=951`, **425 of 1192 trapped addresses executed (36%)**.
+
+**FOURTH unwired capability — and this one is unwired for a REASON.** `probe_vmless_cpuless.py` passes
+`--observed` to no stage (its two mentions are comments). Measured before wiring it, on a scratch
+census, and it made things WORSE:
+
+| | promotable | contains-call |
+|---|---|---|
+| today (no `--observed`) | 591 | 20 |
+| `--observed` = spine demo alone | **571** | **40** |
+
+At 36% address coverage, a single demo marks far too much as dead: a path this demo skipped is NOT a
+dead path. This is the "demo breadth is the lever" lesson from 2026-07-18 resurfacing in a new place —
+and it is the reason to measure a capability on scratch before wiring it into the pipeline, rather
+than assuming an unpassed flag is simply an oversight. Three unwired capabilities this campaign were
+real bugs (`--boundary-heads` facts, the corrupting probe, `--desmc`); the fourth is a trap.
+
+The tool therefore takes `--demo` REPEATABLY and unions the evidence, with the measured regression
+recorded in its own `--help` so nobody wires it up from a single demo. `--observed` stays OUT of the
+pipeline until the union covers enough of the corpus to justify it.
+
+**Frontier unchanged and still ordered:** `1010:96C8` (the game's top level) has no recovered module;
+its chain bottoms out at `1010:065C` refused `sp-as-data`, the C-runtime fatal-abort longjmp
+(`mov sp, cs:[0242]` then `ret`, returning on the restored stack). `--observed` was investigated as a
+possible way to make that abort path a dead exit instead of a refusal; the instruction-level
+`sp-as-data` check runs BEFORE the dead-exit logic, so dead-path evidence alone would not clear it
+regardless. The general dos_re fix (model the non-local exit as a structured exception, or skip ABI
+checks on provably-dead paths) remains the next capability slice.
+
+
 ## 2026-07-18j — FRONTIER 1 CLEARED: the boot root RUNS. Frontier 2 = a longjmp the lifter can't model
 
 Cold-boot forward, second iteration. Frontier 1 was `INT 21h AH=3Dh` (open file) at
