@@ -2221,3 +2221,45 @@ FINE here -- the overlay loop wants the release eventually, not at a specific in
 the predicate fix was sufficient. But if a case ever appears that needs both delivered at the SAME
 index, the EVENT DELIVERY MODEL is what must change, not the predicate: no wait predicate can
 deliver two events at one boundary.
+
+### 2026-07-18s — `differential frame = boundary - 410` is ARITHMETICALLY IMPOSSIBLE (measured)
+
+Before building the clock adoption, measured the ratio on the differential's OWN oracle, from its OWN
+start snapshot (`frontend_intro_snapshot`, post-uninstall pure oracle, 300 frames):
+
+    RECORDER-RULE BOUNDARIES PER DIFFERENTIAL FRAME
+      distribution: {1839: 1, 3: 299}
+      composition over 300 frames: {retrace 1836, present 300, timer 600}
+
+**Offset-only requires that ratio to be exactly 1. It is 3 in steady state, and 1839 for frame 0.**
+So no offset maps demo boundaries onto differential frames, and no constant scale does either -- this
+reproduces the non-proportional signature the original brief reported for the older demos
+(`{2: 1199, 1838: 1}`; here `{3: 299, 1839: 1}` -- the same shape).
+
+**THE ROOT REASON IS STRUCTURAL, not a tuning problem.** The recorder counts EVERY `1010:0679`
+CALL; the differential cuts on the **2nd pass** at `0679` per frame. So one differential frame is
+*at minimum* two recorder timer-boundaries, before retrace or present are even considered. A ratio
+of 1 is unreachable by construction. (Note also: retrace FREEZES at 1836 after frame 0 on this
+input-free path, while the spine demo's stream is `{retrace 1532, timer 171}` -- the two runs follow
+different paths, so the composition is not comparable frame-for-frame either.)
+
+**WHAT WOULD ACTUALLY BE REQUIRED**, so the next attempt does not rediscover this:
+
+1. *Make the differential cut at every recorder-rule boundary.* Needs the candidate to yield at
+   retrace and present as well as per-CALL at 0679 -- i.e. boundary heads including the retrace poll
+   `1010:C9FC`, which was measured (2026-07-18m) to grow parking 20 -> 42 and was DECLINED. Step 1
+   and that decision are in direct conflict; one of them has to move.
+2. *Or count recorder-rule boundaries LIVE on both sides and deliver events on that count.* This is
+   exact rather than a derived scale factor (both sides count the same VM events), and on the ORACLE
+   it is trivial -- count arrivals at 0679/50C9/3354, which is what the measurement above does. The
+   CANDIDATE is the hard half: CPUless generated code has no "address arrival", only `plat.boundary`
+   calls at declared heads. It could plausibly be counted by wrapping the generated
+   `func_1010_50c9` / `func_1010_3354` / `func_1010_0679` (host-side observation of the corpus's own
+   calls, NOT a new head), but that is a design to validate, not a tweak.
+3. *Re-indexing the events by the measured distribution is NOT acceptable* -- it is exactly the
+   derived scale factor the charter forbids, and the distribution is path-dependent (see the retrace
+   note above), so a mapping fitted on the attract path would not hold on the spine path.
+
+**NOT ATTEMPTED HERE.** Option 1 needs the C9FC decision reversed; option 2 is a real design. Both
+are decisions rather than measurements, so this stops at the fork. Nothing was built on top of an
+impossible mapping, and no divergence is claimed.
