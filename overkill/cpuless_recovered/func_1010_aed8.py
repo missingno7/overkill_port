@@ -11,6 +11,7 @@ from overkill.cpuless_recovered.func_1010_505b import func_1010_505b
 from overkill.cpuless_recovered.func_1010_5073 import func_1010_5073
 from overkill.cpuless_recovered.func_1010_837a import func_1010_837a
 from overkill.cpuless_recovered.func_1010_859e import func_1010_859e
+from overkill.cpuless_recovered.func_1010_9e19 import func_1010_9e19
 from overkill.cpuless_recovered.func_1010_c054 import func_1010_c054
 
 from overkill.cpuless_recovered._dyncall import dyn_exec as _dyn
@@ -25,7 +26,7 @@ _ITER_CAP = 20000000
 
 #: intra-function landing map for near jump-table dispatch:
 #: block-leader ip -> dispatch block index.
-_LOCAL = {0xAC19: 0, 0xAD60: 1, 0xAD66: 2, 0xAD69: 3, 0xAD70: 4, 0xAD73: 5, 0xAD7A: 6, 0xAD7D: 7, 0xAD83: 8, 0xAD89: 9, 0xAD8F: 10, 0xAD95: 11, 0xAD9B: 12, 0xADA1: 13, 0xADA7: 14, 0xADAD: 15, 0xADAF: 16, 0xADB6: 17, 0xADC1: 18, 0xADC5: 19, 0xADC8: 20, 0xADC9: 21, 0xAED8: 22, 0xAEDD: 23, 0xAEE0: 24, 0xBD17: 25, 0xBD22: 26, 0xBD28: 27, 0xBD2E: 28, 0xBD34: 29, 0xBD3A: 30, 0xBD40: 31, 0xBD43: 32, 0xBD49: 33, 0xBD4F: 34, 0xBD55: 35, 0xBD56: 36, 0xBD5C: 37, 0xBD65: 38, 0xBD66: 39, 0xBD6C: 40, 0xBD6D: 41, 0xBD7A: 42, 0xBD81: 43, 0xBD82: 44, 0xBD88: 45, 0xBD8E: 46, 0xBD8F: 47, 0xBD9E: 48, 0xBDA5: 49, 0xBDA9: 50, 0xBDAC: 51, 0xBDB3: 52, 0xBDB7: 53, 0xBDB8: 54, 0xBDBF: 55, 0xBDC3: 56, 0xBDC4: 57, 0xBDCB: 58, 0xBDCF: 59}
+_LOCAL = {0xAC19: 0, 0xAD5A: 1, 0xAD60: 2, 0xAD66: 3, 0xAD69: 4, 0xAD70: 5, 0xAD73: 6, 0xAD7A: 7, 0xAD7D: 8, 0xAD83: 9, 0xAD89: 10, 0xAD8F: 11, 0xAD95: 12, 0xAD9B: 13, 0xADA1: 14, 0xADA7: 15, 0xADAD: 16, 0xADAF: 17, 0xADB6: 18, 0xADC1: 19, 0xADC5: 20, 0xADC8: 21, 0xADC9: 22, 0xAED8: 23, 0xAEDD: 24, 0xAEE0: 25, 0xB250: 26, 0xB256: 27, 0xB265: 28, 0xB26D: 29, 0xB272: 30, 0xB27A: 31, 0xB283: 32, 0xB28A: 33, 0xB294: 34, 0xB297: 35, 0xB2A0: 36, 0xB2A3: 37, 0xBD17: 38, 0xBD22: 39, 0xBD28: 40, 0xBD2E: 41, 0xBD34: 42, 0xBD3A: 43, 0xBD40: 44, 0xBD43: 45, 0xBD49: 46, 0xBD4F: 47, 0xBD55: 48, 0xBD56: 49, 0xBD5C: 50, 0xBD65: 51, 0xBD66: 52, 0xBD6C: 53, 0xBD6D: 54, 0xBD7A: 55, 0xBD81: 56, 0xBD82: 57, 0xBD88: 58, 0xBD8E: 59, 0xBD8F: 60, 0xBD9E: 61, 0xBDA5: 62, 0xBDA9: 63, 0xBDAC: 64, 0xBDB3: 65, 0xBDB7: 66, 0xBDB8: 67, 0xBDBF: 68, 0xBDC3: 69, 0xBDC4: 70, 0xBDCB: 71, 0xBDCF: 72}
 
 
 def func_1010_aed8(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, bx=0, cx=0, di=0, ds=0, dx=0, es=0, si=0, sp=0, ss=0):
@@ -42,7 +43,7 @@ def func_1010_aed8(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, bx=0, 
     df = _df != 0    # caller DF (hidden compat input, tier 9)
     _fmask = 0
     cs = 0x1010
-    bb = 22
+    bb = 23
     _iters = 0
     while True:
         _iters += 1
@@ -107,7 +108,23 @@ def func_1010_aed8(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, bx=0, 
             sp = (sp + 2) & 0xFFFF
             _cost += 5
             break
-        if bb == 1:  # 1010:AD60
+        if bb == 1:  # 1010:AD5A
+            ax = mem.rw(ds, 0xA278)
+            _a = mem.rw(ss, ((bp + 2) & 0xFFFF))
+            _b = ax
+            _t = _a + _b
+            zf = (_t & 0xFFFF) == 0
+            sf = (_t & 0x8000) != 0
+            pf = _PARITY[_t & 0xFF]
+            af = ((_a) ^ (_b) ^ _t) & 0x10 != 0
+            cf = _t > 0xFFFF
+            of = (~((_a) ^ (_b)) & ((_a) ^ _t) & 0x8000) != 0
+            mem.ww(ss, ((bp + 2) & 0xFFFF), (_t) & 0xFFFF)
+            _cost += 2
+            _fmask |= 0x10 | 0x1 | 0x800 | 0x4 | 0x80 | 0x40
+            bb = 2
+            continue
+        if bb == 2:  # 1010:AD60
             _a = mem.rw(ss, ((bp + 2) & 0xFFFF))
             _b = 0x8
             _t = _a - _b
@@ -120,15 +137,15 @@ def func_1010_aed8(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, bx=0, 
             _cost += 2
             _fmask |= 0x10 | 0x1 | 0x800 | 0x4 | 0x80 | 0x40
             if not cf:
-                bb = 3
+                bb = 4
                 continue
-            bb = 2
+            bb = 3
             continue
-        if bb == 2:  # 1010:AD66
+        if bb == 3:  # 1010:AD66
             _cost += 1
-            bb = 25
+            bb = 38
             continue
-        if bb == 3:  # 1010:AD69
+        if bb == 4:  # 1010:AD69
             _a = mem.rw(ss, ((bp + 2) & 0xFFFF))
             _b = 0xE0
             _t = _a - _b
@@ -141,15 +158,15 @@ def func_1010_aed8(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, bx=0, 
             _cost += 2
             _fmask |= 0x10 | 0x1 | 0x800 | 0x4 | 0x80 | 0x40
             if cf or zf:
-                bb = 5
+                bb = 6
                 continue
-            bb = 4
+            bb = 5
             continue
-        if bb == 4:  # 1010:AD70
+        if bb == 5:  # 1010:AD70
             _cost += 1
-            bb = 25
+            bb = 38
             continue
-        if bb == 5:  # 1010:AD73
+        if bb == 6:  # 1010:AD73
             _a = mem.rw(ss, ((bp + 4) & 0xFFFF))
             _b = 0xC8
             _t = _a - _b
@@ -162,15 +179,15 @@ def func_1010_aed8(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, bx=0, 
             _cost += 2
             _fmask |= 0x10 | 0x1 | 0x800 | 0x4 | 0x80 | 0x40
             if cf or zf:
-                bb = 7
+                bb = 8
                 continue
-            bb = 6
+            bb = 7
             continue
-        if bb == 6:  # 1010:AD7A
+        if bb == 7:  # 1010:AD7A
             _cost += 1
-            bb = 25
+            bb = 38
             continue
-        if bb == 7:  # 1010:AD7D
+        if bb == 8:  # 1010:AD7D
             _a = mem.rw(ss, ((bp + 22) & 0xFFFF))
             _b = 0x2
             _t = _a - _b
@@ -183,11 +200,11 @@ def func_1010_aed8(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, bx=0, 
             _cost += 2
             _fmask |= 0x10 | 0x1 | 0x800 | 0x4 | 0x80 | 0x40
             if not zf:
-                bb = 20
+                bb = 21
                 continue
-            bb = 8
+            bb = 9
             continue
-        if bb == 8:  # 1010:AD83
+        if bb == 9:  # 1010:AD83
             _a = mem.rw(ss, ((bp + 24) & 0xFFFF))
             _b = 0x2
             _t = _a - _b
@@ -200,11 +217,11 @@ def func_1010_aed8(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, bx=0, 
             _cost += 2
             _fmask |= 0x10 | 0x1 | 0x800 | 0x4 | 0x80 | 0x40
             if zf:
-                bb = 16
+                bb = 17
                 continue
-            bb = 9
+            bb = 10
             continue
-        if bb == 9:  # 1010:AD89
+        if bb == 10:  # 1010:AD89
             _a = mem.rw(ss, ((bp + 24) & 0xFFFF))
             _b = 0x4
             _t = _a - _b
@@ -217,11 +234,11 @@ def func_1010_aed8(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, bx=0, 
             _cost += 2
             _fmask |= 0x10 | 0x1 | 0x800 | 0x4 | 0x80 | 0x40
             if zf:
-                bb = 16
+                bb = 17
                 continue
-            bb = 10
+            bb = 11
             continue
-        if bb == 10:  # 1010:AD8F
+        if bb == 11:  # 1010:AD8F
             _a = mem.rw(ss, ((bp + 24) & 0xFFFF))
             _b = 0xC
             _t = _a - _b
@@ -234,11 +251,11 @@ def func_1010_aed8(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, bx=0, 
             _cost += 2
             _fmask |= 0x10 | 0x1 | 0x800 | 0x4 | 0x80 | 0x40
             if zf:
-                bb = 16
+                bb = 17
                 continue
-            bb = 11
+            bb = 12
             continue
-        if bb == 11:  # 1010:AD95
+        if bb == 12:  # 1010:AD95
             _a = mem.rw(ss, ((bp + 24) & 0xFFFF))
             _b = 0x5
             _t = _a - _b
@@ -251,11 +268,11 @@ def func_1010_aed8(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, bx=0, 
             _cost += 2
             _fmask |= 0x10 | 0x1 | 0x800 | 0x4 | 0x80 | 0x40
             if zf:
-                bb = 16
+                bb = 17
                 continue
-            bb = 12
+            bb = 13
             continue
-        if bb == 12:  # 1010:AD9B
+        if bb == 13:  # 1010:AD9B
             _a = mem.rw(ss, ((bp + 24) & 0xFFFF))
             _b = 0x6
             _t = _a - _b
@@ -268,11 +285,11 @@ def func_1010_aed8(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, bx=0, 
             _cost += 2
             _fmask |= 0x10 | 0x1 | 0x800 | 0x4 | 0x80 | 0x40
             if zf:
-                bb = 16
+                bb = 17
                 continue
-            bb = 13
+            bb = 14
             continue
-        if bb == 13:  # 1010:ADA1
+        if bb == 14:  # 1010:ADA1
             _a = mem.rw(ss, ((bp + 24) & 0xFFFF))
             _b = 0x9
             _t = _a - _b
@@ -285,11 +302,11 @@ def func_1010_aed8(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, bx=0, 
             _cost += 2
             _fmask |= 0x10 | 0x1 | 0x800 | 0x4 | 0x80 | 0x40
             if zf:
-                bb = 16
+                bb = 17
                 continue
-            bb = 14
+            bb = 15
             continue
-        if bb == 14:  # 1010:ADA7
+        if bb == 15:  # 1010:ADA7
             _a = mem.rw(ss, ((bp + 24) & 0xFFFF))
             _b = 0x8
             _t = _a - _b
@@ -302,15 +319,15 @@ def func_1010_aed8(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, bx=0, 
             _cost += 2
             _fmask |= 0x10 | 0x1 | 0x800 | 0x4 | 0x80 | 0x40
             if zf:
-                bb = 16
+                bb = 17
                 continue
-            bb = 15
+            bb = 16
             continue
-        if bb == 15:  # 1010:ADAD
+        if bb == 16:  # 1010:ADAD
             _cost += 1
-            bb = 20
+            bb = 21
             continue
-        if bb == 16:  # 1010:ADAF
+        if bb == 17:  # 1010:ADAF
             _a = mem.rw(ds, 0xBDAC)
             _b = 0x1
             _t = _a - _b
@@ -323,11 +340,11 @@ def func_1010_aed8(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, bx=0, 
             _cost += 2
             _fmask |= 0x10 | 0x1 | 0x800 | 0x4 | 0x80 | 0x40
             if zf:
-                bb = 20
+                bb = 21
                 continue
-            bb = 17
+            bb = 18
             continue
-        if bb == 17:  # 1010:ADB6
+        if bb == 18:  # 1010:ADB6
             sp = (sp - 2) & 0xFFFF
             mem.ww(ss, sp, 0xADB9)
             _o, _c = func_1010_5073(mem, bp=bp, cx=cx, ds=ds, dx=dx, ss=ss)
@@ -382,11 +399,11 @@ def func_1010_aed8(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, bx=0, 
             _cost += 4
             _fmask |= 0x10 | 0x1 | 0x800 | 0x4 | 0x80 | 0x40
             if zf:
-                bb = 20
+                bb = 21
                 continue
-            bb = 18
+            bb = 19
             continue
-        if bb == 18:  # 1010:ADC1
+        if bb == 19:  # 1010:ADC1
             _a = (ax & 0xFF)
             _t = _a - 1
             zf = (_t & 0xFF) == 0
@@ -398,23 +415,23 @@ def func_1010_aed8(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, bx=0, 
             _cost += 2
             _fmask |= 0x10 | 0x800 | 0x4 | 0x80 | 0x40
             if not zf:
-                bb = 20
+                bb = 21
                 continue
-            bb = 19
+            bb = 20
             continue
-        if bb == 19:  # 1010:ADC5
+        if bb == 20:  # 1010:ADC5
             _cost += 1
-            bb = 25
+            bb = 38
             continue
-        if bb == 20:  # 1010:ADC8
+        if bb == 21:  # 1010:ADC8
             _cost += 1
             break
-        if bb == 21:  # 1010:ADC9
+        if bb == 22:  # 1010:ADC9
             mem.ww(ss, ((bp + 2) & 0xFFFF), (0xFFFF) & 0xFFFF)
             _cost += 2
-            bb = 1
+            bb = 2
             continue
-        if bb == 22:  # 1010:AED8
+        if bb == 23:  # 1010:AED8
             _a = mem.rw(ss, ((bp + 28) & 0xFFFF))
             _t = _a - 1
             zf = (_t & 0xFFFF) == 0
@@ -426,15 +443,15 @@ def func_1010_aed8(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, bx=0, 
             _cost += 2
             _fmask |= 0x10 | 0x800 | 0x4 | 0x80 | 0x40
             if not zf:
-                bb = 24
+                bb = 25
                 continue
-            bb = 23
+            bb = 24
             continue
-        if bb == 23:  # 1010:AEDD
+        if bb == 24:  # 1010:AEDD
             _cost += 1
-            bb = 21
+            bb = 22
             continue
-        if bb == 24:  # 1010:AEE0
+        if bb == 25:  # 1010:AEE0
             ax = 0xB250
             sp = (sp - 2) & 0xFFFF
             mem.ww(ss, sp, ax)
@@ -456,10 +473,6 @@ def func_1010_aed8(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, bx=0, 
                     _fmask |= 0x800
                 bx = (_t) & 0xFFFF
             _dt = (mem.rw(cs, ((bx + -20754) & 0xFFFF))) & 0xFFFF
-            if _dt in _LOCAL:
-                _cost += 5
-                bb = _LOCAL[_dt]
-                continue
             _do, _dc = _dyn("1010:%04X" % _dt, mem, plat, _base + _cost + 4, {'ax': ax, 'cx': cx, 'dx': dx, 'bx': bx, 'sp': sp, 'bp': bp, 'si': si, 'di': di, 'ds': ds, 'es': es, 'ss': ss, 'cs': 0x1010, '_df': (1 if df else 0), '_flags_in': ((_flags_in & ~_fmask) | (((0x1 if cf else 0) | (0x4 if pf else 0) | (0x10 if af else 0) | (0x40 if zf else 0) | (0x80 if sf else 0) | (0x800 if of else 0) | (0x400 if df else 0) | (0x200 if intf else 0)) & _fmask))})
             ax = _do['ax']
             cx = _do['cx']
@@ -485,9 +498,236 @@ def func_1010_aed8(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, bx=0, 
                 if _gm & 0x400: df = (_gf & 0x400) != 0
                 _fmask |= _gm
             _cost += _dc['cost']
+            sp = (sp + 2) & 0xFFFF
             _cost += 5
-            break
-        if bb == 25:  # 1010:BD17
+            bb = 26
+            continue
+        if bb == 26:  # 1010:B250
+            _a = mem.rw(ss, ((bp + 30) & 0xFFFF))
+            _b = 0x1
+            _t = _a - _b
+            zf = (_t & 0xFFFF) == 0
+            sf = (_t & 0x8000) != 0
+            pf = _PARITY[_t & 0xFF]
+            af = ((_a) ^ (_b) ^ _t) & 0x10 != 0
+            cf = _t < 0
+            of = (((_a) ^ (_b)) & ((_a) ^ _t) & 0x8000) != 0
+            _cost += 2
+            _fmask |= 0x10 | 0x1 | 0x800 | 0x4 | 0x80 | 0x40
+            if zf:
+                bb = 37
+                continue
+            bb = 27
+            continue
+        if bb == 27:  # 1010:B256
+            ax = mem.rw(ds, 0x237E)
+            bx = mem.rw(ds, 0x2380)
+            _a = ax
+            _b = 0x2
+            _t = _a - _b
+            zf = (_t & 0xFFFF) == 0
+            sf = (_t & 0x8000) != 0
+            pf = _PARITY[_t & 0xFF]
+            af = ((_a) ^ (_b) ^ _t) & 0x10 != 0
+            cf = _t < 0
+            of = (((_a) ^ (_b)) & ((_a) ^ _t) & 0x8000) != 0
+            ax = _t & 0xFFFF
+            _a = mem.rw(ss, ((bp + 2) & 0xFFFF))
+            _b = ax
+            _t = _a - _b
+            zf = (_t & 0xFFFF) == 0
+            sf = (_t & 0x8000) != 0
+            pf = _PARITY[_t & 0xFF]
+            af = ((_a) ^ (_b) ^ _t) & 0x10 != 0
+            cf = _t < 0
+            of = (((_a) ^ (_b)) & ((_a) ^ _t) & 0x8000) != 0
+            _cost += 5
+            _fmask |= 0x10 | 0x1 | 0x800 | 0x4 | 0x80 | 0x40
+            if sf != of:
+                bb = 37
+                continue
+            bb = 28
+            continue
+        if bb == 28:  # 1010:B265
+            _a = ax
+            _b = 0x14
+            _t = _a + _b
+            zf = (_t & 0xFFFF) == 0
+            sf = (_t & 0x8000) != 0
+            pf = _PARITY[_t & 0xFF]
+            af = ((_a) ^ (_b) ^ _t) & 0x10 != 0
+            cf = _t > 0xFFFF
+            of = (~((_a) ^ (_b)) & ((_a) ^ _t) & 0x8000) != 0
+            ax = _t & 0xFFFF
+            _a = mem.rw(ss, ((bp + 2) & 0xFFFF))
+            _b = ax
+            _t = _a - _b
+            zf = (_t & 0xFFFF) == 0
+            sf = (_t & 0x8000) != 0
+            pf = _PARITY[_t & 0xFF]
+            af = ((_a) ^ (_b) ^ _t) & 0x10 != 0
+            cf = _t < 0
+            of = (((_a) ^ (_b)) & ((_a) ^ _t) & 0x8000) != 0
+            _cost += 3
+            _fmask |= 0x10 | 0x1 | 0x800 | 0x4 | 0x80 | 0x40
+            if not (zf or (sf != of)):
+                bb = 37
+                continue
+            bb = 29
+            continue
+        if bb == 29:  # 1010:B26D
+            _a = mem.rw(ss, ((bp + 4) & 0xFFFF))
+            _b = bx
+            _t = _a - _b
+            zf = (_t & 0xFFFF) == 0
+            sf = (_t & 0x8000) != 0
+            pf = _PARITY[_t & 0xFF]
+            af = ((_a) ^ (_b) ^ _t) & 0x10 != 0
+            cf = _t < 0
+            of = (((_a) ^ (_b)) & ((_a) ^ _t) & 0x8000) != 0
+            _cost += 2
+            _fmask |= 0x10 | 0x1 | 0x800 | 0x4 | 0x80 | 0x40
+            if cf:
+                bb = 37
+                continue
+            bb = 30
+            continue
+        if bb == 30:  # 1010:B272
+            _a = bx
+            _b = 0x14
+            _t = _a + _b
+            zf = (_t & 0xFFFF) == 0
+            sf = (_t & 0x8000) != 0
+            pf = _PARITY[_t & 0xFF]
+            af = ((_a) ^ (_b) ^ _t) & 0x10 != 0
+            cf = _t > 0xFFFF
+            of = (~((_a) ^ (_b)) & ((_a) ^ _t) & 0x8000) != 0
+            bx = (_t) & 0xFFFF
+            _a = mem.rw(ss, ((bp + 4) & 0xFFFF))
+            _b = bx
+            _t = _a - _b
+            zf = (_t & 0xFFFF) == 0
+            sf = (_t & 0x8000) != 0
+            pf = _PARITY[_t & 0xFF]
+            af = ((_a) ^ (_b) ^ _t) & 0x10 != 0
+            cf = _t < 0
+            of = (((_a) ^ (_b)) & ((_a) ^ _t) & 0x8000) != 0
+            _cost += 3
+            _fmask |= 0x10 | 0x1 | 0x800 | 0x4 | 0x80 | 0x40
+            if not (cf or zf):
+                bb = 37
+                continue
+            bb = 31
+            continue
+        if bb == 31:  # 1010:B27A
+            cx = 0x1
+            _a = mem.rw(ss, ((bp + 24) & 0xFFFF))
+            _b = 0x3
+            _t = _a - _b
+            zf = (_t & 0xFFFF) == 0
+            sf = (_t & 0x8000) != 0
+            pf = _PARITY[_t & 0xFF]
+            af = ((_a) ^ (_b) ^ _t) & 0x10 != 0
+            cf = _t < 0
+            of = (((_a) ^ (_b)) & ((_a) ^ _t) & 0x8000) != 0
+            _cost += 3
+            _fmask |= 0x10 | 0x1 | 0x800 | 0x4 | 0x80 | 0x40
+            if not zf:
+                bb = 35
+                continue
+            bb = 32
+            continue
+        if bb == 32:  # 1010:B283
+            _a = mem.rw(ds, 0xBEDC)
+            _b = 0x0
+            _t = _a - _b
+            zf = (_t & 0xFFFF) == 0
+            sf = (_t & 0x8000) != 0
+            pf = _PARITY[_t & 0xFF]
+            af = ((_a) ^ (_b) ^ _t) & 0x10 != 0
+            cf = _t < 0
+            of = (((_a) ^ (_b)) & ((_a) ^ _t) & 0x8000) != 0
+            _cost += 2
+            _fmask |= 0x10 | 0x1 | 0x800 | 0x4 | 0x80 | 0x40
+            if zf:
+                bb = 35
+                continue
+            bb = 33
+            continue
+        if bb == 33:  # 1010:B28A
+            cx = 0x3
+            _a = mem.rw(ds, 0xBEDC)
+            _b = 0x1
+            _t = _a - _b
+            zf = (_t & 0xFFFF) == 0
+            sf = (_t & 0x8000) != 0
+            pf = _PARITY[_t & 0xFF]
+            af = ((_a) ^ (_b) ^ _t) & 0x10 != 0
+            cf = _t < 0
+            of = (((_a) ^ (_b)) & ((_a) ^ _t) & 0x8000) != 0
+            _cost += 3
+            _fmask |= 0x10 | 0x1 | 0x800 | 0x4 | 0x80 | 0x40
+            if zf:
+                bb = 35
+                continue
+            bb = 34
+            continue
+        if bb == 34:  # 1010:B294
+            cx = 0x5
+            _cost += 1
+            bb = 35
+            continue
+        if bb == 35:  # 1010:B297
+            sp = (sp - 2) & 0xFFFF
+            mem.ww(ss, sp, cx)
+            sp = (sp - 2) & 0xFFFF
+            mem.ww(ss, sp, bp)
+            sp = (sp - 2) & 0xFFFF
+            mem.ww(ss, sp, 0xB29C)
+            _o, _c = func_1010_9e19(mem, plat, _base=_base + _cost + 3, _df=(1 if df else 0), _flags_in=((_flags_in & ~_fmask) | (((0x1 if cf else 0) | (0x4 if pf else 0) | (0x10 if af else 0) | (0x40 if zf else 0) | (0x80 if sf else 0) | (0x800 if of else 0) | (0x400 if df else 0) | (0x200 if intf else 0)) & _fmask)), ax=ax, bp=bp, bx=bx, cx=cx, di=di, ds=ds, dx=dx, es=es, si=si, sp=sp, ss=ss)
+            ax = _o['ax']
+            bp = _o['bp']
+            bx = _o['bx']
+            cx = _o['cx']
+            di = _o['di']
+            ds = _o['ds']
+            dx = _o['dx']
+            es = _o['es']
+            si = _o['si']
+            _gm = _c['fmask']
+            if _gm:
+                _gf = _c['flags']
+                if _gm & 0x1: cf = (_gf & 0x1) != 0
+                if _gm & 0x4: pf = (_gf & 0x4) != 0
+                if _gm & 0x10: af = (_gf & 0x10) != 0
+                if _gm & 0x40: zf = (_gf & 0x40) != 0
+                if _gm & 0x80: sf = (_gf & 0x80) != 0
+                if _gm & 0x800: of = (_gf & 0x800) != 0
+                if _gm & 0x200: intf = (_gf & 0x200) != 0
+                if _gm & 0x400: df = (_gf & 0x400) != 0
+                _fmask |= _gm
+            _cost += _c['cost']
+            sp = (sp + 2) & 0xFFFF
+            bp = mem.rw(ss, sp)
+            sp = (sp + 2) & 0xFFFF
+            cx = mem.rw(ss, sp)
+            sp = (sp + 2) & 0xFFFF
+            _cost += 6
+            cx = (cx - 1) & 0xFFFF
+            if cx != 0:
+                bb = 35
+                continue
+            bb = 36
+            continue
+        if bb == 36:  # 1010:B2A0
+            _cost += 1
+            bb = 22
+            continue
+        if bb == 37:  # 1010:B2A3
+            _cost += 1
+            bb = 1
+            continue
+        if bb == 38:  # 1010:BD17
             mem.ww(ss, ((bp + 0) & 0xFFFF), (0x0) & 0xFFFF)
             _a = mem.rw(ss, ((bp + 22) & 0xFFFF))
             _b = 0x4
@@ -501,11 +741,11 @@ def func_1010_aed8(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, bx=0, 
             _cost += 3
             _fmask |= 0x10 | 0x1 | 0x800 | 0x4 | 0x80 | 0x40
             if zf:
-                bb = 37
+                bb = 50
                 continue
-            bb = 26
+            bb = 39
             continue
-        if bb == 26:  # 1010:BD22
+        if bb == 39:  # 1010:BD22
             _a = mem.rw(ss, ((bp + 22) & 0xFFFF))
             _b = 0x1
             _t = _a - _b
@@ -518,11 +758,11 @@ def func_1010_aed8(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, bx=0, 
             _cost += 2
             _fmask |= 0x10 | 0x1 | 0x800 | 0x4 | 0x80 | 0x40
             if zf:
-                bb = 36
+                bb = 49
                 continue
-            bb = 27
+            bb = 40
             continue
-        if bb == 27:  # 1010:BD28
+        if bb == 40:  # 1010:BD28
             _a = mem.rw(ss, ((bp + 24) & 0xFFFF))
             _b = 0x7
             _t = _a - _b
@@ -535,11 +775,11 @@ def func_1010_aed8(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, bx=0, 
             _cost += 2
             _fmask |= 0x10 | 0x1 | 0x800 | 0x4 | 0x80 | 0x40
             if zf:
-                bb = 51
+                bb = 64
                 continue
-            bb = 28
+            bb = 41
             continue
-        if bb == 28:  # 1010:BD2E
+        if bb == 41:  # 1010:BD2E
             _a = mem.rw(ss, ((bp + 24) & 0xFFFF))
             _b = 0x8
             _t = _a - _b
@@ -552,11 +792,11 @@ def func_1010_aed8(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, bx=0, 
             _cost += 2
             _fmask |= 0x10 | 0x1 | 0x800 | 0x4 | 0x80 | 0x40
             if zf:
-                bb = 51
+                bb = 64
                 continue
-            bb = 29
+            bb = 42
             continue
-        if bb == 29:  # 1010:BD34
+        if bb == 42:  # 1010:BD34
             _a = mem.rw(ss, ((bp + 24) & 0xFFFF))
             _b = 0x9
             _t = _a - _b
@@ -569,11 +809,11 @@ def func_1010_aed8(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, bx=0, 
             _cost += 2
             _fmask |= 0x10 | 0x1 | 0x800 | 0x4 | 0x80 | 0x40
             if zf:
-                bb = 42
+                bb = 55
                 continue
-            bb = 30
+            bb = 43
             continue
-        if bb == 30:  # 1010:BD3A
+        if bb == 43:  # 1010:BD3A
             _a = mem.rw(ss, ((bp + 24) & 0xFFFF))
             _b = 0x6
             _t = _a - _b
@@ -586,15 +826,15 @@ def func_1010_aed8(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, bx=0, 
             _cost += 2
             _fmask |= 0x10 | 0x1 | 0x800 | 0x4 | 0x80 | 0x40
             if not zf:
-                bb = 32
+                bb = 45
                 continue
-            bb = 31
+            bb = 44
             continue
-        if bb == 31:  # 1010:BD40
+        if bb == 44:  # 1010:BD40
             _cost += 1
-            bb = 57
+            bb = 70
             continue
-        if bb == 32:  # 1010:BD43
+        if bb == 45:  # 1010:BD43
             _a = mem.rw(ss, ((bp + 24) & 0xFFFF))
             _b = 0x5
             _t = _a - _b
@@ -607,11 +847,11 @@ def func_1010_aed8(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, bx=0, 
             _cost += 2
             _fmask |= 0x10 | 0x1 | 0x800 | 0x4 | 0x80 | 0x40
             if zf:
-                bb = 57
+                bb = 70
                 continue
-            bb = 33
+            bb = 46
             continue
-        if bb == 33:  # 1010:BD49
+        if bb == 46:  # 1010:BD49
             _a = mem.rw(ss, ((bp + 24) & 0xFFFF))
             _b = 0xC
             _t = _a - _b
@@ -624,11 +864,11 @@ def func_1010_aed8(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, bx=0, 
             _cost += 2
             _fmask |= 0x10 | 0x1 | 0x800 | 0x4 | 0x80 | 0x40
             if zf:
-                bb = 54
+                bb = 67
                 continue
-            bb = 34
+            bb = 47
             continue
-        if bb == 34:  # 1010:BD4F
+        if bb == 47:  # 1010:BD4F
             _a = mem.rw(ss, ((bp + 24) & 0xFFFF))
             _b = 0xA
             _t = _a - _b
@@ -641,18 +881,18 @@ def func_1010_aed8(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, bx=0, 
             _cost += 2
             _fmask |= 0x10 | 0x1 | 0x800 | 0x4 | 0x80 | 0x40
             if zf:
-                bb = 48
+                bb = 61
                 continue
-            bb = 35
+            bb = 48
             continue
-        if bb == 35:  # 1010:BD55
+        if bb == 48:  # 1010:BD55
             _cost += 1
             break
-        if bb == 36:  # 1010:BD56
+        if bb == 49:  # 1010:BD56
             mem.ww(ss, ((bp + 22) & 0xFFFF), (0x2) & 0xFFFF)
             _cost += 2
             break
-        if bb == 37:  # 1010:BD5C
+        if bb == 50:  # 1010:BD5C
             sp = (sp - 2) & 0xFFFF
             mem.ww(ss, sp, 0xBD5F)
             _o, _c = func_1010_c054(mem, ax=ax, bp=bp, bx=bx, cx=cx, ds=ds, si=si, sp=sp, ss=ss)
@@ -687,14 +927,14 @@ def func_1010_aed8(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, bx=0, 
             _cost += 3
             _fmask |= 0x10 | 0x1 | 0x800 | 0x4 | 0x80 | 0x40
             if not zf:
-                bb = 39
+                bb = 52
                 continue
-            bb = 38
+            bb = 51
             continue
-        if bb == 38:  # 1010:BD65
+        if bb == 51:  # 1010:BD65
             _cost += 1
             break
-        if bb == 39:  # 1010:BD66
+        if bb == 52:  # 1010:BD66
             _a = mem.rw(ss, ((bp + 40) & 0xFFFF))
             _b = 0xFFFF
             _t = _a - _b
@@ -707,14 +947,14 @@ def func_1010_aed8(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, bx=0, 
             _cost += 2
             _fmask |= 0x10 | 0x1 | 0x800 | 0x4 | 0x80 | 0x40
             if not zf:
-                bb = 41
+                bb = 54
                 continue
-            bb = 40
+            bb = 53
             continue
-        if bb == 40:  # 1010:BD6C
+        if bb == 53:  # 1010:BD6C
             _cost += 1
             break
-        if bb == 41:  # 1010:BD6D
+        if bb == 54:  # 1010:BD6D
             si = mem.rw(ss, ((bp + 40) & 0xFFFF))
             _n = 1
             _a = si
@@ -746,7 +986,7 @@ def func_1010_aed8(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, bx=0, 
             _cost += 5
             _fmask |= 0x10 | 0x1 | 0x800 | 0x4 | 0x80 | 0x40
             break
-        if bb == 42:  # 1010:BD7A
+        if bb == 55:  # 1010:BD7A
             _a = mem.rw(ds, 0xA972)
             _b = 0x0
             _t = _a - _b
@@ -759,20 +999,20 @@ def func_1010_aed8(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, bx=0, 
             _cost += 2
             _fmask |= 0x10 | 0x1 | 0x800 | 0x4 | 0x80 | 0x40
             if not zf:
-                bb = 44
+                bb = 57
                 continue
-            bb = 43
+            bb = 56
             continue
-        if bb == 43:  # 1010:BD81
+        if bb == 56:  # 1010:BD81
             _cost += 1
             break
-        if bb == 44:  # 1010:BD82
+        if bb == 57:  # 1010:BD82
             cx = 0x1A
             si = 0xA3B4
             _cost += 2
-            bb = 45
+            bb = 58
             continue
-        if bb == 45:  # 1010:BD88
+        if bb == 58:  # 1010:BD88
             _d = -2 if df else 2
             ax = mem.rw(ds, si)
             si = (si + _d) & 0xFFFF
@@ -788,14 +1028,14 @@ def func_1010_aed8(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, bx=0, 
             _cost += 3
             _fmask |= 0x10 | 0x1 | 0x800 | 0x4 | 0x80 | 0x40
             if not zf:
-                bb = 47
+                bb = 60
                 continue
-            bb = 46
+            bb = 59
             continue
-        if bb == 46:  # 1010:BD8E
+        if bb == 59:  # 1010:BD8E
             _cost += 1
             break
-        if bb == 47:  # 1010:BD8F
+        if bb == 60:  # 1010:BD8F
             mem.ww(ds, ((si + -2) & 0xFFFF), (ax) & 0xFFFF)
             bx = ax
             mem.ww(ds, ((bx) & 0xFFFF), (0x0) & 0xFFFF)
@@ -809,9 +1049,9 @@ def func_1010_aed8(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, bx=0, 
             mem.ww(ds, 0xA972, (_t) & 0xFFFF)
             _cost += 5
             _fmask |= 0x10 | 0x800 | 0x4 | 0x80 | 0x40
-            bb = 45
+            bb = 58
             continue
-        if bb == 48:  # 1010:BD9E
+        if bb == 61:  # 1010:BD9E
             _a = mem.rw(ds, 0xA97E)
             _b = 0x0
             _t = _a - _b
@@ -824,11 +1064,11 @@ def func_1010_aed8(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, bx=0, 
             _cost += 2
             _fmask |= 0x10 | 0x1 | 0x800 | 0x4 | 0x80 | 0x40
             if zf:
-                bb = 50
+                bb = 63
                 continue
-            bb = 49
+            bb = 62
             continue
-        if bb == 49:  # 1010:BDA5
+        if bb == 62:  # 1010:BDA5
             _a = mem.rw(ds, 0xA97E)
             _t = _a - 1
             zf = (_t & 0xFFFF) == 0
@@ -839,13 +1079,13 @@ def func_1010_aed8(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, bx=0, 
             mem.ww(ds, 0xA97E, (_t) & 0xFFFF)
             _cost += 1
             _fmask |= 0x10 | 0x800 | 0x4 | 0x80 | 0x40
-            bb = 50
+            bb = 63
             continue
-        if bb == 50:  # 1010:BDA9
+        if bb == 63:  # 1010:BDA9
             _cost += 1
             bb = 0
             continue
-        if bb == 51:  # 1010:BDAC
+        if bb == 64:  # 1010:BDAC
             _a = mem.rw(ds, 0xA970)
             _b = 0x0
             _t = _a - _b
@@ -858,11 +1098,11 @@ def func_1010_aed8(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, bx=0, 
             _cost += 2
             _fmask |= 0x10 | 0x1 | 0x800 | 0x4 | 0x80 | 0x40
             if zf:
-                bb = 53
+                bb = 66
                 continue
-            bb = 52
+            bb = 65
             continue
-        if bb == 52:  # 1010:BDB3
+        if bb == 65:  # 1010:BDB3
             _a = mem.rw(ds, 0xA970)
             _t = _a - 1
             zf = (_t & 0xFFFF) == 0
@@ -873,12 +1113,12 @@ def func_1010_aed8(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, bx=0, 
             mem.ww(ds, 0xA970, (_t) & 0xFFFF)
             _cost += 1
             _fmask |= 0x10 | 0x800 | 0x4 | 0x80 | 0x40
-            bb = 53
+            bb = 66
             continue
-        if bb == 53:  # 1010:BDB7
+        if bb == 66:  # 1010:BDB7
             _cost += 1
             break
-        if bb == 54:  # 1010:BDB8
+        if bb == 67:  # 1010:BDB8
             _a = mem.rw(ds, 0xA974)
             _b = 0x0
             _t = _a - _b
@@ -891,11 +1131,11 @@ def func_1010_aed8(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, bx=0, 
             _cost += 2
             _fmask |= 0x10 | 0x1 | 0x800 | 0x4 | 0x80 | 0x40
             if zf:
-                bb = 56
+                bb = 69
                 continue
-            bb = 55
+            bb = 68
             continue
-        if bb == 55:  # 1010:BDBF
+        if bb == 68:  # 1010:BDBF
             _a = mem.rw(ds, 0xA974)
             _t = _a - 1
             zf = (_t & 0xFFFF) == 0
@@ -906,12 +1146,12 @@ def func_1010_aed8(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, bx=0, 
             mem.ww(ds, 0xA974, (_t) & 0xFFFF)
             _cost += 1
             _fmask |= 0x10 | 0x800 | 0x4 | 0x80 | 0x40
-            bb = 56
+            bb = 69
             continue
-        if bb == 56:  # 1010:BDC3
+        if bb == 69:  # 1010:BDC3
             _cost += 1
             break
-        if bb == 57:  # 1010:BDC4
+        if bb == 70:  # 1010:BDC4
             _a = mem.rw(ds, 0xA976)
             _b = 0x0
             _t = _a - _b
@@ -924,11 +1164,11 @@ def func_1010_aed8(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, bx=0, 
             _cost += 2
             _fmask |= 0x10 | 0x1 | 0x800 | 0x4 | 0x80 | 0x40
             if zf:
-                bb = 59
+                bb = 72
                 continue
-            bb = 58
+            bb = 71
             continue
-        if bb == 58:  # 1010:BDCB
+        if bb == 71:  # 1010:BDCB
             _a = mem.rw(ds, 0xA976)
             _t = _a - 1
             zf = (_t & 0xFFFF) == 0
@@ -939,12 +1179,12 @@ def func_1010_aed8(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, bx=0, 
             mem.ww(ds, 0xA976, (_t) & 0xFFFF)
             _cost += 1
             _fmask |= 0x10 | 0x800 | 0x4 | 0x80 | 0x40
-            bb = 59
+            bb = 72
             continue
-        if bb == 59:  # 1010:BDCF
+        if bb == 72:  # 1010:BDCF
             _cost += 1
             break
         raise AssertionError('unreachable dispatch')
     _flags = ((0x1 if cf else 0) | (0x4 if pf else 0) | (0x10 if af else 0) | (0x40 if zf else 0) | (0x80 if sf else 0) | (0x800 if of else 0) | (0x400 if df else 0) | (0x200 if intf else 0)) & _fmask
-    return {'ax': ax & 0xFFFF, 'bp': bp & 0xFFFF, 'bx': bx & 0xFFFF, 'cx': cx & 0xFFFF, 'di': di & 0xFFFF, 'ds': ds & 0xFFFF, 'dx': dx & 0xFFFF, 'es': es & 0xFFFF, 'si': si & 0xFFFF, 'sp': sp & 0xFFFF}, {'flags': _flags, 'fmask': _fmask, 'cost': _cost}
+    return {'ax': ax & 0xFFFF, 'bp': bp & 0xFFFF, 'bx': bx & 0xFFFF, 'cx': cx & 0xFFFF, 'di': di & 0xFFFF, 'ds': ds & 0xFFFF, 'dx': dx & 0xFFFF, 'es': es & 0xFFFF, 'si': si & 0xFFFF}, {'flags': _flags, 'fmask': _fmask, 'cost': _cost}
 

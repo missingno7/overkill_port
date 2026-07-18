@@ -13,6 +13,61 @@
 > `artifacts/boot_entry_snapshot` with `steps=0`. The cold root the CPUless corpus now actually
 > drives is the game top level `1010:96C8`, over the snapshot recorded at it.
 
+## 2026-07-18j -- FIXED. The frontier moves 870 -> past 4000, and the fix costs nothing
+
+The manufactured-return defect diagnosed in 2026-07-18i is repaired in dos_re (`f23b0fb` +
+`47ca790`). **The cold-start differential now passes 4000 frames byte-exact from cold**, and the
+whole 64KB DGROUP is identical over 1500 frames as well (the stronger observable that had put the
+real frontier at 870).
+
+### The fix took TWO parts, and the second was the one that mattered
+
+**Part 1 -- represent it in the emitter (`emit_cpuless`).** `_manufactured_return` recognises
+`push <addr> ; ... ; jmp <indirect>` tightly: within the block containing the jmp there must be
+EXACTLY ONE stack-affecting instruction, and it must push a statically-known value (`push imm16`, or
+`push r16` fed by `mov r16, imm16` in the same block). Recognised + the offset is a block of this
+function -> a computed CALL (sp rises 2 after the dispatch; control resumes at that block; the
+`_LOCAL` fast path is suppressed because an intra-function goto cannot express "the arm's ret comes
+back here"). Recognised + not a block -> REFUSE. Not recognised -> the tail form, unchanged.
+
+Depth CANNOT be the discriminator, and that is the subtle part: the FRAMELESS STACK-ARG tail
+(`push si; push di; jmp [table]`, arms pop the args) also sits at nonzero depth and IS a genuine
+tail. The pushed VALUE is what separates them. A test pins that the frameless idiom is still
+declined.
+
+**Part 2 -- FOLLOW it in the CFG walk (`cfg.scan_function`).** Part 1 alone made things WORSE:
+promotion fell 623 -> 610, because `scan_function` also stopped at the indirect jmp, so the resume
+point was not in the function and the new refusal fired on the very sites the fix was for. The
+pushed address is an ARRIVAL -- control really lands there -- so the scan now runs an outer fixpoint
+(walk, find manufactured-return sites now that blocks exist, enqueue unreached resume points, walk
+again) and records them as FORCED block leaders, exactly like dynamic-dispatch alternate entries.
+
+`manufactured_return` lives in `cfg.py` (it is a CFG fact) and `emit_cpuless` imports it; the depth
+walk and the emitter share `FunctionScan.leader_of()` so they cannot disagree about where blocks
+begin.
+
+### Measured cost: none
+
+| metric | before | after |
+|---|---|---|
+| CPUless promotable | 623/626 | **623/626** |
+| hard frontier | 3 `ir-not-liftable` | **3 `ir-not-liftable`** |
+| runtime closure from `1010:97B2` | 253/253 | 253/253 |
+| corpus modules changed | -- | **2** (`1010:AED8`, `1010:580B`) |
+| cold-start differential | diverges 882 (state 870) | **PASS 4000** |
+
+`1010:AED8`'s scan grows **116 -> 150 instructions** and now reaches
+`B250 -> B2A3 -> AD5A -> AD60 -> BD17` -- the object off-screen bounds check and destructor that had
+been invisible to every stage of the pipeline. Exactly two modules in the regenerated corpus change:
+the two sites the recogniser fires on. Nothing newly refuses.
+
+### Frontier
+
+**No divergence in 4000 frames** (video plane + CRTC + 3Dx ports), and no real DGROUP divergence in
+1500. Claimed narrowly: for this cold snapshot, this frame model, these frame counts, with ZERO
+input events delivered -- the attract path only. Demo input replay is still unwired, so nothing here
+is proven about any input-driven path.
+
 ## 2026-07-18i -- ROOT CAUSE of the frame-882 "missing draw": dos_re DROPS A MANUFACTURED RETURN
 
 The frame-882 video divergence is **not** where the corpus first goes wrong, and it is **not** a

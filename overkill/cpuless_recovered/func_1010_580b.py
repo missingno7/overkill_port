@@ -19,7 +19,7 @@ _ITER_CAP = 20000000
 
 #: intra-function landing map for near jump-table dispatch:
 #: block-leader ip -> dispatch block index.
-_LOCAL = {0x580B: 0}
+_LOCAL = {0x00C8: 0, 0x00D1: 1, 0x580B: 2}
 
 
 def func_1010_580b(mem, plat, *, _base=0, _df=0, _flags_in=2, bp=0, di=0, si=0, sp=0, ss=0):
@@ -36,13 +36,75 @@ def func_1010_580b(mem, plat, *, _base=0, _df=0, _flags_in=2, bp=0, di=0, si=0, 
     df = _df != 0    # caller DF (hidden compat input, tier 9)
     _fmask = 0
     cs = 0x1010
-    bb = 0
+    bb = 2
     _iters = 0
     while True:
         _iters += 1
         if _iters > _ITER_CAP:
             raise RuntimeError('CPUless dispatch spin in 1010:580B (block %d, cost %d): loop exceeded 20000000 iterations -- an unbounded wait (interrupt-updated flag, or a wrong port after a state divergence)' % (bb, _cost))
-        if bb == 0:  # 1010:580B
+        if bb == 0:  # 1010:00C8
+            sp = (sp - 2) & 0xFFFF
+            mem.ww(ss, sp, ds)
+            sp = (sp - 2) & 0xFFFF
+            mem.ww(ss, sp, ax)
+            _a = (cx & 0xFF)
+            _b = (dx & 0xFF)
+            _t = _a + _b
+            zf = (_t & 0xFF) == 0
+            sf = (_t & 0x80) != 0
+            pf = _PARITY[_t & 0xFF]
+            af = ((_a) ^ (_b) ^ _t) & 0x10 != 0
+            cf = _t > 0xFF
+            of = (~((_a) ^ (_b)) & ((_a) ^ _t) & 0x80) != 0
+            cx = (cx & 0xFF00) | ((_t) & 0xFF)
+            _cost += 4
+            _fmask |= 0x10 | 0x1 | 0x800 | 0x4 | 0x80 | 0x40
+            bb = 1
+            continue
+        if bb == 1:  # 1010:00D1
+            mem.ww(ds, 0x44, (bx) & 0xFFFF)
+            bx = mem.rw(ds, 0x50)
+            _a = bx
+            _b = mem.rw(ds, 0x48)
+            _t = _a - _b
+            zf = (_t & 0xFFFF) == 0
+            sf = (_t & 0x8000) != 0
+            pf = _PARITY[_t & 0xFF]
+            af = ((_a) ^ (_b) ^ _t) & 0x10 != 0
+            cf = _t < 0
+            of = (((_a) ^ (_b)) & ((_a) ^ _t) & 0x8000) != 0
+            bx = _t & 0xFFFF
+            _n = 1
+            _a = bx
+            if _n:
+                if _n <= 16:
+                    cf = ((_a >> (_n - 1)) & 1) != 0
+                    _t = _a >> _n
+                else:
+                    cf = False; _t = 0
+                zf = _t == 0
+                sf = (_t & 0x8000) != 0
+                pf = _PARITY[_t & 0xFF]
+                _fmask |= 0xC5
+                if _n == 1:
+                    of = ((_a >> 15) & 1) != 0
+                    _fmask |= 0x800
+                bx = (_t) & 0xFFFF
+            _a = bx
+            _b = mem.rw(ds, 0x48)
+            _t = _a + _b
+            zf = (_t & 0xFFFF) == 0
+            sf = (_t & 0x8000) != 0
+            pf = _PARITY[_t & 0xFF]
+            af = ((_a) ^ (_b) ^ _t) & 0x10 != 0
+            cf = _t > 0xFFFF
+            of = (~((_a) ^ (_b)) & ((_a) ^ _t) & 0x8000) != 0
+            bx = _t & 0xFFFF
+            mem.ww(ds, 0x42, (bx) & 0xFFFF)
+            _cost += 7
+            _fmask |= 0x10 | 0x1 | 0x800 | 0x4 | 0x80 | 0x40
+            break
+        if bb == 2:  # 1010:580B
             _a = si
             _b = si
             _t = _a ^ _b
@@ -91,11 +153,6 @@ def func_1010_580b(mem, plat, *, _base=0, _df=0, _flags_in=2, bp=0, di=0, si=0, 
                     _fmask |= 0x800
                 bx = (_t) & 0xFFFF
             _dt = (mem.rw(cs, ((bx + 22580) & 0xFFFF))) & 0xFFFF
-            if _dt in _LOCAL:
-                _cost += 14
-                _fmask |= 0x1 | 0x800 | 0x4 | 0x80 | 0x40
-                bb = _LOCAL[_dt]
-                continue
             _do, _dc = _dyn("1010:%04X" % _dt, mem, plat, _base + _cost + 13, {'ax': ax, 'cx': cx, 'dx': dx, 'bx': bx, 'sp': sp, 'bp': bp, 'si': si, 'di': di, 'ds': ds, 'es': es, 'ss': ss, 'cs': 0x1010, '_df': (1 if df else 0), '_flags_in': ((_flags_in & ~_fmask) | (((0x1 if cf else 0) | (0x4 if pf else 0) | (0x10 if af else 0) | (0x40 if zf else 0) | (0x80 if sf else 0) | (0x800 if of else 0) | (0x400 if df else 0) | (0x200 if intf else 0)) & _fmask))})
             ax = _do['ax']
             cx = _do['cx']
@@ -121,9 +178,11 @@ def func_1010_580b(mem, plat, *, _base=0, _df=0, _flags_in=2, bp=0, di=0, si=0, 
                 if _gm & 0x400: df = (_gf & 0x400) != 0
                 _fmask |= _gm
             _cost += _dc['cost']
+            sp = (sp + 2) & 0xFFFF
             _cost += 14
             _fmask |= 0x1 | 0x800 | 0x4 | 0x80 | 0x40
-            break
+            bb = 0
+            continue
         raise AssertionError('unreachable dispatch')
     _flags = ((0x1 if cf else 0) | (0x4 if pf else 0) | (0x10 if af else 0) | (0x40 if zf else 0) | (0x80 if sf else 0) | (0x800 if of else 0) | (0x400 if df else 0) | (0x200 if intf else 0)) & _fmask
     return {'ax': ax & 0xFFFF, 'bp': bp & 0xFFFF, 'bx': bx & 0xFFFF, 'cx': cx & 0xFFFF, 'di': di & 0xFFFF, 'ds': ds & 0xFFFF, 'dx': dx & 0xFFFF, 'es': es & 0xFFFF, 'si': si & 0xFFFF, 'sp': sp & 0xFFFF}, {'flags': _flags, 'fmask': _fmask, 'cost': _cost}

@@ -1,11 +1,13 @@
 # Loop blockers — divergences/targets that need the user (or better tooling)
 
-## 2026-07-18 — OPEN: dos_re `emit_cpuless` drops a MANUFACTURED RETURN (`push addr ; jmp indirect`)
+## 2026-07-18 — RESOLVED: dos_re `emit_cpuless` dropped a MANUFACTURED RETURN (`push addr ; jmp indirect`)
 
-**Not attempted-and-failed — diagnosed and specified, deliberately not implemented.** The fix is a
-change to the shared `dos_re` lifter that cannot be landed without a full corpus regeneration
-(`scripts/probe_vmless_cpuless.py`), both suites, and a re-run of the 890-frame differential. Landing
-it half-validated on a branch other agents share is worse than leaving it recorded.
+**FIXED** in dos_re `f23b0fb` + `47ca790`; the differential passes 4000 frames from cold. Kept here
+for its REPRO LINES and its instrument traps, which are still the fastest way to re-localize a
+divergence in this game — and because the diagnosis path is reusable. The two-part shape of the fix
+is the lesson: representing the construct in the emitter alone made promotion WORSE (623 -> 610),
+because the CFG walk stopped at the indirect jmp too and the resume point was not in the function.
+See `campaigns/cpuless_app.md` 2026-07-18j.
 
 **Defect.** For a near indirect JMP, `dos_re/lift/emit_cpuless.py` assumes the callee's `ret` is this
 function's exit ("dynamic TAIL", its own comment). That is false when the block manufactured a return
