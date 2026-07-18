@@ -63,6 +63,26 @@
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
 
+## 2026-07-18c — cpuless_app: front-end platform started (INT 10h AH=0Bh verified) + dos_re bump; menu needs FRAMELESS tail-dispatch
+
+- **Slices 3a/3b (12a88a9, e3e36a2):** `OverkillPlatform` (cpuless_runtime.py) — the standalone device
+  model. Video-port half (CGA/Tandy write-only regs recorded; 3DAh retrace toggle) + `intr(INT 10h
+  AH=0Bh)` ported and VERIFIED BYTE-FAITHFUL against the dos_re `int10` oracle
+  (`tests/test_overkill_platform_int10.py`, a reusable oracle harness to grow the platform one INT/AH at
+  a time). The front-end fn `4F57` (closure = 2 fns, only INT 10h) now RUNS STANDALONE under the wall.
+- **dos_re bump 14fafab→6825851 (a3a9e58):** gained FRAMED tail-dispatch, far retf-N cleanup, hand-rolled
+  leave fusion, blocking-console frame-wait, the capture↔close fixpoint, plat-effect anchoring.
+  Regenerated the committed corpus (243 modules). Walls HOLD, 561/626, suites green.
+- **MENU-BLOCKER DIAGNOSIS (important):** the dos_re bump did NOT unblock OVERKILL's menu. Our
+  tail-dispatch fns (`CC4F/CCC4/CDA7/5827`) are the **FRAMELESS stack-arg video-mode variant** (`push
+  param; jmp cs:[bx*2+table]`; arm pops the param + rets), with NO established bp frame — so the new
+  FRAMED-switch capability (which needs `has_frame` for the `leave` unwind) correctly refuses them.
+  The frameless variant is genuinely deeper: it can't rely on `leave` restoring sp, so it must resolve
+  each dispatch ARM (from dyn-evidence) and prove the arm pops exactly the pushed `d` bytes before its
+  ret (arm composition), unlike the framed case which is arm-agnostic. **This is the remaining generic
+  capability for the menu** (or, per ADR-2, native overrides for the 3 menu blitters). dos_re is
+  actively working tail-dispatch (framed just landed; an `abi-recovered` branch exists), so coordinate.
+
 ## 2026-07-18b — cpuless_app: the host core + the import WALL (CPUless now a PROVEN property)
 
 Continued the cpuless_app campaign (mirror lemmings). Two slices landed:

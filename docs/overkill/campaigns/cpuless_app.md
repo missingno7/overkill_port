@@ -116,6 +116,14 @@ Then wire the front-end into `play_cpuless` over the existing boot image
 - later: `overkill/native/loader.py` (fine sys.modules aliasing for hot-leaf overrides, per ADR-2).
 
 ## Status log (newest first)
+- **2026-07-18** dos_re bumped 14fafab→6825851 (a3a9e58): FRAMED tail-dispatch + retf-N + leave-fusion +
+  capture↔close fixpoint; corpus regenerated (243 modules), walls HOLD, suites green. **Did NOT unblock
+  the menu:** OVERKILL's tail-dispatch fns are the FRAMELESS stack-arg variant (no bp frame), which the
+  FRAMED capability correctly refuses. The frameless variant needs ARM COMPOSITION (resolve each arm
+  from dyn-evidence, prove it pops the pushed d bytes before ret) — deeper than the arm-agnostic framed
+  case. **Menu fork: (a) contribute frameless tail-dispatch to dos_re (generic, deep; coordinate — dos_re
+  is active here, `abi-recovered` branch), or (b) native overrides for the 3 menu blitters CC4F/CCC4/CDA7
+  (per ADR-2, fine-grained; but these are the CGA/Tandy blitters the native port replaces anyway).**
 - **2026-07-18** slice 3b DONE (e3e36a2): `OverkillPlatform.intr(INT 10h AH=0Bh)` ported + verified
   BYTE-FAITHFUL against the dos_re `int10` oracle (a no-op there; the colour goes via the 3D9h port);
   unported AH values fail loud. Reusable oracle harness (`test_overkill_platform_int10.py`) grows the
