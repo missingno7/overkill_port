@@ -88,6 +88,7 @@ def test_render_present_page_matches_framebuffer_on_corpus():
 
     agreements = []
     exact = 0
+    unscrolled = 0
     for snap in snaps:
         mem = np.frombuffer((snap / "memory_1mb.bin").read_bytes(), dtype=np.uint8)
         cpu = json.loads((snap / "state.json").read_text(encoding="utf-8"))["cpu_snapshot"]
@@ -95,6 +96,19 @@ def test_render_present_page_matches_framebuffer_on_corpus():
         page = rw(mem, 0x1010, 0x9598)
         cursor = rw(mem, ds, 0x234C)
         video = rw(mem, 0x1010, 0x95A4)
+
+        # PRECONDITION: this comparison is only DEFINED once the level-start scroll
+        # init (1010:60AC) has run.  60AC establishes [234C] (the scroll cursor, from
+        # CS:[95A2]=0x680) together with [2350]; before it, a capture still carries the
+        # bundle's zeros -- the state whose "first A6FE step wrapped it negative" was
+        # itself a fixed cold-seed BUG (run_status 2026-07-13).  With an uninitialised
+        # cursor the [9598]/[234C] pair never produced the B800 being compared against,
+        # so the agreement is meaningless, not a rasterizer error: measured, these split
+        # bimodally (median 0.68, min 0.17) while initialised captures sit at median 0.97.
+        # Skip them EXPLICITLY and count them, so the corpus can never silently shrink.
+        if cursor == 0 or rw(mem, ds, 0x2350) == 0:
+            unscrolled += 1
+            continue
 
         page_rgb = render_present_page_rgb(mem, page, cursor)
         b800_rgb = decode_tandy_b800_rgb(mem, (video << 4) & 0xFFFFF)
@@ -106,6 +120,11 @@ def test_render_present_page_matches_framebuffer_on_corpus():
         if agree == 1.0:
             exact += 1
 
+    # The filter must not be able to hide the corpus: most captures are mid-level and
+    # DO carry an initialised scroll cursor.
+    assert len(agreements) >= max(4, len(snaps) // 3), (
+        f"only {len(agreements)} scroll-initialised snapshots of {len(snaps)} "
+        f"({unscrolled} pre-scroll-init) -- the corpus or the precondition is wrong")
     # Several in-phase frames must match the framebuffer *exactly* — proving the
     # rasterizer is correct (not merely close) and VM-framebuffer-independent.
     assert exact >= 2, f"only {exact} exact frames; agreements={sorted(agreements)[:5]}"
@@ -113,4 +132,5 @@ def test_render_present_page_matches_framebuffer_on_corpus():
     # of sprite motion ahead of the last-presented B800), so the static background
     # still dominates: the median frame reproduces the playfield to >95%.
     median = sorted(agreements)[len(agreements) // 2]
-    assert median >= 0.95, f"median playfield agreement {median:.4f}"
+    assert median >= 0.95, (f"median playfield agreement {median:.4f} over "
+                            f"{len(agreements)} scroll-initialised snapshots")
