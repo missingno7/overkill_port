@@ -145,11 +145,35 @@ REUSES the frame (iteration), but the composed model emits it as a nested `_dyn`
 loop grows the Python stack instead of iterating. Proper handling needs a **trampoline**: a tail dispatch
 should return a "continue at X" signal that the dispatcher's own loop re-enters, rather than nesting.
 
-Caveat before building that: the entry state here is synthetic (`ds/es=0x25CC, ss=0x2000, sp=0x1000`
-over the boot image), so the ping-pong may also be a WRONG-MODE-SELECTOR artifact rather than a genuine
-loop. **Check which it is first** (capture CC04's real entry state, e.g. via the session-demo recorder)
-before designing the trampoline — a dos_re-level change to tail-transfer composition is not worth
-building on a synthetic-state artifact.
+**DIAGNOSED (2026-07-18) — it is a GENUINE loop, not a state artifact.** Instrumented `dyn_exec` and
+traced 173 dispatches before the limit: **all 173 register bundles are DISTINCT**, `cx` counts down
+(15 → 14 …) and `sp` drifts — the state advances every hop. So it is real iteration (a blitter looping
+over rows), and the composition is what breaks, not the input state.
+
+**ROOT CAUSE, precisely:** `CCC4`'s dispatch site `CC9E` resolves to **`1010:CCC4` — its own entry**.
+The routine re-enters itself through a computed `jmp`; on the machine that is a LOOP (the frame is
+reused), but the emitter models every dyn transfer as a NESTED `_dyn` CALL, so it recurses. Confirmed
+internal: `CC9E → CCC4` has `INTERNAL=True` against CCC4's own scanned instruction set.
+
+### THE FIX — internal dispatch becomes a BLOCK GOTO (not a trampoline)
+
+> A dyn tail dispatch whose observed targets ALL lie within the function's own scanned instruction set
+> is INTERNAL control flow: emit a computed block goto (`bb = <target block>; continue`) instead of a
+> nested `_dyn` call, with a fail-loud `else` for any unobserved target.
+
+The emitter ALREADY emits each function as a block state machine (`bb = N; continue`) and already
+computes the runtime target (`_dt`); it simply never uses that path for COMPUTED jumps — even `4E26`'s
+purely intra-function goto currently round-trips through `_dyn`. Why this beats a trampoline:
+semantically exact (a jmp inside the routine IS a goto — modelling it as a call was the error); zero
+stack growth so internal loops iterate freely; NO ABI/contract/caller changes (a trampoline needs a tail
+token threaded through every call site); generic across ports; fail-loud preserved.
+*Implementation subtlety:* the target must be a BLOCK HEAD for `bb = idx`, so the emitter must SPLIT a
+block when a dispatch lands mid-block (usually already a CFG boundary, but must be enforced).
+
+*Scope:* this fixes the self-loop and all intra-routine cases. `CCC4 ↔ CDA7` cross-dispatch is NOT
+internal to either scan (overlapping-but-distinct scans sharing 49 of CDA7's 62 instructions) — if
+recursion persists after the fix, the follow-on is to treat such overlapping scans as ONE routine with
+ALTERNATE ENTRIES, for which the DISPATCH tuple already carries an `_entry_ip` slot.
 
 Then wire it into `play_cpuless`, composing generated front-end + the native gameplay override.
 - SCOPING: do NOT run the boot bootstrap `254A:04D7` standalone (11 INT 21h C-startup calls — the boot
