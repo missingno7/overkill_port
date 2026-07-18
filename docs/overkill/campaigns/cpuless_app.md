@@ -124,12 +124,32 @@ immediately above DOES admit sp-varying functions ("the invoking site pops the f
 runtime sp, so even an sp-varying ISR is exact") — and `dyn_exec` already merges the callee's outputs,
 so sp threading does work mechanically.
 
-**Do NOT lift the exclusion wholesale.** DISPATCH serves BOTH near indirect CALLs and near indirect JMPs
-(tail dispatch). For a tail JMP an sp-varying arm is correct (its sp IS the dispatcher's exit sp); for a
-near CALL the caller would resume on a shifted stack unless it threads sp. The fix is a TARGETED
-eligibility: admit an sp_output callee as a dispatch target for tail-JMP sites (or thread sp explicitly
-for call sites), gated by a differential like the frameless one. **This is the next dos_re slice — the
-last thing between here and running the menu.**
+**RESOLVED (2026-07-18, dos_re `2679213`).** Investigation showed sp threading ALREADY exists end to
+end — the emitted dyn site passes `sp` into the bundle, `dyn_exec` merges the callee's outputs over it,
+and the site reads `sp = _do['sp']` back — so an `sp_output` callee is precisely the case where sp IS
+communicated. The exclusion was stale, not protective. The rule is now stated as the property it
+actually is: **eligible iff the callee's sp effect is COMMUNICATED** — zero, or returned via
+`sp_output`; still excluded when `sp_delta != 0 and not sp_output` (shifts sp without returning it, so
+`merged['sp']` is the stale input) or `ret_pop` / non-near `ret_kind`. Applied to promoted functions and
+overrides alike. No regressions (L1 48 PASS/0 DIVERGED, wall holds, dos_re 707).
+
+### NEXT FINDING: a tail-dispatch LOOP recurses (composition models a tail JMP as a nested call)
+
+With the arms dispatchable, `CC04` runs further and now hits **`RecursionError`**: `func_1010_ccc4` ↔
+`func_1010_cda7` mutually recurse (~37 frames each). They are alternate entries into the SAME shared
+CGA/Tandy blitter that tail-jump to each other.
+
+**Root cause is structural, and PRE-EXISTS this work** (it applies to the framed variant equally — the
+frameless capability only made more such functions reachable): a machine `jmp` is a TAIL transfer that
+REUSES the frame (iteration), but the composed model emits it as a nested `_dyn` CALL, so a tail-dispatch
+loop grows the Python stack instead of iterating. Proper handling needs a **trampoline**: a tail dispatch
+should return a "continue at X" signal that the dispatcher's own loop re-enters, rather than nesting.
+
+Caveat before building that: the entry state here is synthetic (`ds/es=0x25CC, ss=0x2000, sp=0x1000`
+over the boot image), so the ping-pong may also be a WRONG-MODE-SELECTOR artifact rather than a genuine
+loop. **Check which it is first** (capture CC04's real entry state, e.g. via the session-demo recorder)
+before designing the trampoline — a dos_re-level change to tail-transfer composition is not worth
+building on a synthetic-state artifact.
 
 Then wire it into `play_cpuless`, composing generated front-end + the native gameplay override.
 - SCOPING: do NOT run the boot bootstrap `254A:04D7` standalone (11 INT 21h C-startup calls — the boot
