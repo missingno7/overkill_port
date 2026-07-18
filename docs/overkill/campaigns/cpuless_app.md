@@ -331,3 +331,36 @@ manual composer models the same machine behaviour. Gated by
 
 **Still open (unchanged):** the menu's `bx` branch codes are undecoded, so we act on "the loop exited",
 not on WHICH menu action; level-load remains the manual side; `run_deep` remains an accommodation.
+
+## 2026-07-18 — FINDING: the env-wait frontier is not wired into our pipeline
+
+Investigating why the front-end loop is IDEMPOTENT (same frame + same ax/bx every iteration; no tick we
+tried — `DS:2324`, the 5F61 frame clock, the BIOS tick `0040:006C` — advances it) surfaced a correctness
+problem that matters more than the animation:
+
+**`1010:0679` and `1010:50C9` are PROMOTED into the committed corpus, although
+`artifacts/lift_keep_interpreted.txt` declares them the ENV-WAIT FRONTIER** — async spin-waits
+(`0679` = the gameplay frame timer wait; `50C9` = the front-end CRT retrace wait) where the recorded
+recovery fact says a plain lift *"freezes an iteration count that is really timing-dependent -- liftverify
+proves it DIVERGES against the interpreted oracle (2026-07-17e: 1010:0679 flagged DIVERGED)"*.
+`scripts/probe_vmless_cpuless.py` passes `--boundary-heads` but **never passes the keep-interpreted
+facts**, so the declared frontier is silently lifted. Neither function appears in the demo differential,
+so our gates never verified them either.
+
+The promoter already has the prescribed mechanism: `--boundary-heads` (tier 13) turns the head into an
+emitted `plat.boundary` observer — exactly what the env-wait note asks for ("modelled as an explicit
+scheduler-yield boundary in the standalone runtime").
+
+**Measured cost of applying it naively** (both addresses appended to the boundary-head facts):
+promotable **591 → 568 (−23)**, `contains-call` cascade **19 → 41**, `50C9` correctly becomes a boundary
+— but **`0679` stays promoted** (the head likely has to be the inner spin site, not the entry). So it
+half-fixes the problem while costing real coverage, and to be coherent the standalone runtime must also
+IMPLEMENT `plat.boundary` (advance the host's time base and resume), which does not exist yet.
+
+**Deliberately NOT applied** — reverted to 591/626. This is a proper slice, not a one-line flag:
+1. implement `plat.boundary` in `OverkillPlatform` (the scheduler yield: advance the tick/retrace, resume);
+2. declare the env-wait heads at the correct sites (verify `0679` actually leaves the promoted set);
+3. re-verify the differential + the demo lockstep, then accept the coverage change knowingly.
+
+This is also the likely reason the front-end cannot animate: its pacing wait is a frozen lift rather
+than a yield the host services.
