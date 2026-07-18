@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import builtins
 import importlib
+import sys
 
 #: The committed generated corpus -- runtime source, not a disposable artifact.
 RECOVERED_PKG = "overkill.cpuless_recovered"
@@ -128,6 +129,46 @@ def load_recovered(key: str):
             f"{key}: no recovered module ({name}) -- it (or a recovered callee) is on the "
             f"CPUless frontier; promote it or bind a native override.") from exc
     return getattr(mod, name)
+
+
+#: A tail dispatch is currently emitted as a NESTED `_dyn` call, so a tail-dispatch
+#: LOOP (the machine reuses the frame; we stack a Python frame per hop) grows the
+#: stack instead of iterating.  The loops are BOUNDED -- a blitter walking rows
+#: terminates -- so running them just needs headroom.  This is deliberately a
+#: RUNTIME ACCOMMODATION, not a fix: the correct repair is to emit an intra-routine
+#: dispatch as a block goto and a cross-routine tail cycle through a trampoline
+#: (see docs/overkill/campaigns/cpuless_app.md).  Until then, run the graph on a
+#: thread with a big stack -- raising the recursion limit alone would overflow the
+#: C stack and crash instead of raising.
+_DEEP_STACK_BYTES = 64 * 1024 * 1024      # 512MB is rejected on Windows; 64MB is portable
+_DEEP_RECURSION = 300_000
+
+
+def run_deep(fn, *args, **kwargs):
+    """Run ``fn`` on a thread with a large stack and a raised recursion limit, so a
+    bounded tail-dispatch loop completes instead of dying on Python's frame limit.
+    Result and exception are propagated to the caller unchanged."""
+    import threading
+
+    box: dict = {}
+
+    def _target():
+        sys.setrecursionlimit(_DEEP_RECURSION)
+        try:
+            box["value"] = fn(*args, **kwargs)
+        except BaseException as exc:            # noqa: BLE001 -- propagated verbatim
+            box["error"] = exc
+
+    prev = threading.stack_size(_DEEP_STACK_BYTES)
+    try:
+        t = threading.Thread(target=_target)
+        t.start()
+        t.join()
+    finally:
+        threading.stack_size(prev)
+    if "error" in box:
+        raise box["error"]
+    return box.get("value")
 
 
 def run_recovered(key: str, mem, plat=None, **regs):

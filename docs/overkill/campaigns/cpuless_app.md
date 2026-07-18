@@ -233,3 +233,20 @@ Then wire it into `play_cpuless`, composing generated front-end + the native gam
   composition + fail-loud (5 pass).
 - **2026-07-18** slice 1 DONE (e5fed92): corpus committed as runtime source; campaign opened; blueprint
   mapped from lemmings; corpus regenerated (561/626, walls HOLD).
+
+## 2026-07-18 — THE MENU LOOP RUNS AND RENDERS, CPUless
+
+`1010:CC04` (the front-end/menu loop) now **runs to completion standalone** under the armed wall via
+`run_recovered + OverkillPlatform`, and **writes 494 blocks into video memory (0xB8000)** — it draws
+the menu. Carrier-free throughout; no platform effect was even reached (the drawing is direct video-
+memory writes, which is why the port shim saw nothing).
+
+The unblock was `cpuless_host.run_deep()`: the cross-function tail-dispatch cycle
+(`312D→30B4→3103→306F→CCC4→CDA7`) is emitted as nested `_dyn` calls, so a BOUNDED blit loop grew the
+Python stack. Running it on a 64MB-stack thread with a raised recursion limit completes it. **This is a
+deliberate RUNTIME ACCOMMODATION, not the fix** — the correct repair remains: intra-routine dispatch as
+a block goto (landed upstream as `_LOCAL`/arm absorption) plus a TRAMPOLINE for cross-routine tail
+cycles. Recorded so it is never mistaken for a solution.
+
+**Next:** present that rendered video memory through play_native's renderer to get a VISIBLE native
+menu, then drive input into it.
