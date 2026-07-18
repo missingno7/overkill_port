@@ -104,3 +104,6 @@ artifacts/viewA_differential.txt
 
 # M3b ABI-recovered pipeline output (regeneratable: tools/contract_census.py + abi_promote.py)
 artifacts/abi/
+
+# verification ledgers (regeneratable: verify_cpuless.py --ledger)
+artifacts/verify_ledger_*.json

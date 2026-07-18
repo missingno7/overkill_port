@@ -256,6 +256,9 @@ def main(argv=None) -> int:
     ap.add_argument("--entries", default="", help="CS:IP,... or @file; default = all near-ret promoted")
     ap.add_argument("--trials", type=int, default=12)
     ap.add_argument("--limit", type=int, default=60)
+    ap.add_argument("--ledger", default="",
+                    help="write per-function verdicts here (JSON) so verification COVERAGE is "
+                         "auditable -- see scripts/cpuless_verification_coverage.py")
     ap.add_argument("--adapter-pkg", default="overkill.cpuless_adapters")
     args = ap.parse_args(argv)
 
@@ -285,6 +288,17 @@ def main(argv=None) -> int:
               f"{tally.get('SKIP',0)} skipped  (demo-driven, real states)")
         if diverged:
             print("DIVERGED:", " ".join(diverged))
+        # Persist the verdicts so VERIFICATION COVERAGE is auditable across demos.  "591 promoted,
+        # walls HOLD" reads as "591 verified" and is not: only the functions a demo actually reaches
+        # get a byte-exact differential.  cpuless_verification_coverage.py unions these ledgers.
+        if args.ledger:
+            import json as _json
+            led = Path(args.ledger)
+            led.parent.mkdir(parents=True, exist_ok=True)
+            led.write_text(_json.dumps({"demo": args.demo,
+                                        "verdicts": {k: v for k, (v, _d) in results.items()}},
+                                       indent=1), encoding="utf-8")
+            print(f"ledger -> {led}")
         return 1 if diverged else 0
 
     rt = load_overkill_snapshot(ROOT / "assets" / "OVERKILL", args.snapshot, game_root=ROOT / "assets")
