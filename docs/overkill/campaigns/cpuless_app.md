@@ -105,17 +105,52 @@ what must be byte-faithful.
 The standalone runner PLAYS gameplay carrier-free (`scripts/play_cpuless.py`). The remaining work is
 boot → title/menu → level-load, which converges on two enablers (neither a quick win, both needed for a
 visible native menu):
-- (a) the **video platform shim** — a `CPUlessPlatformRuntime`/`FailLoudPlatform` upgrade servicing the
-  front-end's INT 10h + video ports on the host framebuffer (makes the front-end RENDERABLE);
-- (b) the **tail-dispatch capability** (dos_re) — the `CC04` menu closure is 23/27 CPUless; its only
-  blockers are `CC4F/CCC4/CDA7` (makes the menu logic PROMOTABLE).
-Then wire the front-end into `play_cpuless` over the existing boot image
-(`artifacts/frontend_intro_snapshot/`), composing generated front-end + the native gameplay override.
+- (a) ▶ **IN PROGRESS — the video platform shim**: `OverkillPlatform` has the CGA/Tandy ports + INT 10h
+  AH=0Bh (oracle-verified). Grow it (more INT 10h AH values / INT 16h) as running the menu reveals what
+  it reaches — each one ported byte-faithfully against the dos_re `int10` oracle.
+- (b) ✅ **DONE (2026-07-18)** — the **tail-dispatch capability** (contributed to dos_re): `CC04` and all
+  its blockers `CC4F/CCC4/CDA7` are now promoted; the menu closure is fully CPUless.
+**RAN `CC04` standalone (2026-07-18)** over the boot image via `run_recovered + OverkillPlatform` under
+the wall. It got past the platform (no video effect reached yet) and failed loud on the NEXT precise
+blocker:
+
+> `UnknownDispatchTarget: dynamic dispatch to dyn 1010:CCC4: no recovered implementation`
+
+**Diagnosis — the frameless arms are promoted but NOT DISPATCHABLE.** `tools/cpuless_promote.py` (~line
+636) excludes a callee from the DISPATCH registry when `c.sp_output` (`reason = "sp-output" # needs sp
+threading`); the frameless tail-dispatch arms are precisely `sp_output=True` by construction, so they
+never enter the registry and `_dyn` cannot resolve them. Note the asymmetry: the HANDLERS (IRET) path
+immediately above DOES admit sp-varying functions ("the invoking site pops the frame at the MERGED
+runtime sp, so even an sp-varying ISR is exact") — and `dyn_exec` already merges the callee's outputs,
+so sp threading does work mechanically.
+
+**Do NOT lift the exclusion wholesale.** DISPATCH serves BOTH near indirect CALLs and near indirect JMPs
+(tail dispatch). For a tail JMP an sp-varying arm is correct (its sp IS the dispatcher's exit sp); for a
+near CALL the caller would resume on a shifted stack unless it threads sp. The fix is a TARGETED
+eligibility: admit an sp_output callee as a dispatch target for tail-JMP sites (or thread sp explicitly
+for call sites), gated by a differential like the frameless one. **This is the next dos_re slice — the
+last thing between here and running the menu.**
+
+Then wire it into `play_cpuless`, composing generated front-end + the native gameplay override.
 - SCOPING: do NOT run the boot bootstrap `254A:04D7` standalone (11 INT 21h C-startup calls — the boot
   image bypasses exactly that DOS surface).
 - later: `overkill/native/loader.py` (fine sys.modules aliasing for hot-leaf overrides, per ADR-2).
 
 ## Status log (newest first)
+- **2026-07-18** **MENU UNBLOCKED (4027159 + dos_re f771908):** contributed the **FRAMELESS stack-arg
+  TAIL DISPATCH** capability to dos_re — the dispatcher pushes args and tail-jumps with no bp frame, so
+  the framed-switch capability refused it; it now composes via a **runtime sp output** (the arm, resolved
+  through `_dyn`, returns its actual sp). **561→591/626 promotable (+30); the tail-dispatch frontier is
+  ELIMINATED (16→0); cascade 33→19. ALL menu functions promoted — `CC4F/CCC4/CDA7` and `CC04` (the menu
+  loop itself)**, plus nested `5827/587E` and intra-function gotos `4E26/AEBF`. 30 new corpus modules,
+  ZERO existing changed (purely additive). Walls HOLD; suite 1433.
+  *Verification, honestly:* the capability is proven BYTE-FOR-BYTE vs the interpreter by a synthetic
+  differential in dos_re; no regressions (L1 48 PASS/0 DIVERGED, cold-start 54 PASS/0 DIVERGED); but the
+  30 newly-promoted fns are **not yet demo-verified at real states** — no demo reaches the menu blitters,
+  so they get their byte-exact proof once the menu actually runs.
+  *Also arrived upstream:* a dos_re **CPUless OVERRIDE mechanism** (`tests/test_cpuless_override.py`,
+  `tools/cpuless_promote.py`) — directly relevant to ADR-2's manual-override half; evaluate it before
+  hand-rolling `overkill/native/loader.py`.
 - **2026-07-18** dos_re bumped 14fafab→6825851 (a3a9e58): FRAMED tail-dispatch + retf-N + leave-fusion +
   capture↔close fixpoint; corpus regenerated (243 modules), walls HOLD, suites green. **Did NOT unblock
   the menu:** OVERKILL's tail-dispatch fns are the FRAMELESS stack-arg variant (no bp frame), which the
