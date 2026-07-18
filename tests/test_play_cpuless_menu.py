@@ -37,7 +37,10 @@ def test_cpuless_menu_runs_and_draws():
 @pytest.mark.skipif(not BOOT_IMAGE.is_file(),
                     reason="no front-end boot image -- the CPUless chain run is artifact-gated")
 def test_cpuless_chain_menu_to_gameplay():
-    """THE JOIN: the generated front-end reports a selection and hands off to the gameplay half.
+    """THE JOIN: the generated front-end signals its exit and hands off to the gameplay half.
+
+    NB the exit is a FIRE-key break out of the attract/blueprint cycle, not a decoded menu
+    choice -- the loop writes no level/difficulty, so gameplay starts at the image default.
 
     Front-end = generated corpus, level-load + gameplay = the manual override (ADR-2), both under the
     armed wall in one process."""
@@ -47,7 +50,7 @@ def test_cpuless_chain_menu_to_gameplay():
          "--auto-select", "--play", "--seconds", "2"],
         capture_output=True, text=True, timeout=900, env=env)
     assert r.returncode == 0, f"chain failed:\nSTDOUT:{r.stdout}\nSTDERR:{r.stderr}"
-    assert "front-end SELECTED" in r.stdout, r.stdout
+    assert "front-end loop EXITED on fire" in r.stdout, r.stdout
     assert "handing off to the gameplay half" in r.stdout, r.stdout
     m = re.search(r"(\d+) gameplay frames", r.stdout)
     assert m and int(m.group(1)) > 0, f"gameplay did not run:\n{r.stdout}"

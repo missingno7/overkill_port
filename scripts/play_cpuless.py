@@ -124,11 +124,17 @@ def run_menu(scale: int = 3, seconds: float = 0.0, then_play: bool = False,
         if auto_select:                           # headless: press the select key ourselves
             img.wb(_DS, (_KEY_TABLE + _SELECT_SCANCODE) & 0xFFFF, 1)
         out = step()                              # re-run the front-end over the evolving image
-        if out.get("ax", 0xFFFF) == 0:            # the menu made a selection (observed: ax 9 -> 0)
+        # The CC04 loop returns ax=0 when the FIRE key is held (ax=9 while idling).  Per the front-end
+        # model that is the attract/blueprint cycle being broken out of -- NOT a decoded menu choice:
+        # the loop writes no level/difficulty (measured: 0xBEDA/0xBEDC keep their boot values), and the
+        # meaning of `bx` is not yet decoded into the menu's branches (start / instructions / ordering).
+        # So this is an EXIT signal we act on, and the level below is the boot default, not a selection.
+        if out.get("ax", 0xFFFF) == 0:
             level = img.rw(_DS, _LEVEL_CELL)
             difficulty = img.rw(_DS, _DIFFICULTY_CELL)
-            print(f"[cpuless] front-end SELECTED (ax=0, bx={out.get('bx', 0):#06x}) -- "
-                  f"level {level + 1}, difficulty {difficulty}", flush=True)
+            print(f"[cpuless] front-end loop EXITED on fire (ax=0, bx={out.get('bx', 0):#06x}); "
+                  f"level/difficulty are the image defaults ({level + 1}/{difficulty}) -- the menu's "
+                  f"own branch codes are not decoded yet", flush=True)
             display.close()
             if not then_play:
                 return 0

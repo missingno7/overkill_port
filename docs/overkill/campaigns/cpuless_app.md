@@ -307,3 +307,27 @@ what we lack manual code for".
 2. The menu's action code (`bx`) is not yet decoded into its branches (start / instructions / ordering /
    attract) — we act on "a selection happened", not on WHICH.
 3. `run_deep` is still a runtime accommodation for cross-routine tail cycles, not the trampoline fix.
+
+## 2026-07-18 — CORRECTION + a real cross-validation
+
+**Correction.** The previous entry claimed the front-end "SELECTED" a level on `ax=0`. That was wrong,
+and the repo's own front-end analysis caught it: run_status 2026-07-13 records the CC04 loop as
+*compose grid (CE97) → recipe reveal (CE5F+CC4F ×3) → repeat*, with **"nz 16827 at +5 == the VM's early
+frame"** — exactly the pixel count attributed to a "selection". Verified directly: the `ax=0` frame is
+**byte-identical to `compose_blueprint(mem, 5)`**, the blueprint intro at 5 cells revealed. It is a
+FIRE-key break out of the attract/blueprint cycle, not a decoded menu choice. The level/difficulty
+printed alongside it were the image's boot defaults (`0xBEDA`/`0xBEDC` are never written by the loop).
+`play_cpuless` now says what is actually true, and the chain test asserts the corrected wording.
+
+**The real result this uncovered — an independent CROSS-VALIDATION.** Two recoveries that share no code
+agree byte-for-byte on the same screen:
+- the GENERATED corpus (`1010:CC04` under the CPUless wall, drawing into B800), and
+- the HAND-RECOVERED composer (`native_video.blueprint.compose_blueprint`, reading the game's own
+  `DS:BD54` recipe, separately verified against the VM with zero under-draw).
+
+That is evidence for BOTH directions at once: the lifted front-end reproduces what the VM draws, and the
+manual composer models the same machine behaviour. Gated by
+`tests/test_cpuless_frontend_matches_native.py`.
+
+**Still open (unchanged):** the menu's `bx` branch codes are undecoded, so we act on "the loop exited",
+not on WHICH menu action; level-load remains the manual side; `run_deep` remains an accommodation.
