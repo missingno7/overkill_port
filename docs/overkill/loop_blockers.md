@@ -4,7 +4,7 @@ Open items the autonomous loop attempted but could not finish byte-exact. Do NOT
 re-attempt these in the loop; they need a reproduction trace and/or gameplay
 context. Each has the analysis already done so a human can pick up fast.
 
-## 2026-07-17 — PRE-EXISTING RED: test_native_page_raster median 0.9439 < 0.95 (corpus-drift, NOT a code regression)
+## 2026-07-18 — RESOLVED: test_native_page_raster median 0.9439 < 0.95 (it was a TEST-SAMPLING bug)
 
 `tests/test_native_page_raster.py::test_render_present_page_matches_framebuffer_on_corpus` fails:
 `assert median >= 0.95` gets `0.9439`. Confirmed pre-existing and orthogonal — it fails identically on
@@ -17,6 +17,20 @@ weaken the threshold to hide it; the fix is either re-tuning against a pinned co
 present-skew correction in the rasterizer — front-end-campaign work, not the CPUless/dos_re frontier.
 The 2026-07-17l tooling/doc commit is isolated from rendering (green in isolation) and neither
 introduces nor masks this red.
+
+**RESOLVED 2026-07-18 — and the 'corpus-drift' diagnosis above was WRONG.** The agreements are not
+uniformly-slightly-low (a mistuned threshold); they are BIMODAL: 22 snapshots sit at median 0.9662,
+while 14 collapse to median 0.6817 (min 0.1682). All 14 have `[234C] == 0` AND `[2350] == 0` — the
+level-start scroll init `1010:60AC` has not run, so the scroll cursor is still the bundle capture's
+zeros (the state whose 'first A6FE step wrapped it negative' was itself a fixed cold-seed BUG,
+run_status 2026-07-13; one capture even carries `A978=0xF0FF`). For those the `[9598]`/`[234C]` pair
+NEVER produced the B800 being compared against, so the agreement is undefined — not a rasterizer error.
+The test was sampling states where its own property does not hold.
+
+Fixed in `tests/test_native_page_raster.py`: the precondition (scroll initialised) is explicit and
+documented, skipped captures are COUNTED, and a new assertion keeps the surviving sample large
+(>= max(4, n/3)) so the filter can never silently empty the corpus. `exact >= 2` and the 0.95 median are
+UNCHANGED — the oracle was not weakened, its domain was made well-defined. Suite fully green: 1436/0.
 
 ## 2026-07-10 — _planet0_cue: the 23-handler stamp table DECODED (build data ready)
 
