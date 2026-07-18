@@ -189,6 +189,54 @@ def all_keys_release_wait(cpu: CPU8086) -> bool:
     return _all_keys_release_wait_spinning(cpu.mem, cpu.s.ds & 0xFFFF)
 
 
+# <overlay>:099B..09DF -- the overlay-segment MENU KEY WAIT: ten `cmp byte [flag],1 ; jz exit`
+# pairs (20 instructions, one per watched menu flag) that spin until the INT 9 ISR sets one of
+# them.  Like the menu waits above it contains no timer/retrace/presenter call, so it produces no
+# boundary and demo replay deadlocks there: the recorded keypress is gated on a frozen counter.
+# MEASURED at the wedge (frame 1174 of demo_coldspine_20260718_211150, parked 1F8F:09D3): the
+# signature matches, all ten flags read 0, the visited IP span is exactly 099B..09DF (20 distinct),
+# and the HEAD 099B is entered once per iteration (20 times in 400 steps) -- which is what makes
+# head-only firing valid for the frame verifier below.
+# Segment-agnostic on purpose: overlays are not pinned to one segment, so this is identified by its
+# code signature rather than by cs (scripts/play.py's interactive detector does the same, and now
+# delegates here).
+_OVERLAY_MENU_WAIT_HEAD = 0x099B
+_OVERLAY_MENU_WAIT_LAST = 0x09DF
+_OVERLAY_MENU_WAIT_SIG = bytes.fromhex("80 3e 0f 99 01 74 47")   # cmp [990F],1 ; jz +47
+_OVERLAY_MENU_FLAGS = (0x990F, 0x990C, 0x990D, 0x98D2, 0x9911,
+                       0x9914, 0x9915, 0x98FD, 0x98E0, 0x98C5)
+
+
+def _overlay_menu_key_wait_spinning(mem, ds: int) -> bool:
+    """True while NO watched menu flag is set -- i.e. the loop is genuinely waiting."""
+    return all(mem.rb(ds, off) != 1 for off in _OVERLAY_MENU_FLAGS)
+
+
+def _overlay_menu_key_wait_at(cpu: CPU8086, *, head_only: bool) -> bool:
+    """Shared body for the coarse and head-only forms (one definition, two samplers)."""
+    cs, ip = cpu.addr()
+    if head_only:
+        if ip != _OVERLAY_MENU_WAIT_HEAD:
+            return False
+    elif not (_OVERLAY_MENU_WAIT_HEAD <= ip <= _OVERLAY_MENU_WAIT_LAST):
+        return False
+    mem = cpu.mem
+    if mem.block(cs, _OVERLAY_MENU_WAIT_HEAD, 7) != _OVERLAY_MENU_WAIT_SIG:
+        return False
+    return _overlay_menu_key_wait_spinning(mem, cpu.s.ds & 0xFFFF)
+
+
+def overlay_menu_key_wait(cpu: CPU8086) -> bool:
+    """True while parked anywhere in the overlay menu key wait (coarse).
+
+    The coarse counterpart of the head-only entry in :func:`frame_verify_input_wait`, exactly as
+    :func:`all_keys_release_wait` pairs with its own head-only check: play.py samples at chunk
+    boundaries and can be parked on any instruction of the loop, while the frame verifier checks
+    every step and must stop both sides at the identical instruction.
+    """
+    return _overlay_menu_key_wait_at(cpu, head_only=False)
+
+
 # 1010:5797 -- the REDEFINE-KEYS per-slot capture: two boundary-less busy-waits with no
 # timer/retrace/present in between, so a demo replaying the redefine screen deadlocks unless each is
 # treated as a boundary where the recorded press/release is pumped one event at a time.
@@ -286,6 +334,13 @@ def frame_verify_input_wait(cpu: CPU8086) -> tuple[str, Addr] | None:
     cs, ip = cpu.addr()
     mem = cpu.mem
     ds = cpu.s.ds & 0xFFFF
+    # The overlay-segment MENU KEY wait: fire only at its 099B head (every-step lockstep).
+    # ORDER MATTERS -- this must be checked BEFORE the all-keys-released branch below, which
+    # `return None`s for every IP in its segment other than 024B and would otherwise SHADOW this
+    # one entirely (that shadowing is exactly why demo replay wedged at 1F8F:09D3).  Kept
+    # segment-agnostic (signature-identified), so it also composes if an overlay loads elsewhere.
+    if _overlay_menu_key_wait_at(cpu, head_only=True):
+        return "wait", (cs, _OVERLAY_MENU_WAIT_HEAD)
     # The overlay-segment all-keys-released wait: fire only at its 024B head
     # (every-step lockstep, same as the selector idle loop below).
     if cs == _ALL_KEYS_RELEASE_WAIT_CS:
@@ -351,7 +406,8 @@ def pump_demo_frame(demo, boundary_n: int, runtimes: Sequence, cpu: CPU8086) -> 
     approximate selector replacement hooks are removed) so this sub-frame delivery
     keeps the verifier's reference and candidate in lockstep.
     """
-    if title_fire_release_wait(cpu) or all_keys_release_wait(cpu) or redefine_key_wait(cpu):
+    if title_fire_release_wait(cpu) or all_keys_release_wait(cpu) or redefine_key_wait(cpu) \
+            or overlay_menu_key_wait(cpu):
         return boundary_n, demo.apply_to_runtimes(boundary_n, runtimes, single=True)
     if _on_input_select_screen(cpu):
         return boundary_n, 0

@@ -72,7 +72,7 @@ from overkill.coverage import (
 from overkill.sounds import AsyncTimerIrqDriver, OVERKILL_PIT_HZ
 from overkill.launch import build_command_tail
 from dos_re.input_demo import InputDemoPlayback, InputDemoRecorder, dos_key_value
-from overkill.input_waits import pump_demo_frame, title_fire_release_wait
+from overkill.input_waits import overlay_menu_key_wait, pump_demo_frame, title_fire_release_wait
 from render_frame import CGA_PALETTES
 
 CGA_PRESENT_HOOK = (0x1010, 0x447B)  # mode-0 CGA frame-present blit
@@ -978,16 +978,14 @@ def main(argv: list[str] | None = None) -> int:
 
 
     def is_overlay_menu_key_wait() -> bool:
-        cs, ip = rt.cpu.addr()
-        if not (0x099B <= ip <= 0x09DF):
-            return False
-        mem = rt.cpu.mem
-        if mem.block(cs, 0x099B, 7) != bytes.fromhex("80 3e 0f 99 01 74 47"):
-            return False
-        ds = rt.cpu.s.ds & 0xFFFF
-        watched = (0x990F, 0x990C, 0x990D, 0x98D2, 0x9911,
-                   0x9914, 0x9915, 0x98FD, 0x98E0, 0x98C5)
-        return all(mem.rb(ds, off) != 1 for off in watched)
+        """Detect the overlay-segment menu key wait (099B..09DF).
+
+        Shared with the frame verifier via overkill.input_waits so the same boundary-less wait loop
+        is handled identically across interactive play, --verify-hooks and --verify-frames -- the
+        same reason is_title_fire_release_wait delegates.  It was NOT shared before, so headless
+        demo replay wedged here (FRAME VERIFY TIMEOUT at 1F8F:09D3) while interactive play was fine.
+        """
+        return overlay_menu_key_wait(rt.cpu)
 
     def is_gameplay_exit_confirm_wait() -> bool:
         """Detect the in-game Esc "SURE ?" confirmation key loop.
