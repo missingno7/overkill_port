@@ -56,11 +56,30 @@ x 68..137 across 8 distinct byte columns. The oracle draws `0C`/`FC`/`C0` (brigh
 **the candidate draws nothing at all (`00`) there.** CRTC registers and the 3Dx video ports agree, so
 it is not a page-flip or a mode divergence -- something the intro draws at that point is missing.
 
-**The FIRST thing to check, and do not skip it:** whether the candidate frame 883 equals the oracle
-frame 882. The shape -- oracle draws, candidate blank, everything else identical for 882 frames -- is
-equally consistent with a ONE-FRAME LAG in when the element appears as with a missing draw, and those
-are completely different investigations. Compare candidate[883] against oracle[882] before localizing
-anything inside the corpus.
+**ANSWERED: it is NOT a frame-alignment problem.** The shape -- oracle draws, candidate blank,
+everything identical for 882 frames -- is equally consistent with a one-frame lag as with a missing
+draw, so that was measured before localizing anything. Cross-correlating the two capture sequences at
+shifts k = -2..+2 over frames 870..895:
+
+| shift | first mismatch |
+|-------|----------------|
+| **k = 0** | **frame 882** |
+| k = +1 | frame 870 |
+| k = +2 | frame 870 |
+| k = -1 | frame 870 |
+| k = -2 | frame 870 |
+
+`k = 0` is strictly the best alignment -- every shift makes the mismatch EARLIER -- so the frame cut
+agrees on both sides and the divergence is genuine CONTENT.
+
+**And it does not self-correct; it grows.** Differing B800 bytes per frame: 881 -> 0, 882 -> 52,
+883 -> 52, 884 -> 133, then a persistent ~113-119, with CRTC and video ports still agreeing
+throughout. That is a real missing draw whose consequences accumulate -- precisely the class of
+defect a re-seeding gate cannot see, and the reason this harness runs the candidate continuously.
+
+So the next task is to find what the intro draws at rows 59..86 / x 68..137 around frame 882 that the
+corpus does not. Start from the oracle: trap the writes into that B800 region on the interpreted side
+in the frames just before 882 and name the routine doing them.
 
 **NOT YET: demo input replay.** Both 2026-07-18 demos start at `1010:58F4`, which is not an entry
 point -- it is the `pop cx` immediately after `call 50C9` inside `func_1010_58df`, block 2 of that
