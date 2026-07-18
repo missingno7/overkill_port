@@ -2169,3 +2169,22 @@ spinning guards exist to prevent. The correct predicate models the program:
 **STILL TO MEASURE before implementing:** the `09E9` handler (taken by 990F/990C/990D/98D2) was NOT
 traced -- only `0A03` was, because 98FD is the flag that happened to be set. Disassemble `1F8F:09E9`
 and confirm its loop-back condition before writing the second clause; do not assume it mirrors 0A03.
+
+**DATA CONFIRMATION of the 0A03 read (independent of the instruction trace).** Dumping the menu
+table at the wedge:
+
+    [BED4] index = 4    [BED6] base = BE92
+      idx 3 -> [BE98] = 1350
+      idx 4 -> [BE9A] = 135F     <-- the cursor
+      idx 5 -> [BE9C] = FFFF     <-- the NEXT entry IS the terminator
+      idx 6 -> [BE9E] = 0001
+
+which is exactly what `mov bx,[BED4] ; inc bx ; shl bx,1 ; cmp [bx+si],FFFFh` computes:
+bx = (4+1)*2 = 0x0A, si = BE92, `[BE92+0A]` = `[BE9C]` = FFFF -> `jz 099B` taken. **The menu cursor
+is on the LAST entry and the held key is trying to move past the end**, which the terminator check
+refuses -- so it spins for as long as the key is held. Control flow and data agree.
+
+**API TRAP, so nobody loses a 4-minute run to it:** `decode_one(mem, cs, off)` FAILS --
+"decode_one() takes 2 positional arguments but 3 were given". Check the signature in
+`dos_re/lift/decode.py` before using it (scripts/lindis.py is the working caller to copy). The 09E9
+handler is consequently STILL UNMEASURED -- the run reached the wedge but the decode call raised.
