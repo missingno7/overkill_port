@@ -420,6 +420,54 @@ plausible coverage story survived one measurement and died on the second — the
 promotion count that looked like progress while growing the UNPROVEN surface.
 
 
+## 2026-07-18n — THE STITCH WAS UNSOUND: both skyroads bypass paths were present here
+
+Owner relayed skyroads_port's hard-won pitfalls. The first one describes `overkill/cpuless_overrides.py`
+exactly, so it was checked rather than assumed — and **both bypasses were real in the code shipped
+earlier this session**. Two failing tests were written first, then the fix.
+
+| bypass | why the shadow misses it |
+|---|---|
+| a caller that ALREADY imported the callee | `from ...func_1010_0679 import func_1010_0679` binds a DIRECT reference; a later `sys.modules` shadow cannot reach it |
+| a WARMED dynamic-dispatch cache | `_dyncall._cache` memoizes `(kind, key) -> callable` on first use, so indirect transfers keep serving the generated body |
+
+Both are SILENT — the override simply never runs and nothing reports it, which is the worst failure
+mode a verification seam can have. The old tests passed only because they imported the corpus AFTER
+installing, i.e. they tested the favourable order and nothing else.
+
+Fixed: `install_overrides` now retro-patches every already-imported corpus module holding the name,
+and clears `_dyncall`'s cache; `uninstall_overrides` restores the retro-patched bindings (otherwise a
+torn-down override lives on in the callers it was patched into). Tests assert installation-order
+independence in both directions. Suite 1454.
+
+**A bug the fix itself introduced, caught by an existing test:** the first retro-patch was too broad
+and rebound the ORACLE copy (`...__generated`, the alias `generated()` loads so an override can
+delegate to the autolifted body). That would have made the differential compare the override against
+ITSELF while still passing. `test_generated_stays_reachable_as_its_own_oracle` caught it immediately —
+a good argument for keeping the oracle assertion even though it looks tautological.
+
+**The module docstring carried a now-false claim** ("dynamic transfers ... the same shadow serves those
+too -- no separate patch needed") and has been corrected in place, with the skyroads provenance noted.
+
+### The other pitfalls, checked against this port
+
+* **"Do not trust function-entry counters"** — never built any here; the equivalent trap was
+  `--observed`, where a plausible coverage story survived one measurement and died on the second
+  (2026-07-18m). Same lesson, different instrument.
+* **"Virtual time is part of the contract"** — already the recorded blocker on any island: the
+  measured-cost requirement is why no `C679`/`5559` body was written, and the `island` virtual-time
+  kind is documented as NOT gate-admissible.
+* **"Compare only observable outputs"** — the `1010:0679` override delegates to the generated body
+  precisely so the returned flags/cost are the generated ones and cannot drift into a private notion
+  of "result".
+* **"Attach replacements only at real joints"** — matches the measured result that four correct
+  islands promote MORE than ten (2026-07-18g), and that host-created flow (`--no-title`, `--level`,
+  the `_run_title_menu` loops) is FLOW the skeleton supersedes rather than something to re-sew.
+* **"A passing local island is not proof of the whole path"** — the standing claim here stays narrow:
+  the boot root runs on `DOSMachine` for THIS image; the cold-start differential over the two spine
+  demos remains the authority and has NOT been run, because `96C8` is still unpromoted.
+
+
 ## 2026-07-18l — the ATTRACT demo, and the NON-LOCAL-EXIT design (ready to implement)
 
 Owner supplied a second spine demo, `artifacts/demos/demo_play_tandy_20260718_135013`: **11257

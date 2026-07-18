@@ -10,11 +10,23 @@ WHY THIS SHAPE (the constraint that picked it):
 
     A generated module binds its callees AT IMPORT TIME with direct imports --
         from overkill.cpuless_recovered.func_1010_cc4f import func_1010_cc4f
-    -- so there is no per-call resolver to hook.  The only seam is the MODULE OBJECT, and it only
-    works if the override is installed BEFORE any dependent imports it.  Hence
-    :func:`install_overrides` runs ahead of the corpus load and shadows ``sys.modules`` entries.
-    (Dynamic transfers additionally route through ``_dyncall`` -> ``DISPATCH``, which imports by
-    module name, so the same shadow serves those too -- no separate patch needed.)
+    -- so there is no per-call resolver to hook.  The only seam is the MODULE OBJECT, and
+    :func:`install_overrides` shadows ``sys.modules`` entries ahead of the corpus load.
+
+    A ``sys.modules`` shadow ALONE IS NOT ENOUGH, and both gaps are silent -- the override simply
+    never runs, with nothing reporting it.  (Carried over from skyroads_port, which hit both; the
+    corrected claim replaces an earlier note here that said dynamic transfers needed "no separate
+    patch".)  So installation also:
+
+      * RETRO-PATCHES already-imported callers.  A module that already ran
+        ``from ...func_1010_0679 import func_1010_0679`` holds a direct reference no shadow can
+        reach.  Originals are recorded so teardown restores them.
+      * CLEARS ``_dyncall``'s resolution cache.  The dispatch registry memoizes
+        ``(kind, key) -> callable`` on first use, so a cache warmed before the install keeps serving
+        the generated body for every INDIRECT transfer -- an override that applies to direct calls
+        only is a split-brain seam, worse than no seam.
+
+    Consequence: installation order must not matter, and the tests assert exactly that.
 
 INVARIANTS:
 
@@ -49,6 +61,10 @@ _CS = 0x1010
 #: The timer-tick flag the INT 8 handler sets (`1010:066C` does ``inc byte [066B]``) and the
 #: `1010:0679` env-wait spins on.
 _TICK_FLAG = 0x66B
+
+
+#: (module, attr, original) for every retro-patched binding, so teardown restores the corpus.
+_PATCHED: "list" = []
 
 
 def module_name(addr: str) -> str:
@@ -141,17 +157,66 @@ def install_overrides(plat, addrs=None) -> "list[str]":
                 f"override {addr} has no generated module ({name}) -- the corpus does not contain "
                 f"that address; fix or drop the OVERRIDES entry")
         fn = OVERRIDES[addr](plat)
+        attr = func_name(addr)
         shadow = types.ModuleType(name)
         shadow._OVERRIDE_SHADOW = True
         shadow._OVERRIDE_ADDR = addr
-        setattr(shadow, func_name(addr), fn)
+        setattr(shadow, attr, fn)
         sys.modules[name] = shadow
+        _retro_patch(attr, fn, skip=name)
         installed.append(addr)
+    _clear_dispatch_cache()
     return installed
 
 
+def _retro_patch(attr: str, fn, *, skip: str) -> None:
+    """Rebind ``attr`` to ``fn`` in every ALREADY-IMPORTED corpus module that holds it.
+
+    A ``sys.modules`` shadow only affects imports that happen AFTER it is installed. A generated
+    module that already ran ``from ...func_1010_0679 import func_1010_0679`` holds a DIRECT reference
+    the shadow can never reach, so the override silently never runs for that caller -- the worst
+    failure mode a verification seam can have, because nothing reports it.
+
+    The original binding is recorded so :func:`uninstall_overrides` can put it back; otherwise a
+    teardown would leave the corpus permanently patched."""
+    for modname, mod in list(sys.modules.items()):
+        if modname == skip or not modname.startswith(RECOVERED_PKG + "."):
+            continue
+        # Never patch a shadow, and never patch an ORACLE copy: `generated()` loads the autolifted
+        # module under a `__generated` alias precisely so the override can delegate to it, and
+        # rebinding that would make the oracle return the override -- silently turning the
+        # differential into a comparison of the override against itself.
+        if getattr(mod, "_OVERRIDE_SHADOW", False) or modname.endswith("__generated"):
+            continue
+        current = getattr(mod, attr, None)
+        if current is None or current is fn:
+            continue
+        _PATCHED.append((mod, attr, current))
+        setattr(mod, attr, fn)
+
+
+def _clear_dispatch_cache() -> None:
+    """Drop ``_dyncall``'s memoized resolutions.
+
+    The dynamic-dispatch registry caches ``(kind, key) -> resolved callable`` on first use. A cache
+    warmed BEFORE an override is installed keeps serving the generated body for every indirect
+    transfer, so the override would apply to direct calls only -- a split-brain seam that is worse
+    than no seam at all."""
+    dyn = sys.modules.get(f"{RECOVERED_PKG}._dyncall")
+    cache = getattr(dyn, "_cache", None)
+    if cache is not None:
+        cache.clear()
+
+
 def uninstall_overrides() -> None:
-    """Drop every installed shadow (and any oracle copies) so the next load is pure generated code."""
+    """Drop every installed shadow (and any oracle copies) so the next load is pure generated code.
+
+    Also RESTORES every retro-patched binding: without that, a torn-down override would live on in
+    the callers it was patched into, and the corpus would silently stay overridden."""
+    while _PATCHED:
+        mod, attr, original = _PATCHED.pop()
+        setattr(mod, attr, original)
     for name in [n for n, m in list(sys.modules.items())
                  if getattr(m, "_OVERRIDE_SHADOW", False) or n.endswith("__generated")]:
         del sys.modules[name]
+    _clear_dispatch_cache()

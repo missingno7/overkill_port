@@ -108,3 +108,55 @@ def test_no_yield_when_the_wait_would_not_have_blocked():
 def test_every_override_names_an_address_the_corpus_actually_contains():
     """The ratchet against corpus regeneration silently orphaning a manual patch."""
     ov.install_overrides(_Plat())               # raises LookupError if any entry is stale
+
+
+# ---------------------------------------------------------------------------------------------------
+# INSTALLATION-ORDER INDEPENDENCE.  Carried over from skyroads_port, which found that a sys.modules
+# shadow silently misses calls in two ways: a caller that ALREADY imported the callee holds a direct
+# reference the shadow never touches, and the dynamic-dispatch registry CACHES resolved functions, so
+# a cache populated before the install keeps serving the generated body.  Both are silent -- the
+# override simply never runs -- which is the worst failure mode a verification seam can have.
+# ---------------------------------------------------------------------------------------------------
+
+def test_override_reaches_a_caller_that_already_imported_the_callee():
+    """The realistic order: something imported the corpus before overrides were installed."""
+    import importlib
+
+    caller = importlib.import_module("overkill.cpuless_recovered.func_1010_d007")
+    generated = caller.func_1010_0679                      # bound by `from ... import ...`
+
+    ov.install_overrides(_Plat())
+    override = getattr(sys.modules["overkill.cpuless_recovered.func_1010_0679"], "func_1010_0679")
+
+    assert caller.func_1010_0679 is not generated, (
+        "the caller still holds the GENERATED function: a sys.modules shadow cannot reach a name "
+        "already bound by `from ... import ...`, so the override silently never runs")
+    assert caller.func_1010_0679 is override
+
+
+def test_override_reaches_a_cached_dynamic_dispatch():
+    """`_dyncall` memoizes resolved targets; a cache warmed before install would bypass overrides."""
+    import importlib
+
+    dyn = importlib.import_module("overkill.cpuless_recovered._dyncall")
+    dyn._cache[("DISPATCH", "1010:0679")] = "STALE-PRE-INSTALL-ENTRY"
+
+    ov.install_overrides(_Plat())
+
+    assert ("DISPATCH", "1010:0679") not in dyn._cache, (
+        "the dynamic-dispatch cache still holds a pre-install entry, so indirect transfers keep "
+        "reaching the generated body after an override is installed")
+
+
+def test_uninstall_restores_retro_patched_callers():
+    """Teardown must undo the retro-patch too, or a torn-down override lives on in the callers it
+    was patched into and the corpus stays silently overridden."""
+    import importlib
+
+    caller = importlib.import_module("overkill.cpuless_recovered.func_1010_d007")
+    generated = caller.func_1010_0679
+
+    ov.install_overrides(_Plat())
+    assert caller.func_1010_0679 is not generated
+    ov.uninstall_overrides()
+    assert caller.func_1010_0679 is generated, "uninstall must put the generated function back"
