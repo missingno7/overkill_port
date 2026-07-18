@@ -2188,3 +2188,36 @@ refuses -- so it spins for as long as the key is held. Control flow and data agr
 "decode_one() takes 2 positional arguments but 3 were given". Check the signature in
 `dos_re/lift/decode.py` before using it (scripts/lindis.py is the working caller to copy). The 09E9
 handler is consequently STILL UNMEASURED -- the run reached the wedge but the decode call raised.
+
+### 2026-07-18r — RESOLVED: demo replay completes, and classes 4-5 are now MEASURED
+
+The overlay-menu wedges are gone (`a3a8640`). `demo_coldspine_20260718_211150` replays end to end
+through the frame verifier: **frames=2500, applied_events=133** (all of them), no wedge. Frontier
+history: 1174 -> 1236 -> 1296 -> full run.
+
+**THE INPUT-DELIVERED HOST-SPEED A/B, which is what upgrades the `is_*_wait()` class from a
+code-reading claim to a measurement** (the earlier 18m A/B could not exercise it -- that window had
+no input, and this is precisely where the wait detectors live). Three arms, identical demo, differing
+only in host speed:
+
+    FINAL frames=2500 boundaries=1703 {retrace 1532, timer 171} applied_events=133 elapsed= 50.6s
+    FINAL frames=2500 boundaries=1703 {retrace 1532, timer 171} applied_events=133 elapsed= 58.5s
+    FINAL frames=2500 boundaries=1703 {retrace 1532, timer 171} applied_events=133 elapsed=134.9s
+    STREAM SHA1 = 22c3ca967709dd8c8af0442e8edcdc428f1b153f   (ALL THREE IDENTICAL)
+
+A **2.7x wall-clock spread** yields a byte-identical boundary stream WITH all 133 events delivered
+through the wait detectors. So the determinism result now covers the input path, not just the
+input-free attract path.
+
+**STATED NARROWLY.** This is the RECORDER-rule boundary stream on the REFERENCE (interpreted) side
+under the frame verifier. It is not the CPUless differential, and it is not a claim that the
+candidate corpus matches -- steps 3-5 (clock adoption at `boundary - 410`, delivery through the
+recovered INT 09h ISR, and the spine run's earliest divergence) are still open.
+
+**THE DEEPER ISSUE, recorded as asked.** A frozen boundary carrying BOTH a press and its release
+means the release can only ever be delivered on a LATER boundary than the press, because
+`apply_to_runtimes(single=True)` delivers one event per call and the index is monotonic. That is
+FINE here -- the overlay loop wants the release eventually, not at a specific index -- and it is why
+the predicate fix was sufficient. But if a case ever appears that needs both delivered at the SAME
+index, the EVENT DELIVERY MODEL is what must change, not the predicate: no wait predicate can
+deliver two events at one boundary.

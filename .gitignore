@@ -73,6 +73,9 @@ artifacts/boot_init_snapshot/
 artifacts/boot_lifts/
 artifacts/*.wav
 artifacts/frontend_intro_snapshot/
+# the overlay-menu wedge image (1F8F:09A2), for disassembling the menu waits with
+# scripts/lindis.py -- large game-derived binary, recreate rather than track
+artifacts/overlay_menu_wedge_snapshot/
 artifacts/intro_frame_dump/
 artifacts/idle_boot_capture*/
 
