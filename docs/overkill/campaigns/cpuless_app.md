@@ -13,6 +13,88 @@
 > `artifacts/boot_entry_snapshot` with `steps=0`. The cold root the CPUless corpus now actually
 > drives is the game top level `1010:96C8`, over the snapshot recorded at it.
 
+## 2026-07-18i -- ROOT CAUSE of the frame-882 "missing draw": dos_re DROPS A MANUFACTURED RETURN
+
+The frame-882 video divergence is **not** where the corpus first goes wrong, and it is **not** a
+drawing bug. It is the visible tail of a dos_re **soundness bug** in `emit_cpuless`: the
+`push <addr> ; jmp <indirect>` computed-call idiom is emitted as a TAIL transfer, so the pushed
+continuation is written to the guest stack and then silently abandoned. Everything below is measured.
+
+### The chain, each link measured, in the order it was measured
+
+1. **The pixels come from a blit, not a draw.** A memory write watcher over B800 during frame 882
+   (UNGATED first: *every* B800 write, grouped by writing cs:ip) reports **20400 byte-writes from
+   exactly 2 instructions**; all **980** rectangle bytes come from `1010:336D` (`rep movsw`, in the
+   full-screen blit at `1010:3354`). So the divergence originates in the blit SOURCE buffer.
+2. **Back through the blit.** Mapping each divergent B800 byte to its source cell named 13 unrolled
+   `stosw` sites in `1010:2FB6`, the masked glyph blitter. Two mapping controls FAILED LOUD first and
+   were both real: `si` is not `ds:[234C]` read at frame start (measured live from the loop top
+   instead), and the source window is REWRITTEN AFTER the blit inside the same frame (2120 of 4240
+   bytes), so it must be sampled AT BLIT TIME. With both fixed the control reads **52/52 mapped, 0
+   value mismatches**.
+3. **The blitter is NOT missing.** Oracle 521 entries to `2FB6`, candidate 517, and the per-frame
+   counts are **identical on every frame through 881**. Frame 882: 17 vs 13. So the drawing code is
+   fine and something upstream changed what there was to draw.
+4. **The observable was too narrow.** Widening to the whole 64KB DGROUP moves the frontier:
+   **the first real state divergence is frame 870**, ONE byte, `ds:2F14` (oracle `00`, corpus `01`).
+   (Excluded, each for a stated reason and each still counted: dead stack below `sp`, and
+   `ds:[0054]`/`ds:[BF00]`, the documented 2-bit INT8 tick counters, which differ from frame 0 by
+   IRQ PHASE because the harness delivers IRQs before the oracle's run-to-cut and the driver delivers
+   them after `present`.)
+5. **Who writes it.** Oracle writes `ds:2F14 = 0` at frame 870 from `1010:BD17`
+   (`mov ss:[bp+0],0000h`) -- the object DESTRUCTOR, whose `[bp+0] == 0` is exactly the liveness test
+   the draw loop at `1010:A87C` checks. The candidate never makes that write. So the candidate keeps
+   an object alive that the original destroys; the 52 pixels are a downstream consequence.
+6. **The path in.** Tracing every executed cs:ip in frame 870:
+   `AA2B -> EFAE -> AED8 -> AF0B -> B250 -> B2A3 -> AD5A -> AD66 -> BD17`.
+   The decision is `AD5A: mov ax,[A278] ; add ss:[bp+2],ax ; cmp ss:[bp+2],8 ; jnb ; jmp BD17`
+   -- an off-screen bounds check that destroys the object.
+7. **Which half the candidate runs.** Watching `ds:2F16` (the object's `[bp+2]`) on both sides:
+   both run the MOVEMENT (`1010:AF0F` / `func_1010_af0b`, y `08 -> 00` at frame 870, and identically
+   for every frame before). Only the oracle then runs the `AD5A` block. The candidate **never
+   executes `AD5A` in any frame of the run** -- oracle 12 writes from `1010:AD60`, candidate 0.
+   It was invisible until frame 870 only because `ds:[A278]` is 0, so `add ss:[bp+2],ax` is a
+   same-value write that changes no state; the omission first MATTERS when the threshold is crossed.
+
+### The defect
+
+    1010:AEE0  mov ax,B250h
+    1010:AEE3  push ax            ; MANUFACTURED return address
+    1010:AEE4  mov bx,ss:[bp+6]
+    1010:AEE7  shl bx,1
+    1010:AEE9  jmp cs:[bx-20754]  ; direction table; each arm ends in `ret near`
+
+The arm's `ret` resumes at `B250`, which falls through to `B2A3 -> AD5A`: the bounds check. The
+generated `func_1010_aed8` block 24 pushes `0xB250` faithfully (`mem.ww(ss, sp, ax)`), dispatches the
+arm through `_dyn`, and then **`break`s** -- the function returns and `B250` is never executed.
+
+`dos_re/lift/emit_cpuless.py` states the false assumption in its own comment at the `_is_dyn` JMP
+path: *"dynamic TAIL: the dispatched callee's return IS this function's exit (its ret pops our
+caller's frame)."* That holds only if the block pushed nothing. **For a near indirect JMP the
+callee's `ret` resumes at whatever is on top of the stack**; if the block pushed a word that is still
+on top, that word IS the resume point. This is general x86 (dispatch-with-return), not an OVERKILL
+quirk -- and it fails SILENTLY rather than refusing, which is the serious kind.
+
+### The fix, specified (NOT YET IMPLEMENTED -- see loop_blockers.md)
+
+In the `_is_dyn` / `JMP_IND` emit path, compute the block's net stack delta before the jmp:
+
+* delta 0 -> the current TAIL form, unchanged.
+* delta -2 with a statically-known pushed value that is a block address in THIS function ->
+  emit the CALL form that already exists for `CALL_IND`: after `_dyn` returns, `sp = (sp + 2)` and
+  `bb = bb_of[pushed]; continue` instead of `break`. The `_LOCAL` fast path must be SUPPRESSED in
+  this case: an intra-function landing cannot express "this arm's `ret` resumes at B250".
+* delta -2 with an unknown value, or an address not in this function -> **REFUSE loudly**. Today
+  this case silently mis-executes.
+
+### Frontier
+
+**Frame 870**, one byte, `ds:2F14` -- moved back from the previously reported 882. Frames 0..869 of
+the cold-start differential are byte-exact in B800 + CRTC + 3Dx **and** in DGROUP (modulo the two
+stated exclusions). Claimed narrowly: for this cold snapshot, this frame model, these 890 frames.
+
+Reproductions for every step above are in `docs/overkill/loop_blockers.md`.
+
 ## 2026-07-18f -- THE SPINE RUNS COLD, AND 882 FRAMES ARE BYTE-EXACT
 
 The milestone question was whether OVERKILL can run as a complete CPUless game driven by the

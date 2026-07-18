@@ -1,5 +1,60 @@
 # Loop blockers — divergences/targets that need the user (or better tooling)
 
+## 2026-07-18 — OPEN: dos_re `emit_cpuless` drops a MANUFACTURED RETURN (`push addr ; jmp indirect`)
+
+**Not attempted-and-failed — diagnosed and specified, deliberately not implemented.** The fix is a
+change to the shared `dos_re` lifter that cannot be landed without a full corpus regeneration
+(`scripts/probe_vmless_cpuless.py`), both suites, and a re-run of the 890-frame differential. Landing
+it half-validated on a branch other agents share is worse than leaving it recorded.
+
+**Defect.** For a near indirect JMP, `dos_re/lift/emit_cpuless.py` assumes the callee's `ret` is this
+function's exit ("dynamic TAIL", its own comment). That is false when the block manufactured a return
+address: `1010:AEE0 mov ax,B250h ; push ax ; ... ; jmp cs:[bx-20754]`. The generated
+`func_1010_aed8` block 24 writes `0xB250` to the guest stack and then `break`s, so the continuation
+`B250 -> B2A3 -> AD5A` (the object off-screen bounds check + destroy) never runs. It fails SILENTLY.
+
+**Observable consequence.** OVERKILL's cold-start differential: first real DGROUP divergence at
+**frame 870** (`ds:2F14`, oracle 00 / corpus 01 — an object the original destroys and the corpus keeps
+alive); first VIDEO divergence at frame 882 (52 B800 bytes). Full chain + the specified fix:
+`docs/overkill/campaigns/cpuless_app.md`, entry `2026-07-18i`.
+
+**Repro lines** (all under PyPy; scratch probes, not committed):
+
+    pypy3 -u scripts/verify_cpuless_coldstart.py --frames 890
+        -> VIDEO DIVERGED at frame 882: 52 of 32768 bytes, first at B800+0988
+
+The four diagnostic probes each need ~10 lines of harness reused from
+`scripts/verify_cpuless_coldstart.py` (same cold snapshot, same 2-IRQ/frame cut at `1010:0679`,
+`assert_pure_oracle(cpu, allow=frozenset())` after `hook_registry.uninstall`):
+
+1. **B800 write census, frame 882** — `cpu.mem.write_watchers.append(...)` filtered to
+   `0xB8000..0xB8000+0x8000`, keyed by `(cpu.s.cs, cpu.s.ip)`. Expect 20400 bytes from 2 sites,
+   `1010:336F` (i.e. the `rep movsw` at `336D`) and `1010:3083`.
+2. **Blit source map** — `install_step_observer(cpu, obs, trap=[(0x1010,0x336B)])`, recording live
+   `(ds, si, es, di)` AND the 104 source bytes AT THAT MOMENT. Do NOT compute the mapping from
+   `ds:[234C]`, and do NOT read the source at end-of-frame; both are wrong and the value-equality
+   control catches them (52/52 mismatch).
+3. **DGROUP frontier** — compare `mem.data[0x25CC0:0x25CC0+0x10000]` per frame. Exclude ONLY dead
+   stack `[0x8000, sp)` and `ds:[0054]`/`ds:[BF00]` (tick counters, IRQ-phase artifact), and count
+   both. Expect first real divergence frame 870, `ds:2F14`.
+4. **Writer identity** — oracle: write watcher on the single phys address; candidate: wrap
+   `MutFlatMemory.wb/ww` and take the recovered function name from `traceback.extract_stack()`.
+   Expect oracle `1010:BD1C` (i.e. `mov ss:[bp+0],0` at `BD17`) at frame 870, candidate nothing.
+
+**Instrument traps that cost time here — do not repeat them:**
+
+* **Counting calls to `func_1010_bd17` reads 0 on the candidate and that means NOTHING.** `BD17` is
+  reached by a NEAR JMP, so the lifter inlines it as a block in ~29 different functions. Wrapping the
+  module function (or the `dyn_exec` key) measures a path the corpus does not use. The memory write
+  is the authoritative observable; the call count is not.
+* Generated modules bind `from ._dyncall import dyn_exec as _dyn` at IMPORT time, so patching
+  `_dyncall.dyn_exec` late is inert — patch before the corpus imports AND retro-patch `sys.modules`.
+  (`func_1010_aa2b._dyn` is different: it resolves as a module global at call time, so patching the
+  module attribute is enough there.)
+* The `1010:AA2B` object-update dispatch sequence diverges at frame 871, not 870 — that is the
+  DOWNSTREAM extra live object, not the cause. Do not start there.
+
+
 Open items the autonomous loop attempted but could not finish byte-exact. Do NOT
 re-attempt these in the loop; they need a reproduction trace and/or gameplay
 context. Each has the analysis already done so a human can pick up fast.
