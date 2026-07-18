@@ -2083,3 +2083,37 @@ loop is genuinely unbounded without input. And do not reach for play.py's "demo 
 branch as the model — it advances the counter on a stall and is a fudge that only papers over a
 missing wait detector (it also cannot fire while RECORDING, since it requires `demo_playback is not
 None`).
+
+### 2026-07-18p — the overlay-menu wait has a SECOND state: "flag set, still waiting" (1F8F:09A2)
+
+`fdbcb97` shared `overlay_menu_key_wait` into `input_waits.py` and moved the headless-replay frontier
+**1174 -> 1236** frames. It did NOT clear replay. The next wedge is characterised, and the cause is
+in the SPIN CONDITION, which I inherited verbatim from play.py's original predicate:
+
+    PARKED 1F8F:09A2 frame=1236 applied=24
+    sig at 1F8F:099B = 803e0f99017447 match=True
+    ten flags: {990F:0, 990C:0, 990D:0, 98D2:0, 9911:0, 9914:0, 9915:0, 98FD:1, 98E0:0, 98C5:0}
+    spinning(): False        <-- so the predicate DECLINES
+    frame_verify_input_wait(): None
+    IP span over 400 steps: 099B..0A11 (22 distinct)   <-- was 099B..09DF (20) at the first wedge
+    head 099B visits: 18 (per 400 steps)
+
+**`98FD` is SET, so that pair's `jz` TAKES**, and execution runs on to ~0A11 and still cycles back to
+the head. The loop is therefore STILL boundary-less and still waiting, but
+`_overlay_menu_key_wait_spinning` ("all ten flags != 1") reads it as not-waiting and declines, so the
+verifier spins its whole 200,000,000 budget.
+
+**This is a pre-existing limitation of play.py's predicate, not something the share introduced** —
+play.py has always used `all(mem.rb(ds, off) != 1 ...)`. It never mattered interactively because real
+keypresses arrive asynchronously from SDL rather than being gated on the boundary counter.
+
+Note the context: the demo's pending events are at boundary **1235**, one of the SIX FROZEN
+boundaries measured in 18k (1235 carries BOTH `scan 57` press and `scan 185` release). So this is the
+press/release-in-one-frozen-boundary case.
+
+**DO NOT just widen the predicate to "in the loop range".** Measure first what the `98FD == 1` branch
+(the code from ~09E9 to 0A11) actually DOES: if it is the menu ACTION, the loop is about to exit and
+the real blocker is elsewhere; if it is a wait-for-release, the spin condition needs a second clause
+for the held-key state. Those two call for opposite fixes, and this repo's record is that every
+forward inference from partial instrumentation was wrong. Disassemble 1F8F:09E9..0A11 (scripts/lindis.py)
+or trap the flag write before touching the predicate.
