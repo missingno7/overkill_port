@@ -430,6 +430,46 @@ per-invocation instruction count, or `model`. MEASURE IT AGAINST THE VM BEFORE D
 cost is exactly the kind of quiet approximation this project forbids.
 
 
+### CORRECTION (same pass) — the seam is `1010:C679`, not `1010:0B3E`
+
+The entry directly below named `0B3E` as the DOS-I/O seam. Checked it instead of trusting it, and it
+was wrong on the load-bearing detail: **`0B3E` has `ints: []`** — it performs no INT 21h at all. It
+calls `4E75` (already auto-cpuless) and `C679`. The DOS/BIOS boundary is `C679`:
+`ints: ['10','21']` — file I/O *and* video — with `0615`/`0624`/`065C` (the INT 21h primitives,
+`065C` self-recursive and refused `sp-as-data`) below it.
+
+A proper FIXPOINT over the census call graph (a node promotes when every callee promotes and it has
+no own shape refusal) settles which seam to use:
+
+| provided | `0B3E` | `4DBF` | `9B2E` | total promotable |
+|---|---|---|---|---|
+| nothing | no | no | no | 591 |
+| **`1010:C679`** | **yes** | **yes** | **yes** | **601** |
+| `1010:0B3E` | yes | yes | yes | 594 |
+
+**`C679` alone promotes the whole chain**, and it is the strictly better seam: the manual surface is
+one function instead of a subtree, and ten more functions stay GENERATED (601 vs 594). It is also the
+semantically correct boundary — INT 21h + INT 10h is precisely what a VM-less port must own, whereas
+`0B3E` is ordinary game code that happens to sit above it. Overriding `0B3E` would have swallowed
+`C679`'s video path as collateral.
+
+Method note worth keeping: the first walk OVERSTATED what stayed blocked, because it counted any
+callee not already promoted — including ones whose blockage clears once the seam is provided. Only
+the fixpoint answers the question. Two of this session's wrong turns came from reading a
+one-pass reachability walk as if it were a fixpoint.
+
+**Remaining work before this can land** (deliberately not rushed):
+1. a faithful `C679` body — 12 callees, `exits: ['jmp_ind','ret']`, so the indirect exit needs
+   modelling, not hand-waving;
+2. its `CalleeContract` (ret_kind/ret_pop/sp_delta) read off the census ABI;
+3. a MEASURED virtual-time contract (`static` with a counted per-invocation cost, or `model`).
+   The default `island` kind is NOT virtual-time-exact, and `cost` accumulates into the caller's
+   `_cost`, which anchors platform effects and demo-input landing — an unmeasured cost here could
+   perturb the gameplay lockstep, which is the one gate that must not be weakened;
+4. wire `--overrides` into `scripts/probe_vmless_cpuless.py`, regenerate, and confirm the ten
+   top-level entries stop refusing `boundary-head-on-transfer`.
+
+
 ## 2026-07-18d — ROOT CAUSE: the corpus has NO TOP LEVEL, because the lifter refuses `no-exit` regions
 
 Owner report: "play_cpuless starts from a not-correct intro animation instead of the real starting
