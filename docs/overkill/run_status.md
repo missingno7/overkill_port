@@ -21,7 +21,13 @@
 > `trace_enabled` defaults True and formatting a trace line per instruction costs 1.7x on CPython
 > and DEFEATS PyPy's JIT (236k -> 399k CPython / 16.3M instr/s PyPy untraced). `_harness`'s
 > `trap=` kwarg makes on_ref_step fire only at the addresses a probe acts on (semantics-identical:
-> same cache bytes)**; cold-boot probes MUST pass
+> same cache bytes).  **PYPY IS PROVEN TO AGREE ON FAILURES, NOT JUST PASSES (2026-07-18)**: the
+> 900-frame `verify_cpuless_coldstart` run was executed under CPython and PyPy and the two logs are
+> sha1-identical (`647140ec...`) -- including the DIVERGENCE detail (frame 882, 52 of 32768 bytes,
+> first at B800+0988, oracle=0C corpus=00).  That is the check that matters: an interpreter swap is
+> only safe if it cannot turn a red gate green, so re-run an A/B over a KNOWN-DIVERGING case after
+> any PyPy upgrade, not just a passing one.  Measured this run: 26.9s CPython -> 6.1s PyPy (4.4x;
+> short runs gain least -- skyroads' 5,109-frame differential gains 10.6x)**; cold-boot probes MUST pass
 > `overkill.launch.build_command_tail("tandy", "pc")`.
 > Suite green: 1223 passed / 23 skipped (2026-07-10).
 > **THE ACTIVE CAMPAIGN: [`campaigns/demo_lockstep.md`](campaigns/demo_lockstep.md)** -- grow the

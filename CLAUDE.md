@@ -26,8 +26,12 @@ toward the VM-less port. Use `/loop /goal` for an indefinite self-continuing run
 It reads the brief above and works one verified slice at a time.
 
 ## Non-negotiable invariants (also in the brief §3)
-- **Never commit red** — every commit is preceded by a green `python -m pytest -q`
-  (~1183 passed / 23 skipped as of 2026-07-04).
+- **Never commit red** — every commit is preceded by a green
+  `python -m pytest -q -n auto` (~1474 passed / 38 skipped as of 2026-07-18).
+  Use `-n auto`: it is the SAME suite, ~4.5x faster (xdist; see
+  `dos_re/docs/performance.md`). CPython, not PyPy — every PyPy worker re-pays
+  JIT warmup, so PyPy loses on suites and wins only on long single-process
+  oracle runs (`pypy3 -u scripts/verify_cpuless_coldstart.py`).
 - **Check for an existing mechanism before building one.** This repo already ported several pre2
   patterns that later sessions nearly rebuilt. The standing-mechanisms list at the TOP of
   `run_status.md` is the registry — read it before writing any new tooling, harness, or metadata
