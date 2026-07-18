@@ -2049,3 +2049,37 @@ those arms. A boundary is a CALL, and the call count is control-flow determined.
 need to re-record.** Proven for classes present/timer/retrace over the first 16426 cold boundaries;
 the `is_*_wait()` detector class was not exercised (that window carries no input) — re-run the A/B
 with input before treating it as proven.
+
+### 2026-07-18n — headless demo replay DEADLOCKS at the overlay menu key wait (1F8F:09D3)
+
+Any headless replay of a cold-start demo that reaches the overlay menu wedges. Repro (~3 min to the
+wedge, PyPy):
+
+    # coldspine demo through the frame verifier's replay path, cold boot, tandy/adlib
+    # -> FRAME VERIFY TIMEOUT side=reference frame=1174 budget=200000000 at=1F8F:09D3
+
+`1F8F:09D3` is the OVERLAY MENU KEY WAIT: a boundary-less keyboard spin (no `0679`, no `50C9`), so
+the boundary counter FREEZES and a demo event gated on a later boundary can never be delivered.
+
+**It is not a missing capability — the predicate exists, it was just never shared.**
+`scripts/play.py: is_overlay_menu_key_wait` handles it interactively (matches `ip` in
+`0x099B..0x09DF` on the `cs:099B` signature `80 3e 0f 99 01 74 47` plus a DS-flag check) and is one
+of only two segment-agnostic detectors. But `overkill/input_waits.py` has no `overlay_menu_key_wait`,
+so the frame-verifier adapter `frame_verify_input_wait` cannot see it. That adapter IS active
+(`overkill/frame_verify.py:154`) and DOES cover the overlay segment — but at exactly one head,
+`_ALL_KEYS_RELEASE_WAIT_CS=0x1F8F` / `_ALL_KEYS_RELEASE_WAIT_HEAD=0x024B` — and then
+unconditionally `return None` for any other IP in that segment. `0x09D3 != 0x024B`, so it declines.
+
+**Fix (copy the existing precedent, do not invent one):** `title_fire_release_wait` had this exact
+problem and was solved by moving the predicate into `overkill/input_waits.py` and having play.py
+delegate to it — its docstring still describes this failure mode verbatim. Do the same:
+`overlay_menu_key_wait(cpu)` in `input_waits.py`; `frame_verify_input_wait` returns
+`("wait", (cs, 0x099B))` at the head (head-only, like the other every-step entries, so ref and
+candidate stop at the identical instruction); add it to `pump_demo_frame`'s single-event delivery
+set; play.py delegates.
+
+**Do NOT "fix" this by raising the frame budget.** 200,000,000 instructions were already burned; the
+loop is genuinely unbounded without input. And do not reach for play.py's "demo stall recovery"
+branch as the model — it advances the counter on a stall and is a fudge that only papers over a
+missing wait detector (it also cannot fire while RECORDING, since it requires `demo_playback is not
+None`).

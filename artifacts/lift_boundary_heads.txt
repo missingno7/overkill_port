@@ -48,6 +48,31 @@
 #   callers, so the head lands on a transfer and the refusal cascades. If the
 #   retrace pacing is ever needed as a head it must be declared at the real
 #   polling site inside C9F1/CA02, not at the thunk.
+#
+#   1010:C9FC IS THAT REAL POLLING SITE, and it was located and PRICED
+#   2026-07-18m -- both halves of the trade are recorded here so the next agent
+#   inherits them together. It is block 0 of func_1010_ca02:
+#       in al,dx (dx=3DA) ; test al,8 ; jz self
+#   MEASURED, declaring it (vs the shipped heads):
+#     * liftable UNCHANGED at 623/626, refusal buckets unchanged, and only two
+#       IR functions move (C9F1, CA02) -- so by the CENSUS it looks free;
+#     * but the CORPUS prices it differently: PARKING GROWS 20 -> 42.  Twenty-two
+#       functions lose their CPU-ABI adapters: 0011 0030 0136 50C9 587E 58DF
+#       5C35 5C46 5C74 5C9A 9844 C9F1 CA02 CC04 CCAA CCC4 CCF0 CD8D CDA7 CDAA
+#       CE40 CE5C.  Six of them (58DF 50C9 5C46 5C74 CE40 CE5C) carry verdicts in
+#       verify_ledger_coldstart.json -- all INCONCLUSIVE, none PASS -- so no
+#       PROVEN coverage is destroyed, but those six become permanently unprovable
+#       by the per-function differential while parked.
+#   DECLINED 2026-07-18m: a real permanent cost against a still-hypothetical
+#   benefit.  Declare it only when something concrete needs a retrace-cut frame.
+#
+#   THE GENERAL LESSON, and the reason this note is long: THE LIFTABLE COUNT AND
+#   THE PARKING COUNT ARE DIFFERENT COST FUNCTIONS.  close_census.py's
+#   liftable=N/M says a head does not break the lift; only
+#   cpuless_promote.py --apply says what it costs.  Quote the SECOND before
+#   calling any head declaration free.  (Ungated control for that comparison:
+#   regenerating with the SHIPPED heads must reproduce the committed corpus
+#   byte-identically -- it does, 625 modules.)
 #   1010:5160 (EGA display-start) is a genuine 3DA poll but is gated on video
 #   mode [95BC]==1, i.e. it is dead on the Tandy path this port runs.
 #   1010:06E5 and 1010:0672 are NOT waits at all despite sitting in

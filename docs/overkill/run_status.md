@@ -13,6 +13,30 @@
 > per-frame VM states on first run and replays them in ~40s instead of ~5min -- same states, same
 > comparison; pass `vm` to force the live oracle; caches live in `artifacts/shadow_cache/`,
 > gitignored, keyed on the demo file sha1 + frame budget)**, `scripts/lindis.py` (encoded targets), **`scripts/audit_recovery_facts.py` (2026-07-18): every declared RECOVERY FACT (`artifacts/lift_*.txt`) must have a visible CONSEQUENCE in the generated census -- checks OUTCOMES, not pipeline source text, so it survives a pipeline rewrite. A RATCHET: known violations are listed with their reason, and it fails on a NEW violation OR on a listed one that has been fixed. Exists because lift_keep_interpreted.txt was silently ignored for weeks and two known-divergent env-waits got promoted**; **`scripts/cpuless_verification_coverage.py` + `verify_cpuless.py --ledger` (2026-07-18): promotion is STRUCTURAL, correctness is a per-function differential -- quote the PROVEN fraction, not the promotion count. Measured 2026-07-18 over BOTH demo ledgers (L1 gameplay + cold-start): promoted 591, verified PASS 96, DIVERGED 0, INCONCLUSIVE 18, NEVER EXERCISED 477 = **16.2% proven**. NB a single ledger read 8.1% -- each demo roughly DOUBLES coverage, so DEMO BREADTH is the lever on the unproven surface, not more promotion**; 
+> **THE LIFTABLE COUNT IS NOT THE COST OF A BOUNDARY HEAD (2026-07-18m) — `close_census.py`'s
+> `liftable=N/M` and `cpuless_promote.py --apply`'s PARKING count are DIFFERENT COST FUNCTIONS, and
+> only the second prices a head.** Measured on `1010:C9FC`: liftable is UNCHANGED at 623/626 with
+> only two IR functions moving — it reads as free — while regenerating the real corpus grows PARKING
+> **20 -> 42**, i.e. 22 functions lose their CPU-ABI adapters and can no longer be verified by the
+> per-function differential. A head that "costs nothing" by census can still shrink the VERIFIABLE
+> surface, which is the thing this project actually sells (promotion is STRUCTURAL, correctness is
+> the per-function differential). **Always quote the parking count, and always run the ungated
+> control first: regenerating with the SHIPPED heads must reproduce the committed corpus
+> byte-identically (it does — 625 modules); only then is a diff against it meaningful.** Full trade
+> incl. the ledger check recorded beside the declaration in `artifacts/lift_boundary_heads.txt`;
+> **THE BOUNDARY INDEX IS DETERMINISTIC FROM VM STATE (2026-07-18m)**: a 48x wall-clock spread
+> (2.9s -> 141.3s) yields a BYTE-IDENTICAL boundary stream, even though the wall-clock
+> `AsyncTimerIrqDriver` delivered 47 vs 8652 real IRQ0 ISR executions across those arms. **A boundary
+> is a CALL, and the call count is control-flow determined** — extra ticks only shorten each 0679
+> spin. So recorded demo boundary indices are replayable and DEMOS DO NOT NEED RE-RECORDING. Proven
+> for present/timer/retrace; the `is_*_wait()` detector class HAS now been exercised and it does NOT
+> hold up — see **THE OVERLAY-MENU WAIT GAP** below, which deadlocks headless replay before the
+> determinism question can even be asked there. **THE COLD-START OFFSET IS 410 (2026-07-18m)**: `frontend_intro_snapshot`
+> sits at recorder-boundary **410** of an input-free cold boot, all 410 being RETRACE boundaries
+> (frame counter and boundary counter are 1:1 there), witnessed by `cs:ip=1010:96C8 video_mode=3`
+> matching the snapshot's own `state.json`. Do NOT hook `1010:96C8` to measure this — OVERKILL
+> registers `overkill_intro_retrace_delay_loop_tail_96c8` there and it hangs; replay
+> `make_frontend_snapshot.py`'s own mechanism instead;
 > `scripts/behavior_zoo_xref.py`;  **THE COLD-START CPULESS DIFFERENTIAL (2026-07-18, `scripts/verify_cpuless_coldstart.py` + `overkill/cpuless_driver.py`): the port's FIRST gate that can see CROSS-FRAME DRIFT. Every existing gate (verify_native_lockstep, frame_verify) RE-SEEDS the candidate from the oracle at each frame boundary, so an error introduced in frame N is erased before frame N+1 and a corpus wrong in a compounding way still passes every frame. Here BOTH sides start from the same recorded cold image (`artifacts/frontend_intro_snapshot`, whose state.json records cs=1010 ip=96C8 steps=0) and the candidate ENTERS ITS ROOT ONCE for the whole run. It calls `assert_pure_oracle(cpu, allow=frozenset())` after a POST-BOOT `registry.uninstall` (a snapshot load leaves 337 replacements live -- measured), FAILS LOUD on step-budget exhaustion rather than truncating the oracle, and shares the SHIPPED frame driver rather than a verification-only lookalike. Observable: the 32KB Tandy B800 window + the CRTC register file (which owns the displayed page) + the 3Dx video ports (Tandy has no DAC to diff). RESULT 2026-07-18: 882 frames byte-identical from cold; first VIDEO divergence at frame 882 (rows 59..86, x 68..137), measured NOT to be a frame-alignment lag -- shift k=0 beats k=+-1/+-2 -- and it GROWS (52 -> 133 -> ~113 bytes/frame) rather than self-correcting. **ROOT-CAUSED AND FIXED 2026-07-18i/j -- the differential now PASSES 4000 FRAMES from cold (and the whole 64KB DGROUP is identical over 1500), so the numbers below are the SOLVED history, not the current state.** Widening the observable to the whole 64KB DGROUP moves the first REAL state divergence to **frame 870**, ONE byte (`ds:2F14`, oracle 00 / corpus 01 -- an object the original DESTROYS and the corpus keeps alive; the 52 pixels are its downstream consequence). The cause is a dos_re SOUNDNESS bug, not an OVERKILL stitching issue: `emit_cpuless` emits a near indirect JMP as a TAIL transfer ("the dispatched callee's return IS this function's exit" -- its own comment), which is false when the block MANUFACTURED a return address (`1010:AEE0 mov ax,B250h ; push ax ; ... ; jmp cs:[bx-20754]`). The generated code writes `0xB250` to the guest stack and then `break`s, so the continuation `B250 -> B2A3 -> AD5A` (the object off-screen bounds check + destroy) never runs -- SILENTLY, not as a refusal. For a near indirect JMP the callee's `ret` resumes at whatever is on TOP OF STACK; the tail assumption is only valid at stack delta 0. FIXED in dos_re `f23b0fb` (represent it in emit_cpuless) + `47ca790` (FOLLOW it in the CFG walk -- the scan stopped at the indirect jmp too, so the resume point was not even in the function; part 1 alone dropped promotion 623 -> 610). Promotion is UNCHANGED at 623/626 and exactly TWO corpus modules move (`1010:AED8`, `1010:580B`). NB depth cannot discriminate this idiom -- the frameless stack-arg tail also sits at nonzero depth and IS a genuine tail; the pushed VALUE decides. Write-up in `campaigns/cpuless_app.md` 2026-07-18i/j; repro lines + the instrument traps that cost time (chiefly: a call count to `func_1010_bd17` reads 0 on the candidate and means NOTHING, because `BD17` is reached by a near JMP and is INLINED as a block into ~29 functions -- only the memory write is authoritative) in `loop_blockers.md`**; **THE STITCH (2026-07-18, `overkill/cpuless_overrides.py`): manual implementations patch the AUTOLIFTED corpus at named addresses, so the generated corpus (which IS the original control flow) drives and hand-recovered code overrides individual addresses inside it -- nobody hand-wires screen-to-screen transitions. Generated modules bind callees at IMPORT time, so the only seam is the module object: `install_overrides(plat)` shadows sys.modules BEFORE the corpus loads (DISPATCH/_dyncall import by name, so dynamic transfers are served too). An override for an address the corpus lacks raises LookupError (a regeneration cannot silently orphan a manual patch), and `generated(addr)` keeps the autolifted function reachable as its differential oracle -- an override that only ADDS an effect delegates to it (`1010:0679` is the model: yield to `OverkillPlatform.boundary()`, supply the tick the absent INT 8 owed, then delegate)**; **THE IMPORT-GUARD RATCHET (2026-07-18, `tests/conftest.py` + dos_re `import_guard()`): the CPUless wall is process-global, so a bare `install_import_guard()` in a test arms it for the whole session -- it cost 239 red tests that each passed in isolation and read as corpus drift. ALWAYS use the scoped `import_guard()`; the autouse fixture fails the leaking test by name**; **`scripts/capture_pure_vm_snapshot.py` (2026-07-10): dumps a PURE-VM (hooks-stripped) memory+state.json snapshot the first frame boundary a target behaviour (record +0x18) is live -- the enabler for lifter-assisted actor recovery, since the hooked capture_demo_snapshot cannot reach a hooked-over handler (liftverify would report NOT_REACHED)**; **THE DRIVEN ORACLE FOR UNGATED BEHAVIOR (2026-07-10, `probes/verify_native_flash_decay.py`): when a playtest bug is in a path the demo corpus never exercises (lockstep stays green but the behavior is wrong), inject the missing precondition into BOTH the pure VM and the native frame at each 9B2E boundary and diff -- turns an unexercised path into a byte-exact gate that can FAIL**; **THE GAP SEED (2026-07-10, `play_native.dump_gap_snapshot`): on any RecoveryGap in play, the app dumps a --snapshot-loadable PRE-frame image to artifacts/gap_snapshots/ so the exact gap reproduces with one frame -- the seed a driven oracle then fills**; **THE AUDIO ORACLE GATE (2026-07-12, `probes/verify_native_audio.py`): seeds the VM-free AdLib driver (`native_audio.adlib.AdlibDriver`) from the VM's own seg-2032 and replays it FORWARD in lockstep with the ref VM, diffing the YM3812 writes -- the audio counterpart of the 9B2E gameplay lockstep. It TRAPS (2032:0063 tick, 2032:0557 write leaf, 1010:9B2E frame tail) to read per-frame (tick-count, writes), which also fixed the music TEMPO at 2 driver ticks/gameplay-frame (was guessed). Two forms: `clean_window` (forward from one seed -- music-only, reads the tempo, diverges at the first game event) and `per_tick` (re-seeds from the true seg-2032 at every 2032:0063 entry -- verifies the WHOLE demo incl. SFX + page changes, PASS ~700 ticks each on L1-L6, all six planet songs)**; **THE FRONT-END COLD-BOOT SNAPSHOT (2026-07-13, `scripts/make_frontend_snapshot.py`): a reusable loadable snapshot just before the graphics intro (`artifacts/frontend_intro_snapshot/`, gitignored) so front-end probing loads instantly instead of re-running the ~10-min cold boot every attempt. TWO GOTCHAS: (1) a cold boot MUST replay the demo's own `command_tail` -- the game reads its VIDEO TYPE from PSP:82 (0=CGA/1=EGA/2=Tandy, `overkill/launch.py build_command_tail`); an empty tail boots the CGA path and every capture from it is an artifact. (2) the intro paces via RETRACE POLLING (`in al,0x3DA`), not the `1010:0679` timer wait, so `advance_frames_fast`/the `CS:066B` poke both no-op -- RAW-STEP instead (one attract cycle ~7k raw steps; screens pop within ~250-step windows, so sample fine)**; **THE 4-GATE FRONT-END PROOF (2026-07-13, `dos_re.frontend_timeline`, bumped to e19bb1a; see `campaigns/frontend.md`): a VALIDATED (passing on another port's real cold-start demo) cadence-free replacement for pixel-diff guessing -- `filter_runs` drops transient mode-switch/loading states (the exact noise that broke earlier CGA/Tandy oracle attempts), then 4 gates: [1] `diff_sequence` on the filtered screen ORDER, [2] `pack_fields`/`diff_fields` a decision-state WITNESS at every transition, [3] `diff_offsets` the entry-state OWNERSHIP split, [4] `spread_beyond` INERTNESS (dual-replay proves owned bytes never leak into gameplay); `input_segments`/`SegmentedInput` deliver captured input PER-SCREEN so causal alignment needs no shared frame clock. NOT YET WIRED into `verify_native_frontend.py` (still only imports `collapse`/`diff_sequence`) -- adopting it is the next concrete unblock for the front-end campaign**; **THE AUTOMATIC LIFTER (2026-07-10, dos_re 1bfd5fd): `dos_re/tools/liftgen.py` (census: is a routine liftable, and why not) and `dos_re/tools/liftverify.py` (emit a literal ASM->Python hook per entry, install it, run the VM, and differentially verify each call against the interpreted ORIGINAL, writing ORACLE_PASSING/DIVERGED/NOT_REACHED into a proof ledger). USE IT BEFORE HAND-DECODING ANYTHING: `python dos_re/tools/liftverify.py --exe assets/OVERKILL --snapshot DIR --entry 1010:XXXX --steps 3000000 --emit-dir lifted`. It refuses indirect jumps, which is exactly the 4E26 jump-table case a hand-decode got wrong by two bytes. A lifted hook is SCAFFOLDING, not recovered source -- it is a verified starting point to refactor, and the same oracle keeps the refactor honest**; **PERF (2026-07-08, see dos_re/docs/performance.md): suites =
 > `python -m pytest -q -n auto` (xdist, 4m30s -> 54s); long oracle/probe runs = PyPy serial
 > (`pypy -m overkill.probes.X`) -- PyPy is BYTE-FAITHFUL (proved: a full lockstep re-record under
@@ -68,6 +92,83 @@
 > inside the row pull), the 0162 input poll, the A067 fire path and the 0922 starfield are native in
 > the lockstep frame.  **play_native RUNS THE VERIFIED FRAME as of 2026-07-10** (the hybrid loop is
 > deleted -- see deprecated_or_quarantined.md); charter step 2 (--demo/--mirror) is still open.
+
+## 2026-07-18n — THE OFFSET IS 410 (measured, stable) — and THE OVERLAY-MENU WAIT GAP blocks replay
+
+Two results. The start offset is now MEASURED rather than fabricated. The replay itself is blocked by
+a NAMED, one-function gap, not by anything about the demo.
+
+### 1. THE COLD-START OFFSET IS **410**, measured and stable
+
+The 2026-07-18m determinism result turned this from "unmeasurable, do not fabricate" into a
+measurement. `artifacts/frontend_intro_snapshot` is written by `scripts/make_frontend_snapshot.py`
+at present-frame **410** of a cold boot replaying `demo_cold_start_intro_20260711_203259` — which has
+the **same config** as the coldspine demo (`tandy`/`adlib`/`\r\x02A`, verified) and whose first input
+event is at boundary **6174**, so **the boot to the snapshot is entirely INPUT-FREE**. Same config +
+input-free + a deterministic boundary stream ⇒ the snapshot IS on the coldspine demo's path and the
+offset is well defined.
+
+Measured by replaying that exact mechanism and counting boundaries by the RECORDER's rule:
+
+    *** FRAME 410 REACHED (the snapshot point) ***
+        RECORDER-RULE BOUNDARY COUNT = 410   {'retrace': 410}
+        cs:ip=1010:96C8  video_mode=3
+        stream sha1 = 41fc2daffb928a8d606f763665a09e83278d1c36
+
+**The frame counter and the recorder's boundary counter are 1:1 here, and every one of the 410 is a
+RETRACE boundary** — no present, no timer — which matches the standing fact that the intro paces on
+retrace polling rather than the `0679` timer wait. The witness is the snapshot's own recorded state:
+`cs:ip=1010:96C8` and `video_mode=3` both match `state.json` exactly. (Do NOT hook `1010:96C8` to
+measure this: OVERKILL registers `overkill_intro_retrace_delay_loop_tail_96c8` there and it hangs.)
+
+**STABILITY (a one-shot number was not accepted):** re-measured at a 2.9x slower host —
+
+    fast arm: 11.8s -> boundary 410, sha1 41fc2daf...
+    slow arm: 34.1s -> boundary 410, sha1 41fc2daf...   IDENTICAL
+
+So an event recorded at boundary B is deliverable at differential frame **B - 410**. Offset-only, no
+scale factor.
+
+### 2. THE GAP I WAS ASKED TO CLOSE DID NOT CLOSE — and that is the finding
+
+The 18m determinism proof covered an INPUT-FREE window, so the `is_*_wait()` class was never
+exercised. Re-running the speed A/B **with the coldspine demo's input actually delivered** does not
+produce a different stream — it produces **no second stream at all**, because the run wedges:
+
+    [hb] frame  500 bnd=500  applied=0 cs:ip=1010:CD68 mode=9
+    [hb] frame 1000 bnd=1000 applied=1 cs:ip=1010:CC01 mode=9
+    FRAME VERIFY TIMEOUT side=reference frame=1174 budget=200000000 at=1F8F:09D3
+
+Everything up to there is healthy: frame↔boundary stays 1:1, the video mode reaches 9 (Tandy
+graphics), and the first demo event lands at ~997 exactly as recorded. Then the reference burns
+200,000,000 instructions at `1F8F:09D3` without producing a boundary.
+
+**ROOT CAUSE, named and exact.** `1F8F:09D3` is the OVERLAY MENU KEY WAIT. `scripts/play.py` handles
+it interactively as `is_overlay_menu_key_wait` — one of only two segment-agnostic detectors — which
+matches `ip` in `0x099B..0x09DF` on the `cs:099B` signature `80 3e 0f 99 01 74 47`. **That predicate
+was never shared into `overkill/input_waits.py`.** The frame verifier's adapter
+`frame_verify_input_wait` (wired in at `overkill/frame_verify.py:154`, so it WAS active) covers the
+overlay segment at exactly ONE head — `_ALL_KEYS_RELEASE_WAIT_CS=0x1F8F`,
+`_ALL_KEYS_RELEASE_WAIT_HEAD=0x024B` — and its very next statement is `return None` for any other IP
+in that segment. `0x09D3 != 0x024B`, so it declines and the verifier spins.
+
+This is the SAME failure `title_fire_release_wait`'s docstring already describes ("no 0679 timer wait
+or 50C9 retrace wait, so it never produces a play boundary... during --demo replay that is fatal...
+the demo deadlocks"), and it is the same phenomenon as the SIX frozen boundaries measured in 18k
+(1235/1295/1424/1585/1644/1726): the counter freezes in a boundary-less wait, the human's keypress
+unfreezes it at record time, and at replay time the event is gated on a counter that can never
+advance.
+
+**THE NEXT SLICE, with a precedent to copy exactly:** lift `is_overlay_menu_key_wait` out of
+`scripts/play.py` into `overkill/input_waits.py` as `overlay_menu_key_wait(cpu)`, have
+`frame_verify_input_wait` return `("wait", (cs, 0x099B))` at its head, add it to `pump_demo_frame`'s
+single-event delivery set, and make play.py delegate to it — which is precisely what
+`title_fire_release_wait` already does, comment and all ("shared with the frame verifier via
+overkill.input_waits so the same boundary-less wait loop is handled identically"). **NOT attempted
+here**: it changes a predicate shared by play.py, `--verify-hooks`, `--verify-frames` and the
+differential, so it deserves its own slice with the full suite behind it rather than being rushed in
+at the end of this one. Until it lands, steps 3-5 (adopt the recorder's clock, deliver the 133 events,
+report the earliest divergence) cannot be reached, and no frame count or divergence is claimed.
 
 ## 2026-07-18m — THE BOUNDARY INDEX IS REPRODUCIBLE FROM VM STATE (measured) — the demo is usable as-is
 
