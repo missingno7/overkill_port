@@ -16,15 +16,24 @@ BOTH halves of the unification run here:
   renderer, with the host keyboard written into the image's own INT9 key table so the menu really
   responds to input.
 
-What is still missing for a single cold-booting app is the JOIN: following the menu's own selection into
-level-load and on into gameplay (see docs/overkill/campaigns/cpuless_app.md).
+``--menu --play`` JOINS them: the generated front-end runs until it reports a selection, then hands that
+selection to the gameplay half.  LEVEL-LOAD is deliberately the MANUAL side -- play_native cold-starts a
+level from the decoded container with no INT 21h -- which is ADR-2 working as intended: the generated
+corpus fills what we lack manual code for, and here we have it.  (The generated level-select ``D390``
+would additionally need the DOS file-I/O shim and the ``065C`` sp-as-data capability; neither is on the
+critical path while the manual level-start exists.)
+
+Still short of a true COLD boot: the front-end starts from a data-only boot image (post-C-startup),
+which is what bypasses the DOS surface a from-EXE boot would need.  See
+docs/overkill/campaigns/cpuless_app.md.
 
 Usage:
     python scripts/play_cpuless.py                 # play (live window), gameplay from the default bundle
     python scripts/play_cpuless.py --menu          # the CPUless FRONT-END (generated corpus), interactive
+    python scripts/play_cpuless.py --menu --play   # THE CHAIN: front-end -> selection -> gameplay
     python scripts/play_cpuless.py --snapshot DIR  # start from a captured image (it IS the state)
     python scripts/play_cpuless.py --frames N --no-sound   # headless self-test: N frames then exit
-    python scripts/play_cpuless.py --menu --seconds 1      # headless front-end self-test
+    python scripts/play_cpuless.py --menu --auto-select --play --seconds 2   # headless chain self-test
     # ...all other play_native.py arguments pass straight through.
 """
 from __future__ import annotations
@@ -48,9 +57,15 @@ BOOT_IMAGE = ROOT / "artifacts" / "frontend_intro_snapshot" / "memory_1mb.bin"
 #: (1 = pressed) -- the same table the gameplay runner writes the host keyboard into.
 _DS = 0x25CC
 _KEY_TABLE = 0x98C4
+#: the front-end's chosen level / difficulty, read at the JOIN into gameplay.
+_LEVEL_CELL = 0xBEDA
+_DIFFICULTY_CELL = 0xBEDC
+#: scancode the front-end acts on (select / fire).
+_SELECT_SCANCODE = 0x39
 
 
-def run_menu(scale: int = 3, seconds: float = 0.0) -> int:
+def run_menu(scale: int = 3, seconds: float = 0.0, then_play: bool = False,
+             auto_select: bool = False) -> int:
     """Run the CPUless FRONT-END: execute the menu root from the generated corpus over the boot image
     and present what it drew into video memory through the native Tandy renderer.
 
@@ -106,12 +121,25 @@ def run_menu(scale: int = 3, seconds: float = 0.0) -> int:
                 if sc is not None:
                     img.wb(_DS, (_KEY_TABLE + (sc & 0x7F)) & 0xFFFF,
                            1 if ev.type == pygame.KEYDOWN else 0)
+        if auto_select:                           # headless: press the select key ourselves
+            img.wb(_DS, (_KEY_TABLE + _SELECT_SCANCODE) & 0xFFFF, 1)
         out = step()                              # re-run the front-end over the evolving image
         if out.get("ax", 0xFFFF) == 0:            # the menu made a selection (observed: ax 9 -> 0)
+            level = img.rw(_DS, _LEVEL_CELL)
+            difficulty = img.rw(_DS, _DIFFICULTY_CELL)
             print(f"[cpuless] front-end SELECTED (ax=0, bx={out.get('bx', 0):#06x}) -- "
-                  f"the next stage is level-load", flush=True)
+                  f"level {level + 1}, difficulty {difficulty}", flush=True)
             display.close()
-            return 0
+            if not then_play:
+                return 0
+            # THE JOIN: hand the front-end's selection to the gameplay half.  Level-load is the
+            # MANUAL side (play_native cold-starts a level from the decoded container -- no INT 21h),
+            # exactly as ADR-2 intends: the generated corpus fills what we lack manual code for, and
+            # here we have it.  Gameplay itself is the manual override; both halves stay carrier-free.
+            print("[cpuless] -> handing off to the gameplay half (manual override)", flush=True)
+            import scripts.play_native as play_native_mod
+            return play_native_mod.main(["--level", str(level), "--no-title"]
+                                        + (["--frames", str(int(seconds * 30))] if seconds else []))
         display.draw(frame())
         elapsed += clock.tick(30) / 1000.0
         if seconds and elapsed >= seconds:
@@ -126,11 +154,18 @@ def main(argv=None) -> int:
     if "--menu" in args:
         args.remove("--menu")
         scale, seconds = 3, 0.0
+        then_play = "--play" in args
+        if then_play:
+            args.remove("--play")
+        auto_select = "--auto-select" in args
+        if auto_select:
+            args.remove("--auto-select")
         if "--scale" in args:
             i = args.index("--scale"); scale = int(args[i + 1]); del args[i:i + 2]
         if "--seconds" in args:
             i = args.index("--seconds"); seconds = float(args[i + 1]); del args[i:i + 2]
-        return run_menu(scale=scale, seconds=seconds)
+        return run_menu(scale=scale, seconds=seconds, then_play=then_play,
+                        auto_select=auto_select)
     import scripts.play_native as play_native  # imported under the wall (proven carrier-free)
     return play_native.main(args)
 

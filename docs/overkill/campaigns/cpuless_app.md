@@ -279,3 +279,31 @@ names level-load as the next stage.
 
 **Remaining for one cold-booting app — the JOIN:** follow that selection into `D390` level-select /
 level-load (needs the DOS file-I/O shim: INT 21h ×14, 13h, 67h) and hand off to the gameplay override.
+
+## 2026-07-18 — THE JOIN: front-end → selection → gameplay, in one CPUless process
+
+`play_cpuless.py --menu --play` now runs the whole chain:
+
+```
+[cpuless] front-end 1010:CC04 drew 18556 lit pixels -- NO CPU, NO interpreter
+[cpuless] front-end SELECTED (ax=0, bx=0x0004) -- level 1, difficulty 1
+[cpuless] -> handing off to the gameplay half (manual override)
+native: cold level 1 -- planet 1, difficulty 0, lives 3 ... no VM
+--frames self-test: 60 gameplay frames, 60 drawn
+```
+
+boot image → **generated front-end** → selection → **manual gameplay override**, all under the armed
+wall. Gated by `tests/test_play_cpuless_menu.py::test_cpuless_chain_menu_to_gameplay`.
+
+**Design note (ADR-2 in action):** level-load is deliberately the MANUAL side — play_native cold-starts
+a level from the decoded container with NO INT 21h. The generated `D390` level-select would additionally
+need the DOS file-I/O shim (INT 21h ×23, 67h ×3, 13h) *and* the `065C` sp-as-data capability, and it
+buys nothing while a verified manual level-start exists. This is exactly "the generated corpus fills
+what we lack manual code for".
+
+### What still separates this from a true COLD boot
+1. The front-end starts from a **data-only boot image** (post-C-startup). A from-EXE boot would need the
+   DOS surface that image bypasses (`254A:04D7` = 11 INT 21h C-startup calls).
+2. The menu's action code (`bx`) is not yet decoded into its branches (start / instructions / ordering /
+   attract) — we act on "a selection happened", not on WHICH.
+3. `run_deep` is still a runtime accommodation for cross-routine tail cycles, not the trampoline fix.
