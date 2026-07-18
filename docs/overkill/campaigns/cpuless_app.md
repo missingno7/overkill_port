@@ -434,6 +434,32 @@ faithful bodies + shadow evidence + measured virtual-time contracts are NOT yet 
 next slice, and deliberately not half-landed here.
 
 
+### `0248` follow-up — `--desmc` is a SECOND unwired capability (lead, not yet resolved)
+
+`1010:0248` is `observed_reachable=True` AND `class=likely-data` (`decoder-mismatch` x3). Those two
+facts together are contradictory for plain data: it EXECUTES, but its static bytes do not decode as
+code. That signature is runtime-patched / self-modifying code, and dos_re already handles it —
+`cpuless_promote --desmc` ("promote desmc-candidate functions, reading each patched operand from live
+code memory") and `liftemit --desmc` ("emit desmc-candidate functions with their runtime-patched
+operands read from live code memory").
+
+**`scripts/probe_vmless_cpuless.py` passes `--desmc` to NO stage** (`grep -c desmc` = 0). This is the
+same failure mode as the boundary-head / keep-interpreted facts: a capability exists upstream and the
+port's pipeline never asks for it. `scripts/audit_recovery_facts.py` catches unconsumed FACT FILES;
+it does not catch an unpassed FLAG, which is a gap in the audit worth closing.
+
+Measured: adding `--desmc` to the promote stage ALONE changes nothing (591 promotable, identical
+refusals) — expected, because the smc verdicts have to come from the IR, and `liftemit` was not run
+with `--desmc` either (`close_census.py` does not expose the flag at all). So the experiment to run
+next is a full pipeline pass with `--desmc` threaded through the IR stages, then re-measure whether
+`0248` decodes and `C679` promotes generatively.
+
+**Why this matters to the slice:** if it works, the island set drops from four to `065C` + `0624`
+(+ whatever `5559` still needs) — i.e. from two large hand-transcribed game functions plus two DOS
+primitives, down to just the two thin, obviously-correct DOS primitives. That is a large enough
+difference in manual surface and proof standard to settle BEFORE writing any body.
+
+
 ## 2026-07-18f — PROVEN BY EXPERIMENT: only the DOS/BIOS SURFACE gates the top level
 
 Ran the promotion as a DIAGNOSTIC (no `--apply`, census to scratch, committed corpus untouched),
