@@ -65,9 +65,12 @@ def test_run_recovered_composes_over_a_flat_image():
 
 
 def test_unpromoted_function_fails_loud():
-    # 1010:4E26 is a tail-dispatch frontier function -- not promoted, no recovered module.
+    # 1010:97B2 is the gameplay frame root -- still on the CPUless frontier
+    # (boundary-head-on-transfer), so it has no recovered module. (The tail-dispatch
+    # functions that used to sit here are now promoted by the frameless stack-arg
+    # capability, so they no longer serve as a frontier example.)
     with pytest.raises(CpuStandaloneWitness):
-        load_recovered("1010:4E26")
+        load_recovered("1010:97B2")
 
 
 def test_fail_loud_platform_raises_on_every_effect():
