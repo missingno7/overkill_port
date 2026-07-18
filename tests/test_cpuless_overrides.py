@@ -4,6 +4,16 @@
 flow while hand-recovered code replaces individual addresses inside it.  These tests pin the two
 properties the whole scheme rests on: the shadow really is what dependents bind to, and the generated
 function stays reachable as its own differential oracle.
+
+RE-POINTED 2026-07-18.  These used to exercise the mechanism through the shipped `1010:0679` env-wait
+override.  That override is RETIRED -- an env-wait is a declared BOUNDARY HEAD answered by
+`overkill.cpuless_driver`, not an address the host intercepts (see the note on `ov.OVERRIDES`) -- so
+`OVERRIDES` is now legitimately empty.  The MECHANISM is unchanged and still has to hold, so the tests
+now install a TEST-LOCAL override at a real corpus address via the `_probe_override` fixture.  Testing
+it through a fixture rather than through whatever happens to ship is strictly better: the mechanism is
+address-agnostic, and these no longer rot the next time the override list changes.  The behaviour the
+retired override used to assert is now asserted against the GENERATED spine in
+`tests/test_cpuless_frame_driver.py`.
 """
 from __future__ import annotations
 
@@ -13,6 +23,11 @@ import pytest
 
 from overkill import cpuless_overrides as ov
 
+#: A real corpus address to hang the test-local override on.  `1010:0679` is deliberately still the
+#: choice: it is the address the mechanism was originally proven at, it is guaranteed present, and
+#: using it keeps these tests comparable to the ones they replace.
+PROBE_ADDR = "1010:0679"
+
 
 @pytest.fixture(autouse=True)
 def _clean():
@@ -21,25 +36,28 @@ def _clean():
     ov.uninstall_overrides()
 
 
+@pytest.fixture
+def _probe_override():
+    """Register a TEST-LOCAL override so the stitch has something to install.
+
+    The shipped `OVERRIDES` is empty by design; the mechanism it implements still has to work the
+    moment a real override is added, and that is what these tests are for."""
+    def factory(_plat):
+        def probe(mem, *_a, **_k):
+            return {}, {"flags": 0, "fmask": 0, "cost": 0}
+        probe._IS_TEST_PROBE = True
+        return probe
+
+    ov.OVERRIDES[PROBE_ADDR] = factory
+    try:
+        yield PROBE_ADDR
+    finally:
+        ov.OVERRIDES.pop(PROBE_ADDR, None)
+
+
 class _Plat:
-    def __init__(self):
-        self.yields = []
-
-    def boundary(self, kind="timer"):
-        self.yields.append(kind)
-
-
-class _Mem:
-    """Just the four accessors the recovered contract uses."""
-
-    def __init__(self):
-        self.cells = {}
-
-    def rb(self, seg, off):
-        return self.cells.get((seg, off), 0)
-
-    def wb(self, seg, off, val):
-        self.cells[(seg, off)] = val & 0xFF
+    """A platform stand-in.  It deliberately has NO `boundary` attribute: the retired override looked
+    one up by name and found the wrong protocol's method, so nothing here should tempt that back."""
 
 
 def test_names_map_addresses_to_the_corpus_layout():
@@ -47,7 +65,17 @@ def test_names_map_addresses_to_the_corpus_layout():
     assert ov.func_name("1010:0679") == "func_1010_0679"
 
 
-def test_install_shadows_the_module_dependents_bind_to():
+def test_shipped_override_list_is_empty_and_that_is_the_point():
+    """With `OVERRIDES = {}` the composite is bit-for-bit the generated program, so a passing cold
+    run proves the GENERATED CORPUS rather than the stitch.  This is an assertion about what the
+    milestone claims, not a convenience: if an override is added, whoever adds it must come here and
+    say why the generated body is not the truth at that address."""
+    assert ov.OVERRIDES == {}, (
+        f"unjustified override(s) {sorted(ov.OVERRIDES)}: every entry weakens what a green cold-start "
+        f"differential proves, so each one needs its reason recorded on OVERRIDES")
+
+
+def test_install_shadows_the_module_dependents_bind_to(_probe_override):
     plat = _Plat()
     installed = ov.install_overrides(plat)
     assert "1010:0679" in installed
@@ -59,7 +87,7 @@ def test_install_shadows_the_module_dependents_bind_to():
     assert func_1010_0679 is getattr(mod, "func_1010_0679")
 
 
-def test_generated_stays_reachable_as_its_own_oracle():
+def test_generated_stays_reachable_as_its_own_oracle(_probe_override):
     """An override must never make the autolifted function unreachable -- it is the differential
     oracle, and overrides that only ADD an effect delegate to it."""
     plat = _Plat()
@@ -76,36 +104,7 @@ def test_unknown_address_fails_loud_rather_than_silently_doing_nothing():
         ov.install_overrides(_Plat(), addrs=["1010:FFFE"])
 
 
-def test_timer_env_wait_yields_then_lets_the_generated_body_return():
-    """`1010:0679` spins on the tick flag `[066B]` that the absent INT 8 handler would set. The
-    override yields to the host, supplies the tick, and delegates -- so the wait TERMINATES."""
-    plat = _Plat()
-    ov.install_overrides(plat)
-    fn = getattr(sys.modules["overkill.cpuless_recovered.func_1010_0679"], "func_1010_0679")
-
-    mem = _Mem()
-    assert mem.rb(ov._CS, ov._TICK_FLAG) == 0, "precondition: the tick flag is clear (would block)"
-    out, compat = fn(mem)                       # must not spin
-    assert plat.yields == ["timer"], "a blocking wait must hand the host a scheduler boundary"
-    assert mem.rb(ov._CS, ov._TICK_FLAG) == 1, "the tick the absent interrupt owed us"
-    assert out == {} and "flags" in compat, "the generated contract is preserved"
-
-
-def test_no_yield_when_the_wait_would_not_have_blocked():
-    """An already-set flag returns immediately on real hardware; the override must not invent a
-    yield (that would slow the flow by a frame every time it is polled)."""
-    plat = _Plat()
-    ov.install_overrides(plat)
-    fn = getattr(sys.modules["overkill.cpuless_recovered.func_1010_0679"], "func_1010_0679")
-
-    mem = _Mem()
-    mem.wb(ov._CS, ov._TICK_FLAG, 3)            # already ticked
-    fn(mem)
-    assert plat.yields == [], "no block -> no yield"
-    assert mem.rb(ov._CS, ov._TICK_FLAG) == 3, "and no spurious extra tick"
-
-
-def test_every_override_names_an_address_the_corpus_actually_contains():
+def test_every_override_names_an_address_the_corpus_actually_contains(_probe_override):
     """The ratchet against corpus regeneration silently orphaning a manual patch."""
     ov.install_overrides(_Plat())               # raises LookupError if any entry is stale
 
@@ -118,7 +117,7 @@ def test_every_override_names_an_address_the_corpus_actually_contains():
 # override simply never runs -- which is the worst failure mode a verification seam can have.
 # ---------------------------------------------------------------------------------------------------
 
-def test_override_reaches_a_caller_that_already_imported_the_callee():
+def test_override_reaches_a_caller_that_already_imported_the_callee(_probe_override):
     """The realistic order: something imported the corpus before overrides were installed."""
     import importlib
 
@@ -134,7 +133,7 @@ def test_override_reaches_a_caller_that_already_imported_the_callee():
     assert caller.func_1010_0679 is override
 
 
-def test_override_reaches_a_cached_dynamic_dispatch():
+def test_override_reaches_a_cached_dynamic_dispatch(_probe_override):
     """`_dyncall` memoizes resolved targets; a cache warmed before install would bypass overrides."""
     import importlib
 
@@ -148,7 +147,7 @@ def test_override_reaches_a_cached_dynamic_dispatch():
         "reaching the generated body after an override is installed")
 
 
-def test_uninstall_restores_retro_patched_callers():
+def test_uninstall_restores_retro_patched_callers(_probe_override):
     """Teardown must undo the retro-patch too, or a torn-down override lives on in the callers it
     was patched into and the corpus stays silently overridden."""
     import importlib

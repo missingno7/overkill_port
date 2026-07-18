@@ -11,6 +11,12 @@ from overkill.cpuless_recovered.func_1010_7524 import func_1010_7524
 from overkill.cpuless_recovered.func_1010_9db9 import func_1010_9db9
 
 _PARITY = tuple((1 - bin(v).count('1') % 2) == 1 for v in range(256))
+#: spin-detector cap.  Production keeps it high to catch a genuine
+#: unbounded wait; the seeded differential lowers it (both sides
+#: identically), because 'both hit the cap' is the same evidence
+#: at a fraction of the cost -- a 20M-iteration spin-wait ran the
+#: 143-core corpus past 15 minutes at only 4 states.
+_ITER_CAP = 20000000
 
 
 def func_1010_c3bf(mem, *, _df=0, cx=0, ds=0, sp=0, ss=0):
@@ -23,7 +29,7 @@ def func_1010_c3bf(mem, *, _df=0, cx=0, ds=0, sp=0, ss=0):
     _iters = 0
     while True:
         _iters += 1
-        if _iters > 20000000:
+        if _iters > _ITER_CAP:
             raise RuntimeError('CPUless dispatch spin in 1010:C3BF (block %d, cost %d): loop exceeded 20000000 iterations -- an unbounded wait (interrupt-updated flag, or a wrong port after a state divergence)' % (bb, _cost))
         if bb == 0:  # 1010:C3BF
             sp = (sp - 2) & 0xFFFF

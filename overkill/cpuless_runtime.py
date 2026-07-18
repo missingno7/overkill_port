@@ -49,21 +49,42 @@ class OverkillPlatform(FailLoudPlatform):
     def __init__(self, on_boundary=None) -> None:
         self.video_ports: dict[int, int] = {}
         self._retrace = 0
-        #: host callback invoked at a SCHEDULER YIELD (see :meth:`boundary`), or None to just count.
+        #: host callback invoked at a SCHEDULER YIELD (see :meth:`host_yield`), or None to just count.
         self._on_boundary = on_boundary
         #: yields seen, per kind -- the front-end's frame clock when the host does not pace it.
         self.boundaries: dict[str, int] = {}
+        #: FRAME DRIVER on the framework's boundary-head protocol, or None to just count the yield.
+        #: Set it with :class:`overkill.cpuless_driver.CPUlessFrameDriver.install`.
+        self.boundary_cb = None
 
-    def boundary(self, kind: str = "timer") -> None:
-        """A SCHEDULER YIELD: recovered code is blocking on something only the environment can
-        supply (a timer tick, a retrace).  A CPUless build has no interrupt to deliver it, so the
-        env-wait override (``overkill.cpuless_overrides``) hands control here instead of spinning.
+    def host_yield(self, kind: str = "timer") -> None:
+        """A SCHEDULER YIELD, counted by KIND -- the front-end's frame clock when nothing else paces
+        it.  The host uses it to pace the frame, present, and pump input, i.e. it is where the wall
+        clock and the player re-enter a program that has no CPU underneath it.
 
-        The host uses it to pace the frame, present, and pump input -- i.e. it is where the wall
-        clock and the player re-enter a program that has no CPU underneath it."""
+        This used to be called ``boundary``, which COLLIDED with the framework's boundary-head
+        observer protocol of the same name on ``dos_re.lift.platform.CPUlessPlatformRuntime``
+        (``boundary(head_cs, head_ip, resume_ip, regs, cost)``).  Two unrelated protocols sharing a
+        method name is not a hazard a ``getattr(plat, "boundary", None)`` check can see -- it finds
+        the wrong one and raises ``TypeError`` at the call.  Now that ``1010:0679`` is a declared
+        boundary head, generated bodies really do call ``plat.boundary(cs, ip, ...)`` on WHICHEVER
+        platform they are running under, so the two names had to stop meaning different things."""
         self.boundaries[kind] = self.boundaries.get(kind, 0) + 1
         if self._on_boundary is not None:
             self._on_boundary(kind)
+
+    def boundary(self, head_cs, head_ip, resume_ip, regs, cost):
+        """The BOUNDARY-HEAD OBSERVER, same contract as ``CPUlessPlatformRuntime.boundary``.
+
+        A generated body reaching a declared head (``artifacts/lift_boundary_heads.txt``) calls this
+        with its live register bundle and hands the pass to :attr:`boundary_cb`, which may PARK
+        in-line and returns the possibly-updated bundle, flags word, and the extra virtual time any
+        delivered ISRs executed.  With no driver installed the yield is only COUNTED, so the
+        interactive front-end keeps the pacing signal it had before."""
+        self.host_yield("timer")
+        if self.boundary_cb is None:
+            return regs, regs.get("_flags_in", 2), 0
+        return self.boundary_cb(head_cs, head_ip, resume_ip, regs, cost)
 
     def outp(self, port: int, value: int, width: int, cost: int) -> None:
         p = port & 0xFFFF

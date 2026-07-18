@@ -15,3 +15,43 @@
 #              (1010:97B2). One frame == one traversal from the resume point
 #              back to this call. Gives all 10 no-exit entries a modelled exit.
 1010:97CB
+
+# 1010:0679 -- the TIMER TICK ENV-WAIT: `cmp byte cs:[066B],0 ; jz self ; ret`.
+#              The IRQ0 ISR 1010:06E5 -> 1010:066C does `inc byte cs:[066B]`;
+#              this spins until it does.  A CPUless build has no asynchronous
+#              interrupt, so the flag never changes on its own and the wait is
+#              unsatisfiable: measured, `1010:96C8 -> CBE8 -> CF2E -> 0679` runs
+#              the generated body to its 20M-iteration spin guard.
+#
+#              Declaring it a HEAD is what makes the GENERATED SPINE own the
+#              yield: the emitted body calls `plat.boundary(1010, 0679, 067F,
+#              regs, cost)` inside the poll loop, and a frame driver installed
+#              on `plat.boundary_cb` decides whether to park.  The alternative
+#              -- intercepting the address with a host override -- is
+#              host-created flow that BYPASSES the spine, and it was also
+#              silently broken (it called the WRONG `boundary`; see the
+#              retired `_timer_env_wait` in git history).
+#
+#              MEASURED COST of declaring it: promotable stays 623/626 and the
+#              refusal buckets are unchanged (only the 3 structural
+#              ir-not-liftable).  Parking grows 10 -> 20 functions, which lose
+#              their CPU-ABI adapters: 0679 itself plus 558B 5559 CBE8 CF2E
+#              CF78 D007 D305 D318 D390.  NONE of those ten appears in either
+#              verification ledger (artifacts/verify_ledger_L1.json,
+#              verify_ledger_coldstart.json), so the per-function differential
+#              loses NO proven coverage.
+#
+# NOT DECLARED, and here is the measurement so nobody re-tries it blind:
+#   1010:50C9 (the CRTC retrace wait) REGRESSES the corpus badly -- promotable
+#   623 -> 585, `contains-call` 0 -> 37, `boundary-head-on-transfer` 0 -> 1.
+#   It is a thunk (`jmp C9EA ; call C9F1 ; call CA02 ; ret`) with ~20 static
+#   callers, so the head lands on a transfer and the refusal cascades. If the
+#   retrace pacing is ever needed as a head it must be declared at the real
+#   polling site inside C9F1/CA02, not at the thunk.
+#   1010:5160 (EGA display-start) is a genuine 3DA poll but is gated on video
+#   mode [95BC]==1, i.e. it is dead on the Tandy path this port runs.
+#   1010:06E5 and 1010:0672 are NOT waits at all despite sitting in
+#   hook_taxonomy's env_wait set: 06E5 IS the IRQ0 ISR (the producer of the
+#   tick 0679 consumes) and 0672 clears the flag. Declaring either would be a
+#   category error.
+1010:0679

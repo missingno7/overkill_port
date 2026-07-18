@@ -36,8 +36,10 @@ INVARIANTS:
   is the typo guard, and it keeps this registry honest as the corpus is regenerated.
 * THE GENERATED FUNCTION STAYS AVAILABLE as the differential oracle (:func:`generated`), and an
   override should DELEGATE to it wherever it only needs to add an effect rather than replace the
-  computation.  ``1010:0679`` below is the model: it supplies the missing timer tick and then calls
-  the generated body, so the returned flags are the generated ones and cannot drift.
+  computation, so the returned flags are the generated ones and cannot drift.
+* AN ENV-WAIT IS NOT AN OVERRIDE.  A scheduler yield (timer tick, retrace) belongs in the GENERATED
+  spine as a declared BOUNDARY HEAD answered by :mod:`overkill.cpuless_driver`, not as an address the
+  host intercepts.  See the retirement note on :data:`OVERRIDES`.
 
 Usage (see scripts/play_cpuless.py):
 
@@ -58,9 +60,6 @@ RECOVERED_PKG = "overkill.cpuless_recovered"
 
 #: The game's CS for every recovered code address.
 _CS = 0x1010
-#: The timer-tick flag the INT 8 handler sets (`1010:066C` does ``inc byte [066B]``) and the
-#: `1010:0679` env-wait spins on.
-_TICK_FLAG = 0x66B
 
 
 #: (module, attr, original) for every retro-patched binding, so teardown restores the corpus.
@@ -108,39 +107,34 @@ def generated(addr: str) -> Callable:
 # so an override may close over host services (clock, presenter) the generated signature cannot carry.
 # ---------------------------------------------------------------------------------------------------
 
-def _timer_env_wait(plat) -> Callable:
-    """``1010:0679`` -- wait for the next TIMER TICK.
-
-    The original spins on ``[066B]`` until the INT 8 handler (``1010:066C``: ``inc byte [066B]``)
-    sets it.  A CPUless build has no interrupt to run that handler, so the flag never changes and the
-    wait is unsatisfiable -- the generated body spins to its 20M-iteration guard.  This is exactly the
-    ENV-WAIT frontier `artifacts/lift_keep_interpreted.txt` declared and the pipeline promoted anyway.
-
-    The recovered semantic is a SCHEDULER YIELD: hand the host a boundary (pace the frame, present,
-    pump input), then run the tick the absent interrupt owed us, then let the GENERATED body observe
-    the now-set flag and return -- so the flags/cost it reports are the generated ones.
-
-    The tick is applied only when the flag is clear, i.e. only when the original would actually have
-    BLOCKED.  An already-set flag returns immediately, as it does on real hardware."""
-    real = generated("1010:0679")
-
-    def func_1010_0679(mem, *, ss=0):
-        if mem.rb(_CS, _TICK_FLAG) == 0:
-            boundary = getattr(plat, "boundary", None)
-            if boundary is not None:
-                boundary("timer")
-            mem.wb(_CS, _TICK_FLAG, (mem.rb(_CS, _TICK_FLAG) + 1) & 0xFF)
-        return real(mem, ss=ss)
-
-    return func_1010_0679
-
-
 #: address -> factory(plat) -> generated-contract callable.  Keep this list SMALL and justified: every
 #: entry is a place the generated corpus is not the truth, and each one needs the reason in its
 #: docstring.  Everything absent here is served by the autolifted corpus.
-OVERRIDES: "dict[str, Callable]" = {
-    "1010:0679": _timer_env_wait,
-}
+#:
+#: EMPTY IS THE CORRECT STATE RIGHT NOW, and an empty registry is not a dead mechanism -- with
+#: ``OVERRIDES = {}`` the composite is bit-for-bit the generated program, so a passing cold run proves
+#: the GENERATED CORPUS, which is exactly what this milestone is about.  (skyroads_port keeps its own
+#: mirror of this registry empty for the same reason.)
+#:
+#: RETIRED 2026-07-18 -- ``1010:0679`` (`_timer_env_wait`).  It supplied the timer tick the absent
+#: IRQ0 owed, so the tick-wait would terminate.  Two things were wrong with it:
+#:
+#:   * IT BYPASSED THE SPINE.  Intercepting an address and calling a host yield is flow the HOST
+#:     invents, running beside the generated program instead of inside it.  The game-agnostic model --
+#:     the one dos_re is built around and skyroads already uses -- is that an env-wait is a BOUNDARY
+#:     HEAD: the generated body itself calls ``plat.boundary(...)`` at the declared address and a
+#:     frame driver on ``plat.boundary_cb`` decides whether to park.  ``1010:0679`` is now declared in
+#:     ``artifacts/lift_boundary_heads.txt`` and the emitted body carries the call.
+#:   * IT WAS INERT ANYWAY.  ``getattr(plat, "boundary", None)`` then ``boundary("timer")`` targets
+#:     ``OverkillPlatform.boundary(kind="timer")``, the host-yield protocol.  Under the cold-start
+#:     runtime the platform is dos_re's ``CPUlessPlatformRuntime``, whose ``boundary(head_cs, head_ip,
+#:     resume_ip, regs, cost)`` is the boundary-head OBSERVER protocol -- so the call raised
+#:     ``TypeError``.  The ``getattr(..., None)`` guard read as defensive but actually found the WRONG
+#:     method: a name collision between two unrelated protocols is not something a None-check can see.
+#:     Note for anyone adding an override that wants a host service: check the TYPE, not the name.
+#:
+#: The replacement lives in :mod:`overkill.cpuless_driver`.
+OVERRIDES: "dict[str, Callable]" = {}
 
 
 def install_overrides(plat, addrs=None) -> "list[str]":
@@ -152,13 +146,22 @@ def install_overrides(plat, addrs=None) -> "list[str]":
     installed = []
     for addr in (addrs if addrs is not None else sorted(OVERRIDES)):
         name = module_name(addr)
-        if importlib.util.find_spec(name) is None:
+        spec = importlib.util.find_spec(name)
+        if spec is None:
             raise LookupError(
                 f"override {addr} has no generated module ({name}) -- the corpus does not contain "
                 f"that address; fix or drop the OVERRIDES entry")
         fn = OVERRIDES[addr](plat)
         attr = func_name(addr)
         shadow = types.ModuleType(name)
+        # CARRY THE REAL SPEC.  A bare ModuleType has `__spec__ = None`, and `find_spec` on a name
+        # already in `sys.modules` reads that attribute -- so a spec-less shadow makes the very
+        # lookup `generated()` uses raise `ValueError` instead of finding the autolifted module.
+        # That would sever the differential oracle from behind the shadow, which is the one thing
+        # the shadow must never do.  It was latent until now only because the shipped override
+        # happened to warm the `__generated` alias from its factory before the shadow went in.
+        shadow.__spec__ = spec
+        shadow.__loader__ = spec.loader
         shadow._OVERRIDE_SHADOW = True
         shadow._OVERRIDE_ADDR = addr
         setattr(shadow, attr, fn)

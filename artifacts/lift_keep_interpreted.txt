@@ -10,10 +10,25 @@
 #
 # overkill already treats both as wait boundaries (overkill/input_waits.py).
 #
-# 1010:0679 -- the GAMEPLAY FRAME timer wait: `cmp cs:[066B],0; jz 0679; ret`,
-#              spins until the timer ISR sets 066B (one frame). Called first in
-#              the 97B2 frame loop.
+# DISCHARGED 2026-07-18 -- 1010:0679, the GAMEPLAY FRAME timer wait
+#   (`cmp cs:[066B],0; jz 0679; ret`, spins until the IRQ0 ISR 1010:06E5 -> 066C
+#   sets 066B).  It is no longer listed here because the condition this file
+#   states for delisting -- "until modelled as an explicit scheduler-yield
+#   boundary in the standalone runtime" -- is MET: it is declared in
+#   artifacts/lift_boundary_heads.txt, the generated body carries a real
+#   `plat.boundary(0x1010, 0x0679, 0x067F, ...)` call (audit_recovery_facts.py
+#   verifies that positively, in the committed corpus), and
+#   overkill/cpuless_driver.py answers it.  Promotion is now the CORRECT outcome
+#   for this address, so keeping it declared keep-interpreted would assert a
+#   frontier that no longer exists.
+#
 # 1010:50C9 -- the VGA/CRT RETRACE wait (`in al,0x3DA; test; jnz`), the front-end
-#              pacing spin.
-1010:0679
+#              pacing spin.  STILL DECLARED.  It cannot follow 0679 into
+#              lift_boundary_heads.txt as it stands: measured 2026-07-18,
+#              declaring `1010:50C9` a head takes the corpus from 623/626
+#              promotable to 585, `contains-call` 0 -> 37 and
+#              `boundary-head-on-transfer` 0 -> 1, because 50C9 is a THUNK
+#              (`jmp C9EA ; call C9F1 ; call CA02 ; ret`) with ~20 static callers,
+#              so the head lands on a transfer and the refusal cascades.  Modelling
+#              it means declaring the real polling site inside C9F1/CA02.
 1010:50C9

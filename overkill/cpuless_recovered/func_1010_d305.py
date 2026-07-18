@@ -22,6 +22,12 @@ from overkill.cpuless_recovered.func_1010_d367 import func_1010_d367
 from overkill.cpuless_recovered.func_1f8f_0922 import func_1f8f_0922
 
 _PARITY = tuple((1 - bin(v).count('1') % 2) == 1 for v in range(256))
+#: spin-detector cap.  Production keeps it high to catch a genuine
+#: unbounded wait; the seeded differential lowers it (both sides
+#: identically), because 'both hit the cap' is the same evidence
+#: at a fraction of the cost -- a 20M-iteration spin-wait ran the
+#: 143-core corpus past 15 minutes at only 4 states.
+_ITER_CAP = 20000000
 
 
 def func_1010_d305(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, bx=0, di=0, ds=0, dx=0, es=0, sp=0, ss=0):
@@ -42,7 +48,7 @@ def func_1010_d305(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, bx=0, 
     _iters = 0
     while True:
         _iters += 1
-        if _iters > 20000000:
+        if _iters > _ITER_CAP:
             raise RuntimeError('CPUless dispatch spin in 1010:D305 (block %d, cost %d): loop exceeded 20000000 iterations -- an unbounded wait (interrupt-updated flag, or a wrong port after a state divergence)' % (bb, _cost))
         if bb == 0:  # 1010:D305
             sp = (sp - 2) & 0xFFFF
@@ -363,7 +369,7 @@ def func_1010_d305(mem, plat, *, _base=0, _df=0, _flags_in=2, ax=0, bp=0, bx=0, 
             sp = (sp + 2) & 0xFFFF
             sp = (sp - 2) & 0xFFFF
             mem.ww(ss, sp, 0xD343)
-            _o, _c = func_1010_0679(mem, ss=ss)
+            _o, _c = func_1010_0679(mem, plat, _base=_base + _cost + 7, _flags_in=((_flags_in & ~_fmask) | (((0x1 if cf else 0) | (0x4 if pf else 0) | (0x10 if af else 0) | (0x40 if zf else 0) | (0x80 if sf else 0) | (0x800 if of else 0) | (0x400 if df else 0) | (0x200 if intf else 0)) & _fmask)), ax=ax, bp=bp, bx=bx, cx=cx, di=di, ds=ds, dx=dx, es=es, si=si, sp=sp, ss=ss)
             _gm = _c['fmask']
             if _gm:
                 _gf = _c['flags']

@@ -38,12 +38,6 @@ _BOUNDARY_CALL = re.compile(r"\bplat\.boundary\(\s*0x([0-9A-Fa-f]{1,4})\s*,\s*0x
 #: violation-key -> why it is tolerated *for now* and where the fix is tracked.  A violation here is an
 #: acknowledged debt with an owner, not an exemption: the audit fails if one is fixed but still listed.
 KNOWN_VIOLATIONS = {
-    "keep-interpreted-promoted:1010:0679":
-        "env-wait (frame timer spin) is promoted although declared keep-interpreted. MITIGATED at "
-        "RUNTIME (2026-07-18d): overkill/cpuless_overrides.py patches it with a scheduler yield to "
-        "OverkillPlatform.boundary() that supplies the tick the absent INT 8 handler owed, then "
-        "delegates to the generated body. The PIPELINE-level violation stands (promotion still "
-        "ignores the fact file); it stops mattering once the emitter models env-waits as boundaries.",
     "keep-interpreted-promoted:1010:50C9":
         "env-wait (CRT retrace spin) is promoted although declared keep-interpreted. Satisfied at "
         "runtime by OverkillPlatform.inp() toggling 3DAh, so the spin terminates. CORRECTION "
@@ -54,7 +48,12 @@ KNOWN_VIOLATIONS = {
         "no-exit') -- no longer true. dos_re can now represent setjmp/longjmp, 96C8 promotes with "
         "ZERO overrides, and the runtime closure from 1010:97B2 is 253/253 with an empty frontier. "
         "The corpus HAS a top level; what remains here is only the PIPELINE-level violation "
-        "(promotion still ignores the keep-interpreted fact file).",
+        "(promotion still ignores the keep-interpreted fact file). UPDATE (2026-07-18f): its "
+        "sibling 1010:0679 left this list for real -- it is a declared BOUNDARY HEAD now and the "
+        "emitted body carries the plat.boundary call -- but 50C9 cannot follow it as declared: "
+        "measured, a head at 50C9 drops promotable 623 -> 585 (contains-call 0 -> 37, "
+        "boundary-head-on-transfer 0 -> 1) because 50C9 is a thunk and the head lands on a "
+        "transfer. Modelling it means declaring the real 3DA polling site inside C9F1/CA02.",
 }
 
 

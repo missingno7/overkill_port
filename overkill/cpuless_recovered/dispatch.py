@@ -24,7 +24,7 @@ DISPATCH = {
     '1010:065C': ('overkill.cpuless_recovered.func_1010_065c', 'func_1010_065c', None, ('ax', 'bp', 'cx', 'di', 'ds', 'dx', 'es', 'si', 'sp', 'ss'), True, False, True),
     '1010:066C': ('overkill.cpuless_recovered.func_1010_066c', 'func_1010_066c', None, ('ss',), False, False, False),
     '1010:0672': ('overkill.cpuless_recovered.func_1010_0672', 'func_1010_0672', None, ('ss',), False, False, False),
-    '1010:0679': ('overkill.cpuless_recovered.func_1010_0679', 'func_1010_0679', None, ('ss',), False, False, False),
+    '1010:0679': ('overkill.cpuless_recovered.func_1010_0679', 'func_1010_0679', None, ('ax', 'bp', 'bx', 'cx', 'di', 'ds', 'dx', 'es', 'si', 'sp', 'ss'), True, False, True),
     '1010:06BC': ('overkill.cpuless_recovered.func_1010_06bc', 'func_1010_06bc', None, ('ax', 'bp', 'bx', 'cx', 'di', 'ds', 'dx', 'es', 'si', 'sp', 'ss'), True, False, True),
     '1010:073C': ('overkill.cpuless_recovered.func_1010_073c', 'func_1010_073c', None, ('ax', 'bp', 'bx', 'cx', 'di', 'ds', 'dx', 'es', 'si', 'sp', 'ss'), True, True, True),
     '1010:0747': ('overkill.cpuless_recovered.func_1010_0747', 'func_1010_0747', None, ('ax', 'bp', 'bx', 'cx', 'di', 'ds', 'dx', 'es', 'si', 'sp', 'ss'), True, True, True),

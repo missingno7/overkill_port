@@ -8,18 +8,32 @@ generated CPU-ABI adapter -- it is not part of the recovered API.
 """
 
 _PARITY = tuple((1 - bin(v).count('1') % 2) == 1 for v in range(256))
+#: spin-detector cap.  Production keeps it high to catch a genuine
+#: unbounded wait; the seeded differential lowers it (both sides
+#: identically), because 'both hit the cap' is the same evidence
+#: at a fraction of the cost -- a 20M-iteration spin-wait ran the
+#: 143-core corpus past 15 minutes at only 4 states.
+_ITER_CAP = 20000000
 
 
-def func_1010_0679(mem, *, ss=0):
+def func_1010_0679(mem, plat, *, _base=0, _flags_in=2, ax=0, bp=0, bx=0, cx=0, di=0, ds=0, dx=0, es=0, si=0, sp=0, ss=0):
     _cost = 0
     cf = pf = af = zf = sf = of = df = intf = False
+    af = (_flags_in & 0x10) != 0
+    cf = (_flags_in & 0x1) != 0
+    df = (_flags_in & 0x400) != 0
+    intf = (_flags_in & 0x200) != 0
+    of = (_flags_in & 0x800) != 0
+    pf = (_flags_in & 0x4) != 0
+    sf = (_flags_in & 0x80) != 0
+    zf = (_flags_in & 0x40) != 0
     _fmask = 0
     cs = 0x1010
     bb = 0
     _iters = 0
     while True:
         _iters += 1
-        if _iters > 20000000:
+        if _iters > _ITER_CAP:
             raise RuntimeError('CPUless dispatch spin in 1010:0679 (block %d, cost %d): loop exceeded 20000000 iterations -- an unbounded wait (interrupt-updated flag, or a wrong port after a state divergence)' % (bb, _cost))
         if bb == 0:  # 1010:0679
             _a = mem.rb(cs, 0x66B)
@@ -31,8 +45,32 @@ def func_1010_0679(mem, *, ss=0):
             af = ((_a) ^ (_b) ^ _t) & 0x10 != 0
             cf = _t < 0
             of = (((_a) ^ (_b)) & ((_a) ^ _t) & 0x80) != 0
-            _cost += 2
             _fmask |= 0x10 | 0x1 | 0x800 | 0x4 | 0x80 | 0x40
+            _bw = (_flags_in & ~_fmask) | (((0x1 if cf else 0) | (0x4 if pf else 0) | (0x10 if af else 0) | (0x40 if zf else 0) | (0x80 if sf else 0) | (0x800 if of else 0) | (0x400 if df else 0) | (0x200 if intf else 0)) & _fmask)
+            _bo = plat.boundary(0x1010, 0x0679, 0x067F, {'ax': ax, 'cx': cx, 'dx': dx, 'bx': bx, 'sp': sp, 'bp': bp, 'si': si, 'di': di, 'ds': ds, 'es': es, 'ss': ss, 'cs': 0x1010, '_df': (1 if df else 0), '_flags_in': _bw}, _base + _cost + 1)
+            ax = _bo[0]['ax']
+            cx = _bo[0]['cx']
+            dx = _bo[0]['dx']
+            bx = _bo[0]['bx']
+            sp = _bo[0]['sp']
+            bp = _bo[0]['bp']
+            si = _bo[0]['si']
+            di = _bo[0]['di']
+            ds = _bo[0]['ds']
+            es = _bo[0]['es']
+            ss = _bo[0]['ss']
+            _bf = _bo[1]
+            cf = (_bf & 0x1) != 0
+            pf = (_bf & 0x4) != 0
+            af = (_bf & 0x10) != 0
+            zf = (_bf & 0x40) != 0
+            sf = (_bf & 0x80) != 0
+            of = (_bf & 0x800) != 0
+            intf = (_bf & 0x200) != 0
+            df = (_bf & 0x400) != 0
+            _fmask |= 0xED5
+            _cost += _bo[2]
+            _cost += 2
             if zf:
                 bb = 0
                 continue
