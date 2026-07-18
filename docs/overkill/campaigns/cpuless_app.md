@@ -262,3 +262,20 @@ Gated by `tests/test_play_cpuless_menu.py` (headless, artifact-gated on the boot
 via the generated corpus (`--menu`). What remains to join them into one cold-booting app: drive INPUT
 into the menu (it currently runs to completion and returns rather than waiting on keys), then follow the
 menu's own exit into level-load + gameplay.
+
+## 2026-07-18 — the CPUless front-end is INTERACTIVE
+
+`--menu` now feeds the host keyboard into the image's OWN INT9 key-state table (`DS:0x98C4 + scancode`,
+1 = pressed) — the same table the gameplay runner writes, and the one the recovered front-end polls, so
+this is real input rather than a side channel. Measured response (all CPUless, no carrier):
+
+| key | ax | bx | lit px | screen |
+|---|---|---|---|---|
+| none / Esc / Enter / '1' / 'p' / 'i' | 0x0009 | 0x0019 | 18556 | idle baseline |
+| **Space** (select/fire) | **0x0000** | 0x0004 | 16827 | **DIFFERS** |
+
+So the menu genuinely acts on Space and reports a selection (`ax` 9 → 0); `run_menu` exits on that and
+names level-load as the next stage.
+
+**Remaining for one cold-booting app — the JOIN:** follow that selection into `D390` level-select /
+level-load (needs the DOS file-I/O shim: INT 21h ×14, 13h, 67h) and hand off to the gameplay override.

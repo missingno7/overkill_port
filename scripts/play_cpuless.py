@@ -7,16 +7,24 @@ the CPU-ABI adapters) may be imported. A breach raises ``CpuStandaloneWitness`` 
 falling back to the VM, so this runner's ENTIRE import + run closure is proven carrier-free every launch
 (scripts/check_cpuless_wall.py is the CI gate for the same claim on paths a given run doesn't take).
 
-Today it plays GAMEPLAY from a snapshot/bundle image; the generated front-end (boot -> title/menu ->
-level load) fills in as the video platform shim and the tail-dispatch capability land -- see
-docs/overkill/campaigns/cpuless_app.md. It is a thin wall-armed entry over play_native (which is already
-carrier-free): the point of a separate runner is that the wall is ARMED, making "CPUless" enforced here,
-not merely true by habit.
+BOTH halves of the unification run here:
+
+* GAMEPLAY comes from the MANUAL override (``native_frame``, the coarse ADR-2 seam) over a
+  snapshot/bundle image -- the default mode, a thin wall-armed entry over play_native;
+* the FRONT-END (``--menu``) comes from the GENERATED corpus: it executes the menu root over the
+  data-only boot image and presents what the recovered code drew into B800 through the native Tandy
+  renderer, with the host keyboard written into the image's own INT9 key table so the menu really
+  responds to input.
+
+What is still missing for a single cold-booting app is the JOIN: following the menu's own selection into
+level-load and on into gameplay (see docs/overkill/campaigns/cpuless_app.md).
 
 Usage:
     python scripts/play_cpuless.py                 # play (live window), gameplay from the default bundle
+    python scripts/play_cpuless.py --menu          # the CPUless FRONT-END (generated corpus), interactive
     python scripts/play_cpuless.py --snapshot DIR  # start from a captured image (it IS the state)
     python scripts/play_cpuless.py --frames N --no-sound   # headless self-test: N frames then exit
+    python scripts/play_cpuless.py --menu --seconds 1      # headless front-end self-test
     # ...all other play_native.py arguments pass straight through.
 """
 from __future__ import annotations
@@ -36,6 +44,10 @@ MENU_ROOT = "1010:CC04"
 #: The data-only boot image the front-end runs over (post-C-startup; the DOS surface a cold boot would
 #: need is exactly what this image bypasses -- see the campaign doc).
 BOOT_IMAGE = ROOT / "artifacts" / "frontend_intro_snapshot" / "memory_1mb.bin"
+#: the game DGROUP, and the image's own INT9 key-state table the front-end polls
+#: (1 = pressed) -- the same table the gameplay runner writes the host keyboard into.
+_DS = 0x25CC
+_KEY_TABLE = 0x98C4
 
 
 def run_menu(scale: int = 3, seconds: float = 0.0) -> int:
@@ -57,29 +69,50 @@ def run_menu(scale: int = 3, seconds: float = 0.0) -> int:
 
     img = MutFlatMemory(BOOT_IMAGE.read_bytes())
     plat = OverkillPlatform()
-    # run_deep: the front-end's tail-dispatch loops are BOUNDED but are emitted as nested _dyn calls,
-    # so they need stack headroom (a runtime accommodation -- see dos_re.lift.standalone).
-    run_deep(run_recovered, MENU_ROOT, img, plat, ds=0x25CC, es=0x25CC, ss=0x2000, sp=0x1000)
 
-    indices = decode_tandy_b800_indices(np.frombuffer(bytes(img.data), dtype=np.uint8), 0xB8000)
-    lit = int((indices != 0).sum())
-    print(f"[cpuless] front-end {MENU_ROOT} drew {lit} lit pixels -- NO CPU, NO interpreter",
-          flush=True)
+    def step():
+        """One pass of the front-end over the image, returning its live outputs.
+
+        run_deep: the front-end's tail-dispatch loops are BOUNDED but are emitted as nested _dyn calls,
+        so they need stack headroom (a runtime accommodation -- see dos_re.lift.standalone)."""
+        return run_deep(run_recovered, MENU_ROOT, img, plat,
+                        ds=_DS, es=_DS, ss=0x2000, sp=0x1000)
+
+    def frame():
+        return decode_tandy_b800_indices(np.frombuffer(bytes(img.data), dtype=np.uint8), 0xB8000)
+
+    out = step()
+    print(f"[cpuless] front-end {MENU_ROOT} drew {int((frame() != 0).sum())} lit pixels "
+          f"-- NO CPU, NO interpreter", flush=True)
     if plat.video_ports:
         print(f"[cpuless] video registers: {({hex(k): hex(v) for k, v in plat.video_ports.items()})}")
 
     import scripts.play_native as play_native      # under the wall; proven carrier-free
     display = play_native.PygameDisplay(scale=scale, title="OVERKILL - CPUless front-end")
     pygame = display.pygame
-    display.draw(indices)
+    scan_map = play_native._build_scan_map(pygame)
     clock = pygame.time.Clock()
     elapsed = 0.0
     while True:
+        # The host keyboard goes into the image's OWN INT9 key-state table, exactly as the gameplay
+        # runner does it -- the recovered front-end polls that table, so this is real input, not a
+        # side channel. Space (the select/fire key) is what the menu acts on.
         for ev in pygame.event.get():
             if ev.type == pygame.QUIT or (ev.type == pygame.KEYDOWN and ev.key == pygame.K_ESCAPE):
                 display.close()
                 return 0
-        display.draw(indices)
+            if ev.type in (pygame.KEYDOWN, pygame.KEYUP):
+                sc = scan_map.get(ev.key)
+                if sc is not None:
+                    img.wb(_DS, (_KEY_TABLE + (sc & 0x7F)) & 0xFFFF,
+                           1 if ev.type == pygame.KEYDOWN else 0)
+        out = step()                              # re-run the front-end over the evolving image
+        if out.get("ax", 0xFFFF) == 0:            # the menu made a selection (observed: ax 9 -> 0)
+            print(f"[cpuless] front-end SELECTED (ax=0, bx={out.get('bx', 0):#06x}) -- "
+                  f"the next stage is level-load", flush=True)
+            display.close()
+            return 0
+        display.draw(frame())
         elapsed += clock.tick(30) / 1000.0
         if seconds and elapsed >= seconds:
             display.close()
