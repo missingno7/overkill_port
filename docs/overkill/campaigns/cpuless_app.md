@@ -385,6 +385,46 @@ is DEMO BREADTH, not more promotion** — every new promotion without a demo tha
 unproven surface rather than shrinking it. This is the figure to quote for correctness; "591/626
 promoted, walls HOLD" is a structural claim and says nothing about these 477.
 
+## 2026-07-18l — the ATTRACT demo, and the NON-LOCAL-EXIT design (ready to implement)
+
+Owner supplied a second spine demo, `artifacts/demos/demo_play_tandy_20260718_135013`: **11257
+boundaries, ZERO events** — a do-nothing run from the same `1010:58F4` start, waiting through the grid
+intro and the gameplay demonstration until the attract cycle looped back. It covers exactly what the
+first spine demo SKIPPED (that one pressed SPACE at b=466), so the two are complementary and together
+they are the cold-start path end to end. Union trace running.
+
+### The non-local-exit capability — where it goes in `emit_cpuless`, and the precedent to mirror
+
+The frontier (`065C` refused `sp-as-data`, blocking `96C8` = the game's top level) is a C-runtime
+fatal-abort longjmp. `emit_cpuless` ALREADY has the right shape for this in its RUNTIME-DEAD EXIT
+handling, which is the model to copy: a dead exit is *terminal but constrains nothing*, emitting
+`raise RuntimeError('CPUless: runtime-dead exit ... reached -- frontier witness')` instead of a return.
+A longjmp is the same idea with a real cause — it IS terminal for this function, and its "return" goes
+to another stack, so it must not constrain this function's exit ABI either.
+
+Four sites, all located this pass:
+
+1. **Recognizer** — add `_is_nonlocal_exit(scan, i)` next to `_is_bootstrap_ss_switch` (~line 1396),
+   written just as tightly: `mov sp, m16` (op `0x8B`, reg field = 4, modrm = memory) where every
+   forward path reaches a `ret`/`retf` with no intervening push/pop/call. Tight recognition is the
+   whole point of the precedent — it must not admit an arbitrary SP write elsewhere in the program.
+2. **Refusal** — in the instruction scan (~line 1053), `continue` instead of
+   `raise Refusal("sp-as-data")` when the recognizer fires, collecting the IPs.
+3. **Exit ABI** — in `_check_stack_depths` (~line 1508), treat a `ret` reached only via a non-local
+   exit exactly like `i.ip in dead_exits`: `continue`, recording no exit depth or `ret_pop`.
+4. **Emission** — in the block emitter (~line 2000), intercept the recognized instruction and emit a
+   structured `NonLocalExit` raise, terminating the block (mirroring the dead-exit branch).
+
+The raise is not a cop-out: a longjmp really is a non-local transfer, and a Python exception is its
+natural model — it unwinds the interpreter stack the same way the original unwinds the machine stack.
+The recovered program root (or a future setjmp site) catches it. This is general: every DOS C runtime
+has a fatal-error path of this shape, so it is a dos_re capability, not an OVERKILL patch.
+
+**Deliberately not started at the end of a long session** — it is a four-site change in a 2000-line
+emitter, and a half-applied edit there is worse than none. The sites and the precedent are recorded
+so the next pass implements directly rather than re-deriving.
+
+
 ## 2026-07-18k — THE SPINE DEMO + a NEGATIVE result: `--observed` on one demo REGRESSES promotion
 
 Owner supplied the spine demo `artifacts/demos/demo_play_tandy_20260718_134524` — recording started at
