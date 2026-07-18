@@ -385,6 +385,51 @@ is DEMO BREADTH, not more promotion** — every new promotion without a demo tha
 unproven surface rather than shrinking it. This is the figure to quote for correctness; "591/626
 promoted, walls HOLD" is a structural claim and says nothing about these 477.
 
+## 2026-07-18i — METHOD CHANGE: cold-boot forward, first divergence IS the frontier
+
+Adopting the owner's method: grow ONE continuous oracle-proven path from startup rather than a
+collection of locally passing islands. The work order stops being ours to choose — boot the recovered
+program, let it run until it hits something the port has not supplied, repair that seam, rerun from
+the beginning, and the next first-failure is the next task.
+
+This is a direct correction to how the last few passes worked. Call-graph analysis produced a real
+result (the promotion cascade, the probe bug) but also two wrong turns a cold boot could not have
+made: naming `0B3E` as the DOS-I/O seam when it performs no DOS I/O at all, and a ten-function island
+set where four were needed and six were ordinary game code.
+
+**New instrument: `scripts/coldboot_frontier.py`.** Runs the corpus from the boot root under the armed
+wall and reports the first thing it cannot do. `FailLoudPlatform` raises and NAMES the missing
+service, and the recovered corpus never falls back to a VM — so the exception IS the output: a
+precise, ordered statement of what the port owes next.
+
+**FIRST RESULT — and the boot root was never the problem.** `254A:04D7` (the C-startup bootstrap, the
+first game code a cold boot runs) is ALREADY PROMOTED, along with `0582/05A1/05BF/05D9` and
+`1F8F:01AD`/`1F8F:0980`. An earlier scoping note in this campaign said "do NOT run the boot bootstrap
+standalone (11 INT 21h C-startup calls)"; under the new method that avoidance was exactly backwards,
+and running it is what produced a usable frontier in one command:
+
+    FRONTIER: CpuStandaloneWitness
+      INT 0x21 reached with no host platform implementation
+      in recovered code: func_254a_04d7.py:78
+
+The site is `ax = 0x3D02` -> **INT 21h AH=3Dh AL=02h, OPEN FILE**, filename ASCIIZ at `DS:[0740]`.
+The very first DOS call of the cold boot opens the asset container.
+
+**THE REPAIR — reuse dos_re's DOS model, do not hand-roll INT 21h.** `dos_re/dos.py` already has a
+real DOS file service including details that were learned the hard way (`_alloc_handle` reuses the
+LOWEST free handle, because a monotonic counter makes a game that indexes a fixed-size per-handle
+table overrun it — a documented Ancient Empires bug). VERIFIED this pass: **`dos_re.dos` imports
+clean under the CPUless wall**, so the port can use it directly. skyroads_port already cold-boots
+through `dos_re.lift.platform.CPUlessPlatformRuntime` over `DOSMachine`, which is the same answer
+arrived at independently.
+
+So the next slice is NOT "write INT 21h handlers in OverkillPlatform" — it is to back the platform
+with dos_re's DOS machine (serving the real `assets/OVERKILL` bytes, which are the original file, so
+faithful rather than approximated), rerun `coldboot_frontier.py`, and let the frontier move to
+whatever the second gap turns out to be. Every INT 21h handler hand-written in the port would be
+DOS recreated unnecessarily, against the standing rule.
+
+
 ## 2026-07-18h — THE JOINT WASN'T REAL: the IP-delta probe was corrupting the code it measured
 
 Followed the skin/skeleton question "is `0248` actually a joint, or did the decoder just fail to see
